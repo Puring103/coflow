@@ -1,7 +1,9 @@
 use std::fs;
-use std::path::{Path, PathBuf};
 
 use coflow::lexer::{lex, TokenKind};
+
+mod common;
+use common::{fixture_files, render_errors, render_tokens};
 
 #[test]
 fn valid_fixtures_have_no_lex_errors() {
@@ -28,6 +30,71 @@ fn invalid_lex_fixtures_report_errors() {
             path.display()
         );
     }
+}
+
+#[test]
+fn token_expectation_fixtures_match() {
+    let mut checked = 0;
+    for path in fixture_files("tests/fixtures/coflow/valid") {
+        let expect_path = path.with_extension("tokens.expect");
+        if !expect_path.exists() {
+            continue;
+        }
+
+        let source = fs::read_to_string(&path).expect("fixture should be readable");
+        let output = lex(&source);
+        assert_eq!(
+            output.errors,
+            [],
+            "fixture should lex cleanly: {}",
+            path.display()
+        );
+
+        let actual = render_tokens(&source, &output.tokens);
+        let expected =
+            fs::read_to_string(&expect_path).expect("token expectation should be readable");
+        assert_eq!(
+            expected.trim_end(),
+            actual.trim_end(),
+            "token expectation mismatch for {}",
+            path.display()
+        );
+        checked += 1;
+    }
+
+    assert!(
+        checked > 0,
+        "expected at least one token expectation fixture"
+    );
+}
+
+#[test]
+fn error_expectation_fixtures_match() {
+    let mut checked = 0;
+    for path in fixture_files("tests/fixtures/coflow/invalid/lex") {
+        let expect_path = path.with_extension("errors.expect");
+        if !expect_path.exists() {
+            continue;
+        }
+
+        let source = fs::read_to_string(&path).expect("fixture should be readable");
+        let output = lex(&source);
+        let actual = render_errors(&source, &output.errors);
+        let expected =
+            fs::read_to_string(&expect_path).expect("error expectation should be readable");
+        assert_eq!(
+            expected.trim_end(),
+            actual.trim_end(),
+            "error expectation mismatch for {}",
+            path.display()
+        );
+        checked += 1;
+    }
+
+    assert!(
+        checked > 0,
+        "expected at least one error expectation fixture"
+    );
 }
 
 #[test]
@@ -165,25 +232,6 @@ fn complex_nested_module_has_expected_token_sequence() {
             TokenKind::RBrace,
         ]
     );
-}
-
-fn fixture_files(root: impl AsRef<Path>) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    collect_fixture_files(root.as_ref(), &mut files);
-    files.sort();
-    files
-}
-
-fn collect_fixture_files(dir: &Path, files: &mut Vec<PathBuf>) {
-    for entry in fs::read_dir(dir).expect("fixture directory should exist") {
-        let entry = entry.expect("fixture directory entry should be readable");
-        let path = entry.path();
-        if path.is_dir() {
-            collect_fixture_files(&path, files);
-        } else if path.extension().is_some_and(|ext| ext == "cf") {
-            files.push(path);
-        }
-    }
 }
 
 fn assert_contains_token_window(actual: &[TokenKind], expected: &[TokenKind]) {
