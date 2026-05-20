@@ -2,10 +2,8 @@ class Range {
   min: int
   max: int
 
-  validate {
-    if self.min > self.max {
-      throw "min must be <= max"
-    }
+  check {
+    self.min <= self.max => "min must be <= max"
   }
 }
 

@@ -1,4 +1,4 @@
-stream_factory = co fn(limit) {
+stream_factory = iter fn(limit) {
   var i = 0
 
   while i < limit {

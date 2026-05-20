@@ -1,4 +1,4 @@
-use coflow::ast::{Expr, Item, Literal, StringKind};
+use coflow::ast::{Expr, FnBody, Item, Literal, StringKind};
 use coflow::parser::ParseErrorKind;
 
 use crate::common::{parse_error_kinds, parse_ok};
@@ -66,9 +66,9 @@ fn imports_with_optional_alias_parse() {
 }
 
 #[test]
-fn top_level_var_and_local_var_parse() {
-    let module = parse_ok("var runtime_cache = null\nlocal var scale: int = 2");
-    assert_eq!(module.items.len(), 2);
+fn top_level_var_parses() {
+    let module = parse_ok("var runtime_cache = null");
+    assert_eq!(module.items.len(), 1);
 
     let Item::Var(first) = &module.items[0] else {
         panic!("expected var");
@@ -79,24 +79,17 @@ fn top_level_var_and_local_var_parse() {
         first.init,
         Some(Expr::Literal(Literal::Null { .. }))
     ));
-
-    let Item::Var(second) = &module.items[1] else {
-        panic!("expected local var");
-    };
-    assert!(second.local);
-    assert_eq!(second.name.text, "scale");
-    assert!(second.ty.is_some());
 }
 
 #[test]
-fn functions_and_co_functions_parse() {
+fn functions_and_iter_functions_parse() {
     let module = parse_ok(
         r#"
 fn add(a: int, b) {
   return a + b
 }
 
-local co fn stream(count) {
+local iter fn stream(count) {
   yield count
 }
 "#,
@@ -108,29 +101,54 @@ local co fn stream(count) {
     };
     assert_eq!(add.name.text, "add");
     assert!(!add.local);
-    assert!(!add.co);
+    assert!(!add.iter);
     assert_eq!(add.params.len(), 2);
 
     let Item::Function(stream) = &module.items[1] else {
-        panic!("expected co function");
+        panic!("expected iter function");
     };
     assert_eq!(stream.name.text, "stream");
     assert!(stream.local);
-    assert!(stream.co);
+    assert!(stream.iter);
 }
 
 #[test]
-fn class_with_fields_defaults_and_validate_parses() {
+fn function_with_return_type_parses() {
+    let module = parse_ok("fn add(a: int, b: int) -> int { return a + b }");
+    let Item::Function(func) = &module.items[0] else {
+        panic!("expected function");
+    };
+    assert!(func.return_type.is_some());
+}
+
+#[test]
+fn function_with_expr_body_parses() {
+    let module = parse_ok("fn double(x: int) -> int => x * 2");
+    let Item::Function(func) = &module.items[0] else {
+        panic!("expected function");
+    };
+    assert!(matches!(func.body, FnBody::Expr(_)));
+}
+
+#[test]
+fn function_with_default_param_parses() {
+    let module = parse_ok("fn spawn(name: string, hp: int = 100) { }");
+    let Item::Function(func) = &module.items[0] else {
+        panic!("expected function");
+    };
+    assert!(func.params[1].default.is_some());
+}
+
+#[test]
+fn class_with_fields_defaults_and_check_parses() {
     let module = parse_ok(
         r#"
 local class Weapon {
   id: string
   damage: int = 10
 
-  validate {
-    if self.damage <= 0 {
-      throw "damage must be positive"
-    }
+  check {
+    self.damage > 0 => "damage must be positive"
   }
 }
 "#,
@@ -144,12 +162,12 @@ local class Weapon {
     assert_eq!(class.fields.len(), 2);
     assert_eq!(class.fields[0].name.text, "id");
     assert!(class.fields[1].default.is_some());
-    assert!(class.validate.is_some());
+    assert_eq!(class.checks.len(), 1);
 }
 
 #[test]
-fn enum_variants_parse() {
-    let module = parse_ok("local enum Rarity { common rare epic }");
+fn enum_variants_with_int_values_parse() {
+    let module = parse_ok("local enum Rarity { common = 0, rare = 10, epic }");
     let Item::Enum(enum_decl) = &module.items[0] else {
         panic!("expected enum");
     };
@@ -159,7 +177,26 @@ fn enum_variants_parse() {
         enum_decl
             .variants
             .iter()
-            .map(|variant| variant.text.as_str())
+            .map(|v| v.name.text.as_str())
+            .collect::<Vec<_>>(),
+        vec!["common", "rare", "epic"]
+    );
+    assert_eq!(enum_decl.variants[0].value, Some(0));
+    assert_eq!(enum_decl.variants[1].value, Some(10));
+    assert_eq!(enum_decl.variants[2].value, None);
+}
+
+#[test]
+fn enum_variants_without_values_parse() {
+    let module = parse_ok("local enum Rarity { common rare epic }");
+    let Item::Enum(enum_decl) = &module.items[0] else {
+        panic!("expected enum");
+    };
+    assert_eq!(
+        enum_decl
+            .variants
+            .iter()
+            .map(|v| v.name.text.as_str())
             .collect::<Vec<_>>(),
         vec!["common", "rare", "epic"]
     );
@@ -202,8 +239,8 @@ fn rejects_local_config_declaration() {
 }
 
 #[test]
-fn rejects_co_without_fn() {
-    let errors = parse_error_kinds("co stream() {}");
+fn rejects_iter_without_fn() {
+    let errors = parse_error_kinds("iter stream() {}");
     assert!(errors.contains(&ParseErrorKind::ExpectedToken));
 }
 

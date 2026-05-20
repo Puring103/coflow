@@ -1,9 +1,9 @@
-co fn child() {
+iter fn child() {
   yield 1
   yield 2
 }
 
-co fn parent(limit) {
+iter fn parent(limit) {
   yield from child()
 
   var i = 0

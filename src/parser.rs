@@ -1,10 +1,11 @@
 use crate::ast::{
-    ArrayLiteral, AssignOp, AssignStmt, AssignTarget, BinaryExpr, BinaryOp, Block, CallExpr,
-    ClassDecl, ClassField, ConfigDecl, ElseBranch, EnumDecl, Expr, FieldExpr, FnDecl, FnExpr,
-    ForInStmt, Ident, IfStmt, ImportDecl, IndexExpr, Item, Literal, Module, OptionalFieldExpr,
-    Param, Path, RecordEntry, RecordKey, RecordLiteral, ReturnStmt, Stmt, StringKind,
-    StringLiteral, ThrowStmt, TryCatchStmt, TypeExpr, UnaryExpr, UnaryOp, VarDecl, WhileStmt,
-    YieldStmt,
+    Arg, ArrayLiteral, AssignOp, AssignStmt, AssignTarget, BinaryExpr, BinaryOp, Block, CallExpr,
+    CheckArm, ClassDecl, ClassField, ConfigDecl, ElseBranch, EnumDecl, EnumVariant, Expr,
+    FieldExpr, FnBody, FnDecl, FnExpr, ForInStmt, Ident, IfExpr, IfStmt, ImportDecl, IndexExpr,
+    Item, LambdaExpr, Literal, LoopStmt, Module, OptionalFieldExpr, OptionalIndexExpr, Param,
+    Path, RangeExpr, RecordEntry, RecordKey, RecordLiteral, ReturnStmt, Stmt, StringKind,
+    StringLiteral, ThrowStmt, TryCatchStmt, TypeExpr, UnaryExpr, UnaryOp, UntilStmt, VarDecl,
+    WhileStmt, YieldStmt,
 };
 use crate::lexer::{lex, LexErrorKind, Token, TokenKind};
 use crate::span::Span;
@@ -110,7 +111,7 @@ impl<'a> Parser<'a> {
             Some(TokenKind::Class) => self.parse_class(local).map(Item::Class),
             Some(TokenKind::Enum) => self.parse_enum(local).map(Item::Enum),
             Some(TokenKind::Var) => self.parse_var_decl(local).map(Item::Var),
-            Some(TokenKind::Co) => {
+            Some(TokenKind::Iter) => {
                 let start = self.current_span();
                 self.bump();
                 if !self.at(TokenKind::Fn) {
@@ -194,22 +195,25 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_fn_decl(&mut self, local: bool, co: bool) -> Option<FnDecl> {
+    fn parse_fn_decl(&mut self, local: bool, iter: bool) -> Option<FnDecl> {
         let start = self.expect_token(TokenKind::Fn)?.start;
         let name = self.expect_ident()?;
         let params = self.parse_params()?;
-        let body = self.parse_block()?;
-        let span = Span {
-            start,
-            end: body.span.end,
+        let return_type = if self.eat(TokenKind::Arrow).is_some() {
+            Some(self.parse_type()?)
+        } else {
+            None
         };
+        let body = self.parse_fn_body()?;
+        let end = fn_body_span(&body).end;
         Some(FnDecl {
             local,
-            co,
+            iter,
             name,
             params,
+            return_type,
             body,
-            span,
+            span: Span { start, end },
         })
     }
 
@@ -218,12 +222,37 @@ impl<'a> Parser<'a> {
         let name = self.expect_ident()?;
         self.expect_token(TokenKind::LBrace)?;
         let mut fields = Vec::new();
-        let mut validate = None;
+        let mut methods = Vec::new();
+        let mut checks = Vec::new();
 
         while !self.is_eof() && !self.at(TokenKind::RBrace) {
-            if self.at(TokenKind::Validate) {
+            if self.at(TokenKind::Check) {
                 self.bump();
-                validate = self.parse_block();
+                self.expect_token(TokenKind::LBrace)?;
+                while !self.is_eof() && !self.at(TokenKind::RBrace) {
+                    let before = self.pos;
+                    match self.parse_check_arm() {
+                        Some(arm) => checks.push(arm),
+                        None => {
+                            if self.pos == before {
+                                self.bump();
+                            }
+                        }
+                    }
+                }
+                self.expect_token(TokenKind::RBrace)?;
+                continue;
+            }
+
+            if self.at(TokenKind::Fn) {
+                let before = self.pos;
+                match self.parse_fn_decl(false, false) {
+                    Some(method) => methods.push(method),
+                    None => self.synchronize_class_member(),
+                }
+                if self.pos == before {
+                    self.bump();
+                }
                 continue;
             }
 
@@ -244,8 +273,24 @@ impl<'a> Parser<'a> {
             local,
             name,
             fields,
-            validate,
+            methods,
+            checks,
             span: Span { start, end },
+        })
+    }
+
+    fn parse_check_arm(&mut self) -> Option<CheckArm> {
+        let condition = self.parse_expression()?;
+        self.expect_token(TokenKind::FatArrow)?;
+        let message = self.parse_expression()?;
+        let span = Span {
+            start: expr_span(&condition).start,
+            end: expr_span(&message).end,
+        };
+        Some(CheckArm {
+            condition,
+            message,
+            span,
         })
     }
 
@@ -282,7 +327,7 @@ impl<'a> Parser<'a> {
             if self.eat(TokenKind::Comma).is_some() {
                 continue;
             }
-            match self.expect_ident() {
+            match self.parse_enum_variant() {
                 Some(variant) => variants.push(variant),
                 None => {
                     self.synchronize_class_member();
@@ -299,6 +344,28 @@ impl<'a> Parser<'a> {
             name,
             variants,
             span: Span { start, end },
+        })
+    }
+
+    fn parse_enum_variant(&mut self) -> Option<EnumVariant> {
+        let name = self.expect_ident()?;
+        let value = if self.eat(TokenKind::Eq).is_some() {
+            let neg = self.eat(TokenKind::Minus).is_some();
+            let token = self.expect_token(TokenKind::IntLiteral)?;
+            let raw = self.slice(token);
+            let v: i64 = raw.replace('_', "").parse().ok()?;
+            Some(if neg { -v } else { v })
+        } else {
+            None
+        };
+        let end = value.map_or(name.span.end, |_| self.previous_end());
+        Some(EnumVariant {
+            span: Span {
+                start: name.span.start,
+                end,
+            },
+            name,
+            value,
         })
     }
 
@@ -329,15 +396,26 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_fn_body(&mut self) -> Option<FnBody> {
+        if self.at(TokenKind::LBrace) {
+            self.parse_block().map(FnBody::Block)
+        } else if self.at(TokenKind::FatArrow) {
+            self.bump();
+            let expr = self.parse_expression()?;
+            Some(FnBody::Expr(Box::new(expr)))
+        } else {
+            self.error_here(ParseErrorKind::ExpectedToken);
+            None
+        }
+    }
+
     fn parse_stmt(&mut self) -> Option<Stmt> {
         match self.peek_kind()? {
             TokenKind::Local => {
                 self.bump();
-                if self.at(TokenKind::Var) {
-                    self.parse_var_decl(true).map(Stmt::Var)
-                } else if self.at(TokenKind::Fn) {
+                if self.at(TokenKind::Fn) {
                     self.parse_fn_decl(true, false).map(Stmt::Function)
-                } else if self.at(TokenKind::Co) {
+                } else if self.at(TokenKind::Iter) {
                     let start = self.current_span();
                     self.bump();
                     if !self.at(TokenKind::Fn) {
@@ -353,7 +431,7 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Var => self.parse_var_decl(false).map(Stmt::Var),
             TokenKind::Fn => self.parse_fn_decl(false, false).map(Stmt::Function),
-            TokenKind::Co => {
+            TokenKind::Iter => {
                 let start = self.current_span();
                 self.bump();
                 if !self.at(TokenKind::Fn) {
@@ -365,6 +443,8 @@ impl<'a> Parser<'a> {
             }
             TokenKind::If => self.parse_if().map(Stmt::If),
             TokenKind::While => self.parse_while().map(Stmt::While),
+            TokenKind::Until => self.parse_until().map(Stmt::Until),
+            TokenKind::Loop => self.parse_loop().map(Stmt::Loop),
             TokenKind::For => self.parse_for_in().map(Stmt::ForIn),
             TokenKind::Break => self.parse_break(),
             TokenKind::Continue => self.parse_continue(),
@@ -417,6 +497,32 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_until(&mut self) -> Option<UntilStmt> {
+        let start = self.expect_token(TokenKind::Until)?.start;
+        let condition = self.parse_expression()?;
+        let body = self.parse_block()?;
+        Some(UntilStmt {
+            condition,
+            span: Span {
+                start,
+                end: body.span.end,
+            },
+            body,
+        })
+    }
+
+    fn parse_loop(&mut self) -> Option<LoopStmt> {
+        let start = self.expect_token(TokenKind::Loop)?.start;
+        let body = self.parse_block()?;
+        Some(LoopStmt {
+            span: Span {
+                start,
+                end: body.span.end,
+            },
+            body,
+        })
+    }
+
     fn parse_for_in(&mut self) -> Option<ForInStmt> {
         let start = self.expect_token(TokenKind::For)?.start;
         let item = self.expect_ident()?;
@@ -454,12 +560,16 @@ impl<'a> Parser<'a> {
 
     fn parse_return(&mut self) -> Option<ReturnStmt> {
         let start = self.expect_token(TokenKind::Return)?.start;
-        let value = self.parse_expression()?;
+        let value = if self.peek_kind().is_some_and(can_start_expression) {
+            Some(self.parse_expression()?)
+        } else {
+            None
+        };
+        let end = value
+            .as_ref()
+            .map_or(start + 6, |expr| expr_span(expr).end);
         Some(ReturnStmt {
-            span: Span {
-                start,
-                end: expr_span(&value).end,
-            },
+            span: Span { start, end },
             value,
         })
     }
@@ -499,14 +609,6 @@ impl<'a> Parser<'a> {
 
     fn parse_yield(&mut self) -> Option<YieldStmt> {
         let start = self.expect_token(TokenKind::Yield)?.start;
-        if let Some(break_span) = self.eat(TokenKind::Break) {
-            return Some(YieldStmt::Break {
-                span: Span {
-                    start,
-                    end: break_span.end,
-                },
-            });
-        }
         if self.eat(TokenKind::From).is_some() {
             let value = self.parse_expression()?;
             return Some(YieldStmt::From {
@@ -557,27 +659,18 @@ impl<'a> Parser<'a> {
 
     fn parse_type(&mut self) -> Option<TypeExpr> {
         match self.peek_kind() {
+            Some(TokenKind::Dict) => self.parse_dict_type(),
             Some(TokenKind::Ident) | Some(TokenKind::SelfKw) => {
                 self.parse_path().map(TypeExpr::Name)
             }
             Some(TokenKind::LBracket) => {
                 let start = self.bump()?.span.start;
-                let key_or_element = self.parse_type()?;
-                if self.eat(TokenKind::Colon).is_some() {
-                    let value = self.parse_type()?;
-                    let end = self.expect_token(TokenKind::RBracket)?.end;
-                    Some(TypeExpr::Dict {
-                        key: Box::new(key_or_element),
-                        value: Box::new(value),
-                        span: Span { start, end },
-                    })
-                } else {
-                    let end = self.expect_token(TokenKind::RBracket)?.end;
-                    Some(TypeExpr::Array {
-                        element: Box::new(key_or_element),
-                        span: Span { start, end },
-                    })
-                }
+                let element = self.parse_type()?;
+                let end = self.expect_token(TokenKind::RBracket)?.end;
+                Some(TypeExpr::Array {
+                    element: Box::new(element),
+                    span: Span { start, end },
+                })
             }
             Some(_) => {
                 self.error_here(ParseErrorKind::ExpectedType);
@@ -590,6 +683,20 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_dict_type(&mut self) -> Option<TypeExpr> {
+        let start = self.bump()?.span.start; // consume 'dict'
+        self.expect_token(TokenKind::LBracket)?;
+        let key = self.parse_type()?;
+        self.expect_token(TokenKind::Comma)?;
+        let value = self.parse_type()?;
+        let end = self.expect_token(TokenKind::RBracket)?.end;
+        Some(TypeExpr::Dict {
+            key: Box::new(key),
+            value: Box::new(value),
+            span: Span { start, end },
+        })
+    }
+
     fn parse_expression(&mut self) -> Option<Expr> {
         self.parse_expr_bp(0)
     }
@@ -597,10 +704,11 @@ impl<'a> Parser<'a> {
     fn parse_expr_bp(&mut self, min_bp: u8) -> Option<Expr> {
         let mut lhs = self.parse_prefix()?;
 
+        // Postfix: calls, field access, indexing
         loop {
             match self.peek_kind() {
                 Some(TokenKind::LParen) => {
-                    let args = self.parse_expr_list(TokenKind::LParen, TokenKind::RParen)?;
+                    let args = self.parse_arg_list()?;
                     let span = Span {
                         start: expr_span(&lhs).start,
                         end: self.previous_end(),
@@ -648,19 +756,105 @@ impl<'a> Parser<'a> {
                         span: Span { start, end },
                     });
                 }
+                Some(TokenKind::QuestionLBracket) => {
+                    let start = expr_span(&lhs).start;
+                    self.bump();
+                    let index = self.parse_expression()?;
+                    let end = self.expect_token(TokenKind::RBracket)?.end;
+                    lhs = Expr::OptionalIndex(OptionalIndexExpr {
+                        object: Box::new(lhs),
+                        index: Box::new(index),
+                        span: Span { start, end },
+                    });
+                }
                 _ => break,
             }
         }
 
+        // Infix binary operators (with chained comparison support)
         while let Some(kind) = self.peek_kind() {
+            // `not in` two-token infix operator — same precedence as `in`
+            if kind == TokenKind::Not
+                && self.tokens.get(self.pos + 1).map(|t| t.kind) == Some(TokenKind::In)
+            {
+                let (_, left_bp, right_bp) = infix_binding_power(TokenKind::In).unwrap();
+                if left_bp < min_bp {
+                    break;
+                }
+                let start = expr_span(&lhs).start;
+                self.bump(); // not
+                self.bump(); // in
+                let rhs = self.parse_expr_bp(right_bp)?;
+                let span = Span { start, end: expr_span(&rhs).end };
+                lhs = Expr::Binary(BinaryExpr {
+                    lhs: Box::new(lhs),
+                    op: BinaryOp::NotIn,
+                    rhs: Box::new(rhs),
+                    span,
+                });
+                continue;
+            }
+
             let Some((op, left_bp, right_bp)) = infix_binding_power(kind) else {
+                // Handle range operators after numeric expression
+                if min_bp == 0 {
+                    if let Some(range) = self.try_parse_range(lhs.clone()) {
+                        lhs = range;
+                        continue;
+                    }
+                }
                 break;
             };
             if left_bp < min_bp {
                 break;
             }
+
             self.bump();
             let rhs = self.parse_expr_bp(right_bp)?;
+
+            // Check for chained comparison
+            if is_comparison_op(op) {
+                if let Some(kind2) = self.peek_kind() {
+                    if let Some((op2, _, right_bp2)) = infix_binding_power(kind2) {
+                        if is_comparison_op(op2) {
+                            self.bump();
+                            let rhs2 = self.parse_expr_bp(right_bp2)?;
+                            let left_span = Span {
+                                start: expr_span(&lhs).start,
+                                end: expr_span(&rhs).end,
+                            };
+                            let right_span = Span {
+                                start: expr_span(&rhs).start,
+                                end: expr_span(&rhs2).end,
+                            };
+                            let full_span = Span {
+                                start: expr_span(&lhs).start,
+                                end: expr_span(&rhs2).end,
+                            };
+                            let left_cmp = Expr::Binary(BinaryExpr {
+                                lhs: Box::new(lhs),
+                                op,
+                                rhs: Box::new(rhs.clone()),
+                                span: left_span,
+                            });
+                            let right_cmp = Expr::Binary(BinaryExpr {
+                                lhs: Box::new(rhs),
+                                op: op2,
+                                rhs: Box::new(rhs2),
+                                span: right_span,
+                            });
+                            lhs = Expr::Binary(BinaryExpr {
+                                lhs: Box::new(left_cmp),
+                                op: BinaryOp::And,
+                                rhs: Box::new(right_cmp),
+                                span: full_span,
+                            });
+                            continue;
+                        }
+                    }
+                }
+            }
+
             let span = Span {
                 start: expr_span(&lhs).start,
                 end: expr_span(&rhs).end,
@@ -674,6 +868,26 @@ impl<'a> Parser<'a> {
         }
 
         Some(lhs)
+    }
+
+    fn try_parse_range(&mut self, lhs: Expr) -> Option<Expr> {
+        if self.at(TokenKind::DotDot) || self.at(TokenKind::DotDotEq) {
+            let inclusive = self.at(TokenKind::DotDotEq);
+            self.bump();
+            let rhs = self.parse_expr_bp(1)?;
+            let span = Span {
+                start: expr_span(&lhs).start,
+                end: expr_span(&rhs).end,
+            };
+            Some(Expr::Range(RangeExpr {
+                start: Box::new(lhs),
+                end: Box::new(rhs),
+                inclusive,
+                span,
+            }))
+        } else {
+            None
+        }
     }
 
     fn parse_prefix(&mut self) -> Option<Expr> {
@@ -715,7 +929,7 @@ impl<'a> Parser<'a> {
             Some(TokenKind::Ident | TokenKind::SelfKw) => self.expect_ident().map(Expr::Name),
             Some(TokenKind::Minus) => {
                 let start = self.bump()?.span.start;
-                let expr = self.parse_expr_bp(11)?;
+                let expr = self.parse_expr_bp(PREFIX_BP)?;
                 let span = Span {
                     start,
                     end: expr_span(&expr).end,
@@ -728,7 +942,7 @@ impl<'a> Parser<'a> {
             }
             Some(TokenKind::Not) => {
                 let start = self.bump()?.span.start;
-                let expr = self.parse_expr_bp(11)?;
+                let expr = self.parse_expr_bp(PREFIX_BP)?;
                 let span = Span {
                     start,
                     end: expr_span(&expr).end,
@@ -739,16 +953,35 @@ impl<'a> Parser<'a> {
                     span,
                 }))
             }
+            Some(TokenKind::Tilde) => {
+                let start = self.bump()?.span.start;
+                let expr = self.parse_expr_bp(PREFIX_BP)?;
+                let span = Span {
+                    start,
+                    end: expr_span(&expr).end,
+                };
+                Some(Expr::Unary(UnaryExpr {
+                    op: UnaryOp::BitNot,
+                    expr: Box::new(expr),
+                    span,
+                }))
+            }
             Some(TokenKind::LParen) => {
-                self.bump();
-                let expr = self.parse_expression()?;
-                self.expect_token(TokenKind::RParen)?;
-                Some(expr)
+                // One-token lookahead: is this a lambda `(params) => ...` or a grouped expr?
+                if self.is_lambda_start() {
+                    self.parse_lambda_expr().map(Expr::Lambda)
+                } else {
+                    self.bump();
+                    let expr = self.parse_expression()?;
+                    self.expect_token(TokenKind::RParen)?;
+                    Some(expr)
+                }
             }
             Some(TokenKind::LBracket) => self.parse_array_literal(),
             Some(TokenKind::LBrace) => self.parse_record_literal(),
+            Some(TokenKind::If) => self.parse_if_expr(),
             Some(TokenKind::Fn) => self.parse_fn_expr(false).map(Expr::Fn),
-            Some(TokenKind::Co) => {
+            Some(TokenKind::Iter) => {
                 let start = self.current_span();
                 self.bump();
                 if !self.at(TokenKind::Fn) {
@@ -767,6 +1000,115 @@ impl<'a> Parser<'a> {
                 None
             }
         }
+    }
+
+    /// Lookahead to decide if `(` starts a lambda expression.
+    /// A lambda starts with `(` followed by either `)` (no params) or
+    /// `ident` (`:` | `,` | `)` | `=`), i.e. the content looks like a param list.
+    fn is_lambda_start(&self) -> bool {
+        // We're sitting on `(`
+        let mut i = self.pos + 1;
+        // Empty params: `() =>`
+        if let Some(tok) = self.tokens.get(i) {
+            if tok.kind == TokenKind::RParen {
+                // Check for `=>` after `)`
+                if let Some(next) = self.tokens.get(i + 1) {
+                    return next.kind == TokenKind::FatArrow;
+                }
+                return false;
+            }
+            // First token inside parens must be an identifier
+            if !matches!(tok.kind, TokenKind::Ident | TokenKind::SelfKw) {
+                return false;
+            }
+            i += 1;
+            // After ident: `:` (type), `,` (next param), `)` (end), or `=` (default)
+            if let Some(tok2) = self.tokens.get(i) {
+                return matches!(
+                    tok2.kind,
+                    TokenKind::Colon | TokenKind::Comma | TokenKind::RParen | TokenKind::Eq
+                );
+            }
+        }
+        false
+    }
+
+    fn parse_lambda_expr(&mut self) -> Option<LambdaExpr> {
+        let start = self.expect_token(TokenKind::LParen)?.start;
+        let mut params = Vec::new();
+        if self.eat(TokenKind::RParen).is_none() {
+            loop {
+                let name = self.expect_ident()?;
+                let ty = if self.eat(TokenKind::Colon).is_some() {
+                    Some(self.parse_type()?)
+                } else {
+                    None
+                };
+                let default = if self.eat(TokenKind::Eq).is_some() {
+                    Some(self.parse_expression()?)
+                } else {
+                    None
+                };
+                let end = default
+                    .as_ref()
+                    .map(|e| expr_span(e).end)
+                    .or_else(|| ty.as_ref().map(|t| type_span(t).end))
+                    .unwrap_or(name.span.end);
+                params.push(Param {
+                    span: Span {
+                        start: name.span.start,
+                        end,
+                    },
+                    name,
+                    ty,
+                    default,
+                });
+                if self.eat(TokenKind::Comma).is_none() {
+                    break;
+                }
+                if self.at(TokenKind::RParen) {
+                    break;
+                }
+            }
+            self.expect_token(TokenKind::RParen)?;
+        }
+        let return_type = if self.eat(TokenKind::Arrow).is_some() {
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+        self.expect_token(TokenKind::FatArrow)?;
+        let body = if self.at(TokenKind::LBrace) {
+            FnBody::Block(self.parse_block()?)
+        } else {
+            let expr = self.parse_expression()?;
+            FnBody::Expr(Box::new(expr))
+        };
+        let end = fn_body_span(&body).end;
+        Some(LambdaExpr {
+            params,
+            return_type,
+            body,
+            span: Span { start, end },
+        })
+    }
+
+    fn parse_if_expr(&mut self) -> Option<Expr> {
+        let start = self.expect_token(TokenKind::If)?.start;
+        let condition = self.parse_expression()?;
+        self.expect_token(TokenKind::LBrace)?;
+        let then_expr = self.parse_expression()?;
+        self.expect_token(TokenKind::RBrace)?;
+        self.expect_token(TokenKind::Else)?;
+        self.expect_token(TokenKind::LBrace)?;
+        let else_expr = self.parse_expression()?;
+        let end = self.expect_token(TokenKind::RBrace)?.end;
+        Some(Expr::If(IfExpr {
+            condition: Box::new(condition),
+            then_expr: Box::new(then_expr),
+            else_expr: Box::new(else_expr),
+            span: Span { start, end },
+        }))
     }
 
     fn parse_array_literal(&mut self) -> Option<Expr> {
@@ -811,31 +1153,47 @@ impl<'a> Parser<'a> {
         }
         loop {
             let entry_start = self.current_span().start;
-            let key = match self.peek_kind() {
-                Some(TokenKind::Ident | TokenKind::SelfKw) => {
-                    RecordKey::Ident(self.expect_ident()?)
-                }
-                Some(
-                    TokenKind::StringLiteral
-                    | TokenKind::RawStringLiteral
-                    | TokenKind::MultilineStringLiteral
-                    | TokenKind::RawMultilineStringLiteral,
-                ) => RecordKey::String(self.parse_string_literal()?),
-                _ => {
-                    self.error_here(ParseErrorKind::ExpectedIdentifier);
-                    return None;
-                }
-            };
-            self.expect_token(TokenKind::Colon)?;
-            let value = self.parse_expression()?;
-            entries.push(RecordEntry {
-                span: Span {
-                    start: entry_start,
-                    end: expr_span(&value).end,
-                },
-                key,
-                value,
-            });
+
+            // Spread: `...expr`
+            if self.at(TokenKind::DotDotDot) {
+                self.bump();
+                let expr = self.parse_expression()?;
+                let entry_end = expr_span(&expr).end;
+                entries.push(RecordEntry::Spread {
+                    expr,
+                    span: Span {
+                        start: entry_start,
+                        end: entry_end,
+                    },
+                });
+            } else {
+                let key = match self.peek_kind() {
+                    Some(TokenKind::Ident | TokenKind::SelfKw) => {
+                        RecordKey::Ident(self.expect_ident()?)
+                    }
+                    Some(
+                        TokenKind::StringLiteral
+                        | TokenKind::RawStringLiteral
+                        | TokenKind::MultilineStringLiteral
+                        | TokenKind::RawMultilineStringLiteral,
+                    ) => RecordKey::String(self.parse_string_literal()?),
+                    _ => {
+                        self.error_here(ParseErrorKind::ExpectedIdentifier);
+                        return None;
+                    }
+                };
+                self.expect_token(TokenKind::Colon)?;
+                let value = self.parse_expression()?;
+                entries.push(RecordEntry::Field {
+                    span: Span {
+                        start: entry_start,
+                        end: expr_span(&value).end,
+                    },
+                    key,
+                    value,
+                });
+            }
+
             if self.eat(TokenKind::Comma).is_none() {
                 break;
             }
@@ -850,16 +1208,22 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_fn_expr(&mut self, co: bool) -> Option<FnExpr> {
+    fn parse_fn_expr(&mut self, iter: bool) -> Option<FnExpr> {
         let start = self.expect_token(TokenKind::Fn)?.start;
         let params = self.parse_params()?;
-        let body = self.parse_block()?;
+        let return_type = if self.eat(TokenKind::Arrow).is_some() {
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+        let body = self.parse_fn_body()?;
         Some(FnExpr {
-            co,
+            iter,
             params,
+            return_type,
             span: Span {
                 start,
-                end: body.span.end,
+                end: fn_body_span(&body).end,
             },
             body,
         })
@@ -878,7 +1242,16 @@ impl<'a> Parser<'a> {
             } else {
                 None
             };
-            let end = ty.as_ref().map_or(name.span.end, |ty| type_span(ty).end);
+            let default = if self.eat(TokenKind::Eq).is_some() {
+                Some(self.parse_expression()?)
+            } else {
+                None
+            };
+            let end = default
+                .as_ref()
+                .map(|e| expr_span(e).end)
+                .or_else(|| ty.as_ref().map(|t| type_span(t).end))
+                .unwrap_or(name.span.end);
             params.push(Param {
                 span: Span {
                     start: name.span.start,
@@ -886,6 +1259,7 @@ impl<'a> Parser<'a> {
                 },
                 name,
                 ty,
+                default,
             });
             if self.eat(TokenKind::Comma).is_none() {
                 break;
@@ -898,23 +1272,44 @@ impl<'a> Parser<'a> {
         Some(params)
     }
 
-    fn parse_expr_list(&mut self, open: TokenKind, close: TokenKind) -> Option<Vec<Expr>> {
-        self.expect_token(open)?;
-        let mut exprs = Vec::new();
-        if self.eat(close).is_some() {
-            return Some(exprs);
+    /// Parse a call argument list, supporting named args: `foo(x: 1, y: 2)` or `foo(1, 2)`.
+    fn parse_arg_list(&mut self) -> Option<Vec<Arg>> {
+        self.expect_token(TokenKind::LParen)?;
+        let mut args = Vec::new();
+        if self.eat(TokenKind::RParen).is_some() {
+            return Some(args);
         }
         loop {
-            exprs.push(self.parse_expression()?);
+            let arg_start = self.current_span().start;
+            // Named arg: `ident :`
+            let name = if matches!(self.peek_kind(), Some(TokenKind::Ident))
+                && self.tokens.get(self.pos + 1).map(|t| t.kind) == Some(TokenKind::Colon)
+            {
+                let ident = self.expect_ident()?;
+                self.bump(); // consume `:`
+                Some(ident)
+            } else {
+                None
+            };
+            let value = self.parse_expression()?;
+            let arg_end = expr_span(&value).end;
+            args.push(Arg {
+                name,
+                value,
+                span: Span {
+                    start: arg_start,
+                    end: arg_end,
+                },
+            });
             if self.eat(TokenKind::Comma).is_none() {
                 break;
             }
-            if self.at(close) {
+            if self.at(TokenKind::RParen) {
                 break;
             }
         }
-        self.expect_token(close)?;
-        Some(exprs)
+        self.expect_token(TokenKind::RParen)?;
+        Some(args)
     }
 
     fn parse_path(&mut self) -> Option<Path> {
@@ -989,8 +1384,15 @@ impl<'a> Parser<'a> {
             TokenKind::MinusEq => AssignOp::Sub,
             TokenKind::StarEq => AssignOp::Mul,
             TokenKind::SlashEq => AssignOp::Div,
+            TokenKind::SlashSlashEq => AssignOp::IntDiv,
             TokenKind::PercentEq => AssignOp::Rem,
+            TokenKind::StarStarEq => AssignOp::Pow,
             TokenKind::QuestionQuestionEq => AssignOp::NullCoalesce,
+            TokenKind::AmpEq => AssignOp::BitAnd,
+            TokenKind::PipeEq => AssignOp::BitOr,
+            TokenKind::CaretEq => AssignOp::BitXor,
+            TokenKind::LtLtEq => AssignOp::Shl,
+            TokenKind::GtGtEq => AssignOp::Shr,
             _ => return None,
         };
         Some((op, token.span))
@@ -1006,7 +1408,7 @@ impl<'a> Parser<'a> {
                     | TokenKind::Enum
                     | TokenKind::Var
                     | TokenKind::Fn
-                    | TokenKind::Co
+                    | TokenKind::Iter
                     | TokenKind::Ident
             ) {
                 break;
@@ -1040,10 +1442,7 @@ impl<'a> Parser<'a> {
 
     fn synchronize_class_member(&mut self) {
         while let Some(kind) = self.peek_kind() {
-            if matches!(
-                kind,
-                TokenKind::RBrace | TokenKind::Validate | TokenKind::Ident
-            ) {
+            if matches!(kind, TokenKind::RBrace | TokenKind::Check | TokenKind::Ident) {
                 break;
             }
             self.bump();
@@ -1136,6 +1535,15 @@ impl<'a> Parser<'a> {
     }
 }
 
+const PREFIX_BP: u8 = 25;
+
+fn is_comparison_op(op: BinaryOp) -> bool {
+    matches!(
+        op,
+        BinaryOp::Lt | BinaryOp::LtEq | BinaryOp::Gt | BinaryOp::GtEq | BinaryOp::Eq | BinaryOp::NotEq
+    )
+}
+
 fn can_start_expression(kind: TokenKind) -> bool {
     matches!(
         kind,
@@ -1152,11 +1560,13 @@ fn can_start_expression(kind: TokenKind) -> bool {
             | TokenKind::Null
             | TokenKind::Minus
             | TokenKind::Not
+            | TokenKind::Tilde
             | TokenKind::LParen
             | TokenKind::LBracket
             | TokenKind::LBrace
             | TokenKind::Fn
-            | TokenKind::Co
+            | TokenKind::Iter
+            | TokenKind::If
     )
 }
 
@@ -1166,9 +1576,11 @@ fn can_start_statement(kind: TokenKind) -> bool {
         TokenKind::Local
             | TokenKind::Var
             | TokenKind::Fn
-            | TokenKind::Co
+            | TokenKind::Iter
             | TokenKind::If
             | TokenKind::While
+            | TokenKind::Until
+            | TokenKind::Loop
             | TokenKind::For
             | TokenKind::Break
             | TokenKind::Continue
@@ -1188,7 +1600,7 @@ fn is_top_level_starter(kind: TokenKind) -> bool {
             | TokenKind::Enum
             | TokenKind::Var
             | TokenKind::Fn
-            | TokenKind::Co
+            | TokenKind::Iter
     )
 }
 
@@ -1197,18 +1609,25 @@ fn infix_binding_power(kind: TokenKind) -> Option<(BinaryOp, u8, u8)> {
         TokenKind::Or => (BinaryOp::Or, 1, 2),
         TokenKind::And => (BinaryOp::And, 3, 4),
         TokenKind::QuestionQuestion => (BinaryOp::NullCoalesce, 5, 5),
-        TokenKind::EqEq => (BinaryOp::Eq, 6, 7),
-        TokenKind::BangEq => (BinaryOp::NotEq, 6, 7),
-        TokenKind::Lt => (BinaryOp::Lt, 6, 7),
-        TokenKind::LtEq => (BinaryOp::LtEq, 6, 7),
-        TokenKind::Gt => (BinaryOp::Gt, 6, 7),
-        TokenKind::GtEq => (BinaryOp::GtEq, 6, 7),
-        TokenKind::In => (BinaryOp::In, 6, 7),
-        TokenKind::Plus => (BinaryOp::Add, 8, 9),
-        TokenKind::Minus => (BinaryOp::Sub, 8, 9),
-        TokenKind::Star => (BinaryOp::Mul, 10, 11),
-        TokenKind::Slash => (BinaryOp::Div, 10, 11),
-        TokenKind::Percent => (BinaryOp::Rem, 10, 11),
+        TokenKind::Pipe => (BinaryOp::BitOr, 6, 7),
+        TokenKind::Caret => (BinaryOp::BitXor, 8, 9),
+        TokenKind::Amp => (BinaryOp::BitAnd, 10, 11),
+        TokenKind::EqEq => (BinaryOp::Eq, 12, 13),
+        TokenKind::BangEq => (BinaryOp::NotEq, 12, 13),
+        TokenKind::Lt => (BinaryOp::Lt, 12, 13),
+        TokenKind::LtEq => (BinaryOp::LtEq, 12, 13),
+        TokenKind::Gt => (BinaryOp::Gt, 12, 13),
+        TokenKind::GtEq => (BinaryOp::GtEq, 12, 13),
+        TokenKind::In => (BinaryOp::In, 12, 13),
+        TokenKind::Plus => (BinaryOp::Add, 14, 15),
+        TokenKind::Minus => (BinaryOp::Sub, 14, 15),
+        TokenKind::LtLt => (BinaryOp::Shl, 16, 17),
+        TokenKind::GtGt => (BinaryOp::Shr, 16, 17),
+        TokenKind::Star => (BinaryOp::Mul, 18, 19),
+        TokenKind::Slash => (BinaryOp::Div, 18, 19),
+        TokenKind::SlashSlash => (BinaryOp::IntDiv, 18, 19),
+        TokenKind::Percent => (BinaryOp::Rem, 18, 19),
+        TokenKind::StarStar => (BinaryOp::Pow, 21, 20), // right-associative
         _ => return None,
     })
 }
@@ -1237,6 +1656,13 @@ fn assign_target_span(target: &AssignTarget) -> Span {
     }
 }
 
+fn fn_body_span(body: &FnBody) -> Span {
+    match body {
+        FnBody::Block(block) => block.span,
+        FnBody::Expr(expr) => expr_span(expr),
+    }
+}
+
 fn expr_span(expr: &Expr) -> Span {
     match expr {
         Expr::Literal(literal) => literal_span(literal),
@@ -1244,12 +1670,16 @@ fn expr_span(expr: &Expr) -> Span {
         Expr::Array(array) => array.span,
         Expr::Record(record) => record.span,
         Expr::Fn(func) => func.span,
+        Expr::Lambda(lambda) => lambda.span,
+        Expr::Range(range) => range.span,
         Expr::Unary(unary) => unary.span,
         Expr::Binary(binary) => binary.span,
         Expr::Call(call) => call.span,
         Expr::Field(field) => field.span,
         Expr::OptionalField(field) => field.span,
         Expr::Index(index) => index.span,
+        Expr::OptionalIndex(index) => index.span,
+        Expr::If(if_expr) => if_expr.span,
     }
 }
 

@@ -84,8 +84,7 @@ fn dot_boundary_cases_do_not_create_implicit_floats() {
             TokenKind::Dot,
             TokenKind::IntLiteral,
             TokenKind::IntLiteral,
-            TokenKind::Dot,
-            TokenKind::Dot,
+            TokenKind::DotDot,
             TokenKind::IntLiteral,
         ]
     );

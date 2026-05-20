@@ -43,25 +43,43 @@ pub struct VarDecl {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FnDecl {
     pub local: bool,
-    pub co: bool,
+    pub iter: bool,
     pub name: Ident,
     pub params: Vec<Param>,
-    pub body: Block,
+    pub return_type: Option<TypeExpr>,
+    pub body: FnBody,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FnExpr {
-    pub co: bool,
+    pub iter: bool,
     pub params: Vec<Param>,
-    pub body: Block,
+    pub return_type: Option<TypeExpr>,
+    pub body: FnBody,
     pub span: Span,
+}
+
+/// Lambda: `(x, y) => expr` or `(x, y) => { stmts }`
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LambdaExpr {
+    pub params: Vec<Param>,
+    pub return_type: Option<TypeExpr>,
+    pub body: FnBody,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FnBody {
+    Block(Block),
+    Expr(Box<Expr>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Param {
     pub name: Ident,
     pub ty: Option<TypeExpr>,
+    pub default: Option<Expr>,
     pub span: Span,
 }
 
@@ -79,6 +97,8 @@ pub enum Stmt {
     Expr(Expr),
     If(IfStmt),
     While(WhileStmt),
+    Until(UntilStmt),
+    Loop(LoopStmt),
     ForIn(ForInStmt),
     Break(Span),
     Continue(Span),
@@ -103,8 +123,15 @@ pub enum AssignOp {
     Sub,
     Mul,
     Div,
+    IntDiv,
     Rem,
+    Pow,
     NullCoalesce,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -144,6 +171,19 @@ pub struct WhileStmt {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UntilStmt {
+    pub condition: Expr,
+    pub body: Block,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoopStmt {
+    pub body: Block,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForInStmt {
     pub item: Ident,
     pub iterable: Expr,
@@ -153,7 +193,7 @@ pub struct ForInStmt {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReturnStmt {
-    pub value: Expr,
+    pub value: Option<Expr>,
     pub span: Span,
 }
 
@@ -175,7 +215,6 @@ pub struct TryCatchStmt {
 pub enum YieldStmt {
     Value { value: Expr, span: Span },
     From { value: Expr, span: Span },
-    Break { span: Span },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -185,12 +224,16 @@ pub enum Expr {
     Array(ArrayLiteral),
     Record(RecordLiteral),
     Fn(FnExpr),
+    Lambda(LambdaExpr),
+    Range(RangeExpr),
     Unary(UnaryExpr),
     Binary(BinaryExpr),
     Call(CallExpr),
     Field(FieldExpr),
     OptionalField(OptionalFieldExpr),
     Index(IndexExpr),
+    OptionalIndex(OptionalIndexExpr),
+    If(IfExpr),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -206,16 +249,30 @@ pub struct RecordLiteral {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RecordEntry {
-    pub key: RecordKey,
-    pub value: Expr,
-    pub span: Span,
+pub enum RecordEntry {
+    Field {
+        key: RecordKey,
+        value: Expr,
+        span: Span,
+    },
+    Spread {
+        expr: Expr,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecordKey {
     Ident(Ident),
     String(StringLiteral),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RangeExpr {
+    pub start: Box<Expr>,
+    pub end: Box<Expr>,
+    pub inclusive: bool,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -229,6 +286,7 @@ pub struct UnaryExpr {
 pub enum UnaryOp {
     Neg,
     Not,
+    BitNot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -245,7 +303,9 @@ pub enum BinaryOp {
     Sub,
     Mul,
     Div,
+    IntDiv,
     Rem,
+    Pow,
     Eq,
     NotEq,
     Lt,
@@ -256,12 +316,25 @@ pub enum BinaryOp {
     Or,
     NullCoalesce,
     In,
+    NotIn,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallExpr {
     pub callee: Box<Expr>,
-    pub args: Vec<Expr>,
+    pub args: Vec<Arg>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Arg {
+    pub name: Option<Ident>,
+    pub value: Expr,
     pub span: Span,
 }
 
@@ -283,6 +356,21 @@ pub struct OptionalFieldExpr {
 pub struct IndexExpr {
     pub object: Box<Expr>,
     pub index: Box<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OptionalIndexExpr {
+    pub object: Box<Expr>,
+    pub index: Box<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IfExpr {
+    pub condition: Box<Expr>,
+    pub then_expr: Box<Expr>,
+    pub else_expr: Box<Expr>,
     pub span: Span,
 }
 
@@ -329,7 +417,15 @@ pub struct ClassDecl {
     pub local: bool,
     pub name: Ident,
     pub fields: Vec<ClassField>,
-    pub validate: Option<Block>,
+    pub methods: Vec<FnDecl>,
+    pub checks: Vec<CheckArm>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckArm {
+    pub condition: Expr,
+    pub message: Expr,
     pub span: Span,
 }
 
@@ -345,7 +441,14 @@ pub struct ClassField {
 pub struct EnumDecl {
     pub local: bool,
     pub name: Ident,
-    pub variants: Vec<Ident>,
+    pub variants: Vec<EnumVariant>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumVariant {
+    pub name: Ident,
+    pub value: Option<i64>,
     pub span: Span,
 }
 

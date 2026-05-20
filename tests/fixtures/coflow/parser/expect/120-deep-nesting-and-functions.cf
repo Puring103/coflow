@@ -1,11 +1,11 @@
 class Modifier {
   id: string
-  weights: [string: [float]]
+  weights: dict[string, [float]]
 }
 
 class SkillTree {
   roots: [[string]]
-  metadata: [string: [string: string]]
+  metadata: dict[string, dict[string, string]]
   modifier: Modifier = {
     id: "base",
     weights: {
@@ -13,10 +13,8 @@ class SkillTree {
     },
   }
 
-  validate {
-    if self.roots[0][0] == "" {
-      throw "empty root"
-    }
+  check {
+    self.roots[0][0] != "" => "empty root"
   }
 }
 
@@ -25,7 +23,7 @@ nested_lists = [
   [[7], [8, 9]],
 ]
 
-nested_dict: [string: [string: [int]]] = {
+nested_dict: dict[string, dict[string, [int]]] = {
   "alpha": {
     "levels": [1, 2, 3],
   },

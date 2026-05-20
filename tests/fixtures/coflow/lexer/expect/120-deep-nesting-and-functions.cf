@@ -13,7 +13,7 @@ class SkillTree {
     },
   }
 
-  validate {
+  check {
     if self.roots[0][0] == "" {
       throw "empty root"
     }

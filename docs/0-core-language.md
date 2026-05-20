@@ -25,10 +25,8 @@ import weapons as w
 顶层声明默认公开。使用`local`声明文件内私有成员。
 
 ```coflow
-local var scale = 2
-
 local fn helper(x) {
-  return x * scale
+  return x * 2
 }
 ```
 
@@ -43,14 +41,14 @@ local fn helper(x) {
 
 ## 注释
 
-支持单行注释。
+单行注释使用`#`。
 
 ```coflow
-// this is a comment
+# this is a comment
 var hp = 100
 ```
 
-支持块注释。
+块注释使用`/* */`。
 
 ```coflow
 /*
@@ -71,11 +69,11 @@ var hp = 100
 2. `class`
 3. `enum`
 4. `fn`
-5. `co fn`
+5. `iter fn`
 6. `var`
 7. 配置定义
 
-顶层`name = value`是配置定义。
+顶层`name = value`是配置定义，隐式只读。
 
 ```coflow
 base_damage = 10
@@ -95,13 +93,13 @@ sword: Weapon = {
 }
 ```
 
-顶层`var`是普通模块变量，不是配置。
+顶层`var`是运行时模块变量，不是配置。
 
 ```coflow
 var runtime_cache = null
 ```
 
-核心版本不支持私有配置定义。`local name = value`不是合法顶层声明；需要私有运行时变量时使用`local var`。
+核心版本不支持私有配置定义。`local name = value`不是合法顶层声明。
 
 重复定义同名顶层成员是错误。
 
@@ -109,22 +107,23 @@ var runtime_cache = null
 
 核心版本支持以下语句：
 
-1. `var`局部变量声明
+1. `var`局部变量声明（块级作用域）
 2. 普通赋值
-3. 字段赋值
-4. 索引赋值
-5. 复合赋值
-6. `if else`
-7. `while`
-8. `for in`
-9. `break`
-10. `continue`
-11. `return`
-12. `throw`
-13. `try catch`
-14. `yield`
-15. `yield from`
-16. `yield break`
+4. 字段赋值
+5. 索引赋值
+6. 复合赋值
+7. `if else`
+8. `while`
+9. `until`
+10. `loop`
+11. `for in`
+12. `break`
+13. `continue`
+14. `return`
+15. `throw`
+16. `try catch`
+17. `yield`
+18. `yield from`
 
 局部变量使用`var`，为块级作用域。
 
@@ -138,7 +137,18 @@ fn main() {
 }
 ```
 
-`return`不能出现在`co fn`中。`yield`，`yield from`和`yield break`只能出现在`co fn`中。
+`return`可以带值或不带值。
+
+```coflow
+fn get_name(player) {
+  if player == null {
+    return          # 等价于 return null
+  }
+  return player.name
+}
+```
+
+`yield`，`yield from`只能出现在`iter fn`中。`iter fn`中可以使用`return`（不带值）提前结束迭代。
 
 ## 函数
 
@@ -150,31 +160,67 @@ fn add(a: int, b: int) {
 }
 ```
 
-参数类型标注可选。
+参数类型标注可选。返回类型使用`->`标注，可选。
 
 ```coflow
-fn print_value(value) {
-  print(value)
+fn add(a: int, b: int) -> int {
+  return a + b
 }
 ```
 
-核心版本不引入`void`。所有函数调用都有结果。
+参数可以有默认值。
 
-1. `return value`返回`value`。
-2. 函数自然结束等价于`return null`。
-3. 空`return`不允许；需要提前返回空值时写`return null`。
+```coflow
+fn spawn(name: string, hp: int = 100, team: int = 0) {
+  # ...
+}
+
+spawn("goblin")           # hp=100, team=0
+spawn("boss", hp: 500)    # named argument
+spawn("elite", 200, 1)    # positional
+```
+
+调用时可以使用具名参数，具名参数必须和形参名一致，可以和位置参数混用。
+
+函数体可以是语句块或单个表达式。
+
+```coflow
+fn double(x: int) -> int => x * 2
+
+fn greet(name: string) -> string {
+  return "hello " + name
+}
+```
 
 匿名函数是值。
 
 ```coflow
-var add_one = fn(x) {
-  return x + 1
+var double = fn(x) => x * 2
+
+var greet = fn(name) {
+  return "hello " + name
 }
 ```
 
-函数也是值，因此函数值可以作为配置常量的一部分。函数对象本身是常量；函数体运行时执行，不属于配置常量求值。
+Lambda使用`(params) => expr`语法。
 
-核心版本不支持命名参数，默认参数和多返回值。
+```coflow
+var doubled = items.map((x) => x * 2)
+var positive = items.filter((x) => x > 0)
+```
+
+Lambda参数可以有类型和默认值。Lambda体可以是表达式或块。
+
+```coflow
+var add = (x: int, y: int) -> int => x + y
+
+var process = (x) => {
+  var result = x * 2
+  return result
+}
+```
+
+核心版本不支持多返回值。
 
 函数可以访问模块顶层名字，也可以捕获外层作用域的局部变量。捕获是共享引用，闭包内外对同一变量的修改互相可见。
 
@@ -215,11 +261,31 @@ if score >= 90 {
 }
 ```
 
-`while`用于条件循环。
+`while`用于条件循环，条件为真时持续执行。
 
 ```coflow
 while running {
   update()
+}
+```
+
+`until`用于条件循环，条件为真时停止执行（等价于`while not`）。
+
+```coflow
+until dead {
+  tick()
+}
+```
+
+`loop`用于无限循环，配合`break`退出。
+
+```coflow
+loop {
+  var input = read()
+  if input == "quit" {
+    break
+  }
+  process(input)
 }
 ```
 
@@ -231,14 +297,14 @@ for item in items {
 }
 ```
 
-标准库`range`函数返回可迭代值。
+Range字面量可以直接用于`for in`。
 
 ```coflow
-for i in range(0, 10) {
+for i in 0..10 {    # [0, 10) 不含尾
   print(i)
 }
 
-for i in range(1, 11) {
+for i in 0..=10 {   # [0, 10] 含尾
   print(i)
 }
 ```
@@ -249,25 +315,67 @@ for i in range(1, 11) {
 
 1. 字面量
 2. 数组字面量
-3. 对象字面量
+3. 对象字面量（支持展开`...`）
 4. 字典字面量
 5. 字段访问
 6. 索引访问
 7. 调用表达式
-8. 算术运算
-9. 字符串拼接
-10. 比较运算
-11. 逻辑运算
-12. 空值合并`??`
-13. 空值合并赋值`??=`
-14. 可选字段访问`?.`
-15. 成员判断`in`
+8. 算术运算（`+` `-` `*` `/` `%`）
+9. 整数除法（`//`）
+10. 幂运算（`**`）
+11. 位运算（`&` `|` `^` `~` `<<` `>>`）
+12. 字符串拼接（`+`）
+13. 比较运算（含链式比较）
+14. 逻辑运算
+15. 空值合并`??`
+16. 空值合并赋值`??=`
+17. 可选字段访问`?.`
+18. 成员判断`in`
+19. Range字面量（`..` `..=`）
 
 逻辑运算使用`and`，`or`，`not`。
 
 ```coflow
 if alive and not dead {
   update()
+}
+```
+
+比较运算支持链式写法，等价于各段比较用`and`连接。
+
+```coflow
+if 0 < damage <= 100 {
+  apply(damage)
+}
+# 等价于 damage > 0 and damage <= 100
+```
+
+位运算优先级低于比较运算，高于逻辑运算。
+
+```coflow
+var flags = STATUS_DEAD | STATUS_STUNNED
+if flags & STATUS_DEAD != 0 {
+  die()
+}
+var cleared = flags & ~STATUS_STUNNED
+```
+
+整数除法`//`和幂运算`**`。
+
+```coflow
+var q = damage // armor    # 截断整除
+var area = radius ** 2     # 幂运算，右结合
+```
+
+对象展开使用`...`。
+
+```coflow
+base = { damage: 10, speed: 1.0 }
+
+sword = {
+  ...base,
+  name: "Iron Sword",
+  damage: 15,    # 覆盖 base.damage
 }
 ```
 
@@ -281,24 +389,6 @@ if item in items {
 if key in scores {
   print(scores[key])
 }
-
-if "hero" in text {
-  print(text)
-}
-```
-
-`in`支持：
-
-1. 数组成员判断。
-2. 字典key判断。
-3. 字符串子串判断。
-
-核心版本不支持对象字段存在性判断。对象字段缺失读取结果是`null`。
-
-缺失字段和缺失索引的读取结果是`null`。
-
-```coflow
-var name = player.name ?? "unknown"
 ```
 
 可选字段访问使用`?.`。如果左侧为`null`，结果为`null`。
@@ -312,8 +402,6 @@ var name = player?.profile?.name ?? "unknown"
 ```coflow
 name ??= "unknown"
 ```
-
-核心版本不支持范围语法，`match`，`if`表达式，切片，解构，展开，`is`，`not in`和字符串插值。
 
 ## 数字
 
@@ -384,20 +472,15 @@ float4 main() {
 
 ## 错误处理
 
-运行时错误使用`throw`抛出。
+运行时错误使用`throw`抛出，必须抛出error对象。
 
 ```coflow
 fn check_hp(hp) {
   if hp < 0 {
-    throw "hp must be >= 0"
+    throw error("hp must be >= 0")
   }
 }
 ```
-
-`throw string`由运行时包装为错误对象。错误对象至少包含：
-
-1. `message`
-2. `stack`
 
 使用`try catch`捕获运行时错误。
 
@@ -406,6 +489,7 @@ try {
   risky()
 } catch err {
   print(err.message)
+  print(err.stack)
 }
 ```
 

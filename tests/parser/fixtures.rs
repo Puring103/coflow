@@ -57,7 +57,7 @@ fn ast_expectation_fixtures_match() {
         let expected =
             fs::read_to_string(&expect_path).expect("ast expectation should be readable");
         assert_eq!(
-            expected.trim_end(),
+            expected.replace("\r\n", "\n").trim_end(),
             actual.trim_end(),
             "ast expectation mismatch for {}",
             path.display()
@@ -83,7 +83,7 @@ fn parse_error_expectation_fixtures_match() {
         let expected =
             fs::read_to_string(&expect_path).expect("parse error expectation should be readable");
         assert_eq!(
-            expected.trim_end(),
+            expected.replace("\r\n", "\n").trim_end(),
             actual.trim_end(),
             "parse error expectation mismatch for {}",
             path.display()

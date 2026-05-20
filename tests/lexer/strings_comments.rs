@@ -72,7 +72,7 @@ fn single_line_strings_cannot_cross_newlines() {
 #[test]
 fn comments_are_skipped_without_creating_tokens() {
     assert_eq!(
-        kinds("a // hidden + - *\r\n b /* hidden { [ ( */ c"),
+        kinds("a # hidden + - *\r\n b /* hidden { [ ( */ c"),
         vec![TokenKind::Ident, TokenKind::Ident, TokenKind::Ident]
     );
 }

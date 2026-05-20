@@ -1,4 +1,4 @@
-use coflow::ast::{Expr, Item, Literal, RecordKey, StringKind};
+use coflow::ast::{Expr, FnBody, Item, Literal, RecordEntry, RecordKey, StringKind};
 use coflow::parser::ParseErrorKind;
 
 use crate::common::{parse_error_kinds, parse_ok};
@@ -76,8 +76,26 @@ v = {
         panic!("expected record");
     };
     assert_eq!(record.entries.len(), 2);
-    assert!(matches!(record.entries[0].key, RecordKey::Ident(_)));
-    assert!(matches!(record.entries[1].key, RecordKey::String(_)));
+    assert!(matches!(&record.entries[0], RecordEntry::Field { key: RecordKey::Ident(_), .. }));
+    assert!(matches!(&record.entries[1], RecordEntry::Field { key: RecordKey::String(_), .. }));
+}
+
+#[test]
+fn parses_record_with_spread() {
+    let expr = parse_config_value(
+        r#"
+v = {
+  ...base,
+  name: "x",
+}
+"#,
+    );
+    let Expr::Record(record) = expr else {
+        panic!("expected record");
+    };
+    assert_eq!(record.entries.len(), 2);
+    assert!(matches!(&record.entries[0], RecordEntry::Spread { .. }));
+    assert!(matches!(&record.entries[1], RecordEntry::Field { .. }));
 }
 
 #[test]
@@ -110,24 +128,51 @@ apply = fn(caster, target,) {
     let Expr::Fn(func) = expr else {
         panic!("expected function expression");
     };
-    assert!(!func.co);
+    assert!(!func.iter);
     assert_eq!(func.params.len(), 2);
 }
 
 #[test]
-fn parses_co_function_values() {
+fn parses_iter_function_values() {
     let expr = parse_config_value(
         r#"
-stream = co fn(count,) {
+stream = iter fn(count,) {
   yield count
 }
 "#,
     );
     let Expr::Fn(func) = expr else {
-        panic!("expected co function expression");
+        panic!("expected iter function expression");
     };
-    assert!(func.co);
+    assert!(func.iter);
     assert_eq!(func.params.len(), 1);
+}
+
+#[test]
+fn parses_fn_expr_body() {
+    let expr = parse_config_value("double = fn(x) => x * 2");
+    let Expr::Fn(func) = expr else {
+        panic!("expected fn expression");
+    };
+    assert!(matches!(func.body, FnBody::Expr(_)));
+}
+
+#[test]
+fn parses_lambda_expr() {
+    let expr = parse_config_value("double = (x) => x * 2");
+    assert!(matches!(expr, Expr::Lambda(_)));
+}
+
+#[test]
+fn parses_range_expression() {
+    let expr = parse_config_value("v = 0..10");
+    assert!(matches!(expr, Expr::Range(ref r) if !r.inclusive));
+}
+
+#[test]
+fn parses_inclusive_range_expression() {
+    let expr = parse_config_value("v = 0..=10");
+    assert!(matches!(expr, Expr::Range(ref r) if r.inclusive));
 }
 
 #[test]

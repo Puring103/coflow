@@ -1,0 +1,39 @@
+# spread、check 块、enum 整数值
+
+enum Priority {
+  low    = 0
+  normal = 10
+  high   = 20
+  urgent        # = 21
+}
+
+class Task {
+  id: string
+  title: string
+  priority: Priority = Priority.normal
+  retries: int = 0
+
+  check {
+    self.retries >= 0 => "retries cannot be negative"
+    self.retries <= 10 => "retries must not exceed 10"
+  }
+}
+
+base_task = {
+  retries: 0,
+}
+
+urgent_task: Task = {
+  ...base_task,
+  id: "t1",
+  title: "Critical fix",
+  priority: Priority.urgent,
+}
+
+fn make_task(id: string, title: string) -> Task {
+  return {
+    ...base_task,
+    id: id,
+    title: title,
+  }
+}

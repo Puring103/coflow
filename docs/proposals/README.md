@@ -14,8 +14,12 @@
 1. `control-expressions.md`
 2. `destructuring.md`
 3. `optional-access.md`，部分能力已进入核心，剩余问题继续跟踪
-4. `named-and-default-args.md`
-5. `class-methods-and-validate.md`
+4. `named-and-default-args.md`，已进入核心
+5. `class-methods-and-validate.md`，validate 已重命名为 check 并进入核心
 6. `string-literals.md`
 7. `object-dict-extensions.md`
 8. `types.md`
+9. `slice.md`，数组切片语法
+10. `type-check.md`，`is` / `is not` 运行时类型检查
+11. `array-comprehension.md`，数组推导式
+12. `discard.md`，`_` 弃元标识符

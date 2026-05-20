@@ -44,7 +44,7 @@ var value: any = host.get("player")
 value.move(1, 0)
 ```
 
-`any`上的字段访问和调用主要在运行时检查。
+`any`类型变量上访问不存在的成员会在运行时显式报错，不会静默返回`null`。
 
 ## 数组
 
@@ -77,14 +77,23 @@ weapon = {
 var damage = weapon.damage
 ```
 
+对象支持展开合并。
+
+```coflow
+base = { damage: 10, speed: 1.0 }
+sword = { ...base, name: "Iron Sword", damage: 15 }
+```
+
 对象主要用于结构化数据，配置，class实例和宿主对象绑定。
 
 ## 字典
 
 字典表示动态键值映射。字典值是同构的。当值类型为`any`时，字典接受任意值。
 
+字典类型使用`dict[K, V]`语法标注。
+
 ```coflow
-var scores: [string: int] = {
+var scores: dict[string, int] = {
   "alice": 10,
   "bob": 20,
 }
@@ -129,7 +138,7 @@ sword: Weapon = {
 有字典类型上下文时，`{ ... }`按字典校验。
 
 ```coflow
-scores: [string: int] = {
+scores: dict[string, int] = {
   "alice": 10,
   "bob": 20,
 }
@@ -147,20 +156,20 @@ weapon = {
 }
 ```
 
-纯字符串key的字面量在无类型上下文时推断为字典。值类型同构时推断具体类型，异构时推断为`[string: any]`。
+纯字符串key的字面量在无类型上下文时推断为字典。值类型同构时推断具体类型，异构时推断为`dict[string, any]`。
 
 ```coflow
 var scores = {
   "alice": 10,
   "bob": 20,
 }
-// 推断为 [string: int]
+# 推断为 dict[string, int]
 
 var meta = {
   "name": "hero",
   "level": 5,
 }
-// 推断为 [string: any]
+# 推断为 dict[string, any]
 ```
 
 此规则适用于所有无类型上下文的位置：`var`右值，函数参数，数组元素等。
@@ -168,7 +177,7 @@ var meta = {
 顶层配置定义仍需显式字典类型标注以保证配置校验的严格性。
 
 ```coflow
-scores: [string: int] = {
+scores: dict[string, int] = {
   "alice": 10,
   "bob": 20,
 }
@@ -200,46 +209,68 @@ class Enemy {
 
 字段默认值必须是常量表达式。核心版本中，字段默认值不能引用`self`或同一对象的其他字段。
 
-核心版本的`class`只声明结构，不声明方法。`validate`是专用关键字，不是方法。
+## check
 
-## validate
-
-`validate`是class内的配置校验块，在配置加载期执行。
+`check`是class内的配置校验块，在配置加载期执行。
 
 ```coflow
 class Range {
   min: int
   max: int
 
-  validate {
-    if self.min > self.max {
-      throw "min must be <= max"
-    }
+  check {
+    self.min <= self.max => "min must be <= max"
   }
 }
 ```
 
-`validate`块中`self`隐式可用，指向当前校验的对象实例。
+每条check语句的格式为`condition => message`，其中`condition`为真时校验通过，为假时以`message`作为错误信息报告配置错误。
 
-校验失败使用`throw`。校验错误是加载期配置诊断，不通过脚本`try catch`捕获。
+`check`块中`self`隐式可用，指向当前校验的对象实例。
 
-`validate`块的约束：
+校验错误是加载期配置诊断，不通过脚本`try catch`捕获。
+
+`check`块的约束：
 
 1. 禁止修改`self`或任何外部状态。
 2. 禁止调用宿主API。
 3. 只允许读取`self`字段和使用纯计算逻辑。
 
-一个class只允许一个`validate`块。
+一个class只允许一个`check`块，块内可以有多条check语句。
+
+```coflow
+class Skill {
+  id: string
+  damage: int
+  cooldown: float
+
+  check {
+    self.damage > 0        => "damage must be positive"
+    self.cooldown >= 0.0   => "cooldown must be non-negative"
+  }
+}
+```
 
 ## enum
 
-`enum`用于有限选项。
+`enum`用于有限选项，底层类型为`int`。
 
 ```coflow
 enum Rarity {
   common
   rare
   epic
+}
+```
+
+枚举变体默认从0开始自动编号。可以显式指定整数值，未指定的变体从前一个值+1开始。
+
+```coflow
+enum Status {
+  none   = 0
+  active = 10
+  dead   = 20
+  ghost        # 值为21
 }
 ```
 
@@ -254,8 +285,10 @@ rarity = Rarity.common
 函数是一种值。
 
 ```coflow
-var f = fn(x) {
-  return x + 1
+var double = fn(x) => x * 2
+
+var greet = fn(name) {
+  return "hello " + name
 }
 ```
 
@@ -265,7 +298,7 @@ var f = fn(x) {
 
 ## Iterator
 
-核心版本使用一个动态Iterator协议统一`for in`，标准库可迭代值和`co fn`。
+核心版本使用一个动态Iterator协议统一`for in`，标准库可迭代值和`iter fn`。
 
 Iterator对象提供`next()`。
 
@@ -286,7 +319,7 @@ step.value
 
 没有泛型版本的Iterator协议。
 
-数组，字典，标准库`range`返回值和`co fn`调用结果都可以被迭代。
+数组，字典，Range字面量，标准库`range`返回值和`iter fn`调用结果都可以被迭代。
 
 ## 联合类型
 

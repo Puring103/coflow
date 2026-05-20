@@ -53,7 +53,7 @@ fn token_expectation_fixtures_match() {
         let expected =
             fs::read_to_string(&expect_path).expect("token expectation should be readable");
         assert_eq!(
-            expected.trim_end(),
+            expected.replace("\r\n", "\n").trim_end(),
             actual.trim_end(),
             "token expectation mismatch for {}",
             path.display()
@@ -82,7 +82,7 @@ fn lex_error_expectation_fixtures_match() {
         let expected =
             fs::read_to_string(&expect_path).expect("lex error expectation should be readable");
         assert_eq!(
-            expected.trim_end(),
+            expected.replace("\r\n", "\n").trim_end(),
             actual.trim_end(),
             "lex error expectation mismatch for {}",
             path.display()
@@ -181,7 +181,7 @@ fn complex_nested_module_has_expected_token_sequence() {
     assert_contains_token_window(
         &actual,
         &[
-            TokenKind::Co,
+            TokenKind::Iter,
             TokenKind::Fn,
             TokenKind::Ident,
             TokenKind::LParen,

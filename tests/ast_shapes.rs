@@ -1,5 +1,5 @@
 use coflow::ast::{
-    BinaryExpr, BinaryOp, Expr, FnDecl, Ident, Literal, Module, Span, Stmt, VarDecl,
+    BinaryExpr, BinaryOp, Expr, FnBody, FnDecl, Ident, Literal, Module, Span, Stmt, VarDecl,
 };
 
 #[test]
@@ -40,13 +40,14 @@ fn blocks_can_contain_named_function_declarations() {
 
     let stmt = Stmt::Function(FnDecl {
         local: false,
-        co: false,
+        iter: false,
         name,
         params: Vec::new(),
-        body: coflow::ast::Block {
+        return_type: None,
+        body: FnBody::Block(coflow::ast::Block {
             stmts: Vec::new(),
             span: Span { start: 12, end: 14 },
-        },
+        }),
         span: Span { start: 0, end: 14 },
     });
 

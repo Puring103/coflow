@@ -1,6 +1,6 @@
 # coflow核心运行时
 
-核心运行时围绕函数调用，模块初始化，Iterator协议，`for in`和`co fn`展开。
+核心运行时围绕函数调用，模块初始化，Iterator协议，`for in`和`iter fn`展开。
 
 ## 模块阶段
 
@@ -15,7 +15,7 @@
 ```coflow
 var scale = host.get_scale()
 
-damage = scale * 10 // 错误
+damage = scale * 10  # 错误
 ```
 
 顶层`var`在运行时模块初始化阶段初始化。
@@ -70,7 +70,8 @@ var step = it.next()
 1. 如果`value`已经是Iterator，直接返回。
 2. 如果`value`是数组，返回数组Iterator。
 3. 如果`value`是字典，返回字典Iterator。
-4. 否则运行时报错；静态可确定时提前诊断。
+4. 如果`value`是Range，返回Range Iterator。
+5. 否则运行时报错；静态可确定时提前诊断。
 
 ## for in
 
@@ -107,9 +108,34 @@ for entry in scores {
 
 核心版本不支持`for key, value in dict`。该语法放入解构提案。
 
+## Range
+
+Range字面量产生可迭代的整数序列。
+
+```coflow
+0..10     # [0, 10)，不含10
+0..=10    # [0, 10]，含10
+```
+
+Range可以直接用于`for in`。
+
+```coflow
+for i in 0..10 {
+  print(i)
+}
+```
+
+Range也可以用于成员判断。
+
+```coflow
+if hp in 1..=100 {
+  # hp在[1, 100]范围内
+}
+```
+
 ## 标准库range
 
-核心语言不内置范围语法。标准库提供`range`函数，返回可迭代值。
+标准库提供`range`函数，与Range字面量互补，支持步长参数。
 
 ```coflow
 range(0, 10)
@@ -129,29 +155,29 @@ for i in range(0, 10) {
 }
 
 for i in range(0, 10, 2) {
-  print(i)  // 0, 2, 4, 6, 8
+  print(i)  # 0, 2, 4, 6, 8
 }
 ```
 
-## co fn
+## iter fn
 
-`co fn`是Iterator工厂。
+`iter fn`是Iterator工厂。
 
 ```coflow
-co fn counter() {
+iter fn counter() {
   yield 1
   yield 2
 }
 ```
 
-调用`co fn`不会立即执行函数体，而是返回Iterator。
+调用`iter fn`不会立即执行函数体，而是返回Iterator。
 
 ```coflow
 var c = counter()
 
-c.next() // { done: false, value: 1 }
-c.next() // { done: false, value: 2 }
-c.next() // { done: true, value: null }
+c.next()  # { done: false, value: 1 }
+c.next()  # { done: false, value: 2 }
+c.next()  # { done: true, value: null }
 ```
 
 `yield value`产出一个值。
@@ -160,13 +186,13 @@ c.next() // { done: true, value: null }
 yield 1
 ```
 
-`co fn`可以捕获外层作用域的局部变量，遵守与普通函数相同的闭包规则。
+`iter fn`可以捕获外层作用域的局部变量，遵守与普通函数相同的闭包规则。
 
 ```coflow
 fn make_sequence(start) {
   var i = start
 
-  return co fn() {
+  return iter fn() {
     while true {
       yield i
       i += 1
@@ -175,19 +201,17 @@ fn make_sequence(start) {
 }
 ```
 
-`co fn`中禁止使用`return`。
-
 自然执行到函数末尾表示迭代结束。
 
-提前结束使用`yield break`。
+提前结束使用`return`（不带值）。
 
 ```coflow
-co fn numbers(limit) {
+iter fn numbers(limit) {
   var i = 0
 
   while true {
     if i >= limit {
-      yield break
+      return    # 提前结束迭代
     }
 
     yield i
@@ -196,19 +220,19 @@ co fn numbers(limit) {
 }
 ```
 
-`yield break`是特殊控制流语法，只能出现在`co fn`中。
+`iter fn`中禁止使用`return value`（带值的return）。
 
 ## yield from
 
 `yield from`将子Iterator的所有值委托产出。
 
 ```coflow
-co fn child() {
+iter fn child() {
   yield 1
   yield 2
 }
 
-co fn parent() {
+iter fn parent() {
   yield from child()
   yield 3
 }
@@ -227,14 +251,14 @@ co fn parent() {
 `yield value`始终产出`value`本身。如果`value`是Iterator对象，它作为普通值产出，不会自动展开。
 
 ```coflow
-co fn wrap() {
-  yield child()  // 产出Iterator对象本身
-  yield from child()  // 展开子Iterator，产出1, 2
+iter fn wrap() {
+  yield child()        # 产出Iterator对象本身
+  yield from child()   # 展开子Iterator，产出1, 2
 }
 ```
 
 ## 错误
 
-Iterator或`co fn`执行期间抛错时，错误从`next()`传播。
+Iterator或`iter fn`执行期间抛错时，错误从`next()`传播。
 
 异常终止后的Iterator进入dead状态。dead状态再次`next()`抛运行时错误。

@@ -6,7 +6,7 @@ fn first_error(source: &str) -> LexErrorKind {
 
 #[test]
 fn reports_unexpected_characters() {
-    for source in ["?", "!", "|", "&", "^", "player? .name"] {
+    for source in ["?", "!", "player? .name"] {
         assert_eq!(
             first_error(source),
             LexErrorKind::UnexpectedChar,
@@ -17,7 +17,7 @@ fn reports_unexpected_characters() {
 
 #[test]
 fn reports_multiple_unexpected_characters_and_recovers() {
-    let output = lex("? | !");
+    let output = lex("? !");
     assert_eq!(
         output
             .errors
@@ -27,7 +27,6 @@ fn reports_multiple_unexpected_characters_and_recovers() {
         vec![
             LexErrorKind::UnexpectedChar,
             LexErrorKind::UnexpectedChar,
-            LexErrorKind::UnexpectedChar
         ]
     );
 }

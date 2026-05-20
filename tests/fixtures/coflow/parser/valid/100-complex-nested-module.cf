@@ -11,10 +11,8 @@ class Requirement {
   level: int
   tags: [string]
 
-  validate {
-    if self.level < 0 {
-      throw "level must be >= 0"
-    }
+  check {
+    self.level >= 0 => "level must be >= 0"
   }
 }
 
@@ -25,14 +23,12 @@ class Skill {
   damage: int
   cooldown: float = 1.0
   requirement: Requirement
-  costs: [string: int]
+  costs: dict[string, int]
   effects: [any]
-  metadata: [string: any]
+  metadata: dict[string, any]
 
-  validate {
-    if self.damage <= 0 {
-      throw "damage must be positive"
-    }
+  check {
+    self.damage > 0 => "damage must be positive"
   }
 }
 
@@ -88,7 +84,7 @@ Can burn the target.
   },
 }
 
-co fn cooldown_ticks(skill, count) {
+iter fn cooldown_ticks(skill, count) {
   var i = 0
   while i < count {
     yield {

@@ -8,12 +8,12 @@ weapon = {
   },
 }
 
-scores: [string: int] = {
+scores: dict[string, int] = {
   "alice": 10,
   "bob": 20,
 }
 
-loot_table: [string: [string]] = {
+loot_table: dict[string, [string]] = {
   "common": ["coin", "apple"],
   "rare": ["sword", "ring"],
 }

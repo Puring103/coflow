@@ -11,8 +11,8 @@ fn kinds(source: &str) -> Vec<TokenKind> {
 fn recognizes_every_keyword_token() {
     assert_eq!(
         kinds(
-            "import as local class enum validate fn co var if else while for in break continue \
-             return throw try catch yield from and or not true false null self"
+            "import as local class enum check fn iter dict var if else while until loop for in \
+             break continue return throw try catch yield from and or not true false null self"
         ),
         vec![
             TokenKind::Import,
@@ -20,13 +20,16 @@ fn recognizes_every_keyword_token() {
             TokenKind::Local,
             TokenKind::Class,
             TokenKind::Enum,
-            TokenKind::Validate,
+            TokenKind::Check,
             TokenKind::Fn,
-            TokenKind::Co,
+            TokenKind::Iter,
+            TokenKind::Dict,
             TokenKind::Var,
             TokenKind::If,
             TokenKind::Else,
             TokenKind::While,
+            TokenKind::Until,
+            TokenKind::Loop,
             TokenKind::For,
             TokenKind::In,
             TokenKind::Break,
@@ -106,7 +109,7 @@ fn recognizes_every_literal_token() {
 #[test]
 fn recognizes_every_operator_token() {
     assert_eq!(
-        kinds("= += -= *= /= %= ??= + - * / % == != < <= > >= ?? . ?."),
+        kinds("= += -= *= /= %= ??= **= //= &= |= ^= <<= >>= + - * ** // / % == != < <= << > >= >> ?? . .. ..= ... ?. ?[ -> =>"),
         vec![
             TokenKind::Eq,
             TokenKind::PlusEq,
@@ -115,20 +118,50 @@ fn recognizes_every_operator_token() {
             TokenKind::SlashEq,
             TokenKind::PercentEq,
             TokenKind::QuestionQuestionEq,
+            TokenKind::StarStarEq,
+            TokenKind::SlashSlashEq,
+            TokenKind::AmpEq,
+            TokenKind::PipeEq,
+            TokenKind::CaretEq,
+            TokenKind::LtLtEq,
+            TokenKind::GtGtEq,
             TokenKind::Plus,
             TokenKind::Minus,
             TokenKind::Star,
+            TokenKind::StarStar,
+            TokenKind::SlashSlash,
             TokenKind::Slash,
             TokenKind::Percent,
             TokenKind::EqEq,
             TokenKind::BangEq,
             TokenKind::Lt,
             TokenKind::LtEq,
+            TokenKind::LtLt,
             TokenKind::Gt,
             TokenKind::GtEq,
+            TokenKind::GtGt,
             TokenKind::QuestionQuestion,
             TokenKind::Dot,
+            TokenKind::DotDot,
+            TokenKind::DotDotEq,
+            TokenKind::DotDotDot,
             TokenKind::QuestionDot,
+            TokenKind::QuestionLBracket,
+            TokenKind::Arrow,
+            TokenKind::FatArrow,
+        ]
+    );
+}
+
+#[test]
+fn recognizes_bitwise_operator_tokens() {
+    assert_eq!(
+        kinds("& | ^ ~"),
+        vec![
+            TokenKind::Amp,
+            TokenKind::Pipe,
+            TokenKind::Caret,
+            TokenKind::Tilde,
         ]
     );
 }
@@ -177,16 +210,25 @@ fn floats_do_not_swallow_dot_without_fraction() {
 }
 
 #[test]
-fn skips_comments_and_whitespace() {
+fn skips_line_comments_with_hash() {
     assert_eq!(
-        kinds("a // comment\n b /* hidden */ c / / /= // tail"),
+        kinds("a # comment\n b /* hidden */ c"),
         vec![
             TokenKind::Ident,
             TokenKind::Ident,
             TokenKind::Ident,
-            TokenKind::Slash,
-            TokenKind::Slash,
-            TokenKind::SlashEq,
+        ]
+    );
+}
+
+#[test]
+fn slash_slash_is_int_div_not_comment() {
+    assert_eq!(
+        kinds("a // b"),
+        vec![
+            TokenKind::Ident,
+            TokenKind::SlashSlash,
+            TokenKind::Ident,
         ]
     );
 }
@@ -202,10 +244,11 @@ fn spans_are_byte_offsets() {
 #[test]
 fn every_token_kind_has_a_positive_case() {
     let covered = kinds(
-        "import as local class enum validate fn co var if else while for in break continue \
-         return throw try catch yield from and or not true false null self ident 1 1.0 \
-         \"s\" r\"s\" \"\"\"s\"\"\" r\"\"\"s\"\"\" = += -= *= /= %= ??= + - * / % \
-         == != < <= > >= ?? . ?. ( ) { } [ ] , :",
+        "import as local class enum check fn iter dict var if else while until loop for in \
+         break continue return throw try catch yield from and or not true false null self \
+         ident 1 1.0 \"s\" r\"s\" \"\"\"s\"\"\" r\"\"\"s\"\"\" \
+         = += -= *= /= %= ??= **= //= &= |= ^= <<= >>= + - * ** // / % == != < <= << > >= >> ?? \
+         . .. ..= ... ?. ?[ -> => & | ^ ~ ( ) { } [ ] , :",
     );
 
     let all = [
@@ -214,13 +257,16 @@ fn every_token_kind_has_a_positive_case() {
         TokenKind::Local,
         TokenKind::Class,
         TokenKind::Enum,
-        TokenKind::Validate,
+        TokenKind::Check,
         TokenKind::Fn,
-        TokenKind::Co,
+        TokenKind::Iter,
+        TokenKind::Dict,
         TokenKind::Var,
         TokenKind::If,
         TokenKind::Else,
         TokenKind::While,
+        TokenKind::Until,
+        TokenKind::Loop,
         TokenKind::For,
         TokenKind::In,
         TokenKind::Break,
@@ -252,20 +298,41 @@ fn every_token_kind_has_a_positive_case() {
         TokenKind::SlashEq,
         TokenKind::PercentEq,
         TokenKind::QuestionQuestionEq,
+        TokenKind::StarStarEq,
+        TokenKind::SlashSlashEq,
+        TokenKind::AmpEq,
+        TokenKind::PipeEq,
+        TokenKind::CaretEq,
+        TokenKind::LtLtEq,
+        TokenKind::GtGtEq,
         TokenKind::Plus,
         TokenKind::Minus,
         TokenKind::Star,
+        TokenKind::StarStar,
+        TokenKind::SlashSlash,
         TokenKind::Slash,
         TokenKind::Percent,
         TokenKind::EqEq,
         TokenKind::BangEq,
         TokenKind::Lt,
         TokenKind::LtEq,
+        TokenKind::LtLt,
         TokenKind::Gt,
         TokenKind::GtEq,
+        TokenKind::GtGt,
         TokenKind::QuestionQuestion,
         TokenKind::Dot,
+        TokenKind::DotDot,
+        TokenKind::DotDotEq,
+        TokenKind::DotDotDot,
         TokenKind::QuestionDot,
+        TokenKind::QuestionLBracket,
+        TokenKind::Arrow,
+        TokenKind::FatArrow,
+        TokenKind::Amp,
+        TokenKind::Pipe,
+        TokenKind::Caret,
+        TokenKind::Tilde,
         TokenKind::LParen,
         TokenKind::RParen,
         TokenKind::LBrace,

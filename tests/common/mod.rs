@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use std::fmt::Write;
 
 use coflow::ast::{
-    AssignOp, AssignTarget, BinaryOp, Block, ElseBranch, Expr, Item, Literal, Module, RecordKey,
-    Stmt, StringKind, TypeExpr, YieldStmt,
+    AssignOp, AssignTarget, BinaryOp, Block, ElseBranch, Expr, FnBody, Item, Literal, Module,
+    RecordEntry, RecordKey, Stmt, StringKind, TypeExpr, YieldStmt,
 };
 use coflow::lexer::{LexError, Token};
 use coflow::parser::{parse_module, ParseError, ParseErrorKind};
@@ -126,9 +126,13 @@ fn render_item(out: &mut String, item: &Item, indent: usize) {
                     render_expr(out, default, indent + 3);
                 }
             }
-            if let Some(validate) = &class.validate {
-                line(out, indent + 1, "Validate");
-                render_block(out, validate, indent + 2);
+            if !class.checks.is_empty() {
+                line(out, indent + 1, "Check");
+                for arm in &class.checks {
+                    line(out, indent + 2, "Arm");
+                    render_expr(out, &arm.condition, indent + 3);
+                    render_expr(out, &arm.message, indent + 3);
+                }
             }
         }
         Item::Enum(enum_decl) => {
@@ -142,7 +146,11 @@ fn render_item(out: &mut String, item: &Item, indent: usize) {
                 ),
             );
             for variant in &enum_decl.variants {
-                line(out, indent + 1, &format!("Variant {}", variant.text));
+                if let Some(v) = variant.value {
+                    line(out, indent + 1, &format!("Variant {} = {}", variant.name.text, v));
+                } else {
+                    line(out, indent + 1, &format!("Variant {}", variant.name.text));
+                }
             }
         }
         Item::Function(func) => {
@@ -152,7 +160,7 @@ fn render_item(out: &mut String, item: &Item, indent: usize) {
                 &format!(
                     "{}{}Fn {}",
                     if func.local { "Local " } else { "" },
-                    if func.co { "Co " } else { "" },
+                    if func.iter { "Iter " } else { "" },
                     func.name.text
                 ),
             );
@@ -162,7 +170,11 @@ fn render_item(out: &mut String, item: &Item, indent: usize) {
                     render_type(out, ty, indent + 2);
                 }
             }
-            render_block(out, &func.body, indent + 1);
+            if let Some(ret_ty) = &func.return_type {
+                line(out, indent + 1, "ReturnType");
+                render_type(out, ret_ty, indent + 2);
+            }
+            render_fn_body(out, &func.body, indent + 1);
         }
         Item::Var(var) => {
             line(
@@ -187,6 +199,16 @@ fn render_item(out: &mut String, item: &Item, indent: usize) {
                 render_type(out, ty, indent + 1);
             }
             render_expr(out, &config.value, indent + 1);
+        }
+    }
+}
+
+fn render_fn_body(out: &mut String, body: &FnBody, indent: usize) {
+    match body {
+        FnBody::Block(block) => render_block(out, block, indent),
+        FnBody::Expr(expr) => {
+            line(out, indent, "ExprBody");
+            render_expr(out, expr, indent + 1);
         }
     }
 }
@@ -237,6 +259,15 @@ fn render_stmt(out: &mut String, stmt: &Stmt, indent: usize) {
             render_expr(out, &while_stmt.condition, indent + 1);
             render_block(out, &while_stmt.body, indent + 1);
         }
+        Stmt::Until(until_stmt) => {
+            line(out, indent, "Until");
+            render_expr(out, &until_stmt.condition, indent + 1);
+            render_block(out, &until_stmt.body, indent + 1);
+        }
+        Stmt::Loop(loop_stmt) => {
+            line(out, indent, "Loop");
+            render_block(out, &loop_stmt.body, indent + 1);
+        }
         Stmt::ForIn(for_stmt) => {
             line(out, indent, &format!("ForIn {}", for_stmt.item.text));
             render_expr(out, &for_stmt.iterable, indent + 1);
@@ -246,7 +277,9 @@ fn render_stmt(out: &mut String, stmt: &Stmt, indent: usize) {
         Stmt::Continue(_) => line(out, indent, "Continue"),
         Stmt::Return(ret) => {
             line(out, indent, "Return");
-            render_expr(out, &ret.value, indent + 1);
+            if let Some(value) = &ret.value {
+                render_expr(out, value, indent + 1);
+            }
         }
         Stmt::Throw(throw) => {
             line(out, indent, "Throw");
@@ -270,7 +303,6 @@ fn render_stmt(out: &mut String, stmt: &Stmt, indent: usize) {
                 line(out, indent, "YieldFrom");
                 render_expr(out, value, indent + 1);
             }
-            YieldStmt::Break { .. } => line(out, indent, "YieldBreak"),
         },
     }
 }
@@ -288,23 +320,47 @@ fn render_expr(out: &mut String, expr: &Expr, indent: usize) {
         Expr::Record(record) => {
             line(out, indent, "Record");
             for entry in &record.entries {
-                line(
-                    out,
-                    indent + 1,
-                    &format!("Entry {}", render_record_key(&entry.key)),
-                );
-                render_expr(out, &entry.value, indent + 2);
+                match entry {
+                    RecordEntry::Field { key, value, .. } => {
+                        line(
+                            out,
+                            indent + 1,
+                            &format!("Entry {}", render_record_key(key)),
+                        );
+                        render_expr(out, value, indent + 2);
+                    }
+                    RecordEntry::Spread { expr, .. } => {
+                        line(out, indent + 1, "Spread");
+                        render_expr(out, expr, indent + 2);
+                    }
+                }
             }
         }
         Expr::Fn(func) => {
-            line(out, indent, if func.co { "Co FnExpr" } else { "FnExpr" });
+            line(out, indent, if func.iter { "Iter FnExpr" } else { "FnExpr" });
             for param in &func.params {
                 line(out, indent + 1, &format!("Param {}", param.name.text));
                 if let Some(ty) = &param.ty {
                     render_type(out, ty, indent + 2);
                 }
             }
-            render_block(out, &func.body, indent + 1);
+            if let Some(ret_ty) = &func.return_type {
+                line(out, indent + 1, "ReturnType");
+                render_type(out, ret_ty, indent + 2);
+            }
+            render_fn_body(out, &func.body, indent + 1);
+        }
+        Expr::Lambda(lambda) => {
+            line(out, indent, "Lambda");
+            for param in &lambda.params {
+                line(out, indent + 1, &format!("Param {}", param.name.text));
+            }
+            render_fn_body(out, &lambda.body, indent + 1);
+        }
+        Expr::Range(range) => {
+            line(out, indent, if range.inclusive { "RangeInclusive" } else { "Range" });
+            render_expr(out, &range.start, indent + 1);
+            render_expr(out, &range.end, indent + 1);
         }
         Expr::Unary(unary) => {
             line(out, indent, &format!("Unary {:?}", unary.op));
@@ -323,7 +379,12 @@ fn render_expr(out: &mut String, expr: &Expr, indent: usize) {
             line(out, indent, "Call");
             render_expr(out, &call.callee, indent + 1);
             for arg in &call.args {
-                render_expr(out, arg, indent + 1);
+                if let Some(name) = &arg.name {
+                    line(out, indent + 1, &format!("Arg {}", name.text));
+                } else {
+                    line(out, indent + 1, "Arg");
+                }
+                render_expr(out, &arg.value, indent + 2);
             }
         }
         Expr::Field(field) => {
@@ -338,6 +399,17 @@ fn render_expr(out: &mut String, expr: &Expr, indent: usize) {
             line(out, indent, "Index");
             render_expr(out, &index.object, indent + 1);
             render_expr(out, &index.index, indent + 1);
+        }
+        Expr::OptionalIndex(index) => {
+            line(out, indent, "OptionalIndex");
+            render_expr(out, &index.object, indent + 1);
+            render_expr(out, &index.index, indent + 1);
+        }
+        Expr::If(if_expr) => {
+            line(out, indent, "IfExpr");
+            render_expr(out, &if_expr.condition, indent + 1);
+            render_expr(out, &if_expr.then_expr, indent + 1);
+            render_expr(out, &if_expr.else_expr, indent + 1);
         }
     }
 }
@@ -415,7 +487,9 @@ fn render_binary_op(op: BinaryOp) -> &'static str {
         BinaryOp::Sub => "Sub",
         BinaryOp::Mul => "Mul",
         BinaryOp::Div => "Div",
+        BinaryOp::IntDiv => "IntDiv",
         BinaryOp::Rem => "Rem",
+        BinaryOp::Pow => "Pow",
         BinaryOp::Eq => "Eq",
         BinaryOp::NotEq => "NotEq",
         BinaryOp::Lt => "Lt",
@@ -426,6 +500,12 @@ fn render_binary_op(op: BinaryOp) -> &'static str {
         BinaryOp::Or => "Or",
         BinaryOp::NullCoalesce => "NullCoalesce",
         BinaryOp::In => "In",
+        BinaryOp::NotIn => "NotIn",
+        BinaryOp::BitAnd => "BitAnd",
+        BinaryOp::BitOr => "BitOr",
+        BinaryOp::BitXor => "BitXor",
+        BinaryOp::Shl => "Shl",
+        BinaryOp::Shr => "Shr",
     }
 }
 
@@ -436,8 +516,15 @@ fn render_assign_op(op: AssignOp) -> &'static str {
         AssignOp::Sub => "Sub",
         AssignOp::Mul => "Mul",
         AssignOp::Div => "Div",
+        AssignOp::IntDiv => "IntDiv",
         AssignOp::Rem => "Rem",
+        AssignOp::Pow => "Pow",
         AssignOp::NullCoalesce => "NullCoalesce",
+        AssignOp::BitAnd => "BitAnd",
+        AssignOp::BitOr => "BitOr",
+        AssignOp::BitXor => "BitXor",
+        AssignOp::Shl => "Shl",
+        AssignOp::Shr => "Shr",
     }
 }
 

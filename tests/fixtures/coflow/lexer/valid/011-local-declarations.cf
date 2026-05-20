@@ -11,6 +11,6 @@ local fn helper(value) {
   return value
 }
 
-local co fn helper_stream() {
+local iter fn helper_stream() {
   yield 1
 }

@@ -1,4 +1,4 @@
-use coflow::ast::{AssignOp, AssignTarget, ElseBranch, Item, Stmt, YieldStmt};
+use coflow::ast::{AssignOp, AssignTarget, ElseBranch, FnBody, Item, Stmt, YieldStmt};
 use coflow::parser::ParseErrorKind;
 
 use crate::common::{parse_error_kinds, parse_ok};
@@ -8,7 +8,10 @@ fn parse_function_body(source: &str) -> Vec<Stmt> {
     let Item::Function(func) = &module.items[0] else {
         panic!("expected function");
     };
-    func.body.stmts.clone()
+    let FnBody::Block(block) = &func.body else {
+        panic!("expected block body");
+    };
+    block.stmts.clone()
 }
 
 #[test]
@@ -125,19 +128,41 @@ for item in items {
 }
 
 #[test]
+fn parses_loop_and_until() {
+    let stmts = parse_function_body(
+        r#"
+loop {
+  update()
+}
+until done {
+  tick()
+}
+"#,
+    );
+    assert!(matches!(stmts[0], Stmt::Loop(_)));
+    assert!(matches!(stmts[1], Stmt::Until(_)));
+}
+
+#[test]
 fn parses_control_transfer_statements() {
     let stmts = parse_function_body(
         r#"
 break
 continue
 return value
-throw "message"
+throw error("message")
 "#,
     );
     assert!(matches!(stmts[0], Stmt::Break(_)));
     assert!(matches!(stmts[1], Stmt::Continue(_)));
     assert!(matches!(stmts[2], Stmt::Return(_)));
     assert!(matches!(stmts[3], Stmt::Throw(_)));
+}
+
+#[test]
+fn parses_return_without_value() {
+    let stmts = parse_function_body("return");
+    assert!(matches!(stmts[0], Stmt::Return(ref r) if r.value.is_none()));
 }
 
 #[test]
@@ -158,34 +183,37 @@ try {
 fn parses_yield_statements() {
     let module = parse_ok(
         r#"
-co fn stream(source) {
+iter fn stream(source) {
   yield value
   yield from source
-  yield break
+  return
 }
 "#,
     );
     let Item::Function(func) = &module.items[0] else {
         panic!("expected function");
     };
+    let FnBody::Block(block) = &func.body else {
+        panic!("expected block body");
+    };
     assert!(matches!(
-        func.body.stmts[0],
+        block.stmts[0],
         Stmt::Yield(YieldStmt::Value { .. })
     ));
     assert!(matches!(
-        func.body.stmts[1],
+        block.stmts[1],
         Stmt::Yield(YieldStmt::From { .. })
     ));
     assert!(matches!(
-        func.body.stmts[2],
-        Stmt::Yield(YieldStmt::Break { .. })
+        block.stmts[2],
+        Stmt::Return(ref r) if r.value.is_none()
     ));
 }
 
 #[test]
-fn rejects_empty_return() {
-    let errors = parse_error_kinds("fn main() { return }");
-    assert!(errors.contains(&ParseErrorKind::ExpectedExpression));
+fn parses_bare_return() {
+    let stmts = parse_function_body("return");
+    assert!(matches!(stmts[0], Stmt::Return(ref r) if r.value.is_none()));
 }
 
 #[test]
@@ -226,6 +254,6 @@ fn rejects_break_with_value() {
 
 #[test]
 fn rejects_yield_from_without_value() {
-    let errors = parse_error_kinds("co fn main() { yield from }");
+    let errors = parse_error_kinds("iter fn main() { yield from }");
     assert!(errors.contains(&ParseErrorKind::ExpectedExpression));
 }

@@ -67,8 +67,10 @@ fn main() {
     let Item::Function(func) = &module.items[0] else {
         panic!("expected function");
     };
-    assert!(func
-        .body
+    let coflow::ast::FnBody::Block(block) = &func.body else {
+        panic!("expected block body");
+    };
+    assert!(block
         .stmts
         .iter()
         .any(|stmt| matches!(stmt, Stmt::Return(_))));

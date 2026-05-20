@@ -31,13 +31,13 @@ fn parses_array_type() {
 
 #[test]
 fn parses_dict_type() {
-    let ty = parse_config_type("scores: [string: int] = {}");
+    let ty = parse_config_type("scores: dict[string, int] = {}");
     assert!(matches!(ty, TypeExpr::Dict { .. }));
 }
 
 #[test]
 fn parses_nested_type_expressions() {
-    let ty = parse_config_type("value: [string: [common.Weapon]] = {}");
+    let ty = parse_config_type("value: dict[string, [common.Weapon]] = {}");
     let TypeExpr::Dict { key, value, .. } = ty else {
         panic!("expected dict type");
     };
@@ -53,7 +53,7 @@ fn rejects_empty_bracket_type() {
 
 #[test]
 fn rejects_dict_type_without_value_type() {
-    let errors = parse_error_kinds("value: [string:] = {}");
+    let errors = parse_error_kinds("value: dict[string,] = {}");
     assert!(errors.contains(&ParseErrorKind::ExpectedType));
 }
 
@@ -65,6 +65,6 @@ fn rejects_missing_type_after_colon() {
 
 #[test]
 fn rejects_unclosed_type_bracket() {
-    let errors = parse_error_kinds("value: [string: int = {}");
+    let errors = parse_error_kinds("value: dict[string, int = {}");
     assert!(errors.contains(&ParseErrorKind::ExpectedToken));
 }

@@ -26,13 +26,16 @@ pub enum TokenKind {
     Local,
     Class,
     Enum,
-    Validate,
+    Check,
     Fn,
-    Co,
+    Iter,
+    Dict,
     Var,
     If,
     Else,
     While,
+    Until,
+    Loop,
     For,
     In,
     Break,
@@ -64,20 +67,41 @@ pub enum TokenKind {
     SlashEq,
     PercentEq,
     QuestionQuestionEq,
+    StarStarEq,
+    SlashSlashEq,
+    AmpEq,
+    PipeEq,
+    CaretEq,
+    LtLtEq,
+    GtGtEq,
     Plus,
     Minus,
     Star,
+    StarStar,
     Slash,
+    SlashSlash,
     Percent,
     EqEq,
     BangEq,
     Lt,
     LtEq,
+    LtLt,
     Gt,
     GtEq,
+    GtGt,
     QuestionQuestion,
     Dot,
+    DotDot,
+    DotDotEq,
     QuestionDot,
+    QuestionLBracket,
+    Arrow,
+    FatArrow,
+    DotDotDot,
+    Amp,
+    Pipe,
+    Caret,
+    Tilde,
     LParen,
     RParen,
     LBrace,
@@ -131,7 +155,7 @@ impl<'a> Lexer<'a> {
 
             let start = self.pos;
             match ch {
-                '/' if self.starts_with("//") => self.skip_line_comment(),
+                '#' => self.skip_line_comment(),
                 '/' if self.starts_with("/*") => self.skip_block_comment(),
                 'r' if self.starts_with("r\"\"\"") => self.scan_multiline_string(true),
                 'r' if self.starts_with("r\"") => self.scan_string(true),
@@ -470,18 +494,42 @@ impl<'a> Lexer<'a> {
         } else if self.starts_with("??") {
             self.pos += 2;
             Some(TokenKind::QuestionQuestion)
+        } else if self.starts_with("?[") {
+            self.pos += 2;
+            Some(TokenKind::QuestionLBracket)
         } else if self.starts_with("?.") {
             self.pos += 2;
             Some(TokenKind::QuestionDot)
+        } else if self.starts_with("...") {
+            self.pos += 3;
+            Some(TokenKind::DotDotDot)
+        } else if self.starts_with("..=") {
+            self.pos += 3;
+            Some(TokenKind::DotDotEq)
+        } else if self.starts_with("..") {
+            self.pos += 2;
+            Some(TokenKind::DotDot)
         } else if self.starts_with("+=") {
             self.pos += 2;
             Some(TokenKind::PlusEq)
         } else if self.starts_with("-=") {
             self.pos += 2;
             Some(TokenKind::MinusEq)
+        } else if self.starts_with("**=") {
+            self.pos += 3;
+            Some(TokenKind::StarStarEq)
+        } else if self.starts_with("**") {
+            self.pos += 2;
+            Some(TokenKind::StarStar)
         } else if self.starts_with("*=") {
             self.pos += 2;
             Some(TokenKind::StarEq)
+        } else if self.starts_with("//=") {
+            self.pos += 3;
+            Some(TokenKind::SlashSlashEq)
+        } else if self.starts_with("//") {
+            self.pos += 2;
+            Some(TokenKind::SlashSlash)
         } else if self.starts_with("/=") {
             self.pos += 2;
             Some(TokenKind::SlashEq)
@@ -494,12 +542,39 @@ impl<'a> Lexer<'a> {
         } else if self.starts_with("!=") {
             self.pos += 2;
             Some(TokenKind::BangEq)
+        } else if self.starts_with("<<=") {
+            self.pos += 3;
+            Some(TokenKind::LtLtEq)
         } else if self.starts_with("<=") {
             self.pos += 2;
             Some(TokenKind::LtEq)
+        } else if self.starts_with("<<") {
+            self.pos += 2;
+            Some(TokenKind::LtLt)
+        } else if self.starts_with(">>=") {
+            self.pos += 3;
+            Some(TokenKind::GtGtEq)
         } else if self.starts_with(">=") {
             self.pos += 2;
             Some(TokenKind::GtEq)
+        } else if self.starts_with(">>") {
+            self.pos += 2;
+            Some(TokenKind::GtGt)
+        } else if self.starts_with("->") {
+            self.pos += 2;
+            Some(TokenKind::Arrow)
+        } else if self.starts_with("=>") {
+            self.pos += 2;
+            Some(TokenKind::FatArrow)
+        } else if self.starts_with("&=") {
+            self.pos += 2;
+            Some(TokenKind::AmpEq)
+        } else if self.starts_with("|=") {
+            self.pos += 2;
+            Some(TokenKind::PipeEq)
+        } else if self.starts_with("^=") {
+            self.pos += 2;
+            Some(TokenKind::CaretEq)
         } else {
             self.pos += ch.len_utf8();
             match ch {
@@ -512,6 +587,10 @@ impl<'a> Lexer<'a> {
                 '<' => Some(TokenKind::Lt),
                 '>' => Some(TokenKind::Gt),
                 '.' => Some(TokenKind::Dot),
+                '&' => Some(TokenKind::Amp),
+                '|' => Some(TokenKind::Pipe),
+                '^' => Some(TokenKind::Caret),
+                '~' => Some(TokenKind::Tilde),
                 '(' => Some(TokenKind::LParen),
                 ')' => Some(TokenKind::RParen),
                 '{' => Some(TokenKind::LBrace),
@@ -543,13 +622,16 @@ fn keyword_kind(text: &str) -> Option<TokenKind> {
         "local" => TokenKind::Local,
         "class" => TokenKind::Class,
         "enum" => TokenKind::Enum,
-        "validate" => TokenKind::Validate,
+        "check" => TokenKind::Check,
         "fn" => TokenKind::Fn,
-        "co" => TokenKind::Co,
+        "iter" => TokenKind::Iter,
+        "dict" => TokenKind::Dict,
         "var" => TokenKind::Var,
         "if" => TokenKind::If,
         "else" => TokenKind::Else,
         "while" => TokenKind::While,
+        "until" => TokenKind::Until,
+        "loop" => TokenKind::Loop,
         "for" => TokenKind::For,
         "in" => TokenKind::In,
         "break" => TokenKind::Break,
