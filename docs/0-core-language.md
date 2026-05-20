@@ -263,7 +263,9 @@ for i in range(1, 11) {
 10. 比较运算
 11. 逻辑运算
 12. 空值合并`??`
-13. 成员判断`in`
+13. 空值合并赋值`??=`
+14. 可选字段访问`?.`
+15. 成员判断`in`
 
 逻辑运算使用`and`，`or`，`not`。
 
@@ -303,7 +305,48 @@ if "hero" in text {
 var name = player.name ?? "unknown"
 ```
 
-核心版本不支持范围语法，可选链，`??=`，`match`，`if`表达式，切片，解构，展开，`is`，`not in`和字符串插值。
+可选字段访问使用`?.`。如果左侧为`null`，结果为`null`。
+
+```coflow
+var name = player?.profile?.name ?? "unknown"
+```
+
+空值合并赋值使用`??=`。左侧为`null`时才写入右侧值。
+
+```coflow
+name ??= "unknown"
+```
+
+核心版本不支持范围语法，`match`，`if`表达式，切片，解构，展开，`is`，`not in`和字符串插值。
+
+## 数字
+
+整数默认使用十进制。
+
+```coflow
+var hp = 100
+var cost = 1_000
+```
+
+核心版本支持前缀进制整数：
+
+```coflow
+var mask = 0xff
+var flags = 0b1010_0101
+var mode = 0o755
+```
+
+浮点数支持小数形式和科学计数法。
+
+```coflow
+var speed = 3.5
+var scale = 1_000.000_5
+var large = 1e3
+var small = 1.0e-3
+var also_large = 1E+3
+```
+
+数字分隔符`_`只能出现在两个数字之间。负号不是数字字面量的一部分，`-1`按一元负号和数字字面量解析。
 
 ## 字符串
 

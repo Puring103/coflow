@@ -13,10 +13,9 @@
 
 1. `control-expressions.md`
 2. `destructuring.md`
-3. `optional-access.md`
+3. `optional-access.md`，部分能力已进入核心，剩余问题继续跟踪
 4. `named-and-default-args.md`
 5. `class-methods-and-validate.md`
 6. `string-literals.md`
 7. `object-dict-extensions.md`
 8. `types.md`
-
