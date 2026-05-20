@@ -147,7 +147,11 @@ fn render_item(out: &mut String, item: &Item, indent: usize) {
             );
             for variant in &enum_decl.variants {
                 if let Some(v) = variant.value {
-                    line(out, indent + 1, &format!("Variant {} = {}", variant.name.text, v));
+                    line(
+                        out,
+                        indent + 1,
+                        &format!("Variant {} = {}", variant.name.text, v),
+                    );
                 } else {
                     line(out, indent + 1, &format!("Variant {}", variant.name.text));
                 }
@@ -337,7 +341,11 @@ fn render_expr(out: &mut String, expr: &Expr, indent: usize) {
             }
         }
         Expr::Fn(func) => {
-            line(out, indent, if func.iter { "Iter FnExpr" } else { "FnExpr" });
+            line(
+                out,
+                indent,
+                if func.iter { "Iter FnExpr" } else { "FnExpr" },
+            );
             for param in &func.params {
                 line(out, indent + 1, &format!("Param {}", param.name.text));
                 if let Some(ty) = &param.ty {
@@ -358,7 +366,15 @@ fn render_expr(out: &mut String, expr: &Expr, indent: usize) {
             render_fn_body(out, &lambda.body, indent + 1);
         }
         Expr::Range(range) => {
-            line(out, indent, if range.inclusive { "RangeInclusive" } else { "Range" });
+            line(
+                out,
+                indent,
+                if range.inclusive {
+                    "RangeInclusive"
+                } else {
+                    "Range"
+                },
+            );
             render_expr(out, &range.start, indent + 1);
             render_expr(out, &range.end, indent + 1);
         }
@@ -429,6 +445,22 @@ fn render_type(out: &mut String, ty: &TypeExpr, indent: usize) {
             line(out, indent, "TypeDict");
             render_type(out, key, indent + 1);
             render_type(out, value, indent + 1);
+        }
+        TypeExpr::Function {
+            params, return_ty, ..
+        } => {
+            line(out, indent, "TypeFunction");
+            if let Some(params) = params {
+                for param in params {
+                    render_type(out, param, indent + 1);
+                }
+            } else {
+                line(out, indent + 1, "AnyFunction");
+            }
+            if let Some(return_ty) = return_ty {
+                line(out, indent + 1, "ReturnType");
+                render_type(out, return_ty, indent + 2);
+            }
         }
     }
 }

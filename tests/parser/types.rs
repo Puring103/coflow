@@ -46,6 +46,30 @@ fn parses_nested_type_expressions() {
 }
 
 #[test]
+fn parses_function_type() {
+    let ty = parse_config_type("value: fn(int, string) -> bool = callback");
+    let TypeExpr::Function {
+        params, return_ty, ..
+    } = ty
+    else {
+        panic!("expected function type");
+    };
+    let params = params.expect("expected concrete function signature");
+    assert_eq!(params.len(), 2);
+    assert!(matches!(params[0], TypeExpr::Name(_)));
+    assert!(matches!(
+        *return_ty.expect("expected return type"),
+        TypeExpr::Name(_)
+    ));
+}
+
+#[test]
+fn parses_top_function_type() {
+    let ty = parse_config_type("value: fn = callback");
+    assert!(matches!(ty, TypeExpr::Function { params: None, .. }));
+}
+
+#[test]
 fn rejects_empty_bracket_type() {
     let errors = parse_error_kinds("value: [] = []");
     assert!(errors.contains(&ParseErrorKind::ExpectedType));

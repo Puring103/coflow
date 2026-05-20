@@ -2,10 +2,10 @@ use crate::ast::{
     Arg, ArrayLiteral, AssignOp, AssignStmt, AssignTarget, BinaryExpr, BinaryOp, Block, CallExpr,
     CheckArm, ClassDecl, ClassField, ConfigDecl, ElseBranch, EnumDecl, EnumVariant, Expr,
     FieldExpr, FnBody, FnDecl, FnExpr, ForInStmt, Ident, IfExpr, IfStmt, ImportDecl, IndexExpr,
-    Item, LambdaExpr, Literal, LoopStmt, Module, OptionalFieldExpr, OptionalIndexExpr, Param,
-    Path, RangeExpr, RecordEntry, RecordKey, RecordLiteral, ReturnStmt, Stmt, StringKind,
-    StringLiteral, ThrowStmt, TryCatchStmt, TypeExpr, UnaryExpr, UnaryOp, UntilStmt, VarDecl,
-    WhileStmt, YieldStmt,
+    Item, LambdaExpr, Literal, LoopStmt, Module, OptionalFieldExpr, OptionalIndexExpr, Param, Path,
+    RangeExpr, RecordEntry, RecordKey, RecordLiteral, ReturnStmt, Stmt, StringKind, StringLiteral,
+    ThrowStmt, TryCatchStmt, TypeExpr, UnaryExpr, UnaryOp, UntilStmt, VarDecl, WhileStmt,
+    YieldStmt,
 };
 use crate::lexer::{lex, LexErrorKind, Token, TokenKind};
 use crate::span::Span;
@@ -565,9 +565,7 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        let end = value
-            .as_ref()
-            .map_or(start + 6, |expr| expr_span(expr).end);
+        let end = value.as_ref().map_or(start + 6, |expr| expr_span(expr).end);
         Some(ReturnStmt {
             span: Span { start, end },
             value,
@@ -660,6 +658,7 @@ impl<'a> Parser<'a> {
     fn parse_type(&mut self) -> Option<TypeExpr> {
         match self.peek_kind() {
             Some(TokenKind::Dict) => self.parse_dict_type(),
+            Some(TokenKind::Fn) => self.parse_function_type(),
             Some(TokenKind::Ident) | Some(TokenKind::SelfKw) => {
                 self.parse_path().map(TypeExpr::Name)
             }
@@ -693,6 +692,48 @@ impl<'a> Parser<'a> {
         Some(TypeExpr::Dict {
             key: Box::new(key),
             value: Box::new(value),
+            span: Span { start, end },
+        })
+    }
+
+    fn parse_function_type(&mut self) -> Option<TypeExpr> {
+        let start = self.expect_token(TokenKind::Fn)?.start;
+        if self.eat(TokenKind::LParen).is_none() {
+            return Some(TypeExpr::Function {
+                params: None,
+                return_ty: None,
+                span: Span {
+                    start,
+                    end: self.previous_end(),
+                },
+            });
+        }
+
+        let mut params = Vec::new();
+        if self.eat(TokenKind::RParen).is_none() {
+            loop {
+                params.push(self.parse_type()?);
+                if self.eat(TokenKind::Comma).is_none() {
+                    break;
+                }
+                if self.at(TokenKind::RParen) {
+                    break;
+                }
+            }
+            self.expect_token(TokenKind::RParen)?;
+        }
+
+        let return_ty = if self.eat(TokenKind::Arrow).is_some() {
+            Some(Box::new(self.parse_type()?))
+        } else {
+            None
+        };
+        let end = return_ty
+            .as_ref()
+            .map_or_else(|| self.previous_end(), |ty| type_span(ty).end);
+        Some(TypeExpr::Function {
+            params: Some(params),
+            return_ty,
             span: Span { start, end },
         })
     }
@@ -785,7 +826,10 @@ impl<'a> Parser<'a> {
                 self.bump(); // not
                 self.bump(); // in
                 let rhs = self.parse_expr_bp(right_bp)?;
-                let span = Span { start, end: expr_span(&rhs).end };
+                let span = Span {
+                    start,
+                    end: expr_span(&rhs).end,
+                };
                 lhs = Expr::Binary(BinaryExpr {
                     lhs: Box::new(lhs),
                     op: BinaryOp::NotIn,
@@ -1442,7 +1486,10 @@ impl<'a> Parser<'a> {
 
     fn synchronize_class_member(&mut self) {
         while let Some(kind) = self.peek_kind() {
-            if matches!(kind, TokenKind::RBrace | TokenKind::Check | TokenKind::Ident) {
+            if matches!(
+                kind,
+                TokenKind::RBrace | TokenKind::Check | TokenKind::Ident
+            ) {
                 break;
             }
             self.bump();
@@ -1540,7 +1587,12 @@ const PREFIX_BP: u8 = 25;
 fn is_comparison_op(op: BinaryOp) -> bool {
     matches!(
         op,
-        BinaryOp::Lt | BinaryOp::LtEq | BinaryOp::Gt | BinaryOp::GtEq | BinaryOp::Eq | BinaryOp::NotEq
+        BinaryOp::Lt
+            | BinaryOp::LtEq
+            | BinaryOp::Gt
+            | BinaryOp::GtEq
+            | BinaryOp::Eq
+            | BinaryOp::NotEq
     )
 }
 
@@ -1696,6 +1748,8 @@ fn literal_span(literal: &Literal) -> Span {
 fn type_span(ty: &TypeExpr) -> Span {
     match ty {
         TypeExpr::Name(path) => path.span,
-        TypeExpr::Array { span, .. } | TypeExpr::Dict { span, .. } => *span,
+        TypeExpr::Array { span, .. }
+        | TypeExpr::Dict { span, .. }
+        | TypeExpr::Function { span, .. } => *span,
     }
 }

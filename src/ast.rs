@@ -410,6 +410,11 @@ pub enum TypeExpr {
         value: Box<TypeExpr>,
         span: Span,
     },
+    Function {
+        params: Option<Vec<TypeExpr>>,
+        return_ty: Option<Box<TypeExpr>>,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
