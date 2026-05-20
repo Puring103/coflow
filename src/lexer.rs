@@ -261,7 +261,7 @@ impl<'a> Lexer<'a> {
                 previous_was_underscore = true;
                 self.bump_char();
             } else if ch.is_ascii_alphanumeric() {
-                if ch.to_digit(radix).is_some() {
+                if ch.is_digit(radix) {
                     saw_digit = true;
                     previous_was_digit = true;
                     previous_was_underscore = false;
@@ -316,7 +316,7 @@ impl<'a> Lexer<'a> {
             return None;
         }
 
-        if self.next_starts_identifier() {
+        if self.starts_with("_") || self.next_starts_identifier() {
             let end = self.consume_identifier_tail();
             self.push_error(LexErrorKind::InvalidNumber, start, end);
             return None;
