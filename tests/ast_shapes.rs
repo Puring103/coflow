@@ -1,4 +1,6 @@
-use coflow::ast::{BinaryExpr, BinaryOp, Expr, Ident, Literal, Module, Span, Stmt, VarDecl};
+use coflow::ast::{
+    BinaryExpr, BinaryOp, Expr, FnDecl, Ident, Literal, Module, Span, Stmt, VarDecl,
+};
 
 #[test]
 fn ast_nodes_carry_spans_and_raw_literals() {
@@ -27,6 +29,28 @@ fn ast_nodes_carry_spans_and_raw_literals() {
     assert_eq!(name.text, "hp");
     assert_eq!(module.span, Span { start: 0, end: 14 });
     assert!(matches!(stmt, Stmt::Var(_)));
+}
+
+#[test]
+fn blocks_can_contain_named_function_declarations() {
+    let name = Ident {
+        text: "helper".to_string(),
+        span: Span { start: 3, end: 9 },
+    };
+
+    let stmt = Stmt::Function(FnDecl {
+        local: false,
+        co: false,
+        name,
+        params: Vec::new(),
+        body: coflow::ast::Block {
+            stmts: Vec::new(),
+            span: Span { start: 12, end: 14 },
+        },
+        span: Span { start: 0, end: 14 },
+    });
+
+    assert!(matches!(stmt, Stmt::Function(_)));
 }
 
 #[test]

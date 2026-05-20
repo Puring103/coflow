@@ -1,0 +1,20 @@
+local class InternalConfig {
+  id: string
+}
+
+local enum InternalMode {
+  idle
+  active
+}
+
+local fn helper(value) {
+  return value
+}
+
+local co fn helper_stream() {
+  yield 1
+}
+
+local hidden_config = {
+  id: "hidden",
+}

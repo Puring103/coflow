@@ -1,0 +1,8 @@
+stream_factory = co fn(limit) {
+  var i = 0
+
+  while i < limit {
+    yield i
+    i += 1
+  }
+}

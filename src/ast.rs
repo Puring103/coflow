@@ -74,6 +74,7 @@ pub struct Block {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Stmt {
+    Function(FnDecl),
     Var(VarDecl),
     Assign(AssignStmt),
     Expr(Expr),
