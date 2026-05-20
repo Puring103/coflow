@@ -1,3 +1,0 @@
-co fn main() {
-  yield from
-}

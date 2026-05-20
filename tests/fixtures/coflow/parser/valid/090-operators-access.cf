@@ -1,0 +1,16 @@
+fn normalize(player) {
+  var name = player?.name ?? "unknown"
+  name ??= "fallback"
+
+  player.stats["hp"] += 10
+  player.stats["mp"] -= 1
+  player.stats["rate"] *= 2
+  player.stats["scale"] /= 2
+  player.stats["bucket"] %= 3
+
+  if name != "" and not player.dead {
+    return name
+  }
+
+  return "none"
+}

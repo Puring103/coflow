@@ -1,0 +1,40 @@
+Module
+  Config weapon
+    Record
+      Entry id
+        String Normal "\"sword\""
+      Entry damage
+        Int 10
+      Entry tags
+        Array
+          String Normal "\"melee\""
+          String Normal "\"sharp\""
+      Entry owner
+        Record
+          Entry id
+            String Normal "\"npc_blacksmith\""
+          Entry level
+            Int 3
+  Config scores
+    TypeDict
+      Type string
+      Type int
+    Record
+      Entry "\"alice\""
+        Int 10
+      Entry "\"bob\""
+        Int 20
+  Config loot_table
+    TypeDict
+      Type string
+      TypeArray
+        Type string
+    Record
+      Entry "\"common\""
+        Array
+          String Normal "\"coin\""
+          String Normal "\"apple\""
+      Entry "\"rare\""
+        Array
+          String Normal "\"sword\""
+          String Normal "\"ring\""

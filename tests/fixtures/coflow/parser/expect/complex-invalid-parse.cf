@@ -1,0 +1,11 @@
+class Weapon {
+  id
+  damage: int
+}
+
+fn main() {
+  a + b = 1
+  return
+}
+
+good = 1

@@ -1,0 +1,6 @@
+valid_before = 1
+bad_number = 0xzz
+bad_string = "bad \x"
+emoji😀name = 1
+after = 2
+/* unterminated block comment

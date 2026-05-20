@@ -1,0 +1,28 @@
+fn run_ai(agent, world) {
+  var result = {
+    actions: [],
+    score: 0,
+  }
+
+  for entry in world.threats {
+    var threat = entry.value
+    if threat == null {
+      continue
+    }
+
+    if threat.level > agent.level {
+      result.actions[0] = "retreat"
+      break
+    } else {
+      result.score += threat.level
+    }
+  }
+
+  try {
+    agent.last_result = result
+  } catch err {
+    throw err.message
+  }
+
+  return result
+}

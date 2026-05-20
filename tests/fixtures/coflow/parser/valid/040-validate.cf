@@ -1,0 +1,15 @@
+class Range {
+  min: int
+  max: int
+
+  validate {
+    if self.min > self.max {
+      throw "min must be <= max"
+    }
+  }
+}
+
+normal: Range = {
+  min: 1,
+  max: 10,
+}
