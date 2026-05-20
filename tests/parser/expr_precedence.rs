@@ -66,6 +66,26 @@ fn postfix_binds_tighter_than_unary() {
 }
 
 #[test]
+fn unary_binds_tighter_than_multiplication() {
+    let expr = parse_value_expr("-a * b");
+    let Expr::Binary(BinaryExpr {
+        op: BinaryOp::Mul,
+        lhs,
+        ..
+    }) = expr
+    else {
+        panic!("expected multiplication");
+    };
+    assert!(matches!(
+        *lhs,
+        Expr::Unary(UnaryExpr {
+            op: UnaryOp::Neg,
+            ..
+        })
+    ));
+}
+
+#[test]
 fn not_binds_tighter_than_and() {
     let expr = parse_value_expr("not a and b");
     let Expr::Binary(BinaryExpr {

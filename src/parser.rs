@@ -100,6 +100,11 @@ impl<'a> Parser<'a> {
 
     fn parse_item(&mut self) -> Option<Item> {
         let local = self.eat(TokenKind::Local).is_some();
+        if local && matches!(self.peek_kind(), Some(TokenKind::Ident)) {
+            self.error_here(ParseErrorKind::ExpectedItem);
+            self.consume_malformed_local_config();
+            return None;
+        }
         match self.peek_kind() {
             Some(TokenKind::Import) if !local => self.parse_import().map(Item::Import),
             Some(TokenKind::Class) => self.parse_class(local).map(Item::Class),
@@ -710,7 +715,7 @@ impl<'a> Parser<'a> {
             Some(TokenKind::Ident | TokenKind::SelfKw) => self.expect_ident().map(Expr::Name),
             Some(TokenKind::Minus) => {
                 let start = self.bump()?.span.start;
-                let expr = self.parse_expr_bp(9)?;
+                let expr = self.parse_expr_bp(11)?;
                 let span = Span {
                     start,
                     end: expr_span(&expr).end,
@@ -723,7 +728,7 @@ impl<'a> Parser<'a> {
             }
             Some(TokenKind::Not) => {
                 let start = self.bump()?.span.start;
-                let expr = self.parse_expr_bp(9)?;
+                let expr = self.parse_expr_bp(11)?;
                 let span = Span {
                     start,
                     end: expr_span(&expr).end,
@@ -1010,6 +1015,29 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn consume_malformed_local_config(&mut self) {
+        let mut depth = 0usize;
+        while let Some(kind) = self.peek_kind() {
+            match kind {
+                TokenKind::LBrace | TokenKind::LParen | TokenKind::LBracket => {
+                    depth += 1;
+                    self.bump();
+                }
+                TokenKind::RBrace | TokenKind::RParen | TokenKind::RBracket => {
+                    self.bump();
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                kind if depth == 0 && is_top_level_starter(kind) => break,
+                _ => {
+                    self.bump();
+                }
+            }
+        }
+    }
+
     fn synchronize_class_member(&mut self) {
         while let Some(kind) = self.peek_kind() {
             if matches!(
@@ -1149,6 +1177,19 @@ fn can_start_statement(kind: TokenKind) -> bool {
             | TokenKind::Try
             | TokenKind::Yield
     ) || can_start_expression(kind)
+}
+
+fn is_top_level_starter(kind: TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Import
+            | TokenKind::Local
+            | TokenKind::Class
+            | TokenKind::Enum
+            | TokenKind::Var
+            | TokenKind::Fn
+            | TokenKind::Co
+    )
 }
 
 fn infix_binding_power(kind: TokenKind) -> Option<(BinaryOp, u8, u8)> {

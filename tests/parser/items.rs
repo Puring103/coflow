@@ -185,8 +185,20 @@ fn rejects_top_level_runtime_statement() {
 
 #[test]
 fn rejects_local_config_declaration() {
-    let errors = parse_error_kinds("local sword = {}");
+    let output = coflow::parser::parse_module("local sword = {}");
+    let errors = output
+        .errors
+        .iter()
+        .map(|error| error.kind)
+        .collect::<Vec<_>>();
     assert!(errors.contains(&ParseErrorKind::ExpectedItem));
+    assert_eq!(
+        output
+            .module
+            .expect("parser should return partial module")
+            .items,
+        []
+    );
 }
 
 #[test]
