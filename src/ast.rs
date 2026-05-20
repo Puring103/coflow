@@ -1,4 +1,4 @@
-pub use crate::lexer::Span;
+pub use crate::span::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {

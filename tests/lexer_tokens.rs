@@ -1,4 +1,5 @@
-use coflow::lexer::{lex, LexErrorKind, Span, TokenKind};
+use coflow::lexer::{lex, LexErrorKind, TokenKind};
+use coflow::span::Span;
 
 fn kinds(source: &str) -> Vec<TokenKind> {
     let output = lex(source);
