@@ -305,6 +305,21 @@ impl<'a> Lexer<'a> {
             }
         }
 
+        if matches!(self.peek_char(), Some('e' | 'E')) {
+            kind = TokenKind::FloatLiteral;
+            self.pos += 1;
+
+            if matches!(self.peek_char(), Some('+' | '-')) {
+                self.bump_char();
+            }
+
+            let exponent_start = self.pos;
+            self.consume_digits_and_underscores(&mut invalid);
+            if self.pos == exponent_start {
+                invalid = true;
+            }
+        }
+
         let text = &self.source[start..self.pos];
         if invalid
             || text.ends_with('_')

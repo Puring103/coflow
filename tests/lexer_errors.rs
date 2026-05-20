@@ -58,8 +58,8 @@ fn reports_invalid_float_numbers() {
 }
 
 #[test]
-fn reports_unsupported_scientific_numbers() {
-    for source in ["1e3", "1.0e-3", "1E3"] {
+fn reports_invalid_scientific_numbers() {
+    for source in ["1e", "1e+", "1e-", "1e_3", "1e+_3", "1.0e", "1.0e-"] {
         assert_eq!(
             first_error(source),
             LexErrorKind::InvalidNumber,

@@ -77,7 +77,7 @@ fn recognizes_unicode_identifiers() {
 fn recognizes_every_literal_token() {
     assert_eq!(
         kinds(
-            "0 123 1_000 0xff 0XFF 0b1010_0101 0o755 1.0 1_000.5 1.000_5 \
+            "0 123 1_000 0xff 0XFF 0b1010_0101 0o755 1.0 1_000.5 1.000_5 1e3 1.0e-3 1E+3 \
                \"hero\\n\" r\"C:\\game\" \"\"\"line\nline\"\"\" r\"\"\"C:\\game\nline\"\"\""
         ),
         vec![
@@ -88,6 +88,9 @@ fn recognizes_every_literal_token() {
             TokenKind::IntLiteral,
             TokenKind::IntLiteral,
             TokenKind::IntLiteral,
+            TokenKind::FloatLiteral,
+            TokenKind::FloatLiteral,
+            TokenKind::FloatLiteral,
             TokenKind::FloatLiteral,
             TokenKind::FloatLiteral,
             TokenKind::FloatLiteral,
