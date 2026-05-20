@@ -1,0 +1,8 @@
+[package]
+name = "coflow"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+logos = "0.16.1"
+unicode-ident = "1"
