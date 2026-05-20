@@ -114,15 +114,22 @@ for entry in scores {
 ```coflow
 range(0, 10)
 range(1, 11)
+range(0, 10, 2)
 ```
 
 `range(start, end)`表示从`start`到`end`的左闭右开整数序列。
+
+`range(start, end, step)`指定步长。`step`默认为1，不能为0。
 
 `range`不生成数组，按需迭代。
 
 ```coflow
 for i in range(0, 10) {
   print(i)
+}
+
+for i in range(0, 10, 2) {
+  print(i)  // 0, 2, 4, 6, 8
 }
 ```
 
@@ -153,6 +160,21 @@ c.next() // { done: true, value: null }
 yield 1
 ```
 
+`co fn`可以捕获外层作用域的局部变量，遵守与普通函数相同的闭包规则。
+
+```coflow
+fn make_sequence(start) {
+  var i = start
+
+  return co fn() {
+    while true {
+      yield i
+      i += 1
+    }
+  }
+}
+```
+
 `co fn`中禁止使用`return`。
 
 自然执行到函数末尾表示迭代结束。
@@ -176,9 +198,9 @@ co fn numbers(limit) {
 
 `yield break`是特殊控制流语法，只能出现在`co fn`中。
 
-## 自动委托
+## yield from
 
-如果`yield`的值是Iterator或可迭代值，则自动委托。
+`yield from`将子Iterator的所有值委托产出。
 
 ```coflow
 co fn child() {
@@ -187,7 +209,7 @@ co fn child() {
 }
 
 co fn parent() {
-  yield child()
+  yield from child()
   yield 3
 }
 ```
@@ -202,7 +224,14 @@ co fn parent() {
 
 委托只转发子Iterator产出的值。子Iterator结束时的`done`结果不向外产出。
 
-因为核心版本中`yield iterator`自动委托，所以不能直接把Iterator对象作为普通yield值产出。若未来需要该能力，放入提案。
+`yield value`始终产出`value`本身。如果`value`是Iterator对象，它作为普通值产出，不会自动展开。
+
+```coflow
+co fn wrap() {
+  yield child()  // 产出Iterator对象本身
+  yield from child()  // 展开子Iterator，产出1, 2
+}
+```
 
 ## 错误
 

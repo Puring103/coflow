@@ -127,7 +127,8 @@ var runtime_cache = null
 12. `throw`
 13. `try catch`
 14. `yield`
-15. `yield break`
+15. `yield from`
+16. `yield break`
 
 局部变量使用`var`，为块级作用域。
 
@@ -141,7 +142,7 @@ fn main() {
 }
 ```
 
-`return`不能出现在`co fn`中。`yield`和`yield break`只能出现在`co fn`中。
+`return`不能出现在`co fn`中。`yield`，`yield from`和`yield break`只能出现在`co fn`中。
 
 ## 函数
 
@@ -177,9 +178,20 @@ var add_one = fn(x) {
 
 函数也是值，因此函数值可以作为配置常量的一部分。函数对象本身是常量；函数体运行时执行，不属于配置常量求值。
 
-核心版本不支持命名参数，默认参数，闭包捕获和多返回值。
+核心版本不支持命名参数，默认参数和多返回值。
 
-函数可以访问模块顶层名字，但不能捕获函数内或块内局部变量。
+函数可以访问模块顶层名字，也可以捕获外层作用域的局部变量。捕获是共享引用，闭包内外对同一变量的修改互相可见。
+
+```coflow
+fn make_counter() {
+  var count = 0
+
+  return fn() {
+    count += 1
+    return count
+  }
+}
+```
 
 函数可以在局部作用域中声明。局部函数遵守同样的捕获规则。
 

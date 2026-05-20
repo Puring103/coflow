@@ -79,7 +79,7 @@ var damage = weapon.damage
 
 ## 字典
 
-字典表示动态键值映射。字典值是同构的。
+字典表示动态键值映射。字典值是同构的。当值类型为`any`时，字典接受任意值。
 
 ```coflow
 var scores: [string: int] = {
@@ -133,7 +133,10 @@ scores: [string: int] = {
 }
 ```
 
-没有类型上下文时，`{ ... }`必须能按字段形式判断为对象。字符串key形式的字面量需要字典类型上下文。
+没有类型上下文时，按key形式判断：
+
+1. 标识符key → 对象。
+2. 字符串key → 字典。
 
 ```coflow
 weapon = {
@@ -142,11 +145,30 @@ weapon = {
 }
 ```
 
-下面的字面量缺少字典类型上下文，核心版本不推断为字典：
+纯字符串key的字面量在无类型上下文时推断为字典。值类型同构时推断具体类型，异构时推断为`[string: any]`。
 
 ```coflow
-scores = {
+var scores = {
   "alice": 10,
+  "bob": 20,
+}
+// 推断为 [string: int]
+
+var meta = {
+  "name": "hero",
+  "level": 5,
+}
+// 推断为 [string: any]
+```
+
+此规则适用于所有无类型上下文的位置：`var`右值，函数参数，数组元素等。
+
+顶层配置定义仍需显式字典类型标注以保证配置校验的严格性。
+
+```coflow
+scores: [string: int] = {
+  "alice": 10,
+  "bob": 20,
 }
 ```
 
@@ -176,7 +198,36 @@ class Enemy {
 
 字段默认值必须是常量表达式。核心版本中，字段默认值不能引用`self`或同一对象的其他字段。
 
-核心版本的`class`只声明结构，不声明方法。
+核心版本的`class`只声明结构，不声明方法。`validate`是专用关键字，不是方法。
+
+## validate
+
+`validate`是class内的配置校验块，在配置加载期执行。
+
+```coflow
+class Range {
+  min: int
+  max: int
+
+  validate {
+    if self.min > self.max {
+      throw "min must be <= max"
+    }
+  }
+}
+```
+
+`validate`块中`self`隐式可用，指向当前校验的对象实例。
+
+校验失败使用`throw`。校验错误是加载期配置诊断，不通过脚本`try catch`捕获。
+
+`validate`块的约束：
+
+1. 禁止修改`self`或任何外部状态。
+2. 禁止调用宿主API。
+3. 只允许读取`self`字段和使用纯计算逻辑。
+
+一个class只允许一个`validate`块。
 
 ## enum
 
