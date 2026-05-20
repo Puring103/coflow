@@ -1,0 +1,3 @@
+local sword = {
+  id: "sword",
+}

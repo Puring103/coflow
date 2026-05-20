@@ -1,7 +1,12 @@
+#![allow(dead_code)]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use coflow::lexer::{LexError, Token};
+use coflow::parser::{parse_module, ParseError, ParseErrorKind};
+
+use coflow::ast::Module;
 
 pub fn fixture_files(root: impl AsRef<Path>) -> Vec<PathBuf> {
     let mut files = Vec::new();
@@ -38,6 +43,24 @@ pub fn render_errors(source: &str, errors: &[LexError]) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+pub fn parse_ok(source: &str) -> Module {
+    let output = parse_module(source);
+    assert_eq!(output.errors, [], "source should parse cleanly:\n{source}");
+    output.module.expect("parser should return a module")
+}
+
+pub fn parse_error_kinds(source: &str) -> Vec<ParseErrorKind> {
+    parse_module(source)
+        .errors
+        .into_iter()
+        .map(|error| error.kind)
+        .collect()
+}
+
+pub fn parse_errors(source: &str) -> Vec<ParseError> {
+    parse_module(source).errors
 }
 
 fn collect_fixture_files(dir: &Path, files: &mut Vec<PathBuf>) {
