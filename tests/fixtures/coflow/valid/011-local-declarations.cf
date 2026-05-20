@@ -14,7 +14,3 @@ local fn helper(value) {
 local co fn helper_stream() {
   yield 1
 }
-
-local hidden_config = {
-  id: "hidden",
-}

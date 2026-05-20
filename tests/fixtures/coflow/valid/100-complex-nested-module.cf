@@ -36,8 +36,8 @@ class Skill {
   }
 }
 
-local base_damage = 0x1e
-local default_requirement: Requirement = {
+base_damage = 0x1e
+default_requirement: Requirement = {
   level: 3,
   tags: ["mage", "fire"],
 }

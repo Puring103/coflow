@@ -25,7 +25,6 @@ pub struct ImportDecl {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigDecl {
-    pub local: bool,
     pub name: Ident,
     pub ty: Option<TypeExpr>,
     pub value: Expr,

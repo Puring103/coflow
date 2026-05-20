@@ -1,7 +1,7 @@
 import common
 import weapons as w
 
-local base_damage = 10
+base_damage = 10
 local var cache = null
 
 starter = {

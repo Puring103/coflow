@@ -86,12 +86,6 @@ sword = {
 }
 ```
 
-`local name = value`是文件内私有配置定义。
-
-```coflow
-local base_damage = 10
-```
-
 顶层`name: Type = value`是带类型标注的配置定义。
 
 ```coflow
@@ -106,6 +100,8 @@ sword: Weapon = {
 ```coflow
 var runtime_cache = null
 ```
+
+核心版本不支持私有配置定义。`local name = value`不是合法顶层声明；需要私有运行时变量时使用`local var`。
 
 重复定义同名顶层成员是错误。
 

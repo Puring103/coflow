@@ -43,7 +43,7 @@ var runtime_cache = null
 7. `co fn`函数值
 8. 简单算术
 9. 字符串拼接
-10. 同文件其他配置引用
+10. 同文件其他公开配置引用
 11. import进来的其他配置引用
 
 不允许：
@@ -66,7 +66,7 @@ skill = {
 
 ## 配置依赖
 
-配置可以引用同文件中其他配置。
+配置可以引用同文件中其他公开配置。
 
 ```coflow
 base_damage = 10
@@ -75,12 +75,6 @@ sword = {
   id: "sword",
   damage: base_damage,
 }
-```
-
-私有配置使用`local`。
-
-```coflow
-local base_damage = 10
 ```
 
 配置可以引用import模块中的公开配置。
@@ -148,18 +142,9 @@ enemy.items[0] = "sword"
 
 深只读包括嵌套对象，数组和字典。
 
-## local与公开配置
+## local与公开API
 
-公开配置可以引用`local`配置辅助值，只要最终公开类型不泄露`local`类型。
-
-```coflow
-local base_damage = 10
-
-sword = {
-  id: "sword",
-  damage: base_damage,
-}
-```
+核心版本不支持私有配置定义。`local`用于私有`var`，`fn`，`co fn`，`class`和`enum`声明。
 
 公开API不能泄露`local`类型。公开函数参数，返回值，公开class字段，公开顶层变量和公开配置类型都不能引用`local`类型。
 
