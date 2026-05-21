@@ -16,7 +16,7 @@ fn parse_function_body(source: &str) -> Vec<Stmt> {
 
 #[test]
 fn parses_var_declarations() {
-    let stmts = parse_function_body("var hp = 100\nvar name: string\nvar alive: bool = true");
+    let stmts = parse_function_body("var hp = 100;\nvar name: string;\nvar alive: bool = true;");
     assert_eq!(stmts.len(), 3);
     assert!(matches!(stmts[0], Stmt::Var(_)));
     assert!(matches!(stmts[1], Stmt::Var(_)));
@@ -28,7 +28,7 @@ fn parses_local_function_declaration_in_block() {
     let stmts = parse_function_body(
         r#"
 fn helper(x,) {
-  return x
+  return x;
 }
 "#,
     );
@@ -37,7 +37,7 @@ fn helper(x,) {
 
 #[test]
 fn parses_expression_statement() {
-    let stmts = parse_function_body("print(value)");
+    let stmts = parse_function_body("print(value);");
     assert!(matches!(stmts[0], Stmt::Expr(_)));
 }
 
@@ -45,15 +45,15 @@ fn parses_expression_statement() {
 fn parses_assignments_and_compound_assignments() {
     let stmts = parse_function_body(
         r#"
-hp = 10
-target.hp = 10
-items[0] = value
-hp += 1
-hp -= 1
-hp *= 2
-hp /= 2
-hp %= 2
-name ??= "unknown"
+hp = 10;
+target.hp = 10;
+items[0] = value;
+hp += 1;
+hp -= 1;
+hp *= 2;
+hp /= 2;
+hp %= 2;
+name ??= "unknown";
 "#,
     );
 
@@ -76,7 +76,7 @@ name ??= "unknown"
 
 #[test]
 fn parses_assignment_targets() {
-    let stmts = parse_function_body("name = 1\ntarget.hp = 2\nitems[0] = 3");
+    let stmts = parse_function_body("name = 1;\ntarget.hp = 2;\nitems[0] = 3;");
     assert!(matches!(
         &stmts[0],
         Stmt::Assign(assign) if matches!(assign.target, AssignTarget::Name(_))
@@ -96,11 +96,11 @@ fn parses_if_else_if_else() {
     let stmts = parse_function_body(
         r#"
 if score >= 90 {
-  rank = "S"
+  rank = "S";
 } else if score >= 60 {
-  rank = "A"
+  rank = "A";
 } else {
-  rank = "B"
+  rank = "B";
 }
 "#,
     );
@@ -116,10 +116,10 @@ fn parses_while_and_for_in() {
     let stmts = parse_function_body(
         r#"
 while running {
-  update()
+  update();
 }
 for item in items {
-  print(item)
+  print(item);
 }
 "#,
     );
@@ -132,10 +132,10 @@ fn parses_loop_and_until() {
     let stmts = parse_function_body(
         r#"
 loop {
-  update()
+  update();
 }
 until done {
-  tick()
+  tick();
 }
 "#,
     );
@@ -147,10 +147,10 @@ until done {
 fn parses_control_transfer_statements() {
     let stmts = parse_function_body(
         r#"
-break
-continue
-return value
-throw error("message")
+break;
+continue;
+return value;
+throw error("message");
 "#,
     );
     assert!(matches!(stmts[0], Stmt::Break(_)));
@@ -161,7 +161,7 @@ throw error("message")
 
 #[test]
 fn parses_return_without_value() {
-    let stmts = parse_function_body("return");
+    let stmts = parse_function_body("return;");
     assert!(matches!(stmts[0], Stmt::Return(ref r) if r.value.is_none()));
 }
 
@@ -170,9 +170,9 @@ fn parses_try_catch() {
     let stmts = parse_function_body(
         r#"
 try {
-  risky()
+  risky();
 } catch err {
-  print(err.message)
+  print(err.message);
 }
 "#,
     );
@@ -184,9 +184,9 @@ fn parses_yield_statements() {
     let module = parse_ok(
         r#"
 iter fn stream(source) {
-  yield value
-  yield from source
-  return
+  yield value;
+  yield from source;
+  return;
 }
 "#,
     );
@@ -212,19 +212,19 @@ iter fn stream(source) {
 
 #[test]
 fn parses_bare_return() {
-    let stmts = parse_function_body("return");
+    let stmts = parse_function_body("return;");
     assert!(matches!(stmts[0], Stmt::Return(ref r) if r.value.is_none()));
 }
 
 #[test]
 fn rejects_throw_without_value() {
-    let errors = parse_error_kinds("fn main() { throw }");
+    let errors = parse_error_kinds("fn main() { throw; }");
     assert!(errors.contains(&ParseErrorKind::ExpectedExpression));
 }
 
 #[test]
 fn rejects_try_without_catch() {
-    let errors = parse_error_kinds("fn main() { try { risky() } }");
+    let errors = parse_error_kinds("fn main() { try { risky(); } }");
     assert!(errors.contains(&ParseErrorKind::MissingCatch));
 }
 
@@ -242,18 +242,18 @@ fn rejects_malformed_for_in() {
 
 #[test]
 fn rejects_invalid_assignment_target() {
-    let errors = parse_error_kinds("fn main() { a + b = 1 }");
+    let errors = parse_error_kinds("fn main() { a + b = 1; }");
     assert!(errors.contains(&ParseErrorKind::InvalidAssignmentTarget));
 }
 
 #[test]
 fn rejects_break_with_value() {
-    let errors = parse_error_kinds("fn main() { break value }");
+    let errors = parse_error_kinds("fn main() { break value; }");
     assert!(errors.contains(&ParseErrorKind::UnexpectedToken));
 }
 
 #[test]
 fn rejects_yield_from_without_value() {
-    let errors = parse_error_kinds("iter fn main() { yield from }");
+    let errors = parse_error_kinds("iter fn main() { yield from; }");
     assert!(errors.contains(&ParseErrorKind::ExpectedExpression));
 }

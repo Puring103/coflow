@@ -17,4 +17,4 @@ sword: Weapon = {
   name: "Iron Sword",
   damage: 10,
   rarity: Rarity.common,
-}
+};

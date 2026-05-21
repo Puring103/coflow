@@ -5,7 +5,8 @@
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
       "Bash(cargo build *)",
-      "Bash(cargo test *)"
+      "Bash(cargo test *)",
+      "Bash(xargs wc -l)"
     ]
   }
 }

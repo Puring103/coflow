@@ -8,9 +8,9 @@ local enum InternalMode {
 }
 
 local fn helper(value) {
-  return value
+  return value;
 }
 
 local iter fn helper_stream() {
-  yield 1
+  yield 1;
 }

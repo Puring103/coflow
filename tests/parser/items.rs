@@ -11,7 +11,7 @@ fn empty_module_parses() {
 
 #[test]
 fn top_level_config_with_int_literal_parses() {
-    let module = parse_ok("base_damage = 10");
+    let module = parse_ok("base_damage = 10;");
     assert_eq!(module.items.len(), 1);
 
     let Item::Config(config) = &module.items[0] else {
@@ -32,7 +32,7 @@ fn typed_config_with_record_value_parses() {
 sword: Weapon = {
   id: "sword",
   damage: 10,
-}
+};
 "#,
     );
 
@@ -46,7 +46,7 @@ sword: Weapon = {
 
 #[test]
 fn imports_with_optional_alias_parse() {
-    let module = parse_ok("import common\nimport effects as fx");
+    let module = parse_ok("import common;\nimport effects as fx;");
     assert_eq!(module.items.len(), 2);
 
     let Item::Import(first) = &module.items[0] else {
@@ -67,7 +67,7 @@ fn imports_with_optional_alias_parse() {
 
 #[test]
 fn top_level_var_parses() {
-    let module = parse_ok("var runtime_cache = null");
+    let module = parse_ok("var runtime_cache = null;");
     assert_eq!(module.items.len(), 1);
 
     let Item::Var(first) = &module.items[0] else {
@@ -86,11 +86,11 @@ fn functions_and_iter_functions_parse() {
     let module = parse_ok(
         r#"
 fn add(a: int, b) {
-  return a + b
+  return a + b;
 }
 
 local iter fn stream(count) {
-  yield count
+  yield count;
 }
 "#,
     );
@@ -114,7 +114,7 @@ local iter fn stream(count) {
 
 #[test]
 fn function_with_return_type_parses() {
-    let module = parse_ok("fn add(a: int, b: int) -> int { return a + b }");
+    let module = parse_ok("fn add(a: int, b: int) -> int { return a + b; }");
     let Item::Function(func) = &module.items[0] else {
         panic!("expected function");
     };
@@ -204,7 +204,7 @@ fn enum_variants_without_values_parse() {
 
 #[test]
 fn top_level_string_config_preserves_string_kind() {
-    let module = parse_ok("path = r\"C:\\game\\hero.png\"");
+    let module = parse_ok("path = r\"C:\\game\\hero.png\";");
     let Item::Config(config) = &module.items[0] else {
         panic!("expected config");
     };
@@ -216,13 +216,13 @@ fn top_level_string_config_preserves_string_kind() {
 
 #[test]
 fn rejects_top_level_runtime_statement() {
-    let errors = parse_error_kinds("if true { print(true) }");
+    let errors = parse_error_kinds("if true { print(true); }");
     assert!(errors.contains(&ParseErrorKind::ExpectedItem));
 }
 
 #[test]
 fn rejects_local_config_declaration() {
-    let output = coflow::parser::parse_module("local sword = {}");
+    let output = coflow::parser::parse_module("local sword = {};");
     let errors = output
         .errors
         .iter()
@@ -246,13 +246,13 @@ fn rejects_iter_without_fn() {
 
 #[test]
 fn rejects_import_without_module_name() {
-    let errors = parse_error_kinds("import");
+    let errors = parse_error_kinds("import;");
     assert!(errors.contains(&ParseErrorKind::ExpectedIdentifier));
 }
 
 #[test]
 fn rejects_import_alias_without_name() {
-    let errors = parse_error_kinds("import effects as");
+    let errors = parse_error_kinds("import effects as;");
     assert!(errors.contains(&ParseErrorKind::ExpectedIdentifier));
 }
 

@@ -14,12 +14,12 @@ fn parse_config_value(source: &str) -> Expr {
 #[test]
 fn parses_primitive_literals() {
     let cases = [
-        ("v = 1", "int"),
-        ("v = 1.5e-3", "float"),
-        ("v = \"hero\"", "string"),
-        ("v = true", "bool"),
-        ("v = false", "bool"),
-        ("v = null", "null"),
+        ("v = 1;", "int"),
+        ("v = 1.5e-3;", "float"),
+        ("v = \"hero\";", "string"),
+        ("v = true;", "bool"),
+        ("v = false;", "bool"),
+        ("v = null;", "null"),
     ];
 
     for (source, kind) in cases {
@@ -38,10 +38,10 @@ fn parses_primitive_literals() {
 #[test]
 fn parses_all_string_literal_kinds() {
     let cases = [
-        ("v = \"hero\"", StringKind::Normal),
-        (r#"v = r"C:\game""#, StringKind::Raw),
-        ("v = \"\"\"line\nline\"\"\"", StringKind::Multiline),
-        ("v = r\"\"\"line\\n\nline\"\"\"", StringKind::RawMultiline),
+        ("v = \"hero\";", StringKind::Normal),
+        (r#"v = r"C:\game";"#, StringKind::Raw),
+        ("v = \"\"\"line\nline\"\"\";", StringKind::Multiline),
+        ("v = r\"\"\"line\\n\nline\"\"\";", StringKind::RawMultiline),
     ];
 
     for (source, expected) in cases {
@@ -55,7 +55,7 @@ fn parses_all_string_literal_kinds() {
 
 #[test]
 fn parses_arrays_with_optional_trailing_comma() {
-    let expr = parse_config_value("v = [1, 2, 3,]");
+    let expr = parse_config_value("v = [1, 2, 3,];");
     let Expr::Array(array) = expr else {
         panic!("expected array");
     };
@@ -69,7 +69,7 @@ fn parses_records_with_identifier_and_string_keys_and_trailing_comma() {
 v = {
   id: "sword",
   "damage": 10,
-}
+};
 "#,
     );
     let Expr::Record(record) = expr else {
@@ -87,7 +87,7 @@ fn parses_record_with_spread() {
 v = {
   ...base,
   name: "x",
-}
+};
 "#,
     );
     let Expr::Record(record) = expr else {
@@ -107,7 +107,7 @@ value = {
     { id: "burn", duration: 3.5, },
     { id: "push", vector: [0, 1, 0,], },
   ],
-}
+};
 "#,
     );
     let Expr::Record(record) = expr else {
@@ -121,8 +121,8 @@ fn parses_function_values_with_trailing_param_comma() {
     let expr = parse_config_value(
         r#"
 apply = fn(caster, target,) {
-  target.hp -= 10
-}
+  target.hp -= 10;
+};
 "#,
     );
     let Expr::Fn(func) = expr else {
@@ -137,8 +137,8 @@ fn parses_iter_function_values() {
     let expr = parse_config_value(
         r#"
 stream = iter fn(count,) {
-  yield count
-}
+  yield count;
+};
 "#,
     );
     let Expr::Fn(func) = expr else {
@@ -150,7 +150,7 @@ stream = iter fn(count,) {
 
 #[test]
 fn parses_fn_expr_body() {
-    let expr = parse_config_value("double = fn(x) => x * 2");
+    let expr = parse_config_value("double = fn(x) => x * 2;");
     let Expr::Fn(func) = expr else {
         panic!("expected fn expression");
     };
@@ -159,36 +159,36 @@ fn parses_fn_expr_body() {
 
 #[test]
 fn parses_lambda_expr() {
-    let expr = parse_config_value("double = (x) => x * 2");
+    let expr = parse_config_value("double = (x) => x * 2;");
     assert!(matches!(expr, Expr::Lambda(_)));
 }
 
 #[test]
 fn parses_range_expression() {
-    let expr = parse_config_value("v = 0..10");
+    let expr = parse_config_value("v = 0..10;");
     assert!(matches!(expr, Expr::Range(ref r) if !r.inclusive));
 }
 
 #[test]
 fn parses_inclusive_range_expression() {
-    let expr = parse_config_value("v = 0..=10");
+    let expr = parse_config_value("v = 0..=10;");
     assert!(matches!(expr, Expr::Range(ref r) if r.inclusive));
 }
 
 #[test]
 fn rejects_record_entry_without_colon() {
-    let errors = parse_error_kinds("v = { id }");
+    let errors = parse_error_kinds("v = { id };");
     assert!(errors.contains(&ParseErrorKind::ExpectedToken));
 }
 
 #[test]
 fn rejects_record_entry_without_value() {
-    let errors = parse_error_kinds("v = { id: }");
+    let errors = parse_error_kinds("v = { id: };");
     assert!(errors.contains(&ParseErrorKind::ExpectedExpression));
 }
 
 #[test]
 fn rejects_array_with_empty_entry_before_comma() {
-    let errors = parse_error_kinds("v = [1, , 2]");
+    let errors = parse_error_kinds("v = [1, , 2];");
     assert!(errors.contains(&ParseErrorKind::ExpectedExpression));
 }

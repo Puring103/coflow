@@ -16,7 +16,7 @@ fn parse_fn_body_expr(source: &str) -> Vec<coflow::ast::Stmt> {
 }
 
 fn parse_value_expr(source: &str) -> Expr {
-    let module = parse_ok(&format!("value = {source}"));
+    let module = parse_ok(&format!("value = {source};"));
     let Item::Config(config) = &module.items[0] else {
         panic!("expected config");
     };
@@ -210,19 +210,19 @@ fn parses_call_field_index_chain_with_trailing_arguments() {
 
 #[test]
 fn rejects_missing_rhs_expression() {
-    let errors = parse_error_kinds("value = 1 +");
+    let errors = parse_error_kinds("value = 1 +;");
     assert!(errors.contains(&ParseErrorKind::ExpectedExpression));
 }
 
 #[test]
 fn rejects_expression_starting_with_binary_operator() {
-    let errors = parse_error_kinds("value = * 1");
+    let errors = parse_error_kinds("value = * 1;");
     assert!(errors.contains(&ParseErrorKind::ExpectedExpression));
 }
 
 #[test]
 fn rejects_split_optional_field_operator() {
-    let errors = parse_error_kinds("value = a ? . b");
+    let errors = parse_error_kinds("value = a ? . b;");
     assert!(errors.contains(&ParseErrorKind::Lex(
         coflow::lexer::LexErrorKind::UnexpectedChar
     )));
@@ -230,19 +230,19 @@ fn rejects_split_optional_field_operator() {
 
 #[test]
 fn rejects_field_access_without_name() {
-    let errors = parse_error_kinds("value = a.");
+    let errors = parse_error_kinds("value = a.;");
     assert!(errors.contains(&ParseErrorKind::ExpectedIdentifier));
 }
 
 #[test]
 fn rejects_empty_index_expression() {
-    let errors = parse_error_kinds("value = a[]");
+    let errors = parse_error_kinds("value = a[];");
     assert!(errors.contains(&ParseErrorKind::ExpectedExpression));
 }
 
 #[test]
 fn rejects_empty_call_argument_before_comma() {
-    let errors = parse_error_kinds("value = call(, x)");
+    let errors = parse_error_kinds("value = call(, x);");
     assert!(errors.contains(&ParseErrorKind::ExpectedExpression));
 }
 
@@ -485,13 +485,13 @@ fn if_expr_parses() {
 
 #[test]
 fn if_expr_missing_else_is_error() {
-    let errors = parse_error_kinds("value = if x > 0 { 1 }");
+    let errors = parse_error_kinds("value = if x > 0 { 1 };");
     assert!(!errors.is_empty());
 }
 
 #[test]
 fn compound_assign_intdiv_parses() {
-    let stmts = parse_fn_body_expr("x //= 2");
+    let stmts = parse_fn_body_expr("x //= 2;");
     assert!(matches!(
         stmts[0],
         coflow::ast::Stmt::Assign(ref a) if a.op == coflow::ast::AssignOp::IntDiv
@@ -500,7 +500,7 @@ fn compound_assign_intdiv_parses() {
 
 #[test]
 fn compound_assign_pow_parses() {
-    let stmts = parse_fn_body_expr("x **= 3");
+    let stmts = parse_fn_body_expr("x **= 3;");
     assert!(matches!(
         stmts[0],
         coflow::ast::Stmt::Assign(ref a) if a.op == coflow::ast::AssignOp::Pow
@@ -510,11 +510,11 @@ fn compound_assign_pow_parses() {
 #[test]
 fn compound_assign_bitwise_parses() {
     let cases = [
-        ("x &= mask",  coflow::ast::AssignOp::BitAnd),
-        ("x |= flag",  coflow::ast::AssignOp::BitOr),
-        ("x ^= bits",  coflow::ast::AssignOp::BitXor),
-        ("x <<= 2",    coflow::ast::AssignOp::Shl),
-        ("x >>= 1",    coflow::ast::AssignOp::Shr),
+        ("x &= mask;",  coflow::ast::AssignOp::BitAnd),
+        ("x |= flag;",  coflow::ast::AssignOp::BitOr),
+        ("x ^= bits;",  coflow::ast::AssignOp::BitXor),
+        ("x <<= 2;",    coflow::ast::AssignOp::Shl),
+        ("x >>= 1;",    coflow::ast::AssignOp::Shr),
     ];
     for (src, expected_op) in cases {
         let stmts = parse_fn_body_expr(src);

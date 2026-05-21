@@ -13,31 +13,31 @@ fn parse_config_type(source: &str) -> TypeExpr {
 
 #[test]
 fn parses_simple_type_name() {
-    let ty = parse_config_type("value: int = 1");
+    let ty = parse_config_type("value: int = 1;");
     assert!(matches!(ty, TypeExpr::Name(path) if path.segments[0].text == "int"));
 }
 
 #[test]
 fn parses_path_type_name() {
-    let ty = parse_config_type("value: common.Weapon = {}");
+    let ty = parse_config_type("value: common.Weapon = {};");
     assert!(matches!(ty, TypeExpr::Name(path) if path.segments.len() == 2));
 }
 
 #[test]
 fn parses_array_type() {
-    let ty = parse_config_type("values: [string] = []");
+    let ty = parse_config_type("values: [string] = [];");
     assert!(matches!(ty, TypeExpr::Array { .. }));
 }
 
 #[test]
 fn parses_dict_type() {
-    let ty = parse_config_type("scores: dict[string, int] = {}");
+    let ty = parse_config_type("scores: dict[string, int] = {};");
     assert!(matches!(ty, TypeExpr::Dict { .. }));
 }
 
 #[test]
 fn parses_nested_type_expressions() {
-    let ty = parse_config_type("value: dict[string, [common.Weapon]] = {}");
+    let ty = parse_config_type("value: dict[string, [common.Weapon]] = {};");
     let TypeExpr::Dict { key, value, .. } = ty else {
         panic!("expected dict type");
     };
@@ -47,7 +47,7 @@ fn parses_nested_type_expressions() {
 
 #[test]
 fn parses_function_type() {
-    let ty = parse_config_type("value: fn(int, string) -> bool = callback");
+    let ty = parse_config_type("value: fn(int, string) -> bool = callback;");
     let TypeExpr::Function {
         params, return_ty, ..
     } = ty
@@ -65,30 +65,30 @@ fn parses_function_type() {
 
 #[test]
 fn parses_top_function_type() {
-    let ty = parse_config_type("value: fn = callback");
+    let ty = parse_config_type("value: fn = callback;");
     assert!(matches!(ty, TypeExpr::Function { params: None, .. }));
 }
 
 #[test]
 fn rejects_empty_bracket_type() {
-    let errors = parse_error_kinds("value: [] = []");
+    let errors = parse_error_kinds("value: [] = [];");
     assert!(errors.contains(&ParseErrorKind::ExpectedType));
 }
 
 #[test]
 fn rejects_dict_type_without_value_type() {
-    let errors = parse_error_kinds("value: dict[string,] = {}");
+    let errors = parse_error_kinds("value: dict[string,] = {};");
     assert!(errors.contains(&ParseErrorKind::ExpectedType));
 }
 
 #[test]
 fn rejects_missing_type_after_colon() {
-    let errors = parse_error_kinds("value: = 1");
+    let errors = parse_error_kinds("value: = 1;");
     assert!(errors.contains(&ParseErrorKind::ExpectedType));
 }
 
 #[test]
 fn rejects_unclosed_type_bracket() {
-    let errors = parse_error_kinds("value: dict[string, int = {}");
+    let errors = parse_error_kinds("value: dict[string, int = {};");
     assert!(errors.contains(&ParseErrorKind::ExpectedToken));
 }

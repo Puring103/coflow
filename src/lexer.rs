@@ -110,6 +110,7 @@ pub enum TokenKind {
     RBracket,
     Comma,
     Colon,
+    Semicolon,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -599,6 +600,7 @@ impl<'a> Lexer<'a> {
                 ']' => Some(TokenKind::RBracket),
                 ',' => Some(TokenKind::Comma),
                 ':' => Some(TokenKind::Colon),
+                ';' => Some(TokenKind::Semicolon),
                 _ => None,
             }
         };

@@ -1,16 +1,16 @@
 fn add(a: int, b: int) {
-  return a + b
+  return a + b;
 }
 
 fn make_counter() {
-  var count = 0
+  var count = 0;
 
   return fn() {
-    count += 1
-    return count
-  }
+    count += 1;
+    return count;
+  };
 }
 
 adder = fn(x) {
-  return x + 1
-}
+  return x + 1;
+};

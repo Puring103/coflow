@@ -1,28 +1,28 @@
 fn sum_positive(items) {
-  var total = 0
+  var total = 0;
 
   for item in items {
     if item < 0 {
-      continue
+      continue;
     } else if item == 0 {
-      total += 0
+      total += 0;
     } else {
-      total += item
+      total += item;
     }
   }
 
-  return total
+  return total;
 }
 
 fn countdown(start) {
-  var n = start
+  var n = start;
 
   while n > 0 {
-    n -= 1
+    n -= 1;
     if n == 2 {
-      break
+      break;
     }
   }
 
-  return n
+  return n;
 }

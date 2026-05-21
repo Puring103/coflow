@@ -3,34 +3,34 @@
 fn double(x: int) -> int => x * 2
 
 fn spawn(name: string, hp: int = 100, team: int = 0) {
-  print(name)
+  print(name);
 }
 
 fn apply_all(items: [any], f: any) {
   for item in items {
-    f(item)
+    f(item);
   }
 }
 
 fn main() {
   # lambda 表达式体
-  var doubled = (x) => x * 2
-  var typed = (x: int) -> int => x * 2
+  var doubled = (x) => x * 2;
+  var typed = (x: int) -> int => x * 2;
 
   # lambda 块体
   var greet = (name) => {
-    var msg = "hello " + name
-    return msg
-  }
+    var msg = "hello " + name;
+    return msg;
+  };
 
   # 默认参数调用
-  spawn("goblin")
-  spawn("boss", hp: 500)
-  spawn("elite", 200, 1)
+  spawn("goblin");
+  spawn("boss", hp: 500);
+  spawn("elite", 200, 1);
 
   # 传递 lambda
-  apply_all([1, 2, 3], (x) => print(x))
+  apply_all([1, 2, 3], (x) => print(x));
 
   # fn 表达式体
-  var triple = fn(x: int) -> int => x * 3
+  var triple = fn(x: int) -> int => x * 3;
 }

@@ -1,8 +1,8 @@
 stream_factory = iter fn(limit) {
-  var i = 0
+  var i = 0;
 
   while i < limit {
-    yield i
-    i += 1
+    yield i;
+    i += 1;
   }
-}
+};

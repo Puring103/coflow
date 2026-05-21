@@ -21,19 +21,19 @@ class Task {
 
 base_task = {
   retries: 0,
-}
+};
 
 urgent_task: Task = {
   ...base_task,
   id: "t1",
   title: "Critical fix",
   priority: Priority.urgent,
-}
+};
 
 fn make_task(id: string, title: string) -> Task {
   return {
     ...base_task,
     id: id,
     title: title,
-  }
+  };
 }

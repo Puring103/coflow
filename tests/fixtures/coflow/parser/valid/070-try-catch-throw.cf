@@ -1,11 +1,11 @@
 fn check_hp(hp) {
   try {
     if hp < 0 {
-      throw "hp must be >= 0"
+      throw "hp must be >= 0";
     }
   } catch err {
-    return err.message
+    return err.message;
   }
 
-  return "ok"
+  return "ok";
 }

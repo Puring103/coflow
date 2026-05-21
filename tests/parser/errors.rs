@@ -5,7 +5,7 @@ use crate::common::{parse_error_kinds, parse_errors};
 
 #[test]
 fn lex_errors_are_reported_by_parser() {
-    let errors = parse_error_kinds("a = ?");
+    let errors = parse_error_kinds("a = ?;");
     assert_eq!(
         errors,
         vec![ParseErrorKind::Lex(LexErrorKind::UnexpectedChar)]
@@ -14,7 +14,7 @@ fn lex_errors_are_reported_by_parser() {
 
 #[test]
 fn parse_error_spans_point_to_the_problem_token() {
-    let source = "value = 1 +";
+    let source = "value = 1 +;";
     let errors = parse_errors(source);
     assert!(!errors.is_empty());
     assert_eq!(
@@ -33,6 +33,6 @@ fn malformed_input_does_not_return_successful_module_without_errors() {
 
 #[test]
 fn unexpected_eof_is_reported_for_unclosed_block() {
-    let errors = parse_error_kinds("fn main() { var x = 1");
+    let errors = parse_error_kinds("fn main() { var x = 1;");
     assert!(errors.contains(&ParseErrorKind::UnexpectedEof));
 }

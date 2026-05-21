@@ -2,13 +2,7 @@
 
 本文整理 coflow 核心版本的语义分析阶段需要完成的工作，以及 AST 降级到 HIR 的形态和流程。实现语言使用 Rust，与已有的 lexer / parser 同处一个 crate。
 
-核心依据：
-
-1. `docs/0-core-language.md`
-2. `docs/1-core-types.md`
-3. `docs/2-core-config.md`
-4. `docs/3-core-runtime.md`
-5. `docs/plan/词法分析器实现计划.md`
+核心依据：`docs/spec/` 下的语言规范文档。
 
 后续阶段（字节码 VM 与 codegen）单独立项，本计划只覆盖语义分析与 HIR。
 

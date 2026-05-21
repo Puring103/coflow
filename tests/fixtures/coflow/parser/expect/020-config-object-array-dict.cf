@@ -6,14 +6,14 @@ weapon = {
     id: "npc_blacksmith",
     level: 3,
   },
-}
+};
 
 scores: dict[string, int] = {
   "alice": 10,
   "bob": 20,
-}
+};
 
 loot_table: dict[string, [string]] = {
   "common": ["coin", "apple"],
   "rare": ["sword", "ring"],
-}
+};

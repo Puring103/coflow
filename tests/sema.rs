@@ -21,8 +21,8 @@ fn collects_enum_values_and_evaluates_config() {
     let output = analyze_source(
         r#"
 enum Rarity { common, rare = 5, epic }
-base = 2
-total: int = base + 40
+base = 2;
+total: int = base + 40;
 "#,
     );
 
@@ -45,7 +45,7 @@ fn reports_duplicate_top_level_and_fields() {
     assert!(has_error(
         r#"
 class Weapon { id: string id: int }
-Weapon = {}
+Weapon = {};
 "#,
         SemaErrorKind::DuplicateTopLevel
     ));
@@ -62,7 +62,7 @@ fn resolves_forward_function_signature_for_calls() {
     let output = analyze_source(
         r#"
 fn main() -> int {
-  return add(1, 2)
+  return add(1, 2);
 }
 
 fn add(a: int, b: int) -> int => a + b
@@ -95,18 +95,18 @@ fn add(a: int, b: int) -> int => a + b
 
 #[test]
 fn reports_type_mismatch_and_unknown_names() {
-    assert!(has_error("var x: int = \"s\"", SemaErrorKind::TypeMismatch));
+    assert!(has_error("var x: int = \"s\";", SemaErrorKind::TypeMismatch));
     assert!(has_error(
         r#"
 fn main(value: string) {
-  var hp: int = 1
-  hp = value
+  var hp: int = 1;
+  hp = value;
 }
 "#,
         SemaErrorKind::TypeMismatch
     ));
     assert!(has_error(
-        "fn main() { missing() }",
+        "fn main() { missing(); }",
         SemaErrorKind::UndefinedName
     ));
     assert!(has_error(
@@ -114,11 +114,11 @@ fn main(value: string) {
         SemaErrorKind::TypeMismatch
     ));
     assert!(has_error(
-        "var stream = iter fn() -> int { yield 1 }",
+        "var stream = iter fn() -> int { yield 1; };",
         SemaErrorKind::TypeMismatch
     ));
     assert!(has_error(
-        "enum Rarity { common }\nfn main() { Rarity.common = 1 }",
+        "enum Rarity { common }\nfn main() { Rarity.common = 1; }",
         SemaErrorKind::AssignToReadonly
     ));
 }
@@ -128,8 +128,8 @@ fn assignment_to_typed_locations_inserts_runtime_guards() {
     let output = analyze_source(
         r#"
 fn main(value: any) {
-  var hp: int = 1
-  hp = value
+  var hp: int = 1;
+  hp = value;
 }
 "#,
     );
@@ -148,7 +148,7 @@ fn main(value: any) {
 fn function_values_use_expected_signature_for_unannotated_params() {
     let output = analyze_source(
         r#"
-var double: fn(int) -> int = fn(x) -> int => x
+var double: fn(int) -> int = fn(x) -> int => x;
 "#,
     );
     assert_eq!(output.diagnostics, []);
@@ -160,7 +160,7 @@ var double: fn(int) -> int = fn(x) -> int => x
 fn function_top_type_can_narrow_to_named_signature() {
     let output = analyze_source(
         r#"
-var callback: fn(any) -> any = print
+var callback: fn(any) -> any = print;
 "#,
     );
     assert_eq!(output.diagnostics, []);
@@ -181,13 +181,13 @@ fn lowers_until_for_range_and_null_coalesce_assign() {
     let output = analyze_source(
         r#"
 fn main() {
-  var x = null
-  x ??= 1
+  var x = null;
+  x ??= 1;
   until x > 10 {
-    x += 1
+    x += 1;
   }
   for i in 0..=3 {
-    x += i
+    x += i;
   }
 }
 "#,
@@ -216,9 +216,9 @@ fn captures_outer_locals_in_closures() {
     let output = analyze_source(
         r#"
 fn outer() {
-  var count = 0
+  var count = 0;
   fn inc() {
-    count += 1
+    count += 1;
   }
 }
 "#,
@@ -247,7 +247,7 @@ class Range {
   }
 }
 
-limits: Range = { min: 1 }
+limits: Range = { min: 1 };
 "#,
     );
     assert_eq!(output.diagnostics, []);
@@ -272,8 +272,8 @@ class Range {
   }
 }
 
-limits: Range = { min: 1 }
-default_max = 10
+limits: Range = { min: 1 };
+default_max = 10;
 "#,
     );
     assert_eq!(output.diagnostics, []);
@@ -295,15 +295,15 @@ default_max = 10
 fn reports_config_dependency_errors() {
     assert!(has_error(
         r#"
-var runtime = 1
-value = runtime
+var runtime = 1;
+value = runtime;
 "#,
         SemaErrorKind::ConfigDependsOnVar
     ));
     assert!(has_error(
         r#"
-a = b
-b = a
+a = b;
+b = a;
 "#,
         SemaErrorKind::ConfigCircularDependency
     ));

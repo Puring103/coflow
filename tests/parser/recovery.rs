@@ -12,7 +12,7 @@ bad = {
   damage:
 }
 
-good = 1
+good = 1;
 "#,
     );
 
@@ -56,8 +56,8 @@ fn recovers_to_next_statement_after_bad_statement() {
     let output = coflow::parser::parse_module(
         r#"
 fn main() {
-  a + = 1
-  return 1
+  a + = 1;
+  return 1;
 }
 "#,
     );
@@ -78,7 +78,7 @@ fn main() {
 
 #[test]
 fn unclosed_delimiters_report_errors() {
-    let errors = parse_errors("fn main() { call(1, 2");
+    let errors = parse_errors("fn main() { call(1, 2;");
     assert!(errors.iter().any(|error| matches!(
         error.kind,
         ParseErrorKind::ExpectedToken | ParseErrorKind::UnexpectedEof

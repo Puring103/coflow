@@ -4,8 +4,8 @@ class Weapon {
 }
 
 fn main() {
-  a + b = 1
-  return
+  a + b = 1;
+  return;
 }
 
-good = 1
+good = 1;

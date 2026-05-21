@@ -34,6 +34,7 @@ pub enum ParseErrorKind {
     ExpectedToken,
     InvalidAssignmentTarget,
     MissingCatch,
+    MissingSemicolon,
     UnsupportedParserNotImplemented,
 }
 
@@ -82,6 +83,7 @@ impl<'a> Parser<'a> {
                 Some(item) => items.push(item),
                 None => self.synchronize_top_level(),
             }
+            self.eat(TokenKind::Semicolon);
             if self.pos == before {
                 self.bump();
             }
@@ -130,6 +132,12 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn expect_semicolon(&mut self) {
+        if self.eat(TokenKind::Semicolon).is_none() {
+            self.error_here(ParseErrorKind::MissingSemicolon);
+        }
+    }
+
     fn parse_import(&mut self) -> Option<ImportDecl> {
         let start = self.expect_token(TokenKind::Import)?.start;
         let module = self.parse_path()?;
@@ -141,11 +149,13 @@ impl<'a> Parser<'a> {
         let end = alias
             .as_ref()
             .map_or(module.span.end, |alias| alias.span.end);
-        Some(ImportDecl {
+        let decl = ImportDecl {
             module,
             alias,
             span: Span { start, end },
-        })
+        };
+        self.expect_semicolon();
+        Some(decl)
     }
 
     fn parse_config_decl(&mut self) -> Option<ConfigDecl> {
@@ -161,12 +171,14 @@ impl<'a> Parser<'a> {
             start: name.span.start,
             end: expr_span(&value).end,
         };
-        Some(ConfigDecl {
+        let decl = ConfigDecl {
             name,
             ty,
             value,
             span,
-        })
+        };
+        self.expect_semicolon();
+        Some(decl)
     }
 
     fn parse_var_decl(&mut self, local: bool) -> Option<VarDecl> {
@@ -186,13 +198,15 @@ impl<'a> Parser<'a> {
             || ty.as_ref().map_or(name.span.end, |ty| type_span(ty).end),
             |expr| expr_span(expr).end,
         );
-        Some(VarDecl {
+        let decl = VarDecl {
             local,
             name,
             ty,
             init,
             span: Span { start, end },
-        })
+        };
+        self.expect_semicolon();
+        Some(decl)
     }
 
     fn parse_fn_decl(&mut self, local: bool, iter: bool) -> Option<FnDecl> {
@@ -379,6 +393,7 @@ impl<'a> Parser<'a> {
                 Some(stmt) => stmts.push(stmt),
                 None => self.synchronize_stmt(),
             }
+            self.eat(TokenKind::Semicolon);
             if self.pos == before {
                 self.bump();
             }
@@ -546,6 +561,7 @@ impl<'a> Parser<'a> {
             self.error_here(ParseErrorKind::UnexpectedToken);
             self.synchronize_stmt();
         }
+        self.expect_semicolon();
         Some(Stmt::Break(span))
     }
 
@@ -555,6 +571,7 @@ impl<'a> Parser<'a> {
             self.error_here(ParseErrorKind::UnexpectedToken);
             self.synchronize_stmt();
         }
+        self.expect_semicolon();
         Some(Stmt::Continue(span))
     }
 
@@ -566,22 +583,26 @@ impl<'a> Parser<'a> {
             None
         };
         let end = value.as_ref().map_or(start + 6, |expr| expr_span(expr).end);
-        Some(ReturnStmt {
+        let stmt = ReturnStmt {
             span: Span { start, end },
             value,
-        })
+        };
+        self.expect_semicolon();
+        Some(stmt)
     }
 
     fn parse_throw(&mut self) -> Option<ThrowStmt> {
         let start = self.expect_token(TokenKind::Throw)?.start;
         let value = self.parse_expression()?;
-        Some(ThrowStmt {
+        let stmt = ThrowStmt {
             span: Span {
                 start,
                 end: expr_span(&value).end,
             },
             value,
-        })
+        };
+        self.expect_semicolon();
+        Some(stmt)
     }
 
     fn parse_try_catch(&mut self) -> Option<TryCatchStmt> {
@@ -609,22 +630,26 @@ impl<'a> Parser<'a> {
         let start = self.expect_token(TokenKind::Yield)?.start;
         if self.eat(TokenKind::From).is_some() {
             let value = self.parse_expression()?;
-            return Some(YieldStmt::From {
+            let stmt = YieldStmt::From {
                 span: Span {
                     start,
                     end: expr_span(&value).end,
                 },
                 value,
-            });
+            };
+            self.expect_semicolon();
+            return Some(stmt);
         }
         let value = self.parse_expression()?;
-        Some(YieldStmt::Value {
+        let stmt = YieldStmt::Value {
             span: Span {
                 start,
                 end: expr_span(&value).end,
             },
             value,
-        })
+        };
+        self.expect_semicolon();
+        Some(stmt)
     }
 
     fn parse_expr_or_assignment_stmt(&mut self) -> Option<Stmt> {
@@ -644,13 +669,16 @@ impl<'a> Parser<'a> {
                 start: assign_target_span(&target).start,
                 end: expr_span(&value).end,
             };
-            Some(Stmt::Assign(AssignStmt {
+            let stmt = Stmt::Assign(AssignStmt {
                 target,
                 op,
                 value,
                 span,
-            }))
+            });
+            self.expect_semicolon();
+            Some(stmt)
         } else {
+            self.expect_semicolon();
             Some(Stmt::Expr(expr))
         }
     }

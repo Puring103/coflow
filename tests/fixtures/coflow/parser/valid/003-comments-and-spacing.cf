@@ -1,13 +1,13 @@
 #import fake
-base = 1
+base = 1;
 
 /*
 fn fake() {
   return ??=
 }
 */
-value = base + 2
+value = base + 2;
 
 fn keep_strings() {
-  return "not // comment and not /* comment */"
+  return "not // comment and not /* comment */";
 }
