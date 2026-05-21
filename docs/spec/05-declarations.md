@@ -30,6 +30,47 @@ var r = weapons.Rarity.common;
 
 `import` 只能出现在顶层。
 
+### 访问名规则
+
+不写 `as` 时，访问名是路径的最后一段：
+
+```coflow
+import game.utils;   # 访问名为 utils
+utils.helper();
+```
+
+`as` 显式指定访问名：
+
+```coflow
+import game.utils as gu;
+gu.helper();
+```
+
+### import 错误情形
+
+以下三种情况是编译期错误：
+
+1. **同一文件重复 import 同一路径**（无论是否带 `as`）：
+
+```coflow
+import weapons;
+import weapons as w;   # 错误：同路径不能重复导入
+```
+
+2. **同一文件两个不同路径产生相同访问名**（必须用 `as` 区分）：
+
+```coflow
+import a.utils;
+import b.utils;        # 错误：访问名 utils 冲突
+```
+
+3. 解决方法：用 `as` 给其中一个（或两个）指定不同访问名：
+
+```coflow
+import a.utils as a_utils;
+import b.utils as b_utils;
+```
+
 ## fn
 
 声明命名函数：
@@ -83,7 +124,7 @@ fn greet(name: string) -> string {
 **表达式体**（`=>` 后接单个表达式）：
 
 ```coflow
-fn double(x: int) -> int => x * 2
+fn double(x: int) -> int => x * 2;
 ```
 
 ### 具名参数调用
@@ -214,7 +255,7 @@ class Weapon {
 
 ### 方法
 
-class 内的 `fn` 声明为方法，方法内 `self` 隐式可用：
+class 内的 `fn` 声明为方法，方法内 `self` 隐式可用。方法体内访问字段**必须**显式写 `self.field`，不能裸写字段名（即使字段名与局部变量不冲突）：
 
 ```coflow
 class Player {

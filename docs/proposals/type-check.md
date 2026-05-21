@@ -1,4 +1,4 @@
-# 提案：is 类型检查
+# P02 提案：is / is not 类型检查
 
 ## 动机
 
@@ -6,11 +6,13 @@
 
 ```coflow
 fn process(value: any) {
-  if value is int    { apply_int(value) }
-  if value is string { apply_string(value) }
-  if value is null   { return }
+  if value is int { apply_int(value); }
+  if value is string { apply_string(value); }
+  if value is null { return; }
 }
 ```
+
+本提案与 [P01 联合类型与可空类型](./types.md) 配套：`is` 是联合类型收窄的基础能力。
 
 ## 语法
 
@@ -32,9 +34,9 @@ value is not null
 value is not int
 ```
 
-右侧只允许类型名（`int` `float` `string` `bool` `null` `any` 或 class 名），不允许复合类型（`is [int]` 不合法）。
+第一期右侧只允许简单类型名（`int` `float` `string` `bool` `null` `any`、class 名、enum 名、函数类型 `fn`）。不允许复合类型（`is [int]` 不合法）。
 
-优先级与比较运算符相同（12/13）。
+优先级与比较运算符相同。
 
 ## 语义
 
@@ -42,14 +44,29 @@ value is not int
 - `is int` 和 `is float` 分别检查，不存在 `is number`。
 - `is any` 永远返回 `true`。
 - `is null` 等价于 `== null`，但更明确。
-- class 类型检查：检查对象是否由该 class 实例化（不检查结构兼容性）。
+- class 类型检查：检查对象是否由该 class 实例化，不检查结构兼容性。
+- enum 类型检查：检查值是否属于指定 enum 类型。
+- `is not T` 等价于 `not (expr is T)`，但作为一个独立二元运算处理，便于诊断和类型收窄。
 
-## 与 if 表达式的联动
+## 类型收窄
 
-`is` 检查是 `if` 表达式的自然伴侣：
+当左侧是简单变量名时，`if` 条件中的 `is` 可以在分支内收窄类型：
 
 ```coflow
-var msg = if value is string { value } else { to_string(value) }
+fn label(value: string?) -> string {
+  if value is string {
+    return value;        # value 在此块内视为 string
+  }
+  return "unknown";
+}
+```
+
+`is not null` 也可用于可空类型收窄：
+
+```coflow
+if player is not null {
+  print(player.name);    # player 在此块内视为 Player
+}
 ```
 
 ## 与 match 的联动
@@ -57,18 +74,20 @@ var msg = if value is string { value } else { to_string(value) }
 `is` 的完整价值在 match 表达式引入后体现：
 
 ```coflow
-match value {
-  is int    => process_int(value)
-  is string => process_string(value)
-  _         => default()
-}
+var result = match value {
+  is int => process_int(value),
+  is string => process_string(value),
+  _ => default(),
+};
 ```
 
 建议 `is` 和 match 表达式一同设计，确保语义一致。
 
 ## 语法冲突
 
-无。`is` 目前是普通标识符，加入关键字列表即可。`is not` 是两个 token，parser 在 infix 位置检测 `is` 后跟 `not` 时合并处理，与 `not in` 的实现方式相同。
+`is` 目前是普通标识符，加入后会变为保留关键字，存在兼容性成本。
+
+`is not` 是两个 token，parser 在 infix 位置检测 `is` 后跟 `not` 时合并处理，与 `not in` 的实现方式相同。
 
 ## 实现成本
 
@@ -83,4 +102,5 @@ match value {
 
 1. `is` 应该是 `BinaryOp` 变体还是独立的 `Expr::Is`？前者 uniform，后者右侧可以有更强的静态约束。
 2. 数组类型检查 `value is [int]` 是否支持？
-3. class 继承（若引入）时，子类是否通过父类的 `is` 检查？
+3. `is fn(int) -> string` 是否需要支持完整函数签名检查？
+4. class 继承（若引入）时，子类是否通过父类的 `is` 检查？

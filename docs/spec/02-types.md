@@ -86,11 +86,15 @@ value.nonexistent;      # 若不存在，运行时报错
 
 整数类型，为 64 位有符号整数（`i64`）。超出 `i64` 表示范围（`-2^63` ~ `2^63 - 1`）的整数字面量是词法或语义错误，包括十进制和带进制前缀的字面量（如 `0xFFFF_FFFF_FFFF_FFFF` 因超 `i64` 最大值而非法，需要全 1 位模式时使用 `~0`）。
 
+整数运算溢出采用 **wrapping** 语义（模 2^64 回绕），不报错，不饱和。
+
 整数字面量写法详见 [03-expressions.md](./03-expressions.md)。
 
 ## float
 
-浮点数类型，通常为 IEEE 754 双精度浮点。
+浮点数类型，为 IEEE 754 双精度浮点（`f64`）。
+
+浮点除零遵循 IEEE 754：`1.0 / 0.0 = Inf`，`0.0 / 0.0 = NaN`，不报运行时错误。
 
 浮点字面量写法详见 [03-expressions.md](./03-expressions.md)。
 
@@ -344,7 +348,7 @@ assert <bool-expr> or <string-expr>;
 
 - `bool-expr` 求值为真时校验通过；为假时校验失败，求值 `string-expr` 作为错误信息报告加载期配置错误
 - `string-expr` 仅在 `bool-expr` 为假时才求值（短路）
-- `bool-expr` 可以是任意纯表达式，**包括块表达式**，便于引入局部变量做中间计算
+- `bool-expr` 可以是任意纯表达式
 - `string-expr` 可以是任意求值为字符串的纯表达式，包括字符串拼接和插值字符串
 
 `assert ... or ...` 是 `check` 块内的专用语法：这里的 `or` 不是普通逻辑或运算符，而是 `assert` 句法的一部分。普通函数体中不能写 `assert`。
@@ -404,7 +408,7 @@ rarity = Rarity.common;
 status = Status.active;
 ```
 
-枚举底层表示为 `int`，但 `enum` 类型与 `int` **不可隐式互转**：
+枚举底层表示为 `int`，但 `enum` 类型与 `int` **不可隐式互转**，不同枚举类型之间也**不可比较**：
 
 ```coflow
 var s: Status = Status.active;
@@ -413,6 +417,7 @@ var t: Status = 10;          # 错误：int 不能隐式转为 enum
 
 if s == Status.active { ... }   # 合法：同枚举类型比较
 if s == 10 { ... }               # 错误：enum 与 int 比较
+if s == Rarity.common { ... }    # 错误：不同枚举类型之间不可比较
 ```
 
 未来引入显式转换语法 `expr as Type` 后，`s as int` / `(10 as Status)` 用于显式转换。核心版本不提供该语法，需要数值的场合应直接使用 `int`。
@@ -490,6 +495,91 @@ for v in Counter{ start: 0, end: 5 } {
 ### 单向迭代器
 
 `iter fn` 的 yield 是**单向**的：调用方通过 `next()` 拉取下一个值，不能向 Iterator 发送数据（无 `send`）、不能向其注入异常（无 `throw`）、不能跨函数 yield。需要双向通信或完整协程的场景由宿主程序处理，coflow 核心版本不提供。
+
+### Iterator 约定
+
+Iterator 是 duck-typing 约定，不是静态类型。判定规则：
+
+- "已经是 Iterator"：对象的 `next` 字段存在**且**是函数
+- `next()` 返回值结构不符（缺少 `done` 或 `value` 字段）时是运行时错误
+
+## 方法引用
+
+通过对象取方法得到 **bound method**：自动捕获 `self`，结果是一个普通函数值，可以赋给变量或作为回调传递：
+
+```coflow
+class Player {
+  hp: int;
+  fn take_damage(amount: int) { self.hp -= amount; };
+}
+
+var p = Player{ hp: 100 };
+var on_hit = p.take_damage;   # bound method，已绑定 p 作为 self
+on_hit(10);                    # 等价于 p.take_damage(10)
+```
+
+通过类名访问方法（`Player.take_damage`）在核心版本**不支持**，类名不是值。
+
+## 运算语义
+
+### 算术类型规则
+
+- `int / int` 结果为 `float`（浮点除法）
+- `int // int` 结果为 `int`（截断整除）
+- `int + float`、`int - float`、`int * float` 等混合算术：`int` 隐式提升为 `float`，结果为 `float`
+- `int` 运算溢出：wrapping 回绕（见 int 节）
+- `int` 除零：运行时错误
+- `float` 除零：遵循 IEEE 754，返回 `Inf` 或 `NaN`
+
+### 取余语义
+
+`%` 采用 **floored** 语义（结果符号跟除数，与 Python 一致）：
+
+```coflow
+7 % 3    # 1
+-7 % 3   # 2  （非 C 风格的 -1）
+7 % -3   # -2
+-7 % -3  # -1
+```
+
+### 位运算
+
+位运算（`&` `|` `^` `~` `<<` `>>`）操作数必须是 `int`。在 `float` 上使用位运算是**编译期类型错误**。
+
+移位规则：
+- 移位量 < 0：运行时错误
+- 移位量 ≥ 64：结果为 `0`
+
+## 比较语义
+
+| 类型 | `==` / `!=` 语义 | 顺序比较（`<` `<=` `>` `>=`） |
+|------|-----------------|-------------------------------|
+| `int` / `float` | 数值相等；`1 == 1.0` 为 `true` | 数值大小 |
+| `string` | 字典序相等 | 字典序 |
+| `bool` | 值相等 | 不支持 |
+| `null` | `null == null` 为 `true`；`null` 与任何非 `null` 值不相等 | 不支持 |
+| 数组 | 深相等（逐元素递归比较） | 不支持 |
+| 对象 | 引用相等 | 不支持 |
+| 字典 | 引用相等 | 不支持 |
+| `enum` | 同枚举类型内按整数值比较；不同枚举类型之间比较是编译期错误 | 不支持 |
+| 函数 | 引用相等 | 不支持 |
+
+`null` 不等于 `0`、`false` 或空字符串：
+
+```coflow
+null == 0      # false
+null == false  # false
+null == null   # true
+```
+
+`int` 与 `float` 比较时 `int` 隐式提升为 `float`：
+
+```coflow
+1 == 1.0   # true
+2 < 2.5    # true
+```
+
+注意：极大整数转换为 `float` 可能有精度损失（`2^53` 以上的整数不能被 `f64` 精确表示）。
 
 ## 联合类型
 

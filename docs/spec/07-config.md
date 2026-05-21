@@ -78,12 +78,18 @@ skill = {
   },
 };
 
+# fn 字面量的捕获规则：
+# 可以捕获：其他配置值、枚举值、env 字段（均为常量）
+# 不可以捕获：顶层 var（配置求值时 var 尚未初始化）
+local var state = 0;
+bad_fn = fn() { state += 1; };   # 错误：捕获了顶层 var
+
 # if 表达式 + env：随平台变化的常量
-quality = if env.platform == "mobile" { "low"; } else { "high"; };
-log_level = if env.debug { 0; } else { 3; };
+quality = if env.platform == "mobile" => "low" else => "high";
+log_level = if env.debug => 0 else => 3;
 ```
 
-`if` 表达式作为常量表达式时，**两个分支体都必须是常量表达式**（不是只有被选中那条），目的是让依赖图分析可以在不求值的情况下完成。
+`if` 表达式作为常量表达式时，**两个分支的表达式都必须是常量表达式**（不是只有被选中那条），目的是让依赖图分析可以在不求值的情况下完成。
 
 ## env 命名空间
 

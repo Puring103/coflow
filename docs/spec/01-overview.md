@@ -55,7 +55,7 @@ if hp <= 0 {                # if 不需要分号
 }
 ```
 
-注意：当 `return`、赋值等语句的值是以 `}` 结尾的表达式（如匿名函数、对象字面量、块表达式）时，分号加在 `}` 之后：
+注意：当 `return`、赋值等语句的值是以 `}` 结尾的表达式（如匿名函数、对象字面量）时，分号加在 `}` 之后：
 
 ```coflow
 fn make_counter() {
@@ -116,14 +116,36 @@ var 生命值 = 100;
 ```
 and       as        assert    break     catch
 check     class     continue  dict      else
-enum      false     fn        for       from
-if        import    in        iter      local
-loop      not       null      or        return
-self      throw     true      try       var
-while     yield
+enum      false     fn        for       if
+import    in        iter      local     loop
+not       null      or        return    self
+throw     true      try       var       while
+yield
 ```
 
-`env` 是加载期注入的全局常量命名空间，不是关键字，但作为预定义全局名不可被重新声明或遮蔽。详见 [07-config.md](./07-config.md)。
+以下标识符为未来版本预留，同样不能用作普通标识符：
+
+```
+async     await     case      defer     extern
+from      impl      is        macro     match
+mod       pub       trait     type      unsafe
+use       when      where     with
+```
+
+`env` 和 `host` 是预定义全局名，不是关键字，但不可被重新声明、赋值或遮蔽。详见 [07-config.md](./07-config.md)。
+
+## 命名规范
+
+以下是推荐的命名规范（约定而非强制）：
+
+| 类别 | 规范 | 示例 |
+|------|------|------|
+| `class` / `enum` 名 | PascalCase | `Weapon`、`Rarity` |
+| 函数、方法名 | snake_case | `take_damage` |
+| 变量、参数名 | snake_case | `base_hp` |
+| 配置名 | snake_case | `base_damage` |
+| 枚举变体名 | snake_case | `Rarity.epic` |
+| 模块文件名 | snake_case | `weapons.cf` |
 
 ## 运算符与分隔符
 

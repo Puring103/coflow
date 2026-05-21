@@ -29,6 +29,8 @@ return fn() {
 }
 ```
 
+块内禁止裸 `:` 形式的标签语法（如 `label: stmt`），出现是语法错误。
+
 ## var 声明
 
 在当前块作用域中声明局部变量：
@@ -53,6 +55,7 @@ var name: Type = expr
 - 变量作用域从声明处到所在块的末尾
 - 同一块内不能重复声明同名变量
 - 内层块可以遮蔽（shadow）外层的同名变量
+- 有类型标注且类型不允许 `null`（即非 `any`）时，必须提供初始值；`var x: int`（无初值）是编译期错误
 
 ```coflow
 fn main() {
@@ -168,7 +171,7 @@ if condition1 {
 
 coflow 的真值规则：只有 `false` 和 `null` 是假值，其他所有值（包括 `0`、`0.0`、`""`、`[]`）均为真值。
 
-`if` 也可以作为**表达式**使用，见 [03-expressions.md](./03-expressions.md)。
+`if` 也可以作为**表达式**使用（`if cond => expr else => expr` 语法），见 [03-expressions.md](./03-expressions.md)。
 
 ## while 语句
 
@@ -331,7 +334,7 @@ try {
 - `try` 块内（及其调用链中）抛出的错误被捕获
 - `catch` 后的标识符（`err`）绑定到捕获的 Error 对象，作用域为 `catch` 块内
 - Error 对象的字段见上方 `error()` 节
-- `catch` 块内可以重新 `throw`
+- `catch` 块内可以重新 `throw`；重新抛出时保留原始 stack trace
 
 `try catch` 只捕获运行时错误，不捕获加载期配置错误。
 
