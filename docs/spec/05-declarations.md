@@ -26,7 +26,7 @@ var r = weapons.Rarity.common;
 核心版本限制：
 - 不支持 `from module import name` 选择性导入
 - 不支持通配符导入
-- 不支持循环导入（A 导入 B，B 又导入 A 是加载期错误）
+- 允许声明级循环导入；配置值和顶层 `var` 初始化依赖必须无环，详见 [06-modules.md](./06-modules.md) 和 [07-config.md](./07-config.md)
 
 `import` 只能出现在顶层。
 
@@ -163,6 +163,11 @@ iter fn counter(start: int) {
 - `return`（不带值）提前结束迭代；禁止 `return value`
 - 函数体执行到末尾时迭代自然结束
 
+约束：
+
+- `iter fn` 的函数体必须**至少包含一处** `yield` 或 `yield from`（出现在不可达分支也满足要求）。完全不含 `yield` 的 `iter fn` 是编译期错误——这种函数应直接写为普通 `fn`
+- `iter fn` 是单向迭代器：仅支持外部通过 `next()` 拉取，不支持 `send` / `throw` / 跨函数 yield。详见 [02-types.md](./02-types.md) 的"单向迭代器"
+
 ```coflow
 var c = counter(1);
 c.next();   # { done: false, value: 1 }
@@ -186,22 +191,22 @@ var gen = iter fn() {
 
 ```coflow
 class Weapon {
-  id: string
-  name: string
-  damage: int
-  cooldown: float = 1.0
+  id: string;
+  name: string;
+  damage: int;
+  cooldown: float = 1.0;
 
   fn description() -> string {
-    return self.name + " (damage: " + self.damage + ")";
-  }
+    return f"{self.name} (damage: {self.damage})";
+  };
 
   check {
-    self.damage > 0 => "damage must be positive"
-  }
+    assert self.damage > 0 or "damage must be positive";
+  };
 }
 ```
 
-`class` 声明以 `class` 开头，后接类型名和 `{ }` 包围的成员列表。声明前加 `local` 表示文件内私有类型。class 成员可以包含字段、方法和可选的 `check` 块。
+`class` 声明以 `class` 开头，后接类型名和 `{ }` 包围的成员列表。声明前加 `local` 表示文件内私有类型。class 成员可以包含字段、方法和可选的 `check` 块。**字段、方法、`check` 块之间用 `;` 分隔，允许末尾分号。**
 
 ### 字段声明
 
@@ -213,19 +218,39 @@ class 内的 `fn` 声明为方法，方法内 `self` 隐式可用：
 
 ```coflow
 class Player {
-  hp: int
-  max_hp: int = 100
+  hp: int;
+  max_hp: int = 100;
 
-  fn is_alive() -> bool => self.hp > 0
+  fn is_alive() -> bool => self.hp > 0;
 
   fn heal(amount: int) {
     self.hp += amount;
     if self.hp > self.max_hp {
       self.hp = self.max_hp;
     }
-  }
+  };
 }
 ```
+
+方法体内的匿名函数 / `iter fn` 表达式可以捕获 `self`，按一般闭包"共享引用"规则处理：
+
+```coflow
+class Player {
+  hp: int;
+  max_hp: int = 100;
+
+  fn make_healer() -> fn(int) {
+    return fn(amount: int) {
+      self.hp += amount;     # 捕获外层方法的 self
+      if self.hp > self.max_hp {
+        self.hp = self.max_hp;
+      }
+    };
+  };
+}
+```
+
+闭包持有的是当前方法 `self` 这个绑定，闭包寿命可以超过方法返回；通过该闭包修改 `self.field` 与对实例的直接修改等效。
 
 ### check 块
 
@@ -239,8 +264,8 @@ class Player {
 
 ```coflow
 local class InternalState {
-  phase: int
-  timer: float
+  phase: int;
+  timer: float;
 }
 ```
 
@@ -250,22 +275,22 @@ local class InternalState {
 
 ```coflow
 enum Rarity {
-  common
-  rare
-  epic
+  common;
+  rare;
+  epic;
 }
 ```
 
-`enum` 声明以 `enum` 开头，后接枚举名和 `{ }` 包围的变体列表。声明前加 `local` 表示文件内私有枚举。每个变体可以只写名称，也可以用 `=` 显式指定整数值。
+`enum` 声明以 `enum` 开头，后接枚举名和 `{ }` 包围的变体列表。声明前加 `local` 表示文件内私有枚举。变体之间用 `;` 分隔，允许末尾分号。每个变体可以只写名称，也可以用 `=` 显式指定整数值。
 
 变体从 `0` 开始自动编号，可以显式指定值，后续变体从前一个值 +1 继续：
 
 ```coflow
 enum Status {
-  none   = 0
-  active = 10
-  dead   = 20
-  ghost        # 自动为 21
+  none   = 0;
+  active = 10;
+  dead   = 20;
+  ghost;        # 自动为 21
 }
 ```
 
@@ -275,7 +300,7 @@ enum Status {
 var r = Rarity.epic;
 ```
 
-枚举底层为 `int`，可与整数比较，可用于配置值。
+枚举与 `int` 不可隐式互转，详见 [02-types.md](./02-types.md)。
 
 ## 顶层 var
 

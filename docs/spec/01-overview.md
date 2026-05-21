@@ -32,8 +32,11 @@ coflow 是自由格式语言，换行不作为语句终止符。
 - 表达式语句（函数调用等）
 - `break`、`continue`、`return`、`throw`
 - `yield`、`yield from`
+- `class` 内的字段、方法、`check` 块之间的分隔
+- `enum` 内的变体之间的分隔
+- `check` 块内的 `assert` 语句
 
-以 `}` 结尾的构造**不需要**分号，包括：`fn`、`iter fn`、`class`、`enum` 声明，以及 `if`、`while`、`until`、`loop`、`for in`、`try catch` 语句。
+以 `}` 结尾的构造**不需要**分号，包括：`fn`、`iter fn`、`class`、`enum` 声明，以及 `if`、`while`、`loop`、`for in`、`try catch` 语句。
 
 ```coflow
 import weapons;             # import 需要分号
@@ -52,7 +55,7 @@ if hp <= 0 {                # if 不需要分号
 }
 ```
 
-注意：当 `return`、赋值等语句的值是以 `}` 结尾的表达式（如匿名函数）时，分号加在 `}` 之后：
+注意：当 `return`、赋值等语句的值是以 `}` 结尾的表达式（如匿名函数、对象字面量、块表达式）时，分号加在 `}` 之后：
 
 ```coflow
 fn make_counter() {
@@ -72,7 +75,7 @@ fn make_counter() {
 
 ```coflow
 # 这是一行注释
-var hp = 100  # 行尾注释
+var hp = 100;  # 行尾注释
 ```
 
 ### 块注释
@@ -84,7 +87,7 @@ var hp = 100  # 行尾注释
   多行注释
   可以跨越多行
 */
-var hp = 100
+var hp = 100;
 ```
 
 块注释不支持嵌套。`/*` 之后遇到的第一个 `*/` 即结束注释。
@@ -99,9 +102,9 @@ var hp = 100
 实践中，ASCII 字母、数字、下划线构成最常见的标识符，也支持中文等非 ASCII 字母字符。
 
 ```coflow
-var hp = 100
-var _private = 0
-var 生命值 = 100
+var hp = 100;
+var _private = 0;
+var 生命值 = 100;
 ```
 
 标识符区分大小写。`hp`、`HP`、`Hp` 是三个不同的标识符。
@@ -111,14 +114,16 @@ var 生命值 = 100
 以下标识符是保留关键字，不能用作普通标识符：
 
 ```
-and       as        break     catch     check
-class     continue  dict      else      enum
-false     fn        for       from      if
-import    in        iter      local     loop
-not       null      or        return    self
-throw     true      try       until     var
+and       as        assert    break     catch
+check     class     continue  dict      else
+enum      false     fn        for       from
+if        import    in        iter      local
+loop      not       null      or        return
+self      throw     true      try       var
 while     yield
 ```
+
+`env` 是加载期注入的全局常量命名空间，不是关键字，但作为预定义全局名不可被重新声明或遮蔽。详见 [07-config.md](./07-config.md)。
 
 ## 运算符与分隔符
 
@@ -186,29 +191,23 @@ while     yield
 | `-=`    | 减法赋值 |
 | `*=`    | 乘法赋值 |
 | `/=`    | 除法赋值 |
-| `//=`   | 整数除法赋值 |
-| `%=`    | 取余赋值 |
-| `**=`   | 幂运算赋值 |
 | `??=`   | 空值合并赋值 |
-| `&=`    | 按位与赋值 |
-| `\|=`   | 按位或赋值 |
-| `^=`    | 按位异或赋值 |
-| `<<=`   | 左移赋值 |
-| `>>=`   | 右移赋值 |
+
+复合赋值仅保留以上五种。位运算、整除、取余、幂运算的复合赋值在配置/嵌入式场景使用频次极低，统一展开为完整赋值（`x = x // y` 等）。
 
 ### 分隔符
 
 | 符号  | 用途 |
 |-------|------|
-| `(`   | 函数调用、参数列表、分组表达式、lambda 参数 |
+| `(`   | 函数调用、参数列表、分组表达式 |
 | `)`   | 同上（结束） |
 | `[`   | 数组字面量、索引访问 |
 | `]`   | 同上（结束） |
-| `{`   | 块、对象/字典字面量 |
+| `{`   | 块、对象字面量、`dict` 字典字面量；详见 [03-expressions.md](./03-expressions.md) 的"花括号消歧" |
 | `}`   | 同上（结束） |
 | `,`   | 分隔参数、字段、元素 |
 | `:`   | 类型标注、对象字段键值分隔 |
 | `->`  | 返回类型标注 |
-| `=>`  | 函数体简写（fat arrow）、check 条件消息分隔 |
+| `=>`  | 函数体简写（fat arrow） |
 | `.`   | 字段访问、路径分隔 |
 | `;`   | 语句终止符 |

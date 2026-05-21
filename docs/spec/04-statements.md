@@ -4,7 +4,7 @@
 
 ## 分号
 
-每条语句必须以 `;` 结尾。以 `}` 自然结束的构造（`if`、`while`、`until`、`loop`、`for in`、`try catch`、局部 `fn`/`iter fn` 声明）**不需要**分号。
+每条语句必须以 `;` 结尾。以 `}` 自然结束的构造（`if`、`while`、`loop`、`for in`、`try catch`、局部 `fn`/`iter fn` 声明）**不需要**分号。
 
 当语句的值是一个以 `}` 结尾的表达式（如赋值右侧为匿名函数）时，分号加在 `}` 之后：
 
@@ -82,9 +82,18 @@ items[0] = "sword";
 
 不能赋值给函数调用结果、字面量等非左值表达式。
 
+可选字段访问和可选索引访问不能作为赋值目标：
+
+```coflow
+obj?.field = value;   # 错误
+dict?[key] = value;   # 错误
+```
+
+字典普通索引赋值可以创建或覆盖 key。数组索引赋值要求索引有效，越界时报运行时错误。对象字段赋值要求字段存在；class 对象只能写入 class 声明的字段。
+
 ### 复合赋值
 
-将运算和赋值合并，`x op= v` 等价于 `x = x op v`：
+将运算和赋值合并，`x op= v` 严格等价于 `x = x op v`（按 `x = x op v` 展开求值，**不**保证原地修改语义）：
 
 | 运算符  | 等价于 |
 |---------|--------|
@@ -92,14 +101,10 @@ items[0] = "sword";
 | `x -= v`   | `x = x - v` |
 | `x *= v`   | `x = x * v` |
 | `x /= v`   | `x = x / v` |
-| `x //= v`  | `x = x // v` |
-| `x %= v`   | `x = x % v` |
-| `x **= v`  | `x = x ** v` |
-| `x &= v`   | `x = x & v` |
-| `x \|= v`  | `x = x \| v` |
-| `x ^= v`   | `x = x ^ v` |
-| `x <<= v`  | `x = x << v` |
-| `x >>= v`  | `x = x >> v` |
+
+只保留以上四种算术复合赋值，加上下面的 `??=`。位运算、整除、取余、幂运算的复合赋值在配置/嵌入式场景使用频次极低，统一展开为完整赋值。
+
+数组的 `+= [x]` 同样按上述规则展开为 `arr = arr + [x]`，**总是创建新数组并重新绑定变量**，旧数组的别名不会观察到变化。需要原地追加时使用 `arr.push(x)`（参见 [02-types.md](./02-types.md)）。
 
 复合赋值同样支持字段和索引目标：
 
@@ -113,9 +118,19 @@ counters["hit"] += 1;
 ```coflow
 x ??= default_value;
 obj.field ??= "default";
+dict[key] ??= 0;
 ```
 
 仅当左侧当前值为 `null` 时才执行赋值，左侧非 `null` 时整个语句无效。
+
+`??=` 只支持普通可写位置，不支持可选访问目标：
+
+```coflow
+obj?.field ??= value;   # 错误
+dict?[key] ??= value;   # 错误
+```
+
+对字典索引目标，key 不存在时视为缺失并写入右侧值。对数组索引目标，索引越界时报运行时错误，不自动扩容。对对象字段目标，字段不存在时报运行时错误。
 
 ## 表达式语句
 
@@ -167,16 +182,6 @@ while running {
 
 `condition` 在每次循环开始前求值，为假时退出循环。
 
-## until 语句
-
-条件为真时**停止**执行，等价于 `while not condition`：
-
-```coflow
-until dead {
-  tick();
-}
-```
-
 ## loop 语句
 
 无限循环，必须通过 `break` 退出：
@@ -226,7 +231,7 @@ for entry in scores {
 
 ## break 语句
 
-退出最近的 `while`、`until`、`loop` 或 `for in` 循环：
+退出最近的 `while`、`loop` 或 `for in` 循环：
 
 ```coflow
 loop {
@@ -280,7 +285,35 @@ fn check_hp(hp) {
 }
 ```
 
-`throw` 的操作数必须是 error 对象（由内建 `error()` 函数创建）。抛出的错误沿调用栈向上传播，直到被 `try catch` 捕获。
+`throw` 的操作数必须是 Error 对象（由内建 `error()` 函数创建）。抛出的错误沿调用栈向上传播，直到被 `try catch` 捕获。
+
+### error() 与 Error 对象
+
+内建函数 `error` 用于创建 Error 对象：
+
+```
+error(message: string, data: any = null) -> Error
+```
+
+- `message`：人类可读的错误消息，必填
+- `data`：附加结构化数据（错误码、上下文信息等），默认 `null`
+
+返回的 Error 对象具有以下字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `message` | `string` | 由 `error()` 第一参数提供 |
+| `data` | `any` | 由 `error()` 第二参数提供 |
+| `stack` | `string` | 调用栈快照；**由 `throw` 触发时填充**，未经 `throw` 的 Error 对象 `stack` 为 `null` |
+
+将创建与抛出分开是合法的，`stack` 在 `throw` 时记录抛出位置：
+
+```coflow
+var e = error("invalid input", "E_INPUT");
+# e.stack == null
+throw e;
+# 抛出后被 catch 捕获时，e.stack 是 throw 处的栈
+```
 
 ## try catch 语句
 
@@ -296,8 +329,8 @@ try {
 ```
 
 - `try` 块内（及其调用链中）抛出的错误被捕获
-- `catch` 后的标识符（`err`）绑定到捕获的 error 对象，作用域为 `catch` 块内
-- error 对象包含 `message`（字符串）和 `stack`（调用栈信息）字段
+- `catch` 后的标识符（`err`）绑定到捕获的 Error 对象，作用域为 `catch` 块内
+- Error 对象的字段见上方 `error()` 节
 - `catch` 块内可以重新 `throw`
 
 `try catch` 只捕获运行时错误，不捕获加载期配置错误。
