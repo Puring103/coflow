@@ -32,9 +32,9 @@ type Stats {
 }
 
 enum Rarity {
-  common;
-  rare;
-  epic;
+  common,
+  rare,
+  epic,
 }
 
 type Monster {
@@ -165,32 +165,15 @@ assert <bool-expr> : <string-expr>;
 - 只允许纯数据表达式，不能调用宿主 API、修改状态或执行运行时逻辑。
 - 表达式语义在 CFC 规范自身内定义，不依赖 CFS。
 
-## 顶层 `check`（v2）
-
-顶层 `check` 块用于约束跨节点的全局关系，是 `type` 内 `check` 做不到的能力。v2 能力，v1 parser 遇到时直接跳过，不报错。
-
-顶层 `check` 属于数据定义段，必须位于所有 `type` 和 `enum` 定义之后。一个文件可以有多个顶层 `check` 块。
-
-```cfc
-slime: Monster = { hp: 30, ... };
-goblin: Monster = { hp: 50, ... };
-
-check {
-  assert slime.hp < goblin.hp : "goblin should be stronger than slime";
-}
-```
-
-语法与 `type` 内的 `check` 块完全一致，但访问的是顶层命名节点而非 `self` 字段。
-
 ## `enum` 枚举定义
 
-`enum` 定义有限的命名整数集合。
+`enum` 定义有限的命名整数集合。变体之间用 `,` 分隔，允许末尾 `,`。
 
 ```cfc
 enum Rarity {
-  common;
-  rare;
-  epic;
+  common,
+  rare,
+  epic,
 }
 ```
 
@@ -198,15 +181,15 @@ enum Rarity {
 
 ```cfc
 enum Status {
-  none = 0;
-  active = 10;
-  dead = 20;
-  ghost;        // 自动为 21
+  none = 0,
+  active = 10,
+  dead = 20,
+  ghost,        // 自动为 21
 }
 
 enum Bad {
-  a = 1;
-  b = 1;        // 错误：重复值
+  a = 1,
+  b = 1,        // 错误：重复值
 }
 ```
 
@@ -217,6 +200,23 @@ rarity = Rarity.rare;
 ```
 
 枚举底层表示为整数，但枚举类型与 `int` 不隐式互转。
+
+同一文件内重复声明同名 `type`、`enum` 或数据节点是错误。`use` 别名不能与本地 `type`、`enum` 或数据节点同名：
+
+```cfc
+use "common/item.cfc" as item;
+
+type item { ... }   // 错误：别名 item 与本地 type 同名
+```
+
+跨文件引用只允许一级别名访问，不能穿透多层 `use`：
+
+```cfc
+use "common/base.cfc" as base;
+
+boss: base.Enemy = { ... };      // 合法：一级访问
+x: base.other.Type = { ... };   // 错误：不允许多级穿透
+```
 
 ## 字典字面量
 
@@ -268,14 +268,23 @@ goblin = {
 
 数据值必须在加载期可完全解析为常量。合法的值形式包括：字面量（整数、浮点、布尔、字符串）、枚举值、对象字面量、数组字面量、字典字面量、以及对其他命名节点的引用（支持前向引用）。
 
-数组字面量的元素必须类型一致，从元素推断数组类型：
+数组字面量的元素必须类型一致，从元素推断数组类型。空数组 `[]` 无法推断类型，必须带类型标注才合法：
 
 ```cfc
-[1, 2, 3]      // 合法，推断为 [int]
-[1, "a"]       // 错误：元素类型不一致
+[1, 2, 3]               // 合法，推断为 [int]
+[1, "a"]                // 错误：元素类型不一致
+items: [string] = [];   // 合法
+items = [];             // 错误：无法推断类型
 ```
 
-对象字面量的字段用 `,` 分隔，允许末尾 `,`。
+对象字面量的字段用 `,` 分隔，允许末尾 `,`。字典字面量 `dict{}` 内部条目同样用 `,` 分隔，允许末尾 `,`。
+
+顶层数据节点声明以 `;` 结尾，必须显式写出：
+
+```cfc
+slime = { id: "slime" };    // 合法
+slime = { id: "slime" }     // 错误：缺少末尾 ;
+```
 
 无类型标注的数据节点与 `any` 类型语义一致：不进行结构校验，但所有引用必须合法。
 
@@ -304,6 +313,32 @@ node_b = {
   next: node_a,
 };
 ```
+
+## 顶层 `check`（v2）
+
+顶层 `check` 块用于约束跨节点的全局关系，是 `type` 内 `check` 做不到的能力。v2 能力，v1 parser 遇到时直接跳过，不报错。
+
+顶层 `check` 属于数据定义段，必须位于所有 `type` 和 `enum` 定义之后，可以穿插在数据节点之间。一个文件可以有多个顶层 `check` 块。
+
+```cfc
+slime: Monster = {
+  id: "slime",
+  stats: slime_stats,
+  rarity: Rarity.common,
+};
+
+goblin: Monster = {
+  id: "goblin",
+  stats: goblin_stats,
+  rarity: Rarity.rare,
+};
+
+check {
+  assert slime.stats.hp < goblin.stats.hp : "goblin should be stronger than slime";
+}
+```
+
+语法与 `type` 内的 `check` 块完全一致，但访问的是顶层命名节点而非 `self` 字段。
 
 ## Loader 接口
 
@@ -354,8 +389,8 @@ container.check(result) -> [CheckError]
 CFC 提供命令行工具，是 `CfcContainer` 接口的薄封装，resolver 直接读取文件系统。
 
 ```
-cfc check <file>    // 加载并校验，报告全部错误
-cfc fmt <file>      // 格式化
+cfc check <file>    # 加载并校验，报告全部错误
+cfc fmt <file>      # 格式化
 ```
 
 ## v1 / v2 边界
