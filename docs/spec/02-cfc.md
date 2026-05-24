@@ -88,11 +88,13 @@ use "common/item.cfc" as item;
 use "common/item.cfc" as it;   // 错误：重复导入同一路径
 ```
 
+重复导入判断基于宿主解析后的模块标识，而不是 `use` 中的原始路径字符串。若宿主把 `"./item.cfc"` 和 `"item.cfc"` 解析为同一个模块标识，则它们视为重复导入。
+
 `use` 循环依赖完全允许：A `use` B、B `use` A 是合法的，loader 在构建阶段统一处理。
 
 单文件 `.cfc`（无 `use`）完全自包含，是最小可用单元。`use` 是可选的多文件扩展能力。
 
-导入路径由宿主程序解析。`getusing()` 原样返回 `use` 声明中的路径字符串，宿主负责将其解析为调用 `parse()` 时使用的模块标识，两者不要求格式一致。`.cfc` 只能通过 `use` 引用其他 `.cfc` 文件，不能引用 `.cfs` 脚本文件。
+导入路径由宿主程序解析。`imports()` 原样返回 `use` 声明中的路径字符串，宿主负责将其解析为模块标识，再通过 `bind_import()` 把这次解析结果交回 container；路径字符串和模块标识两者不要求格式一致。`.cfc` 只能通过 `use` 引用其他 `.cfc` 文件，不能引用 `.cfs` 脚本文件。
 
 ## `type` 类型定义
 
@@ -111,6 +113,7 @@ type Weapon {
 - 字段必须显式标注类型
 - 无默认值的字段必须填写
 - 有默认值的字段可以省略；默认值必须是常量（字面量或枚举值，包括空数组 `[]`、空对象 `{}` 和空字典 `dict{}`），不能引用其他字段
+- 默认值填充时会复制默认值本身；数组、对象和字典默认值不会在多个实例之间共享 identity
 
 支持的字段类型：
 
@@ -120,6 +123,22 @@ type Weapon {
 - 字典类型：`{K: V}`，K 只允许 `string`、`int` 或任意已定义的 `enum` 类型名，V 可以是任意合法字段类型，包括 `any`
 - 当前文件或导入文件中的 `type`
 - 当前文件或导入文件中的 `enum`
+
+`type` 使用名义类型（nominal typing），不使用结构类型。两个 `type` 即使字段完全相同，也不是同一个类型。对象字面量只有在上下文提供明确类型时才按该 `type` 校验；无类型标注的数据节点和 `any` 字段不会因为字段形状自动推断为某个 `type`。
+
+```cfc
+type A {
+  id: string;
+}
+
+type B {
+  id: string;
+}
+
+a: A = { id: "x" };
+b: B = a;          // 错误：A 不是 B
+raw = { id: "x" }; // 合法，但 raw 的结构不按 A 或 B 校验
+```
 
 `type` 支持前向引用和自引用：
 
@@ -164,6 +183,17 @@ assert <bool-expr> : <string-expr>;
 - `check` 中直接访问当前对象字段，不需要 `self.`。
 - 只允许纯数据表达式，不能调用宿主 API、修改状态或执行运行时逻辑。
 - 表达式语义在 CFC 规范自身内定义，不依赖 CFS。
+- v2 初版表达式只支持字面量、枚举值、字段访问、数组下标、比较运算、布尔运算和括号分组。
+- v2 初版不支持函数调用、宿主 API 调用、变量声明、赋值、循环、字符串插值或字符串拼接。
+
+支持的 `check` 表达式集合：
+
+```cfc
+assert min <= max : "min must be <= max";
+assert enabled == true && weight > 0.0 : "enabled item must have weight";
+assert rarity != Rarity.common : "rarity must not be common";
+assert drops[0].id == "coin" : "first drop must be coin";
+```
 
 ## `enum` 枚举定义
 
@@ -266,6 +296,29 @@ goblin = {
 
 加载后，`slime.stats` 和 `goblin.stats` 指向同一个对象。
 
+identity 规则：
+
+- 顶层命名节点如果保存对象、数组或字典，则该值具有稳定 identity。
+- 顶层命名节点如果保存基础值或枚举值，不提供可观察的对象 identity。
+- 内联对象、数组和字典字面量不具有可被其他节点直接引用的独立 identity；它们是所属值的一部分。
+- 只有通过命名节点引用同一个对象、数组或字典时，加载后才保留共享引用关系。
+
+```cfc
+shared_tags: [string] = ["enemy"];
+
+slime = {
+  tags: shared_tags,       // 与 goblin.tags 共享同一个数组
+};
+
+goblin = {
+  tags: shared_tags,
+};
+
+orc = {
+  tags: ["enemy"],         // 独立内联数组，不与 shared_tags 共享
+};
+```
+
 数据值必须在加载期可完全解析为常量。合法的值形式包括：字面量（整数、浮点、布尔、字符串）、枚举值、对象字面量、数组字面量、字典字面量、以及对其他命名节点的引用（支持前向引用）。
 
 数组字面量的元素必须类型一致，从元素推断数组类型。空数组 `[]` 无法推断类型，必须带类型标注才合法：
@@ -340,6 +393,8 @@ check {
 
 语法与 `type` 内的 `check` 块完全一致，但访问的是顶层命名节点而非 `self` 字段。
 
+v1 parser 必须能识别并跳过 `check { ... }` 块。跳过时需要正确处理字符串字面量、注释和嵌套括号，直到匹配到对应的右花括号。v1 不解析 `assert` 内容，也不执行 `check` 语义校验。
+
 ## Loader 接口
 
 `.cfc` loader 本身无 I/O，路径解析和文件读取由宿主程序负责。所有加载操作通过 `CfcContainer` 完成。
@@ -347,34 +402,200 @@ check {
 ### 低层接口
 
 ```
-container.parse(name, source)
+container.add_module(name, source)
 ```
 
-注册一个 `.cfc` 源文本。`name` 为该模块的标识（通常是文件路径）。同一 `name` 重复注册是错误。
+注册并解析一个 `.cfc` 源文本。`name` 为宿主解析后的模块标识，不要求等同于文件路径。container 保存源码和解析后的 AST；同一 `name` 重复注册是错误。
 
 ```
-container.getusing(name) -> [path]
+container.replace_module(name, source)
 ```
 
-返回指定模块通过 `use` 声明的、尚未注册到 container 的依赖路径列表。宿主可循环调用直到返回空列表，完成依赖发现。
+原子替换一个已注册模块的源码和 AST。`name` 必须已存在。替换前先解析新源码；若解析失败，container 保持原状态。替换成功后清空该模块发出的所有 import 绑定，其他模块指向该模块的绑定保留。
 
 ```
-container.build() -> CfcResult
+container.imports(name) -> [ImportDecl]
 ```
 
-对所有已注册模块执行全量解析和结构校验，返回全部模块的导出数据。宿主按模块名从结果中取用。
+返回指定模块的 `use` 声明列表。每个 `ImportDecl` 至少包含稳定的 import id、别名、原始路径字符串和源码位置。宿主使用原始路径字符串完成路径解析，但绑定时使用 import id，而不是使用 path 字符串作为 key。
+
+```
+container.bind_import(name, importId, dependencyName)
+```
+
+注册模块 `name` 中某条 `use` 声明对应的依赖模块标识。`dependencyName` 必须已经通过 `add_module()` 或 `replace_module()` 成功注册。同一个 import id 不能重复绑定。同一模块内不允许多条 `use` 绑定到同一个 `dependencyName`，也不允许多个 `use` 使用同一个别名。
+
+```
+container.build(rootName) -> CfcResult
+```
+
+从 `rootName` 出发，对 root 的 import closure 执行结构校验和对象图构建。返回结果包含 root closure 中的所有模块。宿主既可以直接取 root 模块导出，也可以按模块名取任意 closure 模块导出。
+
+```
+container.build_all() -> CfcResult
+```
+
+对 container 中所有已注册模块执行结构校验和对象图构建。该接口主要用于工具、编辑器和多 root 场景；普通加载入口应优先使用 `build(rootName)`。
 
 `build()` 内置结构校验：必填字段检查、类型匹配、默认值填充、多余字段检查。结构不合法时报告错误，不返回对象图。
+
+`build()` 的处理顺序：
+
+1. 确定要构建的模块集合：`build(rootName)` 使用 root import closure，`build_all()` 使用所有已注册模块。
+2. 建立每个模块的 `use`、`type`、`enum` 和顶层数据节点符号表。
+3. 校验同名定义、重复导入、未绑定 import、未知引用、跨模块别名访问和不允许的多级穿透。
+4. 为构建集合内所有顶层命名对象、数组和字典创建占位节点，用于支持前向引用和循环引用。
+5. 解析并连接所有数据引用边，包括跨文件引用。
+6. 在上下文类型存在的位置执行结构校验，包括必填字段、多余字段、字段类型、数组元素类型、字典 key/value 类型和枚举类型。
+7. 对省略字段填充默认值；对象、数组和字典默认值按值复制，不与其他实例共享 identity。
+8. 返回对象图结果。若任一步出现结构错误，`build()` 报告错误且不返回对象图。
 
 ### 高层接口
 
 ```
-container.import(name, source, resolver)
+container.load_graph(rootName, rootSource, resolver)
 ```
 
-一键导入。`resolver` 是宿主提供的回调函数，签名为 `path -> source`。`import` 内部自动驱动依赖发现循环，调用 `resolver` 获取依赖文件内容，全部就位后自动执行 `build()`。
+一键加载 root import closure 并构建结果。`rootName` 不能已存在。`resolver` 是宿主提供的回调函数，签名为 `(fromName, importDecl) -> (dependencyName, source)`。`dependencyName` 是宿主解析后的模块标识，`source` 是该模块源码。
 
-大多数场景使用 `import`；需要精细控制依赖加载顺序、缓存或路径重映射时使用低层接口。
+`load_graph()` 内部执行：
+
+1. 调用 `add_module(rootName, rootSource)` 注册 root。
+2. 读取每个模块的 `imports()`。
+3. 对每条 import 调用 resolver，获得 `(dependencyName, source)`。
+4. 若 `dependencyName` 尚未注册，则调用 `add_module(dependencyName, source)`；若已经注册，则忽略本次返回的 source。
+5. 调用 `bind_import(fromName, importId, dependencyName)`。
+6. 所有可达依赖加载完后调用 `build(rootName)`。
+
+resolver 可能会因为多条 import 解析到同一个 `dependencyName` 而被多次调用；如源码读取成本较高，宿主应在 resolver 内部缓存。
+
+大多数场景使用 `load_graph()`；需要精细控制依赖加载顺序、缓存、热重载或路径重映射时使用低层接口。
+
+### Rust reference API
+
+Rust crate 是 CFC 的第一版参考实现。spec API 描述稳定概念模型；Rust API 可以使用强类型、错误集合和 ownership 规则表达这些概念。
+
+模块标识使用强类型，不直接混用原始路径字符串：
+
+```rust
+pub struct ModuleId(String);
+pub struct ImportId(u32);
+```
+
+`ModuleId` 由宿主 resolver 产生，loader 不负责路径规范化。原始 `use` 路径只保存在 `CfcImport.path` 中，用于宿主解析和诊断。
+
+核心类型：
+
+```rust
+pub struct CfcImport {
+    pub id: ImportId,
+    pub alias: String,
+    pub path: String,
+    pub span: Span,
+}
+
+pub struct CfcContainer { ... }
+
+pub struct CfcResult { ... }
+
+pub struct CfcModuleResult { ... }
+```
+
+低层 API：
+
+```rust
+impl CfcContainer {
+    pub fn new() -> Self;
+
+    pub fn add_module(
+        &mut self,
+        module: ModuleId,
+        source: impl Into<String>,
+    ) -> Result<(), ParseErrors>;
+
+    pub fn replace_module(
+        &mut self,
+        module: ModuleId,
+        source: impl Into<String>,
+    ) -> Result<(), ParseErrors>;
+
+    pub fn imports(&self, module: &ModuleId) -> Result<&[CfcImport], ModuleError>;
+
+    pub fn bind_import(
+        &mut self,
+        from: &ModuleId,
+        import: ImportId,
+        dependency: &ModuleId,
+    ) -> Result<(), BindImportError>;
+
+    pub fn build(&self, root: &ModuleId) -> Result<CfcResult, BuildErrors>;
+
+    pub fn build_all(&self) -> Result<CfcResult, BuildErrors>;
+
+    pub fn check(&self, result: &CfcResult) -> Vec<CheckError>;
+}
+```
+
+`add_module()` 和 `replace_module()` 会立即完成词法和语法解析，并保存源码和 AST。`add_module()` 遇到重复 `ModuleId` 报错。`replace_module()` 遇到不存在的 `ModuleId` 报错；替换是原子的，解析失败时 container 不变。
+
+`imports()` 返回借用 slice。调用方若需要在随后调用 `bind_import()`，应先复制出 `ImportId` 和 `path`，避免同时持有不可变借用和可变借用。
+
+高层 API：
+
+```rust
+impl CfcContainer {
+    pub fn load_graph<R>(
+        &mut self,
+        root: ModuleId,
+        source: impl Into<String>,
+        resolver: R,
+    ) -> Result<CfcResult, CfcError>
+    where
+        R: FnMut(&ModuleId, &CfcImport) -> Result<(ModuleId, String), ResolveError>;
+}
+```
+
+`load_graph()` 每个 `ModuleId` 最多解析一次。若 resolver 多次返回已经注册的 `ModuleId`，本次返回的 source 被忽略；source 一致性由宿主负责，未来可以增加 strict/debug 检查。
+
+错误类型：
+
+```rust
+pub struct ParseErrors {
+    pub errors: Vec<ParseError>,
+}
+
+pub struct BuildErrors {
+    pub errors: Vec<BuildError>,
+}
+
+pub enum CfcError {
+    Parse(ParseErrors),
+    Module(ModuleError),
+    Import(BindImportError),
+    Resolve(ResolveError),
+    Build(BuildErrors),
+}
+```
+
+低层 API 使用分阶段错误类型；`load_graph()` 使用统一 `CfcError`。parser 第一版可以 fail-fast，但 API 使用 `ParseErrors` 预留错误恢复能力。`build()` 应尽量收集多个结构错误后一次性返回 `BuildErrors`。
+
+结果访问：
+
+```rust
+impl CfcResult {
+    pub fn root_id(&self) -> Option<&ModuleId>;
+    pub fn root(&self) -> Option<&CfcModuleResult>;
+    pub fn module(&self, module: &ModuleId) -> Option<&CfcModuleResult>;
+    pub fn modules(&self) -> impl Iterator<Item = (&ModuleId, &CfcModuleResult)>;
+}
+
+impl CfcModuleResult {
+    pub fn get(&self, name: &str) -> Option<CfcValueRef>;
+    pub fn values(&self) -> impl Iterator<Item = (&str, CfcValueRef)>;
+}
+```
+
+`build(root)` 返回的 `CfcResult` 同时暴露 root 模块和 root closure 内所有模块。`build_all()` 返回的 `CfcResult` 没有唯一 root，`root_id()` 和 `root()` 返回 `None`。
 
 ### check 校验接口（v2）
 
@@ -383,6 +604,8 @@ container.check(result) -> [CheckError]
 ```
 
 对 `build()` 返回的对象图执行 `check` 块校验。返回错误列表而非抛异常，方便编辑器等工具场景一次性展示全部校验错误。
+
+`check()` 只在 `build()` 成功后执行。`check()` 不修改对象图，不填充默认值，不重新执行结构校验。`type` 内 `check` 以每个已构建对象为上下文执行；顶层 `check` 以所在模块的顶层命名节点为上下文执行。
 
 ## CLI
 
@@ -393,6 +616,18 @@ cfc check <file>    # 加载并校验，报告全部错误
 cfc fmt <file>      # 格式化
 ```
 
+## 错误阶段
+
+CFC 错误按阶段划分：
+
+- `add_module` / `replace_module` 阶段：词法错误、语法错误、段落顺序错误、缺少分隔符、非法字面量、重复模块或缺失模块。
+- `imports` 阶段：指定模块尚未注册。
+- `bind_import` 阶段：指定模块尚未注册、import id 不存在、依赖模块尚未注册、重复绑定、同一模块内多个 import 绑定到同一依赖模块、别名重复。
+- `build` 阶段：重复定义、未绑定 import、未知符号、非法跨模块访问、类型不匹配、缺少必填字段、多余字段、无法推断空数组或空字典类型、枚举重复值、非法循环类型约束。
+- `check` 阶段：`assert` 条件为假、`check` 表达式类型错误、`check` 中访问不存在的字段或越界数组下标。
+
+`add_module`、`replace_module`、`imports`、`bind_import` 和 `build` 的错误会阻止返回可用对象图。`check` 错误不改变对象图，返回错误列表供宿主或编辑器展示。
+
 ## v1 / v2 边界
 
 | 能力 | v1 | v2 |
@@ -400,7 +635,7 @@ cfc fmt <file>      # 格式化
 | 结构校验（必填字段、类型匹配、默认值填充、多余字段） | ✓ | |
 | `use` 多文件导入 | ✓ | |
 | `CfcContainer` 低层接口 | ✓ | |
-| `CfcContainer.import` 高层接口 | ✓ | |
+| `CfcContainer.load_graph` 高层接口 | ✓ | |
 | CLI `check` / `fmt` | ✓ | |
 | `type` 内 `check` 块语义校验 | | ✓ |
 | 顶层 `check` 块 | | ✓ |
