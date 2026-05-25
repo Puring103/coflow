@@ -1,8 +1,8 @@
 use super::{BuildCtx, ObjectEvalState};
 use crate::ast::{Expr, ExprKind, PathSegment, TypeName};
-use crate::build::support::build_error;
+use crate::build::names::QualifiedName;
 use crate::container::ModuleId;
-use crate::error::BuildError;
+use crate::error::{BuildError, BuildErrorKind};
 use crate::span::Span;
 use crate::value::{CfcNominalType, CfcValue, CfcValueRef};
 use std::collections::BTreeMap;
@@ -17,7 +17,7 @@ impl BuildCtx<'_> {
     ) -> Option<CfcValueRef> {
         match parts {
             [a, b] => {
-                if let Some(enum_info) = self.enums.get(&(module.clone(), a.clone())) {
+                if let Some(enum_info) = self.symbols.enums.get(&(module.clone(), a.clone())) {
                     if let Some(value) = enum_info.values.get(b) {
                         return Some(CfcValueRef::new(CfcValue::Enum {
                             enum_type: CfcNominalType {
@@ -41,10 +41,11 @@ impl BuildCtx<'_> {
                 self.eval_enum_value_by_name(expr.span, &dep, enum_name, variant)
             }
             _ => {
-                self.errors.push(BuildError {
-                    message: "qualified access may only use one import alias".to_string(),
-                    span: Some(expr.span),
-                });
+                self.errors.push(BuildError::new(
+                    BuildErrorKind::Path,
+                    "qualified access may only use one import alias",
+                    Some(expr.span),
+                ));
                 None
             }
         }
@@ -56,17 +57,22 @@ impl BuildCtx<'_> {
         module: &ModuleId,
         variant: &str,
     ) -> Option<CfcValueRef> {
-        let mut matches = self.enums.iter().filter(|((enum_module, _), info)| {
-            enum_module == module && info.values.contains_key(variant)
-        });
+        let mut matches = self
+            .symbols
+            .enums
+            .iter()
+            .filter(|((enum_module, _), info)| {
+                enum_module == module && info.values.contains_key(variant)
+            });
         let ((enum_module, enum_name), _) = matches.next()?;
         let enum_module = enum_module.clone();
         let enum_name = enum_name.clone();
         if matches.next().is_some() {
-            self.errors.push(BuildError {
-                message: format!("ambiguous enum variant `{variant}`"),
-                span: Some(expr.span),
-            });
+            self.errors.push(BuildError::new(
+                BuildErrorKind::UnknownEnumVariant,
+                format!("ambiguous enum variant `{variant}`"),
+                Some(expr.span),
+            ));
             return None;
         }
         self.eval_enum_value_by_name(expr.span, &enum_module, &enum_name, variant)
@@ -125,18 +131,24 @@ impl BuildCtx<'_> {
         enum_name: &str,
         variant: &str,
     ) -> Option<CfcValueRef> {
-        let Some(enum_info) = self.enums.get(&(module.clone(), enum_name.to_string())) else {
-            self.errors.push(BuildError {
-                message: format!("unknown enum `{enum_name}`"),
-                span: Some(span),
-            });
+        let Some(enum_info) = self
+            .symbols
+            .enums
+            .get(&(module.clone(), enum_name.to_string()))
+        else {
+            self.errors.push(BuildError::new(
+                BuildErrorKind::UnknownType,
+                format!("unknown enum `{enum_name}`"),
+                Some(span),
+            ));
             return None;
         };
         let Some(value) = enum_info.values.get(variant) else {
-            self.errors.push(BuildError {
-                message: format!("unknown enum variant `{enum_name}.{variant}`"),
-                span: Some(span),
-            });
+            self.errors.push(BuildError::new(
+                BuildErrorKind::UnknownEnumVariant,
+                format!("unknown enum variant `{enum_name}.{variant}`"),
+                Some(span),
+            ));
             return None;
         };
         Some(CfcValueRef::new(CfcValue::Enum {
@@ -156,27 +168,25 @@ impl BuildCtx<'_> {
         parts: &[String],
         locals: Option<&BTreeMap<String, CfcValueRef>>,
     ) -> Option<CfcValueRef> {
-        match parts {
-            [a, b] => {
-                if let Some(dep) = self.try_resolve_import(module, a) {
-                    if self.data.contains_key(&(dep.clone(), b.clone())) {
-                        return self.eval_data_name(&dep, b, expr.span);
-                    }
-                }
-                self.eval_path(
-                    module,
-                    a,
-                    &[PathSegment::Field(b.clone())],
-                    expr.span,
-                    locals,
-                )
+        match self.resolve_qualified_name(module, parts, expr.span)? {
+            QualifiedName::LocalPath { root, field } => self.eval_path(
+                module,
+                root,
+                &[PathSegment::Field(field.to_string())],
+                expr.span,
+                locals,
+            ),
+            QualifiedName::ImportedData { module, name } => {
+                self.eval_data_name(&module, name, expr.span)
             }
-            [alias, data, field] => {
-                let dep = self.resolve_import(module, alias, expr.span)?;
-                let root = self.eval_data_name(&dep, data, expr.span)?;
-                self.select_path(root, &[PathSegment::Field(field.clone())], expr.span)
+            QualifiedName::ImportedPath {
+                module,
+                data,
+                field,
+            } => {
+                let root = self.eval_data_name(&module, data, expr.span)?;
+                self.select_path(root, &[PathSegment::Field(field.to_string())], expr.span)
             }
-            _ => None,
         }
     }
 
@@ -188,28 +198,26 @@ impl BuildCtx<'_> {
         parts: &[String],
         state: &mut ObjectEvalState,
     ) -> Option<CfcValueRef> {
-        match parts {
-            [a, b] => {
-                if let Some(dep) = self.try_resolve_import(module, a) {
-                    if self.data.contains_key(&(dep.clone(), b.clone())) {
-                        return self.eval_data_name(&dep, b, expr.span);
-                    }
-                }
-                self.eval_path_in_object_state_parts(
-                    module,
-                    default_module,
-                    a,
-                    &[PathSegment::Field(b.clone())],
-                    expr.span,
-                    state,
-                )
+        match self.resolve_qualified_name(module, parts, expr.span)? {
+            QualifiedName::LocalPath { root, field } => self.eval_path_in_object_state_parts(
+                module,
+                default_module,
+                root,
+                &[PathSegment::Field(field.to_string())],
+                expr.span,
+                state,
+            ),
+            QualifiedName::ImportedData { module, name } => {
+                self.eval_data_name(&module, name, expr.span)
             }
-            [alias, data, field] => {
-                let dep = self.resolve_import(module, alias, expr.span)?;
-                let root = self.eval_data_name(&dep, data, expr.span)?;
-                self.select_path(root, &[PathSegment::Field(field.clone())], expr.span)
+            QualifiedName::ImportedPath {
+                module,
+                data,
+                field,
+            } => {
+                let root = self.eval_data_name(&module, data, expr.span)?;
+                self.select_path(root, &[PathSegment::Field(field.to_string())], expr.span)
             }
-            _ => None,
         }
     }
 
@@ -294,29 +302,36 @@ impl BuildCtx<'_> {
     ) -> Option<CfcValueRef> {
         let dep = self.resolve_import(module, root, span)?;
         let Some((first, rest)) = segments.split_first() else {
-            self.errors.push(BuildError {
-                message: format!("import path `{root}` must name a data node"),
-                span: Some(span),
-            });
+            self.errors.push(BuildError::new(
+                BuildErrorKind::Path,
+                format!("import path `{root}` must name a data node"),
+                Some(span),
+            ));
             return None;
         };
         let PathSegment::Field(data) = first else {
-            self.errors.push(BuildError {
-                message: format!("import path `{root}` must select a data node before indexing"),
-                span: Some(span),
-            });
+            self.errors.push(BuildError::new(
+                BuildErrorKind::Path,
+                format!("import path `{root}` must select a data node before indexing"),
+                Some(span),
+            ));
             return None;
         };
-        if !self.data.contains_key(&(dep.clone(), data.clone())) {
+        if !self.symbols.data.contains_key(&(dep.clone(), data.clone())) {
             if let [PathSegment::Field(variant)] = rest {
-                if self.enums.contains_key(&(dep.clone(), data.clone())) {
+                if self
+                    .symbols
+                    .enums
+                    .contains_key(&(dep.clone(), data.clone()))
+                {
                     return self.eval_enum_value_by_name(span, &dep, data, variant);
                 }
             }
-            self.errors.push(BuildError {
-                message: format!("unknown data node `{root}.{data}`"),
-                span: Some(span),
-            });
+            self.errors.push(BuildError::new(
+                BuildErrorKind::UnknownName,
+                format!("unknown data node `{root}.{data}`"),
+                Some(span),
+            ));
             return None;
         }
         let root = self.eval_data_name(&dep, data, span)?;
@@ -335,46 +350,51 @@ impl BuildCtx<'_> {
                 match (segment, &*borrowed) {
                     (PathSegment::Field(field), CfcValue::Object { fields, .. }) => {
                         let Some(next) = fields.get(field) else {
-                            self.errors.push(BuildError {
-                                message: format!("missing field `{field}`"),
-                                span: Some(span),
-                            });
+                            self.errors.push(BuildError::new(
+                                BuildErrorKind::Path,
+                                format!("missing field `{field}`"),
+                                Some(span),
+                            ));
                             return None;
                         };
                         next.clone()
                     }
                     (PathSegment::Index(index), CfcValue::Array(items)) => {
                         let Some(next) = items.get(*index) else {
-                            self.errors.push(BuildError {
-                                message: format!("array index `{index}` is out of bounds"),
-                                span: Some(span),
-                            });
+                            self.errors.push(BuildError::new(
+                                BuildErrorKind::Path,
+                                format!("array index `{index}` is out of bounds"),
+                                Some(span),
+                            ));
                             return None;
                         };
                         next.clone()
                     }
                     (PathSegment::Index(index), CfcValue::Dict(entries)) => {
                         let Some((_, next)) = entries.get(*index) else {
-                            self.errors.push(BuildError {
-                                message: format!("dict index `{index}` is out of bounds"),
-                                span: Some(span),
-                            });
+                            self.errors.push(BuildError::new(
+                                BuildErrorKind::Path,
+                                format!("dict index `{index}` is out of bounds"),
+                                Some(span),
+                            ));
                             return None;
                         };
                         next.clone()
                     }
                     (PathSegment::Field(field), _) => {
-                        self.errors.push(BuildError {
-                            message: format!("cannot select field `{field}`"),
-                            span: Some(span),
-                        });
+                        self.errors.push(BuildError::new(
+                            BuildErrorKind::Path,
+                            format!("cannot select field `{field}`"),
+                            Some(span),
+                        ));
                         return None;
                     }
                     (PathSegment::Index(index), _) => {
-                        self.errors.push(BuildError {
-                            message: format!("cannot index value at `{index}`"),
-                            span: Some(span),
-                        });
+                        self.errors.push(BuildError::new(
+                            BuildErrorKind::Path,
+                            format!("cannot index value at `{index}`"),
+                            Some(span),
+                        ));
                         return None;
                     }
                 }
@@ -396,42 +416,6 @@ impl BuildCtx<'_> {
                 Some((self.resolve_import(module, alias, span)?, name.clone()))
             }
         }
-    }
-
-    fn resolve_import(&mut self, module: &ModuleId, alias: &str, span: Span) -> Option<ModuleId> {
-        let Some(module_data) = self.container.modules.get(module) else {
-            self.errors
-                .push(build_error(format!("unknown module `{module}`")));
-            return None;
-        };
-        let Some(import) = module_data
-            .imports
-            .iter()
-            .find(|import| import.alias == alias)
-        else {
-            self.errors.push(BuildError {
-                message: format!("unknown import alias `{alias}`"),
-                span: Some(span),
-            });
-            return None;
-        };
-        let Some(dep) = module_data.bindings.get(&import.id) else {
-            self.errors.push(BuildError {
-                message: format!("unbound import `{alias}`"),
-                span: Some(import.span),
-            });
-            return None;
-        };
-        Some(dep.clone())
-    }
-
-    pub(super) fn try_resolve_import(&self, module: &ModuleId, alias: &str) -> Option<ModuleId> {
-        let module_data = self.container.modules.get(module)?;
-        let import = module_data
-            .imports
-            .iter()
-            .find(|import| import.alias == alias)?;
-        module_data.bindings.get(&import.id).cloned()
     }
 
     pub(super) fn resolve_local(
@@ -475,11 +459,16 @@ impl BuildCtx<'_> {
         name: &str,
         span: Span,
     ) -> Option<CfcValueRef> {
-        if !self.data.contains_key(&(module.clone(), name.to_string())) {
-            self.errors.push(BuildError {
-                message: format!("unknown data node `{name}`"),
-                span: Some(span),
-            });
+        if !self
+            .symbols
+            .data
+            .contains_key(&(module.clone(), name.to_string()))
+        {
+            self.errors.push(BuildError::new(
+                BuildErrorKind::UnknownName,
+                format!("unknown data node `{name}`"),
+                Some(span),
+            ));
             return None;
         }
         self.eval_data(module, name)

@@ -4,6 +4,14 @@ use crate::span::Span;
 pub struct ParseError {
     pub message: String,
     pub span: Span,
+    pub kind: ParseErrorKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParseErrorKind {
+    Lex,
+    Syntax,
+    Module,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,10 +21,15 @@ pub struct ParseErrors {
 
 impl ParseErrors {
     pub fn one(message: impl Into<String>, span: Span) -> Self {
+        Self::one_kind(ParseErrorKind::Syntax, message, span)
+    }
+
+    pub fn one_kind(kind: ParseErrorKind, message: impl Into<String>, span: Span) -> Self {
         Self {
             errors: vec![ParseError {
                 message: message.into(),
                 span,
+                kind,
             }],
         }
     }
@@ -26,6 +39,29 @@ impl ParseErrors {
 pub struct BuildError {
     pub message: String,
     pub span: Option<Span>,
+    pub kind: BuildErrorKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuildErrorKind {
+    Module,
+    Import,
+    DuplicateName,
+    DuplicateField,
+    DuplicateEnumVariant,
+    DuplicateEnumValue,
+    UnknownName,
+    UnknownType,
+    UnknownEnumVariant,
+    TypeMismatch,
+    MissingRequiredField,
+    ExtraField,
+    InvalidDefault,
+    InvalidDictKeyType,
+    Inference,
+    Cycle,
+    Path,
+    Other,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,6 +73,22 @@ impl BuildErrors {
     #[must_use]
     pub fn new(errors: Vec<BuildError>) -> Self {
         Self { errors }
+    }
+}
+
+impl BuildError {
+    #[must_use]
+    pub fn new(kind: BuildErrorKind, message: impl Into<String>, span: Option<Span>) -> Self {
+        Self {
+            message: message.into(),
+            span,
+            kind,
+        }
+    }
+
+    #[must_use]
+    pub fn other(message: impl Into<String>, span: Option<Span>) -> Self {
+        Self::new(BuildErrorKind::Other, message, span)
     }
 }
 

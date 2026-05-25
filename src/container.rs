@@ -1,7 +1,9 @@
 use crate::ast::ModuleAst;
 use crate::build;
 use crate::check;
-use crate::error::{BuildError, BuildErrors, CfcError, CheckError, ParseErrors};
+use crate::error::{
+    BuildError, BuildErrorKind, BuildErrors, CfcError, CheckError, ParseErrorKind, ParseErrors,
+};
 use crate::parser::parse_module;
 use crate::span::Span;
 use crate::value::CfcValueRef;
@@ -161,7 +163,8 @@ impl CfcContainer {
         source: impl Into<String>,
     ) -> Result<(), ParseErrors> {
         if self.modules.contains_key(&module) {
-            return Err(ParseErrors::one(
+            return Err(ParseErrors::one_kind(
+                ParseErrorKind::Module,
                 format!("module `{module}` already exists"),
                 Span::new(0, 0),
             ));
@@ -201,7 +204,8 @@ impl CfcContainer {
         source: impl Into<String>,
     ) -> Result<(), ParseErrors> {
         if !self.modules.contains_key(&module) {
-            return Err(ParseErrors::one(
+            return Err(ParseErrors::one_kind(
+                ParseErrorKind::Module,
                 format!("module `{module}` does not exist"),
                 Span::new(0, 0),
             ));
@@ -343,13 +347,11 @@ impl CfcContainer {
         for (module_id, module) in &self.modules {
             for import in &module.imports {
                 if !module.bindings.contains_key(&import.id) {
-                    errors.push(BuildError {
-                        message: format!(
-                            "unbound import `{}` in module `{module_id}`",
-                            import.alias
-                        ),
-                        span: Some(import.span),
-                    });
+                    errors.push(BuildError::new(
+                        BuildErrorKind::Import,
+                        format!("unbound import `{}` in module `{module_id}`", import.alias),
+                        Some(import.span),
+                    ));
                 }
             }
         }
@@ -422,18 +424,16 @@ impl CfcContainer {
         for import in &module.imports {
             match module.bindings.get(&import.id) {
                 Some(dep) => self.collect_closure(dep, set, errors),
-                None => errors.push(BuildError {
-                    message: format!("unbound import `{}`", import.alias),
-                    span: Some(import.span),
-                }),
+                None => errors.push(BuildError::new(
+                    BuildErrorKind::Import,
+                    format!("unbound import `{}`", import.alias),
+                    Some(import.span),
+                )),
             }
         }
     }
 }
 
 fn plain_build_error(message: impl Into<String>) -> BuildError {
-    BuildError {
-        message: message.into(),
-        span: None,
-    }
+    BuildError::new(BuildErrorKind::Module, message, None)
 }

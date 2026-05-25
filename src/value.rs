@@ -12,7 +12,6 @@ pub struct CfcNominalType {
 
 #[derive(Debug, Clone)]
 pub enum CfcValue {
-    Pending,
     Int(i64),
     Float(f64),
     Bool(bool),
@@ -31,25 +30,37 @@ pub enum CfcValue {
 }
 
 #[derive(Debug, Clone)]
-pub struct CfcValueRef(Rc<RefCell<CfcValue>>);
+pub struct CfcValueRef(Rc<RefCell<ValueSlot>>);
+
+#[derive(Debug, Clone)]
+pub(crate) enum ValueSlot {
+    Pending(CfcValue),
+    Ready(CfcValue),
+}
 
 impl CfcValueRef {
     #[must_use]
     pub fn new(value: CfcValue) -> Self {
-        Self(Rc::new(RefCell::new(value)))
+        Self(Rc::new(RefCell::new(ValueSlot::Ready(value))))
     }
 
-    pub(crate) fn pending() -> Self {
-        Self::new(CfcValue::Pending)
+    pub(crate) fn pending(value: CfcValue) -> Self {
+        Self(Rc::new(RefCell::new(ValueSlot::Pending(value))))
     }
 
     #[must_use]
     pub fn borrow(&self) -> Ref<'_, CfcValue> {
-        self.0.borrow()
+        Ref::map(self.0.borrow(), |slot| match slot {
+            ValueSlot::Pending(value) | ValueSlot::Ready(value) => value,
+        })
     }
 
     pub(crate) fn replace(&self, value: CfcValue) {
-        *self.0.borrow_mut() = value;
+        *self.0.borrow_mut() = ValueSlot::Ready(value);
+    }
+
+    pub(crate) fn is_pending(&self) -> bool {
+        matches!(&*self.0.borrow(), ValueSlot::Pending(_))
     }
 
     #[must_use]
@@ -66,7 +77,6 @@ impl CfcValue {
     #[must_use]
     pub fn type_name(&self) -> &'static str {
         match self {
-            CfcValue::Pending => "pending",
             CfcValue::Int(_) => "int",
             CfcValue::Float(_) => "float",
             CfcValue::Bool(_) => "bool",

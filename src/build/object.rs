@@ -1,7 +1,7 @@
 use super::{BuildCtx, ObjectEvalState, ObjectFieldPlan, TypeInfo};
 use crate::ast::{Expr, ExprKind, ObjectField, TypeName, TypeRef};
 use crate::container::ModuleId;
-use crate::error::BuildError;
+use crate::error::{BuildError, BuildErrorKind};
 use crate::value::{CfcNominalType, CfcValue, CfcValueRef};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -18,10 +18,11 @@ impl BuildCtx<'_> {
         for field in fields {
             if field_map.insert(field.name.as_str(), field).is_some() {
                 has_error = true;
-                self.errors.push(BuildError {
-                    message: format!("duplicate field `{}`", field.name),
-                    span: Some(field.span),
-                });
+                self.errors.push(BuildError::new(
+                    BuildErrorKind::DuplicateField,
+                    format!("duplicate field `{}`", field.name),
+                    Some(field.span),
+                ));
             }
         }
         let mut plans = HashMap::new();
@@ -44,19 +45,21 @@ impl BuildCtx<'_> {
                 );
             } else {
                 has_error = true;
-                self.errors.push(BuildError {
-                    message: format!("missing required field `{}`", field.name),
-                    span: Some(field.span),
-                });
+                self.errors.push(BuildError::new(
+                    BuildErrorKind::MissingRequiredField,
+                    format!("missing required field `{}`", field.name),
+                    Some(field.span),
+                ));
             }
         }
         let has_extra_fields = !field_map.is_empty();
         for (_, extra) in field_map {
             has_error = true;
-            self.errors.push(BuildError {
-                message: format!("unknown field `{}`", extra.name),
-                span: Some(extra.span),
-            });
+            self.errors.push(BuildError::new(
+                BuildErrorKind::ExtraField,
+                format!("unknown field `{}`", extra.name),
+                Some(extra.span),
+            ));
         }
 
         let mut state = ObjectEvalState {
@@ -101,10 +104,11 @@ impl BuildCtx<'_> {
             return Some(value.clone());
         }
         if !state.visiting.insert(name.to_string()) {
-            self.errors.push(BuildError {
-                message: format!("cyclic field reference involving `{name}`"),
-                span: None,
-            });
+            self.errors.push(BuildError::new(
+                BuildErrorKind::Cycle,
+                format!("cyclic field reference involving `{name}`"),
+                None,
+            ));
             return None;
         }
         let Some(plan) = state.plans.get(name).cloned() else {
@@ -272,20 +276,23 @@ impl BuildCtx<'_> {
         let (target_module, target_name) =
             self.resolve_type_name(default_module, name, expr.span)?;
         if self
+            .symbols
             .enums
             .contains_key(&(target_module.clone(), target_name.clone()))
         {
             return self.eval_enum_value(module, expr, &target_module, &target_name);
         }
         let Some(type_info) = self
+            .symbols
             .types
             .get(&(target_module.clone(), target_name.clone()))
             .cloned()
         else {
-            self.errors.push(BuildError {
-                message: format!("unknown type `{target_name}`"),
-                span: Some(expr.span),
-            });
+            self.errors.push(BuildError::new(
+                BuildErrorKind::UnknownType,
+                format!("unknown type `{target_name}`"),
+                Some(expr.span),
+            ));
             return None;
         };
         match &expr.kind {

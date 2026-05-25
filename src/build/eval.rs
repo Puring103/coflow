@@ -2,13 +2,13 @@ use super::{BuildCtx, ObjectEvalState, TypeInfo};
 use crate::ast::{DataDef, Expr, ExprKind, TypeName, TypeRef};
 use crate::build::support::{build_error, format_nominal, value_signature};
 use crate::container::{CfcModuleResult, ModuleId};
-use crate::error::BuildError;
+use crate::error::{BuildError, BuildErrorKind};
 use crate::value::{CfcNominalType, CfcValue, CfcValueRef};
 use std::collections::BTreeMap;
 
 impl BuildCtx<'_> {
     pub(super) fn build_values(&mut self) {
-        let keys: Vec<_> = self.data.keys().cloned().collect();
+        let keys: Vec<_> = self.symbols.data.keys().cloned().collect();
         for (module, name) in keys {
             if self.eval_data(&module, &name).is_none() {
                 self.errors.push(build_error(format!(
@@ -19,54 +19,56 @@ impl BuildCtx<'_> {
 
         for module_id in &self.module_ids {
             let values = self
+                .graph
                 .memo
                 .iter()
                 .filter(|((module, _), _)| module == module_id)
-                .filter(|(key, _)| !self.failed.contains(key))
+                .filter(|(key, _)| !self.graph.failed.contains(key))
                 .map(|((_, name), value)| (name.clone(), value.clone()))
                 .collect();
-            self.results
+            self.graph
+                .results
                 .insert(module_id.clone(), CfcModuleResult::new(values));
         }
     }
 
     pub(super) fn eval_data(&mut self, module: &ModuleId, name: &str) -> Option<CfcValueRef> {
         let key = (module.clone(), name.to_string());
-        if let Some(value) = self.memo.get(&key) {
-            return (!self.failed.contains(&key)).then(|| value.clone());
+        if let Some(value) = self.graph.memo.get(&key) {
+            return (!self.graph.failed.contains(&key)).then(|| value.clone());
         }
-        let Some(def) = self.data.get(&key).cloned() else {
+        let Some(def) = self.symbols.data.get(&key).cloned() else {
             self.errors
                 .push(build_error(format!("unknown data node `{module}.{name}`")));
             return None;
         };
 
         let placeholder = if data_has_identity(&def) {
-            let value = CfcValueRef::pending();
-            self.memo.insert(key.clone(), value.clone());
+            let value = CfcValueRef::pending(identity_placeholder(&def));
+            self.graph.memo.insert(key.clone(), value.clone());
             Some(value)
         } else {
             None
         };
 
-        if !self.visiting.insert(key.clone()) {
-            return self.memo.get(&key).cloned();
+        if !self.graph.visiting.insert(key.clone()) {
+            return self.graph.memo.get(&key).cloned();
         }
         let value = self.eval_expr(module, &def.value, def.ty.as_ref());
-        self.visiting.remove(&key);
+        self.graph.visiting.remove(&key);
         if let Some(value) = value {
             if let Some(placeholder) = placeholder {
                 placeholder.replace(value.borrow().clone());
                 Some(placeholder)
             } else {
-                self.memo.insert(key, value.clone());
+                self.graph.memo.insert(key, value.clone());
                 Some(value)
             }
         } else {
             if placeholder.is_some() {
-                self.memo.remove(&key);
+                self.graph.memo.remove(&key);
             }
-            self.failed.insert(key);
+            self.graph.failed.insert(key);
             None
         }
     }
@@ -160,20 +162,23 @@ impl BuildCtx<'_> {
     ) -> Option<CfcValueRef> {
         let (target_module, target_name) = self.resolve_type_name(module, name, expr.span)?;
         if self
+            .symbols
             .enums
             .contains_key(&(target_module.clone(), target_name.clone()))
         {
             return self.eval_enum_value(module, expr, &target_module, &target_name);
         }
         let Some(type_info) = self
+            .symbols
             .types
             .get(&(target_module.clone(), target_name.clone()))
             .cloned()
         else {
-            self.errors.push(BuildError {
-                message: format!("unknown type `{target_name}`"),
-                span: Some(expr.span),
-            });
+            self.errors.push(BuildError::new(
+                BuildErrorKind::UnknownType,
+                format!("unknown type `{target_name}`"),
+                Some(expr.span),
+            ));
             return None;
         };
         match &expr.kind {
@@ -205,48 +210,53 @@ impl BuildCtx<'_> {
             module: type_info.module.clone(),
             name: type_info.def.name.clone(),
         };
+        if value.is_pending() {
+            return Some(value.clone());
+        }
         let borrowed = value.borrow();
         match &*borrowed {
             CfcValue::Object {
                 type_name: Some(actual),
                 ..
             } if actual == &expected => Some(value.clone()),
-            CfcValue::Pending => Some(value.clone()),
             CfcValue::Object {
                 type_name: None, ..
             } => {
-                self.errors.push(BuildError {
-                    message: format!(
+                self.errors.push(BuildError::new(
+                    BuildErrorKind::TypeMismatch,
+                    format!(
                         "expected `{}`, found untyped object",
                         format_nominal(&expected)
                     ),
-                    span: Some(expr.span),
-                });
+                    Some(expr.span),
+                ));
                 None
             }
             CfcValue::Object {
                 type_name: Some(actual),
                 ..
             } => {
-                self.errors.push(BuildError {
-                    message: format!(
+                self.errors.push(BuildError::new(
+                    BuildErrorKind::TypeMismatch,
+                    format!(
                         "expected `{}`, found `{}`",
                         format_nominal(&expected),
                         format_nominal(actual)
                     ),
-                    span: Some(expr.span),
-                });
+                    Some(expr.span),
+                ));
                 None
             }
             other => {
-                self.errors.push(BuildError {
-                    message: format!(
+                self.errors.push(BuildError::new(
+                    BuildErrorKind::TypeMismatch,
+                    format!(
                         "expected `{}`, found `{}`",
                         format_nominal(&expected),
                         other.type_name()
                     ),
-                    span: Some(expr.span),
-                });
+                    Some(expr.span),
+                ));
                 None
             }
         }
@@ -323,7 +333,7 @@ impl BuildCtx<'_> {
         expr: &Expr,
         value: &CfcValueRef,
     ) -> Option<CfcValueRef> {
-        if matches!(&*value.borrow(), CfcValue::Array(_) | CfcValue::Pending) {
+        if value.is_pending() || matches!(&*value.borrow(), CfcValue::Array(_)) {
             Some(value.clone())
         } else {
             self.type_error(expr, "array")
@@ -335,7 +345,7 @@ impl BuildCtx<'_> {
         expr: &Expr,
         value: &CfcValueRef,
     ) -> Option<CfcValueRef> {
-        if matches!(&*value.borrow(), CfcValue::Dict(_) | CfcValue::Pending) {
+        if value.is_pending() || matches!(&*value.borrow(), CfcValue::Dict(_)) {
             Some(value.clone())
         } else {
             self.type_error(expr, "dict")
@@ -531,10 +541,11 @@ impl BuildCtx<'_> {
         locals: Option<&BTreeMap<String, CfcValueRef>>,
     ) -> Option<CfcValueRef> {
         if items.is_empty() {
-            self.errors.push(BuildError {
-                message: "cannot infer type of empty array".to_string(),
-                span: Some(expr.span),
-            });
+            self.errors.push(BuildError::new(
+                BuildErrorKind::Inference,
+                "cannot infer type of empty array",
+                Some(expr.span),
+            ));
             return None;
         }
         let mut out = Vec::new();
@@ -556,10 +567,11 @@ impl BuildCtx<'_> {
         state: &mut ObjectEvalState,
     ) -> Option<CfcValueRef> {
         if items.is_empty() {
-            self.errors.push(BuildError {
-                message: "cannot infer type of empty array".to_string(),
-                span: Some(expr.span),
-            });
+            self.errors.push(BuildError::new(
+                BuildErrorKind::Inference,
+                "cannot infer type of empty array",
+                Some(expr.span),
+            ));
             return None;
         }
         let mut out = Vec::new();
@@ -580,10 +592,11 @@ impl BuildCtx<'_> {
         locals: Option<&BTreeMap<String, CfcValueRef>>,
     ) -> Option<CfcValueRef> {
         if entries.is_empty() {
-            self.errors.push(BuildError {
-                message: "cannot infer type of empty dict".to_string(),
-                span: Some(expr.span),
-            });
+            self.errors.push(BuildError::new(
+                BuildErrorKind::Inference,
+                "cannot infer type of empty dict",
+                Some(expr.span),
+            ));
             return None;
         }
         let mut out = Vec::new();
@@ -615,10 +628,11 @@ impl BuildCtx<'_> {
         state: &mut ObjectEvalState,
     ) -> Option<CfcValueRef> {
         if entries.is_empty() {
-            self.errors.push(BuildError {
-                message: "cannot infer type of empty dict".to_string(),
-                span: Some(expr.span),
-            });
+            self.errors.push(BuildError::new(
+                BuildErrorKind::Inference,
+                "cannot infer type of empty dict",
+                Some(expr.span),
+            ));
             return None;
         }
         let mut out = Vec::new();
@@ -651,6 +665,28 @@ fn data_has_identity(def: &DataDef) -> bool {
     )
 }
 
+fn identity_placeholder(def: &DataDef) -> CfcValue {
+    match def.value.kind {
+        ExprKind::Array(_) => CfcValue::Array(Vec::new()),
+        ExprKind::Dict(_) => CfcValue::Dict(Vec::new()),
+        ExprKind::Object(_)
+        | ExprKind::Int(_)
+        | ExprKind::Float(_)
+        | ExprKind::Bool(_)
+        | ExprKind::String(_)
+        | ExprKind::Name(_)
+        | ExprKind::Qualified(_)
+        | ExprKind::Path { .. } => empty_object_placeholder(),
+    }
+}
+
+fn empty_object_placeholder() -> CfcValue {
+    CfcValue::Object {
+        type_name: None,
+        fields: BTreeMap::new(),
+    }
+}
+
 fn validate_array_item(
     ctx: &mut BuildCtx<'_>,
     item: &Expr,
@@ -660,10 +696,11 @@ fn validate_array_item(
     let signature = value_signature(value);
     if let Some(expected) = inferred {
         if expected != &signature {
-            ctx.errors.push(BuildError {
-                message: "array elements must have the same type".to_string(),
-                span: Some(item.span),
-            });
+            ctx.errors.push(BuildError::new(
+                BuildErrorKind::TypeMismatch,
+                "array elements must have the same type",
+                Some(item.span),
+            ));
             return None;
         }
     } else {
@@ -685,10 +722,11 @@ fn validate_dict_entry(
     let value_signature = value_signature(value_value);
     if let Some(expected) = inferred_key {
         if expected != &key_signature {
-            ctx.errors.push(BuildError {
-                message: "dict keys must have the same type".to_string(),
-                span: Some(key.span),
-            });
+            ctx.errors.push(BuildError::new(
+                BuildErrorKind::TypeMismatch,
+                "dict keys must have the same type",
+                Some(key.span),
+            ));
             return None;
         }
     } else {
@@ -696,10 +734,11 @@ fn validate_dict_entry(
     }
     if let Some(expected) = inferred_value {
         if expected != &value_signature {
-            ctx.errors.push(BuildError {
-                message: "dict values must have the same type".to_string(),
-                span: Some(value.span),
-            });
+            ctx.errors.push(BuildError::new(
+                BuildErrorKind::TypeMismatch,
+                "dict values must have the same type",
+                Some(value.span),
+            ));
             return None;
         }
     } else {

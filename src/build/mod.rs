@@ -5,6 +5,7 @@ use crate::value::CfcValueRef;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 mod eval;
+mod names;
 mod object;
 mod path;
 mod support;
@@ -47,16 +48,24 @@ struct ObjectEvalState {
     parent_locals: BTreeMap<String, CfcValueRef>,
 }
 
-struct BuildCtx<'a> {
-    container: &'a CfcContainer,
-    module_ids: Vec<ModuleId>,
+struct SymbolTables {
     types: HashMap<(ModuleId, String), TypeInfo>,
     enums: HashMap<(ModuleId, String), EnumInfo>,
     data: HashMap<(ModuleId, String), DataDef>,
+}
+
+struct GraphState {
     memo: HashMap<(ModuleId, String), CfcValueRef>,
     failed: HashSet<(ModuleId, String)>,
     visiting: HashSet<(ModuleId, String)>,
     results: BTreeMap<ModuleId, CfcModuleResult>,
+}
+
+struct BuildCtx<'a> {
+    container: &'a CfcContainer,
+    module_ids: Vec<ModuleId>,
+    symbols: SymbolTables,
+    graph: GraphState,
     errors: Vec<BuildError>,
 }
 
@@ -65,20 +74,24 @@ impl<'a> BuildCtx<'a> {
         Self {
             container,
             module_ids,
-            types: HashMap::new(),
-            enums: HashMap::new(),
-            data: HashMap::new(),
-            memo: HashMap::new(),
-            failed: HashSet::new(),
-            visiting: HashSet::new(),
-            results: BTreeMap::new(),
+            symbols: SymbolTables {
+                types: HashMap::new(),
+                enums: HashMap::new(),
+                data: HashMap::new(),
+            },
+            graph: GraphState {
+                memo: HashMap::new(),
+                failed: HashSet::new(),
+                visiting: HashSet::new(),
+                results: BTreeMap::new(),
+            },
             errors: Vec::new(),
         }
     }
 
     fn finish(self, root: Option<ModuleId>) -> Result<CfcResult, BuildErrors> {
         if self.errors.is_empty() {
-            Ok(CfcResult::new(root, self.results))
+            Ok(CfcResult::new(root, self.graph.results))
         } else {
             Err(BuildErrors::new(self.errors))
         }

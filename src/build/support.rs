@@ -1,6 +1,6 @@
 use super::BuildCtx;
 use crate::ast::Expr;
-use crate::error::BuildError;
+use crate::error::{BuildError, BuildErrorKind};
 use crate::value::{CfcNominalType, CfcValue, CfcValueRef};
 
 impl BuildCtx<'_> {
@@ -28,19 +28,17 @@ impl BuildCtx<'_> {
     }
 
     pub(super) fn type_error<T>(&mut self, expr: &Expr, expected: &str) -> Option<T> {
-        self.errors.push(BuildError {
-            message: format!("expected `{expected}`"),
-            span: Some(expr.span),
-        });
+        self.errors.push(BuildError::new(
+            BuildErrorKind::TypeMismatch,
+            format!("expected `{expected}`"),
+            Some(expr.span),
+        ));
         None
     }
 }
 
 pub(super) fn build_error(message: impl Into<String>) -> BuildError {
-    BuildError {
-        message: message.into(),
-        span: None,
-    }
+    BuildError::other(message, None)
 }
 
 pub(super) fn format_nominal(ty: &CfcNominalType) -> String {
@@ -48,8 +46,10 @@ pub(super) fn format_nominal(ty: &CfcNominalType) -> String {
 }
 
 pub(super) fn value_signature(value: &CfcValueRef) -> ValueSignature {
+    if value.is_pending() {
+        return ValueSignature::Pending;
+    }
     match &*value.borrow() {
-        CfcValue::Pending => ValueSignature::Pending,
         CfcValue::Int(_) => ValueSignature::Int,
         CfcValue::Float(_) => ValueSignature::Float,
         CfcValue::Bool(_) => ValueSignature::Bool,

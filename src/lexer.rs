@@ -1,4 +1,4 @@
-use crate::error::ParseErrors;
+use crate::error::{ParseErrorKind, ParseErrors};
 use crate::span::Span;
 use unicode_ident::{is_xid_continue, is_xid_start};
 
@@ -227,7 +227,8 @@ pub fn lex(source: &str) -> Result<Vec<Token>, ParseErrors> {
             '_' => lex_ident(source, &mut i),
             c if is_xid_start(c) => lex_ident(source, &mut i),
             _ => {
-                return Err(ParseErrors::one(
+                return Err(ParseErrors::one_kind(
+                    ParseErrorKind::Lex,
                     format!("unexpected character `{ch}`"),
                     Span::new(start, start + ch_len),
                 ));
@@ -288,13 +289,21 @@ fn lex_number(source: &str, i: &mut usize, start: usize) -> Result<TokenKind, Pa
     }
     let raw = &source[start..*i];
     if is_float {
-        raw.parse::<f64>()
-            .map(TokenKind::Float)
-            .map_err(|_| ParseErrors::one("invalid float literal", Span::new(start, *i)))
+        raw.parse::<f64>().map(TokenKind::Float).map_err(|_| {
+            ParseErrors::one_kind(
+                ParseErrorKind::Lex,
+                "invalid float literal",
+                Span::new(start, *i),
+            )
+        })
     } else {
-        raw.parse::<i64>()
-            .map(TokenKind::Int)
-            .map_err(|_| ParseErrors::one("invalid int literal", Span::new(start, *i)))
+        raw.parse::<i64>().map(TokenKind::Int).map_err(|_| {
+            ParseErrors::one_kind(
+                ParseErrorKind::Lex,
+                "invalid int literal",
+                Span::new(start, *i),
+            )
+        })
     }
 }
 
@@ -320,7 +329,8 @@ fn lex_string(source: &str, i: &mut usize, start: usize) -> Result<TokenKind, Pa
                     b'r' => '\r',
                     b't' => '\t',
                     _ => {
-                        return Err(ParseErrors::one(
+                        return Err(ParseErrors::one_kind(
+                            ParseErrorKind::Lex,
                             "invalid string escape",
                             Span::new(*i - 1, *i + 1),
                         ));
@@ -336,7 +346,8 @@ fn lex_string(source: &str, i: &mut usize, start: usize) -> Result<TokenKind, Pa
             None => break,
         }
     }
-    Err(ParseErrors::one(
+    Err(ParseErrors::one_kind(
+        ParseErrorKind::Lex,
         "unterminated string literal",
         Span::new(start, source.len()),
     ))

@@ -2,7 +2,7 @@ use super::{BuildCtx, EnumInfo, TypeInfo};
 use crate::ast::{EnumDef, Expr, ExprKind, Item, TypeDef, TypeRef};
 use crate::build::support::build_error;
 use crate::container::ModuleId;
-use crate::error::BuildError;
+use crate::error::{BuildError, BuildErrorKind};
 use crate::span::Span;
 use std::collections::{HashMap, HashSet};
 
@@ -18,22 +18,24 @@ impl BuildCtx<'_> {
             let mut local_names = HashSet::new();
             for import in &module.imports {
                 if !local_names.insert(import.alias.clone()) {
-                    self.errors.push(BuildError {
-                        message: format!("duplicate name `{}`", import.alias),
-                        span: Some(import.span),
-                    });
+                    self.errors.push(BuildError::new(
+                        BuildErrorKind::DuplicateName,
+                        format!("duplicate name `{}`", import.alias),
+                        Some(import.span),
+                    ));
                 }
             }
             for item in &module.ast.items {
                 match item {
                     Item::Type(def) => {
                         if !local_names.insert(def.name.clone()) {
-                            self.errors.push(BuildError {
-                                message: format!("duplicate name `{}`", def.name),
-                                span: Some(def.span),
-                            });
+                            self.errors.push(BuildError::new(
+                                BuildErrorKind::DuplicateName,
+                                format!("duplicate name `{}`", def.name),
+                                Some(def.span),
+                            ));
                         }
-                        self.types.insert(
+                        self.symbols.types.insert(
                             (module_id.clone(), def.name.clone()),
                             TypeInfo {
                                 module: module_id.clone(),
@@ -43,23 +45,27 @@ impl BuildCtx<'_> {
                     }
                     Item::Enum(def) => {
                         if !local_names.insert(def.name.clone()) {
-                            self.errors.push(BuildError {
-                                message: format!("duplicate name `{}`", def.name),
-                                span: Some(def.span),
-                            });
+                            self.errors.push(BuildError::new(
+                                BuildErrorKind::DuplicateName,
+                                format!("duplicate name `{}`", def.name),
+                                Some(def.span),
+                            ));
                         }
                         let info = self.build_enum(def);
-                        self.enums
+                        self.symbols
+                            .enums
                             .insert((module_id.clone(), def.name.clone()), info);
                     }
                     Item::Data(def) => {
                         if !local_names.insert(def.name.clone()) {
-                            self.errors.push(BuildError {
-                                message: format!("duplicate name `{}`", def.name),
-                                span: Some(def.span),
-                            });
+                            self.errors.push(BuildError::new(
+                                BuildErrorKind::DuplicateName,
+                                format!("duplicate name `{}`", def.name),
+                                Some(def.span),
+                            ));
                         }
-                        self.data
+                        self.symbols
+                            .data
                             .insert((module_id.clone(), def.name.clone()), def.clone());
                     }
                     Item::Check(block) => {
@@ -73,6 +79,7 @@ impl BuildCtx<'_> {
 
     fn validate_type_defs(&mut self) {
         let defs: Vec<_> = self
+            .symbols
             .types
             .values()
             .map(|info| (info.module.clone(), info.def.clone()))
@@ -90,16 +97,18 @@ impl BuildCtx<'_> {
         for variant in &def.variants {
             let value = variant.value.unwrap_or(next);
             if !names.insert(variant.name.clone()) {
-                self.errors.push(BuildError {
-                    message: format!("duplicate enum variant `{}`", variant.name),
-                    span: Some(variant.span),
-                });
+                self.errors.push(BuildError::new(
+                    BuildErrorKind::DuplicateEnumVariant,
+                    format!("duplicate enum variant `{}`", variant.name),
+                    Some(variant.span),
+                ));
             }
             if !used.insert(value) {
-                self.errors.push(BuildError {
-                    message: format!("duplicate enum value `{value}`"),
-                    span: Some(variant.span),
-                });
+                self.errors.push(BuildError::new(
+                    BuildErrorKind::DuplicateEnumValue,
+                    format!("duplicate enum value `{value}`"),
+                    Some(variant.span),
+                ));
             }
             values.insert(variant.name.clone(), value);
             next = value + 1;
@@ -111,21 +120,23 @@ impl BuildCtx<'_> {
         let mut names = HashSet::new();
         for field in &def.fields {
             if !names.insert(field.name.clone()) {
-                self.errors.push(BuildError {
-                    message: format!("duplicate field `{}`", field.name),
-                    span: Some(field.span),
-                });
+                self.errors.push(BuildError::new(
+                    BuildErrorKind::DuplicateField,
+                    format!("duplicate field `{}`", field.name),
+                    Some(field.span),
+                ));
             }
             self.validate_type_ref(module, &field.ty, field.span);
             if let Some(default) = &field.default {
                 if !self.is_default_constant(module, default) {
-                    self.errors.push(BuildError {
-                        message: format!(
+                    self.errors.push(BuildError::new(
+                        BuildErrorKind::InvalidDefault,
+                        format!(
                             "default value for field `{}` must be a constant",
                             field.name
                         ),
-                        span: Some(default.span),
-                    });
+                        Some(default.span),
+                    ));
                 }
             }
         }
@@ -151,12 +162,13 @@ impl BuildCtx<'_> {
     fn is_enum_constant(&self, module: &ModuleId, parts: &[String]) -> bool {
         match parts {
             [enum_name, variant] => self
+                .symbols
                 .enums
                 .get(&(module.clone(), enum_name.clone()))
                 .is_some_and(|info| info.values.contains_key(variant)),
             [alias, enum_name, variant] => self
                 .try_resolve_import(module, alias)
-                .and_then(|dep| self.enums.get(&(dep, enum_name.clone())))
+                .and_then(|dep| self.symbols.enums.get(&(dep, enum_name.clone())))
                 .is_some_and(|info| info.values.contains_key(variant)),
             _ => false,
         }
@@ -175,16 +187,19 @@ impl BuildCtx<'_> {
                     self.resolve_type_name(module, name, span)
                 {
                     if !self
+                        .symbols
                         .types
                         .contains_key(&(target_module.clone(), target_name.clone()))
                         && !self
+                            .symbols
                             .enums
                             .contains_key(&(target_module, target_name.clone()))
                     {
-                        self.errors.push(BuildError {
-                            message: format!("unknown type `{target_name}`"),
-                            span: Some(span),
-                        });
+                        self.errors.push(BuildError::new(
+                            BuildErrorKind::UnknownType,
+                            format!("unknown type `{target_name}`"),
+                            Some(span),
+                        ));
                     }
                 }
             }
@@ -199,23 +214,24 @@ impl BuildCtx<'_> {
                     self.resolve_type_name(module, name, span)
                 {
                     if !self
+                        .symbols
                         .enums
                         .contains_key(&(target_module.clone(), target_name.clone()))
                     {
-                        self.errors.push(BuildError {
-                            message: format!(
-                                "dict key type `{target_name}` must be string, int, or enum"
-                            ),
-                            span: Some(span),
-                        });
+                        self.errors.push(BuildError::new(
+                            BuildErrorKind::InvalidDictKeyType,
+                            format!("dict key type `{target_name}` must be string, int, or enum"),
+                            Some(span),
+                        ));
                     }
                 }
             }
             _ => {
-                self.errors.push(BuildError {
-                    message: "dict key type must be string, int, or enum".to_string(),
-                    span: Some(span),
-                });
+                self.errors.push(BuildError::new(
+                    BuildErrorKind::InvalidDictKeyType,
+                    "dict key type must be string, int, or enum",
+                    Some(span),
+                ));
             }
         }
     }
