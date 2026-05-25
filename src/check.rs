@@ -1,6 +1,6 @@
 use crate::ast::{BinOp, CheckBlock, CheckExpr, CheckExprKind, CmpOp, CondStmt, Item, UnaryOp};
 use crate::container::{CfcContainer, CfcResult, ModuleId};
-use crate::error::CheckError;
+use crate::error::{AllFailedItem, CheckError, CheckErrorKind};
 use crate::span::Span;
 use crate::value::{CfcNominalType, CfcValue, CfcValueRef};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -252,28 +252,21 @@ impl<'a> CheckRunner<'a> {
             Ok(value) => match value {
                 EvalValue::Bool(true) => true,
                 EvalValue::Bool(false) => {
-                    self.errors.push(check_error(
-                        format!("check failed [{context}]: {}", describe_expr(expr)),
-                        Some(expr.span),
-                    ));
+                    self.errors
+                        .push(cond_failed(describe_expr(expr), context, expr.span));
                     true
                 }
                 other => {
-                    self.errors.push(check_error(
-                        format!(
-                            "check eval error [{context}]: condition must be bool, found {}",
-                            other.type_name()
-                        ),
-                        Some(expr.span),
+                    self.errors.push(eval_error(
+                        format!("condition must be bool, found {}", other.type_name()),
+                        context,
+                        expr.span,
                     ));
                     false
                 }
             },
             Err(message) => {
-                self.errors.push(check_error(
-                    format!("check eval error [{context}]: {message}"),
-                    Some(expr.span),
-                ));
+                self.errors.push(eval_error(message, context, expr.span));
                 false
             }
         }
@@ -290,12 +283,13 @@ impl<'a> CheckRunner<'a> {
         context: &str,
     ) -> bool {
         let Ok(value) = self.eval_expr(collection, module, scope, context) else {
-            self.errors.push(check_error(
+            self.errors.push(eval_error(
                 format!(
-                    "check eval error [{context}]: failed to evaluate all collection `{}`",
+                    "failed to evaluate all collection `{}`",
                     describe_expr(collection)
                 ),
-                Some(collection.span),
+                context,
+                collection.span,
             ));
             return false;
         };
@@ -323,47 +317,63 @@ impl<'a> CheckRunner<'a> {
                     })
                     .collect(),
                 other => {
-                    self.errors.push(check_error(
+                    self.errors.push(eval_error(
                         format!(
-                            "check eval error [{context}]: all collection must be array or dict, found {}",
+                            "all collection must be array or dict, found {}",
                             other.type_name()
                         ),
-                        Some(collection.span),
+                        context,
+                        collection.span,
                     ));
                     return false;
                 }
             },
             other => {
-                self.errors.push(check_error(
+                self.errors.push(eval_error(
                     format!(
-                        "check eval error [{context}]: all collection must be array or dict, found {}",
+                        "all collection must be array or dict, found {}",
                         other.type_name()
                     ),
-                    Some(collection.span),
+                    context,
+                    collection.span,
                 ));
                 return false;
             }
         };
 
-        let before = self.errors.len();
+        let total = entries.len();
+        let mut failed = Vec::new();
         for (label, item) in entries {
             scope.push(BTreeMap::from([(binding.to_string(), item)]));
             let item_context = format!("{context} {binding}{label}");
+            let before = self.errors.len();
             for stmt in body {
                 if !self.eval_stmt(stmt, module, scope, &item_context) {
+                    let errors = self.errors.split_off(before);
+                    failed.push(AllFailedItem {
+                        key: format!("{binding}{label}"),
+                        errors,
+                    });
                     scope.pop();
                     return false;
                 }
             }
             scope.pop();
+            let errors = self.errors.split_off(before);
+            if !errors.is_empty() {
+                failed.push(AllFailedItem {
+                    key: format!("{binding}{label}"),
+                    errors,
+                });
+            }
         }
-        if self.errors.len() > before {
-            self.errors.push(check_error(
-                format!(
-                    "check failed [{context}]: all {binding} in {}",
-                    describe_expr(collection)
-                ),
-                Some(span),
+        if !failed.is_empty() {
+            self.errors.push(all_failed(
+                format!("all {binding} in {}", describe_expr(collection)),
+                context,
+                total,
+                failed,
+                span,
             ));
         }
         true
@@ -1025,9 +1035,49 @@ fn cmp_op_name(op: CmpOp) -> &'static str {
     }
 }
 
-fn check_error(message: impl Into<String>, span: Option<Span>) -> CheckError {
+fn cond_failed(source: String, context: &str, span: Span) -> CheckError {
+    let message = format!("check failed [{context}]: {source}");
     CheckError {
-        message: message.into(),
-        span,
+        message,
+        span: Some(span),
+        kind: CheckErrorKind::CondFailed {
+            evaluated: source.clone(),
+            source,
+            context: context.to_string(),
+        },
+    }
+}
+
+fn all_failed(
+    source: String,
+    context: &str,
+    total: usize,
+    failed: Vec<AllFailedItem>,
+    span: Span,
+) -> CheckError {
+    let message = format!(
+        "check failed [{context}]: {source} ({}/{total} failed)",
+        failed.len()
+    );
+    CheckError {
+        message,
+        span: Some(span),
+        kind: CheckErrorKind::AllFailed {
+            source,
+            context: context.to_string(),
+            total,
+            failed,
+        },
+    }
+}
+
+fn eval_error(message: String, context: &str, span: Span) -> CheckError {
+    CheckError {
+        message: format!("check eval error [{context}]: {message}"),
+        span: Some(span),
+        kind: CheckErrorKind::EvalError {
+            message,
+            context: context.to_string(),
+        },
     }
 }

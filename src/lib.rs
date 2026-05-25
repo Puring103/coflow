@@ -12,6 +12,9 @@ pub use container::{
     BindImportError, CfcContainer, CfcImport, CfcModuleResult, CfcResult, ImportId, ModuleError,
     ModuleId, ResolveError,
 };
-pub use error::{BuildError, BuildErrors, CfcError, CheckError, ParseError, ParseErrors};
+pub use error::{
+    AllFailedItem, BuildError, BuildErrors, CfcError, CheckError, CheckErrorKind, ParseError,
+    ParseErrors,
+};
 pub use span::Span;
 pub use value::{CfcNominalType, CfcValue, CfcValueRef};

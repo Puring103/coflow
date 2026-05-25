@@ -1,16 +1,20 @@
 #![allow(clippy::panic, clippy::unwrap_used)]
 
-use coflow::{CfcContainer, ModuleId};
+use coflow::{CfcContainer, CheckError, CheckErrorKind, ModuleId};
 
 fn check_errors(source: &str) -> Vec<String> {
+    check_results(source)
+        .into_iter()
+        .map(|error| error.message)
+        .collect()
+}
+
+fn check_results(source: &str) -> Vec<CheckError> {
     let mut c = CfcContainer::new();
     let root = ModuleId::from("root");
     c.add_module(root.clone(), source).unwrap();
     let result = c.build(&root).unwrap();
     c.check(&result)
-        .into_iter()
-        .map(|error| error.message)
-        .collect()
 }
 
 fn check_errors_with_import(root_source: &str, dep_source: &str) -> Vec<String> {
@@ -54,7 +58,7 @@ range: Range = {
 
 #[test]
 fn failing_conditions_are_collected() {
-    let errors = check_errors(
+    let errors = check_results(
         r#"
 type Range {
   min: int;
@@ -74,13 +78,17 @@ range: Range = {
     );
 
     assert_eq!(errors.len(), 2);
-    assert!(errors.iter().any(|error| error.contains("min <= max")));
-    assert!(errors.iter().any(|error| error.contains("min >= 0")));
+    assert!(errors
+        .iter()
+        .any(|error| matches!(&error.kind, CheckErrorKind::CondFailed { source, .. } if source == "min <= max")));
+    assert!(errors
+        .iter()
+        .any(|error| matches!(&error.kind, CheckErrorKind::CondFailed { source, .. } if source == "min >= 0")));
 }
 
 #[test]
 fn eval_error_stops_current_object_check() {
-    let errors = check_errors(
+    let errors = check_results(
         r#"
 type Bad {
   name: string;
@@ -98,12 +106,16 @@ bad: Bad = {
     );
 
     assert_eq!(errors.len(), 1);
-    assert!(errors[0].contains("cannot order compare string and int"));
+    assert!(matches!(
+        &errors[0].kind,
+        CheckErrorKind::EvalError { message, .. }
+            if message.contains("cannot order compare string and int")
+    ));
 }
 
 #[test]
 fn all_over_arrays_reports_failed_items() {
-    let errors = check_errors(
+    let errors = check_results(
         r#"
 type Drop {
   value: int;
@@ -129,17 +141,20 @@ loot: Loot = {
 "#,
     );
 
-    assert_eq!(errors.len(), 3);
-    assert!(errors.iter().any(|error| error.contains("drop[1]")));
-    assert!(errors.iter().any(|error| error.contains("drop[2]")));
-    assert!(errors
-        .iter()
-        .any(|error| error.contains("all drop in drops")));
+    assert_eq!(errors.len(), 1);
+    let CheckErrorKind::AllFailed { total, failed, .. } = &errors[0].kind else {
+        panic!("expected all failure");
+    };
+    assert_eq!(*total, 3);
+    assert_eq!(failed.len(), 2);
+    assert_eq!(failed[0].key, "drop[1]");
+    assert_eq!(failed[1].key, "drop[2]");
+    assert!(errors[0].message.contains("all drop in drops"));
 }
 
 #[test]
 fn all_over_dict_entries_exposes_key_and_value() {
-    let errors = check_errors(
+    let errors = check_results(
         r#"
 type ScoreTable {
   scores: {string: int};
@@ -160,11 +175,14 @@ table: ScoreTable = {
 "#,
     );
 
-    assert_eq!(errors.len(), 2);
-    assert!(errors.iter().any(|error| error.contains("entry[1]")));
-    assert!(errors
-        .iter()
-        .any(|error| error.contains("all entry in scores")));
+    assert_eq!(errors.len(), 1);
+    let CheckErrorKind::AllFailed { total, failed, .. } = &errors[0].kind else {
+        panic!("expected all failure");
+    };
+    assert_eq!(*total, 2);
+    assert_eq!(failed.len(), 1);
+    assert_eq!(failed[0].key, "entry[1]");
+    assert!(errors[0].message.contains("all entry in scores"));
 }
 
 #[test]

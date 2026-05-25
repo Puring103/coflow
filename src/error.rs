@@ -44,6 +44,32 @@ impl BuildErrors {
 pub struct CheckError {
     pub message: String,
     pub span: Option<Span>,
+    pub kind: CheckErrorKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CheckErrorKind {
+    CondFailed {
+        source: String,
+        evaluated: String,
+        context: String,
+    },
+    AllFailed {
+        source: String,
+        context: String,
+        total: usize,
+        failed: Vec<AllFailedItem>,
+    },
+    EvalError {
+        message: String,
+        context: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AllFailedItem {
+    pub key: String,
+    pub errors: Vec<CheckError>,
 }
 
 #[derive(Debug)]
