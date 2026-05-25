@@ -1,4 +1,4 @@
-#![allow(clippy::panic, clippy::unwrap_used)]
+#![allow(clippy::panic, clippy::unwrap_used, clippy::needless_raw_string_hashes)]
 
 use coflow::{CfcContainer, ModuleId};
 

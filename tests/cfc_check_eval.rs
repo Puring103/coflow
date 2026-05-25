@@ -1,4 +1,4 @@
-#![allow(clippy::panic, clippy::unwrap_used)]
+#![allow(clippy::panic, clippy::unwrap_used, clippy::needless_raw_string_hashes)]
 
 use coflow::{CfcContainer, CheckError, CheckErrorKind, ModuleId};
 
@@ -186,6 +186,43 @@ table: ScoreTable = {
 }
 
 #[test]
+fn all_eval_error_is_reported_as_failed_item() {
+    let errors = check_results(
+        r#"
+type Drop {
+  value: int;
+}
+
+type Loot {
+  drops: [Drop];
+
+  check {
+    all drop in drops {
+      drop.missing > 0;
+    }
+  }
+}
+
+loot: Loot = {
+  drops: [
+    { value: 1 },
+  ],
+};
+"#,
+    );
+
+    assert_eq!(errors.len(), 1);
+    let CheckErrorKind::AllFailed { failed, .. } = &errors[0].kind else {
+        panic!("expected all failure");
+    };
+    assert_eq!(failed.len(), 1);
+    assert!(matches!(
+        &failed[0].errors[0].kind,
+        CheckErrorKind::EvalError { message, .. } if message.contains("missing field `missing`")
+    ));
+}
+
+#[test]
 fn top_level_checks_can_compare_nodes() {
     let errors = check_errors(
         r#"
@@ -298,6 +335,33 @@ stats: Stats = {
     );
 
     assert!(errors.is_empty());
+}
+
+#[test]
+fn integer_arithmetic_errors_do_not_panic() {
+    let errors = check_results(
+        r#"
+type Limits {
+  value: int;
+
+  check {
+    value + 1 > 0;
+    value // -1 > 0;
+    1 << 100 > 0;
+  }
+}
+
+limits: Limits = {
+  value: 9223372036854775807,
+};
+"#,
+    );
+
+    assert_eq!(errors.len(), 1);
+    assert!(matches!(
+        &errors[0].kind,
+        CheckErrorKind::EvalError { message, .. } if message.contains("integer addition overflow")
+    ));
 }
 
 #[test]

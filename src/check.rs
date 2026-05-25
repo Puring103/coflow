@@ -91,14 +91,14 @@ impl<'a> CheckRunner<'a> {
     fn run_type_checks(&mut self, enum_values: &HashMap<(ModuleId, String, String), CfcValueRef>) {
         for (_, module) in self.result.modules() {
             for (_, value) in module.values() {
-                self.walk_value(value, enum_values);
+                self.walk_value(&value, enum_values);
             }
         }
     }
 
     fn walk_value(
         &mut self,
-        value: CfcValueRef,
+        value: &CfcValueRef,
         enum_values: &HashMap<(ModuleId, String, String), CfcValueRef>,
     ) {
         if !self.visited_walk.insert(value.ptr_key()) {
@@ -122,7 +122,7 @@ impl<'a> CheckRunner<'a> {
             }
         };
         for child in children {
-            self.walk_value(child, enum_values);
+            self.walk_value(&child, enum_values);
         }
     }
 
@@ -145,7 +145,7 @@ impl<'a> CheckRunner<'a> {
             &block,
             &type_name.module,
             &mut scope,
-            type_name.name.clone(),
+            type_name.name.as_str(),
         );
     }
 
@@ -179,7 +179,7 @@ impl<'a> CheckRunner<'a> {
                 };
                 let mut scope = CheckScope::new(enum_values, self.base_scope(module_id, true));
                 scope.push(locals.clone());
-                self.eval_block(block, module_id, &mut scope, module_id.to_string());
+                self.eval_block(block, module_id, &mut scope, module_id.as_str());
             }
         }
     }
@@ -214,10 +214,10 @@ impl<'a> CheckRunner<'a> {
         block: &CheckBlock,
         module: &ModuleId,
         scope: &mut CheckScope<'_>,
-        context: String,
+        context: &str,
     ) {
         for stmt in &block.stmts {
-            if !self.eval_stmt(stmt, module, scope, &context) {
+            if !self.eval_stmt(stmt, module, scope, context) {
                 break;
             }
         }
@@ -272,6 +272,7 @@ impl<'a> CheckRunner<'a> {
         }
     }
 
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     fn eval_all(
         &mut self,
         binding: &str,
@@ -355,7 +356,14 @@ impl<'a> CheckRunner<'a> {
                         errors,
                     });
                     scope.pop();
-                    return false;
+                    self.errors.push(all_failed(
+                        format!("all {binding} in {}", describe_expr(collection)),
+                        context,
+                        total,
+                        failed,
+                        span,
+                    ));
+                    return true;
                 }
             }
             scope.pop();
@@ -603,19 +611,21 @@ impl<'a> CheckRunner<'a> {
                         rhs.into_string()?
                     )));
                 }
-                numeric_bin(lhs, rhs, |a, b| a + b, |a, b| a + b)
+                numeric_bin(lhs, rhs, i64::checked_add, |a, b| a + b, "addition")
             }
             BinOp::Sub => numeric_bin(
                 self.eval_expr(lhs, module, scope, context)?,
                 self.eval_expr(rhs, module, scope, context)?,
+                i64::checked_sub,
                 |a, b| a - b,
-                |a, b| a - b,
+                "subtraction",
             ),
             BinOp::Mul => numeric_bin(
                 self.eval_expr(lhs, module, scope, context)?,
                 self.eval_expr(rhs, module, scope, context)?,
+                i64::checked_mul,
                 |a, b| a * b,
-                |a, b| a * b,
+                "multiplication",
             ),
             BinOp::Div => {
                 let lhs = self.eval_expr(lhs, module, scope, context)?.into_f64()?;
@@ -631,7 +641,9 @@ impl<'a> CheckRunner<'a> {
                 if rhs == 0 {
                     return Err("division by zero".to_string());
                 }
-                Ok(EvalValue::Int(lhs / rhs))
+                lhs.checked_div(rhs)
+                    .map(EvalValue::Int)
+                    .ok_or_else(|| "integer division overflow".to_string())
             }
             BinOp::Mod => {
                 let lhs = self.eval_expr(lhs, module, scope, context)?.into_i64()?;
@@ -639,7 +651,9 @@ impl<'a> CheckRunner<'a> {
                 if rhs == 0 {
                     return Err("modulo by zero".to_string());
                 }
-                Ok(EvalValue::Int(lhs % rhs))
+                lhs.checked_rem(rhs)
+                    .map(EvalValue::Int)
+                    .ok_or_else(|| "integer remainder overflow".to_string())
             }
             BinOp::Pow => {
                 let lhs = self.eval_expr(lhs, module, scope, context)?;
@@ -649,19 +663,28 @@ impl<'a> CheckRunner<'a> {
                         let exp = rhs.into_i64()?;
                         let exp = u32::try_from(exp)
                             .map_err(|_| "integer exponent must be nonnegative".to_string())?;
-                        Ok(EvalValue::Int(lhs.into_i64()?.pow(exp)))
+                        lhs.into_i64()?
+                            .checked_pow(exp)
+                            .map(EvalValue::Int)
+                            .ok_or_else(|| "integer exponentiation overflow".to_string())
                     }
                     _ => Ok(EvalValue::Float(lhs.into_f64()?.powf(rhs.into_f64()?))),
                 }
             }
-            BinOp::Shl => Ok(EvalValue::Int(
-                self.eval_expr(lhs, module, scope, context)?.into_i64()?
-                    << self.eval_expr(rhs, module, scope, context)?.into_i64()?,
-            )),
-            BinOp::Shr => Ok(EvalValue::Int(
-                self.eval_expr(lhs, module, scope, context)?.into_i64()?
-                    >> self.eval_expr(rhs, module, scope, context)?.into_i64()?,
-            )),
+            BinOp::Shl => {
+                let lhs = self.eval_expr(lhs, module, scope, context)?.into_i64()?;
+                let rhs = shift_amount(self.eval_expr(rhs, module, scope, context)?.into_i64()?)?;
+                lhs.checked_shl(rhs)
+                    .map(EvalValue::Int)
+                    .ok_or_else(|| "left shift overflow".to_string())
+            }
+            BinOp::Shr => {
+                let lhs = self.eval_expr(lhs, module, scope, context)?.into_i64()?;
+                let rhs = shift_amount(self.eval_expr(rhs, module, scope, context)?.into_i64()?)?;
+                lhs.checked_shr(rhs)
+                    .map(EvalValue::Int)
+                    .ok_or_else(|| "right shift overflow".to_string())
+            }
         }
     }
 
@@ -755,6 +778,7 @@ impl EvalValue {
         }
     }
 
+    #[allow(clippy::cast_precision_loss)]
     fn into_f64(self) -> Result<f64, String> {
         match self {
             EvalValue::Int(value) => Ok(value as f64),
@@ -840,15 +864,25 @@ fn module_namespace_value(module: &ModuleId, allow_data: bool) -> CfcValueRef {
 fn numeric_bin(
     lhs: EvalValue,
     rhs: EvalValue,
-    int_op: impl FnOnce(i64, i64) -> i64,
+    int_op: impl FnOnce(i64, i64) -> Option<i64>,
     float_op: impl FnOnce(f64, f64) -> f64,
+    operation: &str,
 ) -> Result<EvalValue, String> {
     match (lhs.number_kind()?, rhs.number_kind()?) {
-        (NumberKind::Int, NumberKind::Int) => {
-            Ok(EvalValue::Int(int_op(lhs.into_i64()?, rhs.into_i64()?)))
-        }
+        (NumberKind::Int, NumberKind::Int) => int_op(lhs.into_i64()?, rhs.into_i64()?)
+            .map(EvalValue::Int)
+            .ok_or_else(|| format!("integer {operation} overflow")),
         _ => Ok(EvalValue::Float(float_op(lhs.into_f64()?, rhs.into_f64()?))),
     }
+}
+
+fn shift_amount(value: i64) -> Result<u32, String> {
+    let amount =
+        u32::try_from(value).map_err(|_| "shift amount must be nonnegative".to_string())?;
+    if amount >= i64::BITS {
+        return Err(format!("shift amount `{amount}` is out of range"));
+    }
+    Ok(amount)
 }
 
 fn compare_values(op: CmpOp, lhs: &EvalValue, rhs: &EvalValue) -> Result<bool, String> {
@@ -859,6 +893,7 @@ fn compare_values(op: CmpOp, lhs: &EvalValue, rhs: &EvalValue) -> Result<bool, S
     }
 }
 
+#[allow(clippy::float_cmp)]
 fn equal_values(lhs: &EvalValue, rhs: &EvalValue) -> Result<bool, String> {
     match (materialize(lhs)?, materialize(rhs)?) {
         (EvalValue::Int(a), EvalValue::Int(b)) => Ok(a == b),
@@ -885,12 +920,13 @@ fn equal_values(lhs: &EvalValue, rhs: &EvalValue) -> Result<bool, String> {
     }
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn compare_ordered(op: CmpOp, lhs: &EvalValue, rhs: &EvalValue) -> Result<bool, String> {
     match (materialize(lhs)?, materialize(rhs)?) {
-        (EvalValue::Int(a), EvalValue::Int(b)) => Ok(apply_cmp(op, a, b)),
-        (EvalValue::Int(a), EvalValue::Float(b)) => Ok(apply_cmp(op, a as f64, b)),
-        (EvalValue::Float(a), EvalValue::Int(b)) => Ok(apply_cmp(op, a, b as f64)),
-        (EvalValue::Float(a), EvalValue::Float(b)) => Ok(apply_cmp(op, a, b)),
+        (EvalValue::Int(a), EvalValue::Int(b)) => Ok(apply_cmp(op, &a, &b)),
+        (EvalValue::Int(a), EvalValue::Float(b)) => Ok(apply_cmp(op, &(a as f64), &b)),
+        (EvalValue::Float(a), EvalValue::Int(b)) => Ok(apply_cmp(op, &a, &(b as f64))),
+        (EvalValue::Float(a), EvalValue::Float(b)) => Ok(apply_cmp(op, &a, &b)),
         (
             EvalValue::Enum {
                 enum_type: a_ty,
@@ -902,7 +938,7 @@ fn compare_ordered(op: CmpOp, lhs: &EvalValue, rhs: &EvalValue) -> Result<bool, 
                 value: b_value,
                 ..
             },
-        ) if a_ty == b_ty => Ok(apply_cmp(op, a_value, b_value)),
+        ) if a_ty == b_ty => Ok(apply_cmp(op, &a_value, &b_value)),
         (
             EvalValue::Enum {
                 enum_type: a_ty, ..
@@ -922,7 +958,7 @@ fn compare_ordered(op: CmpOp, lhs: &EvalValue, rhs: &EvalValue) -> Result<bool, 
     }
 }
 
-fn apply_cmp<T: PartialOrd>(op: CmpOp, lhs: T, rhs: T) -> bool {
+fn apply_cmp<T: PartialOrd>(op: CmpOp, lhs: &T, rhs: &T) -> bool {
     match op {
         CmpOp::Eq => lhs == rhs,
         CmpOp::Ne => lhs != rhs,
