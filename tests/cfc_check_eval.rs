@@ -515,3 +515,309 @@ item: Item = {
     assert_eq!(errors.len(), 1);
     assert!(errors[0].contains("unknown name `limit`"));
 }
+
+#[test]
+fn empty_all_blocks_pass() {
+    let errors = check_errors(
+        r#"
+type Drop {
+  value: int;
+}
+
+type Loot {
+  drops: [Drop];
+
+  check {
+    all drop in drops {
+      drop.value > 0;
+    }
+  }
+}
+
+loot: Loot = {
+  drops: [],
+};
+"#,
+    );
+
+    assert!(errors.is_empty());
+}
+
+#[test]
+fn nested_all_reports_inner_failures() {
+    let errors = check_results(
+        r#"
+type Drop {
+  value: int;
+}
+
+type Monster {
+  drops: [Drop];
+}
+
+type Zone {
+  monsters: [Monster];
+
+  check {
+    all monster in monsters {
+      all drop in monster.drops {
+        drop.value > 0;
+      }
+    }
+  }
+}
+
+zone: Zone = {
+  monsters: [
+    { drops: [{ value: 1 }] },
+    { drops: [{ value: 0 }, { value: 2 }] },
+  ],
+};
+"#,
+    );
+
+    assert_eq!(errors.len(), 1);
+    let CheckErrorKind::AllFailed { total, failed, .. } = &errors[0].kind else {
+        panic!("expected outer all failure");
+    };
+    assert_eq!(*total, 2);
+    assert_eq!(failed.len(), 1);
+    assert_eq!(failed[0].key, "monster[1]");
+    assert_eq!(failed[0].errors.len(), 1);
+    let CheckErrorKind::AllFailed {
+        total: inner_total,
+        failed: inner_failed,
+        ..
+    } = &failed[0].errors[0].kind
+    else {
+        panic!("expected inner all failure");
+    };
+    assert_eq!(*inner_total, 2);
+    assert_eq!(inner_failed.len(), 1);
+    assert_eq!(inner_failed[0].key, "drop[0]");
+}
+
+#[test]
+fn top_level_all_blocks_continue_across_multiple_check_blocks() {
+    let errors = check_results(
+        r#"
+values: [int] = [1, 0, 2];
+
+check {
+  all value in values {
+    value > 0;
+  }
+}
+
+check {
+  values[2] == 2;
+}
+"#,
+    );
+
+    assert_eq!(errors.len(), 1);
+    let CheckErrorKind::AllFailed { total, failed, .. } = &errors[0].kind else {
+        panic!("expected all failure");
+    };
+    assert_eq!(*total, 3);
+    assert_eq!(failed.len(), 1);
+    assert_eq!(failed[0].key, "value[1]");
+}
+
+#[test]
+fn condition_must_evaluate_to_bool() {
+    let errors = check_results(
+        r#"
+type Bad {
+  value: int;
+
+  check {
+    value + 1;
+    false;
+  }
+}
+
+bad: Bad = {
+  value: 1,
+};
+"#,
+    );
+
+    assert_eq!(errors.len(), 1);
+    assert!(matches!(
+        &errors[0].kind,
+        CheckErrorKind::EvalError { message, .. } if message.contains("condition must be bool")
+    ));
+}
+
+#[test]
+fn check_array_index_out_of_bounds_is_eval_error() {
+    let errors = check_results(
+        r#"
+type Bag {
+  values: [int];
+
+  check {
+    values[2] > 0;
+    false;
+  }
+}
+
+bag: Bag = {
+  values: [1],
+};
+"#,
+    );
+
+    assert_eq!(errors.len(), 1);
+    assert!(matches!(
+        &errors[0].kind,
+        CheckErrorKind::EvalError { message, .. }
+            if message.contains("array index `2` is out of bounds")
+    ));
+}
+
+#[test]
+fn check_dict_missing_key_is_eval_error() {
+    let errors = check_results(
+        r#"
+type Scores {
+  values: {string: int};
+
+  check {
+    values["missing"] > 0;
+    false;
+  }
+}
+
+scores: Scores = {
+  values: dict{ "alice": 1 },
+};
+"#,
+    );
+
+    assert_eq!(errors.len(), 1);
+    assert!(matches!(
+        &errors[0].kind,
+        CheckErrorKind::EvalError { message, .. } if message.contains("dict key not found")
+    ));
+}
+
+#[test]
+fn all_collection_must_be_array_or_dict() {
+    let errors = check_results(
+        r#"
+type Bad {
+  value: int;
+
+  check {
+    all item in value {
+      true;
+    }
+    false;
+  }
+}
+
+bad: Bad = {
+  value: 1,
+};
+"#,
+    );
+
+    assert_eq!(errors.len(), 1);
+    assert!(matches!(
+        &errors[0].kind,
+        CheckErrorKind::EvalError { message, .. }
+            if message.contains("all collection must be array or dict")
+    ));
+}
+
+#[test]
+fn division_and_modulo_by_zero_are_eval_errors() {
+    let errors = check_results(
+        r#"
+type Div {
+  value: int;
+
+  check {
+    value / 0 > 0;
+  }
+}
+
+type Mod {
+  value: int;
+
+  check {
+    value % 0 == 0;
+  }
+}
+
+div: Div = {
+  value: 1,
+};
+
+modulo: Mod = {
+  value: 1,
+};
+"#,
+    );
+
+    assert_eq!(errors.len(), 2);
+    assert!(errors.iter().any(|error| matches!(
+        &error.kind,
+        CheckErrorKind::EvalError { message, .. } if message.contains("division by zero")
+    )));
+    assert!(errors.iter().any(|error| matches!(
+        &error.kind,
+        CheckErrorKind::EvalError { message, .. } if message.contains("modulo by zero")
+    )));
+}
+
+#[test]
+fn ordered_comparison_between_different_enums_is_eval_error() {
+    let errors = check_results(
+        r#"
+enum Element {
+  fire,
+}
+
+enum Rarity {
+  common,
+}
+
+type Pair {
+  element: Element;
+  rarity: Rarity;
+
+  check {
+    element < rarity;
+  }
+}
+
+pair: Pair = {
+  element: Element.fire,
+  rarity: Rarity.common,
+};
+"#,
+    );
+
+    assert_eq!(errors.len(), 1);
+    assert!(matches!(
+        &errors[0].kind,
+        CheckErrorKind::EvalError { message, .. }
+            if message.contains("cannot compare enum `Element` with enum `Rarity`")
+    ));
+}
+
+#[test]
+fn check_power_operator_is_right_associative() {
+    let errors = check_errors(
+        r#"
+check {
+  2 ** 3 ** 2 == 512;
+}
+"#,
+    );
+
+    assert!(errors.is_empty());
+}
