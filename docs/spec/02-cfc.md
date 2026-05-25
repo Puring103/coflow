@@ -167,33 +167,97 @@ type Range {
   max: int;
 
   check {
-    assert min <= max : "min must be <= max";
+    min <= max;
+    min >= 0;
   }
 }
 ```
 
-`check` 块由若干 `assert` 语句组成：
+`check` 块由若干条件语句和 `all` 量词块组成，没有 `assert` 关键字，没有用户自定义错误消息。
+
+**条件语句**：一个表达式加分号，求值结果必须为 bool。
 
 ```cfc
-assert <bool-expr> : <string-expr>;
+type Weapon {
+  damage: int;
+  cooldown: float;
+  rarity: Rarity;
+
+  check {
+    damage > 0;
+    cooldown >= 0.1;
+    rarity >= Rarity.common;
+    0 < damage <= 1000;
+  }
+}
 ```
 
-- `bool-expr` 为真时校验通过；为假时求值 `string-expr` 作为错误信息。
-- 多条 `assert` 按出现顺序求值，第一条失败即中止该对象的校验。
-- `check` 中直接访问当前对象字段，不需要 `self.`。
-- 只允许纯数据表达式，不能调用宿主 API、修改状态或执行运行时逻辑。
-- 表达式语义在 CFC 规范自身内定义，不依赖 CFS。
-- v2 初版表达式只支持字面量、枚举值、字段访问、数组下标、比较运算、布尔运算和括号分组。
-- v2 初版不支持函数调用、宿主 API 调用、变量声明、赋值、循环、字符串插值或字符串拼接。
-
-支持的 `check` 表达式集合：
+**`all` 量词块**：对集合中每个元素执行内部条件，全部通过则通过。
 
 ```cfc
-assert min <= max : "min must be <= max";
-assert enabled == true && weight > 0.0 : "enabled item must have weight";
-assert rarity != Rarity.common : "rarity must not be common";
-assert drops[0].id == "coin" : "first drop must be coin";
+type Loot {
+  drops: [Drop];
+
+  check {
+    all drop in drops {
+      drop.value > 0;
+      drop.rarity != Rarity.common;
+    }
+  }
+}
 ```
+
+`all` 支持 Array 和 Dict。迭代 Array 时绑定变量直接是元素；迭代 Dict 时绑定变量是 entry 对象，具有 `.key` 和 `.value` 字段：
+
+```cfc
+type ScoreTable {
+  scores: {string: int};
+
+  check {
+    all entry in scores {
+      entry.value >= 0;
+    }
+  }
+}
+```
+
+`all` 块支持任意深度嵌套：
+
+```cfc
+type Zone {
+  monsters: [Monster];
+
+  check {
+    all monster in monsters {
+      monster.level > 0;
+      all drop in monster.drops {
+        drop.value > 0;
+      }
+    }
+  }
+}
+```
+
+**访问范围**：`type` 内 `check` 只能访问当前对象的字段和枚举值，不能引用外部命名节点。跨节点约束用顶层 `check` 表达。
+
+**执行规则**：
+- 多条语句顺序求值，条件为假时继续收集后续错误。
+- 求值过程中发生类型错误或数组越界时立即停止当前对象的校验。
+- 空集合上的 `all` 视为通过（vacuous truth）。
+- 同一对象图中多处引用同一命名节点时，该对象的 check 只执行一次。
+
+**支持的运算符**（优先级从低到高）：
+
+- 逻辑：`||` `&&` `!`，短路求值
+- 按位：`|` `^` `&` `~`
+- 比较：`==` `!=` `<` `<=` `>` `>=`，支持链式比较（方向一致，如 `0 < x <= 100`）
+- 算术：`+` `-` `*` `/` `//` `%` `**`，`**` 右结合
+- 一元：`-`（取负）
+- 后缀：`.`（字段访问）`[]`（索引访问）
+
+枚举类型支持全部六种比较运算符，按底层整数值比较。
+
+不支持：函数调用、字符串插值、变量声明、赋值、`?.`、`?[]`。
 
 ## `enum` 枚举定义
 
@@ -387,13 +451,26 @@ goblin: Monster = {
 };
 
 check {
-  assert slime.stats.hp < goblin.stats.hp : "goblin should be stronger than slime";
+  slime.stats.hp < goblin.stats.hp;
+  goblin.rarity > slime.rarity;
 }
 ```
 
-语法与 `type` 内的 `check` 块完全一致，但访问的是顶层命名节点而非 `self` 字段。
+语法与 `type` 内的 `check` 块完全一致，但访问范围是所在模块的顶层命名节点，而非 `self` 字段。`all` 量词块同样可用：
 
-v1 parser 必须能识别并跳过 `check { ... }` 块。跳过时需要正确处理字符串字面量、注释和嵌套括号，直到匹配到对应的右花括号。v1 不解析 `assert` 内容，也不执行 `check` 语义校验。
+```cfc
+monsters: [Monster] = [...];
+
+check {
+  all monster in monsters {
+    monster.stats.hp > 0;
+  }
+}
+```
+
+**报错标识**：顶层 `check` 失败时以模块标识和行号定位，而非类型名。
+
+v1 parser 必须能识别并跳过 `check { ... }` 块。跳过时需要正确处理字符串字面量、注释和嵌套括号，直到匹配到对应的右花括号。v1 不解析 `check` 内容，也不执行语义校验。
 
 ## Loader 接口
 
@@ -624,7 +701,7 @@ CFC 错误按阶段划分：
 - `imports` 阶段：指定模块尚未注册。
 - `bind_import` 阶段：指定模块尚未注册、import id 不存在、依赖模块尚未注册、重复绑定、同一模块内多个 import 绑定到同一依赖模块、别名重复。
 - `build` 阶段：重复定义、未绑定 import、未知符号、非法跨模块访问、类型不匹配、缺少必填字段、多余字段、无法推断空数组或空字典类型、枚举重复值、非法循环类型约束。
-- `check` 阶段：`assert` 条件为假、`check` 表达式类型错误、`check` 中访问不存在的字段或越界数组下标。
+- `check` 阶段：条件表达式为假、`check` 表达式类型错误、`check` 中访问不存在的字段或越界数组下标。
 
 `add_module`、`replace_module`、`imports`、`bind_import` 和 `build` 的错误会阻止返回可用对象图。`check` 错误不改变对象图，返回错误列表供宿主或编辑器展示。
 
