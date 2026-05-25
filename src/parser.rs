@@ -1,6 +1,7 @@
 use crate::ast::{
-    CheckBlock, DataDef, EnumDef, EnumVariant, Expr, ExprKind, FieldDef, Item, ModuleAst,
-    ObjectField, PathSegment, TypeDef, TypeName, TypeRef, UseDecl,
+    BinOp, CheckBlock, CheckExpr, CheckExprKind, CmpOp, CondStmt, DataDef, EnumDef, EnumVariant,
+    Expr, ExprKind, FieldDef, Item, ModuleAst, ObjectField, PathSegment, TypeDef, TypeName,
+    TypeRef, UnaryOp, UseDecl,
 };
 use crate::container::ImportId;
 use crate::error::ParseErrors;
@@ -88,9 +89,10 @@ impl Parser {
         let (name, _) = self.expect_ident()?;
         self.expect_simple(&TokenKind::LBrace)?;
         let mut fields = Vec::new();
+        let mut check = None;
         while !self.at(&TokenKind::RBrace) {
             if self.at(&TokenKind::Check) {
-                self.parse_check_block()?;
+                check = Some(self.parse_check_block()?);
                 break;
             }
             let field_start = self.peek().span.start;
@@ -114,6 +116,7 @@ impl Parser {
         Ok(TypeDef {
             name,
             fields,
+            check,
             span: Span::new(start, end),
         })
     }
@@ -375,30 +378,310 @@ impl Parser {
     fn parse_check_block(&mut self) -> Result<CheckBlock, ParseErrors> {
         let start = self.expect_simple(&TokenKind::Check)?.start;
         self.expect_simple(&TokenKind::LBrace)?;
-        let mut depth = 1;
-        while depth > 0 {
-            let token = self.peek().clone();
-            match token.kind {
-                TokenKind::LBrace => {
-                    depth += 1;
-                    self.bump();
-                }
-                TokenKind::RBrace => {
-                    depth -= 1;
-                    self.bump();
-                    if depth == 0 {
-                        return Ok(CheckBlock {
-                            span: Span::new(start, token.span.end),
-                        });
-                    }
-                }
-                TokenKind::Eof => return self.err("unterminated check block"),
-                _ => {
-                    self.bump();
-                }
+        let stmts = self.parse_cond_stmts()?;
+        let end = self.expect_simple(&TokenKind::RBrace)?.end;
+        Ok(CheckBlock {
+            stmts,
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_cond_stmts(&mut self) -> Result<Vec<CondStmt>, ParseErrors> {
+        let mut stmts = Vec::new();
+        while !self.at(&TokenKind::RBrace) {
+            if self.at(&TokenKind::Eof) {
+                return self.err("unterminated check block");
+            }
+            stmts.push(self.parse_cond_stmt()?);
+        }
+        Ok(stmts)
+    }
+
+    fn parse_cond_stmt(&mut self) -> Result<CondStmt, ParseErrors> {
+        if self.at(&TokenKind::All) {
+            return self.parse_all_stmt();
+        }
+        let expr = self.parse_check_expr()?;
+        self.expect_simple(&TokenKind::Semicolon)?;
+        Ok(CondStmt::Expr(expr))
+    }
+
+    fn parse_all_stmt(&mut self) -> Result<CondStmt, ParseErrors> {
+        let start = self.expect_simple(&TokenKind::All)?.start;
+        let (binding, _) = self.expect_ident()?;
+        self.expect_simple(&TokenKind::In)?;
+        let collection = self.parse_check_expr()?;
+        self.expect_simple(&TokenKind::LBrace)?;
+        let body = self.parse_cond_stmts()?;
+        let end = self.expect_simple(&TokenKind::RBrace)?.end;
+        Ok(CondStmt::All {
+            binding,
+            collection,
+            body,
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_check_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        self.parse_or_expr()
+    }
+
+    fn parse_or_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let mut expr = self.parse_and_expr()?;
+        while self.eat(&TokenKind::PipePipe).is_some() {
+            let rhs = self.parse_and_expr()?;
+            expr = bin_expr(BinOp::Or, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_and_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let mut expr = self.parse_bitor_expr()?;
+        while self.eat(&TokenKind::AmpAmp).is_some() {
+            let rhs = self.parse_bitor_expr()?;
+            expr = bin_expr(BinOp::And, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_bitor_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let mut expr = self.parse_bitxor_expr()?;
+        while self.eat(&TokenKind::Pipe).is_some() {
+            let rhs = self.parse_bitxor_expr()?;
+            expr = bin_expr(BinOp::BitOr, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_bitxor_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let mut expr = self.parse_bitand_expr()?;
+        while self.eat(&TokenKind::Caret).is_some() {
+            let rhs = self.parse_bitand_expr()?;
+            expr = bin_expr(BinOp::BitXor, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_bitand_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let mut expr = self.parse_cmp_chain()?;
+        while self.eat(&TokenKind::Amp).is_some() {
+            let rhs = self.parse_cmp_chain()?;
+            expr = bin_expr(BinOp::BitAnd, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_cmp_chain(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let first = self.parse_add_expr()?;
+        let mut rest = Vec::new();
+        while let Some(op) = self.eat_cmp_op() {
+            rest.push((op, self.parse_add_expr()?));
+        }
+        if rest.is_empty() {
+            return Ok(first);
+        }
+        let start = first.span.start;
+        validate_cmp_chain(&rest, first.span)?;
+        let end = rest
+            .last()
+            .map_or(first.span.end, |(_, expr)| expr.span.end);
+        Ok(CheckExpr {
+            kind: CheckExprKind::CmpChain {
+                first: Box::new(first),
+                rest,
+            },
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_add_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let mut expr = self.parse_shift_expr()?;
+        loop {
+            let op = if self.eat(&TokenKind::Plus).is_some() {
+                BinOp::Add
+            } else if self.eat(&TokenKind::Minus).is_some() {
+                BinOp::Sub
+            } else {
+                break;
+            };
+            let rhs = self.parse_shift_expr()?;
+            expr = bin_expr(op, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_shift_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let mut expr = self.parse_mul_expr()?;
+        loop {
+            let op = if self.eat(&TokenKind::LessLess).is_some() {
+                BinOp::Shl
+            } else if self.eat(&TokenKind::GreaterGreater).is_some() {
+                BinOp::Shr
+            } else {
+                break;
+            };
+            let rhs = self.parse_mul_expr()?;
+            expr = bin_expr(op, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_mul_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let mut expr = self.parse_prefix_expr()?;
+        loop {
+            let op = if self.eat(&TokenKind::Star).is_some() {
+                BinOp::Mul
+            } else if self.eat(&TokenKind::Slash).is_some() {
+                BinOp::Div
+            } else if self.eat(&TokenKind::SlashSlash).is_some() {
+                BinOp::IntDiv
+            } else if self.eat(&TokenKind::Percent).is_some() {
+                BinOp::Mod
+            } else {
+                break;
+            };
+            let rhs = self.parse_prefix_expr()?;
+            expr = bin_expr(op, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_prefix_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let token = self.peek().clone();
+        let op = if self.eat(&TokenKind::Bang).is_some() {
+            Some(UnaryOp::Not)
+        } else if self.eat(&TokenKind::Tilde).is_some() {
+            Some(UnaryOp::BitNot)
+        } else if self.eat(&TokenKind::Minus).is_some() {
+            Some(UnaryOp::Neg)
+        } else {
+            None
+        };
+        if let Some(op) = op {
+            let expr = self.parse_prefix_expr()?;
+            return Ok(CheckExpr {
+                span: Span::new(token.span.start, expr.span.end),
+                kind: CheckExprKind::Unary {
+                    op,
+                    expr: Box::new(expr),
+                },
+            });
+        }
+        self.parse_power_expr()
+    }
+
+    fn parse_power_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let lhs = self.parse_postfix_expr()?;
+        if self.eat(&TokenKind::StarStar).is_some() {
+            let rhs = self.parse_prefix_expr()?;
+            Ok(bin_expr(BinOp::Pow, lhs, rhs))
+        } else {
+            Ok(lhs)
+        }
+    }
+
+    fn parse_postfix_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let mut expr = self.parse_check_primary()?;
+        loop {
+            if self.eat(&TokenKind::Dot).is_some() {
+                let (name, name_span) = self.expect_ident()?;
+                let span = Span::new(expr.span.start, name_span.end);
+                expr = CheckExpr {
+                    kind: CheckExprKind::Field {
+                        expr: Box::new(expr),
+                        name,
+                    },
+                    span,
+                };
+            } else if self.eat(&TokenKind::LBracket).is_some() {
+                let index = self.parse_check_expr()?;
+                let end = self.expect_simple(&TokenKind::RBracket)?.end;
+                expr = CheckExpr {
+                    span: Span::new(expr.span.start, end),
+                    kind: CheckExprKind::Index {
+                        expr: Box::new(expr),
+                        index: Box::new(index),
+                    },
+                };
+            } else {
+                break;
             }
         }
-        self.err("unterminated check block")
+        Ok(expr)
+    }
+
+    fn parse_check_primary(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let token = self.peek().clone();
+        match token.kind {
+            TokenKind::Int(value) => {
+                self.bump();
+                Ok(CheckExpr {
+                    kind: CheckExprKind::Int(value),
+                    span: token.span,
+                })
+            }
+            TokenKind::Float(value) => {
+                self.bump();
+                Ok(CheckExpr {
+                    kind: CheckExprKind::Float(value),
+                    span: token.span,
+                })
+            }
+            TokenKind::True => {
+                self.bump();
+                Ok(CheckExpr {
+                    kind: CheckExprKind::Bool(true),
+                    span: token.span,
+                })
+            }
+            TokenKind::False => {
+                self.bump();
+                Ok(CheckExpr {
+                    kind: CheckExprKind::Bool(false),
+                    span: token.span,
+                })
+            }
+            TokenKind::String(value) => {
+                self.bump();
+                Ok(CheckExpr {
+                    kind: CheckExprKind::Str(value),
+                    span: token.span,
+                })
+            }
+            TokenKind::Ident(value) => {
+                self.bump();
+                Ok(CheckExpr {
+                    kind: CheckExprKind::Name(value),
+                    span: token.span,
+                })
+            }
+            TokenKind::LParen => {
+                let start = self.expect_simple(&TokenKind::LParen)?.start;
+                let mut expr = self.parse_check_expr()?;
+                let end = self.expect_simple(&TokenKind::RParen)?.end;
+                expr.span = Span::new(start, end);
+                Ok(expr)
+            }
+            _ => self.err("expected check expression"),
+        }
+    }
+
+    fn eat_cmp_op(&mut self) -> Option<CmpOp> {
+        if self.eat(&TokenKind::EqEq).is_some() {
+            Some(CmpOp::Eq)
+        } else if self.eat(&TokenKind::BangEq).is_some() {
+            Some(CmpOp::Ne)
+        } else if self.eat(&TokenKind::Less).is_some() {
+            Some(CmpOp::Lt)
+        } else if self.eat(&TokenKind::LessEq).is_some() {
+            Some(CmpOp::Le)
+        } else if self.eat(&TokenKind::Greater).is_some() {
+            Some(CmpOp::Gt)
+        } else if self.eat(&TokenKind::GreaterEq).is_some() {
+            Some(CmpOp::Ge)
+        } else {
+            None
+        }
     }
 
     fn parse_signed_int(&mut self) -> Result<i64, ParseErrors> {
@@ -503,6 +786,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Comma => ",",
         TokenKind::Dot => ".",
         TokenKind::Equal => "=",
+        TokenKind::In => "in",
         _ => "token",
     }
 }
@@ -515,4 +799,57 @@ fn path_segments(parts: Vec<RawPathPart>) -> Vec<PathSegment> {
             RawPathPart::Index(index) => PathSegment::Index(index),
         })
         .collect()
+}
+
+fn bin_expr(op: BinOp, lhs: CheckExpr, rhs: CheckExpr) -> CheckExpr {
+    let span = Span::new(lhs.span.start, rhs.span.end);
+    CheckExpr {
+        kind: CheckExprKind::BinOp {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        },
+        span,
+    }
+}
+
+fn validate_cmp_chain(rest: &[(CmpOp, CheckExpr)], span: Span) -> Result<(), ParseErrors> {
+    if rest.len() < 2 {
+        return Ok(());
+    }
+    if rest.iter().any(|(op, _)| *op == CmpOp::Ne) {
+        return Err(ParseErrors::one(
+            "`!=` cannot be used in chain comparisons",
+            span,
+        ));
+    }
+    let first_group = cmp_chain_group(rest[0].0);
+    if rest
+        .iter()
+        .skip(1)
+        .any(|(op, _)| cmp_chain_group(*op) != first_group)
+    {
+        return Err(ParseErrors::one(
+            "chain comparison operators must have a consistent direction",
+            span,
+        ));
+    }
+    Ok(())
+}
+
+fn cmp_chain_group(op: CmpOp) -> CmpChainGroup {
+    match op {
+        CmpOp::Lt | CmpOp::Le => CmpChainGroup::Increasing,
+        CmpOp::Gt | CmpOp::Ge => CmpChainGroup::Decreasing,
+        CmpOp::Eq => CmpChainGroup::Equal,
+        CmpOp::Ne => CmpChainGroup::NotEqual,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CmpChainGroup {
+    Increasing,
+    Decreasing,
+    Equal,
+    NotEqual,
 }

@@ -1,5 +1,6 @@
 use crate::ast::ModuleAst;
 use crate::build;
+use crate::check;
 use crate::error::{BuildError, BuildErrors, CfcError, CheckError, ParseErrors};
 use crate::parser::parse_module;
 use crate::span::Span;
@@ -359,8 +360,8 @@ impl CfcContainer {
     }
 
     #[must_use]
-    pub fn check(&self, _result: &CfcResult) -> Vec<CheckError> {
-        Vec::new()
+    pub fn check(&self, result: &CfcResult) -> Vec<CheckError> {
+        check::run(self, result)
     }
 
     /// Loads a root module, resolves its import graph, and builds the resulting closure.

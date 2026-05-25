@@ -1375,15 +1375,15 @@ type 本地化 {
 }
 
 #[test]
-fn v1_skips_type_and_top_level_check_blocks() {
+fn build_accepts_type_and_top_level_check_blocks() {
     let source = r#"
 type Range {
   min: int;
   max: int;
 
   check {
-    assert min <= max : "string with { braces } is ignored";
-    assert drops[0].id == "coin" : "nested-ish syntax";
+    min <= max;
+    max >= min;
   }
 }
 
@@ -1393,7 +1393,7 @@ low: Range = {
 };
 
 check {
-  assert low.min < low.max : "top-level check is ignored";
+  low.min < low.max;
 }
 
 high: Range = {
@@ -1418,7 +1418,7 @@ fn fields_after_type_check_block_are_parse_errors() {
 type Bad {
   value: int;
   check {
-    assert true : "ignored";
+    true;
   }
   later: int;
 }

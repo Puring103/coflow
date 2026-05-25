@@ -27,6 +27,8 @@ pub enum Item {
 pub struct TypeDef {
     pub name: String,
     pub fields: Vec<FieldDef>,
+    #[allow(dead_code)]
+    pub check: Option<CheckBlock>,
     pub span: Span,
 }
 
@@ -60,9 +62,96 @@ pub struct DataDef {
     pub span: Span,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct CheckBlock {
+    pub stmts: Vec<CondStmt>,
     pub span: Span,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub enum CondStmt {
+    Expr(CheckExpr),
+    All {
+        binding: String,
+        collection: CheckExpr,
+        body: Vec<CondStmt>,
+        span: Span,
+    },
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct CheckExpr {
+    pub kind: CheckExprKind,
+    pub span: Span,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub enum CheckExprKind {
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    Str(String),
+    Name(String),
+    Field {
+        expr: Box<CheckExpr>,
+        name: String,
+    },
+    Index {
+        expr: Box<CheckExpr>,
+        index: Box<CheckExpr>,
+    },
+    BinOp {
+        op: BinOp,
+        lhs: Box<CheckExpr>,
+        rhs: Box<CheckExpr>,
+    },
+    Unary {
+        op: UnaryOp,
+        expr: Box<CheckExpr>,
+    },
+    CmpChain {
+        first: Box<CheckExpr>,
+        rest: Vec<(CmpOp, CheckExpr)>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinOp {
+    Or,
+    And,
+    BitOr,
+    BitXor,
+    BitAnd,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    IntDiv,
+    Mod,
+    Pow,
+    Shl,
+    Shr,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnaryOp {
+    Not,
+    BitNot,
+    Neg,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CmpOp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

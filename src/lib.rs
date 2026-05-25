@@ -1,5 +1,6 @@
 mod ast;
 mod build;
+mod check;
 mod container;
 mod error;
 mod lexer;

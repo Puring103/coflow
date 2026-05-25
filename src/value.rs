@@ -56,6 +56,10 @@ impl CfcValueRef {
     pub fn ptr_eq(a: &Self, b: &Self) -> bool {
         Rc::ptr_eq(&a.0, &b.0)
     }
+
+    pub(crate) fn ptr_key(&self) -> usize {
+        Rc::as_ptr(&self.0).cast::<()>() as usize
+    }
 }
 
 impl CfcValue {
