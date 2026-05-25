@@ -436,9 +436,9 @@ impl Parser {
     }
 
     fn parse_and_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
-        let mut expr = self.parse_bitor_expr()?;
+        let mut expr = self.parse_cmp_chain()?;
         while self.eat(&TokenKind::AmpAmp).is_some() {
-            let rhs = self.parse_bitor_expr()?;
+            let rhs = self.parse_cmp_chain()?;
             expr = bin_expr(BinOp::And, expr, rhs);
         }
         Ok(expr)
@@ -463,19 +463,19 @@ impl Parser {
     }
 
     fn parse_bitand_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
-        let mut expr = self.parse_cmp_chain()?;
+        let mut expr = self.parse_add_expr()?;
         while self.eat(&TokenKind::Amp).is_some() {
-            let rhs = self.parse_cmp_chain()?;
+            let rhs = self.parse_add_expr()?;
             expr = bin_expr(BinOp::BitAnd, expr, rhs);
         }
         Ok(expr)
     }
 
     fn parse_cmp_chain(&mut self) -> Result<CheckExpr, ParseErrors> {
-        let first = self.parse_add_expr()?;
+        let first = self.parse_bitor_expr()?;
         let mut rest = Vec::new();
         while let Some(op) = self.eat_cmp_op() {
-            rest.push((op, self.parse_add_expr()?));
+            rest.push((op, self.parse_bitor_expr()?));
         }
         if rest.is_empty() {
             return Ok(first);

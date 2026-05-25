@@ -18,7 +18,7 @@ struct CheckRunner<'a> {
 }
 
 struct CheckScope<'a> {
-    layers: Vec<BTreeMap<String, CfcValueRef>>,
+    layers: Vec<BTreeMap<String, EvalValue>>,
     enum_values: &'a HashMap<(ModuleId, String, String), CfcValueRef>,
 }
 
@@ -34,6 +34,14 @@ enum EvalValue {
         value: i64,
     },
     Ref(CfcValueRef),
+    EnumType {
+        module: ModuleId,
+        name: String,
+    },
+    ModuleNamespace {
+        module: ModuleId,
+        allow_data: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -140,7 +148,11 @@ impl<'a> CheckRunner<'a> {
             return;
         };
         let mut scope = CheckScope::new(enum_values, self.base_scope(&type_name.module, false));
-        scope.push(fields.clone());
+        scope.push(ref_layer(
+            fields
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone())),
+        ));
         self.eval_block(
             &block,
             &type_name.module,
@@ -171,7 +183,7 @@ impl<'a> CheckRunner<'a> {
             };
             let locals = module_result
                 .values()
-                .map(|(name, value)| (name.to_string(), value))
+                .map(|(name, value)| (name.to_string(), EvalValue::Ref(value)))
                 .collect::<BTreeMap<_, _>>();
             for item in &module.ast.items {
                 let Item::Check(block) = item else {
@@ -188,7 +200,7 @@ impl<'a> CheckRunner<'a> {
         &self,
         module: &ModuleId,
         allow_imported_data: bool,
-    ) -> BTreeMap<String, CfcValueRef> {
+    ) -> BTreeMap<String, EvalValue> {
         let mut out = BTreeMap::new();
         let Some(module_data) = self.container.modules.get(module) else {
             return out;
@@ -345,7 +357,10 @@ impl<'a> CheckRunner<'a> {
         let total = entries.len();
         let mut failed = Vec::new();
         for (label, item) in entries {
-            scope.push(BTreeMap::from([(binding.to_string(), item)]));
+            scope.push(BTreeMap::from([(
+                binding.to_string(),
+                EvalValue::Ref(item),
+            )]));
             let item_context = format!("{context} {binding}{label}");
             let before = self.errors.len();
             for stmt in body {
@@ -363,7 +378,7 @@ impl<'a> CheckRunner<'a> {
                         failed,
                         span,
                     ));
-                    return true;
+                    return false;
                 }
             }
             scope.pop();
@@ -401,7 +416,6 @@ impl<'a> CheckRunner<'a> {
             CheckExprKind::Str(value) => Ok(EvalValue::String(value.clone())),
             CheckExprKind::Name(name) => scope
                 .lookup(name)
-                .map(EvalValue::Ref)
                 .ok_or_else(|| format!("unknown name `{name}`")),
             CheckExprKind::Field { expr, name } => {
                 self.eval_field(expr, name, module, scope, context)
@@ -428,74 +442,54 @@ impl<'a> CheckRunner<'a> {
         context: &str,
     ) -> Result<EvalValue, String> {
         let base = self.eval_expr(expr, module, scope, context)?;
-        if let EvalValue::Ref(value) = &base {
-            if let Some(namespace_value) = self.namespace_field(value, name, scope) {
-                return Ok(EvalValue::Ref(namespace_value));
+        match base {
+            EvalValue::EnumType {
+                module,
+                name: enum_name,
+            } => scope
+                .enum_values
+                .get(&(module, enum_name, name.to_string()))
+                .cloned()
+                .map(EvalValue::Ref)
+                .ok_or_else(|| format!("missing field `{name}`")),
+            EvalValue::ModuleNamespace { module, allow_data } => {
+                if scope
+                    .enum_values
+                    .keys()
+                    .any(|(enum_module, enum_name, _)| enum_module == &module && enum_name == name)
+                {
+                    return Ok(EvalValue::EnumType {
+                        module,
+                        name: name.to_string(),
+                    });
+                }
+                if allow_data {
+                    if let Some(value) = self
+                        .result
+                        .module(&module)
+                        .and_then(|module| module.get(name))
+                    {
+                        return Ok(EvalValue::Ref(value));
+                    }
+                }
+                Err(format!("missing field `{name}`"))
+            }
+            other => {
+                let value = other.into_ref()?;
+                let borrowed = value.borrow();
+                let CfcValue::Object { fields, .. } = &*borrowed else {
+                    return Err(format!(
+                        "cannot select field `{name}` from {}",
+                        borrowed.type_name()
+                    ));
+                };
+                fields
+                    .get(name)
+                    .cloned()
+                    .map(EvalValue::Ref)
+                    .ok_or_else(|| format!("missing field `{name}`"))
             }
         }
-        let value = base.into_ref()?;
-        let borrowed = value.borrow();
-        let CfcValue::Object { fields, .. } = &*borrowed else {
-            return Err(format!(
-                "cannot select field `{name}` from {}",
-                borrowed.type_name()
-            ));
-        };
-        fields
-            .get(name)
-            .cloned()
-            .map(EvalValue::Ref)
-            .ok_or_else(|| format!("missing field `{name}`"))
-    }
-
-    fn namespace_field(
-        &self,
-        value: &CfcValueRef,
-        field: &str,
-        scope: &CheckScope<'_>,
-    ) -> Option<CfcValueRef> {
-        let borrowed = value.borrow();
-        let CfcValue::Object { fields, .. } = &*borrowed else {
-            return None;
-        };
-        let module_value = fields.get("__module")?;
-        let module = {
-            let module_borrowed = module_value.borrow();
-            let CfcValue::String(module) = &*module_borrowed else {
-                return None;
-            };
-            ModuleId::from(module.clone())
-        };
-
-        if let Some(name_value) = fields.get("__name") {
-            let name_borrowed = name_value.borrow();
-            let CfcValue::String(enum_name) = &*name_borrowed else {
-                return None;
-            };
-            return scope
-                .enum_values
-                .get(&(module, enum_name.clone(), field.to_string()))
-                .cloned();
-        }
-
-        if scope
-            .enum_values
-            .keys()
-            .any(|(enum_module, enum_name, _)| enum_module == &module && enum_name == field)
-        {
-            return Some(enum_type_value(&module, field));
-        }
-
-        let allow_data = fields
-            .get("__allow_data")
-            .is_some_and(|value| matches!(&*value.borrow(), CfcValue::Bool(true)));
-        if allow_data {
-            return self
-                .result
-                .module(&module)
-                .and_then(|module| module.get(field));
-        }
-        None
     }
 
     fn eval_index(
@@ -604,7 +598,7 @@ impl<'a> CheckRunner<'a> {
             BinOp::Add => {
                 let lhs = self.eval_expr(lhs, module, scope, context)?;
                 let rhs = self.eval_expr(rhs, module, scope, context)?;
-                if matches!(lhs, EvalValue::String(_)) || matches!(rhs, EvalValue::String(_)) {
+                if is_string_value(&lhs) || is_string_value(&rhs) {
                     return Ok(EvalValue::String(format!(
                         "{}{}",
                         lhs.into_string()?,
@@ -711,7 +705,7 @@ impl<'a> CheckRunner<'a> {
 impl<'a> CheckScope<'a> {
     fn new(
         enum_values: &'a HashMap<(ModuleId, String, String), CfcValueRef>,
-        base: BTreeMap<String, CfcValueRef>,
+        base: BTreeMap<String, EvalValue>,
     ) -> Self {
         let mut scope = Self {
             layers: Vec::new(),
@@ -721,7 +715,7 @@ impl<'a> CheckScope<'a> {
         scope
     }
 
-    fn push(&mut self, layer: BTreeMap<String, CfcValueRef>) {
+    fn push(&mut self, layer: BTreeMap<String, EvalValue>) {
         self.layers.push(layer);
     }
 
@@ -729,7 +723,7 @@ impl<'a> CheckScope<'a> {
         self.layers.pop();
     }
 
-    fn lookup(&self, name: &str) -> Option<CfcValueRef> {
+    fn lookup(&self, name: &str) -> Option<EvalValue> {
         self.layers
             .iter()
             .rev()
@@ -746,6 +740,8 @@ impl EvalValue {
             EvalValue::String(_) => "string",
             EvalValue::Enum { .. } => "enum",
             EvalValue::Ref(value) => value.borrow().type_name(),
+            EvalValue::EnumType { .. } => "enum type",
+            EvalValue::ModuleNamespace { .. } => "module namespace",
         }
     }
 
@@ -829,36 +825,27 @@ impl EvalValue {
     }
 }
 
-fn enum_type_value(module: &ModuleId, name: &str) -> CfcValueRef {
-    CfcValueRef::new(CfcValue::Object {
-        type_name: None,
-        fields: BTreeMap::from([
-            (
-                "__module".to_string(),
-                CfcValueRef::new(CfcValue::String(module.to_string())),
-            ),
-            (
-                "__name".to_string(),
-                CfcValueRef::new(CfcValue::String(name.to_string())),
-            ),
-        ]),
-    })
+fn enum_type_value(module: &ModuleId, name: &str) -> EvalValue {
+    EvalValue::EnumType {
+        module: module.clone(),
+        name: name.to_string(),
+    }
 }
 
-fn module_namespace_value(module: &ModuleId, allow_data: bool) -> CfcValueRef {
-    CfcValueRef::new(CfcValue::Object {
-        type_name: None,
-        fields: BTreeMap::from([
-            (
-                "__module".to_string(),
-                CfcValueRef::new(CfcValue::String(module.to_string())),
-            ),
-            (
-                "__allow_data".to_string(),
-                CfcValueRef::new(CfcValue::Bool(allow_data)),
-            ),
-        ]),
-    })
+fn module_namespace_value(module: &ModuleId, allow_data: bool) -> EvalValue {
+    EvalValue::ModuleNamespace {
+        module: module.clone(),
+        allow_data,
+    }
+}
+
+fn ref_layer(
+    values: impl IntoIterator<Item = (String, CfcValueRef)>,
+) -> BTreeMap<String, EvalValue> {
+    values
+        .into_iter()
+        .map(|(name, value)| (name, EvalValue::Ref(value)))
+        .collect()
 }
 
 fn numeric_bin(
@@ -883,6 +870,14 @@ fn shift_amount(value: i64) -> Result<u32, String> {
         return Err(format!("shift amount `{amount}` is out of range"));
     }
     Ok(amount)
+}
+
+fn is_string_value(value: &EvalValue) -> bool {
+    match value {
+        EvalValue::String(_) => true,
+        EvalValue::Ref(value) => matches!(&*value.borrow(), CfcValue::String(_)),
+        _ => false,
+    }
 }
 
 fn compare_values(op: CmpOp, lhs: &EvalValue, rhs: &EvalValue) -> Result<bool, String> {
@@ -990,6 +985,10 @@ fn materialize(value: &EvalValue) -> Result<EvalValue, String> {
                 other.type_name()
             )),
         },
+        EvalValue::EnumType { .. } | EvalValue::ModuleNamespace { .. } => Err(format!(
+            "expected scalar value, found {}",
+            value.type_name()
+        )),
         other => Ok(other.clone()),
     }
 }

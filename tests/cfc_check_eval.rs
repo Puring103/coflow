@@ -223,6 +223,37 @@ loot: Loot = {
 }
 
 #[test]
+fn all_eval_error_stops_current_object_check() {
+    let errors = check_results(
+        r#"
+type Drop {
+  value: int;
+}
+
+type Loot {
+  drops: [Drop];
+
+  check {
+    all drop in drops {
+      drop.missing > 0;
+    }
+    false;
+  }
+}
+
+loot: Loot = {
+  drops: [
+    { value: 1 },
+  ],
+};
+"#,
+    );
+
+    assert_eq!(errors.len(), 1);
+    assert!(matches!(&errors[0].kind, CheckErrorKind::AllFailed { .. }));
+}
+
+#[test]
 fn top_level_checks_can_compare_nodes() {
     let errors = check_errors(
         r#"
@@ -331,6 +362,79 @@ stats: Stats = {
   hp: 20,
   flags: 3,
 };
+"#,
+    );
+
+    assert!(errors.is_empty());
+}
+
+#[test]
+fn unparenthesized_bitwise_compare_uses_bitwise_first() {
+    let errors = check_errors(
+        r#"
+type Stats {
+  flags: int;
+  mask: int;
+
+  check {
+    flags & mask != 0;
+  }
+}
+
+stats: Stats = {
+  flags: 3,
+  mask: 1,
+};
+"#,
+    );
+
+    assert!(errors.is_empty());
+}
+
+#[test]
+fn string_fields_can_be_concatenated() {
+    let errors = check_errors(
+        r#"
+type Named {
+  a: string;
+  b: string;
+
+  check {
+    a + b == "ab";
+  }
+}
+
+named: Named = {
+  a: "a",
+  b: "b",
+};
+"#,
+    );
+
+    assert!(errors.is_empty());
+}
+
+#[test]
+fn user_magic_field_names_are_plain_fields() {
+    let errors = check_errors(
+        r#"
+type Boxed {
+  __module: string;
+  __allow_data: bool;
+  value: int;
+}
+
+value = 99;
+
+boxed: Boxed = {
+  __module: "root",
+  __allow_data: true,
+  value: 1,
+};
+
+check {
+  boxed.value == 1;
+}
 "#,
     );
 

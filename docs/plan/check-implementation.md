@@ -10,16 +10,16 @@ cond-stmt   ::= check-expr ";"
 
 check-expr  ::= or-expr
 or-expr     ::= and-expr ("||" and-expr)*
-and-expr    ::= bitor-expr ("&&" bitor-expr)*
-bitor-expr  ::= bitxor-expr ("|" bitxor-expr)*
-bitxor-expr ::= bitand-expr ("^" bitand-expr)*
-bitand-expr ::= cmp-chain ("&" cmp-chain)*
-cmp-chain   ::= add-expr (cmp-op add-expr)*
+and-expr    ::= cmp-chain ("&&" cmp-chain)*
+cmp-chain   ::= bitor-expr (cmp-op bitor-expr)*
                   // 方向一致约束：
                   // 全递增：< 与 <= 可混用
                   // 全递减：> 与 >= 可混用
                   // 全等：仅 ==
                   // != 不参与链式
+bitor-expr  ::= bitxor-expr ("|" bitxor-expr)*
+bitxor-expr ::= bitand-expr ("^" bitand-expr)*
+bitand-expr ::= add-expr ("&" add-expr)*
 cmp-op      ::= "==" | "!=" | "<" | "<=" | ">" | ">="
 add-expr    ::= shift-expr (("+" | "-") shift-expr)*
 shift-expr  ::= mul-expr (("<<" | ">>") mul-expr)*
