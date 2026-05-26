@@ -1,16 +1,19 @@
 # check 块实现计划
 
+> 状态：已实现。本文保留为实现记录；当前权威语义以 `docs/spec/02-cfc.md` 和 `src/coflow-cfc` 为准。
+
 ## 形式语法
 
 ```
 check-block ::= "check" "{" cond-stmt* "}"
 
 cond-stmt   ::= check-expr ";"
-              | "all" IDENT "in" check-expr "{" cond-stmt* "}"
+              | quantifier IDENT "in" check-expr "{" cond-stmt* "}"
 
 check-expr  ::= or-expr
 or-expr     ::= and-expr ("||" and-expr)*
-and-expr    ::= cmp-chain ("&&" cmp-chain)*
+and-expr    ::= is-expr ("&&" is-expr)*
+is-expr     ::= cmp-chain ("is" type-predicate)?
 cmp-chain   ::= bitor-expr (cmp-op bitor-expr)*
                   // 方向一致约束：
                   // 全递增：< 与 <= 可混用
@@ -26,10 +29,13 @@ shift-expr  ::= mul-expr (("<<" | ">>") mul-expr)*
 mul-expr    ::= prefix (("*" | "/" | "//" | "%") prefix)*
 prefix      ::= "!" prefix | "~" prefix | "-" prefix | power
 power       ::= postfix ("**" prefix)?          // 右结合
-postfix     ::= primary ("." IDENT | "[" check-expr "]")*
-primary     ::= INT | FLOAT | BOOL | STRING
+postfix     ::= primary ("(" args? ")" | "." IDENT | "[" check-expr "]")*
+primary     ::= INT | FLOAT | BOOL | STRING | NULL
               | IDENT
               | "(" check-expr ")"
+args        ::= check-expr ("," check-expr)*
+quantifier  ::= "all" | "any" | "none"
+type-predicate ::= type-name | "null"
 ```
 
 ## 运算符语义
@@ -37,6 +43,7 @@ primary     ::= INT | FLOAT | BOOL | STRING
 | 运算符 | 支持类型 | 说明 |
 |--------|---------|------|
 | `\|\|` `&&` | bool | 短路求值 |
+| `is` | object, union, null | 名义类型、union alias 或 null 判断 |
 | `!` | bool | 逻辑非 |
 | `\|` `^` `&` `~` | int | 按位运算 |
 | `==` `!=` | 全部，同类型 | 相等比较 |
@@ -49,6 +56,7 @@ primary     ::= INT | FLOAT | BOOL | STRING
 | `<<` `>>` | int | 位移 |
 | `.` | object | 字段访问 |
 | `[]` | array, dict | 索引访问 |
+| `()` | 内建函数名 | check-only 内建函数调用 |
 
 枚举与 int 不隐式互转，枚举之间只有同类型才能比较。
 
@@ -65,13 +73,16 @@ pub struct CheckBlock {
 
 pub enum CondStmt {
     Expr(CheckExpr),
-    All {
+    Quantifier {
+        kind: QuantifierKind,
         binding: String,
         collection: CheckExpr,
         body: Vec<CondStmt>,
         span: Span,
     },
 }
+
+pub enum QuantifierKind { All, Any, None }
 
 pub struct CheckExpr {
     pub kind: CheckExprKind,
@@ -82,10 +93,13 @@ pub enum CheckExprKind {
     Int(i64),
     Float(f64),
     Bool(bool),
+    Null,
     Str(String),
-    Name(String),                          // 字段名 / 枚举名 / all 绑定变量
+    Name(String),                          // 字段名 / 枚举名 / 量词绑定变量
     Field { expr: Box<CheckExpr>, name: String },
     Index { expr: Box<CheckExpr>, index: Box<CheckExpr> },
+    Is { expr: Box<CheckExpr>, predicate: TypePredicate },
+    Call { name: String, args: Vec<CheckExpr> },
     BinOp { op: BinOp, lhs: Box<CheckExpr>, rhs: Box<CheckExpr> },
     Unary { op: UnaryOp, expr: Box<CheckExpr> },
     CmpChain { first: Box<CheckExpr>, rest: Vec<(CmpOp, CheckExpr)> },
@@ -156,28 +170,29 @@ check failed [Zone, line 20]:
       drops[2]: drop.value = -1
 ```
 
-## 实现计划
+## 实现状态
 
-### 阶段 1：Lexer 补充 token
+### 阶段 1：Lexer 补充 token（已完成）
 
-新增或确认以下 token：
+已新增或确认以下 token：
 - `AmpAmp` (`&&`)、`PipePipe` (`||`)、`Bang` (`!`)
 - `Amp` (`&`)、`Pipe` (`|`)、`Caret` (`^`)、`Tilde` (`~`)
 - `EqEq` (`==`)、`BangEq` (`!=`)
-- `Lt` (`<`)、`LtEq` (`<=`)、`Gt` (`>`)、`GtEq` (`>=`)
-- `LtLt` (`<<`)、`GtGt` (`>>`)
+- `Less` (`<`)、`LessEq` (`<=`)、`Greater` (`>`)、`GreaterEq` (`>=`)
+- `LessLess` (`<<`)、`GreaterGreater` (`>>`)
 - `StarStar` (`**`)、`SlashSlash` (`//`)、`Percent` (`%`)
-- `All`、`Any`（关键字，`any` 暂保留关键字位置但不实现）
+- `All`、`Any`、`None`
+- `Null`、`In`、`Is`
 
-### 阶段 2：Parser 填充 check 块
+### 阶段 2：Parser 填充 check 块（已完成）
 
-当前 `CheckBlock { span }` 为空体，需要：
+当前 parser 已支持：
 - 解析 `cond-stmt*`
-- 解析 `all IDENT in check-expr { cond-stmt* }`
-- 解析 `check-expr`，使用优先级爬升（precedence climbing）
+- 解析 `all` / `any` / `none IDENT in check-expr { cond-stmt* }`
+- 解析 `check-expr`，包含逻辑、比较、`is`、按位、算术、后缀访问和内建函数调用
 - 链式比较方向一致性检查在 parser 层完成
 
-### 阶段 3：新增 `src/check.rs`
+### 阶段 3：新增 `src/check.rs`（已完成）
 
 求值引擎核心结构：
 
@@ -202,9 +217,9 @@ impl CheckScope<'_> {
 - `check_type_instance`：遍历对象图，找出所有带 type 的 Object，查找对应 TypeDef 的 check 块，以对象字段为初始 scope 执行
 - `check_top_level`：遍历每个模块 AST 中的顶层 CheckBlock，以模块命名节点为初始 scope 执行
 
-对象图遍历用 `HashSet<*const _>`（Rc 指针）做 visited 标记，防止循环引用导致无限递归。
+对象图遍历用 `CfcValueRef` 的指针 key 做 visited 标记，防止循环引用导致无限递归。
 
-### 阶段 4：`container.rs` 接入
+### 阶段 4：`container.rs` 接入（已完成）
 
 ```rust
 impl CfcContainer {

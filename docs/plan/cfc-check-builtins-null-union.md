@@ -1,5 +1,7 @@
 # CFC check builtins, null, and union design
 
+> 状态：核心方案已实现。本文保留设计背景和取舍记录；当前权威语义以 `docs/spec/02-cfc.md` 和 `src/coflow-cfc` 为准。
+
 ## 背景
 
 CFC 当前定位是纯数据配置语言，`check` 块用于表达加载后的数据约束。现有表达式已经支持字段访问、索引、算术、比较、逻辑短路和 `all` 量词，但缺少常见集合校验能力，例如集合长度、唯一性、聚合和安全查 key。
@@ -393,9 +395,9 @@ CfcValue::Union {
 
 当前实现采用路线 B：union alias 在运行时保存 wrapper metadata，同时字段访问、索引、check 遍历和 `is` 判断对 wrapper 透明访问内部实际值。
 
-## 分阶段计划
+## 实现状态
 
-### Phase 1：check builtins 和量词
+### Phase 1：check builtins 和量词（已完成）
 
 - `len`
 - `contains`
@@ -408,9 +410,9 @@ CfcValue::Union {
 - `any`
 - `none`
 
-这一阶段不改变数据 value model。
+这些能力已在 `src/coflow-cfc/src/check.rs` 中实现，只能在 `check` 表达式中使用。
 
-### Phase 2：`null` 和 nullable
+### Phase 2：`null` 和 nullable（已完成）
 
 - `null` token/value
 - `T | null` 类型
@@ -418,9 +420,9 @@ CfcValue::Union {
 - check 中 `is null`
 - `!= null && ...` 短路安全访问
 
-这一阶段需要新增 `CfcValue::Null`，并更新类型匹配、默认值复制、value signature、check 运行时。
+当前实现包含 `CfcValue::Null`，并已更新类型匹配、默认值复制、value signature 和 check 运行时。
 
-### Phase 3：nominal union alias
+### Phase 3：nominal union alias（已完成）
 
 - `type Reward = A | B | C;`
 - string/int/bool literal type
@@ -428,14 +430,11 @@ CfcValue::Union {
 - `expr is TypeName`
 - union wrapper metadata
 
-这一阶段暂不支持匿名 object union、完整模式匹配和跨语句窄化。
-
-当前实现已覆盖 `type Reward = A | B | C;`、string/int/bool literal type、显式分支对象、union wrapper metadata、`null` / nullable，以及 check 中的 `expr is TypeName` / `expr is UnionAlias` / `expr is null`。
+当前实现暂不支持匿名 object union、完整模式匹配和跨语句窄化。
 
 ## 开放问题
 
-1. `sum([])` 是否固定返回 `0`，还是为了发现错误也报 eval error。
-2. `unique([float])` 是否永远不支持，还是后续定义严格浮点相等规则。
-3. 是否允许 `Reward.CurrencyReward { ... }` 这类命名空间式分支构造语法。
-4. object 字面量构建 union 时，是否永远禁止按唯一可匹配分支推断。
-5. `is` 窄化是否只在 check 表达式内生效，还是未来也服务 `.cfs`。
+1. `unique([float])` 是否永远不支持，还是后续定义严格浮点相等规则。
+2. 是否允许 `Reward.CurrencyReward { ... }` 这类命名空间式分支构造语法。
+3. object 字面量构建 union 时，是否永远禁止按唯一可匹配分支推断。
+4. `is` 窄化是否只在 check 表达式内生效，还是未来也服务 `.cfs`。

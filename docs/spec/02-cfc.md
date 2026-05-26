@@ -218,7 +218,7 @@ type B {
 
 ### `check` 块（v2）
 
-`check` 是 `type` 内部的可选数据校验块，v2 能力，v1 parser 遇到时直接跳过，不报错。`check` 块必须位于所有字段声明之后。
+`check` 是 `type` 内部的可选数据校验块。Rust reference parser 会解析 `check` 内容；`build()` 只构建对象图，不执行 `check`，语义校验由 `CfcContainer.check()` 在 `build()` 成功后显式执行。`check` 块必须位于所有字段声明之后。
 
 ```cfc
 type Range {
@@ -232,7 +232,7 @@ type Range {
 }
 ```
 
-`check` 块由若干条件语句和 `all` 量词块组成，没有 `assert` 关键字，没有用户自定义错误消息。
+`check` 块由若干条件语句和 `all` / `any` / `none` 量词块组成，没有 `assert` 关键字，没有用户自定义错误消息。
 
 **条件语句**：一个表达式加分号，求值结果必须为 bool。
 
@@ -308,8 +308,8 @@ type Zone {
 **支持的运算符**（优先级从低到高）：
 
 - 逻辑：`||` `&&`，短路求值
-- 比较：`==` `!=` `<` `<=` `>` `>=`，支持链式比较（方向一致，如 `0 < x <= 100`）
 - 类型判断：`is`
+- 比较：`==` `!=` `<` `<=` `>` `>=`，支持链式比较（方向一致，如 `0 < x <= 100`）
 - 按位：`|` `^` `&`
 - 算术：`+` `-` `<<` `>>` `*` `/` `//` `%` `**`，`**` 右结合
 - 一元：`!` `~` `-`
@@ -521,7 +521,7 @@ node_b = {
 
 ## 顶层 `check`（v2）
 
-顶层 `check` 块用于约束跨节点的全局关系，是 `type` 内 `check` 做不到的能力。v2 能力，v1 parser 遇到时直接跳过，不报错。
+顶层 `check` 块用于约束跨节点的全局关系，是 `type` 内 `check` 做不到的能力。Rust reference parser 会解析顶层 `check` 内容；语义校验由 `CfcContainer.check()` 在 `build()` 成功后显式执行。
 
 顶层 `check` 属于数据定义段，必须位于所有 `type` 和 `enum` 定义之后，可以穿插在数据节点之间。一个文件可以有多个顶层 `check` 块。
 
@@ -544,7 +544,7 @@ check {
 }
 ```
 
-语法与 `type` 内的 `check` 块完全一致，但访问范围是所在模块的顶层命名节点，而非 `self` 字段。`all` 量词块同样可用：
+语法与 `type` 内的 `check` 块完全一致，但访问范围是所在模块的顶层命名节点，而非 `self` 字段。`all` / `any` / `none` 量词块同样可用：
 
 ```cfc
 monsters: [Monster] = [...];
@@ -558,7 +558,249 @@ check {
 
 **报错标识**：顶层 `check` 失败时以模块标识和行号定位，而非类型名。
 
-v1 parser 必须能识别并跳过 `check { ... }` 块。跳过时需要正确处理字符串字面量、注释和嵌套括号，直到匹配到对应的右花括号。v1 不解析 `check` 内容，也不执行语义校验。
+## 综合示例
+
+下面的两文件示例覆盖当前 Rust reference 实现中的主要语言特性：`use` 导入、枚举、类型定义、字段默认值、字面量类型、nullable、union alias、显式 union 分支对象、命名节点共享引用、循环引用、数组、字典、跨模块引用、字段/索引路径、`type` 内 `check`、顶层 `check`、量词和 check-only 内建函数。
+
+`common.cfc`：
+
+```cfc
+enum Rarity {
+  common = 0,
+  rare = 10,
+  epic = 20,
+  legendary,
+}
+
+enum DamageType {
+  physical,
+  fire,
+  ice,
+}
+
+type Stats {
+  hp: int;
+  attack: int;
+  speed: float = 1.0;
+  flags: int = 0;
+
+  check {
+    hp > 0;
+    0 <= attack <= 999;
+    speed >= 0.1;
+    flags == 0 || flags & 1 == 1;
+  }
+}
+
+type ResistanceTable {
+  values: {DamageType: float};
+
+  check {
+    len(values) > 0;
+    contains(values, DamageType.fire);
+    unique(keys(values));
+    min(values(values)) >= 0.0;
+    max(values(values)) <= 1.0;
+
+    all entry in values {
+      entry.value >= 0.0;
+      entry.value <= 1.0;
+    }
+  }
+}
+
+type Item {
+  id: string;
+  rarity: Rarity = Rarity.common;
+  tags: [string] = [];
+  resistances: ResistanceTable? = null;
+
+  check {
+    id != "";
+
+    none tag in tags {
+      tag == "";
+    }
+
+    resistances is null || contains(resistances.values, DamageType.fire);
+  }
+}
+
+type SchemaMarker {
+  category: "combat" = "combat";
+  version: 1 = 1;
+  enabled: true = true;
+}
+
+type ItemReward {
+  item: Item;
+  count: int = 1;
+
+  check {
+    count > 0;
+    item.id != "";
+  }
+}
+
+type CurrencyReward {
+  amount: int;
+
+  check {
+    amount > 0;
+  }
+}
+
+type Reward = ItemReward | CurrencyReward;
+```
+
+`monsters.cfc`：
+
+```cfc
+use "common.cfc" as common;
+
+type DropTable {
+  rewards: [common.Reward];
+  weights: [int];
+  tags: [string] = [];
+
+  check {
+    len(rewards) == len(weights);
+    len(rewards) > 0;
+    sum(weights) == 100;
+    min(weights) >= 0;
+    max(weights) <= 100;
+    unique(tags);
+
+    any reward in rewards {
+      reward is common.CurrencyReward && reward.amount > 0;
+    }
+
+    all reward in rewards {
+      reward is common.Reward;
+    }
+
+    none tag in tags {
+      tag == "";
+    }
+  }
+}
+
+type Monster {
+  id: string;
+  display: string;
+  rarity: common.Rarity;
+  stats: common.Stats;
+  drops: DropTable;
+  primary_drop: common.Reward;
+  highlighted_drop: common.Reward;
+  optional_boss_drop: common.Item?;
+  resistances: {common.DamageType: float};
+
+  check {
+    id != "";
+    display != "";
+    stats.hp > 0;
+    rarity >= common.Rarity.common;
+    primary_drop is common.Reward;
+    highlighted_drop is common.Reward;
+    optional_boss_drop is null || optional_boss_drop.rarity >= common.Rarity.rare;
+    contains(resistances, common.DamageType.fire);
+
+    all entry in resistances {
+      entry.value >= 0.0;
+      entry.value <= 1.0;
+    }
+  }
+}
+
+shared_stats: common.Stats = {
+  hp: 30,
+  attack: 5,
+  speed: 1.25,
+  flags: 1,
+};
+
+fire_resists: {common.DamageType: float} = dict{
+  common.DamageType.fire: 0.25,
+  common.DamageType.ice: 0.0,
+};
+
+schema_marker: common.SchemaMarker = {};
+
+potion: common.Item = {
+  id: "potion",
+  rarity: common.Rarity.rare,
+  tags: ["consumable", "healing"],
+  resistances: null,
+};
+
+coin_reward: common.CurrencyReward = {
+  amount: 25,
+};
+
+loot: DropTable = {
+  rewards: [
+    common.ItemReward {
+      item: potion,
+      count: 1,
+    },
+    coin_reward,
+  ],
+  weights: [40, 60],
+  tags: ["starter", "forest"],
+};
+
+slime: Monster = {
+  id: "slime",
+  display: "Green Slime",
+  rarity: common.Rarity.common,
+  stats: shared_stats,
+  drops: loot,
+  primary_drop: loot.rewards[0],
+  highlighted_drop: primary_drop,
+  optional_boss_drop: null,
+  resistances: fire_resists,
+};
+
+goblin: Monster = {
+  id: "goblin",
+  display: "Cave Goblin",
+  rarity: common.Rarity.rare,
+  stats: shared_stats,
+  drops: loot,
+  primary_drop: highlighted_drop,
+  highlighted_drop: drops.rewards[1],
+  optional_boss_drop: potion,
+  resistances: dict{
+    common.DamageType.physical: 0.10,
+    common.DamageType.fire: 0.20,
+  },
+};
+
+monsters: [Monster] = [slime, goblin];
+first_reward: common.Reward = loot.rewards[0];
+
+cycle_a = {
+  name: "a",
+  next: cycle_b,
+};
+
+cycle_b = {
+  name: "b",
+  next: cycle_a,
+};
+
+check {
+  slime.stats.hp == goblin.stats.hp;
+  first_reward is common.ItemReward;
+  common.Rarity.rare > common.Rarity.common;
+
+  all monster in monsters {
+    monster.stats.hp > 0;
+    contains(monster.resistances, common.DamageType.fire);
+  }
+}
+```
 
 ## Loader 接口
 
@@ -583,6 +825,12 @@ container.imports(name) -> [ImportDecl]
 ```
 
 返回指定模块的 `use` 声明列表。每个 `ImportDecl` 至少包含稳定的 import id、别名、原始路径字符串和源码位置。宿主使用原始路径字符串完成路径解析，但绑定时使用 import id，而不是使用 path 字符串作为 key。
+
+```
+container.source(name) -> source
+```
+
+返回指定模块注册时保存的原始源码。该接口主要用于诊断、工具显示和热重载辅助；指定模块不存在时报错。
 
 ```
 container.bind_import(name, importId, dependencyName)
@@ -686,6 +934,8 @@ impl CfcContainer {
 
     pub fn imports(&self, module: &ModuleId) -> Result<&[CfcImport], ModuleError>;
 
+    pub fn source(&self, module: &ModuleId) -> Result<&str, ModuleError>;
+
     pub fn bind_import(
         &mut self,
         from: &ModuleId,
@@ -703,7 +953,7 @@ impl CfcContainer {
 
 `add_module()` 和 `replace_module()` 会立即完成词法和语法解析，并保存源码和 AST。`add_module()` 遇到重复 `ModuleId` 报错。`replace_module()` 遇到不存在的 `ModuleId` 报错；替换是原子的，解析失败时 container 不变。
 
-`imports()` 返回借用 slice。调用方若需要在随后调用 `bind_import()`，应先复制出 `ImportId` 和 `path`，避免同时持有不可变借用和可变借用。
+`imports()` 返回借用 slice，`source()` 返回借用源码字符串。调用方若需要在随后调用 `bind_import()` 或 `replace_module()`，应先复制出必要信息，避免同时持有不可变借用和可变借用。
 
 高层 API：
 
@@ -772,9 +1022,9 @@ container.check(result) -> [CheckError]
 
 `check()` 只在 `build()` 成功后执行。`check()` 不修改对象图，不填充默认值，不重新执行结构校验。`type` 内 `check` 以每个已构建对象为上下文执行；顶层 `check` 以所在模块的顶层命名节点为上下文执行。
 
-## CLI
+## CLI（未实现）
 
-CFC 提供命令行工具，是 `CfcContainer` 接口的薄封装，resolver 直接读取文件系统。
+当前 Rust reference crate 只提供 library API，尚未提供 CLI。预期 CLI 会作为 `CfcContainer` 接口的薄封装，resolver 直接读取文件系统。
 
 ```
 cfc check <file>    # 加载并校验，报告全部错误
@@ -801,7 +1051,7 @@ CFC 错误按阶段划分：
 | `use` 多文件导入 | ✓ | |
 | `CfcContainer` 低层接口 | ✓ | |
 | `CfcContainer.load_graph` 高层接口 | ✓ | |
-| CLI `check` / `fmt` | ✓ | |
+| CLI `check` / `fmt` | | 后续 |
 | `type` 内 `check` 块语义校验 | | ✓ |
 | 顶层 `check` 块 | | ✓ |
 | `CfcContainer.check()` | | ✓ |
