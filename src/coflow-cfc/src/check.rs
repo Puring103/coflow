@@ -10,7 +10,7 @@ use self::runtime::{
 use self::scope::{enum_type_value, module_namespace_value, ref_layer, CheckScope};
 use crate::ast::{
     BinOp, CheckBlock, CheckExpr, CheckExprKind, CmpOp, CondStmt, Item, QuantifierKind, TypeName,
-    TypeRef, UnaryOp,
+    TypePredicate, TypeRef, UnaryOp,
 };
 use crate::container::{CfcContainer, CfcResult, ModuleId};
 use crate::error::{AllFailedItem, CheckError};
@@ -101,6 +101,7 @@ impl<'a> CheckRunner<'a> {
                     }
                     fields.values().cloned().collect::<Vec<_>>()
                 }
+                CfcValue::Union { value, .. } => vec![value.clone()],
                 CfcValue::Array(items) => items.clone(),
                 CfcValue::Dict(entries) => entries
                     .iter()
@@ -455,6 +456,7 @@ impl<'a> CheckRunner<'a> {
         context: &str,
     ) -> Result<EvalValue, String> {
         match &expr.kind {
+            CheckExprKind::Null => Ok(EvalValue::Null),
             CheckExprKind::Int(value) => Ok(EvalValue::Int(*value)),
             CheckExprKind::Float(value) => Ok(EvalValue::Float(*value)),
             CheckExprKind::Bool(value) => Ok(EvalValue::Bool(*value)),
@@ -468,7 +470,9 @@ impl<'a> CheckRunner<'a> {
             CheckExprKind::Index { expr, index } => {
                 self.eval_index(expr, index, module, scope, context)
             }
-            CheckExprKind::Is { expr, ty } => self.eval_is(expr, ty, module, scope, context),
+            CheckExprKind::Is { expr, predicate } => {
+                self.eval_is(expr, predicate, module, scope, context)
+            }
             CheckExprKind::Call { name, args } => {
                 self.eval_call(name, args, module, scope, context)
             }
@@ -485,15 +489,24 @@ impl<'a> CheckRunner<'a> {
     fn eval_is(
         &self,
         expr: &CheckExpr,
-        ty: &TypeName,
+        predicate: &TypePredicate,
         module: &ModuleId,
         scope: &CheckScope<'_>,
         context: &str,
     ) -> Result<EvalValue, String> {
         let value = self.eval_expr(expr, module, scope, context)?;
+        if matches!(predicate, TypePredicate::Null) {
+            let is_null = match value {
+                EvalValue::Null => true,
+                EvalValue::Ref(value) => matches!(&*value.borrow(), CfcValue::Null),
+                _ => false,
+            };
+            return Ok(EvalValue::Bool(is_null));
+        }
         let Ok(value) = value.into_ref() else {
             return Ok(EvalValue::Bool(false));
         };
+        let value = unwrap_union_ref(value);
         let borrowed = value.borrow();
         let CfcValue::Object {
             type_name: Some(actual),
@@ -501,6 +514,9 @@ impl<'a> CheckRunner<'a> {
         } = &*borrowed
         else {
             return Ok(EvalValue::Bool(false));
+        };
+        let TypePredicate::Type(ty) = predicate else {
+            unreachable!("null predicate handled before nominal type check");
         };
         let Some((target_module, target_name)) = self.resolve_check_type_name(module, ty) else {
             return Ok(EvalValue::Bool(false));
@@ -599,6 +615,14 @@ impl<'a> CheckRunner<'a> {
             "sum" => {
                 self.expect_arity(name, args, 1)?;
                 self.builtin_sum(&args[0], module, scope, context)
+            }
+            "keys" => {
+                self.expect_arity(name, args, 1)?;
+                self.builtin_keys_values("keys", &args[0], module, scope, context)
+            }
+            "values" => {
+                self.expect_arity(name, args, 1)?;
+                self.builtin_keys_values("values", &args[0], module, scope, context)
             }
             _ => Err(format!("unknown builtin function `{name}`")),
         }
@@ -771,6 +795,26 @@ impl<'a> CheckRunner<'a> {
         }
     }
 
+    fn builtin_keys_values(
+        &self,
+        name: &str,
+        arg: &CheckExpr,
+        module: &ModuleId,
+        scope: &CheckScope<'_>,
+        context: &str,
+    ) -> Result<EvalValue, String> {
+        let value = self.eval_expr(arg, module, scope, context)?.into_ref()?;
+        let CfcValue::Dict(entries) = &*value.borrow() else {
+            return Err(format!("{name}() expects dict"));
+        };
+        let items = if name == "keys" {
+            entries.iter().map(|(key, _)| key.clone()).collect()
+        } else {
+            entries.iter().map(|(_, value)| value.clone()).collect()
+        };
+        Ok(EvalValue::Ref(CfcValueRef::new(CfcValue::Array(items))))
+    }
+
     fn eval_field(
         &self,
         expr: &CheckExpr,
@@ -813,7 +857,7 @@ impl<'a> CheckRunner<'a> {
                 Err(format!("missing field `{name}`"))
             }
             other => {
-                let value = other.into_ref()?;
+                let value = unwrap_union_ref(other.into_ref()?);
                 let borrowed = value.borrow();
                 let CfcValue::Object { fields, .. } = &*borrowed else {
                     return Err(format!(
@@ -839,6 +883,7 @@ impl<'a> CheckRunner<'a> {
         context: &str,
     ) -> Result<EvalValue, String> {
         let base = self.eval_expr(expr, module, scope, context)?.into_ref()?;
+        let base = unwrap_union_ref(base);
         let index = self.eval_expr(index, module, scope, context)?;
         let borrowed = base.borrow();
         match &*borrowed {
@@ -1046,6 +1091,19 @@ fn quantifier_name(kind: QuantifierKind) -> &'static str {
         QuantifierKind::Any => "any",
         QuantifierKind::None => "none",
     }
+}
+
+fn unwrap_union_ref(mut value: CfcValueRef) -> CfcValueRef {
+    while let Some(inner) = {
+        let borrowed = value.borrow();
+        match &*borrowed {
+            CfcValue::Union { value, .. } => Some(value.clone()),
+            _ => None,
+        }
+    } {
+        value = inner;
+    }
+    value
 }
 
 fn unique_key(value: &CfcValueRef) -> Result<String, String> {

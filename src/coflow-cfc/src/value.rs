@@ -12,6 +12,7 @@ pub struct CfcNominalType {
 
 #[derive(Debug, Clone)]
 pub enum CfcValue {
+    Null,
     Int(i64),
     Float(f64),
     Bool(bool),
@@ -24,6 +25,10 @@ pub enum CfcValue {
     Object {
         type_name: Option<CfcNominalType>,
         fields: BTreeMap<String, CfcValueRef>,
+    },
+    Union {
+        union_type: CfcNominalType,
+        value: CfcValueRef,
     },
     Array(Vec<CfcValueRef>),
     Dict(Vec<(CfcValueRef, CfcValueRef)>),
@@ -77,12 +82,14 @@ impl CfcValue {
     #[must_use]
     pub fn type_name(&self) -> &'static str {
         match self {
+            CfcValue::Null => "null",
             CfcValue::Int(_) => "int",
             CfcValue::Float(_) => "float",
             CfcValue::Bool(_) => "bool",
             CfcValue::String(_) => "string",
             CfcValue::Enum { .. } => "enum",
             CfcValue::Object { .. } => "object",
+            CfcValue::Union { .. } => "union",
             CfcValue::Array(_) => "array",
             CfcValue::Dict(_) => "dict",
         }

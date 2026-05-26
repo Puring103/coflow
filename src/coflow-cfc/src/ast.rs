@@ -103,6 +103,7 @@ pub enum CheckExprKind {
     Int(i64),
     Float(f64),
     Bool(bool),
+    Null,
     Str(String),
     Name(String),
     Field {
@@ -115,7 +116,7 @@ pub enum CheckExprKind {
     },
     Is {
         expr: Box<CheckExpr>,
-        ty: TypeName,
+        predicate: TypePredicate,
     },
     Call {
         name: String,
@@ -183,12 +184,21 @@ pub enum TypeRef {
     Float,
     Bool,
     String,
+    Null,
     StringLiteral(String),
+    IntLiteral(i64),
+    BoolLiteral(bool),
     Any,
     Array(Box<TypeRef>),
     Dict(Box<TypeRef>, Box<TypeRef>),
     Union(Vec<TypeRef>),
     Named(TypeName),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum TypePredicate {
+    Type(TypeName),
+    Null,
 }
 
 #[derive(Debug, Clone)]
@@ -202,6 +212,7 @@ pub enum ExprKind {
     Int(i64),
     Float(f64),
     Bool(bool),
+    Null,
     String(String),
     Name(String),
     Qualified(Vec<String>),

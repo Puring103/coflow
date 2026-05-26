@@ -1,7 +1,7 @@
 use crate::ast::{
     BinOp, CheckBlock, CheckExpr, CheckExprKind, CmpOp, CondStmt, DataDef, EnumDef, EnumVariant,
     Expr, ExprKind, FieldDef, Item, ModuleAst, ObjectField, PathSegment, QuantifierKind, TypeDef,
-    TypeName, TypeRef, UnaryOp, UseDecl,
+    TypeName, TypePredicate, TypeRef, UnaryOp, UseDecl,
 };
 use crate::container::ImportId;
 use crate::error::ParseErrors;
@@ -213,6 +213,19 @@ impl Parser {
             self.bump();
             return Ok(TypeRef::StringLiteral(value));
         }
+        if let TokenKind::Int(value) = self.peek().kind.clone() {
+            self.bump();
+            return Ok(TypeRef::IntLiteral(value));
+        }
+        if self.eat(&TokenKind::True).is_some() {
+            return Ok(TypeRef::BoolLiteral(true));
+        }
+        if self.eat(&TokenKind::False).is_some() {
+            return Ok(TypeRef::BoolLiteral(false));
+        }
+        if self.eat(&TokenKind::Null).is_some() {
+            return Ok(TypeRef::Null);
+        }
         let (name, _) = self.expect_type_name_ident()?;
         let ty = match name.as_str() {
             "int" => TypeRef::Int,
@@ -232,7 +245,11 @@ impl Parser {
                 }
             }
         };
-        Ok(ty)
+        if self.eat(&TokenKind::Question).is_some() {
+            Ok(TypeRef::Union(vec![ty, TypeRef::Null]))
+        } else {
+            Ok(ty)
+        }
     }
 
     fn parse_expr(&mut self) -> Result<Expr, ParseErrors> {
@@ -263,6 +280,13 @@ impl Parser {
                 self.bump();
                 Ok(Expr {
                     kind: ExprKind::Bool(false),
+                    span: token.span,
+                })
+            }
+            TokenKind::Null => {
+                self.bump();
+                Ok(Expr {
+                    kind: ExprKind::Null,
                     span: token.span,
                 })
             }
@@ -497,12 +521,12 @@ impl Parser {
         if self.eat(&TokenKind::Is).is_none() {
             return Ok(expr);
         }
-        let ty = self.parse_check_type_name()?;
+        let predicate = self.parse_type_predicate()?;
         let span = Span::new(expr.span.start, self.prev_span().end);
         Ok(CheckExpr {
             kind: CheckExprKind::Is {
                 expr: Box::new(expr),
-                ty,
+                predicate,
             },
             span,
         })
@@ -722,6 +746,13 @@ impl Parser {
                     span: token.span,
                 })
             }
+            TokenKind::Null => {
+                self.bump();
+                Ok(CheckExpr {
+                    kind: CheckExprKind::Null,
+                    span: token.span,
+                })
+            }
             TokenKind::Any => {
                 self.bump();
                 Ok(CheckExpr {
@@ -761,6 +792,13 @@ impl Parser {
             TokenKind::None => Some(QuantifierKind::None),
             _ => None,
         }
+    }
+
+    fn parse_type_predicate(&mut self) -> Result<TypePredicate, ParseErrors> {
+        if self.eat(&TokenKind::Null).is_some() {
+            return Ok(TypePredicate::Null);
+        }
+        self.parse_check_type_name().map(TypePredicate::Type)
     }
 
     fn parse_check_type_name(&mut self) -> Result<TypeName, ParseErrors> {
@@ -919,6 +957,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Comma => ",",
         TokenKind::Dot => ".",
         TokenKind::Equal => "=",
+        TokenKind::Question => "?",
         TokenKind::In => "in",
         TokenKind::Is => "is",
         _ => "token",

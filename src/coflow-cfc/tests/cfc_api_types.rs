@@ -584,8 +584,13 @@ chest: Chest = {
     };
     let reward = fields.get("reward").unwrap();
     let reward_borrowed = reward.borrow();
-    let CfcValue::Object { type_name, fields } = &*reward_borrowed else {
-        panic!("expected reward object");
+    let CfcValue::Union { union_type, value } = &*reward_borrowed else {
+        panic!("expected reward union");
+    };
+    assert_eq!(union_type.name, "Reward");
+    let payload_borrowed = value.borrow();
+    let CfcValue::Object { type_name, fields } = &*payload_borrowed else {
+        panic!("expected reward payload object");
     };
 
     assert_eq!(type_name.as_ref().unwrap().name, "CurrencyReward");
@@ -622,8 +627,13 @@ reward: Reward = coin;
     let result = c.build(&root).unwrap();
     let reward = result.root().unwrap().get("reward").unwrap();
     let borrowed = reward.borrow();
-    let CfcValue::Object { type_name, .. } = &*borrowed else {
-        panic!("expected reward object");
+    let CfcValue::Union { union_type, value } = &*borrowed else {
+        panic!("expected reward union");
+    };
+    assert_eq!(union_type.name, "Reward");
+    let payload_borrowed = value.borrow();
+    let CfcValue::Object { type_name, .. } = &*payload_borrowed else {
+        panic!("expected reward payload object");
     };
 
     assert_eq!(type_name.as_ref().unwrap().name, "CurrencyReward");
@@ -725,8 +735,13 @@ reward: lib.Reward = lib.CurrencyReward {
     let result = c.build(&game).unwrap();
     let reward = result.root().unwrap().get("reward").unwrap();
     let borrowed = reward.borrow();
-    let CfcValue::Object { type_name, fields } = &*borrowed else {
-        panic!("expected reward object");
+    let CfcValue::Union { union_type, value } = &*borrowed else {
+        panic!("expected union wrapper");
+    };
+    assert_eq!(union_type.name, "Reward");
+    let value_borrowed = value.borrow();
+    let CfcValue::Object { type_name, fields } = &*value_borrowed else {
+        panic!("expected reward payload object");
     };
 
     let type_name = type_name.as_ref().unwrap();
@@ -762,4 +777,93 @@ bad: CurrencyReward = {
         .errors
         .iter()
         .any(|e| e.message.contains("expected `\"currency\"`")));
+}
+
+#[test]
+fn nullable_fields_accept_null_and_reject_untyped_null() {
+    let source = r#"
+type Item {
+  id: string;
+}
+
+type Drop {
+  maybe: Item | null = null;
+  shorthand: Item?;
+}
+
+item: Item = {
+  id: "coin",
+};
+
+drop: Drop = {
+  shorthand: item,
+};
+"#;
+
+    let mut c = CfcContainer::new();
+    let root = ModuleId::from("root");
+    c.add_module(root.clone(), source).unwrap();
+
+    let result = c.build(&root).unwrap();
+    let drop = result.root().unwrap().get("drop").unwrap();
+    let borrowed = drop.borrow();
+    let CfcValue::Object { fields, .. } = &*borrowed else {
+        panic!("expected drop object");
+    };
+    assert!(matches!(
+        &*fields.get("maybe").unwrap().borrow(),
+        CfcValue::Null
+    ));
+}
+
+#[test]
+fn non_nullable_field_rejects_null() {
+    let source = r#"
+type Item {
+  id: string;
+}
+
+bad: Item = null;
+"#;
+
+    let mut c = CfcContainer::new();
+    let root = ModuleId::from("root");
+    c.add_module(root.clone(), source).unwrap();
+
+    let err = c.build(&root).unwrap_err();
+
+    assert!(err
+        .errors
+        .iter()
+        .any(|e| e.message.contains("expected `Item`")));
+}
+
+#[test]
+fn int_and_bool_literal_fields_validate_values() {
+    let source = r#"
+type Fixed {
+  version: 1 = 1;
+  enabled: true = true;
+}
+
+bad: Fixed = {
+  version: 2,
+  enabled: false,
+};
+"#;
+
+    let mut c = CfcContainer::new();
+    let root = ModuleId::from("root");
+    c.add_module(root.clone(), source).unwrap();
+
+    let err = c.build(&root).unwrap_err();
+
+    assert!(err
+        .errors
+        .iter()
+        .any(|e| e.message.contains("expected `1`")));
+    assert!(err
+        .errors
+        .iter()
+        .any(|e| e.message.contains("expected `true`")));
 }

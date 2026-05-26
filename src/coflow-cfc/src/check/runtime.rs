@@ -5,6 +5,7 @@ use crate::CfcNominalType;
 
 #[derive(Debug, Clone)]
 pub(super) enum EvalValue {
+    Null,
     Int(i64),
     Float(f64),
     Bool(bool),
@@ -34,6 +35,7 @@ pub(super) enum NumberKind {
 impl EvalValue {
     pub(super) fn type_name(&self) -> &'static str {
         match self {
+            EvalValue::Null => "null",
             EvalValue::Int(_) => "int",
             EvalValue::Float(_) => "float",
             EvalValue::Bool(_) => "bool",
@@ -56,6 +58,10 @@ impl EvalValue {
         match self {
             EvalValue::Bool(value) => Ok(value),
             EvalValue::Ref(value) => match &*value.borrow() {
+                CfcValue::Union { value, .. } => match &*value.borrow() {
+                    CfcValue::Bool(value) => Ok(*value),
+                    other => Err(format!("expected bool, found {}", other.type_name())),
+                },
                 CfcValue::Bool(value) => Ok(*value),
                 other => Err(format!("expected bool, found {}", other.type_name())),
             },
@@ -67,6 +73,10 @@ impl EvalValue {
         match self {
             EvalValue::Int(value) => Ok(value),
             EvalValue::Ref(value) => match &*value.borrow() {
+                CfcValue::Union { value, .. } => match &*value.borrow() {
+                    CfcValue::Int(value) => Ok(*value),
+                    other => Err(format!("expected int, found {}", other.type_name())),
+                },
                 CfcValue::Int(value) => Ok(*value),
                 other => Err(format!("expected int, found {}", other.type_name())),
             },
@@ -80,6 +90,14 @@ impl EvalValue {
             EvalValue::Int(value) => Ok(value as f64),
             EvalValue::Float(value) => Ok(value),
             EvalValue::Ref(value) => match &*value.borrow() {
+                CfcValue::Union { value, .. } => match &*value.borrow() {
+                    CfcValue::Int(value) => Ok(*value as f64),
+                    CfcValue::Float(value) => Ok(*value),
+                    other => Err(format!(
+                        "expected numeric value, found {}",
+                        other.type_name()
+                    )),
+                },
                 CfcValue::Int(value) => Ok(*value as f64),
                 CfcValue::Float(value) => Ok(*value),
                 other => Err(format!(
@@ -98,6 +116,10 @@ impl EvalValue {
         match self {
             EvalValue::String(value) => Ok(value),
             EvalValue::Ref(value) => match &*value.borrow() {
+                CfcValue::Union { value, .. } => match &*value.borrow() {
+                    CfcValue::String(value) => Ok(value.clone()),
+                    other => Err(format!("expected string, found {}", other.type_name())),
+                },
                 CfcValue::String(value) => Ok(value.clone()),
                 other => Err(format!("expected string, found {}", other.type_name())),
             },
@@ -110,6 +132,14 @@ impl EvalValue {
             EvalValue::Int(_) => Ok(NumberKind::Int),
             EvalValue::Float(_) => Ok(NumberKind::Float),
             EvalValue::Ref(value) => match &*value.borrow() {
+                CfcValue::Union { value, .. } => match &*value.borrow() {
+                    CfcValue::Int(_) => Ok(NumberKind::Int),
+                    CfcValue::Float(_) => Ok(NumberKind::Float),
+                    other => Err(format!(
+                        "expected numeric value, found {}",
+                        other.type_name()
+                    )),
+                },
                 CfcValue::Int(_) => Ok(NumberKind::Int),
                 CfcValue::Float(_) => Ok(NumberKind::Float),
                 other => Err(format!(
@@ -171,6 +201,9 @@ pub(super) fn eval_value_equals_ref(value: &EvalValue, other: &CfcValueRef) -> b
 
 #[allow(clippy::float_cmp)]
 fn equal_values(lhs: &EvalValue, rhs: &EvalValue) -> Result<bool, String> {
+    if is_null_value(lhs) || is_null_value(rhs) {
+        return Ok(is_null_value(lhs) && is_null_value(rhs));
+    }
     match (materialize(lhs)?, materialize(rhs)?) {
         (EvalValue::Int(a), EvalValue::Int(b)) => Ok(a == b),
         (EvalValue::Float(a), EvalValue::Float(b)) => Ok(a == b),
@@ -193,6 +226,14 @@ fn equal_values(lhs: &EvalValue, rhs: &EvalValue) -> Result<bool, String> {
             a.type_name(),
             b.type_name()
         )),
+    }
+}
+
+fn is_null_value(value: &EvalValue) -> bool {
+    match value {
+        EvalValue::Null => true,
+        EvalValue::Ref(value) => matches!(&*value.borrow(), CfcValue::Null),
+        _ => false,
     }
 }
 
@@ -248,10 +289,12 @@ fn apply_cmp<T: PartialOrd>(op: CmpOp, lhs: &T, rhs: &T) -> bool {
 fn materialize(value: &EvalValue) -> Result<EvalValue, String> {
     match value {
         EvalValue::Ref(value) => match &*value.borrow() {
+            CfcValue::Union { value, .. } => materialize(&EvalValue::Ref(value.clone())),
             CfcValue::Int(value) => Ok(EvalValue::Int(*value)),
             CfcValue::Float(value) => Ok(EvalValue::Float(*value)),
             CfcValue::Bool(value) => Ok(EvalValue::Bool(*value)),
             CfcValue::String(value) => Ok(EvalValue::String(value.clone())),
+            CfcValue::Null => Ok(EvalValue::Null),
             CfcValue::Enum {
                 enum_type,
                 variant,

@@ -1034,11 +1034,68 @@ reward: Reward = CurrencyReward {
   amount: 100,
 };
 
-check {
-  reward is CurrencyReward;
-  reward is Reward;
-  !(reward is ItemReward);
+  check {
+    reward.amount == 100;
+    reward is CurrencyReward;
+    reward is Reward;
+    !(reward is ItemReward);
 }
+"#,
+    );
+
+    assert!(errors.is_empty());
+}
+
+#[test]
+fn check_null_comparisons_and_safe_access_work() {
+    let errors = check_errors(
+        r#"
+type Item {
+  id: string;
+}
+
+type Drop {
+  item: Item | null;
+
+  check {
+    item != null && item.id == "coin";
+    !(item is null);
+  }
+}
+
+drop: Drop = {
+  item: Item {
+    id: "coin",
+  },
+};
+"#,
+    );
+
+    assert!(errors.is_empty());
+}
+
+#[test]
+fn check_keys_and_values_builtins_return_arrays() {
+    let errors = check_errors(
+        r#"
+type Scores {
+  values: {string: int};
+
+  check {
+    unique(keys(values));
+    len(values(values)) == 2;
+    min(values(values)) == 1;
+    max(values(values)) == 2;
+    contains(keys(values), "alice");
+  }
+}
+
+scores: Scores = {
+  values: dict{
+    "alice": 1,
+    "bob": 2,
+  },
+};
 "#,
     );
 

@@ -17,6 +17,7 @@ pub enum TokenKind {
     All,
     Any,
     None,
+    Null,
     In,
     Is,
     True,
@@ -43,6 +44,7 @@ pub enum TokenKind {
     Less,
     Greater,
     Bang,
+    Question,
     Tilde,
     Amp,
     Pipe,
@@ -201,6 +203,10 @@ pub fn lex(source: &str) -> Result<Vec<Token>, ParseErrors> {
                 i += ch_len;
                 TokenKind::Bang
             }
+            '?' => {
+                i += ch_len;
+                TokenKind::Question
+            }
             '&' if bytes.get(i + 1) == Some(&b'&') => {
                 i += 2;
                 TokenKind::AmpAmp
@@ -271,6 +277,7 @@ fn lex_ident(source: &str, i: &mut usize) -> TokenKind {
         "all" => TokenKind::All,
         "any" => TokenKind::Any,
         "none" => TokenKind::None,
+        "null" => TokenKind::Null,
         "in" => TokenKind::In,
         "is" => TokenKind::Is,
         "true" => TokenKind::True,

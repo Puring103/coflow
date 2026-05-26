@@ -110,13 +110,13 @@ check {
 min() requires a non-empty array
 ```
 
-不支持 dict。后续如需要，可加入 `keys(dict)` / `values(dict)` 后再组合：
+不直接支持 dict。需要先用 `keys(dict)` / `values(dict)` 转成数组后再组合：
 
 ```cfc
 min(values(scores)) >= 0;
 ```
 
-但 `keys` / `values` 不属于第一批目标。
+`keys` / `values` 已纳入当前实现。
 
 ### `sum`
 
@@ -207,7 +207,7 @@ Item | null
 Item?
 ```
 
-第一版可以只实现 `T | null`，避免 `?` 与未来 optional access 语法互相干扰。
+当前实现支持 `T | null`，也支持 `T?` 语法糖。
 
 ## Union 设计方向
 
@@ -294,7 +294,7 @@ type CurrencyReward {
 }
 ```
 
-第一版只支持 string literal type，后续再评估 int/bool literal type。
+当前实现支持 string、int、bool literal type，后续如有需要再评估 float literal type。
 
 规则：
 
@@ -351,7 +351,7 @@ CfcValue::Null
 
 union alias 可以有两种实现路线。
 
-### 路线 A：不新增 union value
+### 路线 A：不新增 union value（已废弃）
 
 构建 `Reward` 时，实际保存分支 object：
 
@@ -372,7 +372,7 @@ CfcValue::Object {
 - 无法直接知道某个字段声明的是 `Reward`，只能看实际值。
 - 如果未来需要保留 union alias 信息，需要额外 metadata。
 
-### 路线 B：新增 union wrapper
+### 路线 B：新增 union wrapper（当前实现）
 
 ```rust
 CfcValue::Union {
@@ -391,7 +391,7 @@ CfcValue::Union {
 - 对象图遍历、check、API 访问都要识别 wrapper。
 - identity 和默认值复制规则更复杂。
 
-建议第一版采用路线 A：union alias 是类型检查概念，运行时保存实际分支 object。只有在编辑器或宿主 API 明确需要保留 alias 信息时，再升级到 wrapper。
+当前实现采用路线 B：union alias 在运行时保存 wrapper metadata，同时字段访问、索引、check 遍历和 `is` 判断对 wrapper 透明访问内部实际值。
 
 ## 分阶段计划
 
@@ -403,6 +403,8 @@ CfcValue::Union {
 - `min`
 - `max`
 - `sum`
+- `keys`
+- `values`
 - `any`
 - `none`
 
@@ -412,6 +414,7 @@ CfcValue::Union {
 
 - `null` token/value
 - `T | null` 类型
+- `T?` 语法糖
 - check 中 `is null`
 - `!= null && ...` 短路安全访问
 
@@ -420,13 +423,14 @@ CfcValue::Union {
 ### Phase 3：nominal union alias
 
 - `type Reward = A | B | C;`
-- string literal type
+- string/int/bool literal type
 - 显式分支对象：`reward: Reward = CurrencyReward { ... };`
 - `expr is TypeName`
+- union wrapper metadata
 
-这一阶段暂不支持匿名 object union、数字 literal type、完整模式匹配和跨语句窄化。
+这一阶段暂不支持匿名 object union、完整模式匹配和跨语句窄化。
 
-当前实现已覆盖 `type Reward = A | B | C;`、string literal type、显式分支对象，以及 check 中的 `expr is TypeName` / `expr is UnionAlias`。运行时保存实际分支 object，不引入 union wrapper。`&&` 右侧局部窄化尚未实现。
+当前实现已覆盖 `type Reward = A | B | C;`、string/int/bool literal type、显式分支对象、union wrapper metadata、`null` / nullable，以及 check 中的 `expr is TypeName` / `expr is UnionAlias` / `expr is null`。
 
 ## 开放问题
 
@@ -434,6 +438,4 @@ CfcValue::Union {
 2. `unique([float])` 是否永远不支持，还是后续定义严格浮点相等规则。
 3. 是否允许 `Reward.CurrencyReward { ... }` 这类命名空间式分支构造语法。
 4. object 字面量构建 union 时，是否永远禁止按唯一可匹配分支推断。
-5. 是否需要在运行时 value 中保留 union alias metadata。
-6. nullable 是否提供 `T?` 语法糖。
-7. `is` 窄化是否只在 check 表达式内生效，还是未来也服务 `.cfs`。
+5. `is` 窄化是否只在 check 表达式内生效，还是未来也服务 `.cfs`。

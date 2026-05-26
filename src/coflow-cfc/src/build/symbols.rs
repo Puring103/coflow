@@ -199,7 +199,11 @@ impl BuildCtx<'_> {
 
     fn is_default_constant(&self, module: &ModuleId, expr: &Expr) -> bool {
         match &expr.kind {
-            ExprKind::Int(_) | ExprKind::Float(_) | ExprKind::Bool(_) | ExprKind::String(_) => true,
+            ExprKind::Null
+            | ExprKind::Int(_)
+            | ExprKind::Float(_)
+            | ExprKind::Bool(_)
+            | ExprKind::String(_) => true,
             ExprKind::Qualified(parts) => self.is_enum_constant(module, parts),
             ExprKind::Array(items) => items
                 .iter()
@@ -238,7 +242,10 @@ impl BuildCtx<'_> {
             | TypeRef::Float
             | TypeRef::Bool
             | TypeRef::String
+            | TypeRef::Null
             | TypeRef::StringLiteral(_)
+            | TypeRef::IntLiteral(_)
+            | TypeRef::BoolLiteral(_)
             | TypeRef::Any => {}
             TypeRef::Array(inner) => self.validate_type_ref(module, inner, span),
             TypeRef::Dict(key, value) => {
@@ -280,7 +287,8 @@ impl BuildCtx<'_> {
 
     fn validate_dict_key_type(&mut self, module: &ModuleId, ty: &TypeRef, span: Span) {
         match ty {
-            TypeRef::String | TypeRef::Int | TypeRef::StringLiteral(_) => {}
+            TypeRef::String | TypeRef::Int | TypeRef::StringLiteral(_) | TypeRef::IntLiteral(_) => {
+            }
             TypeRef::Named(name) => {
                 if let Some((target_module, target_name)) =
                     self.resolve_type_name(module, name, span)

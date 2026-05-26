@@ -1,4 +1,4 @@
-use crate::ast::{BinOp, CheckExpr, CheckExprKind, CmpOp, UnaryOp};
+use crate::ast::{BinOp, CheckExpr, CheckExprKind, CmpOp, TypePredicate, UnaryOp};
 use crate::error::{AllFailedItem, CheckError, CheckErrorKind};
 use crate::span::Span;
 
@@ -7,14 +7,19 @@ pub(super) fn describe_expr(expr: &CheckExpr) -> String {
         CheckExprKind::Int(value) => value.to_string(),
         CheckExprKind::Float(value) => value.to_string(),
         CheckExprKind::Bool(value) => value.to_string(),
+        CheckExprKind::Null => "null".to_string(),
         CheckExprKind::Str(value) => format!("{value:?}"),
         CheckExprKind::Name(name) => name.clone(),
         CheckExprKind::Field { expr, name } => format!("{}.{}", describe_expr(expr), name),
         CheckExprKind::Index { expr, index } => {
             format!("{}[{}]", describe_expr(expr), describe_expr(index))
         }
-        CheckExprKind::Is { expr, ty } => {
-            format!("{} is {}", describe_expr(expr), describe_type_name(ty))
+        CheckExprKind::Is { expr, predicate } => {
+            format!(
+                "{} is {}",
+                describe_expr(expr),
+                describe_type_predicate(predicate)
+            )
         }
         CheckExprKind::Call { name, args } => {
             let args = args
@@ -52,6 +57,13 @@ fn describe_type_name(ty: &crate::ast::TypeName) -> String {
     match ty {
         crate::ast::TypeName::Local(name) => name.clone(),
         crate::ast::TypeName::Imported { alias, name } => format!("{alias}.{name}"),
+    }
+}
+
+fn describe_type_predicate(predicate: &TypePredicate) -> String {
+    match predicate {
+        TypePredicate::Type(ty) => describe_type_name(ty),
+        TypePredicate::Null => "null".to_string(),
     }
 }
 

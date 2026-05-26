@@ -345,6 +345,15 @@ impl BuildCtx<'_> {
         span: Span,
     ) -> Option<CfcValueRef> {
         for segment in segments {
+            while let Some(inner) = {
+                let borrowed = value.borrow();
+                match &*borrowed {
+                    CfcValue::Union { value, .. } => Some(value.clone()),
+                    _ => None,
+                }
+            } {
+                value = inner;
+            }
             let next = {
                 let borrowed = value.borrow();
                 match (segment, &*borrowed) {

@@ -93,6 +93,19 @@ impl BuildCtx<'_> {
             return self.eval_any_with_locals(module, expr, locals);
         }
         match expected {
+            Some(TypeRef::Null) => match expr.kind {
+                ExprKind::Null => Some(CfcValueRef::new(CfcValue::Null)),
+                ExprKind::Name(ref name) => self
+                    .resolve_name_value(module, name, expr.span, locals)
+                    .and_then(|value| self.ensure_null_value(expr, &value)),
+                ExprKind::Qualified(ref parts) => self
+                    .eval_qualified_as_path_or_data(module, expr, parts, locals)
+                    .and_then(|value| self.ensure_null_value(expr, &value)),
+                ExprKind::Path { .. } => self
+                    .eval_path_expr(module, expr, locals)
+                    .and_then(|value| self.ensure_null_value(expr, &value)),
+                _ => self.type_error(expr, "null"),
+            },
             Some(TypeRef::Int) => match expr.kind {
                 ExprKind::Int(value) => Some(CfcValueRef::new(CfcValue::Int(value))),
                 ExprKind::Name(ref name) => self
@@ -105,6 +118,21 @@ impl BuildCtx<'_> {
                     .eval_path_expr(module, expr, locals)
                     .and_then(|value| self.ensure_basic_value(expr, value, "int")),
                 _ => self.type_error(expr, "int"),
+            },
+            Some(TypeRef::IntLiteral(expected)) => match expr.kind {
+                ExprKind::Int(value) if value == *expected => {
+                    Some(CfcValueRef::new(CfcValue::Int(value)))
+                }
+                ExprKind::Name(ref name) => self
+                    .resolve_name_value(module, name, expr.span, locals)
+                    .and_then(|value| self.ensure_int_literal_value(expr, &value, *expected)),
+                ExprKind::Qualified(ref parts) => self
+                    .eval_qualified_as_path_or_data(module, expr, parts, locals)
+                    .and_then(|value| self.ensure_int_literal_value(expr, &value, *expected)),
+                ExprKind::Path { .. } => self
+                    .eval_path_expr(module, expr, locals)
+                    .and_then(|value| self.ensure_int_literal_value(expr, &value, *expected)),
+                _ => self.type_error(expr, &expected.to_string()),
             },
             Some(TypeRef::Float) => match expr.kind {
                 ExprKind::Float(value) => Some(CfcValueRef::new(CfcValue::Float(value))),
@@ -131,6 +159,21 @@ impl BuildCtx<'_> {
                     .eval_path_expr(module, expr, locals)
                     .and_then(|value| self.ensure_basic_value(expr, value, "bool")),
                 _ => self.type_error(expr, "bool"),
+            },
+            Some(TypeRef::BoolLiteral(expected)) => match expr.kind {
+                ExprKind::Bool(value) if value == *expected => {
+                    Some(CfcValueRef::new(CfcValue::Bool(value)))
+                }
+                ExprKind::Name(ref name) => self
+                    .resolve_name_value(module, name, expr.span, locals)
+                    .and_then(|value| self.ensure_bool_literal_value(expr, &value, *expected)),
+                ExprKind::Qualified(ref parts) => self
+                    .eval_qualified_as_path_or_data(module, expr, parts, locals)
+                    .and_then(|value| self.ensure_bool_literal_value(expr, &value, *expected)),
+                ExprKind::Path { .. } => self
+                    .eval_path_expr(module, expr, locals)
+                    .and_then(|value| self.ensure_bool_literal_value(expr, &value, *expected)),
+                _ => self.type_error(expr, &expected.to_string()),
             },
             Some(TypeRef::String) => match &expr.kind {
                 ExprKind::String(value) => Some(CfcValueRef::new(CfcValue::String(value.clone()))),
@@ -264,7 +307,8 @@ impl BuildCtx<'_> {
             .iter()
             .map(|branch| TypeRef::Named(branch.clone()))
             .collect::<Vec<_>>();
-        self.eval_union_expected(module, union_module, expr, &branch_refs, locals)
+        let value = self.eval_union_expected(module, union_module, expr, &branch_refs, locals)?;
+        Some(self.wrap_union_value(union_module, union_name, value))
     }
 
     fn eval_union_expected(
@@ -276,6 +320,24 @@ impl BuildCtx<'_> {
         locals: Option<&BTreeMap<String, CfcValueRef>>,
     ) -> Option<CfcValueRef> {
         match &expr.kind {
+            ExprKind::Null => {
+                if branches
+                    .iter()
+                    .any(|branch| matches!(branch, TypeRef::Null))
+                {
+                    Some(CfcValueRef::new(CfcValue::Null))
+                } else {
+                    self.type_error(expr, "union")
+                }
+            }
+            ExprKind::Int(_)
+            | ExprKind::Bool(_)
+            | ExprKind::String(_)
+            | ExprKind::Float(_)
+            | ExprKind::Array(_)
+            | ExprKind::Dict(_) => {
+                self.eval_union_literal(module, branch_scope, expr, branches, locals)
+            }
             ExprKind::TypedObject { ty, .. } => {
                 let branch =
                     self.resolve_union_branch_type(module, branch_scope, ty, branches, expr.span)?;
@@ -295,7 +357,35 @@ impl BuildCtx<'_> {
                 let value = self.eval_path_expr(module, expr, locals)?;
                 self.ensure_union_value(expr, &value, branch_scope, branches)
             }
-            _ => self.type_error(expr, "union"),
+        }
+    }
+
+    fn eval_union_literal(
+        &mut self,
+        module: &ModuleId,
+        branch_scope: &ModuleId,
+        expr: &Expr,
+        branches: &[TypeRef],
+        locals: Option<&BTreeMap<String, CfcValueRef>>,
+    ) -> Option<CfcValueRef> {
+        for branch in branches {
+            if matches!(branch, TypeRef::Named(_)) {
+                continue;
+            }
+            let before = self.errors.len();
+            if let Some(value) = self.eval_expr_with_locals(module, expr, Some(branch), locals) {
+                return Some(value);
+            }
+            self.errors.truncate(before);
+        }
+        if branches
+            .iter()
+            .any(|branch| matches!(branch, TypeRef::Named(_)))
+        {
+            self.union_branch_required_error(expr)
+        } else {
+            let _ = branch_scope;
+            self.type_error(expr, "union")
         }
     }
 
@@ -349,6 +439,24 @@ impl BuildCtx<'_> {
             return Some(value.clone());
         }
         let borrowed = value.borrow();
+        if let CfcValue::Union { value: inner, .. } = &*borrowed {
+            let inner = inner.clone();
+            drop(borrowed);
+            return self.ensure_union_value(expr, &inner, module, branches);
+        }
+        if matches!(&*borrowed, CfcValue::Null)
+            && branches
+                .iter()
+                .any(|branch| matches!(branch, TypeRef::Null))
+        {
+            return Some(value.clone());
+        }
+        if branches
+            .iter()
+            .any(|branch| value_matches_type_ref(&borrowed, branch))
+        {
+            return Some(value.clone());
+        }
         let CfcValue::Object {
             type_name: Some(actual),
             ..
@@ -380,6 +488,21 @@ impl BuildCtx<'_> {
             ));
             None
         }
+    }
+
+    pub(super) fn wrap_union_value(
+        &self,
+        union_module: &ModuleId,
+        union_name: &str,
+        value: CfcValueRef,
+    ) -> CfcValueRef {
+        CfcValueRef::new(CfcValue::Union {
+            union_type: CfcNominalType {
+                module: union_module.clone(),
+                name: union_name.to_string(),
+            },
+            value,
+        })
     }
 
     pub(super) fn ensure_named_value(
@@ -454,6 +577,44 @@ impl BuildCtx<'_> {
             Some(value.clone())
         } else {
             self.type_error(expr, &format!("{expected:?}"))
+        }
+    }
+
+    pub(super) fn ensure_int_literal_value(
+        &mut self,
+        expr: &Expr,
+        value: &CfcValueRef,
+        expected: i64,
+    ) -> Option<CfcValueRef> {
+        if matches!(&*value.borrow(), CfcValue::Int(actual) if *actual == expected) {
+            Some(value.clone())
+        } else {
+            self.type_error(expr, &expected.to_string())
+        }
+    }
+
+    pub(super) fn ensure_bool_literal_value(
+        &mut self,
+        expr: &Expr,
+        value: &CfcValueRef,
+        expected: bool,
+    ) -> Option<CfcValueRef> {
+        if matches!(&*value.borrow(), CfcValue::Bool(actual) if *actual == expected) {
+            Some(value.clone())
+        } else {
+            self.type_error(expr, &expected.to_string())
+        }
+    }
+
+    pub(super) fn ensure_null_value(
+        &mut self,
+        expr: &Expr,
+        value: &CfcValueRef,
+    ) -> Option<CfcValueRef> {
+        if matches!(&*value.borrow(), CfcValue::Null) {
+            Some(value.clone())
+        } else {
+            self.type_error(expr, "null")
         }
     }
 
@@ -554,6 +715,7 @@ impl BuildCtx<'_> {
         locals: Option<&BTreeMap<String, CfcValueRef>>,
     ) -> Option<CfcValueRef> {
         match &expr.kind {
+            ExprKind::Null => Some(CfcValueRef::new(CfcValue::Null)),
             ExprKind::Int(value) => Some(CfcValueRef::new(CfcValue::Int(*value))),
             ExprKind::Float(value) => Some(CfcValueRef::new(CfcValue::Float(*value))),
             ExprKind::Bool(value) => Some(CfcValueRef::new(CfcValue::Bool(*value))),
@@ -603,6 +765,7 @@ impl BuildCtx<'_> {
         locals: Option<&BTreeMap<String, CfcValueRef>>,
     ) -> Option<CfcValueRef> {
         match &expr.kind {
+            ExprKind::Null => Some(CfcValueRef::new(CfcValue::Null)),
             ExprKind::Int(value) => Some(CfcValueRef::new(CfcValue::Int(*value))),
             ExprKind::Float(value) => Some(CfcValueRef::new(CfcValue::Float(*value))),
             ExprKind::Bool(value) => Some(CfcValueRef::new(CfcValue::Bool(*value))),
@@ -668,6 +831,7 @@ impl BuildCtx<'_> {
         state: &mut ObjectEvalState,
     ) -> Option<CfcValueRef> {
         match &expr.kind {
+            ExprKind::Null => Some(CfcValueRef::new(CfcValue::Null)),
             ExprKind::Int(value) => Some(CfcValueRef::new(CfcValue::Int(*value))),
             ExprKind::Float(value) => Some(CfcValueRef::new(CfcValue::Float(*value))),
             ExprKind::Bool(value) => Some(CfcValueRef::new(CfcValue::Bool(*value))),
@@ -734,6 +898,7 @@ impl BuildCtx<'_> {
         state: &mut ObjectEvalState,
     ) -> Option<CfcValueRef> {
         match &expr.kind {
+            ExprKind::Null => Some(CfcValueRef::new(CfcValue::Null)),
             ExprKind::Int(value) => Some(CfcValueRef::new(CfcValue::Int(*value))),
             ExprKind::Float(value) => Some(CfcValueRef::new(CfcValue::Float(*value))),
             ExprKind::Bool(value) => Some(CfcValueRef::new(CfcValue::Bool(*value))),
@@ -936,6 +1101,7 @@ fn identity_placeholder(def: &DataDef) -> CfcValue {
         ExprKind::Dict(_) => CfcValue::Dict(Vec::new()),
         ExprKind::TypedObject { .. }
         | ExprKind::Object(_)
+        | ExprKind::Null
         | ExprKind::Int(_)
         | ExprKind::Float(_)
         | ExprKind::Bool(_)
@@ -973,6 +1139,20 @@ fn validate_array_item(
         *inferred = Some(signature);
     }
     Some(())
+}
+
+fn value_matches_type_ref(value: &CfcValue, ty: &TypeRef) -> bool {
+    match (value, ty) {
+        (CfcValue::Null, TypeRef::Null) => true,
+        (CfcValue::Int(_), TypeRef::Int) => true,
+        (CfcValue::Int(actual), TypeRef::IntLiteral(expected)) => actual == expected,
+        (CfcValue::Float(_), TypeRef::Float) => true,
+        (CfcValue::Bool(_), TypeRef::Bool) => true,
+        (CfcValue::Bool(actual), TypeRef::BoolLiteral(expected)) => actual == expected,
+        (CfcValue::String(_), TypeRef::String) => true,
+        (CfcValue::String(actual), TypeRef::StringLiteral(expected)) => actual == expected,
+        _ => false,
+    }
 }
 
 fn validate_dict_entry(

@@ -118,13 +118,15 @@ type Weapon {
 支持的字段类型：
 
 - 基础类型：`int`、`float`、`bool`、`string`
-- 字符串字面量类型：例如 `"currency"`，只接受完全相同的字符串值
+- `null`：显式空值，只能写入允许 `null` 的类型
+- 字面量类型：例如 `"currency"`、`1`、`true`，只接受完全相同的值
 - `any`：接受任意值，loader 只做引用合法性检查，不做类型匹配
 - 数组类型：`[T]`，T 可以是任意合法字段类型，包括 `any`
 - 字典类型：`{K: V}`，K 只允许 `string`、`int` 或任意已定义的 `enum` 类型名，V 可以是任意合法字段类型，包括 `any`
 - 当前文件或导入文件中的 `type`
 - 当前文件或导入文件中的 `enum`
 - union alias：由若干已命名 `type` 组成，例如 `type Reward = ItemReward | CurrencyReward;`
+- nullable：`T | null`，也可写成 `T?`
 
 `type` 使用名义类型（nominal typing），不使用结构类型。两个 `type` 即使字段完全相同，也不是同一个类型。对象字面量只有在上下文提供明确类型时才按该 `type` 校验；无类型标注的数据节点和 `any` 字段不会因为字段形状自动推断为某个 `type`。
 
@@ -144,7 +146,7 @@ raw = { id: "x" }; // 合法，但 raw 的结构不按 A 或 B 校验
 
 ### union alias
 
-`type` 也可以声明为 union alias。union alias 不是新的运行时 value 包装；构建结果保存实际分支对象的 nominal type。
+`type` 也可以声明为 union alias。union alias 会在运行时保存为 union wrapper，wrapper 记录 union alias，同时包含实际分支对象；字段访问、索引、`check` 遍历和 `is` 判断会透明访问内部实际值。
 
 ```cfc
 type ItemReward {
@@ -176,7 +178,26 @@ coin: CurrencyReward = { amount: 10 };
 reward: Reward = coin;
 ```
 
-第一版不支持裸结构匹配、按唯一可匹配字段集合推断分支、隐式 discriminator、union value wrapper、数字/布尔 literal type，也不支持 `null`。
+第一版不支持裸结构匹配、按唯一可匹配字段集合推断分支、隐式 discriminator、匿名 object union。
+
+### `null` 和 nullable
+
+`null` 是显式值，不等价于字段缺失。字段缺失仍然按必填字段报结构错误。
+
+```cfc
+type Drop {
+  item: Item | null = null;
+  backup: Item?;
+}
+```
+
+规则：
+
+- 只有类型允许 `null` 时才能填入 `null`
+- `any` 可以接受 `null`
+- `null == null` 为 true，`null != value` 为 true
+- 对 `null` 做字段访问、索引访问、大小比较、算术或聚合会报 check eval error
+- 可用逻辑短路表达安全访问：`item != null && item.id != ""`
 
 `type` 支持前向引用和自引用：
 
@@ -296,17 +317,18 @@ type Zone {
 
 枚举类型支持全部六种比较运算符，按底层整数值比较。
 
-`is` 判断对象的实际 nominal type，也可以判断对象是否属于某个 union alias：
+`is` 判断对象的实际 nominal type，也可以判断对象是否属于某个 union alias，或是否为 `null`：
 
 ```cfc
 check {
   reward is CurrencyReward;
   reward is Reward;
   !(reward is ItemReward);
+  item is null;
 }
 ```
 
-`is` 不做结构匹配，也不会改变后续表达式的静态类型；第一版不实现 TypeScript 式控制流窄化。
+`is` 不做结构匹配。`&&` 短路可以用于最常见的安全访问形式，例如 `item != null && item.id != ""`、`reward is CurrencyReward && reward.amount > 0`。
 
 **内建函数**：`check` 表达式支持受限的内建函数调用，不支持用户自定义函数调用。
 
@@ -318,8 +340,10 @@ check {
 | `min(array)` | 返回非空 int、float 或同一 enum 数组中的最小值。 |
 | `max(array)` | 返回非空 int、float 或同一 enum 数组中的最大值。 |
 | `sum(array)` | 对 int 或 float 数组求和；空数组返回 `0`。 |
+| `keys(dict)` | 返回 dict key 数组。 |
+| `values(dict)` | 返回 dict value 数组。 |
 
-内建函数只在 `check` 表达式中可用，不是数据定义表达式。`unique` 不支持 float、object、array 或 dict 元素；`min` / `max` 对空数组报 check eval error；`contains(dict, value)` 只检查 key，不检查 value。
+内建函数只在 `check` 表达式中可用，不是数据定义表达式。`unique` 不支持 float、object、array、dict、null 或 union 元素；`min` / `max` 对空数组报 check eval error；`contains(dict, value)` 只检查 key，不检查 value。
 
 不支持：用户自定义函数调用、字符串插值、变量声明、赋值、`?.`、`?[]`。
 

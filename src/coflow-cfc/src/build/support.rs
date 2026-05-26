@@ -14,7 +14,8 @@ impl BuildCtx<'_> {
             let borrowed = value.borrow();
             matches!(
                 (&*borrowed, expected),
-                (CfcValue::Int(_), "int")
+                (CfcValue::Null, "null")
+                    | (CfcValue::Int(_), "int")
                     | (CfcValue::Float(_), "float")
                     | (CfcValue::Bool(_), "bool")
                     | (CfcValue::String(_), "string")
@@ -50,12 +51,17 @@ pub(super) fn value_signature(value: &CfcValueRef) -> ValueSignature {
         return ValueSignature::Pending;
     }
     match &*value.borrow() {
+        CfcValue::Null => ValueSignature::Null,
         CfcValue::Int(_) => ValueSignature::Int,
         CfcValue::Float(_) => ValueSignature::Float,
         CfcValue::Bool(_) => ValueSignature::Bool,
         CfcValue::String(_) => ValueSignature::String,
         CfcValue::Enum { enum_type, .. } => ValueSignature::Enum(enum_type.clone()),
         CfcValue::Object { type_name, .. } => ValueSignature::Object(type_name.clone()),
+        CfcValue::Union { union_type, value } => ValueSignature::Union {
+            union_type: union_type.clone(),
+            value: Box::new(value_signature(value)),
+        },
         CfcValue::Array(items) => items.first().map_or(
             ValueSignature::Array(Box::new(ValueSignature::Unknown)),
             |item| ValueSignature::Array(Box::new(value_signature(item))),
@@ -79,12 +85,17 @@ pub(super) fn value_signature(value: &CfcValueRef) -> ValueSignature {
 pub(super) enum ValueSignature {
     Pending,
     Unknown,
+    Null,
     Int,
     Float,
     Bool,
     String,
     Enum(CfcNominalType),
     Object(Option<CfcNominalType>),
+    Union {
+        union_type: CfcNominalType,
+        value: Box<ValueSignature>,
+    },
     Array(Box<ValueSignature>),
     Dict(Box<ValueSignature>, Box<ValueSignature>),
 }
