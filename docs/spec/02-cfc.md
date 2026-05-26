@@ -1022,13 +1022,33 @@ container.check(result) -> [CheckError]
 
 `check()` 只在 `build()` 成功后执行。`check()` 不修改对象图，不填充默认值，不重新执行结构校验。`type` 内 `check` 以每个已构建对象为上下文执行；顶层 `check` 以所在模块的顶层命名节点为上下文执行。
 
-## CLI（未实现）
+## CLI
 
-当前 Rust reference crate 只提供 library API，尚未提供 CLI。预期 CLI 会作为 `CfcContainer` 接口的薄封装，resolver 直接读取文件系统。
+CLI 作为独立 crate `coflow-cfc-cli` 实现，二进制名为 `cfc`。CLI 是 `CfcContainer` 接口的薄封装，resolver 直接读取文件系统，并把 `use` 路径相对当前模块所在目录解析为 canonical 文件路径。
 
 ```
-cfc check <file>    # 加载并校验，报告全部错误
-cfc fmt <file>      # 格式化
+cfc check <file>          # 加载 root import closure，执行 build 和 check
+cfc get <file> <path>     # 加载并校验后，读取指定值路径
+cfc type <file> <name>    # 输出 type 或 enum 定义
+```
+
+`check` 失败时返回非零退出码，并按阶段报告 parse/build/check 错误。`build()` 阶段会区分合法的 identity 引用环和非法的求值依赖环：对象、数组、字典命名节点可以形成引用环；标量、路径或字段求值形成的环会报 `Cycle` 错误。
+
+`get` 的路径是有限路径求值，必须得到确定值，否则报错。第一版支持顶层数据名、对象字段和数字索引：
+
+```
+cfc get monsters.cfc slime.stats.hp
+cfc get monsters.cfc monsters[0].drops[1]
+```
+
+输出使用保留 identity 的 JSON-like 图格式；对象、数组、字典包含 `$id`，重复引用和环用 `$ref` 表示，因此不会无限展开。
+
+`type` 支持当前 root 模块定义和一级 import alias 定义：
+
+```
+cfc type monsters.cfc Monster
+cfc type monsters.cfc common.Item
+cfc type monsters.cfc common.Rarity
 ```
 
 ## 错误阶段

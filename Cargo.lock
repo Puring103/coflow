@@ -10,6 +10,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "coflow-cfc-cli"
+version = "0.7.1"
+dependencies = [
+ "coflow-cfc",
+]
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
