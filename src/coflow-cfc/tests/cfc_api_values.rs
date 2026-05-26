@@ -6,7 +6,7 @@
     clippy::cognitive_complexity
 )]
 
-use coflow::{CfcContainer, CfcValue, CfcValueRef, ModuleId, ResolveError};
+use coflow_cfc::{CfcContainer, CfcValue, CfcValueRef, ModuleId, ResolveError};
 
 #[test]
 fn object_array_and_dict_defaults_are_not_shared_between_instances() {
@@ -282,7 +282,7 @@ fn load_graph_rejects_existing_root_module() {
         })
         .unwrap_err();
 
-    assert!(matches!(err, coflow::CfcError::Parse(_)));
+    assert!(matches!(err, coflow_cfc::CfcError::Parse(_)));
 }
 
 #[test]
@@ -304,7 +304,7 @@ fn low_level_api_reports_basic_phase_errors() {
     assert!(c
         .bind_import(&ModuleId::from("missing"), import, &dep)
         .is_err());
-    assert!(c.bind_import(&root, coflow::ImportId(999), &dep).is_err());
+    assert!(c.bind_import(&root, coflow_cfc::ImportId(999), &dep).is_err());
 }
 
 #[test]

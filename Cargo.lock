@@ -3,8 +3,8 @@
 version = 4
 
 [[package]]
-name = "coflow"
-version = "0.1.0"
+name = "coflow-cfc"
+version = "0.5.0"
 dependencies = [
  "unicode-ident",
 ]

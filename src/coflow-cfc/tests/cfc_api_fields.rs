@@ -6,7 +6,7 @@
     clippy::cognitive_complexity
 )]
 
-use coflow::{CfcContainer, CfcValue, CfcValueRef, ModuleId};
+use coflow_cfc::{CfcContainer, CfcValue, CfcValueRef, ModuleId};
 
 #[test]
 fn type_fields_support_forward_references() {

@@ -6,7 +6,7 @@
     clippy::cognitive_complexity
 )]
 
-use coflow::{CfcContainer, CfcValue, ModuleId};
+use coflow_cfc::{CfcContainer, CfcValue, ModuleId};
 
 #[test]
 fn same_type_name_from_different_modules_is_not_compatible() {

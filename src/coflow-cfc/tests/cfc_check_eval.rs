@@ -1,6 +1,6 @@
 #![allow(clippy::panic, clippy::unwrap_used, clippy::needless_raw_string_hashes)]
 
-use coflow::{CfcContainer, CheckError, CheckErrorKind, ModuleId};
+use coflow_cfc::{CfcContainer, CheckError, CheckErrorKind, ModuleId};
 
 fn check_errors(source: &str) -> Vec<String> {
     check_results(source)

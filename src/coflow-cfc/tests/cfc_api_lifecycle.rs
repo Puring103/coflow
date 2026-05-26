@@ -6,7 +6,7 @@
     clippy::cognitive_complexity
 )]
 
-use coflow::{CfcContainer, CfcValue, CfcValueRef, ModuleId, ResolveError};
+use coflow_cfc::{CfcContainer, CfcValue, CfcValueRef, ModuleId, ResolveError};
 
 #[test]
 fn load_graph_builds_root_closure() {

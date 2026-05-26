@@ -1,6 +1,6 @@
 #![allow(clippy::panic, clippy::unwrap_used, clippy::needless_raw_string_hashes)]
 
-use coflow::{CfcContainer, ModuleId};
+use coflow_cfc::{CfcContainer, ModuleId};
 
 #[test]
 fn parses_type_check_conditions_and_all_blocks() {

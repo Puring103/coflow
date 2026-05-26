@@ -6,7 +6,7 @@
     clippy::cognitive_complexity
 )]
 
-use coflow::{CfcContainer, CfcValue, ModuleId, ResolveError};
+use coflow_cfc::{CfcContainer, CfcValue, ModuleId, ResolveError};
 
 #[test]
 fn imported_enum_values_work_as_typed_dict_keys() {

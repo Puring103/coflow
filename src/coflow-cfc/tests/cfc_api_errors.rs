@@ -6,7 +6,7 @@
     clippy::cognitive_complexity
 )]
 
-use coflow::{CfcContainer, CfcValue, CfcValueRef, ModuleId};
+use coflow_cfc::{CfcContainer, CfcValue, CfcValueRef, ModuleId};
 
 #[test]
 fn duplicate_top_level_names_are_rejected_across_kinds() {

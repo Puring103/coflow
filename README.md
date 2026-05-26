@@ -1,6 +1,6 @@
-# coflow
+# coflow-cfc
 
-coflow is a Rust reference implementation for the CFC configuration language.
+coflow-cfc is a Rust reference implementation for the CFC configuration language.
 
 CFC is a typed, self-validating configuration format for game data and other
 object graphs. It supports schema definitions, enums, imports, typed objects,
