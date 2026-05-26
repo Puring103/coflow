@@ -1,6 +1,6 @@
 [package]
 name = "coflow-cfc"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2021"
 description = "A Rust implementation of the CFC configuration language for game data."
 license = "MIT OR Apache-2.0"

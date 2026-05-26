@@ -52,9 +52,22 @@ impl BuildCtx<'_> {
         };
 
         if !self.graph.visiting.insert(key.clone()) {
-            return self.graph.memo.get(&key).cloned();
+            if let Some(value) = self.graph.memo.get(&key) {
+                if value.is_pending() {
+                    return Some(value.clone());
+                }
+            }
+            self.errors.push(BuildError::new(
+                BuildErrorKind::Cycle,
+                format!("cyclic data reference: {}", self.format_data_cycle(&key)),
+                Some(def.span),
+            ));
+            self.graph.failed.insert(key);
+            return None;
         }
+        self.graph.visiting_stack.push(key.clone());
         let value = self.eval_expr(module, &def.value, def.ty.as_ref());
+        self.graph.visiting_stack.pop();
         self.graph.visiting.remove(&key);
         if let Some(value) = value {
             if let Some(placeholder) = placeholder {
@@ -71,6 +84,21 @@ impl BuildCtx<'_> {
             self.graph.failed.insert(key);
             None
         }
+    }
+
+    fn format_data_cycle(&self, repeated: &(ModuleId, String)) -> String {
+        let start = self
+            .graph
+            .visiting_stack
+            .iter()
+            .position(|key| key == repeated)
+            .unwrap_or(0);
+        self.graph.visiting_stack[start..]
+            .iter()
+            .chain(std::iter::once(repeated))
+            .map(|(module, name)| format!("{module}.{name}"))
+            .collect::<Vec<_>>()
+            .join(" -> ")
     }
 
     fn eval_expr(

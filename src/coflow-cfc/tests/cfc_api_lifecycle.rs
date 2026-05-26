@@ -6,7 +6,7 @@
     clippy::cognitive_complexity
 )]
 
-use coflow_cfc::{CfcContainer, CfcValue, CfcValueRef, ModuleId, ResolveError};
+use coflow_cfc::{BuildErrorKind, CfcContainer, CfcValue, CfcValueRef, ModuleId, ResolveError};
 
 #[test]
 fn load_graph_builds_root_closure() {
@@ -197,6 +197,59 @@ node_b: Node = {
         };
         assert!(CfcValueRef::ptr_eq(b_fields.get("next").unwrap(), &node_a));
     }
+}
+
+#[test]
+fn scalar_data_cycles_are_rejected() {
+    let source = r#"
+a = b;
+b = a;
+"#;
+
+    let mut c = CfcContainer::new();
+    let root = ModuleId::from("root");
+    c.add_module(root.clone(), source).unwrap();
+    let err = c.build(&root).unwrap_err();
+
+    assert!(err.errors.iter().any(|e| {
+        e.kind == BuildErrorKind::Cycle && e.message.contains("root.a -> root.b -> root.a")
+    }));
+}
+
+#[test]
+fn typed_scalar_data_cycles_are_rejected() {
+    let source = r#"
+a: int = b;
+b: int = a;
+"#;
+
+    let mut c = CfcContainer::new();
+    let root = ModuleId::from("root");
+    c.add_module(root.clone(), source).unwrap();
+    let err = c.build(&root).unwrap_err();
+
+    assert!(err.errors.iter().any(|e| {
+        e.kind == BuildErrorKind::Cycle && e.message.contains("root.a -> root.b -> root.a")
+    }));
+}
+
+#[test]
+fn path_data_cycles_are_rejected() {
+    let source = r#"
+a = b.value;
+b = {
+  value: a,
+};
+"#;
+
+    let mut c = CfcContainer::new();
+    let root = ModuleId::from("root");
+    c.add_module(root.clone(), source).unwrap();
+    let err = c.build(&root).unwrap_err();
+
+    assert!(err.errors.iter().any(|e| {
+        e.kind == BuildErrorKind::Cycle && e.message.contains("root.a -> root.b -> root.a")
+    }));
 }
 
 #[test]

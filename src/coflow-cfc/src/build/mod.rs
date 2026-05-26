@@ -66,6 +66,7 @@ struct GraphState {
     memo: HashMap<(ModuleId, String), CfcValueRef>,
     failed: HashSet<(ModuleId, String)>,
     visiting: HashSet<(ModuleId, String)>,
+    visiting_stack: Vec<(ModuleId, String)>,
     results: BTreeMap<ModuleId, CfcModuleResult>,
 }
 
@@ -92,6 +93,7 @@ impl<'a> BuildCtx<'a> {
                 memo: HashMap::new(),
                 failed: HashSet::new(),
                 visiting: HashSet::new(),
+                visiting_stack: Vec::new(),
                 results: BTreeMap::new(),
             },
             errors: Vec::new(),
