@@ -118,11 +118,13 @@ type Weapon {
 支持的字段类型：
 
 - 基础类型：`int`、`float`、`bool`、`string`
+- 字符串字面量类型：例如 `"currency"`，只接受完全相同的字符串值
 - `any`：接受任意值，loader 只做引用合法性检查，不做类型匹配
 - 数组类型：`[T]`，T 可以是任意合法字段类型，包括 `any`
 - 字典类型：`{K: V}`，K 只允许 `string`、`int` 或任意已定义的 `enum` 类型名，V 可以是任意合法字段类型，包括 `any`
 - 当前文件或导入文件中的 `type`
 - 当前文件或导入文件中的 `enum`
+- union alias：由若干已命名 `type` 组成，例如 `type Reward = ItemReward | CurrencyReward;`
 
 `type` 使用名义类型（nominal typing），不使用结构类型。两个 `type` 即使字段完全相同，也不是同一个类型。对象字面量只有在上下文提供明确类型时才按该 `type` 校验；无类型标注的数据节点和 `any` 字段不会因为字段形状自动推断为某个 `type`。
 
@@ -139,6 +141,47 @@ a: A = { id: "x" };
 b: B = a;          // 错误：A 不是 B
 raw = { id: "x" }; // 合法，但 raw 的结构不按 A 或 B 校验
 ```
+
+### union alias
+
+`type` 也可以声明为 union alias。union alias 不是新的运行时 value 包装；构建结果保存实际分支对象的 nominal type。
+
+```cfc
+type ItemReward {
+  kind: "item" = "item";
+  item: Item;
+}
+
+type CurrencyReward {
+  kind: "currency" = "currency";
+  amount: int;
+}
+
+type Reward = ItemReward | CurrencyReward;
+
+reward: Reward = {
+  kind: "currency",
+  amount: 100,
+};
+```
+
+第一版 union 分支必须是已命名 `type`，不支持匿名 object union。对象字面量赋给 union 时，builder 使用字符串字段 `kind` 选择唯一分支；分支类型通常把 `kind` 声明为字符串字面量类型并提供同值默认值。
+
+```cfc
+type CurrencyReward {
+  kind: "currency" = "currency";
+  amount: int;
+}
+```
+
+若对象字面量没有字符串 `kind` 字段，或没有分支的 `kind` 字面量匹配，build 报类型错误。若已有命名节点的实际 nominal type 是 union 分支之一，则可以赋给 union：
+
+```cfc
+coin: CurrencyReward = { amount: 10 };
+reward: Reward = coin;
+```
+
+第一版不支持裸结构匹配、按唯一可匹配字段集合推断分支、union value wrapper、数字/布尔 literal type，也不支持 `null`。
 
 `type` 支持前向引用和自引用：
 
@@ -250,12 +293,25 @@ type Zone {
 
 - 逻辑：`||` `&&`，短路求值
 - 比较：`==` `!=` `<` `<=` `>` `>=`，支持链式比较（方向一致，如 `0 < x <= 100`）
+- 类型判断：`is`
 - 按位：`|` `^` `&`
 - 算术：`+` `-` `<<` `>>` `*` `/` `//` `%` `**`，`**` 右结合
 - 一元：`!` `~` `-`
 - 后缀：`.`（字段访问）`[]`（索引访问）、内建函数调用
 
 枚举类型支持全部六种比较运算符，按底层整数值比较。
+
+`is` 判断对象的实际 nominal type，也可以判断对象是否属于某个 union alias：
+
+```cfc
+check {
+  reward is CurrencyReward;
+  reward is Reward;
+  !(reward is ItemReward);
+}
+```
+
+`is` 不做结构匹配，也不会改变后续表达式的静态类型；第一版不实现 TypeScript 式控制流窄化。
 
 **内建函数**：`check` 表达式支持受限的内建函数调用，不支持用户自定义函数调用。
 

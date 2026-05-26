@@ -1015,3 +1015,35 @@ loot: Loot = {
     assert_eq!(failed[0].key, "value[1]");
     assert_eq!(failed[1].key, "value[2]");
 }
+
+#[test]
+fn check_is_tests_nominal_branch_and_union_alias() {
+    let errors = check_errors(
+        r#"
+type ItemReward {
+  kind: "item" = "item";
+  item: string;
+}
+
+type CurrencyReward {
+  kind: "currency" = "currency";
+  amount: int;
+}
+
+type Reward = ItemReward | CurrencyReward;
+
+reward: Reward = {
+  kind: "currency",
+  amount: 100,
+};
+
+check {
+  reward is CurrencyReward;
+  reward is Reward;
+  !(reward is ItemReward);
+}
+"#,
+    );
+
+    assert!(errors.is_empty());
+}

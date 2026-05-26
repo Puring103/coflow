@@ -87,6 +87,17 @@ impl Parser {
     fn parse_type(&mut self) -> Result<TypeDef, ParseErrors> {
         let start = self.expect_simple(&TokenKind::Type)?.start;
         let (name, _) = self.expect_ident()?;
+        if self.eat(&TokenKind::Equal).is_some() {
+            let alias = self.parse_type_ref()?;
+            let end = self.expect_simple(&TokenKind::Semicolon)?.end;
+            return Ok(TypeDef {
+                name,
+                fields: Vec::new(),
+                check: None,
+                alias: Some(alias),
+                span: Span::new(start, end),
+            });
+        }
         self.expect_simple(&TokenKind::LBrace)?;
         let mut fields = Vec::new();
         let mut check = None;
@@ -117,6 +128,7 @@ impl Parser {
             name,
             fields,
             check,
+            alias: None,
             span: Span::new(start, end),
         })
     }
@@ -172,6 +184,19 @@ impl Parser {
     }
 
     fn parse_type_ref(&mut self) -> Result<TypeRef, ParseErrors> {
+        let first = self.parse_type_atom()?;
+        let mut items = vec![first];
+        while self.eat(&TokenKind::Pipe).is_some() {
+            items.push(self.parse_type_atom()?);
+        }
+        if items.len() == 1 {
+            Ok(items.pop().unwrap())
+        } else {
+            Ok(TypeRef::Union(items))
+        }
+    }
+
+    fn parse_type_atom(&mut self) -> Result<TypeRef, ParseErrors> {
         if self.eat(&TokenKind::LBracket).is_some() {
             let inner = self.parse_type_ref()?;
             self.expect_simple(&TokenKind::RBracket)?;
@@ -183,6 +208,10 @@ impl Parser {
             let value = self.parse_type_ref()?;
             self.expect_simple(&TokenKind::RBrace)?;
             return Ok(TypeRef::Dict(Box::new(key), Box::new(value)));
+        }
+        if let TokenKind::String(value) = self.peek().kind.clone() {
+            self.bump();
+            return Ok(TypeRef::StringLiteral(value));
         }
         let (name, _) = self.expect_type_name_ident()?;
         let ty = match name.as_str() {
@@ -437,12 +466,28 @@ impl Parser {
     }
 
     fn parse_and_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
-        let mut expr = self.parse_cmp_chain()?;
+        let mut expr = self.parse_is_expr()?;
         while self.eat(&TokenKind::AmpAmp).is_some() {
-            let rhs = self.parse_cmp_chain()?;
+            let rhs = self.parse_is_expr()?;
             expr = bin_expr(BinOp::And, expr, rhs);
         }
         Ok(expr)
+    }
+
+    fn parse_is_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let expr = self.parse_cmp_chain()?;
+        if self.eat(&TokenKind::Is).is_none() {
+            return Ok(expr);
+        }
+        let ty = self.parse_check_type_name()?;
+        let span = Span::new(expr.span.start, self.prev_span().end);
+        Ok(CheckExpr {
+            kind: CheckExprKind::Is {
+                expr: Box::new(expr),
+                ty,
+            },
+            span,
+        })
     }
 
     fn parse_bitor_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
@@ -700,6 +745,19 @@ impl Parser {
         }
     }
 
+    fn parse_check_type_name(&mut self) -> Result<TypeName, ParseErrors> {
+        let (name, _) = self.expect_ident()?;
+        if self.eat(&TokenKind::Dot).is_some() {
+            let (member, _) = self.expect_ident()?;
+            Ok(TypeName::Imported {
+                alias: name,
+                name: member,
+            })
+        } else {
+            Ok(TypeName::Local(name))
+        }
+    }
+
     fn eat_cmp_op(&mut self) -> Option<CmpOp> {
         if self.eat(&TokenKind::EqEq).is_some() {
             Some(CmpOp::Eq)
@@ -844,6 +902,7 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Dot => ".",
         TokenKind::Equal => "=",
         TokenKind::In => "in",
+        TokenKind::Is => "is",
         _ => "token",
     }
 }

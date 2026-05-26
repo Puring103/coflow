@@ -1,5 +1,6 @@
 use super::{BuildCtx, ObjectEvalState, ObjectFieldPlan, TypeInfo};
 use crate::ast::{Expr, ExprKind, ObjectField, TypeName, TypeRef};
+use crate::build::eval::object_string_field;
 use crate::container::ModuleId;
 use crate::error::{BuildError, BuildErrorKind};
 use crate::value::{CfcNominalType, CfcValue, CfcValueRef};
@@ -196,6 +197,21 @@ impl BuildCtx<'_> {
                     .and_then(|value| self.ensure_basic_value(expr, value, "string")),
                 _ => self.type_error(expr, "string"),
             },
+            Some(TypeRef::StringLiteral(expected)) => match &expr.kind {
+                ExprKind::String(value) if value == expected => {
+                    Some(CfcValueRef::new(CfcValue::String(value.clone())))
+                }
+                ExprKind::Name(name) => self
+                    .resolve_name_in_object_state(module, default_module, name, expr.span, state)
+                    .and_then(|value| self.ensure_string_literal_value(expr, &value, expected)),
+                ExprKind::Qualified(parts) => self
+                    .eval_qualified_in_object_state(module, default_module, expr, parts, state)
+                    .and_then(|value| self.ensure_string_literal_value(expr, &value, expected)),
+                ExprKind::Path { .. } => self
+                    .eval_path_in_object_state(module, default_module, expr, state)
+                    .and_then(|value| self.ensure_string_literal_value(expr, &value, expected)),
+                _ => self.type_error(expr, &format!("{expected:?}")),
+            },
             Some(TypeRef::Array(inner)) => match &expr.kind {
                 ExprKind::Array(items) => {
                     let mut out = Vec::new();
@@ -255,6 +271,9 @@ impl BuildCtx<'_> {
                     .and_then(|value| self.ensure_dict_value(expr, &value)),
                 _ => self.type_error(expr, "dict"),
             },
+            Some(TypeRef::Union(items)) => {
+                self.eval_union_in_object_state(module, default_module, expr, items, state)
+            }
             Some(TypeRef::Named(name)) => {
                 self.eval_named_in_object_state(module, default_module, expr, name, state)
             }
@@ -281,6 +300,26 @@ impl BuildCtx<'_> {
             .contains_key(&(target_module.clone(), target_name.clone()))
         {
             return self.eval_enum_value(module, expr, &target_module, &target_name);
+        }
+        if self
+            .symbols
+            .unions
+            .contains_key(&(target_module.clone(), target_name.clone()))
+        {
+            let Some(union) = self
+                .symbols
+                .unions
+                .get(&(target_module.clone(), target_name.clone()))
+                .cloned()
+            else {
+                return None;
+            };
+            let branches = union
+                .branches
+                .iter()
+                .map(|branch| TypeRef::Named(branch.clone()))
+                .collect::<Vec<_>>();
+            return self.eval_union_in_object_state(module, default_module, expr, &branches, state);
         }
         let Some(type_info) = self
             .symbols
@@ -324,6 +363,56 @@ impl BuildCtx<'_> {
                 self.ensure_named_value(expr, &value, &type_info)
             }
             _ => self.type_error(expr, &target_name),
+        }
+    }
+
+    fn eval_union_in_object_state(
+        &mut self,
+        module: &ModuleId,
+        default_module: &ModuleId,
+        expr: &Expr,
+        branches: &[TypeRef],
+        state: &mut ObjectEvalState,
+    ) -> Option<CfcValueRef> {
+        match &expr.kind {
+            ExprKind::Object(fields) => {
+                let Some(kind) = object_string_field(fields, "kind") else {
+                    self.errors.push(BuildError::new(
+                        BuildErrorKind::TypeMismatch,
+                        "union object must include string field `kind`",
+                        Some(expr.span),
+                    ));
+                    return None;
+                };
+                let branch =
+                    self.select_union_branch_by_kind(default_module, branches, kind, expr.span)?;
+                self.eval_expr_in_object_state(module, default_module, expr, Some(&branch), state)
+            }
+            ExprKind::Name(name) => {
+                let value = self.resolve_name_in_object_state(
+                    module,
+                    default_module,
+                    name,
+                    expr.span,
+                    state,
+                )?;
+                self.ensure_union_value(expr, &value, default_module, branches)
+            }
+            ExprKind::Qualified(parts) => {
+                let value = self.eval_qualified_in_object_state(
+                    module,
+                    default_module,
+                    expr,
+                    parts,
+                    state,
+                )?;
+                self.ensure_union_value(expr, &value, default_module, branches)
+            }
+            ExprKind::Path { .. } => {
+                let value = self.eval_path_in_object_state(module, default_module, expr, state)?;
+                self.ensure_union_value(expr, &value, default_module, branches)
+            }
+            _ => self.type_error(expr, "union"),
         }
     }
 

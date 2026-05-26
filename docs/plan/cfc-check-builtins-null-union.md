@@ -403,6 +403,8 @@ CfcValue::Union {
 
 这一阶段暂不支持匿名 object union、数字 literal type、完整模式匹配和跨语句窄化。
 
+当前实现已覆盖 `type Reward = A | B | C;`、string literal type、基于 `kind` 字段的分支选择，以及 check 中的 `expr is TypeName`。运行时保存实际分支 object，不引入 union wrapper。`&&` 右侧局部窄化尚未实现。
+
 ## 开放问题
 
 1. `sum([])` 是否固定返回 `0`，还是为了发现错误也报 eval error。

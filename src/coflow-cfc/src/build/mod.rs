@@ -1,4 +1,4 @@
-use crate::ast::{DataDef, Expr, TypeDef, TypeRef};
+use crate::ast::{DataDef, Expr, TypeDef, TypeName, TypeRef};
 use crate::container::{CfcContainer, CfcModuleResult, CfcResult, ModuleId};
 use crate::error::{BuildError, BuildErrors};
 use crate::value::CfcValueRef;
@@ -36,6 +36,13 @@ struct EnumInfo {
 }
 
 #[derive(Clone)]
+struct UnionInfo {
+    module: ModuleId,
+    name: String,
+    branches: Vec<TypeName>,
+}
+
+#[derive(Clone)]
 struct ObjectFieldPlan {
     ty: TypeRef,
     expr: Expr,
@@ -50,6 +57,7 @@ struct ObjectEvalState {
 
 struct SymbolTables {
     types: HashMap<(ModuleId, String), TypeInfo>,
+    unions: HashMap<(ModuleId, String), UnionInfo>,
     enums: HashMap<(ModuleId, String), EnumInfo>,
     data: HashMap<(ModuleId, String), DataDef>,
 }
@@ -76,6 +84,7 @@ impl<'a> BuildCtx<'a> {
             module_ids,
             symbols: SymbolTables {
                 types: HashMap::new(),
+                unions: HashMap::new(),
                 enums: HashMap::new(),
                 data: HashMap::new(),
             },

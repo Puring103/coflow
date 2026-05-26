@@ -13,6 +13,9 @@ pub(super) fn describe_expr(expr: &CheckExpr) -> String {
         CheckExprKind::Index { expr, index } => {
             format!("{}[{}]", describe_expr(expr), describe_expr(index))
         }
+        CheckExprKind::Is { expr, ty } => {
+            format!("{} is {}", describe_expr(expr), describe_type_name(ty))
+        }
         CheckExprKind::Call { name, args } => {
             let args = args
                 .iter()
@@ -42,6 +45,13 @@ pub(super) fn describe_expr(expr: &CheckExpr) -> String {
             }
             out
         }
+    }
+}
+
+fn describe_type_name(ty: &crate::ast::TypeName) -> String {
+    match ty {
+        crate::ast::TypeName::Local(name) => name.clone(),
+        crate::ast::TypeName::Imported { alias, name } => format!("{alias}.{name}"),
     }
 }
 

@@ -29,6 +29,7 @@ pub struct TypeDef {
     pub fields: Vec<FieldDef>,
     #[allow(dead_code)]
     pub check: Option<CheckBlock>,
+    pub alias: Option<TypeRef>,
     pub span: Span,
 }
 
@@ -112,6 +113,10 @@ pub enum CheckExprKind {
         expr: Box<CheckExpr>,
         index: Box<CheckExpr>,
     },
+    Is {
+        expr: Box<CheckExpr>,
+        ty: TypeName,
+    },
     Call {
         name: String,
         args: Vec<CheckExpr>,
@@ -178,9 +183,11 @@ pub enum TypeRef {
     Float,
     Bool,
     String,
+    StringLiteral(String),
     Any,
     Array(Box<TypeRef>),
     Dict(Box<TypeRef>, Box<TypeRef>),
+    Union(Vec<TypeRef>),
     Named(TypeName),
 }
 

@@ -547,3 +547,148 @@ table: LootTable = {
         CfcValue::Int(2)
     ));
 }
+
+#[test]
+fn nominal_union_alias_selects_branch_by_literal_kind() {
+    let source = r#"
+type ItemReward {
+  kind: "item" = "item";
+  item: string;
+}
+
+type CurrencyReward {
+  kind: "currency" = "currency";
+  amount: int;
+}
+
+type Reward = ItemReward | CurrencyReward;
+
+type Chest {
+  reward: Reward;
+}
+
+chest: Chest = {
+  reward: {
+    kind: "currency",
+    amount: 100,
+  },
+};
+"#;
+
+    let mut c = CfcContainer::new();
+    let root = ModuleId::from("root");
+    c.add_module(root.clone(), source).unwrap();
+
+    let result = c.build(&root).unwrap();
+    let chest = result.root().unwrap().get("chest").unwrap();
+    let borrowed = chest.borrow();
+    let CfcValue::Object { fields, .. } = &*borrowed else {
+        panic!("expected chest object");
+    };
+    let reward = fields.get("reward").unwrap();
+    let reward_borrowed = reward.borrow();
+    let CfcValue::Object { type_name, fields } = &*reward_borrowed else {
+        panic!("expected reward object");
+    };
+
+    assert_eq!(type_name.as_ref().unwrap().name, "CurrencyReward");
+    assert!(matches!(
+        &*fields.get("amount").unwrap().borrow(),
+        CfcValue::Int(100)
+    ));
+}
+
+#[test]
+fn union_alias_accepts_named_branch_values() {
+    let source = r#"
+type ItemReward {
+  kind: "item" = "item";
+  item: string;
+}
+
+type CurrencyReward {
+  kind: "currency" = "currency";
+  amount: int;
+}
+
+type Reward = ItemReward | CurrencyReward;
+
+coin: CurrencyReward = {
+  amount: 10,
+};
+
+reward: Reward = coin;
+"#;
+
+    let mut c = CfcContainer::new();
+    let root = ModuleId::from("root");
+    c.add_module(root.clone(), source).unwrap();
+
+    let result = c.build(&root).unwrap();
+    let reward = result.root().unwrap().get("reward").unwrap();
+    let borrowed = reward.borrow();
+    let CfcValue::Object { type_name, .. } = &*borrowed else {
+        panic!("expected reward object");
+    };
+
+    assert_eq!(type_name.as_ref().unwrap().name, "CurrencyReward");
+}
+
+#[test]
+fn union_alias_rejects_unknown_kind() {
+    let source = r#"
+type ItemReward {
+  kind: "item" = "item";
+  item: string;
+}
+
+type CurrencyReward {
+  kind: "currency" = "currency";
+  amount: int;
+}
+
+type Reward = ItemReward | CurrencyReward;
+
+reward: Reward = {
+  kind: "xp",
+  amount: 100,
+};
+"#;
+
+    let mut c = CfcContainer::new();
+    let root = ModuleId::from("root");
+    c.add_module(root.clone(), source).unwrap();
+
+    let err = c.build(&root).unwrap_err();
+
+    assert!(err
+        .errors
+        .iter()
+        .any(|e| e.message.contains("no union branch matches kind `xp`")));
+}
+
+#[test]
+fn string_literal_fields_validate_values() {
+    let source = r#"
+type CurrencyReward {
+  kind: "currency" = "currency";
+  amount: int;
+}
+
+bad: CurrencyReward = {
+  kind: "item",
+  amount: 1,
+};
+"#;
+
+    let mut c = CfcContainer::new();
+    let root = ModuleId::from("root");
+    c.add_module(root.clone(), source).unwrap();
+
+    let err = c.build(&root).unwrap_err();
+
+    assert!(err
+        .errors
+        .iter()
+        .any(|e| e.message.contains("expected `\"currency\"`")));
+}

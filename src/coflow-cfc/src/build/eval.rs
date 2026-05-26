@@ -145,8 +145,24 @@ impl BuildCtx<'_> {
                     .and_then(|value| self.ensure_basic_value(expr, value, "string")),
                 _ => self.type_error(expr, "string"),
             },
+            Some(TypeRef::StringLiteral(expected)) => match &expr.kind {
+                ExprKind::String(value) if value == expected => {
+                    Some(CfcValueRef::new(CfcValue::String(value.clone())))
+                }
+                ExprKind::Name(name) => self
+                    .resolve_name_value(module, name, expr.span, locals)
+                    .and_then(|value| self.ensure_string_literal_value(expr, &value, expected)),
+                ExprKind::Qualified(parts) => self
+                    .eval_qualified_as_path_or_data(module, expr, parts, locals)
+                    .and_then(|value| self.ensure_string_literal_value(expr, &value, expected)),
+                ExprKind::Path { .. } => self
+                    .eval_path_expr(module, expr, locals)
+                    .and_then(|value| self.ensure_string_literal_value(expr, &value, expected)),
+                _ => self.type_error(expr, &format!("{expected:?}")),
+            },
             Some(TypeRef::Array(inner)) => self.eval_array(module, expr, inner, locals),
             Some(TypeRef::Dict(key, value)) => self.eval_dict(module, expr, key, value, locals),
+            Some(TypeRef::Union(items)) => self.eval_union_expected(module, expr, items, locals),
             Some(TypeRef::Named(name)) => self.eval_named_expected(module, expr, name, locals),
             Some(TypeRef::Any) => self.eval_any_with_locals(module, expr, locals),
             None => self.eval_untyped_with_locals(module, expr, locals),
@@ -167,6 +183,19 @@ impl BuildCtx<'_> {
             .contains_key(&(target_module.clone(), target_name.clone()))
         {
             return self.eval_enum_value(module, expr, &target_module, &target_name);
+        }
+        if self
+            .symbols
+            .unions
+            .contains_key(&(target_module.clone(), target_name.clone()))
+        {
+            return self.eval_named_union_expected(
+                module,
+                expr,
+                &target_module,
+                &target_name,
+                locals,
+            );
         }
         let Some(type_info) = self
             .symbols
@@ -197,6 +226,168 @@ impl BuildCtx<'_> {
                 self.ensure_named_value(expr, &value, &type_info)
             }
             _ => self.type_error(expr, &target_name),
+        }
+    }
+
+    fn eval_named_union_expected(
+        &mut self,
+        module: &ModuleId,
+        expr: &Expr,
+        union_module: &ModuleId,
+        union_name: &str,
+        locals: Option<&BTreeMap<String, CfcValueRef>>,
+    ) -> Option<CfcValueRef> {
+        let Some(union) = self
+            .symbols
+            .unions
+            .get(&(union_module.clone(), union_name.to_string()))
+            .cloned()
+        else {
+            self.errors.push(BuildError::new(
+                BuildErrorKind::UnknownType,
+                format!("unknown union `{union_name}`"),
+                Some(expr.span),
+            ));
+            return None;
+        };
+        let branch_refs = union
+            .branches
+            .iter()
+            .map(|branch| TypeRef::Named(branch.clone()))
+            .collect::<Vec<_>>();
+        self.eval_union_expected(module, expr, &branch_refs, locals)
+    }
+
+    fn eval_union_expected(
+        &mut self,
+        module: &ModuleId,
+        expr: &Expr,
+        branches: &[TypeRef],
+        locals: Option<&BTreeMap<String, CfcValueRef>>,
+    ) -> Option<CfcValueRef> {
+        match &expr.kind {
+            ExprKind::Object(fields) => {
+                let Some(kind) = object_string_field(fields, "kind") else {
+                    self.errors.push(BuildError::new(
+                        BuildErrorKind::TypeMismatch,
+                        "union object must include string field `kind`",
+                        Some(expr.span),
+                    ));
+                    return None;
+                };
+                let Some(branch) =
+                    self.select_union_branch_by_kind(module, branches, kind, expr.span)
+                else {
+                    return None;
+                };
+                self.eval_expr_with_locals(module, expr, Some(&branch), locals)
+            }
+            ExprKind::Name(name) => {
+                let value = Self::resolve_local(name, locals)
+                    .or_else(|| self.eval_data_name(module, name, expr.span))?;
+                self.ensure_union_value(expr, &value, module, branches)
+            }
+            ExprKind::Qualified(parts) => {
+                let value = self.eval_qualified_as_path_or_data(module, expr, parts, locals)?;
+                self.ensure_union_value(expr, &value, module, branches)
+            }
+            ExprKind::Path { .. } => {
+                let value = self.eval_path_expr(module, expr, locals)?;
+                self.ensure_union_value(expr, &value, module, branches)
+            }
+            _ => self.type_error(expr, "union"),
+        }
+    }
+
+    pub(super) fn select_union_branch_by_kind(
+        &mut self,
+        module: &ModuleId,
+        branches: &[TypeRef],
+        kind: &str,
+        span: crate::span::Span,
+    ) -> Option<TypeRef> {
+        let mut matches = Vec::new();
+        for branch in branches {
+            let TypeRef::Named(name) = branch else {
+                continue;
+            };
+            let Some((target_module, target_name)) = self.resolve_type_name(module, name, span)
+            else {
+                continue;
+            };
+            let Some(type_info) = self
+                .symbols
+                .types
+                .get(&(target_module.clone(), target_name.clone()))
+            else {
+                continue;
+            };
+            if type_discriminator(type_info).is_some_and(|value| value == kind) {
+                matches.push(branch.clone());
+            }
+        }
+        match matches.len() {
+            1 => matches.pop(),
+            0 => {
+                self.errors.push(BuildError::new(
+                    BuildErrorKind::TypeMismatch,
+                    format!("no union branch matches kind `{kind}`"),
+                    Some(span),
+                ));
+                None
+            }
+            _ => {
+                self.errors.push(BuildError::new(
+                    BuildErrorKind::TypeMismatch,
+                    format!("multiple union branches match kind `{kind}`"),
+                    Some(span),
+                ));
+                None
+            }
+        }
+    }
+
+    pub(super) fn ensure_union_value(
+        &mut self,
+        expr: &Expr,
+        value: &CfcValueRef,
+        module: &ModuleId,
+        branches: &[TypeRef],
+    ) -> Option<CfcValueRef> {
+        if value.is_pending() {
+            return Some(value.clone());
+        }
+        let borrowed = value.borrow();
+        let CfcValue::Object {
+            type_name: Some(actual),
+            ..
+        } = &*borrowed
+        else {
+            self.errors.push(BuildError::new(
+                BuildErrorKind::TypeMismatch,
+                format!("expected union, found {}", borrowed.type_name()),
+                Some(expr.span),
+            ));
+            return None;
+        };
+        if branches.iter().any(|branch| {
+            let TypeRef::Named(name) = branch else {
+                return false;
+            };
+            self.resolve_type_name(module, name, expr.span).is_some_and(
+                |(branch_module, branch_name)| {
+                    actual.module == branch_module && actual.name == branch_name
+                },
+            )
+        }) {
+            Some(value.clone())
+        } else {
+            self.errors.push(BuildError::new(
+                BuildErrorKind::TypeMismatch,
+                format!("expected union, found `{}`", format_nominal(actual)),
+                Some(expr.span),
+            ));
+            None
         }
     }
 
@@ -259,6 +450,19 @@ impl BuildCtx<'_> {
                 ));
                 None
             }
+        }
+    }
+
+    pub(super) fn ensure_string_literal_value(
+        &mut self,
+        expr: &Expr,
+        value: &CfcValueRef,
+        expected: &str,
+    ) -> Option<CfcValueRef> {
+        if matches!(&*value.borrow(), CfcValue::String(actual) if actual == expected) {
+            Some(value.clone())
+        } else {
+            self.type_error(expr, &format!("{expected:?}"))
         }
     }
 
@@ -745,4 +949,25 @@ fn validate_dict_entry(
         *inferred_value = Some(value_signature);
     }
     Some(())
+}
+
+pub(super) fn object_string_field<'a>(
+    fields: &'a [crate::ast::ObjectField],
+    name: &str,
+) -> Option<&'a str> {
+    fields.iter().find_map(|field| {
+        (field.name == name).then_some(match &field.value.kind {
+            ExprKind::String(value) => Some(value.as_str()),
+            _ => None,
+        })?
+    })
+}
+
+pub(super) fn type_discriminator(type_info: &TypeInfo) -> Option<&str> {
+    type_info.def.fields.iter().find_map(|field| {
+        (field.name == "kind").then_some(match &field.ty {
+            TypeRef::StringLiteral(value) => Some(value.as_str()),
+            _ => None,
+        })?
+    })
 }

@@ -9,7 +9,8 @@ use self::runtime::{
 };
 use self::scope::{enum_type_value, module_namespace_value, ref_layer, CheckScope};
 use crate::ast::{
-    BinOp, CheckBlock, CheckExpr, CheckExprKind, CmpOp, CondStmt, Item, QuantifierKind, UnaryOp,
+    BinOp, CheckBlock, CheckExpr, CheckExprKind, CmpOp, CondStmt, Item, QuantifierKind, TypeName,
+    TypeRef, UnaryOp,
 };
 use crate::container::{CfcContainer, CfcResult, ModuleId};
 use crate::error::{AllFailedItem, CheckError};
@@ -467,6 +468,7 @@ impl<'a> CheckRunner<'a> {
             CheckExprKind::Index { expr, index } => {
                 self.eval_index(expr, index, module, scope, context)
             }
+            CheckExprKind::Is { expr, ty } => self.eval_is(expr, ty, module, scope, context),
             CheckExprKind::Call { name, args } => {
                 self.eval_call(name, args, module, scope, context)
             }
@@ -478,6 +480,91 @@ impl<'a> CheckRunner<'a> {
                 self.eval_cmp_chain(first, rest, module, scope, context)
             }
         }
+    }
+
+    fn eval_is(
+        &self,
+        expr: &CheckExpr,
+        ty: &TypeName,
+        module: &ModuleId,
+        scope: &CheckScope<'_>,
+        context: &str,
+    ) -> Result<EvalValue, String> {
+        let value = self.eval_expr(expr, module, scope, context)?;
+        let Ok(value) = value.into_ref() else {
+            return Ok(EvalValue::Bool(false));
+        };
+        let borrowed = value.borrow();
+        let CfcValue::Object {
+            type_name: Some(actual),
+            ..
+        } = &*borrowed
+        else {
+            return Ok(EvalValue::Bool(false));
+        };
+        let Some((target_module, target_name)) = self.resolve_check_type_name(module, ty) else {
+            return Ok(EvalValue::Bool(false));
+        };
+        if actual.module == target_module && actual.name == target_name {
+            return Ok(EvalValue::Bool(true));
+        }
+        Ok(EvalValue::Bool(self.union_contains_actual(
+            &target_module,
+            &target_name,
+            actual,
+        )))
+    }
+
+    fn resolve_check_type_name(
+        &self,
+        module: &ModuleId,
+        ty: &TypeName,
+    ) -> Option<(ModuleId, String)> {
+        match ty {
+            TypeName::Local(name) => Some((module.clone(), name.clone())),
+            TypeName::Imported { alias, name } => {
+                let module_data = self.container.modules.get(module)?;
+                let import = module_data
+                    .imports
+                    .iter()
+                    .find(|import| import.alias == *alias)?;
+                let dep = module_data.bindings.get(&import.id)?;
+                Some((dep.clone(), name.clone()))
+            }
+        }
+    }
+
+    fn union_contains_actual(
+        &self,
+        union_module: &ModuleId,
+        union_name: &str,
+        actual: &CfcNominalType,
+    ) -> bool {
+        let Some(module) = self.container.modules.get(union_module) else {
+            return false;
+        };
+        let Some(alias) = module.ast.items.iter().find_map(|item| {
+            let Item::Type(def) = item else {
+                return None;
+            };
+            (def.name == union_name)
+                .then_some(def.alias.as_ref())
+                .flatten()
+        }) else {
+            return false;
+        };
+        let TypeRef::Union(branches) = alias else {
+            return false;
+        };
+        branches.iter().any(|branch| {
+            let TypeRef::Named(name) = branch else {
+                return false;
+            };
+            self.resolve_check_type_name(union_module, name)
+                .is_some_and(|(branch_module, branch_name)| {
+                    actual.module == branch_module && actual.name == branch_name
+                })
+        })
     }
 
     fn eval_call(

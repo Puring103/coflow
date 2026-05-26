@@ -1,5 +1,5 @@
-use super::{BuildCtx, EnumInfo, TypeInfo};
-use crate::ast::{EnumDef, Expr, ExprKind, Item, TypeDef, TypeRef};
+use super::{BuildCtx, EnumInfo, TypeInfo, UnionInfo};
+use crate::ast::{EnumDef, Expr, ExprKind, Item, TypeDef, TypeName, TypeRef};
 use crate::build::support::build_error;
 use crate::container::ModuleId;
 use crate::error::{BuildError, BuildErrorKind};
@@ -35,13 +35,32 @@ impl BuildCtx<'_> {
                                 Some(def.span),
                             ));
                         }
-                        self.symbols.types.insert(
-                            (module_id.clone(), def.name.clone()),
-                            TypeInfo {
-                                module: module_id.clone(),
-                                def: def.clone(),
-                            },
-                        );
+                        if let Some(alias) = &def.alias {
+                            if let Some(branches) = union_branches(alias) {
+                                self.symbols.unions.insert(
+                                    (module_id.clone(), def.name.clone()),
+                                    UnionInfo {
+                                        module: module_id.clone(),
+                                        name: def.name.clone(),
+                                        branches,
+                                    },
+                                );
+                            } else {
+                                self.errors.push(BuildError::new(
+                                    BuildErrorKind::UnknownType,
+                                    format!("union `{}` must alias named types", def.name),
+                                    Some(def.span),
+                                ));
+                            }
+                        } else {
+                            self.symbols.types.insert(
+                                (module_id.clone(), def.name.clone()),
+                                TypeInfo {
+                                    module: module_id.clone(),
+                                    def: def.clone(),
+                                },
+                            );
+                        }
                     }
                     Item::Enum(def) => {
                         if !local_names.insert(def.name.clone()) {
@@ -86,6 +105,10 @@ impl BuildCtx<'_> {
             .collect();
         for (module, def) in defs {
             self.validate_type_def(&module, &def);
+        }
+        let unions: Vec<_> = self.symbols.unions.values().cloned().collect();
+        for union in unions {
+            self.validate_union_def(&union);
         }
     }
 
@@ -142,6 +165,38 @@ impl BuildCtx<'_> {
         }
     }
 
+    fn validate_union_def(&mut self, union: &UnionInfo) {
+        let mut seen = HashSet::new();
+        for branch in &union.branches {
+            let Some((target_module, target_name)) =
+                self.resolve_type_name(&union.module, branch, Span::new(0, 0))
+            else {
+                continue;
+            };
+            if !seen.insert((target_module.clone(), target_name.clone())) {
+                self.errors.push(BuildError::new(
+                    BuildErrorKind::DuplicateName,
+                    format!("duplicate union branch `{target_name}`"),
+                    None,
+                ));
+            }
+            if !self
+                .symbols
+                .types
+                .contains_key(&(target_module.clone(), target_name.clone()))
+            {
+                self.errors.push(BuildError::new(
+                    BuildErrorKind::UnknownType,
+                    format!(
+                        "union `{}` branch `{target_name}` must name a type",
+                        union.name
+                    ),
+                    None,
+                ));
+            }
+        }
+    }
+
     fn is_default_constant(&self, module: &ModuleId, expr: &Expr) -> bool {
         match &expr.kind {
             ExprKind::Int(_) | ExprKind::Float(_) | ExprKind::Bool(_) | ExprKind::String(_) => true,
@@ -176,11 +231,21 @@ impl BuildCtx<'_> {
 
     fn validate_type_ref(&mut self, module: &ModuleId, ty: &TypeRef, span: Span) {
         match ty {
-            TypeRef::Int | TypeRef::Float | TypeRef::Bool | TypeRef::String | TypeRef::Any => {}
+            TypeRef::Int
+            | TypeRef::Float
+            | TypeRef::Bool
+            | TypeRef::String
+            | TypeRef::StringLiteral(_)
+            | TypeRef::Any => {}
             TypeRef::Array(inner) => self.validate_type_ref(module, inner, span),
             TypeRef::Dict(key, value) => {
                 self.validate_dict_key_type(module, key, span);
                 self.validate_type_ref(module, value, span);
+            }
+            TypeRef::Union(items) => {
+                for item in items {
+                    self.validate_type_ref(module, item, span);
+                }
             }
             TypeRef::Named(name) => {
                 if let Some((target_module, target_name)) =
@@ -190,6 +255,10 @@ impl BuildCtx<'_> {
                         .symbols
                         .types
                         .contains_key(&(target_module.clone(), target_name.clone()))
+                        && !self
+                            .symbols
+                            .unions
+                            .contains_key(&(target_module.clone(), target_name.clone()))
                         && !self
                             .symbols
                             .enums
@@ -208,7 +277,7 @@ impl BuildCtx<'_> {
 
     fn validate_dict_key_type(&mut self, module: &ModuleId, ty: &TypeRef, span: Span) {
         match ty {
-            TypeRef::String | TypeRef::Int => {}
+            TypeRef::String | TypeRef::Int | TypeRef::StringLiteral(_) => {}
             TypeRef::Named(name) => {
                 if let Some((target_module, target_name)) =
                     self.resolve_type_name(module, name, span)
@@ -235,4 +304,17 @@ impl BuildCtx<'_> {
             }
         }
     }
+}
+
+fn union_branches(alias: &TypeRef) -> Option<Vec<TypeName>> {
+    let TypeRef::Union(items) = alias else {
+        return None;
+    };
+    items
+        .iter()
+        .map(|item| match item {
+            TypeRef::Named(name) => Some(name.clone()),
+            _ => None,
+        })
+        .collect()
 }
