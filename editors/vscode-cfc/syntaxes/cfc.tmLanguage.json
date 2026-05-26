@@ -1,0 +1,113 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "CFC",
+  "scopeName": "source.cfc",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#declarations"
+    },
+    {
+      "include": "#builtins"
+    },
+    {
+      "include": "#operators"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.cfc",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.cfc",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.cfc",
+              "match": "\\\\[\"\\\\nrt]"
+            },
+            {
+              "name": "invalid.illegal.escape.cfc",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.cfc",
+          "match": "\\b[0-9]+\\.[0-9]+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.cfc",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.cfc",
+          "match": "\\b(?:use|as|type|enum|check|all|any|none|in|is|dict)\\b"
+        },
+        {
+          "name": "constant.language.cfc",
+          "match": "\\b(?:null|true|false)\\b"
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "name": "entity.name.type.cfc",
+          "match": "\\b(?<=type\\s)[A-Za-z_\\p{L}][A-Za-z_0-9\\p{L}\\p{N}]*\\b"
+        },
+        {
+          "name": "entity.name.type.enum.cfc",
+          "match": "\\b(?<=enum\\s)[A-Za-z_\\p{L}][A-Za-z_0-9\\p{L}\\p{N}]*\\b"
+        }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "name": "storage.type.primitive.cfc",
+          "match": "\\b(?:int|float|bool|string|any)\\b"
+        },
+        {
+          "name": "support.function.builtin.cfc",
+          "match": "\\b(?:len|contains|unique|min|max|sum|keys|values)(?=\\s*\\()"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.cfc",
+          "match": "\\*\\*|//|==|!=|<=|>=|&&|\\|\\||<<|>>|[=+\\-*/%<>!?~&|^.:,;]"
+        }
+      ]
+    }
+  }
+}

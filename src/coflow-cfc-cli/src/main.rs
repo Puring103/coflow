@@ -23,7 +23,10 @@ fn run(args: Vec<String>) -> Result<(), String> {
     };
     match command {
         "check" => {
-            let file = required_arg(&args, 2, "missing file")?;
+            let (json, file) = parse_check_args(&args)?;
+            if json {
+                return check_json(file);
+            }
             let loaded = load_file(file)?;
             report_checks(&loaded.container, &loaded.result)?;
             println!("ok");
@@ -59,10 +62,48 @@ fn required_arg(args: &[String], index: usize, message: &str) -> Result<String, 
 
 fn usage() -> String {
     "usage:
-  cfc check <file.cfc>
+  cfc check [--json] <file.cfc>
   cfc get <file.cfc> <path>
   cfc type <file.cfc> <type-name>"
         .to_string()
+}
+
+fn parse_check_args(args: &[String]) -> Result<(bool, String), String> {
+    match (args.get(2).map(String::as_str), args.get(3)) {
+        (Some("--json"), Some(file)) => Ok((true, file.clone())),
+        (Some("--json"), None) => Err("missing file".to_string()),
+        (Some(file), None) => Ok((false, file.to_string())),
+        (Some(file), Some(_)) => Err(format!("unexpected extra argument after `{file}`")),
+        (None, _) => Err("missing file".to_string()),
+    }
+}
+
+fn check_json(file: String) -> Result<(), String> {
+    let root_path = canonicalize_path(Path::new(&file))?;
+    let root = ModuleId::from(path_to_module_id(&root_path));
+    let root_source = fs::read_to_string(&root_path)
+        .map_err(|err| format!("failed to read `{}`: {err}", root_path.display()))?;
+    let mut aliases = HashMap::new();
+    let mut container = CfcContainer::new();
+    let result = match container.load_graph(root.clone(), root_source, |from, import| {
+        resolve_import(from, import, &mut aliases)
+    }) {
+        Ok(result) => result,
+        Err(error) => {
+            println!("{}", cfc_error_json(&path_to_module_id(&root_path), error));
+            return Err("check failed".to_string());
+        }
+    };
+    let errors = container.check(&result);
+    println!(
+        "{}",
+        check_errors_json(&path_to_module_id(&root_path), &errors)
+    );
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err("check failed".to_string())
+    }
 }
 
 #[derive(Debug)]
@@ -129,6 +170,112 @@ fn report_checks(container: &CfcContainer, result: &CfcResult) -> Result<(), Str
     } else {
         Err(format_check_errors(&errors))
     }
+}
+
+fn cfc_error_json(file: &str, error: CfcError) -> String {
+    match error {
+        CfcError::Parse(errors) => parse_errors_json(file, &errors),
+        CfcError::Build(errors) => build_errors_json(file, &errors),
+        CfcError::Module(error) => single_diagnostic_json(file, "module", "Module", &error.message),
+        CfcError::Import(error) => single_diagnostic_json(file, "import", "Import", &error.message),
+        CfcError::Resolve(error) => {
+            single_diagnostic_json(file, "resolve", "Resolve", &error.message)
+        }
+    }
+}
+
+fn parse_errors_json(file: &str, errors: &ParseErrors) -> String {
+    let items = errors
+        .errors
+        .iter()
+        .map(|error| {
+            diagnostic_json(
+                file,
+                "parse",
+                &format!("{:?}", error.kind),
+                &error.message,
+                Some(error.span),
+            )
+        })
+        .collect::<Vec<_>>();
+    format!("[{}]", items.join(","))
+}
+
+fn build_errors_json(file: &str, errors: &BuildErrors) -> String {
+    let items = errors
+        .errors
+        .iter()
+        .filter(|error| error.span.is_some())
+        .map(|error| {
+            diagnostic_json(
+                file,
+                "build",
+                &format!("{:?}", error.kind),
+                &error.message,
+                error.span,
+            )
+        })
+        .collect::<Vec<_>>();
+    format!("[{}]", items.join(","))
+}
+
+fn check_errors_json(file: &str, errors: &[CheckError]) -> String {
+    let items = errors
+        .iter()
+        .map(|error| {
+            diagnostic_json(
+                error.module.as_deref().unwrap_or(file),
+                "check",
+                "Check",
+                &error.message,
+                error.span,
+            )
+        })
+        .collect::<Vec<_>>();
+    format!("[{}]", items.join(","))
+}
+
+fn single_diagnostic_json(file: &str, stage: &str, kind: &str, message: &str) -> String {
+    format!("[{}]", diagnostic_json(file, stage, kind, message, None))
+}
+
+fn diagnostic_json(
+    file: &str,
+    stage: &str,
+    kind: &str,
+    message: &str,
+    span: Option<coflow_cfc::Span>,
+) -> String {
+    let span = span.map_or_else(|| "null".to_string(), span_json);
+    format!(
+        "{{\"file\":{},\"stage\":{},\"kind\":{},\"message\":{},\"span\":{}}}",
+        json_string(file),
+        json_string(stage),
+        json_string(kind),
+        json_string(message),
+        span
+    )
+}
+
+fn span_json(span: coflow_cfc::Span) -> String {
+    format!("{{\"start\":{},\"end\":{}}}", span.start, span.end)
+}
+
+fn json_string(value: &str) -> String {
+    let mut out = String::from("\"");
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            ch if ch.is_control() => out.push_str(&format!("\\u{:04x}", u32::from(ch))),
+            ch => out.push(ch),
+        }
+    }
+    out.push('"');
+    out
 }
 
 fn format_cfc_error(error: CfcError) -> String {

@@ -1,0 +1,29 @@
+{
+  "type": {
+    "prefix": "type",
+    "body": [
+      "type ${1:Name} {",
+      "  ${2:field}: ${3:int};",
+      "}"
+    ],
+    "description": "Create a CFC type definition"
+  },
+  "enum": {
+    "prefix": "enum",
+    "body": [
+      "enum ${1:Name} {",
+      "  ${2:value},",
+      "}"
+    ],
+    "description": "Create a CFC enum definition"
+  },
+  "check": {
+    "prefix": "check",
+    "body": [
+      "check {",
+      "  ${1:condition};",
+      "}"
+    ],
+    "description": "Create a CFC check block"
+  }
+}

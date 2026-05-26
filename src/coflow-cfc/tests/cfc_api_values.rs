@@ -304,7 +304,9 @@ fn low_level_api_reports_basic_phase_errors() {
     assert!(c
         .bind_import(&ModuleId::from("missing"), import, &dep)
         .is_err());
-    assert!(c.bind_import(&root, coflow_cfc::ImportId(999), &dep).is_err());
+    assert!(c
+        .bind_import(&root, coflow_cfc::ImportId(999), &dep)
+        .is_err());
 }
 
 #[test]

@@ -9,6 +9,7 @@ impl BuildCtx<'_> {
     pub(super) fn eval_object(
         &mut self,
         module: &ModuleId,
+        object_span: crate::span::Span,
         fields: &[ObjectField],
         type_info: &TypeInfo,
         parent_locals: Option<&BTreeMap<String, CfcValueRef>>,
@@ -48,7 +49,7 @@ impl BuildCtx<'_> {
                 self.errors.push(BuildError::new(
                     BuildErrorKind::MissingRequiredField,
                     format!("missing required field `{}`", field.name),
-                    Some(field.span),
+                    Some(object_span),
                 ));
             }
         }
@@ -81,13 +82,14 @@ impl BuildCtx<'_> {
         }
 
         if !has_error && state.values.len() == type_info.def.fields.len() && !has_extra_fields {
-            Some(CfcValueRef::new(CfcValue::Object {
+            let value = CfcValueRef::new(CfcValue::Object {
                 type_name: Some(CfcNominalType {
                     module: type_info.module.clone(),
                     name: type_info.def.name.clone(),
                 }),
                 fields: state.values,
-            }))
+            });
+            Some(value)
         } else {
             None
         }
@@ -266,7 +268,8 @@ impl BuildCtx<'_> {
                             state,
                         )?);
                     }
-                    Some(CfcValueRef::new(CfcValue::Array(out)))
+                    let value = CfcValueRef::new(CfcValue::Array(out));
+                    Some(value)
                 }
                 ExprKind::Name(name) => self
                     .resolve_name_in_object_state(module, default_module, name, expr.span, state)
@@ -300,7 +303,8 @@ impl BuildCtx<'_> {
                             )?,
                         ));
                     }
-                    Some(CfcValueRef::new(CfcValue::Dict(out)))
+                    let value = CfcValueRef::new(CfcValue::Dict(out));
+                    Some(value)
                 }
                 ExprKind::Name(name) => self
                     .resolve_name_in_object_state(module, default_module, name, expr.span, state)
@@ -396,10 +400,10 @@ impl BuildCtx<'_> {
                 if typed_module != target_module || typed_name != target_name {
                     return self.type_error(expr, &target_name);
                 }
-                self.eval_object_with_parent(module, fields, &type_info, state)
+                self.eval_object_with_parent(module, expr.span, fields, &type_info, state)
             }
             ExprKind::Object(fields) => {
-                self.eval_object_with_parent(module, fields, &type_info, state)
+                self.eval_object_with_parent(module, expr.span, fields, &type_info, state)
             }
             ExprKind::Name(name) => {
                 let value = self.resolve_name_in_object_state(
@@ -535,12 +539,13 @@ impl BuildCtx<'_> {
     pub(super) fn eval_object_with_parent(
         &mut self,
         module: &ModuleId,
+        object_span: crate::span::Span,
         fields: &[ObjectField],
         type_info: &TypeInfo,
         parent: &ObjectEvalState,
     ) -> Option<CfcValueRef> {
         let mut parent_locals = parent.parent_locals.clone();
         parent_locals.extend(parent.values.clone());
-        self.eval_object(module, fields, type_info, Some(&parent_locals))
+        self.eval_object(module, object_span, fields, type_info, Some(&parent_locals))
     }
 }

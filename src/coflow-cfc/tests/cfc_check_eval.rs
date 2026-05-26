@@ -87,6 +87,29 @@ range: Range = {
 }
 
 #[test]
+fn type_check_failures_report_check_expression_span() {
+    let source = r#"
+type Range {
+  min: int;
+
+  check {
+    min > 0;
+  }
+}
+
+range: Range = {
+  min: -1,
+};
+"#;
+    let errors = check_results(source);
+    let check_pos = source.find("min > 0").unwrap();
+
+    assert_eq!(errors.len(), 1);
+    let span = errors[0].span.unwrap();
+    assert_eq!(span.start, check_pos);
+}
+
+#[test]
 fn eval_error_stops_current_object_check() {
     let errors = check_results(
         r#"

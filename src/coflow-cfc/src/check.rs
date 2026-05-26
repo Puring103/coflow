@@ -97,7 +97,7 @@ impl<'a> CheckRunner<'a> {
             match &*borrowed {
                 CfcValue::Object { type_name, fields } => {
                     if let Some(type_name) = type_name {
-                        self.check_type_instance(type_name, fields, value.ptr_key(), enum_values);
+                        self.check_type_instance(type_name, fields, value, enum_values);
                     }
                     fields.values().cloned().collect::<Vec<_>>()
                 }
@@ -119,10 +119,10 @@ impl<'a> CheckRunner<'a> {
         &mut self,
         type_name: &CfcNominalType,
         fields: &BTreeMap<String, CfcValueRef>,
-        ptr_key: usize,
+        value: &CfcValueRef,
         enum_values: &HashMap<(ModuleId, String, String), CfcValueRef>,
     ) {
-        if !self.checked_objects.insert(ptr_key) {
+        if !self.checked_objects.insert(value.ptr_key()) {
             return;
         }
         let Some(block) = self.type_check_block(type_name).cloned() else {
@@ -249,12 +249,13 @@ impl<'a> CheckRunner<'a> {
                 EvalValue::Bool(true) => true,
                 EvalValue::Bool(false) => {
                     self.errors
-                        .push(cond_failed(describe_expr(expr), context, expr.span));
+                        .push(cond_failed(describe_expr(expr), module, context, expr.span));
                     true
                 }
                 other => {
                     self.errors.push(eval_error(
                         format!("condition must be bool, found {}", other.type_name()),
+                        module,
                         context,
                         expr.span,
                     ));
@@ -262,7 +263,8 @@ impl<'a> CheckRunner<'a> {
                 }
             },
             Err(message) => {
-                self.errors.push(eval_error(message, context, expr.span));
+                self.errors
+                    .push(eval_error(message, module, context, expr.span));
                 false
             }
         }
@@ -287,12 +289,13 @@ impl<'a> CheckRunner<'a> {
                     quantifier_name(kind),
                     describe_expr(collection)
                 ),
+                module,
                 context,
                 collection.span,
             ));
             return false;
         };
-        let entries = match self.collection_entries(value, collection, context, kind) {
+        let entries = match self.collection_entries(value, collection, module, context, kind) {
             Some(entries) => entries,
             None => return false,
         };
@@ -333,6 +336,7 @@ impl<'a> CheckRunner<'a> {
                             quantifier_name(kind),
                             describe_expr(collection)
                         ),
+                        module,
                         context,
                         total,
                         failed,
@@ -348,6 +352,7 @@ impl<'a> CheckRunner<'a> {
                 if !failed.is_empty() {
                     self.errors.push(all_failed(
                         format!("all {binding} in {}", describe_expr(collection)),
+                        module,
                         context,
                         total,
                         failed,
@@ -359,6 +364,7 @@ impl<'a> CheckRunner<'a> {
             QuantifierKind::Any => {
                 self.errors.push(cond_failed(
                     format!("any {binding} in {}", describe_expr(collection)),
+                    module,
                     context,
                     span,
                 ));
@@ -375,6 +381,7 @@ impl<'a> CheckRunner<'a> {
                         .collect();
                     self.errors.push(all_failed(
                         format!("none {binding} in {}", describe_expr(collection)),
+                        module,
                         context,
                         total,
                         failed,
@@ -390,6 +397,7 @@ impl<'a> CheckRunner<'a> {
         &mut self,
         value: EvalValue,
         collection: &CheckExpr,
+        module: &ModuleId,
         context: &str,
         kind: QuantifierKind,
     ) -> Option<Vec<(String, CfcValueRef)>> {
@@ -427,6 +435,7 @@ impl<'a> CheckRunner<'a> {
                             quantifier_name(kind),
                             other.type_name()
                         ),
+                        module,
                         context,
                         collection.span,
                     ));
@@ -440,6 +449,7 @@ impl<'a> CheckRunner<'a> {
                         quantifier_name(kind),
                         other.type_name()
                     ),
+                    module,
                     context,
                     collection.span,
                 ));

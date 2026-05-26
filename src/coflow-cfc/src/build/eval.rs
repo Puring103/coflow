@@ -289,9 +289,11 @@ impl BuildCtx<'_> {
                 if typed_module != target_module || typed_name != target_name {
                     return self.type_error(expr, &target_name);
                 }
-                self.eval_object(module, fields, &type_info, locals)
+                self.eval_object(module, expr.span, fields, &type_info, locals)
             }
-            ExprKind::Object(fields) => self.eval_object(module, fields, &type_info, locals),
+            ExprKind::Object(fields) => {
+                self.eval_object(module, expr.span, fields, &type_info, locals)
+            }
             ExprKind::Name(name) => {
                 let value = Self::resolve_local(name, locals)
                     .or_else(|| self.eval_data_name(module, name, expr.span))?;
@@ -766,7 +768,7 @@ impl BuildCtx<'_> {
                     ));
                     return None;
                 };
-                self.eval_object(module, fields, &type_info, locals)
+                self.eval_object(module, expr.span, fields, &type_info, locals)
             }
             ExprKind::Object(fields) => {
                 let mut out = BTreeMap::new();
@@ -776,10 +778,11 @@ impl BuildCtx<'_> {
                         self.eval_untyped_with_locals(module, &field.value, Some(&out))?,
                     );
                 }
-                Some(CfcValueRef::new(CfcValue::Object {
+                let value = CfcValueRef::new(CfcValue::Object {
                     type_name: None,
                     fields: out,
-                }))
+                });
+                Some(value)
             }
             ExprKind::Array(items) => self.eval_untyped_array(module, expr, items, locals),
             ExprKind::Dict(entries) => self.eval_untyped_dict(module, expr, entries, locals),
@@ -816,7 +819,7 @@ impl BuildCtx<'_> {
                     ));
                     return None;
                 };
-                self.eval_object(module, fields, &type_info, locals)
+                self.eval_object(module, expr.span, fields, &type_info, locals)
             }
             ExprKind::Object(fields) => {
                 let mut out = BTreeMap::new();
@@ -826,17 +829,19 @@ impl BuildCtx<'_> {
                         self.eval_any_with_locals(module, &field.value, Some(&out))?,
                     );
                 }
-                Some(CfcValueRef::new(CfcValue::Object {
+                let value = CfcValueRef::new(CfcValue::Object {
                     type_name: None,
                     fields: out,
-                }))
+                });
+                Some(value)
             }
             ExprKind::Array(items) => {
                 let mut out = Vec::new();
                 for item in items {
                     out.push(self.eval_any_with_locals(module, item, locals)?);
                 }
-                Some(CfcValueRef::new(CfcValue::Array(out)))
+                let value = CfcValueRef::new(CfcValue::Array(out));
+                Some(value)
             }
             ExprKind::Dict(entries) => {
                 let mut out = Vec::new();
@@ -846,7 +851,8 @@ impl BuildCtx<'_> {
                         self.eval_any_with_locals(module, value, locals)?,
                     ));
                 }
-                Some(CfcValueRef::new(CfcValue::Dict(out)))
+                let value = CfcValueRef::new(CfcValue::Dict(out));
+                Some(value)
             }
         }
     }
@@ -889,7 +895,7 @@ impl BuildCtx<'_> {
                     ));
                     return None;
                 };
-                self.eval_object_with_parent(module, fields, &type_info, state)
+                self.eval_object_with_parent(module, expr.span, fields, &type_info, state)
             }
             ExprKind::Object(fields) => {
                 let mut out = BTreeMap::new();
@@ -904,10 +910,11 @@ impl BuildCtx<'_> {
                         )?,
                     );
                 }
-                Some(CfcValueRef::new(CfcValue::Object {
+                let value = CfcValueRef::new(CfcValue::Object {
                     type_name: None,
                     fields: out,
-                }))
+                });
+                Some(value)
             }
             ExprKind::Array(items) => {
                 self.eval_untyped_array_in_object_state(module, default_module, expr, items, state)
@@ -956,7 +963,7 @@ impl BuildCtx<'_> {
                     ));
                     return None;
                 };
-                self.eval_object_with_parent(module, fields, &type_info, state)
+                self.eval_object_with_parent(module, expr.span, fields, &type_info, state)
             }
             ExprKind::Object(fields) => {
                 let mut out = BTreeMap::new();
@@ -966,17 +973,19 @@ impl BuildCtx<'_> {
                         self.eval_any_in_object_state(module, default_module, &field.value, state)?,
                     );
                 }
-                Some(CfcValueRef::new(CfcValue::Object {
+                let value = CfcValueRef::new(CfcValue::Object {
                     type_name: None,
                     fields: out,
-                }))
+                });
+                Some(value)
             }
             ExprKind::Array(items) => {
                 let mut out = Vec::new();
                 for item in items {
                     out.push(self.eval_any_in_object_state(module, default_module, item, state)?);
                 }
-                Some(CfcValueRef::new(CfcValue::Array(out)))
+                let value = CfcValueRef::new(CfcValue::Array(out));
+                Some(value)
             }
             ExprKind::Dict(entries) => {
                 let mut out = Vec::new();
@@ -986,7 +995,8 @@ impl BuildCtx<'_> {
                         self.eval_any_in_object_state(module, default_module, value, state)?,
                     ));
                 }
-                Some(CfcValueRef::new(CfcValue::Dict(out)))
+                let value = CfcValueRef::new(CfcValue::Dict(out));
+                Some(value)
             }
         }
     }
@@ -1013,7 +1023,8 @@ impl BuildCtx<'_> {
             validate_array_item(self, item, &value, &mut inferred)?;
             out.push(value);
         }
-        Some(CfcValueRef::new(CfcValue::Array(out)))
+        let value = CfcValueRef::new(CfcValue::Array(out));
+        Some(value)
     }
 
     fn eval_untyped_array_in_object_state(
@@ -1039,7 +1050,8 @@ impl BuildCtx<'_> {
             validate_array_item(self, item, &value, &mut inferred)?;
             out.push(value);
         }
-        Some(CfcValueRef::new(CfcValue::Array(out)))
+        let value = CfcValueRef::new(CfcValue::Array(out));
+        Some(value)
     }
 
     fn eval_untyped_dict(
@@ -1074,7 +1086,8 @@ impl BuildCtx<'_> {
             )?;
             out.push((key_value, value_value));
         }
-        Some(CfcValueRef::new(CfcValue::Dict(out)))
+        let value = CfcValueRef::new(CfcValue::Dict(out));
+        Some(value)
     }
 
     fn eval_untyped_dict_in_object_state(
@@ -1112,7 +1125,8 @@ impl BuildCtx<'_> {
             )?;
             out.push((key_value, value_value));
         }
-        Some(CfcValueRef::new(CfcValue::Dict(out)))
+        let value = CfcValueRef::new(CfcValue::Dict(out));
+        Some(value)
     }
 }
 

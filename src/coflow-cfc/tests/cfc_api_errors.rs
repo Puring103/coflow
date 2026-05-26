@@ -107,6 +107,33 @@ bad: Bad = {
 }
 
 #[test]
+fn missing_required_field_reports_object_span() {
+    let source = r#"
+type Stats {
+  hp: int;
+}
+
+stats: Stats = {};
+"#;
+
+    let mut c = CfcContainer::new();
+    let root = ModuleId::from("root");
+    c.add_module(root.clone(), source).unwrap();
+
+    let err = c.build(&root).unwrap_err();
+    let error = err
+        .errors
+        .iter()
+        .find(|error| error.message.contains("missing required field `hp`"))
+        .unwrap();
+    let object_pos = source.find("{}").unwrap();
+    let field_def_pos = source.find("hp: int").unwrap();
+
+    assert_eq!(error.span.unwrap().start, object_pos);
+    assert_ne!(error.span.unwrap().start, field_def_pos);
+}
+
+#[test]
 fn ambiguous_imported_enum_variant_shortcut_is_rejected() {
     let root_source = r#"
 use "dep" as dep;

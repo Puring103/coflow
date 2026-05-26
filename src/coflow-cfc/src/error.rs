@@ -96,6 +96,7 @@ impl BuildError {
 pub struct CheckError {
     pub message: String,
     pub span: Option<Span>,
+    pub module: Option<String>,
     pub kind: CheckErrorKind,
 }
 

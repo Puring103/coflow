@@ -1,6 +1,7 @@
 use crate::ast::{BinOp, CheckExpr, CheckExprKind, CmpOp, TypePredicate, UnaryOp};
 use crate::error::{AllFailedItem, CheckError, CheckErrorKind};
 use crate::span::Span;
+use crate::ModuleId;
 
 pub(super) fn describe_expr(expr: &CheckExpr) -> String {
     match &expr.kind {
@@ -67,11 +68,17 @@ fn describe_type_predicate(predicate: &TypePredicate) -> String {
     }
 }
 
-pub(super) fn cond_failed(source: String, context: &str, span: Span) -> CheckError {
+pub(super) fn cond_failed(
+    source: String,
+    module: &ModuleId,
+    context: &str,
+    span: Span,
+) -> CheckError {
     let message = format!("check failed [{context}]: {source}");
     CheckError {
         message,
         span: Some(span),
+        module: Some(module.as_str().to_string()),
         kind: CheckErrorKind::CondFailed {
             evaluated: source.clone(),
             source,
@@ -82,6 +89,7 @@ pub(super) fn cond_failed(source: String, context: &str, span: Span) -> CheckErr
 
 pub(super) fn all_failed(
     source: String,
+    module: &ModuleId,
     context: &str,
     total: usize,
     failed: Vec<AllFailedItem>,
@@ -94,6 +102,7 @@ pub(super) fn all_failed(
     CheckError {
         message,
         span: Some(span),
+        module: Some(module.as_str().to_string()),
         kind: CheckErrorKind::AllFailed {
             source,
             context: context.to_string(),
@@ -103,10 +112,16 @@ pub(super) fn all_failed(
     }
 }
 
-pub(super) fn eval_error(message: String, context: &str, span: Span) -> CheckError {
+pub(super) fn eval_error(
+    message: String,
+    module: &ModuleId,
+    context: &str,
+    span: Span,
+) -> CheckError {
     CheckError {
         message: format!("check eval error [{context}]: {message}"),
         span: Some(span),
+        module: Some(module.as_str().to_string()),
         kind: CheckErrorKind::EvalError {
             message,
             context: context.to_string(),
