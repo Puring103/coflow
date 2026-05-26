@@ -13,6 +13,14 @@ pub(super) fn describe_expr(expr: &CheckExpr) -> String {
         CheckExprKind::Index { expr, index } => {
             format!("{}[{}]", describe_expr(expr), describe_expr(index))
         }
+        CheckExprKind::Call { name, args } => {
+            let args = args
+                .iter()
+                .map(describe_expr)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{name}({args})")
+        }
         CheckExprKind::BinOp { op, lhs, rhs } => {
             format!(
                 "{} {} {}",

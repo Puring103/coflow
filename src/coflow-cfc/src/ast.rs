@@ -73,12 +73,20 @@ pub struct CheckBlock {
 #[derive(Debug, Clone)]
 pub enum CondStmt {
     Expr(CheckExpr),
-    All {
+    Quantifier {
+        kind: QuantifierKind,
         binding: String,
         collection: CheckExpr,
         body: Vec<CondStmt>,
         span: Span,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuantifierKind {
+    All,
+    Any,
+    None,
 }
 
 #[allow(dead_code)]
@@ -103,6 +111,10 @@ pub enum CheckExprKind {
     Index {
         expr: Box<CheckExpr>,
         index: Box<CheckExpr>,
+    },
+    Call {
+        name: String,
+        args: Vec<CheckExpr>,
     },
     BinOp {
         op: BinOp,

@@ -8,7 +8,9 @@ use self::runtime::{
     NumberKind,
 };
 use self::scope::{enum_type_value, module_namespace_value, ref_layer, CheckScope};
-use crate::ast::{BinOp, CheckBlock, CheckExpr, CheckExprKind, CmpOp, CondStmt, Item, UnaryOp};
+use crate::ast::{
+    BinOp, CheckBlock, CheckExpr, CheckExprKind, CmpOp, CondStmt, Item, QuantifierKind, UnaryOp,
+};
 use crate::container::{CfcContainer, CfcResult, ModuleId};
 use crate::error::{AllFailedItem, CheckError};
 use crate::span::Span;
@@ -221,12 +223,15 @@ impl<'a> CheckRunner<'a> {
     ) -> bool {
         match stmt {
             CondStmt::Expr(expr) => self.eval_condition(expr, module, scope, context),
-            CondStmt::All {
+            CondStmt::Quantifier {
+                kind,
                 binding,
                 collection,
                 body,
                 span,
-            } => self.eval_all(binding, collection, body, *span, module, scope, context),
+            } => self.eval_quantifier(
+                *kind, binding, collection, body, *span, module, scope, context,
+            ),
         }
     }
 
@@ -262,8 +267,9 @@ impl<'a> CheckRunner<'a> {
     }
 
     #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-    fn eval_all(
+    fn eval_quantifier(
         &mut self,
+        kind: QuantifierKind,
         binding: &str,
         collection: &CheckExpr,
         body: &[CondStmt],
@@ -275,7 +281,8 @@ impl<'a> CheckRunner<'a> {
         let Ok(value) = self.eval_expr(collection, module, scope, context) else {
             self.errors.push(eval_error(
                 format!(
-                    "failed to evaluate all collection `{}`",
+                    "failed to evaluate {} collection `{}`",
+                    quantifier_name(kind),
                     describe_expr(collection)
                 ),
                 context,
@@ -283,56 +290,14 @@ impl<'a> CheckRunner<'a> {
             ));
             return false;
         };
-        let entries = match value {
-            EvalValue::Ref(value) => match &*value.borrow() {
-                CfcValue::Array(items) => items
-                    .iter()
-                    .enumerate()
-                    .map(|(index, value)| (format!("[{index}]"), value.clone()))
-                    .collect::<Vec<_>>(),
-                CfcValue::Dict(items) => items
-                    .iter()
-                    .enumerate()
-                    .map(|(index, (key, value))| {
-                        (
-                            format!("[{index}]"),
-                            CfcValueRef::new(CfcValue::Object {
-                                type_name: None,
-                                fields: BTreeMap::from([
-                                    ("key".to_string(), key.clone()),
-                                    ("value".to_string(), value.clone()),
-                                ]),
-                            }),
-                        )
-                    })
-                    .collect(),
-                other => {
-                    self.errors.push(eval_error(
-                        format!(
-                            "all collection must be array or dict, found {}",
-                            other.type_name()
-                        ),
-                        context,
-                        collection.span,
-                    ));
-                    return false;
-                }
-            },
-            other => {
-                self.errors.push(eval_error(
-                    format!(
-                        "all collection must be array or dict, found {}",
-                        other.type_name()
-                    ),
-                    context,
-                    collection.span,
-                ));
-                return false;
-            }
+        let entries = match self.collection_entries(value, collection, context, kind) {
+            Some(entries) => entries,
+            None => return false,
         };
 
         let total = entries.len();
         let mut failed = Vec::new();
+        let mut passed = Vec::new();
         for (label, item) in entries {
             scope.push(BTreeMap::from([(
                 binding.to_string(),
@@ -340,16 +305,32 @@ impl<'a> CheckRunner<'a> {
             )]));
             let item_context = format!("{context} {binding}{label}");
             let before = self.errors.len();
+            let mut stopped = false;
             for stmt in body {
                 if !self.eval_stmt(stmt, module, scope, &item_context) {
-                    let errors = self.errors.split_off(before);
-                    failed.push(AllFailedItem {
-                        key: format!("{binding}{label}"),
-                        errors,
-                    });
-                    scope.pop();
+                    stopped = true;
+                    break;
+                }
+            }
+            scope.pop();
+            let errors = self.errors.split_off(before);
+            if errors.is_empty() {
+                passed.push(format!("{binding}{label}"));
+                if kind == QuantifierKind::Any {
+                    return true;
+                }
+            } else {
+                failed.push(AllFailedItem {
+                    key: format!("{binding}{label}"),
+                    errors,
+                });
+                if stopped {
                     self.errors.push(all_failed(
-                        format!("all {binding} in {}", describe_expr(collection)),
+                        format!(
+                            "{} {binding} in {}",
+                            quantifier_name(kind),
+                            describe_expr(collection)
+                        ),
                         context,
                         total,
                         failed,
@@ -358,25 +339,111 @@ impl<'a> CheckRunner<'a> {
                     return false;
                 }
             }
-            scope.pop();
-            let errors = self.errors.split_off(before);
-            if !errors.is_empty() {
-                failed.push(AllFailedItem {
-                    key: format!("{binding}{label}"),
-                    errors,
-                });
+        }
+
+        match kind {
+            QuantifierKind::All => {
+                if !failed.is_empty() {
+                    self.errors.push(all_failed(
+                        format!("all {binding} in {}", describe_expr(collection)),
+                        context,
+                        total,
+                        failed,
+                        span,
+                    ));
+                }
+                true
+            }
+            QuantifierKind::Any => {
+                self.errors.push(cond_failed(
+                    format!("any {binding} in {}", describe_expr(collection)),
+                    context,
+                    span,
+                ));
+                true
+            }
+            QuantifierKind::None => {
+                if !passed.is_empty() {
+                    let failed = passed
+                        .into_iter()
+                        .map(|key| AllFailedItem {
+                            key,
+                            errors: Vec::new(),
+                        })
+                        .collect();
+                    self.errors.push(all_failed(
+                        format!("none {binding} in {}", describe_expr(collection)),
+                        context,
+                        total,
+                        failed,
+                        span,
+                    ));
+                }
+                true
             }
         }
-        if !failed.is_empty() {
-            self.errors.push(all_failed(
-                format!("all {binding} in {}", describe_expr(collection)),
-                context,
-                total,
-                failed,
-                span,
-            ));
+    }
+
+    fn collection_entries(
+        &mut self,
+        value: EvalValue,
+        collection: &CheckExpr,
+        context: &str,
+        kind: QuantifierKind,
+    ) -> Option<Vec<(String, CfcValueRef)>> {
+        match value {
+            EvalValue::Ref(value) => match &*value.borrow() {
+                CfcValue::Array(items) => Some(
+                    items
+                        .iter()
+                        .enumerate()
+                        .map(|(index, value)| (format!("[{index}]"), value.clone()))
+                        .collect::<Vec<_>>(),
+                ),
+                CfcValue::Dict(items) => Some(
+                    items
+                        .iter()
+                        .enumerate()
+                        .map(|(index, (key, value))| {
+                            (
+                                format!("[{index}]"),
+                                CfcValueRef::new(CfcValue::Object {
+                                    type_name: None,
+                                    fields: BTreeMap::from([
+                                        ("key".to_string(), key.clone()),
+                                        ("value".to_string(), value.clone()),
+                                    ]),
+                                }),
+                            )
+                        })
+                        .collect(),
+                ),
+                other => {
+                    self.errors.push(eval_error(
+                        format!(
+                            "{} collection must be array or dict, found {}",
+                            quantifier_name(kind),
+                            other.type_name()
+                        ),
+                        context,
+                        collection.span,
+                    ));
+                    None
+                }
+            },
+            other => {
+                self.errors.push(eval_error(
+                    format!(
+                        "{} collection must be array or dict, found {}",
+                        quantifier_name(kind),
+                        other.type_name()
+                    ),
+                    context,
+                    collection.span,
+                ));
+                None
+            }
         }
-        true
     }
 
     fn eval_expr(
@@ -400,6 +467,9 @@ impl<'a> CheckRunner<'a> {
             CheckExprKind::Index { expr, index } => {
                 self.eval_index(expr, index, module, scope, context)
             }
+            CheckExprKind::Call { name, args } => {
+                self.eval_call(name, args, module, scope, context)
+            }
             CheckExprKind::BinOp { op, lhs, rhs } => {
                 self.eval_bin(*op, lhs, rhs, module, scope, context)
             }
@@ -407,6 +477,210 @@ impl<'a> CheckRunner<'a> {
             CheckExprKind::CmpChain { first, rest } => {
                 self.eval_cmp_chain(first, rest, module, scope, context)
             }
+        }
+    }
+
+    fn eval_call(
+        &self,
+        name: &str,
+        args: &[CheckExpr],
+        module: &ModuleId,
+        scope: &CheckScope<'_>,
+        context: &str,
+    ) -> Result<EvalValue, String> {
+        match name {
+            "len" => {
+                self.expect_arity(name, args, 1)?;
+                self.builtin_len(&args[0], module, scope, context)
+            }
+            "contains" => {
+                self.expect_arity(name, args, 2)?;
+                self.builtin_contains(&args[0], &args[1], module, scope, context)
+            }
+            "unique" => {
+                self.expect_arity(name, args, 1)?;
+                self.builtin_unique(&args[0], module, scope, context)
+            }
+            "min" => {
+                self.expect_arity(name, args, 1)?;
+                self.builtin_min_max("min", &args[0], module, scope, context)
+            }
+            "max" => {
+                self.expect_arity(name, args, 1)?;
+                self.builtin_min_max("max", &args[0], module, scope, context)
+            }
+            "sum" => {
+                self.expect_arity(name, args, 1)?;
+                self.builtin_sum(&args[0], module, scope, context)
+            }
+            _ => Err(format!("unknown builtin function `{name}`")),
+        }
+    }
+
+    fn expect_arity(&self, name: &str, args: &[CheckExpr], expected: usize) -> Result<(), String> {
+        if args.len() == expected {
+            Ok(())
+        } else {
+            Err(format!(
+                "`{name}` expects {expected} argument{}, found {}",
+                if expected == 1 { "" } else { "s" },
+                args.len()
+            ))
+        }
+    }
+
+    fn builtin_len(
+        &self,
+        arg: &CheckExpr,
+        module: &ModuleId,
+        scope: &CheckScope<'_>,
+        context: &str,
+    ) -> Result<EvalValue, String> {
+        let value = self.eval_expr(arg, module, scope, context)?.into_ref()?;
+        let len = match &*value.borrow() {
+            CfcValue::Array(items) => items.len(),
+            CfcValue::Dict(entries) => entries.len(),
+            other => {
+                return Err(format!(
+                    "len() expects array or dict, found {}",
+                    other.type_name()
+                ))
+            }
+        };
+        i64::try_from(len)
+            .map(EvalValue::Int)
+            .map_err(|_| "len() result is out of range".to_string())
+    }
+
+    fn builtin_contains(
+        &self,
+        collection: &CheckExpr,
+        needle: &CheckExpr,
+        module: &ModuleId,
+        scope: &CheckScope<'_>,
+        context: &str,
+    ) -> Result<EvalValue, String> {
+        let collection = self
+            .eval_expr(collection, module, scope, context)?
+            .into_ref()?;
+        let needle = self.eval_expr(needle, module, scope, context)?;
+        let contains = match &*collection.borrow() {
+            CfcValue::Array(items) => items
+                .iter()
+                .any(|item| eval_value_equals_ref(&needle, item)),
+            CfcValue::Dict(entries) => entries
+                .iter()
+                .any(|(key, _)| eval_value_equals_ref(&needle, key)),
+            other => {
+                return Err(format!(
+                    "contains() expects array or dict, found {}",
+                    other.type_name()
+                ));
+            }
+        };
+        Ok(EvalValue::Bool(contains))
+    }
+
+    fn builtin_unique(
+        &self,
+        arg: &CheckExpr,
+        module: &ModuleId,
+        scope: &CheckScope<'_>,
+        context: &str,
+    ) -> Result<EvalValue, String> {
+        let value = self.eval_expr(arg, module, scope, context)?.into_ref()?;
+        let CfcValue::Array(items) = &*value.borrow() else {
+            return Err("unique() expects array".to_string());
+        };
+        let mut seen = HashSet::new();
+        for item in items {
+            let key = unique_key(item)?;
+            if !seen.insert(key) {
+                return Ok(EvalValue::Bool(false));
+            }
+        }
+        Ok(EvalValue::Bool(true))
+    }
+
+    fn builtin_min_max(
+        &self,
+        name: &str,
+        arg: &CheckExpr,
+        module: &ModuleId,
+        scope: &CheckScope<'_>,
+        context: &str,
+    ) -> Result<EvalValue, String> {
+        let value = self.eval_expr(arg, module, scope, context)?.into_ref()?;
+        let CfcValue::Array(items) = &*value.borrow() else {
+            return Err(format!("{name}() expects array"));
+        };
+        let Some(mut best) = items.first().cloned() else {
+            return Err(format!("{name}() requires a non-empty array"));
+        };
+        ensure_orderable_for_builtin(name, &best)?;
+        for item in &items[1..] {
+            ensure_orderable_for_builtin(name, item)?;
+            let op = if name == "min" { CmpOp::Lt } else { CmpOp::Gt };
+            if compare_values(
+                op,
+                &EvalValue::Ref(item.clone()),
+                &EvalValue::Ref(best.clone()),
+            )? {
+                best = item.clone();
+            }
+        }
+        Ok(EvalValue::Ref(best))
+    }
+
+    fn builtin_sum(
+        &self,
+        arg: &CheckExpr,
+        module: &ModuleId,
+        scope: &CheckScope<'_>,
+        context: &str,
+    ) -> Result<EvalValue, String> {
+        let value = self.eval_expr(arg, module, scope, context)?.into_ref()?;
+        let CfcValue::Array(items) = &*value.borrow() else {
+            return Err("sum() expects array".to_string());
+        };
+        let mut int_total = 0i64;
+        let mut float_total = 0.0f64;
+        let mut has_float = false;
+        for item in items {
+            match &*item.borrow() {
+                CfcValue::Int(value) if has_float => {
+                    #[allow(clippy::cast_precision_loss)]
+                    {
+                        float_total += *value as f64;
+                    }
+                }
+                CfcValue::Int(value) => {
+                    int_total = int_total
+                        .checked_add(*value)
+                        .ok_or_else(|| "integer sum overflow".to_string())?;
+                }
+                CfcValue::Float(value) if has_float => {
+                    float_total += value;
+                }
+                CfcValue::Float(value) => {
+                    #[allow(clippy::cast_precision_loss)]
+                    {
+                        float_total = int_total as f64 + value;
+                    }
+                    has_float = true;
+                }
+                other => {
+                    return Err(format!(
+                        "sum() expects numeric array, found {}",
+                        other.type_name()
+                    ));
+                }
+            }
+        }
+        if has_float {
+            Ok(EvalValue::Float(float_total))
+        } else {
+            Ok(EvalValue::Int(int_total))
         }
     }
 
@@ -676,5 +950,43 @@ impl<'a> CheckRunner<'a> {
             lhs = rhs;
         }
         Ok(EvalValue::Bool(true))
+    }
+}
+
+fn quantifier_name(kind: QuantifierKind) -> &'static str {
+    match kind {
+        QuantifierKind::All => "all",
+        QuantifierKind::Any => "any",
+        QuantifierKind::None => "none",
+    }
+}
+
+fn unique_key(value: &CfcValueRef) -> Result<String, String> {
+    match &*value.borrow() {
+        CfcValue::Int(value) => Ok(format!("int:{value}")),
+        CfcValue::Bool(value) => Ok(format!("bool:{value}")),
+        CfcValue::String(value) => Ok(format!("string:{value}")),
+        CfcValue::Enum {
+            enum_type, variant, ..
+        } => Ok(format!(
+            "enum:{}:{}:{variant}",
+            enum_type.module.as_str(),
+            enum_type.name
+        )),
+        CfcValue::Float(_) => Err("unique() does not support float arrays".to_string()),
+        other => Err(format!(
+            "unique() expects scalar array, found {}",
+            other.type_name()
+        )),
+    }
+}
+
+fn ensure_orderable_for_builtin(name: &str, value: &CfcValueRef) -> Result<(), String> {
+    match &*value.borrow() {
+        CfcValue::Int(_) | CfcValue::Float(_) | CfcValue::Enum { .. } => Ok(()),
+        other => Err(format!(
+            "{name}() expects int, float, or enum array, found {}",
+            other.type_name()
+        )),
     }
 }

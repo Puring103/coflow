@@ -192,7 +192,7 @@ type Weapon {
 }
 ```
 
-**`all` 量词块**：对集合中每个元素执行内部条件，全部通过则通过。
+**量词块**：对集合中元素执行内部条件。`all` 表示全部元素通过，`any` 表示至少一个元素通过，`none` 表示没有元素通过。
 
 ```cfc
 type Loot {
@@ -207,7 +207,7 @@ type Loot {
 }
 ```
 
-`all` 支持 Array 和 Dict。迭代 Array 时绑定变量直接是元素；迭代 Dict 时绑定变量是 entry 对象，具有 `.key` 和 `.value` 字段：
+`all`、`any` 和 `none` 支持 Array 和 Dict。迭代 Array 时绑定变量直接是元素；迭代 Dict 时绑定变量是 entry 对象，具有 `.key` 和 `.value` 字段：
 
 ```cfc
 type ScoreTable {
@@ -221,7 +221,7 @@ type ScoreTable {
 }
 ```
 
-`all` 块支持任意深度嵌套：
+量词块支持任意深度嵌套：
 
 ```cfc
 type Zone {
@@ -243,7 +243,7 @@ type Zone {
 **执行规则**：
 - 多条语句顺序求值，条件为假时继续收集后续错误。
 - 求值过程中发生类型错误或数组越界时立即停止当前对象的校验。
-- 空集合上的 `all` 视为通过（vacuous truth）。
+- 空集合上的 `all` 和 `none` 视为通过，空集合上的 `any` 视为失败。
 - 同一对象图中多处引用同一命名节点时，该对象的 check 只执行一次。
 
 **支持的运算符**（优先级从低到高）：
@@ -253,11 +253,24 @@ type Zone {
 - 按位：`|` `^` `&`
 - 算术：`+` `-` `<<` `>>` `*` `/` `//` `%` `**`，`**` 右结合
 - 一元：`!` `~` `-`
-- 后缀：`.`（字段访问）`[]`（索引访问）
+- 后缀：`.`（字段访问）`[]`（索引访问）、内建函数调用
 
 枚举类型支持全部六种比较运算符，按底层整数值比较。
 
-不支持：函数调用、字符串插值、变量声明、赋值、`?.`、`?[]`。
+**内建函数**：`check` 表达式支持受限的内建函数调用，不支持用户自定义函数调用。
+
+| 函数 | 语义 |
+|------|------|
+| `len(value)` | 返回 array 或 dict 的元素数量；不支持 string。 |
+| `contains(collection, value)` | array 中判断元素是否存在；dict 中判断 key 是否存在。 |
+| `unique(array)` | 判断数组元素是否唯一；第一版支持 int、bool、string 和同一 enum 类型。 |
+| `min(array)` | 返回非空 int、float 或同一 enum 数组中的最小值。 |
+| `max(array)` | 返回非空 int、float 或同一 enum 数组中的最大值。 |
+| `sum(array)` | 对 int 或 float 数组求和；空数组返回 `0`。 |
+
+内建函数只在 `check` 表达式中可用，不是数据定义表达式。`unique` 不支持 float、object、array 或 dict 元素；`min` / `max` 对空数组报 check eval error；`contains(dict, value)` 只检查 key，不检查 value。
+
+不支持：用户自定义函数调用、字符串插值、变量声明、赋值、`?.`、`?[]`。
 
 ## `enum` 枚举定义
 

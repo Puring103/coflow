@@ -821,3 +821,197 @@ check {
 
     assert!(errors.is_empty());
 }
+
+#[test]
+fn check_builtins_cover_collection_validation() {
+    let errors = check_errors(
+        r#"
+enum Rarity {
+  common,
+  rare,
+  epic,
+}
+
+type Loot {
+  tags: [string];
+  weights: [int];
+  ratios: [float];
+  rarities: [Rarity];
+  scores: {string: int};
+
+  check {
+    len(tags) == 3;
+    len(scores) == 2;
+    contains(tags, "boss");
+    contains(scores, "alice");
+    unique(tags);
+    min(weights) == 10;
+    max(weights) == 60;
+    sum(weights) == 100;
+    min(ratios) == 0.25;
+    max(ratios) == 0.75;
+    min(rarities) == Rarity.common;
+    max(rarities) == Rarity.epic;
+  }
+}
+
+loot: Loot = {
+  tags: ["boss", "elite", "fire"],
+  weights: [30, 10, 60],
+  ratios: [0.25, 0.75],
+  rarities: [Rarity.epic, Rarity.common],
+  scores: dict{ "alice": 1, "bob": 2 },
+};
+"#,
+    );
+
+    assert!(errors.is_empty());
+}
+
+#[test]
+fn check_builtins_report_invalid_inputs() {
+    let errors = check_results(
+        r#"
+type Bad {
+  value: int;
+
+  check {
+    len(value) > 0;
+  }
+}
+
+type EmptyMin {
+  values: [int];
+
+  check {
+    min(values) > 0;
+  }
+}
+
+type ObjectUnique {
+  objects: any;
+
+  check {
+    unique(objects);
+  }
+}
+
+type BadContains {
+  value: int;
+
+  check {
+    contains(value, 1);
+  }
+}
+
+bad: Bad = {
+  value: 1,
+};
+
+empty_min: EmptyMin = {
+  values: [],
+};
+
+object_unique: ObjectUnique = {
+  objects: [{ value: 1 }],
+};
+
+bad_contains: BadContains = {
+  value: 1,
+};
+"#,
+    );
+
+    assert_eq!(errors.len(), 4);
+    assert!(errors.iter().any(|error| matches!(
+        &error.kind,
+        CheckErrorKind::EvalError { message, .. } if message.contains("len() expects array or dict")
+    )));
+    assert!(errors.iter().any(|error| matches!(
+        &error.kind,
+        CheckErrorKind::EvalError { message, .. } if message.contains("min() requires a non-empty array")
+    )));
+    assert!(errors.iter().any(|error| matches!(
+        &error.kind,
+        CheckErrorKind::EvalError { message, .. } if message.contains("unique() expects scalar array")
+    )));
+    assert!(errors.iter().any(|error| matches!(
+        &error.kind,
+        CheckErrorKind::EvalError { message, .. } if message.contains("contains() expects array or dict")
+    )));
+}
+
+#[test]
+fn any_and_none_quantifiers_use_expected_empty_collection_truth() {
+    let errors = check_results(
+        r#"
+type Loot {
+  values: [int];
+  empty: [int];
+
+  check {
+    any value in values {
+      value > 10;
+    }
+    none value in values {
+      value < 0;
+    }
+    any value in empty {
+      value > 0;
+    }
+    none value in empty {
+      value > 0;
+    }
+  }
+}
+
+loot: Loot = {
+  values: [1, 20, 3],
+  empty: [],
+};
+"#,
+    );
+
+    assert_eq!(errors.len(), 1);
+    assert!(matches!(
+        &errors[0].kind,
+        CheckErrorKind::CondFailed { source, .. } if source == "any value in empty"
+    ));
+}
+
+#[test]
+fn any_and_none_report_failed_items() {
+    let errors = check_results(
+        r#"
+type Loot {
+  values: [int];
+
+  check {
+    none value in values {
+      value > 1;
+    }
+  }
+}
+
+loot: Loot = {
+  values: [1, 2, 3],
+};
+"#,
+    );
+
+    assert_eq!(errors.len(), 1);
+    let CheckErrorKind::AllFailed {
+        source,
+        total,
+        failed,
+        ..
+    } = &errors[0].kind
+    else {
+        panic!("expected quantifier failure");
+    };
+    assert_eq!(source, "none value in values");
+    assert_eq!(*total, 3);
+    assert_eq!(failed.len(), 2);
+    assert_eq!(failed[0].key, "value[1]");
+    assert_eq!(failed[1].key, "value[2]");
+}

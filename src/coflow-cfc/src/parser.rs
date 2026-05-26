@@ -1,7 +1,7 @@
 use crate::ast::{
     BinOp, CheckBlock, CheckExpr, CheckExprKind, CmpOp, CondStmt, DataDef, EnumDef, EnumVariant,
-    Expr, ExprKind, FieldDef, Item, ModuleAst, ObjectField, PathSegment, TypeDef, TypeName,
-    TypeRef, UnaryOp, UseDecl,
+    Expr, ExprKind, FieldDef, Item, ModuleAst, ObjectField, PathSegment, QuantifierKind, TypeDef,
+    TypeName, TypeRef, UnaryOp, UseDecl,
 };
 use crate::container::ImportId;
 use crate::error::ParseErrors;
@@ -184,7 +184,7 @@ impl Parser {
             self.expect_simple(&TokenKind::RBrace)?;
             return Ok(TypeRef::Dict(Box::new(key), Box::new(value)));
         }
-        let (name, _) = self.expect_ident()?;
+        let (name, _) = self.expect_type_name_ident()?;
         let ty = match name.as_str() {
             "int" => TypeRef::Int,
             "float" => TypeRef::Float,
@@ -398,23 +398,24 @@ impl Parser {
     }
 
     fn parse_cond_stmt(&mut self) -> Result<CondStmt, ParseErrors> {
-        if self.at(&TokenKind::All) {
-            return self.parse_all_stmt();
+        if let Some(kind) = self.peek_quantifier() {
+            return self.parse_quantifier_stmt(kind);
         }
         let expr = self.parse_check_expr()?;
         self.expect_simple(&TokenKind::Semicolon)?;
         Ok(CondStmt::Expr(expr))
     }
 
-    fn parse_all_stmt(&mut self) -> Result<CondStmt, ParseErrors> {
-        let start = self.expect_simple(&TokenKind::All)?.start;
+    fn parse_quantifier_stmt(&mut self, kind: QuantifierKind) -> Result<CondStmt, ParseErrors> {
+        let start = self.bump().span.start;
         let (binding, _) = self.expect_ident()?;
         self.expect_simple(&TokenKind::In)?;
         let collection = self.parse_check_expr()?;
         self.expect_simple(&TokenKind::LBrace)?;
         let body = self.parse_cond_stmts()?;
         let end = self.expect_simple(&TokenKind::RBrace)?.end;
-        Ok(CondStmt::All {
+        Ok(CondStmt::Quantifier {
+            kind,
             binding,
             collection,
             body,
@@ -583,7 +584,24 @@ impl Parser {
     fn parse_postfix_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
         let mut expr = self.parse_check_primary()?;
         loop {
-            if self.eat(&TokenKind::Dot).is_some() {
+            if self.eat(&TokenKind::LParen).is_some() {
+                let CheckExprKind::Name(name) = expr.kind else {
+                    return self.err("only builtin function names can be called");
+                };
+                let start = expr.span.start;
+                let mut args = Vec::new();
+                while !self.at(&TokenKind::RParen) {
+                    args.push(self.parse_check_expr()?);
+                    if self.eat(&TokenKind::Comma).is_none() {
+                        break;
+                    }
+                }
+                let end = self.expect_simple(&TokenKind::RParen)?.end;
+                expr = CheckExpr {
+                    kind: CheckExprKind::Call { name, args },
+                    span: Span::new(start, end),
+                };
+            } else if self.eat(&TokenKind::Dot).is_some() {
                 let (name, name_span) = self.expect_ident()?;
                 let span = Span::new(expr.span.start, name_span.end);
                 expr = CheckExpr {
@@ -641,6 +659,13 @@ impl Parser {
                     span: token.span,
                 })
             }
+            TokenKind::Any => {
+                self.bump();
+                Ok(CheckExpr {
+                    kind: CheckExprKind::Name("any".to_string()),
+                    span: token.span,
+                })
+            }
             TokenKind::String(value) => {
                 self.bump();
                 Ok(CheckExpr {
@@ -663,6 +688,15 @@ impl Parser {
                 Ok(expr)
             }
             _ => self.err("expected check expression"),
+        }
+    }
+
+    fn peek_quantifier(&self) -> Option<QuantifierKind> {
+        match self.peek().kind {
+            TokenKind::All => Some(QuantifierKind::All),
+            TokenKind::Any => Some(QuantifierKind::Any),
+            TokenKind::None => Some(QuantifierKind::None),
+            _ => None,
         }
     }
 
@@ -718,6 +752,29 @@ impl Parser {
             TokenKind::Ident(value) => {
                 self.bump();
                 Ok((value, token.span))
+            }
+            TokenKind::Any => {
+                self.bump();
+                Ok(("any".to_string(), token.span))
+            }
+            TokenKind::None => {
+                self.bump();
+                Ok(("none".to_string(), token.span))
+            }
+            _ => self.err("expected identifier"),
+        }
+    }
+
+    fn expect_type_name_ident(&mut self) -> Result<(String, Span), ParseErrors> {
+        let token = self.peek().clone();
+        match token.kind {
+            TokenKind::Ident(value) => {
+                self.bump();
+                Ok((value, token.span))
+            }
+            TokenKind::Any => {
+                self.bump();
+                Ok(("any".to_string(), token.span))
             }
             _ => self.err("expected identifier"),
         }
