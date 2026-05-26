@@ -549,15 +549,13 @@ table: LootTable = {
 }
 
 #[test]
-fn nominal_union_alias_selects_branch_by_literal_kind() {
+fn nominal_union_alias_accepts_explicit_branch_object() {
     let source = r#"
 type ItemReward {
-  kind: "item" = "item";
   item: string;
 }
 
 type CurrencyReward {
-  kind: "currency" = "currency";
   amount: int;
 }
 
@@ -568,8 +566,7 @@ type Chest {
 }
 
 chest: Chest = {
-  reward: {
-    kind: "currency",
+  reward: CurrencyReward {
     amount: 100,
   },
 };
@@ -602,12 +599,10 @@ chest: Chest = {
 fn union_alias_accepts_named_branch_values() {
     let source = r#"
 type ItemReward {
-  kind: "item" = "item";
   item: string;
 }
 
 type CurrencyReward {
-  kind: "currency" = "currency";
   amount: int;
 }
 
@@ -635,22 +630,19 @@ reward: Reward = coin;
 }
 
 #[test]
-fn union_alias_rejects_unknown_kind() {
+fn union_alias_rejects_untyped_object_literal() {
     let source = r#"
 type ItemReward {
-  kind: "item" = "item";
   item: string;
 }
 
 type CurrencyReward {
-  kind: "currency" = "currency";
   amount: int;
 }
 
 type Reward = ItemReward | CurrencyReward;
 
 reward: Reward = {
-  kind: "xp",
   amount: 100,
 };
 "#;
@@ -664,7 +656,86 @@ reward: Reward = {
     assert!(err
         .errors
         .iter()
-        .any(|e| e.message.contains("no union branch matches kind `xp`")));
+        .any(|e| e.message.contains("union object must specify branch type")));
+}
+
+#[test]
+fn union_alias_rejects_explicit_non_branch_object() {
+    let source = r#"
+type ItemReward {
+  item: string;
+}
+
+type CurrencyReward {
+  amount: int;
+}
+
+type ExpReward {
+  amount: int;
+}
+
+type Reward = ItemReward | CurrencyReward;
+
+reward: Reward = ExpReward {
+  amount: 100,
+};
+"#;
+
+    let mut c = CfcContainer::new();
+    let root = ModuleId::from("root");
+    c.add_module(root.clone(), source).unwrap();
+
+    let err = c.build(&root).unwrap_err();
+
+    assert!(err
+        .errors
+        .iter()
+        .any(|e| e.message.contains("not a branch of this union")));
+}
+
+#[test]
+fn imported_union_alias_accepts_explicit_imported_branch_object() {
+    let lib_source = r#"
+type ItemReward {
+  item: string;
+}
+
+type CurrencyReward {
+  amount: int;
+}
+
+type Reward = ItemReward | CurrencyReward;
+"#;
+    let game_source = r#"
+use "lib" as lib;
+
+reward: lib.Reward = lib.CurrencyReward {
+  amount: 100,
+};
+"#;
+
+    let mut c = CfcContainer::new();
+    let lib = ModuleId::from("lib");
+    let game = ModuleId::from("game");
+    c.add_module(lib.clone(), lib_source).unwrap();
+    c.add_module(game.clone(), game_source).unwrap();
+    let import = c.imports(&game).unwrap()[0].id;
+    c.bind_import(&game, import, &lib).unwrap();
+
+    let result = c.build(&game).unwrap();
+    let reward = result.root().unwrap().get("reward").unwrap();
+    let borrowed = reward.borrow();
+    let CfcValue::Object { type_name, fields } = &*borrowed else {
+        panic!("expected reward object");
+    };
+
+    let type_name = type_name.as_ref().unwrap();
+    assert_eq!(type_name.module, lib);
+    assert_eq!(type_name.name, "CurrencyReward");
+    assert!(matches!(
+        &*fields.get("amount").unwrap().borrow(),
+        CfcValue::Int(100)
+    ));
 }
 
 #[test]

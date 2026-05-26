@@ -207,6 +207,9 @@ impl BuildCtx<'_> {
             ExprKind::Object(fields) => fields
                 .iter()
                 .all(|field| self.is_default_constant(module, &field.value)),
+            ExprKind::TypedObject { fields, .. } => fields
+                .iter()
+                .all(|field| self.is_default_constant(module, &field.value)),
             ExprKind::Dict(entries) => entries.iter().all(|(key, value)| {
                 self.is_default_constant(module, key) && self.is_default_constant(module, value)
             }),

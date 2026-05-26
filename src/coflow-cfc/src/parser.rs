@@ -321,6 +321,24 @@ impl Parser {
                 break;
             }
         }
+        if !has_index && self.at(&TokenKind::LBrace) {
+            let ty = match parts.as_slice() {
+                [] => TypeName::Local(first),
+                [RawPathPart::Field(name)] => TypeName::Imported {
+                    alias: first,
+                    name: name.clone(),
+                },
+                _ => return self.err("typed object may only use a local type or import alias"),
+            };
+            let object = self.parse_object()?;
+            let ExprKind::Object(fields) = object.kind else {
+                unreachable!("parse_object always returns object expression");
+            };
+            return Ok(Expr {
+                kind: ExprKind::TypedObject { ty, fields },
+                span: Span::new(start.min(first_span.start), object.span.end),
+            });
+        }
         let end = self.prev_span().end;
         let kind = if has_index || parts.len() > 1 {
             ExprKind::Path {

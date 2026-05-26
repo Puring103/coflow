@@ -232,17 +232,14 @@ reward: Item | Currency = {
 
 ```cfc
 type ItemReward {
-  kind: "item" = "item";
   item: Item;
 }
 
 type CurrencyReward {
-  kind: "currency" = "currency";
   amount: int;
 }
 
 type ExpReward {
-  kind: "exp" = "exp";
   value: int;
 }
 
@@ -251,32 +248,59 @@ type Reward = ItemReward | CurrencyReward | ExpReward;
 
 这里 `Reward` 是 union alias，不是普通 object type。分支必须是已命名 `type`，第一版不支持匿名 object union。
 
-## Literal types
+### 显式分支对象
 
-为了表达 discriminator，union 分支需要 literal type：
+union 配置值使用显式分支类型，而不是污染配置字段：
 
 ```cfc
-kind: "currency" = "currency";
+reward: Reward = CurrencyReward {
+  amount: 100,
+};
 ```
 
-第一版只建议支持 string literal type，后续再评估 int/bool literal type。
+导入类型同样显式带上模块别名：
+
+```cfc
+reward: lib.Reward = lib.CurrencyReward {
+  amount: 100,
+};
+```
+
+如果已有命名节点的实际 nominal type 是 union 分支之一，也可以直接赋给 union：
+
+```cfc
+coin: CurrencyReward = { amount: 10 };
+reward: Reward = coin;
+```
+
+普通对象字面量直接赋给 union 会报错：
+
+```cfc
+reward: Reward = {
+  amount: 100,
+};
+```
+
+错误语义是“union object must specify branch type”。不做按字段集合推断分支，因为这会把分支选择变成隐式结构匹配，和 CFC 的名义类型方向冲突。
+
+## Literal types
+
+string literal type 仍然是独立类型能力，可用于普通字段约束，但不再作为 union 内置 discriminator：
+
+```cfc
+type CurrencyReward {
+  category: "currency" = "currency";
+  amount: int;
+}
+```
+
+第一版只支持 string literal type，后续再评估 int/bool literal type。
 
 规则：
 
 - 字段类型 `"currency"` 只接受字符串值 `"currency"`。
 - 默认值可省略时，如果字段有 literal type 且没有默认值，仍按普通必填字段处理。
-- 推荐 union 分支的 discriminator 字段显式写默认值，减少实例冗余。
-
-对象实例可以写：
-
-```cfc
-reward: Reward = {
-  kind: "currency",
-  amount: 100,
-};
-```
-
-如果上下文类型是 `Reward`，builder 根据 `kind` 选择唯一分支，然后按该分支 type 校验。
+- 不要求 union 分支拥有同名 literal 字段。
 
 ## `is` 类型判断与窄化
 
@@ -397,20 +421,19 @@ CfcValue::Union {
 
 - `type Reward = A | B | C;`
 - string literal type
-- 基于 discriminator 的 union 分支选择
+- 显式分支对象：`reward: Reward = CurrencyReward { ... };`
 - `expr is TypeName`
-- `&&` 右侧局部窄化
 
 这一阶段暂不支持匿名 object union、数字 literal type、完整模式匹配和跨语句窄化。
 
-当前实现已覆盖 `type Reward = A | B | C;`、string literal type、基于 `kind` 字段的分支选择，以及 check 中的 `expr is TypeName`。运行时保存实际分支 object，不引入 union wrapper。`&&` 右侧局部窄化尚未实现。
+当前实现已覆盖 `type Reward = A | B | C;`、string literal type、显式分支对象，以及 check 中的 `expr is TypeName` / `expr is UnionAlias`。运行时保存实际分支 object，不引入 union wrapper。`&&` 右侧局部窄化尚未实现。
 
 ## 开放问题
 
 1. `sum([])` 是否固定返回 `0`，还是为了发现错误也报 eval error。
 2. `unique([float])` 是否永远不支持，还是后续定义严格浮点相等规则。
-3. union 分支 discriminator 是否强制字段名为 `kind`，还是允许配置。
-4. `type Reward = A | B` 是否要求所有分支都有同名 literal discriminator。
-5. object 字面量构建 union 时，如果没有 discriminator，是否允许按唯一可匹配分支推断。
+3. 是否允许 `Reward.CurrencyReward { ... }` 这类命名空间式分支构造语法。
+4. object 字面量构建 union 时，是否永远禁止按唯一可匹配分支推断。
+5. 是否需要在运行时 value 中保留 union alias metadata。
 6. nullable 是否提供 `T?` 语法糖。
 7. `is` 窄化是否只在 check 表达式内生效，还是未来也服务 `.cfs`。

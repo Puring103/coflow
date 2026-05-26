@@ -209,6 +209,10 @@ pub enum ExprKind {
         root: String,
         segments: Vec<PathSegment>,
     },
+    TypedObject {
+        ty: TypeName,
+        fields: Vec<ObjectField>,
+    },
     Object(Vec<ObjectField>),
     Array(Vec<Expr>),
     Dict(Vec<(Expr, Expr)>),

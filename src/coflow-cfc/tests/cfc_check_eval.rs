@@ -1021,19 +1021,16 @@ fn check_is_tests_nominal_branch_and_union_alias() {
     let errors = check_errors(
         r#"
 type ItemReward {
-  kind: "item" = "item";
   item: string;
 }
 
 type CurrencyReward {
-  kind: "currency" = "currency";
   amount: int;
 }
 
 type Reward = ItemReward | CurrencyReward;
 
-reward: Reward = {
-  kind: "currency",
+reward: Reward = CurrencyReward {
   amount: 100,
 };
 

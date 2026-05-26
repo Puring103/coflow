@@ -1,6 +1,5 @@
 use super::{BuildCtx, ObjectEvalState, ObjectFieldPlan, TypeInfo};
 use crate::ast::{Expr, ExprKind, ObjectField, TypeName, TypeRef};
-use crate::build::eval::object_string_field;
 use crate::container::ModuleId;
 use crate::error::{BuildError, BuildErrorKind};
 use crate::value::{CfcNominalType, CfcValue, CfcValueRef};
@@ -271,9 +270,14 @@ impl BuildCtx<'_> {
                     .and_then(|value| self.ensure_dict_value(expr, &value)),
                 _ => self.type_error(expr, "dict"),
             },
-            Some(TypeRef::Union(items)) => {
-                self.eval_union_in_object_state(module, default_module, expr, items, state)
-            }
+            Some(TypeRef::Union(items)) => self.eval_union_in_object_state(
+                module,
+                default_module,
+                default_module,
+                expr,
+                items,
+                state,
+            ),
             Some(TypeRef::Named(name)) => {
                 self.eval_named_in_object_state(module, default_module, expr, name, state)
             }
@@ -319,7 +323,14 @@ impl BuildCtx<'_> {
                 .iter()
                 .map(|branch| TypeRef::Named(branch.clone()))
                 .collect::<Vec<_>>();
-            return self.eval_union_in_object_state(module, default_module, expr, &branches, state);
+            return self.eval_union_in_object_state(
+                module,
+                default_module,
+                &target_module,
+                expr,
+                &branches,
+                state,
+            );
         }
         let Some(type_info) = self
             .symbols
@@ -335,6 +346,14 @@ impl BuildCtx<'_> {
             return None;
         };
         match &expr.kind {
+            ExprKind::TypedObject { ty, fields } => {
+                let (typed_module, typed_name) =
+                    self.resolve_type_name(default_module, ty, expr.span)?;
+                if typed_module != target_module || typed_name != target_name {
+                    return self.type_error(expr, &target_name);
+                }
+                self.eval_object_with_parent(module, fields, &type_info, state)
+            }
             ExprKind::Object(fields) => {
                 self.eval_object_with_parent(module, fields, &type_info, state)
             }
@@ -370,24 +389,23 @@ impl BuildCtx<'_> {
         &mut self,
         module: &ModuleId,
         default_module: &ModuleId,
+        branch_scope: &ModuleId,
         expr: &Expr,
         branches: &[TypeRef],
         state: &mut ObjectEvalState,
     ) -> Option<CfcValueRef> {
         match &expr.kind {
-            ExprKind::Object(fields) => {
-                let Some(kind) = object_string_field(fields, "kind") else {
-                    self.errors.push(BuildError::new(
-                        BuildErrorKind::TypeMismatch,
-                        "union object must include string field `kind`",
-                        Some(expr.span),
-                    ));
-                    return None;
-                };
-                let branch =
-                    self.select_union_branch_by_kind(default_module, branches, kind, expr.span)?;
+            ExprKind::TypedObject { ty, .. } => {
+                let branch = self.resolve_union_branch_type(
+                    default_module,
+                    branch_scope,
+                    ty,
+                    branches,
+                    expr.span,
+                )?;
                 self.eval_expr_in_object_state(module, default_module, expr, Some(&branch), state)
             }
+            ExprKind::Object(_) => self.union_branch_required_error(expr),
             ExprKind::Name(name) => {
                 let value = self.resolve_name_in_object_state(
                     module,
@@ -396,7 +414,7 @@ impl BuildCtx<'_> {
                     expr.span,
                     state,
                 )?;
-                self.ensure_union_value(expr, &value, default_module, branches)
+                self.ensure_union_value(expr, &value, branch_scope, branches)
             }
             ExprKind::Qualified(parts) => {
                 let value = self.eval_qualified_in_object_state(
@@ -406,17 +424,17 @@ impl BuildCtx<'_> {
                     parts,
                     state,
                 )?;
-                self.ensure_union_value(expr, &value, default_module, branches)
+                self.ensure_union_value(expr, &value, branch_scope, branches)
             }
             ExprKind::Path { .. } => {
                 let value = self.eval_path_in_object_state(module, default_module, expr, state)?;
-                self.ensure_union_value(expr, &value, default_module, branches)
+                self.ensure_union_value(expr, &value, branch_scope, branches)
             }
             _ => self.type_error(expr, "union"),
         }
     }
 
-    fn eval_object_with_parent(
+    pub(super) fn eval_object_with_parent(
         &mut self,
         module: &ModuleId,
         fields: &[ObjectField],

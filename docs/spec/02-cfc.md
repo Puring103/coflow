@@ -148,40 +148,35 @@ raw = { id: "x" }; // 合法，但 raw 的结构不按 A 或 B 校验
 
 ```cfc
 type ItemReward {
-  kind: "item" = "item";
   item: Item;
 }
 
 type CurrencyReward {
-  kind: "currency" = "currency";
   amount: int;
 }
 
 type Reward = ItemReward | CurrencyReward;
 
-reward: Reward = {
-  kind: "currency",
+reward: Reward = CurrencyReward {
   amount: 100,
 };
 ```
 
-第一版 union 分支必须是已命名 `type`，不支持匿名 object union。对象字面量赋给 union 时，builder 使用字符串字段 `kind` 选择唯一分支；分支类型通常把 `kind` 声明为字符串字面量类型并提供同值默认值。
+第一版 union 分支必须是已命名 `type`，不支持匿名 object union。对象字面量赋给 union 时必须显式写出分支类型：
 
 ```cfc
-type CurrencyReward {
-  kind: "currency" = "currency";
-  amount: int;
-}
+reward: Reward = CurrencyReward { amount: 100 };
+remote_reward: lib.Reward = lib.CurrencyReward { amount: 100 };
 ```
 
-若对象字面量没有字符串 `kind` 字段，或没有分支的 `kind` 字面量匹配，build 报类型错误。若已有命名节点的实际 nominal type 是 union 分支之一，则可以赋给 union：
+若普通对象字面量直接赋给 union，build 报类型错误。若显式分支类型不是该 union 的分支，build 也报类型错误。若已有命名节点的实际 nominal type 是 union 分支之一，则可以赋给 union：
 
 ```cfc
 coin: CurrencyReward = { amount: 10 };
 reward: Reward = coin;
 ```
 
-第一版不支持裸结构匹配、按唯一可匹配字段集合推断分支、union value wrapper、数字/布尔 literal type，也不支持 `null`。
+第一版不支持裸结构匹配、按唯一可匹配字段集合推断分支、隐式 discriminator、union value wrapper、数字/布尔 literal type，也不支持 `null`。
 
 `type` 支持前向引用和自引用：
 

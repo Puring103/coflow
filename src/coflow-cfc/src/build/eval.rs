@@ -162,7 +162,9 @@ impl BuildCtx<'_> {
             },
             Some(TypeRef::Array(inner)) => self.eval_array(module, expr, inner, locals),
             Some(TypeRef::Dict(key, value)) => self.eval_dict(module, expr, key, value, locals),
-            Some(TypeRef::Union(items)) => self.eval_union_expected(module, expr, items, locals),
+            Some(TypeRef::Union(items)) => {
+                self.eval_union_expected(module, module, expr, items, locals)
+            }
             Some(TypeRef::Named(name)) => self.eval_named_expected(module, expr, name, locals),
             Some(TypeRef::Any) => self.eval_any_with_locals(module, expr, locals),
             None => self.eval_untyped_with_locals(module, expr, locals),
@@ -211,6 +213,13 @@ impl BuildCtx<'_> {
             return None;
         };
         match &expr.kind {
+            ExprKind::TypedObject { ty, fields } => {
+                let (typed_module, typed_name) = self.resolve_type_name(module, ty, expr.span)?;
+                if typed_module != target_module || typed_name != target_name {
+                    return self.type_error(expr, &target_name);
+                }
+                self.eval_object(module, fields, &type_info, locals)
+            }
             ExprKind::Object(fields) => self.eval_object(module, fields, &type_info, locals),
             ExprKind::Name(name) => {
                 let value = Self::resolve_local(name, locals)
@@ -255,96 +264,78 @@ impl BuildCtx<'_> {
             .iter()
             .map(|branch| TypeRef::Named(branch.clone()))
             .collect::<Vec<_>>();
-        self.eval_union_expected(module, expr, &branch_refs, locals)
+        self.eval_union_expected(module, union_module, expr, &branch_refs, locals)
     }
 
     fn eval_union_expected(
         &mut self,
         module: &ModuleId,
+        branch_scope: &ModuleId,
         expr: &Expr,
         branches: &[TypeRef],
         locals: Option<&BTreeMap<String, CfcValueRef>>,
     ) -> Option<CfcValueRef> {
         match &expr.kind {
-            ExprKind::Object(fields) => {
-                let Some(kind) = object_string_field(fields, "kind") else {
-                    self.errors.push(BuildError::new(
-                        BuildErrorKind::TypeMismatch,
-                        "union object must include string field `kind`",
-                        Some(expr.span),
-                    ));
-                    return None;
-                };
-                let Some(branch) =
-                    self.select_union_branch_by_kind(module, branches, kind, expr.span)
-                else {
-                    return None;
-                };
+            ExprKind::TypedObject { ty, .. } => {
+                let branch =
+                    self.resolve_union_branch_type(module, branch_scope, ty, branches, expr.span)?;
                 self.eval_expr_with_locals(module, expr, Some(&branch), locals)
             }
+            ExprKind::Object(_) => self.union_branch_required_error(expr),
             ExprKind::Name(name) => {
                 let value = Self::resolve_local(name, locals)
                     .or_else(|| self.eval_data_name(module, name, expr.span))?;
-                self.ensure_union_value(expr, &value, module, branches)
+                self.ensure_union_value(expr, &value, branch_scope, branches)
             }
             ExprKind::Qualified(parts) => {
                 let value = self.eval_qualified_as_path_or_data(module, expr, parts, locals)?;
-                self.ensure_union_value(expr, &value, module, branches)
+                self.ensure_union_value(expr, &value, branch_scope, branches)
             }
             ExprKind::Path { .. } => {
                 let value = self.eval_path_expr(module, expr, locals)?;
-                self.ensure_union_value(expr, &value, module, branches)
+                self.ensure_union_value(expr, &value, branch_scope, branches)
             }
             _ => self.type_error(expr, "union"),
         }
     }
 
-    pub(super) fn select_union_branch_by_kind(
+    pub(super) fn resolve_union_branch_type(
         &mut self,
         module: &ModuleId,
+        branch_scope: &ModuleId,
+        ty: &TypeName,
         branches: &[TypeRef],
-        kind: &str,
         span: crate::span::Span,
     ) -> Option<TypeRef> {
-        let mut matches = Vec::new();
+        let (typed_module, typed_name) = self.resolve_type_name(module, ty, span)?;
         for branch in branches {
             let TypeRef::Named(name) = branch else {
                 continue;
             };
-            let Some((target_module, target_name)) = self.resolve_type_name(module, name, span)
+            let Some((target_module, target_name)) =
+                self.resolve_type_name(branch_scope, name, span)
             else {
                 continue;
             };
-            let Some(type_info) = self
-                .symbols
-                .types
-                .get(&(target_module.clone(), target_name.clone()))
-            else {
-                continue;
-            };
-            if type_discriminator(type_info).is_some_and(|value| value == kind) {
-                matches.push(branch.clone());
+            if typed_module == target_module && typed_name == target_name {
+                return Some(TypeRef::Named(ty.clone()));
             }
         }
-        match matches.len() {
-            1 => matches.pop(),
-            0 => {
-                self.errors.push(BuildError::new(
-                    BuildErrorKind::TypeMismatch,
-                    format!("no union branch matches kind `{kind}`"),
-                    Some(span),
-                ));
-                None
-            }
-            _ => {
-                self.errors.push(BuildError::new(
-                    BuildErrorKind::TypeMismatch,
-                    format!("multiple union branches match kind `{kind}`"),
-                    Some(span),
-                ));
-                None
-            }
-        }
+        self.errors.push(BuildError::new(
+            BuildErrorKind::TypeMismatch,
+            format!("type `{typed_name}` is not a branch of this union"),
+            Some(span),
+        ));
+        None
+    }
+
+    pub(super) fn union_branch_required_error(&mut self, expr: &Expr) -> Option<CfcValueRef> {
+        self.errors.push(BuildError::new(
+            BuildErrorKind::TypeMismatch,
+            "union object must specify branch type",
+            Some(expr.span),
+        ));
+        None
     }
 
     pub(super) fn ensure_union_value(
@@ -570,6 +561,23 @@ impl BuildCtx<'_> {
             ExprKind::Name(name) => self.resolve_name_value(module, name, expr.span, locals),
             ExprKind::Qualified(parts) => self.eval_qualified_untyped(module, expr, parts, locals),
             ExprKind::Path { .. } => self.eval_path_expr(module, expr, locals),
+            ExprKind::TypedObject { ty, fields } => {
+                let (target_module, target_name) = self.resolve_type_name(module, ty, expr.span)?;
+                let Some(type_info) = self
+                    .symbols
+                    .types
+                    .get(&(target_module.clone(), target_name.clone()))
+                    .cloned()
+                else {
+                    self.errors.push(BuildError::new(
+                        BuildErrorKind::UnknownType,
+                        format!("unknown type `{target_name}`"),
+                        Some(expr.span),
+                    ));
+                    return None;
+                };
+                self.eval_object(module, fields, &type_info, locals)
+            }
             ExprKind::Object(fields) => {
                 let mut out = BTreeMap::new();
                 for field in fields {
@@ -602,6 +610,23 @@ impl BuildCtx<'_> {
             ExprKind::Name(name) => self.resolve_name_value(module, name, expr.span, locals),
             ExprKind::Qualified(parts) => self.eval_qualified_untyped(module, expr, parts, locals),
             ExprKind::Path { .. } => self.eval_path_expr(module, expr, locals),
+            ExprKind::TypedObject { ty, fields } => {
+                let (target_module, target_name) = self.resolve_type_name(module, ty, expr.span)?;
+                let Some(type_info) = self
+                    .symbols
+                    .types
+                    .get(&(target_module.clone(), target_name.clone()))
+                    .cloned()
+                else {
+                    self.errors.push(BuildError::new(
+                        BuildErrorKind::UnknownType,
+                        format!("unknown type `{target_name}`"),
+                        Some(expr.span),
+                    ));
+                    return None;
+                };
+                self.eval_object(module, fields, &type_info, locals)
+            }
             ExprKind::Object(fields) => {
                 let mut out = BTreeMap::new();
                 for field in fields {
@@ -656,6 +681,24 @@ impl BuildCtx<'_> {
             ExprKind::Path { .. } => {
                 self.eval_path_in_object_state(module, default_module, expr, state)
             }
+            ExprKind::TypedObject { ty, fields } => {
+                let (target_module, target_name) =
+                    self.resolve_type_name(default_module, ty, expr.span)?;
+                let Some(type_info) = self
+                    .symbols
+                    .types
+                    .get(&(target_module.clone(), target_name.clone()))
+                    .cloned()
+                else {
+                    self.errors.push(BuildError::new(
+                        BuildErrorKind::UnknownType,
+                        format!("unknown type `{target_name}`"),
+                        Some(expr.span),
+                    ));
+                    return None;
+                };
+                self.eval_object_with_parent(module, fields, &type_info, state)
+            }
             ExprKind::Object(fields) => {
                 let mut out = BTreeMap::new();
                 for field in fields {
@@ -703,6 +746,24 @@ impl BuildCtx<'_> {
             }
             ExprKind::Path { .. } => {
                 self.eval_path_in_object_state(module, default_module, expr, state)
+            }
+            ExprKind::TypedObject { ty, fields } => {
+                let (target_module, target_name) =
+                    self.resolve_type_name(default_module, ty, expr.span)?;
+                let Some(type_info) = self
+                    .symbols
+                    .types
+                    .get(&(target_module.clone(), target_name.clone()))
+                    .cloned()
+                else {
+                    self.errors.push(BuildError::new(
+                        BuildErrorKind::UnknownType,
+                        format!("unknown type `{target_name}`"),
+                        Some(expr.span),
+                    ));
+                    return None;
+                };
+                self.eval_object_with_parent(module, fields, &type_info, state)
             }
             ExprKind::Object(fields) => {
                 let mut out = BTreeMap::new();
@@ -865,7 +926,7 @@ impl BuildCtx<'_> {
 fn data_has_identity(def: &DataDef) -> bool {
     matches!(
         def.value.kind,
-        ExprKind::Object(_) | ExprKind::Array(_) | ExprKind::Dict(_)
+        ExprKind::TypedObject { .. } | ExprKind::Object(_) | ExprKind::Array(_) | ExprKind::Dict(_)
     )
 }
 
@@ -873,7 +934,8 @@ fn identity_placeholder(def: &DataDef) -> CfcValue {
     match def.value.kind {
         ExprKind::Array(_) => CfcValue::Array(Vec::new()),
         ExprKind::Dict(_) => CfcValue::Dict(Vec::new()),
-        ExprKind::Object(_)
+        ExprKind::TypedObject { .. }
+        | ExprKind::Object(_)
         | ExprKind::Int(_)
         | ExprKind::Float(_)
         | ExprKind::Bool(_)
@@ -949,25 +1011,4 @@ fn validate_dict_entry(
         *inferred_value = Some(value_signature);
     }
     Some(())
-}
-
-pub(super) fn object_string_field<'a>(
-    fields: &'a [crate::ast::ObjectField],
-    name: &str,
-) -> Option<&'a str> {
-    fields.iter().find_map(|field| {
-        (field.name == name).then_some(match &field.value.kind {
-            ExprKind::String(value) => Some(value.as_str()),
-            _ => None,
-        })?
-    })
-}
-
-pub(super) fn type_discriminator(type_info: &TypeInfo) -> Option<&str> {
-    type_info.def.fields.iter().find_map(|field| {
-        (field.name == "kind").then_some(match &field.ty {
-            TypeRef::StringLiteral(value) => Some(value.as_str()),
-            _ => None,
-        })?
-    })
 }
