@@ -34,4 +34,5 @@ print_stdout = "allow"
 print_stderr = "allow"
 
 [dependencies]
-coflow-cfc = { path = "../coflow-cfc" }
+coflow-cft = { path = "../coflow-cft" }
+coflow-cfd = { path = "../coflow-cfd" }

@@ -36,24 +36,27 @@
 
 ## CFT 规则
 
-`.cft` 文件只定义 schema。
+`.cft` 文件只定义 schema。所有已注册的 `.cft` 模块共享同一个全局类型命名空间，类型名在整个项目中唯一。
 
 允许：
 
-- `use` 导入其他 `.cft` 文件；
 - `type` 定义；
 - `enum` 定义；
 - `type` 内部的 `check` 块。
 
 禁止：
 
+- `use` 导入语句（无模块级导入，类型全局可见）；
 - 顶层数据节点；
-- 顶层 `check` 块；
-- 导入 `.cfd` 文件。
+- 顶层 `check` 块。
+
+约束：
+
+- 两个 `.cft` 模块定义同名 `type` 或 `enum` 时，注册时立即报错，不等到 build 阶段。
 
 示例：
 
-```cfc
+```cft
 // schema/item.cft
 enum Rarity {
   Common = 1;
@@ -74,30 +77,28 @@ type Item {
 
 ## CFD 规则
 
-`.cfd` 文件只定义数据。
+`.cfd` 文件只定义数据。类型标注直接使用裸名（从全局 `.cft` 类型表解析），跨模块数据引用使用 `moduleid.name` 限定名。
 
 允许：
 
-- `use` 导入 `.cft` 文件以使用类型；
-- `use` 导入 `.cfd` 文件以使用其他数据节点；
 - 顶层有类型标注的数据节点；
-- 顶层 `check` 块。
+- 顶层 `check` 块；
+- 跨模块数据引用（`moduleid.name` 限定名）。
 
 禁止：
 
+- `use` 导入语句（无模块级导入）；
 - `type` 定义；
 - `enum` 定义。
 
 示例：
 
-```cfc
+```cfd
 // data/items.cfd
-use "../schema/item.cft" as schema;
-
-potion: schema.Item = {
+potion: Item = {
   id = "potion";
   name = "Potion";
-  rarity = schema.Rarity.Common;
+  rarity = Rarity.Common;
   price = 10;
 };
 
@@ -106,16 +107,36 @@ check {
 }
 ```
 
-## Import 方向
+跨模块引用示例：
 
-导入图必须强制定义和数据的分层：
+```cfd
+// data/shop.cfd
+// 引用 data/items 模块（ModuleId = "data/items"）中的 potion 数据节点
+featured = data/items.potion;
+```
 
-- `.cft -> .cft`：允许；
-- `.cft -> .cfd`：禁止；
-- `.cfd -> .cft`：允许；
-- `.cfd -> .cfd`：允许。
+## 模块系统
 
-这样 schema 文件不会依赖数据文件，但数据文件仍然可以引用类型，也可以跨模块共享数据节点。
+`.cft` 和 `.cfd` 均不使用 `use` 导入语句。宿主负责将所有相关模块批量注册到容器，容器在 build 阶段全局解析名称。
+
+**ModuleId** 由宿主在注册时指定，是不透明字符串，语言层不做路径解析。推荐宿主使用相对项目根的路径去掉扩展名作为 ModuleId：
+
+```
+schema/item.cft   →  ModuleId = "schema/item"
+data/items.cfd    →  ModuleId = "data/items"
+data/shop.cfd     →  ModuleId = "data/shop"
+```
+
+`.cfd` 文件中的跨模块限定名 `data/items.potion` 里，`data/items` 必须精确匹配宿主注册的 ModuleId。
+
+名称解析优先级（`.cfd` build 阶段）：
+
+1. 类型名（`Item`）→ 全局 `.cft` 类型表
+2. 枚举变体（`Rarity.Common`）→ 全局 `.cft` 枚举表
+3. 同模块数据裸名（`potion`）→ 当前模块符号表
+4. 跨模块限定名（`data/items.potion`）→ ModuleId=`"data/items"` 模块的 `potion` 值
+
+找不到名称则报错。
 
 ## 产品边界
 
@@ -517,10 +538,10 @@ public static GameConfigDatabase Load(Stream stream)
 ## 实施计划
 
 1. 将文档中的语言概念从 CFC 调整为 `.cft` / `.cfd` 配置系统。
-2. 根据文件扩展名增加 module kind 检测。
-3. 拒绝 `.cfc` 作为输入扩展名。
-4. 强制 `.cft` 和 `.cfd` 的语法/profile 规则。
-5. 强制 import 方向规则。
+2. 创建 `coflow-cft` crate：解析 `.cft`，提供全局类型注册表和 schema 反射 API。
+3. 创建 `coflow-cfd` crate：解析 `.cfd`，依赖 `coflow-cft` 进行类型解析，支持跨模块限定名引用。
+4. 将 `coflow-cfc` 改为 re-export shim（`pub use coflow_cft::*; pub use coflow_cfd::*;`）。
+5. 根据文件扩展名增加 module kind 检测，拒绝 `.cfc` 作为输入扩展名。
 6. 将示例和测试从 `.cfc` 改为 `.cft` / `.cfd`。
 7. 更新 CLI help 和文档。
 8. 更新 VS Code 扩展，识别 `.cft` 和 `.cfd`。

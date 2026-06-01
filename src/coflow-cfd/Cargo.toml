@@ -1,0 +1,9 @@
+[package]
+name = "coflow-cfd"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+unicode-ident = "1"
+coflow-cft = { path = "../coflow-cft" }

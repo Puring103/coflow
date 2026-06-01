@@ -1,0 +1,904 @@
+use crate::ast::{
+    BinOp, CheckBlock, CheckExpr, CheckExprKind, CmpOp, CondStmt, EnumDef, EnumVariant, Expr,
+    ExprKind, FieldDef, Item, ModuleAst, ObjectField, QuantifierKind, TypeDef, TypeName,
+    TypePredicate, TypeRef, UnaryOp,
+};
+use crate::error::ParseErrors;
+use crate::lexer::{lex, Token, TokenKind};
+use crate::span::Span;
+
+pub fn parse_module(source: &str) -> Result<ModuleAst, ParseErrors> {
+    let tokens = lex(source)?;
+    Parser::new(tokens).parse_module()
+}
+
+struct Parser {
+    tokens: Vec<Token>,
+    pos: usize,
+}
+
+impl Parser {
+    fn new(tokens: Vec<Token>) -> Self {
+        Self { tokens, pos: 0 }
+    }
+
+    fn parse_module(&mut self) -> Result<ModuleAst, ParseErrors> {
+        let mut items = Vec::new();
+
+        while !self.at(&TokenKind::Eof) {
+            if self.at(&TokenKind::Type) {
+                items.push(Item::Type(self.parse_type()?));
+            } else if self.at(&TokenKind::Enum) {
+                items.push(Item::Enum(self.parse_enum()?));
+            } else {
+                return self.err("only type and enum definitions are allowed in .cft files");
+            }
+        }
+
+        Ok(ModuleAst { items })
+    }
+
+    fn parse_type(&mut self) -> Result<TypeDef, ParseErrors> {
+        let start = self.expect_simple(&TokenKind::Type)?.start;
+        let (name, _) = self.expect_ident()?;
+        if self.eat(&TokenKind::Equal).is_some() {
+            let alias = self.parse_type_ref()?;
+            let end = self.expect_simple(&TokenKind::Semicolon)?.end;
+            return Ok(TypeDef {
+                name,
+                fields: Vec::new(),
+                check: None,
+                alias: Some(alias),
+                span: Span::new(start, end),
+            });
+        }
+        self.expect_simple(&TokenKind::LBrace)?;
+        let mut fields = Vec::new();
+        let mut check = None;
+        while !self.at(&TokenKind::RBrace) {
+            if self.at(&TokenKind::Eof) {
+                return self.err("unterminated type definition");
+            }
+            if self.at(&TokenKind::Check) {
+                check = Some(self.parse_check_block()?);
+                break;
+            }
+            let field_start = self.peek().span.start;
+            let (field_name, _) = self.expect_ident()?;
+            self.expect_simple(&TokenKind::Colon)?;
+            let ty = self.parse_type_ref()?;
+            let default = if self.eat(&TokenKind::Equal).is_some() {
+                Some(self.parse_expr()?)
+            } else {
+                None
+            };
+            let end = self.expect_simple(&TokenKind::Semicolon)?.end;
+            fields.push(FieldDef {
+                name: field_name,
+                ty,
+                default,
+                span: Span::new(field_start, end),
+            });
+        }
+        let end = self.expect_simple(&TokenKind::RBrace)?.end;
+        Ok(TypeDef {
+            name,
+            fields,
+            check,
+            alias: None,
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_enum(&mut self) -> Result<EnumDef, ParseErrors> {
+        let start = self.expect_simple(&TokenKind::Enum)?.start;
+        let (name, _) = self.expect_ident()?;
+        self.expect_simple(&TokenKind::LBrace)?;
+        let mut variants = Vec::new();
+        while !self.at(&TokenKind::RBrace) {
+            if self.at(&TokenKind::Eof) {
+                return self.err("unterminated enum definition");
+            }
+            let span_start = self.peek().span.start;
+            let (variant, _) = self.expect_ident()?;
+            let value = if self.eat(&TokenKind::Equal).is_some() {
+                Some(self.parse_signed_int()?)
+            } else {
+                None
+            };
+            let span_end = self.prev_span().end;
+            variants.push(EnumVariant {
+                name: variant,
+                value,
+                span: Span::new(span_start, span_end),
+            });
+            if self.eat(&TokenKind::Comma).is_none() {
+                break;
+            }
+        }
+        let end = self.expect_simple(&TokenKind::RBrace)?.end;
+        Ok(EnumDef {
+            name,
+            variants,
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_type_ref(&mut self) -> Result<TypeRef, ParseErrors> {
+        let first = self.parse_type_atom()?;
+        let mut items = vec![first];
+        while self.eat(&TokenKind::Pipe).is_some() {
+            items.push(self.parse_type_atom()?);
+        }
+        if items.len() == 1 {
+            Ok(items.remove(0))
+        } else {
+            Ok(TypeRef::Union(items))
+        }
+    }
+
+    fn parse_type_atom(&mut self) -> Result<TypeRef, ParseErrors> {
+        if self.eat(&TokenKind::LBracket).is_some() {
+            let inner = self.parse_type_ref()?;
+            self.expect_simple(&TokenKind::RBracket)?;
+            return Ok(TypeRef::Array(Box::new(inner)));
+        }
+        if self.eat(&TokenKind::LBrace).is_some() {
+            let key = self.parse_type_ref()?;
+            self.expect_simple(&TokenKind::Colon)?;
+            let value = self.parse_type_ref()?;
+            self.expect_simple(&TokenKind::RBrace)?;
+            return Ok(TypeRef::Dict(Box::new(key), Box::new(value)));
+        }
+        if let TokenKind::String(value) = self.peek().kind.clone() {
+            self.bump();
+            return Ok(TypeRef::StringLiteral(value));
+        }
+        if let TokenKind::Int(value) = self.peek().kind.clone() {
+            self.bump();
+            return Ok(TypeRef::IntLiteral(value));
+        }
+        if self.eat(&TokenKind::True).is_some() {
+            return Ok(TypeRef::BoolLiteral(true));
+        }
+        if self.eat(&TokenKind::False).is_some() {
+            return Ok(TypeRef::BoolLiteral(false));
+        }
+        if self.eat(&TokenKind::Null).is_some() {
+            return Ok(TypeRef::Null);
+        }
+        let (name, _) = self.expect_type_name_ident()?;
+        let ty = match name.as_str() {
+            "int" => TypeRef::Int,
+            "float" => TypeRef::Float,
+            "bool" => TypeRef::Bool,
+            "string" => TypeRef::String,
+            "any" => TypeRef::Any,
+            _ => {
+                if self.eat(&TokenKind::Dot).is_some() {
+                    return self.err("imported type names are not supported in .cft files");
+                }
+                TypeRef::Named(TypeName::Local(name))
+            }
+        };
+        if self.eat(&TokenKind::Question).is_some() {
+            Ok(TypeRef::Union(vec![ty, TypeRef::Null]))
+        } else {
+            Ok(ty)
+        }
+    }
+
+    fn parse_expr(&mut self) -> Result<Expr, ParseErrors> {
+        let token = self.peek().clone();
+        match token.kind {
+            TokenKind::Int(value) => {
+                self.bump();
+                Ok(Expr {
+                    kind: ExprKind::Int(value),
+                    span: token.span,
+                })
+            }
+            TokenKind::Float(value) => {
+                self.bump();
+                Ok(Expr {
+                    kind: ExprKind::Float(value),
+                    span: token.span,
+                })
+            }
+            TokenKind::True => {
+                self.bump();
+                Ok(Expr {
+                    kind: ExprKind::Bool(true),
+                    span: token.span,
+                })
+            }
+            TokenKind::False => {
+                self.bump();
+                Ok(Expr {
+                    kind: ExprKind::Bool(false),
+                    span: token.span,
+                })
+            }
+            TokenKind::Null => {
+                self.bump();
+                Ok(Expr {
+                    kind: ExprKind::Null,
+                    span: token.span,
+                })
+            }
+            TokenKind::String(value) => {
+                self.bump();
+                Ok(Expr {
+                    kind: ExprKind::String(value),
+                    span: token.span,
+                })
+            }
+            TokenKind::Ident(_) => self.parse_path_or_qualified(),
+            TokenKind::LBrace => self.parse_object(),
+            TokenKind::LBracket => self.parse_array(),
+            TokenKind::Dict => self.parse_dict(),
+            TokenKind::Minus => {
+                self.bump();
+                let start = token.span.start;
+                let next = self.peek().clone();
+                match next.kind {
+                    TokenKind::Int(value) => {
+                        self.bump();
+                        Ok(Expr {
+                            kind: ExprKind::Int(-value),
+                            span: Span::new(start, next.span.end),
+                        })
+                    }
+                    TokenKind::Float(value) => {
+                        self.bump();
+                        Ok(Expr {
+                            kind: ExprKind::Float(-value),
+                            span: Span::new(start, next.span.end),
+                        })
+                    }
+                    _ => self.err("expected number after `-`"),
+                }
+            }
+            _ => self.err("expected expression"),
+        }
+    }
+
+    fn parse_path_or_qualified(&mut self) -> Result<Expr, ParseErrors> {
+        let start = self.peek().span.start;
+        let (first, first_span) = self.expect_ident()?;
+        if self.eat(&TokenKind::Dot).is_some() {
+            return self.err("dot-separated paths are not supported in .cft files");
+        }
+        if self.at(&TokenKind::LBrace) {
+            let object = self.parse_object()?;
+            if let ExprKind::Object(fields) = object.kind {
+                return Ok(Expr {
+                    kind: ExprKind::TypedObject {
+                        ty: TypeName::Local(first),
+                        fields,
+                    },
+                    span: Span::new(start.min(first_span.start), object.span.end),
+                });
+            }
+        }
+        Ok(Expr {
+            kind: ExprKind::Name(first),
+            span: Span::new(start.min(first_span.start), first_span.end),
+        })
+    }
+
+    fn parse_object(&mut self) -> Result<Expr, ParseErrors> {
+        let start = self.expect_simple(&TokenKind::LBrace)?.start;
+        let mut fields = Vec::new();
+        while !self.at(&TokenKind::RBrace) {
+            if self.at(&TokenKind::Eof) {
+                return self.err("unterminated object expression");
+            }
+            let field_start = self.peek().span.start;
+            let (name, _) = self.expect_ident()?;
+            self.expect_simple(&TokenKind::Colon)?;
+            let value = self.parse_expr()?;
+            let field_end = value.span.end;
+            fields.push(ObjectField {
+                name,
+                value,
+                span: Span::new(field_start, field_end),
+            });
+            if self.eat(&TokenKind::Comma).is_none() {
+                break;
+            }
+        }
+        let end = self.expect_simple(&TokenKind::RBrace)?.end;
+        Ok(Expr {
+            kind: ExprKind::Object(fields),
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_array(&mut self) -> Result<Expr, ParseErrors> {
+        let start = self.expect_simple(&TokenKind::LBracket)?.start;
+        let mut items = Vec::new();
+        while !self.at(&TokenKind::RBracket) {
+            if self.at(&TokenKind::Eof) {
+                return self.err("unterminated array expression");
+            }
+            items.push(self.parse_expr()?);
+            if self.eat(&TokenKind::Comma).is_none() {
+                break;
+            }
+        }
+        let end = self.expect_simple(&TokenKind::RBracket)?.end;
+        Ok(Expr {
+            kind: ExprKind::Array(items),
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_dict(&mut self) -> Result<Expr, ParseErrors> {
+        let start = self.expect_simple(&TokenKind::Dict)?.start;
+        self.expect_simple(&TokenKind::LBrace)?;
+        let mut entries = Vec::new();
+        while !self.at(&TokenKind::RBrace) {
+            if self.at(&TokenKind::Eof) {
+                return self.err("unterminated dict expression");
+            }
+            let key = self.parse_expr()?;
+            self.expect_simple(&TokenKind::Colon)?;
+            let value = self.parse_expr()?;
+            entries.push((key, value));
+            if self.eat(&TokenKind::Comma).is_none() {
+                break;
+            }
+        }
+        let end = self.expect_simple(&TokenKind::RBrace)?.end;
+        Ok(Expr {
+            kind: ExprKind::Dict(entries),
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_check_block(&mut self) -> Result<CheckBlock, ParseErrors> {
+        let start = self.expect_simple(&TokenKind::Check)?.start;
+        self.expect_simple(&TokenKind::LBrace)?;
+        let stmts = self.parse_cond_stmts()?;
+        let end = self.expect_simple(&TokenKind::RBrace)?.end;
+        Ok(CheckBlock {
+            stmts,
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_cond_stmts(&mut self) -> Result<Vec<CondStmt>, ParseErrors> {
+        let mut stmts = Vec::new();
+        while !self.at(&TokenKind::RBrace) {
+            if self.at(&TokenKind::Eof) {
+                return self.err("unterminated check block");
+            }
+            stmts.push(self.parse_cond_stmt()?);
+        }
+        Ok(stmts)
+    }
+
+    fn parse_cond_stmt(&mut self) -> Result<CondStmt, ParseErrors> {
+        if let Some(kind) = self.peek_quantifier() {
+            return self.parse_quantifier_stmt(kind);
+        }
+        let expr = self.parse_check_expr()?;
+        self.expect_simple(&TokenKind::Semicolon)?;
+        Ok(CondStmt::Expr(expr))
+    }
+
+    fn parse_quantifier_stmt(&mut self, kind: QuantifierKind) -> Result<CondStmt, ParseErrors> {
+        let start = self.bump().span.start;
+        let (binding, _) = self.expect_ident()?;
+        self.expect_simple(&TokenKind::In)?;
+        let collection = self.parse_check_expr()?;
+        self.expect_simple(&TokenKind::LBrace)?;
+        let body = self.parse_cond_stmts()?;
+        let end = self.expect_simple(&TokenKind::RBrace)?.end;
+        Ok(CondStmt::Quantifier {
+            kind,
+            binding,
+            collection,
+            body,
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_check_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        self.parse_or_expr()
+    }
+
+    fn parse_or_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let mut expr = self.parse_and_expr()?;
+        while self.eat(&TokenKind::PipePipe).is_some() {
+            let rhs = self.parse_and_expr()?;
+            expr = bin_expr(BinOp::Or, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_and_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let mut expr = self.parse_is_expr()?;
+        while self.eat(&TokenKind::AmpAmp).is_some() {
+            let rhs = self.parse_is_expr()?;
+            expr = bin_expr(BinOp::And, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_is_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let expr = self.parse_cmp_chain()?;
+        if self.eat(&TokenKind::Is).is_none() {
+            return Ok(expr);
+        }
+        let predicate = self.parse_type_predicate()?;
+        let span = Span::new(expr.span.start, self.prev_span().end);
+        Ok(CheckExpr {
+            kind: CheckExprKind::Is {
+                expr: Box::new(expr),
+                predicate,
+            },
+            span,
+        })
+    }
+
+    fn parse_bitor_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let mut expr = self.parse_bitxor_expr()?;
+        while self.eat(&TokenKind::Pipe).is_some() {
+            let rhs = self.parse_bitxor_expr()?;
+            expr = bin_expr(BinOp::BitOr, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_bitxor_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let mut expr = self.parse_bitand_expr()?;
+        while self.eat(&TokenKind::Caret).is_some() {
+            let rhs = self.parse_bitand_expr()?;
+            expr = bin_expr(BinOp::BitXor, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_bitand_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let mut expr = self.parse_add_expr()?;
+        while self.eat(&TokenKind::Amp).is_some() {
+            let rhs = self.parse_add_expr()?;
+            expr = bin_expr(BinOp::BitAnd, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_cmp_chain(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let first = self.parse_bitor_expr()?;
+        let mut rest = Vec::new();
+        while let Some(op) = self.eat_cmp_op() {
+            rest.push((op, self.parse_bitor_expr()?));
+        }
+        if rest.is_empty() {
+            return Ok(first);
+        }
+        let start = first.span.start;
+        validate_cmp_chain(&rest, first.span)?;
+        let end = rest
+            .last()
+            .map_or(first.span.end, |(_, expr)| expr.span.end);
+        Ok(CheckExpr {
+            kind: CheckExprKind::CmpChain {
+                first: Box::new(first),
+                rest,
+            },
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_add_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let mut expr = self.parse_shift_expr()?;
+        loop {
+            let op = if self.eat(&TokenKind::Plus).is_some() {
+                BinOp::Add
+            } else if self.eat(&TokenKind::Minus).is_some() {
+                BinOp::Sub
+            } else {
+                break;
+            };
+            let rhs = self.parse_shift_expr()?;
+            expr = bin_expr(op, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_shift_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let mut expr = self.parse_mul_expr()?;
+        loop {
+            let op = if self.eat(&TokenKind::LessLess).is_some() {
+                BinOp::Shl
+            } else if self.eat(&TokenKind::GreaterGreater).is_some() {
+                BinOp::Shr
+            } else {
+                break;
+            };
+            let rhs = self.parse_mul_expr()?;
+            expr = bin_expr(op, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_mul_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let mut expr = self.parse_prefix_expr()?;
+        loop {
+            let op = if self.eat(&TokenKind::Star).is_some() {
+                BinOp::Mul
+            } else if self.eat(&TokenKind::Slash).is_some() {
+                BinOp::Div
+            } else if self.eat(&TokenKind::SlashSlash).is_some() {
+                BinOp::IntDiv
+            } else if self.eat(&TokenKind::Percent).is_some() {
+                BinOp::Mod
+            } else {
+                break;
+            };
+            let rhs = self.parse_prefix_expr()?;
+            expr = bin_expr(op, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_prefix_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let token = self.peek().clone();
+        let op = if self.eat(&TokenKind::Bang).is_some() {
+            Some(UnaryOp::Not)
+        } else if self.eat(&TokenKind::Tilde).is_some() {
+            Some(UnaryOp::BitNot)
+        } else if self.eat(&TokenKind::Minus).is_some() {
+            Some(UnaryOp::Neg)
+        } else {
+            None
+        };
+        if let Some(op) = op {
+            let expr = self.parse_prefix_expr()?;
+            return Ok(CheckExpr {
+                span: Span::new(token.span.start, expr.span.end),
+                kind: CheckExprKind::Unary {
+                    op,
+                    expr: Box::new(expr),
+                },
+            });
+        }
+        self.parse_power_expr()
+    }
+
+    fn parse_power_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let lhs = self.parse_postfix_expr()?;
+        if self.eat(&TokenKind::StarStar).is_some() {
+            let rhs = self.parse_prefix_expr()?;
+            Ok(bin_expr(BinOp::Pow, lhs, rhs))
+        } else {
+            Ok(lhs)
+        }
+    }
+
+    fn parse_postfix_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let mut expr = self.parse_check_primary()?;
+        loop {
+            if self.eat(&TokenKind::LParen).is_some() {
+                let CheckExprKind::Name(name) = expr.kind else {
+                    return self.err("only builtin function names can be called");
+                };
+                let start = expr.span.start;
+                let mut args = Vec::new();
+                while !self.at(&TokenKind::RParen) {
+                    if self.at(&TokenKind::Eof) {
+                        return self.err("unterminated function call");
+                    }
+                    args.push(self.parse_check_expr()?);
+                    if self.eat(&TokenKind::Comma).is_none() {
+                        break;
+                    }
+                }
+                let end = self.expect_simple(&TokenKind::RParen)?.end;
+                expr = CheckExpr {
+                    kind: CheckExprKind::Call { name, args },
+                    span: Span::new(start, end),
+                };
+            } else if self.eat(&TokenKind::Dot).is_some() {
+                let (name, name_span) = self.expect_ident()?;
+                let span = Span::new(expr.span.start, name_span.end);
+                expr = CheckExpr {
+                    kind: CheckExprKind::Field {
+                        expr: Box::new(expr),
+                        name,
+                    },
+                    span,
+                };
+            } else if self.eat(&TokenKind::LBracket).is_some() {
+                let index = self.parse_check_expr()?;
+                let end = self.expect_simple(&TokenKind::RBracket)?.end;
+                expr = CheckExpr {
+                    span: Span::new(expr.span.start, end),
+                    kind: CheckExprKind::Index {
+                        expr: Box::new(expr),
+                        index: Box::new(index),
+                    },
+                };
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
+    }
+
+    fn parse_check_primary(&mut self) -> Result<CheckExpr, ParseErrors> {
+        let token = self.peek().clone();
+        match token.kind {
+            TokenKind::Int(value) => {
+                self.bump();
+                Ok(CheckExpr {
+                    kind: CheckExprKind::Int(value),
+                    span: token.span,
+                })
+            }
+            TokenKind::Float(value) => {
+                self.bump();
+                Ok(CheckExpr {
+                    kind: CheckExprKind::Float(value),
+                    span: token.span,
+                })
+            }
+            TokenKind::True => {
+                self.bump();
+                Ok(CheckExpr {
+                    kind: CheckExprKind::Bool(true),
+                    span: token.span,
+                })
+            }
+            TokenKind::False => {
+                self.bump();
+                Ok(CheckExpr {
+                    kind: CheckExprKind::Bool(false),
+                    span: token.span,
+                })
+            }
+            TokenKind::Null => {
+                self.bump();
+                Ok(CheckExpr {
+                    kind: CheckExprKind::Null,
+                    span: token.span,
+                })
+            }
+            TokenKind::Any => {
+                self.bump();
+                Ok(CheckExpr {
+                    kind: CheckExprKind::Name("any".to_string()),
+                    span: token.span,
+                })
+            }
+            TokenKind::String(value) => {
+                self.bump();
+                Ok(CheckExpr {
+                    kind: CheckExprKind::Str(value),
+                    span: token.span,
+                })
+            }
+            TokenKind::Ident(value) => {
+                self.bump();
+                Ok(CheckExpr {
+                    kind: CheckExprKind::Name(value),
+                    span: token.span,
+                })
+            }
+            TokenKind::LParen => {
+                let start = self.expect_simple(&TokenKind::LParen)?.start;
+                let mut expr = self.parse_check_expr()?;
+                let end = self.expect_simple(&TokenKind::RParen)?.end;
+                expr.span = Span::new(start, end);
+                Ok(expr)
+            }
+            _ => self.err("expected check expression"),
+        }
+    }
+
+    fn peek_quantifier(&self) -> Option<QuantifierKind> {
+        match self.peek().kind {
+            TokenKind::All => Some(QuantifierKind::All),
+            TokenKind::Any => Some(QuantifierKind::Any),
+            TokenKind::None => Some(QuantifierKind::None),
+            _ => None,
+        }
+    }
+
+    fn parse_type_predicate(&mut self) -> Result<TypePredicate, ParseErrors> {
+        if self.eat(&TokenKind::Null).is_some() {
+            return Ok(TypePredicate::Null);
+        }
+        self.parse_check_type_name().map(TypePredicate::Type)
+    }
+
+    fn parse_check_type_name(&mut self) -> Result<TypeName, ParseErrors> {
+        let (name, _) = self.expect_ident()?;
+        if self.eat(&TokenKind::Dot).is_some() {
+            return self.err("imported type names are not supported in .cft files");
+        }
+        Ok(TypeName::Local(name))
+    }
+
+    fn eat_cmp_op(&mut self) -> Option<CmpOp> {
+        if self.eat(&TokenKind::EqEq).is_some() {
+            Some(CmpOp::Eq)
+        } else if self.eat(&TokenKind::BangEq).is_some() {
+            Some(CmpOp::Ne)
+        } else if self.eat(&TokenKind::Less).is_some() {
+            Some(CmpOp::Lt)
+        } else if self.eat(&TokenKind::LessEq).is_some() {
+            Some(CmpOp::Le)
+        } else if self.eat(&TokenKind::Greater).is_some() {
+            Some(CmpOp::Gt)
+        } else if self.eat(&TokenKind::GreaterEq).is_some() {
+            Some(CmpOp::Ge)
+        } else {
+            None
+        }
+    }
+
+    fn parse_signed_int(&mut self) -> Result<i64, ParseErrors> {
+        let sign = if self.eat(&TokenKind::Minus).is_some() {
+            -1
+        } else {
+            1
+        };
+        let token = self.peek().clone();
+        match token.kind {
+            TokenKind::Int(value) => {
+                self.bump();
+                Ok(sign * value)
+            }
+            _ => self.err("expected integer literal"),
+        }
+    }
+
+    fn expect_ident(&mut self) -> Result<(String, Span), ParseErrors> {
+        let token = self.peek().clone();
+        match token.kind {
+            TokenKind::Ident(value) => {
+                self.bump();
+                Ok((value, token.span))
+            }
+            TokenKind::Any => {
+                self.bump();
+                Ok(("any".to_string(), token.span))
+            }
+            TokenKind::None => {
+                self.bump();
+                Ok(("none".to_string(), token.span))
+            }
+            _ => self.err("expected identifier"),
+        }
+    }
+
+    fn expect_type_name_ident(&mut self) -> Result<(String, Span), ParseErrors> {
+        let token = self.peek().clone();
+        match token.kind {
+            TokenKind::Ident(value) => {
+                self.bump();
+                Ok((value, token.span))
+            }
+            TokenKind::Any => {
+                self.bump();
+                Ok(("any".to_string(), token.span))
+            }
+            _ => self.err("expected identifier"),
+        }
+    }
+
+    fn expect_simple(&mut self, kind: &TokenKind) -> Result<Span, ParseErrors> {
+        if self.at(kind) {
+            Ok(self.bump().span)
+        } else {
+            self.err(format!("expected `{}`", token_name(kind)))
+        }
+    }
+
+    fn eat(&mut self, kind: &TokenKind) -> Option<Span> {
+        if self.at(kind) {
+            Some(self.bump().span)
+        } else {
+            None
+        }
+    }
+
+    fn at(&self, kind: &TokenKind) -> bool {
+        std::mem::discriminant(&self.peek().kind) == std::mem::discriminant(kind)
+    }
+
+    fn bump(&mut self) -> Token {
+        let token = self.tokens[self.pos].clone();
+        self.pos += 1;
+        token
+    }
+
+    fn peek(&self) -> &Token {
+        &self.tokens[self.pos]
+    }
+
+    fn prev_span(&self) -> Span {
+        self.tokens[self.pos - 1].span
+    }
+
+    fn err<T>(&self, message: impl Into<String>) -> Result<T, ParseErrors> {
+        Err(ParseErrors::one(message, self.peek().span))
+    }
+}
+
+fn token_name(kind: &TokenKind) -> &'static str {
+    match kind {
+        TokenKind::LBrace => "{",
+        TokenKind::RBrace => "}",
+        TokenKind::LBracket => "[",
+        TokenKind::RBracket => "]",
+        TokenKind::LParen => "(",
+        TokenKind::RParen => ")",
+        TokenKind::Colon => ":",
+        TokenKind::Semicolon => ";",
+        TokenKind::Comma => ",",
+        TokenKind::Dot => ".",
+        TokenKind::Equal => "=",
+        TokenKind::Question => "?",
+        TokenKind::In => "in",
+        TokenKind::Is => "is",
+        _ => "token",
+    }
+}
+
+fn bin_expr(op: BinOp, lhs: CheckExpr, rhs: CheckExpr) -> CheckExpr {
+    let span = Span::new(lhs.span.start, rhs.span.end);
+    CheckExpr {
+        kind: CheckExprKind::BinOp {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        },
+        span,
+    }
+}
+
+fn validate_cmp_chain(rest: &[(CmpOp, CheckExpr)], span: Span) -> Result<(), ParseErrors> {
+    if rest.len() < 2 {
+        return Ok(());
+    }
+    if rest.iter().any(|(op, _)| *op == CmpOp::Ne) {
+        return Err(ParseErrors::one(
+            "`!=` cannot be used in chain comparisons",
+            span,
+        ));
+    }
+    let first_group = cmp_chain_group(rest[0].0);
+    if rest
+        .iter()
+        .skip(1)
+        .any(|(op, _)| cmp_chain_group(*op) != first_group)
+    {
+        return Err(ParseErrors::one(
+            "chain comparison operators must have a consistent direction",
+            span,
+        ));
+    }
+    Ok(())
+}
+
+fn cmp_chain_group(op: CmpOp) -> CmpChainGroup {
+    match op {
+        CmpOp::Lt | CmpOp::Le => CmpChainGroup::Increasing,
+        CmpOp::Gt | CmpOp::Ge => CmpChainGroup::Decreasing,
+        CmpOp::Eq => CmpChainGroup::Equal,
+        CmpOp::Ne => CmpChainGroup::NotEqual,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CmpChainGroup {
+    Increasing,
+    Decreasing,
+    Equal,
+    NotEqual,
+}

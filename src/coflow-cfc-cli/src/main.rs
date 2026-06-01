@@ -1,8 +1,9 @@
-use coflow_cfc::{
-    BuildErrors, CfcContainer, CfcError, CfcImport, CfcModuleResult, CfcResult, CfcSchemaEnum,
-    CfcSchemaType, CfcValue, CfcValueRef, CheckError, ModuleId, ParseErrors, ResolveError,
+use coflow_cfd::{
+    BuildErrors, CfdContainer, CfdModuleResult, CfdValue, CfdValueRef, CheckError, ModuleId,
+    ParseErrors,
 };
-use std::collections::HashMap;
+use coflow_cft::{CftContainer, CftSchemaEnum, CftSchemaType, ParseErrors as CftParseErrors};
+use coflow_cfd::CfdResult;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -23,30 +24,35 @@ fn run(args: Vec<String>) -> Result<(), String> {
     };
     match command {
         "check" => {
-            let (json, file) = parse_check_args(&args)?;
+            let (json, dir) = parse_check_args(&args)?;
             if json {
-                return check_json(file);
+                return check_json(&dir);
             }
-            let loaded = load_file(file)?;
-            report_checks(&loaded.container, &loaded.result)?;
+            let loaded = load_dir(&dir)?;
+            report_checks(&loaded.cfd, &loaded.result)?;
             println!("ok");
             Ok(())
         }
         "get" => {
-            let file = required_arg(&args, 2, "missing file")?;
-            let path = required_arg(&args, 3, "missing path")?;
-            let loaded = load_file(file)?;
-            report_checks(&loaded.container, &loaded.result)?;
-            let value =
-                select_root_path(loaded.result.root().ok_or("missing root module")?, &path)?;
+            let dir = required_arg(&args, 2, "missing dir")?;
+            let module = required_arg(&args, 3, "missing module")?;
+            let path = required_arg(&args, 4, "missing path")?;
+            let loaded = load_dir(&dir)?;
+            report_checks(&loaded.cfd, &loaded.result)?;
+            let module_id = ModuleId::new(module);
+            let module_result = loaded
+                .result
+                .module(&module_id)
+                .ok_or_else(|| format!("unknown module `{module_id}`"))?;
+            let value = select_root_path(module_result, &path)?;
             println!("{}", GraphRenderer::new().render(&value));
             Ok(())
         }
         "type" => {
-            let file = required_arg(&args, 2, "missing file")?;
+            let dir = required_arg(&args, 2, "missing dir")?;
             let name = required_arg(&args, 3, "missing type name")?;
-            let loaded = load_file(file)?;
-            print_definition(&loaded, &name)
+            let loaded = load_dir(&dir)?;
+            print_definition(loaded.cfd.type_ctx(), &name)
         }
         "-h" | "--help" | "help" => {
             println!("{}", usage());
@@ -62,43 +68,92 @@ fn required_arg(args: &[String], index: usize, message: &str) -> Result<String, 
 
 fn usage() -> String {
     "usage:
-  cfc check [--json] <file.cfc>
-  cfc get <file.cfc> <path>
-  cfc type <file.cfc> <type-name>"
+  cfc check [--json] <dir>
+  cfc get <dir> <module> <path>
+  cfc type <dir> <type-name>"
         .to_string()
 }
 
 fn parse_check_args(args: &[String]) -> Result<(bool, String), String> {
     match (args.get(2).map(String::as_str), args.get(3)) {
-        (Some("--json"), Some(file)) => Ok((true, file.clone())),
-        (Some("--json"), None) => Err("missing file".to_string()),
-        (Some(file), None) => Ok((false, file.to_string())),
-        (Some(file), Some(_)) => Err(format!("unexpected extra argument after `{file}`")),
-        (None, _) => Err("missing file".to_string()),
+        (Some("--json"), Some(dir)) => Ok((true, dir.clone())),
+        (Some("--json"), None) => Err("missing dir".to_string()),
+        (Some(dir), None) => Ok((false, dir.to_string())),
+        (Some(dir), Some(_)) => Err(format!("unexpected extra argument after `{dir}`")),
+        (None, _) => Err("missing dir".to_string()),
     }
 }
 
-fn check_json(file: String) -> Result<(), String> {
-    let root_path = canonicalize_path(Path::new(&file))?;
-    let root = ModuleId::from(path_to_module_id(&root_path));
-    let root_source = fs::read_to_string(&root_path)
-        .map_err(|err| format!("failed to read `{}`: {err}", root_path.display()))?;
-    let mut aliases = HashMap::new();
-    let mut container = CfcContainer::new();
-    let result = match container.load_graph(root.clone(), root_source, |from, import| {
-        resolve_import(from, import, &mut aliases)
-    }) {
-        Ok(result) => result,
-        Err(error) => {
-            println!("{}", cfc_error_json(&path_to_module_id(&root_path), error));
+struct LoadedGraph {
+    cfd: CfdContainer,
+    result: CfdResult,
+}
+
+fn load_dir(dir: &str) -> Result<LoadedGraph, String> {
+    let root = fs::canonicalize(dir)
+        .map_err(|err| format!("failed to resolve `{dir}`: {err}"))?;
+
+    let mut cft = CftContainer::new();
+    // Register all .cft files first
+    for entry in collect_files(&root, "cft")? {
+        let module_id = file_to_module_id(&root, &entry);
+        let source = fs::read_to_string(&entry)
+            .map_err(|err| format!("failed to read `{}`: {err}", entry.display()))?;
+        cft.add_module(ModuleId::new(module_id), source)
+            .map_err(|err| format_cft_parse_errors(&entry, &err))?;
+    }
+
+    let mut cfd = CfdContainer::new(cft);
+    // Register all .cfd files
+    for entry in collect_files(&root, "cfd")? {
+        let module_id = file_to_module_id(&root, &entry);
+        let source = fs::read_to_string(&entry)
+            .map_err(|err| format!("failed to read `{}`: {err}", entry.display()))?;
+        cfd.add_module(ModuleId::new(module_id), source)
+            .map_err(|err| format_cfd_parse_errors(&entry, &err))?;
+    }
+
+    let result = cfd.build_all().map_err(|err| format_build_errors(&err))?;
+    Ok(LoadedGraph { cfd, result })
+}
+
+fn collect_files(root: &Path, ext: &str) -> Result<Vec<PathBuf>, String> {
+    let mut files = Vec::new();
+    collect_files_recursive(root, ext, &mut files)
+        .map_err(|err| format!("failed to walk `{}`: {err}", root.display()))?;
+    files.sort();
+    Ok(files)
+}
+
+fn collect_files_recursive(dir: &Path, ext: &str, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files_recursive(&path, ext, out)?;
+        } else if path.extension().and_then(|e| e.to_str()) == Some(ext) {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn file_to_module_id(root: &Path, file: &Path) -> String {
+    let rel = file.strip_prefix(root).unwrap_or(file);
+    let without_ext = rel.with_extension("");
+    without_ext.to_string_lossy().replace('\\', "/")
+}
+
+fn check_json(dir: &str) -> Result<(), String> {
+    let loaded = match load_dir(dir) {
+        Ok(loaded) => loaded,
+        Err(err) => {
+            println!("[{}]", single_diagnostic_json(dir, "build", "Build", &err));
             return Err("check failed".to_string());
         }
     };
-    let errors = container.check(&result);
-    println!(
-        "{}",
-        check_errors_json(&path_to_module_id(&root_path), &errors)
-    );
+    let errors = loaded.cfd.check(&loaded.result);
+    println!("{}", check_errors_json(dir, &errors));
     if errors.is_empty() {
         Ok(())
     } else {
@@ -106,117 +161,48 @@ fn check_json(file: String) -> Result<(), String> {
     }
 }
 
-#[derive(Debug)]
-struct LoadedGraph {
-    container: CfcContainer,
-    result: CfcResult,
-    root: ModuleId,
-    aliases: HashMap<(ModuleId, String), ModuleId>,
+fn format_cft_parse_errors(file: &Path, errors: &CftParseErrors) -> String {
+    errors
+        .errors
+        .iter()
+        .map(|e| format!("{}: {:?}: {}", file.display(), e.kind, e.message))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
-fn load_file(file: String) -> Result<LoadedGraph, String> {
-    let root_path = canonicalize_path(Path::new(&file))?;
-    let root = ModuleId::from(path_to_module_id(&root_path));
-    let root_source = fs::read_to_string(&root_path)
-        .map_err(|err| format!("failed to read `{}`: {err}", root_path.display()))?;
-    let mut aliases = HashMap::new();
-    let mut container = CfcContainer::new();
-    let result = container
-        .load_graph(root.clone(), root_source, |from, import| {
-            resolve_import(from, import, &mut aliases)
-        })
-        .map_err(format_cfc_error)?;
-    Ok(LoadedGraph {
-        container,
-        result,
-        root,
-        aliases,
-    })
+fn format_cfd_parse_errors(file: &Path, errors: &ParseErrors) -> String {
+    errors
+        .errors
+        .iter()
+        .map(|e| format!("{}: {:?}: {}", file.display(), e.kind, e.message))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
-fn resolve_import(
-    from: &ModuleId,
-    import: &CfcImport,
-    aliases: &mut HashMap<(ModuleId, String), ModuleId>,
-) -> Result<(ModuleId, String), ResolveError> {
-    let from_path = Path::new(from.as_str());
-    let base = from_path.parent().unwrap_or_else(|| Path::new(""));
-    let import_path = Path::new(&import.path);
-    let path = if import_path.is_absolute() {
-        import_path.to_path_buf()
-    } else {
-        base.join(import_path)
-    };
-    let path = canonicalize_path(&path).map_err(ResolveError::new)?;
-    let module = ModuleId::from(path_to_module_id(&path));
-    let source = fs::read_to_string(&path)
-        .map_err(|err| ResolveError::new(format!("failed to read `{}`: {err}", path.display())))?;
-    aliases.insert((from.clone(), import.alias.clone()), module.clone());
-    Ok((module, source))
+fn format_build_errors(errors: &BuildErrors) -> String {
+    errors
+        .errors
+        .iter()
+        .map(|e| format!("{:?}: {}", e.kind, e.message))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
-fn canonicalize_path(path: &Path) -> Result<PathBuf, String> {
-    fs::canonicalize(path).map_err(|err| format!("failed to resolve `{}`: {err}", path.display()))
+fn format_check_errors(errors: &[CheckError]) -> String {
+    errors
+        .iter()
+        .map(|e| format!("{:?}: {}", e.kind, e.message))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
-fn path_to_module_id(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
-}
-
-fn report_checks(container: &CfcContainer, result: &CfcResult) -> Result<(), String> {
-    let errors = container.check(result);
+fn report_checks(cfd: &CfdContainer, result: &CfdResult) -> Result<(), String> {
+    let errors = cfd.check(result);
     if errors.is_empty() {
         Ok(())
     } else {
         Err(format_check_errors(&errors))
     }
-}
-
-fn cfc_error_json(file: &str, error: CfcError) -> String {
-    match error {
-        CfcError::Parse(errors) => parse_errors_json(file, &errors),
-        CfcError::Build(errors) => build_errors_json(file, &errors),
-        CfcError::Module(error) => single_diagnostic_json(file, "module", "Module", &error.message),
-        CfcError::Import(error) => single_diagnostic_json(file, "import", "Import", &error.message),
-        CfcError::Resolve(error) => {
-            single_diagnostic_json(file, "resolve", "Resolve", &error.message)
-        }
-    }
-}
-
-fn parse_errors_json(file: &str, errors: &ParseErrors) -> String {
-    let items = errors
-        .errors
-        .iter()
-        .map(|error| {
-            diagnostic_json(
-                file,
-                "parse",
-                &format!("{:?}", error.kind),
-                &error.message,
-                Some(error.span),
-            )
-        })
-        .collect::<Vec<_>>();
-    format!("[{}]", items.join(","))
-}
-
-fn build_errors_json(file: &str, errors: &BuildErrors) -> String {
-    let items = errors
-        .errors
-        .iter()
-        .filter(|error| error.span.is_some())
-        .map(|error| {
-            diagnostic_json(
-                file,
-                "build",
-                &format!("{:?}", error.kind),
-                &error.message,
-                error.span,
-            )
-        })
-        .collect::<Vec<_>>();
-    format!("[{}]", items.join(","))
 }
 
 fn check_errors_json(file: &str, errors: &[CheckError]) -> String {
@@ -236,7 +222,7 @@ fn check_errors_json(file: &str, errors: &[CheckError]) -> String {
 }
 
 fn single_diagnostic_json(file: &str, stage: &str, kind: &str, message: &str) -> String {
-    format!("[{}]", diagnostic_json(file, stage, kind, message, None))
+    diagnostic_json(file, stage, kind, message, None)
 }
 
 fn diagnostic_json(
@@ -244,7 +230,7 @@ fn diagnostic_json(
     stage: &str,
     kind: &str,
     message: &str,
-    span: Option<coflow_cfc::Span>,
+    span: Option<coflow_cfd::Span>,
 ) -> String {
     let span = span.map_or_else(|| "null".to_string(), span_json);
     format!(
@@ -257,7 +243,7 @@ fn diagnostic_json(
     )
 }
 
-fn span_json(span: coflow_cfc::Span) -> String {
+fn span_json(span: coflow_cfd::Span) -> String {
     format!("{{\"start\":{},\"end\":{}}}", span.start, span.end)
 }
 
@@ -278,49 +264,13 @@ fn json_string(value: &str) -> String {
     out
 }
 
-fn format_cfc_error(error: CfcError) -> String {
-    match error {
-        CfcError::Parse(errors) => format_parse_errors(&errors),
-        CfcError::Module(error) => error.message,
-        CfcError::Import(error) => error.message,
-        CfcError::Resolve(error) => error.message,
-        CfcError::Build(errors) => format_build_errors(&errors),
-    }
-}
-
-fn format_parse_errors(errors: &ParseErrors) -> String {
-    errors
-        .errors
-        .iter()
-        .map(|error| format!("{:?}: {}", error.kind, error.message))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn format_build_errors(errors: &BuildErrors) -> String {
-    errors
-        .errors
-        .iter()
-        .map(|error| format!("{:?}: {}", error.kind, error.message))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn format_check_errors(errors: &[CheckError]) -> String {
-    errors
-        .iter()
-        .map(|error| format!("{:?}: {}", error.kind, error.message))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Segment {
     Field(String),
     Index(usize),
 }
 
-fn select_root_path(module: &CfcModuleResult, path: &str) -> Result<CfcValueRef, String> {
+fn select_root_path(module: &CfdModuleResult, path: &str) -> Result<CfdValueRef, String> {
     let (root, segments) = parse_value_path(path)?;
     let mut value = module
         .get(&root)
@@ -360,7 +310,7 @@ fn parse_value_path(path: &str) -> Result<(String, Vec<Segment>), String> {
                 chars.next();
                 let index = path[start..end]
                     .parse::<usize>()
-                    .map_err(|_| format!("index must be a nonnegative integer in `{path}`"))?;
+                    .map_err(|_| format!("index must be a nonneg integer in `{path}`"))?;
                 segments.push(Segment::Index(index));
             }
             _ => return Err(format!("unexpected `{ch}` in path `{path}`")),
@@ -391,68 +341,53 @@ fn read_ident(
     }
 }
 
-fn select_segment(value: CfcValueRef, segment: &Segment) -> Result<CfcValueRef, String> {
+fn select_segment(value: CfdValueRef, segment: &Segment) -> Result<CfdValueRef, String> {
     let borrowed = value.borrow();
     match (segment, &*borrowed) {
-        (Segment::Field(field), CfcValue::Object { fields, .. }) => fields
+        (Segment::Field(field), CfdValue::Object { fields, .. }) => fields
             .get(field)
             .cloned()
             .ok_or_else(|| format!("missing field `{field}`")),
-        (Segment::Field(field), CfcValue::Union { value, .. }) => {
+        (Segment::Field(field), CfdValue::Union { value, .. }) => {
             let inner = value.clone();
             drop(borrowed);
             select_segment(inner, &Segment::Field(field.clone()))
         }
-        (Segment::Index(index), CfcValue::Array(items)) => items
+        (Segment::Index(index), CfdValue::Array(items)) => items
             .get(*index)
             .cloned()
             .ok_or_else(|| format!("array index `{index}` is out of bounds")),
-        (Segment::Index(index), CfcValue::Dict(entries)) => entries
+        (Segment::Index(index), CfdValue::Dict(entries)) => entries
             .get(*index)
-            .map(|(_, value)| value.clone())
+            .map(|(_, v)| v.clone())
             .ok_or_else(|| format!("dict index `{index}` is out of bounds")),
-        (Segment::Index(index), CfcValue::Union { value, .. }) => {
+        (Segment::Index(index), CfdValue::Union { value, .. }) => {
             let inner = value.clone();
             drop(borrowed);
             select_segment(inner, &Segment::Index(*index))
         }
-        (Segment::Field(field), other) => Err(format!(
-            "cannot select field `{field}` from {}",
-            other.type_name()
-        )),
+        (Segment::Field(field), other) => {
+            Err(format!("cannot select field `{field}` from {}", other.type_name()))
+        }
         (Segment::Index(index), other) => {
             Err(format!("cannot index {} at `{index}`", other.type_name()))
         }
     }
 }
 
-fn print_definition(loaded: &LoadedGraph, name: &str) -> Result<(), String> {
-    let (module, local_name) = resolve_definition_name(loaded, name)?;
-    if let Some(def) = loaded.container.type_def(&module, &local_name) {
+fn print_definition(cft: &CftContainer, name: &str) -> Result<(), String> {
+    if let Some(def) = cft.resolve_type(name) {
         println!("{}", format_type_def(&def));
         return Ok(());
     }
-    if let Some(def) = loaded.container.enum_def(&module, &local_name) {
+    if let Some(def) = cft.resolve_enum(name) {
         println!("{}", format_enum_def(&def));
         return Ok(());
     }
     Err(format!("unknown type or enum `{name}`"))
 }
 
-fn resolve_definition_name(loaded: &LoadedGraph, name: &str) -> Result<(ModuleId, String), String> {
-    if let Some((alias, local)) = name.split_once('.') {
-        let module = loaded
-            .aliases
-            .get(&(loaded.root.clone(), alias.to_string()))
-            .cloned()
-            .ok_or_else(|| format!("unknown import alias `{alias}`"))?;
-        Ok((module, local.to_string()))
-    } else {
-        Ok((loaded.root.clone(), name.to_string()))
-    }
-}
-
-fn format_type_def(def: &CfcSchemaType) -> String {
+fn format_type_def(def: &CftSchemaType) -> String {
     if let Some(alias) = &def.alias {
         return format!("type {} = {};", def.name, alias);
     }
@@ -469,7 +404,7 @@ fn format_type_def(def: &CfcSchemaType) -> String {
     out
 }
 
-fn format_enum_def(def: &CfcSchemaEnum) -> String {
+fn format_enum_def(def: &CftSchemaEnum) -> String {
     let mut out = format!("enum {} {{", def.name);
     let mut next = 0;
     for variant in &def.variants {
@@ -483,7 +418,7 @@ fn format_enum_def(def: &CfcSchemaEnum) -> String {
 
 #[derive(Debug, Default)]
 struct GraphRenderer {
-    seen: Vec<(CfcValueRef, usize)>,
+    seen: Vec<(CfdValueRef, usize)>,
     next_id: usize,
 }
 
@@ -495,39 +430,36 @@ impl GraphRenderer {
         }
     }
 
-    fn render(mut self, value: &CfcValueRef) -> String {
+    fn render(mut self, value: &CfdValueRef) -> String {
         self.render_ref(value)
     }
 
-    fn render_ref(&mut self, value: &CfcValueRef) -> String {
+    fn render_ref(&mut self, value: &CfdValueRef) -> String {
         match &*value.borrow() {
-            CfcValue::Null => "null".to_string(),
-            CfcValue::Int(value) => value.to_string(),
-            CfcValue::Float(value) => value.to_string(),
-            CfcValue::Bool(value) => value.to_string(),
-            CfcValue::String(value) => quoted(value),
-            CfcValue::Enum {
+            CfdValue::Null => "null".to_string(),
+            CfdValue::Int(v) => v.to_string(),
+            CfdValue::Float(v) => v.to_string(),
+            CfdValue::Bool(v) => v.to_string(),
+            CfdValue::String(v) => quoted(v),
+            CfdValue::Enum {
                 enum_type,
                 variant,
-                value,
+                value: v,
             } => format!(
                 "{{\"$enum\":{},\"value\":{}}}",
-                quoted(&format!(
-                    "{}.{}.{}",
-                    enum_type.module, enum_type.name, variant
-                )),
-                value
+                quoted(&format!("{}.{}.{}", enum_type.module, enum_type.name, variant)),
+                v
             ),
-            CfcValue::Object { type_name, fields } => {
+            CfdValue::Object { type_name, fields } => {
                 if let Some(id) = self.seen_id(value) {
                     return format!("{{\"$ref\":{}}}", quoted(&id.to_string()));
                 }
                 let id = self.mark_seen(value);
                 let mut parts = vec![format!("\"$id\":{}", quoted(&id.to_string()))];
-                if let Some(type_name) = type_name {
+                if let Some(tn) = type_name {
                     parts.push(format!(
                         "\"$type\":{}",
-                        quoted(&format!("{}.{}", type_name.module, type_name.name))
+                        quoted(&format!("{}.{}", tn.module, tn.name))
                     ));
                 }
                 for (name, field) in fields {
@@ -535,62 +467,52 @@ impl GraphRenderer {
                 }
                 format!("{{{}}}", parts.join(","))
             }
-            CfcValue::Union { union_type, value } => {
-                format!(
-                    "{{\"$union\":{},\"value\":{}}}",
-                    quoted(&format!("{}.{}", union_type.module, union_type.name)),
-                    self.render_ref(value)
-                )
-            }
-            CfcValue::Array(items) => {
+            CfdValue::Union { union_type, value: v } => format!(
+                "{{\"$union\":{},\"value\":{}}}",
+                quoted(&format!("{}.{}", union_type.module, union_type.name)),
+                self.render_ref(v)
+            ),
+            CfdValue::Array(items) => {
                 if let Some(id) = self.seen_id(value) {
                     return format!("{{\"$ref\":{}}}", quoted(&id.to_string()));
                 }
                 let id = self.mark_seen(value);
-                let items = items
+                let rendered = items
                     .iter()
                     .map(|item| self.render_ref(item))
                     .collect::<Vec<_>>()
                     .join(",");
-                format!(
-                    "{{\"$id\":{},\"$array\":[{}]}}",
-                    quoted(&id.to_string()),
-                    items
-                )
+                format!("{{\"$id\":{},\"$array\":[{}]}}", quoted(&id.to_string()), rendered)
             }
-            CfcValue::Dict(entries) => {
+            CfdValue::Dict(entries) => {
                 if let Some(id) = self.seen_id(value) {
                     return format!("{{\"$ref\":{}}}", quoted(&id.to_string()));
                 }
                 let id = self.mark_seen(value);
-                let entries = entries
+                let rendered = entries
                     .iter()
-                    .map(|(key, value)| {
+                    .map(|(k, v)| {
                         format!(
                             "{{\"key\":{},\"value\":{}}}",
-                            self.render_ref(key),
-                            self.render_ref(value)
+                            self.render_ref(k),
+                            self.render_ref(v)
                         )
                     })
                     .collect::<Vec<_>>()
                     .join(",");
-                format!(
-                    "{{\"$id\":{},\"$dict\":[{}]}}",
-                    quoted(&id.to_string()),
-                    entries
-                )
+                format!("{{\"$id\":{},\"$dict\":[{}]}}", quoted(&id.to_string()), rendered)
             }
         }
     }
 
-    fn seen_id(&self, value: &CfcValueRef) -> Option<usize> {
+    fn seen_id(&self, value: &CfdValueRef) -> Option<usize> {
         self.seen
             .iter()
-            .find(|(seen, _)| CfcValueRef::ptr_eq(seen, value))
+            .find(|(seen, _)| CfdValueRef::ptr_eq(seen, value))
             .map(|(_, id)| *id)
     }
 
-    fn mark_seen(&mut self, value: &CfcValueRef) -> usize {
+    fn mark_seen(&mut self, value: &CfdValueRef) -> usize {
         let id = self.next_id;
         self.next_id += 1;
         self.seen.push((value.clone(), id));

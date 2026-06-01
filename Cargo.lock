@@ -6,14 +6,31 @@ version = 4
 name = "coflow-cfc"
 version = "0.7.1"
 dependencies = [
- "unicode-ident",
+ "coflow-cfd",
+ "coflow-cft",
 ]
 
 [[package]]
 name = "coflow-cfc-cli"
 version = "0.7.1"
 dependencies = [
- "coflow-cfc",
+ "coflow-cfd",
+ "coflow-cft",
+]
+
+[[package]]
+name = "coflow-cfd"
+version = "0.1.0"
+dependencies = [
+ "coflow-cft",
+ "unicode-ident",
+]
+
+[[package]]
+name = "coflow-cft"
+version = "0.1.0"
+dependencies = [
+ "unicode-ident",
 ]
 
 [[package]]

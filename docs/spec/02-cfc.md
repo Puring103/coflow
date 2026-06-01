@@ -1,100 +1,86 @@
-# cfc 配置语言
+# cft / cfd 配置系统
 
-`.cfc` 是 coflow 的自校验强类型配置语言。它可以脱离 `.cfs` 独立运行，可被任意宿主语言加载，定位类似 JSON，但额外提供类型化枚举、对象 identity 和 schema 校验。
+Coflow 配置系统由两种文件类型组成：
 
-`.cfc` 是纯数据语言，不执行运行时逻辑。`.cfc` 文件中不能定义函数、方法、运行时变量或控制流语句。
+- `.cft`（Coflow Type File）：类型定义文件，只包含 `type` 和 `enum` 定义；
+- `.cfd`（Coflow Data File）：数据文件，只包含数据定义和 `check` 块。
+
+两种格式均可脱离 `.cfs` 独立运行，可被任意宿主语言加载，定位类似 JSON，但额外提供类型化枚举、对象 identity 和 schema 校验。两种格式均为纯数据语言，不执行运行时逻辑，不能定义函数、方法或控制流语句。
 
 注释使用 `//`：
 
-```cfc
+```cft
 // 这是注释
-name = "value";  // 行尾注释
+type Item { id: string; }  // 行尾注释
 ```
 
-## 顶层结构
+## 模块系统
 
-`.cfc` 文件的顶层由三段组成，段之间不能交错：
+`.cft` 和 `.cfd` 均无 `use` 导入语句。宿主将所有相关模块批量注册到容器，语言层在 build 阶段全局解析名称，找不到则报错。
 
-1. `use` 导入声明
-2. `type` 和 `enum` 定义（可混合，任意顺序）
-3. 顶层数据定义
+**ModuleId** 由宿主在注册时指定，是不透明字符串，语言层不做路径解析。推荐宿主使用相对项目根的路径去掉扩展名作为 ModuleId：
 
-`type` 和 `enum` 支持所有前向引用，包括 `type` 引用 `enum`、`type` 引用 `type`、`enum` 引用无（枚举不引用其他定义）。数据定义之间也支持前向引用。
+```
+schema/item.cft   →  ModuleId = "schema/item"
+data/weapons.cfd  →  ModuleId = "data/weapons"
+```
+
+**类型全局可见**：所有已注册的 `.cft` 模块共享同一个全局类型命名空间。`.cfd` 文件中类型标注和枚举值直接使用裸名，无需限定模块前缀。两个 `.cft` 模块定义同名 `type` 或 `enum` 时，注册时立即报错。
+
+**跨模块数据引用**：`.cfd` 文件中引用其他模块的数据节点使用 `moduleid.name` 限定名，ModuleId 直接作为前缀：
+
+```cfd
+// 引用 ModuleId="data/common" 模块中的 shared_stats 数据节点
+boss: Monster = { stats: data/common.shared_stats };
+```
+
+循环引用完全允许，loader 在构建阶段统一处理。
+
+## CFT 文件顶层结构
+
+`.cft` 文件只包含 `type` 和 `enum` 定义，可混合，任意顺序。
+
+`type` 和 `enum` 支持所有前向引用，包括 `type` 引用 `enum`、`type` 引用 `type`。
 
 示例：
 
-```cfc
-use "common/types.cfc" as common;
+```cft
+// schema/entities.cft
+enum Rarity { common, rare, epic; }
 
 type Stats {
   hp: int;
   speed: float;
 }
 
-enum Rarity {
-  common,
-  rare,
-  epic,
-}
-
-type Monster {
+type Item {
   id: string;
-  stats: Stats;
   rarity: Rarity;
-  drop: common.Item;
 }
+```
 
-slime_stats: Stats = {
-  hp: 30,
-  speed: 1.0,
-};
+## CFD 文件顶层结构
+
+`.cfd` 文件的顶层由两段组成，段之间不能交错：
+
+1. `type` 和 `enum` 定义（可混合，任意顺序）——**禁止**，`.cfd` 不允许类型定义
+2. 顶层数据定义和 `check` 块（可穿插）
+
+实际上 `.cfd` 只有数据段，不含定义段：
+
+```cfd
+// data/monsters.cfd
+slime_stats: Stats = { hp: 30; speed: 1.25; };
 
 slime: Monster = {
-  id: "slime",
-  stats: slime_stats,
-  rarity: Rarity.common,
-  drop: goblin_drop,     // 前向引用
-};
-
-goblin_drop: common.Item = {
-  id: "coin",
-  value: 5,
+  id: "slime";
+  stats: slime_stats;
+  rarity: Rarity.common;
+  drop: data/items.goblin_drop;  // 跨模块引用
 };
 ```
 
-## `use` 导入
-
-`.cfc` 使用 `use` 导入其他 `.cfc` 文件：
-
-```cfc
-use "path/to/file.cfc" as name;
-```
-
-`as name` 是必须的，不能省略。被导入文件的公开 `type`、`enum` 和数据定义通过别名访问：
-
-```cfc
-use "common/item.cfc" as item;
-
-sword: item.Item = {
-  id: "sword",
-  rarity: item.Rarity.rare,
-};
-```
-
-同一文件中重复 `use` 同一路径是错误，无论别名是否相同：
-
-```cfc
-use "common/item.cfc" as item;
-use "common/item.cfc" as it;   // 错误：重复导入同一路径
-```
-
-重复导入判断基于宿主解析后的模块标识，而不是 `use` 中的原始路径字符串。若宿主把 `"./item.cfc"` 和 `"item.cfc"` 解析为同一个模块标识，则它们视为重复导入。
-
-`use` 循环依赖完全允许：A `use` B、B `use` A 是合法的，loader 在构建阶段统一处理。
-
-单文件 `.cfc`（无 `use`）完全自包含，是最小可用单元。`use` 是可选的多文件扩展能力。
-
-导入路径由宿主程序解析。`imports()` 原样返回 `use` 声明中的路径字符串，宿主负责将其解析为模块标识，再通过 `bind_import()` 把这次解析结果交回 container；路径字符串和模块标识两者不要求格式一致。`.cfc` 只能通过 `use` 引用其他 `.cfc` 文件，不能引用 `.cfs` 脚本文件。
+数据定义之间支持前向引用，跨模块引用使用 `moduleid.name` 限定名。
 
 ## `type` 类型定义
 
@@ -383,22 +369,7 @@ rarity = Rarity.rare;
 
 枚举底层表示为整数，但枚举类型与 `int` 不隐式互转。
 
-同一文件内重复声明同名 `type`、`enum` 或数据节点是错误。`use` 别名不能与本地 `type`、`enum` 或数据节点同名：
-
-```cfc
-use "common/item.cfc" as item;
-
-type item { ... }   // 错误：别名 item 与本地 type 同名
-```
-
-跨文件引用只允许一级别名访问，不能穿透多层 `use`：
-
-```cfc
-use "common/base.cfc" as base;
-
-boss: base.Enemy = { ... };      // 合法：一级访问
-x: base.other.Type = { ... };   // 错误：不允许多级穿透
-```
+同一文件内重复声明同名 `type`、`enum` 或数据节点是错误。跨 `.cft` 模块重复声明同名 `type` 或 `enum` 也是错误，在注册时立即报告。
 
 ## 字典字面量
 
@@ -428,7 +399,7 @@ name = value;
 name: Type = value;
 ```
 
-所有顶层数据节点均公开，可以被其他 `.cfc` 或 `.cfs` 通过对应命名空间引用。`.cfc` 没有私有数据节点。
+所有顶层数据节点均公开，可以被其他 `.cfd` 或 `.cfs` 通过 `moduleid.name` 限定名引用。`.cfd` 没有私有数据节点。
 
 顶层命名数据节点具有对象 identity。引用命名数据节点时，加载后的对象图保留共享引用关系：
 
@@ -493,15 +464,14 @@ slime = { id: "slime" }     // 错误：缺少末尾 ;
 
 无类型标注的数据节点与 `any` 类型语义一致：不进行结构校验，但所有引用必须合法。
 
-跨文件数据引用通过 `use` 别名访问：
+跨模块数据引用使用 `moduleid.name` 限定名：
 
-```cfc
-use "common/base.cfc" as base;
-
-boss: base.Enemy = {
-  id: "boss",
-  hp: 500,
-  drop: base.rare_loot,      // 引用导入文件中的数据节点
+```cfd
+// ModuleId="data/common" 模块中的数据节点
+boss: Enemy = {
+  id: "boss";
+  hp: 500;
+  drop: data/common.rare_loot;   // 引用 data/common 模块的 rare_loot 节点
 };
 ```
 
@@ -560,11 +530,11 @@ check {
 
 ## 综合示例
 
-下面的两文件示例覆盖当前 Rust reference 实现中的主要语言特性：`use` 导入、枚举、类型定义、字段默认值、字面量类型、nullable、union alias、显式 union 分支对象、命名节点共享引用、循环引用、数组、字典、跨模块引用、字段/索引路径、`type` 内 `check`、顶层 `check`、量词和 check-only 内建函数。
+下面的两文件示例覆盖主要语言特性：枚举、类型定义、字段默认值、字面量类型、nullable、union alias、显式 union 分支对象、命名节点共享引用、循环引用、数组、字典、跨模块引用、字段/索引路径、`type` 内 `check`、顶层 `check`、量词和 check-only 内建函数。
 
-`common.cfc`：
+`common.cft`：
 
-```cfc
+```cft
 enum Rarity {
   common = 0,
   rare = 10,
@@ -651,15 +621,9 @@ type CurrencyReward {
 }
 
 type Reward = ItemReward | CurrencyReward;
-```
-
-`monsters.cfc`：
-
-```cfc
-use "common.cfc" as common;
 
 type DropTable {
-  rewards: [common.Reward];
+  rewards: [Reward];
   weights: [int];
   tags: [string] = [];
 
@@ -672,11 +636,11 @@ type DropTable {
     unique(tags);
 
     any reward in rewards {
-      reward is common.CurrencyReward && reward.amount > 0;
+      reward is CurrencyReward && reward.amount > 0;
     }
 
     all reward in rewards {
-      reward is common.Reward;
+      reward is Reward;
     }
 
     none tag in tags {
@@ -688,23 +652,23 @@ type DropTable {
 type Monster {
   id: string;
   display: string;
-  rarity: common.Rarity;
-  stats: common.Stats;
+  rarity: Rarity;
+  stats: Stats;
   drops: DropTable;
-  primary_drop: common.Reward;
-  highlighted_drop: common.Reward;
-  optional_boss_drop: common.Item?;
-  resistances: {common.DamageType: float};
+  primary_drop: Reward;
+  highlighted_drop: Reward;
+  optional_boss_drop: Item?;
+  resistances: {DamageType: float};
 
   check {
     id != "";
     display != "";
     stats.hp > 0;
-    rarity >= common.Rarity.common;
-    primary_drop is common.Reward;
-    highlighted_drop is common.Reward;
-    optional_boss_drop is null || optional_boss_drop.rarity >= common.Rarity.rare;
-    contains(resistances, common.DamageType.fire);
+    rarity >= Rarity.common;
+    primary_drop is Reward;
+    highlighted_drop is Reward;
+    optional_boss_drop is null || optional_boss_drop.rarity >= Rarity.rare;
+    contains(resistances, DamageType.fire);
 
     all entry in resistances {
       entry.value >= 0.0;
@@ -712,35 +676,39 @@ type Monster {
     }
   }
 }
+```
 
-shared_stats: common.Stats = {
+`monsters.cfd`（ModuleId = `"data/monsters"`）：
+
+```cfd
+shared_stats: Stats = {
   hp: 30,
   attack: 5,
   speed: 1.25,
   flags: 1,
 };
 
-fire_resists: {common.DamageType: float} = dict{
-  common.DamageType.fire: 0.25,
-  common.DamageType.ice: 0.0,
+fire_resists: {DamageType: float} = dict{
+  DamageType.fire: 0.25,
+  DamageType.ice: 0.0,
 };
 
-schema_marker: common.SchemaMarker = {};
+schema_marker: SchemaMarker = {};
 
-potion: common.Item = {
+potion: Item = {
   id: "potion",
-  rarity: common.Rarity.rare,
+  rarity: Rarity.rare,
   tags: ["consumable", "healing"],
   resistances: null,
 };
 
-coin_reward: common.CurrencyReward = {
+coin_reward: CurrencyReward = {
   amount: 25,
 };
 
 loot: DropTable = {
   rewards: [
-    common.ItemReward {
+    ItemReward {
       item: potion,
       count: 1,
     },
@@ -753,7 +721,7 @@ loot: DropTable = {
 slime: Monster = {
   id: "slime",
   display: "Green Slime",
-  rarity: common.Rarity.common,
+  rarity: Rarity.common,
   stats: shared_stats,
   drops: loot,
   primary_drop: loot.rewards[0],
@@ -765,252 +733,165 @@ slime: Monster = {
 goblin: Monster = {
   id: "goblin",
   display: "Cave Goblin",
-  rarity: common.Rarity.rare,
+  rarity: Rarity.rare,
   stats: shared_stats,
   drops: loot,
   primary_drop: highlighted_drop,
   highlighted_drop: drops.rewards[1],
   optional_boss_drop: potion,
   resistances: dict{
-    common.DamageType.physical: 0.10,
-    common.DamageType.fire: 0.20,
+    DamageType.physical: 0.10,
+    DamageType.fire: 0.20,
   },
 };
 
 monsters: [Monster] = [slime, goblin];
-first_reward: common.Reward = loot.rewards[0];
+first_reward: Reward = loot.rewards[0];
 
-cycle_a = {
-  name: "a",
-  next: cycle_b,
-};
-
-cycle_b = {
-  name: "b",
-  next: cycle_a,
-};
+cycle_a = { name: "a"; next: cycle_b; };
+cycle_b = { name: "b"; next: cycle_a; };
 
 check {
   slime.stats.hp == goblin.stats.hp;
-  first_reward is common.ItemReward;
-  common.Rarity.rare > common.Rarity.common;
+  first_reward is ItemReward;
+  Rarity.rare > Rarity.common;
 
   all monster in monsters {
     monster.stats.hp > 0;
-    contains(monster.resistances, common.DamageType.fire);
+    contains(monster.resistances, DamageType.fire);
   }
 }
 ```
 
 ## Loader 接口
 
-`.cfc` loader 本身无 I/O，路径解析和文件读取由宿主程序负责。所有加载操作通过 `CfcContainer` 完成。
+loader 本身无 I/O，路径解析和文件读取由宿主程序负责。
 
-### 低层接口
+**双容器模型**：宿主使用 `CftContainer` 注册所有 `.cft` 模块，建立全局类型表；再使用 `CfdContainer`（持有 `CftContainer`）注册所有 `.cfd` 模块并构建数据。
 
-```
-container.add_module(name, source)
-```
-
-注册并解析一个 `.cfc` 源文本。`name` 为宿主解析后的模块标识，不要求等同于文件路径。container 保存源码和解析后的 AST；同一 `name` 重复注册是错误。
+### CftContainer 接口
 
 ```
-container.replace_module(name, source)
+cft_container.add_module(id, source)
 ```
 
-原子替换一个已注册模块的源码和 AST。`name` 必须已存在。替换前先解析新源码；若解析失败，container 保持原状态。替换成功后清空该模块发出的所有 import 绑定，其他模块指向该模块的绑定保留。
+注册并解析一个 `.cft` 源文本。`id` 为宿主指定的模块标识。同一 `id` 重复注册，或任意 `.cft` 模块中出现与已注册 `type`/`enum` 同名的定义，立即报错。
 
 ```
-container.imports(name) -> [ImportDecl]
+cft_container.schema(id) -> SchemaModule
 ```
 
-返回指定模块的 `use` 声明列表。每个 `ImportDecl` 至少包含稳定的 import id、别名、原始路径字符串和源码位置。宿主使用原始路径字符串完成路径解析，但绑定时使用 import id，而不是使用 path 字符串作为 key。
+返回指定模块的类型/枚举定义集合，用于 schema 反射和代码生成。
 
 ```
-container.source(name) -> source
+cft_container.resolve_type(name) -> (ModuleId, SchemaType)
 ```
 
-返回指定模块注册时保存的原始源码。该接口主要用于诊断、工具显示和热重载辅助；指定模块不存在时报错。
+在全局类型表中查找指定名称的 `type`，找不到返回 None。
 
 ```
-container.bind_import(name, importId, dependencyName)
+cft_container.resolve_enum(name) -> (ModuleId, SchemaEnum)
 ```
 
-注册模块 `name` 中某条 `use` 声明对应的依赖模块标识。`dependencyName` 必须已经通过 `add_module()` 或 `replace_module()` 成功注册。同一个 import id 不能重复绑定。同一模块内不允许多条 `use` 绑定到同一个 `dependencyName`，也不允许多个 `use` 使用同一个别名。
+在全局类型表中查找指定名称的 `enum`，找不到返回 None。
+
+### CfdContainer 接口
 
 ```
-container.build(rootName) -> CfcResult
+cfd_container.add_module(id, source)
 ```
 
-从 `rootName` 出发，对 root 的 import closure 执行结构校验和对象图构建。返回结果包含 root closure 中的所有模块。宿主既可以直接取 root 模块导出，也可以按模块名取任意 closure 模块导出。
+注册并解析一个 `.cfd` 源文本。同一 `id` 重复注册是错误。
 
 ```
-container.build_all() -> CfcResult
+cfd_container.build_all() -> CfdResult
 ```
 
-对 container 中所有已注册模块执行结构校验和对象图构建。该接口主要用于工具、编辑器和多 root 场景；普通加载入口应优先使用 `build(rootName)`。
+对 container 中所有已注册 `.cfd` 模块执行结构校验和对象图构建。使用 `CftContainer` 中的全局类型表解析类型标注，使用跨模块限定名解析数据引用。
 
-`build()` 内置结构校验：必填字段检查、类型匹配、默认值填充、多余字段检查。结构不合法时报告错误，不返回对象图。
+`build_all()` 内置结构校验：必填字段检查、类型匹配、默认值填充、多余字段检查。结构不合法时报告错误，不返回对象图。
 
-`build()` 的处理顺序：
+`build_all()` 的处理顺序：
 
-1. 确定要构建的模块集合：`build(rootName)` 使用 root import closure，`build_all()` 使用所有已注册模块。
-2. 建立每个模块的 `use`、`type`、`enum` 和顶层数据节点符号表。
-3. 校验同名定义、重复导入、未绑定 import、未知引用、跨模块别名访问和不允许的多级穿透。
-4. 为构建集合内所有顶层命名对象、数组和字典创建占位节点，用于支持前向引用和循环引用。
-5. 解析并连接所有数据引用边，包括跨文件引用。
-6. 在上下文类型存在的位置执行结构校验，包括必填字段、多余字段、字段类型、数组元素类型、字典 key/value 类型和枚举类型。
-7. 对省略字段填充默认值；对象、数组和字典默认值按值复制，不与其他实例共享 identity。
-8. 返回对象图结果。若任一步出现结构错误，`build()` 报告错误且不返回对象图。
-
-### 高层接口
+1. 建立每个模块的顶层数据节点符号表。
+2. 校验同名数据节点、未知类型引用、未知跨模块数据引用。
+3. 为所有顶层命名对象、数组和字典创建占位节点，支持前向引用和循环引用。
+4. 解析并连接所有数据引用边，包括跨模块限定名引用。
+5. 执行结构校验：必填字段、多余字段、字段类型、数组/字典元素类型、枚举类型。
+6. 填充默认值；默认值按值复制，不共享 identity。
+7. 返回对象图。若任一步出现结构错误，报告错误且不返回对象图。
 
 ```
-container.load_graph(rootName, rootSource, resolver)
+cfd_container.check(result) -> [CheckError]
 ```
 
-一键加载 root import closure 并构建结果。`rootName` 不能已存在。`resolver` 是宿主提供的回调函数，签名为 `(fromName, importDecl) -> (dependencyName, source)`。`dependencyName` 是宿主解析后的模块标识，`source` 是该模块源码。
-
-`load_graph()` 内部执行：
-
-1. 调用 `add_module(rootName, rootSource)` 注册 root。
-2. 读取每个模块的 `imports()`。
-3. 对每条 import 调用 resolver，获得 `(dependencyName, source)`。
-4. 若 `dependencyName` 尚未注册，则调用 `add_module(dependencyName, source)`；若已经注册，则忽略本次返回的 source。
-5. 调用 `bind_import(fromName, importId, dependencyName)`。
-6. 所有可达依赖加载完后调用 `build(rootName)`。
-
-resolver 可能会因为多条 import 解析到同一个 `dependencyName` 而被多次调用；如源码读取成本较高，宿主应在 resolver 内部缓存。
-
-大多数场景使用 `load_graph()`；需要精细控制依赖加载顺序、缓存、热重载或路径重映射时使用低层接口。
+对 `build_all()` 返回的对象图执行 `check` 块校验，返回错误列表。
 
 ### Rust reference API
 
-Rust crate 是 CFC 的第一版参考实现。spec API 描述稳定概念模型；Rust API 可以使用强类型、错误集合和 ownership 规则表达这些概念。
-
-模块标识使用强类型，不直接混用原始路径字符串：
+模块标识使用强类型：
 
 ```rust
 pub struct ModuleId(String);
-pub struct ImportId(u32);
 ```
 
-`ModuleId` 由宿主 resolver 产生，loader 不负责路径规范化。原始 `use` 路径只保存在 `CfcImport.path` 中，用于宿主解析和诊断。
-
-核心类型：
+`CftContainer` API：
 
 ```rust
-pub struct CfcImport {
-    pub id: ImportId,
-    pub alias: String,
-    pub path: String,
-    pub span: Span,
-}
-
-pub struct CfcContainer { ... }
-
-pub struct CfcResult { ... }
-
-pub struct CfcModuleResult { ... }
-```
-
-低层 API：
-
-```rust
-impl CfcContainer {
+impl CftContainer {
     pub fn new() -> Self;
 
     pub fn add_module(
         &mut self,
-        module: ModuleId,
+        id: ModuleId,
         source: impl Into<String>,
-    ) -> Result<(), ParseErrors>;
+    ) -> Result<(), CftParseErrors>;
 
-    pub fn replace_module(
-        &mut self,
-        module: ModuleId,
-        source: impl Into<String>,
-    ) -> Result<(), ParseErrors>;
-
-    pub fn imports(&self, module: &ModuleId) -> Result<&[CfcImport], ModuleError>;
-
-    pub fn source(&self, module: &ModuleId) -> Result<&str, ModuleError>;
-
-    pub fn bind_import(
-        &mut self,
-        from: &ModuleId,
-        import: ImportId,
-        dependency: &ModuleId,
-    ) -> Result<(), BindImportError>;
-
-    pub fn build(&self, root: &ModuleId) -> Result<CfcResult, BuildErrors>;
-
-    pub fn build_all(&self) -> Result<CfcResult, BuildErrors>;
-
-    pub fn check(&self, result: &CfcResult) -> Vec<CheckError>;
+    pub fn schema(&self, id: &ModuleId) -> Option<CftSchemaModule>;
+    pub fn resolve_type(&self, name: &str) -> Option<(ModuleId, CftSchemaType)>;
+    pub fn resolve_enum(&self, name: &str) -> Option<(ModuleId, CftSchemaEnum)>;
 }
 ```
 
-`add_module()` 和 `replace_module()` 会立即完成词法和语法解析，并保存源码和 AST。`add_module()` 遇到重复 `ModuleId` 报错。`replace_module()` 遇到不存在的 `ModuleId` 报错；替换是原子的，解析失败时 container 不变。
-
-`imports()` 返回借用 slice，`source()` 返回借用源码字符串。调用方若需要在随后调用 `bind_import()` 或 `replace_module()`，应先复制出必要信息，避免同时持有不可变借用和可变借用。
-
-高层 API：
+`CfdContainer` API：
 
 ```rust
-impl CfcContainer {
-    pub fn load_graph<R>(
+impl CfdContainer {
+    pub fn new(type_ctx: CftContainer) -> Self;
+
+    pub fn add_module(
         &mut self,
-        root: ModuleId,
+        id: ModuleId,
         source: impl Into<String>,
-        resolver: R,
-    ) -> Result<CfcResult, CfcError>
-    where
-        R: FnMut(&ModuleId, &CfcImport) -> Result<(ModuleId, String), ResolveError>;
+    ) -> Result<(), CfdParseErrors>;
+
+    pub fn build_all(&self) -> Result<CfdResult, CfdBuildErrors>;
+
+    pub fn check(&self, result: &CfdResult) -> Vec<CfdCheckError>;
 }
 ```
-
-`load_graph()` 每个 `ModuleId` 最多解析一次。若 resolver 多次返回已经注册的 `ModuleId`，本次返回的 source 被忽略；source 一致性由宿主负责，未来可以增加 strict/debug 检查。
 
 错误类型：
 
 ```rust
-pub struct ParseErrors {
-    pub errors: Vec<ParseError>,
-}
-
-pub struct BuildErrors {
-    pub errors: Vec<BuildError>,
-}
-
-pub enum CfcError {
-    Parse(ParseErrors),
-    Module(ModuleError),
-    Import(BindImportError),
-    Resolve(ResolveError),
-    Build(BuildErrors),
-}
+pub struct CftParseErrors { pub errors: Vec<CftParseError> }
+pub struct CfdParseErrors { pub errors: Vec<CfdParseError> }
+pub struct CfdBuildErrors { pub errors: Vec<CfdBuildError> }
 ```
-
-低层 API 使用分阶段错误类型；`load_graph()` 使用统一 `CfcError`。parser 第一版可以 fail-fast，但 API 使用 `ParseErrors` 预留错误恢复能力。`build()` 应尽量收集多个结构错误后一次性返回 `BuildErrors`。
 
 结果访问：
 
 ```rust
-impl CfcResult {
-    pub fn root_id(&self) -> Option<&ModuleId>;
-    pub fn root(&self) -> Option<&CfcModuleResult>;
-    pub fn module(&self, module: &ModuleId) -> Option<&CfcModuleResult>;
-    pub fn modules(&self) -> impl Iterator<Item = (&ModuleId, &CfcModuleResult)>;
+impl CfdResult {
+    pub fn module(&self, id: &ModuleId) -> Option<&CfdModuleResult>;
+    pub fn modules(&self) -> impl Iterator<Item = (&ModuleId, &CfdModuleResult)>;
 }
 
-impl CfcModuleResult {
-    pub fn get(&self, name: &str) -> Option<CfcValueRef>;
-    pub fn values(&self) -> impl Iterator<Item = (&str, CfcValueRef)>;
+impl CfdModuleResult {
+    pub fn get(&self, name: &str) -> Option<CfdValueRef>;
+    pub fn values(&self) -> impl Iterator<Item = (&str, CfdValueRef)>;
 }
 ```
-
-`build(root)` 返回的 `CfcResult` 同时暴露 root 模块和 root closure 内所有模块。`build_all()` 返回的 `CfcResult` 没有唯一 root，`root_id()` 和 `root()` 返回 `None`。
 
 ### check 校验接口（v2）
 
@@ -1024,54 +905,54 @@ container.check(result) -> [CheckError]
 
 ## CLI
 
-CLI 作为独立 crate `coflow-cfc-cli` 实现，二进制名为 `cfc`。CLI 是 `CfcContainer` 接口的薄封装，resolver 直接读取文件系统，并把 `use` 路径相对当前模块所在目录解析为 canonical 文件路径。
+CLI 作为独立 crate `coflow-cfc-cli` 实现，二进制名为 `cfc`。CLI 扫描指定目录，按相对路径（去掉扩展名）作为 ModuleId 批量注册所有 `.cft` 和 `.cfd` 文件，执行构建和校验。
 
 ```
-cfc check <file>          # 加载 root import closure，执行 build 和 check
-cfc get <file> <path>     # 加载并校验后，读取指定值路径
-cfc type <file> <name>    # 输出 type 或 enum 定义
+cfc check <dir>           # 注册目录下所有 .cft / .cfd，执行 build_all 和 check
+cfc get <dir> <module> <path>   # 构建后读取指定模块中的值路径
+cfc type <name>           # 输出全局类型表中的 type 或 enum 定义
 ```
 
-`check` 失败时返回非零退出码，并按阶段报告 parse/build/check 错误。`build()` 阶段会区分合法的 identity 引用环和非法的求值依赖环：对象、数组、字典命名节点可以形成引用环；标量、路径或字段求值形成的环会报 `Cycle` 错误。
+`check` 失败时返回非零退出码，并按阶段报告 parse/build/check 错误。`build_all()` 阶段会区分合法的 identity 引用环和非法的求值依赖环：对象、数组、字典命名节点可以形成引用环；标量、路径或字段求值形成的环会报 `Cycle` 错误。
 
 `get` 的路径是有限路径求值，必须得到确定值，否则报错。第一版支持顶层数据名、对象字段和数字索引：
 
 ```
-cfc get monsters.cfc slime.stats.hp
-cfc get monsters.cfc monsters[0].drops[1]
+cfc get data slime.stats.hp
+cfc get data data/monsters.monsters[0].drops[1]
 ```
 
 输出使用保留 identity 的 JSON-like 图格式；对象、数组、字典包含 `$id`，重复引用和环用 `$ref` 表示，因此不会无限展开。
 
-`type` 支持当前 root 模块定义和一级 import alias 定义：
+`type` 支持全局类型表中所有已注册的 `type` 和 `enum`：
 
 ```
-cfc type monsters.cfc Monster
-cfc type monsters.cfc common.Item
-cfc type monsters.cfc common.Rarity
+cfc type Monster
+cfc type Item
+cfc type Rarity
 ```
 
 ## 错误阶段
 
-CFC 错误按阶段划分：
+错误按阶段划分：
 
-- `add_module` / `replace_module` 阶段：词法错误、语法错误、段落顺序错误、缺少分隔符、非法字面量、重复模块或缺失模块。
-- `imports` 阶段：指定模块尚未注册。
-- `bind_import` 阶段：指定模块尚未注册、import id 不存在、依赖模块尚未注册、重复绑定、同一模块内多个 import 绑定到同一依赖模块、别名重复。
-- `build` 阶段：重复定义、未绑定 import、未知符号、非法跨模块访问、类型不匹配、缺少必填字段、多余字段、无法推断空数组或空字典类型、枚举重复值、非法循环类型约束。
+- `CftContainer.add_module` 阶段：词法错误、语法错误、段落错误（含数据定义）、重复 ModuleId、全局 type/enum 重名。
+- `CfdContainer.add_module` 阶段：词法错误、语法错误、段落错误（含类型定义）、重复 ModuleId。
+- `CfdContainer.build_all` 阶段：重复数据节点名、未知类型引用、未知跨模块 ModuleId、未知数据节点名、类型不匹配、缺少必填字段、多余字段、无法推断空数组或空字典类型、枚举重复值、非法求值循环。
 - `check` 阶段：条件表达式为假、`check` 表达式类型错误、`check` 中访问不存在的字段或越界数组下标。
 
-`add_module`、`replace_module`、`imports`、`bind_import` 和 `build` 的错误会阻止返回可用对象图。`check` 错误不改变对象图，返回错误列表供宿主或编辑器展示。
+`add_module` 和 `build_all` 的错误会阻止返回可用对象图。`check` 错误不改变对象图，返回错误列表供宿主或编辑器展示。
 
 ## v1 / v2 边界
 
 | 能力 | v1 | v2 |
 |------|:--:|:--:|
 | 结构校验（必填字段、类型匹配、默认值填充、多余字段） | ✓ | |
-| `use` 多文件导入 | ✓ | |
-| `CfcContainer` 低层接口 | ✓ | |
-| `CfcContainer.load_graph` 高层接口 | ✓ | |
+| `.cft` / `.cfd` 双格式拆分 | ✓ | |
+| 全局类型命名空间（无 `use`） | ✓ | |
+| 跨模块 `moduleid.name` 限定名数据引用 | ✓ | |
+| `CftContainer` + `CfdContainer` 双容器 API | ✓ | |
 | CLI `check` / `fmt` | | 后续 |
 | `type` 内 `check` 块语义校验 | | ✓ |
 | 顶层 `check` 块 | | ✓ |
-| `CfcContainer.check()` | | ✓ |
+| `CfdContainer.check()` | | ✓ |

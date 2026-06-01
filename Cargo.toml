@@ -1,3 +1,3 @@
 [workspace]
-members = ["src/coflow-cfc", "src/coflow-cfc-cli"]
+members = ["src/coflow-cfc", "src/coflow-cfc-cli", "src/coflow-cfd", "src/coflow-cft"]
 resolver = "2"

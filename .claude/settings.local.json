@@ -7,7 +7,10 @@
       "Bash(cargo build *)",
       "Bash(cargo test *)",
       "Bash(xargs wc -l)",
-      "Bash(git -C C:/Users/wtlll/Desktop/Project/ScriptForGame log --oneline -20)"
+      "Bash(git -C C:/Users/wtlll/Desktop/Project/ScriptForGame log --oneline -20)",
+      "Bash(node *)",
+      "Bash(cargo check *)",
+      "Bash(cargo fix *)"
     ]
   }
 }

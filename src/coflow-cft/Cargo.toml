@@ -1,12 +1,12 @@
 [package]
-name = "coflow-cfc"
-version = "0.7.1"
+name = "coflow-cft"
+version = "0.1.0"
 edition = "2021"
-description = "A Rust implementation of the CFC configuration language for game data."
+description = "A Rust implementation of the CFT type definition language for Coflow."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/wtlll/ScriptForGame"
 readme = "../../README.md"
-keywords = ["config", "parser", "game-data", "cfc"]
+keywords = ["config", "parser", "game-data", "cft"]
 categories = ["config", "parser-implementations", "game-development"]
 publish = false
 
@@ -34,5 +34,4 @@ print_stdout = "warn"
 print_stderr = "warn"
 
 [dependencies]
-coflow-cft = { path = "../coflow-cft" }
-coflow-cfd = { path = "../coflow-cfd" }
+unicode-ident = "1"

@@ -1,25 +1,14 @@
-mod ast;
-mod build;
-mod check;
-mod container;
-mod error;
-mod lexer;
-mod parser;
-mod schema;
-mod span;
-mod value;
+// Re-export shim: coflow-cfc is superseded by coflow-cft (type layer) and coflow-cfd (data layer).
+// This crate exists for backwards compatibility during migration.
+pub use coflow_cfd::*;
+pub use coflow_cft::{
+    CftContainer, CftSchemaEnum, CftSchemaEnumVariant, CftSchemaField, CftSchemaModule,
+    CftSchemaType,
+};
 
-pub use container::{
-    BindImportError, CfcContainer, CfcImport, CfcModuleResult, CfcResult, ImportId, ModuleError,
-    ModuleId, ResolveError,
+// Legacy type aliases kept for test compatibility.
+pub use coflow_cfd::{
+    CfdContainer as CfcContainer, CfdModuleResult as CfcModuleResult, CfdResult as CfcResult,
+    CfdValue as CfcValue, CfdValueRef as CfcValueRef,
 };
-pub use error::{
-    AllFailedItem, BuildError, BuildErrorKind, BuildErrors, CfcError, CheckError, CheckErrorKind,
-    ParseError, ParseErrors,
-};
-pub use schema::{
-    CfcSchemaData, CfcSchemaEnum, CfcSchemaEnumVariant, CfcSchemaField, CfcSchemaModule,
-    CfcSchemaType,
-};
-pub use span::Span;
-pub use value::{CfcNominalType, CfcValue, CfcValueRef};
+pub use coflow_cfd::CfdError as CfcError;
