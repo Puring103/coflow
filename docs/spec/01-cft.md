@@ -71,7 +71,7 @@ enum Status {
 
 - 同一枚举内禁止重复整数值
 - 枚举值通过 `EnumName.Variant` 使用
-- 枚举类型与 `int` 不隐式互转
+- 枚举类型与 `int` 不隐式互转；枚举只能与同类型枚举比较，`rarity > 5` 报类型错误
 - 枚举类型支持六种比较运算符（`==` `!=` `<` `<=` `>` `>=`），按底层整数值比较
 
 **位标志枚举**使用 `@flag` 注解，所有变体值必须为 2 的幂（0 除外）：
@@ -84,6 +84,16 @@ enum Permission {
   Execute = 4,
 }
 ```
+
+`@flag` 枚举支持按位运算（`&` `|` `^` `~`），运算结果仍为同一枚举类型：
+
+```cft
+// check 块中
+(flags & Permission.Read) != Permission(0)   // 合法
+(flags & Permission.Read) != 0               // 错误：不能与 int 比较
+```
+
+`Permission(0)` 表示该枚举的整数零值。
 
 ---
 
@@ -105,6 +115,7 @@ type Weapon {
 - 有默认值的字段可以省略
 - 默认值必须是编译期常量（字面量、`const` 常量或枚举值，包括空数组 `[]`、空对象 `{}`）
 - 默认值不能引用其他字段
+- 子类不能声明与父类（任意层级）同名的字段
 
 ### 4.2 字段类型
 
@@ -168,6 +179,8 @@ type Quest {
 
 字段类型为普通 `type` 时，可以填入该类型本身或任意子类实例。
 
+`@ref` 的目标类型可以是 `abstract type`，表示持有该继承树中任意子类实例的 ID。所有子类的 `@id` 字段值在整个继承树中必须唯一。
+
 ### 4.5 nullable
 
 `T?` 是 `T | null` 的简写：
@@ -203,9 +216,9 @@ type B { value: int; }
 
 ## 5. check 块
 
-`check` 是 `type` 内部的可选校验块，必须位于所有字段声明之后。`check` 块在对象构建完成后由宿主显式调用执行，不影响对象图构建。
+`check` 是 `type` 内部的可选校验块，必须位于所有字段声明之后。`check` 块在对象构建完成（含 `@ref` 解析）后由宿主显式调用执行，执行期间对象图不可变，不影响对象图构建。
 
-`check` 内可以访问当前对象的所有字段（含继承字段）、`const` 常量和枚举值，不能引用外部节点。
+`check` 内可以访问当前对象的所有字段（含继承字段）、`const` 常量和枚举值，不能引用外部节点。check 内的 `@ref` 字段已是解析后的引用，可以直接访问目标对象的字段。
 
 **继承与 check**：子类实例依次执行从根类到当前类的所有 `check` 块：
 
@@ -224,7 +237,7 @@ type CurrencyReward : Reward {
 
 ### 5.1 条件语句
 
-一个表达式加分号，求值结果必须为 `bool`：
+一个表达式加分号，求值结果必须为 `bool`。多条语句相互独立，不能依赖前面语句的结果；条件为假时继续执行后续语句，收集全部错误：
 
 ```cft
 check {
@@ -234,6 +247,8 @@ check {
   0 < damage <= MAX_DAMAGE;    // 链式比较（方向一致）
 }
 ```
+
+**链式比较**：所有比较运算符方向相同，即全部是 `<`/`<=`（递增）或全部是 `>`/`>=`（递减）。`a < b > c` 方向不一致，报语法错误。从左到右短路求值，某步为 false 时立即停止。
 
 ### 5.2 量词块
 
@@ -256,6 +271,16 @@ all entry in scores {
 | `all x in col { ... }` | 全部元素通过 | 通过 |
 | `any x in col { ... }` | 至少一个元素通过 | 失败 |
 | `none x in col { ... }` | 没有元素通过 | 通过 |
+
+量词块中某个元素的条件为假时，继续处理后续元素，收集全部失败。只有类型错误或越界才立即停止当前量词块。
+
+多态数组中每个元素独立执行自己完整继承链上的 check，元素之间互不影响。
+
+如果需要表达"可以为空或至少满足一个"，惯用法为：
+
+```cft
+len(rewards) == 0 || any reward in rewards { reward is CurrencyReward; }
+```
 
 ### 5.3 when 块
 
@@ -301,7 +326,7 @@ all item in items {
 | 2 | `is` | 类型判断 |
 | 3 | `==` `!=` `<` `<=` `>` `>=` | 比较，支持链式（如 `0 < x <= 100`） |
 | 4 | `\|` `^` `&` | 按位或/异或/与 |
-| 5 | `+` `-` `<<` `>>` | 加减、位移 |
+| 5 | `+` `-` `<<` `>>` | 加减、位移（`<<` `>>` 仅支持 `int`） |
 | 6 | `*` `/` `//` `%` | 乘、除、整除、取模 |
 | 7 | `**` | 幂（右结合） |
 | 8 | `!` `~` `-` | 一元逻辑非、按位非、取负 |
@@ -329,18 +354,20 @@ item is null              // null 判断
 | `sum(array)` | int 或 float array | 同元素类型 | 求和，空数组返回 `0` |
 | `keys(dict)` | dict | array | key 数组 |
 | `values(dict)` | dict | array | value 数组 |
-| `matches(str, pat)` | string + 正则字面量 | bool | 正则匹配 |
+| `matches(str, pat)` | string + 正则字符串字面量 | bool | 正则匹配，pattern 使用标准双引号字符串，Unicode 感知 |
 
 注意：
 - `unique` 不支持 float、object、array、dict、null 元素
 - `min` / `max` 对空数组报 check eval error
 - `contains(dict, val)` 只检查 key，不检查 value
+- `<<` `>>` 两个操作数均必须是 `int`
 
 ### 5.7 执行规则
 
 - 多条语句顺序求值，条件为假时继续收集后续错误
 - 求值中出现类型错误或越界时，立即停止当前对象的校验
-- 同一对象被多处引用时，其 check 只执行一次
+- 同一对象被多处引用时，其 check 只执行一次（按 identity 去重）
+- check 在所有数据加载完成（含 `@ref` 解析）后执行，执行期间对象图不可变
 
 ---
 
@@ -350,13 +377,13 @@ item is null              // null 判断
 
 | 注解 | 适用目标 | 字段类型限制 | 额外约束 | 说明 |
 |------|---------|------------|---------|------|
-| `@struct` | `type` | — | 必须是 `sealed type` | codegen 生成值类型（C# struct，Rust Copy+Clone） |
-| `@flag` | `enum` | — | 变体值必须为 2 的幂（0 除外） | 位标志枚举（C# [Flags]，Rust bitflags） |
-| `@id` | `field` | `string`、`int` | — | 主键，加载器用于跨表引用解析，隐含唯一性 |
-| `@ref(TypeName)` | `field` | `string`、`int` | TypeName 必须是已定义的 `type` | 字符串/整数外键，加载器校验目标记录存在 |
-| `@index` | `field` | `string`、`int`、`enum` | — | codegen 生成按此字段查询的索引 API |
-| `@display("text")` | `type`、`enum`、`field` | 任意 | — | 可读名称，用于生成注释和编辑器显示 |
-| `@deprecated` | `type`、`enum`、`field` | 任意 | — | 标记废弃，codegen 输出对应语言的废弃标记 |
+| `@struct` | `type` | — | 必须是 `sealed type` | codegen 生成值类型（C# struct） |
+| `@flag` | `enum` | — | 变体值必须为 2 的幂（0 除外） | 位标志枚举（C# [Flags]） |
+| `@id` | `field` | `string`、`int` | 每个类型只能有一个 `@id` 字段 | 主键，加载器用于跨表引用解析，隐含唯一性 |
+| `@ref(TypeName)` | `field` | `string`、`int` | TypeName 必须是已定义的 `type`（含 abstract） | 字符串/整数外键，加载器校验目标记录存在 |
+| `@index` | `field` | `string`、`int`、`enum` | — | codegen 生成按此字段查询的索引 API；nullable 字段的 null 值不加入索引；索引始终返回列表 |
+| `@display("text")` | `type`、`enum`、`field` | 任意 | — | 可读名称，codegen 生成 XML 注释，用于编辑器显示 |
+| `@deprecated` | `type`、`enum`、`field` | 任意 | — | 标记废弃，codegen 输出对应语言的废弃标记；子类不自动继承父类的 `@deprecated` |
 
 示例：
 
@@ -411,16 +438,62 @@ impl CftContainer {
     pub fn resolve_type(&self, name: &str) -> Option<CftSchemaType>;
     pub fn resolve_enum(&self, name: &str) -> Option<CftSchemaEnum>;
     pub fn resolve_const(&self, name: &str) -> Option<CftSchemaConst>;
+
+    // 遍历
+    pub fn module_ids(&self) -> impl Iterator<Item = &ModuleId>;
+    pub fn all_types(&self) -> impl Iterator<Item = &CftSchemaType>;
+    pub fn all_enums(&self) -> impl Iterator<Item = &CftSchemaEnum>;
+    pub fn has_type(&self, name: &str) -> bool;
+    pub fn has_enum(&self, name: &str) -> bool;
 }
 ```
 
-`CftSchemaModule` 包含 `consts`、`types`、`enums` 三个集合。
+**Schema 结构：**
+
+```rust
+pub struct CftSchemaModule {
+    pub consts: Vec<CftSchemaConst>,
+    pub types:  Vec<CftSchemaType>,
+    pub enums:  Vec<CftSchemaEnum>,
+}
+
+pub struct CftSchemaType {
+    pub name:        String,
+    pub parent:      Option<String>,
+    pub is_abstract: bool,
+    pub is_sealed:   bool,
+    pub fields:      Vec<CftSchemaField>,
+    pub annotations: Vec<CftAnnotation>,
+}
+
+pub struct CftSchemaField {
+    pub name:        String,
+    pub ty:          String,
+    pub has_default: bool,
+    pub annotations: Vec<CftAnnotation>,
+}
+
+pub struct CftSchemaEnum {
+    pub name:     String,
+    pub variants: Vec<CftSchemaEnumVariant>,
+    pub annotations: Vec<CftAnnotation>,
+}
+
+pub struct CftSchemaEnumVariant {
+    pub name:  String,
+    pub value: i64,
+    pub annotations: Vec<CftAnnotation>,
+}
+
+pub struct CftSchemaConst {
+    pub name:  String,
+    pub value: CftConstValue,
+}
+```
 
 ---
 
 ## 8. 错误阶段
-
-所有错误均在 `add_module` 阶段（注册时）或 check 执行阶段产生：
 
 **`add_module` 阶段（注册时立即报错）：**
 
@@ -434,6 +507,7 @@ impl CftContainer {
 | `@struct` 标注在非 `sealed type` 上 | 注解范围违反 |
 | `@flag` 变体值不是 2 的幂 | 注解约束违反 |
 | `@ref(TypeName)` 引用未定义的类型 | 注解参数非法 |
+| 同一类型标注多个 `@id` 字段 | 注解约束违反 |
 | 注解使用范围或字段类型不匹配 | 注解范围违反 |
 
 **check 执行阶段：**
@@ -441,9 +515,9 @@ impl CftContainer {
 | 错误 | 原因 |
 |------|------|
 | 条件为假 | check 表达式求值结果为 false |
-| 类型错误 | 对不支持的类型使用运算符或函数 |
+| 类型错误 | 对不支持的类型使用运算符或函数（含 enum 与 int 比较） |
 | 越界 | 数组索引越界 |
-| eval error | 对 `null` 做非法操作，或 `min`/`max` 对空数组调用 |
+| eval error | 对 `null` 做非法操作，`min`/`max` 对空数组调用，`@flag` 枚举与 int 比较 |
 
 ---
 
