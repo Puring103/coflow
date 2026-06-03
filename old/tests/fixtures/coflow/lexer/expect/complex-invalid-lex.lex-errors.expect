@@ -1,5 +1,0 @@
-InvalidNumber [30..34] "0xzz"
-InvalidEscape [48..55] "\"bad \\x"
-UnterminatedString [55..57] "\"\n"
-UnexpectedChar [62..66] "😀"
-UnterminatedBlockComment [85..115] "/* unterminated block comment\n"

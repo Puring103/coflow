@@ -1,0 +1,602 @@
+# CFT 语言规格
+
+CFT（Coflow Type File，`.cft`）是一种自校验的类型定义语言，用于声明数据结构的 schema。`.cft` 文件只包含 `const`、`enum`、`type` 定义，不含数据、不执行代码、不做 I/O。
+
+---
+
+## 目录
+
+1. [基本语法](#1-基本语法)
+2. [常量](#2-常量)
+3. [枚举](#3-枚举)
+4. [类型](#4-类型)
+5. [check 块](#5-check-块)
+6. [注解](#6-注解)
+7. [模块系统与 Loader 接口](#7-模块系统与-loader-接口)
+8. [错误阶段](#8-错误阶段)
+9. [综合示例](#9-综合示例)
+
+---
+
+## 1. 基本语法
+
+注释使用 `//`，可单独成行也可放在行尾：
+
+```cft
+// 这是注释
+type Item { id: string; }  // 行尾注释
+```
+
+所有顶层定义（`const`、`enum`、`type`）共享同一个**全局命名空间**，名称在整个项目中唯一，支持前向引用，无需按声明顺序排列。
+
+---
+
+## 2. 常量
+
+`const` 定义编译期常量，可用于字段默认值和 `check` 表达式：
+
+```cft
+const MAX_LEVEL  = 100;
+const MIN_SPEED  = 0.1;
+const EMPTY_NAME = "unknown";
+```
+
+- 值只允许整数、浮点、布尔、字符串字面量
+- 类型从值自动推断，无需显式标注
+
+---
+
+## 3. 枚举
+
+`enum` 定义有限的命名整数集合，变体之间用 `,` 分隔，允许末尾 `,`：
+
+```cft
+enum Rarity {
+  Common,
+  Rare,
+  Epic,
+}
+```
+
+变体默认从 `0` 开始自动编号，依次递增；可以显式指定整数值，未指定的变体从前一个值 +1 继续：
+
+```cft
+enum Status {
+  None   = 0,
+  Active = 10,
+  Dead   = 20,
+  Ghost,          // 自动为 21
+}
+```
+
+- 同一枚举内禁止重复整数值
+- 枚举值通过 `EnumName.Variant` 使用
+- 枚举类型与 `int` 不隐式互转
+- 枚举类型支持六种比较运算符（`==` `!=` `<` `<=` `>` `>=`），按底层整数值比较
+
+**位标志枚举**使用 `@flag` 注解，所有变体值必须为 2 的幂（0 除外）：
+
+```cft
+@flag
+enum Permission {
+  Read    = 1,
+  Write   = 2,
+  Execute = 4,
+}
+```
+
+---
+
+## 4. 类型
+
+### 4.1 基本结构
+
+```cft
+type Weapon {
+  id:       string;
+  damage:   int;
+  cooldown: float = 1.0;
+}
+```
+
+字段之间用 `;` 分隔，允许末尾 `;`。
+
+- 无默认值的字段**必须**填写
+- 有默认值的字段可以省略
+- 默认值必须是编译期常量（字面量、`const` 常量或枚举值，包括空数组 `[]`、空对象 `{}`）
+- 默认值不能引用其他字段
+
+### 4.2 字段类型
+
+| 类型 | 说明 |
+|------|------|
+| `int` | 64 位整数 |
+| `float` | 64 位浮点 |
+| `bool` | 布尔值 |
+| `string` | 字符串 |
+| `[T]` | 数组，T 为任意合法字段类型 |
+| `{K: V}` | 字典，K 只允许 `string`、`int` 或 `enum` 类型名 |
+| `T?` | nullable，等价于 `T \| null`；`null` 是显式值，不等于字段缺失 |
+| `TypeName` | 引用已定义的 `type`（含父类及子类） |
+| `EnumName` | 引用已定义的 `enum` |
+
+`type` 使用**名义类型**（nominal typing），不使用结构类型：两个字段完全相同的 `type` 不能互相替换。
+
+### 4.3 修饰符
+
+| 关键词 | 语义 |
+|--------|------|
+| `abstract` | 禁止直接实例化，只能通过子类使用 |
+| `sealed` | 禁止被继承；可以直接实例化 |
+| （无修饰符） | 可以实例化，可以被继承（默认） |
+
+`abstract` 和 `sealed` 互斥，同时使用报错。
+
+### 4.4 继承
+
+使用 `:` 声明父类，支持单继承和多层继承：
+
+```cft
+abstract type Reward {
+  id: string;
+}
+
+type ItemReward : Reward {
+  item:  Item;
+  count: int = 1;
+}
+
+type CurrencyReward : Reward {
+  amount: int;
+}
+```
+
+规则：
+- 每个 `type` 最多一个父类
+- `sealed type` 不能被继承
+- 子类继承父类所有字段
+- 子类不能声明与父类（任意层级）同名的字段
+- 子类实例可以赋值给父类类型的字段
+
+字段类型为 `abstract type` 时，只能填入其子类实例：
+
+```cft
+type Quest {
+  reward: Reward;    // Reward 是 abstract，只能填 ItemReward 或 CurrencyReward
+}
+```
+
+字段类型为普通 `type` 时，可以填入该类型本身或任意子类实例。
+
+### 4.5 nullable
+
+`T?` 是 `T | null` 的简写：
+
+```cft
+type Drop {
+  item:   Item?;           // 必须显式填写，可以填 null 或 Item 实例
+  backup: Item? = null;    // 有默认值，可以省略
+}
+```
+
+对 `null` 做字段访问、索引访问、大小比较或算术，会在 check 执行时报错。安全访问惯用法：
+
+```cft
+item != null && item.id != ""
+```
+
+### 4.6 前向引用与自引用
+
+无需按声明顺序排列，支持前向引用和自引用：
+
+```cft
+type Node {
+  value:    int;
+  children: [Node];    // 自引用
+}
+
+type A { b: B; }       // 前向引用
+type B { value: int; }
+```
+
+---
+
+## 5. check 块
+
+`check` 是 `type` 内部的可选校验块，必须位于所有字段声明之后。`check` 块在对象构建完成后由宿主显式调用执行，不影响对象图构建。
+
+`check` 内可以访问当前对象的所有字段（含继承字段）、`const` 常量和枚举值，不能引用外部节点。
+
+**继承与 check**：子类实例依次执行从根类到当前类的所有 `check` 块：
+
+```cft
+abstract type Reward {
+  id: string;
+  check { id != ""; }                   // 对所有子类实例执行
+}
+
+type CurrencyReward : Reward {
+  amount: int;
+  check { amount > 0; }                 // 只在 CurrencyReward 实例上执行
+}
+// 执行顺序：Reward.check → CurrencyReward.check
+```
+
+### 5.1 条件语句
+
+一个表达式加分号，求值结果必须为 `bool`：
+
+```cft
+check {
+  damage > 0;
+  cooldown >= MIN_COOLDOWN;
+  id != "";
+  0 < damage <= MAX_DAMAGE;    // 链式比较（方向一致）
+}
+```
+
+### 5.2 量词块
+
+对集合中每个元素执行条件：
+
+```cft
+// Array：绑定变量直接是元素
+all drop in drops {
+  drop.value > 0;
+}
+
+// Dict：绑定变量是 entry 对象，具有 .key 和 .value 字段
+all entry in scores {
+  entry.value >= 0;
+}
+```
+
+| 量词 | 语义 | 空集合行为 |
+|------|------|-----------|
+| `all x in col { ... }` | 全部元素通过 | 通过 |
+| `any x in col { ... }` | 至少一个元素通过 | 失败 |
+| `none x in col { ... }` | 没有元素通过 | 通过 |
+
+### 5.3 when 块
+
+条件成立时，块内所有语句必须通过；条件不成立时整块直接通过：
+
+```cft
+type Skill {
+  is_passive: bool;
+  cooldown:   float? = null;
+  range:      float? = null;
+
+  check {
+    when !is_passive {
+      cooldown != null;
+      cooldown > 0.0;
+    }
+    when is_passive {
+      range != null;
+    }
+  }
+}
+```
+
+等价语义：`when cond { s1; s2; }` = `!cond || (s1 && s2)`。
+
+`when` 支持嵌套，也可以与量词块组合：
+
+```cft
+all item in items {
+  when item.is_rare {
+    item.price > 100;
+  }
+}
+```
+
+### 5.4 运算符
+
+优先级从低到高：
+
+| 优先级 | 运算符 | 说明 |
+|--------|--------|------|
+| 1（最低）| `\|\|` `&&` | 逻辑或/与，短路求值 |
+| 2 | `is` | 类型判断 |
+| 3 | `==` `!=` `<` `<=` `>` `>=` | 比较，支持链式（如 `0 < x <= 100`） |
+| 4 | `\|` `^` `&` | 按位或/异或/与 |
+| 5 | `+` `-` `<<` `>>` | 加减、位移 |
+| 6 | `*` `/` `//` `%` | 乘、除、整除、取模 |
+| 7 | `**` | 幂（右结合） |
+| 8 | `!` `~` `-` | 一元逻辑非、按位非、取负 |
+| 9（最高）| `.field` `[index]` `fn()` | 字段访问、索引、函数调用 |
+
+### 5.5 `is` 类型判断
+
+`is` 判断对象的实际类型；对象的实际类型是目标类型本身或其任意子类时返回 `true`：
+
+```cft
+reward is Reward          // Reward 或任意子类均为 true
+reward is CurrencyReward  // 只有实际类型恰好是 CurrencyReward 时为 true
+item is null              // null 判断
+```
+
+### 5.6 内建函数
+
+| 函数 | 参数 | 返回值 | 说明 |
+|------|------|--------|------|
+| `len(col)` | array 或 dict | int | 元素数量 |
+| `contains(col, val)` | array + 元素，或 dict + key | bool | 存在性判断 |
+| `unique(array)` | array | bool | 元素是否唯一（支持 int、bool、string、enum） |
+| `min(array)` | 非空 int / float / enum array | 同元素类型 | 最小值 |
+| `max(array)` | 非空 int / float / enum array | 同元素类型 | 最大值 |
+| `sum(array)` | int 或 float array | 同元素类型 | 求和，空数组返回 `0` |
+| `keys(dict)` | dict | array | key 数组 |
+| `values(dict)` | dict | array | value 数组 |
+| `matches(str, pat)` | string + 正则字面量 | bool | 正则匹配 |
+
+注意：
+- `unique` 不支持 float、object、array、dict、null 元素
+- `min` / `max` 对空数组报 check eval error
+- `contains(dict, val)` 只检查 key，不检查 value
+
+### 5.7 执行规则
+
+- 多条语句顺序求值，条件为假时继续收集后续错误
+- 求值中出现类型错误或越界时，立即停止当前对象的校验
+- 同一对象被多处引用时，其 check 只执行一次
+
+---
+
+## 6. 注解
+
+注解附加在 `type`、`enum`、字段声明之前，驱动代码生成和加载器行为，不影响语言语义。每个注解有明确的适用范围，范围外使用立即报错。多个注解可以叠加，每行一个。
+
+| 注解 | 适用目标 | 字段类型限制 | 额外约束 | 说明 |
+|------|---------|------------|---------|------|
+| `@struct` | `type` | — | 必须是 `sealed type` | codegen 生成值类型（C# struct，Rust Copy+Clone） |
+| `@flag` | `enum` | — | 变体值必须为 2 的幂（0 除外） | 位标志枚举（C# [Flags]，Rust bitflags） |
+| `@id` | `field` | `string`、`int` | — | 主键，加载器用于跨表引用解析，隐含唯一性 |
+| `@ref(TypeName)` | `field` | `string`、`int` | TypeName 必须是已定义的 `type` | 字符串/整数外键，加载器校验目标记录存在 |
+| `@index` | `field` | `string`、`int`、`enum` | — | codegen 生成按此字段查询的索引 API |
+| `@display("text")` | `type`、`enum`、`field` | 任意 | — | 可读名称，用于生成注释和编辑器显示 |
+| `@deprecated` | `type`、`enum`、`field` | 任意 | — | 标记废弃，codegen 输出对应语言的废弃标记 |
+
+示例：
+
+```cft
+@display("物品")
+type Item {
+  @id
+  id: string;
+
+  @index
+  @display("稀有度")
+  rarity: Rarity;
+
+  @ref(Item)
+  @display("升级目标")
+  next_tier_id: string? = null;
+
+  @deprecated
+  @display("旧价格")
+  old_price: int = 0;
+}
+```
+
+---
+
+## 7. 模块系统与 Loader 接口
+
+`.cft` 没有 `use` 导入语句。所有已注册模块共享同一个全局命名空间，宿主负责将文件批量注册到 `CftContainer`。
+
+**ModuleId** 由宿主指定，推荐使用相对项目根的路径去掉扩展名：
+
+```
+schema/item.cft   →  "schema/item"
+schema/enemy.cft  →  "schema/enemy"
+```
+
+**Loader 本身无 I/O**，路径解析和文件读取由宿主负责：
+
+```rust
+impl CftContainer {
+    pub fn new() -> Self;
+
+    // 注册并解析一个 .cft 源文本。重复名称或约束违反时立即报错。
+    pub fn add_module(
+        &mut self,
+        id: ModuleId,
+        source: impl Into<String>,
+    ) -> Result<(), ParseErrors>;
+
+    // schema 反射，用于代码生成和 Excel 加载器字段映射
+    pub fn schema(&self, id: &ModuleId) -> Option<CftSchemaModule>;
+    pub fn resolve_type(&self, name: &str) -> Option<CftSchemaType>;
+    pub fn resolve_enum(&self, name: &str) -> Option<CftSchemaEnum>;
+    pub fn resolve_const(&self, name: &str) -> Option<CftSchemaConst>;
+}
+```
+
+`CftSchemaModule` 包含 `consts`、`types`、`enums` 三个集合。
+
+---
+
+## 8. 错误阶段
+
+所有错误均在 `add_module` 阶段（注册时）或 check 执行阶段产生：
+
+**`add_module` 阶段（注册时立即报错）：**
+
+| 错误 | 原因 |
+|------|------|
+| 词法错误、语法错误 | 源文件格式非法 |
+| 全局名称重复 | `const`、`enum`、`type` 重名 |
+| 子类字段与父类重名 | 子类声明了与任意父类同名的字段 |
+| 继承循环 | `A : B`，`B : A` |
+| `abstract` + `sealed` 同时使用 | 修饰符互斥 |
+| `@struct` 标注在非 `sealed type` 上 | 注解范围违反 |
+| `@flag` 变体值不是 2 的幂 | 注解约束违反 |
+| `@ref(TypeName)` 引用未定义的类型 | 注解参数非法 |
+| 注解使用范围或字段类型不匹配 | 注解范围违反 |
+
+**check 执行阶段：**
+
+| 错误 | 原因 |
+|------|------|
+| 条件为假 | check 表达式求值结果为 false |
+| 类型错误 | 对不支持的类型使用运算符或函数 |
+| 越界 | 数组索引越界 |
+| eval error | 对 `null` 做非法操作，或 `min`/`max` 对空数组调用 |
+
+---
+
+## 9. 综合示例
+
+```cft
+const MAX_LEVEL  = 100;
+const MAX_ATTACK = 999;
+const MIN_SPEED  = 0.1;
+
+@flag
+enum Permission {
+  Read    = 1,
+  Write   = 2,
+  Execute = 4,
+}
+
+enum Rarity {
+  Common = 0,
+  Rare   = 10,
+  Epic   = 20,
+}
+
+enum DamageType {
+  Physical,
+  Fire,
+  Ice,
+}
+
+@struct
+sealed type Vector2 {
+  x: float;
+  y: float;
+}
+
+type Stats {
+  hp:     int;
+  attack: int;
+  speed:  float = 1.0;
+
+  check {
+    hp > 0;
+    0 <= attack <= MAX_ATTACK;
+    speed >= MIN_SPEED;
+  }
+}
+
+@display("物品")
+type Item {
+  @id
+  id: string;
+
+  @display("名称")
+  name: string;
+
+  rarity: Rarity = Rarity.Common;
+  tags:   [string] = [];
+
+  check {
+    id != "";
+    name != "";
+    matches(id, "^[a-z][a-z0-9_]*$");
+    none tag in tags { tag == ""; }
+  }
+}
+
+abstract type Reward {
+  @id
+  id: string;
+
+  check { id != ""; }
+}
+
+type ItemReward : Reward {
+  @ref(Item)
+  item_id: string;
+
+  count: int = 1;
+
+  check { count > 0; }
+}
+
+type CurrencyReward : Reward {
+  amount: int;
+
+  check { amount > 0; }
+}
+
+type DropTable {
+  rewards: [Reward];
+  weights: [int];
+
+  check {
+    len(rewards) == len(weights);
+    len(rewards) > 0;
+    sum(weights) == 100;
+    min(weights) >= 0;
+    any reward in rewards { reward is CurrencyReward; }
+  }
+}
+
+@display("怪物")
+type Monster {
+  @id
+  id: string;
+
+  @display("名称")
+  name: string;
+
+  @index
+  rarity: Rarity;
+
+  level:       int;
+  stats:       Stats;
+  drops:       DropTable;
+  boss_drop:   Item? = null;
+  resistances: {DamageType: float};
+  skill:       Skill? = null;
+
+  check {
+    id != "";
+    name != "";
+    1 <= level <= MAX_LEVEL;
+    stats.hp > 0;
+    rarity >= Rarity.Common;
+    contains(resistances, DamageType.Fire);
+
+    when boss_drop != null {
+      boss_drop.rarity >= Rarity.Rare;
+    }
+
+    all entry in resistances {
+      0.0 <= entry.value <= 1.0;
+    }
+  }
+}
+
+type Skill {
+  id:         string;
+  is_passive: bool;
+  cooldown:   float? = null;
+  range:      float? = null;
+
+  check {
+    id != "";
+    when !is_passive {
+      cooldown != null;
+      cooldown > 0.0;
+    }
+    when is_passive {
+      range != null;
+      range > 0.0;
+    }
+  }
+}
+```
