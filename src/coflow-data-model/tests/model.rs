@@ -309,33 +309,3 @@ fn ref_resolution_reports_missing_targets_and_targets_without_id() {
     let no_id = no_id_builder.build().expect_err("ref target without id");
     assert_has_code(&no_id, CfdErrorCode::RefTargetHasNoId);
 }
-
-#[test]
-fn integer_overflow_and_shift_eval_errors_are_reported_without_panicking() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                value: int;
-                check {
-                    value + 1 > 0;
-                    value * value > 0;
-                    1 << 64 > 0;
-                    1 >> -1 > 0;
-                }
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("value", CfdInputValue::from(i64::MAX))]);
-    let model = builder.build().expect("data model should build");
-    let result = std::panic::catch_unwind(|| model.run_checks(&schema));
-    assert!(result.is_ok(), "check runner should not panic");
-    let err = result.unwrap().expect_err("arithmetic eval errors");
-    let eval_errors = err
-        .diagnostics
-        .iter()
-        .filter(|diag| diag.code == CfdErrorCode::CheckEvalTypeError)
-        .count();
-    assert_eq!(eval_errors, 4);
-}

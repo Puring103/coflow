@@ -1,9 +1,10 @@
 use super::evaluator::CheckEvaluator;
 use super::value::{CheckRecordRef, CheckValue};
-use crate::diagnostic::{CfdDiagnostic, CfdDiagnostics, CfdPath};
-use crate::model::{CfdDataModel, CfdRecordId, CfdValue};
 use crate::schema_view::SchemaView;
 use coflow_cft::CftContainer;
+use coflow_data_model::{
+    CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdPath, CfdRecordId, CfdValue,
+};
 use std::collections::BTreeMap;
 
 pub(crate) struct CheckRunner<'a> {

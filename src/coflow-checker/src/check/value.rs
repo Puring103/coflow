@@ -1,5 +1,5 @@
-use crate::model::{CfdDataModel, CfdDictKey, CfdEnumValue, CfdRecord, CfdRecordId, CfdValue};
 use coflow_cft::CftConstValue;
+use coflow_data_model::{CfdDataModel, CfdDictKey, CfdEnumValue, CfdRecord, CfdRecordId, CfdValue};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]

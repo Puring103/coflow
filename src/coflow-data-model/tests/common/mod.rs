@@ -1,7 +1,7 @@
 #![allow(dead_code, unused_imports)]
 
-pub(crate) use coflow_cfd::*;
 pub(crate) use coflow_cft::{CftContainer, ModuleId};
+pub(crate) use coflow_data_model::*;
 
 pub(crate) fn compile_schema(source: &str) -> CftContainer {
     let mut container = CftContainer::new();

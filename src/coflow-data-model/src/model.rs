@@ -1,4 +1,4 @@
-use crate::{check::CheckRunner, compiler::ModelCompiler, CfdDiagnostics};
+use crate::{compiler::ModelCompiler, CfdDiagnostics};
 use coflow_cft::CftContainer;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -14,17 +14,6 @@ impl CfdDataModel {
     #[must_use]
     pub fn builder(schema: &CftContainer) -> CfdModelBuilder<'_> {
         CfdModelBuilder::new(schema)
-    }
-
-    /// Executes CFT `check` blocks against this already-built data model.
-    ///
-    /// # Errors
-    ///
-    /// Returns runtime check diagnostics for false conditions or evaluation
-    /// errors. This method is source-neutral and never inspects Excel/JSON
-    /// loader state.
-    pub fn run_checks(&self, schema: &CftContainer) -> Result<(), CfdDiagnostics> {
-        CheckRunner::new(schema, self).run()
     }
 
     #[must_use]

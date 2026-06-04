@@ -1,11 +1,12 @@
 use super::value::{comparable_key, dict_key_from_check_value, values_equal, CheckValue};
-use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
-use crate::model::{CfdDataModel, CfdEnumValue, CfdRecordId};
 use crate::schema_view::SchemaView;
 use coflow_cft::{
     CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
     CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind, CftSchemaTypePredicate,
     CftSchemaUnaryOp, Span,
+};
+use coflow_data_model::{
+    CfdDataModel, CfdDiagnostic, CfdEnumValue, CfdErrorCode, CfdPath, CfdRecordId,
 };
 use regex::Regex;
 use std::collections::{BTreeMap, BTreeSet};

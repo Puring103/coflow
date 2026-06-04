@@ -1,7 +1,7 @@
-use crate::model::{CfdDictKey, CfdEnumValue, CfdIdValue, CfdIndexKey, CfdInputValue, CfdValue};
+use crate::model::{CfdDictKey, CfdIdValue, CfdIndexKey, CfdInputValue, CfdValue};
 use coflow_cft::{
-    CftAnnotation, CftAnnotationValue, CftConstValue, CftContainer, CftSchemaCheckBlock,
-    CftSchemaDefaultValue, CftSchemaEnum, CftSchemaField, CftSchemaType,
+    CftAnnotation, CftAnnotationValue, CftContainer, CftSchemaDefaultValue, CftSchemaEnum,
+    CftSchemaField, CftSchemaType,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -22,7 +22,6 @@ pub(crate) enum CfdValueDraft {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SchemaView {
-    pub(crate) consts: BTreeMap<String, CftConstValue>,
     pub(crate) types: BTreeMap<String, TypeMeta>,
     pub(crate) enums: BTreeMap<String, EnumMeta>,
     children: BTreeMap<String, BTreeSet<String>>,
@@ -30,13 +29,6 @@ pub(crate) struct SchemaView {
 
 impl SchemaView {
     pub(crate) fn new(schema: &CftContainer) -> Self {
-        let consts = schema
-            .module_ids()
-            .filter_map(|id| schema.schema(id))
-            .flat_map(|module| module.consts.iter())
-            .map(|schema_const| (schema_const.name.clone(), schema_const.value.clone()))
-            .collect::<BTreeMap<_, _>>();
-
         let enums = schema
             .all_enums()
             .map(|schema_enum| (schema_enum.name.clone(), EnumMeta::from_schema(schema_enum)))
@@ -56,7 +48,6 @@ impl SchemaView {
         }
 
         Self {
-            consts,
             types,
             enums,
             children,
@@ -159,35 +150,6 @@ impl SchemaView {
             .and_then(|meta| meta.variants.get(variant))
             .copied()
     }
-
-    pub(crate) fn enum_value_from_int(&self, enum_name: &str, value: i64) -> Option<CfdEnumValue> {
-        let meta = self.enums.get(enum_name)?;
-        meta.variants
-            .iter()
-            .find(|(_, variant_value)| **variant_value == value)
-            .map(|(variant, variant_value)| CfdEnumValue {
-                enum_name: enum_name.to_string(),
-                variant: variant.clone(),
-                value: *variant_value,
-            })
-    }
-
-    pub(crate) fn checks_for_actual(&self, actual_type: &str) -> Vec<CftSchemaCheckBlock> {
-        let mut chain = Vec::new();
-        let mut current = Some(actual_type);
-        while let Some(name) = current {
-            let Some(meta) = self.types.get(name) else {
-                break;
-            };
-            chain.push(meta);
-            current = meta.parent.as_deref();
-        }
-        chain.reverse();
-        chain
-            .into_iter()
-            .filter_map(|meta| meta.check.clone())
-            .collect()
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -196,7 +158,6 @@ pub(crate) struct TypeMeta {
     pub(crate) parent: Option<String>,
     pub(crate) is_abstract: bool,
     fields: Vec<FieldMeta>,
-    check: Option<CftSchemaCheckBlock>,
 }
 
 impl TypeMeta {
@@ -210,7 +171,6 @@ impl TypeMeta {
                 .iter()
                 .map(|field| FieldMeta::from_schema(schema, field))
                 .collect(),
-            check: schema_type.check.clone(),
         }
     }
 }

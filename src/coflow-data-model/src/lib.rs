@@ -3,10 +3,9 @@
 //! This crate is deliberately below every concrete loader. Excel, JSON, tests,
 //! and editor integrations should all translate their input into
 //! [`CfdInputRecord`] / [`CfdInputValue`] and then build a [`CfdDataModel`].
-//! Runtime `check` execution takes a compiled CFT schema plus [`CfdDataModel`]
-//! and remains independent from any concrete source format.
+//! Runtime `check` execution lives in the `coflow-checker` crate so this crate
+//! stays focused on data construction and reference resolution.
 
-mod check;
 mod compiler;
 mod diagnostic;
 mod model;
