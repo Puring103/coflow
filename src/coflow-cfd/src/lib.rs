@@ -1370,25 +1370,88 @@ impl<'a> CheckRunner<'a> {
 
     fn run(mut self) -> Result<(), CfdDiagnostics> {
         for (record_id, record) in self.model.records() {
-            let checks = self.schema.checks_for_actual(&record.actual_type);
-            let root = CheckValue::Record(CheckRecordRef::Top(record_id));
-            let mut evaluator = CheckEvaluator::new(
-                &self.schema,
-                self.model,
+            let path = CfdPath::root();
+            self.run_record_checks(
+                CheckRecordRef::Top(record_id),
                 Some(record_id),
-                CfdPath::root(),
-                root,
+                path.clone(),
             );
-            for check in checks {
-                evaluator.eval_check_block(&check);
-            }
-            self.diagnostics.extend(evaluator.diagnostics);
+            self.run_nested_field_checks(Some(record_id), &record.fields, path);
         }
 
         if self.diagnostics.is_empty() {
             Ok(())
         } else {
             Err(CfdDiagnostics::new(self.diagnostics))
+        }
+    }
+
+    fn run_record_checks(
+        &mut self,
+        record: CheckRecordRef,
+        root_record: Option<CfdRecordId>,
+        root_path: CfdPath,
+    ) {
+        let Some(actual_type) = record.actual_type(self.model).map(ToOwned::to_owned) else {
+            return;
+        };
+        let checks = self.schema.checks_for_actual(&actual_type);
+        let root = CheckValue::Record(record);
+        let mut evaluator =
+            CheckEvaluator::new(&self.schema, self.model, root_record, root_path, root);
+        for check in checks {
+            evaluator.eval_check_block(&check);
+        }
+        self.diagnostics.extend(evaluator.diagnostics);
+    }
+
+    fn run_nested_field_checks(
+        &mut self,
+        root_record: Option<CfdRecordId>,
+        fields: &BTreeMap<String, CfdValue>,
+        root_path: CfdPath,
+    ) {
+        for (name, value) in fields {
+            self.run_nested_value_checks(root_record, value, root_path.clone().field(name));
+        }
+    }
+
+    fn run_nested_value_checks(
+        &mut self,
+        root_record: Option<CfdRecordId>,
+        value: &CfdValue,
+        path: CfdPath,
+    ) {
+        match value {
+            CfdValue::Object(record) => {
+                self.run_record_checks(
+                    CheckRecordRef::Inline(record.as_ref().clone()),
+                    root_record,
+                    path.clone(),
+                );
+                self.run_nested_field_checks(root_record, &record.fields, path);
+            }
+            CfdValue::Array(items) => {
+                for (index, item) in items.iter().enumerate() {
+                    self.run_nested_value_checks(root_record, item, path.clone().index(index));
+                }
+            }
+            CfdValue::Dict(entries) => {
+                for (index, (_, item)) in entries.iter().enumerate() {
+                    self.run_nested_value_checks(
+                        root_record,
+                        item,
+                        path.clone().dict_key(index.to_string()),
+                    );
+                }
+            }
+            CfdValue::Ref { .. }
+            | CfdValue::Null
+            | CfdValue::Bool(_)
+            | CfdValue::Int(_)
+            | CfdValue::Float(_)
+            | CfdValue::String(_)
+            | CfdValue::Enum(_) => {}
         }
     }
 }
@@ -1495,6 +1558,13 @@ impl<'a> CheckEvaluator<'a> {
             self.eval_stmts(body);
             let passed = self.diagnostics.len() == diagnostic_start;
             let _ = self.scopes.pop();
+
+            match kind {
+                CftSchemaQuantifierKind::All => {}
+                CftSchemaQuantifierKind::Any | CftSchemaQuantifierKind::None => {
+                    self.diagnostics.truncate(diagnostic_start);
+                }
+            }
 
             if passed {
                 matched += 1;
@@ -2111,32 +2181,54 @@ impl<'a> CheckEvaluator<'a> {
     ) -> Result<CheckValue, ()> {
         match (op, lhs, rhs) {
             (CftSchemaBinOp::Add, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
-                Ok(CheckValue::Int(lhs + rhs))
+                self.checked_int(lhs.checked_add(rhs), span, "integer addition overflow")
             }
             (CftSchemaBinOp::Sub, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
-                Ok(CheckValue::Int(lhs - rhs))
+                self.checked_int(lhs.checked_sub(rhs), span, "integer subtraction overflow")
             }
-            (CftSchemaBinOp::Mul, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
-                Ok(CheckValue::Int(lhs * rhs))
-            }
+            (CftSchemaBinOp::Mul, CheckValue::Int(lhs), CheckValue::Int(rhs)) => self.checked_int(
+                lhs.checked_mul(rhs),
+                span,
+                "integer multiplication overflow",
+            ),
             (CftSchemaBinOp::Div, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
-                Ok(CheckValue::Int(lhs / rhs))
+                self.checked_int(lhs.checked_div(rhs), span, "integer division failed")
             }
             (CftSchemaBinOp::IntDiv, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
-                Ok(CheckValue::Int(lhs / rhs))
+                self.checked_int(lhs.checked_div(rhs), span, "integer division failed")
             }
             (CftSchemaBinOp::Mod, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
-                Ok(CheckValue::Int(lhs % rhs))
+                self.checked_int(lhs.checked_rem(rhs), span, "integer modulo failed")
             }
             (CftSchemaBinOp::Pow, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
-                Ok(CheckValue::Int(lhs.pow(rhs as u32)))
+                match rhs.try_into().ok().and_then(|rhs| lhs.checked_pow(rhs)) {
+                    Some(value) => Ok(CheckValue::Int(value)),
+                    None => {
+                        self.diag(
+                            CfdErrorCode::CheckEvalTypeError,
+                            span,
+                            "integer power failed",
+                        );
+                        Err(())
+                    }
+                }
             }
-            (CftSchemaBinOp::Shl, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
-                Ok(CheckValue::Int(lhs << rhs))
-            }
-            (CftSchemaBinOp::Shr, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
-                Ok(CheckValue::Int(lhs >> rhs))
-            }
+            (CftSchemaBinOp::Shl, CheckValue::Int(lhs), CheckValue::Int(rhs)) => self
+                .checked_shift(
+                    i64::checked_shl,
+                    lhs,
+                    rhs,
+                    span,
+                    "integer shift left failed",
+                ),
+            (CftSchemaBinOp::Shr, CheckValue::Int(lhs), CheckValue::Int(rhs)) => self
+                .checked_shift(
+                    i64::checked_shr,
+                    lhs,
+                    rhs,
+                    span,
+                    "integer shift right failed",
+                ),
             (CftSchemaBinOp::Add, CheckValue::Float(lhs), CheckValue::Float(rhs)) => {
                 Ok(CheckValue::Float(lhs + rhs))
             }
@@ -2185,6 +2277,32 @@ impl<'a> CheckEvaluator<'a> {
                 Err(())
             }
         }
+    }
+
+    fn checked_int(
+        &mut self,
+        value: Option<i64>,
+        span: Span,
+        message: impl Into<String>,
+    ) -> Result<CheckValue, ()> {
+        value.map(CheckValue::Int).ok_or_else(|| {
+            self.diag(CfdErrorCode::CheckEvalTypeError, span, message);
+        })
+    }
+
+    fn checked_shift(
+        &mut self,
+        op: fn(i64, u32) -> Option<i64>,
+        lhs: i64,
+        rhs: i64,
+        span: Span,
+        message: impl Into<String>,
+    ) -> Result<CheckValue, ()> {
+        let Some(rhs) = rhs.try_into().ok() else {
+            self.diag(CfdErrorCode::CheckEvalTypeError, span, message);
+            return Err(());
+        };
+        self.checked_int(op(lhs, rhs), span, message)
     }
 
     fn compare(
@@ -3374,5 +3492,253 @@ mod tests {
         let err = model.run_checks(&schema).expect_err("eval errors");
         assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
         assert_has_code(&err, CfdErrorCode::CheckEmptyMinMax);
+    }
+
+    #[test]
+    fn check_runner_executes_inline_object_checks() {
+        let schema = compile_schema(
+            r#"
+                type Stats {
+                    hp: int;
+                    check { hp > 0; }
+                }
+                type Monster {
+                    stats: Stats;
+                    check { true; }
+                }
+            "#,
+        );
+
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record(
+            "Monster",
+            [(
+                "stats",
+                CfdInputValue::object_with_declared_type([("hp", CfdInputValue::from(0_i64))]),
+            )],
+        );
+        let model = builder.build().expect("data model should build");
+        let err = model.run_checks(&schema).expect_err("nested check fails");
+        assert_has_code(&err, CfdErrorCode::CheckFailed);
+        let diag = err
+            .diagnostics
+            .iter()
+            .find(|diag| diag.code == CfdErrorCode::CheckFailed)
+            .expect("check failed diagnostic");
+        assert_eq!(
+            diag.primary.as_ref().map(|label| label.path.clone()),
+            Some(CfdPath::root().field("stats"))
+        );
+    }
+
+    #[test]
+    fn any_and_none_quantifiers_do_not_leak_trial_failures() {
+        let any_schema = compile_schema(
+            r#"
+                type Item {
+                    values: [int];
+                    check { any value in values { value > 0; } }
+                }
+            "#,
+        );
+        let mut any_builder = CfdDataModel::builder(&any_schema);
+        any_builder.add_record(
+            "Item",
+            [(
+                "values",
+                CfdInputValue::Array(vec![
+                    CfdInputValue::from(-1_i64),
+                    CfdInputValue::from(1_i64),
+                ]),
+            )],
+        );
+        let any_model = any_builder.build().expect("data model should build");
+        any_model
+            .run_checks(&any_schema)
+            .expect("any should pass without leaking first failed trial");
+
+        let none_schema = compile_schema(
+            r#"
+                type Item {
+                    values: [int];
+                    check { none value in values { value > 0; } }
+                }
+            "#,
+        );
+        let mut none_builder = CfdDataModel::builder(&none_schema);
+        none_builder.add_record(
+            "Item",
+            [(
+                "values",
+                CfdInputValue::Array(vec![
+                    CfdInputValue::from(-1_i64),
+                    CfdInputValue::from(-2_i64),
+                ]),
+            )],
+        );
+        let none_model = none_builder.build().expect("data model should build");
+        none_model
+            .run_checks(&none_schema)
+            .expect("none should pass without leaking trial failures");
+    }
+
+    #[test]
+    fn arithmetic_eval_errors_are_reported_without_panicking() {
+        let schema = compile_schema(
+            r#"
+                type Item {
+                    value: int;
+                    check {
+                        value / 0 > 0;
+                        value % 0 == 0;
+                        value ** -1 > 0;
+                    }
+                }
+            "#,
+        );
+
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record("Item", [("value", CfdInputValue::from(1_i64))]);
+        let model = builder.build().expect("data model should build");
+        let result = std::panic::catch_unwind(|| model.run_checks(&schema));
+        assert!(result.is_ok(), "check runner should not panic");
+        let err = result.unwrap().expect_err("arithmetic eval errors");
+        assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
+    }
+
+    #[test]
+    fn check_runner_executes_inline_object_checks_inside_collections() {
+        let schema = compile_schema(
+            r#"
+                type Stat {
+                    hp: int;
+                    check { hp > 0; }
+                }
+                type Monster {
+                    stats: [Stat];
+                    named: {string: Stat};
+                }
+            "#,
+        );
+
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record(
+            "Monster",
+            [
+                (
+                    "stats",
+                    CfdInputValue::Array(vec![CfdInputValue::object_with_declared_type([(
+                        "hp",
+                        CfdInputValue::from(0_i64),
+                    )])]),
+                ),
+                (
+                    "named",
+                    CfdInputValue::dict([(
+                        CfdInputDictKey::from("bad"),
+                        CfdInputValue::object_with_declared_type([(
+                            "hp",
+                            CfdInputValue::from(-1_i64),
+                        )]),
+                    )]),
+                ),
+            ],
+        );
+        let model = builder.build().expect("data model should build");
+        let err = model.run_checks(&schema).expect_err("nested checks fail");
+        let failed_paths = err
+            .diagnostics
+            .iter()
+            .filter(|diag| diag.code == CfdErrorCode::CheckFailed)
+            .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
+            .collect::<Vec<_>>();
+        assert!(failed_paths.contains(&CfdPath::root().field("stats").index(0)));
+        assert!(failed_paths.contains(&CfdPath::root().field("named").dict_key("0")));
+    }
+
+    #[test]
+    fn any_and_none_quantifier_failures_report_quantifier_only() {
+        let any_schema = compile_schema(
+            r#"
+                type Item {
+                    values: [int];
+                    check { any value in values { value > 0; } }
+                }
+            "#,
+        );
+        let mut any_builder = CfdDataModel::builder(&any_schema);
+        any_builder.add_record(
+            "Item",
+            [(
+                "values",
+                CfdInputValue::Array(vec![
+                    CfdInputValue::from(-1_i64),
+                    CfdInputValue::from(-2_i64),
+                ]),
+            )],
+        );
+        let any_model = any_builder.build().expect("data model should build");
+        let any_err = any_model.run_checks(&any_schema).expect_err("any fails");
+        assert_eq!(any_err.diagnostics.len(), 1);
+        assert_eq!(any_err.diagnostics[0].code, CfdErrorCode::CheckFailed);
+        assert_eq!(
+            any_err.diagnostics[0].message,
+            "any quantifier did not match any element"
+        );
+
+        let none_schema = compile_schema(
+            r#"
+                type Item {
+                    values: [int];
+                    check { none value in values { value > 0; } }
+                }
+            "#,
+        );
+        let mut none_builder = CfdDataModel::builder(&none_schema);
+        none_builder.add_record(
+            "Item",
+            [(
+                "values",
+                CfdInputValue::Array(vec![CfdInputValue::from(1_i64)]),
+            )],
+        );
+        let none_model = none_builder.build().expect("data model should build");
+        let none_err = none_model.run_checks(&none_schema).expect_err("none fails");
+        assert_eq!(none_err.diagnostics.len(), 1);
+        assert_eq!(none_err.diagnostics[0].code, CfdErrorCode::CheckFailed);
+        assert_eq!(
+            none_err.diagnostics[0].message,
+            "none quantifier matched at least one element"
+        );
+    }
+
+    #[test]
+    fn integer_overflow_and_shift_eval_errors_are_reported_without_panicking() {
+        let schema = compile_schema(
+            r#"
+                type Item {
+                    value: int;
+                    check {
+                        value + 1 > 0;
+                        value * value > 0;
+                        1 << 64 > 0;
+                        1 >> -1 > 0;
+                    }
+                }
+            "#,
+        );
+
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record("Item", [("value", CfdInputValue::from(i64::MAX))]);
+        let model = builder.build().expect("data model should build");
+        let result = std::panic::catch_unwind(|| model.run_checks(&schema));
+        assert!(result.is_ok(), "check runner should not panic");
+        let err = result.unwrap().expect_err("arithmetic eval errors");
+        let eval_errors = err
+            .diagnostics
+            .iter()
+            .filter(|diag| diag.code == CfdErrorCode::CheckEvalTypeError)
+            .count();
+        assert_eq!(eval_errors, 4);
     }
 }
