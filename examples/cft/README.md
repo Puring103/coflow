@@ -12,6 +12,7 @@ These files demonstrate core CFT syntax and are designed to compile together as 
 - `08_when_and_quantifiers.cft`: `when`, `all`, `any`, and `none`.
 - `09_builtin_functions.cft`: built-in check functions.
 - `10_comprehensive_schema.cft`: a larger schema that combines several features.
+- `11_unicode_identifiers.cft`: Unicode identifiers such as Chinese type, enum, and field names.
 
 Validate all examples:
 

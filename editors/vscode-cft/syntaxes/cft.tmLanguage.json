@@ -45,7 +45,7 @@
       "patterns": [
         {
           "name": "storage.modifier.annotation.cft",
-          "match": "@(struct|flag|id|ref|index|display|deprecated)\\b"
+          "match": "@(struct|flag|id|ref|index|display|deprecated)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
         },
         {
           "name": "invalid.illegal.annotation.cft",
@@ -57,7 +57,7 @@
       "patterns": [
         {
           "name": "support.function.builtin.cft",
-          "match": "\\b(len|contains|unique|min|max|sum|keys|values|matches)\\b(?=\\s*\\()"
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(len|contains|unique|min|max|sum|keys|values|matches)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(?=\\s*\\()"
         }
       ]
     },
@@ -65,7 +65,7 @@
       "patterns": [
         {
           "name": "storage.type.primitive.cft",
-          "match": "\\b(int|float|bool|string)\\b"
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(int|float|bool|string)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
         }
       ]
     },
@@ -81,7 +81,7 @@
       "patterns": [
         {
           "name": "constant.language.cft",
-          "match": "\\b(true|false|null)\\b"
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(true|false|null)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
         }
       ]
     },
@@ -89,7 +89,7 @@
       "patterns": [
         {
           "name": "meta.declaration.const.cft",
-          "match": "\\b(const)\\s+([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)",
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(const)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])\\s+([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)",
           "captures": {
             "1": {
               "name": "storage.type.const.cft"
@@ -101,7 +101,7 @@
         },
         {
           "name": "meta.declaration.enum.cft",
-          "match": "\\b(enum)\\s+([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)",
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(enum)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])\\s+([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)",
           "captures": {
             "1": {
               "name": "storage.type.enum.cft"
@@ -113,7 +113,7 @@
         },
         {
           "name": "meta.declaration.type.cft",
-          "match": "\\b((?:(?:abstract|sealed)\\s+)*)(type)\\s+([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)",
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])((?:(?:abstract|sealed)\\s+)*)(type)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])\\s+([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)",
           "captures": {
             "1": {
               "name": "storage.modifier.cft"
@@ -132,15 +132,15 @@
       "patterns": [
         {
           "name": "keyword.control.cft",
-          "match": "\\b(check|when|all|any|none|in|is)\\b"
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(check|when|all|any|none|in|is)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
         },
         {
           "name": "storage.modifier.cft",
-          "match": "\\b(abstract|sealed)\\b"
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(abstract|sealed)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
         },
         {
           "name": "storage.type.cft",
-          "match": "\\b(const|enum|type)\\b"
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(const|enum|type)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
         }
       ]
     },
