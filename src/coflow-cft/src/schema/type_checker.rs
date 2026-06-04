@@ -1,0 +1,644 @@
+use super::compiler::SchemaCompiler;
+use super::support::{
+    min_max_supported, ordered_comparable, same_type, types_comparable, unique_supported,
+    unwrap_nullable, SymbolKind, Ty, TypeInfo,
+};
+use crate::ast::{
+    BinOp, CheckExpr, CheckExprKind, CheckStmt, CmpOp, NameRef, TypePredicate, UnaryOp,
+};
+use crate::error::{CftDiagnostic, CftErrorCode};
+use crate::span::Span;
+use regex::Regex;
+use std::collections::HashMap;
+
+pub(super) struct TypeChecker<'a, 'b> {
+    compiler: &'a mut SchemaCompiler<'b>,
+    type_info: &'a TypeInfo<'b>,
+    locals: Vec<HashMap<String, Ty>>,
+}
+
+impl<'a, 'b> TypeChecker<'a, 'b> {
+    pub(super) fn new(compiler: &'a mut SchemaCompiler<'b>, type_info: &'a TypeInfo<'b>) -> Self {
+        Self {
+            compiler,
+            type_info,
+            locals: Vec::new(),
+        }
+    }
+
+    pub(super) fn check_stmts(&mut self, stmts: &[CheckStmt]) {
+        for stmt in stmts {
+            self.check_stmt(stmt);
+        }
+    }
+
+    fn check_stmt(&mut self, stmt: &CheckStmt) {
+        match stmt {
+            CheckStmt::Expr(expr) => {
+                let ty = self.check_expr(expr);
+                self.expect_bool(&ty, expr.span);
+            }
+            CheckStmt::When {
+                condition, body, ..
+            } => {
+                let ty = self.check_expr(condition);
+                self.expect_bool(&ty, condition.span);
+                self.check_stmts(body);
+            }
+            CheckStmt::Quantifier {
+                binding,
+                collection,
+                body,
+                span,
+                ..
+            } => {
+                let col_ty = self.check_expr(collection);
+                let item_ty = match unwrap_nullable(&col_ty) {
+                    Ty::Array(inner) => *inner.clone(),
+                    Ty::Dict(key, value) => Ty::Entry(key.clone(), value.clone()),
+                    Ty::Unknown => Ty::Unknown,
+                    _ => {
+                        self.diag(
+                            CftErrorCode::QuantifierRequiresCollection,
+                            *span,
+                            "quantifier target must be an array or dict",
+                        );
+                        Ty::Unknown
+                    }
+                };
+                self.locals
+                    .push(HashMap::from([(binding.name.clone(), item_ty)]));
+                self.check_stmts(body);
+                self.locals.pop();
+            }
+        }
+    }
+
+    fn check_expr(&mut self, expr: &CheckExpr) -> Ty {
+        match &expr.kind {
+            CheckExprKind::Int(_) => Ty::Int,
+            CheckExprKind::Float(_) => Ty::Float,
+            CheckExprKind::Bool(_) => Ty::Bool,
+            CheckExprKind::Null => Ty::Null,
+            CheckExprKind::String(_) => Ty::String,
+            CheckExprKind::Name(name) => self.resolve_value_name(name, expr.span),
+            CheckExprKind::Unary { op, expr: inner } => {
+                let ty = self.check_expr(inner);
+                self.check_unary(*op, &ty, expr.span)
+            }
+            CheckExprKind::BinOp { op, lhs, rhs } => {
+                let lhs_ty = self.check_expr(lhs);
+                let rhs_ty = self.check_expr(rhs);
+                self.check_binop(*op, &lhs_ty, &rhs_ty, expr.span)
+            }
+            CheckExprKind::CmpChain { first, rest } => {
+                let mut lhs_ty = self.check_expr(first);
+                for (op, rhs) in rest {
+                    let rhs_ty = self.check_expr(rhs);
+                    self.check_comparison(*op, &lhs_ty, &rhs_ty, rhs.span);
+                    lhs_ty = rhs_ty;
+                }
+                Ty::Bool
+            }
+            CheckExprKind::Field { expr: inner, name } => self.check_field(inner, name, expr.span),
+            CheckExprKind::Index { expr: inner, index } => {
+                self.check_index(inner, index, expr.span)
+            }
+            CheckExprKind::Is {
+                expr: inner,
+                predicate,
+            } => {
+                let _ = self.check_expr(inner);
+                self.check_is(predicate);
+                Ty::Bool
+            }
+            CheckExprKind::Call { name, args } => self.check_call(name, args, expr.span),
+        }
+    }
+
+    fn resolve_value_name(&mut self, name: &str, span: Span) -> Ty {
+        for scope in self.locals.iter().rev() {
+            if let Some(ty) = scope.get(name) {
+                return ty.clone();
+            }
+        }
+        if let Some(fields) = self.compiler.full_fields.get(&self.type_info.def.name) {
+            if let Some(field) = fields.get(name) {
+                return field.check_ty.clone();
+            }
+        }
+        if let Some(info) = self.compiler.consts.get(name) {
+            return Ty::from_const(&info.value);
+        }
+        if self.compiler.enums.contains_key(name) {
+            return Ty::EnumNamespace(name.to_string());
+        }
+        self.diag(
+            CftErrorCode::UnknownValueName,
+            span,
+            format!("unknown value `{name}`"),
+        );
+        Ty::Unknown
+    }
+
+    fn check_field(&mut self, inner: &CheckExpr, name: &NameRef, span: Span) -> Ty {
+        if let CheckExprKind::Name(enum_name) = &inner.kind {
+            if let Some(enum_info) = self.compiler.enums.get(enum_name) {
+                if enum_info.variants.contains(&name.name) {
+                    return Ty::Enum(enum_name.clone());
+                }
+                self.diag(
+                    CftErrorCode::TypeUnknownEnumVariant,
+                    name.span,
+                    format!("unknown enum variant `{}`", name.name),
+                );
+                return Ty::Unknown;
+            }
+            if let Some(symbol) = self.compiler.symbols.get(enum_name) {
+                if symbol.kind != SymbolKind::Enum && self.compiler.symbols.contains_key(enum_name)
+                {
+                    self.diag(
+                        CftErrorCode::TypeEnumVariantOnNonEnum,
+                        inner.span,
+                        "enum variant access used on a non-enum name",
+                    );
+                    return Ty::Unknown;
+                }
+            }
+        }
+
+        let inner_ty = self.check_expr(inner);
+        match unwrap_nullable(&inner_ty) {
+            Ty::Type(type_name) => {
+                if let Some(fields) = self.compiler.full_fields.get(type_name) {
+                    if let Some(field) = fields.get(&name.name) {
+                        field.check_ty.clone()
+                    } else {
+                        self.diag(
+                            CftErrorCode::UnknownField,
+                            name.span,
+                            format!("unknown field `{}`", name.name),
+                        );
+                        Ty::Unknown
+                    }
+                } else {
+                    Ty::Unknown
+                }
+            }
+            Ty::Entry(key, value) => match name.name.as_str() {
+                "key" => *key.clone(),
+                "value" => *value.clone(),
+                _ => {
+                    self.diag(
+                        CftErrorCode::UnknownField,
+                        name.span,
+                        "dict entry only has key and value fields",
+                    );
+                    Ty::Unknown
+                }
+            },
+            Ty::Unknown => Ty::Unknown,
+            _ => {
+                self.diag(
+                    CftErrorCode::FieldAccessOnNonObject,
+                    span,
+                    "field access requires an object",
+                );
+                Ty::Unknown
+            }
+        }
+    }
+
+    fn check_index(&mut self, inner: &CheckExpr, index: &CheckExpr, span: Span) -> Ty {
+        let inner_ty = self.check_expr(inner);
+        let index_ty = self.check_expr(index);
+        match unwrap_nullable(&inner_ty) {
+            Ty::Array(elem) => {
+                if !same_type(&index_ty, &Ty::Int) && index_ty != Ty::Unknown {
+                    self.diag(
+                        CftErrorCode::IndexTypeMismatch,
+                        index.span,
+                        "array index must be int",
+                    );
+                }
+                *elem.clone()
+            }
+            Ty::Dict(key, value) => {
+                if !types_comparable(key, &index_ty) && index_ty != Ty::Unknown {
+                    self.diag(
+                        CftErrorCode::IndexTypeMismatch,
+                        index.span,
+                        "dict index type does not match key type",
+                    );
+                }
+                *value.clone()
+            }
+            Ty::Unknown => Ty::Unknown,
+            _ => {
+                self.diag(
+                    CftErrorCode::IndexOnNonIndexable,
+                    span,
+                    "index access requires an array or dict",
+                );
+                Ty::Unknown
+            }
+        }
+    }
+
+    fn check_is(&mut self, predicate: &TypePredicate) {
+        if let TypePredicate::Type(name) = predicate {
+            match self.compiler.symbols.get(&name.name) {
+                Some(symbol) if symbol.kind == SymbolKind::Type => {}
+                _ => self.diag(
+                    CftErrorCode::InvalidIsPredicate,
+                    name.span,
+                    "is predicate must name a type or null",
+                ),
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn check_call(&mut self, name: &NameRef, args: &[CheckExpr], span: Span) -> Ty {
+        if self.compiler.enums.contains_key(&name.name) {
+            if args.len() != 1 {
+                self.diag(
+                    CftErrorCode::FunctionArityMismatch,
+                    span,
+                    "enum constructor expects one argument",
+                );
+                return Ty::Unknown;
+            }
+            let arg_ty = self.check_expr(&args[0]);
+            if !same_type(&arg_ty, &Ty::Int) && arg_ty != Ty::Unknown {
+                self.diag(
+                    CftErrorCode::FunctionArgTypeMismatch,
+                    args[0].span,
+                    "enum constructor argument must be int",
+                );
+            }
+            return Ty::Enum(name.name.clone());
+        }
+
+        match name.name.as_str() {
+            "len" => {
+                if self.expect_arity(args, 1, span).is_err() {
+                    return Ty::Unknown;
+                }
+                let ty = self.check_expr(&args[0]);
+                if !matches!(
+                    unwrap_nullable(&ty),
+                    Ty::Array(_) | Ty::Dict(_, _) | Ty::Unknown
+                ) {
+                    self.diag(
+                        CftErrorCode::FunctionArgTypeMismatch,
+                        args[0].span,
+                        "len expects an array or dict",
+                    );
+                }
+                Ty::Int
+            }
+            "contains" => {
+                if self.expect_arity(args, 2, span).is_err() {
+                    return Ty::Bool;
+                }
+                let col_ty = self.check_expr(&args[0]);
+                let value_ty = self.check_expr(&args[1]);
+                match unwrap_nullable(&col_ty) {
+                    Ty::Array(elem) => {
+                        if !types_comparable(elem, &value_ty) && value_ty != Ty::Unknown {
+                            self.diag(
+                                CftErrorCode::FunctionArgTypeMismatch,
+                                args[1].span,
+                                "contains value type does not match array element type",
+                            );
+                        }
+                    }
+                    Ty::Dict(key, _) => {
+                        if !types_comparable(key, &value_ty) && value_ty != Ty::Unknown {
+                            self.diag(
+                                CftErrorCode::FunctionArgTypeMismatch,
+                                args[1].span,
+                                "contains value type does not match dict key type",
+                            );
+                        }
+                    }
+                    Ty::Unknown => {}
+                    _ => self.diag(
+                        CftErrorCode::FunctionArgTypeMismatch,
+                        args[0].span,
+                        "contains expects an array or dict",
+                    ),
+                }
+                Ty::Bool
+            }
+            "unique" => {
+                if self.expect_arity(args, 1, span).is_err() {
+                    return Ty::Bool;
+                }
+                let ty = self.check_expr(&args[0]);
+                match unwrap_nullable(&ty) {
+                    Ty::Array(elem) if unique_supported(elem) => {}
+                    Ty::Array(_) => self.diag(
+                        CftErrorCode::UniqueUnsupportedElementType,
+                        args[0].span,
+                        "unique does not support this element type",
+                    ),
+                    Ty::Unknown => {}
+                    _ => self.diag(
+                        CftErrorCode::FunctionArgTypeMismatch,
+                        args[0].span,
+                        "unique expects an array",
+                    ),
+                }
+                Ty::Bool
+            }
+            "min" | "max" => {
+                if self.expect_arity(args, 1, span).is_err() {
+                    return Ty::Unknown;
+                }
+                let ty = self.check_expr(&args[0]);
+                match unwrap_nullable(&ty) {
+                    Ty::Array(elem) if min_max_supported(elem) => *elem.clone(),
+                    Ty::Array(_) => {
+                        self.diag(
+                            CftErrorCode::FunctionArgTypeMismatch,
+                            args[0].span,
+                            "min/max expects int, float, or enum arrays",
+                        );
+                        Ty::Unknown
+                    }
+                    Ty::Unknown => Ty::Unknown,
+                    _ => {
+                        self.diag(
+                            CftErrorCode::FunctionArgTypeMismatch,
+                            args[0].span,
+                            "min/max expects an array",
+                        );
+                        Ty::Unknown
+                    }
+                }
+            }
+            "sum" => {
+                if self.expect_arity(args, 1, span).is_err() {
+                    return Ty::Unknown;
+                }
+                let ty = self.check_expr(&args[0]);
+                match unwrap_nullable(&ty) {
+                    Ty::Array(elem) if matches!(elem.as_ref(), Ty::Int | Ty::Float) => {
+                        *elem.clone()
+                    }
+                    Ty::Array(_) => {
+                        self.diag(
+                            CftErrorCode::FunctionArgTypeMismatch,
+                            args[0].span,
+                            "sum expects an int or float array",
+                        );
+                        Ty::Unknown
+                    }
+                    Ty::Unknown => Ty::Unknown,
+                    _ => {
+                        self.diag(
+                            CftErrorCode::FunctionArgTypeMismatch,
+                            args[0].span,
+                            "sum expects an array",
+                        );
+                        Ty::Unknown
+                    }
+                }
+            }
+            "keys" => {
+                if self.expect_arity(args, 1, span).is_err() {
+                    return Ty::Unknown;
+                }
+                let ty = self.check_expr(&args[0]);
+                match unwrap_nullable(&ty) {
+                    Ty::Dict(key, _) => Ty::Array(key.clone()),
+                    Ty::Unknown => Ty::Unknown,
+                    _ => {
+                        self.diag(
+                            CftErrorCode::FunctionArgTypeMismatch,
+                            args[0].span,
+                            "keys expects a dict",
+                        );
+                        Ty::Unknown
+                    }
+                }
+            }
+            "values" => {
+                if self.expect_arity(args, 1, span).is_err() {
+                    return Ty::Unknown;
+                }
+                let ty = self.check_expr(&args[0]);
+                match unwrap_nullable(&ty) {
+                    Ty::Dict(_, value) => Ty::Array(value.clone()),
+                    Ty::Unknown => Ty::Unknown,
+                    _ => {
+                        self.diag(
+                            CftErrorCode::FunctionArgTypeMismatch,
+                            args[0].span,
+                            "values expects a dict",
+                        );
+                        Ty::Unknown
+                    }
+                }
+            }
+            "matches" => {
+                if self.expect_arity(args, 2, span).is_err() {
+                    return Ty::Bool;
+                }
+                let str_ty = self.check_expr(&args[0]);
+                if !same_type(&str_ty, &Ty::String) && str_ty != Ty::Unknown {
+                    self.diag(
+                        CftErrorCode::FunctionArgTypeMismatch,
+                        args[0].span,
+                        "matches first argument must be string",
+                    );
+                }
+                if let CheckExprKind::String(pattern) = &args[1].kind {
+                    if Regex::new(pattern).is_err() {
+                        self.diag(
+                            CftErrorCode::InvalidRegexPattern,
+                            args[1].span,
+                            "regex pattern cannot be compiled",
+                        );
+                    }
+                } else {
+                    let _ = self.check_expr(&args[1]);
+                    self.diag(
+                        CftErrorCode::RegexPatternMustBeLiteral,
+                        args[1].span,
+                        "matches pattern must be a string literal",
+                    );
+                }
+                Ty::Bool
+            }
+            _ => {
+                self.diag(
+                    CftErrorCode::UnknownFunction,
+                    name.span,
+                    format!("unknown function `{}`", name.name),
+                );
+                for arg in args {
+                    let _ = self.check_expr(arg);
+                }
+                Ty::Unknown
+            }
+        }
+    }
+
+    fn check_unary(&mut self, op: UnaryOp, ty: &Ty, span: Span) -> Ty {
+        match op {
+            UnaryOp::Not if same_type(ty, &Ty::Bool) => Ty::Bool,
+            UnaryOp::Neg | UnaryOp::BitNot if same_type(ty, &Ty::Int) => Ty::Int,
+            UnaryOp::Neg if same_type(ty, &Ty::Float) => Ty::Float,
+            UnaryOp::BitNot if self.is_flag_enum(ty) => ty.clone(),
+            UnaryOp::BitNot => {
+                self.diag(
+                    CftErrorCode::BitwiseRequiresIntOrFlagEnum,
+                    span,
+                    "bitwise not requires int or flag enum",
+                );
+                Ty::Unknown
+            }
+            _ if *ty == Ty::Unknown => Ty::Unknown,
+            _ => {
+                self.diag(
+                    CftErrorCode::OperatorTypeMismatch,
+                    span,
+                    "unary operator does not support this operand type",
+                );
+                Ty::Unknown
+            }
+        }
+    }
+
+    fn check_binop(&mut self, op: BinOp, lhs: &Ty, rhs: &Ty, span: Span) -> Ty {
+        match op {
+            BinOp::Or | BinOp::And => {
+                if (!same_type(lhs, &Ty::Bool) || !same_type(rhs, &Ty::Bool))
+                    && *lhs != Ty::Unknown
+                    && *rhs != Ty::Unknown
+                {
+                    self.diag(
+                        CftErrorCode::OperatorTypeMismatch,
+                        span,
+                        "logical operators require bool operands",
+                    );
+                }
+                Ty::Bool
+            }
+            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Pow => {
+                if same_type(lhs, &Ty::Int) && same_type(rhs, &Ty::Int) {
+                    Ty::Int
+                } else if same_type(lhs, &Ty::Float) && same_type(rhs, &Ty::Float) {
+                    Ty::Float
+                } else {
+                    self.operator_mismatch(lhs, rhs, span);
+                    Ty::Unknown
+                }
+            }
+            BinOp::IntDiv | BinOp::Mod => {
+                if same_type(lhs, &Ty::Int) && same_type(rhs, &Ty::Int) {
+                    Ty::Int
+                } else {
+                    self.operator_mismatch(lhs, rhs, span);
+                    Ty::Unknown
+                }
+            }
+            BinOp::Shl | BinOp::Shr => {
+                if same_type(lhs, &Ty::Int) && same_type(rhs, &Ty::Int) {
+                    Ty::Int
+                } else {
+                    self.diag(
+                        CftErrorCode::ShiftRequiresInt,
+                        span,
+                        "shift operators require int operands",
+                    );
+                    Ty::Unknown
+                }
+            }
+            BinOp::BitOr | BinOp::BitXor | BinOp::BitAnd => {
+                if same_type(lhs, &Ty::Int) && same_type(rhs, &Ty::Int) {
+                    Ty::Int
+                } else if same_type(lhs, rhs) && self.is_flag_enum(lhs) {
+                    lhs.clone()
+                } else {
+                    self.diag(
+                        CftErrorCode::BitwiseRequiresIntOrFlagEnum,
+                        span,
+                        "bitwise operators require int or the same flag enum",
+                    );
+                    Ty::Unknown
+                }
+            }
+        }
+    }
+
+    fn check_comparison(&mut self, op: CmpOp, lhs: &Ty, rhs: &Ty, span: Span) -> Ty {
+        let ok = match op {
+            CmpOp::Eq | CmpOp::Ne => types_comparable(lhs, rhs),
+            CmpOp::Lt | CmpOp::Le | CmpOp::Gt | CmpOp::Ge => ordered_comparable(lhs, rhs),
+        };
+        if !ok && *lhs != Ty::Unknown && *rhs != Ty::Unknown {
+            self.diag(
+                CftErrorCode::ComparisonTypeMismatch,
+                span,
+                "comparison operands are not compatible",
+            );
+        }
+        Ty::Bool
+    }
+
+    fn expect_bool(&mut self, ty: &Ty, span: Span) {
+        if !same_type(ty, &Ty::Bool) && *ty != Ty::Unknown {
+            self.diag(
+                CftErrorCode::ConditionMustBeBool,
+                span,
+                "check conditions must be bool",
+            );
+        }
+    }
+
+    fn expect_arity(&mut self, args: &[CheckExpr], expected: usize, span: Span) -> Result<(), ()> {
+        if args.len() == expected {
+            Ok(())
+        } else {
+            self.diag(
+                CftErrorCode::FunctionArityMismatch,
+                span,
+                format!("expected {expected} argument(s)"),
+            );
+            Err(())
+        }
+    }
+
+    fn operator_mismatch(&mut self, lhs: &Ty, rhs: &Ty, span: Span) {
+        if *lhs != Ty::Unknown && *rhs != Ty::Unknown {
+            self.diag(
+                CftErrorCode::OperatorTypeMismatch,
+                span,
+                "operator does not support these operand types",
+            );
+        }
+    }
+
+    fn is_flag_enum(&self, ty: &Ty) -> bool {
+        let Ty::Enum(name) = unwrap_nullable(ty) else {
+            return false;
+        };
+        self.compiler
+            .enums
+            .get(name)
+            .is_some_and(|info| info.is_flag)
+    }
+
+    fn diag(&mut self, code: CftErrorCode, span: Span, message: impl Into<String>) {
+        self.compiler.diagnostics.push(CftDiagnostic::error(
+            code,
+            self.type_info.module.clone(),
+            span,
+            message,
+        ));
+    }
+}
