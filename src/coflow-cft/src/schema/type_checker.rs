@@ -108,8 +108,8 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 expr: inner,
                 predicate,
             } => {
-                let _ = self.check_expr(inner);
-                self.check_is(predicate);
+                let inner_ty = self.check_expr(inner);
+                self.check_is(&inner_ty, predicate, expr.span);
                 Ty::Bool
             }
             CheckExprKind::Call { name, args } => self.check_call(name, args, expr.span),
@@ -245,15 +245,28 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
         }
     }
 
-    fn check_is(&mut self, predicate: &TypePredicate) {
-        if let TypePredicate::Type(name) = predicate {
-            match self.compiler.symbols.get(&name.name) {
-                Some(symbol) if symbol.kind == SymbolKind::Type => {}
-                _ => self.diag(
-                    CftErrorCode::InvalidIsPredicate,
-                    name.span,
-                    "is predicate must name a type or null",
-                ),
+    fn check_is(&mut self, lhs: &Ty, predicate: &TypePredicate, span: Span) {
+        match predicate {
+            TypePredicate::Null(_) => {}
+            TypePredicate::Type(name) => {
+                match self.compiler.symbols.get(&name.name) {
+                    Some(symbol) if symbol.kind == SymbolKind::Type => {}
+                    _ => {
+                        self.diag(
+                            CftErrorCode::InvalidIsPredicate,
+                            name.span,
+                            "is predicate must name a type or null",
+                        );
+                        return;
+                    }
+                }
+                if !matches!(unwrap_nullable(lhs), Ty::Type(_) | Ty::Unknown) {
+                    self.diag(
+                        CftErrorCode::OperatorTypeMismatch,
+                        span,
+                        "`is` type predicates require an object operand",
+                    );
+                }
             }
         }
     }

@@ -72,6 +72,9 @@ fn parser_rejects_invalid_top_level_item() {
 fn parser_rejects_invalid_chain_comparison() {
     let err = add_source("type A { value: int; check { 0 < value > 10; } }").unwrap_err();
     assert_has_code(&err, CftErrorCode::InvalidChainComparison);
+
+    let eq_chain = add_source("type A { value: int; check { 0 == value == 10; } }").unwrap_err();
+    assert_has_code(&eq_chain, CftErrorCode::InvalidChainComparison);
 }
 
 #[test]

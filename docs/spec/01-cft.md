@@ -429,12 +429,15 @@ schema/enemy.cft  →  "schema/enemy"
 impl CftContainer {
     pub fn new() -> Self;
 
-    // 注册并解析一个 .cft 源文本。重复名称或约束违反时立即报错。
+    // 注册并解析一个 .cft 源文本。重复 ModuleId、词法错误或语法错误会立即报错。
     pub fn add_module(
         &mut self,
         id: ModuleId,
         source: impl Into<String>,
-    ) -> Result<(), ParseErrors>;
+    ) -> Result<(), CftDiagnostics>;
+
+    // 编译所有已注册模块，统一校验全局命名空间、字段类型、继承、注解、默认值和 check 静态类型。
+    pub fn compile(&mut self) -> Result<(), CftDiagnostics>;
 
     // schema 反射，用于代码生成和 Excel 加载器字段映射
     pub fn schema(&self, id: &ModuleId) -> Option<CftSchemaModule>;
@@ -607,6 +610,12 @@ pub struct CftSchemaConst {
 | 错误 | 原因 |
 |------|------|
 | 词法错误、语法错误 | 源文件格式非法 |
+| 重复模块 | 已注册同一 `ModuleId` |
+
+**`compile` 阶段（所有模块注册完成后统一报错）：**
+
+| 错误 | 原因 |
+|------|------|
 | 全局名称重复 | `const`、`enum`、`type` 重名 |
 | 子类字段与父类重名 | 子类声明了与任意父类同名的字段 |
 | 继承循环 | `A : B`，`B : A` |

@@ -1081,6 +1081,14 @@ fn validate_cmp_chain(
         )));
     }
     let first_group = cmp_chain_group(rest[0].0);
+    if matches!(first_group, CmpChainGroup::Equal | CmpChainGroup::NotEqual) {
+        return Err(CftDiagnostics::one(CftDiagnostic::error(
+            CftErrorCode::InvalidChainComparison,
+            module.clone(),
+            first_span,
+            "chain comparison operators must be ordered comparisons",
+        )));
+    }
     if rest
         .iter()
         .skip(1)

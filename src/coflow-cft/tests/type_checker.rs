@@ -82,6 +82,21 @@ fn type_checker_reports_is_predicate_and_condition_edges() {
 }
 
 #[test]
+fn type_checker_reports_is_on_non_object_left_operand() {
+    let source = r#"
+        type Item {
+            id: string;
+            check {
+                id is Item;
+            }
+        }
+    "#;
+
+    let err = compile_one(source).unwrap_err();
+    assert_has_code(&err, CftErrorCode::OperatorTypeMismatch);
+}
+
+#[test]
 fn type_checker_reports_bitwise_shift_and_function_edges() {
     let source = r#"
         @flag

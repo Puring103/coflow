@@ -190,7 +190,7 @@ impl<'a> SchemaCompiler<'a> {
             let mut variant_names: BTreeMap<String, (ModuleId, Span)> = BTreeMap::new();
             let mut values: BTreeMap<i64, (String, ModuleId, Span)> = BTreeMap::new();
             let mut variants = BTreeSet::new();
-            for variant in &info.def.variants {
+            for (index, variant) in info.def.variants.iter().enumerate() {
                 if let Some(first) = variant_names.get(&variant.name) {
                     self.diagnostics.push(
                         CftDiagnostic::error(
@@ -216,17 +216,22 @@ impl<'a> SchemaCompiler<'a> {
                 } else {
                     next
                 };
-                next = if let Some(value) = value.checked_add(1) {
-                    value
-                } else {
+                if value == i64::MAX
+                    && info
+                        .def
+                        .variants
+                        .iter()
+                        .skip(index + 1)
+                        .any(|next_variant| next_variant.value.is_none())
+                {
                     self.push_diag(
                         CftErrorCode::InvalidEnumValueSequence,
                         &info.module,
                         variant.span,
                         "enum auto numbering overflowed",
                     );
-                    value
-                };
+                }
+                next = value.saturating_add(1);
                 if let Some(first) = values.get(&value) {
                     self.diagnostics.push(
                         CftDiagnostic::error(
@@ -636,18 +641,22 @@ impl<'a> SchemaCompiler<'a> {
     fn validate_defaults(&mut self) {
         let type_infos = self.types.values().cloned().collect::<Vec<_>>();
         for info in type_infos {
-            let local_fields = info
-                .def
-                .fields
-                .iter()
-                .map(|field| field.name.as_str())
+            let mut field_names = self
+                .collect_ancestor_fields(
+                    info.def
+                        .parent
+                        .as_ref()
+                        .map_or("", |parent| parent.name.as_str()),
+                )
+                .into_keys()
                 .collect::<BTreeSet<_>>();
+            field_names.extend(info.def.fields.iter().map(|field| field.name.clone()));
             for field in &info.def.fields {
                 let Some(default) = &field.default else {
                     continue;
                 };
                 let field_ty = self.resolve_field_type(&info.module, &field.ty);
-                let default_ty = self.default_expr_type(&info.module, default, &local_fields);
+                let default_ty = self.default_expr_type(&info.module, default, &field_names);
                 if !types_assignable(&field_ty, &default_ty) {
                     self.push_diag(
                         CftErrorCode::DefaultTypeMismatch,
@@ -664,7 +673,7 @@ impl<'a> SchemaCompiler<'a> {
         &mut self,
         module: &ModuleId,
         expr: &DefaultExpr,
-        local_fields: &BTreeSet<&str>,
+        field_names: &BTreeSet<String>,
     ) -> Ty {
         match &expr.kind {
             DefaultExprKind::Int(_) => Ty::Int,
@@ -673,7 +682,7 @@ impl<'a> SchemaCompiler<'a> {
             DefaultExprKind::Null => Ty::Null,
             DefaultExprKind::String(_) => Ty::String,
             DefaultExprKind::Name(name) => {
-                if local_fields.contains(name.name.as_str()) {
+                if field_names.contains(&name.name) {
                     self.push_diag(
                         CftErrorCode::DefaultReferencesField,
                         module,

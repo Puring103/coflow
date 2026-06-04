@@ -95,3 +95,31 @@ fn schema_reports_default_errors() {
     assert_has_code(&err, CftErrorCode::UnknownEnumVariant);
     assert_has_code(&err, CftErrorCode::InvalidDefaultExpression);
 }
+
+#[test]
+fn schema_reports_parent_field_default_references() {
+    let source = r#"
+        type Base { base_id: int; }
+        type Child : Base {
+            copy: int = base_id;
+        }
+    "#;
+
+    let err = compile_one(source).unwrap_err();
+    assert_has_code(&err, CftErrorCode::DefaultReferencesField);
+}
+
+#[test]
+fn schema_accepts_explicit_i64_max_enum_value_without_following_auto_variant() {
+    let mut container = compile_one("enum Limit { Max = 9223372036854775807, }").unwrap();
+    container.compile().unwrap();
+
+    let enum_schema = container.resolve_enum("Limit").unwrap();
+    assert_eq!(enum_schema.variants[0].value, i64::MAX);
+}
+
+#[test]
+fn schema_reports_enum_auto_numbering_overflow_only_when_next_variant_needs_value() {
+    let err = compile_one("enum Limit { Max = 9223372036854775807, Next, }").unwrap_err();
+    assert_has_code(&err, CftErrorCode::InvalidEnumValueSequence);
+}
