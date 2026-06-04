@@ -1,6 +1,9 @@
-use crate::ast::{Item, ModuleAst};
-use crate::error::{ParseErrorKind, ParseErrors};
+use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::parser::parse_module;
+use crate::schema::{
+    compile_container, CftSchemaConst, CftSchemaEnum, CftSchemaModule, CftSchemaType,
+    CompiledSchema,
+};
 use crate::span::Span;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -44,22 +47,16 @@ impl fmt::Debug for ModuleId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ModuleError {
-    pub message: String,
-}
-
-#[derive(Debug)]
-pub(crate) struct TypeModule {
+#[derive(Debug, Clone)]
+pub(crate) struct CftModule {
     pub(crate) source: String,
-    pub(crate) ast: ModuleAst,
+    pub(crate) ast: crate::ast::ModuleAst,
 }
 
 #[derive(Debug, Default)]
 pub struct CftContainer {
-    pub(crate) modules: BTreeMap<ModuleId, TypeModule>,
-    pub(crate) type_names: BTreeMap<String, ModuleId>,
-    pub(crate) enum_names: BTreeMap<String, ModuleId>,
+    pub(crate) modules: BTreeMap<ModuleId, CftModule>,
+    compiled: Option<CompiledSchema>,
 }
 
 impl CftContainer {
@@ -68,71 +65,93 @@ impl CftContainer {
         Self::default()
     }
 
-    /// Adds a parsed type module to the container.
+    /// Registers one module and parses it into AST.
     ///
     /// # Errors
     ///
-    /// Returns parse errors when `source` is invalid, when `module` already exists, or when a type
-    /// or enum name has already been registered.
+    /// Returns diagnostics for duplicate module ids, lexical errors, or syntax errors.
     pub fn add_module(
         &mut self,
-        module: ModuleId,
+        id: ModuleId,
         source: impl Into<String>,
-    ) -> Result<(), ParseErrors> {
-        if self.modules.contains_key(&module) {
-            return Err(module_error(format!("module `{module}` already exists")));
+    ) -> Result<(), CftDiagnostics> {
+        if self.modules.contains_key(&id) {
+            return Err(CftDiagnostics::one(CftDiagnostic::error(
+                CftErrorCode::DuplicateModule,
+                id,
+                Span::new(0, 0),
+                "duplicate module id",
+            )));
         }
-
         let source = source.into();
-        let ast = parse_module(&source)?;
-        let mut type_names = BTreeMap::new();
-        let mut enum_names = BTreeMap::new();
-        for item in &ast.items {
-            match item {
-                Item::Type(def) => {
-                    if type_names.insert(def.name.clone(), def.span).is_some() {
-                        return Err(module_error(format!("duplicate type `{}`", def.name)));
-                    }
-                    if self.type_names.contains_key(&def.name) {
-                        return Err(module_error(format!("duplicate type `{}`", def.name)));
-                    }
-                }
-                Item::Enum(def) => {
-                    if enum_names.insert(def.name.clone(), def.span).is_some() {
-                        return Err(module_error(format!("duplicate enum `{}`", def.name)));
-                    }
-                    if self.enum_names.contains_key(&def.name) {
-                        return Err(module_error(format!("duplicate enum `{}`", def.name)));
-                    }
-                }
-            }
-        }
-
-        for name in type_names.keys() {
-            self.type_names.insert(name.clone(), module.clone());
-        }
-        for name in enum_names.keys() {
-            self.enum_names.insert(name.clone(), module.clone());
-        }
-        self.modules.insert(module, TypeModule { source, ast });
+        let ast = parse_module(&id, &source)?;
+        self.modules.insert(id, CftModule { source, ast });
+        self.compiled = None;
         Ok(())
     }
 
-    /// Returns the original source for a module.
+    /// Finalizes all registered modules into schema and statically type-checks checks.
     ///
     /// # Errors
     ///
-    /// Returns an error when `module` is unknown.
-    pub fn source(&self, module: &ModuleId) -> Result<&str, ModuleError> {
-        self.modules
-            .get(module)
-            .map(|module| module.source.as_str())
-            .ok_or_else(|| ModuleError {
-                message: format!("unknown module `{module}`"),
-            })
+    /// Returns schema and type diagnostics. Failed compilation clears the published schema.
+    pub fn compile(&mut self) -> Result<(), CftDiagnostics> {
+        self.compiled = None;
+        let compiled = compile_container(self)?;
+        self.compiled = Some(compiled);
+        Ok(())
     }
-}
 
-fn module_error(message: impl Into<String>) -> ParseErrors {
-    ParseErrors::one_kind(ParseErrorKind::Module, message, Span::new(0, 0))
+    #[must_use]
+    pub fn schema(&self, id: &ModuleId) -> Option<&CftSchemaModule> {
+        self.compiled.as_ref()?.modules.get(id)
+    }
+
+    #[must_use]
+    pub fn resolve_type(&self, name: &str) -> Option<&CftSchemaType> {
+        self.compiled.as_ref()?.types.get(name)
+    }
+
+    #[must_use]
+    pub fn resolve_enum(&self, name: &str) -> Option<&CftSchemaEnum> {
+        self.compiled.as_ref()?.enums.get(name)
+    }
+
+    #[must_use]
+    pub fn resolve_const(&self, name: &str) -> Option<&CftSchemaConst> {
+        self.compiled.as_ref()?.consts.get(name)
+    }
+
+    pub fn module_ids(&self) -> impl Iterator<Item = &ModuleId> {
+        self.modules.keys()
+    }
+
+    pub fn all_types(&self) -> impl Iterator<Item = &CftSchemaType> {
+        self.compiled
+            .as_ref()
+            .into_iter()
+            .flat_map(|compiled| compiled.types.values())
+    }
+
+    pub fn all_enums(&self) -> impl Iterator<Item = &CftSchemaEnum> {
+        self.compiled
+            .as_ref()
+            .into_iter()
+            .flat_map(|compiled| compiled.enums.values())
+    }
+
+    #[must_use]
+    pub fn has_type(&self, name: &str) -> bool {
+        self.resolve_type(name).is_some()
+    }
+
+    #[must_use]
+    pub fn has_enum(&self, name: &str) -> bool {
+        self.resolve_enum(name).is_some()
+    }
+
+    #[must_use]
+    pub fn source(&self, id: &ModuleId) -> Option<&str> {
+        self.modules.get(id).map(|module| module.source.as_str())
+    }
 }

@@ -1,63 +1,209 @@
+#![allow(dead_code)]
+
 use crate::span::Span;
 
 #[derive(Debug, Clone)]
 pub struct ModuleAst {
     pub items: Vec<Item>,
+    pub dangling_annotations: Vec<Annotation>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Item {
-    Type(TypeDef),
+    Const(ConstDef),
     Enum(EnumDef),
+    Type(TypeDef),
 }
 
 #[derive(Debug, Clone)]
-pub struct TypeDef {
+pub struct ConstDef {
     pub name: String,
-    pub fields: Vec<FieldDef>,
-    pub check: Option<CheckBlock>,
-    pub alias: Option<TypeRef>,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone)]
-pub struct FieldDef {
-    pub name: String,
-    pub ty: TypeRef,
-    pub default: Option<Expr>,
+    pub name_span: Span,
+    pub value: ConstLiteral,
+    pub annotations: Vec<Annotation>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone)]
 pub struct EnumDef {
     pub name: String,
+    pub name_span: Span,
     pub variants: Vec<EnumVariant>,
+    pub annotations: Vec<Annotation>,
+    pub dangling_annotations: Vec<Annotation>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone)]
 pub struct EnumVariant {
     pub name: String,
-    pub value: Option<i64>,
+    pub name_span: Span,
+    pub value: Option<SignedInt>,
+    pub annotations: Vec<Annotation>,
     pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeDef {
+    pub name: String,
+    pub name_span: Span,
+    pub is_abstract: bool,
+    pub abstract_span: Option<Span>,
+    pub is_sealed: bool,
+    pub sealed_span: Option<Span>,
+    pub parent: Option<NameRef>,
+    pub fields: Vec<FieldDef>,
+    pub check: Option<CheckBlock>,
+    pub annotations: Vec<Annotation>,
+    pub dangling_annotations: Vec<Annotation>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct FieldDef {
+    pub name: String,
+    pub name_span: Span,
+    pub ty: TypeRef,
+    pub default: Option<DefaultExpr>,
+    pub annotations: Vec<Annotation>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct NameRef {
+    pub name: String,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct Annotation {
+    pub name: String,
+    pub name_span: Span,
+    pub args: Vec<AnnotationArg>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum AnnotationArg {
+    Name(NameRef),
+    String(String, Span),
+    Int(i64, Span),
+    Float(f64, Span),
+    Bool(bool, Span),
+    Null(Span),
+}
+
+impl AnnotationArg {
+    #[must_use]
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Name(name) => name.span,
+            Self::String(_, span)
+            | Self::Int(_, span)
+            | Self::Float(_, span)
+            | Self::Bool(_, span)
+            | Self::Null(span) => *span,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SignedInt {
+    pub value: i64,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum ConstLiteral {
+    Int(i64, Span),
+    Float(f64, Span),
+    Bool(bool, Span),
+    String(String, Span),
+}
+
+impl ConstLiteral {
+    #[must_use]
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Int(_, span)
+            | Self::Float(_, span)
+            | Self::Bool(_, span)
+            | Self::String(_, span) => *span,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeRefKind {
+    Int,
+    Float,
+    Bool,
+    String,
+    Named(String),
+    Array(Box<TypeRef>),
+    Dict(Box<TypeRef>, Box<TypeRef>),
+    Nullable(Box<TypeRef>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeRef {
+    pub kind: TypeRefKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct DefaultExpr {
+    pub kind: DefaultExprKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum DefaultExprKind {
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    Null,
+    String(String),
+    Name(NameRef),
+    EnumVariant {
+        enum_name: NameRef,
+        variant: NameRef,
+    },
+    Array(Vec<DefaultExpr>),
+    Object(Vec<(NameRef, DefaultExpr)>),
 }
 
 #[derive(Debug, Clone)]
 pub struct CheckBlock {
-    pub stmts: Vec<CondStmt>,
+    pub stmts: Vec<CheckStmt>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone)]
-pub enum CondStmt {
+pub enum CheckStmt {
     Expr(CheckExpr),
     Quantifier {
         kind: QuantifierKind,
-        binding: String,
+        binding: NameRef,
         collection: CheckExpr,
-        body: Vec<CondStmt>,
+        body: Vec<CheckStmt>,
         span: Span,
     },
+    When {
+        condition: CheckExpr,
+        body: Vec<CheckStmt>,
+        span: Span,
+    },
+}
+
+impl CheckStmt {
+    #[must_use]
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Expr(expr) => expr.span,
+            Self::Quantifier { span, .. } | Self::When { span, .. } => *span,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,11 +225,11 @@ pub enum CheckExprKind {
     Float(f64),
     Bool(bool),
     Null,
-    Str(String),
+    String(String),
     Name(String),
     Field {
         expr: Box<CheckExpr>,
-        name: String,
+        name: NameRef,
     },
     Index {
         expr: Box<CheckExpr>,
@@ -94,7 +240,7 @@ pub enum CheckExprKind {
         predicate: TypePredicate,
     },
     Call {
-        name: String,
+        name: NameRef,
         args: Vec<CheckExpr>,
     },
     BinOp {
@@ -112,6 +258,12 @@ pub enum CheckExprKind {
     },
 }
 
+#[derive(Debug, Clone)]
+pub enum TypePredicate {
+    Type(NameRef),
+    Null(Span),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinOp {
     Or,
@@ -121,13 +273,13 @@ pub enum BinOp {
     BitAnd,
     Add,
     Sub,
+    Shl,
+    Shr,
     Mul,
     Div,
     IntDiv,
     Mod,
     Pow,
-    Shl,
-    Shr,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,63 +297,4 @@ pub enum CmpOp {
     Le,
     Gt,
     Ge,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TypeName {
-    Local(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TypeRef {
-    Int,
-    Float,
-    Bool,
-    String,
-    Null,
-    StringLiteral(String),
-    IntLiteral(i64),
-    BoolLiteral(bool),
-    Any,
-    Array(Box<TypeRef>),
-    Dict(Box<TypeRef>, Box<TypeRef>),
-    Union(Vec<TypeRef>),
-    Named(TypeName),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TypePredicate {
-    Type(TypeName),
-    Null,
-}
-
-/// Simplified expression for field default values (constants only).
-#[derive(Debug, Clone)]
-pub struct Expr {
-    pub kind: ExprKind,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone)]
-pub enum ExprKind {
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    Null,
-    String(String),
-    Name(String),
-    TypedObject {
-        ty: TypeName,
-        fields: Vec<ObjectField>,
-    },
-    Object(Vec<ObjectField>),
-    Array(Vec<Expr>),
-    Dict(Vec<(Expr, Expr)>),
-}
-
-#[derive(Debug, Clone)]
-pub struct ObjectField {
-    pub name: String,
-    pub value: Expr,
-    pub span: Span,
 }

@@ -1,402 +1,607 @@
 use crate::ast::{
-    BinOp, CheckBlock, CheckExpr, CheckExprKind, CmpOp, CondStmt, EnumDef, EnumVariant, Expr,
-    ExprKind, FieldDef, Item, ModuleAst, ObjectField, QuantifierKind, TypeDef, TypeName,
-    TypePredicate, TypeRef, UnaryOp,
+    Annotation, AnnotationArg, BinOp, CheckBlock, CheckExpr, CheckExprKind, CheckStmt, CmpOp,
+    ConstDef, ConstLiteral, DefaultExpr, DefaultExprKind, EnumDef, EnumVariant, FieldDef, Item,
+    ModuleAst, NameRef, QuantifierKind, SignedInt, TypeDef, TypePredicate, TypeRef, TypeRefKind,
+    UnaryOp,
 };
-use crate::error::ParseErrors;
+use crate::container::ModuleId;
+use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::lexer::{lex, Token, TokenKind};
 use crate::span::Span;
 
-pub fn parse_module(source: &str) -> Result<ModuleAst, ParseErrors> {
-    let tokens = lex(source)?;
-    Parser::new(tokens).parse_module()
+pub fn parse_module(module: &ModuleId, source: &str) -> Result<ModuleAst, CftDiagnostics> {
+    let tokens = lex(module, source)?;
+    Parser::new(module, tokens).parse_module()
 }
 
-struct Parser {
+struct Parser<'a> {
+    module: &'a ModuleId,
     tokens: Vec<Token>,
     pos: usize,
 }
 
-impl Parser {
-    fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, pos: 0 }
+impl<'a> Parser<'a> {
+    fn new(module: &'a ModuleId, tokens: Vec<Token>) -> Self {
+        Self {
+            module,
+            tokens,
+            pos: 0,
+        }
     }
 
-    fn parse_module(&mut self) -> Result<ModuleAst, ParseErrors> {
+    fn parse_module(&mut self) -> Result<ModuleAst, CftDiagnostics> {
         let mut items = Vec::new();
-
+        let mut pending_annotations = Vec::new();
         while !self.at(&TokenKind::Eof) {
-            if self.at(&TokenKind::Type) {
-                items.push(Item::Type(self.parse_type()?));
-            } else if self.at(&TokenKind::Enum) {
-                items.push(Item::Enum(self.parse_enum()?));
-            } else {
-                return self.err("only type and enum definitions are allowed in .cft files");
+            while self.at(&TokenKind::At) {
+                pending_annotations.push(self.parse_annotation()?);
             }
-        }
-
-        Ok(ModuleAst { items })
-    }
-
-    fn parse_type(&mut self) -> Result<TypeDef, ParseErrors> {
-        let start = self.expect_simple(&TokenKind::Type)?.start;
-        let (name, _) = self.expect_ident()?;
-        if self.eat(&TokenKind::Equal).is_some() {
-            let alias = self.parse_type_ref()?;
-            let end = self.expect_simple(&TokenKind::Semicolon)?.end;
-            return Ok(TypeDef {
-                name,
-                fields: Vec::new(),
-                check: None,
-                alias: Some(alias),
-                span: Span::new(start, end),
-            });
-        }
-        self.expect_simple(&TokenKind::LBrace)?;
-        let mut fields = Vec::new();
-        let mut check = None;
-        while !self.at(&TokenKind::RBrace) {
             if self.at(&TokenKind::Eof) {
-                return self.err("unterminated type definition");
-            }
-            if self.at(&TokenKind::Check) {
-                check = Some(self.parse_check_block()?);
                 break;
             }
-            let field_start = self.peek().span.start;
-            let (field_name, _) = self.expect_ident()?;
-            self.expect_simple(&TokenKind::Colon)?;
-            let ty = self.parse_type_ref()?;
-            let default = if self.eat(&TokenKind::Equal).is_some() {
-                Some(self.parse_expr()?)
+            if self.at(&TokenKind::Const) {
+                items.push(Item::Const(
+                    self.parse_const(take(&mut pending_annotations))?,
+                ));
+            } else if self.at(&TokenKind::Enum) {
+                items.push(Item::Enum(self.parse_enum(take(&mut pending_annotations))?));
+            } else if self.at(&TokenKind::Type)
+                || self.at(&TokenKind::Abstract)
+                || self.at(&TokenKind::Sealed)
+            {
+                items.push(Item::Type(self.parse_type(take(&mut pending_annotations))?));
             } else {
-                None
-            };
-            let end = self.expect_simple(&TokenKind::Semicolon)?.end;
-            fields.push(FieldDef {
-                name: field_name,
-                ty,
-                default,
-                span: Span::new(field_start, end),
-            });
+                return self.err(
+                    CftErrorCode::InvalidTopLevelItem,
+                    "top level items must be const, enum, or type definitions",
+                );
+            }
         }
-        let end = self.expect_simple(&TokenKind::RBrace)?.end;
-        Ok(TypeDef {
-            name,
-            fields,
-            check,
-            alias: None,
+        Ok(ModuleAst {
+            items,
+            dangling_annotations: pending_annotations,
+        })
+    }
+
+    fn parse_annotation(&mut self) -> Result<Annotation, CftDiagnostics> {
+        let start = self
+            .expect_simple(&TokenKind::At, CftErrorCode::InvalidAnnotationSyntax)?
+            .start;
+        let name = self.expect_ident_with_code(CftErrorCode::InvalidAnnotationSyntax)?;
+        let mut args = Vec::new();
+        let mut end = name.span.end;
+        if self.eat(&TokenKind::LParen).is_some() {
+            while !self.at(&TokenKind::RParen) {
+                if self.at(&TokenKind::Eof) {
+                    return self.err_at(
+                        CftErrorCode::InvalidAnnotationSyntax,
+                        Span::new(start, end),
+                        "unterminated annotation argument list",
+                    );
+                }
+                args.push(self.parse_annotation_arg()?);
+                if self.eat(&TokenKind::Comma).is_none() {
+                    break;
+                }
+            }
+            end = self
+                .expect_simple(&TokenKind::RParen, CftErrorCode::InvalidAnnotationSyntax)?
+                .end;
+        }
+        Ok(Annotation {
+            name: name.name,
+            name_span: name.span,
+            args,
             span: Span::new(start, end),
         })
     }
 
-    fn parse_enum(&mut self) -> Result<EnumDef, ParseErrors> {
-        let start = self.expect_simple(&TokenKind::Enum)?.start;
-        let (name, _) = self.expect_ident()?;
-        self.expect_simple(&TokenKind::LBrace)?;
+    fn parse_annotation_arg(&mut self) -> Result<AnnotationArg, CftDiagnostics> {
+        let token = self.peek().clone();
+        match token.kind {
+            TokenKind::Ident(_) => self
+                .expect_ident_with_code(CftErrorCode::InvalidAnnotationSyntax)
+                .map(AnnotationArg::Name),
+            TokenKind::String(value) => {
+                self.bump();
+                Ok(AnnotationArg::String(value, token.span))
+            }
+            TokenKind::Int(value) => {
+                self.bump();
+                Ok(AnnotationArg::Int(value, token.span))
+            }
+            TokenKind::Float(value) => {
+                self.bump();
+                Ok(AnnotationArg::Float(value, token.span))
+            }
+            TokenKind::True => {
+                self.bump();
+                Ok(AnnotationArg::Bool(true, token.span))
+            }
+            TokenKind::False => {
+                self.bump();
+                Ok(AnnotationArg::Bool(false, token.span))
+            }
+            TokenKind::Null => {
+                self.bump();
+                Ok(AnnotationArg::Null(token.span))
+            }
+            _ => self.err(
+                CftErrorCode::InvalidAnnotationSyntax,
+                "invalid annotation argument",
+            ),
+        }
+    }
+
+    fn parse_const(&mut self, annotations: Vec<Annotation>) -> Result<ConstDef, CftDiagnostics> {
+        let start = self
+            .expect_simple(&TokenKind::Const, CftErrorCode::UnexpectedToken)?
+            .start;
+        let name = self.expect_ident()?;
+        self.expect_simple(&TokenKind::Equal, CftErrorCode::ExpectedToken)?;
+        let value = self.parse_const_literal()?;
+        let end = self
+            .expect_simple(&TokenKind::Semicolon, CftErrorCode::ExpectedToken)?
+            .end;
+        Ok(ConstDef {
+            name: name.name,
+            name_span: name.span,
+            value,
+            annotations,
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_const_literal(&mut self) -> Result<ConstLiteral, CftDiagnostics> {
+        let token = self.peek().clone();
+        match token.kind {
+            TokenKind::Int(value) => {
+                self.bump();
+                Ok(ConstLiteral::Int(value, token.span))
+            }
+            TokenKind::Float(value) => {
+                self.bump();
+                Ok(ConstLiteral::Float(value, token.span))
+            }
+            TokenKind::True => {
+                self.bump();
+                Ok(ConstLiteral::Bool(true, token.span))
+            }
+            TokenKind::False => {
+                self.bump();
+                Ok(ConstLiteral::Bool(false, token.span))
+            }
+            TokenKind::String(value) => {
+                self.bump();
+                Ok(ConstLiteral::String(value, token.span))
+            }
+            TokenKind::Minus => {
+                self.bump();
+                let next = self.peek().clone();
+                match next.kind {
+                    TokenKind::Int(value) => {
+                        self.bump();
+                        Ok(ConstLiteral::Int(
+                            -value,
+                            Span::new(token.span.start, next.span.end),
+                        ))
+                    }
+                    TokenKind::Float(value) => {
+                        self.bump();
+                        Ok(ConstLiteral::Float(
+                            -value,
+                            Span::new(token.span.start, next.span.end),
+                        ))
+                    }
+                    _ => self.err(CftErrorCode::InvalidConstValue, "expected numeric literal"),
+                }
+            }
+            _ => self.err(
+                CftErrorCode::InvalidConstValue,
+                "const value must be an int, float, bool, or string literal",
+            ),
+        }
+    }
+
+    fn parse_enum(&mut self, annotations: Vec<Annotation>) -> Result<EnumDef, CftDiagnostics> {
+        let start = self
+            .expect_simple(&TokenKind::Enum, CftErrorCode::UnexpectedToken)?
+            .start;
+        let name = self.expect_ident()?;
+        self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
         let mut variants = Vec::new();
+        let mut dangling_annotations = Vec::new();
+        let mut pending_annotations = Vec::new();
         while !self.at(&TokenKind::RBrace) {
             if self.at(&TokenKind::Eof) {
-                return self.err("unterminated enum definition");
+                return self.err(CftErrorCode::UnexpectedEof, "unterminated enum definition");
             }
-            let span_start = self.peek().span.start;
-            let (variant, _) = self.expect_ident()?;
+            while self.at(&TokenKind::At) {
+                pending_annotations.push(self.parse_annotation()?);
+            }
+            if self.at(&TokenKind::RBrace) {
+                dangling_annotations.append(&mut pending_annotations);
+                break;
+            }
+            let variant_start = self.peek().span.start;
+            let variant = self.expect_ident()?;
             let value = if self.eat(&TokenKind::Equal).is_some() {
                 Some(self.parse_signed_int()?)
             } else {
                 None
             };
-            let span_end = self.prev_span().end;
+            let end = self.prev_span().end;
             variants.push(EnumVariant {
-                name: variant,
+                name: variant.name,
+                name_span: variant.span,
                 value,
-                span: Span::new(span_start, span_end),
+                annotations: take(&mut pending_annotations),
+                span: Span::new(variant_start, end),
             });
             if self.eat(&TokenKind::Comma).is_none() {
                 break;
             }
         }
-        let end = self.expect_simple(&TokenKind::RBrace)?.end;
+        let end = self
+            .expect_simple(&TokenKind::RBrace, CftErrorCode::ExpectedToken)?
+            .end;
         Ok(EnumDef {
-            name,
+            name: name.name,
+            name_span: name.span,
             variants,
+            annotations,
+            dangling_annotations,
             span: Span::new(start, end),
         })
     }
 
-    fn parse_type_ref(&mut self) -> Result<TypeRef, ParseErrors> {
-        let first = self.parse_type_atom()?;
-        let mut items = vec![first];
-        while self.eat(&TokenKind::Pipe).is_some() {
-            items.push(self.parse_type_atom()?);
+    fn parse_type(&mut self, annotations: Vec<Annotation>) -> Result<TypeDef, CftDiagnostics> {
+        let start = self.peek().span.start;
+        let mut is_abstract = false;
+        let mut abstract_span = None;
+        let mut is_sealed = false;
+        let mut sealed_span = None;
+        loop {
+            if let Some(span) = self.eat(&TokenKind::Abstract) {
+                is_abstract = true;
+                abstract_span = Some(span);
+            } else if let Some(span) = self.eat(&TokenKind::Sealed) {
+                is_sealed = true;
+                sealed_span = Some(span);
+            } else {
+                break;
+            }
         }
-        if items.len() == 1 {
-            Ok(items.remove(0))
+        self.expect_simple(&TokenKind::Type, CftErrorCode::ExpectedToken)?;
+        let name = self.expect_ident()?;
+        let parent = if self.eat(&TokenKind::Colon).is_some() {
+            Some(self.expect_ident()?)
         } else {
-            Ok(TypeRef::Union(items))
+            None
+        };
+        self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
+        let mut fields = Vec::new();
+        let mut check = None;
+        let mut dangling_annotations = Vec::new();
+        let mut pending_annotations = Vec::new();
+        let mut seen_check = false;
+        while !self.at(&TokenKind::RBrace) {
+            if self.at(&TokenKind::Eof) {
+                return self.err(CftErrorCode::UnexpectedEof, "unterminated type definition");
+            }
+            while self.at(&TokenKind::At) {
+                pending_annotations.push(self.parse_annotation()?);
+            }
+            if self.at(&TokenKind::RBrace) {
+                dangling_annotations.append(&mut pending_annotations);
+                break;
+            }
+            if self.at(&TokenKind::Check) {
+                if seen_check {
+                    return self.err(CftErrorCode::DuplicateCheckBlock, "duplicate check block");
+                }
+                if !pending_annotations.is_empty() {
+                    dangling_annotations.append(&mut pending_annotations);
+                }
+                seen_check = true;
+                check = Some(self.parse_check_block()?);
+                continue;
+            }
+            if seen_check {
+                return self.err(
+                    CftErrorCode::CheckBlockMustBeLast,
+                    "check block must be the last item in a type",
+                );
+            }
+            fields.push(self.parse_field(take(&mut pending_annotations))?);
         }
+        let end = self
+            .expect_simple(&TokenKind::RBrace, CftErrorCode::ExpectedToken)?
+            .end;
+        Ok(TypeDef {
+            name: name.name,
+            name_span: name.span,
+            is_abstract,
+            abstract_span,
+            is_sealed,
+            sealed_span,
+            parent,
+            fields,
+            check,
+            annotations,
+            dangling_annotations,
+            span: Span::new(start, end),
+        })
     }
 
-    fn parse_type_atom(&mut self) -> Result<TypeRef, ParseErrors> {
-        if self.eat(&TokenKind::LBracket).is_some() {
+    fn parse_field(&mut self, annotations: Vec<Annotation>) -> Result<FieldDef, CftDiagnostics> {
+        let start = self.peek().span.start;
+        let name = self.expect_ident()?;
+        self.expect_simple(&TokenKind::Colon, CftErrorCode::ExpectedToken)?;
+        let ty = self.parse_type_ref()?;
+        let default = if self.eat(&TokenKind::Equal).is_some() {
+            Some(self.parse_default_expr()?)
+        } else {
+            None
+        };
+        let end = self
+            .expect_simple(&TokenKind::Semicolon, CftErrorCode::ExpectedToken)?
+            .end;
+        Ok(FieldDef {
+            name: name.name,
+            name_span: name.span,
+            ty,
+            default,
+            annotations,
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_type_ref(&mut self) -> Result<TypeRef, CftDiagnostics> {
+        let mut ty = if let Some(start) = self.eat(&TokenKind::LBracket) {
             let inner = self.parse_type_ref()?;
-            self.expect_simple(&TokenKind::RBracket)?;
-            return Ok(TypeRef::Array(Box::new(inner)));
-        }
-        if self.eat(&TokenKind::LBrace).is_some() {
+            let end = self
+                .expect_simple(&TokenKind::RBracket, CftErrorCode::ExpectedToken)?
+                .end;
+            TypeRef {
+                span: Span::new(start.start, end),
+                kind: TypeRefKind::Array(Box::new(inner)),
+            }
+        } else if let Some(start) = self.eat(&TokenKind::LBrace) {
             let key = self.parse_type_ref()?;
-            self.expect_simple(&TokenKind::Colon)?;
+            self.expect_simple(&TokenKind::Colon, CftErrorCode::ExpectedToken)?;
             let value = self.parse_type_ref()?;
-            self.expect_simple(&TokenKind::RBrace)?;
-            return Ok(TypeRef::Dict(Box::new(key), Box::new(value)));
-        }
-        if let TokenKind::String(value) = self.peek().kind.clone() {
-            self.bump();
-            return Ok(TypeRef::StringLiteral(value));
-        }
-        if let TokenKind::Int(value) = self.peek().kind.clone() {
-            self.bump();
-            return Ok(TypeRef::IntLiteral(value));
-        }
-        if self.eat(&TokenKind::True).is_some() {
-            return Ok(TypeRef::BoolLiteral(true));
-        }
-        if self.eat(&TokenKind::False).is_some() {
-            return Ok(TypeRef::BoolLiteral(false));
-        }
-        if self.eat(&TokenKind::Null).is_some() {
-            return Ok(TypeRef::Null);
-        }
-        let (name, _) = self.expect_type_name_ident()?;
-        let ty = match name.as_str() {
-            "int" => TypeRef::Int,
-            "float" => TypeRef::Float,
-            "bool" => TypeRef::Bool,
-            "string" => TypeRef::String,
-            "any" => TypeRef::Any,
-            _ => {
-                if self.eat(&TokenKind::Dot).is_some() {
-                    return self.err("imported type names are not supported in .cft files");
-                }
-                TypeRef::Named(TypeName::Local(name))
+            let end = self
+                .expect_simple(&TokenKind::RBrace, CftErrorCode::ExpectedToken)?
+                .end;
+            TypeRef {
+                span: Span::new(start.start, end),
+                kind: TypeRefKind::Dict(Box::new(key), Box::new(value)),
+            }
+        } else {
+            let name = self.expect_ident()?;
+            let kind = match name.name.as_str() {
+                "int" => TypeRefKind::Int,
+                "float" => TypeRefKind::Float,
+                "bool" => TypeRefKind::Bool,
+                "string" => TypeRefKind::String,
+                _ => TypeRefKind::Named(name.name),
+            };
+            TypeRef {
+                kind,
+                span: name.span,
             }
         };
-        if self.eat(&TokenKind::Question).is_some() {
-            Ok(TypeRef::Union(vec![ty, TypeRef::Null]))
-        } else {
-            Ok(ty)
+        if let Some(question) = self.eat(&TokenKind::Question) {
+            ty = TypeRef {
+                span: ty.span.join(question),
+                kind: TypeRefKind::Nullable(Box::new(ty)),
+            };
         }
+        Ok(ty)
     }
 
-    fn parse_expr(&mut self) -> Result<Expr, ParseErrors> {
+    fn parse_default_expr(&mut self) -> Result<DefaultExpr, CftDiagnostics> {
         let token = self.peek().clone();
         match token.kind {
             TokenKind::Int(value) => {
                 self.bump();
-                Ok(Expr {
-                    kind: ExprKind::Int(value),
+                Ok(DefaultExpr {
+                    kind: DefaultExprKind::Int(value),
                     span: token.span,
                 })
             }
             TokenKind::Float(value) => {
                 self.bump();
-                Ok(Expr {
-                    kind: ExprKind::Float(value),
+                Ok(DefaultExpr {
+                    kind: DefaultExprKind::Float(value),
                     span: token.span,
                 })
             }
             TokenKind::True => {
                 self.bump();
-                Ok(Expr {
-                    kind: ExprKind::Bool(true),
+                Ok(DefaultExpr {
+                    kind: DefaultExprKind::Bool(true),
                     span: token.span,
                 })
             }
             TokenKind::False => {
                 self.bump();
-                Ok(Expr {
-                    kind: ExprKind::Bool(false),
+                Ok(DefaultExpr {
+                    kind: DefaultExprKind::Bool(false),
                     span: token.span,
                 })
             }
             TokenKind::Null => {
                 self.bump();
-                Ok(Expr {
-                    kind: ExprKind::Null,
+                Ok(DefaultExpr {
+                    kind: DefaultExprKind::Null,
                     span: token.span,
                 })
             }
             TokenKind::String(value) => {
                 self.bump();
-                Ok(Expr {
-                    kind: ExprKind::String(value),
+                Ok(DefaultExpr {
+                    kind: DefaultExprKind::String(value),
                     span: token.span,
                 })
             }
-            TokenKind::Ident(_) => self.parse_path_or_qualified(),
-            TokenKind::LBrace => self.parse_object(),
-            TokenKind::LBracket => self.parse_array(),
-            TokenKind::Dict => self.parse_dict(),
+            TokenKind::Ident(_) => self.parse_name_or_enum_default(),
+            TokenKind::LBracket => self.parse_array_default(),
+            TokenKind::LBrace => self.parse_object_default(),
             TokenKind::Minus => {
                 self.bump();
-                let start = token.span.start;
                 let next = self.peek().clone();
                 match next.kind {
                     TokenKind::Int(value) => {
                         self.bump();
-                        Ok(Expr {
-                            kind: ExprKind::Int(-value),
-                            span: Span::new(start, next.span.end),
+                        Ok(DefaultExpr {
+                            kind: DefaultExprKind::Int(-value),
+                            span: Span::new(token.span.start, next.span.end),
                         })
                     }
                     TokenKind::Float(value) => {
                         self.bump();
-                        Ok(Expr {
-                            kind: ExprKind::Float(-value),
-                            span: Span::new(start, next.span.end),
+                        Ok(DefaultExpr {
+                            kind: DefaultExprKind::Float(-value),
+                            span: Span::new(token.span.start, next.span.end),
                         })
                     }
-                    _ => self.err("expected number after `-`"),
+                    _ => self.err(
+                        CftErrorCode::InvalidDefaultExpression,
+                        "expected number after `-`",
+                    ),
                 }
             }
-            _ => self.err("expected expression"),
+            _ => self.err(
+                CftErrorCode::InvalidDefaultExpression,
+                "expected default expression",
+            ),
         }
     }
 
-    fn parse_path_or_qualified(&mut self) -> Result<Expr, ParseErrors> {
-        let start = self.peek().span.start;
-        let (first, first_span) = self.expect_ident()?;
+    fn parse_name_or_enum_default(&mut self) -> Result<DefaultExpr, CftDiagnostics> {
+        let first = self.expect_ident()?;
         if self.eat(&TokenKind::Dot).is_some() {
-            return self.err("dot-separated paths are not supported in .cft files");
+            let variant = self.expect_ident()?;
+            Ok(DefaultExpr {
+                span: first.span.join(variant.span),
+                kind: DefaultExprKind::EnumVariant {
+                    enum_name: first,
+                    variant,
+                },
+            })
+        } else {
+            Ok(DefaultExpr {
+                span: first.span,
+                kind: DefaultExprKind::Name(first),
+            })
         }
-        if self.at(&TokenKind::LBrace) {
-            let object = self.parse_object()?;
-            if let ExprKind::Object(fields) = object.kind {
-                return Ok(Expr {
-                    kind: ExprKind::TypedObject {
-                        ty: TypeName::Local(first),
-                        fields,
-                    },
-                    span: Span::new(start.min(first_span.start), object.span.end),
-                });
-            }
-        }
-        Ok(Expr {
-            kind: ExprKind::Name(first),
-            span: Span::new(start.min(first_span.start), first_span.end),
-        })
     }
 
-    fn parse_object(&mut self) -> Result<Expr, ParseErrors> {
-        let start = self.expect_simple(&TokenKind::LBrace)?.start;
-        let mut fields = Vec::new();
-        while !self.at(&TokenKind::RBrace) {
-            if self.at(&TokenKind::Eof) {
-                return self.err("unterminated object expression");
-            }
-            let field_start = self.peek().span.start;
-            let (name, _) = self.expect_ident()?;
-            self.expect_simple(&TokenKind::Colon)?;
-            let value = self.parse_expr()?;
-            let field_end = value.span.end;
-            fields.push(ObjectField {
-                name,
-                value,
-                span: Span::new(field_start, field_end),
-            });
-            if self.eat(&TokenKind::Comma).is_none() {
-                break;
-            }
-        }
-        let end = self.expect_simple(&TokenKind::RBrace)?.end;
-        Ok(Expr {
-            kind: ExprKind::Object(fields),
-            span: Span::new(start, end),
-        })
-    }
-
-    fn parse_array(&mut self) -> Result<Expr, ParseErrors> {
-        let start = self.expect_simple(&TokenKind::LBracket)?.start;
+    fn parse_array_default(&mut self) -> Result<DefaultExpr, CftDiagnostics> {
+        let start = self
+            .expect_simple(&TokenKind::LBracket, CftErrorCode::ExpectedToken)?
+            .start;
         let mut items = Vec::new();
         while !self.at(&TokenKind::RBracket) {
             if self.at(&TokenKind::Eof) {
-                return self.err("unterminated array expression");
+                return self.err(CftErrorCode::UnexpectedEof, "unterminated array default");
             }
-            items.push(self.parse_expr()?);
+            items.push(self.parse_default_expr()?);
             if self.eat(&TokenKind::Comma).is_none() {
                 break;
             }
         }
-        let end = self.expect_simple(&TokenKind::RBracket)?.end;
-        Ok(Expr {
-            kind: ExprKind::Array(items),
+        let end = self
+            .expect_simple(&TokenKind::RBracket, CftErrorCode::ExpectedToken)?
+            .end;
+        Ok(DefaultExpr {
+            kind: DefaultExprKind::Array(items),
             span: Span::new(start, end),
         })
     }
 
-    fn parse_dict(&mut self) -> Result<Expr, ParseErrors> {
-        let start = self.expect_simple(&TokenKind::Dict)?.start;
-        self.expect_simple(&TokenKind::LBrace)?;
-        let mut entries = Vec::new();
+    fn parse_object_default(&mut self) -> Result<DefaultExpr, CftDiagnostics> {
+        let start = self
+            .expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?
+            .start;
+        let mut fields = Vec::new();
         while !self.at(&TokenKind::RBrace) {
             if self.at(&TokenKind::Eof) {
-                return self.err("unterminated dict expression");
+                return self.err(CftErrorCode::UnexpectedEof, "unterminated object default");
             }
-            let key = self.parse_expr()?;
-            self.expect_simple(&TokenKind::Colon)?;
-            let value = self.parse_expr()?;
-            entries.push((key, value));
+            let name = self.expect_ident()?;
+            self.expect_simple(&TokenKind::Colon, CftErrorCode::ExpectedToken)?;
+            let value = self.parse_default_expr()?;
+            fields.push((name, value));
             if self.eat(&TokenKind::Comma).is_none() {
                 break;
             }
         }
-        let end = self.expect_simple(&TokenKind::RBrace)?.end;
-        Ok(Expr {
-            kind: ExprKind::Dict(entries),
+        let end = self
+            .expect_simple(&TokenKind::RBrace, CftErrorCode::ExpectedToken)?
+            .end;
+        Ok(DefaultExpr {
+            kind: DefaultExprKind::Object(fields),
             span: Span::new(start, end),
         })
     }
 
-    fn parse_check_block(&mut self) -> Result<CheckBlock, ParseErrors> {
-        let start = self.expect_simple(&TokenKind::Check)?.start;
-        self.expect_simple(&TokenKind::LBrace)?;
-        let stmts = self.parse_cond_stmts()?;
-        let end = self.expect_simple(&TokenKind::RBrace)?.end;
+    fn parse_check_block(&mut self) -> Result<CheckBlock, CftDiagnostics> {
+        let start = self
+            .expect_simple(&TokenKind::Check, CftErrorCode::UnexpectedToken)?
+            .start;
+        self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
+        let stmts = self.parse_check_stmts()?;
+        let end = self
+            .expect_simple(&TokenKind::RBrace, CftErrorCode::ExpectedToken)?
+            .end;
         Ok(CheckBlock {
             stmts,
             span: Span::new(start, end),
         })
     }
 
-    fn parse_cond_stmts(&mut self) -> Result<Vec<CondStmt>, ParseErrors> {
+    fn parse_check_stmts(&mut self) -> Result<Vec<CheckStmt>, CftDiagnostics> {
         let mut stmts = Vec::new();
         while !self.at(&TokenKind::RBrace) {
             if self.at(&TokenKind::Eof) {
-                return self.err("unterminated check block");
+                return self.err(CftErrorCode::UnexpectedEof, "unterminated check block");
             }
-            stmts.push(self.parse_cond_stmt()?);
+            stmts.push(self.parse_check_stmt()?);
         }
         Ok(stmts)
     }
 
-    fn parse_cond_stmt(&mut self) -> Result<CondStmt, ParseErrors> {
+    fn parse_check_stmt(&mut self) -> Result<CheckStmt, CftDiagnostics> {
         if let Some(kind) = self.peek_quantifier() {
             return self.parse_quantifier_stmt(kind);
         }
+        if self.at(&TokenKind::When) {
+            return self.parse_when_stmt();
+        }
         let expr = self.parse_check_expr()?;
-        self.expect_simple(&TokenKind::Semicolon)?;
-        Ok(CondStmt::Expr(expr))
+        if self.eat(&TokenKind::Semicolon).is_none() {
+            return self.err(
+                CftErrorCode::InvalidCheckStatement,
+                "check expression statements must end with `;`",
+            );
+        }
+        Ok(CheckStmt::Expr(expr))
     }
 
-    fn parse_quantifier_stmt(&mut self, kind: QuantifierKind) -> Result<CondStmt, ParseErrors> {
+    fn parse_quantifier_stmt(&mut self, kind: QuantifierKind) -> Result<CheckStmt, CftDiagnostics> {
         let start = self.bump().span.start;
-        let (binding, _) = self.expect_ident()?;
-        self.expect_simple(&TokenKind::In)?;
+        let binding = self.expect_ident()?;
+        self.expect_simple(&TokenKind::In, CftErrorCode::ExpectedToken)?;
         let collection = self.parse_check_expr()?;
-        self.expect_simple(&TokenKind::LBrace)?;
-        let body = self.parse_cond_stmts()?;
-        let end = self.expect_simple(&TokenKind::RBrace)?.end;
-        Ok(CondStmt::Quantifier {
+        self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
+        let body = self.parse_check_stmts()?;
+        let end = self
+            .expect_simple(&TokenKind::RBrace, CftErrorCode::ExpectedToken)?
+            .end;
+        Ok(CheckStmt::Quantifier {
             kind,
             binding,
             collection,
@@ -405,11 +610,28 @@ impl Parser {
         })
     }
 
-    fn parse_check_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+    fn parse_when_stmt(&mut self) -> Result<CheckStmt, CftDiagnostics> {
+        let start = self
+            .expect_simple(&TokenKind::When, CftErrorCode::UnexpectedToken)?
+            .start;
+        let condition = self.parse_check_expr()?;
+        self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
+        let body = self.parse_check_stmts()?;
+        let end = self
+            .expect_simple(&TokenKind::RBrace, CftErrorCode::ExpectedToken)?
+            .end;
+        Ok(CheckStmt::When {
+            condition,
+            body,
+            span: Span::new(start, end),
+        })
+    }
+
+    fn parse_check_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
         self.parse_or_expr()
     }
 
-    fn parse_or_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+    fn parse_or_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
         let mut expr = self.parse_and_expr()?;
         while self.eat(&TokenKind::PipePipe).is_some() {
             let rhs = self.parse_and_expr()?;
@@ -418,7 +640,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn parse_and_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+    fn parse_and_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
         let mut expr = self.parse_is_expr()?;
         while self.eat(&TokenKind::AmpAmp).is_some() {
             let rhs = self.parse_is_expr()?;
@@ -427,50 +649,26 @@ impl Parser {
         Ok(expr)
     }
 
-    fn parse_is_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
-        let expr = self.parse_cmp_chain()?;
-        if self.eat(&TokenKind::Is).is_none() {
-            return Ok(expr);
-        }
-        let predicate = self.parse_type_predicate()?;
-        let span = Span::new(expr.span.start, self.prev_span().end);
-        Ok(CheckExpr {
-            kind: CheckExprKind::Is {
-                expr: Box::new(expr),
-                predicate,
-            },
-            span,
-        })
-    }
-
-    fn parse_bitor_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
-        let mut expr = self.parse_bitxor_expr()?;
-        while self.eat(&TokenKind::Pipe).is_some() {
-            let rhs = self.parse_bitxor_expr()?;
-            expr = bin_expr(BinOp::BitOr, expr, rhs);
+    fn parse_is_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
+        let mut expr = self.parse_cmp_chain()?;
+        while self.eat(&TokenKind::Is).is_some() {
+            let predicate = self.parse_type_predicate()?;
+            let end = match &predicate {
+                TypePredicate::Type(name) => name.span.end,
+                TypePredicate::Null(span) => span.end,
+            };
+            expr = CheckExpr {
+                span: Span::new(expr.span.start, end),
+                kind: CheckExprKind::Is {
+                    expr: Box::new(expr),
+                    predicate,
+                },
+            };
         }
         Ok(expr)
     }
 
-    fn parse_bitxor_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
-        let mut expr = self.parse_bitand_expr()?;
-        while self.eat(&TokenKind::Caret).is_some() {
-            let rhs = self.parse_bitand_expr()?;
-            expr = bin_expr(BinOp::BitXor, expr, rhs);
-        }
-        Ok(expr)
-    }
-
-    fn parse_bitand_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
-        let mut expr = self.parse_add_expr()?;
-        while self.eat(&TokenKind::Amp).is_some() {
-            let rhs = self.parse_add_expr()?;
-            expr = bin_expr(BinOp::BitAnd, expr, rhs);
-        }
-        Ok(expr)
-    }
-
-    fn parse_cmp_chain(&mut self) -> Result<CheckExpr, ParseErrors> {
+    fn parse_cmp_chain(&mut self) -> Result<CheckExpr, CftDiagnostics> {
         let first = self.parse_bitor_expr()?;
         let mut rest = Vec::new();
         while let Some(op) = self.eat_cmp_op() {
@@ -479,40 +677,54 @@ impl Parser {
         if rest.is_empty() {
             return Ok(first);
         }
-        let start = first.span.start;
-        validate_cmp_chain(&rest, first.span)?;
+        validate_cmp_chain(self.module, first.span, &rest)?;
         let end = rest
             .last()
             .map_or(first.span.end, |(_, expr)| expr.span.end);
         Ok(CheckExpr {
+            span: Span::new(first.span.start, end),
             kind: CheckExprKind::CmpChain {
                 first: Box::new(first),
                 rest,
             },
-            span: Span::new(start, end),
         })
     }
 
-    fn parse_add_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
-        let mut expr = self.parse_shift_expr()?;
+    fn parse_bitor_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
+        let mut expr = self.parse_bitxor_expr()?;
+        while self.eat(&TokenKind::Pipe).is_some() {
+            let rhs = self.parse_bitxor_expr()?;
+            expr = bin_expr(BinOp::BitOr, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_bitxor_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
+        let mut expr = self.parse_bitand_expr()?;
+        while self.eat(&TokenKind::Caret).is_some() {
+            let rhs = self.parse_bitand_expr()?;
+            expr = bin_expr(BinOp::BitXor, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_bitand_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
+        let mut expr = self.parse_add_expr()?;
+        while self.eat(&TokenKind::Amp).is_some() {
+            let rhs = self.parse_add_expr()?;
+            expr = bin_expr(BinOp::BitAnd, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_add_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
+        let mut expr = self.parse_mul_expr()?;
         loop {
             let op = if self.eat(&TokenKind::Plus).is_some() {
                 BinOp::Add
             } else if self.eat(&TokenKind::Minus).is_some() {
                 BinOp::Sub
-            } else {
-                break;
-            };
-            let rhs = self.parse_shift_expr()?;
-            expr = bin_expr(op, expr, rhs);
-        }
-        Ok(expr)
-    }
-
-    fn parse_shift_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
-        let mut expr = self.parse_mul_expr()?;
-        loop {
-            let op = if self.eat(&TokenKind::LessLess).is_some() {
+            } else if self.eat(&TokenKind::LessLess).is_some() {
                 BinOp::Shl
             } else if self.eat(&TokenKind::GreaterGreater).is_some() {
                 BinOp::Shr
@@ -525,8 +737,8 @@ impl Parser {
         Ok(expr)
     }
 
-    fn parse_mul_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
-        let mut expr = self.parse_prefix_expr()?;
+    fn parse_mul_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
+        let mut expr = self.parse_power_expr()?;
         loop {
             let op = if self.eat(&TokenKind::Star).is_some() {
                 BinOp::Mul
@@ -539,13 +751,23 @@ impl Parser {
             } else {
                 break;
             };
-            let rhs = self.parse_prefix_expr()?;
+            let rhs = self.parse_power_expr()?;
             expr = bin_expr(op, expr, rhs);
         }
         Ok(expr)
     }
 
-    fn parse_prefix_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
+    fn parse_power_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
+        let lhs = self.parse_prefix_expr()?;
+        if self.eat(&TokenKind::StarStar).is_some() {
+            let rhs = self.parse_power_expr()?;
+            Ok(bin_expr(BinOp::Pow, lhs, rhs))
+        } else {
+            Ok(lhs)
+        }
+    }
+
+    fn parse_prefix_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
         let token = self.peek().clone();
         let op = if self.eat(&TokenKind::Bang).is_some() {
             Some(UnaryOp::Not)
@@ -566,55 +788,58 @@ impl Parser {
                 },
             });
         }
-        self.parse_power_expr()
+        self.parse_postfix_expr()
     }
 
-    fn parse_power_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
-        let lhs = self.parse_postfix_expr()?;
-        if self.eat(&TokenKind::StarStar).is_some() {
-            let rhs = self.parse_prefix_expr()?;
-            Ok(bin_expr(BinOp::Pow, lhs, rhs))
-        } else {
-            Ok(lhs)
-        }
-    }
-
-    fn parse_postfix_expr(&mut self) -> Result<CheckExpr, ParseErrors> {
-        let mut expr = self.parse_check_primary()?;
+    fn parse_postfix_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
+        let mut expr = self.parse_primary_expr()?;
         loop {
             if self.eat(&TokenKind::LParen).is_some() {
                 let CheckExprKind::Name(name) = expr.kind else {
-                    return self.err("only builtin function names can be called");
+                    return self.err(
+                        CftErrorCode::UnexpectedToken,
+                        "only named functions can be called",
+                    );
                 };
-                let start = expr.span.start;
+                let call_name = NameRef {
+                    name,
+                    span: expr.span,
+                };
                 let mut args = Vec::new();
                 while !self.at(&TokenKind::RParen) {
                     if self.at(&TokenKind::Eof) {
-                        return self.err("unterminated function call");
+                        return self.err(CftErrorCode::UnexpectedEof, "unterminated function call");
                     }
                     args.push(self.parse_check_expr()?);
                     if self.eat(&TokenKind::Comma).is_none() {
                         break;
                     }
                 }
-                let end = self.expect_simple(&TokenKind::RParen)?.end;
+                let end = self
+                    .expect_simple(&TokenKind::RParen, CftErrorCode::ExpectedToken)?
+                    .end;
                 expr = CheckExpr {
-                    kind: CheckExprKind::Call { name, args },
-                    span: Span::new(start, end),
+                    span: Span::new(call_name.span.start, end),
+                    kind: CheckExprKind::Call {
+                        name: call_name,
+                        args,
+                    },
                 };
             } else if self.eat(&TokenKind::Dot).is_some() {
-                let (name, name_span) = self.expect_ident()?;
-                let span = Span::new(expr.span.start, name_span.end);
+                let name = self.expect_ident()?;
+                let span = Span::new(expr.span.start, name.span.end);
                 expr = CheckExpr {
+                    span,
                     kind: CheckExprKind::Field {
                         expr: Box::new(expr),
                         name,
                     },
-                    span,
                 };
             } else if self.eat(&TokenKind::LBracket).is_some() {
                 let index = self.parse_check_expr()?;
-                let end = self.expect_simple(&TokenKind::RBracket)?.end;
+                let end = self
+                    .expect_simple(&TokenKind::RBracket, CftErrorCode::ExpectedToken)?
+                    .end;
                 expr = CheckExpr {
                     span: Span::new(expr.span.start, end),
                     kind: CheckExprKind::Index {
@@ -629,7 +854,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn parse_check_primary(&mut self) -> Result<CheckExpr, ParseErrors> {
+    fn parse_primary_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
         let token = self.peek().clone();
         match token.kind {
             TokenKind::Int(value) => {
@@ -667,17 +892,10 @@ impl Parser {
                     span: token.span,
                 })
             }
-            TokenKind::Any => {
-                self.bump();
-                Ok(CheckExpr {
-                    kind: CheckExprKind::Name("any".to_string()),
-                    span: token.span,
-                })
-            }
             TokenKind::String(value) => {
                 self.bump();
                 Ok(CheckExpr {
-                    kind: CheckExprKind::Str(value),
+                    kind: CheckExprKind::String(value),
                     span: token.span,
                 })
             }
@@ -689,13 +907,43 @@ impl Parser {
                 })
             }
             TokenKind::LParen => {
-                let start = self.expect_simple(&TokenKind::LParen)?.start;
+                let start = self
+                    .expect_simple(&TokenKind::LParen, CftErrorCode::ExpectedToken)?
+                    .start;
                 let mut expr = self.parse_check_expr()?;
-                let end = self.expect_simple(&TokenKind::RParen)?.end;
+                let end = self
+                    .expect_simple(&TokenKind::RParen, CftErrorCode::ExpectedToken)?
+                    .end;
                 expr.span = Span::new(start, end);
                 Ok(expr)
             }
-            _ => self.err("expected check expression"),
+            _ => self.err(
+                CftErrorCode::InvalidCheckStatement,
+                "expected check expression",
+            ),
+        }
+    }
+
+    fn parse_type_predicate(&mut self) -> Result<TypePredicate, CftDiagnostics> {
+        if let Some(span) = self.eat(&TokenKind::Null) {
+            return Ok(TypePredicate::Null(span));
+        }
+        self.expect_ident().map(TypePredicate::Type)
+    }
+
+    fn parse_signed_int(&mut self) -> Result<SignedInt, CftDiagnostics> {
+        let sign_span = self.eat(&TokenKind::Minus);
+        let token = self.peek().clone();
+        match token.kind {
+            TokenKind::Int(value) => {
+                self.bump();
+                let value = if sign_span.is_some() { -value } else { value };
+                Ok(SignedInt {
+                    value,
+                    span: sign_span.map_or(token.span, |span| span.join(token.span)),
+                })
+            }
+            _ => self.err(CftErrorCode::ExpectedToken, "expected integer literal"),
         }
     }
 
@@ -706,21 +954,6 @@ impl Parser {
             TokenKind::None => Some(QuantifierKind::None),
             _ => None,
         }
-    }
-
-    fn parse_type_predicate(&mut self) -> Result<TypePredicate, ParseErrors> {
-        if self.eat(&TokenKind::Null).is_some() {
-            return Ok(TypePredicate::Null);
-        }
-        self.parse_check_type_name().map(TypePredicate::Type)
-    }
-
-    fn parse_check_type_name(&mut self) -> Result<TypeName, ParseErrors> {
-        let (name, _) = self.expect_ident()?;
-        if self.eat(&TokenKind::Dot).is_some() {
-            return self.err("imported type names are not supported in .cft files");
-        }
-        Ok(TypeName::Local(name))
     }
 
     fn eat_cmp_op(&mut self) -> Option<CmpOp> {
@@ -741,61 +974,33 @@ impl Parser {
         }
     }
 
-    fn parse_signed_int(&mut self) -> Result<i64, ParseErrors> {
-        let sign = if self.eat(&TokenKind::Minus).is_some() {
-            -1
-        } else {
-            1
-        };
+    fn expect_ident(&mut self) -> Result<NameRef, CftDiagnostics> {
+        self.expect_ident_with_code(CftErrorCode::ExpectedIdentifier)
+    }
+
+    fn expect_ident_with_code(&mut self, code: CftErrorCode) -> Result<NameRef, CftDiagnostics> {
         let token = self.peek().clone();
         match token.kind {
-            TokenKind::Int(value) => {
+            TokenKind::Ident(name) => {
                 self.bump();
-                Ok(sign * value)
+                Ok(NameRef {
+                    name,
+                    span: token.span,
+                })
             }
-            _ => self.err("expected integer literal"),
+            _ => self.err(code, "expected identifier"),
         }
     }
 
-    fn expect_ident(&mut self) -> Result<(String, Span), ParseErrors> {
-        let token = self.peek().clone();
-        match token.kind {
-            TokenKind::Ident(value) => {
-                self.bump();
-                Ok((value, token.span))
-            }
-            TokenKind::Any => {
-                self.bump();
-                Ok(("any".to_string(), token.span))
-            }
-            TokenKind::None => {
-                self.bump();
-                Ok(("none".to_string(), token.span))
-            }
-            _ => self.err("expected identifier"),
-        }
-    }
-
-    fn expect_type_name_ident(&mut self) -> Result<(String, Span), ParseErrors> {
-        let token = self.peek().clone();
-        match token.kind {
-            TokenKind::Ident(value) => {
-                self.bump();
-                Ok((value, token.span))
-            }
-            TokenKind::Any => {
-                self.bump();
-                Ok(("any".to_string(), token.span))
-            }
-            _ => self.err("expected identifier"),
-        }
-    }
-
-    fn expect_simple(&mut self, kind: &TokenKind) -> Result<Span, ParseErrors> {
+    fn expect_simple(
+        &mut self,
+        kind: &TokenKind,
+        code: CftErrorCode,
+    ) -> Result<Span, CftDiagnostics> {
         if self.at(kind) {
             Ok(self.bump().span)
         } else {
-            self.err(format!("expected `{}`", token_name(kind)))
+            self.err(code, format!("expected `{}`", token_name(kind)))
         }
     }
 
@@ -825,52 +1030,55 @@ impl Parser {
         self.tokens[self.pos - 1].span
     }
 
-    fn err<T>(&self, message: impl Into<String>) -> Result<T, ParseErrors> {
-        Err(ParseErrors::one(message, self.peek().span))
+    fn err<T>(&self, code: CftErrorCode, message: impl Into<String>) -> Result<T, CftDiagnostics> {
+        self.err_at(code, self.peek().span, message)
+    }
+
+    fn err_at<T>(
+        &self,
+        code: CftErrorCode,
+        span: Span,
+        message: impl Into<String>,
+    ) -> Result<T, CftDiagnostics> {
+        Err(CftDiagnostics::one(CftDiagnostic::error(
+            code,
+            self.module.clone(),
+            span,
+            message,
+        )))
     }
 }
 
-fn token_name(kind: &TokenKind) -> &'static str {
-    match kind {
-        TokenKind::LBrace => "{",
-        TokenKind::RBrace => "}",
-        TokenKind::LBracket => "[",
-        TokenKind::RBracket => "]",
-        TokenKind::LParen => "(",
-        TokenKind::RParen => ")",
-        TokenKind::Colon => ":",
-        TokenKind::Semicolon => ";",
-        TokenKind::Comma => ",",
-        TokenKind::Dot => ".",
-        TokenKind::Equal => "=",
-        TokenKind::Question => "?",
-        TokenKind::In => "in",
-        TokenKind::Is => "is",
-        _ => "token",
-    }
+fn take<T>(items: &mut Vec<T>) -> Vec<T> {
+    std::mem::take(items)
 }
 
 fn bin_expr(op: BinOp, lhs: CheckExpr, rhs: CheckExpr) -> CheckExpr {
-    let span = Span::new(lhs.span.start, rhs.span.end);
     CheckExpr {
+        span: lhs.span.join(rhs.span),
         kind: CheckExprKind::BinOp {
             op,
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
         },
-        span,
     }
 }
 
-fn validate_cmp_chain(rest: &[(CmpOp, CheckExpr)], span: Span) -> Result<(), ParseErrors> {
+fn validate_cmp_chain(
+    module: &ModuleId,
+    first_span: Span,
+    rest: &[(CmpOp, CheckExpr)],
+) -> Result<(), CftDiagnostics> {
     if rest.len() < 2 {
         return Ok(());
     }
     if rest.iter().any(|(op, _)| *op == CmpOp::Ne) {
-        return Err(ParseErrors::one(
+        return Err(CftDiagnostics::one(CftDiagnostic::error(
+            CftErrorCode::InvalidChainComparison,
+            module.clone(),
+            first_span,
             "`!=` cannot be used in chain comparisons",
-            span,
-        ));
+        )));
     }
     let first_group = cmp_chain_group(rest[0].0);
     if rest
@@ -878,10 +1086,12 @@ fn validate_cmp_chain(rest: &[(CmpOp, CheckExpr)], span: Span) -> Result<(), Par
         .skip(1)
         .any(|(op, _)| cmp_chain_group(*op) != first_group)
     {
-        return Err(ParseErrors::one(
+        return Err(CftDiagnostics::one(CftDiagnostic::error(
+            CftErrorCode::InvalidChainComparison,
+            module.clone(),
+            first_span,
             "chain comparison operators must have a consistent direction",
-            span,
-        ));
+        )));
     }
     Ok(())
 }
@@ -901,4 +1111,23 @@ enum CmpChainGroup {
     Decreasing,
     Equal,
     NotEqual,
+}
+
+fn token_name(kind: &TokenKind) -> &'static str {
+    match kind {
+        TokenKind::LBrace => "{",
+        TokenKind::RBrace => "}",
+        TokenKind::LBracket => "[",
+        TokenKind::RBracket => "]",
+        TokenKind::LParen => "(",
+        TokenKind::RParen => ")",
+        TokenKind::Colon => ":",
+        TokenKind::Semicolon => ";",
+        TokenKind::Comma => ",",
+        TokenKind::Dot => ".",
+        TokenKind::Equal => "=",
+        TokenKind::Question => "?",
+        TokenKind::In => "in",
+        _ => "token",
+    }
 }

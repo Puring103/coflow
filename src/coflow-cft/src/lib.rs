@@ -6,10 +6,13 @@ mod parser;
 mod schema;
 mod span;
 
-pub use container::{CftContainer, ModuleError, ModuleId};
-pub use error::{ParseError, ParseErrorKind, ParseErrors};
-pub use parser::parse_module;
+#[cfg(test)]
+mod tests;
+
+pub use container::{CftContainer, ModuleId};
+pub use error::{CftDiagnostic, CftDiagnostics, CftErrorCode, CftLabel, CftSeverity, CftStage};
 pub use schema::{
-    CftSchemaEnum, CftSchemaEnumVariant, CftSchemaField, CftSchemaModule, CftSchemaType,
+    CftAnnotation, CftAnnotationValue, CftConstValue, CftSchemaConst, CftSchemaEnum,
+    CftSchemaEnumVariant, CftSchemaField, CftSchemaModule, CftSchemaType,
 };
 pub use span::Span;

@@ -34,4 +34,5 @@ print_stdout = "warn"
 print_stderr = "warn"
 
 [dependencies]
+regex = "1"
 unicode-ident = "1"
