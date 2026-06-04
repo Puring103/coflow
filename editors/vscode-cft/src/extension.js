@@ -3,7 +3,13 @@ const cp = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
-const IDENT = "[A-Za-z_][A-Za-z0-9_]*";
+const IDENT_START = "[_\\p{ID_Start}]";
+const IDENT_CONTINUE = "[_\\p{ID_Continue}]";
+const IDENT = `${IDENT_START}${IDENT_CONTINUE}*`;
+const IDENT_BOUNDARY_BEFORE = `(?<!${IDENT_CONTINUE})`;
+const IDENT_BOUNDARY_AFTER = `(?!${IDENT_CONTINUE})`;
+const IDENT_WORD_RE = new RegExp(IDENT, "u");
+const ANNOTATION_WORD_RE = new RegExp(`@?${IDENT}`, "u");
 
 const KEYWORDS = [
   ["const", "Define a compile-time constant."],
@@ -117,12 +123,13 @@ class CftCompletionProvider {
     const symbols = collectSymbols(document);
     const linePrefix = document.lineAt(position).text.slice(0, position.character);
 
-    if (/@[A-Za-z0-9_]*$/.test(linePrefix)) {
-      const range = rangeFromLineMatch(document, position, /@[A-Za-z0-9_]*$/);
+    const annotationPrefix = new RegExp(`@${IDENT_CONTINUE}*$`, "u");
+    if (annotationPrefix.test(linePrefix)) {
+      const range = rangeFromLineMatch(document, position, annotationPrefix);
       return ANNOTATIONS.map((annotation) => annotationItem(annotation, range));
     }
 
-    const dot = linePrefix.match(new RegExp(`(${IDENT})\\.\\s*(${IDENT})?$`));
+    const dot = linePrefix.match(new RegExp(`(${IDENT})\\.\\s*(${IDENT})?$`, "u"));
     if (dot) {
       const target = dot[1];
       const typed = dot[2] || "";
@@ -141,7 +148,7 @@ class CftCompletionProvider {
       return dotFieldCompletions(symbols, document.offsetAt(position), range);
     }
 
-    if (/\bis\s+[A-Za-z0-9_]*$/.test(linePrefix)) {
+    if (new RegExp(`${IDENT_BOUNDARY_BEFORE}is\\s+${IDENT_CONTINUE}*$`, "u").test(linePrefix)) {
       return [
         ...symbols.types.map((type) =>
           simpleItem(type.name, vscode.CompletionItemKind.Class, "CFT type")
@@ -183,8 +190,8 @@ class CftCompletionProvider {
 class CftHoverProvider {
   provideHover(document, position) {
     const range =
-      document.getWordRangeAtPosition(position, /@[A-Za-z_][A-Za-z0-9_]*/) ||
-      document.getWordRangeAtPosition(position, /[A-Za-z_][A-Za-z0-9_]*/);
+      document.getWordRangeAtPosition(position, ANNOTATION_WORD_RE) ||
+      document.getWordRangeAtPosition(position, IDENT_WORD_RE);
     if (!range) {
       return undefined;
     }
@@ -246,7 +253,7 @@ class CftDocumentSymbolProvider {
 
 class CftDefinitionProvider {
   async provideDefinition(document, position) {
-    const range = document.getWordRangeAtPosition(position, /[A-Za-z_][A-Za-z0-9_]*/);
+    const range = document.getWordRangeAtPosition(position, IDENT_WORD_RE);
     if (!range) {
       return undefined;
     }
@@ -485,7 +492,9 @@ function dotFieldCompletions(symbols, offset, range) {
 }
 
 function isTypeReferenceContext(linePrefix) {
-  return /:\s*[\[{A-Za-z0-9_]*$/.test(linePrefix) || /@\s*ref\s*\(\s*[A-Za-z0-9_]*$/.test(linePrefix);
+  const typePrefix = new RegExp(`:\\s*(?:[\\[{]\\s*)?${IDENT_CONTINUE}*$`, "u");
+  const refPrefix = new RegExp(`@\\s*ref\\s*\\(\\s*${IDENT_CONTINUE}*$`, "u");
+  return typePrefix.test(linePrefix) || refPrefix.test(linePrefix);
 }
 
 function rangeFromLineMatch(document, position, regex) {
@@ -510,14 +519,14 @@ function collectSymbols(document) {
   const consts = [];
   const enumVariants = new Map();
 
-  for (const match of masked.matchAll(new RegExp(`\\bconst\\s+(${IDENT})\\b`, "g"))) {
+  for (const match of masked.matchAll(new RegExp(`${IDENT_BOUNDARY_BEFORE}const\\s+(${IDENT})${IDENT_BOUNDARY_AFTER}`, "gu"))) {
     const name = match[1];
     const start = match.index + match[0].lastIndexOf(name);
     const end = start + name.length;
     consts.push({ name, start, end, uri: document.uri });
   }
 
-  const enumRegex = new RegExp(`\\benum\\s+(${IDENT})\\b`, "g");
+  const enumRegex = new RegExp(`${IDENT_BOUNDARY_BEFORE}enum\\s+(${IDENT})${IDENT_BOUNDARY_AFTER}`, "gu");
   for (const match of masked.matchAll(enumRegex)) {
     const name = match[1];
     const nameStart = match.index + match[0].lastIndexOf(name);
@@ -533,7 +542,7 @@ function collectSymbols(document) {
     }
   }
 
-  const typeRegex = new RegExp(`\\b(?:(?:abstract|sealed)\\s+)*type\\s+(${IDENT})\\b`, "g");
+  const typeRegex = new RegExp(`${IDENT_BOUNDARY_BEFORE}(?:(?:abstract|sealed)\\s+)*type\\s+(${IDENT})${IDENT_BOUNDARY_AFTER}`, "gu");
   for (const match of masked.matchAll(typeRegex)) {
     const name = match[1];
     const nameStart = match.index + match[0].lastIndexOf(name);
@@ -548,9 +557,11 @@ function collectSymbols(document) {
 }
 
 function parseEnumVariants(masked, bodyStart, bodyEnd, uri) {
-  const body = masked.slice(bodyStart, bodyEnd).replace(/@[A-Za-z_][A-Za-z0-9_]*(?:\([^)]*\))?/g, " ");
+  const body = masked
+    .slice(bodyStart, bodyEnd)
+    .replace(new RegExp(`@${IDENT}(?:\\([^)]*\\))?`, "gu"), " ");
   const variants = [];
-  const variantRegex = new RegExp(`(?:^|,)\\s*(${IDENT})\\b`, "g");
+  const variantRegex = new RegExp(`(?:^|,)\\s*(${IDENT})${IDENT_BOUNDARY_AFTER}`, "gu");
   for (const match of body.matchAll(variantRegex)) {
     const name = match[1];
     const start = bodyStart + match.index + match[0].lastIndexOf(name);
@@ -566,7 +577,7 @@ function parseFields(masked, bodyStart, bodyEnd) {
   const fields = [];
   const fieldRegex = new RegExp(
     `(?:^|[;\\n])\\s*((?:@${IDENT}(?:\\([^)]*\\))?\\s*)*)(${IDENT})\\s*:\\s*([^;=]+)`,
-    "g"
+    "gu"
   );
   for (const match of fieldBody.matchAll(fieldRegex)) {
     const annotations = match[1] || "";
@@ -590,12 +601,12 @@ function parseFields(masked, bodyStart, bodyEnd) {
 
 function namedTypeFromTypeRef(rawType) {
   const text = rawType.trim().replace(/\?$/, "").trim();
-  const named = text.match(new RegExp(`^(${IDENT})$`));
+  const named = text.match(new RegExp(`^(${IDENT})$`, "u"));
   return named ? named[1] : undefined;
 }
 
 function refTargetFromAnnotations(annotations) {
-  const match = annotations.match(new RegExp(`@ref\\s*\\(\\s*(${IDENT})\\s*\\)`));
+  const match = annotations.match(new RegExp(`@ref\\s*\\(\\s*(${IDENT})\\s*\\)`, "u"));
   return match ? match[1] : undefined;
 }
 
@@ -862,10 +873,10 @@ function dottedChainAt(document, range) {
   const line = document.lineAt(range.start.line).text;
   const left = line.slice(0, range.end.character);
   const right = line.slice(range.end.character);
-  const leftMatch = left.match(new RegExp(`(${IDENT}(?:\\s*\\.\\s*${IDENT})*)$`));
-  const rightMatch = right.match(new RegExp(`^(?:\\s*\\.\\s*${IDENT})*`));
+  const leftMatch = left.match(new RegExp(`(${IDENT}(?:\\s*\\.\\s*${IDENT})*)$`, "u"));
+  const rightMatch = right.match(new RegExp(`^(?:\\s*\\.\\s*${IDENT})*`, "u"));
   const text = `${leftMatch ? leftMatch[1] : ""}${rightMatch ? rightMatch[0] : ""}`;
-  return [...text.matchAll(new RegExp(IDENT, "g"))].map((match) => ({ name: match[0] }));
+  return [...text.matchAll(new RegExp(IDENT, "gu"))].map((match) => ({ name: match[0] }));
 }
 
 function positionAtText(text, offset) {

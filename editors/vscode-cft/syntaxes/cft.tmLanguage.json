@@ -49,7 +49,7 @@
         },
         {
           "name": "invalid.illegal.annotation.cft",
-          "match": "@[A-Za-z_][A-Za-z0-9_]*\\b"
+          "match": "@[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*"
         }
       ]
     },
@@ -89,7 +89,7 @@
       "patterns": [
         {
           "name": "meta.declaration.const.cft",
-          "match": "\\b(const)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(const)\\s+([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)",
           "captures": {
             "1": {
               "name": "storage.type.const.cft"
@@ -101,7 +101,7 @@
         },
         {
           "name": "meta.declaration.enum.cft",
-          "match": "\\b(enum)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(enum)\\s+([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)",
           "captures": {
             "1": {
               "name": "storage.type.enum.cft"
@@ -113,7 +113,7 @@
         },
         {
           "name": "meta.declaration.type.cft",
-          "match": "\\b((?:(?:abstract|sealed)\\s+)*)(type)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b((?:(?:abstract|sealed)\\s+)*)(type)\\s+([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)",
           "captures": {
             "1": {
               "name": "storage.modifier.cft"
@@ -199,7 +199,7 @@
       "patterns": [
         {
           "name": "support.type.user-defined.cft",
-          "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+          "match": "[_\\p{Lu}\\p{Lt}\\p{Lo}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*"
         }
       ]
     }

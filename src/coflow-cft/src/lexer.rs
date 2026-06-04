@@ -100,7 +100,7 @@ impl<'a> Lexer<'a> {
             let Some(ch) = self.source[self.pos..].chars().next() else {
                 break;
             };
-            if ch.is_ascii_whitespace() {
+            if ch.is_whitespace() {
                 self.pos += ch.len_utf8();
                 continue;
             }
@@ -472,10 +472,12 @@ impl<'a> Lexer<'a> {
         let Some(next) = self.next_non_ws(self.pos + 2) else {
             return false;
         };
-        let prev_can_end_operand =
-            prev.is_ascii_alphanumeric() || prev == '_' || matches!(prev, ')' | ']' | '"');
-        let next_can_start_operand =
-            next.is_ascii_alphanumeric() || next == '_' || matches!(next, '(' | '"' | '-' | '!');
+        let prev_can_end_operand = prev.is_ascii_digit()
+            || is_ident_continue(prev)
+            || matches!(prev, ')' | ']' | '"' | '\'');
+        let next_can_start_operand = next.is_ascii_digit()
+            || is_ident_start(next)
+            || matches!(next, '(' | '"' | '\'' | '-' | '!');
         prev_can_end_operand && next_can_start_operand
     }
 
@@ -498,4 +500,12 @@ impl<'a> Lexer<'a> {
             message,
         ))
     }
+}
+
+fn is_ident_start(ch: char) -> bool {
+    ch == '_' || is_xid_start(ch)
+}
+
+fn is_ident_continue(ch: char) -> bool {
+    ch == '_' || is_xid_continue(ch)
 }

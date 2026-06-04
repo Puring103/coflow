@@ -63,6 +63,31 @@ fn parser_accepts_core_syntax() {
 }
 
 #[test]
+fn parser_accepts_unicode_identifiers_whitespace_and_int_division() {
+    let source = r#"
+        const 上限 = 10;
+        enum 稀有度 { 普通, 传说 = 2, }
+
+        type　道具 {
+            名称: string = "长剑🙂";
+            数量: int = 9;
+            每组数量: int = 3;
+            稀有: 稀有度 = 稀有度.普通;
+            check {
+                数量 // 每组数量 >= 1;
+                数量 <= 上限;
+                名称 != "";
+            }
+        }
+    "#;
+
+    let mut container = add_source(source).unwrap();
+    container.compile().unwrap();
+    assert!(container.has_type("道具"));
+    assert!(container.has_enum("稀有度"));
+}
+
+#[test]
 fn parser_rejects_invalid_top_level_item() {
     let err = add_source("let x = 1;").unwrap_err();
     assert_primary_stage(&err, CftErrorCode::InvalidTopLevelItem, CftStage::Syn);
