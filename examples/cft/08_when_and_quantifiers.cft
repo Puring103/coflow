@@ -1,0 +1,36 @@
+// when blocks are conditional checks.
+// all, any, and none iterate over arrays or dicts.
+
+type ExampleSkill {
+  id: string;
+  is_passive: bool;
+  cooldown: float? = null;
+  range: float? = null;
+  costs: [int] = [];
+
+  check {
+    id != "";
+
+    when !is_passive {
+      cooldown != null;
+      cooldown > 0.0;
+    }
+
+    when is_passive {
+      range != null;
+      range > 0.0;
+    }
+
+    all cost in costs {
+      cost >= 0;
+    }
+
+    any cost in costs {
+      cost == 0;
+    }
+
+    none cost in costs {
+      cost < 0;
+    }
+  }
+}

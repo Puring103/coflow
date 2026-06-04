@@ -1,0 +1,35 @@
+// Nullable fields use T?.
+// @ref fields store an id but are type-checked in checks as the target object.
+
+type ExampleQuestStep {
+  title: string;
+  optional_target: ExampleItem? = null;
+
+  @ref(ExampleItem)
+  required_item_id: string;
+
+  check {
+    title != "";
+    required_item_id.id != "";
+
+    when optional_target != null {
+      optional_target.rarity >= ExampleRarity.Common;
+    }
+  }
+}
+
+type ExampleQuest {
+  @id
+  id: string;
+
+  name: string;
+  steps: [ExampleQuestStep] = [];
+  reward: ExampleReward;
+
+  check {
+    id != "";
+    name != "";
+    len(steps) > 0;
+    reward is ExampleReward;
+  }
+}

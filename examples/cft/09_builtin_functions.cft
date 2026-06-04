@@ -1,0 +1,22 @@
+// Built-in functions are available in check expressions.
+
+type ExampleBuiltinFunctions {
+  id: string;
+  numbers: [int] = [];
+  names: [string] = [];
+  scores: {string: int} = {};
+
+  check {
+    matches(id, "^[a-z][a-z0-9_]*$");
+    len(numbers) >= 0;
+    sum(numbers) >= 0;
+    unique(names);
+    contains(names, "default");
+    contains(scores, "default");
+    len(keys(scores)) == len(values(scores));
+
+    when len(numbers) > 0 {
+      min(numbers) <= max(numbers);
+    }
+  }
+}

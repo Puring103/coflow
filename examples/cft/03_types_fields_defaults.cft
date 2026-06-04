@@ -1,0 +1,29 @@
+// Types define schema objects. Fields use semicolons and may have defaults.
+
+@struct
+sealed type ExampleVector2 {
+  x: float;
+  y: float;
+}
+
+@display("Example item")
+type ExampleItem {
+  @id
+  id: string;
+
+  @display("Display name")
+  name: string;
+
+  @index
+  rarity: ExampleRarity = ExampleRarity.Common;
+
+  price: int = 0;
+  tags: [string] = [];
+
+  check {
+    id != "";
+    name != "";
+    price >= 0;
+    none tag in tags { tag == ""; }
+  }
+}

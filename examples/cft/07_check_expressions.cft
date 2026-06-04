@@ -1,0 +1,21 @@
+// check blocks contain boolean conditions.
+// Operators include arithmetic, comparisons, logical operators, and bitwise operators.
+
+type ExampleFormula {
+  a: int;
+  b: int;
+  c: float;
+  flags: ExamplePermission;
+
+  check {
+    a + b > 0;
+    a * b >= 0;
+    b != 0;
+    a // b >= 0;
+    a % b >= 0;
+    0 <= a <= EXAMPLE_MAX_LEVEL;
+    c ** 2.0 >= 0.0;
+    !(a < 0);
+    (flags | ExamplePermission.Write) != ExamplePermission(0);
+  }
+}

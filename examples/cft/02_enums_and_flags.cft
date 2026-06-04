@@ -1,0 +1,34 @@
+// Plain enums model a finite set of named integer values.
+
+enum ExampleRarity {
+  Common = 0,
+  Rare = 10,
+  Epic = 20,
+}
+
+enum ExampleDamageType {
+  Physical,
+  Fire,
+  Ice,
+}
+
+// @flag enums support bitwise checks.
+
+@flag
+enum ExamplePermission {
+  Read = 1,
+  Write = 2,
+  Execute = 4,
+}
+
+type ExampleEnumUsage {
+  rarity: ExampleRarity = ExampleRarity.Common;
+  damage_type: ExampleDamageType = ExampleDamageType.Fire;
+  permissions: ExamplePermission = ExamplePermission.Read;
+
+  check {
+    rarity >= ExampleRarity.Common;
+    damage_type != ExampleDamageType.Physical;
+    (permissions & ExamplePermission.Read) != ExamplePermission(0);
+  }
+}

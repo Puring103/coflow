@@ -1,0 +1,36 @@
+// Types support single inheritance.
+// Abstract types cannot be instantiated directly.
+
+abstract type ExampleReward {
+  @id
+  id: string;
+
+  check {
+    id != "";
+  }
+}
+
+type ExampleItemReward : ExampleReward {
+  item: ExampleItem;
+  count: int = 1;
+
+  check {
+    count > 0;
+  }
+}
+
+type ExampleCurrencyReward : ExampleReward {
+  amount: int;
+
+  check {
+    amount > 0;
+  }
+}
+
+sealed type ExampleFixedReward : ExampleReward {
+  label: string;
+
+  check {
+    label != "";
+  }
+}

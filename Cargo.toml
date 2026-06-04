@@ -1,3 +1,8 @@
 [workspace]
-members = ["src/coflow-cft", "src/coflow-data-model", "src/coflow-checker"]
+members = [
+    "src/coflow-cft",
+    "src/coflow-cft-cli",
+    "src/coflow-data-model",
+    "src/coflow-checker",
+]
 resolver = "2"

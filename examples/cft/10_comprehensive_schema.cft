@@ -1,0 +1,36 @@
+// A larger example tying the core syntax together.
+
+type ExampleMonsterStats {
+  hp: int;
+  attack: int;
+  speed: float = EXAMPLE_MIN_SPEED;
+
+  check {
+    hp > 0;
+    attack >= 0;
+    speed >= EXAMPLE_MIN_SPEED;
+  }
+}
+
+type ExampleMonster {
+  @id
+  id: string;
+
+  name: string;
+  level: int;
+  rarity: ExampleRarity = ExampleRarity.Common;
+  stats: ExampleMonsterStats;
+  loot: ExampleLootTable;
+  skill: ExampleSkill? = null;
+
+  check {
+    id != "";
+    name != "";
+    1 <= level <= EXAMPLE_MAX_LEVEL;
+    stats.hp > 0;
+
+    when skill != null {
+      skill.id != "";
+    }
+  }
+}

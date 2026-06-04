@@ -1,0 +1,88 @@
+{
+  "name": "coflow-cft",
+  "displayName": "CFT Language Support",
+  "description": "Syntax highlighting, snippets, hovers, and completions for Coflow Type File (.cft).",
+  "version": "0.1.0",
+  "publisher": "coflow",
+  "license": "MIT OR Apache-2.0",
+  "engines": {
+    "vscode": "^1.84.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "cft",
+    "coflow",
+    "schema",
+    "game-data"
+  ],
+  "activationEvents": [
+    "onLanguage:cft"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "CFT",
+      "properties": {
+        "coflowCft.diagnostics.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable diagnostics from the coflow-cft compiler."
+        },
+        "coflowCft.diagnostics.command": {
+          "type": "string",
+          "default": "cargo",
+          "description": "Command used to run the CFT diagnostics tool."
+        },
+        "coflowCft.diagnostics.args": {
+          "type": "array",
+          "default": [
+            "run",
+            "--quiet",
+            "-p",
+            "coflow-cft-cli",
+            "--",
+            "diagnostics"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Arguments used before the diagnostics tool arguments."
+        },
+        "coflowCft.diagnostics.debounceMs": {
+          "type": "number",
+          "default": 350,
+          "minimum": 0,
+          "description": "Delay before diagnostics run after document edits."
+        }
+      }
+    },
+    "languages": [
+      {
+        "id": "cft",
+        "aliases": [
+          "CFT",
+          "Coflow Type File"
+        ],
+        "extensions": [
+          ".cft"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "cft",
+        "scopeName": "source.cft",
+        "path": "./syntaxes/cft.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "cft",
+        "path": "./snippets/cft.json"
+      }
+    ]
+  }
+}

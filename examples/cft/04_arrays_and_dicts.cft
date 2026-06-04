@@ -1,0 +1,26 @@
+// Arrays use [T]. Dicts use {K: V}.
+// Dict keys may be string, int, or enum types.
+
+type ExampleLootTable {
+  item_ids: [string] = [];
+  weights: [int] = [];
+  named_weights: {string: int} = {};
+  resistances: {ExampleDamageType: float} = {};
+
+  check {
+    len(item_ids) == len(weights);
+    sum(weights) >= 0;
+    unique(item_ids);
+    contains(resistances, ExampleDamageType.Fire);
+
+    all entry in named_weights {
+      entry.key != "";
+      entry.value >= 0;
+    }
+
+    all entry in resistances {
+      entry.key >= ExampleDamageType.Physical;
+      0.0 <= entry.value <= 1.0;
+    }
+  }
+}
