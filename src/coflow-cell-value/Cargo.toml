@@ -1,0 +1,16 @@
+[package]
+name = "coflow-cell-value"
+version = "0.1.0"
+edition = "2021"
+description = "Schema-guided Coflow Excel cell value parser."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/wtlll/ScriptForGame"
+readme = "../../README.md"
+keywords = ["config", "game-data", "parser"]
+categories = ["config", "parser-implementations", "game-development"]
+publish = false
+
+[dependencies]
+coflow-cft = { path = "../coflow-cft" }
+coflow-data-model = { path = "../coflow-data-model" }
+unicode-ident = "1"

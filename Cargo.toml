@@ -3,6 +3,7 @@ members = [
     "src/coflow-cft",
     "src/coflow-cft-cli",
     "src/coflow-data-model",
+    "src/coflow-cell-value",
     "src/coflow-checker",
 ]
 resolver = "2"
