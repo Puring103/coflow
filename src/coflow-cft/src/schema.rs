@@ -40,6 +40,7 @@ pub struct CftSchemaType {
     pub is_abstract: bool,
     pub is_sealed: bool,
     pub fields: Vec<CftSchemaField>,
+    pub check: Option<CftSchemaCheckBlock>,
     pub annotations: Vec<CftAnnotation>,
     pub span: Span,
 }
@@ -49,8 +50,141 @@ pub struct CftSchemaField {
     pub name: String,
     pub ty: String,
     pub has_default: bool,
+    pub default: Option<CftSchemaDefaultValue>,
     pub annotations: Vec<CftAnnotation>,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CftSchemaDefaultValue {
+    Null,
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    String(String),
+    Enum {
+        enum_name: String,
+        variant: String,
+        value: i64,
+    },
+    EmptyArray,
+    EmptyObject,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CftSchemaCheckBlock {
+    pub stmts: Vec<CftSchemaCheckStmt>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CftSchemaCheckStmt {
+    Expr(CftSchemaCheckExpr),
+    Quantifier {
+        kind: CftSchemaQuantifierKind,
+        binding: String,
+        collection: CftSchemaCheckExpr,
+        body: Vec<CftSchemaCheckStmt>,
+        span: Span,
+    },
+    When {
+        condition: CftSchemaCheckExpr,
+        body: Vec<CftSchemaCheckStmt>,
+        span: Span,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CftSchemaCheckExpr {
+    pub kind: CftSchemaCheckExprKind,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CftSchemaCheckExprKind {
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    Null,
+    String(String),
+    Name(String),
+    Field {
+        expr: Box<CftSchemaCheckExpr>,
+        name: String,
+    },
+    Index {
+        expr: Box<CftSchemaCheckExpr>,
+        index: Box<CftSchemaCheckExpr>,
+    },
+    Is {
+        expr: Box<CftSchemaCheckExpr>,
+        predicate: CftSchemaTypePredicate,
+    },
+    Call {
+        name: String,
+        args: Vec<CftSchemaCheckExpr>,
+    },
+    BinOp {
+        op: CftSchemaBinOp,
+        lhs: Box<CftSchemaCheckExpr>,
+        rhs: Box<CftSchemaCheckExpr>,
+    },
+    Unary {
+        op: CftSchemaUnaryOp,
+        expr: Box<CftSchemaCheckExpr>,
+    },
+    CmpChain {
+        first: Box<CftSchemaCheckExpr>,
+        rest: Vec<(CftSchemaCmpOp, CftSchemaCheckExpr)>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CftSchemaTypePredicate {
+    Type(String),
+    Null,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CftSchemaQuantifierKind {
+    All,
+    Any,
+    None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CftSchemaBinOp {
+    Or,
+    And,
+    BitOr,
+    BitXor,
+    BitAnd,
+    Add,
+    Sub,
+    Shl,
+    Shr,
+    Mul,
+    Div,
+    IntDiv,
+    Mod,
+    Pow,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CftSchemaUnaryOp {
+    Not,
+    BitNot,
+    Neg,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CftSchemaCmpOp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -965,6 +1099,10 @@ impl<'a> SchemaCompiler<'a> {
                     name: field.name.clone(),
                     ty: format_type_ref(&field.ty),
                     has_default: field.default.is_some(),
+                    default: field
+                        .default
+                        .as_ref()
+                        .and_then(|default| self.schema_default_value(default)),
                     annotations: convert_annotations(&field.annotations),
                     span: field.span,
                 })
@@ -976,6 +1114,7 @@ impl<'a> SchemaCompiler<'a> {
                 is_abstract: info.def.is_abstract,
                 is_sealed: info.def.is_sealed,
                 fields,
+                check: info.def.check.as_ref().map(convert_check_block),
                 annotations: convert_annotations(&info.def.annotations),
                 span: info.def.span,
             };
@@ -991,6 +1130,45 @@ impl<'a> SchemaCompiler<'a> {
             types,
             enums,
         }
+    }
+
+    fn schema_default_value(&self, expr: &DefaultExpr) -> Option<CftSchemaDefaultValue> {
+        Some(match &expr.kind {
+            DefaultExprKind::Null => CftSchemaDefaultValue::Null,
+            DefaultExprKind::Int(value) => CftSchemaDefaultValue::Int(*value),
+            DefaultExprKind::Float(value) => CftSchemaDefaultValue::Float(*value),
+            DefaultExprKind::Bool(value) => CftSchemaDefaultValue::Bool(*value),
+            DefaultExprKind::String(value) => CftSchemaDefaultValue::String(value.clone()),
+            DefaultExprKind::Array(items) if items.is_empty() => CftSchemaDefaultValue::EmptyArray,
+            DefaultExprKind::Object(fields) if fields.is_empty() => {
+                CftSchemaDefaultValue::EmptyObject
+            }
+            DefaultExprKind::Name(name) => match self.consts.get(&name.name)?.value.clone() {
+                CftConstValue::Int(value) => CftSchemaDefaultValue::Int(value),
+                CftConstValue::Float(value) => CftSchemaDefaultValue::Float(value),
+                CftConstValue::Bool(value) => CftSchemaDefaultValue::Bool(value),
+                CftConstValue::String(value) => CftSchemaDefaultValue::String(value),
+            },
+            DefaultExprKind::EnumVariant { enum_name, variant } => CftSchemaDefaultValue::Enum {
+                enum_name: enum_name.name.clone(),
+                variant: variant.name.clone(),
+                value: self.enum_variant_value(&enum_name.name, &variant.name)?,
+            },
+            DefaultExprKind::Array(_) | DefaultExprKind::Object(_) => return None,
+        })
+    }
+
+    fn enum_variant_value(&self, enum_name: &str, variant_name: &str) -> Option<i64> {
+        let info = self.enums.get(enum_name)?;
+        let mut next = 0_i64;
+        for variant in &info.def.variants {
+            let value = variant.value.as_ref().map_or(next, |value| value.value);
+            if variant.name == variant_name {
+                return Some(value);
+            }
+            next = value.saturating_add(1);
+        }
+        None
     }
 
     fn resolve_field_type(&mut self, module: &ModuleId, ty: &TypeRef) -> Ty {
@@ -1953,6 +2131,131 @@ fn convert_annotations(annotations: &[Annotation]) -> Vec<CftAnnotation> {
                 .collect(),
         })
         .collect()
+}
+
+fn convert_check_block(check: &crate::ast::CheckBlock) -> CftSchemaCheckBlock {
+    CftSchemaCheckBlock {
+        stmts: check.stmts.iter().map(convert_check_stmt).collect(),
+        span: check.span,
+    }
+}
+
+fn convert_check_stmt(stmt: &CheckStmt) -> CftSchemaCheckStmt {
+    match stmt {
+        CheckStmt::Expr(expr) => CftSchemaCheckStmt::Expr(convert_check_expr(expr)),
+        CheckStmt::Quantifier {
+            kind,
+            binding,
+            collection,
+            body,
+            span,
+        } => CftSchemaCheckStmt::Quantifier {
+            kind: match kind {
+                crate::ast::QuantifierKind::All => CftSchemaQuantifierKind::All,
+                crate::ast::QuantifierKind::Any => CftSchemaQuantifierKind::Any,
+                crate::ast::QuantifierKind::None => CftSchemaQuantifierKind::None,
+            },
+            binding: binding.name.clone(),
+            collection: convert_check_expr(collection),
+            body: body.iter().map(convert_check_stmt).collect(),
+            span: *span,
+        },
+        CheckStmt::When {
+            condition,
+            body,
+            span,
+        } => CftSchemaCheckStmt::When {
+            condition: convert_check_expr(condition),
+            body: body.iter().map(convert_check_stmt).collect(),
+            span: *span,
+        },
+    }
+}
+
+fn convert_check_expr(expr: &CheckExpr) -> CftSchemaCheckExpr {
+    CftSchemaCheckExpr {
+        kind: match &expr.kind {
+            CheckExprKind::Int(value) => CftSchemaCheckExprKind::Int(*value),
+            CheckExprKind::Float(value) => CftSchemaCheckExprKind::Float(*value),
+            CheckExprKind::Bool(value) => CftSchemaCheckExprKind::Bool(*value),
+            CheckExprKind::Null => CftSchemaCheckExprKind::Null,
+            CheckExprKind::String(value) => CftSchemaCheckExprKind::String(value.clone()),
+            CheckExprKind::Name(name) => CftSchemaCheckExprKind::Name(name.clone()),
+            CheckExprKind::Field { expr: inner, name } => CftSchemaCheckExprKind::Field {
+                expr: Box::new(convert_check_expr(inner)),
+                name: name.name.clone(),
+            },
+            CheckExprKind::Index { expr: inner, index } => CftSchemaCheckExprKind::Index {
+                expr: Box::new(convert_check_expr(inner)),
+                index: Box::new(convert_check_expr(index)),
+            },
+            CheckExprKind::Is {
+                expr: inner,
+                predicate,
+            } => CftSchemaCheckExprKind::Is {
+                expr: Box::new(convert_check_expr(inner)),
+                predicate: match predicate {
+                    TypePredicate::Type(name) => CftSchemaTypePredicate::Type(name.name.clone()),
+                    TypePredicate::Null(_) => CftSchemaTypePredicate::Null,
+                },
+            },
+            CheckExprKind::Call { name, args } => CftSchemaCheckExprKind::Call {
+                name: name.name.clone(),
+                args: args.iter().map(convert_check_expr).collect(),
+            },
+            CheckExprKind::BinOp { op, lhs, rhs } => CftSchemaCheckExprKind::BinOp {
+                op: convert_bin_op(*op),
+                lhs: Box::new(convert_check_expr(lhs)),
+                rhs: Box::new(convert_check_expr(rhs)),
+            },
+            CheckExprKind::Unary { op, expr: inner } => CftSchemaCheckExprKind::Unary {
+                op: match op {
+                    UnaryOp::Not => CftSchemaUnaryOp::Not,
+                    UnaryOp::BitNot => CftSchemaUnaryOp::BitNot,
+                    UnaryOp::Neg => CftSchemaUnaryOp::Neg,
+                },
+                expr: Box::new(convert_check_expr(inner)),
+            },
+            CheckExprKind::CmpChain { first, rest } => CftSchemaCheckExprKind::CmpChain {
+                first: Box::new(convert_check_expr(first)),
+                rest: rest
+                    .iter()
+                    .map(|(op, rhs)| (convert_cmp_op(*op), convert_check_expr(rhs)))
+                    .collect(),
+            },
+        },
+        span: expr.span,
+    }
+}
+
+fn convert_bin_op(op: BinOp) -> CftSchemaBinOp {
+    match op {
+        BinOp::Or => CftSchemaBinOp::Or,
+        BinOp::And => CftSchemaBinOp::And,
+        BinOp::BitOr => CftSchemaBinOp::BitOr,
+        BinOp::BitXor => CftSchemaBinOp::BitXor,
+        BinOp::BitAnd => CftSchemaBinOp::BitAnd,
+        BinOp::Add => CftSchemaBinOp::Add,
+        BinOp::Sub => CftSchemaBinOp::Sub,
+        BinOp::Shl => CftSchemaBinOp::Shl,
+        BinOp::Shr => CftSchemaBinOp::Shr,
+        BinOp::Mul => CftSchemaBinOp::Mul,
+        BinOp::Div => CftSchemaBinOp::Div,
+        BinOp::IntDiv => CftSchemaBinOp::IntDiv,
+        BinOp::Mod => CftSchemaBinOp::Mod,
+        BinOp::Pow => CftSchemaBinOp::Pow,
+    }
+}
+
+fn convert_cmp_op(op: CmpOp) -> CftSchemaCmpOp {
+    match op {
+        CmpOp::Eq => CftSchemaCmpOp::Eq,
+        CmpOp::Ne => CftSchemaCmpOp::Ne,
+        CmpOp::Lt => CftSchemaCmpOp::Lt,
+        CmpOp::Le => CftSchemaCmpOp::Le,
+        CmpOp::Gt => CftSchemaCmpOp::Gt,
+        CmpOp::Ge => CftSchemaCmpOp::Ge,
+    }
 }
 
 fn format_type_ref(ty: &TypeRef) -> String {

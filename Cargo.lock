@@ -12,6 +12,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "coflow-cfd"
+version = "0.1.0"
+dependencies = [
+ "coflow-cft",
+ "regex",
+]
+
+[[package]]
 name = "coflow-cft"
 version = "0.1.0"
 dependencies = [

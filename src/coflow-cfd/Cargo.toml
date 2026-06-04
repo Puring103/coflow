@@ -1,0 +1,15 @@
+[package]
+name = "coflow-cfd"
+version = "0.1.0"
+edition = "2021"
+description = "Source-neutral Coflow data model built from compiled CFT schema."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/wtlll/ScriptForGame"
+readme = "../../README.md"
+keywords = ["config", "game-data", "data-model"]
+categories = ["config", "game-development"]
+publish = false
+
+[dependencies]
+coflow-cft = { path = "../coflow-cft" }
+regex = "1"
