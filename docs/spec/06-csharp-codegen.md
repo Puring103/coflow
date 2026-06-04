@@ -278,7 +278,7 @@ public partial class ItemReward : Reward
 }
 ```
 
-`@ref` 目标是 `abstract type` 时，引用属性类型为父类：
+`@ref` 目标是 `abstract type` 或有子类的普通 `type` 时，引用属性类型为声明的目标父类：
 
 ```cft
 type Quest {
@@ -441,6 +441,8 @@ public sealed class CftLoadException : Exception
 | `$type` 字段缺失 | 多态字段缺少类型标记 |
 | `$type` 值不是合法子类 | 类型名不在继承树中 |
 | `@ref` 目标 ID 不存在 | 外键指向不存在的记录 |
+| 主键重复 | 同一类型或同一继承树索引中存在重复 ID |
+| JSON object key 重复 | 字典或对象字段出现重复 key |
 
 ---
 

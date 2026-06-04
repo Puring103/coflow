@@ -111,15 +111,18 @@ sources:
 
 对每个数据行，按列名（经过 `columns` 映射后）找到对应字段，根据字段的 CFT 类型 schema-guided 解析单元格内容（见第 3 节）。
 
-解析结果构造为 `Record`，加入对应 `Table` 的 `records` 列表。同时将 `@id` 字段值注册到 `primary_index`，重复 ID 立即报错。
+解析结果构造为 `Record`，加入对应 `Table` 的 `records` 列表。同时将 `@id` 字段值注册到该类型的 `primary_index`，重复 ID 立即报错。
+
+如果该类型属于带 `@id` 的继承树，加载器还要把记录注册到相关 `inheritance_index`。同一继承树索引中的 ID 必须唯一，兄弟子类之间重复 ID 也立即报错。
 
 同一类型的 records 按配置文件中 sources 顺序追加（见 [02-data-model.md](02-data-model.md)）。
 
 ### 第四阶段：解析跨表引用
 
-遍历所有 Record，将 `@ref` 字段的值（string 或 int）在目标类型的 `primary_index` 中查找，替换为 `Value::Ref { id, target }`。
+遍历所有 Record，将 `@ref` 字段的值（string 或 int）按目标类型的赋值兼容范围查找，替换为 `Value::Ref { id, target }`。
 
-- `@ref(TypeName)` 中 TypeName 是 `abstract type` 时，在该继承树所有子类的 `primary_index` 中查找
+- `@ref(TypeName)` 中 TypeName 是 `sealed type` 或无子类的普通 `type` 时，在该类型的 `primary_index` 中查找
+- `@ref(TypeName)` 中 TypeName 是 `abstract type` 或有子类的普通 `type` 时，在对应 `inheritance_index` 中查找
 - 允许循环引用（A.ref → B，B.ref → A）；两遍设计天然支持，不会无限递归
 - 找不到目标则报错
 
@@ -151,6 +154,6 @@ sources:
 |------|---------|
 | schema 加载 | CFT 解析错误、类型名重复 |
 | Excel 解析 | 文件不存在、sheet 不存在、`type` 指定的类型未定义 |
-| 记录解析 | 列名找不到对应字段、单元格值类型不匹配、`@id` 重复、多态字段缺少类型标记 |
+| 记录解析 | 列名找不到对应字段、单元格值类型不匹配、`@id` 重复、继承树 ID 重复、字典 key 重复、多态字段缺少类型标记 |
 | 跨表引用解析 | `@ref` 目标类型不存在、目标 ID 找不到 |
 | check 执行 | 条件为假、类型错误、越界 |

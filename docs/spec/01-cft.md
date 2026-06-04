@@ -133,6 +133,8 @@ type Weapon {
 
 `type` 使用**名义类型**（nominal typing），不使用结构类型：两个字段完全相同的 `type` 不能互相替换。
 
+字典 key 在 schema-guided 解析后必须唯一。重复 key 是加载错误，不允许后写覆盖。枚举 key 的等价性按“枚举类型 + 底层整数值”判断，不同 enum 即使底层值相同也不是同一个 key。
+
 ### 4.3 修饰符
 
 | 关键词 | 语义 |
@@ -168,6 +170,7 @@ type CurrencyReward : Reward {
 - 子类继承父类所有字段
 - 子类不能声明与父类（任意层级）同名的字段
 - 子类实例可以赋值给父类类型的字段
+- 如果父类声明了 `@id` 字段，子类继承同一个主键字段；子类不能重新声明另一个 `@id` 字段
 
 字段类型为 `abstract type` 时，只能填入其子类实例：
 
@@ -179,7 +182,7 @@ type Quest {
 
 字段类型为普通 `type` 时，可以填入该类型本身或任意子类实例。
 
-`@ref` 的目标类型可以是 `abstract type`，表示持有该继承树中任意子类实例的 ID。所有子类的 `@id` 字段值在整个继承树中必须唯一。
+`@ref` 的目标类型可以是 `abstract type` 或有子类的普通 `type`，表示持有该类型赋值兼容范围内任意实例的 ID。该范围内的所有记录共享一个继承树索引，`@id` 字段值必须唯一。
 
 ### 4.5 nullable
 
@@ -379,7 +382,7 @@ item is null              // null 判断
 |------|---------|------------|---------|------|
 | `@struct` | `type` | — | 必须是 `sealed type` | codegen 生成值类型（C# struct） |
 | `@flag` | `enum` | — | 变体值必须为 2 的幂（0 除外） | 位标志枚举（C# [Flags]） |
-| `@id` | `field` | `string`、`int` | 每个类型只能有一个 `@id` 字段 | 主键，加载器用于跨表引用解析，隐含唯一性 |
+| `@id` | `field` | `string`、`int` | 每个继承树最多一个 `@id` 字段；子类继承父类的 `@id` | 主键，加载器用于跨表引用解析，隐含唯一性 |
 | `@ref(TypeName)` | `field` | `string`、`int` | TypeName 必须是已定义的 `type`（含 abstract） | 字符串/整数外键，加载器校验目标记录存在 |
 | `@index` | `field` | `string`、`int`、`enum` | — | codegen 生成按此字段查询的索引 API；nullable 字段的 null 值不加入索引；索引始终返回列表 |
 | `@display("text")` | `type`、`enum`、`field` | 任意 | — | 可读名称，codegen 生成 XML 注释，用于编辑器显示 |
@@ -495,6 +498,110 @@ pub struct CftSchemaConst {
 
 ## 8. 错误阶段
 
+编译阶段错误码用于 CLI、编辑器诊断和宿主集成。错误码必须稳定，机器逻辑不得依赖错误消息文本。
+
+编译阶段分为四类：
+
+| 阶段 | 说明 |
+|------|------|
+| `LEX` | 字符流到 token |
+| `SYN` | token 到 AST |
+| `SCHEMA` | 顶层符号、类型定义、继承、注解、默认值 |
+| `TYPE` | `check` 表达式的静态名称解析和类型检查 |
+
+`check` 的实际执行错误不属于编译阶段。特别是对 `null` 做字段访问、索引访问、大小比较或算术，只在 check 执行阶段报错；编译期不能因为 nullable 字段访问直接判错，否则会误伤 `item != null && item.id != ""` 这类安全访问写法。
+
+### 8.1 编译阶段错误码
+
+#### LEX
+
+| 错误码 | 名称 | 含义 |
+|--------|------|------|
+| `CFT-LEX-001` | `UnexpectedCharacter` | 非法字符 |
+| `CFT-LEX-002` | `InvalidStringEscape` | 非法字符串转义 |
+| `CFT-LEX-003` | `UnterminatedString` | 字符串未闭合 |
+| `CFT-LEX-004` | `InvalidIntLiteral` | 整数字面量非法或溢出 |
+| `CFT-LEX-005` | `InvalidFloatLiteral` | 浮点字面量非法 |
+
+#### SYN
+
+| 错误码 | 名称 | 含义 |
+|--------|------|------|
+| `CFT-SYN-001` | `UnexpectedToken` | 遇到不期望的 token |
+| `CFT-SYN-002` | `UnexpectedEof` | 文件意外结束 |
+| `CFT-SYN-003` | `ExpectedIdentifier` | 需要标识符 |
+| `CFT-SYN-004` | `ExpectedToken` | 缺少固定 token，如 `;`、`}` |
+| `CFT-SYN-005` | `InvalidTopLevelItem` | 顶层只能出现 `const`、`enum`、`type` |
+| `CFT-SYN-006` | `InvalidChainComparison` | 链式比较方向不一致或使用 `!=` |
+| `CFT-SYN-007` | `CheckBlockMustBeLast` | `check` 块后又出现字段声明 |
+| `CFT-SYN-008` | `InvalidAnnotationSyntax` | 注解语法非法 |
+| `CFT-SYN-009` | `InvalidCheckStatement` | `check` 块内不是合法条件语句、量词块或 `when` 块 |
+| `CFT-SYN-010` | `DuplicateCheckBlock` | 同一个 `type` 内声明了多个 `check` 块 |
+
+#### SCHEMA
+
+| 错误码 | 名称 | 含义 |
+|--------|------|------|
+| `CFT-SCHEMA-001` | `DuplicateModule` | 重复注册同一 `ModuleId` |
+| `CFT-SCHEMA-002` | `DuplicateGlobalName` | `const`、`enum`、`type` 全局重名 |
+| `CFT-SCHEMA-003` | `DuplicateFieldName` | 同一 `type` 内字段重名 |
+| `CFT-SCHEMA-004` | `DuplicateEnumVariant` | 同一 `enum` 内变体名重名 |
+| `CFT-SCHEMA-005` | `DuplicateEnumValue` | 同一 `enum` 内整数值重名 |
+| `CFT-SCHEMA-006` | `UnknownNamedType` | 字段类型引用未知的 `type` 或 `enum` |
+| `CFT-SCHEMA-007` | `ParentMustBeType` | 父类引用的名称不是 `type` |
+| `CFT-SCHEMA-008` | `UnknownConst` | 默认值引用未知 `const` |
+| `CFT-SCHEMA-009` | `InheritanceCycle` | 继承循环 |
+| `CFT-SCHEMA-010` | `InheritSealedType` | 继承 `sealed type` |
+| `CFT-SCHEMA-011` | `DuplicateInheritedField` | 子类声明了父类任意层级已有字段 |
+| `CFT-SCHEMA-012` | `ConflictingTypeModifiers` | `abstract` 和 `sealed` 同时使用 |
+| `CFT-SCHEMA-013` | `MultipleIdFieldsInTree` | 同一继承树内存在多个 `@id` 字段 |
+| `CFT-SCHEMA-014` | `InvalidDictKeyType` | 字典 key 不是 `string`、`int` 或 `enum` 类型 |
+| `CFT-SCHEMA-015` | `InvalidDefaultExpression` | 默认值不是编译期常量 |
+| `CFT-SCHEMA-016` | `DefaultTypeMismatch` | 默认值类型与字段类型不匹配 |
+| `CFT-SCHEMA-017` | `DefaultReferencesField` | 默认值引用了字段或对象运行期值 |
+| `CFT-SCHEMA-018` | `InvalidEnumValueSequence` | 枚举自动编号溢出或无法继续编号 |
+| `CFT-SCHEMA-019` | `InvalidFlagEnumValue` | `@flag` 变体值不是 2 的幂 |
+| `CFT-SCHEMA-020` | `UnknownAnnotation` | 未知注解名称 |
+| `CFT-SCHEMA-021` | `DuplicateAnnotation` | 同一目标重复使用不允许重复的注解 |
+| `CFT-SCHEMA-022` | `AnnotationWithoutTarget` | 注解后没有可附加的 `type`、`enum` 或字段 |
+| `CFT-SCHEMA-023` | `InvalidAnnotationTarget` | 注解用在不支持的目标上 |
+| `CFT-SCHEMA-024` | `InvalidAnnotationArgument` | 注解参数数量或类型错误 |
+| `CFT-SCHEMA-025` | `InvalidAnnotatedFieldType` | `@id`、`@ref`、`@index` 字段类型不合法 |
+| `CFT-SCHEMA-026` | `StructRequiresSealedType` | `@struct` 标注的 `type` 不是 `sealed type` |
+| `CFT-SCHEMA-027` | `RefTargetMustBeType` | `@ref(TypeName)` 的目标不是已定义的 `type` |
+| `CFT-SCHEMA-028` | `EnumVariantOnNonEnum` | 默认值使用 `Name.Variant`，但 `Name` 不是 `enum` |
+| `CFT-SCHEMA-029` | `UnknownEnumVariant` | 默认值引用未知枚举变体 |
+| `CFT-SCHEMA-030` | `InvalidConstValue` | `const` 值不是允许的字面量类型 |
+
+`@ref` 字段类型允许 `string`、`int` 以及对应 nullable 形式；`@index` 字段类型允许 `string`、`int`、`enum` 以及对应 nullable 形式，nullable 字段的 `null` 值不加入索引。
+
+#### TYPE
+
+| 错误码 | 名称 | 含义 |
+|--------|------|------|
+| `CFT-TYPE-001` | `UnknownValueName` | `check` 表达式引用未知字段、量词变量、`const` 或枚举名称 |
+| `CFT-TYPE-002` | `UnknownField` | 字段访问的目标类型中不存在该字段 |
+| `CFT-TYPE-003` | `UnknownEnumVariant` | `check` 表达式引用未知枚举变体 |
+| `CFT-TYPE-004` | `EnumVariantOnNonEnum` | `check` 表达式使用 `Name.Variant`，但 `Name` 不是 `enum` |
+| `CFT-TYPE-005` | `OperatorTypeMismatch` | 运算符不支持操作数类型 |
+| `CFT-TYPE-006` | `ComparisonTypeMismatch` | 不可比较类型，如 `enum` 与 `int` |
+| `CFT-TYPE-007` | `ConditionMustBeBool` | `check` 条件、`when` 条件或量词块条件结果不是 `bool` |
+| `CFT-TYPE-008` | `UnknownFunction` | 未知内建函数 |
+| `CFT-TYPE-009` | `FunctionArityMismatch` | 函数参数数量错误 |
+| `CFT-TYPE-010` | `FunctionArgTypeMismatch` | 函数参数类型错误 |
+| `CFT-TYPE-011` | `FieldAccessOnNonObject` | 对非对象做字段访问 |
+| `CFT-TYPE-012` | `IndexOnNonIndexable` | 对非 array/dict 做索引访问 |
+| `CFT-TYPE-013` | `IndexTypeMismatch` | array index 不是 `int`，或 dict key 类型不匹配 |
+| `CFT-TYPE-014` | `InvalidIsPredicate` | `is` 目标不是 `type` 或 `null` |
+| `CFT-TYPE-015` | `QuantifierRequiresCollection` | `all`、`any`、`none` 的目标不是 array/dict |
+| `CFT-TYPE-016` | `UniqueUnsupportedElementType` | `unique` 的元素类型不支持 |
+| `CFT-TYPE-017` | `BitwiseRequiresIntOrFlagEnum` | 位运算类型非法 |
+| `CFT-TYPE-018` | `ShiftRequiresInt` | `<<`、`>>` 操作数不是 `int` |
+| `CFT-TYPE-019` | `RegexPatternMustBeLiteral` | `matches` 的 pattern 不是字符串字面量 |
+| `CFT-TYPE-020` | `InvalidRegexPattern` | `matches` 的正则 pattern 无法编译 |
+
+编译诊断应包含错误码、阶段、消息、主位置和相关位置。重复定义、继承冲突、`@id` 冲突等错误必须用相关位置指向首次定义或冲突来源。
+
 **`add_module` 阶段（注册时立即报错）：**
 
 | 错误 | 原因 |
@@ -507,7 +614,7 @@ pub struct CftSchemaConst {
 | `@struct` 标注在非 `sealed type` 上 | 注解范围违反 |
 | `@flag` 变体值不是 2 的幂 | 注解约束违反 |
 | `@ref(TypeName)` 引用未定义的类型 | 注解参数非法 |
-| 同一类型标注多个 `@id` 字段 | 注解约束违反 |
+| 同一继承树标注多个 `@id` 字段 | 注解约束违反 |
 | 注解使用范围或字段类型不匹配 | 注解范围违反 |
 
 **check 执行阶段：**
