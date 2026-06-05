@@ -354,6 +354,27 @@ pub(super) fn format_type_ref(ty: &TypeRef) -> String {
     }
 }
 
+pub(super) fn build_schema_type_ref(ty: &TypeRef) -> super::CftSchemaTypeRef {
+    use super::CftSchemaTypeRef;
+    match &ty.kind {
+        TypeRefKind::Int => CftSchemaTypeRef::Int,
+        TypeRefKind::Float => CftSchemaTypeRef::Float,
+        TypeRefKind::Bool => CftSchemaTypeRef::Bool,
+        TypeRefKind::String => CftSchemaTypeRef::String,
+        TypeRefKind::Named(name) => CftSchemaTypeRef::Named(name.clone()),
+        TypeRefKind::Array(inner) => {
+            CftSchemaTypeRef::Array(Box::new(build_schema_type_ref(inner)))
+        }
+        TypeRefKind::Dict(key, value) => CftSchemaTypeRef::Dict(
+            Box::new(build_schema_type_ref(key)),
+            Box::new(build_schema_type_ref(value)),
+        ),
+        TypeRefKind::Nullable(inner) => {
+            CftSchemaTypeRef::Nullable(Box::new(build_schema_type_ref(inner)))
+        }
+    }
+}
+
 pub(super) fn is_valid_dict_key(ty: &Ty) -> bool {
     matches!(ty, Ty::Int | Ty::String | Ty::Enum(_) | Ty::Unknown)
 }

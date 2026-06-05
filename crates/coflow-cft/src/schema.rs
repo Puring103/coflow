@@ -38,16 +38,30 @@ pub struct CftSchemaType {
     pub parent: Option<String>,
     pub is_abstract: bool,
     pub is_sealed: bool,
-    pub fields: Vec<CftSchemaField>,
+    pub fields: Vec<CftSchemaField>,     // 自身字段（不含继承）
+    pub all_fields: Vec<CftSchemaField>, // 含继承的完整字段列表
     pub check: Option<CftSchemaCheckBlock>,
     pub annotations: Vec<CftAnnotation>,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CftSchemaTypeRef {
+    Int,
+    Float,
+    Bool,
+    String,
+    Named(String),
+    Array(Box<CftSchemaTypeRef>),
+    Dict(Box<CftSchemaTypeRef>, Box<CftSchemaTypeRef>),
+    Nullable(Box<CftSchemaTypeRef>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CftSchemaField {
     pub name: String,
     pub ty: String,
+    pub ty_ref: CftSchemaTypeRef,
     pub has_default: bool,
     pub default: Option<CftSchemaDefaultValue>,
     pub annotations: Vec<CftAnnotation>,

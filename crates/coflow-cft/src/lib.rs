@@ -12,6 +12,7 @@ pub use schema::{
     CftAnnotation, CftAnnotationValue, CftConstValue, CftSchemaBinOp, CftSchemaCheckBlock,
     CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaConst,
     CftSchemaDefaultValue, CftSchemaEnum, CftSchemaEnumVariant, CftSchemaField, CftSchemaModule,
-    CftSchemaQuantifierKind, CftSchemaType, CftSchemaTypePredicate, CftSchemaUnaryOp,
+    CftSchemaQuantifierKind, CftSchemaType, CftSchemaTypePredicate, CftSchemaTypeRef,
+    CftSchemaUnaryOp,
 };
 pub use span::Span;

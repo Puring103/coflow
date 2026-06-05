@@ -1,8 +1,8 @@
 use super::support::{
-    const_value, convert_annotations, convert_check_block, find_annotation, format_type_ref,
-    has_annotation, is_i64_power_of_two, is_indexable_field_type, is_string_or_int,
-    is_valid_dict_key, types_assignable, AnnotationSpec, AnnotationTarget, ConstInfo, EnumInfo,
-    FieldInfo, FieldOrigin, Symbol, SymbolKind, Ty, TypeInfo,
+    build_schema_type_ref, const_value, convert_annotations, convert_check_block, find_annotation,
+    format_type_ref, has_annotation, is_i64_power_of_two, is_indexable_field_type,
+    is_string_or_int, is_valid_dict_key, types_assignable, AnnotationSpec, AnnotationTarget,
+    ConstInfo, EnumInfo, FieldInfo, FieldOrigin, Symbol, SymbolKind, Ty, TypeInfo,
 };
 use super::type_checker::TypeChecker;
 use super::{
@@ -486,9 +486,30 @@ impl<'a> SchemaCompiler<'a> {
     }
 
     fn validate_id_fields_by_tree(&mut self) {
-        let names = self.types.keys().cloned().collect::<Vec<_>>();
+        // Walk types in (depth_from_root, source_position) order so that the
+        // earliest declared @id field in the inheritance chain is reported as
+        // the original, regardless of alphabetical name order.
+        let mut entries: Vec<(usize, ModuleId, Span, String)> = self
+            .types
+            .keys()
+            .filter_map(|name| {
+                let info = self.types.get(name)?;
+                Some((
+                    self.inheritance_depth(name),
+                    info.module.clone(),
+                    info.def.name_span,
+                    name.clone(),
+                ))
+            })
+            .collect();
+        entries.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then_with(|| a.1.as_str().cmp(b.1.as_str()))
+                .then_with(|| a.2.start.cmp(&b.2.start))
+        });
+
         let mut first_by_root: BTreeMap<String, (ModuleId, Span)> = BTreeMap::new();
-        for name in names {
+        for (_, _, _, name) in entries {
             let Some(info) = self.types.get(&name).cloned() else {
                 continue;
             };
@@ -518,6 +539,28 @@ impl<'a> SchemaCompiler<'a> {
         }
     }
 
+    fn inheritance_depth(&self, name: &str) -> usize {
+        let mut depth = 0;
+        let mut current = name.to_string();
+        let mut seen = HashSet::new();
+        while seen.insert(current.clone()) {
+            let Some(parent) = self
+                .types
+                .get(&current)
+                .and_then(|info| info.def.parent.as_ref())
+                .map(|parent| parent.name.clone())
+            else {
+                break;
+            };
+            if !self.types.contains_key(&parent) {
+                break;
+            }
+            depth += 1;
+            current = parent;
+        }
+        depth
+    }
+
     fn validate_annotations(&mut self) {
         let enum_infos = self.enums.values().cloned().collect::<Vec<_>>();
         for info in enum_infos {
@@ -526,16 +569,6 @@ impl<'a> SchemaCompiler<'a> {
                 AnnotationTarget::Enum,
                 &info.def.annotations,
             );
-            if has_annotation(&info.def.annotations, "struct") {
-                if let Some(annotation) = find_annotation(&info.def.annotations, "struct") {
-                    self.push_diag(
-                        CftErrorCode::InvalidAnnotationTarget,
-                        &info.module,
-                        annotation.span,
-                        "@struct can only be applied to types",
-                    );
-                }
-            }
         }
 
         let type_infos = self.types.values().cloned().collect::<Vec<_>>();
@@ -928,18 +961,9 @@ impl<'a> SchemaCompiler<'a> {
                 .def
                 .fields
                 .iter()
-                .map(|field| CftSchemaField {
-                    name: field.name.clone(),
-                    ty: format_type_ref(&field.ty),
-                    has_default: field.default.is_some(),
-                    default: field
-                        .default
-                        .as_ref()
-                        .and_then(|default| self.schema_default_value(default)),
-                    annotations: convert_annotations(&field.annotations),
-                    span: field.span,
-                })
+                .map(|field| self.build_schema_field(field))
                 .collect();
+            let all_fields = self.collect_all_schema_fields(name);
             let schema = CftSchemaType {
                 module: info.module.clone(),
                 name: name.clone(),
@@ -947,6 +971,7 @@ impl<'a> SchemaCompiler<'a> {
                 is_abstract: info.def.is_abstract,
                 is_sealed: info.def.is_sealed,
                 fields,
+                all_fields,
                 check: info.def.check.as_ref().map(convert_check_block),
                 annotations: convert_annotations(&info.def.annotations),
                 span: info.def.span,
@@ -963,6 +988,52 @@ impl<'a> SchemaCompiler<'a> {
             types,
             enums,
         }
+    }
+
+    fn build_schema_field(&self, field: &FieldDef) -> CftSchemaField {
+        CftSchemaField {
+            name: field.name.clone(),
+            ty: format_type_ref(&field.ty),
+            ty_ref: build_schema_type_ref(&field.ty),
+            has_default: field.default.is_some(),
+            default: field
+                .default
+                .as_ref()
+                .and_then(|default| self.schema_default_value(default)),
+            annotations: convert_annotations(&field.annotations),
+            span: field.span,
+        }
+    }
+
+    fn collect_all_schema_fields(&self, type_name: &str) -> Vec<CftSchemaField> {
+        let mut out = Vec::new();
+        self.fill_all_schema_fields(type_name, &mut out, &mut HashSet::new());
+        out
+    }
+
+    fn fill_all_schema_fields(
+        &self,
+        type_name: &str,
+        out: &mut Vec<CftSchemaField>,
+        seen: &mut HashSet<String>,
+    ) {
+        if !seen.insert(type_name.to_string()) {
+            return;
+        }
+        let Some(info) = self.types.get(type_name) else {
+            return;
+        };
+        let parent_name = info.def.parent.as_ref().map(|p| p.name.clone());
+        if let Some(parent) = parent_name {
+            self.fill_all_schema_fields(&parent, out, seen);
+        }
+        let own_fields: Vec<CftSchemaField> = info
+            .def
+            .fields
+            .iter()
+            .map(|f| self.build_schema_field(f))
+            .collect();
+        out.extend(own_fields);
     }
 
     fn schema_default_value(&self, expr: &DefaultExpr) -> Option<CftSchemaDefaultValue> {
