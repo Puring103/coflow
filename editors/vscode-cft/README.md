@@ -12,7 +12,7 @@ VS Code language support for Coflow Type File (`.cft`) schemas.
 - Hover text for core keywords, annotations, built-in functions, and discovered local symbols.
 - Outline symbols for constants, enums, enum variants, types, and fields.
 - Go to definition for workspace `const`, `enum`, `type`, enum variants, and simple field access.
-- Diagnostics from the Rust `coflow-cft` compiler, including lex, syntax, schema, and check type errors.
+- Project-aware diagnostics from `coflow cft check`, including lex, syntax, schema, and check type errors.
 
 ## Run Locally
 
@@ -26,10 +26,10 @@ Then press `F5` to start an Extension Development Host and open a `.cft` file.
 
 If VS Code asks for a launch target, choose `Run CFT Extension`.
 
-Diagnostics run through Cargo by default:
+Diagnostics run through Cargo by default and resolve the nearest `coflow.yaml` / `coflow.yml`:
 
 ```powershell
-cargo run --quiet -p coflow-cft-cli -- diagnostics ...
+cargo run --quiet -p coflow -- cft check --json --stdin-path schema/item.cft
 ```
 
 You can change this in VS Code settings:

@@ -1,10 +1,29 @@
+[package]
+name = "coflow"
+version = "0.1.0"
+edition = "2021"
+description = "Project-level command-line tools for Coflow."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/wtlll/ScriptForGame"
+publish = false
+
 [workspace]
 members = [
     "crates/coflow-cft",
-    "crates/coflow-cft-cli",
     "crates/coflow-data-model",
     "crates/coflow-cell-value",
     "crates/coflow-checker",
     "crates/coflow-excel-loader",
+    "crates/coflow-json-export",
 ]
 resolver = "2"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+coflow-cft = { path = "crates/coflow-cft" }
+coflow-checker = { path = "crates/coflow-checker" }
+coflow-excel-loader = { path = "crates/coflow-excel-loader" }
+coflow-json-export = { path = "crates/coflow-json-export" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_yaml = "0.9"

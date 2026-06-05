@@ -1,0 +1,40 @@
+schema: schema/
+
+sources:
+  - file: data/rpg.xlsx
+    sheets:
+      - sheet: Item
+        columns:
+          Item ID: id
+          Name: name
+          Rarity: rarity
+          Tags: tags
+      - sheet: Skill
+        columns:
+          Skill ID: id
+          Name: name
+          Power: power
+          Cooldown: cooldown
+      - sheet: Monster
+        columns:
+          Monster ID: id
+          Name: name
+          Level: level
+          Rarity: rarity
+          Stats: stats
+          Skill ID: skill_id
+      - sheet: DropTable
+        columns:
+          Drop ID: id
+          Monster ID: monster_id
+          Rewards: rewards
+          Weights: weights
+
+outputs:
+  data:
+    type: json
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Example.Rpg.Config

@@ -161,6 +161,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "coflow"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "coflow-cft",
+ "coflow-checker",
+ "coflow-excel-loader",
+ "coflow-json-export",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+]
+
+[[package]]
 name = "coflow-cell-value"
 version = "0.1.0"
 dependencies = [
@@ -175,16 +189,6 @@ version = "0.1.0"
 dependencies = [
  "regex",
  "unicode-ident",
-]
-
-[[package]]
-name = "coflow-cft-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "coflow-cft",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -213,6 +217,15 @@ dependencies = [
  "coflow-checker",
  "coflow-data-model",
  "rust_xlsxwriter",
+]
+
+[[package]]
+name = "coflow-json-export"
+version = "0.1.0"
+dependencies = [
+ "coflow-cft",
+ "coflow-data-model",
+ "serde_json",
 ]
 
 [[package]]
@@ -396,6 +409,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ryu"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
+
+[[package]]
 name = "serde"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -431,11 +450,25 @@ version = "1.0.150"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8014e44b4736ed0538adeecded0fce2a272f22dc9578a7eb6b2d9993c74cfb9"
 dependencies = [
+ "indexmap",
  "itoa",
  "memchr",
  "serde",
  "serde_core",
  "zmij",
+]
+
+[[package]]
+name = "serde_yaml"
+version = "0.9.34+deprecated"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+dependencies = [
+ "indexmap",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
 ]
 
 [[package]]
@@ -472,6 +505,12 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "unsafe-libyaml"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "utf8parse"

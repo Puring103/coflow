@@ -1,0 +1,23 @@
+schema:
+  - 01_constants.cft
+  - 02_enums_and_flags.cft
+  - 03_types_fields_defaults.cft
+  - 04_arrays_and_dicts.cft
+  - 05_inheritance.cft
+  - 06_nullable_and_ref.cft
+  - 07_check_expressions.cft
+  - 08_when_and_quantifiers.cft
+  - 09_builtin_functions.cft
+  - 10_comprehensive_schema.cft
+  - 11_unicode_identifiers.cft
+
+sources: []
+
+outputs:
+  data:
+    type: json
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Game.Config

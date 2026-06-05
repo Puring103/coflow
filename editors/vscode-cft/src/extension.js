@@ -371,18 +371,16 @@ class CftDiagnostics {
       "run",
       "--quiet",
       "-p",
-      "coflow-cft-cli",
+      "coflow",
       "--",
-      "diagnostics"
+      "cft",
+      "check",
+      "--json"
     ]);
     const cwd = findDiagnosticsCwd(document.uri.fsPath, this.context.extensionPath);
-    const paths = await collectCftPaths(document.uri);
     const currentPath = normalizePath(document.uri.fsPath);
-    if (!paths.includes(currentPath)) {
-      paths.push(currentPath);
-    }
 
-    const args = [...baseArgs, "--stdin-path", currentPath, ...paths];
+    const args = [...baseArgs, "--stdin-path", currentPath];
     const result = await runDiagnosticsCommand(command, args, cwd, document.getText());
     if (document.version !== documentVersion) {
       return;
@@ -400,7 +398,7 @@ class CftDiagnostics {
     }
 
     const touchedUris = new Set([document.uri.toString()]);
-    for (const cftPath of paths) {
+    for (const cftPath of await collectCftPaths(document.uri)) {
       touchedUris.add(vscode.Uri.file(cftPath).toString());
     }
 
@@ -905,6 +903,11 @@ function isBuiltinName(name) {
 }
 
 function findDiagnosticsCwd(documentPath, extensionPath) {
+  const configDir = findNearestCoflowConfigDir(path.dirname(documentPath));
+  if (configDir) {
+    return configDir;
+  }
+
   const workspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   const candidates = [
     workspace,
@@ -919,6 +922,23 @@ function findDiagnosticsCwd(documentPath, extensionPath) {
   }
 
   return workspace || path.dirname(documentPath);
+}
+
+function findNearestCoflowConfigDir(startDir) {
+  let current = path.resolve(startDir);
+  while (true) {
+    if (
+      fs.existsSync(path.join(current, "coflow.yaml")) ||
+      fs.existsSync(path.join(current, "coflow.yml"))
+    ) {
+      return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return undefined;
+    }
+    current = parent;
+  }
 }
 
 function runDiagnosticsCommand(command, args, cwd, stdin) {
@@ -941,6 +961,8 @@ function runDiagnosticsCommand(command, args, cwd, stdin) {
     child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) {
+        resolve({ stdout, stderr });
+      } else if (stdout.trim()) {
         resolve({ stdout, stderr });
       } else {
         reject(new Error(stderr.trim() || `${command} exited with code ${code}`));

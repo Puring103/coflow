@@ -17,6 +17,5 @@ These files demonstrate core CFT syntax and are designed to compile together as 
 Validate all examples:
 
 ```powershell
-$files = Get-ChildItem examples/cft/*.cft | ForEach-Object { $_.FullName }
-cargo run --quiet -p coflow-cft-cli -- diagnostics $files
+cargo run --quiet -p coflow -- cft check examples/cft
 ```

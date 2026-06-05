@@ -252,8 +252,8 @@ impl<'a> Lexer<'a> {
                 }
                 '"' => self.lex_string(start)?,
                 '0'..='9' => self.lex_number(start)?,
-                '_' => self.lex_ident(),
-                value if is_xid_start(value) => self.lex_ident(),
+                '_' => self.lex_word(),
+                value if is_xid_start(value) => self.lex_word(),
                 _ => {
                     return Err(self.err(
                         CftErrorCode::UnexpectedCharacter,
@@ -274,7 +274,7 @@ impl<'a> Lexer<'a> {
         Ok(tokens)
     }
 
-    fn lex_ident(&mut self) -> TokenKind {
+    fn lex_word(&mut self) -> TokenKind {
         let start = self.pos;
         self.bump_char();
         while let Some(ch) = self.source[self.pos..].chars().next() {
