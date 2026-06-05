@@ -1,4 +1,4 @@
-use crate::model::CfdRecordId;
+use crate::model::{CfdDictKey, CfdInputDictKey, CfdRecordId};
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -117,6 +117,27 @@ impl CfdPath {
         self.segments.push(CfdPathSegment::DictKey(key.into()));
         self
     }
+
+    /// Append a dict-key segment using a validated [`CfdDictKey`].
+    /// The display form preserves the key's actual type:
+    /// - strings are shown quoted (e.g. `"foo"`),
+    /// - ints are shown as numbers,
+    /// - enum keys are shown as `Enum.Variant`.
+    #[must_use]
+    pub fn dict_key_value(mut self, key: &CfdDictKey) -> Self {
+        self.segments
+            .push(CfdPathSegment::DictKey(format_dict_key(key)));
+        self
+    }
+
+    /// Append a dict-key segment using an unvalidated [`CfdInputDictKey`].
+    /// Used for diagnostics emitted before key validation succeeds.
+    #[must_use]
+    pub fn dict_key_input(mut self, key: &CfdInputDictKey) -> Self {
+        self.segments
+            .push(CfdPathSegment::DictKey(format_input_dict_key(key)));
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,6 +145,24 @@ pub enum CfdPathSegment {
     Field(String),
     Index(usize),
     DictKey(String),
+}
+
+fn format_dict_key(key: &CfdDictKey) -> String {
+    match key {
+        CfdDictKey::String(value) => format!("\"{value}\""),
+        CfdDictKey::Int(value) => value.to_string(),
+        CfdDictKey::Enum(value) => format!("{}.{}", value.enum_name, value.variant),
+    }
+}
+
+fn format_input_dict_key(key: &CfdInputDictKey) -> String {
+    match key {
+        CfdInputDictKey::String(value) => format!("\"{value}\""),
+        CfdInputDictKey::Int(value) => value.to_string(),
+        CfdInputDictKey::EnumVariant { enum_name, variant } => {
+            format!("{enum_name}.{variant}")
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

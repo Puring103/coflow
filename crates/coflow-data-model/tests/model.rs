@@ -1,5 +1,6 @@
 mod common;
 use common::*;
+use std::collections::BTreeMap;
 
 #[test]
 fn data_model_applies_defaults_and_builds_indexes_without_running_check() {
@@ -42,7 +43,10 @@ fn data_model_applies_defaults_and_builds_indexes_without_running_check() {
         Some(&CfdValue::String("unknown".to_string()))
     );
     assert_eq!(record.field("tags"), Some(&CfdValue::Array(Vec::new())));
-    assert_eq!(record.field("attrs"), Some(&CfdValue::Dict(Vec::new())));
+    assert_eq!(
+        record.field("attrs"),
+        Some(&CfdValue::Dict(BTreeMap::new()))
+    );
 }
 
 #[test]
@@ -78,7 +82,9 @@ fn polymorphic_refs_resolve_against_the_data_model() {
     let item_reward_id = record_id_at(&model, 0);
     let drop_id = record_id_at(&model, 1);
 
-    assert!(model.inheritance_index["Reward"]
+    assert!(model
+        .polymorphic_index("Reward")
+        .unwrap()
         .records
         .contains_key(&CfdIdValue::from("reward_1")));
     assert_eq!(

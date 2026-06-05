@@ -5,8 +5,8 @@ use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdDataModel {
-    pub tables: BTreeMap<String, CfdTable>,
-    pub inheritance_index: BTreeMap<String, CfdPolymorphicIndex>,
+    pub(crate) tables: BTreeMap<String, CfdTable>,
+    pub(crate) inheritance_index: BTreeMap<String, CfdPolymorphicIndex>,
     pub(crate) records: Vec<CfdRecord>,
 }
 
@@ -31,6 +31,55 @@ impl CfdDataModel {
     #[must_use]
     pub fn table(&self, type_name: &str) -> Option<&CfdTable> {
         self.tables.get(type_name)
+    }
+
+    /// Looks up a record by type name and id.
+    /// Works for both concrete tables and polymorphic (abstract/inherited) ranges.
+    #[must_use]
+    pub fn lookup(&self, type_name: &str, id: &CfdIdValue) -> Option<CfdRecordId> {
+        if let Some(index) = self.inheritance_index.get(type_name) {
+            return index.records.get(id).copied();
+        }
+        self.tables
+            .get(type_name)
+            .and_then(|table| table.primary_index.get(id))
+            .copied()
+    }
+
+    /// Returns the polymorphic index for a type, if one exists.
+    #[must_use]
+    pub fn polymorphic_index(&self, type_name: &str) -> Option<&CfdPolymorphicIndex> {
+        self.inheritance_index.get(type_name)
+    }
+
+    pub fn tables(&self) -> impl Iterator<Item = (&str, &CfdTable)> {
+        self.tables.iter().map(|(k, v)| (k.as_str(), v))
+    }
+
+    /// Total number of top-level records in the model.
+    #[must_use]
+    pub fn record_count(&self) -> usize {
+        self.records.len()
+    }
+
+    /// Returns true when the model contains no top-level records.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.records.is_empty()
+    }
+
+    /// Iterates over the records of a specific concrete type, in insertion order.
+    pub fn records_of_type<'a>(
+        &'a self,
+        type_name: &str,
+    ) -> impl Iterator<Item = (CfdRecordId, &'a CfdRecord)> + 'a {
+        let ids = self
+            .tables
+            .get(type_name)
+            .map(|table| table.records.as_slice())
+            .unwrap_or(&[]);
+        ids.iter()
+            .filter_map(move |id| self.records.get(id.0).map(|record| (*id, record)))
     }
 }
 
@@ -133,7 +182,7 @@ pub enum CfdValue {
     Object(Box<CfdRecord>),
     Ref { id: CfdIdValue, target: CfdRecordId },
     Array(Vec<CfdValue>),
-    Dict(Vec<(CfdDictKey, CfdValue)>),
+    Dict(BTreeMap<CfdDictKey, CfdValue>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

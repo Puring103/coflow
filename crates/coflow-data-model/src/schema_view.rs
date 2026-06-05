@@ -1,7 +1,7 @@
 use crate::model::{CfdDictKey, CfdIdValue, CfdIndexKey, CfdInputValue, CfdValue};
 use coflow_cft::{
     CftAnnotation, CftAnnotationValue, CftContainer, CftSchemaDefaultValue, CftSchemaEnum,
-    CftSchemaField, CftSchemaType,
+    CftSchemaField, CftSchemaType, CftSchemaTypeRef,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -55,22 +55,10 @@ impl SchemaView {
     }
 
     pub(crate) fn full_fields(&self, type_name: &str) -> Vec<FieldMeta> {
-        let mut out = Vec::new();
-        self.fill_fields(type_name, &mut out, &mut BTreeSet::new());
-        out
-    }
-
-    fn fill_fields(&self, type_name: &str, out: &mut Vec<FieldMeta>, seen: &mut BTreeSet<String>) {
-        if !seen.insert(type_name.to_string()) {
-            return;
-        }
-        let Some(meta) = self.types.get(type_name) else {
-            return;
-        };
-        if let Some(parent) = &meta.parent {
-            self.fill_fields(parent, out, seen);
-        }
-        out.extend(meta.fields.clone());
+        self.types
+            .get(type_name)
+            .map(|meta| meta.fields.clone())
+            .unwrap_or_default()
     }
 
     pub(crate) fn is_assignable(&self, actual_type: &str, expected_type: &str) -> bool {
@@ -167,7 +155,7 @@ impl TypeMeta {
             parent: schema_type.parent.clone(),
             is_abstract: schema_type.is_abstract,
             fields: schema_type
-                .fields
+                .all_fields
                 .iter()
                 .map(|field| FieldMeta::from_schema(schema, field))
                 .collect(),
@@ -189,7 +177,7 @@ impl FieldMeta {
     fn from_schema(schema: &CftContainer, field: &CftSchemaField) -> Self {
         Self {
             name: field.name.clone(),
-            ty: CfdType::parse(&field.ty, schema),
+            ty: CfdType::from_schema(&field.ty_ref, schema),
             default: field.default.clone(),
             ref_target: annotation_name_arg(&field.annotations, "ref"),
             is_id: has_annotation(&field.annotations, "id"),
@@ -229,9 +217,25 @@ pub(crate) enum CfdType {
 }
 
 impl CfdType {
-    fn parse(text: &str, schema: &CftContainer) -> Self {
-        let mut parser = TypeParser::new(text, schema);
-        parser.parse_type()
+    fn from_schema(ty: &CftSchemaTypeRef, schema: &CftContainer) -> Self {
+        match ty {
+            CftSchemaTypeRef::Int => Self::Int,
+            CftSchemaTypeRef::Float => Self::Float,
+            CftSchemaTypeRef::Bool => Self::Bool,
+            CftSchemaTypeRef::String => Self::String,
+            CftSchemaTypeRef::Named(name) if schema.has_enum(name) => Self::Enum(name.clone()),
+            CftSchemaTypeRef::Named(name) => Self::Type(name.clone()),
+            CftSchemaTypeRef::Array(inner) => {
+                Self::Array(Box::new(Self::from_schema(inner, schema)))
+            }
+            CftSchemaTypeRef::Dict(key, value) => Self::Dict(
+                Box::new(Self::from_schema(key, schema)),
+                Box::new(Self::from_schema(value, schema)),
+            ),
+            CftSchemaTypeRef::Nullable(inner) => {
+                Self::Nullable(Box::new(Self::from_schema(inner, schema)))
+            }
+        }
     }
 
     pub(crate) fn is_nullable(&self) -> bool {
@@ -249,100 +253,6 @@ impl CfdType {
             Self::Dict(key, value) => format!("{{{}: {}}}", key.display(), value.display()),
             Self::Nullable(inner) => format!("{}?", inner.display()),
         }
-    }
-}
-
-struct TypeParser<'a> {
-    text: &'a str,
-    pos: usize,
-    schema: &'a CftContainer,
-}
-
-impl<'a> TypeParser<'a> {
-    fn new(text: &'a str, schema: &'a CftContainer) -> Self {
-        Self {
-            text,
-            pos: 0,
-            schema,
-        }
-    }
-
-    fn parse_type(&mut self) -> CfdType {
-        self.skip_ws();
-        let mut ty = self.parse_primary();
-        self.skip_ws();
-        while self.eat('?') {
-            ty = CfdType::Nullable(Box::new(ty));
-            self.skip_ws();
-        }
-        ty
-    }
-
-    fn parse_primary(&mut self) -> CfdType {
-        self.skip_ws();
-        if self.eat('[') {
-            let inner = self.parse_type();
-            self.skip_ws();
-            let _ = self.eat(']');
-            return CfdType::Array(Box::new(inner));
-        }
-        if self.eat('{') {
-            let key = self.parse_type();
-            self.skip_ws();
-            let _ = self.eat(':');
-            let value = self.parse_type();
-            self.skip_ws();
-            let _ = self.eat('}');
-            return CfdType::Dict(Box::new(key), Box::new(value));
-        }
-
-        let name = self.parse_name();
-        match name.as_str() {
-            "int" => CfdType::Int,
-            "float" => CfdType::Float,
-            "bool" => CfdType::Bool,
-            "string" => CfdType::String,
-            other if self.schema.has_enum(other) => CfdType::Enum(other.to_string()),
-            other => CfdType::Type(other.to_string()),
-        }
-    }
-
-    fn parse_name(&mut self) -> String {
-        self.skip_ws();
-        let start = self.pos;
-        while let Some(ch) = self.peek() {
-            if matches!(
-                ch,
-                '[' | ']' | '{' | '}' | ':' | '?' | ' ' | '\t' | '\r' | '\n'
-            ) {
-                break;
-            }
-            self.pos += ch.len_utf8();
-        }
-        self.text[start..self.pos].to_string()
-    }
-
-    fn skip_ws(&mut self) {
-        while let Some(ch) = self.peek() {
-            if ch.is_whitespace() {
-                self.pos += ch.len_utf8();
-            } else {
-                break;
-            }
-        }
-    }
-
-    fn eat(&mut self, expected: char) -> bool {
-        if self.peek() == Some(expected) {
-            self.pos += expected.len_utf8();
-            true
-        } else {
-            false
-        }
-    }
-
-    fn peek(&self) -> Option<char> {
-        self.text[self.pos..].chars().next()
     }
 }
 

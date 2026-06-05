@@ -10,20 +10,18 @@ use crate::schema_view::{
 use coflow_cft::{CftContainer, CftSchemaDefaultValue};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub(crate) struct ModelCompiler<'a> {
+pub(crate) struct ModelCompiler {
     schema: SchemaView,
     input: Vec<CfdInputRecord>,
     diagnostics: Vec<CfdDiagnostic>,
-    schema_source: &'a CftContainer,
 }
 
-impl<'a> ModelCompiler<'a> {
-    pub(crate) fn new(schema_source: &'a CftContainer, input: Vec<CfdInputRecord>) -> Self {
+impl ModelCompiler {
+    pub(crate) fn new(schema_source: &CftContainer, input: Vec<CfdInputRecord>) -> Self {
         Self {
             schema: SchemaView::new(schema_source),
             input,
             diagnostics: Vec::new(),
-            schema_source,
         }
     }
 
@@ -74,7 +72,6 @@ impl<'a> ModelCompiler<'a> {
             return Err(CfdDiagnostics::new(self.diagnostics));
         }
 
-        let _ = self.schema_source;
         Ok(CfdDataModel {
             tables,
             inheritance_index,
@@ -91,7 +88,12 @@ impl<'a> ModelCompiler<'a> {
         path: CfdPath,
     ) -> Option<RecordDraft> {
         let diagnostic_start = self.diagnostics.len();
-        let Some(actual_meta) = self.schema.types.get(actual_type).cloned() else {
+        let Some(is_abstract) = self
+            .schema
+            .types
+            .get(actual_type)
+            .map(|meta| meta.is_abstract)
+        else {
             self.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::UnknownType,
@@ -101,7 +103,7 @@ impl<'a> ModelCompiler<'a> {
             );
             return None;
         };
-        if actual_meta.is_abstract {
+        if is_abstract {
             self.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::AbstractRecordType,
@@ -310,19 +312,20 @@ impl<'a> ModelCompiler<'a> {
             (CfdType::Dict(key_ty, value_ty), CfdInputValue::Dict(entries)) => {
                 let mut seen = BTreeMap::<CfdDictKey, CfdPath>::new();
                 let mut out = Vec::with_capacity(entries.len());
-                for (index, (key, value)) in entries.iter().enumerate() {
-                    let key_path = path.clone().dict_key(index.to_string());
+                for (key, value) in entries {
+                    let key_path = path.clone().dict_key_input(key);
                     let Some(key) = self.validate_dict_key(key_ty, key, record, key_path.clone())
                     else {
                         continue;
                     };
+                    let value_path = path.clone().dict_key_value(&key);
                     if let Some(first) = seen.get(&key) {
                         self.push(
                             CfdDiagnostic::error(
                                 CfdErrorCode::DuplicateDictKey,
                                 "duplicate dict key",
                             )
-                            .with_primary(record, key_path)
+                            .with_primary(record, value_path)
                             .with_related(
                                 record,
                                 first.clone(),
@@ -331,13 +334,9 @@ impl<'a> ModelCompiler<'a> {
                         );
                         continue;
                     }
-                    seen.insert(key.clone(), key_path);
-                    let Some(value) = self.validate_value(
-                        value_ty,
-                        value,
-                        record,
-                        path.clone().dict_key(index.to_string()),
-                    ) else {
+                    seen.insert(key.clone(), value_path.clone());
+                    let Some(value) = self.validate_value(value_ty, value, record, value_path)
+                    else {
                         continue;
                     };
                     out.push((key, value));
@@ -467,7 +466,7 @@ impl<'a> ModelCompiler<'a> {
                 CfdValue::Array(Vec::new())
             }
             CftSchemaDefaultValue::EmptyObject if matches!(ty, CfdType::Dict(_, _)) => {
-                CfdValue::Dict(Vec::new())
+                CfdValue::Dict(BTreeMap::new())
             }
             _ => {
                 self.push(
@@ -685,18 +684,18 @@ impl<'a> ModelCompiler<'a> {
                 Some(CfdValue::Array(out))
             }
             CfdValueDraft::Dict(entries) => {
-                let mut out = Vec::with_capacity(entries.len());
-                for (index, (key, value)) in entries.iter().enumerate() {
+                let mut out = BTreeMap::new();
+                for (key, value) in entries {
                     let Some(value) = self.resolve_value(
                         value,
                         record,
-                        path.clone().dict_key(index.to_string()),
+                        path.clone().dict_key_value(key),
                         tables,
                         inheritance_index,
                     ) else {
                         continue;
                     };
-                    out.push((key.clone(), value));
+                    out.insert(key.clone(), value);
                 }
                 Some(CfdValue::Dict(out))
             }

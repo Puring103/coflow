@@ -63,8 +63,8 @@ impl<'a> JsonExporter<'a> {
 
     fn export(&self) -> Result<BTreeMap<String, Value>, JsonExportError> {
         let mut out = BTreeMap::new();
-        for (type_name, table) in &self.model.tables {
-            out.insert(type_name.clone(), self.encode_table(table)?);
+        for (type_name, table) in self.model.tables() {
+            out.insert(type_name.to_string(), self.encode_table(table)?);
         }
         Ok(out)
     }
