@@ -13,17 +13,102 @@
 
 ## 目录
 
-1. [命名约定](#1-命名约定)
-2. [enum 生成](#2-enum-生成)
-3. [type 生成](#3-type-生成)
-4. [数据库类生成](#4-数据库类生成)
-5. [加载器生成](#5-加载器生成)
-6. [错误处理](#6-错误处理)
-7. [完整示例](#7-完整示例)
+1. [实现方案](#1-实现方案)
+2. [命名约定](#2-命名约定)
+3. [enum 生成](#3-enum-生成)
+4. [type 生成](#4-type-生成)
+5. [数据库类生成](#5-数据库类生成)
+6. [加载器生成](#6-加载器生成)
+7. [错误处理](#7-错误处理)
+8. [完整示例](#8-完整示例)
 
 ---
 
-## 1. 命名约定
+## 1. 实现方案
+
+C# codegen 是 `coflow codegen csharp` 的内置生成能力，由 `coflow.yaml` 的 `outputs.code` 配置驱动：
+
+```yaml
+outputs:
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Example.Rpg.Config
+```
+
+实现使用 Tera 渲染模板文件，但模板只负责文本展开，不承载 CFT 语义判断。代码生成流程为：
+
+1. 读取 `coflow.yaml`
+2. 编译 CFT schema
+3. 将 `CftContainer` 转换为 C# 专用 Codegen IR
+4. 使用 Tera 模板渲染 `.cs` 文件
+5. 写入 `outputs.code.dir`
+
+Codegen IR 是 C# 视角的数据结构，而不是直接暴露 `CftSchemaType` 给模板：
+
+```rust
+struct CsharpProject {
+    namespace: String,
+    enums: Vec<CsharpEnum>,
+    types: Vec<CsharpType>,
+    database: CsharpDatabase,
+}
+
+struct CsharpType {
+    name: String,
+    kind: CsharpTypeKind, // class / abstract class / sealed class / struct
+    parent: Option<String>,
+    summary: Option<String>,
+    obsolete: bool,
+    fields: Vec<CsharpField>,
+}
+
+struct CsharpField {
+    name: String,        // C# 属性名，如 SkillId
+    source_name: String, // CFT 字段名，如 skill_id
+    ty: String,          // C# 类型，如 string / long / IReadOnlyList<string>
+    default: Option<String>,
+    summary: Option<String>,
+    obsolete: bool,
+    ref_target: Option<String>,
+    ref_id_property: Option<String>,
+    ref_property: Option<String>,
+}
+```
+
+Tera 模板只允许做简单的字段遍历、条件输出和命名空间包裹；类型映射、默认值、继承展开、`@ref`、`@id`、`@index`、`@display`、`@deprecated` 等规则必须在 Rust IR 构建阶段完成，并由 golden tests 固定输出。
+
+建议文件布局：
+
+```text
+crates/coflow-csharp-codegen/
+  src/lib.rs
+  src/ir.rs
+  src/render.rs
+  templates/
+    enum.cs.tera
+    type.cs.tera
+    database.cs.tera
+    load_exception.cs.tera
+```
+
+生成文件按类型拆分：
+
+```text
+generated/csharp/
+  Rarity.cs
+  Item.cs
+  Monster.cs
+  DropTable.cs
+  GameConfig.cs
+  CftLoadException.cs
+```
+
+第一版必须生成类型定义、枚举、继承、默认值、`@ref` 双属性、`@id` 主键查询和 `@index` 查询 API。JSON 加载器可以分阶段实现，但生成结构必须预留两遍加载：先构造对象和主键索引，再解析 `@ref`。
+
+---
+
+## 2. 命名约定
 
 | CFT | C# |
 |-----|----|
@@ -36,7 +121,7 @@
 
 ---
 
-## 2. enum 生成
+## 3. enum 生成
 
 ### 普通枚举
 
@@ -109,7 +194,7 @@ public enum Rarity
 
 ---
 
-## 3. type 生成
+## 4. type 生成
 
 ### 普通 type
 
@@ -257,6 +342,8 @@ public partial class Monster
 
 ### `@ref` 字段
 
+当前 CFT 语义中，`@ref` 字段本身存储目标记录的 `@id` 值，字段类型必须是 `string` 或 `int`，也可以是对应 nullable 形式。JSON 导出仍然输出原始 ID 值，运行时加载器负责解析引用。
+
 `@ref` 字段生成两个属性：原始 ID 和解析后的引用：
 
 ```cft
@@ -278,6 +365,11 @@ public partial class ItemReward : Reward
 }
 ```
 
+其中：
+
+- `ItemId` 保留原始配置值，用于错误定位、调试、重新导出和与 JSON 文件对应
+- `Item` 是解析后的强类型引用，由 `GameConfig.Load` 在第二遍加载时填充
+
 `@ref` 目标是 `abstract type` 或有子类的普通 `type` 时，引用属性类型为声明的目标父类：
 
 ```cft
@@ -297,6 +389,38 @@ public partial class Quest
 }
 ```
 
+未来允许增加直接引用写法，但普通对象字段不能自动变成引用：
+
+```cft
+type Monster {
+  @ref
+  skill: Skill;
+
+  @ref
+  optional_skill: Skill?;
+}
+```
+
+这是一种预留语法，不是当前 CFT 必备能力。它的语义仍然是“Excel/JSON 中存目标 ID，运行时解析为对象引用”。普通字段：
+
+```cft
+type Monster {
+  skill: Skill;
+}
+```
+
+仍表示内联对象，不表示跨表引用。这样可以避免和 `stats: Stats` 这类值对象字段冲突。
+
+直接引用写法未来生成时仍应保留原始 ID 属性：
+
+```csharp
+public string SkillId { get; init; } = "";
+public Skill Skill { get; internal set; } = null!;
+
+public string? OptionalSkillId { get; init; }
+public Skill? OptionalSkill { get; internal set; }
+```
+
 ### 默认值生成规则
 
 | CFT 默认值 | C# 生成 |
@@ -312,9 +436,11 @@ public partial class Quest
 
 ---
 
-## 4. 数据库类生成
+## 5. 数据库类生成
 
 数据库类聚合所有 table，提供强类型访问和查询 API：
+
+`@id` 的核心作用是唯一定位一条记录，生成 `Find{Type}`。`@index` 的核心作用是声明某个字段需要生成“按字段值查记录”的快速查询入口，生成 `Get{Types}By{Field}`。`@index` 不是数据校验规则，也不是 Excel 解析规则；它把运行时常用查询写入 schema，使不同语言的生成器生成一致 API。
 
 ```csharp
 public partial class GameConfig
@@ -340,7 +466,7 @@ public partial class GameConfig
 
 ---
 
-## 5. 加载器生成
+## 6. 加载器生成
 
 加载器从 JSON 文件读取数据，构造强类型对象，解析 `@ref` 引用。失败时抛出 `CftLoadException`：
 
@@ -405,7 +531,7 @@ static Reward LoadReward(JsonElement el)
 
 ---
 
-## 6. 错误处理
+## 7. 错误处理
 
 加载器失败时抛出 `CftLoadException`，包含字段路径和详细信息：
 
@@ -446,7 +572,7 @@ public sealed class CftLoadException : Exception
 
 ---
 
-## 7. 完整示例
+## 8. 完整示例
 
 CFT 输入：
 
