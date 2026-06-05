@@ -1,10 +1,10 @@
 [workspace]
 members = [
-    "src/coflow-cft",
-    "src/coflow-cft-cli",
-    "src/coflow-data-model",
-    "src/coflow-cell-value",
-    "src/coflow-checker",
-    "src/coflow-excel-loader",
+    "crates/coflow-cft",
+    "crates/coflow-cft-cli",
+    "crates/coflow-data-model",
+    "crates/coflow-cell-value",
+    "crates/coflow-checker",
+    "crates/coflow-excel-loader",
 ]
 resolver = "2"
