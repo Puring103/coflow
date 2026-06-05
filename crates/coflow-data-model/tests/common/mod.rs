@@ -31,3 +31,23 @@ pub(crate) fn record_id_at(model: &CfdDataModel, index: usize) -> CfdRecordId {
         .find(|record_id| record_id.index() == index)
         .expect("record id should exist")
 }
+
+pub(crate) fn diagnostic_with_code<'a>(
+    diags: &'a CfdDiagnostics,
+    code: CfdErrorCode,
+) -> &'a CfdDiagnostic {
+    diags
+        .diagnostics
+        .iter()
+        .find(|diag| diag.code == code)
+        .unwrap_or_else(|| panic!("diagnostic with code {code} not found"))
+}
+
+pub(crate) fn primary_path_segments(diag: &CfdDiagnostic) -> &[CfdPathSegment] {
+    &diag
+        .primary
+        .as_ref()
+        .expect("primary label should be present")
+        .path
+        .segments
+}
