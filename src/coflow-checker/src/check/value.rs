@@ -1,5 +1,7 @@
 use coflow_cft::CftConstValue;
-use coflow_data_model::{CfdDataModel, CfdDictKey, CfdEnumValue, CfdRecord, CfdRecordId, CfdValue};
+use coflow_data_model::{
+    CfdDataModel, CfdDictKey, CfdEnumValue, CfdPath, CfdRecord, CfdRecordId, CfdValue,
+};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -27,17 +29,14 @@ impl CheckValue {
         }
     }
 
-    pub(super) fn field(&self, model: &CfdDataModel, name: &str) -> Option<CheckValue> {
+    pub(super) fn field(&self, model: &CfdDataModel, name: &str) -> Option<LocatedCheckValue> {
         let Self::Record(record) = self else {
             return None;
         };
-        record
-            .fields(model)?
-            .get(name)
-            .map(CheckValue::from_cfd_value)
+        record.field(model, name)
     }
 
-    fn from_cfd_value(value: &CfdValue) -> Self {
+    fn from_cfd_value_with_path(value: &CfdValue, path: Option<CfdPath>) -> Self {
         match value {
             CfdValue::Null => Self::Null,
             CfdValue::Bool(value) => Self::Bool(*value),
@@ -45,17 +44,33 @@ impl CheckValue {
             CfdValue::Float(value) => Self::Float(*value),
             CfdValue::String(value) => Self::String(value.clone()),
             CfdValue::Enum(value) => Self::Enum(value.clone()),
-            CfdValue::Object(record) => {
-                Self::Record(CheckRecordRef::Inline(record.as_ref().clone()))
-            }
+            CfdValue::Object(record) => Self::Record(CheckRecordRef::Inline {
+                record: record.as_ref().clone(),
+                path,
+            }),
             CfdValue::Ref { target, .. } => Self::Record(CheckRecordRef::Top(*target)),
-            CfdValue::Array(items) => Self::Array(items.iter().map(Self::from_cfd_value).collect()),
+            CfdValue::Array(items) => Self::Array(
+                items
+                    .iter()
+                    .enumerate()
+                    .map(|(index, item)| {
+                        Self::from_cfd_value_with_path(
+                            item,
+                            path.clone().map(|path| path.index(index)),
+                        )
+                    })
+                    .collect(),
+            ),
             CfdValue::Dict(entries) => Self::Dict(
                 entries
                     .iter()
-                    .map(|(key, value)| CheckEntry {
+                    .enumerate()
+                    .map(|(index, (key, value))| CheckEntry {
                         key: Box::new(Self::from_dict_key(key)),
-                        value: Self::from_cfd_value(value),
+                        value: Self::from_cfd_value_with_path(
+                            value,
+                            path.clone().map(|path| path.dict_key(index.to_string())),
+                        ),
                     })
                     .collect(),
             ),
@@ -79,9 +94,28 @@ impl CheckValue {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(super) struct LocatedCheckValue {
+    pub(super) value: CheckValue,
+    pub(super) path: Option<CfdPath>,
+}
+
+impl LocatedCheckValue {
+    pub(super) fn new(value: CheckValue, path: Option<CfdPath>) -> Self {
+        Self { value, path }
+    }
+
+    pub(super) fn value(value: CheckValue) -> Self {
+        Self { value, path: None }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(super) enum CheckRecordRef {
     Top(CfdRecordId),
-    Inline(CfdRecord),
+    Inline {
+        record: CfdRecord,
+        path: Option<CfdPath>,
+    },
 }
 
 impl CheckRecordRef {
@@ -91,21 +125,31 @@ impl CheckRecordRef {
     ) -> Option<&'a BTreeMap<String, CfdValue>> {
         match self {
             Self::Top(id) => model.record(*id).map(|record| &record.fields),
-            Self::Inline(record) => Some(&record.fields),
+            Self::Inline { record, .. } => Some(&record.fields),
         }
     }
 
     pub(super) fn actual_type<'a>(&'a self, model: &'a CfdDataModel) -> Option<&'a str> {
         match self {
             Self::Top(id) => model.record(*id).map(|record| record.actual_type.as_str()),
-            Self::Inline(record) => Some(&record.actual_type),
+            Self::Inline { record, .. } => Some(&record.actual_type),
         }
     }
 
-    pub(super) fn field(&self, model: &CfdDataModel, name: &str) -> Option<CheckValue> {
-        self.fields(model)?
-            .get(name)
-            .map(CheckValue::from_cfd_value)
+    pub(super) fn field(&self, model: &CfdDataModel, name: &str) -> Option<LocatedCheckValue> {
+        let value = self.fields(model)?.get(name)?;
+        let path = self.path().map(|path| path.field(name.to_string()));
+        Some(LocatedCheckValue::new(
+            CheckValue::from_cfd_value_with_path(value, path.clone()),
+            path,
+        ))
+    }
+
+    pub(super) fn path(&self) -> Option<CfdPath> {
+        match self {
+            Self::Top(_) => Some(CfdPath::root()),
+            Self::Inline { path, .. } => path.clone(),
+        }
     }
 }
 

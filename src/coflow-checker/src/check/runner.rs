@@ -79,7 +79,10 @@ impl<'a> CheckRunner<'a> {
         match value {
             CfdValue::Object(record) => {
                 self.run_record_checks(
-                    CheckRecordRef::Inline(record.as_ref().clone()),
+                    CheckRecordRef::Inline {
+                        record: record.as_ref().clone(),
+                        path: Some(path.clone()),
+                    },
                     root_record,
                     path.clone(),
                 );

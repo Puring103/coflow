@@ -223,7 +223,7 @@ fn check_runner_executes_inline_object_checks() {
         .expect("check failed diagnostic");
     assert_eq!(
         diag.primary.as_ref().map(|label| label.path.clone()),
-        Some(CfdPath::root().field("stats"))
+        Some(CfdPath::root().field("stats").field("hp"))
     );
 }
 
@@ -345,8 +345,8 @@ fn check_runner_executes_inline_object_checks_inside_collections() {
         .filter(|diag| diag.code == CfdErrorCode::CheckFailed)
         .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
         .collect::<Vec<_>>();
-    assert!(failed_paths.contains(&CfdPath::root().field("stats").index(0)));
-    assert!(failed_paths.contains(&CfdPath::root().field("named").dict_key("0")));
+    assert!(failed_paths.contains(&CfdPath::root().field("stats").index(0).field("hp")));
+    assert!(failed_paths.contains(&CfdPath::root().field("named").dict_key("0").field("hp")));
 }
 
 #[test]
