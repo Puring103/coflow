@@ -1,3 +1,11 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::needless_raw_string_hashes,
+    clippy::doc_markdown
+)]
+
 mod common;
 use common::*;
 
@@ -160,6 +168,41 @@ fn type_checker_accepts_dict_entry_keys_values_and_enum_constructor() {
     "#;
 
     compile_one(source).unwrap();
+}
+
+/// Regression: bare enum names (e.g. `Rarity > 5`, `Rarity + 1`,
+/// `len(Rarity)`) used to surface as a generic `OperatorTypeMismatch` /
+/// `FunctionArgTypeMismatch` without explaining that the *enum type itself*
+/// was being used as a value. The diagnostic now mentions the enum and
+/// suggests `EnumName.Variant` or `EnumName(0)`.
+#[test]
+fn type_checker_reports_bare_enum_name_used_as_value() {
+    let source = r#"
+        enum Rarity { Common, Rare, }
+        type Item {
+            rarity: Rarity;
+            check {
+                Rarity > 5;
+                rarity == Rarity;
+                len(Rarity) > 0;
+            }
+        }
+    "#;
+    let err = compile_one(source).unwrap_err();
+    assert_has_code(&err, CftErrorCode::OperatorTypeMismatch);
+
+    let mismatches: Vec<_> = err
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == CftErrorCode::OperatorTypeMismatch)
+        .collect();
+    assert!(
+        mismatches
+            .iter()
+            .any(|d| d.message.contains("Rarity") && d.message.contains("Variant")),
+        "expected diagnostic message to suggest `Rarity.Variant`, got {:?}",
+        mismatches.iter().map(|d| &d.message).collect::<Vec<_>>()
+    );
 }
 
 #[test]

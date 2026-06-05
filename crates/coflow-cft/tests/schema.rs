@@ -1,3 +1,11 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::needless_raw_string_hashes,
+    clippy::doc_markdown
+)]
+
 mod common;
 use common::*;
 
@@ -122,4 +130,92 @@ fn schema_accepts_explicit_i64_max_enum_value_without_following_auto_variant() {
 fn schema_reports_enum_auto_numbering_overflow_only_when_next_variant_needs_value() {
     let err = compile_one("enum Limit { Max = 9223372036854775807, Next, }").unwrap_err();
     assert_has_code(&err, CftErrorCode::InvalidEnumValueSequence);
+}
+
+/// Regression: an unknown field type used to be reported once per stage
+/// (`validate_field_shapes`, `validate_field_annotations`,
+/// `validate_defaults`, `build_full_fields`). The first pass now owns
+/// emission, so a single unknown name yields exactly one diagnostic even
+/// when the field carries multiple annotations and a default.
+#[test]
+fn schema_does_not_duplicate_unknown_field_type_diagnostic() {
+    let cases = [
+        "type T { x: Missing; }",
+        "type T { @id x: Missing; }",
+        "type T { @id @display(\"x\") x: Missing; }",
+        "const C = 1; type T { x: Missing = C; }",
+    ];
+    for source in cases {
+        let err = compile_one(source).unwrap_err();
+        let count = err
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == CftErrorCode::UnknownNamedType)
+            .count();
+        assert_eq!(
+            count, 1,
+            "expected exactly one UnknownNamedType for `{source}`, got {count}"
+        );
+    }
+}
+
+/// Regression: `{ [int]: int }` used to push InvalidDictKeyType twice — once
+/// during `validate_field_shapes` and again during `build_full_fields`.
+#[test]
+fn schema_does_not_duplicate_invalid_dict_key_diagnostic() {
+    let err = compile_one("type T { d: {[int]: int}; }").unwrap_err();
+    let count = err
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == CftErrorCode::InvalidDictKeyType)
+        .count();
+    assert_eq!(count, 1, "expected exactly one InvalidDictKeyType, got {count}");
+}
+
+/// Regression: `@struct` on an `enum` used to emit two
+/// `InvalidAnnotationTarget` diagnostics — once from the generic target
+/// validator and once from a duplicated `@struct`-only branch.
+#[test]
+fn schema_emits_single_invalid_annotation_target_for_struct_on_enum() {
+    let err = compile_one("@struct enum E { A, }").unwrap_err();
+    let count = err
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == CftErrorCode::InvalidAnnotationTarget)
+        .count();
+    assert_eq!(
+        count, 1,
+        "expected one InvalidAnnotationTarget for @struct on enum, got {count}"
+    );
+}
+
+/// Regression: `MultipleIdFieldsInTree` used to report the alphabetically
+/// first type as the "original" and the rest as duplicates, even when source
+/// order said otherwise. The traversal now walks the inheritance tree from
+/// the root downwards, so the parent's `@id` is always recorded as the
+/// canonical declaration regardless of how the types are named.
+#[test]
+fn schema_reports_id_conflict_with_parent_first_regardless_of_alphabetical_order() {
+    // Parent name "Z" sorts after child name "A" alphabetically.
+    let source = "type Z { @id z_id: string; } type A : Z { @id a_id: string; }";
+    let err = compile_one(source).unwrap_err();
+    let diag = err
+        .diagnostics
+        .iter()
+        .find(|d| d.code == CftErrorCode::MultipleIdFieldsInTree)
+        .expect("MultipleIdFieldsInTree diagnostic");
+    let primary = diag.primary.as_ref().expect("primary label");
+    let related = diag.related.first().expect("related label");
+
+    let parent_id_offset = source.find("z_id").expect("z_id span");
+    let child_id_offset = source.find("a_id").expect("a_id span");
+
+    assert_eq!(
+        primary.span.start, child_id_offset,
+        "primary should point at the redundant child @id"
+    );
+    assert_eq!(
+        related.span.start, parent_id_offset,
+        "related should point at the original parent @id"
+    );
 }

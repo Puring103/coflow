@@ -1,7 +1,7 @@
 use super::compiler::SchemaCompiler;
 use super::support::{
-    min_max_supported, ordered_comparable, same_type, types_comparable, unique_supported,
-    unwrap_nullable, SymbolKind, Ty, TypeInfo,
+    min_max_supported, ordered_comparable, types_comparable, unique_supported, unwrap_nullable,
+    SymbolKind, Ty, TypeInfo,
 };
 use crate::ast::{
     BinOp, CheckExpr, CheckExprKind, CheckStmt, CmpOp, NameRef, TypePredicate, UnaryOp,
@@ -35,13 +35,13 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
     fn check_stmt(&mut self, stmt: &CheckStmt) {
         match stmt {
             CheckStmt::Expr(expr) => {
-                let ty = self.check_expr(expr);
+                let ty = self.check_expr_value(expr);
                 self.expect_bool(&ty, expr.span);
             }
             CheckStmt::When {
                 condition, body, ..
             } => {
-                let ty = self.check_expr(condition);
+                let ty = self.check_expr_value(condition);
                 self.expect_bool(&ty, condition.span);
                 self.check_stmts(body);
             }
@@ -52,7 +52,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 span,
                 ..
             } => {
-                let col_ty = self.check_expr(collection);
+                let col_ty = self.check_expr_value(collection);
                 let item_ty = match unwrap_nullable(&col_ty) {
                     Ty::Array(inner) => *inner.clone(),
                     Ty::Dict(key, value) => Ty::Entry(key.clone(), value.clone()),
@@ -83,18 +83,18 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
             CheckExprKind::String(_) => Ty::String,
             CheckExprKind::Name(name) => self.resolve_value_name(name, expr.span),
             CheckExprKind::Unary { op, expr: inner } => {
-                let ty = self.check_expr(inner);
+                let ty = self.check_expr_value(inner);
                 self.check_unary(*op, &ty, expr.span)
             }
             CheckExprKind::BinOp { op, lhs, rhs } => {
-                let lhs_ty = self.check_expr(lhs);
-                let rhs_ty = self.check_expr(rhs);
+                let lhs_ty = self.check_expr_value(lhs);
+                let rhs_ty = self.check_expr_value(rhs);
                 self.check_binop(*op, &lhs_ty, &rhs_ty, expr.span)
             }
             CheckExprKind::CmpChain { first, rest } => {
-                let mut lhs_ty = self.check_expr(first);
+                let mut lhs_ty = self.check_expr_value(first);
                 for (op, rhs) in rest {
-                    let rhs_ty = self.check_expr(rhs);
+                    let rhs_ty = self.check_expr_value(rhs);
                     self.check_comparison(*op, &lhs_ty, &rhs_ty, rhs.span);
                     lhs_ty = rhs_ty;
                 }
@@ -108,12 +108,31 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 expr: inner,
                 predicate,
             } => {
-                let inner_ty = self.check_expr(inner);
+                let inner_ty = self.check_expr_value(inner);
                 self.check_is(&inner_ty, predicate, expr.span);
                 Ty::Bool
             }
             CheckExprKind::Call { name, args } => self.check_call(name, args, expr.span),
         }
+    }
+
+    /// Like `check_expr`, but rejects bare enum-name references in operand
+    /// positions (e.g. `Rarity > 5`). Without this guard, the plain
+    /// `OperatorTypeMismatch` diagnostic would obscure the real mistake of
+    /// using the enum type itself as a value.
+    fn check_expr_value(&mut self, expr: &CheckExpr) -> Ty {
+        let ty = self.check_expr(expr);
+        if let Ty::EnumNamespace(name) = &ty {
+            self.diag(
+                CftErrorCode::OperatorTypeMismatch,
+                expr.span,
+                format!(
+                    "enum type `{name}` cannot be used as a value; use `{name}.Variant` or `{name}(0)` instead",
+                ),
+            );
+            return Ty::Unknown;
+        }
+        ty
     }
 
     fn resolve_value_name(&mut self, name: &str, span: Span) -> Ty {
@@ -167,7 +186,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
             }
         }
 
-        let inner_ty = self.check_expr(inner);
+        let inner_ty = self.check_expr_value(inner);
         match unwrap_nullable(&inner_ty) {
             Ty::Type(type_name) => {
                 if let Some(fields) = self.compiler.full_fields.get(type_name) {
@@ -210,11 +229,11 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
     }
 
     fn check_index(&mut self, inner: &CheckExpr, index: &CheckExpr, span: Span) -> Ty {
-        let inner_ty = self.check_expr(inner);
-        let index_ty = self.check_expr(index);
+        let inner_ty = self.check_expr_value(inner);
+        let index_ty = self.check_expr_value(index);
         match unwrap_nullable(&inner_ty) {
             Ty::Array(elem) => {
-                if !same_type(&index_ty, &Ty::Int) && index_ty != Ty::Unknown {
+                if !types_comparable(&index_ty, &Ty::Int) && index_ty != Ty::Unknown {
                     self.diag(
                         CftErrorCode::IndexTypeMismatch,
                         index.span,
@@ -282,8 +301,8 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 );
                 return Ty::Unknown;
             }
-            let arg_ty = self.check_expr(&args[0]);
-            if !same_type(&arg_ty, &Ty::Int) && arg_ty != Ty::Unknown {
+            let arg_ty = self.check_expr_value(&args[0]);
+            if !types_comparable(&arg_ty, &Ty::Int) && arg_ty != Ty::Unknown {
                 self.diag(
                     CftErrorCode::FunctionArgTypeMismatch,
                     args[0].span,
@@ -298,7 +317,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 if self.expect_arity(args, 1, span).is_err() {
                     return Ty::Unknown;
                 }
-                let ty = self.check_expr(&args[0]);
+                let ty = self.check_expr_value(&args[0]);
                 if !matches!(
                     unwrap_nullable(&ty),
                     Ty::Array(_) | Ty::Dict(_, _) | Ty::Unknown
@@ -315,8 +334,8 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 if self.expect_arity(args, 2, span).is_err() {
                     return Ty::Bool;
                 }
-                let col_ty = self.check_expr(&args[0]);
-                let value_ty = self.check_expr(&args[1]);
+                let col_ty = self.check_expr_value(&args[0]);
+                let value_ty = self.check_expr_value(&args[1]);
                 match unwrap_nullable(&col_ty) {
                     Ty::Array(elem) => {
                         if !types_comparable(elem, &value_ty) && value_ty != Ty::Unknown {
@@ -349,7 +368,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 if self.expect_arity(args, 1, span).is_err() {
                     return Ty::Bool;
                 }
-                let ty = self.check_expr(&args[0]);
+                let ty = self.check_expr_value(&args[0]);
                 match unwrap_nullable(&ty) {
                     Ty::Array(elem) if unique_supported(elem) => {}
                     Ty::Array(_) => self.diag(
@@ -370,7 +389,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 if self.expect_arity(args, 1, span).is_err() {
                     return Ty::Unknown;
                 }
-                let ty = self.check_expr(&args[0]);
+                let ty = self.check_expr_value(&args[0]);
                 match unwrap_nullable(&ty) {
                     Ty::Array(elem) if min_max_supported(elem) => *elem.clone(),
                     Ty::Array(_) => {
@@ -396,7 +415,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 if self.expect_arity(args, 1, span).is_err() {
                     return Ty::Unknown;
                 }
-                let ty = self.check_expr(&args[0]);
+                let ty = self.check_expr_value(&args[0]);
                 match unwrap_nullable(&ty) {
                     Ty::Array(elem) if matches!(elem.as_ref(), Ty::Int | Ty::Float) => {
                         *elem.clone()
@@ -424,7 +443,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 if self.expect_arity(args, 1, span).is_err() {
                     return Ty::Unknown;
                 }
-                let ty = self.check_expr(&args[0]);
+                let ty = self.check_expr_value(&args[0]);
                 match unwrap_nullable(&ty) {
                     Ty::Dict(key, _) => Ty::Array(key.clone()),
                     Ty::Unknown => Ty::Unknown,
@@ -442,7 +461,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 if self.expect_arity(args, 1, span).is_err() {
                     return Ty::Unknown;
                 }
-                let ty = self.check_expr(&args[0]);
+                let ty = self.check_expr_value(&args[0]);
                 match unwrap_nullable(&ty) {
                     Ty::Dict(_, value) => Ty::Array(value.clone()),
                     Ty::Unknown => Ty::Unknown,
@@ -460,8 +479,8 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 if self.expect_arity(args, 2, span).is_err() {
                     return Ty::Bool;
                 }
-                let str_ty = self.check_expr(&args[0]);
-                if !same_type(&str_ty, &Ty::String) && str_ty != Ty::Unknown {
+                let str_ty = self.check_expr_value(&args[0]);
+                if !types_comparable(&str_ty, &Ty::String) && str_ty != Ty::Unknown {
                     self.diag(
                         CftErrorCode::FunctionArgTypeMismatch,
                         args[0].span,
@@ -477,7 +496,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                         );
                     }
                 } else {
-                    let _ = self.check_expr(&args[1]);
+                    let _ = self.check_expr_value(&args[1]);
                     self.diag(
                         CftErrorCode::RegexPatternMustBeLiteral,
                         args[1].span,
@@ -493,7 +512,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                     format!("unknown function `{}`", name.name),
                 );
                 for arg in args {
-                    let _ = self.check_expr(arg);
+                    let _ = self.check_expr_value(arg);
                 }
                 Ty::Unknown
             }
@@ -502,9 +521,9 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
 
     fn check_unary(&mut self, op: UnaryOp, ty: &Ty, span: Span) -> Ty {
         match op {
-            UnaryOp::Not if same_type(ty, &Ty::Bool) => Ty::Bool,
-            UnaryOp::Neg | UnaryOp::BitNot if same_type(ty, &Ty::Int) => Ty::Int,
-            UnaryOp::Neg if same_type(ty, &Ty::Float) => Ty::Float,
+            UnaryOp::Not if types_comparable(ty, &Ty::Bool) => Ty::Bool,
+            UnaryOp::Neg | UnaryOp::BitNot if types_comparable(ty, &Ty::Int) => Ty::Int,
+            UnaryOp::Neg if types_comparable(ty, &Ty::Float) => Ty::Float,
             UnaryOp::BitNot if self.is_flag_enum(ty) => ty.clone(),
             UnaryOp::BitNot => {
                 self.diag(
@@ -529,7 +548,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
     fn check_binop(&mut self, op: BinOp, lhs: &Ty, rhs: &Ty, span: Span) -> Ty {
         match op {
             BinOp::Or | BinOp::And => {
-                if (!same_type(lhs, &Ty::Bool) || !same_type(rhs, &Ty::Bool))
+                if (!types_comparable(lhs, &Ty::Bool) || !types_comparable(rhs, &Ty::Bool))
                     && *lhs != Ty::Unknown
                     && *rhs != Ty::Unknown
                 {
@@ -542,9 +561,9 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 Ty::Bool
             }
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Pow => {
-                if same_type(lhs, &Ty::Int) && same_type(rhs, &Ty::Int) {
+                if types_comparable(lhs, &Ty::Int) && types_comparable(rhs, &Ty::Int) {
                     Ty::Int
-                } else if same_type(lhs, &Ty::Float) && same_type(rhs, &Ty::Float) {
+                } else if types_comparable(lhs, &Ty::Float) && types_comparable(rhs, &Ty::Float) {
                     Ty::Float
                 } else {
                     self.operator_mismatch(lhs, rhs, span);
@@ -552,7 +571,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 }
             }
             BinOp::IntDiv | BinOp::Mod => {
-                if same_type(lhs, &Ty::Int) && same_type(rhs, &Ty::Int) {
+                if types_comparable(lhs, &Ty::Int) && types_comparable(rhs, &Ty::Int) {
                     Ty::Int
                 } else {
                     self.operator_mismatch(lhs, rhs, span);
@@ -560,7 +579,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 }
             }
             BinOp::Shl | BinOp::Shr => {
-                if same_type(lhs, &Ty::Int) && same_type(rhs, &Ty::Int) {
+                if types_comparable(lhs, &Ty::Int) && types_comparable(rhs, &Ty::Int) {
                     Ty::Int
                 } else {
                     self.diag(
@@ -572,9 +591,9 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 }
             }
             BinOp::BitOr | BinOp::BitXor | BinOp::BitAnd => {
-                if same_type(lhs, &Ty::Int) && same_type(rhs, &Ty::Int) {
+                if types_comparable(lhs, &Ty::Int) && types_comparable(rhs, &Ty::Int) {
                     Ty::Int
-                } else if same_type(lhs, rhs) && self.is_flag_enum(lhs) {
+                } else if types_comparable(lhs, rhs) && self.is_flag_enum(lhs) {
                     lhs.clone()
                 } else {
                     self.diag(
@@ -604,7 +623,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
     }
 
     fn expect_bool(&mut self, ty: &Ty, span: Span) {
-        if !same_type(ty, &Ty::Bool) && *ty != Ty::Unknown {
+        if !types_comparable(ty, &Ty::Bool) && *ty != Ty::Unknown {
             self.diag(
                 CftErrorCode::ConditionMustBeBool,
                 span,

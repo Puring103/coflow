@@ -408,10 +408,6 @@ pub(super) fn types_assignable(expected: &Ty, actual: &Ty) -> bool {
     }
 }
 
-pub(super) fn same_type(left: &Ty, right: &Ty) -> bool {
-    types_comparable(left, right)
-}
-
 pub(super) fn types_comparable(left: &Ty, right: &Ty) -> bool {
     if matches!(left, Ty::Unknown) || matches!(right, Ty::Unknown) {
         return true;

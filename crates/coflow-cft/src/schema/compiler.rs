@@ -383,7 +383,7 @@ impl<'a> SchemaCompiler<'a> {
                 } else {
                     fields.insert(field.name.clone(), field.name_span);
                 }
-                self.resolve_field_type(&info.module, &field.ty);
+                self.validate_field_type(&info.module, &field.ty);
             }
         }
     }
@@ -654,7 +654,7 @@ impl<'a> SchemaCompiler<'a> {
 
     fn validate_field_annotations(&mut self, module: &ModuleId, field: &FieldDef) {
         if let Some(annotation) = find_annotation(&field.annotations, "id") {
-            if !is_string_or_int(&self.resolve_field_type(module, &field.ty), false) {
+            if !is_string_or_int(&self.resolve_field_type(&field.ty), false) {
                 self.push_diag(
                     CftErrorCode::InvalidAnnotatedFieldType,
                     module,
@@ -664,7 +664,7 @@ impl<'a> SchemaCompiler<'a> {
             }
         }
         if let Some(annotation) = find_annotation(&field.annotations, "ref") {
-            if !is_string_or_int(&self.resolve_field_type(module, &field.ty), true) {
+            if !is_string_or_int(&self.resolve_field_type(&field.ty), true) {
                 self.push_diag(
                     CftErrorCode::InvalidAnnotatedFieldType,
                     module,
@@ -702,7 +702,7 @@ impl<'a> SchemaCompiler<'a> {
             }
         }
         if let Some(annotation) = find_annotation(&field.annotations, "index") {
-            if !is_indexable_field_type(&self.resolve_field_type(module, &field.ty)) {
+            if !is_indexable_field_type(&self.resolve_field_type(&field.ty)) {
                 self.push_diag(
                     CftErrorCode::InvalidAnnotatedFieldType,
                     module,
@@ -730,7 +730,7 @@ impl<'a> SchemaCompiler<'a> {
                 let Some(default) = &field.default else {
                     continue;
                 };
-                let field_ty = self.resolve_field_type(&info.module, &field.ty);
+                let field_ty = self.resolve_field_type(&field.ty);
                 let default_ty = self.default_expr_type(&info.module, default, &field_names);
                 if !types_assignable(&field_ty, &default_ty) {
                     self.push_diag(
@@ -877,7 +877,7 @@ impl<'a> SchemaCompiler<'a> {
             self.fill_fields(&parent.name, out, seen);
         }
         for field in &info.def.fields {
-            let declared_ty = self.resolve_field_type(&info.module, &field.ty);
+            let declared_ty = self.resolve_field_type(&field.ty);
             let check_ty = self.check_type_for_field(&info.module, field, &declared_ty);
             out.insert(field.name.clone(), FieldInfo { check_ty });
         }
@@ -1075,7 +1075,35 @@ impl<'a> SchemaCompiler<'a> {
         None
     }
 
-    fn resolve_field_type(&mut self, module: &ModuleId, ty: &TypeRef) -> Ty {
+    /// Resolves a `TypeRef` to a `Ty` without emitting diagnostics. Errors
+    /// (unknown names, invalid dict keys) are reported once by
+    /// [`Self::validate_field_type`] during `validate_field_shapes`; later
+    /// passes that need the resolved type just consume the result here.
+    fn resolve_field_type(&self, ty: &TypeRef) -> Ty {
+        match &ty.kind {
+            TypeRefKind::Int => Ty::Int,
+            TypeRefKind::Float => Ty::Float,
+            TypeRefKind::Bool => Ty::Bool,
+            TypeRefKind::String => Ty::String,
+            TypeRefKind::Named(name) => match self.symbols.get(name) {
+                Some(symbol) if symbol.kind == SymbolKind::Type => Ty::Type(name.clone()),
+                Some(symbol) if symbol.kind == SymbolKind::Enum => Ty::Enum(name.clone()),
+                _ => Ty::Unknown,
+            },
+            TypeRefKind::Array(inner) => Ty::Array(Box::new(self.resolve_field_type(inner))),
+            TypeRefKind::Dict(key, value) => Ty::Dict(
+                Box::new(self.resolve_field_type(key)),
+                Box::new(self.resolve_field_type(value)),
+            ),
+            TypeRefKind::Nullable(inner) => {
+                Ty::Nullable(Box::new(self.resolve_field_type(inner)))
+            }
+        }
+    }
+
+    /// Walks a `TypeRef` once, emitting `UnknownNamedType` / `InvalidDictKeyType`
+    /// diagnostics and returning the resolved type.
+    fn validate_field_type(&mut self, module: &ModuleId, ty: &TypeRef) -> Ty {
         match &ty.kind {
             TypeRefKind::Int => Ty::Int,
             TypeRefKind::Float => Ty::Float,
@@ -1111,11 +1139,11 @@ impl<'a> SchemaCompiler<'a> {
                 }
             },
             TypeRefKind::Array(inner) => {
-                let inner = self.resolve_field_type(module, inner);
+                let inner = self.validate_field_type(module, inner);
                 Ty::Array(Box::new(inner))
             }
             TypeRefKind::Dict(key, value) => {
-                let key_ty = self.resolve_field_type(module, key);
+                let key_ty = self.validate_field_type(module, key);
                 if !is_valid_dict_key(&key_ty) {
                     self.push_diag(
                         CftErrorCode::InvalidDictKeyType,
@@ -1124,11 +1152,11 @@ impl<'a> SchemaCompiler<'a> {
                         "dict key type must be string, int, or enum",
                     );
                 }
-                let value_ty = self.resolve_field_type(module, value);
+                let value_ty = self.validate_field_type(module, value);
                 Ty::Dict(Box::new(key_ty), Box::new(value_ty))
             }
             TypeRefKind::Nullable(inner) => {
-                let inner = self.resolve_field_type(module, inner);
+                let inner = self.validate_field_type(module, inner);
                 Ty::Nullable(Box::new(inner))
             }
         }

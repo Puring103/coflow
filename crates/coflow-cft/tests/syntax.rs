@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 mod common;
 use common::*;
 
@@ -100,6 +102,46 @@ fn parser_rejects_invalid_chain_comparison() {
 
     let eq_chain = add_source("type A { value: int; check { 0 == value == 10; } }").unwrap_err();
     assert_has_code(&eq_chain, CftErrorCode::InvalidChainComparison);
+}
+
+/// Comments use `#` per the spec. `//` is reserved for integer division and
+/// must not be parsed as the start of a comment.
+#[test]
+fn lexer_recognises_hash_comments_and_keeps_double_slash_as_int_div() {
+    let mut container = add_source(
+        "# leading comment\nconst N = 10; # trailing comment\ntype T { x: int; check { N // 2 >= 0; } }",
+    )
+    .unwrap();
+    container.compile().unwrap();
+    assert!(container.has_type("T"));
+}
+
+#[test]
+fn parser_rejects_double_slash_at_top_level_as_invalid_item() {
+    // `//` is the integer-division operator, not a comment opener.
+    let err = add_source("// not a comment\ntype A {}").unwrap_err();
+    assert_has_code(&err, CftErrorCode::InvalidTopLevelItem);
+}
+
+/// Regression: `const NAME: TYPE = VALUE;` should accept primitive
+/// annotations and reject named-type annotations or value/type mismatches.
+#[test]
+fn parser_accepts_optional_const_type_annotation() {
+    let mut container = add_source(
+        "const A: int = 1; const B: float = 1.5; const C: bool = true; const D: string = \"x\";",
+    )
+    .unwrap();
+    container.compile().unwrap();
+    assert!(container.resolve_const("A").is_some());
+}
+
+#[test]
+fn const_annotation_rejects_named_types_and_value_mismatch() {
+    let named = compile_one("type Foo {} const X: Foo = 1;").unwrap_err();
+    assert_has_code(&named, CftErrorCode::InvalidConstValue);
+
+    let mismatch = compile_one("const X: int = 1.5;").unwrap_err();
+    assert_has_code(&mismatch, CftErrorCode::InvalidConstValue);
 }
 
 #[test]

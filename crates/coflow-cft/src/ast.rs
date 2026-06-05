@@ -1,3 +1,8 @@
+// AST nodes deliberately keep span fields (`Bool(_, Span)`, `SignedInt.span`,
+// `AnnotationArg::span()`, `CheckStmt::span()`) even when current passes do not
+// consume them. They are part of the canonical AST shape and are exercised by
+// downstream tooling (IDE diagnostics, codegen). Suppress the resulting
+// `dead_code` warnings here rather than in individual definitions.
 #![allow(dead_code)]
 
 use crate::span::Span;
