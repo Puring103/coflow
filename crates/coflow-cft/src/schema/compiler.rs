@@ -10,7 +10,8 @@ use super::{
     CftSchemaField, CftSchemaModule, CftSchemaType, CompiledSchema,
 };
 use crate::ast::{
-    Annotation, AnnotationArg, DefaultExpr, DefaultExprKind, FieldDef, Item, TypeRef, TypeRefKind,
+    Annotation, AnnotationArg, ConstLiteral, DefaultExpr, DefaultExprKind, FieldDef, Item, TypeRef,
+    TypeRefKind,
 };
 use crate::container::{CftContainer, ModuleId};
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
@@ -44,6 +45,7 @@ impl<'a> SchemaCompiler<'a> {
         self.report_dangling_annotations();
         self.collect_symbols();
         self.validate_enums();
+        self.validate_const_type_annotations();
         self.validate_type_headers();
         self.validate_field_shapes();
         self.validate_inheritance();
@@ -268,6 +270,46 @@ impl<'a> SchemaCompiler<'a> {
                     .into_iter()
                     .map(|(value, (_, module, span))| (value, (module, span)))
                     .collect();
+            }
+        }
+    }
+
+    fn validate_const_type_annotations(&mut self) {
+        let const_infos = self.consts.values().cloned().collect::<Vec<_>>();
+        for info in const_infos {
+            let Some(ty) = &info.def.ty else {
+                continue;
+            };
+            let type_name = match &ty.kind {
+                TypeRefKind::Int => "int",
+                TypeRefKind::Float => "float",
+                TypeRefKind::Bool => "bool",
+                TypeRefKind::String => "string",
+                _ => {
+                    self.push_diag(
+                        CftErrorCode::InvalidConstValue,
+                        &info.module,
+                        ty.span,
+                        "const type annotation must be int, float, bool, or string",
+                    );
+                    continue;
+                }
+            };
+            let matches = matches!(
+                (&ty.kind, &info.def.value),
+                (TypeRefKind::Int, ConstLiteral::Int(..))
+                    | (TypeRefKind::Float, ConstLiteral::Float(..))
+                    | (TypeRefKind::Bool, ConstLiteral::Bool(..))
+                    | (TypeRefKind::String, ConstLiteral::String(..))
+            );
+            if !matches {
+                let value_span = info.def.value.span();
+                self.push_diag(
+                    CftErrorCode::InvalidConstValue,
+                    &info.module,
+                    value_span,
+                    format!("const value does not match type annotation `{type_name}`"),
+                );
             }
         }
     }

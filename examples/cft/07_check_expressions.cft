@@ -1,5 +1,5 @@
-// check blocks contain boolean conditions.
-// Operators include arithmetic, comparisons, logical operators, and bitwise operators.
+# check blocks contain boolean conditions.
+# Operators include arithmetic, comparisons, logical operators, and bitwise operators.
 
 type ExampleFormula {
   a: int;

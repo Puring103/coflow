@@ -1,5 +1,5 @@
-// Nullable fields use T?.
-// @ref fields store an id but are type-checked in checks as the target object.
+# Nullable fields use T?.
+# @ref fields store an id but are type-checked in checks as the target object.
 
 type ExampleQuestStep {
   title: string;

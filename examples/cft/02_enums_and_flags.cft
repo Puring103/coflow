@@ -1,4 +1,4 @@
-// Plain enums model a finite set of named integer values.
+# Plain enums model a finite set of named integer values.
 
 enum ExampleRarity {
   Common = 0,
@@ -12,7 +12,7 @@ enum ExampleDamageType {
   Ice,
 }
 
-// @flag enums support bitwise checks.
+# @flag enums support bitwise checks.
 
 @flag
 enum ExamplePermission {

@@ -1,4 +1,4 @@
-// A larger example tying the core syntax together.
+# A larger example tying the core syntax together.
 
 type ExampleMonsterStats {
   hp: int;

@@ -19,6 +19,7 @@ pub enum Item {
 pub struct ConstDef {
     pub name: String,
     pub name_span: Span,
+    pub ty: Option<TypeRef>,
     pub value: ConstLiteral,
     pub annotations: Vec<Annotation>,
     pub span: Span,

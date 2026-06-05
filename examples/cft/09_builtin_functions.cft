@@ -1,4 +1,4 @@
-// Built-in functions are available in check expressions.
+# Built-in functions are available in check expressions.
 
 type ExampleBuiltinFunctions {
   id: string;

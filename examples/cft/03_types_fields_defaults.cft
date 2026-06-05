@@ -1,4 +1,4 @@
-// Types define schema objects. Fields use semicolons and may have defaults.
+# Types define schema objects. Fields use semicolons and may have defaults.
 
 @struct
 sealed type ExampleVector2 {

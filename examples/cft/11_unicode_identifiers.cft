@@ -1,4 +1,4 @@
-// Unicode identifiers are valid CFT names.
+# Unicode identifiers are valid CFT names.
 
 enum 示例品质 {
   普通,

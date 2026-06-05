@@ -1,10 +1,10 @@
-// Constants are compile-time values.
-// They can be used in defaults and check expressions.
+# Constants are compile-time values.
+# They can be used in defaults and check expressions.
 
-const EXAMPLE_MAX_LEVEL = 100;
-const EXAMPLE_MIN_SPEED = 0.1;
-const EXAMPLE_DEFAULT_NAME = "unknown";
-const EXAMPLE_FEATURE_ENABLED = true;
+const EXAMPLE_MAX_LEVEL: int = 100;
+const EXAMPLE_MIN_SPEED: float = 0.1;
+const EXAMPLE_DEFAULT_NAME: string = "unknown";
+const EXAMPLE_FEATURE_ENABLED: bool = true;
 
 type ExampleConstantsConfig {
   level: int = EXAMPLE_MAX_LEVEL;

@@ -1,5 +1,5 @@
-// when blocks are conditional checks.
-// all, any, and none iterate over arrays or dicts.
+# when blocks are conditional checks.
+# all, any, and none iterate over arrays or dicts.
 
 type ExampleSkill {
   id: string;

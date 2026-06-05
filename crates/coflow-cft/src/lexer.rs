@@ -77,8 +77,6 @@ struct Lexer<'a> {
     source: &'a str,
     bytes: &'a [u8],
     pos: usize,
-    check_depth: usize,
-    pending_check_brace: bool,
 }
 
 impl<'a> Lexer<'a> {
@@ -88,8 +86,6 @@ impl<'a> Lexer<'a> {
             source,
             bytes: source.as_bytes(),
             pos: 0,
-            check_depth: 0,
-            pending_check_brace: false,
         }
     }
 
@@ -104,8 +100,8 @@ impl<'a> Lexer<'a> {
                 self.pos += ch.len_utf8();
                 continue;
             }
-            if self.starts_with("//") && self.slash_slash_is_comment() {
-                self.pos += 2;
+            if ch == '#' {
+                self.pos += 1;
                 while self.pos < self.bytes.len() && self.bytes[self.pos] != b'\n' {
                     self.pos += 1;
                 }
@@ -266,7 +262,6 @@ impl<'a> Lexer<'a> {
                     ));
                 }
             };
-            self.update_check_depth(&kind);
             tokens.push(Token {
                 kind,
                 span: Span::new(start, self.pos),
@@ -444,54 +439,6 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn update_check_depth(&mut self, kind: &TokenKind) {
-        match kind {
-            TokenKind::Check => self.pending_check_brace = true,
-            TokenKind::LBrace if self.pending_check_brace => {
-                self.pending_check_brace = false;
-                self.check_depth += 1;
-            }
-            TokenKind::LBrace if self.check_depth > 0 => self.check_depth += 1,
-            TokenKind::RBrace if self.check_depth > 0 => self.check_depth -= 1,
-            _ if !matches!(kind, TokenKind::LBrace) => self.pending_check_brace = false,
-            _ => {}
-        }
-    }
-
-    fn slash_slash_is_comment(&self) -> bool {
-        if self.check_depth == 0 {
-            return true;
-        }
-        !self.slash_slash_is_operator()
-    }
-
-    fn slash_slash_is_operator(&self) -> bool {
-        let Some(prev) = self.prev_non_ws() else {
-            return false;
-        };
-        let Some(next) = self.next_non_ws(self.pos + 2) else {
-            return false;
-        };
-        let prev_can_end_operand = prev.is_ascii_digit()
-            || is_ident_continue(prev)
-            || matches!(prev, ')' | ']' | '"' | '\'');
-        let next_can_start_operand = next.is_ascii_digit()
-            || is_ident_start(next)
-            || matches!(next, '(' | '"' | '\'' | '-' | '!');
-        prev_can_end_operand && next_can_start_operand
-    }
-
-    fn prev_non_ws(&self) -> Option<char> {
-        self.source[..self.pos]
-            .chars()
-            .rev()
-            .find(|ch| !ch.is_whitespace())
-    }
-
-    fn next_non_ws(&self, pos: usize) -> Option<char> {
-        self.source[pos..].chars().find(|ch| !ch.is_whitespace())
-    }
-
     fn err(&self, code: CftErrorCode, span: Span, message: impl Into<String>) -> CftDiagnostics {
         CftDiagnostics::one(CftDiagnostic::error(
             code,
@@ -500,12 +447,4 @@ impl<'a> Lexer<'a> {
             message,
         ))
     }
-}
-
-fn is_ident_start(ch: char) -> bool {
-    ch == '_' || is_xid_start(ch)
-}
-
-fn is_ident_continue(ch: char) -> bool {
-    ch == '_' || is_xid_continue(ch)
 }

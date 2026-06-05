@@ -38,7 +38,7 @@ fn cases() -> Vec<Case> {
         Case {
             name: "unexpected character",
             phase: Phase::AddModule,
-            source: "type A {} #",
+            source: "type A {} $",
             codes: &[CftErrorCode::UnexpectedCharacter],
         },
         Case {

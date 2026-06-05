@@ -3,7 +3,7 @@ use common::*;
 
 #[test]
 fn lexer_reports_invalid_character() {
-    let err = add_source("type A { id: string; } #").unwrap_err();
+    let err = add_source("type A { id: string; } $").unwrap_err();
     assert_primary_stage(&err, CftErrorCode::UnexpectedCharacter, CftStage::Lex);
 }
 

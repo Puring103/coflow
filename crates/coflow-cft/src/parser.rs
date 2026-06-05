@@ -138,6 +138,11 @@ impl<'a> Parser<'a> {
             .expect_simple(&TokenKind::Const, CftErrorCode::UnexpectedToken)?
             .start;
         let name = self.expect_ident()?;
+        let ty = if self.eat(&TokenKind::Colon).is_some() {
+            Some(self.parse_type_ref()?)
+        } else {
+            None
+        };
         self.expect_simple(&TokenKind::Equal, CftErrorCode::ExpectedToken)?;
         let value = self.parse_const_literal()?;
         let end = self
@@ -146,6 +151,7 @@ impl<'a> Parser<'a> {
         Ok(ConstDef {
             name: name.name,
             name_span: name.span,
+            ty,
             value,
             annotations,
             span: Span::new(start, end),

@@ -1,5 +1,5 @@
-// Arrays use [T]. Dicts use {K: V}.
-// Dict keys may be string, int, or enum types.
+# Arrays use [T]. Dicts use {K: V}.
+# Dict keys may be string, int, or enum types.
 
 type ExampleLootTable {
   item_ids: [string] = [];
