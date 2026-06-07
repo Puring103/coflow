@@ -15,6 +15,7 @@ members = [
     "crates/coflow-checker",
     "crates/coflow-excel-loader",
     "crates/coflow-json-export",
+    "crates/coflow-codegen-csharp",
 ]
 resolver = "2"
 
@@ -22,6 +23,7 @@ resolver = "2"
 clap = { version = "4", features = ["derive"] }
 coflow-cft = { path = "crates/coflow-cft" }
 coflow-checker = { path = "crates/coflow-checker" }
+coflow-codegen-csharp = { path = "crates/coflow-codegen-csharp" }
 coflow-excel-loader = { path = "crates/coflow-excel-loader" }
 coflow-json-export = { path = "crates/coflow-json-export" }
 serde = { version = "1", features = ["derive"] }

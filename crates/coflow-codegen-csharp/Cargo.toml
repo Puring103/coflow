@@ -1,0 +1,15 @@
+[package]
+name = "coflow-codegen-csharp"
+version = "0.1.0"
+edition = "2021"
+description = "C# runtime code generator for Coflow JSON data."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/wtlll/ScriptForGame"
+keywords = ["config", "game-data", "codegen", "csharp"]
+categories = ["config", "game-development"]
+publish = false
+
+[dependencies]
+coflow-cft = { path = "../coflow-cft" }
+serde = { version = "1", features = ["derive"] }
+tera = "1"

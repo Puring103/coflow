@@ -1,5 +1,8 @@
+mod lsp;
+
 use clap::{Args, Parser, Subcommand};
 use coflow_cft::{CftContainer, CftDiagnostic, CftLabel, ModuleId};
+use coflow_codegen_csharp::{generate_csharp_json, CsharpCodegenOptions};
 use coflow_excel_loader::{
     load_excel, ExcelDiagnostic, ExcelDiagnostics, ExcelLoadError, ExcelLocation, ExcelSheet,
     ExcelSource,
@@ -320,6 +323,13 @@ struct SchemaBuild {
     paths: BTreeMap<String, String>,
 }
 
+#[derive(Debug, Clone)]
+struct SchemaSourceOverride {
+    requested_module: Option<String>,
+    normalized_path: PathBuf,
+    source: String,
+}
+
 fn init_project(args: InitArgs) -> Result<bool, String> {
     let dir = args.dir.unwrap_or_else(|| PathBuf::from("."));
     fs::create_dir_all(dir.join("schema"))
@@ -393,11 +403,7 @@ fn cft_check(args: CftCheckArgs) -> Result<bool, String> {
 
 fn cft_lsp(args: CftLspArgs) -> Result<bool, String> {
     let project = Project::open(args.config_or_dir.as_deref())?;
-    println!(
-        "CFT LSP is not implemented yet. Project config resolved to {}.",
-        project.config_path.display()
-    );
-    Ok(true)
+    lsp::run(project)
 }
 
 fn project_check(args: ProjectCheckArgs) -> Result<bool, String> {
@@ -532,11 +538,31 @@ fn codegen_csharp(args: CodegenCsharpArgs) -> Result<bool, String> {
         .as_deref()
         .or(output.namespace.as_deref())
         .unwrap_or("Game.Config");
-    println!(
-        "C# code generation is not implemented yet. Configured output dir: {}, namespace: {}",
-        dir.display(),
-        namespace
-    );
+    let build = compile_schema_project(&project, None)?;
+    let cft_diagnostics = dedupe_cft_diagnostics(build.diagnostics);
+    if !cft_diagnostics.is_empty() {
+        write_human_cft_diagnostics(&cft_diagnostics, &build.sources, &build.paths)?;
+        return Ok(false);
+    }
+    let Some(schema) = build.container else {
+        return Err("schema compilation did not produce a container".to_string());
+    };
+
+    let options = CsharpCodegenOptions::new(namespace);
+    let files = generate_csharp_json(&schema, &options)
+        .map_err(|err| format!("failed to generate C# code: {err}"))?;
+    fs::create_dir_all(&dir)
+        .map_err(|err| format!("failed to create output dir `{}`: {err}", dir.display()))?;
+    for file in files {
+        let path = dir.join(&file.relative_path);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|err| format!("failed to create `{}`: {err}", parent.display()))?;
+        }
+        fs::write(&path, file.contents)
+            .map_err(|err| format!("failed to write `{}`: {err}", path.display()))?;
+    }
+    println!("C# code generated to {}", dir.display());
     Ok(true)
 }
 
@@ -544,8 +570,7 @@ fn compile_schema_project(
     project: &Project,
     stdin_path: Option<&Path>,
 ) -> Result<SchemaBuild, String> {
-    let schema_files = project.schema_files()?;
-    let stdin_override = if let Some(path) = stdin_path {
+    let overrides = if let Some(path) = stdin_path {
         let mut source = String::new();
         io::stdin()
             .read_to_string(&mut source)
@@ -556,29 +581,43 @@ fn compile_schema_project(
         } else {
             project.root_dir.join(path)
         };
-        Some((requested, normalize_path(&absolute), source))
+        vec![SchemaSourceOverride {
+            requested_module: Some(requested),
+            normalized_path: normalize_path(&absolute),
+            source,
+        }]
     } else {
-        None
+        Vec::new()
     };
+    compile_schema_project_with_overrides(project, &overrides)
+}
 
-    let mut matched_stdin = stdin_override.is_none();
+fn compile_schema_project_with_overrides(
+    project: &Project,
+    overrides: &[SchemaSourceOverride],
+) -> Result<SchemaBuild, String> {
+    let schema_files = project.schema_files()?;
+    let mut matched_overrides = vec![false; overrides.len()];
     let mut sources = BTreeMap::new();
     let mut paths = BTreeMap::new();
     let mut container = CftContainer::new();
     let mut diagnostics = Vec::new();
 
     for schema_file in schema_files {
-        let source = if let Some((requested, requested_path, source)) = &stdin_override {
-            if schema_file.module_id == *requested
-                || normalize_path(&schema_file.canonical_path) == *requested_path
-            {
-                matched_stdin = true;
-                source.clone()
-            } else {
-                fs::read_to_string(&schema_file.path).map_err(|err| {
-                    format!("failed to read `{}`: {err}", schema_file.path.display())
-                })?
-            }
+        let source = if let Some((index, source_override)) = overrides
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, source_override)| {
+                source_override
+                    .requested_module
+                    .as_deref()
+                    .is_some_and(|module| module == schema_file.module_id)
+                    || normalize_path(&schema_file.canonical_path)
+                        == source_override.normalized_path
+            }) {
+            matched_overrides[index] = true;
+            source_override.source.clone()
         } else {
             fs::read_to_string(&schema_file.path)
                 .map_err(|err| format!("failed to read `{}`: {err}", schema_file.path.display()))?
@@ -593,13 +632,17 @@ fn compile_schema_project(
         }
     }
 
-    if !matched_stdin {
-        let Some((requested, _, _)) = stdin_override else {
-            unreachable!("matched_stdin is true without stdin override");
-        };
-        return Err(format!(
-            "`--stdin-path {requested}` is not part of the configured schema"
-        ));
+    for (index, matched) in matched_overrides.into_iter().enumerate() {
+        if !matched {
+            let source_override = &overrides[index];
+            let requested = source_override.requested_module.as_deref().map_or_else(
+                || source_override.normalized_path.display().to_string(),
+                str::to_string,
+            );
+            return Err(format!(
+                "`--stdin-path {requested}` is not part of the configured schema"
+            ));
+        }
     }
 
     let compiled = if diagnostics.is_empty() {

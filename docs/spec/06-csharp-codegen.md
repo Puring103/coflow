@@ -40,15 +40,16 @@ outputs:
 
 1. 读取 `coflow.yaml`
 2. 编译 CFT schema
-3. 将 `CftContainer` 转换为 C# 专用 Codegen IR
+3. 将 `CftContainer` 投影为 C# 专用 codegen model
 4. 使用 Tera 模板渲染 `.cs` 文件
 5. 写入 `outputs.code.dir`
 
-Codegen IR 是 C# 视角的数据结构，而不是直接暴露 `CftSchemaType` 给模板：
+Codegen model 是 C# 视角的数据结构，而不是直接暴露 `CftSchemaType` 给模板：
 
 ```rust
 struct CsharpProject {
     namespace: String,
+    database_class: String,
     enums: Vec<CsharpEnum>,
     types: Vec<CsharpType>,
     database: CsharpDatabase,
@@ -76,14 +77,20 @@ struct CsharpField {
 }
 ```
 
-Tera 模板只允许做简单的字段遍历、条件输出和命名空间包裹；类型映射、默认值、继承展开、`@ref`、`@id`、`@index`、`@display`、`@deprecated` 等规则必须在 Rust IR 构建阶段完成，并由 golden tests 固定输出。
+Tera 模板只允许做简单的字段遍历、条件输出和命名空间包裹；类型映射、默认值、继承展开、`@ref`、`@id`、`@index`、`@display`、`@deprecated` 等规则必须在 Rust model 构建阶段完成。实现应补充 golden tests 固定复杂 schema 的输出形状。
+
+当前实现位于 `crates/coflow-codegen-csharp`，使用 `Newtonsoft.Json` 生成通用 .NET 加载器。生成出的 C# 运行时代码只依赖 JSON 文件和 `Newtonsoft.Json`，不依赖 CFT parser/compiler。
 
 建议文件布局：
 
 ```text
-crates/coflow-csharp-codegen/
+crates/coflow-codegen-csharp/
   src/lib.rs
   src/ir.rs
+  src/model.rs
+  src/schema_view.rs
+  src/emit.rs
+  src/names.rs
   src/render.rs
   templates/
     enum.cs.tera
@@ -468,27 +475,22 @@ public partial class GameConfig
 
 ## 6. 加载器生成
 
-加载器从 JSON 文件读取数据，构造强类型对象，解析 `@ref` 引用。失败时抛出 `CftLoadException`：
+加载器从 `coflow export json` 产出的 JSON 目录读取数据：每个 table 一个 `<TypeName>.json` 文件，文件内容是 JSON array。加载过程构造强类型对象，解析 `@ref` 引用。失败时抛出 `CftLoadException`。
+
+运行时 JSON 库固定为通用 .NET 包 `Newtonsoft.Json`：
 
 ```csharp
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+
 public partial class GameConfig
 {
-    public static GameConfig Load(string jsonPath)
+    public static GameConfig Load(string dataDir)
     {
-        var json = File.ReadAllText(jsonPath);
-        return Load(JsonDocument.Parse(json));
-    }
+        var items = LoadTable(Path.Combine(dataDir, "Item.json"), "Item", LoadItem);
+        var monsters = LoadTable(Path.Combine(dataDir, "Monster.json"), "Monster", LoadMonster);
 
-    public static GameConfig Load(JsonDocument doc)
-    {
-        var root = doc.RootElement;
-
-        // 第一遍：构造所有对象（@ref 字段只填原始 ID）
-        var items    = LoadItems(root.GetProperty("Item"));
-        var monsters = LoadMonsters(root.GetProperty("Monster"));
-
-        // 建立主键索引
-        var itemIndex    = items.ToDictionary(x => x.Id);
+        var itemIndex = BuildUniqueIndex(items, x => x.Id, "Item", "id");
         var monsterIndex = monsters.ToDictionary(x => x.Id);
 
         // 第二遍：解析 @ref 引用
@@ -509,22 +511,44 @@ public partial class GameConfig
 
         return new GameConfig(items, monsters, itemIndex, monsterIndex, monstersByRarity);
     }
+
+    private static List<T> LoadTable<T>(
+        string file,
+        string tableName,
+        Func<JToken, string, T> loadRow)
+    {
+        var root = JToken.Parse(
+            File.ReadAllText(file),
+            new JsonLoadSettings
+            {
+                DuplicatePropertyNameHandling = DuplicatePropertyNameHandling.Error
+            });
+
+        if (root is not JArray array)
+            throw new CftLoadException($"table `{tableName}` must be a JSON array", tableName);
+
+        var result = new List<T>();
+        for (var i = 0; i < array.Count; i++)
+            result.Add(loadRow(array[i], $"{tableName}[{i}]"));
+        return result;
+    }
 }
 ```
 
 **多态对象的 `$type` 分发**：每个多态字段生成对应的分发方法：
 
 ```csharp
-static Reward LoadReward(JsonElement el)
+static Reward LoadRewardPolymorphic(JToken token, string path)
 {
-    var typeName = el.GetProperty("$type").GetString()
-        ?? throw new CftLoadException("多态对象缺少 $type 字段", fieldPath: "reward");
+    var obj = RequireObject(token, path);
+    var typeName = ReadRequired(obj, "$type", path, ReadString);
 
     return typeName switch
     {
-        "CurrencyReward" => LoadCurrencyReward(el),
-        "ItemReward"     => LoadItemReward(el),
-        _ => throw new CftLoadException($"未知类型 {typeName}", fieldPath: "reward.$type")
+        "CurrencyReward" => LoadCurrencyReward(token, path),
+        "ItemReward"     => LoadItemReward(token, path),
+        _ => throw new CftLoadException($"unknown polymorphic type `{typeName}`",
+            $"{path}.$type", "CurrencyReward or ItemReward", typeName)
     };
 }
 ```
