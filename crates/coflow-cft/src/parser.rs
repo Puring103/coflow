@@ -41,15 +41,19 @@ impl<'a> Parser<'a> {
             }
             if self.at(&TokenKind::Const) {
                 items.push(Item::Const(
-                    self.parse_const(take(&mut pending_annotations))?,
+                    self.parse_const(std::mem::take(&mut pending_annotations))?,
                 ));
             } else if self.at(&TokenKind::Enum) {
-                items.push(Item::Enum(self.parse_enum(take(&mut pending_annotations))?));
+                items.push(Item::Enum(
+                    self.parse_enum(std::mem::take(&mut pending_annotations))?,
+                ));
             } else if self.at(&TokenKind::Type)
                 || self.at(&TokenKind::Abstract)
                 || self.at(&TokenKind::Sealed)
             {
-                items.push(Item::Type(self.parse_type(take(&mut pending_annotations))?));
+                items.push(Item::Type(
+                    self.parse_type(std::mem::take(&mut pending_annotations))?,
+                ));
             } else {
                 return self.err(
                     CftErrorCode::InvalidTopLevelItem,
@@ -126,6 +130,10 @@ impl<'a> Parser<'a> {
                 self.bump();
                 Ok(AnnotationArg::Null(token.span))
             }
+            TokenKind::UIntOverflow(_) => self.err(
+                CftErrorCode::InvalidIntLiteral,
+                "integer literal out of range",
+            ),
             _ => self.err(
                 CftErrorCode::InvalidAnnotationSyntax,
                 "invalid annotation argument",
@@ -184,24 +192,41 @@ impl<'a> Parser<'a> {
             TokenKind::Minus => {
                 self.bump();
                 let next = self.peek().clone();
+                let span = Span::new(token.span.start, next.span.end);
                 match next.kind {
                     TokenKind::Int(value) => {
                         self.bump();
-                        Ok(ConstLiteral::Int(
-                            -value,
-                            Span::new(token.span.start, next.span.end),
-                        ))
+                        let Some(negated) = value.checked_neg() else {
+                            return self.err_at(
+                                CftErrorCode::InvalidIntLiteral,
+                                span,
+                                "negated integer literal overflowed",
+                            );
+                        };
+                        Ok(ConstLiteral::Int(negated, span))
+                    }
+                    TokenKind::UIntOverflow(value) => {
+                        self.bump();
+                        let Some(negated) = negate_u64_to_i64(value) else {
+                            return self.err_at(
+                                CftErrorCode::InvalidIntLiteral,
+                                span,
+                                "integer literal out of range",
+                            );
+                        };
+                        Ok(ConstLiteral::Int(negated, span))
                     }
                     TokenKind::Float(value) => {
                         self.bump();
-                        Ok(ConstLiteral::Float(
-                            -value,
-                            Span::new(token.span.start, next.span.end),
-                        ))
+                        Ok(ConstLiteral::Float(-value, span))
                     }
                     _ => self.err(CftErrorCode::InvalidConstValue, "expected numeric literal"),
                 }
             }
+            TokenKind::UIntOverflow(_) => self.err(
+                CftErrorCode::InvalidIntLiteral,
+                "integer literal out of range",
+            ),
             _ => self.err(
                 CftErrorCode::InvalidConstValue,
                 "const value must be an int, float, bool, or string literal",
@@ -241,7 +266,7 @@ impl<'a> Parser<'a> {
                 name: variant.name,
                 name_span: variant.span,
                 value,
-                annotations: take(&mut pending_annotations),
+                annotations: std::mem::take(&mut pending_annotations),
                 span: Span::new(variant_start, end),
             });
             if self.eat(&TokenKind::Comma).is_none() {
@@ -319,7 +344,7 @@ impl<'a> Parser<'a> {
                     "check block must be the last item in a type",
                 );
             }
-            fields.push(self.parse_field(take(&mut pending_annotations))?);
+            fields.push(self.parse_field(std::mem::take(&mut pending_annotations))?);
         }
         let end = self
             .expect_simple(&TokenKind::RBrace, CftErrorCode::ExpectedToken)?
@@ -455,33 +480,61 @@ impl<'a> Parser<'a> {
             TokenKind::Ident(_) => self.parse_name_or_enum_default(),
             TokenKind::LBracket => self.parse_array_default(),
             TokenKind::LBrace => self.parse_object_default(),
-            TokenKind::Minus => {
-                self.bump();
-                let next = self.peek().clone();
-                match next.kind {
-                    TokenKind::Int(value) => {
-                        self.bump();
-                        Ok(DefaultExpr {
-                            kind: DefaultExprKind::Int(-value),
-                            span: Span::new(token.span.start, next.span.end),
-                        })
-                    }
-                    TokenKind::Float(value) => {
-                        self.bump();
-                        Ok(DefaultExpr {
-                            kind: DefaultExprKind::Float(-value),
-                            span: Span::new(token.span.start, next.span.end),
-                        })
-                    }
-                    _ => self.err(
-                        CftErrorCode::InvalidDefaultExpression,
-                        "expected number after `-`",
-                    ),
-                }
-            }
+            TokenKind::Minus => self.parse_negative_default(token.span.start),
+            TokenKind::UIntOverflow(_) => self.err(
+                CftErrorCode::InvalidIntLiteral,
+                "integer literal out of range",
+            ),
             _ => self.err(
                 CftErrorCode::InvalidDefaultExpression,
                 "expected default expression",
+            ),
+        }
+    }
+
+    fn parse_negative_default(&mut self, start: usize) -> Result<DefaultExpr, CftDiagnostics> {
+        self.bump();
+        let next = self.peek().clone();
+        let span = Span::new(start, next.span.end);
+        match next.kind {
+            TokenKind::Int(value) => {
+                self.bump();
+                let Some(negated) = value.checked_neg() else {
+                    return self.err_at(
+                        CftErrorCode::InvalidIntLiteral,
+                        span,
+                        "negated integer literal overflowed",
+                    );
+                };
+                Ok(DefaultExpr {
+                    kind: DefaultExprKind::Int(negated),
+                    span,
+                })
+            }
+            TokenKind::UIntOverflow(value) => {
+                self.bump();
+                let Some(negated) = negate_u64_to_i64(value) else {
+                    return self.err_at(
+                        CftErrorCode::InvalidIntLiteral,
+                        span,
+                        "integer literal out of range",
+                    );
+                };
+                Ok(DefaultExpr {
+                    kind: DefaultExprKind::Int(negated),
+                    span,
+                })
+            }
+            TokenKind::Float(value) => {
+                self.bump();
+                Ok(DefaultExpr {
+                    kind: DefaultExprKind::Float(-value),
+                    span,
+                })
+            }
+            _ => self.err(
+                CftErrorCode::InvalidDefaultExpression,
+                "expected number after `-`",
             ),
         }
     }
@@ -587,7 +640,7 @@ impl<'a> Parser<'a> {
         if self.at(&TokenKind::When) {
             return self.parse_when_stmt();
         }
-        let expr = self.parse_check_expr()?;
+        let expr = self.parse_or_expr()?;
         if self.eat(&TokenKind::Semicolon).is_none() {
             return self.err(
                 CftErrorCode::InvalidCheckStatement,
@@ -601,7 +654,7 @@ impl<'a> Parser<'a> {
         let start = self.bump().span.start;
         let binding = self.expect_ident()?;
         self.expect_simple(&TokenKind::In, CftErrorCode::ExpectedToken)?;
-        let collection = self.parse_check_expr()?;
+        let collection = self.parse_or_expr()?;
         self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
         let body = self.parse_check_stmts()?;
         let end = self
@@ -620,7 +673,7 @@ impl<'a> Parser<'a> {
         let start = self
             .expect_simple(&TokenKind::When, CftErrorCode::UnexpectedToken)?
             .start;
-        let condition = self.parse_check_expr()?;
+        let condition = self.parse_or_expr()?;
         self.expect_simple(&TokenKind::LBrace, CftErrorCode::ExpectedToken)?;
         let body = self.parse_check_stmts()?;
         let end = self
@@ -631,10 +684,6 @@ impl<'a> Parser<'a> {
             body,
             span: Span::new(start, end),
         })
-    }
-
-    fn parse_check_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
-        self.parse_or_expr()
     }
 
     fn parse_or_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
@@ -785,6 +834,27 @@ impl<'a> Parser<'a> {
             None
         };
         if let Some(op) = op {
+            // Special case: `- <UIntOverflow>` is the only legal place for a
+            // magnitude that exceeds i64::MAX (e.g. `-9223372036854775808`).
+            // Fold it into a single Int expression here so the AST never has
+            // to carry the unsigned magnitude.
+            if matches!(op, UnaryOp::Neg) {
+                if let TokenKind::UIntOverflow(value) = self.peek().kind {
+                    let value_token = self.bump();
+                    let span = Span::new(token.span.start, value_token.span.end);
+                    let Some(negated) = negate_u64_to_i64(value) else {
+                        return self.err_at(
+                            CftErrorCode::InvalidIntLiteral,
+                            span,
+                            "integer literal out of range",
+                        );
+                    };
+                    return Ok(CheckExpr {
+                        kind: CheckExprKind::Int(negated),
+                        span,
+                    });
+                }
+            }
             let expr = self.parse_prefix_expr()?;
             return Ok(CheckExpr {
                 span: Span::new(token.span.start, expr.span.end),
@@ -816,7 +886,7 @@ impl<'a> Parser<'a> {
                     if self.at(&TokenKind::Eof) {
                         return self.err(CftErrorCode::UnexpectedEof, "unterminated function call");
                     }
-                    args.push(self.parse_check_expr()?);
+                    args.push(self.parse_or_expr()?);
                     if self.eat(&TokenKind::Comma).is_none() {
                         break;
                     }
@@ -842,7 +912,7 @@ impl<'a> Parser<'a> {
                     },
                 };
             } else if self.eat(&TokenKind::LBracket).is_some() {
-                let index = self.parse_check_expr()?;
+                let index = self.parse_or_expr()?;
                 let end = self
                     .expect_simple(&TokenKind::RBracket, CftErrorCode::ExpectedToken)?
                     .end;
@@ -916,13 +986,17 @@ impl<'a> Parser<'a> {
                 let start = self
                     .expect_simple(&TokenKind::LParen, CftErrorCode::ExpectedToken)?
                     .start;
-                let mut expr = self.parse_check_expr()?;
+                let mut expr = self.parse_or_expr()?;
                 let end = self
                     .expect_simple(&TokenKind::RParen, CftErrorCode::ExpectedToken)?
                     .end;
                 expr.span = Span::new(start, end);
                 Ok(expr)
             }
+            TokenKind::UIntOverflow(_) => self.err(
+                CftErrorCode::InvalidIntLiteral,
+                "integer literal out of range",
+            ),
             _ => self.err(
                 CftErrorCode::InvalidCheckStatement,
                 "expected check expression",
@@ -940,14 +1014,45 @@ impl<'a> Parser<'a> {
     fn parse_signed_int(&mut self) -> Result<SignedInt, CftDiagnostics> {
         let sign_span = self.eat(&TokenKind::Minus);
         let token = self.peek().clone();
+        let span = sign_span.map_or(token.span, |span| span.join(token.span));
         match token.kind {
             TokenKind::Int(value) => {
                 self.bump();
-                let value = if sign_span.is_some() { -value } else { value };
-                Ok(SignedInt {
-                    value,
-                    span: sign_span.map_or(token.span, |span| span.join(token.span)),
-                })
+                let value = if sign_span.is_some() {
+                    let Some(negated) = value.checked_neg() else {
+                        return self.err_at(
+                            CftErrorCode::InvalidIntLiteral,
+                            span,
+                            "negated integer literal overflowed",
+                        );
+                    };
+                    negated
+                } else {
+                    value
+                };
+                Ok(SignedInt { value, span })
+            }
+            TokenKind::UIntOverflow(value) => {
+                self.bump();
+                if sign_span.is_some() {
+                    let Some(negated) = negate_u64_to_i64(value) else {
+                        return self.err_at(
+                            CftErrorCode::InvalidIntLiteral,
+                            span,
+                            "integer literal out of range",
+                        );
+                    };
+                    Ok(SignedInt {
+                        value: negated,
+                        span,
+                    })
+                } else {
+                    self.err_at(
+                        CftErrorCode::InvalidIntLiteral,
+                        span,
+                        "integer literal out of range",
+                    )
+                }
             }
             _ => self.err(CftErrorCode::ExpectedToken, "expected integer literal"),
         }
@@ -1055,8 +1160,16 @@ impl<'a> Parser<'a> {
     }
 }
 
-fn take<T>(items: &mut Vec<T>) -> Vec<T> {
-    std::mem::take(items)
+/// Folds `-magnitude` where `magnitude > i64::MAX` into the equivalent `i64`.
+/// Only `2^63` (i.e. `i64::MIN.unsigned_abs()`) is representable; any larger
+/// magnitude is out of range and returns `None`.
+fn negate_u64_to_i64(magnitude: u64) -> Option<i64> {
+    const I64_MIN_MAGNITUDE: u64 = i64::MIN.unsigned_abs();
+    if magnitude == I64_MIN_MAGNITUDE {
+        Some(i64::MIN)
+    } else {
+        None
+    }
 }
 
 fn bin_expr(op: BinOp, lhs: CheckExpr, rhs: CheckExpr) -> CheckExpr {

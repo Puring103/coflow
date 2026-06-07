@@ -94,9 +94,10 @@ impl CftContainer {
     ///
     /// # Errors
     ///
-    /// Returns schema and type diagnostics. Failed compilation clears the published schema.
+    /// Returns schema and type diagnostics. A failed compile leaves the previously
+    /// published schema (if any) untouched, so consumers keep observing a stable
+    /// reflection until the next successful call.
     pub fn compile(&mut self) -> Result<(), CftDiagnostics> {
-        self.compiled = None;
         let compiled = compile_container(self)?;
         self.compiled = Some(compiled);
         Ok(())
@@ -153,5 +154,32 @@ impl CftContainer {
     #[must_use]
     pub fn source(&self, id: &ModuleId) -> Option<&str> {
         self.modules.get(id).map(|module| module.source.as_str())
+    }
+
+    /// Returns true when `actual_type` is `expected_type` itself or a
+    /// descendant via single inheritance. Both must be names of known types.
+    /// Used by data-model construction (`@ref` and polymorphic field
+    /// assignment) and by the runtime check evaluator (`is` predicate).
+    #[must_use]
+    pub fn is_assignable(&self, actual_type: &str, expected_type: &str) -> bool {
+        let mut current = Some(actual_type);
+        while let Some(name) = current {
+            if name == expected_type {
+                return true;
+            }
+            current = self.resolve_type(name).and_then(|ty| ty.parent.as_deref());
+        }
+        false
+    }
+
+    /// Resolves the integer value of a single enum variant. Returns `None`
+    /// when the enum or variant is unknown.
+    #[must_use]
+    pub fn enum_variant_value(&self, enum_name: &str, variant: &str) -> Option<i64> {
+        self.resolve_enum(enum_name)?
+            .variants
+            .iter()
+            .find(|v| v.name == variant)
+            .map(|v| v.value)
     }
 }

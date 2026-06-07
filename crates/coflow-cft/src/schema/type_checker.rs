@@ -174,8 +174,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 return Ty::Unknown;
             }
             if let Some(symbol) = self.compiler.symbols.get(enum_name) {
-                if symbol.kind != SymbolKind::Enum && self.compiler.symbols.contains_key(enum_name)
-                {
+                if symbol.kind != SymbolKind::Enum {
                     self.diag(
                         CftErrorCode::TypeEnumVariantOnNonEnum,
                         inner.span,
@@ -520,10 +519,14 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
     }
 
     fn check_unary(&mut self, op: UnaryOp, ty: &Ty, span: Span) -> Ty {
+        if *ty == Ty::Unknown {
+            return Ty::Unknown;
+        }
+        let unwrapped = unwrap_nullable(ty);
         match op {
-            UnaryOp::Not if types_comparable(ty, &Ty::Bool) => Ty::Bool,
-            UnaryOp::Neg | UnaryOp::BitNot if types_comparable(ty, &Ty::Int) => Ty::Int,
-            UnaryOp::Neg if types_comparable(ty, &Ty::Float) => Ty::Float,
+            UnaryOp::Not if matches!(unwrapped, Ty::Bool) => Ty::Bool,
+            UnaryOp::Neg | UnaryOp::BitNot if matches!(unwrapped, Ty::Int) => Ty::Int,
+            UnaryOp::Neg if matches!(unwrapped, Ty::Float) => Ty::Float,
             UnaryOp::BitNot if self.is_flag_enum(ty) => ty.clone(),
             UnaryOp::BitNot => {
                 self.diag(
@@ -533,7 +536,6 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 );
                 Ty::Unknown
             }
-            _ if *ty == Ty::Unknown => Ty::Unknown,
             _ => {
                 self.diag(
                     CftErrorCode::OperatorTypeMismatch,

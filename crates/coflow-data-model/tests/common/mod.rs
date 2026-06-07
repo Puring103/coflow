@@ -32,10 +32,7 @@ pub(crate) fn record_id_at(model: &CfdDataModel, index: usize) -> CfdRecordId {
         .expect("record id should exist")
 }
 
-pub(crate) fn diagnostic_with_code<'a>(
-    diags: &'a CfdDiagnostics,
-    code: CfdErrorCode,
-) -> &'a CfdDiagnostic {
+pub(crate) fn diagnostic_with_code(diags: &CfdDiagnostics, code: CfdErrorCode) -> &CfdDiagnostic {
     diags
         .diagnostics
         .iter()

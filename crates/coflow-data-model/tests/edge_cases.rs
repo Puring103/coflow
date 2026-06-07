@@ -216,7 +216,6 @@ fn polymorphic_index_returns_some_for_abstract_root() {
     let model = builder.build().unwrap();
 
     let index = model.polymorphic_index("Reward").unwrap();
-    assert_eq!(index.root_type, "Reward");
     assert!(index.records.contains_key(&CfdIdValue::from("r1")));
 }
 
@@ -775,7 +774,7 @@ fn dict_with_enum_keys_resolves_variant_values() {
     assert_eq!(resist.len(), 2);
     let fire_key = CfdDictKey::Enum(CfdEnumValue {
         enum_name: "Element".to_string(),
-        variant: "Fire".to_string(),
+        variant: Some("Fire".to_string()),
         value: 1,
     });
     assert_eq!(resist.get(&fire_key), Some(&CfdValue::Float(0.25)));

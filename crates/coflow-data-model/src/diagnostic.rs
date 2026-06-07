@@ -151,7 +151,10 @@ fn format_dict_key(key: &CfdDictKey) -> String {
     match key {
         CfdDictKey::String(value) => format!("\"{value}\""),
         CfdDictKey::Int(value) => value.to_string(),
-        CfdDictKey::Enum(value) => format!("{}.{}", value.enum_name, value.variant),
+        CfdDictKey::Enum(value) => match value.variant.as_deref() {
+            Some(variant) => format!("{}.{}", value.enum_name, variant),
+            None => format!("{}({})", value.enum_name, value.value),
+        },
     }
 }
 

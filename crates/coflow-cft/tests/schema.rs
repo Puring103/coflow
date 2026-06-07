@@ -126,6 +126,40 @@ fn schema_accepts_explicit_i64_max_enum_value_without_following_auto_variant() {
     assert_eq!(enum_schema.variants[0].value, i64::MAX);
 }
 
+/// Regression for B4: the lexer used to parse the magnitude as `i64`, so
+/// `-9223372036854775808` (i.e. `i64::MIN`) was rejected with InvalidIntLiteral
+/// because `9223372036854775808` doesn't fit in i64. Magnitudes that exceed
+/// `i64::MAX` are now lexed as a special token and only legal under unary
+/// minus, allowing `i64::MIN` exactly.
+#[test]
+fn schema_accepts_i64_min_in_enum_const_and_default() {
+    let source = r#"
+        const MIN_LEVEL: int = -9223372036854775808;
+        enum Edge { Bottom = -9223372036854775808, }
+        type Edged { value: int = -9223372036854775808; }
+    "#;
+    let container = compile_one(source).unwrap();
+    assert!(matches!(
+        container.resolve_const("MIN_LEVEL").unwrap().value,
+        CftConstValue::Int(i64::MIN),
+    ));
+    let edge = container.resolve_enum("Edge").unwrap();
+    assert_eq!(edge.variants[0].value, i64::MIN);
+}
+
+#[test]
+fn schema_rejects_unsigned_magnitude_that_exceeds_i64_min() {
+    // 2^63 + 1 is out of range even with a unary minus.
+    let err = compile_one("const C: int = -9223372036854775809;").unwrap_err();
+    assert_has_code(&err, CftErrorCode::InvalidIntLiteral);
+}
+
+#[test]
+fn schema_rejects_bare_unsigned_magnitude_above_i64_max() {
+    let err = compile_one("const C: int = 9223372036854775808;").unwrap_err();
+    assert_has_code(&err, CftErrorCode::InvalidIntLiteral);
+}
+
 #[test]
 fn schema_reports_enum_auto_numbering_overflow_only_when_next_variant_needs_value() {
     let err = compile_one("enum Limit { Max = 9223372036854775807, Next, }").unwrap_err();
@@ -169,7 +203,10 @@ fn schema_does_not_duplicate_invalid_dict_key_diagnostic() {
         .iter()
         .filter(|d| d.code == CftErrorCode::InvalidDictKeyType)
         .count();
-    assert_eq!(count, 1, "expected exactly one InvalidDictKeyType, got {count}");
+    assert_eq!(
+        count, 1,
+        "expected exactly one InvalidDictKeyType, got {count}"
+    );
 }
 
 /// Regression: `@struct` on an `enum` used to emit two

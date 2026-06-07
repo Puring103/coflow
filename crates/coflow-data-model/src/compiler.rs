@@ -458,7 +458,7 @@ impl ModelCompiler {
             } if type_accepts_default(ty, &CfdType::Enum(enum_name.clone())) => {
                 CfdValue::Enum(CfdEnumValue {
                     enum_name: enum_name.clone(),
-                    variant: variant.clone(),
+                    variant: Some(variant.clone()),
                     value: *value,
                 })
             }
@@ -581,7 +581,6 @@ impl ModelCompiler {
             let index = inheritance_index
                 .entry(target_type.clone())
                 .or_insert_with(|| CfdPolymorphicIndex {
-                    root_type: target_type.clone(),
                     records: BTreeMap::new(),
                 });
             if let Some(first) = index.records.insert(id.clone(), record_id) {
@@ -765,7 +764,7 @@ impl ModelCompiler {
         };
         Some(CfdEnumValue {
             enum_name: enum_name.to_string(),
-            variant: variant.to_string(),
+            variant: Some(variant.to_string()),
             value,
         })
     }

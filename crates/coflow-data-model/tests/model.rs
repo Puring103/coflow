@@ -32,7 +32,7 @@ fn data_model_applies_defaults_and_builds_indexes_without_running_check() {
     assert!(
         table.secondary_indexes["rarity"].contains_key(&CfdIndexKey::Enum(CfdEnumValue {
             enum_name: "Rarity".to_string(),
-            variant: "Common".to_string(),
+            variant: Some("Common".to_string()),
             value: 0,
         }))
     );

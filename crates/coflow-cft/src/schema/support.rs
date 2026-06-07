@@ -29,7 +29,13 @@ pub(super) struct EnumInfo<'a> {
     pub(super) module: ModuleId,
     pub(super) def: &'a EnumDef,
     pub(super) variants: BTreeSet<String>,
+    /// `value -> (declaring module, span of the originating variant)`. Used
+    /// only for duplicate-value diagnostics during schema validation.
     pub(super) values: BTreeMap<i64, (ModuleId, Span)>,
+    /// `variant name -> resolved integer value`, populated once during
+    /// `validate_enums` so later passes (default-value lowering, schema
+    /// construction) don't need to re-walk the variant list.
+    pub(super) values_by_name: BTreeMap<String, i64>,
     pub(super) is_flag: bool,
 }
 

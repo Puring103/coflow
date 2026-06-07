@@ -64,12 +64,11 @@ impl CheckValue {
             CfdValue::Dict(entries) => Self::Dict(
                 entries
                     .iter()
-                    .enumerate()
-                    .map(|(index, (key, value))| CheckEntry {
+                    .map(|(key, value)| CheckEntry {
                         key: Box::new(Self::from_dict_key(key)),
                         value: Self::from_cfd_value_with_path(
                             value,
-                            path.clone().map(|path| path.dict_key(index.to_string())),
+                            path.clone().map(|path| path.dict_key_value(key)),
                         ),
                     })
                     .collect(),
@@ -203,6 +202,22 @@ pub(super) fn comparable_key(value: &CheckValue) -> Option<ComparableKey> {
 pub(super) fn dict_key_from_check_value(value: &CheckValue) -> Option<ComparableKey> {
     match value {
         CheckValue::Int(_) | CheckValue::String(_) | CheckValue::Enum(_) => comparable_key(value),
+        _ => None,
+    }
+}
+
+/// Formats a dict-entry key (already turned into a `CheckValue`) so it can be
+/// pushed onto a [`CfdPath`]. Mirrors `CfdPath::dict_key_value` so quantifier-
+/// emitted diagnostics use the same key form as data-model diagnostics.
+/// Returns `None` when the value is not a valid dict key shape.
+pub(super) fn format_check_key_for_path(value: &CheckValue) -> Option<String> {
+    match value {
+        CheckValue::String(value) => Some(format!("\"{value}\"")),
+        CheckValue::Int(value) => Some(value.to_string()),
+        CheckValue::Enum(value) => Some(match value.variant.as_deref() {
+            Some(variant) => format!("{}.{}", value.enum_name, variant),
+            None => format!("{}({})", value.enum_name, value.value),
+        }),
         _ => None,
     }
 }

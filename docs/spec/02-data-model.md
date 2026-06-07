@@ -19,8 +19,7 @@ Table {
 }
 
 PolymorphicIndex {
-  root_type: TypeName,
-  records:   Map<IdValue, Rc<Record>>,     // root_type 赋值兼容范围内的所有可引用记录
+  records:   Map<IdValue, Rc<Record>>,     // root type 赋值兼容范围内的所有可引用记录；root type 由所属 inheritance_index 的 key 确定
 }
 
 Record {

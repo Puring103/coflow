@@ -94,11 +94,11 @@ impl<'a> CheckRunner<'a> {
                 }
             }
             CfdValue::Dict(entries) => {
-                for (index, (_, item)) in entries.iter().enumerate() {
+                for (key, item) in entries {
                     self.run_nested_value_checks(
                         root_record,
                         item,
-                        path.clone().dict_key(index.to_string()),
+                        path.clone().dict_key_value(key),
                     );
                 }
             }

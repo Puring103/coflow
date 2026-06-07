@@ -279,6 +279,67 @@ fn any_and_none_quantifiers_do_not_leak_trial_failures() {
 }
 
 #[test]
+fn flag_enum_bitwise_composite_has_no_fake_variant_name() {
+    // Regression for B3: bitwise OR over @flag enum values may produce a
+    // composite (e.g. Read | Write = 3) that has no single declared variant.
+    // The runtime used to fabricate `variant = "3"`, breaking downstream
+    // codegen / JSON which assume `variant` is an identifier. The composite
+    // must round-trip through `is_match`-style checks while keeping
+    // `variant: None`.
+    let schema = compile_schema(
+        r#"
+            @flag
+            enum Permission { Read = 1, Write = 2, Execute = 4, }
+            type Door {
+                granted: Permission;
+                check {
+                    (granted & Permission.Read) != Permission(0);
+                    (granted | Permission.Execute) != Permission(0);
+                }
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Door",
+        [("granted", CfdInputValue::enum_variant("Permission", "Read"))],
+    );
+    let model = builder.build().expect("data model should build");
+    model
+        .run_checks(&schema)
+        .expect("flag enum bitwise composites should evaluate cleanly");
+}
+
+#[test]
+fn sum_reports_integer_overflow_consistently_with_other_arithmetic() {
+    // Regression for B2: sum used to silently saturate while +/- /etc.
+    // raise CheckEvalTypeError. A condition like `sum(weights) == 100`
+    // would then pass against a saturating i64::MAX, masking real overflow.
+    let schema = compile_schema(
+        r#"
+            type Item {
+                xs: [int];
+                check { sum(xs) > 0; }
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Item",
+        [(
+            "xs",
+            CfdInputValue::Array(vec![
+                CfdInputValue::from(i64::MAX),
+                CfdInputValue::from(1_i64),
+            ]),
+        )],
+    );
+    let model = builder.build().expect("data model should build");
+    let err = model.run_checks(&schema).expect_err("overflow eval error");
+    assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
+}
+
+#[test]
 fn arithmetic_eval_errors_are_reported_without_panicking() {
     let schema = compile_schema(
         r#"
@@ -346,7 +407,15 @@ fn check_runner_executes_inline_object_checks_inside_collections() {
         .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
         .collect::<Vec<_>>();
     assert!(failed_paths.contains(&CfdPath::root().field("stats").index(0).field("hp")));
-    assert!(failed_paths.contains(&CfdPath::root().field("named").dict_key("0").field("hp")));
+    // Regression for B1: dict-key path used to be the entry index ("0"),
+    // hiding the actual key. Now it must be the formatted key form
+    // (`"bad"` for a string key) so users can locate the failing entry.
+    assert!(failed_paths.contains(
+        &CfdPath::root()
+            .field("named")
+            .dict_key("\"bad\"".to_string())
+            .field("hp"),
+    ));
 }
 
 #[test]

@@ -18,6 +18,13 @@ use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::span::Span;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+struct TypeTopology {
+    /// `type name -> distance to its inheritance root` (0 for root types).
+    depth: BTreeMap<String, usize>,
+    /// `type name -> root type at the top of its inheritance chain`.
+    root: BTreeMap<String, String>,
+}
+
 pub(super) struct SchemaCompiler<'a> {
     pub(super) container: &'a CftContainer,
     pub(super) diagnostics: Vec<CftDiagnostic>,
@@ -141,6 +148,7 @@ impl<'a> SchemaCompiler<'a> {
                                 def,
                                 variants: BTreeSet::new(),
                                 values: BTreeMap::new(),
+                                values_by_name: BTreeMap::new(),
                                 is_flag: has_annotation(&def.annotations, "flag"),
                             },
                         );
@@ -192,6 +200,7 @@ impl<'a> SchemaCompiler<'a> {
             let mut variant_names: BTreeMap<String, (ModuleId, Span)> = BTreeMap::new();
             let mut values: BTreeMap<i64, (String, ModuleId, Span)> = BTreeMap::new();
             let mut variants = BTreeSet::new();
+            let mut values_by_name = BTreeMap::new();
             for (index, variant) in info.def.variants.iter().enumerate() {
                 if let Some(first) = variant_names.get(&variant.name) {
                     self.diagnostics.push(
@@ -263,6 +272,9 @@ impl<'a> SchemaCompiler<'a> {
                     );
                 }
                 variants.insert(variant.name.clone());
+                // First definition wins on name collisions; later duplicates
+                // already raised `DuplicateEnumVariant` above.
+                values_by_name.entry(variant.name.clone()).or_insert(value);
             }
             if let Some(stored) = self.enums.get_mut(&name) {
                 stored.variants = variants;
@@ -270,15 +282,15 @@ impl<'a> SchemaCompiler<'a> {
                     .into_iter()
                     .map(|(value, (_, module, span))| (value, (module, span)))
                     .collect();
+                stored.values_by_name = values_by_name;
             }
         }
     }
 
     fn validate_const_type_annotations(&mut self) {
-        let const_infos = self.consts.values().cloned().collect::<Vec<_>>();
-        for info in const_infos {
+        self.each_const(|this, info| {
             let Some(ty) = &info.def.ty else {
-                continue;
+                return;
             };
             let type_name = match &ty.kind {
                 TypeRefKind::Int => "int",
@@ -286,13 +298,13 @@ impl<'a> SchemaCompiler<'a> {
                 TypeRefKind::Bool => "bool",
                 TypeRefKind::String => "string",
                 _ => {
-                    self.push_diag(
+                    this.push_diag(
                         CftErrorCode::InvalidConstValue,
                         &info.module,
                         ty.span,
                         "const type annotation must be int, float, bool, or string",
                     );
-                    continue;
+                    return;
                 }
             };
             let matches = matches!(
@@ -304,26 +316,25 @@ impl<'a> SchemaCompiler<'a> {
             );
             if !matches {
                 let value_span = info.def.value.span();
-                self.push_diag(
+                this.push_diag(
                     CftErrorCode::InvalidConstValue,
                     &info.module,
                     value_span,
                     format!("const value does not match type annotation `{type_name}`"),
                 );
             }
-        }
+        });
     }
 
     fn validate_type_headers(&mut self) {
-        let infos = self.types.values().cloned().collect::<Vec<_>>();
-        for info in infos {
+        self.each_type(|this, info| {
             if info.def.is_abstract && info.def.is_sealed {
                 let span = info
                     .def
                     .abstract_span
                     .unwrap_or(info.def.span)
                     .join(info.def.sealed_span.unwrap_or(info.def.span));
-                self.push_diag(
+                this.push_diag(
                     CftErrorCode::ConflictingTypeModifiers,
                     &info.module,
                     span,
@@ -331,10 +342,10 @@ impl<'a> SchemaCompiler<'a> {
                 );
             }
             if let Some(parent) = &info.def.parent {
-                match self.symbols.get(&parent.name) {
+                match this.symbols.get(&parent.name) {
                     Some(symbol) if symbol.kind == SymbolKind::Type => {}
                     Some(symbol) => {
-                        self.diagnostics.push(
+                        this.diagnostics.push(
                             CftDiagnostic::error(
                                 CftErrorCode::ParentMustBeType,
                                 info.module.clone(),
@@ -349,7 +360,7 @@ impl<'a> SchemaCompiler<'a> {
                         );
                     }
                     None => {
-                        self.push_diag(
+                        this.push_diag(
                             CftErrorCode::UnknownNamedType,
                             &info.module,
                             parent.span,
@@ -358,16 +369,15 @@ impl<'a> SchemaCompiler<'a> {
                     }
                 }
             }
-        }
+        });
     }
 
     fn validate_field_shapes(&mut self) {
-        let infos = self.types.values().cloned().collect::<Vec<_>>();
-        for info in infos {
+        self.each_type(|this, info| {
             let mut fields: BTreeMap<String, Span> = BTreeMap::new();
             for field in &info.def.fields {
                 if let Some(first_span) = fields.get(&field.name) {
-                    self.diagnostics.push(
+                    this.diagnostics.push(
                         CftDiagnostic::error(
                             CftErrorCode::DuplicateFieldName,
                             info.module.clone(),
@@ -383,9 +393,9 @@ impl<'a> SchemaCompiler<'a> {
                 } else {
                     fields.insert(field.name.clone(), field.name_span);
                 }
-                self.validate_field_type(&info.module, &field.ty);
+                this.validate_field_type(&info.module, &field.ty);
             }
-        }
+        });
     }
 
     fn validate_inheritance(&mut self) {
@@ -489,17 +499,17 @@ impl<'a> SchemaCompiler<'a> {
         // Walk types in (depth_from_root, source_position) order so that the
         // earliest declared @id field in the inheritance chain is reported as
         // the original, regardless of alphabetical name order.
+        let topo = self.compute_type_topology();
         let mut entries: Vec<(usize, ModuleId, Span, String)> = self
             .types
-            .keys()
-            .filter_map(|name| {
-                let info = self.types.get(name)?;
-                Some((
-                    self.inheritance_depth(name),
+            .iter()
+            .map(|(name, info)| {
+                (
+                    topo.depth.get(name).copied().unwrap_or(0),
                     info.module.clone(),
                     info.def.name_span,
                     name.clone(),
-                ))
+                )
             })
             .collect();
         entries.sort_by(|a, b| {
@@ -513,7 +523,7 @@ impl<'a> SchemaCompiler<'a> {
             let Some(info) = self.types.get(&name).cloned() else {
                 continue;
             };
-            let root = self.root_type_name(&name);
+            let root = topo.root.get(&name).cloned().unwrap_or(name.clone());
             for field in &info.def.fields {
                 if !has_annotation(&field.annotations, "id") {
                     continue;
@@ -539,48 +549,91 @@ impl<'a> SchemaCompiler<'a> {
         }
     }
 
-    fn inheritance_depth(&self, name: &str) -> usize {
-        let mut depth = 0;
+    /// Computes inheritance depth (distance to root) and root type for every
+    /// known type in a single pass, with cycle-safe traversal. The previous
+    /// per-type recursive helpers were O(N) each and called O(N) times, giving
+    /// quadratic behavior on large schemas; this pre-pass is linear.
+    fn compute_type_topology(&self) -> TypeTopology {
+        let mut depth = BTreeMap::new();
+        let mut root = BTreeMap::new();
+        for name in self.types.keys() {
+            self.fill_topology(name, &mut depth, &mut root);
+        }
+        TypeTopology { depth, root }
+    }
+
+    fn fill_topology(
+        &self,
+        name: &str,
+        depth: &mut BTreeMap<String, usize>,
+        root: &mut BTreeMap<String, String>,
+    ) {
+        if depth.contains_key(name) {
+            return;
+        }
+        // Walk towards the root, collecting unresolved ancestors. Stop when we
+        // hit (a) a cycle, (b) an already-resolved ancestor, or (c) a type
+        // with no parent (the actual root of the chain).
+        let mut chain: Vec<String> = Vec::new();
         let mut current = name.to_string();
         let mut seen = HashSet::new();
-        while seen.insert(current.clone()) {
-            let Some(parent) = self
+        let (root_name, base_depth) = loop {
+            if !seen.insert(current.clone()) {
+                // Cycle: validate_inheritance has already reported it. Treat
+                // the entry point of the cycle as its own root with depth 0
+                // so we still produce defined values.
+                break (current.clone(), 0);
+            }
+            if let Some(known_depth) = depth.get(&current) {
+                let known_root = root
+                    .get(&current)
+                    .cloned()
+                    .unwrap_or_else(|| current.clone());
+                break (known_root, *known_depth);
+            }
+            let parent = self
                 .types
                 .get(&current)
                 .and_then(|info| info.def.parent.as_ref())
                 .map(|parent| parent.name.clone())
-            else {
-                break;
-            };
-            if !self.types.contains_key(&parent) {
-                break;
+                .filter(|parent| self.types.contains_key(parent));
+            match parent {
+                Some(parent) => {
+                    chain.push(current);
+                    current = parent;
+                }
+                None => break (current, 0),
             }
-            depth += 1;
-            current = parent;
+        };
+        // Anchor (`current` / `root_name`) is not in `chain`. `chain` holds
+        // descendants in leaf-first order; reverse to assign incrementing
+        // depths starting one above the anchor.
+        depth.entry(root_name.clone()).or_insert(base_depth);
+        root.entry(root_name.clone()).or_insert(root_name.clone());
+        for (steps_from_anchor, type_name) in chain.into_iter().rev().enumerate() {
+            depth.insert(type_name.clone(), base_depth + steps_from_anchor + 1);
+            root.insert(type_name, root_name.clone());
         }
-        depth
     }
 
     fn validate_annotations(&mut self) {
-        let enum_infos = self.enums.values().cloned().collect::<Vec<_>>();
-        for info in enum_infos {
-            self.validate_annotation_list(
+        self.each_enum(|this, info| {
+            this.validate_annotation_list(
                 &info.module,
                 AnnotationTarget::Enum,
                 &info.def.annotations,
             );
-        }
+        });
 
-        let type_infos = self.types.values().cloned().collect::<Vec<_>>();
-        for info in type_infos {
-            self.validate_annotation_list(
+        self.each_type(|this, info| {
+            this.validate_annotation_list(
                 &info.module,
                 AnnotationTarget::Type,
                 &info.def.annotations,
             );
             if let Some(annotation) = find_annotation(&info.def.annotations, "struct") {
                 if !info.def.is_sealed {
-                    self.push_diag(
+                    this.push_diag(
                         CftErrorCode::StructRequiresSealedType,
                         &info.module,
                         annotation.span,
@@ -589,14 +642,14 @@ impl<'a> SchemaCompiler<'a> {
                 }
             }
             for field in &info.def.fields {
-                self.validate_annotation_list(
+                this.validate_annotation_list(
                     &info.module,
                     AnnotationTarget::Field,
                     &field.annotations,
                 );
-                self.validate_field_annotations(&info.module, field);
+                this.validate_field_annotations(&info.module, field);
             }
-        }
+        });
     }
 
     fn validate_annotation_list(
@@ -714,9 +767,8 @@ impl<'a> SchemaCompiler<'a> {
     }
 
     fn validate_defaults(&mut self) {
-        let type_infos = self.types.values().cloned().collect::<Vec<_>>();
-        for info in type_infos {
-            let mut field_names = self
+        self.each_type(|this, info| {
+            let mut field_names = this
                 .collect_ancestor_fields(
                     info.def
                         .parent
@@ -730,10 +782,10 @@ impl<'a> SchemaCompiler<'a> {
                 let Some(default) = &field.default else {
                     continue;
                 };
-                let field_ty = self.resolve_field_type(&field.ty);
-                let default_ty = self.default_expr_type(&info.module, default, &field_names);
+                let field_ty = this.resolve_field_type(&field.ty);
+                let default_ty = this.default_expr_type(&info.module, default, &field_names);
                 if !types_assignable(&field_ty, &default_ty) {
-                    self.push_diag(
+                    this.push_diag(
                         CftErrorCode::DefaultTypeMismatch,
                         &info.module,
                         default.span,
@@ -741,7 +793,7 @@ impl<'a> SchemaCompiler<'a> {
                     );
                 }
             }
-        }
+        });
     }
 
     fn default_expr_type(
@@ -855,42 +907,48 @@ impl<'a> SchemaCompiler<'a> {
     fn build_full_fields(&mut self) {
         let names = self.types.keys().cloned().collect::<Vec<_>>();
         for name in names {
+            let chain = self.ancestry_chain(&name);
             let mut map = BTreeMap::new();
-            self.fill_fields(&name, &mut map, &mut HashSet::new());
+            for info in chain {
+                for field in &info.def.fields {
+                    let declared_ty = self.resolve_field_type(&field.ty);
+                    let check_ty = self.check_type_for_field(&info.module, field, &declared_ty);
+                    map.insert(field.name.clone(), FieldInfo { check_ty });
+                }
+            }
             self.full_fields.insert(name, map);
         }
     }
 
-    fn fill_fields(
-        &mut self,
-        type_name: &str,
-        out: &mut BTreeMap<String, FieldInfo>,
-        seen: &mut HashSet<String>,
-    ) {
-        if !seen.insert(type_name.to_string()) {
-            return;
+    /// Walks the inheritance chain root-first and returns a snapshot of every
+    /// ancestor (plus the type itself). Cycle-safe; unknown parents truncate
+    /// the chain. Used by [`Self::build_full_fields`] and
+    /// [`Self::collect_all_schema_fields`].
+    fn ancestry_chain(&self, type_name: &str) -> Vec<TypeInfo<'a>> {
+        let mut chain = Vec::new();
+        let mut current = Some(type_name.to_string());
+        let mut seen = HashSet::new();
+        while let Some(name) = current {
+            if !seen.insert(name.clone()) {
+                break;
+            }
+            let Some(info) = self.types.get(&name).cloned() else {
+                break;
+            };
+            current = info.def.parent.as_ref().map(|p| p.name.clone());
+            chain.push(info);
         }
-        let Some(info) = self.types.get(type_name).cloned() else {
-            return;
-        };
-        if let Some(parent) = &info.def.parent {
-            self.fill_fields(&parent.name, out, seen);
-        }
-        for field in &info.def.fields {
-            let declared_ty = self.resolve_field_type(&field.ty);
-            let check_ty = self.check_type_for_field(&info.module, field, &declared_ty);
-            out.insert(field.name.clone(), FieldInfo { check_ty });
-        }
+        chain.reverse();
+        chain
     }
 
     fn validate_checks(&mut self) {
-        let infos = self.types.values().cloned().collect::<Vec<_>>();
-        for info in infos {
+        self.each_type(|this, info| {
             if let Some(check) = &info.def.check {
-                let mut checker = TypeChecker::new(self, &info);
+                let mut checker = TypeChecker::new(this, info);
                 checker.check_stmts(&check.stmts);
             }
-        }
+        });
     }
 
     fn build_schema(&self) -> CompiledSchema {
@@ -927,20 +985,18 @@ impl<'a> SchemaCompiler<'a> {
         }
 
         for (name, info) in &self.enums {
-            let mut next = 0_i64;
+            // `validate_enums` already resolved every variant's integer value
+            // (auto-numbered or explicit) into `values_by_name`. We just look
+            // them up here instead of re-walking the sequence.
             let variants = info
                 .def
                 .variants
                 .iter()
-                .map(|variant| {
-                    let value = variant.value.as_ref().map_or(next, |value| value.value);
-                    next = value.saturating_add(1);
-                    CftSchemaEnumVariant {
-                        name: variant.name.clone(),
-                        value,
-                        annotations: Vec::new(),
-                        span: variant.span,
-                    }
+                .map(|variant| CftSchemaEnumVariant {
+                    name: variant.name.clone(),
+                    value: info.values_by_name.get(&variant.name).copied().unwrap_or(0),
+                    annotations: Vec::new(),
+                    span: variant.span,
                 })
                 .collect::<Vec<_>>();
             let schema = CftSchemaEnum {
@@ -1006,34 +1062,16 @@ impl<'a> SchemaCompiler<'a> {
     }
 
     fn collect_all_schema_fields(&self, type_name: &str) -> Vec<CftSchemaField> {
-        let mut out = Vec::new();
-        self.fill_all_schema_fields(type_name, &mut out, &mut HashSet::new());
-        out
-    }
-
-    fn fill_all_schema_fields(
-        &self,
-        type_name: &str,
-        out: &mut Vec<CftSchemaField>,
-        seen: &mut HashSet<String>,
-    ) {
-        if !seen.insert(type_name.to_string()) {
-            return;
-        }
-        let Some(info) = self.types.get(type_name) else {
-            return;
-        };
-        let parent_name = info.def.parent.as_ref().map(|p| p.name.clone());
-        if let Some(parent) = parent_name {
-            self.fill_all_schema_fields(&parent, out, seen);
-        }
-        let own_fields: Vec<CftSchemaField> = info
-            .def
-            .fields
-            .iter()
-            .map(|f| self.build_schema_field(f))
-            .collect();
-        out.extend(own_fields);
+        self.ancestry_chain(type_name)
+            .into_iter()
+            .flat_map(|info| {
+                info.def
+                    .fields
+                    .iter()
+                    .map(|field| self.build_schema_field(field))
+                    .collect::<Vec<_>>()
+            })
+            .collect()
     }
 
     fn schema_default_value(&self, expr: &DefaultExpr) -> Option<CftSchemaDefaultValue> {
@@ -1063,16 +1101,11 @@ impl<'a> SchemaCompiler<'a> {
     }
 
     fn enum_variant_value(&self, enum_name: &str, variant_name: &str) -> Option<i64> {
-        let info = self.enums.get(enum_name)?;
-        let mut next = 0_i64;
-        for variant in &info.def.variants {
-            let value = variant.value.as_ref().map_or(next, |value| value.value);
-            if variant.name == variant_name {
-                return Some(value);
-            }
-            next = value.saturating_add(1);
-        }
-        None
+        self.enums
+            .get(enum_name)?
+            .values_by_name
+            .get(variant_name)
+            .copied()
     }
 
     /// Resolves a `TypeRef` to a `Ty` without emitting diagnostics. Errors
@@ -1095,9 +1128,7 @@ impl<'a> SchemaCompiler<'a> {
                 Box::new(self.resolve_field_type(key)),
                 Box::new(self.resolve_field_type(value)),
             ),
-            TypeRefKind::Nullable(inner) => {
-                Ty::Nullable(Box::new(self.resolve_field_type(inner)))
-            }
+            TypeRefKind::Nullable(inner) => Ty::Nullable(Box::new(self.resolve_field_type(inner))),
         }
     }
 
@@ -1204,23 +1235,6 @@ impl<'a> SchemaCompiler<'a> {
         out
     }
 
-    fn root_type_name(&self, name: &str) -> String {
-        let mut current = name.to_string();
-        let mut seen = HashSet::new();
-        while seen.insert(current.clone()) {
-            let Some(parent) = self
-                .types
-                .get(&current)
-                .and_then(|info| info.def.parent.as_ref())
-                .map(|parent| parent.name.clone())
-            else {
-                break;
-            };
-            current = parent;
-        }
-        current
-    }
-
     fn push_diag(
         &mut self,
         code: CftErrorCode,
@@ -1230,5 +1244,30 @@ impl<'a> SchemaCompiler<'a> {
     ) {
         self.diagnostics
             .push(CftDiagnostic::error(code, module.clone(), span, message));
+    }
+
+    /// Iterates over every type info, releasing the borrow on `self.types`
+    /// for each iteration so the body can call `&mut self` methods. Replaces
+    /// the previous `self.types.values().cloned().collect::<Vec<_>>()` boilerplate
+    /// scattered across the `validate_*` passes.
+    fn each_type<F: FnMut(&mut Self, &TypeInfo<'a>)>(&mut self, mut body: F) {
+        let infos: Vec<TypeInfo<'a>> = self.types.values().cloned().collect();
+        for info in infos {
+            body(self, &info);
+        }
+    }
+
+    fn each_enum<F: FnMut(&mut Self, &EnumInfo<'a>)>(&mut self, mut body: F) {
+        let infos: Vec<EnumInfo<'a>> = self.enums.values().cloned().collect();
+        for info in infos {
+            body(self, &info);
+        }
+    }
+
+    fn each_const<F: FnMut(&mut Self, &ConstInfo<'a>)>(&mut self, mut body: F) {
+        let infos: Vec<ConstInfo<'a>> = self.consts.values().cloned().collect();
+        for info in infos {
+            body(self, &info);
+        }
     }
 }

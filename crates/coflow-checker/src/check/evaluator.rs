@@ -1,11 +1,12 @@
 use super::value::{
-    comparable_key, dict_key_from_check_value, values_equal, CheckValue, LocatedCheckValue,
+    comparable_key, dict_key_from_check_value, format_check_key_for_path, values_equal, CheckValue,
+    LocatedCheckValue,
 };
 use crate::schema_view::SchemaView;
 use coflow_cft::{
     CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
     CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind, CftSchemaTypePredicate,
-    CftSchemaUnaryOp, Span,
+    CftSchemaUnaryOp,
 };
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdEnumValue, CfdErrorCode, CfdPath, CfdRecordId,
@@ -85,15 +86,15 @@ impl<'a> CheckEvaluator<'a> {
                 binding,
                 collection,
                 body,
-                span,
+                ..
             } => {
                 let Ok(collection) = self.eval_expr(collection) else {
                     return;
                 };
-                let Some(items) = self.quantifier_items(collection, *span) else {
+                let Some(items) = self.quantifier_items(collection) else {
                     return;
                 };
-                self.eval_quantifier(*kind, binding, &items, body, *span);
+                self.eval_quantifier(*kind, binding, &items, body);
             }
         }
     }
@@ -104,7 +105,6 @@ impl<'a> CheckEvaluator<'a> {
         binding: &str,
         items: &[LocatedCheckValue],
         body: &[CftSchemaCheckStmt],
-        span: Span,
     ) {
         let mut matched = 0_usize;
         for item in items {
@@ -132,13 +132,11 @@ impl<'a> CheckEvaluator<'a> {
             CftSchemaQuantifierKind::All => {}
             CftSchemaQuantifierKind::Any if matched == 0 => self.diag(
                 CfdErrorCode::CheckFailed,
-                span,
                 "any quantifier did not match any element",
             ),
             CftSchemaQuantifierKind::Any => {}
             CftSchemaQuantifierKind::None if matched > 0 => self.diag(
                 CfdErrorCode::CheckFailed,
-                span,
                 "none quantifier matched at least one element",
             ),
             CftSchemaQuantifierKind::None => {}
@@ -148,7 +146,6 @@ impl<'a> CheckEvaluator<'a> {
     fn quantifier_items(
         &mut self,
         collection: LocatedCheckValue,
-        span: Span,
     ) -> Option<Vec<LocatedCheckValue>> {
         match collection.value {
             CheckValue::Array(items) => Some(
@@ -168,10 +165,9 @@ impl<'a> CheckEvaluator<'a> {
                     .into_iter()
                     .enumerate()
                     .map(|(index, entry)| {
-                        let path = collection
-                            .path
-                            .clone()
-                            .map(|path| path.dict_key(index.to_string()));
+                        let key_label = format_check_key_for_path(&entry.key)
+                            .unwrap_or_else(|| index.to_string());
+                        let path = collection.path.clone().map(|path| path.dict_key(key_label));
                         LocatedCheckValue::new(CheckValue::Entry(Box::new(entry)), path)
                     })
                     .collect(),
@@ -179,7 +175,6 @@ impl<'a> CheckEvaluator<'a> {
             _ => {
                 self.diag(
                     CfdErrorCode::CheckEvalTypeError,
-                    span,
                     "quantifier target is not a collection",
                 );
                 None
@@ -203,24 +198,24 @@ impl<'a> CheckEvaluator<'a> {
             CftSchemaCheckExprKind::String(value) => {
                 Ok(LocatedCheckValue::value(CheckValue::String(value.clone())))
             }
-            CftSchemaCheckExprKind::Name(name) => self.eval_name(name, expr.span),
+            CftSchemaCheckExprKind::Name(name) => self.eval_name(name),
             CftSchemaCheckExprKind::Field { expr: inner, name } => {
                 if let CftSchemaCheckExprKind::Name(enum_name) = &inner.kind {
                     if let Some(enum_value) = self.schema.enum_variant_value(enum_name, name) {
                         return Ok(LocatedCheckValue::value(CheckValue::Enum(CfdEnumValue {
                             enum_name: enum_name.clone(),
-                            variant: name.clone(),
+                            variant: Some(name.clone()),
                             value: enum_value,
                         })));
                     }
                 }
                 let target = self.eval_expr(inner)?;
-                self.eval_field(target, name, expr.span)
+                self.eval_field(target, name)
             }
             CftSchemaCheckExprKind::Index { expr: inner, index } => {
                 let target = self.eval_expr(inner)?;
                 let index = self.eval_expr(index)?;
-                self.eval_index(target, index, expr.span)
+                self.eval_index(target, index)
             }
             CftSchemaCheckExprKind::Is {
                 expr: inner,
@@ -232,13 +227,11 @@ impl<'a> CheckEvaluator<'a> {
                     value.path,
                 ))
             }
-            CftSchemaCheckExprKind::Call { name, args } => self.eval_call(name, args, expr.span),
-            CftSchemaCheckExprKind::BinOp { op, lhs, rhs } => {
-                self.eval_bin_op(*op, lhs, rhs, expr.span)
-            }
+            CftSchemaCheckExprKind::Call { name, args } => self.eval_call(name, args),
+            CftSchemaCheckExprKind::BinOp { op, lhs, rhs } => self.eval_bin_op(*op, lhs, rhs),
             CftSchemaCheckExprKind::Unary { op, expr: inner } => {
                 let value = self.eval_expr(inner)?;
-                self.eval_unary(*op, value, expr.span)
+                self.eval_unary(*op, value)
             }
             CftSchemaCheckExprKind::CmpChain { first, rest } => {
                 let mut lhs = self.eval_expr(first)?;
@@ -255,7 +248,7 @@ impl<'a> CheckEvaluator<'a> {
         }
     }
 
-    fn eval_name(&mut self, name: &str, span: Span) -> Result<LocatedCheckValue, ()> {
+    fn eval_name(&mut self, name: &str) -> Result<LocatedCheckValue, ()> {
         for scope in self.scopes.iter().rev() {
             if let Some(value) = scope.get(name) {
                 return Ok(value.clone());
@@ -274,7 +267,6 @@ impl<'a> CheckEvaluator<'a> {
         }
         self.diag(
             CfdErrorCode::CheckEvalTypeError,
-            span,
             format!("unknown check value `{name}`"),
         );
         Err(())
@@ -284,7 +276,6 @@ impl<'a> CheckEvaluator<'a> {
         &mut self,
         target: LocatedCheckValue,
         name: &str,
-        _span: Span,
     ) -> Result<LocatedCheckValue, ()> {
         if matches!(target.value, CheckValue::Null) {
             self.diag_at(
@@ -329,7 +320,6 @@ impl<'a> CheckEvaluator<'a> {
         &mut self,
         target: LocatedCheckValue,
         index: LocatedCheckValue,
-        _span: Span,
     ) -> Result<LocatedCheckValue, ()> {
         if matches!(target.value, CheckValue::Null) {
             self.diag_at(
@@ -419,13 +409,11 @@ impl<'a> CheckEvaluator<'a> {
         &mut self,
         name: &str,
         args: &[CftSchemaCheckExpr],
-        span: Span,
     ) -> Result<LocatedCheckValue, ()> {
         if self.schema.enums.contains_key(name) {
             let Some(arg) = args.first() else {
                 self.diag(
                     CfdErrorCode::CheckEvalTypeError,
-                    span,
                     "missing enum constructor arg",
                 );
                 return Err(());
@@ -444,7 +432,7 @@ impl<'a> CheckEvaluator<'a> {
                     .enum_value_from_int(name, value)
                     .unwrap_or(CfdEnumValue {
                         enum_name: name.to_string(),
-                        variant: value.to_string(),
+                        variant: None,
                         value,
                     }),
             )));
@@ -453,11 +441,7 @@ impl<'a> CheckEvaluator<'a> {
         match name {
             "len" => {
                 let Some(arg) = args.first() else {
-                    self.diag(
-                        CfdErrorCode::CheckEvalTypeError,
-                        span,
-                        "len expects one argument",
-                    );
+                    self.diag(CfdErrorCode::CheckEvalTypeError, "len expects one argument");
                     return Err(());
                 };
                 let arg_value = self.eval_expr(arg)?;
@@ -484,7 +468,6 @@ impl<'a> CheckEvaluator<'a> {
                 let [collection, value] = args else {
                     self.diag(
                         CfdErrorCode::CheckEvalTypeError,
-                        span,
                         "contains expects two arguments",
                     );
                     return Err(());
@@ -500,7 +483,6 @@ impl<'a> CheckEvaluator<'a> {
                 let Some(arg) = args.first() else {
                     self.diag(
                         CfdErrorCode::CheckEvalTypeError,
-                        span,
                         "unique expects one argument",
                     );
                     return Err(());
@@ -536,13 +518,12 @@ impl<'a> CheckEvaluator<'a> {
                     arg_value.path,
                 ))
             }
-            "min" | "max" => self.eval_min_max(name, args, span),
-            "sum" => self.eval_sum(args, span),
+            "min" | "max" => self.eval_min_max(name, args),
+            "sum" => self.eval_sum(args),
             "keys" => {
                 let Some(arg) = args.first() else {
                     self.diag(
                         CfdErrorCode::CheckEvalTypeError,
-                        span,
                         "keys expects one argument",
                     );
                     return Err(());
@@ -565,7 +546,6 @@ impl<'a> CheckEvaluator<'a> {
                 let Some(arg) = args.first() else {
                     self.diag(
                         CfdErrorCode::CheckEvalTypeError,
-                        span,
                         "values expects one argument",
                     );
                     return Err(());
@@ -588,7 +568,6 @@ impl<'a> CheckEvaluator<'a> {
                 let [value, pattern_expr] = args else {
                     self.diag(
                         CfdErrorCode::CheckEvalTypeError,
-                        span,
                         "matches expects two arguments",
                     );
                     return Err(());
@@ -605,7 +584,6 @@ impl<'a> CheckEvaluator<'a> {
                 let CftSchemaCheckExprKind::String(pattern) = &pattern_expr.kind else {
                     self.diag(
                         CfdErrorCode::CheckEvalTypeError,
-                        pattern_expr.span,
                         "matches pattern is not literal",
                     );
                     return Err(());
@@ -613,7 +591,6 @@ impl<'a> CheckEvaluator<'a> {
                 let regex = Regex::new(pattern).map_err(|_| {
                     self.diag(
                         CfdErrorCode::CheckInvalidRegex,
-                        pattern_expr.span,
                         "regex pattern cannot be compiled",
                     );
                 })?;
@@ -625,7 +602,6 @@ impl<'a> CheckEvaluator<'a> {
             _ => {
                 self.diag(
                     CfdErrorCode::CheckEvalTypeError,
-                    span,
                     format!("unknown function `{name}`"),
                 );
                 Err(())
@@ -637,12 +613,10 @@ impl<'a> CheckEvaluator<'a> {
         &mut self,
         name: &str,
         args: &[CftSchemaCheckExpr],
-        span: Span,
     ) -> Result<LocatedCheckValue, ()> {
         let Some(arg) = args.first() else {
             self.diag(
                 CfdErrorCode::CheckEvalTypeError,
-                span,
                 "min/max expects one argument",
             );
             return Err(());
@@ -673,17 +647,9 @@ impl<'a> CheckEvaluator<'a> {
         Ok(LocatedCheckValue::new(out, arg_value.path))
     }
 
-    fn eval_sum(
-        &mut self,
-        args: &[CftSchemaCheckExpr],
-        span: Span,
-    ) -> Result<LocatedCheckValue, ()> {
+    fn eval_sum(&mut self, args: &[CftSchemaCheckExpr]) -> Result<LocatedCheckValue, ()> {
         let Some(arg) = args.first() else {
-            self.diag(
-                CfdErrorCode::CheckEvalTypeError,
-                span,
-                "sum expects one argument",
-            );
+            self.diag(CfdErrorCode::CheckEvalTypeError, "sum expects one argument");
             return Err(());
         };
         let arg_value = self.eval_expr(arg)?;
@@ -700,7 +666,17 @@ impl<'a> CheckEvaluator<'a> {
         let mut saw_float = false;
         for item in items {
             match item {
-                CheckValue::Int(value) if !saw_float => int_sum = int_sum.saturating_add(value),
+                CheckValue::Int(value) if !saw_float => {
+                    let Some(next) = int_sum.checked_add(value) else {
+                        self.diag_at(
+                            CfdErrorCode::CheckEvalTypeError,
+                            arg_value.path.clone(),
+                            "integer sum overflowed",
+                        );
+                        return Err(());
+                    };
+                    int_sum = next;
+                }
                 CheckValue::Int(value) => float_sum += value as f64,
                 CheckValue::Float(value) => {
                     if !saw_float {
@@ -748,7 +724,6 @@ impl<'a> CheckEvaluator<'a> {
         &mut self,
         op: CftSchemaUnaryOp,
         value: LocatedCheckValue,
-        _span: Span,
     ) -> Result<LocatedCheckValue, ()> {
         let path = value.path;
         match (op, value.value) {
@@ -784,7 +759,6 @@ impl<'a> CheckEvaluator<'a> {
         op: CftSchemaBinOp,
         lhs: &CftSchemaCheckExpr,
         rhs: &CftSchemaCheckExpr,
-        _span: Span,
     ) -> Result<LocatedCheckValue, ()> {
         match op {
             CftSchemaBinOp::Or => {
@@ -1037,12 +1011,12 @@ impl<'a> CheckEvaluator<'a> {
             .enum_value_from_int(enum_name, value)
             .unwrap_or(CfdEnumValue {
                 enum_name: enum_name.to_string(),
-                variant: value.to_string(),
+                variant: None,
                 value,
             })
     }
 
-    fn diag(&mut self, code: CfdErrorCode, _span: Span, message: impl Into<String>) {
+    fn diag(&mut self, code: CfdErrorCode, message: impl Into<String>) {
         self.diag_at(code, None, message);
     }
 

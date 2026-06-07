@@ -131,9 +131,13 @@ pub struct CfdTable {
     pub secondary_indexes: BTreeMap<String, BTreeMap<CfdIndexKey, Vec<CfdRecordId>>>,
 }
 
+/// Index of records assignable to a given root type (`abstract type` or any
+/// concrete type with subclasses), keyed by `@id` value.
+///
+/// The owning `CfdDataModel.inheritance_index` map keys identify the root
+/// type — readers obtain it from the lookup, so it is not duplicated here.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdPolymorphicIndex {
-    pub root_type: String,
     pub records: BTreeMap<CfdIdValue, CfdRecordId>,
 }
 
@@ -223,10 +227,19 @@ pub enum CfdIndexKey {
     Enum(CfdEnumValue),
 }
 
+/// A resolved enum value.
+///
+/// `variant` holds the variant identifier when the value matches a defined
+/// variant. For `@flag` enums, runtime bitwise operations (`flags | other`,
+/// `~flags`) can produce composite integer values that don't correspond to a
+/// single declared variant; in that case `variant` is `None` and the value is
+/// identified by `enum_name + value` only. Codegen and JSON serialization
+/// should therefore prefer `value` (always meaningful) and treat `variant` as
+/// a presentation hint that may be missing.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CfdEnumValue {
     pub enum_name: String,
-    pub variant: String,
+    pub variant: Option<String>,
     pub value: i64,
 }
 
