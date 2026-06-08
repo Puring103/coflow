@@ -11,11 +11,11 @@
 //! code (see [`CftErrorCode`]) and a stage tag (lex / syn / schema / type),
 //! so tools can rely on numeric IDs rather than human-readable messages.
 
-mod ast;
+pub mod ast;
 mod container;
 mod error;
-mod lexer;
-mod parser;
+pub mod lexer;
+pub mod parser;
 mod schema;
 mod span;
 

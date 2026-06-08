@@ -249,13 +249,14 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "coflow-cft",
+ "coflow-cft-lsp",
  "coflow-checker",
  "coflow-codegen-csharp",
  "coflow-excel-loader",
  "coflow-json-export",
+ "coflow-project",
  "serde",
  "serde_json",
- "serde_yaml",
 ]
 
 [[package]]
@@ -273,6 +274,15 @@ version = "0.1.0"
 dependencies = [
  "regex",
  "unicode-ident",
+]
+
+[[package]]
+name = "coflow-cft-lsp"
+version = "0.1.0"
+dependencies = [
+ "coflow-cft",
+ "coflow-project",
+ "serde_json",
 ]
 
 [[package]]
@@ -319,6 +329,15 @@ dependencies = [
  "coflow-cft",
  "coflow-data-model",
  "serde_json",
+]
+
+[[package]]
+name = "coflow-project"
+version = "0.1.0"
+dependencies = [
+ "coflow-cft",
+ "serde",
+ "serde_yaml",
 ]
 
 [[package]]

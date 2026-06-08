@@ -1,0 +1,13 @@
+[package]
+name = "coflow-cft-lsp"
+version = "0.1.0"
+edition = "2021"
+description = "Language server implementation for Coflow CFT schemas."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/wtlll/ScriptForGame"
+publish = false
+
+[dependencies]
+coflow-cft = { path = "../coflow-cft" }
+coflow-project = { path = "../coflow-project" }
+serde_json = { version = "1", features = ["preserve_order"] }

@@ -146,7 +146,7 @@ fn cft_lsp_publishes_project_diagnostics_for_open_document() {
             "params": {}
         }),
     );
-    let initialize = read_lsp(&mut stdout);
+    let initialize = read_lsp_response(&mut stdout, 1);
     assert_eq!(initialize["id"], 1);
     assert!(initialize["result"]["capabilities"]["textDocumentSync"].is_object());
 
@@ -189,7 +189,7 @@ fn cft_lsp_publishes_project_diagnostics_for_open_document() {
             "params": null
         }),
     );
-    let shutdown = read_lsp(&mut stdout);
+    let shutdown = read_lsp_response(&mut stdout, 2);
     assert_eq!(shutdown["id"], 2);
     write_lsp(
         &mut stdin,
@@ -203,11 +203,241 @@ fn cft_lsp_publishes_project_diagnostics_for_open_document() {
     assert!(child.wait().expect("wait lsp").success());
 }
 
+#[test]
+fn cft_lsp_serves_editor_language_features() {
+    let mut child = coflow()
+        .args(["cft", "lsp", "examples/rpg"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn coflow lsp");
+
+    let mut stdin = child.stdin.take().expect("lsp stdin");
+    let mut stdout = child.stdout.take().expect("lsp stdout");
+
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {}
+        }),
+    );
+    let initialize = read_lsp_response(&mut stdout, 1);
+    let capabilities = &initialize["result"]["capabilities"];
+    assert!(capabilities["completionProvider"].is_object());
+    assert_eq!(capabilities["documentFormattingProvider"], true);
+    assert!(capabilities["semanticTokensProvider"].is_object());
+
+    let schema_path = std::fs::canonicalize("examples/rpg/schema/rpg.cft").expect("schema path");
+    let uri = file_uri(&schema_path);
+    let source = std::fs::read_to_string(&schema_path)
+        .expect("schema source")
+        .replacen(
+            "const MAX_LEVEL = 100;",
+            "const MAX_LEVEL = 100; # comment",
+            1,
+        );
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": uri,
+                    "languageId": "cft",
+                    "version": 1,
+                    "text": source
+                }
+            }
+        }),
+    );
+    let publish = read_lsp(&mut stdout);
+    assert_eq!(publish["method"], "textDocument/publishDiagnostics");
+
+    let top_level_completion = request_completion(&mut stdin, &mut stdout, 2, &uri, 0, 0);
+    assert_has_completion(&top_level_completion, "type");
+    assert_missing_completion(&top_level_completion, "Monster");
+    assert_missing_completion(&top_level_completion, "len");
+
+    let type_ref_completion = request_completion(&mut stdin, &mut stdout, 3, &uri, 61, 9);
+    assert_has_completion(&type_ref_completion, "Monster");
+    assert_has_completion(&type_ref_completion, "int");
+    assert_missing_completion(&type_ref_completion, "len");
+
+    let field_default_completion = request_completion(&mut stdin, &mut stdout, 4, &uri, 28, 23);
+    assert_has_completion(&field_default_completion, "Rarity.Common");
+    assert_missing_completion(&field_default_completion, "true");
+    assert_missing_completion(&field_default_completion, "MAX_LEVEL");
+    assert_missing_completion(&field_default_completion, "len");
+
+    let check_completion = request_completion(&mut stdin, &mut stdout, 5, &uri, 66, 4);
+    assert_has_completion(&check_completion, "len");
+    assert_has_completion(&check_completion, "id");
+    assert_missing_completion(&check_completion, "Monster");
+
+    let ref_completion = request_completion(&mut stdin, &mut stdout, 6, &uri, 83, 7);
+    assert_has_completion(&ref_completion, "Monster");
+    assert_missing_completion(&ref_completion, "int");
+    assert_missing_completion(&ref_completion, "Rarity");
+
+    let string_completion = request_completion(&mut stdin, &mut stdout, 7, &uri, 34, 18);
+    assert_no_completion(&string_completion);
+
+    let enum_dot_completion = request_completion(&mut stdin, &mut stdout, 8, &uri, 28, 26);
+    assert_has_completion(&enum_dot_completion, "Common");
+    assert_missing_completion(&enum_dot_completion, "len");
+
+    let field_dot_completion = request_completion(&mut stdin, &mut stdout, 9, &uri, 69, 10);
+    assert_has_completion(&field_dot_completion, "hp");
+    assert_missing_completion(&field_dot_completion, "Monster");
+
+    let type_predicate_completion = request_completion(&mut stdin, &mut stdout, 10, &uri, 115, 38);
+    assert_has_completion(&type_predicate_completion, "ItemReward");
+    assert_has_completion(&type_predicate_completion, "null");
+    assert_missing_completion(&type_predicate_completion, "len");
+
+    let parent_type_completion = request_completion(&mut stdin, &mut stdout, 11, &uri, 82, 18);
+    assert_has_completion(&parent_type_completion, "Reward");
+    assert_missing_completion(&parent_type_completion, "int");
+
+    let abstract_keyword_completion = request_completion(&mut stdin, &mut stdout, 12, &uri, 74, 8);
+    assert_has_completion(&abstract_keyword_completion, "type");
+    assert_missing_completion(&abstract_keyword_completion, "enum");
+
+    let comment_completion = request_completion(&mut stdin, &mut stdout, 13, &uri, 0, 26);
+    assert_no_completion(&comment_completion);
+
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 14,
+            "method": "textDocument/formatting",
+            "params": {
+                "textDocument": { "uri": uri },
+                "options": { "tabSize": 2, "insertSpaces": true }
+            }
+        }),
+    );
+    let formatting = read_lsp_response(&mut stdout, 14);
+    assert!(
+        formatting["result"].is_array(),
+        "formatting: {formatting:?}"
+    );
+
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 15,
+            "method": "textDocument/semanticTokens/full",
+            "params": {
+                "textDocument": { "uri": uri }
+            }
+        }),
+    );
+    let semantic = read_lsp_response(&mut stdout, 15);
+    assert!(
+        semantic["result"]["data"]
+            .as_array()
+            .is_some_and(|data| !data.is_empty()),
+        "semantic: {semantic:?}"
+    );
+
+    shutdown_lsp(stdin, &mut stdout, &mut child, 16);
+}
+
+fn request_completion(
+    stdin: &mut impl Write,
+    stdout: &mut ChildStdout,
+    id: u64,
+    uri: &str,
+    line: u64,
+    character: u64,
+) -> Value {
+    write_lsp(
+        stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "textDocument/completion",
+            "params": {
+                "textDocument": { "uri": uri },
+                "position": { "line": line, "character": character }
+            }
+        }),
+    );
+    read_lsp_response(stdout, id)["result"].clone()
+}
+
+fn assert_has_completion(completion: &Value, label: &str) {
+    let items = completion.as_array().expect("completion array");
+    assert!(
+        items.iter().any(|item| item["label"] == label),
+        "expected completion `{label}` in {items:?}"
+    );
+}
+
+fn assert_missing_completion(completion: &Value, label: &str) {
+    let items = completion.as_array().expect("completion array");
+    assert!(
+        !items.iter().any(|item| item["label"] == label),
+        "unexpected completion `{label}` in {items:?}"
+    );
+}
+
+fn assert_no_completion(completion: &Value) {
+    let items = completion.as_array().expect("completion array");
+    assert!(items.is_empty(), "expected no completion in {items:?}");
+}
+
 fn write_lsp(stdin: &mut impl Write, value: &Value) {
     let body = serde_json::to_vec(value).expect("serialize lsp message");
     write!(stdin, "Content-Length: {}\r\n\r\n", body.len()).expect("write lsp header");
     stdin.write_all(&body).expect("write lsp body");
     stdin.flush().expect("flush lsp");
+}
+
+fn shutdown_lsp(
+    mut stdin: impl Write,
+    stdout: &mut ChildStdout,
+    child: &mut std::process::Child,
+    id: u64,
+) {
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "shutdown",
+            "params": null
+        }),
+    );
+    let shutdown = read_lsp_response(stdout, id);
+    assert_eq!(shutdown["id"], id);
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "exit",
+            "params": null
+        }),
+    );
+    stdin.flush().expect("flush exit");
+    drop(stdin);
+    assert!(child.wait().expect("wait lsp").success());
+}
+
+fn read_lsp_response(stdout: &mut ChildStdout, id: u64) -> Value {
+    loop {
+        let message = read_lsp(stdout);
+        if message["id"] == id {
+            return message;
+        }
+    }
 }
 
 fn read_lsp(stdout: &mut ChildStdout) -> Value {

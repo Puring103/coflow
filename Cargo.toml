@@ -16,16 +16,19 @@ members = [
     "crates/coflow-excel-loader",
     "crates/coflow-json-export",
     "crates/coflow-codegen-csharp",
+    "crates/coflow-project",
+    "crates/coflow-cft-lsp",
 ]
 resolver = "2"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 coflow-cft = { path = "crates/coflow-cft" }
+coflow-cft-lsp = { path = "crates/coflow-cft-lsp" }
 coflow-checker = { path = "crates/coflow-checker" }
 coflow-codegen-csharp = { path = "crates/coflow-codegen-csharp" }
 coflow-excel-loader = { path = "crates/coflow-excel-loader" }
 coflow-json-export = { path = "crates/coflow-json-export" }
+coflow-project = { path = "crates/coflow-project" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-serde_yaml = "0.9"

@@ -32,25 +32,19 @@
         },
         "coflowCft.diagnostics.command": {
           "type": "string",
-          "default": "cargo",
-          "description": "Command used to run the CFT diagnostics tool."
+          "default": "coflow",
+          "description": "Command used to start the CFT language server."
         },
         "coflowCft.diagnostics.args": {
           "type": "array",
           "default": [
-            "run",
-            "--quiet",
-            "-p",
-            "coflow",
-            "--",
             "cft",
-            "check",
-            "--json"
+            "lsp"
           ],
           "items": {
             "type": "string"
           },
-          "description": "Arguments used before the project-aware CFT check arguments."
+          "description": "Arguments used to start the project-aware CFT language server."
         },
         "coflowCft.diagnostics.debounceMs": {
           "type": "number",

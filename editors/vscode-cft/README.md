@@ -5,14 +5,15 @@ VS Code language support for Coflow Type File (`.cft`) schemas.
 ## Features
 
 - `.cft` file association.
-- TextMate syntax highlighting for declarations, annotations, strings, numbers, keywords, operators, primitive types, and built-in check functions.
+- TextMate syntax highlighting plus LSP semantic tokens for declarations, annotations, strings, numbers, keywords, operators, primitive types, and built-in check functions.
 - Language configuration for comments, brackets, indentation, and auto-closing pairs.
 - Snippets for `const`, `enum`, `type`, `check`, `when`, quantifier blocks, and common annotations.
-- Completion items for CFT keywords, primitive types, annotations, built-in functions, local `const`/`enum`/`type` declarations, enum variants, and current type fields.
-- Hover text for core keywords, annotations, built-in functions, and discovered local symbols.
-- Outline symbols for constants, enums, enum variants, types, and fields.
-- Go to definition for workspace `const`, `enum`, `type`, enum variants, and simple field access.
-- Project-aware diagnostics from `coflow cft check`, including lex, syntax, schema, and check type errors.
+- LSP-backed completion items for CFT keywords, primitive types, annotations, built-in functions, workspace `const`/`enum`/`type` declarations, enum variants, and current type fields.
+- LSP-backed hover text for core keywords, annotations, built-in functions, and discovered workspace symbols.
+- LSP-backed outline symbols for constants, enums, enum variants, types, and fields.
+- LSP-backed go to definition for workspace `const`, `enum`, `type`, enum variants, and simple field access.
+- Document formatting through the CFT language server.
+- Project-aware diagnostics from `coflow cft lsp`, including lex, syntax, schema, and check type errors.
 
 ## Run Locally
 
@@ -26,11 +27,22 @@ Then press `F5` to start an Extension Development Host and open a `.cft` file.
 
 If VS Code asks for a launch target, choose `Run CFT Extension`.
 
-Diagnostics run through Cargo by default and resolve the nearest `coflow.yaml` / `coflow.yml`:
+Diagnostics start the `coflow` language server by default and resolve the nearest `coflow.yaml` / `coflow.yml`:
 
 ```powershell
-cargo run --quiet -p coflow -- cft check --json --stdin-path schema/item.cft
+coflow cft lsp <project-dir>
 ```
+
+When debugging from this source repository without installing a `coflow` binary, override the settings:
+
+```json
+{
+  "coflowCft.diagnostics.command": "cargo",
+  "coflowCft.diagnostics.args": ["run", "--quiet", "-p", "coflow", "--", "cft", "lsp"]
+}
+```
+
+The extension appends the resolved project directory to the configured arguments.
 
 You can change this in VS Code settings:
 

@@ -10,6 +10,25 @@ const IDENT_BOUNDARY_BEFORE = `(?<!${IDENT_CONTINUE})`;
 const IDENT_BOUNDARY_AFTER = `(?!${IDENT_CONTINUE})`;
 const IDENT_WORD_RE = new RegExp(IDENT, "u");
 const ANNOTATION_WORD_RE = new RegExp(`@?${IDENT}`, "u");
+const CFT_SEMANTIC_TOKENS_LEGEND = new vscode.SemanticTokensLegend(
+  [
+    "namespace",
+    "type",
+    "enum",
+    "enumMember",
+    "property",
+    "variable",
+    "function",
+    "keyword",
+    "number",
+    "string",
+    "comment",
+    "operator",
+    "decorator",
+    "parameter"
+  ],
+  []
+);
 
 const KEYWORDS = [
   ["const", "Define a compile-time constant."],
@@ -85,13 +104,13 @@ const ANNOTATIONS = [
   {
     label: "@display",
     insertText: "@display(\"${1:text}\")",
-    detail: "type, enum, field, or variant annotation",
+    detail: "type, enum, or field annotation",
     documentation: "Attach a human-readable display name."
   },
   {
     label: "@deprecated",
     insertText: "@deprecated",
-    detail: "type, enum, field, or variant annotation",
+    detail: "type, enum, or field annotation",
     documentation: "Mark the target as deprecated for generated code."
   }
 ];
@@ -102,16 +121,22 @@ function activate(context) {
   context.subscriptions.push(
     vscode.languages.registerCompletionItemProvider(
       selector,
-      new CftCompletionProvider(),
+      new CftCompletionProvider(diagnostics),
       ".",
       "@",
       ":",
       " ",
       "("
     ),
-    vscode.languages.registerHoverProvider(selector, new CftHoverProvider()),
-    vscode.languages.registerDocumentSymbolProvider(selector, new CftDocumentSymbolProvider()),
-    vscode.languages.registerDefinitionProvider(selector, new CftDefinitionProvider()),
+    vscode.languages.registerHoverProvider(selector, new CftHoverProvider(diagnostics)),
+    vscode.languages.registerDocumentSymbolProvider(selector, new CftDocumentSymbolProvider(diagnostics)),
+    vscode.languages.registerDefinitionProvider(selector, new CftDefinitionProvider(diagnostics)),
+    vscode.languages.registerDocumentFormattingEditProvider(selector, new CftFormattingProvider(diagnostics)),
+    vscode.languages.registerDocumentSemanticTokensProvider(
+      selector,
+      new CftSemanticTokensProvider(diagnostics),
+      CFT_SEMANTIC_TOKENS_LEGEND
+    ),
     diagnostics
   );
 }
@@ -119,19 +144,39 @@ function activate(context) {
 function deactivate() {}
 
 class CftCompletionProvider {
-  provideCompletionItems(document, position) {
-    const symbols = collectSymbols(document);
+  constructor(diagnostics) {
+    this.diagnostics = diagnostics;
+  }
+
+  async provideCompletionItems(document, position) {
+    const lspItems = await this.diagnostics.request(
+      document,
+      "textDocument/completion",
+      textPositionParams(document, position)
+    );
+    if (Array.isArray(lspItems)) {
+      return lspItems.map(lspCompletionItemToVsCode);
+    }
+
     const linePrefix = document.lineAt(position).text.slice(0, position.character);
+    if (isTriviaCompletionPosition(document, position)) {
+      return [];
+    }
+
+    const localSymbols = collectSymbols(document);
+    const workspace = await collectWorkspaceSymbols(document);
+    const offset = document.offsetAt(position);
 
     const annotationPrefix = new RegExp(`@${IDENT_CONTINUE}*$`, "u");
     if (annotationPrefix.test(linePrefix)) {
       const range = rangeFromLineMatch(document, position, annotationPrefix);
-      return ANNOTATIONS.map((annotation) => annotationItem(annotation, range));
+      return annotationItemsForContext(document, position, range);
     }
 
-    const dot = linePrefix.match(new RegExp(`(${IDENT})\\.\\s*(${IDENT})?$`, "u"));
+    const dot = linePrefix.match(new RegExp(`(${IDENT}(?:\\s*\\.\\s*${IDENT})*)\\.\\s*(${IDENT})?$`, "u"));
     if (dot) {
-      const target = dot[1];
+      const receiverChain = [...dot[1].matchAll(new RegExp(IDENT, "gu"))].map((match) => match[0]);
+      const target = receiverChain[0];
       const typed = dot[2] || "";
       const range = new vscode.Range(
         position.line,
@@ -139,56 +184,81 @@ class CftCompletionProvider {
         position.line,
         position.character
       );
-      const variants = symbols.enumVariants.get(target);
+      const variants = receiverChain.length === 1 ? workspaceEnumVariants(workspace, target) : undefined;
       if (variants) {
         return variants.map((variant) =>
           simpleItem(variant.name, vscode.CompletionItemKind.EnumMember, `${target} variant`, range)
         );
       }
-      return dotFieldCompletions(symbols, document.offsetAt(position), range);
+      return dotFieldCompletions(workspace, document, position, receiverChain, range);
     }
 
-    if (new RegExp(`${IDENT_BOUNDARY_BEFORE}is\\s+${IDENT_CONTINUE}*$`, "u").test(linePrefix)) {
+    if (isTypePredicateContext(linePrefix)) {
       return [
-        ...symbols.types.map((type) =>
+        ...workspaceTypes(workspace).map((type) =>
           simpleItem(type.name, vscode.CompletionItemKind.Class, "CFT type")
         ),
         simpleItem("null", vscode.CompletionItemKind.Keyword, "Null predicate")
       ];
     }
 
+    if (isRefAnnotationContext(linePrefix)) {
+      return workspaceTypes(workspace).map((type) =>
+        simpleItem(type.name, vscode.CompletionItemKind.Class, "CFT type")
+      );
+    }
+
+    if (topLevelNeedsTypeKeyword(linePrefix)) {
+      return topLevelCompletionItems(linePrefix);
+    }
+
+    if (isTypeHeaderParentContext(linePrefix)) {
+      return workspaceTypes(workspace).map((type) =>
+        simpleItem(type.name, vscode.CompletionItemKind.Class, "CFT type")
+      );
+    }
+
     if (isTypeReferenceContext(linePrefix)) {
-      return typeReferenceItems(symbols);
+      return typeReferenceItems(workspace);
     }
 
-    const offset = document.offsetAt(position);
-    const currentType = currentTypeAt(symbols, offset);
-    const items = [
-      ...KEYWORDS.map(([label, documentation]) =>
-        simpleItem(label, vscode.CompletionItemKind.Keyword, "CFT keyword", undefined, documentation)
-      ),
-      ...PRIMITIVE_TYPES.map(([label, documentation]) =>
-        simpleItem(label, vscode.CompletionItemKind.Keyword, "Primitive type", undefined, documentation)
-      ),
-      ...LITERALS.map(([label, documentation]) =>
-        simpleItem(label, vscode.CompletionItemKind.Keyword, "CFT literal", undefined, documentation)
-      ),
-      ...functionItems(),
-      ...symbolItems(symbols)
-    ];
-
-    if (currentType) {
-      for (const field of currentType.fields) {
-        items.push(simpleItem(field.name, vscode.CompletionItemKind.Field, `${currentType.name} field`));
+    const entry = workspace.documents.get(document.uri.toString());
+    const currentType = entry ? currentTypeAt(entry.symbols, offset) : currentTypeAt(localSymbols, offset);
+    const scope = completionScopeAt(document, localSymbols, offset);
+    if (scope === "topLevel") {
+      return topLevelCompletionItems(linePrefix);
+    }
+    if (scope === "typeBody") {
+      if (isFieldDefaultContext(linePrefix)) {
+        return fieldDefaultCompletionItems(
+          workspace,
+          currentFieldFromLinePrefix(linePrefix, currentType)
+        );
       }
+      return [keywordItem("check")];
     }
-
-    return items;
+    if (scope === "checkBlock") {
+      return checkExpressionCompletionItems(workspace, document, position, currentType);
+    }
+    return [];
   }
 }
 
 class CftHoverProvider {
-  provideHover(document, position) {
+  constructor(diagnostics) {
+    this.diagnostics = diagnostics;
+  }
+
+  async provideHover(document, position) {
+    const hover = await this.diagnostics.request(
+      document,
+      "textDocument/hover",
+      textPositionParams(document, position)
+    );
+    if (hover) {
+      return lspHoverToVsCode(hover);
+    }
+
     const range =
       document.getWordRangeAtPosition(position, ANNOTATION_WORD_RE) ||
       document.getWordRangeAtPosition(position, IDENT_WORD_RE);
@@ -223,23 +293,36 @@ class CftHoverProvider {
 }
 
 class CftDocumentSymbolProvider {
-  provideDocumentSymbols(document) {
-    const symbols = collectSymbols(document);
+  constructor(diagnostics) {
+    this.diagnostics = diagnostics;
+  }
+
+  async provideDocumentSymbols(document) {
+    const symbols = await this.diagnostics.request(document, "textDocument/documentSymbol", {
+      textDocument: {
+        uri: document.uri.toString()
+      }
+    });
+    if (Array.isArray(symbols)) {
+      return symbols.map(lspDocumentSymbolToVsCode);
+    }
+
+    const localSymbols = collectSymbols(document);
     const output = [];
 
-    for (const item of symbols.consts) {
+    for (const item of localSymbols.consts) {
       output.push(documentSymbol(document, item, vscode.SymbolKind.Constant));
     }
 
-    for (const item of symbols.enums) {
+    for (const item of localSymbols.enums) {
       const symbol = documentSymbol(document, item, vscode.SymbolKind.Enum);
-      for (const variant of symbols.enumVariants.get(item.name) || []) {
+      for (const variant of localSymbols.enumVariants.get(item.name) || []) {
         symbol.children.push(documentSymbol(document, variant, vscode.SymbolKind.EnumMember));
       }
       output.push(symbol);
     }
 
-    for (const item of symbols.types) {
+    for (const item of localSymbols.types) {
       const symbol = documentSymbol(document, item, vscode.SymbolKind.Class);
       for (const field of item.fields) {
         symbol.children.push(documentSymbol(document, field, vscode.SymbolKind.Field));
@@ -252,7 +335,20 @@ class CftDocumentSymbolProvider {
 }
 
 class CftDefinitionProvider {
+  constructor(diagnostics) {
+    this.diagnostics = diagnostics;
+  }
+
   async provideDefinition(document, position) {
+    const definitions = await this.diagnostics.request(
+      document,
+      "textDocument/definition",
+      textPositionParams(document, position)
+    );
+    if (Array.isArray(definitions)) {
+      return definitions.map(lspLocationToVsCode);
+    }
+
     const range = document.getWordRangeAtPosition(position, IDENT_WORD_RE);
     if (!range) {
       return undefined;
@@ -293,20 +389,18 @@ class CftDiagnostics {
     this.context = context;
     this.collection = vscode.languages.createDiagnosticCollection("cft");
     this.timers = new Map();
+    this.sessions = new Map();
+    this.documentSessions = new Map();
 
     context.subscriptions.push(
       this.collection,
-      vscode.workspace.onDidOpenTextDocument((document) => this.schedule(document)),
+      vscode.workspace.onDidOpenTextDocument((document) => this.openDocument(document)),
       vscode.workspace.onDidChangeTextDocument((event) => this.schedule(event.document)),
-      vscode.workspace.onDidSaveTextDocument((document) => this.schedule(document)),
-      vscode.workspace.onDidCloseTextDocument((document) => {
-        if (document.languageId === "cft") {
-          this.collection.delete(document.uri);
-        }
-      }),
+      vscode.workspace.onDidSaveTextDocument((document) => this.saveDocument(document)),
+      vscode.workspace.onDidCloseTextDocument((document) => this.closeDocument(document)),
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (event.affectsConfiguration("coflowCft.diagnostics")) {
-          this.validateAllOpenDocuments();
+          this.restartAllSessions();
         }
       })
     );
@@ -319,26 +413,51 @@ class CftDiagnostics {
       clearTimeout(timer);
     }
     this.timers.clear();
+    for (const session of this.sessions.values()) {
+      session.dispose();
+    }
+    this.sessions.clear();
+    this.documentSessions.clear();
     this.collection.dispose();
   }
 
   validateAllOpenDocuments() {
     for (const document of vscode.workspace.textDocuments) {
-      this.schedule(document);
+      this.openDocument(document);
     }
   }
 
+  restartAllSessions() {
+    for (const timer of this.timers.values()) {
+      clearTimeout(timer);
+    }
+    this.timers.clear();
+    for (const session of this.sessions.values()) {
+      session.dispose();
+    }
+    this.sessions.clear();
+    this.documentSessions.clear();
+    this.collection.clear();
+    this.validateAllOpenDocuments();
+  }
+
+  openDocument(document) {
+    if (!this.canValidate(document)) {
+      return;
+    }
+    const session = this.ensureSession(document);
+    if (!session) {
+      return;
+    }
+    session.openOrChangeDocument(document);
+  }
+
   schedule(document) {
-    if (document.languageId !== "cft" || document.uri.scheme !== "file") {
+    if (!this.canValidate(document)) {
       return;
     }
 
     const config = vscode.workspace.getConfiguration("coflowCft.diagnostics", document.uri);
-    if (!config.get("enabled", true)) {
-      this.collection.delete(document.uri);
-      return;
-    }
-
     const key = document.uri.toString();
     const oldTimer = this.timers.get(key);
     if (oldTimer) {
@@ -350,62 +469,417 @@ class CftDiagnostics {
       key,
       setTimeout(() => {
         this.timers.delete(key);
-        this.validate(document).catch((error) => {
-          const diagnostic = new vscode.Diagnostic(
-            new vscode.Range(0, 0, 0, 1),
-            `CFT diagnostics failed: ${error.message || error}`,
-            vscode.DiagnosticSeverity.Warning
-          );
-          diagnostic.source = "cft";
-          this.collection.set(document.uri, [diagnostic]);
-        });
+        const session = this.ensureSession(document);
+        if (session) {
+          session.openOrChangeDocument(document);
+        }
       }, debounceMs)
     );
   }
 
-  async validate(document) {
-    const documentVersion = document.version;
-    const config = vscode.workspace.getConfiguration("coflowCft.diagnostics", document.uri);
-    const command = config.get("command", "cargo");
-    const baseArgs = config.get("args", [
-      "run",
-      "--quiet",
-      "-p",
-      "coflow",
-      "--",
-      "cft",
-      "check",
-      "--json"
-    ]);
-    const cwd = findDiagnosticsCwd(document.uri.fsPath, this.context.extensionPath);
-    const currentPath = normalizePath(document.uri.fsPath);
-
-    const args = [...baseArgs, "--stdin-path", currentPath];
-    const result = await runDiagnosticsCommand(command, args, cwd, document.getText());
-    if (document.version !== documentVersion) {
+  saveDocument(document) {
+    if (!this.canValidate(document)) {
       return;
     }
-    const output = parseDiagnosticsOutput(result.stdout);
-    const byUri = new Map();
 
-    for (const raw of output.diagnostics || []) {
-      const uri = vscode.Uri.file(raw.path);
-      const diagnostic = toVsCodeDiagnostic(raw);
-      const key = uri.toString();
-      const items = byUri.get(key) || [];
-      items.push(diagnostic);
-      byUri.set(key, items);
+    const key = document.uri.toString();
+    const oldTimer = this.timers.get(key);
+    if (oldTimer) {
+      clearTimeout(oldTimer);
+      this.timers.delete(key);
     }
 
-    const touchedUris = new Set([document.uri.toString()]);
-    for (const cftPath of await collectCftPaths(document.uri)) {
-      touchedUris.add(vscode.Uri.file(cftPath).toString());
+    const session = this.ensureSession(document);
+    if (session) {
+      session.openOrChangeDocument(document);
+      session.saveDocument(document);
+    }
+  }
+
+  closeDocument(document) {
+    if (document.languageId !== "cft" || document.uri.scheme !== "file") {
+      return;
     }
 
-    for (const uriString of touchedUris) {
-      const uri = vscode.Uri.parse(uriString);
-      this.collection.set(uri, byUri.get(uriString) || []);
+    const uriString = document.uri.toString();
+    const oldTimer = this.timers.get(uriString);
+    if (oldTimer) {
+      clearTimeout(oldTimer);
+      this.timers.delete(uriString);
     }
+
+    const sessionKey = this.documentSessions.get(uriString);
+    const session = sessionKey ? this.sessions.get(sessionKey) : undefined;
+    if (session) {
+      session.closeDocument(document);
+    }
+    this.documentSessions.delete(uriString);
+    this.collection.delete(document.uri);
+  }
+
+  canValidate(document) {
+    if (document.languageId !== "cft" || document.uri.scheme !== "file") {
+      return false;
+    }
+
+    const config = vscode.workspace.getConfiguration("coflowCft.diagnostics", document.uri);
+    if (!config.get("enabled", true)) {
+      const sessionKey = this.documentSessions.get(document.uri.toString());
+      const session = sessionKey ? this.sessions.get(sessionKey) : undefined;
+      if (session) {
+        session.closeDocument(document);
+      }
+      this.documentSessions.delete(document.uri.toString());
+      this.collection.delete(document.uri);
+      return false;
+    }
+
+    return true;
+  }
+
+  ensureSession(document) {
+    const config = vscode.workspace.getConfiguration("coflowCft.diagnostics", document.uri);
+    let command = config.get("command", "coflow");
+    let baseArgs = config.get("args", [
+      "cft",
+      "lsp"
+    ]);
+    if (shouldUseDevelopmentCargoServer(config, command, baseArgs, this.context.extensionPath)) {
+      command = "cargo";
+      baseArgs = ["run", "--quiet", "-p", "coflow", "--", "cft", "lsp"];
+    }
+    const projectDir = findNearestCoflowConfigDir(path.dirname(document.uri.fsPath));
+    const cwd = findDiagnosticsCwd(
+      document.uri.fsPath,
+      this.context.extensionPath,
+      command,
+      baseArgs,
+      projectDir
+    );
+    const args = appendProjectArg(baseArgs, projectDir);
+    const key = JSON.stringify({ command, args, cwd });
+    const previousKey = this.documentSessions.get(document.uri.toString());
+    if (previousKey && previousKey !== key) {
+      const previous = this.sessions.get(previousKey);
+      if (previous) {
+        previous.closeDocument(document);
+      }
+      this.documentSessions.delete(document.uri.toString());
+    }
+
+    let session = this.sessions.get(key);
+    if (!session) {
+      session = new CftLspSession(command, args, cwd, this.collection);
+      this.sessions.set(key, session);
+    }
+
+    this.documentSessions.set(document.uri.toString(), key);
+    return session;
+  }
+
+  async request(document, method, params) {
+    if (document.languageId !== "cft" || document.uri.scheme !== "file") {
+      return undefined;
+    }
+    const session = this.ensureSession(document);
+    if (!session) {
+      return undefined;
+    }
+    session.openOrChangeDocument(document);
+    return session.request(method, params);
+  }
+}
+
+class CftFormattingProvider {
+  constructor(diagnostics) {
+    this.diagnostics = diagnostics;
+  }
+
+  async provideDocumentFormattingEdits(document) {
+    const edits = await this.diagnostics.request(document, "textDocument/formatting", {
+      textDocument: {
+        uri: document.uri.toString()
+      },
+      options: {
+        tabSize: 2,
+        insertSpaces: true
+      }
+    });
+    return Array.isArray(edits) ? edits.map(lspTextEditToVsCode) : [];
+  }
+}
+
+class CftSemanticTokensProvider {
+  constructor(diagnostics) {
+    this.diagnostics = diagnostics;
+  }
+
+  async provideDocumentSemanticTokens(document) {
+    const result = await this.diagnostics.request(document, "textDocument/semanticTokens/full", {
+      textDocument: {
+        uri: document.uri.toString()
+      }
+    });
+    const builder = new vscode.SemanticTokensBuilder(CFT_SEMANTIC_TOKENS_LEGEND);
+    if (!result || !Array.isArray(result.data)) {
+      return builder.build();
+    }
+
+    let line = 0;
+    let character = 0;
+    const data = result.data;
+    for (let index = 0; index + 4 < data.length; index += 5) {
+      const deltaLine = data[index];
+      const deltaStart = data[index + 1];
+      line += deltaLine;
+      character = deltaLine === 0 ? character + deltaStart : deltaStart;
+      builder.push(line, character, data[index + 2], data[index + 3], data[index + 4]);
+    }
+    return builder.build();
+  }
+}
+
+class CftLspSession {
+  constructor(command, args, cwd, collection) {
+    this.command = command;
+    this.args = args;
+    this.cwd = cwd;
+    this.collection = collection;
+    this.nextId = 1;
+    this.buffer = Buffer.alloc(0);
+    this.openedUris = new Set();
+    this.pending = new Map();
+    this.failed = false;
+    this.disposed = false;
+
+    this.child = cp.spawn(command, args, {
+      cwd,
+      shell: process.platform === "win32"
+    });
+
+    this.child.stdout.on("data", (chunk) => this.handleStdout(chunk));
+    this.child.stderr.setEncoding("utf8");
+    this.child.stderr.on("data", (chunk) => {
+      this.lastStderr = `${this.lastStderr || ""}${chunk}`;
+    });
+    this.child.stdin.on("error", (error) => this.markFailed(error.message));
+    this.child.on("error", (error) => this.markFailed(error.message));
+    this.child.on("close", (code) => {
+      if (!this.disposed && code !== 0) {
+        const message = (this.lastStderr || `${command} exited with code ${code}`).trim();
+        this.markFailed(message);
+      }
+    });
+
+    this.sendRequest("initialize", {
+      processId: null,
+      rootUri: vscode.Uri.file(cwd).toString(),
+      capabilities: {},
+      workspaceFolders: null
+    });
+    this.sendNotification("initialized", {});
+  }
+
+  openOrChangeDocument(document) {
+    if (this.failed || this.disposed) {
+      this.publishFailure(document.uri);
+      return;
+    }
+
+    const uri = document.uri.toString();
+    if (this.openedUris.has(uri)) {
+      this.sendNotification("textDocument/didChange", {
+        textDocument: {
+          uri,
+          version: document.version
+        },
+        contentChanges: [
+          {
+            text: document.getText()
+          }
+        ]
+      });
+    } else {
+      this.openedUris.add(uri);
+      this.sendNotification("textDocument/didOpen", {
+        textDocument: {
+          uri,
+          languageId: document.languageId,
+          version: document.version,
+          text: document.getText()
+        }
+      });
+    }
+  }
+
+  saveDocument(document) {
+    if (this.failed || this.disposed) {
+      this.publishFailure(document.uri);
+      return;
+    }
+
+    this.sendNotification("textDocument/didSave", {
+      textDocument: {
+        uri: document.uri.toString()
+      }
+    });
+  }
+
+  closeDocument(document) {
+    const uri = document.uri.toString();
+    if (!this.openedUris.delete(uri) || this.failed || this.disposed) {
+      return;
+    }
+
+    this.sendNotification("textDocument/didClose", {
+      textDocument: {
+        uri
+      }
+    });
+  }
+
+  dispose() {
+    this.disposed = true;
+    try {
+      this.sendRequest("shutdown", null);
+      this.sendNotification("exit", {});
+    } catch {
+      // The process may already be gone.
+    }
+    if (this.child && !this.child.killed) {
+      this.child.kill();
+    }
+  }
+
+  handleStdout(chunk) {
+    this.buffer = Buffer.concat([this.buffer, Buffer.from(chunk)]);
+
+    while (true) {
+      const headerEnd = this.buffer.indexOf("\r\n\r\n");
+      if (headerEnd < 0) {
+        return;
+      }
+
+      const header = this.buffer.slice(0, headerEnd).toString("utf8");
+      const match = header.match(/(?:^|\r\n)Content-Length:\s*(\d+)/i);
+      if (!match) {
+        this.markFailed("language server sent an invalid LSP header");
+        return;
+      }
+
+      const length = Number(match[1]);
+      const bodyStart = headerEnd + 4;
+      const bodyEnd = bodyStart + length;
+      if (this.buffer.length < bodyEnd) {
+        return;
+      }
+
+      const body = this.buffer.slice(bodyStart, bodyEnd).toString("utf8");
+      this.buffer = this.buffer.slice(bodyEnd);
+
+      try {
+        this.handleMessage(JSON.parse(body));
+      } catch (error) {
+        this.markFailed(`failed to parse language server message: ${error.message || error}`);
+        return;
+      }
+    }
+  }
+
+  handleMessage(message) {
+    if (message.method === "textDocument/publishDiagnostics") {
+      const params = message.params || {};
+      const uri = vscode.Uri.parse(params.uri);
+      const diagnostics = Array.isArray(params.diagnostics)
+        ? params.diagnostics.map(lspDiagnosticToVsCode)
+        : [];
+      this.collection.set(uri, diagnostics);
+    } else if (Object.prototype.hasOwnProperty.call(message, "id")) {
+      const pending = this.pending.get(message.id);
+      if (!pending) {
+        return;
+      }
+      this.pending.delete(message.id);
+      if (message.error) {
+        pending.reject(new Error(message.error.message || "language server request failed"));
+      } else {
+        pending.resolve(message.result);
+      }
+    }
+  }
+
+  sendRequest(method, params) {
+    const id = this.nextId++;
+    this.send({
+      jsonrpc: "2.0",
+      id,
+      method,
+      params
+    });
+    return id;
+  }
+
+  request(method, params) {
+    if (this.failed || this.disposed) {
+      return Promise.resolve(undefined);
+    }
+    return new Promise((resolve) => {
+      const id = this.sendRequest(method, params);
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        resolve(undefined);
+      }, 1500);
+      this.pending.set(id, {
+        resolve: (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        reject: () => {
+          clearTimeout(timer);
+          resolve(undefined);
+        }
+      });
+    });
+  }
+
+  sendNotification(method, params) {
+    this.send({
+      jsonrpc: "2.0",
+      method,
+      params
+    });
+  }
+
+  send(message) {
+    const body = Buffer.from(JSON.stringify(message), "utf8");
+    const header = Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, "utf8");
+    try {
+      this.child.stdin.write(Buffer.concat([header, body]));
+    } catch (error) {
+      this.markFailed(error.message || error);
+    }
+  }
+
+  markFailed(message) {
+    this.failed = true;
+    this.failureMessage = message || "language server failed";
+    for (const pending of this.pending.values()) {
+      pending.reject(new Error(this.failureMessage));
+    }
+    this.pending.clear();
+    for (const uriString of this.openedUris) {
+      this.publishFailure(vscode.Uri.parse(uriString));
+    }
+  }
+
+  publishFailure(uri) {
+    const diagnostic = new vscode.Diagnostic(
+      new vscode.Range(0, 0, 0, 1),
+      `CFT language server failed: ${this.failureMessage}`,
+      vscode.DiagnosticSeverity.Warning
+    );
+    diagnostic.source = "cft";
+    this.collection.set(uri, [diagnostic]);
   }
 }
 
@@ -442,14 +916,118 @@ function functionItems() {
   });
 }
 
-function symbolItems(symbols) {
+function keywordItem(label) {
+  const entry = KEYWORDS.find(([itemLabel]) => itemLabel === label);
+  return simpleItem(
+    label,
+    vscode.CompletionItemKind.Keyword,
+    "CFT keyword",
+    undefined,
+    entry?.[1]
+  );
+}
+
+function topLevelCompletionItems(linePrefix) {
+  const labels = topLevelNeedsTypeKeyword(linePrefix)
+    ? ["type"]
+    : ["const", "enum", "type", "abstract", "sealed"];
+  return labels.map(keywordItem);
+}
+
+function literalItems(includeNull) {
+  return LITERALS
+    .filter(([label]) => includeNull || label !== "null")
+    .map(([label, documentation]) =>
+      simpleItem(label, vscode.CompletionItemKind.Keyword, "CFT literal", undefined, documentation)
+    );
+}
+
+function checkExpressionCompletionItems(workspace, document, position, currentType) {
+  const items = [
+    ...["when", "all", "any", "none"].map(keywordItem),
+    ...literalItems(true),
+    ...functionItems(),
+    ...workspaceConsts(workspace).map((constant) =>
+      simpleItem(constant.name, vscode.CompletionItemKind.Constant, "CFT constant")
+    )
+  ];
+
+  if (currentType) {
+    for (const field of fieldsForType(workspace, currentType.name)) {
+      items.push(simpleItem(field.name, vscode.CompletionItemKind.Field, `${currentType.name} field`));
+    }
+  }
+
+  for (const binding of quantifierBindingsAtWithWorkspace(workspace, document, position)) {
+    items.push(simpleItem(binding.name, vscode.CompletionItemKind.Variable, "CFT quantifier binding"));
+  }
+
+  return items;
+}
+
+function fieldDefaultCompletionItems(workspace, field) {
+  if (!field) {
+    return [
+      ...literalItems(true),
+      ...workspaceConsts(workspace).map((constant) =>
+        simpleItem(constant.name, vscode.CompletionItemKind.Constant, "CFT constant")
+      )
+    ];
+  }
+
+  return [
+    ...defaultItemsForType(workspace, field.typeRef),
+    ...workspaceConsts(workspace)
+      .filter((constant) => constAssignableToType(constant, field.typeRef))
+      .map((constant) => simpleItem(constant.name, vscode.CompletionItemKind.Constant, "CFT constant"))
+  ];
+}
+
+function defaultItemsForType(workspace, typeRef) {
+  if (!typeRef) {
+    return [];
+  }
+  switch (typeRef.kind) {
+    case "bool":
+      return literalItems(false);
+    case "named": {
+      const variants = workspaceEnumVariants(workspace, typeRef.name);
+      return (variants || []).map((variant) =>
+        simpleItem(`${typeRef.name}.${variant.name}`, vscode.CompletionItemKind.EnumMember, "CFT enum variant")
+      );
+    }
+    case "array":
+      return [simpleItem("[]", vscode.CompletionItemKind.Constant, "Empty array default")];
+    case "dict":
+      return [simpleItem("{}", vscode.CompletionItemKind.Constant, "Empty object default")];
+    case "nullable":
+      return [
+        simpleItem("null", vscode.CompletionItemKind.Keyword, "CFT literal", undefined, "Nullable value."),
+        ...defaultItemsForType(workspace, typeRef.inner)
+      ];
+    default:
+      return [];
+  }
+}
+
+function constAssignableToType(constant, typeRef) {
+  if (!constant || !typeRef) {
+    return false;
+  }
+  if (typeRef.kind === "nullable") {
+    return constAssignableToType(constant, typeRef.inner);
+  }
+  return constant.valueKind === typeRef.kind;
+}
+
+function symbolItems(workspace) {
   const items = [];
-  for (const type of symbols.types) {
+  for (const type of workspaceTypes(workspace)) {
     items.push(simpleItem(type.name, vscode.CompletionItemKind.Class, "CFT type"));
   }
-  for (const enumDef of symbols.enums) {
+  for (const enumDef of workspaceEnums(workspace)) {
     items.push(simpleItem(enumDef.name, vscode.CompletionItemKind.Enum, "CFT enum"));
-    for (const variant of symbols.enumVariants.get(enumDef.name) || []) {
+    for (const variant of workspaceEnumVariants(workspace, enumDef.name) || []) {
       const item = simpleItem(
         `${enumDef.name}.${variant.name}`,
         vscode.CompletionItemKind.EnumMember,
@@ -459,40 +1037,214 @@ function symbolItems(symbols) {
       items.push(item);
     }
   }
-  for (const constant of symbols.consts) {
+  for (const constant of workspaceConsts(workspace)) {
     items.push(simpleItem(constant.name, vscode.CompletionItemKind.Constant, "CFT constant"));
   }
   return items;
 }
 
-function typeReferenceItems(symbols) {
+function typeReferenceItems(workspace) {
   return [
     ...PRIMITIVE_TYPES.map(([label, documentation]) =>
       simpleItem(label, vscode.CompletionItemKind.Keyword, "Primitive type", undefined, documentation)
     ),
-    ...symbols.types.map((type) => simpleItem(type.name, vscode.CompletionItemKind.Class, "CFT type")),
-    ...symbols.enums.map((enumDef) => simpleItem(enumDef.name, vscode.CompletionItemKind.Enum, "CFT enum"))
+    ...workspaceTypes(workspace).map((type) => simpleItem(type.name, vscode.CompletionItemKind.Class, "CFT type")),
+    ...workspaceEnums(workspace).map((enumDef) => simpleItem(enumDef.name, vscode.CompletionItemKind.Enum, "CFT enum"))
   ];
 }
 
-function dotFieldCompletions(symbols, offset, range) {
-  const items = [
-    simpleItem("key", vscode.CompletionItemKind.Field, "Dict entry key", range),
-    simpleItem("value", vscode.CompletionItemKind.Field, "Dict entry value", range)
-  ];
-  const currentType = currentTypeAt(symbols, offset);
-  if (currentType) {
-    for (const field of currentType.fields) {
-      items.push(simpleItem(field.name, vscode.CompletionItemKind.Field, `${currentType.name} field`, range));
+function dotFieldCompletions(workspace, document, position, receiverChain, range) {
+  const receiver = typeOfChainAt(workspace, document, position, receiverChain);
+  if (!receiver) {
+    return [];
+  }
+
+  if (receiver.kind === "dictEntry") {
+    return [
+      simpleItem("key", vscode.CompletionItemKind.Field, "Dict entry key", range),
+      simpleItem("value", vscode.CompletionItemKind.Field, "Dict entry value", range)
+    ];
+  }
+
+  const typeName = typeNameOf(receiver);
+  if (!typeName) {
+    return [];
+  }
+
+  return fieldsForType(workspace, typeName).map((field) =>
+    simpleItem(field.name, vscode.CompletionItemKind.Field, `${typeName} field`, range)
+  );
+}
+
+function annotationItemsForContext(document, position, range) {
+  const target = annotationTargetAt(document, position);
+  return ANNOTATIONS.filter((annotation) => annotationAppliesTo(annotation.label, target)).map((annotation) =>
+    annotationItem(annotation, range)
+  );
+}
+
+function annotationTargetAt(document, position) {
+  const maxLine = Math.min(document.lineCount, position.line + 8);
+  for (let lineNumber = position.line; lineNumber < maxLine; lineNumber += 1) {
+    const rawLine = document.lineAt(lineNumber).text;
+    const line = maskTrivia(
+      lineNumber === position.line ? rawLine.slice(position.character) : rawLine
+    ).trim();
+    if (!line || line.startsWith("@")) {
+      continue;
+    }
+    if (new RegExp(`^(?:(?:abstract|sealed)\\s+)*type${IDENT_BOUNDARY_AFTER}`, "u").test(line)) {
+      return "type";
+    }
+    if (new RegExp(`^enum${IDENT_BOUNDARY_AFTER}`, "u").test(line)) {
+      return "enum";
+    }
+    if (new RegExp(`^const${IDENT_BOUNDARY_AFTER}`, "u").test(line)) {
+      return "const";
+    }
+    if (new RegExp(`^${IDENT}\\s*:`, "u").test(line)) {
+      return "field";
+    }
+    return "unknown";
+  }
+  return "unknown";
+}
+
+function annotationAppliesTo(label, target) {
+  switch (label) {
+    case "@struct":
+      return target === "type" || target === "unknown";
+    case "@flag":
+      return target === "enum" || target === "unknown";
+    case "@id":
+    case "@ref":
+    case "@index":
+      return target === "field" || target === "unknown";
+    case "@display":
+    case "@deprecated":
+      return target === "type" || target === "enum" || target === "field" || target === "unknown";
+    default:
+      return true;
+  }
+}
+
+function isTriviaCompletionPosition(document, position) {
+  const linePrefix = document.lineAt(position).text.slice(0, position.character);
+  return isAfterLineComment(linePrefix) || isInsideString(linePrefix);
+}
+
+function isAfterLineComment(linePrefix) {
+  let inString = false;
+  let escaped = false;
+  for (const char of linePrefix) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (inString && char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === "\"") {
+      inString = !inString;
+      continue;
+    }
+    if (!inString && char === "#") {
+      return true;
     }
   }
-  return items;
+  return false;
+}
+
+function isInsideString(linePrefix) {
+  let inString = false;
+  let escaped = false;
+  for (const char of linePrefix) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (inString && char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === "\"") {
+      inString = !inString;
+    }
+  }
+  return inString;
+}
+
+function isTypePredicateContext(linePrefix) {
+  const trimmed = linePrefix.trimEnd();
+  return new RegExp(`(?:^|[^${IDENT_CONTINUE.slice(1, -1)}])is(?:\\s+${IDENT_CONTINUE}*)?$`, "u").test(trimmed);
+}
+
+function isRefAnnotationContext(linePrefix) {
+  return new RegExp(`@\\s*ref\\s*\\(\\s*${IDENT_CONTINUE}*$`, "u").test(linePrefix);
+}
+
+function topLevelNeedsTypeKeyword(linePrefix) {
+  const match = linePrefix.trimEnd().match(new RegExp(`(${IDENT})$`, "u"));
+  return match ? match[1] === "abstract" || match[1] === "sealed" : false;
+}
+
+function isTypeHeaderParentContext(linePrefix) {
+  const colon = linePrefix.lastIndexOf(":");
+  if (colon < 0) {
+    return false;
+  }
+  return new RegExp(`${IDENT_BOUNDARY_BEFORE}type${IDENT_BOUNDARY_AFTER}`, "u").test(linePrefix.slice(0, colon));
 }
 
 function isTypeReferenceContext(linePrefix) {
-  const typePrefix = new RegExp(`:\\s*(?:[\\[{]\\s*)?${IDENT_CONTINUE}*$`, "u");
-  const refPrefix = new RegExp(`@\\s*ref\\s*\\(\\s*${IDENT_CONTINUE}*$`, "u");
-  return typePrefix.test(linePrefix) || refPrefix.test(linePrefix);
+  const trimmed = linePrefix.trimEnd();
+  const colon = trimmed.lastIndexOf(":");
+  if (colon < 0) {
+    return false;
+  }
+  const afterColon = trimmed.slice(colon + 1);
+  return !afterColon.includes(";") && !afterColon.includes("=");
+}
+
+function isFieldDefaultContext(linePrefix) {
+  const trimmed = linePrefix.trimEnd();
+  const equal = trimmed.lastIndexOf("=");
+  const colon = trimmed.lastIndexOf(":");
+  return colon >= 0 && colon < equal && !trimmed.slice(equal + 1).includes(";");
+}
+
+function completionScopeAt(document, symbols, offset) {
+  for (const type of symbols.types) {
+    if (type.start <= offset && offset <= type.end) {
+      return isInsideCheckBlock(document.getText(), type, offset) ? "checkBlock" : "typeBody";
+    }
+  }
+  for (const enumDef of symbols.enums) {
+    if (enumDef.start <= offset && offset <= enumDef.end) {
+      return "enumBody";
+    }
+  }
+  return "topLevel";
+}
+
+function isInsideCheckBlock(text, type, offset) {
+  const body = text.slice(type.start, type.end);
+  const match = maskTrivia(body).match(/\bcheck\s*\{/);
+  if (!match) {
+    return false;
+  }
+  const open = type.start + match.index + match[0].lastIndexOf("{");
+  const close = findMatchingBrace(maskTrivia(text), open);
+  return open <= offset && offset <= close;
+}
+
+function currentFieldFromLinePrefix(linePrefix, currentType) {
+  if (!currentType) {
+    return undefined;
+  }
+  const match = linePrefix.match(new RegExp(`^\\s*(${IDENT})\\s*:`, "u"));
+  return match ? currentType.fields.find((field) => field.name === match[1]) : undefined;
 }
 
 function rangeFromLineMatch(document, position, regex) {
@@ -517,11 +1269,18 @@ function collectSymbols(document) {
   const consts = [];
   const enumVariants = new Map();
 
-  for (const match of masked.matchAll(new RegExp(`${IDENT_BOUNDARY_BEFORE}const\\s+(${IDENT})${IDENT_BOUNDARY_AFTER}`, "gu"))) {
+  const constRegex = new RegExp(`${IDENT_BOUNDARY_BEFORE}const\\s+(${IDENT})${IDENT_BOUNDARY_AFTER}(?:\\s*:\\s*(${IDENT}))?\\s*=\\s*([^;]*)`, "gu");
+  for (const match of masked.matchAll(constRegex)) {
     const name = match[1];
     const start = match.index + match[0].lastIndexOf(name);
     const end = start + name.length;
-    consts.push({ name, start, end, uri: document.uri });
+    consts.push({
+      name,
+      start,
+      end,
+      uri: document.uri,
+      valueKind: constValueKind(match[2], match[3])
+    });
   }
 
   const enumRegex = new RegExp(`${IDENT_BOUNDARY_BEFORE}enum\\s+(${IDENT})${IDENT_BOUNDARY_AFTER}`, "gu");
@@ -544,11 +1303,16 @@ function collectSymbols(document) {
   for (const match of masked.matchAll(typeRegex)) {
     const name = match[1];
     const nameStart = match.index + match[0].lastIndexOf(name);
-    const open = masked.indexOf("{", match.index + match[0].length);
+    const afterName = match.index + match[0].length;
+    const headerEnd = masked.indexOf("{", afterName);
+    const header = headerEnd >= 0 ? masked.slice(afterName, headerEnd) : "";
+    const parentMatch = header.match(new RegExp(`:\\s*(${IDENT})`, "u"));
+    const parent = parentMatch ? parentMatch[1] : undefined;
+    const open = headerEnd;
     const close = open >= 0 ? findMatchingBrace(masked, open) : -1;
     const end = close >= 0 ? close + 1 : nameStart + name.length;
     const fields = open >= 0 && close >= 0 ? parseFields(masked, open + 1, close) : [];
-    types.push({ name, start: nameStart, end, fields, uri: document.uri });
+    types.push({ name, start: nameStart, end, parent, fields, uri: document.uri });
   }
 
   return { types, enums, consts, enumVariants };
@@ -589,6 +1353,7 @@ function parseFields(masked, bodyStart, bodyEnd) {
       name,
       start,
       end: start + name.length,
+      typeRef: parseTypeRefText(rawType),
       typeName: namedTypeFromTypeRef(rawType),
       rawType,
       refTarget: refTargetFromAnnotations(annotations)
@@ -598,9 +1363,97 @@ function parseFields(masked, bodyStart, bodyEnd) {
 }
 
 function namedTypeFromTypeRef(rawType) {
-  const text = rawType.trim().replace(/\?$/, "").trim();
-  const named = text.match(new RegExp(`^(${IDENT})$`, "u"));
-  return named ? named[1] : undefined;
+  return typeNameOf(parseTypeRefText(rawType));
+}
+
+function parseTypeRefText(rawType) {
+  const text = rawType.trim();
+  if (!text) {
+    return undefined;
+  }
+  if (text.endsWith("?")) {
+    return {
+      kind: "nullable",
+      inner: parseTypeRefText(text.slice(0, -1))
+    };
+  }
+  if (text.startsWith("[") && text.endsWith("]")) {
+    return {
+      kind: "array",
+      element: parseTypeRefText(text.slice(1, -1))
+    };
+  }
+  if (text.startsWith("{") && text.endsWith("}")) {
+    const inner = text.slice(1, -1);
+    const colon = findTopLevelColon(inner);
+    if (colon >= 0) {
+      return {
+        kind: "dict",
+        key: parseTypeRefText(inner.slice(0, colon)),
+        value: parseTypeRefText(inner.slice(colon + 1))
+      };
+    }
+  }
+  if (PRIMITIVE_TYPES.some(([primitive]) => primitive === text)) {
+    return {
+      kind: text
+    };
+  }
+  if (new RegExp(`^${IDENT}$`, "u").test(text)) {
+    return {
+      kind: "named",
+      name: text
+    };
+  }
+  return undefined;
+}
+
+function constValueKind(typeName, rawValue) {
+  if (typeName && PRIMITIVE_TYPES.some(([primitive]) => primitive === typeName)) {
+    return typeName;
+  }
+  const value = (rawValue || "").trim();
+  if (/^-?\d+$/.test(value)) {
+    return "int";
+  }
+  if (/^-?(?:\d+\.\d*|\d*\.\d+)(?:[eE][+-]?\d+)?$/.test(value)) {
+    return "float";
+  }
+  if (value === "true" || value === "false") {
+    return "bool";
+  }
+  if (value.startsWith("\"")) {
+    return "string";
+  }
+  return undefined;
+}
+
+function findTopLevelColon(text) {
+  let depth = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === "{" || char === "[") {
+      depth += 1;
+    } else if (char === "}" || char === "]") {
+      depth -= 1;
+    } else if (char === ":" && depth === 0) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function typeNameOf(typeRef) {
+  if (!typeRef) {
+    return undefined;
+  }
+  if (typeRef.kind === "named") {
+    return typeRef.name;
+  }
+  if (typeRef.kind === "nullable") {
+    return typeNameOf(typeRef.inner);
+  }
+  return undefined;
 }
 
 function refTargetFromAnnotations(annotations) {
@@ -635,7 +1488,7 @@ function maskTrivia(text) {
     const char = chars[index];
     if (char === "\"") {
       index = maskString(chars, index);
-    } else if (char === "/" && chars[index + 1] === "/") {
+    } else if (char === "#") {
       index = maskLineComment(chars, index);
     } else {
       index += 1;
@@ -791,6 +1644,56 @@ function globalSymbolLocations(workspace, name) {
   ];
 }
 
+function workspaceTypes(workspace) {
+  return uniqueEntries(workspace.types);
+}
+
+function workspaceEnums(workspace) {
+  return uniqueEntries(workspace.enums);
+}
+
+function workspaceConsts(workspace) {
+  return uniqueEntries(workspace.consts);
+}
+
+function uniqueEntries(map) {
+  const items = [];
+  const seen = new Set();
+  for (const entries of map.values()) {
+    for (const entry of entries) {
+      const key = `${entry.document.uri.toString()}#${entry.item.start}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        items.push(entry.item);
+      }
+    }
+  }
+  return items.sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function workspaceEnumVariants(workspace, enumName) {
+  const variants = locationsEntriesToItems(workspace.enumVariants, `${enumName}.`);
+  return variants.length > 0 ? variants : undefined;
+}
+
+function locationsEntriesToItems(map, prefix) {
+  const items = [];
+  const seen = new Set();
+  for (const [key, entries] of map.entries()) {
+    if (!key.startsWith(prefix)) {
+      continue;
+    }
+    for (const entry of entries) {
+      const itemKey = `${entry.document.uri.toString()}#${entry.item.start}`;
+      if (!seen.has(itemKey)) {
+        seen.add(itemKey);
+        items.push(entry.item);
+      }
+    }
+  }
+  return items.sort((left, right) => left.name.localeCompare(right.name));
+}
+
 function enumVariantLocations(workspace, chain) {
   if (chain.length < 2) {
     return [];
@@ -817,7 +1720,7 @@ function fieldChainLocations(workspace, document, position, chain) {
   }
 
   const root = chain[0].name;
-  let typeName = typeOfNameAt(workspace, document, position, root);
+  let typeName = typeNameOf(typeOfNameAt(workspace, document, position, root));
   if (!typeName) {
     return [];
   }
@@ -828,7 +1731,7 @@ function fieldChainLocations(workspace, document, position, chain) {
     if (!field) {
       return [];
     }
-    typeName = field.item.refTarget || field.item.typeName;
+    typeName = typeNameOf(fieldReceiverType(field.item));
   }
 
   return field ? [locationForItem(field.document, field.item)] : [];
@@ -840,21 +1743,181 @@ function typeOfNameAt(workspace, document, position, name) {
     return undefined;
   }
   const currentType = currentTypeAt(entry.symbols, document.offsetAt(position));
-  const field = currentType?.fields.find((item) => item.name === name);
+  const field = currentType
+    ? fieldsForType(workspace, currentType.name).find((item) => item.name === name)
+    : undefined;
   if (field) {
-    return field.refTarget || field.typeName;
+    return fieldReceiverType(field);
+  }
+
+  const binding = quantifierBindingsAtWithWorkspace(workspace, document, position)
+    .reverse()
+    .find((item) => item.name === name);
+  if (binding) {
+    return binding.typeRef;
   }
   return undefined;
 }
 
+function typeOfChainAt(workspace, document, position, chain) {
+  if (chain.length === 0) {
+    return undefined;
+  }
+
+  let typeRef = typeOfNameAt(workspace, document, position, chain[0]);
+  for (const part of chain.slice(1)) {
+    const typeName = typeNameOf(typeRef);
+    const field = typeName ? fieldByType(workspace, typeName, part)?.item : undefined;
+    if (!field) {
+      return undefined;
+    }
+    typeRef = fieldReceiverType(field);
+  }
+  return typeRef;
+}
+
 function fieldByType(workspace, typeName, fieldName) {
-  for (const entry of workspace.types.get(typeName) || []) {
-    const field = entry.item.fields.find((item) => item.name === fieldName);
+  for (const entry of typeEntriesForType(workspace, typeName)) {
+    const field = fieldsForType(workspace, entry.item.name).find((item) => item.name === fieldName);
     if (field) {
       return { item: field, document: entry.document };
     }
   }
   return undefined;
+}
+
+function quantifierBindingsAt(document, position) {
+  const symbols = collectSymbols(document);
+  const workspaceEntry = {
+    documents: new Map([[document.uri.toString(), { document, symbols }]]),
+    types: new Map(),
+    enums: new Map(),
+    consts: new Map(),
+    enumVariants: new Map()
+  };
+  for (const type of symbols.types) {
+    pushMap(workspaceEntry.types, type.name, { item: type, document });
+  }
+
+  return quantifierBindingsAtWithWorkspace(workspaceEntry, document, position);
+}
+
+function quantifierBindingsAtWithWorkspace(workspace, document, position) {
+  const text = document.getText();
+  const masked = maskTrivia(text);
+  const offset = document.offsetAt(position);
+  const bindings = [];
+  const quantifierRegex = new RegExp(`${IDENT_BOUNDARY_BEFORE}(all|any|none)\\s+(${IDENT})\\s+in\\s+([^{};]+)\\{`, "gu");
+
+  for (const match of masked.matchAll(quantifierRegex)) {
+    const open = match.index + match[0].lastIndexOf("{");
+    const close = findMatchingBrace(masked, open);
+    if (close < 0 || offset <= open || offset > close) {
+      continue;
+    }
+
+    const collection = match[3].trim();
+    const collectionType = typeOfSimpleExpression(workspace, document, document.positionAt(match.index), collection);
+    const bindingType = quantifierBindingType(collectionType);
+    if (bindingType) {
+      bindings.push({
+        name: match[2],
+        typeRef: bindingType
+      });
+    }
+  }
+
+  return bindings;
+}
+
+function typeOfSimpleExpression(workspace, document, position, text) {
+  const parts = [...text.matchAll(new RegExp(IDENT, "gu"))].map((match) => match[0]);
+  if (parts.length === 0) {
+    return undefined;
+  }
+
+  let typeRef = typeOfFieldOrCurrentName(workspace, document, position, parts[0]);
+  for (const part of parts.slice(1)) {
+    const typeName = typeNameOf(typeRef);
+    const field = typeName ? fieldByType(workspace, typeName, part)?.item : undefined;
+    if (!field) {
+      return undefined;
+    }
+    typeRef = fieldReceiverType(field);
+  }
+  return typeRef;
+}
+
+function typeOfFieldOrCurrentName(workspace, document, position, name) {
+  const entry = workspace.documents.get(document.uri.toString());
+  if (!entry) {
+    return undefined;
+  }
+  const currentType = currentTypeAt(entry.symbols, document.offsetAt(position));
+  const field = currentType
+    ? fieldsForType(workspace, currentType.name).find((item) => item.name === name)
+    : undefined;
+  return field ? fieldReceiverType(field) : undefined;
+}
+
+function quantifierBindingType(collectionType) {
+  if (!collectionType) {
+    return undefined;
+  }
+  if (collectionType.kind === "nullable") {
+    return quantifierBindingType(collectionType.inner);
+  }
+  if (collectionType.kind === "array") {
+    return collectionType.element;
+  }
+  if (collectionType.kind === "dict") {
+    return {
+      kind: "dictEntry",
+      key: collectionType.key,
+      value: collectionType.value
+    };
+  }
+  return undefined;
+}
+
+function fieldReceiverType(field) {
+  if (field.refTarget) {
+    return {
+      kind: "named",
+      name: field.refTarget
+    };
+  }
+  return field.typeRef;
+}
+
+function fieldsForType(workspace, typeName, seen = new Set()) {
+  if (!typeName || seen.has(typeName)) {
+    return [];
+  }
+  seen.add(typeName);
+
+  const entries = typeEntriesForType(workspace, typeName);
+  const fields = [];
+  const fieldNames = new Set();
+  for (const entry of entries) {
+    for (const parentField of fieldsForType(workspace, entry.item.parent, seen)) {
+      if (!fieldNames.has(parentField.name)) {
+        fieldNames.add(parentField.name);
+        fields.push(parentField);
+      }
+    }
+    for (const field of entry.item.fields) {
+      if (!fieldNames.has(field.name)) {
+        fieldNames.add(field.name);
+        fields.push(field);
+      }
+    }
+  }
+  return fields;
+}
+
+function typeEntriesForType(workspace, typeName) {
+  return workspace.types.get(typeName) || [];
 }
 
 function locationsForEntries(entries) {
@@ -902,12 +1965,7 @@ function isBuiltinName(name) {
   );
 }
 
-function findDiagnosticsCwd(documentPath, extensionPath) {
-  const configDir = findNearestCoflowConfigDir(path.dirname(documentPath));
-  if (configDir) {
-    return configDir;
-  }
-
+function findDiagnosticsCwd(documentPath, extensionPath, command, args, projectDir) {
   const workspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   const candidates = [
     workspace,
@@ -915,13 +1973,52 @@ function findDiagnosticsCwd(documentPath, extensionPath) {
     path.dirname(documentPath)
   ].filter(Boolean);
 
-  for (const candidate of candidates) {
-    if (fs.existsSync(path.join(candidate, "Cargo.toml"))) {
-      return candidate;
+  if (isCargoCommand(command, args)) {
+    for (const candidate of candidates) {
+      if (fs.existsSync(path.join(candidate, "Cargo.toml"))) {
+        return candidate;
+      }
     }
   }
 
+  if (projectDir) {
+    return projectDir;
+  }
+
   return workspace || path.dirname(documentPath);
+}
+
+function isCargoCommand(command, args) {
+  const executable = path.basename(command).toLowerCase();
+  return executable === "cargo" || executable === "cargo.exe" || args.includes("-p");
+}
+
+function shouldUseDevelopmentCargoServer(config, command, args, extensionPath) {
+  if (command !== "coflow" || JSON.stringify(args) !== JSON.stringify(["cft", "lsp"])) {
+    return false;
+  }
+  const packageCommand = config.inspect("command");
+  const packageArgs = config.inspect("args");
+  if (packageCommand?.workspaceValue !== undefined || packageCommand?.globalValue !== undefined) {
+    return false;
+  }
+  if (packageArgs?.workspaceValue !== undefined || packageArgs?.globalValue !== undefined) {
+    return false;
+  }
+  const repoRoot = path.resolve(extensionPath, "..", "..");
+  return fs.existsSync(path.join(repoRoot, "Cargo.toml")) &&
+    fs.existsSync(path.join(repoRoot, "src", "main.rs"));
+}
+
+function appendProjectArg(args, projectDir) {
+  if (!projectDir) {
+    return args;
+  }
+  const lspIndex = args.lastIndexOf("lsp");
+  if (lspIndex >= 0 && args.slice(lspIndex + 1).some((arg) => !arg.startsWith("-"))) {
+    return args;
+  }
+  return [...args, projectDir];
 }
 
 function findNearestCoflowConfigDir(startDir) {
@@ -941,75 +2038,175 @@ function findNearestCoflowConfigDir(startDir) {
   }
 }
 
-function runDiagnosticsCommand(command, args, cwd, stdin) {
-  return new Promise((resolve, reject) => {
-    const child = cp.spawn(command, args, {
-      cwd,
-      shell: process.platform === "win32"
-    });
-    let stdout = "";
-    let stderr = "";
-
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve({ stdout, stderr });
-      } else if (stdout.trim()) {
-        resolve({ stdout, stderr });
-      } else {
-        reject(new Error(stderr.trim() || `${command} exited with code ${code}`));
-      }
-    });
-
-    child.stdin.end(stdin);
-  });
-}
-
-function parseDiagnosticsOutput(stdout) {
-  const text = stdout.trim();
-  if (!text) {
-    return { diagnostics: [] };
-  }
-  return JSON.parse(text);
-}
-
-function toVsCodeDiagnostic(raw) {
+function lspDiagnosticToVsCode(raw) {
+  const rawRange = raw.range || {};
+  const start = rawRange.start || {};
+  const end = rawRange.end || start;
   const range = new vscode.Range(
-    raw.startLine || 0,
-    raw.startCharacter || 0,
-    raw.endLine || raw.startLine || 0,
-    raw.endCharacter || Math.max((raw.startCharacter || 0) + 1, 1)
+    start.line || 0,
+    start.character || 0,
+    end.line ?? start.line ?? 0,
+    end.character ?? Math.max((start.character || 0) + 1, 1)
   );
   const diagnostic = new vscode.Diagnostic(
     range,
-    `${raw.code}: ${raw.message}`,
-    vscode.DiagnosticSeverity.Error
+    raw.message || "",
+    lspSeverityToVsCode(raw.severity)
   );
   diagnostic.code = raw.code;
-  diagnostic.source = `cft ${raw.stage}`;
-  if (Array.isArray(raw.related)) {
-    diagnostic.relatedInformation = raw.related.map((related) => {
-      const relatedRange = new vscode.Range(
-        related.startLine || 0,
-        related.startCharacter || 0,
-        related.endLine || related.startLine || 0,
-        related.endCharacter || Math.max((related.startCharacter || 0) + 1, 1)
-      );
+  diagnostic.source = raw.source || "cft";
+  if (Array.isArray(raw.relatedInformation)) {
+    diagnostic.relatedInformation = raw.relatedInformation.map((related) => {
+      const location = related.location || {};
+      const relatedRange = location.range || {};
+      const relatedStart = relatedRange.start || {};
+      const relatedEnd = relatedRange.end || relatedStart;
       return new vscode.DiagnosticRelatedInformation(
-        new vscode.Location(vscode.Uri.file(related.path), relatedRange),
-        related.label || "related location"
+        new vscode.Location(
+          vscode.Uri.parse(location.uri),
+          new vscode.Range(
+            relatedStart.line || 0,
+            relatedStart.character || 0,
+            relatedEnd.line ?? relatedStart.line ?? 0,
+            relatedEnd.character ?? Math.max((relatedStart.character || 0) + 1, 1)
+          )
+        ),
+        related.message || "related location"
       );
     });
   }
   return diagnostic;
+}
+
+function lspSeverityToVsCode(severity) {
+  switch (severity) {
+    case 1:
+      return vscode.DiagnosticSeverity.Error;
+    case 2:
+      return vscode.DiagnosticSeverity.Warning;
+    case 3:
+      return vscode.DiagnosticSeverity.Information;
+    case 4:
+      return vscode.DiagnosticSeverity.Hint;
+    default:
+      return vscode.DiagnosticSeverity.Error;
+  }
+}
+
+function textPositionParams(document, position) {
+  return {
+    textDocument: {
+      uri: document.uri.toString()
+    },
+    position: {
+      line: position.line,
+      character: position.character
+    }
+  };
+}
+
+function lspCompletionItemToVsCode(raw) {
+  const item = new vscode.CompletionItem(raw.label || "", lspCompletionKindToVsCode(raw.kind));
+  item.detail = raw.detail;
+  if (raw.documentation) {
+    item.documentation = typeof raw.documentation === "string"
+      ? markdown(raw.documentation)
+      : raw.documentation;
+  }
+  if (raw.insertText) {
+    item.insertText = raw.insertTextFormat === 2
+      ? new vscode.SnippetString(raw.insertText)
+      : raw.insertText;
+  }
+  item.sortText = raw.sortText;
+  if (raw.range) {
+    item.range = lspRangeToVsCode(raw.range);
+  }
+  return item;
+}
+
+function lspCompletionKindToVsCode(kind) {
+  switch (kind) {
+    case 3:
+      return vscode.CompletionItemKind.Function;
+    case 5:
+      return vscode.CompletionItemKind.Field;
+    case 6:
+      return vscode.CompletionItemKind.Variable;
+    case 7:
+      return vscode.CompletionItemKind.Class;
+    case 10:
+      return vscode.CompletionItemKind.Property;
+    case 13:
+      return vscode.CompletionItemKind.Enum;
+    case 14:
+      return vscode.CompletionItemKind.Keyword;
+    case 20:
+      return vscode.CompletionItemKind.EnumMember;
+    case 21:
+      return vscode.CompletionItemKind.Constant;
+    default:
+      return vscode.CompletionItemKind.Text;
+  }
+}
+
+function lspHoverToVsCode(raw) {
+  const contents = raw.contents;
+  const value = typeof contents === "string"
+    ? contents
+    : contents?.value || "";
+  const range = raw.range ? lspRangeToVsCode(raw.range) : undefined;
+  return new vscode.Hover(markdown(value), range);
+}
+
+function lspDocumentSymbolToVsCode(raw) {
+  const symbol = new vscode.DocumentSymbol(
+    raw.name || "",
+    raw.detail || "",
+    lspSymbolKindToVsCode(raw.kind),
+    lspRangeToVsCode(raw.range),
+    lspRangeToVsCode(raw.selectionRange || raw.range)
+  );
+  if (Array.isArray(raw.children)) {
+    symbol.children.push(...raw.children.map(lspDocumentSymbolToVsCode));
+  }
+  return symbol;
+}
+
+function lspSymbolKindToVsCode(kind) {
+  switch (kind) {
+    case 5:
+      return vscode.SymbolKind.Class;
+    case 8:
+      return vscode.SymbolKind.Field;
+    case 10:
+      return vscode.SymbolKind.Enum;
+    case 14:
+      return vscode.SymbolKind.Constant;
+    case 22:
+      return vscode.SymbolKind.EnumMember;
+    default:
+      return vscode.SymbolKind.Variable;
+  }
+}
+
+function lspLocationToVsCode(raw) {
+  return new vscode.Location(vscode.Uri.parse(raw.uri), lspRangeToVsCode(raw.range));
+}
+
+function lspTextEditToVsCode(raw) {
+  return new vscode.TextEdit(lspRangeToVsCode(raw.range), raw.newText || "");
+}
+
+function lspRangeToVsCode(raw) {
+  const start = raw?.start || {};
+  const end = raw?.end || start;
+  return new vscode.Range(
+    start.line || 0,
+    start.character || 0,
+    end.line ?? start.line ?? 0,
+    end.character ?? start.character ?? 0
+  );
 }
 
 function normalizePath(filePath) {
