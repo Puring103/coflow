@@ -700,15 +700,26 @@ impl<'a> CheckEvaluator<'a> {
             );
             return Err(());
         };
-        let Some(mut out) = items.first().cloned() else {
+        if items.is_empty() {
             self.diag_at(
                 CfdErrorCode::CheckEmptyMinMax,
                 arg_value.path,
                 "min/max called on empty array",
             );
             return Err(());
+        }
+        let mut non_null_items = items
+            .iter()
+            .filter(|item| !matches!(item, CheckValue::Null));
+        let Some(mut out) = non_null_items.next().cloned() else {
+            self.diag_at(
+                CfdErrorCode::CheckEmptyMinMax,
+                arg_value.path,
+                "min/max called with no non-null values",
+            );
+            return Err(());
         };
-        for item in items.iter().skip(1) {
+        for item in non_null_items {
             let ord = self.compare_order(&out, item, arg_value.path.clone())?;
             if (name == "min" && ord.is_gt()) || (name == "max" && ord.is_lt()) {
                 out = item.clone();
@@ -735,13 +746,14 @@ impl<'a> CheckEvaluator<'a> {
             );
             return Err(());
         };
-        let empty = items.is_empty();
         let mut int_sum = 0_i64;
         let mut float_sum = 0.0_f64;
         let mut saw_float = false;
+        let mut saw_numeric = false;
         for item in items {
             match item {
                 CheckValue::Int(value) if !saw_float => {
+                    saw_numeric = true;
                     let Some(next) = int_sum.checked_add(value) else {
                         self.diag_at(
                             CfdErrorCode::CheckEvalTypeError,
@@ -752,14 +764,19 @@ impl<'a> CheckEvaluator<'a> {
                     };
                     int_sum = next;
                 }
-                CheckValue::Int(value) => float_sum += value as f64,
+                CheckValue::Int(value) => {
+                    saw_numeric = true;
+                    float_sum += value as f64;
+                }
                 CheckValue::Float(value) => {
+                    saw_numeric = true;
                     if !saw_float {
                         saw_float = true;
                         float_sum = int_sum as f64;
                     }
                     float_sum += value;
                 }
+                CheckValue::Null => {}
                 _ => {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
@@ -770,7 +787,7 @@ impl<'a> CheckEvaluator<'a> {
                 }
             }
         }
-        if saw_float || (empty && type_ref_is_float(element_type.as_ref())) {
+        if saw_float || (!saw_numeric && type_ref_is_float(element_type.as_ref())) {
             Ok(LocatedCheckValue::new(
                 CheckValue::Float(float_sum),
                 arg_value.path,

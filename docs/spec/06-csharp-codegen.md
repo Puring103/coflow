@@ -26,7 +26,7 @@
 
 ## 1. 实现方案
 
-C# codegen 是 `coflow codegen csharp` 的内置生成能力，由 `coflow.yaml` 的 `outputs.code` 配置驱动：
+C# codegen crate 接收已经编译完成的 `CftContainer` 和 C# codegen options，生成 C# 文件。它不读取 `coflow.yaml`，也不负责项目发现、路径解析或 CLI 编排；这些由 project pipeline 和 CLI 层负责。
 
 ```yaml
 outputs:
@@ -36,13 +36,14 @@ outputs:
     namespace: Example.Rpg.Config
 ```
 
-实现使用 Tera 渲染模板文件，但模板只负责文本展开，不承载 CFT 语义判断。代码生成流程为：
+上面的 YAML 是 CLI 项目配置示例：`coflow codegen csharp` 由 project pipeline 读取 `coflow.yaml`、发现并编译 schema、合并命令行选项，然后以 `CftContainer` 和 codegen options 调用 codegen crate，并把生成文件写入项目配置指定的输出目录。
 
-1. 读取 `coflow.yaml`
-2. 编译 CFT schema
-3. 将 `CftContainer` 投影为 C# 专用 codegen model
-4. 使用 Tera 模板渲染 `.cs` 文件
-5. 写入 `outputs.code.dir`
+实现使用 Tera 渲染模板文件，但模板只负责文本展开，不承载 CFT 语义判断。codegen crate 内部流程为：
+
+1. 接收 `CftContainer` 和 C# codegen options
+2. 将 `CftContainer` 投影为 C# 专用 codegen model
+3. 使用 Tera 模板渲染 `.cs` 文件
+4. 返回或写出调用方指定目标中的生成文件
 
 Codegen model 是 C# 视角的数据结构，而不是直接暴露 `CftSchemaType` 给模板：
 
@@ -80,6 +81,8 @@ struct CsharpField {
 Tera 模板只允许做简单的字段遍历、条件输出和命名空间包裹；类型映射、默认值、继承展开、`@ref`、`@id`、`@index`、`@display`、`@deprecated` 等规则必须在 Rust model 构建阶段完成。实现应补充 golden tests 固定复杂 schema 的输出形状。
 
 当前实现位于 `crates/coflow-codegen-csharp`，使用 `Newtonsoft.Json` 生成通用 .NET 加载器。生成出的 C# 运行时代码只依赖 JSON 文件和 `Newtonsoft.Json`，不依赖 CFT parser/compiler。
+
+Generated C# is a trusted artifact loader. It supports JSON produced by the official Coflow exporter from data already accepted by the Rust pipeline. It deserializes, builds runtime lookups, and resolves generated object references. It does not promise stable diagnostics for arbitrary hand-written or corrupted JSON and does not run CFT checks.
 
 建议文件布局：
 
@@ -461,7 +464,6 @@ public partial class GameConfig
     public Monster? FindMonster(string id) => _monsterIndex.GetValueOrDefault(id);
 
     // @index 字段生成按索引查询的方法，始终返回列表
-    // nullable 字段的 null 值不加入索引
     public IReadOnlyList<Monster> GetMonstersByRarity(Rarity rarity)
         => _monstersByRarity.TryGetValue(rarity, out var list) ? list : [];
 
@@ -475,7 +477,7 @@ public partial class GameConfig
 
 ## 6. 加载器生成
 
-加载器从 `coflow export json` 产出的 JSON 目录读取数据：每个 table 一个 `<TypeName>.json` 文件，文件内容是 JSON array。加载过程构造强类型对象，解析 `@ref` 引用。失败时抛出 `CftLoadException`。
+加载器从 `coflow export json` 产出的 JSON 目录读取数据：每个 table 一个 `<TypeName>.json` 文件，文件内容是 JSON array。加载过程构造强类型对象，解析 `@ref` 引用。生成的 C# 加载器是 trusted artifact loader，只支持官方 Coflow exporter 从已经通过 Rust pipeline 的数据生成的 JSON；它不承诺对任意手写或损坏 JSON 提供稳定诊断，也不运行 CFT check。失败时抛出 `CftLoadException`。
 
 运行时 JSON 库固定为通用 .NET 包 `Newtonsoft.Json`：
 
@@ -581,6 +583,8 @@ public sealed class CftLoadException : Exception
     }
 }
 ```
+
+`CftLoadException` 用于定位受信导出产物加载过程中仍可能出现的问题，例如文件缺失、版本不匹配或引用解析失败。它不是 arbitrary JSON validator 的稳定错误契约。
 
 触发 `CftLoadException` 的情况：
 

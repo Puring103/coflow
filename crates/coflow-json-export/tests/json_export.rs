@@ -100,6 +100,45 @@ fn exports_tables_with_schema_order_defaults_and_scalar_values() -> TestResult {
 }
 
 #[test]
+fn exports_empty_tables_for_concrete_id_types() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item { @id id: string; }
+            type Monster { @id id: string; }
+        "#,
+    )?;
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("Item", [("id", CfdInputValue::from("item_1"))]);
+    let model = build_model(builder)?;
+    let tables = export_tables(&schema, &model)?;
+
+    assert_eq!(tables["Item"], json!([{ "id": "item_1" }]));
+    assert_eq!(tables["Monster"], json!([]));
+    Ok(())
+}
+
+#[test]
+fn skips_concrete_non_id_types_even_with_records() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item { @id id: string; }
+            type Inline { value: string; }
+        "#,
+    )?;
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("Item", [("id", CfdInputValue::from("item_1"))]);
+    builder.add_record("Inline", [("value", CfdInputValue::from("embedded"))]);
+    let model = build_model(builder)?;
+    let tables = export_tables(&schema, &model)?;
+
+    assert!(tables.contains_key("Item"));
+    assert!(!tables.contains_key("Inline"));
+    Ok(())
+}
+
+#[test]
 fn exports_refs_as_ids_and_polymorphic_objects_with_type_tags() -> TestResult {
     let schema = compile_schema(
         r#"
@@ -197,17 +236,24 @@ fn exports_type_tag_for_concrete_parent_ranges_even_when_actual_is_parent() -> T
         r#"
             type Reward { id: string; }
             type ItemReward : Reward { count: int; }
-            type Holder { reward: Reward; }
+            type Holder {
+                @id
+                id: string;
+                reward: Reward;
+            }
         "#,
     )?;
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "Holder",
-        [(
-            "reward",
-            CfdInputValue::object("Reward", [("id", CfdInputValue::from("base_reward"))]),
-        )],
+        [
+            ("id", CfdInputValue::from("holder_1")),
+            (
+                "reward",
+                CfdInputValue::object("Reward", [("id", CfdInputValue::from("base_reward"))]),
+            ),
+        ],
     );
     let model = build_model(builder)?;
     let tables = export_tables(&schema, &model)?;
@@ -216,6 +262,7 @@ fn exports_type_tag_for_concrete_parent_ranges_even_when_actual_is_parent() -> T
         tables["Holder"],
         json!([
             {
+                "id": "holder_1",
                 "reward": {
                     "$type": "Reward",
                     "id": "base_reward"
@@ -232,6 +279,8 @@ fn exports_dict_keys_as_json_object_keys() -> TestResult {
         r#"
             enum DamageType { Physical = 0, Fire = 1, Ice = 2, }
             type Resistances {
+                @id
+                id: string;
                 by_enum: {DamageType: float};
                 by_int: {int: string};
             }
@@ -242,6 +291,7 @@ fn exports_dict_keys_as_json_object_keys() -> TestResult {
     builder.add_record(
         "Resistances",
         [
+            ("id", CfdInputValue::from("resist_1")),
             (
                 "by_enum",
                 CfdInputValue::dict([
@@ -271,6 +321,7 @@ fn exports_dict_keys_as_json_object_keys() -> TestResult {
         tables["Resistances"],
         json!([
             {
+                "id": "resist_1",
                 "by_enum": {
                     "1": 0.5,
                     "2": 0.2
@@ -293,6 +344,7 @@ fn exports_nullable_composite_values_using_schema_type_refs() -> TestResult {
                 hp: int;
             }
             type Holder {
+                @id
                 id: string;
                 maybe_stats: Stats?;
                 maybe_tags: [string]?;

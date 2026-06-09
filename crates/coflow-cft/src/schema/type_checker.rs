@@ -1,7 +1,7 @@
 use super::compiler::SchemaCompiler;
 use super::support::{
-    min_max_supported, ordered_comparable, types_comparable, unique_supported, unwrap_nullable,
-    SymbolKind, Ty, TypeInfo,
+    is_reserved_identifier, min_max_supported, ordered_comparable, types_comparable,
+    unique_supported, unwrap_nullable, SymbolKind, Ty, TypeInfo,
 };
 use crate::ast::{
     BinOp, CheckExpr, CheckExprKind, CheckStmt, CmpOp, NameRef, TypePredicate, UnaryOp,
@@ -52,6 +52,13 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 span,
                 ..
             } => {
+                if is_reserved_identifier(&binding.name) {
+                    self.diag(
+                        CftErrorCode::ReservedIdentifier,
+                        binding.span,
+                        format!("`{}` is a reserved identifier", binding.name),
+                    );
+                }
                 let col_ty = self.check_expr_value(collection);
                 let item_ty = match unwrap_nullable(&col_ty) {
                     Ty::Array(inner) => *inner.clone(),
@@ -269,7 +276,15 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
 
     fn check_is(&mut self, lhs: &Ty, predicate: &TypePredicate, span: Span) {
         match predicate {
-            TypePredicate::Null(_) => {}
+            TypePredicate::Null(_) => {
+                if !matches!(lhs, Ty::Nullable(_) | Ty::Unknown) {
+                    self.diag(
+                        CftErrorCode::OperatorTypeMismatch,
+                        span,
+                        "`is null` requires a nullable operand",
+                    );
+                }
+            }
             TypePredicate::Type(name) => {
                 match self.compiler.symbols.get(&name.name) {
                     Some(symbol) if symbol.kind == SymbolKind::Type => {}
@@ -394,7 +409,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 }
                 let ty = self.check_expr_value(&args[0]);
                 match unwrap_nullable(&ty) {
-                    Ty::Array(elem) if min_max_supported(elem) => *elem.clone(),
+                    Ty::Array(elem) if min_max_supported(elem) => unwrap_nullable(elem).clone(),
                     Ty::Array(_) => {
                         self.diag(
                             CftErrorCode::FunctionArgTypeMismatch,
@@ -420,17 +435,17 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 }
                 let ty = self.check_expr_value(&args[0]);
                 match unwrap_nullable(&ty) {
-                    Ty::Array(elem) if matches!(elem.as_ref(), Ty::Int | Ty::Float) => {
-                        *elem.clone()
-                    }
-                    Ty::Array(_) => {
-                        self.diag(
-                            CftErrorCode::FunctionArgTypeMismatch,
-                            args[0].span,
-                            "sum expects an int or float array",
-                        );
-                        Ty::Unknown
-                    }
+                    Ty::Array(elem) => match unwrap_nullable(elem) {
+                        Ty::Int | Ty::Float => unwrap_nullable(elem).clone(),
+                        _ => {
+                            self.diag(
+                                CftErrorCode::FunctionArgTypeMismatch,
+                                args[0].span,
+                                "sum expects an int or float array",
+                            );
+                            Ty::Unknown
+                        }
+                    },
                     Ty::Unknown => Ty::Unknown,
                     _ => {
                         self.diag(

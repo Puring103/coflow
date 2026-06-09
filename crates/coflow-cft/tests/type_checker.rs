@@ -47,6 +47,21 @@ fn type_checker_reports_name_field_enum_function_quantifier_index_and_regex_erro
 }
 
 #[test]
+fn type_checker_rejects_reserved_quantifier_binding() {
+    let source = r#"
+        type Item {
+            nums: [int];
+            check {
+                all module in nums { module > 0; }
+            }
+        }
+    "#;
+
+    let err = compile_one(source).unwrap_err();
+    assert_has_code(&err, CftErrorCode::ReservedIdentifier);
+}
+
+#[test]
 fn type_checker_accepts_nullable_guarded_access_and_ref_object_view() {
     let source = r#"
         type Item {
@@ -70,6 +85,74 @@ fn type_checker_accepts_nullable_guarded_access_and_ref_object_view() {
     "#;
 
     compile_one(source).unwrap();
+}
+
+#[test]
+fn type_checker_allows_is_null_for_nullable_operands() {
+    compile_one(
+        r#"
+            type Child { id: string; }
+            type Holder {
+                maybe_int: int? = null;
+                maybe_child: Child? = null;
+                check {
+                    maybe_int is null;
+                    maybe_child is null;
+                }
+            }
+        "#,
+    )
+    .expect("nullable operands may use is null");
+}
+
+#[test]
+fn type_checker_accepts_nullable_element_builtins() {
+    compile_one(
+        r#"
+            type Holder {
+                nums: [int?] = [];
+                check {
+                    unique(nums);
+                    min(nums) >= 0;
+                    max(nums) >= 0;
+                    sum(nums) >= 0;
+                    contains(nums, null);
+                }
+            }
+        "#,
+    )
+    .expect("nullable element arrays are supported by built-ins");
+}
+
+#[test]
+fn type_checker_treats_nullable_element_min_max_results_as_non_null() {
+    let err = compile_one(
+        r#"
+            type Holder {
+                nums: [int?] = [];
+                check {
+                    min(nums) is null;
+                    max(nums) is null;
+                }
+            }
+        "#,
+    )
+    .expect_err("min/max over nullable elements should return non-null values");
+    assert_has_code(&err, CftErrorCode::OperatorTypeMismatch);
+}
+
+#[test]
+fn type_checker_rejects_is_null_for_non_nullable_operands() {
+    let err = compile_one(
+        r#"
+            type Holder {
+                value: int;
+                check { value is null; }
+            }
+        "#,
+    )
+    .expect_err("non-nullable operand should fail");
+    assert_has_code(&err, CftErrorCode::OperatorTypeMismatch);
 }
 
 #[test]

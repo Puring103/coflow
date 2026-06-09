@@ -79,8 +79,25 @@ impl<'a> JsonExporter<'a> {
 
     fn export(&self) -> Result<BTreeMap<String, Value>, JsonExportError> {
         let mut out = BTreeMap::new();
-        for (type_name, table) in self.model.tables() {
-            out.insert(type_name.to_string(), self.encode_table(table)?);
+        for schema_type in self.schema.schema.all_types() {
+            if schema_type.is_abstract {
+                continue;
+            }
+            let has_id_field = schema_type
+                .all_fields
+                .iter()
+                .any(|field| has_annotation(&field.annotations, "id"));
+            if !has_id_field {
+                continue;
+            }
+
+            let table = self.model.table(&schema_type.name);
+            let value = if let Some(table) = table {
+                self.encode_table(table)?
+            } else {
+                Value::Array(Vec::new())
+            };
+            out.insert(schema_type.name.clone(), value);
         }
         Ok(out)
     }
@@ -307,6 +324,10 @@ fn ref_target(annotations: &[CftAnnotation]) -> Option<String> {
             CftAnnotationValue::Name(name) => Some(name.clone()),
             _ => None,
         })
+}
+
+fn has_annotation(annotations: &[CftAnnotation], name: &str) -> bool {
+    annotations.iter().any(|annotation| annotation.name == name)
 }
 
 fn id_to_json(id: &CfdIdValue) -> Value {

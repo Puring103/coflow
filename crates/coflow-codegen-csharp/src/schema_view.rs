@@ -87,6 +87,10 @@ impl SchemaView {
             .is_some_and(|ty| ty.is_abstract || self.has_descendants(type_name))
     }
 
+    pub fn type_is_struct(&self, type_name: &str) -> bool {
+        self.types.get(type_name).is_some_and(|ty| ty.is_struct)
+    }
+
     fn has_descendants(&self, type_name: &str) -> bool {
         self.children
             .get(type_name)
@@ -160,6 +164,7 @@ impl SchemaView {
 pub struct TypeMeta {
     pub name: String,
     pub is_abstract: bool,
+    pub is_struct: bool,
     pub all_fields: Vec<FieldMeta>,
 }
 
@@ -168,6 +173,7 @@ impl TypeMeta {
         Self {
             name: schema_type.name.clone(),
             is_abstract: schema_type.is_abstract,
+            is_struct: has_annotation(&schema_type.annotations, "struct"),
             all_fields: schema_type
                 .all_fields
                 .iter()

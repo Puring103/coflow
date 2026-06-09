@@ -64,10 +64,58 @@ pub(super) enum SymbolKind {
     Enum,
 }
 
+pub(super) fn is_reserved_identifier(name: &str) -> bool {
+    matches!(
+        name,
+        "_" | "const"
+            | "enum"
+            | "type"
+            | "abstract"
+            | "sealed"
+            | "check"
+            | "when"
+            | "all"
+            | "any"
+            | "none"
+            | "in"
+            | "is"
+            | "true"
+            | "false"
+            | "null"
+            | "int"
+            | "float"
+            | "bool"
+            | "string"
+            | "len"
+            | "contains"
+            | "unique"
+            | "min"
+            | "max"
+            | "sum"
+            | "keys"
+            | "values"
+            | "matches"
+            | "if"
+            | "else"
+            | "match"
+            | "case"
+            | "for"
+            | "while"
+            | "let"
+            | "module"
+            | "import"
+            | "export"
+            | "from"
+            | "as"
+            | "use"
+    )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum AnnotationTarget {
     Type,
     Enum,
+    EnumVariant,
     Field,
 }
 
@@ -100,6 +148,7 @@ impl AnnotationSpec {
                 targets: &[
                     AnnotationTarget::Type,
                     AnnotationTarget::Enum,
+                    AnnotationTarget::EnumVariant,
                     AnnotationTarget::Field,
                 ],
                 args: AnnotationArgs::OneString,
@@ -108,6 +157,7 @@ impl AnnotationSpec {
                 targets: &[
                     AnnotationTarget::Type,
                     AnnotationTarget::Enum,
+                    AnnotationTarget::EnumVariant,
                     AnnotationTarget::Field,
                 ],
                 args: AnnotationArgs::None,
