@@ -1,0 +1,415 @@
+//! Shared schema-aware exporter traversal for Coflow data models.
+//!
+//! This crate walks an already-built [`CfdDataModel`] according to the compiled
+//! CFT schema and delegates concrete value construction to an [`ExportEncoder`].
+
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::dbg_macro,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::panic_in_result_fn,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unreachable,
+        clippy::unwrap_used
+    )
+)]
+
+use coflow_cft::{
+    CftAnnotation, CftAnnotationValue, CftContainer, CftSchemaField, CftSchemaTypeRef,
+};
+use coflow_data_model::{CfdDataModel, CfdDictKey, CfdIdValue, CfdRecord, CfdTable, CfdValue};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
+
+/// Constructs output values for a concrete export format.
+///
+/// The traversal controls schema order and type semantics; encoders only build
+/// values for their target format.
+pub trait ExportEncoder {
+    type Error: fmt::Display;
+    type Value;
+
+    fn null(&mut self) -> Result<Self::Value, Self::Error>;
+    fn bool(&mut self, value: bool) -> Result<Self::Value, Self::Error>;
+    fn int(&mut self, value: i64) -> Result<Self::Value, Self::Error>;
+    fn float(&mut self, value: f64) -> Result<Self::Value, Self::Error>;
+    fn string(&mut self, value: &str) -> Result<Self::Value, Self::Error>;
+    fn array(&mut self, values: Vec<Self::Value>) -> Result<Self::Value, Self::Error>;
+    fn map(&mut self, entries: Vec<(String, Self::Value)>) -> Result<Self::Value, Self::Error>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportError {
+    pub message: String,
+}
+
+impl ExportError {
+    #[must_use]
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl fmt::Display for ExportError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.message.fmt(f)
+    }
+}
+
+impl std::error::Error for ExportError {}
+
+/// Exports every concrete `@id` table from the data model.
+///
+/// The returned map key is the CFT type/table name. Values are arrays whose
+/// order follows the table's original record order in the data model.
+///
+/// # Errors
+///
+/// Returns an error when a model record or field cannot be matched back to the
+/// compiled schema, or when the encoder rejects a value.
+pub fn export_model_with_encoder<E>(
+    schema: &CftContainer,
+    model: &CfdDataModel,
+    encoder: E,
+) -> Result<BTreeMap<String, E::Value>, ExportError>
+where
+    E: ExportEncoder,
+{
+    Exporter::new(schema, model, encoder).export()
+}
+
+struct Exporter<'a, E> {
+    schema: SchemaView<'a>,
+    model: &'a CfdDataModel,
+    encoder: E,
+}
+
+impl<'a, E> Exporter<'a, E>
+where
+    E: ExportEncoder,
+{
+    fn new(schema: &'a CftContainer, model: &'a CfdDataModel, encoder: E) -> Self {
+        Self {
+            schema: SchemaView::new(schema),
+            model,
+            encoder,
+        }
+    }
+
+    fn export(mut self) -> Result<BTreeMap<String, E::Value>, ExportError> {
+        let mut out = BTreeMap::new();
+        for schema_type in self.schema.schema.all_types() {
+            if schema_type.is_abstract {
+                continue;
+            }
+            let has_id_field = schema_type
+                .all_fields
+                .iter()
+                .any(|field| has_annotation(&field.annotations, "id"));
+            if !has_id_field {
+                continue;
+            }
+
+            let table = self.model.table(&schema_type.name);
+            let value = if let Some(table) = table {
+                self.encode_table(table)?
+            } else {
+                self.encoder.array(Vec::new()).map_err(encoder_error)?
+            };
+            out.insert(schema_type.name.clone(), value);
+        }
+        Ok(out)
+    }
+
+    fn encode_table(&mut self, table: &CfdTable) -> Result<E::Value, ExportError> {
+        let mut records = Vec::with_capacity(table.records.len());
+        for record_id in &table.records {
+            let record = self.model.record(*record_id).ok_or_else(|| {
+                ExportError::new(format!(
+                    "table `{}` references missing record `{record_id}`",
+                    table.type_name
+                ))
+            })?;
+            records.push(self.encode_record(&table.type_name, record, TypeTagMode::Never)?);
+        }
+        self.encoder.array(records).map_err(encoder_error)
+    }
+
+    fn encode_record(
+        &mut self,
+        declared_type: &str,
+        record: &CfdRecord,
+        tag_mode: TypeTagMode,
+    ) -> Result<E::Value, ExportError> {
+        let mut entries = Vec::new();
+        if tag_mode == TypeTagMode::WhenPolymorphic
+            && self.schema.range_is_polymorphic(declared_type)
+        {
+            entries.push((
+                "$type".to_string(),
+                self.encoder
+                    .string(&record.actual_type)
+                    .map_err(encoder_error)?,
+            ));
+        }
+
+        for field in self.schema.full_fields(&record.actual_type)? {
+            let value = record.fields.get(&field.name).ok_or_else(|| {
+                ExportError::new(format!(
+                    "record `{}` is missing field `{}`",
+                    record.actual_type, field.name
+                ))
+            })?;
+            let encoded = self.encode_field(&field, value)?;
+            entries.push((field.name, encoded));
+        }
+        self.encoder.map(entries).map_err(encoder_error)
+    }
+
+    fn encode_field(
+        &mut self,
+        field: &FieldMeta,
+        value: &CfdValue,
+    ) -> Result<E::Value, ExportError> {
+        if field.ref_target.is_some() {
+            return self.encode_ref(value);
+        }
+        self.encode_value(&field.ty, value)
+    }
+
+    fn encode_value(
+        &mut self,
+        declared_type: &CftSchemaTypeRef,
+        value: &CfdValue,
+    ) -> Result<E::Value, ExportError> {
+        if let CftSchemaTypeRef::Nullable(inner) = declared_type {
+            return match value {
+                CfdValue::Null => self.encoder.null().map_err(encoder_error),
+                other => self.encode_value(inner, other),
+            };
+        }
+
+        match value {
+            CfdValue::Null => self.encoder.null().map_err(encoder_error),
+            CfdValue::Bool(value) => self.encoder.bool(*value).map_err(encoder_error),
+            CfdValue::Int(value) => self.encoder.int(*value).map_err(encoder_error),
+            CfdValue::Float(value) => {
+                if value.is_finite() {
+                    self.encoder.float(*value).map_err(encoder_error)
+                } else {
+                    Err(ExportError::new("cannot export non-finite float"))
+                }
+            }
+            CfdValue::String(value) => self.encoder.string(value).map_err(encoder_error),
+            CfdValue::Enum(value) => self.encoder.int(value.value).map_err(encoder_error),
+            CfdValue::Object(record) => {
+                let type_name = match declared_type {
+                    CftSchemaTypeRef::Named(type_name) => type_name,
+                    other => {
+                        return Err(ExportError::new(format!(
+                            "object value has non-object declared type `{}`",
+                            display_type_ref(other)
+                        )))
+                    }
+                };
+                self.encode_record(type_name, record, TypeTagMode::WhenPolymorphic)
+            }
+            CfdValue::Ref { .. } => self.encode_ref(value),
+            CfdValue::Array(items) => {
+                let inner = match declared_type {
+                    CftSchemaTypeRef::Array(inner) => inner,
+                    other => {
+                        return Err(ExportError::new(format!(
+                            "array value has non-array declared type `{}`",
+                            display_type_ref(other)
+                        )))
+                    }
+                };
+                let values = items
+                    .iter()
+                    .map(|item| self.encode_value(inner, item))
+                    .collect::<Result<Vec<_>, _>>()?;
+                self.encoder.array(values).map_err(encoder_error)
+            }
+            CfdValue::Dict(entries) => {
+                let value_ty = match declared_type {
+                    CftSchemaTypeRef::Dict(_, value_ty) => value_ty,
+                    other => {
+                        return Err(ExportError::new(format!(
+                            "dict value has non-dict declared type `{}`",
+                            display_type_ref(other)
+                        )))
+                    }
+                };
+                let mut values = Vec::with_capacity(entries.len());
+                for (key, value) in entries {
+                    values.push((dict_key_string(key), self.encode_value(value_ty, value)?));
+                }
+                self.encoder.map(values).map_err(encoder_error)
+            }
+        }
+    }
+
+    fn encode_ref(&mut self, value: &CfdValue) -> Result<E::Value, ExportError> {
+        match value {
+            CfdValue::Null => self.encoder.null().map_err(encoder_error),
+            CfdValue::Ref { id, .. } => self.encode_id(id),
+            other => Err(ExportError::new(format!(
+                "expected ref value, got `{}`",
+                value_kind(other)
+            ))),
+        }
+    }
+
+    fn encode_id(&mut self, id: &CfdIdValue) -> Result<E::Value, ExportError> {
+        match id {
+            CfdIdValue::String(value) => self.encoder.string(value).map_err(encoder_error),
+            CfdIdValue::Int(value) => self.encoder.int(*value).map_err(encoder_error),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TypeTagMode {
+    Never,
+    WhenPolymorphic,
+}
+
+struct SchemaView<'a> {
+    schema: &'a CftContainer,
+    children_by_parent: BTreeMap<String, Vec<String>>,
+}
+
+impl<'a> SchemaView<'a> {
+    fn new(schema: &'a CftContainer) -> Self {
+        let mut children_by_parent = BTreeMap::<String, Vec<String>>::new();
+        for schema_type in schema.all_types() {
+            if let Some(parent) = &schema_type.parent {
+                children_by_parent
+                    .entry(parent.clone())
+                    .or_default()
+                    .push(schema_type.name.clone());
+            }
+        }
+        Self {
+            schema,
+            children_by_parent,
+        }
+    }
+
+    fn full_fields(&self, type_name: &str) -> Result<Vec<FieldMeta>, ExportError> {
+        let mut out = Vec::new();
+        self.fill_fields(type_name, &mut out, &mut BTreeSet::new())?;
+        Ok(out)
+    }
+
+    fn fill_fields(
+        &self,
+        type_name: &str,
+        out: &mut Vec<FieldMeta>,
+        seen: &mut BTreeSet<String>,
+    ) -> Result<(), ExportError> {
+        if !seen.insert(type_name.to_string()) {
+            return Ok(());
+        }
+        let schema_type = self.schema.resolve_type(type_name).ok_or_else(|| {
+            ExportError::new(format!("unknown CFT type `{type_name}` during export"))
+        })?;
+        if let Some(parent) = &schema_type.parent {
+            self.fill_fields(parent, out, seen)?;
+        }
+        for field in &schema_type.fields {
+            out.push(FieldMeta::from_schema(field));
+        }
+        Ok(())
+    }
+
+    fn range_is_polymorphic(&self, type_name: &str) -> bool {
+        self.schema
+            .resolve_type(type_name)
+            .is_some_and(|schema_type| schema_type.is_abstract)
+            || self
+                .children_by_parent
+                .get(type_name)
+                .is_some_and(|children| !children.is_empty())
+    }
+}
+
+#[derive(Debug, Clone)]
+struct FieldMeta {
+    name: String,
+    ty: CftSchemaTypeRef,
+    ref_target: Option<String>,
+}
+
+impl FieldMeta {
+    fn from_schema(field: &CftSchemaField) -> Self {
+        Self {
+            name: field.name.clone(),
+            ty: field.ty_ref.clone(),
+            ref_target: ref_target(&field.annotations),
+        }
+    }
+}
+
+fn ref_target(annotations: &[CftAnnotation]) -> Option<String> {
+    annotations
+        .iter()
+        .find(|annotation| annotation.name == "ref")
+        .and_then(|annotation| annotation.args.first())
+        .and_then(|arg| match arg {
+            CftAnnotationValue::Name(name) => Some(name.clone()),
+            _ => None,
+        })
+}
+
+fn has_annotation(annotations: &[CftAnnotation], name: &str) -> bool {
+    annotations.iter().any(|annotation| annotation.name == name)
+}
+
+fn dict_key_string(key: &CfdDictKey) -> String {
+    match key {
+        CfdDictKey::String(value) => value.clone(),
+        CfdDictKey::Int(value) => value.to_string(),
+        CfdDictKey::Enum(value) => value.value.to_string(),
+    }
+}
+
+const fn value_kind(value: &CfdValue) -> &'static str {
+    match value {
+        CfdValue::Null => "null",
+        CfdValue::Bool(_) => "bool",
+        CfdValue::Int(_) => "int",
+        CfdValue::Float(_) => "float",
+        CfdValue::String(_) => "string",
+        CfdValue::Enum(_) => "enum",
+        CfdValue::Object(_) => "object",
+        CfdValue::Ref { .. } => "ref",
+        CfdValue::Array(_) => "array",
+        CfdValue::Dict(_) => "dict",
+    }
+}
+
+fn display_type_ref(ty: &CftSchemaTypeRef) -> String {
+    match ty {
+        CftSchemaTypeRef::Int => "int".to_string(),
+        CftSchemaTypeRef::Float => "float".to_string(),
+        CftSchemaTypeRef::Bool => "bool".to_string(),
+        CftSchemaTypeRef::String => "string".to_string(),
+        CftSchemaTypeRef::Named(name) => name.clone(),
+        CftSchemaTypeRef::Array(inner) => format!("[{}]", display_type_ref(inner)),
+        CftSchemaTypeRef::Dict(key, value) => {
+            format!("{{{}: {}}}", display_type_ref(key), display_type_ref(value))
+        }
+        CftSchemaTypeRef::Nullable(inner) => format!("{}?", display_type_ref(inner)),
+    }
+}
+
+fn encoder_error(error: impl fmt::Display) -> ExportError {
+    ExportError::new(error.to_string())
+}
