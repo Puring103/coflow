@@ -372,6 +372,7 @@ fn field_local_name(field_name: &str) -> Result<String, CsharpCodegenError> {
     let candidate = camel_case(field_name);
     let local_name = if csharp_ident_error(&candidate)
         .is_some_and(|reason| reason == "identifier is a C# keyword")
+        || is_reserved_loader_local_name(&candidate)
     {
         format!("{candidate}Value")
     } else {
@@ -385,6 +386,34 @@ fn field_local_name(field_name: &str) -> Result<String, CsharpCodegenError> {
     }
 
     Ok(local_name)
+}
+
+fn is_reserved_loader_local_name(value: &str) -> bool {
+    matches!(
+        value,
+        "bytes"
+            | "count"
+            | "fieldPath"
+            | "i"
+            | "index"
+            | "item"
+            | "itemPath"
+            | "itemReader"
+            | "key"
+            | "keyPath"
+            | "list"
+            | "path"
+            | "rawKey"
+            | "reader"
+            | "result"
+            | "source"
+            | "token"
+            | "typeKey"
+            | "typeName"
+            | "value"
+            | "valuePath"
+            | "valueReader"
+    )
 }
 
 fn polymorphic_loaders(
