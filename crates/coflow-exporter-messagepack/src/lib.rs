@@ -1,7 +1,7 @@
-//! MessagePack exporter for validated Coflow data models.
+//! `MessagePack` exporter for validated Coflow data models.
 //!
 //! This crate converts an already-built [`CfdDataModel`] into table-oriented
-//! MessagePack bytes. Each table is encoded as a bare MessagePack array value.
+//! `MessagePack` bytes. Each table is encoded as a bare `MessagePack` array value.
 
 #![cfg_attr(
     not(test),
@@ -51,16 +51,16 @@ impl From<ExportError> for MessagePackExportError {
     }
 }
 
-/// Converts every table in the data model into one bare MessagePack array.
+/// Converts every table in the data model into one bare `MessagePack` array.
 ///
 /// The returned map key is the CFT type/table name. Values are complete
-/// MessagePack byte buffers with no additional file header, manifest, schema
+/// `MessagePack` byte buffers with no additional file header, manifest, schema
 /// hash, encryption, or checksum.
 ///
 /// # Errors
 ///
 /// Returns an error when a model record or field cannot be matched back to the
-/// compiled schema, or when a value cannot be encoded as MessagePack.
+/// compiled schema, or when a value cannot be encoded as `MessagePack`.
 pub fn export_messagepack_model(
     schema: &CftContainer,
     model: &CfdDataModel,
