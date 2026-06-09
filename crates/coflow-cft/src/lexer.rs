@@ -350,24 +350,12 @@ impl<'a> Lexer<'a> {
                 ));
             }
             let raw = &self.source[start..self.pos];
-            return raw.parse::<f64>().map(TokenKind::Float).map_err(|_| {
-                self.err(
-                    CftErrorCode::InvalidFloatLiteral,
-                    Span::new(start, self.pos),
-                    "invalid float literal",
-                )
-            });
+            return self.lex_float(raw, start);
         }
 
         let raw = &self.source[start..self.pos];
         if is_float {
-            raw.parse::<f64>().map(TokenKind::Float).map_err(|_| {
-                self.err(
-                    CftErrorCode::InvalidFloatLiteral,
-                    Span::new(start, self.pos),
-                    "invalid float literal",
-                )
-            })
+            self.lex_float(raw, start)
         } else if let Ok(value) = raw.parse::<i64>() {
             Ok(TokenKind::Int(value))
         } else if let Ok(value) = raw.parse::<u64>() {
@@ -382,6 +370,24 @@ impl<'a> Lexer<'a> {
                 "invalid int literal",
             ))
         }
+    }
+
+    fn lex_float(&self, raw: &str, start: usize) -> Result<TokenKind, CftDiagnostics> {
+        let Ok(value) = raw.parse::<f64>() else {
+            return Err(self.err(
+                CftErrorCode::InvalidFloatLiteral,
+                Span::new(start, self.pos),
+                "invalid float literal",
+            ));
+        };
+        if !value.is_finite() {
+            return Err(self.err(
+                CftErrorCode::InvalidFloatLiteral,
+                Span::new(start, self.pos),
+                "float literal must be finite",
+            ));
+        }
+        Ok(TokenKind::Float(value))
     }
 
     fn lex_string(&mut self, start: usize) -> Result<TokenKind, CftDiagnostics> {

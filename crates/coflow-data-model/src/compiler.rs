@@ -453,6 +453,16 @@ impl ModelCompiler {
                 CfdValue::Int(*value)
             }
             CftSchemaDefaultValue::Float(value) if type_accepts_default(ty, &CfdType::Float) => {
+                if !value.is_finite() {
+                    self.push(
+                        CfdDiagnostic::error(
+                            CfdErrorCode::TypeMismatch,
+                            "float value must be finite",
+                        )
+                        .with_primary(record, path),
+                    );
+                    return None;
+                }
                 CfdValue::Float(*value)
             }
             CftSchemaDefaultValue::Bool(value) if type_accepts_default(ty, &CfdType::Bool) => {

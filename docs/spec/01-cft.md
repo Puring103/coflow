@@ -44,6 +44,7 @@ const EMPTY_NAME = "unknown";
 ```
 
 - 值只允许整数、浮点、布尔、字符串字面量
+- 浮点字面量必须能解析为有限 `f64`；`NaN` 和 `+/-inf` 不是合法 CFT 字面量
 - 类型从值自动推断，无需显式标注
 - 也可以显式标注类型（仅限 `int` / `float` / `bool` / `string`），编译期会校验值与类型一致：
 
@@ -297,8 +298,12 @@ all entry in scores {
 如果需要表达"可以为空或至少满足一个"，惯用法为：
 
 ```cft
-len(rewards) == 0 || any reward in rewards { reward is CurrencyReward; }
+when len(rewards) > 0 {
+  any reward in rewards { reward is CurrencyReward; }
+}
 ```
+
+量词块是 check 语句，不是表达式，不能嵌入 `&&`、`||` 或其他表达式内部。
 
 ### 5.3 when 块
 
@@ -401,7 +406,7 @@ item is null              # null 判断
 | `@flag` | `enum` | — | 变体值必须为 2 的幂（0 除外） | 位标志枚举（C# [Flags]） |
 | `@id` | `field` | `string`、`int` | 每个继承树最多一个 `@id` 字段；子类继承父类的 `@id` | 主键，加载器用于跨表引用解析，隐含唯一性 |
 | `@ref(TypeName)` | `field` | `string`、`int` | TypeName 必须是已定义的 `type`（含 abstract） | 字符串/整数外键，加载器校验目标记录存在 |
-| `@index` | `field` | `string`、`int`、`enum` | — | codegen 生成按此字段查询的索引 API；nullable 字段的 null 值不加入索引；索引始终返回列表 |
+| `@index` | `field` | `string`、`int`、`enum` | 字段必须非 nullable | codegen 生成按此字段查询的索引 API；索引始终返回列表 |
 | `@display("text")` | `type`、`enum`、`field` | 任意 | — | 可读名称，codegen 生成 XML 注释，用于编辑器显示 |
 | `@deprecated` | `type`、`enum`、`field` | 任意 | — | 标记废弃，codegen 输出对应语言的废弃标记；子类不自动继承父类的 `@deprecated` |
 
@@ -457,7 +462,8 @@ impl CftContainer {
     pub fn compile(&mut self) -> Result<(), CftDiagnostics>;
 
     // schema 反射，用于代码生成和 Excel 加载器字段映射；返回的引用在
-    // 下次成功调用 compile 之前保持稳定。
+    // 下次 add_module 或下次成功调用 compile 之前保持稳定。add_module
+    // 会立即使已发布 schema 失效；失败的 compile 不发布新 schema。
     pub fn schema(&self, id: &ModuleId) -> Option<&CftSchemaModule>;
     pub fn resolve_type(&self, name: &str) -> Option<&CftSchemaType>;
     pub fn resolve_enum(&self, name: &str) -> Option<&CftSchemaEnum>;
@@ -542,7 +548,7 @@ pub struct CftSchemaConst {
 | `CFT-LEX-002` | `InvalidStringEscape` | 非法字符串转义 |
 | `CFT-LEX-003` | `UnterminatedString` | 字符串未闭合 |
 | `CFT-LEX-004` | `InvalidIntLiteral` | 整数字面量非法或溢出 |
-| `CFT-LEX-005` | `InvalidFloatLiteral` | 浮点字面量非法 |
+| `CFT-LEX-005` | `InvalidFloatLiteral` | 浮点字面量非法、溢出或非有限 |
 
 #### SYN
 
@@ -594,7 +600,7 @@ pub struct CftSchemaConst {
 | `CFT-SCHEMA-029` | `UnknownEnumVariant` | 默认值引用未知枚举变体 |
 | `CFT-SCHEMA-030` | `InvalidConstValue` | `const` 值不是允许的字面量类型 |
 
-`@ref` 字段类型允许 `string`、`int` 以及对应 nullable 形式；`@index` 字段类型允许 `string`、`int`、`enum` 以及对应 nullable 形式，nullable 字段的 `null` 值不加入索引。
+`@ref` 字段类型允许 `string`、`int` 以及对应 nullable 形式；`@index` 字段类型只允许非 nullable 的 `string`、`int`、`enum`。
 
 #### TYPE
 
@@ -646,12 +652,15 @@ pub struct CftSchemaConst {
 
 **check 执行阶段：**
 
-| 错误 | 原因 |
-|------|------|
-| 条件为假 | check 表达式求值结果为 false |
-| 类型错误 | 对不支持的类型使用运算符或函数（含 enum 与 int 比较） |
-| 越界 | 数组索引越界 |
-| eval error | 对 `null` 做非法操作，`min`/`max` 对空数组调用，`@flag` 枚举与 int 比较 |
+| 错误码 | 名称 | 原因 |
+|--------|------|------|
+| `CFD-CHECK-001` | `CheckFailed` | check 表达式求值结果为 false |
+| `CFD-CHECK-002` | `CheckEvalTypeError` | 执行期类型错误，例如对不支持的类型使用运算符或函数 |
+| `CFD-CHECK-003` | `CheckNullAccess` | 对 `null` 做字段访问、索引访问、大小比较或算术 |
+| `CFD-CHECK-004` | `CheckIndexOutOfBounds` | 数组索引越界 |
+| `CFD-CHECK-005` | `CheckMissingDictKey` | 字典 key 不存在 |
+| `CFD-CHECK-006` | `CheckEmptyMinMax` | `min` / `max` 对空数组调用 |
+| `CFD-CHECK-007` | `CheckInvalidRegex` | `matches` 的正则 pattern 在执行期无法编译 |
 
 ---
 

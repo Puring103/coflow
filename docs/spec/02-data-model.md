@@ -67,6 +67,7 @@ DictKey =
 - `IdValue` 只允许 `string` 和 `int`，对应 `@id` / `@ref` 的字段类型限制
 - `DictKey` 只允许 `string`、`int`、`enum`，对应 CFT 字典 key 类型限制
 - `Enum` 值必须携带 `enum_name`，因为不同枚举可以有相同 variant 名或相同底层整数值；比较、去重和字典 key 等价判断均以 `enum_name + value` 为准
+- `Float` 只允许有限 `f64` 值；`NaN`、`+/-inf` 不是合法数据值
 - `Float` 不能作为 `@id`、`@ref` 或字典 key
 
 **字典 key 重复：**
@@ -100,6 +101,8 @@ DictKey =
 加载器为存在继承关系的类型建立 `inheritance_index`。每个 `PolymorphicIndex` 覆盖一个 root type 的赋值兼容范围，用于 `@ref(root)` 和跨子类 ID 唯一性校验。
 
 如果某个类型继承树中存在 `@id` 字段，则该 `@id` 字段由声明它的祖先类型定义，并被所有子类继承。同一 `PolymorphicIndex` 范围内的 `IdValue` 必须唯一。子类不能重新声明另一个 `@id` 字段。
+
+`@ref(TypeName)` 只有在 `TypeName` 本身或其可见继承字段中存在 `@id` 时才可解析。子类私有的 `@id` 只让该子类自己的引用范围可寻址，不会让父类范围变成可寻址；因此 `@ref(Base)` 不能依赖 `Child : Base` 上才声明的 `@id`。
 
 ---
 

@@ -28,6 +28,9 @@ fn lexer_reports_invalid_int_and_float_literals() {
 
     let float_err = add_source("const N = 1.;").unwrap_err();
     assert_has_code(&float_err, CftErrorCode::InvalidFloatLiteral);
+
+    let non_finite_float_err = add_source("const N = 1e309;").unwrap_err();
+    assert_has_code(&non_finite_float_err, CftErrorCode::InvalidFloatLiteral);
 }
 
 #[test]
