@@ -60,8 +60,9 @@ impl std::error::Error for CsharpCodegenError {}
 
 /// Generates C# type definitions and a Newtonsoft.Json based folder loader.
 ///
-/// The emitted loader expects the current `coflow export json` layout: one
-/// `<TypeName>.json` file per table, each containing a JSON array.
+/// The emitted loader is a trusted artifact loader for JSON produced by
+/// `coflow export json`; it is not a validator for arbitrary JSON.
+/// It expects one `<TypeName>.json` file per table, each containing a JSON array.
 /// It targets the general-purpose `Newtonsoft.Json` package API rather than a
 /// Unity-specific serialization API.
 ///
@@ -116,6 +117,45 @@ mod tests {
         } else {
             Err(format!("expected generated output to contain `{needle}`"))
         }
+    }
+
+    fn require_not_contains(contents: &str, needle: &str) -> Result<(), String> {
+        if contents.contains(needle) {
+            Err(format!(
+                "expected generated output not to contain `{needle}`"
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn codegen_does_not_emit_struct_property_initializers() -> Result<(), String> {
+        let schema = compile_schema(
+            r#"
+            @struct
+            sealed type StatBlock {
+                speed: float = 1.0;
+                crit: int = 5;
+            }
+
+            type Item {
+                @id id: string;
+                stats: StatBlock;
+            }
+        "#,
+        )?;
+
+        let files = generate_csharp_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+            .map_err(|err| err.to_string())?;
+        let stat_block = generated_file(&files, "StatBlock.cs")?;
+        require_contains(stat_block, "public partial struct StatBlock")?;
+        require_not_contains(stat_block, "= 1.0f;")?;
+        require_not_contains(stat_block, "= 5;")?;
+        let database = generated_file(&files, "GameConfig.cs")?;
+        require_contains(database, "Speed = ReadWithDefault")?;
+        require_contains(database, "Crit = ReadWithDefault")?;
+        Ok(())
     }
 
     #[test]

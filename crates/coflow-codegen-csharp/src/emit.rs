@@ -34,7 +34,8 @@ pub fn build_csharp_enum(schema_enum: &CftSchemaEnum) -> CsharpEnum {
 
 pub fn build_csharp_type(schema_type: &CftSchemaType, view: &SchemaView) -> CsharpType {
     let mut properties = Vec::new();
-    let fields = if has_annotation(&schema_type.annotations, "struct") {
+    let is_struct = has_annotation(&schema_type.annotations, "struct");
+    let fields = if is_struct {
         view.types.get(&schema_type.name).map_or_else(
             || {
                 schema_type
@@ -61,7 +62,11 @@ pub fn build_csharp_type(schema_type: &CftSchemaType, view: &SchemaView) -> Csha
             name: pascal_case(&field.name),
             type_name: csharp_property_type(&field_ty, view),
             setter: "init".to_string(),
-            initializer: default_initializer(field, &field_ty, view),
+            initializer: if is_struct {
+                None
+            } else {
+                default_initializer(field, &field_ty, view)
+            },
             summary: display_annotation(&field.annotations),
             obsolete: has_annotation(&field.annotations, "deprecated"),
         });
@@ -75,7 +80,7 @@ pub fn build_csharp_type(schema_type: &CftSchemaType, view: &SchemaView) -> Csha
                     target
                 },
                 setter: "internal set".to_string(),
-                initializer: if field_ty.is_nullable() {
+                initializer: if is_struct || field_ty.is_nullable() {
                     None
                 } else {
                     Some("null!".to_string())
