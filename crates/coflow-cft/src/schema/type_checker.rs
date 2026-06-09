@@ -276,7 +276,15 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
 
     fn check_is(&mut self, lhs: &Ty, predicate: &TypePredicate, span: Span) {
         match predicate {
-            TypePredicate::Null(_) => {}
+            TypePredicate::Null(_) => {
+                if !matches!(lhs, Ty::Nullable(_) | Ty::Unknown) {
+                    self.diag(
+                        CftErrorCode::OperatorTypeMismatch,
+                        span,
+                        "`is null` requires a nullable operand",
+                    );
+                }
+            }
             TypePredicate::Type(name) => {
                 match self.compiler.symbols.get(&name.name) {
                     Some(symbol) if symbol.kind == SymbolKind::Type => {}

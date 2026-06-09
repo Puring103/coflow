@@ -88,6 +88,38 @@ fn type_checker_accepts_nullable_guarded_access_and_ref_object_view() {
 }
 
 #[test]
+fn type_checker_allows_is_null_for_nullable_operands() {
+    compile_one(
+        r#"
+            type Child { id: string; }
+            type Holder {
+                maybe_int: int? = null;
+                maybe_child: Child? = null;
+                check {
+                    maybe_int is null;
+                    maybe_child is null;
+                }
+            }
+        "#,
+    )
+    .expect("nullable operands may use is null");
+}
+
+#[test]
+fn type_checker_rejects_is_null_for_non_nullable_operands() {
+    let err = compile_one(
+        r#"
+            type Holder {
+                value: int;
+                check { value is null; }
+            }
+        "#,
+    )
+    .expect_err("non-nullable operand should fail");
+    assert_has_code(&err, CftErrorCode::OperatorTypeMismatch);
+}
+
+#[test]
 fn type_checker_reports_is_predicate_and_condition_edges() {
     let source = r#"
         enum E { A, }
