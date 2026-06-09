@@ -805,6 +805,31 @@ fn float_field_rejects_int_value() {
 }
 
 #[test]
+fn float_field_rejects_non_finite_values() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                @id id: string;
+                speed: float;
+            }
+        "#,
+    );
+
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record(
+            "Item",
+            [
+                ("id", CfdInputValue::from("i1")),
+                ("speed", CfdInputValue::from(value)),
+            ],
+        );
+        let err = builder.build().expect_err("non-finite float");
+        assert_has_code(&err, CfdErrorCode::TypeMismatch);
+    }
+}
+
+#[test]
 fn int_id_field_works_for_indexing_and_refs() {
     let schema = compile_schema(
         r#"

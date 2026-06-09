@@ -28,8 +28,8 @@ impl ModelCompiler {
     pub(crate) fn build(mut self) -> Result<CfdDataModel, CfdDiagnostics> {
         let mut drafts = Vec::new();
         let input = std::mem::take(&mut self.input);
-        for record in input {
-            let id = CfdRecordId::new(drafts.len());
+        for (input_index, record) in input.into_iter().enumerate() {
+            let id = CfdRecordId::new(input_index);
             if let Some(draft) = self.validate_record(
                 None,
                 &record.actual_type,
@@ -251,6 +251,16 @@ impl ModelCompiler {
                 Some(CfdValueDraft::Value(CfdValue::Int(*value)))
             }
             (CfdType::Float, CfdInputValue::Float(value)) => {
+                if !value.is_finite() {
+                    self.push(
+                        CfdDiagnostic::error(
+                            CfdErrorCode::TypeMismatch,
+                            "float value must be finite",
+                        )
+                        .with_primary(record, path),
+                    );
+                    return None;
+                }
                 Some(CfdValueDraft::Value(CfdValue::Float(*value)))
             }
             (CfdType::Bool, CfdInputValue::Bool(value)) => {
@@ -576,6 +586,9 @@ impl ModelCompiler {
     ) {
         for target_type in self.schema.assignable_target_names(actual_type) {
             if !self.schema.range_is_polymorphic(&target_type) {
+                continue;
+            }
+            if !self.schema.range_has_id(&target_type) {
                 continue;
             }
             let index = inheritance_index

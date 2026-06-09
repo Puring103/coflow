@@ -108,28 +108,7 @@ impl SchemaView {
     }
 
     pub(crate) fn range_has_id(&self, target_type: &str) -> bool {
-        if self.id_field_for_actual(target_type).is_some() {
-            return true;
-        }
-        self.descendants(target_type)
-            .iter()
-            .any(|descendant| self.id_field_for_actual(descendant).is_some())
-    }
-
-    fn descendants(&self, type_name: &str) -> Vec<String> {
-        let mut out = Vec::new();
-        self.fill_descendants(type_name, &mut out);
-        out
-    }
-
-    fn fill_descendants(&self, type_name: &str, out: &mut Vec<String>) {
-        let Some(children) = self.children.get(type_name) else {
-            return;
-        };
-        for child in children {
-            out.push(child.clone());
-            self.fill_descendants(child, out);
-        }
+        self.id_field_for_actual(target_type).is_some()
     }
 
     pub(crate) fn enum_variant_value(&self, enum_name: &str, variant: &str) -> Option<i64> {

@@ -24,6 +24,12 @@ pub(super) struct CheckEvaluator<'a> {
     pub(super) diagnostics: Vec<CfdDiagnostic>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EvalFlow {
+    Continue,
+    HardStop,
+}
+
 impl<'a> CheckEvaluator<'a> {
     pub(super) fn new(
         schema: &'a SchemaView,
@@ -43,43 +49,55 @@ impl<'a> CheckEvaluator<'a> {
         }
     }
 
-    pub(super) fn eval_check_block(&mut self, check: &CftSchemaCheckBlock) {
-        self.eval_stmts(&check.stmts);
+    pub(super) fn eval_check_block(&mut self, check: &CftSchemaCheckBlock) -> EvalFlow {
+        self.eval_stmts(&check.stmts)
     }
 
-    fn eval_stmts(&mut self, stmts: &[CftSchemaCheckStmt]) {
+    fn eval_stmts(&mut self, stmts: &[CftSchemaCheckStmt]) -> EvalFlow {
         for stmt in stmts {
-            self.eval_stmt(stmt);
+            if self.eval_stmt(stmt) == EvalFlow::HardStop {
+                return EvalFlow::HardStop;
+            }
         }
+        EvalFlow::Continue
     }
 
-    fn eval_stmt(&mut self, stmt: &CftSchemaCheckStmt) {
+    fn eval_stmt(&mut self, stmt: &CftSchemaCheckStmt) -> EvalFlow {
         match stmt {
             CftSchemaCheckStmt::Expr(expr) => match self.eval_expr(expr) {
-                Ok(value) if matches!(value.value, CheckValue::Bool(true)) => {}
-                Ok(value) if matches!(value.value, CheckValue::Bool(false)) => self.diag_at(
-                    CfdErrorCode::CheckFailed,
-                    value.path,
-                    "check condition evaluated to false",
-                ),
-                Ok(value) => self.diag_at(
-                    CfdErrorCode::CheckEvalTypeError,
-                    value.path,
-                    "check expression did not evaluate to bool",
-                ),
-                Err(()) => {}
+                Ok(value) if matches!(value.value, CheckValue::Bool(true)) => EvalFlow::Continue,
+                Ok(value) if matches!(value.value, CheckValue::Bool(false)) => {
+                    self.diag_at(
+                        CfdErrorCode::CheckFailed,
+                        value.path,
+                        "check condition evaluated to false",
+                    );
+                    EvalFlow::Continue
+                }
+                Ok(value) => {
+                    self.diag_at(
+                        CfdErrorCode::CheckEvalTypeError,
+                        value.path,
+                        "check expression did not evaluate to bool",
+                    );
+                    EvalFlow::HardStop
+                }
+                Err(()) => EvalFlow::HardStop,
             },
             CftSchemaCheckStmt::When {
                 condition, body, ..
             } => match self.eval_expr(condition) {
                 Ok(value) if matches!(value.value, CheckValue::Bool(true)) => self.eval_stmts(body),
-                Ok(value) if matches!(value.value, CheckValue::Bool(false)) => {}
-                Ok(value) => self.diag_at(
-                    CfdErrorCode::CheckEvalTypeError,
-                    value.path,
-                    "when condition did not evaluate to bool",
-                ),
-                Err(()) => {}
+                Ok(value) if matches!(value.value, CheckValue::Bool(false)) => EvalFlow::Continue,
+                Ok(value) => {
+                    self.diag_at(
+                        CfdErrorCode::CheckEvalTypeError,
+                        value.path,
+                        "when condition did not evaluate to bool",
+                    );
+                    EvalFlow::HardStop
+                }
+                Err(()) => EvalFlow::HardStop,
             },
             CftSchemaCheckStmt::Quantifier {
                 kind,
@@ -89,12 +107,12 @@ impl<'a> CheckEvaluator<'a> {
                 ..
             } => {
                 let Ok(collection) = self.eval_expr(collection) else {
-                    return;
+                    return EvalFlow::HardStop;
                 };
                 let Some(items) = self.quantifier_items(collection) else {
-                    return;
+                    return EvalFlow::HardStop;
                 };
-                self.eval_quantifier(*kind, binding, &items, body);
+                self.eval_quantifier(*kind, binding, &items, body)
             }
         }
     }
@@ -105,16 +123,20 @@ impl<'a> CheckEvaluator<'a> {
         binding: &str,
         items: &[LocatedCheckValue],
         body: &[CftSchemaCheckStmt],
-    ) {
+    ) -> EvalFlow {
         let mut matched = 0_usize;
         for item in items {
             let diagnostic_start = self.diagnostics.len();
             let mut scope = BTreeMap::new();
             scope.insert(binding.to_string(), item.clone());
             self.scopes.push(scope);
-            self.eval_stmts(body);
-            let passed = self.diagnostics.len() == diagnostic_start;
+            let flow = self.eval_stmts(body);
+            let passed = flow == EvalFlow::Continue && self.diagnostics.len() == diagnostic_start;
             let _ = self.scopes.pop();
+
+            if flow == EvalFlow::HardStop {
+                return EvalFlow::HardStop;
+            }
 
             match kind {
                 CftSchemaQuantifierKind::All => {}
@@ -130,17 +152,22 @@ impl<'a> CheckEvaluator<'a> {
 
         match kind {
             CftSchemaQuantifierKind::All => {}
-            CftSchemaQuantifierKind::Any if matched == 0 => self.diag(
-                CfdErrorCode::CheckFailed,
-                "any quantifier did not match any element",
-            ),
+            CftSchemaQuantifierKind::Any if matched == 0 => {
+                self.diag(
+                    CfdErrorCode::CheckFailed,
+                    "any quantifier did not match any element",
+                );
+            }
             CftSchemaQuantifierKind::Any => {}
-            CftSchemaQuantifierKind::None if matched > 0 => self.diag(
-                CfdErrorCode::CheckFailed,
-                "none quantifier matched at least one element",
-            ),
+            CftSchemaQuantifierKind::None if matched > 0 => {
+                self.diag(
+                    CfdErrorCode::CheckFailed,
+                    "none quantifier matched at least one element",
+                );
+            }
             CftSchemaQuantifierKind::None => {}
         }
+        EvalFlow::Continue
     }
 
     fn quantifier_items(

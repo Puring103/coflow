@@ -187,7 +187,88 @@ fn check_runner_reports_index_and_empty_minmax_eval_errors() {
     let model = builder.build().expect("data model should build");
     let err = model.run_checks(&schema).expect_err("eval errors");
     assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
+    assert!(
+        !err.diagnostics
+            .iter()
+            .any(|diag| diag.code == CfdErrorCode::CheckEmptyMinMax),
+        "hard eval errors should stop later statements on the same object"
+    );
+}
+
+#[test]
+fn check_runner_reports_empty_minmax_eval_errors() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                xs: [int];
+                check { min(xs) > 0; }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("Item", [("xs", CfdInputValue::Array(Vec::new()))]);
+    let model = builder.build().expect("data model should build");
+    let err = model.run_checks(&schema).expect_err("eval errors");
     assert_has_code(&err, CfdErrorCode::CheckEmptyMinMax);
+}
+
+#[test]
+fn any_quantifier_preserves_hard_eval_errors() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                rows: [[int]];
+                check { any row in rows { row[0] > 0; } }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Item",
+        [(
+            "rows",
+            CfdInputValue::Array(vec![
+                CfdInputValue::Array(Vec::new()),
+                CfdInputValue::Array(vec![CfdInputValue::from(1_i64)]),
+            ]),
+        )],
+    );
+    let model = builder.build().expect("data model should build");
+    let err = model
+        .run_checks(&schema)
+        .expect_err("hard eval error should not be swallowed");
+    assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
+}
+
+#[test]
+fn none_quantifier_preserves_hard_eval_errors() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                rows: [[int]];
+                check { none row in rows { row[0] > 0; } }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Item",
+        [(
+            "rows",
+            CfdInputValue::Array(vec![
+                CfdInputValue::Array(Vec::new()),
+                CfdInputValue::Array(vec![CfdInputValue::from(-1_i64)]),
+            ]),
+        )],
+    );
+    let model = builder.build().expect("data model should build");
+    let err = model
+        .run_checks(&schema)
+        .expect_err("hard eval error should not be swallowed");
+    assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
 }
 
 #[test]

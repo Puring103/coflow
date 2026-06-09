@@ -54,7 +54,9 @@ impl<'a> CheckRunner<'a> {
         let mut evaluator =
             CheckEvaluator::new(&self.schema, self.model, root_record, root_path, root);
         for check in checks {
-            evaluator.eval_check_block(&check);
+            if evaluator.eval_check_block(&check) == super::evaluator::EvalFlow::HardStop {
+                break;
+            }
         }
         self.diagnostics.extend(evaluator.diagnostics);
     }

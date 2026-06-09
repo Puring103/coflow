@@ -315,3 +315,84 @@ fn ref_resolution_reports_missing_targets_and_targets_without_id() {
     let no_id = no_id_builder.build().expect_err("ref target without id");
     assert_has_code(&no_id, CfdErrorCode::RefTargetHasNoId);
 }
+
+#[test]
+fn child_only_id_does_not_make_parent_ref_range_addressable() {
+    let schema = compile_schema(
+        r#"
+            type Base { name: string; }
+            type Child : Base { @id id: string; }
+            type Holder {
+                @ref(Base)
+                base_id: string;
+            }
+            type ChildHolder {
+                @ref(Child)
+                child_id: string;
+            }
+        "#,
+    );
+
+    let mut parent_ref_builder = CfdDataModel::builder(&schema);
+    parent_ref_builder.add_record(
+        "Child",
+        [
+            ("name", CfdInputValue::from("child")),
+            ("id", CfdInputValue::from("child_1")),
+        ],
+    );
+    parent_ref_builder.add_record("Holder", [("base_id", CfdInputValue::from("child_1"))]);
+    let parent_err = parent_ref_builder
+        .build()
+        .expect_err("parent ref range should not be addressable");
+    assert_has_code(&parent_err, CfdErrorCode::RefTargetHasNoId);
+
+    let mut child_ref_builder = CfdDataModel::builder(&schema);
+    child_ref_builder.add_record(
+        "Child",
+        [
+            ("name", CfdInputValue::from("child")),
+            ("id", CfdInputValue::from("child_1")),
+        ],
+    );
+    child_ref_builder.add_record("ChildHolder", [("child_id", CfdInputValue::from("child_1"))]);
+    let child_model = child_ref_builder
+        .build()
+        .expect("child ref range should remain addressable");
+    assert!(child_model.polymorphic_index("Base").is_none());
+}
+
+#[test]
+fn failed_input_diagnostics_keep_original_record_ordinals() {
+    let schema = compile_schema(
+        r#"
+            type Item { id: string; value: int; }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Item",
+        [
+            ("id", CfdInputValue::from("a")),
+            ("value", CfdInputValue::from("not_int")),
+        ],
+    );
+    builder.add_record("MissingType", [("id", CfdInputValue::from("b"))]);
+
+    let err = builder.build().expect_err("data errors");
+    let records = err
+        .diagnostics
+        .iter()
+        .filter_map(|diag| diag.primary.as_ref().and_then(|label| label.record))
+        .map(CfdRecordId::index)
+        .collect::<Vec<_>>();
+    assert!(
+        records.contains(&0),
+        "first invalid input record should be labelled as record 0: {records:?}"
+    );
+    assert!(
+        records.contains(&1),
+        "second invalid input record should be labelled as record 1: {records:?}"
+    );
+}
