@@ -237,7 +237,7 @@ fn check_runner_reports_min_max_when_nullable_array_has_no_values() {
     let err = model
         .run_checks(&min_schema)
         .expect_err("min over all-null values should fail");
-    assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
+    assert_has_code(&err, CfdErrorCode::CheckEmptyMinMax);
 
     let max_schema = compile_schema(
         r#"
@@ -257,7 +257,7 @@ fn check_runner_reports_min_max_when_nullable_array_has_no_values() {
     let err = model
         .run_checks(&max_schema)
         .expect_err("max over all-null values should fail");
-    assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
+    assert_has_code(&err, CfdErrorCode::CheckEmptyMinMax);
 }
 
 #[test]

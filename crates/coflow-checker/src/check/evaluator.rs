@@ -713,7 +713,7 @@ impl<'a> CheckEvaluator<'a> {
             .filter(|item| !matches!(item, CheckValue::Null));
         let Some(mut out) = non_null_items.next().cloned() else {
             self.diag_at(
-                CfdErrorCode::CheckEvalTypeError,
+                CfdErrorCode::CheckEmptyMinMax,
                 arg_value.path,
                 "min/max called with no non-null values",
             );
