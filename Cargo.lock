@@ -311,6 +311,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "coflow-exporter-core"
+version = "0.1.0"
+dependencies = [
+ "coflow-cft",
+ "coflow-data-model",
+]
+
+[[package]]
 name = "coflow-exporter-json"
 version = "0.1.0"
 dependencies = [

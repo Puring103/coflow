@@ -17,6 +17,7 @@ members = [
     "crates/coflow-cell-value",
     "crates/coflow-checker",
     "crates/coflow-loader-excel",
+    "crates/coflow-exporter-core",
     "crates/coflow-exporter-json",
     "crates/coflow-codegen-csharp",
     "crates/coflow-project",
