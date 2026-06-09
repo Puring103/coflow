@@ -22,8 +22,8 @@ enum TestValue {
     Int(i64),
     Float(f64),
     String(String),
-    Array(Vec<TestValue>),
-    Map(Vec<(String, TestValue)>),
+    Array(Vec<Self>),
+    Map(Vec<(String, Self)>),
 }
 
 #[derive(Debug, Clone, Copy)]

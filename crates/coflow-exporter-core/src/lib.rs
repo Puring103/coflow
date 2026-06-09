@@ -32,12 +32,53 @@ pub trait ExportEncoder {
     type Error: fmt::Display;
     type Value;
 
+    /// Encodes a null value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the target format cannot encode null.
     fn null(&mut self) -> Result<Self::Value, Self::Error>;
+
+    /// Encodes a boolean value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the target format cannot encode the value.
     fn bool(&mut self, value: bool) -> Result<Self::Value, Self::Error>;
+
+    /// Encodes an integer value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the target format cannot encode the value.
     fn int(&mut self, value: i64) -> Result<Self::Value, Self::Error>;
+
+    /// Encodes a floating-point value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the target format cannot encode the value.
     fn float(&mut self, value: f64) -> Result<Self::Value, Self::Error>;
+
+    /// Encodes a string value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the target format cannot encode the value.
     fn string(&mut self, value: &str) -> Result<Self::Value, Self::Error>;
+
+    /// Encodes an array from already-encoded items.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the target format cannot encode the array.
     fn array(&mut self, values: Vec<Self::Value>) -> Result<Self::Value, Self::Error>;
+
+    /// Encodes a map from already-encoded entries.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the target format cannot encode the map.
     fn map(&mut self, entries: Vec<(String, Self::Value)>) -> Result<Self::Value, Self::Error>;
 }
 
