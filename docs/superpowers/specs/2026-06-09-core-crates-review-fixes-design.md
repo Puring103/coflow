@@ -89,7 +89,7 @@ The existing specs should be split by responsibility:
 
 - CFT language spec: syntax, type rules, evaluation semantics, annotations, diagnostics.
 - Schema API spec: public Rust schema reflection model, including modules, spans, declared fields, inherited fields, checks, defaults, and enum variant annotations.
-- Excel loader spec: low-level `coflow-excel-loader` crate behavior, taking an already compiled schema and already parsed Excel source definitions.
+- Excel loader spec: low-level `coflow-loader-excel` crate behavior, taking an already compiled schema and already parsed Excel source definitions.
 - Project pipeline spec: project YAML, schema discovery, source discovery, CLI orchestration, export, and codegen flow.
 
 This split keeps crate-level APIs from being described as project-level orchestration and gives codegen consumers a stable schema API reference.

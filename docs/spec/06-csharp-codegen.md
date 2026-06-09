@@ -1,6 +1,6 @@
 # C# 代码生成规格
 
-**依赖文档**：[01-cft.md](01-cft.md)、[02-data-model.md](02-data-model.md)、[05-json-export.md](05-json-export.md)
+**依赖文档**：[01-cft.md](01-cft.md)、[02-data-model.md](02-data-model.md)、[05-json-export.md](05-json-export.md)、[08-messagepack-export.md](08-messagepack-export.md)
 
 代码生成以 `CftContainer`（全局类型表）为输入，产出两类文件：
 
@@ -30,13 +30,25 @@ C# codegen crate 接收已经编译完成的 `CftContainer` 和 C# codegen optio
 
 ```yaml
 outputs:
+  data:
+    type: json
+    dir: generated/data
   code:
     type: csharp
     dir: generated/csharp
     namespace: Example.Rpg.Config
 ```
 
-上面的 YAML 是 CLI 项目配置示例：`coflow codegen csharp` 由 project pipeline 读取 `coflow.yaml`、发现并编译 schema、合并命令行选项，然后以 `CftContainer` 和 codegen options 调用 codegen crate，并把生成文件写入项目配置指定的输出目录。
+上面的 YAML 是 CLI 项目配置示例：`coflow codegen csharp` 由 project pipeline 读取 `coflow.yaml`、发现并编译 schema、合并命令行选项，然后以 `CftContainer`、`outputs.data.type` 和 codegen options 调用 codegen crate，并把生成文件写入项目配置指定的输出目录。
+
+`outputs.code` 只描述代码生成目标（语言、目录、命名空间等），不提供独立的 data format override。C# codegen 的运行时加载器类型由 `outputs.data.type` 唯一决定：
+
+| `outputs.data.type` | 生成的运行时加载器 |
+|---------------------|--------------------|
+| `json` | 读取 `<TypeName>.json`，使用 `Newtonsoft.Json` |
+| `messagepack` | 读取 `<TypeName>.msgpack`，使用 MessagePack-CSharp 和显式 `MessagePackReader` |
+
+MessagePack loader 不使用 typeless、反射式或动态 resolver 反序列化；生成代码直接调用低层 `MessagePackReader`，以兼容普通 .NET 和 Unity/IL2CPP/AOT。
 
 实现使用 Tera 渲染模板文件，但模板只负责文本展开，不承载 CFT 语义判断。codegen crate 内部流程为：
 
@@ -80,9 +92,9 @@ struct CsharpField {
 
 Tera 模板只允许做简单的字段遍历、条件输出和命名空间包裹；类型映射、默认值、继承展开、`@ref`、`@id`、`@index`、`@display`、`@deprecated` 等规则必须在 Rust model 构建阶段完成。实现应补充 golden tests 固定复杂 schema 的输出形状。
 
-当前实现位于 `crates/coflow-codegen-csharp`，使用 `Newtonsoft.Json` 生成通用 .NET 加载器。生成出的 C# 运行时代码只依赖 JSON 文件和 `Newtonsoft.Json`，不依赖 CFT parser/compiler。
+当前实现位于 `crates/coflow-codegen-csharp`。codegen 根据项目 data format 生成 JSON 或 MessagePack loader；生成出的 C# 运行时代码只依赖对应的数据文件和运行时包，不依赖 CFT parser/compiler。
 
-Generated C# is a trusted artifact loader. It supports JSON produced by the official Coflow exporter from data already accepted by the Rust pipeline. It deserializes, builds runtime lookups, and resolves generated object references. It does not promise stable diagnostics for arbitrary hand-written or corrupted JSON and does not run CFT checks.
+生成的 C# 是 trusted artifact loader。它只承诺加载官方 Coflow exporter 从已经通过 Rust pipeline 的数据生成的 JSON 或 MessagePack 产物，负责反序列化、构建运行时查找表并解析生成对象的引用。它不承诺为任意手写或损坏的数据文件提供稳定诊断，也不执行 CFT check。
 
 建议文件布局：
 
@@ -114,7 +126,7 @@ generated/csharp/
   CftLoadException.cs
 ```
 
-第一版必须生成类型定义、枚举、继承、默认值、`@ref` 双属性、`@id` 主键查询和 `@index` 查询 API。JSON 加载器可以分阶段实现，但生成结构必须预留两遍加载：先构造对象和主键索引，再解析 `@ref`。
+第一版必须生成类型定义、枚举、继承、默认值、`@ref` 双属性、`@id` 主键查询和 `@index` 查询 API。加载器根据 `outputs.data.type` 生成 JSON 或 MessagePack 版本，但生成结构必须保持两遍加载：先构造对象和主键索引，再解析 `@ref`。
 
 ---
 
@@ -352,7 +364,7 @@ public partial class Monster
 
 ### `@ref` 字段
 
-当前 CFT 语义中，`@ref` 字段本身存储目标记录的 `@id` 值，字段类型必须是 `string` 或 `int`，也可以是对应 nullable 形式。JSON 导出仍然输出原始 ID 值，运行时加载器负责解析引用。
+当前 CFT 语义中，`@ref` 字段本身存储目标记录的 `@id` 值，字段类型必须是 `string` 或 `int`，也可以是对应 nullable 形式。JSON 和 MessagePack 导出仍然输出原始 ID 值，运行时加载器负责解析引用。
 
 `@ref` 字段生成两个属性：原始 ID 和解析后的引用：
 
@@ -377,7 +389,7 @@ public partial class ItemReward : Reward
 
 其中：
 
-- `ItemId` 保留原始配置值，用于错误定位、调试、重新导出和与 JSON 文件对应
+- `ItemId` 保留原始配置值，用于错误定位、调试、重新导出和与数据文件对应
 - `Item` 是解析后的强类型引用，由 `GameConfig.Load` 在第二遍加载时填充
 
 `@ref` 目标是 `abstract type` 或有子类的普通 `type` 时，引用属性类型为声明的目标父类：
@@ -411,7 +423,7 @@ type Monster {
 }
 ```
 
-这是一种预留语法，不是当前 CFT 必备能力。它的语义仍然是“Excel/JSON 中存目标 ID，运行时解析为对象引用”。普通字段：
+这是一种预留语法，不是当前 CFT 必备能力。它的语义仍然是“Excel/导出数据中存目标 ID，运行时解析为对象引用”。普通字段：
 
 ```cft
 type Monster {
@@ -477,9 +489,13 @@ public partial class GameConfig
 
 ## 6. 加载器生成
 
-加载器从 `coflow export json` 产出的 JSON 目录读取数据：每个 table 一个 `<TypeName>.json` 文件，文件内容是 JSON array。加载过程构造强类型对象，解析 `@ref` 引用。生成的 C# 加载器是 trusted artifact loader，只支持官方 Coflow exporter 从已经通过 Rust pipeline 的数据生成的 JSON；它不承诺对任意手写或损坏 JSON 提供稳定诊断，也不运行 CFT check。失败时抛出 `CftLoadException`。
+`coflow codegen csharp` 从项目配置的 `outputs.data.type` 选择运行时加载器。`outputs.data.type: json` 生成 JSON loader；`outputs.data.type: messagepack` 生成 MessagePack loader。`outputs.code` 不提供独立 data format override。
 
-运行时 JSON 库固定为通用 .NET 包 `Newtonsoft.Json`：
+加载过程构造强类型对象，建立 `@id` 和 `@index` 查找表，并在第二遍解析 `@ref` 引用。生成的 C# 加载器是 trusted artifact loader，只支持官方 Coflow exporter 从已经通过 Rust pipeline 的数据生成的 JSON 或 MessagePack；它不承诺对任意手写或损坏数据提供稳定诊断，也不运行 CFT check。失败时抛出 `CftLoadException`。
+
+### JSON loader
+
+JSON loader 从 `coflow export json` 产出的 JSON 目录读取数据：每个 table 一个 `<TypeName>.json` 文件，文件内容是 JSON array。运行时 JSON 库固定为通用 .NET 包 `Newtonsoft.Json`：
 
 ```csharp
 using Newtonsoft.Json;
@@ -537,7 +553,7 @@ public partial class GameConfig
 }
 ```
 
-**多态对象的 `$type` 分发**：每个多态字段生成对应的分发方法：
+JSON 多态对象的 `$type` 分发：每个多态字段生成对应的分发方法：
 
 ```csharp
 static Reward LoadRewardPolymorphic(JToken token, string path)
@@ -555,6 +571,63 @@ static Reward LoadRewardPolymorphic(JToken token, string path)
 }
 ```
 
+### MessagePack loader
+
+MessagePack loader 从 `coflow export messagepack` 产出的 MessagePack 目录读取数据：每个 table 一个 `<TypeName>.msgpack` 文件，文件内容是裸 MessagePack array，array 中每个元素是 record map。record map 的 key 是 CFT 源字段名；多态对象要求 `$type` 是 map 第一项。
+
+生成代码依赖 MessagePack-CSharp，并使用低层 `MessagePackReader` 显式读取，不使用 typeless API、反射式 resolver 或运行时代码生成 resolver，因此兼容普通 .NET 和 Unity/IL2CPP/AOT。
+
+```csharp
+using System.Buffers;
+using MessagePack;
+
+public partial class GameConfig
+{
+    private delegate T MessagePackRowLoader<T>(ref MessagePackReader reader, string path);
+
+    public static GameConfig Load(string dataDir)
+    {
+        var items = LoadTable(Path.Combine(dataDir, "Item.msgpack"), "Item", LoadItem);
+        var monsters = LoadTable(Path.Combine(dataDir, "Monster.msgpack"), "Monster", LoadMonster);
+
+        var itemIndex = BuildUniqueIndex(items, x => x.Id, "Item", "id");
+
+        // 第二遍：解析 @ref 引用；缺失目标会抛 CftLoadException。
+        foreach (var reward in monsters
+            .SelectMany(m => m.Drops.Rewards)
+            .OfType<ItemReward>())
+        {
+            reward.Item = ResolveRef(itemIndex, reward.ItemId, "ItemReward.item_id", "Item");
+        }
+
+        return new GameConfig(items, monsters, itemIndex);
+    }
+
+    private static List<T> LoadTable<T>(
+        string file,
+        string tableName,
+        MessagePackRowLoader<T> loadRow)
+    {
+        var bytes = File.ReadAllBytes(file);
+        var reader = new MessagePackReader(new ReadOnlySequence<byte>(bytes));
+        var count = ReadArrayHeader(ref reader, tableName);
+
+        var result = new List<T>(count);
+        for (var i = 0; i < count; i++)
+            result.Add(loadRow(ref reader, $"{tableName}[{i}]"));
+
+        if (!reader.End)
+            throw new CftLoadException($"table `{tableName}` MessagePack contains trailing data", tableName);
+
+        return result;
+    }
+}
+```
+
+MessagePack object loader 读取 map header 后逐项读取 string 字段 key，并用 `switch` 分发到生成的字段 reader。未知字段通过 path-aware helper（例如 `SkipValue(ref reader, fieldPath)`）跳过；helper 内部包装底层 skip 调用的异常并转换成带字段路径的 `CftLoadException`。已知字段重复、必填字段缺失、ID 重复、字典 key 重复、`@ref` 目标缺失、`$type` 缺失或未知、MessagePack 类型不匹配，均抛出 `CftLoadException`。
+
+MessagePack 多态对象的 `$type` 分发：loader 先读取 record map 的第一项，要求 key 为 `$type`，再读取实际类型名并分发到对应的 `Load<Type>Body`。这依赖 MessagePack exporter 按规格把 `$type` 写为多态 map 第一项。
+
 ---
 
 ## 7. 错误处理
@@ -570,7 +643,7 @@ public sealed class CftLoadException : Exception
     /// <summary>期望的类型或值描述</summary>
     public string? Expected { get; }
 
-    /// <summary>实际遇到的 JSON 内容</summary>
+    /// <summary>实际遇到的数据内容或格式描述</summary>
     public string? Actual { get; }
 
     public CftLoadException(string message, string fieldPath,
@@ -584,19 +657,19 @@ public sealed class CftLoadException : Exception
 }
 ```
 
-`CftLoadException` 用于定位受信导出产物加载过程中仍可能出现的问题，例如文件缺失、版本不匹配或引用解析失败。它不是 arbitrary JSON validator 的稳定错误契约。
+`CftLoadException` 用于定位受信导出产物加载过程中仍可能出现的问题，例如文件缺失、版本不匹配、格式损坏或引用解析失败。它不是任意手写 JSON 或 MessagePack 数据的稳定 validator 契约。
 
 触发 `CftLoadException` 的情况：
 
 | 情况 | 说明 |
 |------|------|
-| JSON 字段缺失且无默认值 | 必填字段在 JSON 中不存在 |
-| JSON 字段值类型不匹配 | 期望 number 但得到 string 等 |
+| 字段缺失且无默认值 | 必填字段在 JSON object 或 MessagePack map 中不存在 |
+| 字段值类型不匹配 | 期望 number/integer/string 等但得到其他类型 |
 | `$type` 字段缺失 | 多态字段缺少类型标记 |
 | `$type` 值不是合法子类 | 类型名不在继承树中 |
 | `@ref` 目标 ID 不存在 | 外键指向不存在的记录 |
 | 主键重复 | 同一类型或同一继承树索引中存在重复 ID |
-| JSON object key 重复 | 字典或对象字段出现重复 key |
+| object/map key 重复 | 字典或对象字段出现重复 key |
 
 ---
 
@@ -715,6 +788,6 @@ public partial class GameConfig
     private readonly Dictionary<Rarity, List<Item>> _itemsByRarity;
     private readonly Dictionary<Rarity, List<Monster>> _monstersByRarity;
 
-    public static GameConfig Load(string jsonPath) { ... }
+    public static GameConfig Load(string dataDir) { ... }
 }
 ```

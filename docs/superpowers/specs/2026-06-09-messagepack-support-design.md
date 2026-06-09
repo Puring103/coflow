@@ -177,7 +177,7 @@ private static List<T> LoadTable<T>(
 private static Item LoadItem(ref MessagePackReader reader, string path)
 ```
 
-每个 object loader 读取 MessagePack map header，遍历 map entry，先读取 string 字段 key，再用 `switch` 分发已知字段到生成的字段 reader。未知字段用 `reader.Skip()` 跳过，这样在必填字段仍然存在的情况下，旧版生成代码可以容忍未来 exporter 增加的新字段。必填字段用生成的 `has<Field>` boolean 跟踪；重复的已知字段 key 抛出 `CftLoadException`。
+每个 object loader 读取 MessagePack map header，遍历 map entry，先读取 string 字段 key，再用 `switch` 分发已知字段到生成的字段 reader。未知字段用 path-aware helper（例如 `SkipValue(ref reader, fieldPath)`）跳过；helper 内部包装底层 skip 调用的异常并转换为带字段路径的 `CftLoadException`，这样在必填字段仍然存在的情况下，旧版生成代码可以容忍未来 exporter 增加的新字段。必填字段用生成的 `has<Field>` boolean 跟踪；重复的已知字段 key 抛出 `CftLoadException`。
 
 这种方式能保持 MessagePack loader 紧凑且 AOT-safe，同时不需要把数据物化成动态 dictionary，也不依赖运行时生成 resolver。
 

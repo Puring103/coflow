@@ -2,9 +2,9 @@
 
 **依赖文档**：[01-cft.md](01-cft.md)、[02-schema-api.md](02-schema-api.md)、[02-data-model.md](02-data-model.md)、[03-cell-value.md](03-cell-value.md)
 
-`coflow-excel-loader` 是低层加载 crate。它接收已经编译完成的 `CftContainer`，以及已经解析出的 `ExcelSource` 值，将 Excel 数据按 CFT schema 加载为结构化数据模型。加载过程完全 schema-guided，所有类型解析、单元格值解析和跨表引用解析均依赖 CFT 类型定义。
+`coflow-loader-excel` 是低层加载 crate。它接收已经编译完成的 `CftContainer`，以及已经解析出的 `ExcelSource` 值，将 Excel 数据按 CFT schema 加载为结构化数据模型。加载过程完全 schema-guided，所有类型解析、单元格值解析和跨表引用解析均依赖 CFT 类型定义。
 
-`coflow-excel-loader` 不发现项目文件，不解析 `coflow.yaml`，也不负责 CLI 编排。项目配置、schema 发现、Excel source 定义和导出/codegen 调用由项目加载与 CLI 层负责。
+`coflow-loader-excel` 不发现项目文件，不解析 `coflow.yaml`，也不负责 CLI 编排。项目配置、schema 发现、Excel source 定义和导出/codegen 调用由项目加载与 CLI 层负责。
 
 ---
 
@@ -25,7 +25,7 @@ Excel 加载器的输入是：
 - 已经成功 `compile` 的 `CftContainer`
 - 已经由上层项目管线解析出的 `ExcelSource` 值
 
-`ExcelSource` 描述一个或多个 Excel 文件、sheet 到 CFT type 的映射，以及可选的列名到字段名映射。路径解析、配置文件读取、文件发现和命令行选项合并不属于 `coflow-excel-loader` 的职责。
+`ExcelSource` 描述一个或多个 Excel 文件、sheet 到 CFT type 的映射，以及可选的列名到字段名映射。路径解析、配置文件读取、文件发现和命令行选项合并不属于 `coflow-loader-excel` 的职责。
 
 ---
 
