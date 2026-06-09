@@ -1,3 +1,4 @@
+use crate::ir::CsharpDataFormat;
 use crate::model::CsharpProject;
 use crate::{CsharpCodegenError, GeneratedFile};
 use std::path::PathBuf;
@@ -5,7 +6,9 @@ use tera::{Context, Tera};
 
 const ENUM_TEMPLATE: &str = include_str!("../templates/enum.cs.tera");
 const TYPE_TEMPLATE: &str = include_str!("../templates/type.cs.tera");
-const DATABASE_TEMPLATE: &str = include_str!("../templates/database.cs.tera");
+const DATABASE_JSON_TEMPLATE: &str = include_str!("../templates/database.cs.tera");
+const DATABASE_MESSAGEPACK_TEMPLATE: &str =
+    include_str!("../templates/database_messagepack.cs.tera");
 const EXCEPTION_TEMPLATE: &str = include_str!("../templates/load_exception.cs.tera");
 
 pub fn render_project(project: &CsharpProject) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
@@ -34,9 +37,13 @@ pub fn render_project(project: &CsharpProject) -> Result<Vec<GeneratedFile>, Csh
 
     let mut database_context = Context::new();
     database_context.insert("project", project);
+    let database_template = match project.data_format {
+        CsharpDataFormat::Json => "database_json.cs.tera",
+        CsharpDataFormat::MessagePack => "database_messagepack.cs.tera",
+    };
     files.push(GeneratedFile {
         relative_path: PathBuf::from(format!("{}.cs", project.database_class)),
-        contents: render(&tera, "database.cs.tera", &database_context)?,
+        contents: render(&tera, database_template, &database_context)?,
     });
 
     let mut exception_context = Context::new();
@@ -55,10 +62,19 @@ fn templates() -> Result<Tera, CsharpCodegenError> {
         .map_err(|err| CsharpCodegenError::new(format!("failed to add enum template: {err}")))?;
     tera.add_raw_template("type.cs.tera", TYPE_TEMPLATE)
         .map_err(|err| CsharpCodegenError::new(format!("failed to add type template: {err}")))?;
-    tera.add_raw_template("database.cs.tera", DATABASE_TEMPLATE)
+    tera.add_raw_template("database_json.cs.tera", DATABASE_JSON_TEMPLATE)
         .map_err(|err| {
-            CsharpCodegenError::new(format!("failed to add database template: {err}"))
+            CsharpCodegenError::new(format!("failed to add JSON database template: {err}"))
         })?;
+    tera.add_raw_template(
+        "database_messagepack.cs.tera",
+        DATABASE_MESSAGEPACK_TEMPLATE,
+    )
+    .map_err(|err| {
+        CsharpCodegenError::new(format!(
+            "failed to add MessagePack database template: {err}"
+        ))
+    })?;
     tera.add_raw_template("load_exception.cs.tera", EXCEPTION_TEMPLATE)
         .map_err(|err| {
             CsharpCodegenError::new(format!("failed to add exception template: {err}"))
