@@ -267,6 +267,28 @@ fn check_runner_unique_counts_multiple_nulls_as_duplicates() {
 }
 
 #[test]
+fn check_runner_sums_all_null_nullable_float_as_float_zero() {
+    let schema = compile_schema(
+        r#"
+            type Holder {
+                nums: [float?] = [];
+                check { sum(nums) == 0.0; }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Holder",
+        [("nums", CfdInputValue::Array(vec![CfdInputValue::Null]))],
+    );
+    let model = builder.build().expect("data model should build");
+    model
+        .run_checks(&schema)
+        .expect("all-null nullable float sum should be 0.0");
+}
+
+#[test]
 fn check_runner_executes_inherited_checks() {
     let schema = compile_schema(
         r#"

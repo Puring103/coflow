@@ -746,13 +746,14 @@ impl<'a> CheckEvaluator<'a> {
             );
             return Err(());
         };
-        let empty = items.is_empty();
         let mut int_sum = 0_i64;
         let mut float_sum = 0.0_f64;
         let mut saw_float = false;
+        let mut saw_numeric = false;
         for item in items {
             match item {
                 CheckValue::Int(value) if !saw_float => {
+                    saw_numeric = true;
                     let Some(next) = int_sum.checked_add(value) else {
                         self.diag_at(
                             CfdErrorCode::CheckEvalTypeError,
@@ -763,8 +764,12 @@ impl<'a> CheckEvaluator<'a> {
                     };
                     int_sum = next;
                 }
-                CheckValue::Int(value) => float_sum += value as f64,
+                CheckValue::Int(value) => {
+                    saw_numeric = true;
+                    float_sum += value as f64;
+                }
                 CheckValue::Float(value) => {
+                    saw_numeric = true;
                     if !saw_float {
                         saw_float = true;
                         float_sum = int_sum as f64;
@@ -782,7 +787,7 @@ impl<'a> CheckEvaluator<'a> {
                 }
             }
         }
-        if saw_float || (empty && type_ref_is_float(element_type.as_ref())) {
+        if saw_float || (!saw_numeric && type_ref_is_float(element_type.as_ref())) {
             Ok(LocatedCheckValue::new(
                 CheckValue::Float(float_sum),
                 arg_value.path,
