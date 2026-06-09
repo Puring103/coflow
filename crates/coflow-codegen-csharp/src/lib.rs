@@ -446,6 +446,7 @@ mod tests {
             r"
                 type Item {
                     @id id: string;
+                    has_id: string;
                     count: int;
                     count_value: int;
                     params: int;
@@ -466,6 +467,8 @@ mod tests {
         )
         .map_err(|err| err.to_string())?;
         let database = generated_file(&files, "GameConfig.cs")?;
+        require_contains(database, "var hasId = false;")?;
+        require_contains(database, "string hasId2 = default!;")?;
         require_contains(database, "long countValue = default!;")?;
         require_contains(database, "long countValue2 = default!;")?;
         require_contains(database, "long paramsValue = default!;")?;
@@ -479,6 +482,7 @@ mod tests {
         require_contains(database, "countValue2 = ReadInt(ref reader, fieldPath);")?;
         require_contains(database, "paramsValue = ReadInt(ref reader, fieldPath);")?;
         require_contains(database, "paramsValue2 = ReadInt(ref reader, fieldPath);")?;
+        require_contains(database, "hasId2 = ReadString(ref reader, fieldPath);")?;
         require_contains(database, "keyValue = ReadString(ref reader, fieldPath);")?;
         require_contains(database, "keyValue2 = ReadString(ref reader, fieldPath);")?;
         require_contains(database, "readerValue = ReadString(ref reader, fieldPath);")?;
@@ -491,6 +495,7 @@ mod tests {
         require_contains(database, "CountValue = countValue2,")?;
         require_contains(database, "Params = paramsValue,")?;
         require_contains(database, "ParamsValue = paramsValue2,")?;
+        require_contains(database, "HasId = hasId2,")?;
         require_contains(database, "Key = keyValue,")?;
         require_contains(database, "KeyValue = keyValue2,")?;
         require_contains(database, "Reader = readerValue,")?;
