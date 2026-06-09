@@ -219,7 +219,7 @@ fn check_runner_handles_nullable_element_builtins() {
 
 #[test]
 fn check_runner_reports_min_max_when_nullable_array_has_no_values() {
-    let schema = compile_schema(
+    let min_schema = compile_schema(
         r#"
             type Holder {
                 nums: [int?] = [];
@@ -228,15 +228,35 @@ fn check_runner_reports_min_max_when_nullable_array_has_no_values() {
         "#,
     );
 
-    let mut builder = CfdDataModel::builder(&schema);
+    let mut builder = CfdDataModel::builder(&min_schema);
     builder.add_record(
         "Holder",
         [("nums", CfdInputValue::Array(vec![CfdInputValue::Null]))],
     );
     let model = builder.build().expect("data model should build");
     let err = model
-        .run_checks(&schema)
+        .run_checks(&min_schema)
         .expect_err("min over all-null values should fail");
+    assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
+
+    let max_schema = compile_schema(
+        r#"
+            type Holder {
+                nums: [int?] = [];
+                check { max(nums) >= 0; }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&max_schema);
+    builder.add_record(
+        "Holder",
+        [("nums", CfdInputValue::Array(vec![CfdInputValue::Null]))],
+    );
+    let model = builder.build().expect("data model should build");
+    let err = model
+        .run_checks(&max_schema)
+        .expect_err("max over all-null values should fail");
     assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
 }
 
