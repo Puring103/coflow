@@ -486,7 +486,7 @@ impl ModelCompiler {
                 CfdValue::Array(Vec::new())
             }
             CftSchemaDefaultValue::EmptyObject if matches!(ty, CfdType::Dict(_, _)) => {
-                CfdValue::Dict(BTreeMap::new())
+                CfdValue::Dict(Vec::new())
             }
             _ => {
                 self.push(
@@ -706,7 +706,7 @@ impl ModelCompiler {
                 Some(CfdValue::Array(out))
             }
             CfdValueDraft::Dict(entries) => {
-                let mut out = BTreeMap::new();
+                let mut out = Vec::with_capacity(entries.len());
                 for (key, value) in entries {
                     let Some(value) = self.resolve_value(
                         value,
@@ -717,7 +717,7 @@ impl ModelCompiler {
                     ) else {
                         continue;
                     };
-                    out.insert(key.clone(), value);
+                    out.push((key.clone(), value));
                 }
                 Some(CfdValue::Dict(out))
             }

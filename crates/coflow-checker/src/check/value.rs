@@ -1,4 +1,4 @@
-use coflow_cft::CftConstValue;
+use coflow_cft::{CftConstValue, CftSchemaTypeRef};
 use coflow_data_model::{
     CfdDataModel, CfdDictKey, CfdEnumValue, CfdPath, CfdRecord, CfdRecordId, CfdValue,
 };
@@ -15,7 +15,10 @@ pub(super) enum CheckValue {
     EnumNamespace(String),
     Record(CheckRecordRef),
     Entry(Box<CheckEntry>),
-    Array(Vec<CheckValue>),
+    Array {
+        items: Vec<CheckValue>,
+        element_type: Option<CftSchemaTypeRef>,
+    },
     Dict(Vec<CheckEntry>),
 }
 
@@ -29,14 +32,11 @@ impl CheckValue {
         }
     }
 
-    pub(super) fn field(&self, model: &CfdDataModel, name: &str) -> Option<LocatedCheckValue> {
-        let Self::Record(record) = self else {
-            return None;
-        };
-        record.field(model, name)
-    }
-
-    fn from_cfd_value_with_path(value: &CfdValue, path: Option<CfdPath>) -> Self {
+    fn from_cfd_value_with_path(
+        value: &CfdValue,
+        ty: Option<&CftSchemaTypeRef>,
+        path: Option<CfdPath>,
+    ) -> Self {
         match value {
             CfdValue::Null => Self::Null,
             CfdValue::Bool(value) => Self::Bool(*value),
@@ -49,18 +49,23 @@ impl CheckValue {
                 path,
             }),
             CfdValue::Ref { target, .. } => Self::Record(CheckRecordRef::Top(*target)),
-            CfdValue::Array(items) => Self::Array(
-                items
-                    .iter()
-                    .enumerate()
-                    .map(|(index, item)| {
-                        Self::from_cfd_value_with_path(
-                            item,
-                            path.clone().map(|path| path.index(index)),
-                        )
-                    })
-                    .collect(),
-            ),
+            CfdValue::Array(items) => {
+                let element_type = array_element_type(ty).cloned();
+                Self::Array {
+                    items: items
+                        .iter()
+                        .enumerate()
+                        .map(|(index, item)| {
+                            Self::from_cfd_value_with_path(
+                                item,
+                                array_element_type(ty),
+                                path.clone().map(|path| path.index(index)),
+                            )
+                        })
+                        .collect(),
+                    element_type,
+                }
+            }
             CfdValue::Dict(entries) => Self::Dict(
                 entries
                     .iter()
@@ -68,6 +73,7 @@ impl CheckValue {
                         key: Box::new(Self::from_dict_key(key)),
                         value: Self::from_cfd_value_with_path(
                             value,
+                            dict_value_type(ty),
                             path.clone().map(|path| path.dict_key_value(key)),
                         ),
                     })
@@ -135,11 +141,16 @@ impl CheckRecordRef {
         }
     }
 
-    pub(super) fn field(&self, model: &CfdDataModel, name: &str) -> Option<LocatedCheckValue> {
+    pub(super) fn field(
+        &self,
+        model: &CfdDataModel,
+        field_type: Option<&CftSchemaTypeRef>,
+        name: &str,
+    ) -> Option<LocatedCheckValue> {
         let value = self.fields(model)?.get(name)?;
         let path = self.path().map(|path| path.field(name.to_string()));
         Some(LocatedCheckValue::new(
-            CheckValue::from_cfd_value_with_path(value, path.clone()),
+            CheckValue::from_cfd_value_with_path(value, field_type, path.clone()),
             path,
         ))
     }
@@ -149,6 +160,22 @@ impl CheckRecordRef {
             Self::Top(_) => Some(CfdPath::root()),
             Self::Inline { path, .. } => path.clone(),
         }
+    }
+}
+
+fn array_element_type(ty: Option<&CftSchemaTypeRef>) -> Option<&CftSchemaTypeRef> {
+    match ty {
+        Some(CftSchemaTypeRef::Nullable(inner)) => array_element_type(Some(inner)),
+        Some(CftSchemaTypeRef::Array(inner)) => Some(inner),
+        _ => None,
+    }
+}
+
+fn dict_value_type(ty: Option<&CftSchemaTypeRef>) -> Option<&CftSchemaTypeRef> {
+    match ty {
+        Some(CftSchemaTypeRef::Nullable(inner)) => dict_value_type(Some(inner)),
+        Some(CftSchemaTypeRef::Dict(_, value)) => Some(value),
+        _ => None,
     }
 }
 

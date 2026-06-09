@@ -13,6 +13,7 @@ public partial class {{ project.database_class }}
 {
 {% for table in project.database.tables %}    public IReadOnlyList<{{ table.name }}> {{ table.list_property }} { get; }
 {% endfor %}{% for table in project.database.tables %}    private readonly Dictionary<{{ table.id_type }}, {{ table.name }}> {{ table.index_field }};
+{% endfor %}{% for ref_index in project.database.ref_indexes %}    private readonly Dictionary<{{ ref_index.target_id_type }}, {{ ref_index.target_name }}> {{ ref_index.index_field }};
 {% endfor %}{% for index in project.database.indexes %}    private readonly Dictionary<{{ index.key_type }}, List<{{ index.table_name }}>> {{ index.storage_field }};
 {% endfor %}
     private {{ project.database_class }}(
@@ -22,6 +23,7 @@ public partial class {{ project.database_class }}
 {% for table in project.database.tables %}        {{ table.list_property }} = {{ table.list_var }};
         {{ table.index_field }} = {{ table.index_var }};
 
+{% endfor %}{% for ref_index in project.database.ref_indexes %}        {{ ref_index.index_field }} = {{ ref_index.parameter_name }};
 {% endfor %}{% for index in project.database.indexes %}        {{ index.storage_field }} = {{ index.parameter_name }};
 {% endfor %}    }
 
@@ -178,6 +180,39 @@ public partial class {{ project.database_class }}
         return result;
     }
 
+    private readonly record struct RefIndexSource<TKey, TValue>(
+        IEnumerable<TValue> Values,
+        Func<TValue, TKey> KeySelector,
+        string TableName,
+        string FieldName)
+        where TKey : notnull;
+
+    private static Dictionary<TKey, TValue> BuildRefIndex<TKey, TValue>(
+        params RefIndexSource<TKey, TValue>[] sources)
+        where TKey : notnull
+    {
+        var result = new Dictionary<TKey, TValue>();
+
+        foreach (var source in sources)
+        {
+            foreach (var value in source.Values)
+            {
+                var key = source.KeySelector(value);
+
+                if (!result.TryAdd(key, value))
+                {
+                    throw new CftLoadException(
+                        $"duplicate id `{key}` in ref range `{typeof(TValue).Name}`",
+                        $"{source.TableName}.{source.FieldName}",
+                        "unique id",
+                        key.ToString());
+                }
+            }
+        }
+
+        return result;
+    }
+
     private static T ResolveRef<TKey, T>(
         Dictionary<TKey, T> index,
         TKey id,
@@ -242,6 +277,73 @@ public partial class {{ project.database_class }}
         var token = obj.GetValue(name);
 
         if (token == null || token.Type == JTokenType.Null)
+        {
+            return default;
+        }
+
+        return reader(token, fieldPath);
+    }
+
+    private static T? ReadRequiredNullable<T>(
+        JObject obj,
+        string name,
+        string path,
+        Func<JToken, string, T> reader)
+    {
+        var fieldPath = $"{path}.{name}";
+        var token = obj.GetValue(name);
+
+        if (token == null)
+        {
+            throw new CftLoadException(
+                $"missing required field `{name}`",
+                fieldPath,
+                "present property",
+                "missing");
+        }
+
+        if (token.Type == JTokenType.Null)
+        {
+            return default;
+        }
+
+        return reader(token, fieldPath);
+    }
+
+    private static T ReadWithDefault<T>(
+        JObject obj,
+        string name,
+        string path,
+        T defaultValue,
+        Func<JToken, string, T> reader)
+    {
+        var fieldPath = $"{path}.{name}";
+        var token = obj.GetValue(name);
+
+        if (token == null)
+        {
+            return defaultValue;
+        }
+
+        return reader(token, fieldPath);
+    }
+
+    private static T? ReadNullableWithDefault<T>(
+        JObject obj,
+        string name,
+        string path,
+        T? defaultValue,
+        Func<JToken, string, T> reader)
+    {
+        var fieldPath = $"{path}.{name}";
+        var token = obj.GetValue(name);
+
+        if (token == null)
+        {
+            return defaultValue;
+        }
+
+        if (token.Type == JTokenType.Null)
         {
             return default;
         }

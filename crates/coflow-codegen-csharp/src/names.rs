@@ -227,6 +227,14 @@ pub fn index_param_name(type_name: &str) -> String {
     format!("{}Index", camel_case(type_name))
 }
 
+pub fn ref_index_param_name(type_name: &str) -> String {
+    format!("{}RefIndex", camel_case(type_name))
+}
+
+pub fn ref_index_var_name(type_name: &str) -> String {
+    format!("_{}RefIndex", camel_case(type_name))
+}
+
 pub fn multi_index_var_name(type_name: &str, field_name: &str) -> String {
     format!(
         "_{}By{}",

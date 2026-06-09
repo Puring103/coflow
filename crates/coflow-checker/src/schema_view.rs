@@ -1,4 +1,7 @@
-use coflow_cft::{CftConstValue, CftContainer, CftSchemaCheckBlock, CftSchemaEnum, CftSchemaType};
+use coflow_cft::{
+    CftConstValue, CftContainer, CftSchemaCheckBlock, CftSchemaEnum, CftSchemaType,
+    CftSchemaTypeRef,
+};
 use coflow_data_model::CfdEnumValue;
 use std::collections::BTreeMap;
 
@@ -105,6 +108,16 @@ impl SchemaView {
             .filter_map(|meta| meta.check.clone())
             .collect()
     }
+
+    pub(crate) fn field_type(
+        &self,
+        actual_type: &str,
+        field_name: &str,
+    ) -> Option<&CftSchemaTypeRef> {
+        self.types
+            .get(actual_type)
+            .and_then(|meta| meta.fields.get(field_name))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -112,6 +125,7 @@ pub(crate) struct TypeMeta {
     name: String,
     parent: Option<String>,
     check: Option<CftSchemaCheckBlock>,
+    fields: BTreeMap<String, CftSchemaTypeRef>,
 }
 
 impl TypeMeta {
@@ -120,6 +134,11 @@ impl TypeMeta {
             name: schema_type.name.clone(),
             parent: schema_type.parent.clone(),
             check: schema_type.check.clone(),
+            fields: schema_type
+                .all_fields
+                .iter()
+                .map(|field| (field.name.clone(), field.ty_ref.clone()))
+                .collect(),
         }
     }
 }

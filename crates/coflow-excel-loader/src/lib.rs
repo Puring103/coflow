@@ -266,6 +266,7 @@ fn collect_input_records(
                 file: source.file.clone(),
                 message: err.to_string(),
             })?;
+        let sheet_names = workbook.sheet_names();
 
         for sheet in &source.sheets {
             let type_name = sheet.type_name();
@@ -276,6 +277,13 @@ fn collect_input_records(
                     ),
                     type_name: type_name.to_string(),
                 })?;
+
+            if !sheet_names.iter().any(|name| name == &sheet.sheet) {
+                return Err(ExcelLoadError::MissingSheet {
+                    file: source.file.clone(),
+                    sheet: sheet.sheet.clone(),
+                });
+            }
 
             let range = workbook.worksheet_range(&sheet.sheet).map_err(|err| {
                 ExcelLoadError::ReadSheet {

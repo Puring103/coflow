@@ -6,7 +6,7 @@ use crate::schema_view::SchemaView;
 use coflow_cft::{
     CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
     CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind, CftSchemaTypePredicate,
-    CftSchemaUnaryOp,
+    CftSchemaTypeRef, CftSchemaUnaryOp,
 };
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdEnumValue, CfdErrorCode, CfdPath, CfdRecordId,
@@ -125,6 +125,8 @@ impl<'a> CheckEvaluator<'a> {
         body: &[CftSchemaCheckStmt],
     ) -> EvalFlow {
         let mut matched = 0_usize;
+        let mut any_failures = Vec::new();
+        let mut none_match_paths = Vec::new();
         for item in items {
             let diagnostic_start = self.diagnostics.len();
             let mut scope = BTreeMap::new();
@@ -140,8 +142,17 @@ impl<'a> CheckEvaluator<'a> {
 
             match kind {
                 CftSchemaQuantifierKind::All => {}
-                CftSchemaQuantifierKind::Any | CftSchemaQuantifierKind::None => {
+                CftSchemaQuantifierKind::Any => {
+                    let trial_failures = self.diagnostics.split_off(diagnostic_start);
+                    if !passed {
+                        any_failures.extend(trial_failures);
+                    }
+                }
+                CftSchemaQuantifierKind::None => {
                     self.diagnostics.truncate(diagnostic_start);
+                    if passed {
+                        none_match_paths.push(item.path.clone());
+                    }
                 }
             }
 
@@ -153,17 +164,24 @@ impl<'a> CheckEvaluator<'a> {
         match kind {
             CftSchemaQuantifierKind::All => {}
             CftSchemaQuantifierKind::Any if matched == 0 => {
-                self.diag(
-                    CfdErrorCode::CheckFailed,
-                    "any quantifier did not match any element",
-                );
+                if any_failures.is_empty() {
+                    self.diag(
+                        CfdErrorCode::CheckFailed,
+                        "any quantifier did not match any element",
+                    );
+                } else {
+                    self.diagnostics.extend(any_failures);
+                }
             }
             CftSchemaQuantifierKind::Any => {}
             CftSchemaQuantifierKind::None if matched > 0 => {
-                self.diag(
-                    CfdErrorCode::CheckFailed,
-                    "none quantifier matched at least one element",
-                );
+                for path in none_match_paths {
+                    self.diag_at(
+                        CfdErrorCode::CheckFailed,
+                        path,
+                        "none quantifier matched this element",
+                    );
+                }
             }
             CftSchemaQuantifierKind::None => {}
         }
@@ -175,7 +193,7 @@ impl<'a> CheckEvaluator<'a> {
         collection: LocatedCheckValue,
     ) -> Option<Vec<LocatedCheckValue>> {
         match collection.value {
-            CheckValue::Array(items) => Some(
+            CheckValue::Array { items, .. } => Some(
                 items
                     .into_iter()
                     .enumerate()
@@ -283,7 +301,7 @@ impl<'a> CheckEvaluator<'a> {
                 return Ok(value.clone());
             }
         }
-        if let Some(value) = self.current.field(self.model, name) {
+        if let Some(value) = self.current_field(name) {
             return Ok(value);
         }
         if let Some(value) = self.schema.consts.get(name) {
@@ -301,6 +319,24 @@ impl<'a> CheckEvaluator<'a> {
         Err(())
     }
 
+    fn current_field(&self, name: &str) -> Option<LocatedCheckValue> {
+        let CheckValue::Record(record) = &self.current else {
+            return None;
+        };
+        let field_type = self.field_type_for_record(record, name);
+        record.field(self.model, field_type, name)
+    }
+
+    fn field_type_for_record(
+        &self,
+        record: &super::value::CheckRecordRef,
+        name: &str,
+    ) -> Option<&CftSchemaTypeRef> {
+        record
+            .actual_type(self.model)
+            .and_then(|actual_type| self.schema.field_type(actual_type, name))
+    }
+
     fn eval_field(
         &mut self,
         target: LocatedCheckValue,
@@ -315,13 +351,16 @@ impl<'a> CheckEvaluator<'a> {
             return Err(());
         }
         match target.value {
-            CheckValue::Record(record) => record.field(self.model, name).ok_or_else(|| {
-                self.diag_at(
-                    CfdErrorCode::CheckEvalTypeError,
-                    target.path,
-                    format!("record has no field `{name}`"),
-                );
-            }),
+            CheckValue::Record(record) => {
+                let field_type = self.field_type_for_record(&record, name);
+                record.field(self.model, field_type, name).ok_or_else(|| {
+                    self.diag_at(
+                        CfdErrorCode::CheckEvalTypeError,
+                        target.path,
+                        format!("record has no field `{name}`"),
+                    );
+                })
+            }
             CheckValue::Entry(entry) => match name {
                 "key" => Ok(LocatedCheckValue::new(*entry.key, target.path)),
                 "value" => Ok(LocatedCheckValue::new(entry.value, target.path)),
@@ -359,7 +398,7 @@ impl<'a> CheckEvaluator<'a> {
             return Err(());
         }
         match target.value {
-            CheckValue::Array(items) => {
+            CheckValue::Array { items, .. } => {
                 let CheckValue::Int(index) = index.value else {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
@@ -471,7 +510,7 @@ impl<'a> CheckEvaluator<'a> {
                 };
                 let arg_value = self.eval_expr(arg)?;
                 match arg_value.value {
-                    CheckValue::Array(items) => Ok(LocatedCheckValue::new(
+                    CheckValue::Array { items, .. } => Ok(LocatedCheckValue::new(
                         CheckValue::Int(items.len() as i64),
                         arg_value.path,
                     )),
@@ -513,7 +552,7 @@ impl<'a> CheckEvaluator<'a> {
                     return Err(());
                 };
                 let arg_value = self.eval_expr(arg)?;
-                let CheckValue::Array(items) = arg_value.value else {
+                let CheckValue::Array { items, .. } = arg_value.value else {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         arg_value.path,
@@ -563,7 +602,10 @@ impl<'a> CheckEvaluator<'a> {
                     return Err(());
                 };
                 Ok(LocatedCheckValue::new(
-                    CheckValue::Array(entries.into_iter().map(|entry| *entry.key).collect()),
+                    CheckValue::Array {
+                        items: entries.into_iter().map(|entry| *entry.key).collect(),
+                        element_type: None,
+                    },
                     arg_value.path,
                 ))
             }
@@ -585,7 +627,10 @@ impl<'a> CheckEvaluator<'a> {
                     return Err(());
                 };
                 Ok(LocatedCheckValue::new(
-                    CheckValue::Array(entries.into_iter().map(|entry| entry.value).collect()),
+                    CheckValue::Array {
+                        items: entries.into_iter().map(|entry| entry.value).collect(),
+                        element_type: None,
+                    },
                     arg_value.path,
                 ))
             }
@@ -647,7 +692,7 @@ impl<'a> CheckEvaluator<'a> {
             return Err(());
         };
         let arg_value = self.eval_expr(arg)?;
-        let CheckValue::Array(items) = arg_value.value else {
+        let CheckValue::Array { items, .. } = arg_value.value else {
             self.diag_at(
                 CfdErrorCode::CheckEvalTypeError,
                 arg_value.path,
@@ -678,7 +723,11 @@ impl<'a> CheckEvaluator<'a> {
             return Err(());
         };
         let arg_value = self.eval_expr(arg)?;
-        let CheckValue::Array(items) = arg_value.value else {
+        let CheckValue::Array {
+            items,
+            element_type,
+        } = arg_value.value
+        else {
             self.diag_at(
                 CfdErrorCode::CheckEvalTypeError,
                 arg_value.path,
@@ -686,6 +735,7 @@ impl<'a> CheckEvaluator<'a> {
             );
             return Err(());
         };
+        let empty = items.is_empty();
         let mut int_sum = 0_i64;
         let mut float_sum = 0.0_f64;
         let mut saw_float = false;
@@ -720,7 +770,7 @@ impl<'a> CheckEvaluator<'a> {
                 }
             }
         }
-        if saw_float {
+        if saw_float || (empty && type_ref_is_float(element_type.as_ref())) {
             Ok(LocatedCheckValue::new(
                 CheckValue::Float(float_sum),
                 arg_value.path,
@@ -735,7 +785,7 @@ impl<'a> CheckEvaluator<'a> {
 
     fn contains_value(&mut self, collection: &CheckValue, value: &CheckValue) -> bool {
         match collection {
-            CheckValue::Array(items) => items.iter().any(|item| values_equal(item, value)),
+            CheckValue::Array { items, .. } => items.iter().any(|item| values_equal(item, value)),
             CheckValue::Dict(entries) => dict_key_from_check_value(value).is_some_and(|key| {
                 entries
                     .iter()
@@ -854,6 +904,14 @@ impl<'a> CheckEvaluator<'a> {
         rhs: CheckValue,
         path: Option<CfdPath>,
     ) -> Result<LocatedCheckValue, ()> {
+        if matches!(lhs, CheckValue::Null) || matches!(rhs, CheckValue::Null) {
+            self.diag_at(
+                CfdErrorCode::CheckNullAccess,
+                path,
+                "binary operation on null value",
+            );
+            return Err(());
+        }
         match (op, lhs, rhs) {
             (CftSchemaBinOp::Add, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
                 self.checked_int(lhs.checked_add(rhs), path, "integer addition overflow")
@@ -1017,6 +1075,14 @@ impl<'a> CheckEvaluator<'a> {
         rhs: &CheckValue,
         path: Option<CfdPath>,
     ) -> Result<std::cmp::Ordering, ()> {
+        if matches!(lhs, CheckValue::Null) || matches!(rhs, CheckValue::Null) {
+            self.diag_at(
+                CfdErrorCode::CheckNullAccess,
+                path,
+                "ordered comparison on null value",
+            );
+            return Err(());
+        }
         match (lhs, rhs) {
             (CheckValue::Int(lhs), CheckValue::Int(rhs)) => Ok(lhs.cmp(rhs)),
             (CheckValue::Float(lhs), CheckValue::Float(rhs)) => {
@@ -1068,5 +1134,13 @@ impl<'a> CheckEvaluator<'a> {
         };
         self.diagnostics
             .push(CfdDiagnostic::error(code, message).with_primary(self.root_record, path));
+    }
+}
+
+fn type_ref_is_float(ty: Option<&CftSchemaTypeRef>) -> bool {
+    match ty {
+        Some(CftSchemaTypeRef::Float) => true,
+        Some(CftSchemaTypeRef::Nullable(inner)) => type_ref_is_float(Some(inner)),
+        _ => false,
     }
 }

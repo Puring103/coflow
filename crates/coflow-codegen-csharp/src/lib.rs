@@ -79,6 +79,15 @@ pub fn generate_csharp_json(
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::expect_used,
+        clippy::needless_raw_string_hashes,
+        clippy::panic,
+        clippy::panic_in_result_fn,
+        clippy::too_many_lines,
+        clippy::unwrap_used
+    )]
+
     use super::*;
     use coflow_cft::{CftContainer, ModuleId};
 
@@ -130,7 +139,97 @@ mod tests {
             .map_err(|err| err.to_string())?;
         let database = generated_file(&files, "GameConfig.cs")?;
         require_contains(database, "ResolveNodeRefs")?;
-        require_contains(database, "ResolveRef(_targetIndex")?;
+        require_contains(database, "ResolveRef(targetRefIndex")?;
+        Ok(())
+    }
+
+    #[test]
+    fn codegen_builds_polymorphic_ref_indexes_for_abstract_targets() -> Result<(), String> {
+        let schema = compile_schema(
+            r"
+                abstract type Reward { @id id: string; }
+                type ItemReward : Reward { count: int; }
+                type CurrencyReward : Reward { amount: int; }
+                type Drop {
+                    @id id: string;
+                    @ref(Reward)
+                    reward_id: string;
+                }
+            ",
+        )?;
+
+        let files = generate_csharp_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+            .map_err(|err| err.to_string())?;
+        let database = generated_file(&files, "GameConfig.cs")?;
+        require_contains(database, "Dictionary<string, Reward> _rewardRefIndex")?;
+        require_contains(database, "var rewardRefIndex = BuildRefIndex(")?;
+        require_contains(database, "new RefIndexSource<string, Reward>(itemRewards")?;
+        require_contains(
+            database,
+            "new RefIndexSource<string, Reward>(currencyRewards",
+        )?;
+        require_contains(database, "ResolveRef(rewardRefIndex")?;
+        Ok(())
+    }
+
+    #[test]
+    fn codegen_preserves_missing_field_default_and_nullable_required_semantics(
+    ) -> Result<(), String> {
+        let schema = compile_schema(
+            r#"
+                type Item {
+                    @id id: string;
+                    name: string = "unknown";
+                    maybe: int?;
+                    tags: [string] = [];
+                }
+            "#,
+        )?;
+
+        let files = generate_csharp_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+            .map_err(|err| err.to_string())?;
+        let database = generated_file(&files, "GameConfig.cs")?;
+        let item = generated_file(&files, "Item.cs")?;
+        require_contains(item, "public IReadOnlyList<string> Tags { get; init; }")?;
+        require_contains(
+            database,
+            "Name = ReadWithDefault(obj, \"name\", path, \"unknown\"",
+        )?;
+        require_contains(
+            database,
+            "Maybe = ReadRequiredNullable(obj, \"maybe\", path",
+        )?;
+        require_contains(
+            database,
+            "Tags = ReadWithDefault(obj, \"tags\", path, new List<string>()",
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn codegen_struct_inheritance_emits_inherited_fields() -> Result<(), String> {
+        let schema = compile_schema(
+            r"
+                type Parent { base_value: int; }
+                @struct
+                sealed type Child : Parent { child_value: int; }
+            ",
+        )?;
+
+        let files = generate_csharp_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+            .map_err(|err| err.to_string())?;
+        let child = generated_file(&files, "Child.cs")?;
+        let database = generated_file(&files, "GameConfig.cs")?;
+        require_contains(child, "public long BaseValue { get; init; }")?;
+        require_contains(child, "public long ChildValue { get; init; }")?;
+        require_contains(
+            database,
+            "BaseValue = ReadRequired(obj, \"base_value\", path",
+        )?;
+        require_contains(
+            database,
+            "ChildValue = ReadRequired(obj, \"child_value\", path",
+        )?;
         Ok(())
     }
 

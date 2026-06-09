@@ -2,7 +2,9 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
-    clippy::too_many_lines
+    clippy::panic_in_result_fn,
+    clippy::too_many_lines,
+    clippy::needless_raw_string_hashes
 )]
 
 mod common;

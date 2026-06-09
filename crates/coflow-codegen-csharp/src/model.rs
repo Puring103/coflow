@@ -48,6 +48,7 @@ pub struct CsharpProperty {
 #[derive(Debug, Serialize)]
 pub struct CsharpDatabase {
     pub tables: Vec<CsharpTable>,
+    pub ref_indexes: Vec<CsharpRefIndex>,
     pub indexes: Vec<CsharpIndex>,
     pub constructor_parameters: Vec<CsharpParameter>,
     pub load_steps: Vec<String>,
@@ -79,6 +80,23 @@ pub struct CsharpIndex {
     pub key_type: String,
     pub storage_field: String,
     pub parameter_name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CsharpRefIndex {
+    pub target_name: String,
+    pub target_id_type: String,
+    pub index_field: String,
+    pub parameter_name: String,
+    pub assignable_sources: Vec<CsharpRefIndexSource>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CsharpRefIndexSource {
+    pub list_var: String,
+    pub table_name: String,
+    pub id_property: String,
+    pub id_source_name: String,
 }
 
 #[derive(Debug, Serialize)]

@@ -1,3 +1,12 @@
+#![allow(
+    clippy::expect_used,
+    clippy::needless_raw_string_hashes,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::too_many_lines,
+    clippy::unwrap_used
+)]
+
 use serde_json::Value;
 use std::io::{Read, Write};
 use std::process::{ChildStdout, Command, Stdio};

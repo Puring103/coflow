@@ -1,3 +1,13 @@
+#![allow(
+    clippy::expect_used,
+    clippy::needless_raw_string_hashes,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::too_many_lines,
+    clippy::unwrap_used,
+    clippy::doc_markdown
+)]
+
 //! Edge-case and regression tests for `coflow-data-model`.
 //!
 //! Organised into four sections:
@@ -8,7 +18,12 @@
 
 mod common;
 use common::*;
-use std::collections::BTreeMap;
+
+fn dict_get<'a>(entries: &'a [(CfdDictKey, CfdValue)], key: &CfdDictKey) -> Option<&'a CfdValue> {
+    entries
+        .iter()
+        .find_map(|(entry_key, value)| (entry_key == key).then_some(value))
+}
 
 // ───────────────────────────────────────────────────────────────────────────
 // 1. Public API regression tests
@@ -725,11 +740,11 @@ fn dict_with_int_keys_round_trips_correctly() {
     };
     assert_eq!(slots.len(), 2);
     assert_eq!(
-        slots.get(&CfdDictKey::Int(1)),
+        dict_get(slots, &CfdDictKey::Int(1)),
         Some(&CfdValue::String("a".to_string()))
     );
     assert_eq!(
-        slots.get(&CfdDictKey::Int(2)),
+        dict_get(slots, &CfdDictKey::Int(2)),
         Some(&CfdValue::String("b".to_string()))
     );
 }
@@ -777,7 +792,7 @@ fn dict_with_enum_keys_resolves_variant_values() {
         variant: Some("Fire".to_string()),
         value: 1,
     });
-    assert_eq!(resist.get(&fire_key), Some(&CfdValue::Float(0.25)));
+    assert_eq!(dict_get(resist, &fire_key), Some(&CfdValue::Float(0.25)));
 }
 
 #[test]
@@ -1206,9 +1221,8 @@ fn type_with_no_id_field_has_no_primary_index() {
 }
 
 #[test]
-fn dict_value_in_resolved_form_is_btreemap_ordered() {
-    // Regression for the BTreeMap migration: keys come out in sorted order
-    // regardless of insertion order.
+fn dict_value_in_resolved_form_preserves_insertion_order() {
+    // Dict values are ordered data-model entries, not a sorted map.
     let schema = compile_schema(
         r#"
             type Item {
@@ -1239,13 +1253,13 @@ fn dict_value_in_resolved_form_is_btreemap_ordered() {
         panic!("expected dict");
     };
 
-    let keys: Vec<&CfdDictKey> = attrs.keys().collect();
+    let keys: Vec<&CfdDictKey> = attrs.iter().map(|(key, _)| key).collect();
     assert_eq!(
         keys,
         vec![
+            &CfdDictKey::String("zeta".to_string()),
             &CfdDictKey::String("alpha".to_string()),
             &CfdDictKey::String("mu".to_string()),
-            &CfdDictKey::String("zeta".to_string()),
         ]
     );
 }
@@ -1263,9 +1277,9 @@ fn build_consumes_builder_so_repeated_build_is_compile_error() {
     // let _ = builder.build();
 }
 
-// Smoke check: CfdDataModel still maintains BTreeMap representation for empty defaults.
+// Smoke check: CfdDataModel still emits an empty ordered entry list for dict defaults.
 #[test]
-fn empty_dict_default_uses_btreemap() {
+fn empty_dict_default_uses_empty_entries() {
     let schema = compile_schema(
         r#"
             type Item {
@@ -1281,6 +1295,6 @@ fn empty_dict_default_uses_btreemap() {
     let id = record_id_at(&model, 0);
     assert_eq!(
         model.record(id).and_then(|r| r.field("attrs")),
-        Some(&CfdValue::Dict(BTreeMap::new()))
+        Some(&CfdValue::Dict(Vec::new()))
     );
 }

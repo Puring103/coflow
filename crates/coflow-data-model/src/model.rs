@@ -1,7 +1,9 @@
 use crate::{compiler::ModelCompiler, CfdDiagnostics};
 use coflow_cft::CftContainer;
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdDataModel {
@@ -185,7 +187,7 @@ pub enum CfdValue {
     Object(Box<CfdRecord>),
     Ref { id: CfdIdValue, target: CfdRecordId },
     Array(Vec<CfdValue>),
-    Dict(BTreeMap<CfdDictKey, CfdValue>),
+    Dict(Vec<(CfdDictKey, CfdValue)>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -235,11 +237,40 @@ pub enum CfdIndexKey {
 /// identified by `enum_name + value` only. Codegen and JSON serialization
 /// should therefore prefer `value` (always meaningful) and treat `variant` as
 /// a presentation hint that may be missing.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone)]
 pub struct CfdEnumValue {
     pub enum_name: String,
     pub variant: Option<String>,
     pub value: i64,
+}
+
+impl PartialEq for CfdEnumValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.enum_name == other.enum_name && self.value == other.value
+    }
+}
+
+impl Eq for CfdEnumValue {}
+
+impl PartialOrd for CfdEnumValue {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CfdEnumValue {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.enum_name
+            .cmp(&other.enum_name)
+            .then_with(|| self.value.cmp(&other.value))
+    }
+}
+
+impl Hash for CfdEnumValue {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.enum_name.hash(state);
+        self.value.hash(state);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

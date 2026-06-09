@@ -1,6 +1,14 @@
+#![allow(
+    clippy::expect_used,
+    clippy::needless_raw_string_hashes,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::too_many_lines,
+    clippy::unwrap_used
+)]
+
 mod common;
 use common::*;
-use std::collections::BTreeMap;
 
 #[test]
 fn data_model_applies_defaults_and_builds_indexes_without_running_check() {
@@ -43,10 +51,7 @@ fn data_model_applies_defaults_and_builds_indexes_without_running_check() {
         Some(&CfdValue::String("unknown".to_string()))
     );
     assert_eq!(record.field("tags"), Some(&CfdValue::Array(Vec::new())));
-    assert_eq!(
-        record.field("attrs"),
-        Some(&CfdValue::Dict(BTreeMap::new()))
-    );
+    assert_eq!(record.field("attrs"), Some(&CfdValue::Dict(Vec::new())));
 }
 
 #[test]

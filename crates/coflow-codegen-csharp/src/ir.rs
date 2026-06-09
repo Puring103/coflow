@@ -3,7 +3,7 @@ use crate::model::CsharpProject;
 use crate::names::{
     annotation_name_arg, camel_case, csharp_ident_error, csharp_member_ident_error,
     csharp_namespace_error, index_param_name, index_var_name, multi_index_var_name, pascal_case,
-    pluralize, ref_property_name,
+    pluralize, ref_index_param_name, ref_index_var_name, ref_property_name,
 };
 use crate::schema_view::SchemaView;
 use crate::CsharpCodegenError;
@@ -139,11 +139,11 @@ fn validate_generated_names(view: &SchemaView) -> Result<(), CsharpCodegenError>
     }
 
     for target in &ref_targets {
-        let index_field = index_var_name(target);
-        validate_ident("ref index parameter", &index_field)?;
+        let ref_index_field = ref_index_var_name(target);
+        validate_member_ident("ref index field", &ref_index_field)?;
 
-        let index_arg = index_param_name(target);
-        validate_ident("ref index argument", &index_arg)?;
+        let ref_index_arg = ref_index_param_name(target);
+        validate_ident("ref index parameter", &ref_index_arg)?;
     }
 
     for type_name in view.polymorphic_type_names() {

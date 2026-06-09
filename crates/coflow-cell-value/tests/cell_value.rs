@@ -1,4 +1,11 @@
-#![allow(clippy::needless_raw_string_hashes, clippy::panic_in_result_fn)]
+#![allow(
+    clippy::expect_used,
+    clippy::needless_raw_string_hashes,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::too_many_lines,
+    clippy::unwrap_used
+)]
 
 use coflow_cell_value::{parse_cell, CellValueDiagnostics, CellValueErrorCode, ParsedCell};
 use coflow_cft::{CftContainer, ModuleId};

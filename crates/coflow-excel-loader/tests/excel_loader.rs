@@ -1,4 +1,11 @@
-#![allow(clippy::needless_raw_string_hashes, clippy::panic_in_result_fn)]
+#![allow(
+    clippy::expect_used,
+    clippy::needless_raw_string_hashes,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::too_many_lines,
+    clippy::unwrap_used
+)]
 
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdErrorCode, CfdIdValue, CfdValue};
@@ -100,6 +107,36 @@ fn loads_configured_xlsx_sheets_without_yaml_parsing() -> TestResult {
             CfdValue::String("melee".to_string()),
         ]))
     );
+    Ok(())
+}
+
+#[test]
+fn reports_missing_sheet_before_read_sheet_errors() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                id: string;
+            }
+        "#,
+    )?;
+    let path = temp_xlsx_path("missing-sheet");
+    let mut workbook = Workbook::new();
+    workbook
+        .add_worksheet()
+        .set_name("Existing")
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
+
+    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Missing").with_type("Item")]);
+    let Err(err) = load_excel_model(&schema, &[source]) else {
+        return Err("expected missing sheet error".to_string());
+    };
+
+    let ExcelLoadError::MissingSheet { file, sheet } = err else {
+        return Err(format!("expected missing sheet error, got {err:?}"));
+    };
+    assert_eq!(file, path);
+    assert_eq!(sheet, "Missing");
     Ok(())
 }
 

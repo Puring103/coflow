@@ -1,6 +1,9 @@
 use crate::names::{annotation_name_arg, has_annotation};
 use crate::CsharpCodegenError;
-use coflow_cft::{CftAnnotation, CftContainer, CftSchemaField, CftSchemaType, CftSchemaTypeRef};
+use coflow_cft::{
+    CftAnnotation, CftContainer, CftSchemaDefaultValue, CftSchemaField, CftSchemaType,
+    CftSchemaTypeRef,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
@@ -251,14 +254,18 @@ fn collect_ref_targets_in_type(
 pub struct FieldMeta {
     pub name: String,
     pub ty: FieldType,
+    pub has_default: bool,
+    pub default: Option<CftSchemaDefaultValue>,
     pub annotations: Vec<CftAnnotation>,
 }
 
 impl FieldMeta {
-    fn from_schema(field: &CftSchemaField, enums: &BTreeSet<String>) -> Self {
+    pub fn from_schema(field: &CftSchemaField, enums: &BTreeSet<String>) -> Self {
         Self {
             name: field.name.clone(),
             ty: FieldType::from_schema(&field.ty_ref, enums),
+            has_default: field.has_default,
+            default: field.default.clone(),
             annotations: field.annotations.clone(),
         }
     }

@@ -1,3 +1,12 @@
+#![allow(
+    clippy::expect_used,
+    clippy::needless_raw_string_hashes,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::too_many_lines,
+    clippy::unwrap_used
+)]
+
 mod common;
 use common::*;
 
@@ -131,6 +140,47 @@ fn check_runner_short_circuits_nullable_guards_and_reports_null_access() {
         .run_checks(&unguarded)
         .expect_err("null access");
     assert_has_code(&err, CfdErrorCode::CheckNullAccess);
+}
+
+#[test]
+fn null_arithmetic_and_ordered_comparison_report_null_access() {
+    let arithmetic = compile_schema(
+        r#"
+            type Item {
+                value: int? = null;
+                check { value + 1 > 0; }
+            }
+        "#,
+    );
+    let mut arithmetic_builder = CfdDataModel::builder(&arithmetic);
+    arithmetic_builder.add_input_record(CfdInputRecord::new(
+        "Item",
+        std::iter::empty::<(&str, CfdInputValue)>(),
+    ));
+    let arithmetic_model = arithmetic_builder.build().expect("data model should build");
+    let arithmetic_err = arithmetic_model
+        .run_checks(&arithmetic)
+        .expect_err("null arithmetic should fail");
+    assert_has_code(&arithmetic_err, CfdErrorCode::CheckNullAccess);
+
+    let comparison = compile_schema(
+        r#"
+            type Item {
+                value: int? = null;
+                check { value > 0; }
+            }
+        "#,
+    );
+    let mut comparison_builder = CfdDataModel::builder(&comparison);
+    comparison_builder.add_input_record(CfdInputRecord::new(
+        "Item",
+        std::iter::empty::<(&str, CfdInputValue)>(),
+    ));
+    let comparison_model = comparison_builder.build().expect("data model should build");
+    let comparison_err = comparison_model
+        .run_checks(&comparison)
+        .expect_err("null ordered comparison should fail");
+    assert_has_code(&comparison_err, CfdErrorCode::CheckNullAccess);
 }
 
 #[test]
@@ -421,6 +471,27 @@ fn sum_reports_integer_overflow_consistently_with_other_arithmetic() {
 }
 
 #[test]
+fn sum_of_empty_float_array_uses_declared_element_type() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                xs: [float] = [];
+                check { sum(xs) == 0.0; }
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(CfdInputRecord::new(
+        "Item",
+        std::iter::empty::<(&str, CfdInputValue)>(),
+    ));
+    let model = builder.build().expect("data model should build");
+    model
+        .run_checks(&schema)
+        .expect("empty float sum should evaluate as 0.0");
+}
+
+#[test]
 fn arithmetic_eval_errors_are_reported_without_panicking() {
     let schema = compile_schema(
         r#"
@@ -500,7 +571,7 @@ fn check_runner_executes_inline_object_checks_inside_collections() {
 }
 
 #[test]
-fn any_and_none_quantifier_failures_report_quantifier_only() {
+fn any_and_none_quantifier_failures_report_element_failures() {
     let any_schema = compile_schema(
         r#"
             type Item {
@@ -522,12 +593,18 @@ fn any_and_none_quantifier_failures_report_quantifier_only() {
     );
     let any_model = any_builder.build().expect("data model should build");
     let any_err = any_model.run_checks(&any_schema).expect_err("any fails");
-    assert_eq!(any_err.diagnostics.len(), 1);
-    assert_eq!(any_err.diagnostics[0].code, CfdErrorCode::CheckFailed);
-    assert_eq!(
-        any_err.diagnostics[0].message,
-        "any quantifier did not match any element"
-    );
+    assert_eq!(any_err.diagnostics.len(), 2);
+    assert!(any_err
+        .diagnostics
+        .iter()
+        .all(|diag| diag.code == CfdErrorCode::CheckFailed));
+    let any_paths = any_err
+        .diagnostics
+        .iter()
+        .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
+        .collect::<Vec<_>>();
+    assert!(any_paths.contains(&CfdPath::root().field("values").index(0)));
+    assert!(any_paths.contains(&CfdPath::root().field("values").index(1)));
 
     let none_schema = compile_schema(
         r#"
@@ -542,15 +619,21 @@ fn any_and_none_quantifier_failures_report_quantifier_only() {
         "Item",
         [(
             "values",
-            CfdInputValue::Array(vec![CfdInputValue::from(1_i64)]),
+            CfdInputValue::Array(vec![CfdInputValue::from(1_i64), CfdInputValue::from(2_i64)]),
         )],
     );
     let none_model = none_builder.build().expect("data model should build");
     let none_err = none_model.run_checks(&none_schema).expect_err("none fails");
-    assert_eq!(none_err.diagnostics.len(), 1);
-    assert_eq!(none_err.diagnostics[0].code, CfdErrorCode::CheckFailed);
-    assert_eq!(
-        none_err.diagnostics[0].message,
-        "none quantifier matched at least one element"
-    );
+    assert_eq!(none_err.diagnostics.len(), 2);
+    assert!(none_err
+        .diagnostics
+        .iter()
+        .all(|diag| diag.code == CfdErrorCode::CheckFailed));
+    let none_paths = none_err
+        .diagnostics
+        .iter()
+        .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
+        .collect::<Vec<_>>();
+    assert!(none_paths.contains(&CfdPath::root().field("values").index(0)));
+    assert!(none_paths.contains(&CfdPath::root().field("values").index(1)));
 }

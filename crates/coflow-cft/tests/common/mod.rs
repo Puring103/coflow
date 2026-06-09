@@ -1,4 +1,5 @@
 #![allow(dead_code, unused_imports)]
+#![allow(clippy::redundant_pub_crate)]
 
 pub(crate) use coflow_cft::{
     CftConstValue, CftContainer, CftDiagnostics, CftErrorCode, CftSeverity, CftStage, ModuleId,
