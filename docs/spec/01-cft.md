@@ -612,6 +612,7 @@ pub struct CftSchemaConst {
 | `CFT-SCHEMA-028` | `EnumVariantOnNonEnum` | 默认值使用 `Name.Variant`，但 `Name` 不是 `enum` |
 | `CFT-SCHEMA-029` | `UnknownEnumVariant` | 默认值引用未知枚举变体 |
 | `CFT-SCHEMA-030` | `InvalidConstValue` | `const` 值不是允许的字面量类型 |
+| `CFT-SCHEMA-031` | `ReservedIdentifier` | `const`、`enum`、`type`、字段、枚举变体或量词变量使用保留名 |
 
 `@ref` 字段类型允许 `string`、`int` 以及对应 nullable 形式；`@index` 字段类型只允许非 nullable 的 `string`、`int`、`enum`。
 
