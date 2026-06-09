@@ -189,6 +189,7 @@ mod tests {
                     @ref(Item)
                     item_id: string;
                     count: int = 1;
+                    maybe_count: int?;
                 }
                 type DropTable {
                     @id id: string;
@@ -235,7 +236,22 @@ mod tests {
         require_not_contains(database, "var typeKey = reader.ReadString();")?;
         require_not_contains(database, "var rawKey = reader.ReadString();")?;
         require_contains(database, "case \"item_id\":")?;
-        require_contains(database, "reader.Skip()")?;
+        require_contains(database, "SkipValue(ref reader, fieldPath)")?;
+        require_not_contains(database, "default:\n                    reader.Skip();")?;
+        require_contains(database, "if (result.ContainsKey(key))")?;
+        require_contains(database, "var value = readValue(ref reader, keyPath);")?;
+        require_contains(database, "result.Add(key, value);")?;
+        require_not_contains(database, "TryAdd(key, readValue(")?;
+        require_contains(database, "if (!reader.End)")?;
+        require_contains(database, "\"single MessagePack array\"")?;
+        require_contains(database, "\"trailing data\"")?;
+        require_contains(database, "ReadNil(ref reader, fieldPath) ? null :")?;
+        require_not_contains(database, ".TryReadNil() ? null")?;
+        require_contains(
+            database,
+            "private static bool ReadNil(ref MessagePackReader reader, string path)",
+        )?;
+        require_contains(database, "if (ReadNil(ref reader, path))")?;
         if !database.contains("LoadRewardPolymorphic(ref reader, path)")
             && !database.contains("LoadRewardPolymorphic(ref itemReader, itemPath)")
         {
