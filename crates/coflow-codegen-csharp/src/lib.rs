@@ -153,8 +153,11 @@ mod tests {
         require_not_contains(stat_block, "= 1.0f;")?;
         require_not_contains(stat_block, "= 5;")?;
         let database = generated_file(&files, "GameConfig.cs")?;
+        let item = generated_file(&files, "Item.cs")?;
         require_contains(database, "Speed = ReadWithDefault")?;
         require_contains(database, "Crit = ReadWithDefault")?;
+        require_contains(item, "public StatBlock Stats { get; init; }")?;
+        require_not_contains(item, "public StatBlock Stats { get; init; } = null!;")?;
         Ok(())
     }
 
@@ -217,10 +220,16 @@ mod tests {
     ) -> Result<(), String> {
         let schema = compile_schema(
             r#"
+                enum Element {
+                    Physical = 0,
+                    Fire = 1,
+                }
+
                 type Item {
                     @id id: string;
                     name: string = "unknown";
                     maybe: int?;
+                    element: Element? = null;
                     tags: [string] = [];
                 }
             "#,
@@ -238,6 +247,10 @@ mod tests {
         require_contains(
             database,
             "Maybe = ReadRequiredNullable(obj, \"maybe\", path",
+        )?;
+        require_contains(
+            database,
+            "Element = ReadNullableWithDefault(obj, \"element\", path, (Element?)null",
         )?;
         require_contains(
             database,

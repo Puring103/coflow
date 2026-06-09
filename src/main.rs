@@ -605,6 +605,12 @@ fn diagnostics_from_excel_error(err: &ExcelLoadError) -> Vec<DiagnosticJson> {
                 )
             })
             .collect(),
+        ExcelLoadError::UnsupportedCellValue { location, kind } => vec![excel_location_json(
+            "EXCEL-CELL",
+            "EXCEL",
+            format!("unsupported Excel cell value `{kind}`"),
+            location,
+        )],
         ExcelLoadError::DataModel(diagnostics) => diagnostics_from_excel_checks(diagnostics),
     }
 }

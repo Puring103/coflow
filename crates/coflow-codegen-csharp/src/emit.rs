@@ -732,7 +732,6 @@ fn read_dict_key_expr(ty: &FieldType, key: &str, path: &str) -> Result<String, C
 }
 
 fn csharp_type(ty: &FieldType, view: &SchemaView) -> String {
-    let _ = view;
     match ty {
         FieldType::Int => "long".to_string(),
         FieldType::Float => "float".to_string(),
@@ -796,6 +795,9 @@ fn default_value_expr(
         return Ok(None);
     };
     Ok(Some(match default {
+        CftSchemaDefaultValue::Null if ty.is_nullable() && is_csharp_value_type(ty, view) => {
+            format!("({})null", csharp_type(ty, view))
+        }
         CftSchemaDefaultValue::Null => "null".to_string(),
         CftSchemaDefaultValue::Int(value) => value.to_string(),
         CftSchemaDefaultValue::Float(value) => format_float(*value),
@@ -821,13 +823,25 @@ fn default_initializer(field: &FieldMeta, ty: &FieldType, view: &SchemaView) -> 
 
     match ty.non_nullable() {
         FieldType::String => Some("\"\"".to_string()),
-        FieldType::Type(_) => Some("null!".to_string()),
+        FieldType::Type(name) if !view.type_is_struct(name) => Some("null!".to_string()),
         FieldType::Array(_) | FieldType::Dict(_, _) => collection_default_expr(ty, view).ok(),
         FieldType::Int
         | FieldType::Float
         | FieldType::Bool
+        | FieldType::Type(_)
         | FieldType::Enum(_)
         | FieldType::Nullable(_) => None,
+    }
+}
+
+fn is_csharp_value_type(ty: &FieldType, view: &SchemaView) -> bool {
+    match ty.non_nullable() {
+        FieldType::Int | FieldType::Float | FieldType::Bool | FieldType::Enum(_) => true,
+        FieldType::Type(name) => view.type_is_struct(name),
+        FieldType::String
+        | FieldType::Array(_)
+        | FieldType::Dict(_, _)
+        | FieldType::Nullable(_) => false,
     }
 }
 
