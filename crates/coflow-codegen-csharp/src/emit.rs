@@ -343,6 +343,9 @@ fn loader_methods(view: &SchemaView) -> Result<Vec<CsharpLoader>, CsharpCodegenE
                     .iter()
                     .map(|field| {
                         let local_name = field_local_name(&field.name)?;
+                        let default_expr =
+                            default_value_expr(field.default.as_ref(), &field.ty, view)?;
+                        let is_required = default_expr.is_none();
                         Ok(CsharpLoadField {
                             property: pascal_case(&field.name),
                             source_name: field.name.clone(),
@@ -355,12 +358,8 @@ fn loader_methods(view: &SchemaView) -> Result<Vec<CsharpLoader>, CsharpCodegenE
                                 "fieldPath",
                                 view,
                             )?,
-                            default_expr: default_value_expr(
-                                field.default.as_ref(),
-                                &field.ty,
-                                view,
-                            )?,
-                            is_required: field.default.is_none() && !field.has_default,
+                            default_expr,
+                            is_required,
                         })
                     })
                     .collect::<Result<Vec<_>, CsharpCodegenError>>()?,
