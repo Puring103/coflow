@@ -9,6 +9,9 @@ keywords = ["config", "game-data", "codegen", "csharp"]
 categories = ["config", "game-development"]
 publish = false
 
+[lints]
+workspace = true
+
 [dependencies]
 coflow-cft = { path = "../coflow-cft" }
 serde = { version = "1", features = ["derive"] }

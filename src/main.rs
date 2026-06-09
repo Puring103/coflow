@@ -1,3 +1,17 @@
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::dbg_macro,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::panic_in_result_fn,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unreachable,
+        clippy::unwrap_used
+    )
+)]
+
 use clap::{Args, Parser, Subcommand};
 use coflow_cft::CftDiagnostic;
 use coflow_codegen_csharp::{generate_csharp_json, CsharpCodegenOptions};

@@ -7,6 +7,9 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/wtlll/ScriptForGame"
 publish = false
 
+[lints]
+workspace = true
+
 [dependencies]
 coflow-cft = { path = "../coflow-cft" }
 serde = { version = "1", features = ["derive"] }

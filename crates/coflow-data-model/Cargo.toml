@@ -10,5 +10,8 @@ keywords = ["config", "game-data", "data-model"]
 categories = ["config", "game-development"]
 publish = false
 
+[lints]
+workspace = true
+
 [dependencies]
 coflow-cft = { path = "../coflow-cft" }

@@ -192,8 +192,10 @@ impl<'a> CheckEvaluator<'a> {
                     .into_iter()
                     .enumerate()
                     .map(|(index, entry)| {
-                        let key_label = format_check_key_for_path(&entry.key)
-                            .unwrap_or_else(|| index.to_string());
+                        let key_label = match format_check_key_for_path(&entry.key) {
+                            Some(label) => label,
+                            None => index.to_string(),
+                        };
                         let path = collection.path.clone().map(|path| path.dict_key(key_label));
                         LocatedCheckValue::new(CheckValue::Entry(Box::new(entry)), path)
                     })
@@ -264,7 +266,7 @@ impl<'a> CheckEvaluator<'a> {
                 let mut lhs = self.eval_expr(first)?;
                 for (op, rhs_expr) in rest {
                     let rhs = self.eval_expr(rhs_expr)?;
-                    let path = lhs.path.clone().or(rhs.path.clone());
+                    let path = lhs.path.clone().or_else(|| rhs.path.clone());
                     if !self.compare(*op, &lhs.value, &rhs.value, rhs.path.clone())? {
                         return Ok(LocatedCheckValue::new(CheckValue::Bool(false), path));
                     }
@@ -454,15 +456,11 @@ impl<'a> CheckEvaluator<'a> {
                 );
                 return Err(());
             };
-            return Ok(LocatedCheckValue::value(CheckValue::Enum(
-                self.schema
-                    .enum_value_from_int(name, value)
-                    .unwrap_or(CfdEnumValue {
-                        enum_name: name.to_string(),
-                        variant: None,
-                        value,
-                    }),
-            )));
+            let enum_value = match self.schema.enum_value_from_int(name, value) {
+                Some(enum_value) => enum_value,
+                None => Self::anonymous_enum_value(name, value),
+            };
+            return Ok(LocatedCheckValue::value(CheckValue::Enum(enum_value)));
         }
 
         match name {
@@ -843,7 +841,7 @@ impl<'a> CheckEvaluator<'a> {
             _ => {
                 let lhs = self.eval_expr(lhs)?;
                 let rhs = self.eval_expr(rhs)?;
-                let path = lhs.path.clone().or(rhs.path.clone());
+                let path = lhs.path.clone().or_else(|| rhs.path.clone());
                 self.eval_eager_bin_op(op, lhs.value, rhs.value, path)
             }
         }
@@ -930,17 +928,28 @@ impl<'a> CheckEvaluator<'a> {
             (CftSchemaBinOp::BitAnd, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
                 Ok(LocatedCheckValue::new(CheckValue::Int(lhs & rhs), path))
             }
-            (
-                op @ (CftSchemaBinOp::BitOr | CftSchemaBinOp::BitXor | CftSchemaBinOp::BitAnd),
-                CheckValue::Enum(lhs),
-                CheckValue::Enum(rhs),
-            ) if lhs.enum_name == rhs.enum_name => {
-                let value = match op {
-                    CftSchemaBinOp::BitOr => lhs.value | rhs.value,
-                    CftSchemaBinOp::BitXor => lhs.value ^ rhs.value,
-                    CftSchemaBinOp::BitAnd => lhs.value & rhs.value,
-                    _ => unreachable!(),
-                };
+            (CftSchemaBinOp::BitOr, CheckValue::Enum(lhs), CheckValue::Enum(rhs))
+                if lhs.enum_name == rhs.enum_name =>
+            {
+                let value = lhs.value | rhs.value;
+                Ok(LocatedCheckValue::new(
+                    CheckValue::Enum(self.enum_with_value(&lhs.enum_name, value)),
+                    path,
+                ))
+            }
+            (CftSchemaBinOp::BitXor, CheckValue::Enum(lhs), CheckValue::Enum(rhs))
+                if lhs.enum_name == rhs.enum_name =>
+            {
+                let value = lhs.value ^ rhs.value;
+                Ok(LocatedCheckValue::new(
+                    CheckValue::Enum(self.enum_with_value(&lhs.enum_name, value)),
+                    path,
+                ))
+            }
+            (CftSchemaBinOp::BitAnd, CheckValue::Enum(lhs), CheckValue::Enum(rhs))
+                if lhs.enum_name == rhs.enum_name =>
+            {
+                let value = lhs.value & rhs.value;
                 Ok(LocatedCheckValue::new(
                     CheckValue::Enum(self.enum_with_value(&lhs.enum_name, value)),
                     path,
@@ -1034,13 +1043,18 @@ impl<'a> CheckEvaluator<'a> {
     }
 
     fn enum_with_value(&self, enum_name: &str, value: i64) -> CfdEnumValue {
-        self.schema
-            .enum_value_from_int(enum_name, value)
-            .unwrap_or(CfdEnumValue {
-                enum_name: enum_name.to_string(),
-                variant: None,
-                value,
-            })
+        match self.schema.enum_value_from_int(enum_name, value) {
+            Some(enum_value) => enum_value,
+            None => Self::anonymous_enum_value(enum_name, value),
+        }
+    }
+
+    fn anonymous_enum_value(enum_name: &str, value: i64) -> CfdEnumValue {
+        CfdEnumValue {
+            enum_name: enum_name.to_string(),
+            variant: None,
+            value,
+        }
     }
 
     fn diag(&mut self, code: CfdErrorCode, message: impl Into<String>) {
@@ -1048,10 +1062,11 @@ impl<'a> CheckEvaluator<'a> {
     }
 
     fn diag_at(&mut self, code: CfdErrorCode, path: Option<CfdPath>, message: impl Into<String>) {
+        let path = match path {
+            Some(path) => path,
+            None => self.root_path.clone(),
+        };
         self.diagnostics
-            .push(CfdDiagnostic::error(code, message).with_primary(
-                self.root_record,
-                path.unwrap_or_else(|| self.root_path.clone()),
-            ));
+            .push(CfdDiagnostic::error(code, message).with_primary(self.root_record, path));
     }
 }

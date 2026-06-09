@@ -74,6 +74,12 @@ pub struct Token {
     pub span: Span,
 }
 
+/// Lexes one CFT module into tokens.
+///
+/// # Errors
+///
+/// Returns diagnostics when the source contains invalid characters,
+/// unterminated strings, or malformed lexical constructs.
 pub fn lex(module: &ModuleId, source: &str) -> Result<Vec<Token>, CftDiagnostics> {
     Lexer::new(module, source).lex()
 }

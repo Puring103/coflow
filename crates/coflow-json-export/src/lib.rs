@@ -3,7 +3,23 @@
 //! This crate converts an already-built [`CfdDataModel`] into table-oriented
 //! JSON values. It deliberately does not load files or run checks.
 
-use coflow_cft::{CftAnnotation, CftAnnotationValue, CftContainer, CftSchemaField};
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::dbg_macro,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::panic_in_result_fn,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unreachable,
+        clippy::unwrap_used
+    )
+)]
+
+use coflow_cft::{
+    CftAnnotation, CftAnnotationValue, CftContainer, CftSchemaField, CftSchemaTypeRef,
+};
 use coflow_data_model::{CfdDataModel, CfdDictKey, CfdIdValue, CfdRecord, CfdTable, CfdValue};
 use serde_json::{Map, Number, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -113,16 +129,23 @@ impl<'a> JsonExporter<'a> {
 
     fn encode_field(&self, field: &FieldMeta, value: &CfdValue) -> Result<Value, JsonExportError> {
         if field.ref_target.is_some() {
-            return self.encode_ref(value);
+            return Self::encode_ref(value);
         }
         self.encode_value(&field.ty, value)
     }
 
     fn encode_value(
         &self,
-        declared_type: &str,
+        declared_type: &CftSchemaTypeRef,
         value: &CfdValue,
     ) -> Result<Value, JsonExportError> {
+        if let CftSchemaTypeRef::Nullable(inner) = declared_type {
+            return match value {
+                CfdValue::Null => Ok(Value::Null),
+                other => self.encode_value(inner, other),
+            };
+        }
+
         match value {
             CfdValue::Null => Ok(Value::Null),
             CfdValue::Bool(value) => Ok(Value::Bool(*value)),
@@ -133,42 +156,54 @@ impl<'a> JsonExporter<'a> {
             CfdValue::String(value) => Ok(Value::String(value.clone())),
             CfdValue::Enum(value) => Ok(Value::Number(Number::from(value.value))),
             CfdValue::Object(record) => {
-                let type_name = named_type(declared_type).ok_or_else(|| {
-                    JsonExportError::new(format!(
-                        "object value has non-object declared type `{declared_type}`"
-                    ))
-                })?;
+                let type_name = match declared_type {
+                    CftSchemaTypeRef::Named(type_name) => type_name,
+                    other => {
+                        return Err(JsonExportError::new(format!(
+                            "object value has non-object declared type `{}`",
+                            display_type_ref(other)
+                        )))
+                    }
+                };
                 self.encode_record(type_name, record, TypeTagMode::WhenPolymorphic)
             }
-            CfdValue::Ref { .. } => self.encode_ref(value),
+            CfdValue::Ref { .. } => Self::encode_ref(value),
             CfdValue::Array(items) => {
-                let inner = array_inner(declared_type).ok_or_else(|| {
-                    JsonExportError::new(format!(
-                        "array value has non-array declared type `{declared_type}`"
-                    ))
-                })?;
+                let inner = match declared_type {
+                    CftSchemaTypeRef::Array(inner) => inner,
+                    other => {
+                        return Err(JsonExportError::new(format!(
+                            "array value has non-array declared type `{}`",
+                            display_type_ref(other)
+                        )))
+                    }
+                };
                 items
                     .iter()
-                    .map(|item| self.encode_value(&inner, item))
+                    .map(|item| self.encode_value(inner, item))
                     .collect::<Result<Vec<_>, _>>()
                     .map(Value::Array)
             }
             CfdValue::Dict(entries) => {
-                let (_, value_ty) = dict_parts(declared_type).ok_or_else(|| {
-                    JsonExportError::new(format!(
-                        "dict value has non-dict declared type `{declared_type}`"
-                    ))
-                })?;
+                let value_ty = match declared_type {
+                    CftSchemaTypeRef::Dict(_, value_ty) => value_ty,
+                    other => {
+                        return Err(JsonExportError::new(format!(
+                            "dict value has non-dict declared type `{}`",
+                            display_type_ref(other)
+                        )))
+                    }
+                };
                 let mut object = Map::new();
                 for (key, value) in entries {
-                    object.insert(dict_key_string(key), self.encode_value(&value_ty, value)?);
+                    object.insert(dict_key_string(key), self.encode_value(value_ty, value)?);
                 }
                 Ok(Value::Object(object))
             }
         }
     }
 
-    fn encode_ref(&self, value: &CfdValue) -> Result<Value, JsonExportError> {
+    fn encode_ref(value: &CfdValue) -> Result<Value, JsonExportError> {
         match value {
             CfdValue::Null => Ok(Value::Null),
             CfdValue::Ref { id, .. } => Ok(id_to_json(id)),
@@ -249,7 +284,7 @@ impl<'a> SchemaView<'a> {
 #[derive(Debug, Clone)]
 struct FieldMeta {
     name: String,
-    ty: String,
+    ty: CftSchemaTypeRef,
     ref_target: Option<String>,
 }
 
@@ -257,7 +292,7 @@ impl FieldMeta {
     fn from_schema(field: &CftSchemaField) -> Self {
         Self {
             name: field.name.clone(),
-            ty: field.ty.clone(),
+            ty: field.ty_ref.clone(),
             ref_target: ref_target(&field.annotations),
         }
     }
@@ -289,7 +324,7 @@ fn dict_key_string(key: &CfdDictKey) -> String {
     }
 }
 
-fn value_kind(value: &CfdValue) -> &'static str {
+const fn value_kind(value: &CfdValue) -> &'static str {
     match value {
         CfdValue::Null => "null",
         CfdValue::Bool(_) => "bool",
@@ -304,45 +339,17 @@ fn value_kind(value: &CfdValue) -> &'static str {
     }
 }
 
-fn named_type(text: &str) -> Option<&str> {
-    let text = strip_nullable(text.trim());
-    (!matches!(text, "int" | "float" | "bool" | "string")
-        && !text.starts_with('[')
-        && !text.starts_with('{')
-        && !text.is_empty())
-    .then_some(text)
-}
-
-fn array_inner(text: &str) -> Option<String> {
-    let text = strip_nullable(text.trim());
-    text.strip_prefix('[')
-        .and_then(|rest| rest.strip_suffix(']'))
-        .map(|inner| inner.trim().to_string())
-}
-
-fn dict_parts(text: &str) -> Option<(String, String)> {
-    let text = strip_nullable(text.trim());
-    let inner = text.strip_prefix('{')?.strip_suffix('}')?;
-    let colon = find_top_level_colon(inner)?;
-    Some((
-        inner[..colon].trim().to_string(),
-        inner[colon + 1..].trim().to_string(),
-    ))
-}
-
-fn strip_nullable(text: &str) -> &str {
-    text.strip_suffix('?').map_or(text, str::trim)
-}
-
-fn find_top_level_colon(text: &str) -> Option<usize> {
-    let mut depth = 0usize;
-    for (index, ch) in text.char_indices() {
-        match ch {
-            '[' | '{' => depth += 1,
-            ']' | '}' => depth = depth.saturating_sub(1),
-            ':' if depth == 0 => return Some(index),
-            _ => {}
+fn display_type_ref(ty: &CftSchemaTypeRef) -> String {
+    match ty {
+        CftSchemaTypeRef::Int => "int".to_string(),
+        CftSchemaTypeRef::Float => "float".to_string(),
+        CftSchemaTypeRef::Bool => "bool".to_string(),
+        CftSchemaTypeRef::String => "string".to_string(),
+        CftSchemaTypeRef::Named(name) => name.clone(),
+        CftSchemaTypeRef::Array(inner) => format!("[{}]", display_type_ref(inner)),
+        CftSchemaTypeRef::Dict(key, value) => {
+            format!("{{{}: {}}}", display_type_ref(key), display_type_ref(value))
         }
+        CftSchemaTypeRef::Nullable(inner) => format!("{}?", display_type_ref(inner)),
     }
-    None
 }

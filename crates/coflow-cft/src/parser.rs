@@ -9,6 +9,12 @@ use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::lexer::{lex, Token, TokenKind};
 use crate::span::Span;
 
+/// Parses one CFT module into its AST.
+///
+/// # Errors
+///
+/// Returns diagnostics when lexing fails or when tokens do not match the CFT
+/// grammar.
 pub fn parse_module(module: &ModuleId, source: &str) -> Result<ModuleAst, CftDiagnostics> {
     let tokens = lex(module, source)?;
     Parser::new(module, tokens).parse_module()

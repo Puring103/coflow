@@ -1,5 +1,20 @@
 //! Schema-guided parser for Coflow cell value text.
 
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::dbg_macro,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::panic_in_result_fn,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unreachable,
+        clippy::unwrap_used
+    )
+)]
+#![allow(clippy::missing_const_for_fn, clippy::similar_names, clippy::use_self)]
+
 use coflow_cft::{CftContainer, CftSchemaField};
 use coflow_data_model::{CfdInputDictKey, CfdInputValue};
 use std::collections::{BTreeMap, BTreeSet};
@@ -241,9 +256,14 @@ fn parse_value(
         CellType::Int => Ok(CfdInputValue::Int(
             text.parse::<i64>().map_err(|_| type_mismatch("int"))?,
         )),
-        CellType::Float => Ok(CfdInputValue::Float(
-            text.parse::<f64>().map_err(|_| type_mismatch("float"))?,
-        )),
+        CellType::Float => {
+            let value = text.parse::<f64>().map_err(|_| type_mismatch("float"))?;
+            if value.is_finite() {
+                Ok(CfdInputValue::Float(value))
+            } else {
+                Err(type_mismatch("finite float"))
+            }
+        }
         CellType::Bool => match text {
             "true" => Ok(CfdInputValue::Bool(true)),
             "false" => Ok(CfdInputValue::Bool(false)),
@@ -254,7 +274,7 @@ fn parse_value(
         CellType::Type(type_name) => parse_object(schema, type_name, text, context),
         CellType::Array(inner) => parse_array(schema, inner, text, context),
         CellType::Dict(key, value) => parse_dict(schema, key, value, text, context),
-        CellType::Nullable(_) => unreachable!("nullable handled before match"),
+        CellType::Nullable(inner) => parse_value(schema, inner, text, context),
     }
 }
 
@@ -266,7 +286,7 @@ fn parse_enum(
     let variant = text
         .strip_prefix(enum_name)
         .and_then(|rest| rest.strip_prefix('.'))
-        .unwrap_or(text);
+        .map_or(text, |variant| variant);
     let Some(schema_enum) = schema.resolve_enum(enum_name) else {
         return Err(type_mismatch(enum_name));
     };
@@ -303,7 +323,9 @@ fn parse_object(
     if let Some(actual) = &actual_type {
         validate_actual_type(schema, expected_type, actual)?;
     }
-    let field_type = actual_type.as_deref().unwrap_or(expected_type);
+    let field_type = actual_type
+        .as_deref()
+        .map_or(expected_type, |actual| actual);
     let fields = full_fields(schema, field_type)?;
     let content = content.trim();
     if content.is_empty() {
@@ -522,7 +544,7 @@ fn parse_array(
     if explicit.is_none() && !context.is_root() {
         return Err(missing_boundary("nested array must use `[]`"));
     }
-    let content = explicit.unwrap_or(text).trim();
+    let content = explicit.map_or(text, |inner| inner).trim();
     if content.is_empty() {
         return Ok(CfdInputValue::Array(Vec::new()));
     }
@@ -558,7 +580,7 @@ fn parse_dict(
     if explicit.is_none() && !context.is_root() {
         return Err(missing_boundary("nested dict must use `{}`"));
     }
-    let content = explicit.unwrap_or(text).trim();
+    let content = explicit.map_or(text, |inner| inner).trim();
     if content.is_empty() {
         return Ok(CfdInputValue::dict(std::iter::empty()));
     }
@@ -634,6 +656,8 @@ fn parse_string(text: &str) -> Result<String, CellValueDiagnostics> {
             escaped = false;
         } else if ch == '\\' {
             escaped = true;
+        } else if ch == '"' {
+            return Err(syntax("unescaped quote in string"));
         } else {
             out.push(ch);
         }
@@ -780,10 +804,8 @@ impl ScanState {
             '"' => self.in_string = true,
             '{' => self.stack.push('}'),
             '[' => self.stack.push(']'),
-            '}' | ']' => {
-                if self.stack.pop() != Some(ch) {
-                    return Err(syntax("mismatched brackets"));
-                }
+            '}' | ']' if self.stack.pop() != Some(ch) => {
+                return Err(syntax("mismatched brackets"));
             }
             _ => {}
         }

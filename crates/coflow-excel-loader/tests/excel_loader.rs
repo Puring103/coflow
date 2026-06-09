@@ -1,3 +1,5 @@
+#![allow(clippy::needless_raw_string_hashes, clippy::panic_in_result_fn)]
+
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdErrorCode, CfdIdValue, CfdValue};
 use coflow_excel_loader::{
@@ -9,13 +11,17 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
-fn compile_schema(source: &str) -> CftContainer {
+type TestResult = Result<(), String>;
+
+fn compile_schema(source: &str) -> Result<CftContainer, String> {
     let mut container = CftContainer::new();
     container
         .add_module(ModuleId::from("main"), source)
-        .expect("schema should parse");
-    container.compile().expect("schema should compile");
+        .map_err(|err| format!("schema should parse: {err:?}"))?;
     container
+        .compile()
+        .map_err(|err| format!("schema should compile: {err:?}"))?;
+    Ok(container)
 }
 
 fn temp_xlsx_path(name: &str) -> PathBuf {
@@ -42,7 +48,7 @@ fn write_items_workbook(path: &PathBuf) -> Result<(), XlsxError> {
 }
 
 #[test]
-fn loads_configured_xlsx_sheets_without_yaml_parsing() {
+fn loads_configured_xlsx_sheets_without_yaml_parsing() -> TestResult {
     let schema = compile_schema(
         r#"
             enum Rarity { Common = 0, Rare = 10, }
@@ -54,9 +60,9 @@ fn loads_configured_xlsx_sheets_without_yaml_parsing() {
                 tags: [string] = [];
             }
         "#,
-    );
+    )?;
     let path = temp_xlsx_path("items");
-    write_items_workbook(&path).expect("write workbook");
+    write_items_workbook(&path).map_err(|err| format!("write workbook: {err:?}"))?;
 
     let source = ExcelSource::new(
         &path,
@@ -67,8 +73,10 @@ fn loads_configured_xlsx_sheets_without_yaml_parsing() {
         ])],
     );
 
-    let model = load_excel_model(&schema, &[source]).expect("load excel");
-    let table = model.table("Item").expect("item table");
+    let model = load_excel_model(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+    let Some(table) = model.table("Item") else {
+        return Err("expected Item table".to_string());
+    };
     assert_eq!(table.records.len(), 2);
     assert!(table
         .primary_index
@@ -78,7 +86,9 @@ fn loads_configured_xlsx_sheets_without_yaml_parsing() {
         .contains_key(&CfdIdValue::from("potion_01")));
 
     let first_id = table.records[0];
-    let first = model.record(first_id).expect("first item");
+    let Some(first) = model.record(first_id) else {
+        return Err("expected first item record".to_string());
+    };
     assert_eq!(
         first.field("name"),
         Some(&CfdValue::String("铁剑".to_string()))
@@ -90,10 +100,11 @@ fn loads_configured_xlsx_sheets_without_yaml_parsing() {
             CfdValue::String("melee".to_string()),
         ]))
     );
+    Ok(())
 }
 
 #[test]
-fn reports_cell_parse_location_for_bad_cell_values() {
+fn reports_cell_parse_location_for_bad_cell_values() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
@@ -101,33 +112,47 @@ fn reports_cell_parse_location_for_bad_cell_values() {
                 level: int;
             }
         "#,
-    );
+    )?;
     let path = temp_xlsx_path("bad-cell");
     let mut workbook = Workbook::new();
-    let sheet = workbook.add_worksheet().set_name("Item").expect("sheet");
-    sheet.write_string(0, 0, "id").expect("write");
-    sheet.write_string(0, 1, "level").expect("write");
-    sheet.write_string(1, 0, "item_1").expect("write");
-    sheet.write_string(1, 1, "not_int").expect("write");
-    workbook.save(&path).expect("save");
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "level")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "item_1")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 1, "not_int")
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let err = load_excel_model(&schema, &[source]).expect_err("cell parse error");
+    let Err(err) = load_excel_model(&schema, &[source]) else {
+        return Err("expected cell parse error".to_string());
+    };
 
     let ExcelLoadError::CellParse {
         location, field, ..
     } = err
     else {
-        panic!("expected cell parse error, got {err:?}");
+        return Err(format!("expected cell parse error, got {err:?}"));
     };
     assert_eq!(field, "level");
     assert_eq!(location.sheet.as_deref(), Some("Item"));
     assert_eq!(location.row, Some(2));
     assert_eq!(location.column, Some(2));
+    Ok(())
 }
 
 #[test]
-fn returns_check_diagnostics_without_discarding_model() {
+fn returns_check_diagnostics_without_discarding_model() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
@@ -137,30 +162,38 @@ fn returns_check_diagnostics_without_discarding_model() {
                 check { level > 0; }
             }
         "#,
-    );
+    )?;
     let path = temp_xlsx_path("check");
     let mut workbook = Workbook::new();
-    let sheet = workbook.add_worksheet().set_name("Item").expect("sheet");
-    sheet.write_string(0, 0, "id").expect("write");
-    sheet.write_string(0, 1, "level").expect("write");
-    sheet.write_string(1, 0, "item_1").expect("write");
-    sheet.write_number(1, 1, -1.0).expect("write");
-    workbook.save(&path).expect("save");
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "level")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "item_1")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_number(1, 1, -1.0)
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let output = load_excel(&schema, &[source]).expect("load excel");
+    let output = load_excel(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
 
-    assert_eq!(
-        output
-            .model
-            .table("Item")
-            .expect("item table")
-            .records
-            .len(),
-        1
-    );
-    let diagnostics = output.check_diagnostics.expect("check diagnostics");
-    let diagnostic = diagnostic_with_code(&diagnostics.diagnostics, CfdErrorCode::CheckFailed);
+    let Some(table) = output.model.table("Item") else {
+        return Err("expected Item table".to_string());
+    };
+    assert_eq!(table.records.len(), 1);
+    let Some(diagnostics) = output.check_diagnostics else {
+        return Err("expected check diagnostics".to_string());
+    };
+    let diagnostic = diagnostic_with_code(&diagnostics.diagnostics, CfdErrorCode::CheckFailed)?;
     assert_eq!(
         diagnostic
             .primary
@@ -175,41 +208,54 @@ fn returns_check_diagnostics_without_discarding_model() {
             .and_then(|label| label.location.column),
         Some(2)
     );
+    Ok(())
 }
 
 #[test]
-fn rejects_unknown_header_columns_before_model_build() {
+fn rejects_unknown_header_columns_before_model_build() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
                 id: string;
             }
         "#,
-    );
+    )?;
     let path = temp_xlsx_path("unknown-column");
     let mut workbook = Workbook::new();
-    let sheet = workbook.add_worksheet().set_name("Item").expect("sheet");
-    sheet.write_string(0, 0, "id").expect("write");
-    sheet.write_string(0, 1, "extra").expect("write");
-    sheet.write_string(1, 0, "item_1").expect("write");
-    workbook.save(&path).expect("save");
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "extra")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "item_1")
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let err = load_excel_model(&schema, &[source]).expect_err("unknown column");
+    let Err(err) = load_excel_model(&schema, &[source]) else {
+        return Err("expected unknown column".to_string());
+    };
 
     let ExcelLoadError::UnknownColumn {
         field, location, ..
     } = err
     else {
-        panic!("expected unknown column, got {err:?}");
+        return Err(format!("expected unknown column, got {err:?}"));
     };
     assert_eq!(field, "extra");
     assert_eq!(location.row, Some(1));
     assert_eq!(location.column, Some(2));
+    Ok(())
 }
 
 #[test]
-fn maps_duplicate_id_diagnostics_to_source_cells() {
+fn maps_duplicate_id_diagnostics_to_source_cells() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
@@ -218,25 +264,42 @@ fn maps_duplicate_id_diagnostics_to_source_cells() {
                 level: int;
             }
         "#,
-    );
+    )?;
     let path = temp_xlsx_path("duplicate-id");
     let mut workbook = Workbook::new();
-    let sheet = workbook.add_worksheet().set_name("Item").expect("sheet");
-    sheet.write_string(0, 0, "id").expect("write");
-    sheet.write_string(0, 1, "level").expect("write");
-    sheet.write_string(1, 0, "same").expect("write");
-    sheet.write_number(1, 1, 1.0).expect("write");
-    sheet.write_string(2, 0, "same").expect("write");
-    sheet.write_number(2, 1, 2.0).expect("write");
-    workbook.save(&path).expect("save");
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "level")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "same")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_number(1, 1, 1.0)
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(2, 0, "same")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_number(2, 1, 2.0)
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let err = load_excel_model(&schema, &[source]).expect_err("data model diagnostics");
+    let Err(err) = load_excel_model(&schema, &[source]) else {
+        return Err("expected data model diagnostics".to_string());
+    };
     let ExcelLoadError::DataModel(diagnostics) = err else {
-        panic!("expected data model diagnostics, got {err:?}");
+        return Err(format!("expected data model diagnostics, got {err:?}"));
     };
 
-    let duplicate = diagnostic_with_code(&diagnostics.diagnostics, CfdErrorCode::DuplicateId);
+    let duplicate = diagnostic_with_code(&diagnostics.diagnostics, CfdErrorCode::DuplicateId)?;
     assert_eq!(
         duplicate
             .primary
@@ -258,10 +321,11 @@ fn maps_duplicate_id_diagnostics_to_source_cells() {
             .map(|label| (label.location.row, label.location.column)),
         Some((Some(2), Some(1)))
     );
+    Ok(())
 }
 
 #[test]
-fn maps_missing_required_field_diagnostics_to_source_cells() {
+fn maps_missing_required_field_diagnostics_to_source_cells() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
@@ -269,23 +333,34 @@ fn maps_missing_required_field_diagnostics_to_source_cells() {
                 level: int;
             }
         "#,
-    );
+    )?;
     let path = temp_xlsx_path("missing-required");
     let mut workbook = Workbook::new();
-    let sheet = workbook.add_worksheet().set_name("Item").expect("sheet");
-    sheet.write_string(0, 0, "id").expect("write");
-    sheet.write_string(0, 1, "level").expect("write");
-    sheet.write_string(1, 0, "missing_level").expect("write");
-    workbook.save(&path).expect("save");
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "level")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "missing_level")
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let err = load_excel_model(&schema, &[source]).expect_err("data model diagnostics");
+    let Err(err) = load_excel_model(&schema, &[source]) else {
+        return Err("expected data model diagnostics".to_string());
+    };
     let ExcelLoadError::DataModel(diagnostics) = err else {
-        panic!("expected data model diagnostics, got {err:?}");
+        return Err(format!("expected data model diagnostics, got {err:?}"));
     };
 
     let missing =
-        diagnostic_with_code(&diagnostics.diagnostics, CfdErrorCode::MissingRequiredField);
+        diagnostic_with_code(&diagnostics.diagnostics, CfdErrorCode::MissingRequiredField)?;
     assert_eq!(
         missing
             .primary
@@ -300,14 +375,66 @@ fn maps_missing_required_field_diagnostics_to_source_cells() {
             .and_then(|label| label.location.column),
         Some(2)
     );
+    Ok(())
 }
 
-fn diagnostic_with_code(diagnostics: &[ExcelDiagnostic], code: CfdErrorCode) -> &ExcelDiagnostic {
+#[test]
+fn maps_multiple_invalid_input_rows_to_their_original_excel_rows() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                id: string;
+                level: int;
+            }
+        "#,
+    )?;
+    let path = temp_xlsx_path("multiple-invalid");
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "level")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "missing_level_1")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(2, 0, "missing_level_2")
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
+
+    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
+    let Err(err) = load_excel_model(&schema, &[source]) else {
+        return Err("expected data model diagnostics".to_string());
+    };
+    let ExcelLoadError::DataModel(diagnostics) = err else {
+        return Err(format!("expected data model diagnostics, got {err:?}"));
+    };
+
+    let rows: Vec<usize> = diagnostics
+        .diagnostics
+        .iter()
+        .filter(|diag| diag.source.code == CfdErrorCode::MissingRequiredField)
+        .filter_map(|diag| diag.primary.as_ref()?.location.row)
+        .collect();
+    assert_eq!(rows, vec![2, 3]);
+    Ok(())
+}
+
+fn diagnostic_with_code(
+    diagnostics: &[ExcelDiagnostic],
+    code: CfdErrorCode,
+) -> Result<&ExcelDiagnostic, String> {
     diagnostics
         .iter()
         .find(|diag| diag.source.code == code)
-        .unwrap_or_else(|| {
-            panic!(
+        .ok_or_else(|| {
+            format!(
                 "expected {code}, got {:?}",
                 diagnostics
                     .iter()

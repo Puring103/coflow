@@ -355,7 +355,10 @@ fn child_only_id_does_not_make_parent_ref_range_addressable() {
             ("id", CfdInputValue::from("child_1")),
         ],
     );
-    child_ref_builder.add_record("ChildHolder", [("child_id", CfdInputValue::from("child_1"))]);
+    child_ref_builder.add_record(
+        "ChildHolder",
+        [("child_id", CfdInputValue::from("child_1"))],
+    );
     let child_model = child_ref_builder
         .build()
         .expect("child ref range should remain addressable");

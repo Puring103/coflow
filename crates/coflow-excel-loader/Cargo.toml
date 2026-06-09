@@ -10,6 +10,9 @@ keywords = ["config", "game-data", "excel"]
 categories = ["config", "game-development"]
 publish = false
 
+[lints]
+workspace = true
+
 [dependencies]
 calamine = "0.35"
 coflow-cell-value = { path = "../coflow-cell-value" }

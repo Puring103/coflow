@@ -1,14 +1,57 @@
+#![allow(clippy::needless_raw_string_hashes, clippy::panic_in_result_fn)]
+
 use coflow_cell_value::{parse_cell, CellValueDiagnostics, CellValueErrorCode, ParsedCell};
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue, CfdValue};
 
-fn compile_schema(source: &str) -> CftContainer {
+type TestResult = Result<(), String>;
+
+fn compile_schema(source: &str) -> Result<CftContainer, String> {
     let mut container = CftContainer::new();
     container
         .add_module(ModuleId::from("main"), source)
-        .expect("schema should parse");
-    container.compile().expect("schema should compile");
+        .map_err(|err| format!("schema should parse: {err:?}"))?;
     container
+        .compile()
+        .map_err(|err| format!("schema should compile: {err:?}"))?;
+    Ok(container)
+}
+
+fn parse_ok(schema: &CftContainer, declared_type: &str, text: &str) -> Result<ParsedCell, String> {
+    parse_cell(schema, declared_type, text)
+        .map_err(|err| format!("expected `{text}` as `{declared_type}` to parse: {err:?}"))
+}
+
+fn parse_value(
+    schema: &CftContainer,
+    declared_type: &str,
+    text: &str,
+) -> Result<CfdInputValue, String> {
+    match parse_ok(schema, declared_type, text)? {
+        ParsedCell::Value(value) => Ok(value),
+        ParsedCell::Omitted => Err(format!(
+            "expected `{text}` as `{declared_type}` to be value"
+        )),
+    }
+}
+
+fn parse_err(
+    schema: &CftContainer,
+    declared_type: &str,
+    text: &str,
+) -> Result<CellValueDiagnostics, String> {
+    match parse_cell(schema, declared_type, text) {
+        Ok(value) => Err(format!(
+            "expected `{text}` as `{declared_type}` to fail, got {value:?}"
+        )),
+        Err(err) => Ok(err),
+    }
+}
+
+fn build_model(builder: coflow_data_model::CfdModelBuilder<'_>) -> Result<CfdDataModel, String> {
+    builder
+        .build()
+        .map_err(|err| format!("data model should build: {err:?}"))
 }
 
 fn assert_has_code(diags: &CellValueDiagnostics, code: CellValueErrorCode) {
@@ -24,51 +67,53 @@ fn assert_has_code(diags: &CellValueDiagnostics, code: CellValueErrorCode) {
 }
 
 #[test]
-fn parses_schema_guided_scalar_values() {
-    let schema = compile_schema("");
+fn parses_schema_guided_scalar_values() -> TestResult {
+    let schema = compile_schema("")?;
 
     assert_eq!(
-        parse_cell(&schema, "int", "42").expect("int"),
+        parse_ok(&schema, "int", "42")?,
         ParsedCell::Value(CfdInputValue::Int(42))
     );
     assert_eq!(
-        parse_cell(&schema, "float", "3.14").expect("float"),
-        ParsedCell::Value(CfdInputValue::Float(3.14))
+        parse_ok(&schema, "float", "2.5")?,
+        ParsedCell::Value(CfdInputValue::Float(2.5))
     );
     assert_eq!(
-        parse_cell(&schema, "bool", "true").expect("bool"),
+        parse_ok(&schema, "bool", "true")?,
         ParsedCell::Value(CfdInputValue::Bool(true))
     );
     assert_eq!(
-        parse_cell(&schema, "string", "hello world").expect("string"),
+        parse_ok(&schema, "string", "hello world")?,
         ParsedCell::Value(CfdInputValue::String("hello world".to_string()))
     );
     assert_eq!(
-        parse_cell(&schema, "string", r#""hello, world""#).expect("quoted string"),
+        parse_ok(&schema, "string", r#""hello, world""#)?,
         ParsedCell::Value(CfdInputValue::String("hello, world".to_string()))
     );
+    Ok(())
 }
 
 #[test]
-fn parses_enum_values_with_or_without_type_prefix() {
+fn parses_enum_values_with_or_without_type_prefix() -> TestResult {
     let schema = compile_schema(
         r#"
             enum Rarity { Common = 0, Rare = 10, }
         "#,
-    );
+    )?;
 
     assert_eq!(
-        parse_cell(&schema, "Rarity", "Rare").expect("bare enum"),
+        parse_ok(&schema, "Rarity", "Rare")?,
         ParsedCell::Value(CfdInputValue::enum_variant("Rarity", "Rare"))
     );
     assert_eq!(
-        parse_cell(&schema, "Rarity", "Rarity.Rare").expect("qualified enum"),
+        parse_ok(&schema, "Rarity", "Rarity.Rare")?,
         ParsedCell::Value(CfdInputValue::enum_variant("Rarity", "Rare"))
     );
+    Ok(())
 }
 
 #[test]
-fn parses_positional_object_cells_using_field_order() {
+fn parses_positional_object_cells_using_field_order() -> TestResult {
     let schema = compile_schema(
         r#"
             type Stats {
@@ -80,26 +125,27 @@ fn parses_positional_object_cells_using_field_order() {
                 stats: Stats;
             }
         "#,
-    );
+    )?;
 
-    let ParsedCell::Value(stats) = parse_cell(&schema, "Stats", "100, 50").expect("stats") else {
-        panic!("expected value");
-    };
+    let stats = parse_value(&schema, "Stats", "100, 50")?;
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("Monster", [("stats", stats)]);
-    let model = builder.build().expect("model");
-    let (_, monster) = model.records().next().expect("monster");
+    let model = build_model(builder)?;
+    let Some((_, monster)) = model.records().next() else {
+        return Err("expected monster record".to_string());
+    };
     let Some(CfdValue::Object(stats)) = monster.field("stats") else {
-        panic!("expected stats object");
+        return Err("expected stats object".to_string());
     };
 
     assert_eq!(stats.field("hp"), Some(&CfdValue::Int(100)));
     assert_eq!(stats.field("attack"), Some(&CfdValue::Int(50)));
     assert_eq!(stats.field("speed"), Some(&CfdValue::Float(1.0)));
+    Ok(())
 }
 
 #[test]
-fn parses_named_object_cells_and_omits_skipped_fields() {
+fn parses_named_object_cells_and_omits_skipped_fields() -> TestResult {
     let schema = compile_schema(
         r#"
             type Stats {
@@ -111,28 +157,27 @@ fn parses_named_object_cells_and_omits_skipped_fields() {
                 stats: Stats;
             }
         "#,
-    );
+    )?;
 
-    let ParsedCell::Value(stats) =
-        parse_cell(&schema, "Stats", "speed: 2.0, hp: 100").expect("stats")
-    else {
-        panic!("expected value");
-    };
+    let stats = parse_value(&schema, "Stats", "speed: 2.0, hp: 100")?;
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("Monster", [("stats", stats)]);
-    let model = builder.build().expect("model");
-    let (_, monster) = model.records().next().expect("monster");
+    let model = build_model(builder)?;
+    let Some((_, monster)) = model.records().next() else {
+        return Err("expected monster record".to_string());
+    };
     let Some(CfdValue::Object(stats)) = monster.field("stats") else {
-        panic!("expected stats object");
+        return Err("expected stats object".to_string());
     };
 
     assert_eq!(stats.field("hp"), Some(&CfdValue::Int(100)));
     assert_eq!(stats.field("attack"), Some(&CfdValue::Int(50)));
     assert_eq!(stats.field("speed"), Some(&CfdValue::Float(2.0)));
+    Ok(())
 }
 
 #[test]
-fn rejects_duplicate_named_object_fields() {
+fn rejects_duplicate_named_object_fields() -> TestResult {
     let schema = compile_schema(
         r#"
             type Stats {
@@ -140,47 +185,43 @@ fn rejects_duplicate_named_object_fields() {
                 attack: int;
             }
         "#,
-    );
+    )?;
 
-    let err = parse_cell(&schema, "Stats", "hp: 100, hp: 200, attack: 50")
-        .expect_err("duplicate named field");
+    let err = parse_err(&schema, "Stats", "hp: 100, hp: 200, attack: 50")?;
     assert_has_code(&err, CellValueErrorCode::DuplicateField);
+    Ok(())
 }
 
 #[test]
-fn parses_omitted_and_nullable_cells() {
-    let schema = compile_schema("");
+fn parses_omitted_and_nullable_cells() -> TestResult {
+    let schema = compile_schema("")?;
 
+    assert_eq!(parse_ok(&schema, "int", "")?, ParsedCell::Omitted);
+    assert_eq!(parse_ok(&schema, "int", "_")?, ParsedCell::Omitted);
     assert_eq!(
-        parse_cell(&schema, "int", "").expect("empty"),
-        ParsedCell::Omitted
-    );
-    assert_eq!(
-        parse_cell(&schema, "int", "_").expect("skip"),
-        ParsedCell::Omitted
-    );
-    assert_eq!(
-        parse_cell(&schema, "int?", "null").expect("null"),
+        parse_ok(&schema, "int?", "null")?,
         ParsedCell::Value(CfdInputValue::Null)
     );
+    Ok(())
 }
 
 #[test]
-fn parses_array_cells_with_pipe_delimiters() {
-    let schema = compile_schema("");
+fn parses_array_cells_with_pipe_delimiters() -> TestResult {
+    let schema = compile_schema("")?;
 
     assert_eq!(
-        parse_cell(&schema, "[int]", "1 | 2 | 3").expect("array"),
+        parse_ok(&schema, "[int]", "1 | 2 | 3")?,
         ParsedCell::Value(CfdInputValue::Array(vec![
             CfdInputValue::Int(1),
             CfdInputValue::Int(2),
             CfdInputValue::Int(3),
         ]))
     );
+    Ok(())
 }
 
 #[test]
-fn parses_nested_objects_inside_array_cells() {
+fn parses_nested_objects_inside_array_cells() -> TestResult {
     let schema = compile_schema(
         r#"
             type Stats {
@@ -193,15 +234,14 @@ fn parses_nested_objects_inside_array_cells() {
                 stats: Stats;
             }
         "#,
-    );
+    )?;
 
     assert_eq!(
-        parse_cell(
+        parse_ok(
             &schema,
             "[Monster]",
             "{slime, 5, {100, 50}} | {goblin, 10, {200, 80}}"
-        )
-        .expect("monsters"),
+        )?,
         ParsedCell::Value(CfdInputValue::Array(vec![
             CfdInputValue::object_with_declared_type([
                 ("id", CfdInputValue::String("slime".to_string())),
@@ -227,10 +267,11 @@ fn parses_nested_objects_inside_array_cells() {
             ]),
         ]))
     );
+    Ok(())
 }
 
 #[test]
-fn rejects_object_array_elements_without_object_boundaries() {
+fn rejects_object_array_elements_without_object_boundaries() -> TestResult {
     let schema = compile_schema(
         r#"
             type Stats {
@@ -238,15 +279,15 @@ fn rejects_object_array_elements_without_object_boundaries() {
                 attack: int;
             }
         "#,
-    );
+    )?;
 
-    let err = parse_cell(&schema, "[Stats]", "100, 50 | 200, 80")
-        .expect_err("object array elements need braces");
+    let err = parse_err(&schema, "[Stats]", "100, 50 | 200, 80")?;
     assert_has_code(&err, CellValueErrorCode::MissingBoundary);
+    Ok(())
 }
 
 #[test]
-fn rejects_nested_composite_values_without_boundaries() {
+fn rejects_nested_composite_values_without_boundaries() -> TestResult {
     let schema = compile_schema(
         r#"
             type Stats {
@@ -260,45 +301,44 @@ fn rejects_nested_composite_values_without_boundaries() {
                 attrs: {string: int};
             }
         "#,
-    );
+    )?;
 
-    let missing_array = parse_cell(&schema, "Zone", "forest, 1 | 2, {100, 50}, {hp: 10}")
-        .expect_err("nested array needs brackets");
+    let missing_array = parse_err(&schema, "Zone", "forest, 1 | 2, {100, 50}, {hp: 10}")?;
     assert_has_code(&missing_array, CellValueErrorCode::MissingBoundary);
 
-    let missing_object = parse_cell(&schema, "Zone", "forest, [1 | 2], 100, {hp: 10}")
-        .expect_err("nested object needs braces");
+    let missing_object = parse_err(&schema, "Zone", "forest, [1 | 2], 100, {hp: 10}")?;
     assert_has_code(&missing_object, CellValueErrorCode::MissingBoundary);
 
-    let missing_dict = parse_cell(&schema, "Zone", "forest, [1 | 2], {100, 50}, hp: 10")
-        .expect_err("nested dict needs braces");
+    let missing_dict = parse_err(&schema, "Zone", "forest, [1 | 2], {100, 50}, hp: 10")?;
     assert_has_code(&missing_dict, CellValueErrorCode::MissingBoundary);
+    Ok(())
 }
 
 #[test]
-fn rejects_comma_arrays_and_bare_special_strings() {
-    let schema = compile_schema("");
+fn rejects_comma_arrays_and_bare_special_strings() -> TestResult {
+    let schema = compile_schema("")?;
 
-    let comma_array = parse_cell(&schema, "[string]", "[weapon, melee]").expect_err("comma array");
+    let comma_array = parse_err(&schema, "[string]", "[weapon, melee]")?;
     assert_has_code(&comma_array, CellValueErrorCode::Syntax);
 
     for text in ["hello, world", "fire|ice", "key: value"] {
-        let err = parse_cell(&schema, "string", text).expect_err("special string needs quotes");
+        let err = parse_err(&schema, "string", text)?;
         assert_has_code(&err, CellValueErrorCode::StringNeedsQuotes);
     }
 
     assert_eq!(
-        parse_cell(&schema, "string", r#""_""#).expect("quoted underscore"),
+        parse_ok(&schema, "string", r#""_""#)?,
         ParsedCell::Value(CfdInputValue::String("_".to_string()))
     );
     assert_eq!(
-        parse_cell(&schema, "string", r#""null""#).expect("quoted null"),
+        parse_ok(&schema, "string", r#""null""#)?,
         ParsedCell::Value(CfdInputValue::String("null".to_string()))
     );
+    Ok(())
 }
 
 #[test]
-fn keeps_delimiters_inside_quotes_and_nested_boundaries() {
+fn keeps_delimiters_inside_quotes_and_nested_boundaries() -> TestResult {
     let schema = compile_schema(
         r#"
             type Payload {
@@ -307,15 +347,14 @@ fn keeps_delimiters_inside_quotes_and_nested_boundaries() {
                 attrs: {string: string};
             }
         "#,
-    );
+    )?;
 
     assert_eq!(
-        parse_cell(
+        parse_ok(
             &schema,
             "Payload",
             r#"name: "hello, world", notes: ["a|b" | "c,d"], attrs: {"x:y": "v|1", plain: "a,b"}"#,
-        )
-        .expect("payload"),
+        )?,
         ParsedCell::Value(CfdInputValue::object_with_declared_type([
             ("name", CfdInputValue::String("hello, world".to_string())),
             (
@@ -340,10 +379,11 @@ fn keeps_delimiters_inside_quotes_and_nested_boundaries() {
             ),
         ]))
     );
+    Ok(())
 }
 
 #[test]
-fn validates_polymorphic_type_markers_are_assignable_and_concrete() {
+fn validates_polymorphic_type_markers_are_assignable_and_concrete() -> TestResult {
     let schema = compile_schema(
         r#"
             abstract type Reward {
@@ -356,49 +396,75 @@ fn validates_polymorphic_type_markers_are_assignable_and_concrete() {
                 id: string;
             }
         "#,
-    );
+    )?;
 
-    let abstract_actual =
-        parse_cell(&schema, "Reward", "Reward{r1}").expect_err("abstract actual type");
+    let abstract_actual = parse_err(&schema, "Reward", "Reward{r1}")?;
     assert_has_code(&abstract_actual, CellValueErrorCode::AbstractObjectType);
 
-    let unassignable =
-        parse_cell(&schema, "Reward", "Item{i1}").expect_err("unassignable actual type");
+    let unassignable = parse_err(&schema, "Reward", "Item{i1}")?;
     assert_has_code(&unassignable, CellValueErrorCode::ObjectTypeMismatch);
+    Ok(())
 }
 
 #[test]
-fn rejects_malformed_declared_types() {
-    let schema = compile_schema("");
+fn rejects_malformed_declared_types() -> TestResult {
+    let schema = compile_schema("")?;
 
     for declared_type in ["", "[int", "{string int}", "{: int}", "{string:}", "[]"] {
-        let err = parse_cell(&schema, declared_type, "1").expect_err("invalid declared type");
+        let err = parse_err(&schema, declared_type, "1")?;
         assert_has_code(&err, CellValueErrorCode::InvalidDeclaredType);
     }
+    Ok(())
 }
 
 #[test]
-fn rejects_unbalanced_boundaries_and_invalid_string_escapes() {
-    let schema = compile_schema("");
+fn rejects_unbalanced_boundaries_and_invalid_string_escapes() -> TestResult {
+    let schema = compile_schema("")?;
 
-    let unclosed_array = parse_cell(&schema, "[int]", "[1 | 2").expect_err("unclosed array");
+    let unclosed_array = parse_err(&schema, "[int]", "[1 | 2")?;
     assert_has_code(&unclosed_array, CellValueErrorCode::Syntax);
 
-    let mismatched = parse_cell(&schema, "[int]", "[1}").expect_err("mismatched boundary");
+    let mismatched = parse_err(&schema, "[int]", "[1}")?;
     assert_has_code(&mismatched, CellValueErrorCode::Syntax);
 
-    let extra_close = parse_cell(&schema, "[int]", "1 | 2]").expect_err("extra close");
+    let extra_close = parse_err(&schema, "[int]", "1 | 2]")?;
     assert_has_code(&extra_close, CellValueErrorCode::Syntax);
 
-    let unclosed_string = parse_cell(&schema, "string", r#""hello"#).expect_err("string");
+    let unclosed_string = parse_err(&schema, "string", r#""hello"#)?;
     assert_has_code(&unclosed_string, CellValueErrorCode::Syntax);
 
-    let invalid_escape = parse_cell(&schema, "string", r#""\x""#).expect_err("escape");
+    let invalid_escape = parse_err(&schema, "string", r#""\x""#)?;
     assert_has_code(&invalid_escape, CellValueErrorCode::Syntax);
+    Ok(())
 }
 
 #[test]
-fn parses_full_nested_root_object_example() {
+fn rejects_non_finite_float_values() -> TestResult {
+    let schema = compile_schema("")?;
+
+    for text in ["NaN", "inf", "-inf", "infinity", "-infinity"] {
+        let err = parse_err(&schema, "float", text)?;
+        assert_has_code(&err, CellValueErrorCode::TypeMismatch);
+    }
+    Ok(())
+}
+
+#[test]
+fn quoted_strings_require_internal_quotes_to_be_escaped() -> TestResult {
+    let schema = compile_schema("")?;
+
+    assert_eq!(
+        parse_ok(&schema, "string", r#""a\"b""#)?,
+        ParsedCell::Value(CfdInputValue::String("a\"b".to_string()))
+    );
+
+    let err = parse_err(&schema, "string", r#""a"b""#)?;
+    assert_has_code(&err, CellValueErrorCode::Syntax);
+    Ok(())
+}
+
+#[test]
+fn parses_full_nested_root_object_example() -> TestResult {
     let schema = compile_schema(
         r#"
             abstract type Reward {
@@ -416,15 +482,14 @@ fn parses_full_nested_root_object_example() {
                 weights: [int];
             }
         "#,
-    );
+    )?;
 
     assert_eq!(
-        parse_cell(
+        parse_ok(
             &schema,
             "DropTable",
             "rewards: [CurrencyReward{r1, 100} | ItemReward{r2, sword_01, 1}], weights: [60 | 40]",
-        )
-        .expect("drop table"),
+        )?,
         ParsedCell::Value(CfdInputValue::object_with_declared_type([
             (
                 "rewards",
@@ -452,10 +517,11 @@ fn parses_full_nested_root_object_example() {
             ),
         ]))
     );
+    Ok(())
 }
 
 #[test]
-fn parses_polymorphic_object_type_markers() {
+fn parses_polymorphic_object_type_markers() -> TestResult {
     let schema = compile_schema(
         r#"
             abstract type Reward {
@@ -465,10 +531,10 @@ fn parses_polymorphic_object_type_markers() {
                 amount: int;
             }
         "#,
-    );
+    )?;
 
     assert_eq!(
-        parse_cell(&schema, "Reward", "CurrencyReward{r1, 100}").expect("reward"),
+        parse_ok(&schema, "Reward", "CurrencyReward{r1, 100}")?,
         ParsedCell::Value(CfdInputValue::object(
             "CurrencyReward",
             [
@@ -477,10 +543,11 @@ fn parses_polymorphic_object_type_markers() {
             ],
         ))
     );
+    Ok(())
 }
 
 #[test]
-fn parses_unicode_polymorphic_object_type_markers() {
+fn parses_unicode_polymorphic_object_type_markers() -> TestResult {
     let schema = compile_schema(
         r#"
             abstract type 奖励 {
@@ -490,10 +557,10 @@ fn parses_unicode_polymorphic_object_type_markers() {
                 数量: int;
             }
         "#,
-    );
+    )?;
 
     assert_eq!(
-        parse_cell(&schema, "奖励", "金币奖励{r1, 100}").expect("unicode reward"),
+        parse_ok(&schema, "奖励", "金币奖励{r1, 100}")?,
         ParsedCell::Value(CfdInputValue::object(
             "金币奖励",
             [
@@ -502,10 +569,11 @@ fn parses_unicode_polymorphic_object_type_markers() {
             ],
         ))
     );
+    Ok(())
 }
 
 #[test]
-fn ref_cells_parse_as_their_declared_id_type_for_data_model_resolution() {
+fn ref_cells_parse_as_their_declared_id_type_for_data_model_resolution() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
@@ -517,21 +585,22 @@ fn ref_cells_parse_as_their_declared_id_type_for_data_model_resolution() {
                 item_id: string;
             }
         "#,
-    );
+    )?;
 
-    let ParsedCell::Value(item_id) = parse_cell(&schema, "string", "item_1").expect("ref id")
-    else {
-        panic!("expected value");
-    };
+    let item_id = parse_value(&schema, "string", "item_1")?;
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "Item",
         [("id", CfdInputValue::String("item_1".to_string()))],
     );
     builder.add_record("Drop", [("item_id", item_id)]);
-    let model = builder.build().expect("model");
-    let item_record_id = model.records().next().map(|(id, _)| id).expect("item");
-    let (_, drop_record) = model.records().nth(1).expect("drop");
+    let model = build_model(builder)?;
+    let Some(item_record_id) = model.records().next().map(|(id, _)| id) else {
+        return Err("expected item record".to_string());
+    };
+    let Some((_, drop_record)) = model.records().nth(1) else {
+        return Err("expected drop record".to_string());
+    };
 
     assert_eq!(
         drop_record.field("item_id"),
@@ -540,17 +609,19 @@ fn ref_cells_parse_as_their_declared_id_type_for_data_model_resolution() {
             target: item_record_id,
         })
     );
+    Ok(())
 }
 
 #[test]
-fn parses_dict_cells_with_schema_guided_keys() {
-    let schema = compile_schema("");
+fn parses_dict_cells_with_schema_guided_keys() -> TestResult {
+    let schema = compile_schema("")?;
 
     assert_eq!(
-        parse_cell(&schema, "{string: int}", "alice: 10, bob: 20").expect("dict"),
+        parse_ok(&schema, "{string: int}", "alice: 10, bob: 20")?,
         ParsedCell::Value(CfdInputValue::dict([
             (CfdInputDictKey::from("alice"), CfdInputValue::Int(10)),
             (CfdInputDictKey::from("bob"), CfdInputValue::Int(20)),
         ]))
     );
+    Ok(())
 }

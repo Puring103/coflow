@@ -57,8 +57,7 @@ impl SchemaView {
     pub(crate) fn full_fields(&self, type_name: &str) -> Vec<FieldMeta> {
         self.types
             .get(type_name)
-            .map(|meta| meta.fields.clone())
-            .unwrap_or_default()
+            .map_or_else(Vec::new, |meta| meta.fields.clone())
     }
 
     pub(crate) fn is_assignable(&self, actual_type: &str, expected_type: &str) -> bool {
@@ -284,7 +283,6 @@ pub(crate) fn index_key_from_draft(value: &CfdValueDraft) -> Option<CfdIndexKey>
         CfdValueDraft::Value(CfdValue::String(value)) => Some(CfdIndexKey::String(value.clone())),
         CfdValueDraft::Value(CfdValue::Int(value)) => Some(CfdIndexKey::Int(*value)),
         CfdValueDraft::Value(CfdValue::Enum(value)) => Some(CfdIndexKey::Enum(value.clone())),
-        CfdValueDraft::Value(CfdValue::Null) => None,
         _ => None,
     }
 }

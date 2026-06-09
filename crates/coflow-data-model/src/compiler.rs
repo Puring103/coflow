@@ -56,7 +56,7 @@ impl ModelCompiler {
             let Some(fields) = self.resolve_fields(
                 &draft.fields,
                 Some(record_id),
-                CfdPath::root(),
+                &CfdPath::root(),
                 &tables,
                 &inheritance_index,
             ) else {
@@ -546,7 +546,7 @@ impl ModelCompiler {
                     self.add_polymorphic_ids(
                         &mut inheritance_index,
                         &draft.actual_type,
-                        id,
+                        &id,
                         record_id,
                         &id_field.name,
                     );
@@ -590,7 +590,7 @@ impl ModelCompiler {
         &mut self,
         inheritance_index: &mut BTreeMap<String, CfdPolymorphicIndex>,
         actual_type: &str,
-        id: CfdIdValue,
+        id: &CfdIdValue,
         record_id: CfdRecordId,
         id_field_name: &str,
     ) {
@@ -630,7 +630,7 @@ impl ModelCompiler {
         &mut self,
         fields: &BTreeMap<String, CfdValueDraft>,
         record: Option<CfdRecordId>,
-        path: CfdPath,
+        path: &CfdPath,
         tables: &BTreeMap<String, CfdTable>,
         inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
     ) -> Option<BTreeMap<String, CfdValue>> {
@@ -680,7 +680,7 @@ impl ModelCompiler {
                 let fields = self.resolve_fields(
                     &record_draft.fields,
                     record,
-                    path,
+                    &path,
                     tables,
                     inheritance_index,
                 )?;

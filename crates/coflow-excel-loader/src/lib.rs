@@ -3,6 +3,21 @@
 //! This crate deliberately accepts already-parsed loader configuration. YAML,
 //! JSON, editor settings, and command-line parsing should live in higher layers.
 
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::dbg_macro,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::panic_in_result_fn,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unreachable,
+        clippy::unwrap_used
+    )
+)]
+#![allow(clippy::missing_const_for_fn)]
+
 use calamine::{open_workbook_auto, Data, Reader};
 use coflow_cell_value::{parse_cell, CellValueDiagnostics, ParsedCell};
 use coflow_cft::{CftContainer, CftSchemaField};
@@ -66,7 +81,7 @@ impl ExcelSheet {
 
     #[must_use]
     pub fn type_name(&self) -> &str {
-        self.type_name.as_deref().unwrap_or(&self.sheet)
+        self.type_name.as_deref().map_or(&self.sheet, |name| name)
     }
 }
 
@@ -101,7 +116,7 @@ pub enum ExcelLoadError {
         message: String,
     },
     ReadSheet {
-        location: ExcelLocation,
+        location: Box<ExcelLocation>,
         message: String,
     },
     MissingSheet {
@@ -109,26 +124,26 @@ pub enum ExcelLoadError {
         sheet: String,
     },
     EmptySheet {
-        location: ExcelLocation,
+        location: Box<ExcelLocation>,
     },
     UnknownType {
-        location: ExcelLocation,
+        location: Box<ExcelLocation>,
         type_name: String,
     },
     UnknownColumn {
-        location: ExcelLocation,
+        location: Box<ExcelLocation>,
         type_name: String,
         column: String,
         field: String,
     },
     DuplicateFieldColumn {
-        location: ExcelLocation,
+        location: Box<ExcelLocation>,
         field: String,
         first_column: String,
         duplicate_column: String,
     },
     CellParse {
-        location: ExcelLocation,
+        location: Box<ExcelLocation>,
         type_name: String,
         field: String,
         diagnostics: CellValueDiagnostics,
@@ -256,20 +271,26 @@ fn collect_input_records(
             let type_name = sheet.type_name();
             let fields =
                 full_field_types(schema, type_name).ok_or_else(|| ExcelLoadError::UnknownType {
-                    location: ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()),
+                    location: Box::new(
+                        ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()),
+                    ),
                     type_name: type_name.to_string(),
                 })?;
 
             let range = workbook.worksheet_range(&sheet.sheet).map_err(|err| {
                 ExcelLoadError::ReadSheet {
-                    location: ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()),
+                    location: Box::new(
+                        ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()),
+                    ),
                     message: err.to_string(),
                 }
             })?;
 
             if range.is_empty() {
                 return Err(ExcelLoadError::EmptySheet {
-                    location: ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()),
+                    location: Box::new(
+                        ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()),
+                    ),
                 });
             }
 
@@ -292,9 +313,11 @@ fn collect_input_records(
                     let text = cell_text(row.get(column.index));
                     let parsed = parse_cell(schema, &column.field_type, &text).map_err(|err| {
                         ExcelLoadError::CellParse {
-                            location: ExcelLocation::new(source.file.clone())
-                                .sheet(sheet.sheet.clone())
-                                .cell(excel_row, column.index + 1),
+                            location: Box::new(
+                                ExcelLocation::new(source.file.clone())
+                                    .sheet(sheet.sheet.clone())
+                                    .cell(excel_row, column.index + 1),
+                            ),
                             type_name: type_name.to_string(),
                             field: column.field.clone(),
                             diagnostics: err,
@@ -425,9 +448,11 @@ fn resolve_columns(
             .map_or_else(|| column.to_string(), Clone::clone);
         let Some(field_type) = fields.get(&field) else {
             return Err(ExcelLoadError::UnknownColumn {
-                location: ExcelLocation::new(source.file.clone())
-                    .sheet(sheet.sheet.clone())
-                    .cell(1, index + 1),
+                location: Box::new(
+                    ExcelLocation::new(source.file.clone())
+                        .sheet(sheet.sheet.clone())
+                        .cell(1, index + 1),
+                ),
                 type_name: type_name.to_string(),
                 column: column.to_string(),
                 field,
@@ -435,9 +460,11 @@ fn resolve_columns(
         };
         if let Some(first_column) = seen_fields.insert(field.clone(), column.to_string()) {
             return Err(ExcelLoadError::DuplicateFieldColumn {
-                location: ExcelLocation::new(source.file.clone())
-                    .sheet(sheet.sheet.clone())
-                    .cell(1, index + 1),
+                location: Box::new(
+                    ExcelLocation::new(source.file.clone())
+                        .sheet(sheet.sheet.clone())
+                        .cell(1, index + 1),
+                ),
                 field,
                 first_column,
                 duplicate_column: column.to_string(),
@@ -497,14 +524,18 @@ fn is_empty_row(row: &[Data]) -> bool {
 fn cell_text(cell: Option<&Data>) -> String {
     match cell {
         None | Some(Data::Empty) => String::new(),
-        Some(Data::String(value)) => value.clone(),
-        Some(Data::Float(value)) if value.fract() == 0.0 => format!("{value:.0}"),
+        Some(Data::String(value) | Data::DateTimeIso(value) | Data::DurationIso(value)) => {
+            value.clone()
+        }
+        Some(Data::Float(value)) if is_whole_float(*value) => format!("{value:.0}"),
         Some(Data::Float(value)) => value.to_string(),
         Some(Data::Int(value)) => value.to_string(),
         Some(Data::Bool(value)) => value.to_string(),
         Some(Data::DateTime(value)) => value.to_string(),
-        Some(Data::DateTimeIso(value)) => value.clone(),
-        Some(Data::DurationIso(value)) => value.clone(),
         Some(Data::Error(value)) => value.to_string(),
     }
+}
+
+fn is_whole_float(value: f64) -> bool {
+    value.is_finite() && value.fract().abs() < f64::EPSILON
 }

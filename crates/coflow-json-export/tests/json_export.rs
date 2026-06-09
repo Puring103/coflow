@@ -1,19 +1,40 @@
+#![allow(clippy::needless_raw_string_hashes, clippy::panic_in_result_fn)]
+
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
 use coflow_json_export::export_json_model;
 use serde_json::json;
+use serde_json::Value;
+use std::collections::BTreeMap;
 
-fn compile_schema(source: &str) -> CftContainer {
+type TestResult = Result<(), String>;
+
+fn compile_schema(source: &str) -> Result<CftContainer, String> {
     let mut container = CftContainer::new();
     container
         .add_module(ModuleId::from("main"), source)
-        .expect("schema should parse");
-    container.compile().expect("schema should compile");
+        .map_err(|err| format!("schema should parse: {err:?}"))?;
     container
+        .compile()
+        .map_err(|err| format!("schema should compile: {err:?}"))?;
+    Ok(container)
+}
+
+fn build_model(builder: coflow_data_model::CfdModelBuilder<'_>) -> Result<CfdDataModel, String> {
+    builder
+        .build()
+        .map_err(|err| format!("data model should build: {err:?}"))
+}
+
+fn export_tables(
+    schema: &CftContainer,
+    model: &CfdDataModel,
+) -> Result<BTreeMap<String, Value>, String> {
+    export_json_model(schema, model).map_err(|err| format!("export json: {err:?}"))
 }
 
 #[test]
-fn exports_tables_with_schema_order_defaults_and_scalar_values() {
+fn exports_tables_with_schema_order_defaults_and_scalar_values() -> TestResult {
     let schema = compile_schema(
         r#"
             enum Rarity { Common = 0, Rare = 10, }
@@ -26,7 +47,7 @@ fn exports_tables_with_schema_order_defaults_and_scalar_values() {
                 attrs: {string: int} = {};
             }
         "#,
-    );
+    )?;
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -50,8 +71,8 @@ fn exports_tables_with_schema_order_defaults_and_scalar_values() {
             ),
         ],
     );
-    let model = builder.build().expect("data model should build");
-    let tables = export_json_model(&schema, &model).expect("export json");
+    let model = build_model(builder)?;
+    let tables = export_tables(&schema, &model)?;
 
     assert_eq!(
         tables["Item"],
@@ -68,10 +89,11 @@ fn exports_tables_with_schema_order_defaults_and_scalar_values() {
             }
         ])
     );
+    Ok(())
 }
 
 #[test]
-fn exports_refs_as_ids_and_polymorphic_objects_with_type_tags() {
+fn exports_refs_as_ids_and_polymorphic_objects_with_type_tags() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item { @id id: string; name: string; }
@@ -91,7 +113,7 @@ fn exports_refs_as_ids_and_polymorphic_objects_with_type_tags() {
                 weights: [int];
             }
         "#,
-    );
+    )?;
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -134,8 +156,8 @@ fn exports_refs_as_ids_and_polymorphic_objects_with_type_tags() {
             ),
         ],
     );
-    let model = builder.build().expect("data model should build");
-    let tables = export_json_model(&schema, &model).expect("export json");
+    let model = build_model(builder)?;
+    let tables = export_tables(&schema, &model)?;
 
     assert_eq!(
         tables["DropTable"],
@@ -159,17 +181,18 @@ fn exports_refs_as_ids_and_polymorphic_objects_with_type_tags() {
             }
         ])
     );
+    Ok(())
 }
 
 #[test]
-fn exports_type_tag_for_concrete_parent_ranges_even_when_actual_is_parent() {
+fn exports_type_tag_for_concrete_parent_ranges_even_when_actual_is_parent() -> TestResult {
     let schema = compile_schema(
         r#"
             type Reward { id: string; }
             type ItemReward : Reward { count: int; }
             type Holder { reward: Reward; }
         "#,
-    );
+    )?;
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -179,8 +202,8 @@ fn exports_type_tag_for_concrete_parent_ranges_even_when_actual_is_parent() {
             CfdInputValue::object("Reward", [("id", CfdInputValue::from("base_reward"))]),
         )],
     );
-    let model = builder.build().expect("data model should build");
-    let tables = export_json_model(&schema, &model).expect("export json");
+    let model = build_model(builder)?;
+    let tables = export_tables(&schema, &model)?;
 
     assert_eq!(
         tables["Holder"],
@@ -193,10 +216,11 @@ fn exports_type_tag_for_concrete_parent_ranges_even_when_actual_is_parent() {
             }
         ])
     );
+    Ok(())
 }
 
 #[test]
-fn exports_dict_keys_as_json_object_keys() {
+fn exports_dict_keys_as_json_object_keys() -> TestResult {
     let schema = compile_schema(
         r#"
             enum DamageType { Physical = 0, Fire = 1, Ice = 2, }
@@ -205,7 +229,7 @@ fn exports_dict_keys_as_json_object_keys() {
                 by_int: {int: string};
             }
         "#,
-    );
+    )?;
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -233,8 +257,8 @@ fn exports_dict_keys_as_json_object_keys() {
             ),
         ],
     );
-    let model = builder.build().expect("data model should build");
-    let tables = export_json_model(&schema, &model).expect("export json");
+    let model = build_model(builder)?;
+    let tables = export_tables(&schema, &model)?;
 
     assert_eq!(
         tables["Resistances"],
@@ -251,4 +275,75 @@ fn exports_dict_keys_as_json_object_keys() {
             }
         ])
     );
+    Ok(())
+}
+
+#[test]
+fn exports_nullable_composite_values_using_schema_type_refs() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Stats {
+                hp: int;
+            }
+            type Holder {
+                id: string;
+                maybe_stats: Stats?;
+                maybe_tags: [string]?;
+                maybe_attrs: {string: int}?;
+            }
+        "#,
+    )?;
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Holder",
+        [
+            ("id", CfdInputValue::from("h1")),
+            (
+                "maybe_stats",
+                CfdInputValue::object_with_declared_type([("hp", CfdInputValue::from(10_i64))]),
+            ),
+            (
+                "maybe_tags",
+                CfdInputValue::Array(vec![
+                    CfdInputValue::from("alpha"),
+                    CfdInputValue::from("beta"),
+                ]),
+            ),
+            (
+                "maybe_attrs",
+                CfdInputValue::dict([("score".into(), CfdInputValue::from(7_i64))]),
+            ),
+        ],
+    );
+    builder.add_record(
+        "Holder",
+        [
+            ("id", CfdInputValue::from("h2")),
+            ("maybe_stats", CfdInputValue::Null),
+            ("maybe_tags", CfdInputValue::Null),
+            ("maybe_attrs", CfdInputValue::Null),
+        ],
+    );
+    let model = build_model(builder)?;
+    let tables = export_tables(&schema, &model)?;
+
+    assert_eq!(
+        tables["Holder"],
+        json!([
+            {
+                "id": "h1",
+                "maybe_stats": { "hp": 10 },
+                "maybe_tags": ["alpha", "beta"],
+                "maybe_attrs": { "score": 7 }
+            },
+            {
+                "id": "h2",
+                "maybe_stats": null,
+                "maybe_tags": null,
+                "maybe_attrs": null
+            }
+        ])
+    );
+    Ok(())
 }

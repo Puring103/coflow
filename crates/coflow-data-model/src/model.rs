@@ -76,8 +76,7 @@ impl CfdDataModel {
         let ids = self
             .tables
             .get(type_name)
-            .map(|table| table.records.as_slice())
-            .unwrap_or(&[]);
+            .map_or(&[] as &[CfdRecordId], |table| table.records.as_slice());
         ids.iter()
             .filter_map(move |id| self.records.get(id.0).map(|record| (*id, record)))
     }

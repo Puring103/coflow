@@ -10,6 +10,9 @@ keywords = ["config", "game-data", "parser"]
 categories = ["config", "parser-implementations", "game-development"]
 publish = false
 
+[lints]
+workspace = true
+
 [dependencies]
 coflow-cft = { path = "../coflow-cft" }
 coflow-data-model = { path = "../coflow-data-model" }
