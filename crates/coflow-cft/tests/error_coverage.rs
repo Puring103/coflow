@@ -315,6 +315,12 @@ fn cases() -> Vec<Case> {
             codes: &[CftErrorCode::InvalidConstValue],
         },
         Case {
+            name: "reserved identifier",
+            phase: Phase::Compile,
+            source: "type A { from: string; }",
+            codes: &[CftErrorCode::ReservedIdentifier],
+        },
+        Case {
             name: "unknown value name",
             phase: Phase::Compile,
             source: "type A { check { missing; } }",
