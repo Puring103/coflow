@@ -252,8 +252,8 @@ dependencies = [
  "coflow-cft-lsp",
  "coflow-checker",
  "coflow-codegen-csharp",
- "coflow-excel-loader",
- "coflow-json-export",
+ "coflow-exporter-json",
+ "coflow-loader-excel",
  "coflow-project",
  "serde",
  "serde_json",
@@ -311,7 +311,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "coflow-excel-loader"
+name = "coflow-exporter-json"
+version = "0.1.0"
+dependencies = [
+ "coflow-cft",
+ "coflow-data-model",
+ "serde_json",
+]
+
+[[package]]
+name = "coflow-loader-excel"
 version = "0.1.0"
 dependencies = [
  "calamine",
@@ -320,15 +329,6 @@ dependencies = [
  "coflow-checker",
  "coflow-data-model",
  "rust_xlsxwriter",
-]
-
-[[package]]
-name = "coflow-json-export"
-version = "0.1.0"
-dependencies = [
- "coflow-cft",
- "coflow-data-model",
- "serde_json",
 ]
 
 [[package]]
