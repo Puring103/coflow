@@ -28,7 +28,7 @@ use coflow_cft::CftContainer;
 use std::fmt;
 use std::path::PathBuf;
 
-pub use ir::CsharpCodegenOptions;
+pub use ir::{CsharpCodegenOptions, CsharpDataFormat};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneratedFile {
@@ -71,6 +71,22 @@ impl std::error::Error for CsharpCodegenError {}
 /// Returns an error when the compiled schema cannot be mapped to C# runtime
 /// code or when a Tera template fails to render.
 pub fn generate_csharp_json(
+    schema: &CftContainer,
+    options: &CsharpCodegenOptions,
+) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+    let options = options.clone().with_data_format(CsharpDataFormat::Json);
+    generate_csharp(schema, &options)
+}
+
+/// Generates C# type definitions and a folder loader for the configured data format.
+///
+/// JSON remains the default format for `CsharpCodegenOptions::new`.
+///
+/// # Errors
+///
+/// Returns an error when the compiled schema cannot be mapped to C# runtime
+/// code or when a Tera template fails to render.
+pub fn generate_csharp(
     schema: &CftContainer,
     options: &CsharpCodegenOptions,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
@@ -127,6 +143,30 @@ mod tests {
         } else {
             Ok(())
         }
+    }
+
+    #[test]
+    fn codegen_messagepack_uses_msgpack_loader_template() -> Result<(), String> {
+        let schema = compile_schema(
+            r"
+                type Item {
+                    @id id: string;
+                    value: int;
+                }
+            ",
+        )?;
+
+        let files = generate_csharp(
+            &schema,
+            &CsharpCodegenOptions::new("Game.Config")
+                .with_data_format(CsharpDataFormat::MessagePack),
+        )
+        .map_err(|err| err.to_string())?;
+        let database = generated_file(&files, "GameConfig.cs")?;
+        require_contains(database, "using MessagePack;")?;
+        require_contains(database, "Path.Combine(dataDir, \"Item.msgpack\")")?;
+        require_not_contains(database, "Newtonsoft.Json")?;
+        Ok(())
     }
 
     #[test]

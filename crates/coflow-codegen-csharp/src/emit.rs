@@ -1,3 +1,4 @@
+use crate::ir::CsharpDataFormat;
 use crate::model::{
     CsharpDatabase, CsharpEnum, CsharpEnumVariant, CsharpIndex, CsharpLoadField, CsharpLoader,
     CsharpParameter, CsharpPolymorphicCase, CsharpPolymorphicLoader, CsharpProperty,
@@ -104,6 +105,7 @@ pub fn build_csharp_database(
     view: &SchemaView,
     tables: &[String],
     _database_class: &str,
+    data_format: CsharpDataFormat,
 ) -> Result<CsharpDatabase, CsharpCodegenError> {
     let table_models = tables
         .iter()
@@ -118,6 +120,11 @@ pub fn build_csharp_database(
     let mut parameters = Vec::<CsharpParameter>::new();
     let mut load_steps = Vec::new();
 
+    let load_extension = match data_format {
+        CsharpDataFormat::Json => "json",
+        CsharpDataFormat::MessagePack => "msgpack",
+    };
+
     for table in &table_models {
         parameters.push(CsharpParameter {
             ty: format!("List<{}>", table.name),
@@ -128,8 +135,8 @@ pub fn build_csharp_database(
             name: table.index_var.clone(),
         });
         load_steps.push(format!(
-            "var {} = LoadTable(Path.Combine(dataDir, \"{}.json\"), \"{}\", Load{});",
-            table.list_var, table.name, table.name, table.name
+            "var {} = LoadTable(Path.Combine(dataDir, \"{}.{}\"), \"{}\", Load{});",
+            table.list_var, table.name, load_extension, table.name, table.name
         ));
     }
 

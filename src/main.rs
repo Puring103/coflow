@@ -14,7 +14,7 @@
 
 use clap::{Args, Parser, Subcommand};
 use coflow_cft::CftDiagnostic;
-use coflow_codegen_csharp::{generate_csharp_json, CsharpCodegenOptions};
+use coflow_codegen_csharp::{generate_csharp, CsharpCodegenOptions, CsharpDataFormat};
 use coflow_exporter_json::export_json_model;
 use coflow_exporter_messagepack::export_messagepack_model;
 use coflow_loader_excel::{
@@ -435,6 +435,19 @@ fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, String> {
             output.output_type
         ));
     }
+    let data_output = project.config.outputs.data.as_ref().ok_or_else(|| {
+        "coflow.yaml missing outputs.data; required `type: json` or `type: messagepack` for `coflow codegen csharp`"
+            .to_string()
+    })?;
+    let data_format = match data_output.output_type.as_str() {
+        "json" => CsharpDataFormat::Json,
+        "messagepack" => CsharpDataFormat::MessagePack,
+        other => {
+            return Err(format!(
+                "coflow.yaml outputs.data.type is `{other}`; required `json` or `messagepack` for `coflow codegen csharp`"
+            ));
+        }
+    };
     let dir = args.out_dir.as_deref().map_or_else(
         || project.resolve_path(&output.dir),
         |path| project.resolve_path(path),
@@ -454,8 +467,8 @@ fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, String> {
         return Err("schema compilation did not produce a container".to_string());
     };
 
-    let options = CsharpCodegenOptions::new(namespace);
-    let files = generate_csharp_json(&schema, &options)
+    let options = CsharpCodegenOptions::new(namespace).with_data_format(data_format);
+    let files = generate_csharp(&schema, &options)
         .map_err(|err| format!("failed to generate C# code: {err}"))?;
     fs::create_dir_all(&dir)
         .map_err(|err| format!("failed to create output dir `{}`: {err}", dir.display()))?;
