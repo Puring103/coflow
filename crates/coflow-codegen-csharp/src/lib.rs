@@ -295,4 +295,25 @@ mod tests {
         require_contains(item, "/// <summary>Line 1 Line 2</summary>")?;
         Ok(())
     }
+
+    #[test]
+    fn codegen_emits_enum_variant_annotations() -> Result<(), String> {
+        let schema = compile_schema(
+            r#"
+                enum Rarity {
+                    @display("Common display")
+                    Common,
+                    @deprecated
+                    Old,
+                }
+            "#,
+        )?;
+
+        let files = generate_csharp_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+            .map_err(|err| err.to_string())?;
+        let rarity = generated_file(&files, "Rarity.cs")?;
+        require_contains(rarity, "/// <summary>Common display</summary>")?;
+        require_contains(rarity, "[Obsolete]")?;
+        Ok(())
+    }
 }

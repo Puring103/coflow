@@ -115,6 +115,7 @@ pub(super) fn is_reserved_identifier(name: &str) -> bool {
 pub(super) enum AnnotationTarget {
     Type,
     Enum,
+    EnumVariant,
     Field,
 }
 
@@ -147,6 +148,7 @@ impl AnnotationSpec {
                 targets: &[
                     AnnotationTarget::Type,
                     AnnotationTarget::Enum,
+                    AnnotationTarget::EnumVariant,
                     AnnotationTarget::Field,
                 ],
                 args: AnnotationArgs::OneString,
@@ -155,6 +157,7 @@ impl AnnotationSpec {
                 targets: &[
                     AnnotationTarget::Type,
                     AnnotationTarget::Enum,
+                    AnnotationTarget::EnumVariant,
                     AnnotationTarget::Field,
                 ],
                 args: AnnotationArgs::None,

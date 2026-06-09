@@ -99,16 +99,6 @@ impl<'a> SchemaCompiler<'a> {
                                 "annotation has no target",
                             );
                         }
-                        for variant in &def.variants {
-                            for annotation in &variant.annotations {
-                                self.push_diag(
-                                    CftErrorCode::InvalidAnnotationTarget,
-                                    module_id,
-                                    annotation.span,
-                                    "annotations cannot be applied to enum variants",
-                                );
-                            }
-                        }
                     }
                     Item::Type(def) => {
                         for annotation in &def.dangling_annotations {
@@ -643,6 +633,13 @@ impl<'a> SchemaCompiler<'a> {
                 AnnotationTarget::Enum,
                 &info.def.annotations,
             );
+            for variant in &info.def.variants {
+                this.validate_annotation_list(
+                    &info.module,
+                    AnnotationTarget::EnumVariant,
+                    &variant.annotations,
+                );
+            }
         });
 
         self.each_type(|this, info| {
@@ -1031,7 +1028,7 @@ impl<'a> SchemaCompiler<'a> {
                         .get(&variant.name)
                         .copied()
                         .map_or(0, |value| value),
-                    annotations: Vec::new(),
+                    annotations: convert_annotations(&variant.annotations),
                     span: variant.span,
                 })
                 .collect::<Vec<_>>();
