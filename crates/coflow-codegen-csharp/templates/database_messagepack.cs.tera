@@ -48,7 +48,7 @@ public partial class {{ project.database_class }}
 
 {% for loader in project.database.loaders %}    private static {{ loader.type_name }} Load{{ loader.type_name }}(ref MessagePackReader reader, string path)
     {
-        var count = reader.ReadMapHeader();
+        var count = ReadMapHeader(ref reader, path);
         return Load{{ loader.type_name }}Body(ref reader, path, count);
     }
 
@@ -108,7 +108,7 @@ public partial class {{ project.database_class }}
 
 {% endfor %}{% for loader in project.database.polymorphic_loaders %}    private static {{ loader.type_name }} Load{{ loader.type_name }}Polymorphic(ref MessagePackReader reader, string path)
     {
-        var count = reader.ReadMapHeader();
+        var count = ReadMapHeader(ref reader, path);
         if (count <= 0)
         {
             throw new CftLoadException(
@@ -179,19 +179,7 @@ public partial class {{ project.database_class }}
                 ex.Message);
         }
 
-        int count;
-        try
-        {
-            count = reader.ReadArrayHeader();
-        }
-        catch (MessagePackSerializationException ex)
-        {
-            throw new CftLoadException(
-                $"table `{tableName}` must be a MessagePack array: {ex.Message}",
-                tableName,
-                "array",
-                ex.Message);
-        }
+        int count = ReadArrayHeader(ref reader, tableName);
 
         var result = new List<T>(count);
 
@@ -309,7 +297,7 @@ public partial class {{ project.database_class }}
         string path,
         MessagePackItemReader<T> readItem)
     {
-        var count = reader.ReadArrayHeader();
+        var count = ReadArrayHeader(ref reader, path);
         var result = new List<T>(count);
 
         for (var i = 0; i < count; i++)
@@ -327,7 +315,7 @@ public partial class {{ project.database_class }}
         MessagePackItemReader<TValue> readValue)
         where TKey : notnull
     {
-        var count = reader.ReadMapHeader();
+        var count = ReadMapHeader(ref reader, path);
         var result = new Dictionary<TKey, TValue>();
 
         for (var i = 0; i < count; i++)
@@ -356,6 +344,30 @@ public partial class {{ project.database_class }}
         }
 
         return result;
+    }
+
+    private static int ReadMapHeader(ref MessagePackReader reader, string path)
+    {
+        try
+        {
+            return reader.ReadMapHeader();
+        }
+        catch (MessagePackSerializationException ex)
+        {
+            throw TypeError(path, "MessagePack map", ex.Message);
+        }
+    }
+
+    private static int ReadArrayHeader(ref MessagePackReader reader, string path)
+    {
+        try
+        {
+            return reader.ReadArrayHeader();
+        }
+        catch (MessagePackSerializationException ex)
+        {
+            throw TypeError(path, "MessagePack array", ex.Message);
+        }
     }
 
     private static string ReadString(ref MessagePackReader reader, string path)

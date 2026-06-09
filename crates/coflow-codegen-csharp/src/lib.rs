@@ -210,7 +210,24 @@ mod tests {
             database,
             "private static Item LoadItem(ref MessagePackReader reader, string path)",
         )?;
-        require_contains(database, "reader.ReadMapHeader()")?;
+        require_contains(
+            database,
+            "private static int ReadMapHeader(ref MessagePackReader reader, string path)",
+        )?;
+        require_contains(
+            database,
+            "private static int ReadArrayHeader(ref MessagePackReader reader, string path)",
+        )?;
+        require_contains(database, "var count = ReadMapHeader(ref reader, path);")?;
+        require_contains(
+            database,
+            "int count = ReadArrayHeader(ref reader, tableName);",
+        )?;
+        require_contains(database, "var count = ReadArrayHeader(ref reader, path);")?;
+        require_contains(database, "var count = ReadMapHeader(ref reader, path);")?;
+        require_not_contains(database, "var count = reader.ReadMapHeader();")?;
+        require_not_contains(database, "var count = reader.ReadArrayHeader();")?;
+        require_not_contains(database, "count = reader.ReadArrayHeader();")?;
         require_contains(database, "case \"item_id\":")?;
         require_contains(database, "reader.Skip()")?;
         if !database.contains("LoadRewardPolymorphic(ref reader, path)")
