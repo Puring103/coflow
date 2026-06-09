@@ -230,6 +230,62 @@ mod tests {
     }
 
     #[test]
+    fn codegen_messagepack_requires_fields_with_unrepresentable_schema_defaults(
+    ) -> Result<(), String> {
+        let project = model::CsharpProject {
+            namespace: "Game.Config".to_string(),
+            database_class: "GameConfig".to_string(),
+            data_format: CsharpDataFormat::MessagePack,
+            enums: Vec::new(),
+            types: Vec::new(),
+            database: model::CsharpDatabase {
+                tables: Vec::new(),
+                ref_indexes: Vec::new(),
+                indexes: Vec::new(),
+                constructor_parameters: Vec::new(),
+                load_steps: Vec::new(),
+                constructor_args: Vec::new(),
+                loaders: vec![model::CsharpLoader {
+                    type_name: "Item".to_string(),
+                    fields: vec![
+                        model::CsharpLoadField {
+                            property: "Items".to_string(),
+                            source_name: "items".to_string(),
+                            local_name: "items".to_string(),
+                            type_name: "List<long>".to_string(),
+                            read_expr: String::new(),
+                            messagepack_read_expr: "ReadArray(ref reader, fieldPath, static (ref MessagePackReader itemReader, string itemPath) => ReadInt(ref itemReader, itemPath))".to_string(),
+                            default_expr: None,
+                            is_required: true,
+                        },
+                        model::CsharpLoadField {
+                            property: "Count".to_string(),
+                            source_name: "count".to_string(),
+                            local_name: "count".to_string(),
+                            type_name: "long".to_string(),
+                            read_expr: String::new(),
+                            messagepack_read_expr: "ReadInt(ref reader, fieldPath)".to_string(),
+                            default_expr: Some("1".to_string()),
+                            is_required: false,
+                        },
+                    ],
+                }],
+                polymorphic_loaders: Vec::new(),
+                resolve: None,
+            },
+        };
+
+        let files = render::render_project(&project).map_err(|err| err.to_string())?;
+        let database = generated_file(&files, "GameConfig.cs")?;
+        require_contains(database, "List<long> items = default!;")?;
+        require_contains(database, "if (!hasItems)")?;
+        require_contains(database, "missing required field `items`")?;
+        require_contains(database, "long count = 1;")?;
+        require_not_contains(database, "if (!hasCount)")?;
+        Ok(())
+    }
+
+    #[test]
     fn codegen_does_not_emit_struct_property_initializers() -> Result<(), String> {
         let schema = compile_schema(
             r#"
