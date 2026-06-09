@@ -79,7 +79,7 @@ public partial class {{ project.database_class }}
                     {{ field.local_name }} = {{ field.messagepack_read_expr }};
                     break;
 {% endfor %}                default:
-                    reader.Skip();
+                    SkipValue(ref reader, fieldPath);
                     break;
             }
         }
@@ -178,6 +178,15 @@ public partial class {{ project.database_class }}
         for (var index = 0; index < count; index++)
         {
             result.Add(loadRow(ref reader, $"{tableName}[{index}]"));
+        }
+
+        if (!reader.End)
+        {
+            throw new CftLoadException(
+                $"table `{tableName}` MessagePack contains trailing data",
+                tableName,
+                "single MessagePack array",
+                "trailing data");
         }
 
         return result;
@@ -317,7 +326,7 @@ public partial class {{ project.database_class }}
             var keyPath = $"{path}.{rawKey}";
             var key = readKey(rawKey, keyPath);
 
-            if (!result.TryAdd(key, readValue(ref reader, keyPath)))
+            if (result.ContainsKey(key))
             {
                 throw new CftLoadException(
                     $"duplicate dictionary key `{rawKey}`",
@@ -325,6 +334,9 @@ public partial class {{ project.database_class }}
                     "unique key",
                     rawKey);
             }
+
+            var value = readValue(ref reader, keyPath);
+            result.Add(key, value);
         }
 
         return result;
@@ -356,7 +368,7 @@ public partial class {{ project.database_class }}
 
     private static string ReadString(ref MessagePackReader reader, string path)
     {
-        if (reader.TryReadNil())
+        if (ReadNil(ref reader, path))
         {
             throw TypeError(path, "string", "nil");
         }
@@ -374,6 +386,30 @@ public partial class {{ project.database_class }}
         catch (MessagePackSerializationException ex)
         {
             throw TypeError(path, "string", ex.Message);
+        }
+    }
+
+    private static void SkipValue(ref MessagePackReader reader, string path)
+    {
+        try
+        {
+            reader.Skip();
+        }
+        catch (MessagePackSerializationException ex)
+        {
+            throw TypeError(path, "MessagePack value", ex.Message);
+        }
+    }
+
+    private static bool ReadNil(ref MessagePackReader reader, string path)
+    {
+        try
+        {
+            return reader.TryReadNil();
+        }
+        catch (MessagePackSerializationException ex)
+        {
+            throw TypeError(path, "MessagePack value", ex.Message);
         }
     }
 

@@ -858,7 +858,7 @@ fn read_messagepack_expr(
             read_messagepack_expr(value, "valueReader", "valuePath", view)?
         )),
         FieldType::Nullable(inner) => Ok(format!(
-            "{reader}.TryReadNil() ? null : {}",
+            "ReadNil(ref {reader}, {path}) ? null : {}",
             read_messagepack_expr(inner, reader, path, view)?
         )),
     }
