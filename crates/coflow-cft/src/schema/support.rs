@@ -93,6 +93,7 @@ pub(super) fn is_reserved_identifier(name: &str) -> bool {
             | "max"
             | "sum"
             | "keys"
+            | "values"
             | "matches"
             | "if"
             | "else"

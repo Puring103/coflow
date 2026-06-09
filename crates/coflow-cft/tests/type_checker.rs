@@ -110,13 +110,13 @@ fn type_checker_accepts_nullable_element_builtins() {
     compile_one(
         r#"
             type Holder {
-                values: [int?] = [];
+                nums: [int?] = [];
                 check {
-                    unique(values);
-                    min(values) >= 0;
-                    max(values) >= 0;
-                    sum(values) >= 0;
-                    contains(values, null);
+                    unique(nums);
+                    min(nums) >= 0;
+                    max(nums) >= 0;
+                    sum(nums) >= 0;
+                    contains(nums, null);
                 }
             }
         "#,

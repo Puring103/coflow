@@ -188,14 +188,14 @@ fn check_runner_handles_nullable_element_builtins() {
     let schema = compile_schema(
         r#"
             type Holder {
-                values: [int?] = [];
+                nums: [int?] = [];
                 check {
-                    unique(values);
-                    min(values) == 1;
-                    max(values) == 3;
-                    sum(values) == 4;
-                    contains(values, null);
-                    len(values) == 3;
+                    unique(nums);
+                    min(nums) == 1;
+                    max(nums) == 3;
+                    sum(nums) == 4;
+                    contains(nums, null);
+                    len(nums) == 3;
                 }
             }
         "#,
@@ -205,7 +205,7 @@ fn check_runner_handles_nullable_element_builtins() {
     builder.add_record(
         "Holder",
         [(
-            "values",
+            "nums",
             CfdInputValue::Array(vec![
                 CfdInputValue::from(1_i64),
                 CfdInputValue::Null,
@@ -222,8 +222,8 @@ fn check_runner_reports_min_max_when_nullable_array_has_no_values() {
     let schema = compile_schema(
         r#"
             type Holder {
-                values: [int?] = [];
-                check { min(values) >= 0; }
+                nums: [int?] = [];
+                check { min(nums) >= 0; }
             }
         "#,
     );
@@ -231,7 +231,7 @@ fn check_runner_reports_min_max_when_nullable_array_has_no_values() {
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "Holder",
-        [("values", CfdInputValue::Array(vec![CfdInputValue::Null]))],
+        [("nums", CfdInputValue::Array(vec![CfdInputValue::Null]))],
     );
     let model = builder.build().expect("data model should build");
     let err = model
@@ -245,8 +245,8 @@ fn check_runner_unique_counts_multiple_nulls_as_duplicates() {
     let schema = compile_schema(
         r#"
             type Holder {
-                values: [int?] = [];
-                check { unique(values); }
+                nums: [int?] = [];
+                check { unique(nums); }
             }
         "#,
     );
@@ -255,7 +255,7 @@ fn check_runner_unique_counts_multiple_nulls_as_duplicates() {
     builder.add_record(
         "Holder",
         [(
-            "values",
+            "nums",
             CfdInputValue::Array(vec![CfdInputValue::Null, CfdInputValue::Null]),
         )],
     );
