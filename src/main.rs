@@ -139,7 +139,7 @@ struct ExportArgs {
 enum ExportCommand {
     /// Export data as JSON. The project config must declare outputs.data.type: json.
     Json(ExportJsonArgs),
-    /// Export data as MessagePack. The project config must declare outputs.data.type: messagepack.
+    /// Export data as `MessagePack`. The project config must declare outputs.data.type: messagepack.
     Messagepack(ExportMessagePackArgs),
 }
 
