@@ -346,7 +346,7 @@ class CftDefinitionProvider {
       textPositionParams(document, position)
     );
     if (Array.isArray(definitions)) {
-      return definitions.map(lspLocationToVsCode);
+      return definitions.map(lspLocationToVsCode).filter(Boolean);
     }
 
     const range = document.getWordRangeAtPosition(position, IDENT_WORD_RE);
@@ -648,6 +648,7 @@ class CftLspSession {
     this.nextId = 1;
     this.buffer = Buffer.alloc(0);
     this.openedUris = new Set();
+    this.openedFileUris = new Map();
     this.pending = new Map();
     this.failed = false;
     this.disposed = false;
@@ -686,6 +687,7 @@ class CftLspSession {
       return;
     }
 
+    this.rememberDocumentUri(document);
     const uri = document.uri.toString();
     if (this.openedUris.has(uri)) {
       this.sendNotification("textDocument/didChange", {
@@ -731,6 +733,7 @@ class CftLspSession {
       return;
     }
 
+    this.forgetDocumentUri(document);
     this.sendNotification("textDocument/didClose", {
       textDocument: {
         uri
@@ -789,9 +792,15 @@ class CftLspSession {
   handleMessage(message) {
     if (message.method === "textDocument/publishDiagnostics") {
       const params = message.params || {};
-      const uri = vscode.Uri.parse(params.uri);
+      const uri = this.uriFromLsp(params.uri);
+      if (!uri) {
+        return;
+      }
       const diagnostics = Array.isArray(params.diagnostics)
-        ? params.diagnostics.map(lspDiagnosticToVsCode)
+        ? params.diagnostics.map((diagnostic) => lspDiagnosticToVsCode(
+          diagnostic,
+          (rawUri) => this.uriFromLsp(rawUri)
+        ))
         : [];
       this.collection.set(uri, diagnostics);
     } else if (Object.prototype.hasOwnProperty.call(message, "id")) {
@@ -874,12 +883,33 @@ class CftLspSession {
 
   publishFailure(uri) {
     const diagnostic = new vscode.Diagnostic(
-      new vscode.Range(0, 0, 0, 1),
-      `CFT language server failed: ${this.failureMessage}`,
-      vscode.DiagnosticSeverity.Warning
+      new vscode.Range(0, 0, 0, 0),
+      `CFT language server failed: ${formatFailureMessage(this.failureMessage)}`,
+      vscode.DiagnosticSeverity.Error
     );
     diagnostic.source = "cft";
     this.collection.set(uri, [diagnostic]);
+  }
+
+  rememberDocumentUri(document) {
+    if (document.uri.scheme === "file") {
+      this.openedFileUris.set(normalizeFsPathKey(document.uri.fsPath), document.uri);
+    }
+  }
+
+  forgetDocumentUri(document) {
+    if (document.uri.scheme === "file") {
+      this.openedFileUris.delete(normalizeFsPathKey(document.uri.fsPath));
+    }
+  }
+
+  uriFromLsp(rawUri) {
+    const uri = lspUriToVsCode(rawUri);
+    if (!uri || uri.scheme !== "file") {
+      return uri;
+    }
+
+    return this.openedFileUris.get(normalizeFsPathKey(uri.fsPath)) || uri;
   }
 }
 
@@ -2038,42 +2068,26 @@ function findNearestCoflowConfigDir(startDir) {
   }
 }
 
-function lspDiagnosticToVsCode(raw) {
-  const rawRange = raw.range || {};
-  const start = rawRange.start || {};
-  const end = rawRange.end || start;
-  const range = new vscode.Range(
-    start.line || 0,
-    start.character || 0,
-    end.line ?? start.line ?? 0,
-    end.character ?? Math.max((start.character || 0) + 1, 1)
-  );
+function lspDiagnosticToVsCode(raw, uriFromLsp = lspUriToVsCode) {
   const diagnostic = new vscode.Diagnostic(
-    range,
-    raw.message || "",
-    lspSeverityToVsCode(raw.severity)
+    lspRangeToVsCode(raw?.range, true),
+    raw?.message || "",
+    lspSeverityToVsCode(raw?.severity)
   );
-  diagnostic.code = raw.code;
-  diagnostic.source = raw.source || "cft";
-  if (Array.isArray(raw.relatedInformation)) {
-    diagnostic.relatedInformation = raw.relatedInformation.map((related) => {
-      const location = related.location || {};
-      const relatedRange = location.range || {};
-      const relatedStart = relatedRange.start || {};
-      const relatedEnd = relatedRange.end || relatedStart;
-      return new vscode.DiagnosticRelatedInformation(
-        new vscode.Location(
-          vscode.Uri.parse(location.uri),
-          new vscode.Range(
-            relatedStart.line || 0,
-            relatedStart.character || 0,
-            relatedEnd.line ?? relatedStart.line ?? 0,
-            relatedEnd.character ?? Math.max((relatedStart.character || 0) + 1, 1)
+  diagnostic.code = raw?.code;
+  diagnostic.source = raw?.source || "cft";
+  if (Array.isArray(raw?.relatedInformation)) {
+    diagnostic.relatedInformation = raw.relatedInformation
+      .map((related) => {
+        const location = lspLocationToVsCode(related?.location, uriFromLsp, true);
+        return location
+          ? new vscode.DiagnosticRelatedInformation(
+            location,
+            related?.message || "related location"
           )
-        ),
-        related.message || "related location"
-      );
-    });
+          : undefined;
+      })
+      .filter(Boolean);
   }
   return diagnostic;
 }
@@ -2190,23 +2204,67 @@ function lspSymbolKindToVsCode(kind) {
   }
 }
 
-function lspLocationToVsCode(raw) {
-  return new vscode.Location(vscode.Uri.parse(raw.uri), lspRangeToVsCode(raw.range));
+function lspLocationToVsCode(raw, uriFromLsp = lspUriToVsCode, ensureNonEmpty = false) {
+  const uri = uriFromLsp(raw?.uri);
+  if (!uri) {
+    return undefined;
+  }
+  return new vscode.Location(uri, lspRangeToVsCode(raw.range, ensureNonEmpty));
 }
 
 function lspTextEditToVsCode(raw) {
   return new vscode.TextEdit(lspRangeToVsCode(raw.range), raw.newText || "");
 }
 
-function lspRangeToVsCode(raw) {
+function lspRangeToVsCode(raw, ensureNonEmpty = false) {
   const start = raw?.start || {};
   const end = raw?.end || start;
+  const startLine = lspPositionNumber(start.line, 0);
+  const startCharacter = lspPositionNumber(start.character, 0);
+  let endLine = lspPositionNumber(end.line, startLine);
+  let endCharacter = lspPositionNumber(end.character, startCharacter);
+
+  if (endLine < startLine || (endLine === startLine && endCharacter < startCharacter)) {
+    endLine = startLine;
+    endCharacter = startCharacter;
+  }
+
+  if (ensureNonEmpty && endLine === startLine && endCharacter === startCharacter) {
+    endCharacter += 1;
+  }
+
   return new vscode.Range(
-    start.line || 0,
-    start.character || 0,
-    end.line ?? start.line ?? 0,
-    end.character ?? start.character ?? 0
+    startLine,
+    startCharacter,
+    endLine,
+    endCharacter
   );
+}
+
+function lspPositionNumber(value, fallback) {
+  return Number.isInteger(value) && value >= 0 ? value : fallback;
+}
+
+function lspUriToVsCode(rawUri) {
+  if (typeof rawUri !== "string" || rawUri.length === 0) {
+    return undefined;
+  }
+
+  try {
+    const uri = vscode.Uri.parse(rawUri);
+    return uri.scheme === "file" ? vscode.Uri.file(uri.fsPath) : uri;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeFsPathKey(fsPath) {
+  const normalized = path.normalize(fsPath);
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+
+function formatFailureMessage(message) {
+  return String(message || "language server failed").trim() || "language server failed";
 }
 
 function normalizePath(filePath) {
