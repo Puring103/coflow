@@ -447,7 +447,11 @@ mod tests {
                 type Item {
                     @id id: string;
                     count: int;
+                    count_value: int;
+                    params: int;
+                    params_value: int;
                     key: string;
+                    key_value: string;
                     reader: string;
                     path: string;
                     field_path: string;
@@ -463,12 +467,20 @@ mod tests {
         .map_err(|err| err.to_string())?;
         let database = generated_file(&files, "GameConfig.cs")?;
         require_contains(database, "long countValue = default!;")?;
+        require_contains(database, "long countValue2 = default!;")?;
+        require_contains(database, "long paramsValue = default!;")?;
+        require_contains(database, "long paramsValue2 = default!;")?;
         require_contains(database, "string keyValue = default!;")?;
+        require_contains(database, "string keyValue2 = default!;")?;
         require_contains(database, "string readerValue = default!;")?;
         require_contains(database, "string pathValue = default!;")?;
         require_contains(database, "string fieldPathValue = default!;")?;
         require_contains(database, "countValue = ReadInt(ref reader, fieldPath);")?;
+        require_contains(database, "countValue2 = ReadInt(ref reader, fieldPath);")?;
+        require_contains(database, "paramsValue = ReadInt(ref reader, fieldPath);")?;
+        require_contains(database, "paramsValue2 = ReadInt(ref reader, fieldPath);")?;
         require_contains(database, "keyValue = ReadString(ref reader, fieldPath);")?;
+        require_contains(database, "keyValue2 = ReadString(ref reader, fieldPath);")?;
         require_contains(database, "readerValue = ReadString(ref reader, fieldPath);")?;
         require_contains(database, "pathValue = ReadString(ref reader, fieldPath);")?;
         require_contains(
@@ -476,11 +488,16 @@ mod tests {
             "fieldPathValue = ReadString(ref reader, fieldPath);",
         )?;
         require_contains(database, "Count = countValue,")?;
+        require_contains(database, "CountValue = countValue2,")?;
+        require_contains(database, "Params = paramsValue,")?;
+        require_contains(database, "ParamsValue = paramsValue2,")?;
         require_contains(database, "Key = keyValue,")?;
+        require_contains(database, "KeyValue = keyValue2,")?;
         require_contains(database, "Reader = readerValue,")?;
         require_contains(database, "Path = pathValue,")?;
         require_contains(database, "FieldPath = fieldPathValue,")?;
         require_not_contains(database, "long count =")?;
+        require_not_contains(database, "long params =")?;
         require_not_contains(database, "string key =")?;
         require_not_contains(database, "string reader =")?;
         require_not_contains(database, "string path =")?;
