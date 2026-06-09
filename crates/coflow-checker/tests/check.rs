@@ -468,8 +468,8 @@ fn any_and_none_quantifiers_do_not_leak_trial_failures() {
     let any_schema = compile_schema(
         r#"
             type Item {
-                values: [int];
-                check { any value in values { value > 0; } }
+                nums: [int];
+                check { any value in nums { value > 0; } }
             }
         "#,
     );
@@ -477,7 +477,7 @@ fn any_and_none_quantifiers_do_not_leak_trial_failures() {
     any_builder.add_record(
         "Item",
         [(
-            "values",
+            "nums",
             CfdInputValue::Array(vec![
                 CfdInputValue::from(-1_i64),
                 CfdInputValue::from(1_i64),
@@ -492,8 +492,8 @@ fn any_and_none_quantifiers_do_not_leak_trial_failures() {
     let none_schema = compile_schema(
         r#"
             type Item {
-                values: [int];
-                check { none value in values { value > 0; } }
+                nums: [int];
+                check { none value in nums { value > 0; } }
             }
         "#,
     );
@@ -501,7 +501,7 @@ fn any_and_none_quantifiers_do_not_leak_trial_failures() {
     none_builder.add_record(
         "Item",
         [(
-            "values",
+            "nums",
             CfdInputValue::Array(vec![
                 CfdInputValue::from(-1_i64),
                 CfdInputValue::from(-2_i64),
@@ -680,8 +680,8 @@ fn any_and_none_quantifier_failures_report_element_failures() {
     let any_schema = compile_schema(
         r#"
             type Item {
-                values: [int];
-                check { any value in values { value > 0; } }
+                nums: [int];
+                check { any value in nums { value > 0; } }
             }
         "#,
     );
@@ -689,7 +689,7 @@ fn any_and_none_quantifier_failures_report_element_failures() {
     any_builder.add_record(
         "Item",
         [(
-            "values",
+            "nums",
             CfdInputValue::Array(vec![
                 CfdInputValue::from(-1_i64),
                 CfdInputValue::from(-2_i64),
@@ -708,14 +708,14 @@ fn any_and_none_quantifier_failures_report_element_failures() {
         .iter()
         .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
         .collect::<Vec<_>>();
-    assert!(any_paths.contains(&CfdPath::root().field("values").index(0)));
-    assert!(any_paths.contains(&CfdPath::root().field("values").index(1)));
+    assert!(any_paths.contains(&CfdPath::root().field("nums").index(0)));
+    assert!(any_paths.contains(&CfdPath::root().field("nums").index(1)));
 
     let none_schema = compile_schema(
         r#"
             type Item {
-                values: [int];
-                check { none value in values { value > 0; } }
+                nums: [int];
+                check { none value in nums { value > 0; } }
             }
         "#,
     );
@@ -723,7 +723,7 @@ fn any_and_none_quantifier_failures_report_element_failures() {
     none_builder.add_record(
         "Item",
         [(
-            "values",
+            "nums",
             CfdInputValue::Array(vec![CfdInputValue::from(1_i64), CfdInputValue::from(2_i64)]),
         )],
     );
@@ -739,6 +739,6 @@ fn any_and_none_quantifier_failures_report_element_failures() {
         .iter()
         .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
         .collect::<Vec<_>>();
-    assert!(none_paths.contains(&CfdPath::root().field("values").index(0)));
-    assert!(none_paths.contains(&CfdPath::root().field("values").index(1)));
+    assert!(none_paths.contains(&CfdPath::root().field("nums").index(0)));
+    assert!(none_paths.contains(&CfdPath::root().field("nums").index(1)));
 }
