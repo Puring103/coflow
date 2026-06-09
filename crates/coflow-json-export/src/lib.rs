@@ -83,15 +83,15 @@ impl<'a> JsonExporter<'a> {
             if schema_type.is_abstract {
                 continue;
             }
-            let table = self.model.table(&schema_type.name);
             let has_id_field = schema_type
                 .all_fields
                 .iter()
                 .any(|field| has_annotation(&field.annotations, "id"));
-            if table.is_none() && !has_id_field {
+            if !has_id_field {
                 continue;
             }
 
+            let table = self.model.table(&schema_type.name);
             let value = if let Some(table) = table {
                 self.encode_table(table)?
             } else {
