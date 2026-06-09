@@ -46,29 +46,27 @@ crates/
 
 ## Exporter 架构
 
-`coflow-exporter-core` 负责把已经验证过的 `CfdDataModel` 和编译后的 `CftContainer` 转成格式无关的表导出模型。这样 JSON exporter 和 MessagePack exporter 不会重复实现 schema 遍历、表选择、字段顺序、多态 `$type`、`@ref` ID 保留和字典 key 处理。
+`coflow-exporter-core` 负责复用已经验证过的 `CfdDataModel` 和编译后的 `CftContainer`，提供格式无关的 schema-aware 导出遍历。这样 JSON exporter 和 MessagePack exporter 不会重复实现 schema 遍历、表选择、字段顺序、多态 `$type`、`@ref` ID 保留和字典 key 处理。
 
-核心导出模型应保持格式无关：
+不新增一套公共 `ExportValue` 数据模型。`CfdDataModel` 已经是 source-neutral 的验证后数据模型，里面有 `CfdValue`、`CfdRecord`、`CfdTable`、`CfdDictKey`、`CfdIdValue` 等结构。再引入一个公共 `ExportValue` 会让项目出现第二套“数据模型”，增加同步和命名成本。
 
-```rust
-pub enum ExportValue {
-    Null,
-    Bool(bool),
-    Int(i64),
-    Float(f64),
-    String(String),
-    Array(Vec<ExportValue>),
-    Map(Vec<(String, ExportValue)>),
-}
+导出层仍然需要公共逻辑，但公共逻辑应该是“如何按导出语义遍历 `CfdDataModel`”，而不是“把 `CfdDataModel` 复制成另一个树”。
 
-pub type ExportTables = BTreeMap<String, ExportValue>;
-```
+`coflow-exporter-core` 应封装这些共享规则：
 
-`Map` 使用有序 key-value 列表，而不是 hash map。这样可以保留确定性的字段顺序，也便于编码器直接写紧凑的二进制 map，不需要重新排序或重解析。
+- 只导出非 abstract 且带 `@id` 的 concrete table，并为缺失数据的 table 导出空表；
+- 按 schema 的继承展开顺序输出字段，而不是按 `CfdRecord.fields` 的 `BTreeMap` 字典序；
+- 在声明类型是多态范围时插入 `$type`；
+- 把 `CfdValue::Ref { id, target }` 按 `@ref` 字段导出为原始 ID，而不是内联目标记录；
+- 把 enum 导出为底层整数值；
+- 把 dict key 统一导出为 string key；
+- 按声明类型处理 nullable、array、dict 和 object 的递归编码。
 
-`coflow-exporter-json` 把 `ExportValue` 转成 `serde_json::Value` 并写出 pretty JSON，保持现有 JSON 文件形状不变。
+具体 API 可以是 visitor/encoder 风格，例如让 `coflow-exporter-core` 驱动遍历，JSON 和 MessagePack 分别实现自己的 writer。JSON exporter 可以在 writer 中构建 `serde_json::Value`，MessagePack exporter 可以直接写 MessagePack bytes。核心约束是：公共 crate 复用导出遍历和语义判断，但不拥有第二套完整数据表示。
 
-`coflow-exporter-messagepack` 直接把 `ExportValue` 编码成裸 MessagePack bytes，不经过 JSON 文本。实现可以使用 `rmp` / `rmp-serde`，但公开 API 应暴露表 bytes 或 writer-oriented API，不应该让 CLI 层了解具体编码细节。
+`coflow-exporter-json` 使用 core traversal 生成并写出 pretty JSON，保持现有 JSON 文件形状不变。
+
+`coflow-exporter-messagepack` 使用同一套 core traversal 直接写裸 MessagePack bytes，不经过 JSON 文本。实现可以使用 `rmp` / `rmp-serde`，但公开 API 应暴露表 bytes 或 writer-oriented API，不应该让 CLI 层了解具体编码细节。
 
 ## MessagePack 格式
 
