@@ -337,7 +337,7 @@ fn loader_methods(view: &SchemaView) -> Result<Vec<CsharpLoader>, CsharpCodegenE
         .into_iter()
         .map(|type_name| {
             let ty = view.type_meta(&type_name)?;
-            let mut used_local_names = HashSet::new();
+            let mut used_local_names = loader_reserved_local_names(ty);
             Ok(CsharpLoader {
                 type_name,
                 fields: ty
@@ -367,6 +367,13 @@ fn loader_methods(view: &SchemaView) -> Result<Vec<CsharpLoader>, CsharpCodegenE
                     .collect::<Result<Vec<_>, CsharpCodegenError>>()?,
             })
         })
+        .collect()
+}
+
+fn loader_reserved_local_names(ty: &TypeMeta) -> HashSet<String> {
+    ty.all_fields
+        .iter()
+        .map(|field| format!("has{}", pascal_case(&field.name)))
         .collect()
 }
 
