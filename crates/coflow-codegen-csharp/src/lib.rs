@@ -228,6 +228,12 @@ mod tests {
         require_not_contains(database, "var count = reader.ReadMapHeader();")?;
         require_not_contains(database, "var count = reader.ReadArrayHeader();")?;
         require_not_contains(database, "count = reader.ReadArrayHeader();")?;
+        require_contains(database, "var key = ReadString(ref reader, path);")?;
+        require_contains(database, "var typeKey = ReadString(ref reader, path);")?;
+        require_contains(database, "var rawKey = ReadString(ref reader, path);")?;
+        require_not_contains(database, "var key = reader.ReadString();")?;
+        require_not_contains(database, "var typeKey = reader.ReadString();")?;
+        require_not_contains(database, "var rawKey = reader.ReadString();")?;
         require_contains(database, "case \"item_id\":")?;
         require_contains(database, "reader.Skip()")?;
         if !database.contains("LoadRewardPolymorphic(ref reader, path)")

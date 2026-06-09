@@ -59,15 +59,7 @@ public partial class {{ project.database_class }}
 {% endfor %}
         for (var i = 0; i < count; i++)
         {
-            var key = reader.ReadString();
-            if (key == null)
-            {
-                throw new CftLoadException(
-                    $"field `{path}` object key must be a string",
-                    path,
-                    "string key",
-                    "nil");
-            }
+            var key = ReadString(ref reader, path);
 
             var fieldPath = $"{path}.{key}";
 
@@ -118,7 +110,7 @@ public partial class {{ project.database_class }}
                 "empty object");
         }
 
-        var typeKey = reader.ReadString();
+        var typeKey = ReadString(ref reader, path);
         if (typeKey != "$type")
         {
             throw new CftLoadException(
@@ -320,15 +312,7 @@ public partial class {{ project.database_class }}
 
         for (var i = 0; i < count; i++)
         {
-            var rawKey = reader.ReadString();
-            if (rawKey == null)
-            {
-                throw new CftLoadException(
-                    $"dictionary key `{path}` must be a string",
-                    path,
-                    "string key",
-                    "nil");
-            }
+            var rawKey = ReadString(ref reader, path);
 
             var keyPath = $"{path}.{rawKey}";
             var key = readKey(rawKey, keyPath);
