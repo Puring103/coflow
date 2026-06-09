@@ -60,7 +60,7 @@ pub fn build_csharp_type(schema_type: &CftSchemaType, view: &SchemaView) -> Csha
 
         properties.push(CsharpProperty {
             name: pascal_case(&field.name),
-            type_name: csharp_property_type(&field_ty, view),
+            type_name: csharp_property_type(&field_ty),
             setter: "init".to_string(),
             initializer: if is_struct {
                 None
@@ -111,7 +111,7 @@ pub fn build_csharp_database(
         .collect::<Result<Vec<_>, _>>()?;
     let indexes = indexed_fields(view, tables)
         .iter()
-        .map(|indexed| build_index_model(view, indexed))
+        .map(build_index_model)
         .collect::<Vec<_>>();
     let ref_targets = view.ref_target_names();
     let ref_indexes = build_ref_indexes(view, tables, &ref_targets)?;
@@ -207,7 +207,7 @@ fn build_table_model(
         list_property: pluralize(table_name),
         list_var: camel_case(&pluralize(table_name)),
         item_var: camel_case(table_name),
-        id_type: csharp_type(&id_field.ty, view),
+        id_type: csharp_type(&id_field.ty),
         id_property: pascal_case(&id_field.name),
         id_source_name: id_field.name.clone(),
         index_field: index_var_name(table_name),
@@ -215,14 +215,14 @@ fn build_table_model(
     })
 }
 
-fn build_index_model(view: &SchemaView, indexed: &IndexedField) -> CsharpIndex {
+fn build_index_model(indexed: &IndexedField) -> CsharpIndex {
     let storage_field = multi_index_var_name(&indexed.table, &indexed.field.name);
     CsharpIndex {
         table_name: indexed.table.clone(),
         list_property: pluralize(&indexed.table),
         list_var: camel_case(&pluralize(&indexed.table)),
         field_property: pascal_case(&indexed.field.name),
-        key_type: csharp_type(&indexed.field.ty, view),
+        key_type: csharp_type(&indexed.field.ty),
         parameter_name: storage_field.trim_start_matches('_').to_string(),
         storage_field,
     }
@@ -281,7 +281,7 @@ fn build_ref_indexes(
 
         out.push(CsharpRefIndex {
             target_name: target.clone(),
-            target_id_type: csharp_type(&target_id.ty, view),
+            target_id_type: csharp_type(&target_id.ty),
             index_field: ref_index_var_name(target),
             parameter_name: ref_index_param_name(target),
             assignable_sources,
@@ -608,7 +608,7 @@ fn resolve_parameters(
 
     for target in ref_targets {
         let target_meta = view.type_meta(target)?;
-        let id_type = csharp_type(&target_meta.id_field()?.ty, view);
+        let id_type = csharp_type(&target_meta.id_field()?.ty);
         out.push(CsharpParameter {
             ty: format!("Dictionary<{id_type}, {target}>"),
             name: ref_index_param_name(target),
@@ -625,7 +625,7 @@ fn resolve_index_parameter_models(
     let mut out = Vec::new();
     for target in ref_targets {
         let target_meta = view.type_meta(target)?;
-        let id_type = csharp_type(&target_meta.id_field()?.ty, view);
+        let id_type = csharp_type(&target_meta.id_field()?.ty);
         out.push(CsharpParameter {
             ty: format!("Dictionary<{id_type}, {target}>"),
             name: ref_index_param_name(target),
@@ -731,37 +731,33 @@ fn read_dict_key_expr(ty: &FieldType, key: &str, path: &str) -> Result<String, C
     }
 }
 
-fn csharp_type(ty: &FieldType, view: &SchemaView) -> String {
+fn csharp_type(ty: &FieldType) -> String {
     match ty {
         FieldType::Int => "long".to_string(),
         FieldType::Float => "float".to_string(),
         FieldType::Bool => "bool".to_string(),
         FieldType::String => "string".to_string(),
         FieldType::Type(name) | FieldType::Enum(name) => name.clone(),
-        FieldType::Array(inner) => format!("List<{}>", csharp_type(inner, view)),
+        FieldType::Array(inner) => format!("List<{}>", csharp_type(inner)),
         FieldType::Dict(key, value) => {
-            format!(
-                "Dictionary<{}, {}>",
-                csharp_type(key, view),
-                csharp_type(value, view)
-            )
+            format!("Dictionary<{}, {}>", csharp_type(key), csharp_type(value))
         }
-        FieldType::Nullable(inner) => format!("{}?", csharp_type(inner, view)),
+        FieldType::Nullable(inner) => format!("{}?", csharp_type(inner)),
     }
 }
 
-fn csharp_property_type(ty: &FieldType, view: &SchemaView) -> String {
+fn csharp_property_type(ty: &FieldType) -> String {
     match ty {
-        FieldType::Array(inner) => format!("IReadOnlyList<{}>", csharp_type(inner, view)),
+        FieldType::Array(inner) => format!("IReadOnlyList<{}>", csharp_type(inner)),
         FieldType::Dict(key, value) => {
             format!(
                 "IReadOnlyDictionary<{}, {}>",
-                csharp_type(key, view),
-                csharp_type(value, view)
+                csharp_type(key),
+                csharp_type(value)
             )
         }
-        FieldType::Nullable(inner) => format!("{}?", csharp_property_type(inner, view)),
-        other => csharp_type(other, view),
+        FieldType::Nullable(inner) => format!("{}?", csharp_property_type(inner)),
+        other => csharp_type(other),
     }
 }
 
@@ -796,7 +792,7 @@ fn default_value_expr(
     };
     Ok(Some(match default {
         CftSchemaDefaultValue::Null if ty.is_nullable() && is_csharp_value_type(ty, view) => {
-            format!("({})null", csharp_type(ty, view))
+            format!("({})null", csharp_type(ty))
         }
         CftSchemaDefaultValue::Null => "null".to_string(),
         CftSchemaDefaultValue::Int(value) => value.to_string(),
@@ -807,7 +803,7 @@ fn default_value_expr(
             enum_name, variant, ..
         } => format!("{enum_name}.{variant}"),
         CftSchemaDefaultValue::EmptyArray | CftSchemaDefaultValue::EmptyObject => {
-            collection_default_expr(ty.non_nullable(), view)?
+            collection_default_expr(ty.non_nullable())?
         }
     }))
 }
@@ -824,7 +820,7 @@ fn default_initializer(field: &FieldMeta, ty: &FieldType, view: &SchemaView) -> 
     match ty.non_nullable() {
         FieldType::String => Some("\"\"".to_string()),
         FieldType::Type(name) if !view.type_is_struct(name) => Some("null!".to_string()),
-        FieldType::Array(_) | FieldType::Dict(_, _) => collection_default_expr(ty, view).ok(),
+        FieldType::Array(_) | FieldType::Dict(_, _) => collection_default_expr(ty).ok(),
         FieldType::Int
         | FieldType::Float
         | FieldType::Bool
@@ -845,16 +841,13 @@ fn is_csharp_value_type(ty: &FieldType, view: &SchemaView) -> bool {
     }
 }
 
-fn collection_default_expr(
-    ty: &FieldType,
-    view: &SchemaView,
-) -> Result<String, CsharpCodegenError> {
+fn collection_default_expr(ty: &FieldType) -> Result<String, CsharpCodegenError> {
     match ty.non_nullable() {
-        FieldType::Array(inner) => Ok(format!("new List<{}>()", csharp_type(inner, view))),
+        FieldType::Array(inner) => Ok(format!("new List<{}>()", csharp_type(inner))),
         FieldType::Dict(key, value) => Ok(format!(
             "new Dictionary<{}, {}>()",
-            csharp_type(key, view),
-            csharp_type(value, view)
+            csharp_type(key),
+            csharp_type(value)
         )),
         _ => Err(CsharpCodegenError::new(
             "collection default requires array or dict type",
