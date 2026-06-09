@@ -12,7 +12,7 @@ use coflow_data_model::{CfdErrorCode, CfdIdValue, CfdValue};
 use coflow_excel_loader::{
     load_excel, load_excel_model, ExcelDiagnostic, ExcelLoadError, ExcelSheet, ExcelSource,
 };
-use rust_xlsxwriter::{Workbook, XlsxError};
+use rust_xlsxwriter::{ExcelDateTime, Format, Formula, Workbook, XlsxError};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -185,6 +185,149 @@ fn reports_cell_parse_location_for_bad_cell_values() -> TestResult {
     assert_eq!(location.sheet.as_deref(), Some("Item"));
     assert_eq!(location.row, Some(2));
     assert_eq!(location.column, Some(2));
+    Ok(())
+}
+
+#[test]
+fn rejects_excel_error_cells() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                id: string;
+                value: string;
+            }
+        "#,
+    )?;
+    let path = temp_xlsx_path("error-cell");
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "value")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "item_1")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_formula(1, 1, Formula::new("=1/0").set_result("#DIV/0!"))
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
+
+    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
+    let Err(err) = load_excel_model(&schema, &[source]) else {
+        return Err("expected unsupported cell value".to_string());
+    };
+
+    let ExcelLoadError::UnsupportedCellValue { location, kind } = err else {
+        return Err(format!("expected unsupported cell value, got {err:?}"));
+    };
+    assert_eq!(location.sheet.as_deref(), Some("Item"));
+    assert_eq!(location.row, Some(2));
+    assert_eq!(location.column, Some(2));
+    assert!(kind.contains("Error"), "expected Error kind, got {kind}");
+    Ok(())
+}
+
+#[test]
+fn rejects_native_excel_datetime_cells() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                id: string;
+                value: string;
+            }
+        "#,
+    )?;
+    let path = temp_xlsx_path("datetime-cell");
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "value")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "item_1")
+        .map_err(|err| format!("{err:?}"))?;
+    let datetime = ExcelDateTime::from_ymd(2026, 6, 9).map_err(|err| format!("{err:?}"))?;
+    let format = Format::new().set_num_format("yyyy-mm-dd");
+    sheet
+        .set_column_format(1, &format)
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_datetime(1, 1, &datetime)
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
+
+    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
+    let Err(err) = load_excel_model(&schema, &[source]) else {
+        return Err("expected unsupported cell value".to_string());
+    };
+
+    let ExcelLoadError::UnsupportedCellValue { location, kind } = err else {
+        return Err(format!("expected unsupported cell value, got {err:?}"));
+    };
+    assert_eq!(location.sheet.as_deref(), Some("Item"));
+    assert_eq!(location.row, Some(2));
+    assert_eq!(location.column, Some(2));
+    assert!(
+        kind.contains("DateTime"),
+        "expected DateTime kind, got {kind}"
+    );
+    Ok(())
+}
+
+#[test]
+fn accepts_boolean_cells_for_bool_fields() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                id: string;
+                enabled: bool;
+            }
+        "#,
+    )?;
+    let path = temp_xlsx_path("bool-cell");
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "enabled")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "item_1")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_boolean(1, 1, true)
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
+
+    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
+    let model = load_excel_model(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+    let Some(table) = model.table("Item") else {
+        return Err("expected Item table".to_string());
+    };
+    let Some(record_id) = table.records.first().copied() else {
+        return Err("expected Item record".to_string());
+    };
+    let Some(record) = model.record(record_id) else {
+        return Err("expected Item record".to_string());
+    };
+    assert_eq!(record.field("enabled"), Some(&CfdValue::Bool(true)));
     Ok(())
 }
 

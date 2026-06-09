@@ -315,6 +315,12 @@ fn cases() -> Vec<Case> {
             codes: &[CftErrorCode::InvalidConstValue],
         },
         Case {
+            name: "reserved identifier",
+            phase: Phase::Compile,
+            source: "type A { from: string; }",
+            codes: &[CftErrorCode::ReservedIdentifier],
+        },
+        Case {
             name: "unknown value name",
             phase: Phase::Compile,
             source: "type A { check { missing; } }",
@@ -495,7 +501,7 @@ fn important_error_code_branches_emit_stable_codes() {
         Case {
             name: "invalid annotation target enum variant",
             phase: Phase::Compile,
-            source: "enum E { @deprecated A, }",
+            source: "enum E { @index A, }",
             codes: &[CftErrorCode::InvalidAnnotationTarget],
         },
         Case {

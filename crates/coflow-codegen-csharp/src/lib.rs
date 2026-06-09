@@ -60,8 +60,9 @@ impl std::error::Error for CsharpCodegenError {}
 
 /// Generates C# type definitions and a Newtonsoft.Json based folder loader.
 ///
-/// The emitted loader expects the current `coflow export json` layout: one
-/// `<TypeName>.json` file per table, each containing a JSON array.
+/// The emitted loader is a trusted artifact loader for JSON produced by
+/// `coflow export json`; it is not a validator for arbitrary JSON.
+/// It expects one `<TypeName>.json` file per table, each containing a JSON array.
 /// It targets the general-purpose `Newtonsoft.Json` package API rather than a
 /// Unity-specific serialization API.
 ///
@@ -116,6 +117,48 @@ mod tests {
         } else {
             Err(format!("expected generated output to contain `{needle}`"))
         }
+    }
+
+    fn require_not_contains(contents: &str, needle: &str) -> Result<(), String> {
+        if contents.contains(needle) {
+            Err(format!(
+                "expected generated output not to contain `{needle}`"
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn codegen_does_not_emit_struct_property_initializers() -> Result<(), String> {
+        let schema = compile_schema(
+            r#"
+            @struct
+            sealed type StatBlock {
+                speed: float = 1.0;
+                crit: int = 5;
+            }
+
+            type Item {
+                @id id: string;
+                stats: StatBlock;
+            }
+        "#,
+        )?;
+
+        let files = generate_csharp_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+            .map_err(|err| err.to_string())?;
+        let stat_block = generated_file(&files, "StatBlock.cs")?;
+        require_contains(stat_block, "public partial struct StatBlock")?;
+        require_not_contains(stat_block, "= 1.0f;")?;
+        require_not_contains(stat_block, "= 5;")?;
+        let database = generated_file(&files, "GameConfig.cs")?;
+        let item = generated_file(&files, "Item.cs")?;
+        require_contains(database, "Speed = ReadWithDefault")?;
+        require_contains(database, "Crit = ReadWithDefault")?;
+        require_contains(item, "public StatBlock Stats { get; init; }")?;
+        require_not_contains(item, "public StatBlock Stats { get; init; } = null!;")?;
+        Ok(())
     }
 
     #[test]
@@ -177,10 +220,16 @@ mod tests {
     ) -> Result<(), String> {
         let schema = compile_schema(
             r#"
+                enum Element {
+                    Physical = 0,
+                    Fire = 1,
+                }
+
                 type Item {
                     @id id: string;
                     name: string = "unknown";
                     maybe: int?;
+                    element: Element? = null;
                     tags: [string] = [];
                 }
             "#,
@@ -198,6 +247,10 @@ mod tests {
         require_contains(
             database,
             "Maybe = ReadRequiredNullable(obj, \"maybe\", path",
+        )?;
+        require_contains(
+            database,
+            "Element = ReadNullableWithDefault(obj, \"element\", path, (Element?)null",
         )?;
         require_contains(
             database,
@@ -293,6 +346,27 @@ mod tests {
         let item = generated_file(&files, "Item.cs")?;
         require_contains(item, "/// <summary>A &lt; B &amp; C</summary>")?;
         require_contains(item, "/// <summary>Line 1 Line 2</summary>")?;
+        Ok(())
+    }
+
+    #[test]
+    fn codegen_emits_enum_variant_annotations() -> Result<(), String> {
+        let schema = compile_schema(
+            r#"
+                enum Rarity {
+                    @display("Common display")
+                    Common,
+                    @deprecated
+                    Old,
+                }
+            "#,
+        )?;
+
+        let files = generate_csharp_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+            .map_err(|err| err.to_string())?;
+        let rarity = generated_file(&files, "Rarity.cs")?;
+        require_contains(rarity, "/// <summary>Common display</summary>")?;
+        require_contains(rarity, "[Obsolete]")?;
         Ok(())
     }
 }

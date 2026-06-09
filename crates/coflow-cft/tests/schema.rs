@@ -43,6 +43,28 @@ fn schema_reports_duplicate_field_enum_value_and_unknown_type() {
 }
 
 #[test]
+fn schema_rejects_reserved_identifiers() {
+    let cases = [
+        "type int { value: string; }",
+        "enum len { A, }",
+        "const match = 1;",
+        "const export = 1;",
+        "type Item { from: string; }",
+        "enum E { _, }",
+    ];
+
+    for source in cases {
+        let err = compile_one(source).expect_err(source);
+        assert_has_code(&err, CftErrorCode::ReservedIdentifier);
+    }
+}
+
+#[test]
+fn schema_allows_underscore_prefixed_identifiers() {
+    compile_one("type _Internal { _value: int; }").expect("underscore-prefixed names are valid");
+}
+
+#[test]
 fn schema_reports_inheritance_and_modifier_errors() {
     let source = r#"
         sealed type Parent { id: string; }
@@ -138,6 +160,39 @@ fn schema_accepts_explicit_i64_max_enum_value_without_following_auto_variant() {
 
     let enum_schema = container.resolve_enum("Limit").unwrap();
     assert_eq!(enum_schema.variants[0].value, i64::MAX);
+}
+
+#[test]
+fn schema_accepts_display_and_deprecated_on_enum_variants() {
+    let schema = compile_one(
+        r#"
+            enum Rarity {
+                @display("Common display")
+                Common,
+                @deprecated
+                Old,
+            }
+        "#,
+    )
+    .expect("variant annotations should compile");
+
+    let rarity = schema.resolve_enum("Rarity").expect("enum");
+    assert_eq!(rarity.variants[0].annotations[0].name, "display");
+    assert_eq!(rarity.variants[1].annotations[0].name, "deprecated");
+}
+
+#[test]
+fn schema_rejects_invalid_enum_variant_annotations() {
+    let err = compile_one(
+        r#"
+            enum Rarity {
+                @index
+                Common,
+            }
+        "#,
+    )
+    .expect_err("invalid variant annotation should fail");
+    assert_has_code(&err, CftErrorCode::InvalidAnnotationTarget);
 }
 
 /// Regression for B4: the lexer used to parse the magnitude as `i64`, so

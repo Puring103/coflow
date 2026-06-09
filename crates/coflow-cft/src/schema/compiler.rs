@@ -1,8 +1,9 @@
 use super::support::{
     build_schema_type_ref, const_value, convert_annotations, convert_check_block, find_annotation,
     format_type_ref, has_annotation, is_i64_power_of_two, is_indexable_field_type,
-    is_string_or_int, is_valid_dict_key, types_assignable, AnnotationSpec, AnnotationTarget,
-    ConstInfo, EnumInfo, FieldInfo, FieldOrigin, Symbol, SymbolKind, Ty, TypeInfo,
+    is_reserved_identifier, is_string_or_int, is_valid_dict_key, types_assignable, AnnotationSpec,
+    AnnotationTarget, ConstInfo, EnumInfo, FieldInfo, FieldOrigin, Symbol, SymbolKind, Ty,
+    TypeInfo,
 };
 use super::type_checker::TypeChecker;
 use super::{
@@ -98,16 +99,6 @@ impl<'a> SchemaCompiler<'a> {
                                 "annotation has no target",
                             );
                         }
-                        for variant in &def.variants {
-                            for annotation in &variant.annotations {
-                                self.push_diag(
-                                    CftErrorCode::InvalidAnnotationTarget,
-                                    module_id,
-                                    annotation.span,
-                                    "annotations cannot be applied to enum variants",
-                                );
-                            }
-                        }
                     }
                     Item::Type(def) => {
                         for annotation in &def.dangling_annotations {
@@ -129,6 +120,7 @@ impl<'a> SchemaCompiler<'a> {
             for item in &module.ast.items {
                 match item {
                     Item::Const(def) => {
+                        self.validate_identifier(&def.name, module_id, def.name_span);
                         self.insert_symbol(&def.name, SymbolKind::Const, module_id, def.name_span);
                         self.consts.insert(
                             def.name.clone(),
@@ -140,6 +132,7 @@ impl<'a> SchemaCompiler<'a> {
                         );
                     }
                     Item::Enum(def) => {
+                        self.validate_identifier(&def.name, module_id, def.name_span);
                         self.insert_symbol(&def.name, SymbolKind::Enum, module_id, def.name_span);
                         self.enums.insert(
                             def.name.clone(),
@@ -154,6 +147,7 @@ impl<'a> SchemaCompiler<'a> {
                         );
                     }
                     Item::Type(def) => {
+                        self.validate_identifier(&def.name, module_id, def.name_span);
                         self.insert_symbol(&def.name, SymbolKind::Type, module_id, def.name_span);
                         self.types.insert(
                             def.name.clone(),
@@ -165,6 +159,17 @@ impl<'a> SchemaCompiler<'a> {
                     }
                 }
             }
+        }
+    }
+
+    fn validate_identifier(&mut self, name: &str, module_id: &ModuleId, span: Span) {
+        if is_reserved_identifier(name) {
+            self.push_diag(
+                CftErrorCode::ReservedIdentifier,
+                module_id,
+                span,
+                format!("`{name}` is a reserved identifier"),
+            );
         }
     }
 
@@ -202,6 +207,7 @@ impl<'a> SchemaCompiler<'a> {
             let mut variants = BTreeSet::new();
             let mut values_by_name = BTreeMap::new();
             for (index, variant) in info.def.variants.iter().enumerate() {
+                self.validate_identifier(&variant.name, &info.module, variant.name_span);
                 if let Some(first) = variant_names.get(&variant.name) {
                     self.diagnostics.push(
                         CftDiagnostic::error(
@@ -372,6 +378,7 @@ impl<'a> SchemaCompiler<'a> {
         self.each_type(|this, info| {
             let mut fields: BTreeMap<String, Span> = BTreeMap::new();
             for field in &info.def.fields {
+                this.validate_identifier(&field.name, &info.module, field.name_span);
                 if let Some(first_span) = fields.get(&field.name) {
                     this.diagnostics.push(
                         CftDiagnostic::error(
@@ -626,6 +633,13 @@ impl<'a> SchemaCompiler<'a> {
                 AnnotationTarget::Enum,
                 &info.def.annotations,
             );
+            for variant in &info.def.variants {
+                this.validate_annotation_list(
+                    &info.module,
+                    AnnotationTarget::EnumVariant,
+                    &variant.annotations,
+                );
+            }
         });
 
         self.each_type(|this, info| {
@@ -1014,7 +1028,7 @@ impl<'a> SchemaCompiler<'a> {
                         .get(&variant.name)
                         .copied()
                         .map_or(0, |value| value),
-                    annotations: Vec::new(),
+                    annotations: convert_annotations(&variant.annotations),
                     span: variant.span,
                 })
                 .collect::<Vec<_>>();

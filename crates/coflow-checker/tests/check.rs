@@ -184,6 +184,131 @@ fn null_arithmetic_and_ordered_comparison_report_null_access() {
 }
 
 #[test]
+fn check_runner_handles_nullable_element_builtins() {
+    let schema = compile_schema(
+        r#"
+            type Holder {
+                nums: [int?] = [];
+                check {
+                    unique(nums);
+                    min(nums) == 1;
+                    max(nums) == 3;
+                    sum(nums) == 4;
+                    contains(nums, null);
+                    len(nums) == 3;
+                }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Holder",
+        [(
+            "nums",
+            CfdInputValue::Array(vec![
+                CfdInputValue::from(1_i64),
+                CfdInputValue::Null,
+                CfdInputValue::from(3_i64),
+            ]),
+        )],
+    );
+    let model = builder.build().expect("data model should build");
+    model.run_checks(&schema).expect("checks should pass");
+}
+
+#[test]
+fn check_runner_reports_min_max_when_nullable_array_has_no_values() {
+    let min_schema = compile_schema(
+        r#"
+            type Holder {
+                nums: [int?] = [];
+                check { min(nums) >= 0; }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&min_schema);
+    builder.add_record(
+        "Holder",
+        [("nums", CfdInputValue::Array(vec![CfdInputValue::Null]))],
+    );
+    let model = builder.build().expect("data model should build");
+    let err = model
+        .run_checks(&min_schema)
+        .expect_err("min over all-null values should fail");
+    assert_has_code(&err, CfdErrorCode::CheckEmptyMinMax);
+
+    let max_schema = compile_schema(
+        r#"
+            type Holder {
+                nums: [int?] = [];
+                check { max(nums) >= 0; }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&max_schema);
+    builder.add_record(
+        "Holder",
+        [("nums", CfdInputValue::Array(vec![CfdInputValue::Null]))],
+    );
+    let model = builder.build().expect("data model should build");
+    let err = model
+        .run_checks(&max_schema)
+        .expect_err("max over all-null values should fail");
+    assert_has_code(&err, CfdErrorCode::CheckEmptyMinMax);
+}
+
+#[test]
+fn check_runner_unique_counts_multiple_nulls_as_duplicates() {
+    let schema = compile_schema(
+        r#"
+            type Holder {
+                nums: [int?] = [];
+                check { unique(nums); }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Holder",
+        [(
+            "nums",
+            CfdInputValue::Array(vec![CfdInputValue::Null, CfdInputValue::Null]),
+        )],
+    );
+    let model = builder.build().expect("data model should build");
+    let err = model
+        .run_checks(&schema)
+        .expect_err("multiple nulls are not unique");
+    assert_has_code(&err, CfdErrorCode::CheckFailed);
+}
+
+#[test]
+fn check_runner_sums_all_null_nullable_float_as_float_zero() {
+    let schema = compile_schema(
+        r#"
+            type Holder {
+                nums: [float?] = [];
+                check { sum(nums) == 0.0; }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Holder",
+        [("nums", CfdInputValue::Array(vec![CfdInputValue::Null]))],
+    );
+    let model = builder.build().expect("data model should build");
+    model
+        .run_checks(&schema)
+        .expect("all-null nullable float sum should be 0.0");
+}
+
+#[test]
 fn check_runner_executes_inherited_checks() {
     let schema = compile_schema(
         r#"
@@ -363,8 +488,8 @@ fn any_and_none_quantifiers_do_not_leak_trial_failures() {
     let any_schema = compile_schema(
         r#"
             type Item {
-                values: [int];
-                check { any value in values { value > 0; } }
+                nums: [int];
+                check { any value in nums { value > 0; } }
             }
         "#,
     );
@@ -372,7 +497,7 @@ fn any_and_none_quantifiers_do_not_leak_trial_failures() {
     any_builder.add_record(
         "Item",
         [(
-            "values",
+            "nums",
             CfdInputValue::Array(vec![
                 CfdInputValue::from(-1_i64),
                 CfdInputValue::from(1_i64),
@@ -387,8 +512,8 @@ fn any_and_none_quantifiers_do_not_leak_trial_failures() {
     let none_schema = compile_schema(
         r#"
             type Item {
-                values: [int];
-                check { none value in values { value > 0; } }
+                nums: [int];
+                check { none value in nums { value > 0; } }
             }
         "#,
     );
@@ -396,7 +521,7 @@ fn any_and_none_quantifiers_do_not_leak_trial_failures() {
     none_builder.add_record(
         "Item",
         [(
-            "values",
+            "nums",
             CfdInputValue::Array(vec![
                 CfdInputValue::from(-1_i64),
                 CfdInputValue::from(-2_i64),
@@ -575,8 +700,8 @@ fn any_and_none_quantifier_failures_report_element_failures() {
     let any_schema = compile_schema(
         r#"
             type Item {
-                values: [int];
-                check { any value in values { value > 0; } }
+                nums: [int];
+                check { any value in nums { value > 0; } }
             }
         "#,
     );
@@ -584,7 +709,7 @@ fn any_and_none_quantifier_failures_report_element_failures() {
     any_builder.add_record(
         "Item",
         [(
-            "values",
+            "nums",
             CfdInputValue::Array(vec![
                 CfdInputValue::from(-1_i64),
                 CfdInputValue::from(-2_i64),
@@ -603,14 +728,14 @@ fn any_and_none_quantifier_failures_report_element_failures() {
         .iter()
         .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
         .collect::<Vec<_>>();
-    assert!(any_paths.contains(&CfdPath::root().field("values").index(0)));
-    assert!(any_paths.contains(&CfdPath::root().field("values").index(1)));
+    assert!(any_paths.contains(&CfdPath::root().field("nums").index(0)));
+    assert!(any_paths.contains(&CfdPath::root().field("nums").index(1)));
 
     let none_schema = compile_schema(
         r#"
             type Item {
-                values: [int];
-                check { none value in values { value > 0; } }
+                nums: [int];
+                check { none value in nums { value > 0; } }
             }
         "#,
     );
@@ -618,7 +743,7 @@ fn any_and_none_quantifier_failures_report_element_failures() {
     none_builder.add_record(
         "Item",
         [(
-            "values",
+            "nums",
             CfdInputValue::Array(vec![CfdInputValue::from(1_i64), CfdInputValue::from(2_i64)]),
         )],
     );
@@ -634,6 +759,6 @@ fn any_and_none_quantifier_failures_report_element_failures() {
         .iter()
         .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
         .collect::<Vec<_>>();
-    assert!(none_paths.contains(&CfdPath::root().field("values").index(0)));
-    assert!(none_paths.contains(&CfdPath::root().field("values").index(1)));
+    assert!(none_paths.contains(&CfdPath::root().field("nums").index(0)));
+    assert!(none_paths.contains(&CfdPath::root().field("nums").index(1)));
 }
