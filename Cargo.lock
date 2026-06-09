@@ -324,6 +324,7 @@ version = "0.1.0"
 dependencies = [
  "coflow-cft",
  "coflow-data-model",
+ "coflow-exporter-core",
  "serde_json",
 ]
 

@@ -16,4 +16,5 @@ workspace = true
 [dependencies]
 coflow-cft = { path = "../coflow-cft" }
 coflow-data-model = { path = "../coflow-data-model" }
+coflow-exporter-core = { path = "../coflow-exporter-core" }
 serde_json = { version = "1", features = ["preserve_order"] }
