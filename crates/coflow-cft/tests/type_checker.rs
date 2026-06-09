@@ -125,6 +125,23 @@ fn type_checker_accepts_nullable_element_builtins() {
 }
 
 #[test]
+fn type_checker_treats_nullable_element_min_max_results_as_non_null() {
+    let err = compile_one(
+        r#"
+            type Holder {
+                nums: [int?] = [];
+                check {
+                    min(nums) is null;
+                    max(nums) is null;
+                }
+            }
+        "#,
+    )
+    .expect_err("min/max over nullable elements should return non-null values");
+    assert_has_code(&err, CftErrorCode::OperatorTypeMismatch);
+}
+
+#[test]
 fn type_checker_rejects_is_null_for_non_nullable_operands() {
     let err = compile_one(
         r#"

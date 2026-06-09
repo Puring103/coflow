@@ -409,7 +409,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 }
                 let ty = self.check_expr_value(&args[0]);
                 match unwrap_nullable(&ty) {
-                    Ty::Array(elem) if min_max_supported(elem) => *elem.clone(),
+                    Ty::Array(elem) if min_max_supported(elem) => unwrap_nullable(elem).clone(),
                     Ty::Array(_) => {
                         self.diag(
                             CftErrorCode::FunctionArgTypeMismatch,
