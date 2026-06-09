@@ -75,7 +75,7 @@ impl std::error::Error for ExportError {}
 pub fn export_model_with_encoder<E>(
     schema: &CftContainer,
     model: &CfdDataModel,
-    encoder: E,
+    encoder: &mut E,
 ) -> Result<BTreeMap<String, E::Value>, ExportError>
 where
     E: ExportEncoder,
@@ -86,14 +86,14 @@ where
 struct Exporter<'a, E> {
     schema: SchemaView<'a>,
     model: &'a CfdDataModel,
-    encoder: E,
+    encoder: &'a mut E,
 }
 
 impl<'a, E> Exporter<'a, E>
 where
     E: ExportEncoder,
 {
-    fn new(schema: &'a CftContainer, model: &'a CfdDataModel, encoder: E) -> Self {
+    fn new(schema: &'a CftContainer, model: &'a CfdDataModel, encoder: &'a mut E) -> Self {
         Self {
             schema: SchemaView::new(schema),
             model,
