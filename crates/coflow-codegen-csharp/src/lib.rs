@@ -1,4 +1,4 @@
-//! C# code generator for Coflow's exported JSON runtime data.
+//! C# code generator for Coflow's exported JSON and `MessagePack` runtime data.
 //!
 //! The generated C# code does not depend on CFT at runtime. CFT is consumed only
 //! by this Rust crate during generation.
@@ -81,6 +81,7 @@ pub fn generate_csharp_json(
 /// Generates C# type definitions and a folder loader for the configured data format.
 ///
 /// JSON remains the default format for `CsharpCodegenOptions::new`.
+/// `MessagePack` output targets `coflow export messagepack` runtime data.
 ///
 /// # Errors
 ///
@@ -143,6 +144,14 @@ mod tests {
         } else {
             Ok(())
         }
+    }
+
+    #[test]
+    fn data_format_serializes_messagepack_without_separator() -> Result<(), String> {
+        let value = serde::Serialize::serialize(&CsharpDataFormat::MessagePack, StringSerializer)
+            .map_err(|err| err.to_string())?;
+        assert_eq!(value, "messagepack");
+        Ok(())
     }
 
     #[test]
@@ -408,5 +417,186 @@ mod tests {
         require_contains(rarity, "/// <summary>Common display</summary>")?;
         require_contains(rarity, "[Obsolete]")?;
         Ok(())
+    }
+
+    #[derive(Debug)]
+    struct StringSerializerError(String);
+
+    impl fmt::Display for StringSerializerError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            self.0.fmt(f)
+        }
+    }
+
+    impl std::error::Error for StringSerializerError {}
+
+    impl serde::ser::Error for StringSerializerError {
+        fn custom<T: fmt::Display>(msg: T) -> Self {
+            Self(msg.to_string())
+        }
+    }
+
+    struct StringSerializer;
+
+    impl serde::Serializer for StringSerializer {
+        type Ok = String;
+        type Error = StringSerializerError;
+        type SerializeSeq = serde::ser::Impossible<String, StringSerializerError>;
+        type SerializeTuple = serde::ser::Impossible<String, StringSerializerError>;
+        type SerializeTupleStruct = serde::ser::Impossible<String, StringSerializerError>;
+        type SerializeTupleVariant = serde::ser::Impossible<String, StringSerializerError>;
+        type SerializeMap = serde::ser::Impossible<String, StringSerializerError>;
+        type SerializeStruct = serde::ser::Impossible<String, StringSerializerError>;
+        type SerializeStructVariant = serde::ser::Impossible<String, StringSerializerError>;
+
+        fn serialize_str(self, value: &str) -> Result<Self::Ok, Self::Error> {
+            Ok(value.to_string())
+        }
+
+        fn serialize_bool(self, _value: bool) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_i8(self, _value: i8) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_i16(self, _value: i16) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_i32(self, _value: i32) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_i64(self, _value: i64) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_u8(self, _value: u8) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_u16(self, _value: u16) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_u32(self, _value: u32) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_u64(self, _value: u64) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_f32(self, _value: f32) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_f64(self, _value: f64) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_char(self, _value: char) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_bytes(self, _value: &[u8]) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_some<T: ?Sized + serde::Serialize>(
+            self,
+            _value: &T,
+        ) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_unit_variant(
+            self,
+            _name: &'static str,
+            _variant_index: u32,
+            variant: &'static str,
+        ) -> Result<Self::Ok, Self::Error> {
+            Ok(variant.to_string())
+        }
+
+        fn serialize_newtype_struct<T: ?Sized + serde::Serialize>(
+            self,
+            _name: &'static str,
+            _value: &T,
+        ) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_newtype_variant<T: ?Sized + serde::Serialize>(
+            self,
+            _name: &'static str,
+            _variant_index: u32,
+            _variant: &'static str,
+            _value: &T,
+        ) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_tuple_struct(
+            self,
+            _name: &'static str,
+            _len: usize,
+        ) -> Result<Self::SerializeTupleStruct, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_tuple_variant(
+            self,
+            _name: &'static str,
+            _variant_index: u32,
+            _variant: &'static str,
+            _len: usize,
+        ) -> Result<Self::SerializeTupleVariant, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_struct(
+            self,
+            _name: &'static str,
+            _len: usize,
+        ) -> Result<Self::SerializeStruct, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_struct_variant(
+            self,
+            _name: &'static str,
+            _variant_index: u32,
+            _variant: &'static str,
+            _len: usize,
+        ) -> Result<Self::SerializeStructVariant, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
     }
 }

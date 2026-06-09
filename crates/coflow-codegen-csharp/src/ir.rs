@@ -11,6 +11,7 @@ use coflow_cft::CftContainer;
 use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct CsharpCodegenOptions {
     pub namespace: String,
     pub database_class: String,
@@ -21,6 +22,7 @@ pub struct CsharpCodegenOptions {
 #[serde(rename_all = "snake_case")]
 pub enum CsharpDataFormat {
     Json,
+    #[serde(rename = "messagepack")]
     MessagePack,
 }
 
@@ -41,7 +43,7 @@ impl CsharpCodegenOptions {
     }
 
     #[must_use]
-    pub fn with_data_format(mut self, data_format: CsharpDataFormat) -> Self {
+    pub const fn with_data_format(mut self, data_format: CsharpDataFormat) -> Self {
         self.data_format = data_format;
         self
     }
