@@ -1,119 +1,590 @@
-const MAX_LEVEL = 100;
-const MAX_POWER = 999;
+const MAX_LEVEL: int = 100;
+const MAX_POWER: int = 999;
+const MIN_SPEED: float = 0.1;
+const DEFAULT_REGION: string = "world";
+const DEFAULT_SOURCE: string = "system";
+const FEATURE_RAID_ENABLED: bool = true;
+const DEFAULT_REWARD_COUNT = 1;
 
+@display("Item rarity")
 enum Rarity {
   Common = 0,
   Rare = 10,
   Epic = 20,
+  Legendary,
 }
 
-type Stats {
+enum Element {
+  Physical,
+  Fire,
+  Ice,
+  Lightning,
+  Holy,
+  Shadow,
+}
+
+enum ItemSlot {
+  None = 0,
+  Weapon = 10,
+  Armor,
+  Accessory,
+  Consumable = 50,
+  Material = 60,
+}
+
+enum QuestKind {
+  Story = 0,
+  Side,
+  Daily,
+  Raid = 10,
+}
+
+@flag
+@display("Skill tags")
+enum SkillTag {
+  Damage = 1,
+  Control = 2,
+  Heal = 4,
+  Passive = 8,
+  Ultimate = 16,
+}
+
+@struct
+@display("2D position")
+sealed type Vector2 {
+  x: float;
+  y: float;
+
+  check {
+    -10000.0 <= x <= 10000.0;
+    -10000.0 <= y <= 10000.0;
+  }
+}
+
+@struct
+sealed type StatBlock {
   hp: int;
   attack: int;
   defense: int;
   speed: float = 1.0;
+  crit: int = 5;
 
   check {
     hp > 0;
     0 <= attack <= MAX_POWER;
     0 <= defense <= MAX_POWER;
-    speed > 0.0;
+    speed >= MIN_SPEED;
+    0 <= crit <= 100;
+    attack + defense <= MAX_POWER * 2;
+    speed / 1.0 >= MIN_SPEED;
+    attack // 1 == attack;
+    attack % 1 == 0;
+    attack ** 1 == attack;
+    (1 << 2) == 4;
+    (8 >> 1) == 4;
+    ~0 != 0;
   }
 }
 
+sealed type Targeting {
+  shape: string;
+  params: {string: float} = {};
+
+  check {
+    shape != "";
+    contains(params, "range");
+    params["range"] >= 0.0;
+
+    all entry in params {
+      entry.key != "";
+      entry.value >= 0.0;
+    }
+  }
+}
+
+@display("Item")
 type Item {
   @id
   id: string;
+
+  @display("Display name")
   name: string;
+
   @index
   rarity: Rarity = Rarity.Common;
+
+  @index
+  slot: ItemSlot = ItemSlot.Material;
+
+  level_requirement: int = 1;
+  stack_limit: int = 1;
+  price: int = 0;
+  origin: Vector2;
   tags: [string] = [];
+  attributes: {string: int} = {};
+  elemental_bonus: {Element: int} = {};
+
+  @ref(Item)
+  upgrade_item_id: string? = null;
+
+  @deprecated
+  @display("Legacy combat score")
+  legacy_power: int = 0;
 
   check {
     id != "";
     name != "";
     matches(id, "^[a-z][a-z0-9_]*$");
+    rarity >= Rarity.Common;
+    slot != ItemSlot.None;
+    1 <= level_requirement <= MAX_LEVEL;
+    stack_limit > 0;
+    price >= 0;
+    len(tags) > 0;
+    unique(tags);
     none tag in tags { tag == ""; }
+    len(attributes) > 0;
+    min(values(attributes)) >= 0;
+    max(values(attributes)) <= MAX_POWER;
+    contains(keys(attributes), "power") || slot != ItemSlot.Weapon;
+    contains(tags, "weapon") || slot != ItemSlot.Weapon;
+
+    all entry in attributes {
+      entry.key != "";
+      entry.value >= 0;
+    }
+
+    all entry in elemental_bonus {
+      entry.key >= Element.Physical;
+      entry.value >= 0;
+    }
+
+    when upgrade_item_id != null {
+      upgrade_item_id.id != id;
+      upgrade_item_id.rarity >= rarity;
+    }
   }
 }
 
+@display("Skill")
 type Skill {
   @id
   id: string;
+
   name: string;
+  element: Element;
   power: int;
   cooldown: float;
 
-  check {
-    id != "";
-    name != "";
-    0 < power <= MAX_POWER;
-    cooldown >= 0.0;
-  }
-}
-
-type Monster {
-  @id
-  id: string;
-  name: string;
-  level: int;
   @index
-  rarity: Rarity;
-  stats: Stats;
+  tags: SkillTag = SkillTag.Damage;
+
+  is_passive: bool = false;
+
   @ref(Skill)
-  skill_id: string;
+  follow_up_id: string? = null;
+
+  costs: [int] = [];
+  allowed_slots: [ItemSlot] = [];
+  coefficient: float = 1.0;
+  targeting: Targeting;
 
   check {
     id != "";
     name != "";
-    1 <= level <= MAX_LEVEL;
-    stats.hp > 0;
-    skill_id.power > 0;
+    matches(id, "^[a-z][a-z0-9_]*$");
+    0 <= power <= MAX_POWER;
+    cooldown >= 0.0;
+    coefficient > 0.0;
+    unique(costs);
+    unique(allowed_slots);
+    any cost in costs { cost == 0; }
+    none cost in costs { cost < 0; }
+    any slot in allowed_slots { slot != ItemSlot.None; }
+    targeting.shape != "";
+    targeting.params["range"] >= 0.0;
+
+    when !is_passive {
+      power > 0;
+      cooldown > 0.0;
+      (tags & SkillTag.Passive) == SkillTag(0);
+    }
+
+    when is_passive {
+      power == 0;
+      cooldown == 0.0;
+      (tags & SkillTag.Passive) != SkillTag(0);
+    }
+
+    when follow_up_id != null {
+      follow_up_id.id != id;
+      follow_up_id.power <= power;
+    }
   }
 }
 
 abstract type Reward {
   id: string;
 
+  source_note: string = DEFAULT_SOURCE;
+
   check {
     id != "";
+    source_note != "";
+    matches(id, "^[a-z][a-z0-9_]*$");
   }
 }
 
-type ItemReward : Reward {
-  @ref(Item)
-  item_id: string;
-  count: int = 1;
+abstract type StackableReward : Reward {
+  count: int = DEFAULT_REWARD_COUNT;
 
   check {
-    count > 0;
-    item_id.name != "";
+    count >= DEFAULT_REWARD_COUNT;
   }
 }
 
-type CurrencyReward : Reward {
+type ItemReward : StackableReward {
+  @ref(Item)
+  item_id: string;
+
+  check {
+    item_id.name != "";
+    count == 1 || item_id.stack_limit >= count;
+  }
+}
+
+type CurrencyReward : StackableReward {
+  currency: string = "gold";
   amount: int;
 
   check {
+    currency != "";
     amount > 0;
+    count == 1;
+  }
+}
+
+type SkillUnlockReward : Reward {
+  @ref(Skill)
+  skill_id: string;
+
+  required_level: int = 1;
+
+  check {
+    skill_id.id != "";
+    1 <= required_level <= MAX_LEVEL;
+  }
+}
+
+@deprecated
+type LegacyReward : Reward {
+  legacy_code: string;
+
+  check {
+    legacy_code != "";
+  }
+}
+
+sealed type DropCondition {
+  min_level: int = 1;
+  required_element: Element? = null;
+  flags: SkillTag = SkillTag.Damage;
+
+  check {
+    1 <= min_level <= MAX_LEVEL;
+    (flags & SkillTag.Damage) != SkillTag(0)
+      || (flags & SkillTag.Control) != SkillTag(0)
+      || (flags & SkillTag.Heal) != SkillTag(0)
+      || (flags & SkillTag.Ultimate) != SkillTag(0);
+
+    when required_element != null {
+      required_element >= Element.Physical;
+    }
+  }
+}
+
+sealed type MonsterAbility {
+  @ref(Skill)
+  skill_id: string;
+
+  priority: int = 1;
+  chance: float = 1.0;
+
+  check {
+    skill_id.id != "";
+    priority > 0;
+    0.0 < chance <= 1.0;
+
+    when skill_id.is_passive {
+      chance == 1.0;
+    }
+  }
+}
+
+sealed type MonsterPhase {
+  threshold_hp_pct: float;
+
+  @ref(Skill)
+  added_skill_id: string? = null;
+
+  buffs: [SkillTag] = [];
+
+  check {
+    0.0 < threshold_hp_pct <= 1.0;
+    unique(buffs);
+
+    when added_skill_id != null {
+      added_skill_id.power >= 0;
+    }
+  }
+}
+
+sealed type SpawnPoint {
+  region: string = DEFAULT_REGION;
+  point: Vector2;
+  radius: float;
+  conditions: {string: int} = {};
+
+  check {
+    region != "";
+    radius > 0.0;
+
+    all entry in conditions {
+      entry.key != "";
+      entry.value >= 0;
+    }
+  }
+}
+
+@display("Monster")
+type Monster {
+  @id
+  id: string;
+
+  name: string;
+  level: int;
+
+  @index
+  rarity: Rarity;
+
+  stats: StatBlock;
+  position: Vector2;
+  resistances: {Element: float};
+
+  @ref(Skill)
+  skill_id: string;
+
+  @ref(Item)
+  signature_item_id: string? = null;
+
+  abilities: [MonsterAbility];
+  phases: [MonsterPhase] = [];
+  spawn_points: {int: SpawnPoint};
+  flags: SkillTag = SkillTag.Damage;
+
+  check {
+    id != "";
+    name != "";
+    matches(id, "^[a-z][a-z0-9_]*$");
+    1 <= level <= MAX_LEVEL;
+    stats.hp > 0;
+    stats.speed >= MIN_SPEED;
+    skill_id.power > 0;
+    contains(resistances, Element.Physical);
+    contains(keys(resistances), Element.Fire);
+    len(abilities) > 0;
+    any ability in abilities { ability.skill_id.id == skill_id.id; }
+    contains(spawn_points, 1);
+    spawn_points[1].radius > 0.0;
+    max(keys(spawn_points)) >= min(keys(spawn_points));
+    (flags | SkillTag.Control) != SkillTag(0);
+    (flags & SkillTag.Damage) != SkillTag(0)
+      || (flags & SkillTag.Control) != SkillTag(0)
+      || (flags & SkillTag.Ultimate) != SkillTag(0);
+
+    when signature_item_id != null {
+      signature_item_id.rarity >= rarity;
+    }
+
+    when level >= 40 {
+      rarity >= Rarity.Epic;
+      any phase in phases { phase.added_skill_id != null; }
+    }
+
+    all entry in resistances {
+      entry.key >= Element.Physical;
+      0.0 <= entry.value <= 2.0;
+    }
+
+    all ability in abilities {
+      ability.skill_id.element >= Element.Physical;
+    }
+
+    all entry in spawn_points {
+      entry.key > 0;
+      entry.value.region != "";
+    }
+
+    none phase in phases {
+      phase.threshold_hp_pct <= 0.0;
+    }
   }
 }
 
 type DropTable {
   @id
   id: string;
+
   @ref(Monster)
   monster_id: string;
+
+  conditions: DropCondition;
   rewards: [Reward];
   weights: [int];
+  bonus_by_rarity: {Rarity: int} = {};
+  currency_curve: {int: int} = {};
+  guaranteed_reward: Reward? = null;
+  notes: [string] = [];
 
   check {
     id != "";
+    matches(id, "^drop_[a-z][a-z0-9_]*$");
+    monster_id.level >= conditions.min_level;
     len(rewards) == len(weights);
     len(rewards) > 0;
     sum(weights) == 100;
     min(weights) > 0;
+    max(weights) <= 100;
+    unique(weights);
     any reward in rewards { reward is ItemReward; }
-    monster_id.level > 0;
+    any reward in rewards { reward is CurrencyReward; }
+    none reward in rewards { reward is LegacyReward; }
+    contains(bonus_by_rarity, Rarity.Rare);
+    contains(currency_curve, 1);
+    currency_curve[1] >= 0;
+    guaranteed_reward is null || guaranteed_reward is Reward;
+
+    when guaranteed_reward != null {
+      guaranteed_reward.id != "";
+    }
+
+    all reward in rewards {
+      reward is Reward;
+      reward.id != "";
+    }
+
+    all weight in weights {
+      weight > 0;
+    }
+
+    all entry in bonus_by_rarity {
+      entry.key >= Rarity.Common;
+      entry.value >= 0;
+    }
+
+    all entry in currency_curve {
+      entry.key > 0;
+      entry.value >= 0;
+    }
+
+    none note in notes {
+      note == "";
+    }
+  }
+}
+
+type QuestObjective {
+  key: string;
+  target_count: int;
+  counters: {string: int} = {};
+
+  check {
+    key != "";
+    target_count > 0;
+    contains(counters, "kill") || contains(counters, "collect");
+    sum(values(counters)) >= 0;
+
+    all entry in counters {
+      entry.key != "";
+      entry.value >= 0;
+    }
+  }
+}
+
+type DialogueNode {
+  key: string;
+  text: string;
+  next: [DialogueNode] = [];
+
+  check {
+    key != "";
+    text != "";
+    len(next) <= 3;
+
+    all child in next {
+      child.key != key;
+      child.text != "";
+    }
+  }
+}
+
+type Quest {
+  @id
+  id: string;
+
+  @index
+  kind: QuestKind;
+
+  title: string;
+  min_level: int = 1;
+
+  @ref(Monster)
+  target_monster_id: string? = null;
+
+  @ref(Item)
+  reward_item_id: string;
+
+  prerequisites: [string] = [];
+  objectives: [QuestObjective];
+  reward_preview: Reward;
+  availability: {string: int};
+  dialogue: DialogueNode;
+
+  check {
+    id != "";
+    title != "";
+    matches(id, "^quest_[a-z][a-z0-9_]*$");
+    1 <= min_level <= MAX_LEVEL;
+    reward_item_id.name != "";
+    reward_preview is Reward;
+    len(objectives) > 0;
+    unique(prerequisites);
+    contains(availability, "start_day");
+    contains(availability, "end_day");
+    availability["start_day"] >= 1;
+    availability["end_day"] >= availability["start_day"];
+    dialogue.key != "";
+
+    when target_monster_id != null {
+      target_monster_id.level >= min_level;
+    }
+
+    when kind == QuestKind.Raid {
+      FEATURE_RAID_ENABLED;
+      target_monster_id != null;
+      target_monster_id.rarity >= Rarity.Epic;
+    }
+
+    all objective in objectives {
+      objective.target_count > 0;
+    }
+
+    any objective in objectives {
+      contains(objective.counters, "kill");
+    }
+
+    none prerequisite in prerequisites {
+      prerequisite == id;
+    }
   }
 }

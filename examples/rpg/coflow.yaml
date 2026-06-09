@@ -8,13 +8,30 @@ sources:
           Item ID: id
           Name: name
           Rarity: rarity
+          Slot: slot
+          Level Requirement: level_requirement
+          Stack Limit: stack_limit
+          Price: price
+          Origin: origin
           Tags: tags
+          Attributes: attributes
+          Elemental Bonus: elemental_bonus
+          Upgrade Item ID: upgrade_item_id
+          Legacy Power: legacy_power
       - sheet: Skill
         columns:
           Skill ID: id
           Name: name
+          Element: element
           Power: power
           Cooldown: cooldown
+          Tags: tags
+          Passive: is_passive
+          Follow Up ID: follow_up_id
+          Costs: costs
+          Allowed Slots: allowed_slots
+          Coefficient: coefficient
+          Targeting: targeting
       - sheet: Monster
         columns:
           Monster ID: id
@@ -22,13 +39,38 @@ sources:
           Level: level
           Rarity: rarity
           Stats: stats
+          Position: position
+          Resistances: resistances
           Skill ID: skill_id
+          Signature Item ID: signature_item_id
+          Abilities: abilities
+          Phases: phases
+          Spawn Points: spawn_points
+          Flags: flags
       - sheet: DropTable
         columns:
           Drop ID: id
           Monster ID: monster_id
+          Conditions: conditions
           Rewards: rewards
           Weights: weights
+          Bonus By Rarity: bonus_by_rarity
+          Currency Curve: currency_curve
+          Guaranteed Reward: guaranteed_reward
+          Notes: notes
+      - sheet: Quest
+        columns:
+          Quest ID: id
+          Kind: kind
+          Title: title
+          Min Level: min_level
+          Target Monster ID: target_monster_id
+          Reward Item ID: reward_item_id
+          Prerequisites: prerequisites
+          Objectives: objectives
+          Reward Preview: reward_preview
+          Availability: availability
+          Dialogue: dialogue
 
 outputs:
   data:
