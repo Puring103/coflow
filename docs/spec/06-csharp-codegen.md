@@ -26,7 +26,7 @@
 
 ## 1. 实现方案
 
-C# codegen 是 `coflow codegen csharp` 的内置生成能力，由 `coflow.yaml` 的 `outputs.code` 配置驱动：
+C# codegen crate 接收已经编译完成的 `CftContainer` 和 C# codegen options，生成 C# 文件。它不读取 `coflow.yaml`，也不负责项目发现、路径解析或 CLI 编排；这些由 project pipeline 和 CLI 层负责。
 
 ```yaml
 outputs:
@@ -36,13 +36,14 @@ outputs:
     namespace: Example.Rpg.Config
 ```
 
-实现使用 Tera 渲染模板文件，但模板只负责文本展开，不承载 CFT 语义判断。代码生成流程为：
+上面的 YAML 是 CLI 项目配置示例：`coflow codegen csharp` 由 project pipeline 读取 `coflow.yaml`、发现并编译 schema、合并命令行选项，然后以 `CftContainer` 和 codegen options 调用 codegen crate，并把生成文件写入项目配置指定的输出目录。
 
-1. 读取 `coflow.yaml`
-2. 编译 CFT schema
-3. 将 `CftContainer` 投影为 C# 专用 codegen model
-4. 使用 Tera 模板渲染 `.cs` 文件
-5. 写入 `outputs.code.dir`
+实现使用 Tera 渲染模板文件，但模板只负责文本展开，不承载 CFT 语义判断。codegen crate 内部流程为：
+
+1. 接收 `CftContainer` 和 C# codegen options
+2. 将 `CftContainer` 投影为 C# 专用 codegen model
+3. 使用 Tera 模板渲染 `.cs` 文件
+4. 返回或写出调用方指定目标中的生成文件
 
 Codegen model 是 C# 视角的数据结构，而不是直接暴露 `CftSchemaType` 给模板：
 
