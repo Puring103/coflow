@@ -83,7 +83,8 @@ fn export_tables(
     schema: &CftContainer,
     model: &CfdDataModel,
 ) -> Result<BTreeMap<String, TestValue>, String> {
-    export_model_with_encoder(schema, model, TestEncoder)
+    let mut encoder = TestEncoder;
+    export_model_with_encoder(schema, model, &mut encoder)
         .map_err(|err| format!("export core: {err:?}"))
 }
 
@@ -262,6 +263,194 @@ fn exports_refs_enums_and_dict_keys_as_exporter_scalars() -> TestResult {
                     "7".to_string(),
                     TestValue::String("seven".to_string())
                 )])
+            ),
+        ])])
+    );
+    Ok(())
+}
+
+#[test]
+fn exports_nullable_fields_as_null_or_inner_value() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                @id
+                id: string;
+                maybe_name: string?;
+                maybe_count: int?;
+            }
+        "#,
+    )?;
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Item",
+        [
+            ("id", CfdInputValue::from("null_item")),
+            ("maybe_name", CfdInputValue::Null),
+            ("maybe_count", CfdInputValue::from(3_i64)),
+        ],
+    );
+    let model = build_model(builder)?;
+    let tables = export_tables(&schema, &model)?;
+
+    assert_eq!(
+        tables["Item"],
+        TestValue::Array(vec![TestValue::Map(vec![
+            ("id".to_string(), TestValue::String("null_item".to_string())),
+            ("maybe_name".to_string(), TestValue::Null),
+            ("maybe_count".to_string(), TestValue::Int(3)),
+        ])])
+    );
+    Ok(())
+}
+
+#[test]
+fn exports_array_fields_as_arrays() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                @id
+                id: string;
+                tags: [string];
+                scores: [int];
+            }
+        "#,
+    )?;
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Item",
+        [
+            ("id", CfdInputValue::from("array_item")),
+            (
+                "tags",
+                CfdInputValue::Array(vec![
+                    CfdInputValue::from("alpha"),
+                    CfdInputValue::from("beta"),
+                ]),
+            ),
+            (
+                "scores",
+                CfdInputValue::Array(vec![CfdInputValue::from(7_i64), CfdInputValue::from(9_i64)]),
+            ),
+        ],
+    );
+    let model = build_model(builder)?;
+    let tables = export_tables(&schema, &model)?;
+
+    assert_eq!(
+        tables["Item"],
+        TestValue::Array(vec![TestValue::Map(vec![
+            (
+                "id".to_string(),
+                TestValue::String("array_item".to_string())
+            ),
+            (
+                "tags".to_string(),
+                TestValue::Array(vec![
+                    TestValue::String("alpha".to_string()),
+                    TestValue::String("beta".to_string()),
+                ])
+            ),
+            (
+                "scores".to_string(),
+                TestValue::Array(vec![TestValue::Int(7), TestValue::Int(9)])
+            ),
+        ])])
+    );
+    Ok(())
+}
+
+#[derive(Debug)]
+struct FailingEncoder;
+
+impl ExportEncoder for FailingEncoder {
+    type Error = &'static str;
+    type Value = ();
+
+    fn null(&mut self) -> Result<Self::Value, Self::Error> {
+        Err("encoder null failed")
+    }
+
+    fn bool(&mut self, _value: bool) -> Result<Self::Value, Self::Error> {
+        Err("encoder bool failed")
+    }
+
+    fn int(&mut self, _value: i64) -> Result<Self::Value, Self::Error> {
+        Err("encoder int failed")
+    }
+
+    fn float(&mut self, _value: f64) -> Result<Self::Value, Self::Error> {
+        Err("encoder float failed")
+    }
+
+    fn string(&mut self, _value: &str) -> Result<Self::Value, Self::Error> {
+        Err("encoder string failed")
+    }
+
+    fn array(&mut self, _values: Vec<Self::Value>) -> Result<Self::Value, Self::Error> {
+        Err("encoder array failed")
+    }
+
+    fn map(&mut self, _entries: Vec<(String, Self::Value)>) -> Result<Self::Value, Self::Error> {
+        Err("encoder map failed")
+    }
+}
+
+#[test]
+fn converts_encoder_errors_to_export_error_display_string() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item { @id id: string; }
+        "#,
+    )?;
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("Item", [("id", CfdInputValue::from("item_1"))]);
+    let model = build_model(builder)?;
+    let mut encoder = FailingEncoder;
+    let err = export_model_with_encoder(&schema, &model, &mut encoder)
+        .expect_err("encoder error should become export error");
+
+    assert_eq!(err.to_string(), "encoder string failed");
+    Ok(())
+}
+
+#[test]
+fn does_not_emit_type_tag_for_non_polymorphic_declared_object() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Stats { hp: int; }
+            type Holder {
+                @id
+                id: string;
+                stats: Stats;
+            }
+        "#,
+    )?;
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Holder",
+        [
+            ("id", CfdInputValue::from("holder_1")),
+            (
+                "stats",
+                CfdInputValue::object_with_declared_type([("hp", CfdInputValue::from(10_i64))]),
+            ),
+        ],
+    );
+    let model = build_model(builder)?;
+    let tables = export_tables(&schema, &model)?;
+
+    assert_eq!(
+        tables["Holder"],
+        TestValue::Array(vec![TestValue::Map(vec![
+            ("id".to_string(), TestValue::String("holder_1".to_string())),
+            (
+                "stats".to_string(),
+                TestValue::Map(vec![("hp".to_string(), TestValue::Int(10))])
             ),
         ])])
     );
