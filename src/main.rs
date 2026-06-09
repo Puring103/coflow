@@ -44,15 +44,15 @@ fn main() -> ExitCode {
 fn run() -> Result<bool, String> {
     match Cli::parse().command {
         Command::Init(args) => init_project(args),
-        Command::Cft(command) => match command.command {
+        Command::Cft(command) => match &command.command {
             CftCommand::Check(args) => cft_check(args),
             CftCommand::Lsp(args) => cft_lsp(args),
         },
-        Command::Check(args) => project_check(args),
-        Command::Export(command) => match command.command {
+        Command::Check(args) => project_check(&args),
+        Command::Export(command) => match &command.command {
             ExportCommand::Json(args) => export_json(args),
         },
-        Command::Codegen(command) => match command.command {
+        Command::Codegen(command) => match &command.command {
             CodegenCommand::Csharp(args) => codegen_csharp(args),
         },
     }
@@ -194,7 +194,7 @@ fn init_project(args: InitArgs) -> Result<bool, String> {
     if config_path.exists() {
         return Err(format!("`{}` already exists", config_path.display()));
     }
-    let config = r#"schema: schema/
+    let config = r"schema: schema/
 
 sources: []
 
@@ -206,14 +206,14 @@ outputs:
     type: csharp
     dir: generated/csharp
     namespace: Game.Config
-"#;
+";
     fs::write(&config_path, config)
         .map_err(|err| format!("failed to write `{}`: {err}", config_path.display()))?;
     println!("created {}", config_path.display());
     Ok(true)
 }
 
-fn cft_check(args: CftCheckArgs) -> Result<bool, String> {
+fn cft_check(args: &CftCheckArgs) -> Result<bool, String> {
     let project = Project::open(args.config_or_dir.as_deref())?;
     let build = compile_schema_project(&project, args.stdin_path.as_deref())?;
     let diagnostics = dedupe_cft_diagnostics(build.diagnostics);
@@ -243,12 +243,12 @@ fn cft_check(args: CftCheckArgs) -> Result<bool, String> {
     Ok(diagnostics.is_empty())
 }
 
-fn cft_lsp(args: CftLspArgs) -> Result<bool, String> {
+fn cft_lsp(args: &CftLspArgs) -> Result<bool, String> {
     let project = Project::open(args.config_or_dir.as_deref())?;
     coflow_cft_lsp::run(project)
 }
 
-fn project_check(args: ProjectCheckArgs) -> Result<bool, String> {
+fn project_check(args: &ProjectCheckArgs) -> Result<bool, String> {
     let project = Project::open(args.config_or_dir.as_deref())?;
     let build = compile_schema_project(&project, None)?;
     let cft_diagnostics = dedupe_cft_diagnostics(build.diagnostics);
@@ -301,7 +301,7 @@ fn project_check(args: ProjectCheckArgs) -> Result<bool, String> {
     }
 }
 
-fn export_json(args: ExportJsonArgs) -> Result<bool, String> {
+fn export_json(args: &ExportJsonArgs) -> Result<bool, String> {
     let project = Project::open(args.config_or_dir.as_deref())?;
     let output = project.config.outputs.data.as_ref().ok_or_else(|| {
         "coflow.yaml missing outputs.data; required `type: json` and `dir` for `coflow export json`"
@@ -354,7 +354,7 @@ fn export_json(args: ExportJsonArgs) -> Result<bool, String> {
     Ok(true)
 }
 
-fn codegen_csharp(args: CodegenCsharpArgs) -> Result<bool, String> {
+fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, String> {
     let project = Project::open(args.config_or_dir.as_deref())?;
     let output = project
         .config
@@ -443,8 +443,7 @@ fn excel_diagnostic_json(diagnostic: &ExcelDiagnostic) -> DiagnosticJson {
     let location = diagnostic
         .primary
         .as_ref()
-        .map(|label| &label.location)
-        .unwrap_or(&fallback);
+        .map_or(&fallback, |label| &label.location);
     let (line, character) = excel_position(location);
     DiagnosticJson {
         code: diagnostic.source.code.as_str().to_string(),
