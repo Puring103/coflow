@@ -100,6 +100,25 @@ fn exports_tables_with_schema_order_defaults_and_scalar_values() -> TestResult {
 }
 
 #[test]
+fn exports_empty_tables_for_concrete_id_types() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item { @id id: string; }
+            type Monster { @id id: string; }
+        "#,
+    )?;
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("Item", [("id", CfdInputValue::from("item_1"))]);
+    let model = build_model(builder)?;
+    let tables = export_tables(&schema, &model)?;
+
+    assert_eq!(tables["Item"], json!([{ "id": "item_1" }]));
+    assert_eq!(tables["Monster"], json!([]));
+    Ok(())
+}
+
+#[test]
 fn exports_refs_as_ids_and_polymorphic_objects_with_type_tags() -> TestResult {
     let schema = compile_schema(
         r#"
