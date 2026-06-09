@@ -253,6 +253,7 @@ dependencies = [
  "coflow-checker",
  "coflow-codegen-csharp",
  "coflow-exporter-json",
+ "coflow-exporter-messagepack",
  "coflow-loader-excel",
  "coflow-project",
  "serde",

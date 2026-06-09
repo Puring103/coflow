@@ -92,6 +92,94 @@ fn export_json_validates_declared_output_type() {
 }
 
 #[test]
+fn export_messagepack_writes_msgpack_tables() {
+    let suffix = format!(
+        "{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos()
+    );
+    let root_dir = std::env::temp_dir().join(format!("coflow-messagepack-export-test-{suffix}"));
+    let project_dir = root_dir.join("rpg");
+    let out_dir = root_dir.join("export");
+    if root_dir.exists() {
+        std::fs::remove_dir_all(&root_dir).expect("clean old temp dir");
+    }
+    copy_dir_recursive(std::path::Path::new("examples/rpg"), &project_dir)
+        .expect("copy example project");
+    let config_path = project_dir.join("coflow.yaml");
+    let config = std::fs::read_to_string(&config_path).expect("read coflow.yaml");
+    std::fs::write(
+        &config_path,
+        config.replacen("type: json", "type: messagepack", 1),
+    )
+    .expect("write coflow.yaml");
+
+    let output = coflow()
+        .args([
+            "export",
+            "messagepack",
+            project_dir.to_str().expect("utf8 temp path"),
+            "--out",
+            out_dir.to_str().expect("utf8 temp path"),
+        ])
+        .output()
+        .expect("run coflow");
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("MessagePack data exported to"),
+        "stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(out_dir.join("Item.msgpack").exists());
+    assert!(out_dir.join("DropTable.msgpack").exists());
+
+    std::fs::remove_dir_all(root_dir).expect("clean temp dir");
+}
+
+#[test]
+fn export_messagepack_validates_declared_output_type() {
+    let out_dir = std::env::temp_dir().join(format!(
+        "coflow-messagepack-validation-test-{}",
+        std::process::id()
+    ));
+    if out_dir.exists() {
+        std::fs::remove_dir_all(&out_dir).expect("clean old output dir");
+    }
+
+    let output = coflow()
+        .args([
+            "export",
+            "messagepack",
+            "examples/rpg",
+            "--out",
+            out_dir.to_str().expect("utf8 temp path"),
+        ])
+        .output()
+        .expect("run coflow");
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("required `messagepack` for `coflow export messagepack`"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    if out_dir.exists() {
+        std::fs::remove_dir_all(out_dir).expect("clean output dir");
+    }
+}
+
+#[test]
 fn codegen_csharp_writes_newtonsoft_json_loader() {
     let out_dir =
         std::env::temp_dir().join(format!("coflow-csharp-codegen-test-{}", std::process::id()));
@@ -782,4 +870,19 @@ fn file_uri(path: &std::path::Path) -> String {
         path.insert(0, '/');
     }
     format!("file://{path}")
+}
+
+fn copy_dir_recursive(source: &std::path::Path, target: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(target)?;
+    for entry in std::fs::read_dir(source)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let target_path = target.join(entry.file_name());
+        if source_path.is_dir() {
+            copy_dir_recursive(&source_path, &target_path)?;
+        } else {
+            std::fs::copy(source_path, target_path)?;
+        }
+    }
+    Ok(())
 }

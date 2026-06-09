@@ -55,6 +55,7 @@ coflow-checker = { path = "crates/coflow-checker" }
 coflow-codegen-csharp = { path = "crates/coflow-codegen-csharp" }
 coflow-loader-excel = { path = "crates/coflow-loader-excel" }
 coflow-exporter-json = { path = "crates/coflow-exporter-json" }
+coflow-exporter-messagepack = { path = "crates/coflow-exporter-messagepack" }
 coflow-project = { path = "crates/coflow-project" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
