@@ -473,10 +473,37 @@ fn request_completion_at(
 }
 
 fn position_after(source: &str, needle: &str) -> usize {
-    let start = source
-        .find(needle)
-        .unwrap_or_else(|| panic!("source should contain `{needle}`"));
-    start + needle.len()
+    find_line_ending_insensitive(source, needle)
+        .unwrap_or_else(|| panic!("source should contain `{needle}`"))
+}
+
+fn find_line_ending_insensitive(source: &str, needle: &str) -> Option<usize> {
+    let source_bytes = source.as_bytes();
+    for start in source.char_indices().map(|(index, _)| index) {
+        let mut source_index = start;
+        let mut needle_index = 0;
+        while needle_index < needle.len() {
+            let needle_char = needle[needle_index..].chars().next()?;
+            if needle_char == '\n'
+                && source_bytes.get(source_index) == Some(&b'\r')
+                && source_bytes.get(source_index + 1) == Some(&b'\n')
+            {
+                source_index += 2;
+                needle_index += 1;
+                continue;
+            }
+            let source_char = source[source_index..].chars().next()?;
+            if source_char != needle_char {
+                break;
+            }
+            source_index += source_char.len_utf8();
+            needle_index += needle_char.len_utf8();
+        }
+        if needle_index == needle.len() {
+            return Some(source_index);
+        }
+    }
+    None
 }
 
 fn lsp_position(source: &str, byte_offset: usize) -> (u64, u64) {
