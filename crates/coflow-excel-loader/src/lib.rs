@@ -148,6 +148,10 @@ pub enum ExcelLoadError {
         field: String,
         diagnostics: CellValueDiagnostics,
     },
+    UnsupportedCellValue {
+        location: Box<ExcelLocation>,
+        kind: String,
+    },
     DataModel(ExcelDiagnostics),
 }
 
@@ -318,14 +322,13 @@ fn collect_input_records(
                 let excel_row = zero_based_data_row + 2;
                 let mut input_fields = BTreeMap::new();
                 for column in &columns {
-                    let text = cell_text(row.get(column.index));
+                    let location = ExcelLocation::new(source.file.clone())
+                        .sheet(sheet.sheet.clone())
+                        .cell(excel_row, column.index + 1);
+                    let text = cell_text(row.get(column.index), location.clone())?;
                     let parsed = parse_cell(schema, &column.field_type, &text).map_err(|err| {
                         ExcelLoadError::CellParse {
-                            location: Box::new(
-                                ExcelLocation::new(source.file.clone())
-                                    .sheet(sheet.sheet.clone())
-                                    .cell(excel_row, column.index + 1),
-                            ),
+                            location: Box::new(location),
                             type_name: type_name.to_string(),
                             field: column.field.clone(),
                             diagnostics: err,
@@ -445,7 +448,12 @@ fn resolve_columns(
     let mut seen_fields = BTreeMap::<String, String>::new();
 
     for (index, cell) in header_row.iter().enumerate() {
-        let column = cell_text(Some(cell));
+        let column = cell_text(
+            Some(cell),
+            ExcelLocation::new(source.file.clone())
+                .sheet(sheet.sheet.clone())
+                .cell(1, index + 1),
+        )?;
         let column = column.trim();
         if column.is_empty() {
             continue;
@@ -525,22 +533,41 @@ fn root_field(path: &CfdPath) -> Option<&str> {
 }
 
 fn is_empty_row(row: &[Data]) -> bool {
-    row.iter()
-        .all(|cell| cell_text(Some(cell)).trim().is_empty())
+    row.iter().all(is_empty_cell)
 }
 
-fn cell_text(cell: Option<&Data>) -> String {
+fn is_empty_cell(cell: &Data) -> bool {
     match cell {
-        None | Some(Data::Empty) => String::new(),
+        Data::Empty => true,
+        Data::String(value) => value.trim().is_empty(),
+        Data::Float(_)
+        | Data::Int(_)
+        | Data::Bool(_)
+        | Data::DateTime(_)
+        | Data::DateTimeIso(_)
+        | Data::DurationIso(_)
+        | Data::Error(_) => false,
+    }
+}
+
+fn cell_text(cell: Option<&Data>, location: ExcelLocation) -> Result<String, ExcelLoadError> {
+    match cell {
+        None | Some(Data::Empty) => Ok(String::new()),
         Some(Data::String(value) | Data::DateTimeIso(value) | Data::DurationIso(value)) => {
-            value.clone()
+            Ok(value.clone())
         }
-        Some(Data::Float(value)) if is_whole_float(*value) => format!("{value:.0}"),
-        Some(Data::Float(value)) => value.to_string(),
-        Some(Data::Int(value)) => value.to_string(),
-        Some(Data::Bool(value)) => value.to_string(),
-        Some(Data::DateTime(value)) => value.to_string(),
-        Some(Data::Error(value)) => value.to_string(),
+        Some(Data::Float(value)) if is_whole_float(*value) => Ok(format!("{value:.0}")),
+        Some(Data::Float(value)) => Ok(value.to_string()),
+        Some(Data::Int(value)) => Ok(value.to_string()),
+        Some(Data::Bool(value)) => Ok(value.to_string()),
+        Some(Data::DateTime(value)) => Err(ExcelLoadError::UnsupportedCellValue {
+            location: Box::new(location),
+            kind: format!("DateTime({value})"),
+        }),
+        Some(Data::Error(value)) => Err(ExcelLoadError::UnsupportedCellValue {
+            location: Box::new(location),
+            kind: format!("Error({value})"),
+        }),
     }
 }
 
