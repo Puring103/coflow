@@ -6,9 +6,9 @@ use crate::model::{
     CsharpResolveTableCall, CsharpTable, CsharpType,
 };
 use crate::names::{
-    annotation_name_arg, camel_case, display_annotation, escape_csharp_string, format_float,
-    has_annotation, index_param_name, index_var_name, multi_index_var_name, pascal_case, pluralize,
-    ref_index_param_name, ref_index_var_name, ref_property_name,
+    annotation_name_arg, camel_case, csharp_ident_error, display_annotation, escape_csharp_string,
+    format_float, has_annotation, index_param_name, index_var_name, multi_index_var_name,
+    pascal_case, pluralize, ref_index_param_name, ref_index_var_name, ref_property_name,
 };
 use crate::schema_view::{FieldMeta, FieldType, SchemaView, TypeMeta};
 use crate::CsharpCodegenError;
@@ -342,9 +342,30 @@ fn loader_methods(view: &SchemaView) -> Result<Vec<CsharpLoader>, CsharpCodegenE
                     .all_fields
                     .iter()
                     .map(|field| {
+                        let local_name = camel_case(&field.name);
+                        if let Some(reason) = csharp_ident_error(&local_name) {
+                            return Err(CsharpCodegenError::new(format!(
+                                "invalid C# field local variable name `{local_name}`: {reason}"
+                            )));
+                        }
                         Ok(CsharpLoadField {
                             property: pascal_case(&field.name),
+                            source_name: field.name.clone(),
+                            local_name,
+                            type_name: csharp_type(&field.ty),
                             read_expr: read_field_expr(field, "obj", "path", view)?,
+                            messagepack_read_expr: read_messagepack_field_expr(
+                                &field.ty,
+                                "reader",
+                                "fieldPath",
+                                view,
+                            )?,
+                            default_expr: default_value_expr(
+                                field.default.as_ref(),
+                                &field.ty,
+                                view,
+                            )?,
+                            is_required: field.default.is_none() && !field.has_default,
                         })
                     })
                     .collect::<Result<Vec<_>, CsharpCodegenError>>()?,
@@ -728,6 +749,65 @@ fn read_token_expr(
 }
 
 fn read_dict_key_expr(ty: &FieldType, key: &str, path: &str) -> Result<String, CsharpCodegenError> {
+    match ty.non_nullable() {
+        FieldType::String => Ok(key.to_string()),
+        FieldType::Int => Ok(format!("ReadIntKey({key}, {path})")),
+        FieldType::Enum(name) => Ok(format!("ReadEnumKey<{name}>({key}, {path})")),
+        _ => Err(CsharpCodegenError::new(
+            "dictionary key type must be string, int, or enum",
+        )),
+    }
+}
+
+fn read_messagepack_field_expr(
+    ty: &FieldType,
+    reader: &str,
+    path: &str,
+    view: &SchemaView,
+) -> Result<String, CsharpCodegenError> {
+    read_messagepack_expr(ty, reader, path, view)
+}
+
+fn read_messagepack_expr(
+    ty: &FieldType,
+    reader: &str,
+    path: &str,
+    view: &SchemaView,
+) -> Result<String, CsharpCodegenError> {
+    match ty {
+        FieldType::Int => Ok(format!("ReadInt(ref {reader}, {path})")),
+        FieldType::Float => Ok(format!("ReadFloat(ref {reader}, {path})")),
+        FieldType::Bool => Ok(format!("ReadBool(ref {reader}, {path})")),
+        FieldType::String => Ok(format!("ReadString(ref {reader}, {path})")),
+        FieldType::Enum(name) => Ok(format!("ReadEnum<{name}>(ref {reader}, {path})")),
+        FieldType::Type(name) => {
+            if view.range_is_polymorphic(name) {
+                Ok(format!("Load{name}Polymorphic(ref {reader}, {path})"))
+            } else {
+                Ok(format!("Load{name}(ref {reader}, {path})"))
+            }
+        }
+        FieldType::Array(inner) => Ok(format!(
+            "ReadArray(ref {reader}, {path}, static (ref MessagePackReader itemReader, string itemPath) => {})",
+            read_messagepack_expr(inner, "itemReader", "itemPath", view)?
+        )),
+        FieldType::Dict(key, value) => Ok(format!(
+            "ReadDict(ref {reader}, {path}, static (key, keyPath) => {}, static (ref MessagePackReader valueReader, string valuePath) => {})",
+            read_messagepack_dict_key_expr(key, "key", "keyPath")?,
+            read_messagepack_expr(value, "valueReader", "valuePath", view)?
+        )),
+        FieldType::Nullable(inner) => Ok(format!(
+            "{reader}.TryReadNil() ? null : {}",
+            read_messagepack_expr(inner, reader, path, view)?
+        )),
+    }
+}
+
+fn read_messagepack_dict_key_expr(
+    ty: &FieldType,
+    key: &str,
+    path: &str,
+) -> Result<String, CsharpCodegenError> {
     match ty.non_nullable() {
         FieldType::String => Ok(key.to_string()),
         FieldType::Int => Ok(format!("ReadIntKey({key}, {path})")),

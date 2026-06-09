@@ -179,6 +179,57 @@ mod tests {
     }
 
     #[test]
+    fn codegen_messagepack_emits_explicit_readers_type_dispatch_and_ref_resolution(
+    ) -> Result<(), String> {
+        let schema = compile_schema(
+            r"
+                type Item { @id id: string; }
+                abstract type Reward { id: string; }
+                type ItemReward : Reward {
+                    @ref(Item)
+                    item_id: string;
+                    count: int = 1;
+                }
+                type DropTable {
+                    @id id: string;
+                    rewards: [Reward];
+                }
+            ",
+        )?;
+
+        let files = generate_csharp(
+            &schema,
+            &CsharpCodegenOptions::new("Game.Config")
+                .with_data_format(CsharpDataFormat::MessagePack),
+        )
+        .map_err(|err| err.to_string())?;
+        let database = generated_file(&files, "GameConfig.cs")?;
+        require_contains(database, "using MessagePack;")?;
+        require_contains(database, "private delegate T MessagePackRowLoader<T>(")?;
+        require_contains(
+            database,
+            "private static Item LoadItem(ref MessagePackReader reader, string path)",
+        )?;
+        require_contains(database, "reader.ReadMapHeader()")?;
+        require_contains(database, "case \"item_id\":")?;
+        require_contains(database, "reader.Skip()")?;
+        if !database.contains("LoadRewardPolymorphic(ref reader, path)")
+            && !database.contains("LoadRewardPolymorphic(ref itemReader, itemPath)")
+        {
+            return Err(
+                "expected generated output to contain polymorphic Reward MessagePack loading"
+                    .to_string(),
+            );
+        }
+        require_contains(database, "ResolveRef(itemRefIndex")?;
+        require_not_contains(database, "Newtonsoft.Json")?;
+        require_not_contains(database, "JToken")?;
+        require_not_contains(database, "JObject")?;
+        require_not_contains(database, "JArray")?;
+        Ok(())
+    }
+
+    #[test]
     fn codegen_does_not_emit_struct_property_initializers() -> Result<(), String> {
         let schema = compile_schema(
             r#"
