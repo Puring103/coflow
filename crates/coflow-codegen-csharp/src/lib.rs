@@ -251,6 +251,7 @@ mod tests {
             database,
             "private static bool ReadNil(ref MessagePackReader reader, string path)",
         )?;
+        require_contains(database, "catch (EndOfStreamException ex)")?;
         require_contains(database, "if (ReadNil(ref reader, path))")?;
         if !database.contains("LoadRewardPolymorphic(ref reader, path)")
             && !database.contains("LoadRewardPolymorphic(ref itemReader, itemPath)")
