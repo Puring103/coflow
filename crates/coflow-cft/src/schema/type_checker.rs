@@ -435,17 +435,17 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 }
                 let ty = self.check_expr_value(&args[0]);
                 match unwrap_nullable(&ty) {
-                    Ty::Array(elem) if matches!(elem.as_ref(), Ty::Int | Ty::Float) => {
-                        *elem.clone()
-                    }
-                    Ty::Array(_) => {
-                        self.diag(
-                            CftErrorCode::FunctionArgTypeMismatch,
-                            args[0].span,
-                            "sum expects an int or float array",
-                        );
-                        Ty::Unknown
-                    }
+                    Ty::Array(elem) => match unwrap_nullable(elem) {
+                        Ty::Int | Ty::Float => unwrap_nullable(elem).clone(),
+                        _ => {
+                            self.diag(
+                                CftErrorCode::FunctionArgTypeMismatch,
+                                args[0].span,
+                                "sum expects an int or float array",
+                            );
+                            Ty::Unknown
+                        }
+                    },
                     Ty::Unknown => Ty::Unknown,
                     _ => {
                         self.diag(

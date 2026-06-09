@@ -184,6 +184,89 @@ fn null_arithmetic_and_ordered_comparison_report_null_access() {
 }
 
 #[test]
+fn check_runner_handles_nullable_element_builtins() {
+    let schema = compile_schema(
+        r#"
+            type Holder {
+                values: [int?] = [];
+                check {
+                    unique(values);
+                    min(values) == 1;
+                    max(values) == 3;
+                    sum(values) == 4;
+                    contains(values, null);
+                    len(values) == 3;
+                }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Holder",
+        [(
+            "values",
+            CfdInputValue::Array(vec![
+                CfdInputValue::from(1_i64),
+                CfdInputValue::Null,
+                CfdInputValue::from(3_i64),
+            ]),
+        )],
+    );
+    let model = builder.build().expect("data model should build");
+    model.run_checks(&schema).expect("checks should pass");
+}
+
+#[test]
+fn check_runner_reports_min_max_when_nullable_array_has_no_values() {
+    let schema = compile_schema(
+        r#"
+            type Holder {
+                values: [int?] = [];
+                check { min(values) >= 0; }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Holder",
+        [("values", CfdInputValue::Array(vec![CfdInputValue::Null]))],
+    );
+    let model = builder.build().expect("data model should build");
+    let err = model
+        .run_checks(&schema)
+        .expect_err("min over all-null values should fail");
+    assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
+}
+
+#[test]
+fn check_runner_unique_counts_multiple_nulls_as_duplicates() {
+    let schema = compile_schema(
+        r#"
+            type Holder {
+                values: [int?] = [];
+                check { unique(values); }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Holder",
+        [(
+            "values",
+            CfdInputValue::Array(vec![CfdInputValue::Null, CfdInputValue::Null]),
+        )],
+    );
+    let model = builder.build().expect("data model should build");
+    let err = model
+        .run_checks(&schema)
+        .expect_err("multiple nulls are not unique");
+    assert_has_code(&err, CfdErrorCode::CheckFailed);
+}
+
+#[test]
 fn check_runner_executes_inherited_checks() {
     let schema = compile_schema(
         r#"

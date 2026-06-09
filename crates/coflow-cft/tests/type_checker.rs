@@ -106,6 +106,25 @@ fn type_checker_allows_is_null_for_nullable_operands() {
 }
 
 #[test]
+fn type_checker_accepts_nullable_element_builtins() {
+    compile_one(
+        r#"
+            type Holder {
+                values: [int?] = [];
+                check {
+                    unique(values);
+                    min(values) >= 0;
+                    max(values) >= 0;
+                    sum(values) >= 0;
+                    contains(values, null);
+                }
+            }
+        "#,
+    )
+    .expect("nullable element arrays are supported by built-ins");
+}
+
+#[test]
 fn type_checker_rejects_is_null_for_non_nullable_operands() {
     let err = compile_one(
         r#"

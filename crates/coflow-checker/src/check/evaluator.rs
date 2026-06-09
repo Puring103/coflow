@@ -700,15 +700,26 @@ impl<'a> CheckEvaluator<'a> {
             );
             return Err(());
         };
-        let Some(mut out) = items.first().cloned() else {
+        if items.is_empty() {
             self.diag_at(
                 CfdErrorCode::CheckEmptyMinMax,
                 arg_value.path,
                 "min/max called on empty array",
             );
             return Err(());
+        }
+        let mut non_null_items = items
+            .iter()
+            .filter(|item| !matches!(item, CheckValue::Null));
+        let Some(mut out) = non_null_items.next().cloned() else {
+            self.diag_at(
+                CfdErrorCode::CheckEvalTypeError,
+                arg_value.path,
+                "min/max called with no non-null values",
+            );
+            return Err(());
         };
-        for item in items.iter().skip(1) {
+        for item in non_null_items {
             let ord = self.compare_order(&out, item, arg_value.path.clone())?;
             if (name == "min" && ord.is_gt()) || (name == "max" && ord.is_lt()) {
                 out = item.clone();
@@ -760,6 +771,7 @@ impl<'a> CheckEvaluator<'a> {
                     }
                     float_sum += value;
                 }
+                CheckValue::Null => {}
                 _ => {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
