@@ -352,6 +352,10 @@ public partial class {{ project.database_class }}
         {
             throw TypeError(path, "MessagePack map", ex.Message);
         }
+        catch (EndOfStreamException ex)
+        {
+            throw TypeError(path, "MessagePack map", ex.Message);
+        }
     }
 
     private static int ReadArrayHeader(ref MessagePackReader reader, string path)
@@ -361,6 +365,10 @@ public partial class {{ project.database_class }}
             return reader.ReadArrayHeader();
         }
         catch (MessagePackSerializationException ex)
+        {
+            throw TypeError(path, "MessagePack array", ex.Message);
+        }
+        catch (EndOfStreamException ex)
         {
             throw TypeError(path, "MessagePack array", ex.Message);
         }
@@ -387,6 +395,10 @@ public partial class {{ project.database_class }}
         {
             throw TypeError(path, "string", ex.Message);
         }
+        catch (EndOfStreamException ex)
+        {
+            throw TypeError(path, "string", ex.Message);
+        }
     }
 
     private static void SkipValue(ref MessagePackReader reader, string path)
@@ -396,6 +408,10 @@ public partial class {{ project.database_class }}
             reader.Skip();
         }
         catch (MessagePackSerializationException ex)
+        {
+            throw TypeError(path, "MessagePack value", ex.Message);
+        }
+        catch (EndOfStreamException ex)
         {
             throw TypeError(path, "MessagePack value", ex.Message);
         }
@@ -411,6 +427,10 @@ public partial class {{ project.database_class }}
         {
             throw TypeError(path, "MessagePack value", ex.Message);
         }
+        catch (EndOfStreamException ex)
+        {
+            throw TypeError(path, "MessagePack value", ex.Message);
+        }
     }
 
     private static long ReadInt(ref MessagePackReader reader, string path)
@@ -420,6 +440,10 @@ public partial class {{ project.database_class }}
             return reader.ReadInt64();
         }
         catch (MessagePackSerializationException ex)
+        {
+            throw TypeError(path, "integer", ex.Message);
+        }
+        catch (EndOfStreamException ex)
         {
             throw TypeError(path, "integer", ex.Message);
         }
@@ -440,6 +464,10 @@ public partial class {{ project.database_class }}
         {
             throw TypeError(path, "number", ex.Message);
         }
+        catch (EndOfStreamException ex)
+        {
+            throw TypeError(path, "number", ex.Message);
+        }
     }
 
     private static bool ReadBool(ref MessagePackReader reader, string path)
@@ -449,6 +477,10 @@ public partial class {{ project.database_class }}
             return reader.ReadBoolean();
         }
         catch (MessagePackSerializationException ex)
+        {
+            throw TypeError(path, "boolean", ex.Message);
+        }
+        catch (EndOfStreamException ex)
         {
             throw TypeError(path, "boolean", ex.Message);
         }
