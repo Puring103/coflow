@@ -501,6 +501,152 @@ Console.WriteLine("loaded");
 }
 
 #[test]
+fn generated_csharp_compiles_and_loads_exported_messagepack() {
+    let suffix = unique_suffix();
+    let root_dir = std::env::temp_dir().join(format!("coflow-csharp-messagepack-e2e-{suffix}"));
+    let project_dir = root_dir.join("rpg");
+    let export_dir = root_dir.join("export");
+    let csharp_dir = root_dir.join("csharp");
+    let dotnet_dir = root_dir.join("dotnet");
+    if root_dir.exists() {
+        std::fs::remove_dir_all(&root_dir).expect("clean old temp dir");
+    }
+    std::fs::create_dir_all(&root_dir).expect("create temp root");
+    let _cleanup = TempDirCleanup(root_dir);
+
+    copy_dir_recursive(std::path::Path::new("examples/rpg"), &project_dir)
+        .expect("copy example project");
+    let config_path = project_dir.join("coflow.yaml");
+    let config = std::fs::read_to_string(&config_path).expect("read coflow.yaml");
+    std::fs::write(
+        &config_path,
+        config.replacen("type: json", "type: messagepack", 1),
+    )
+    .expect("write coflow.yaml");
+
+    let export_output = coflow()
+        .args([
+            "export",
+            "messagepack",
+            project_dir.to_str().expect("utf8 temp path"),
+            "--out",
+            export_dir.to_str().expect("utf8 temp path"),
+        ])
+        .output()
+        .expect("run coflow export");
+    assert!(
+        export_output.status.success(),
+        "export failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&export_output.stdout),
+        String::from_utf8_lossy(&export_output.stderr)
+    );
+
+    let codegen_output = coflow()
+        .args([
+            "codegen",
+            "csharp",
+            project_dir.to_str().expect("utf8 temp path"),
+            "--namespace",
+            "Game.Config",
+            "--out",
+            csharp_dir.to_str().expect("utf8 temp path"),
+        ])
+        .output()
+        .expect("run coflow codegen");
+    assert!(
+        codegen_output.status.success(),
+        "codegen failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&codegen_output.stdout),
+        String::from_utf8_lossy(&codegen_output.stderr)
+    );
+
+    let new_output = Command::new("dotnet")
+        .args([
+            "new",
+            "console",
+            "--framework",
+            "net8.0",
+            "--output",
+            dotnet_dir.to_str().expect("utf8 temp path"),
+        ])
+        .output()
+        .expect("run dotnet new");
+    assert!(
+        new_output.status.success(),
+        "dotnet new failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&new_output.stdout),
+        String::from_utf8_lossy(&new_output.stderr)
+    );
+
+    let add_package_output = Command::new("dotnet")
+        .current_dir(&dotnet_dir)
+        .args(["add", "package", "MessagePack"])
+        .output()
+        .expect("run dotnet add package");
+    assert!(
+        add_package_output.status.success(),
+        "dotnet add package failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&add_package_output.stdout),
+        String::from_utf8_lossy(&add_package_output.stderr)
+    );
+
+    for entry in std::fs::read_dir(&csharp_dir).expect("read generated C# dir") {
+        let entry = entry.expect("generated C# entry");
+        let path = entry.path();
+        if path.extension().is_some_and(|extension| extension == "cs") {
+            std::fs::copy(
+                &path,
+                dotnet_dir.join(path.file_name().expect("generated C# file name")),
+            )
+            .expect("copy generated C# file");
+        }
+    }
+
+    std::fs::write(
+        dotnet_dir.join("Program.cs"),
+        r#"using Game.Config;
+
+var config = GameConfig.Load(args[0]);
+if (config.Items.Count == 0)
+{
+    throw new Exception("expected items");
+}
+Console.WriteLine("loaded");
+"#,
+    )
+    .expect("write Program.cs");
+
+    let build_output = Command::new("dotnet")
+        .current_dir(&dotnet_dir)
+        .arg("build")
+        .output()
+        .expect("run dotnet build");
+    assert!(
+        build_output.status.success(),
+        "dotnet build failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&build_output.stdout),
+        String::from_utf8_lossy(&build_output.stderr)
+    );
+
+    let run_output = Command::new("dotnet")
+        .current_dir(&dotnet_dir)
+        .args(["run", "--", export_dir.to_str().expect("utf8 temp path")])
+        .output()
+        .expect("run dotnet app");
+    assert!(
+        run_output.status.success(),
+        "dotnet run failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&run_output.stdout),
+        String::from_utf8_lossy(&run_output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&run_output.stdout).contains("loaded"),
+        "dotnet run stdout: {}",
+        String::from_utf8_lossy(&run_output.stdout)
+    );
+}
+
+#[test]
 fn cft_lsp_publishes_project_diagnostics_for_open_document() {
     let mut child = coflow()
         .args(["cft", "lsp", "examples/rpg"])
@@ -810,6 +956,14 @@ fn unique_suffix() -> String {
             .expect("system time")
             .as_nanos()
     )
+}
+
+struct TempDirCleanup(std::path::PathBuf);
+
+impl Drop for TempDirCleanup {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 fn request_completion(
