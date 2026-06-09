@@ -211,7 +211,7 @@ fn generated_csharp_compiles_and_loads_exported_json() {
 
     let add_package_output = Command::new("dotnet")
         .current_dir(&dotnet_dir)
-        .args(["add", "package", "Newtonsoft.Json"])
+        .args(["add", "package", "Newtonsoft.Json", "--version", "13.0.3"])
         .output()
         .expect("run dotnet add package");
     assert!(
