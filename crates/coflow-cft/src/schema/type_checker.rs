@@ -1,7 +1,7 @@
 use super::compiler::SchemaCompiler;
 use super::support::{
-    min_max_supported, ordered_comparable, types_comparable, unique_supported, unwrap_nullable,
-    SymbolKind, Ty, TypeInfo,
+    is_reserved_identifier, min_max_supported, ordered_comparable, types_comparable,
+    unique_supported, unwrap_nullable, SymbolKind, Ty, TypeInfo,
 };
 use crate::ast::{
     BinOp, CheckExpr, CheckExprKind, CheckStmt, CmpOp, NameRef, TypePredicate, UnaryOp,
@@ -52,6 +52,13 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 span,
                 ..
             } => {
+                if is_reserved_identifier(&binding.name) {
+                    self.diag(
+                        CftErrorCode::ReservedIdentifier,
+                        binding.span,
+                        format!("`{}` is a reserved identifier", binding.name),
+                    );
+                }
                 let col_ty = self.check_expr_value(collection);
                 let item_ty = match unwrap_nullable(&col_ty) {
                     Ty::Array(inner) => *inner.clone(),

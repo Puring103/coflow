@@ -47,6 +47,21 @@ fn type_checker_reports_name_field_enum_function_quantifier_index_and_regex_erro
 }
 
 #[test]
+fn type_checker_rejects_reserved_quantifier_binding() {
+    let source = r#"
+        type Item {
+            nums: [int];
+            check {
+                all module in nums { module > 0; }
+            }
+        }
+    "#;
+
+    let err = compile_one(source).unwrap_err();
+    assert_has_code(&err, CftErrorCode::ReservedIdentifier);
+}
+
+#[test]
 fn type_checker_accepts_nullable_guarded_access_and_ref_object_view() {
     let source = r#"
         type Item {

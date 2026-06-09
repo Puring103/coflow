@@ -48,6 +48,7 @@ fn schema_rejects_reserved_identifiers() {
         "type int { value: string; }",
         "enum len { A, }",
         "const match = 1;",
+        "const export = 1;",
         "type Item { from: string; }",
         "enum E { _, }",
     ];

@@ -36,7 +36,7 @@ type Item { id: string; }  # 行尾注释
 - 关键字和字面量：`const`、`enum`、`type`、`abstract`、`sealed`、`check`、`when`、`all`、`any`、`none`、`in`、`is`、`true`、`false`、`null`
 - primitive 类型名：`int`、`float`、`bool`、`string`
 - 当前内建函数名：`len`、`contains`、`unique`、`min`、`max`、`sum`、`keys`、`values`、`matches`
-- 未来语法保留名：`use`、`import`、`as`、`from`、`namespace`、`module`、`match`、`let`、`fn`、`return`
+- 未来语法保留名：`if`、`else`、`match`、`case`、`for`、`while`、`let`、`module`、`import`、`export`、`from`、`as`、`use`
 - `_`
 
 ---
