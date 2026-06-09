@@ -15,11 +15,11 @@
 use clap::{Args, Parser, Subcommand};
 use coflow_cft::CftDiagnostic;
 use coflow_codegen_csharp::{generate_csharp_json, CsharpCodegenOptions};
-use coflow_excel_loader::{
+use coflow_loader_excel::{
     load_excel, ExcelDiagnostic, ExcelDiagnostics, ExcelLoadError, ExcelLocation, ExcelSheet,
     ExcelSource,
 };
-use coflow_json_export::export_json_model;
+use coflow_exporter_json::export_json_model;
 use coflow_project::{
     compile_schema_project, dedupe_cft_diagnostics, DiagnosticJson, Project, RelatedJson,
 };
