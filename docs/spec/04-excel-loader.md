@@ -1,93 +1,31 @@
 # Excel 加载器规格
 
-**依赖文档**：[01-cft.md](01-cft.md)、[02-data-model.md](02-data-model.md)、[03-cell-value.md](03-cell-value.md)
+**依赖文档**：[01-cft.md](01-cft.md)、[02-schema-api.md](02-schema-api.md)、[02-data-model.md](02-data-model.md)、[03-cell-value.md](03-cell-value.md)
 
-Excel 加载器将 `.xlsx` 文件按 CFT schema 加载为结构化数据模型。加载过程完全 schema-guided，所有类型解析、单元格值解析和跨表引用解析均依赖 CFT 类型定义。
+`coflow-excel-loader` 是低层加载 crate。它接收已经编译完成的 `CftContainer`，以及已经解析出的 `ExcelSource` 值，将 Excel 数据按 CFT schema 加载为结构化数据模型。加载过程完全 schema-guided，所有类型解析、单元格值解析和跨表引用解析均依赖 CFT 类型定义。
+
+`coflow-excel-loader` 不发现项目文件，不解析 `coflow.yaml`，也不负责 CLI 编排。项目配置、schema 发现、Excel source 定义和导出/codegen 调用由项目加载与 CLI 层负责。
 
 ---
 
 ## 目录
 
-1. [配置文件](#1-配置文件)
+1. [输入边界](#1-输入边界)
 2. [加载流程](#2-加载流程)
 3. [单元格值解析](#3-单元格值解析)
-4. [错误阶段](#4-错误阶段)
+4. [API 语义](#4-api-语义)
+5. [错误阶段](#5-错误阶段)
 
 ---
 
-## 1. 配置文件
+## 1. 输入边界
 
-配置文件使用 YAML 格式，描述 schema 来源和数据来源。
+Excel 加载器的输入是：
 
-### 1.1 基本结构
+- 已经成功 `compile` 的 `CftContainer`
+- 已经由上层项目管线解析出的 `ExcelSource` 值
 
-```yaml
-schema: schema/           # .cft 文件所在文件夹，扫描全部 .cft 文件
-
-sources:
-  - file: data/items.xlsx
-    sheets:
-      - sheet: Item       # sheet 名和 CFT 类型名一致，无需额外配置
-
-  - file: data/enemies.xlsx
-    sheets:
-      - sheet: Monster
-```
-
-### 1.2 `schema` 字段
-
-`schema` 指定 CFT 类型定义的来源，支持两种写法：
-
-```yaml
-# 扫描整个文件夹下所有 .cft 文件
-schema: schema/
-
-# 或显式列出文件
-schema:
-  - schema/item.cft
-  - schema/enemy.cft
-```
-
-路径相对于配置文件所在目录。
-
-### 1.3 `sources` 字段
-
-每个 source 对应一个 `.xlsx` 文件，包含若干 sheet 配置。
-
-**sheet 配置字段：**
-
-| 字段 | 必填 | 说明 |
-|------|------|------|
-| `sheet` | 是 | Excel 中的 sheet 名 |
-| `type` | 否 | 对应的 CFT 类型名；省略时使用 sheet 名作为类型名 |
-| `columns` | 否 | 列名到字段名的映射；省略时列名直接作为字段名 |
-
-`columns` 映射只处理列名到字段名的转换，不干涉单元格内容的解析。多态字段的类型标记（`TypeName{}`）由单元格内容本身提供。
-
-### 1.4 完整示例
-
-```yaml
-schema: schema/
-
-sources:
-  - file: data/items.xlsx
-    sheets:
-      - sheet: Item                 # sheet 名 = 类型名，无需额外配置
-
-      - sheet: 物品表               # sheet 名与类型名不一致
-        type: Item
-        columns:                    # 列名与字段名不一致时才需要填
-          物品ID: id
-          名称: name
-          稀有度: rarity
-
-  - file: data/enemies.xlsx
-    sheets:
-      - sheet: Monster
-        columns:
-          怪物ID: id
-          等级: level
-```
+`ExcelSource` 描述一个或多个 Excel 文件、sheet 到 CFT type 的映射，以及可选的列名到字段名映射。路径解析、配置文件读取、文件发现和命令行选项合并不属于 `coflow-excel-loader` 的职责。
 
 ---
 
@@ -97,17 +35,13 @@ sources:
 
 加载分为以下几个阶段，任一阶段出错则停止并报告错误。
 
-### 第一阶段：加载 schema
+### 第一阶段：解析 Excel 结构
 
-扫描并注册所有 `.cft` 文件到 `CftContainer`，建立全局类型表。
-
-### 第二阶段：解析 Excel 结构
-
-读取所有配置中的 `.xlsx` 文件，按 sheet 配置确定每个 sheet 对应的 CFT 类型。
+读取 `ExcelSource` 指定的 `.xlsx` 文件，按 sheet 配置确定每个 sheet 对应的 CFT 类型。
 
 每个 sheet 的**第一行**为列名行，后续行为数据行。空行跳过。
 
-### 第三阶段：逐行解析记录
+### 第二阶段：逐行解析记录
 
 对每个数据行，按列名（经过 `columns` 映射后）找到对应字段，根据字段的 CFT 类型 schema-guided 解析单元格内容（见第 3 节）。
 
@@ -115,9 +49,9 @@ sources:
 
 如果该类型属于带 `@id` 的继承树，加载器还要把记录注册到相关 `inheritance_index`。同一继承树索引中的 ID 必须唯一，兄弟子类之间重复 ID 也立即报错。
 
-同一类型的 records 按配置文件中 sources 顺序追加（见 [02-data-model.md](02-data-model.md)）。
+同一类型的 records 按 `ExcelSource` 中 sources 顺序追加（见 [02-data-model.md](02-data-model.md)）。
 
-### 第四阶段：解析跨表引用
+### 第三阶段：解析跨表引用
 
 遍历所有 Record，将 `@ref` 字段的值（string 或 int）按目标类型的赋值兼容范围查找，替换为 `Value::Ref { id, target }`。
 
@@ -126,9 +60,11 @@ sources:
 - 允许循环引用（A.ref → B，B.ref → A）；两遍设计天然支持，不会无限递归
 - 找不到目标则报错
 
-### 第五阶段：执行 check
+### 第四阶段：执行 check
 
-对所有 Record 执行 CFT check 块校验，收集全部错误后一次性返回。check 错误不影响数据模型的构建结果，由宿主决定是否使用含错误的数据。
+`load_excel_model` 不执行 CFT check；它只构建数据模型并解析引用。
+
+`load_excel` 在 `load_excel_model` 构建数据模型之后执行 CFT check 块校验，收集全部错误后一次性返回。check 错误不影响数据模型的构建结果，由宿主决定是否使用含错误的数据。
 
 ---
 
@@ -148,11 +84,17 @@ sources:
 
 ---
 
-## 4. 错误阶段
+## 4. API 语义
+
+- `load_excel_model` builds a data model and does not run CFT checks.
+- `load_excel` builds a data model and runs CFT checks.
+
+---
+
+## 5. 错误阶段
 
 | 阶段 | 错误类型 |
 |------|---------|
-| schema 加载 | CFT 解析错误、类型名重复 |
 | Excel 解析 | 文件不存在、sheet 不存在、`type` 指定的类型未定义 |
 | 记录解析 | 列名找不到对应字段、单元格值类型不匹配、`@id` 重复、继承树 ID 重复、字典 key 重复、多态字段缺少类型标记 |
 | 跨表引用解析 | `@ref` 目标类型不存在、目标 ID 找不到 |

@@ -29,7 +29,15 @@ type Item { id: string; }  # 行尾注释
 
 所有顶层定义（`const`、`enum`、`type`）共享同一个**全局命名空间**，名称在整个项目中唯一，支持前向引用，无需按声明顺序排列。
 
-标识符遵循 Unicode XID 规则（`unicode-ident`），允许中文、Emoji 之外的合法字符；关键字 `const`、`enum`、`type`、`abstract`、`sealed`、`check`、`when`、`all`、`any`、`none`、`in`、`is`、`true`、`false`、`null` 不能用作标识符。
+标识符遵循 Unicode XID 规则（`unicode-ident`），允许中文、Emoji 之外的合法字符。Reserved identifiers 包括当前关键字和字面量、primitive 类型名、当前内建函数名、为未来语法保留的名称，以及 `_`。这些名称不能用作 `const`、`enum`、`type`、字段、枚举变体或量词变量名称。
+
+当前保留名至少包括：
+
+- 关键字和字面量：`const`、`enum`、`type`、`abstract`、`sealed`、`check`、`when`、`all`、`any`、`none`、`in`、`is`、`true`、`false`、`null`
+- primitive 类型名：`int`、`float`、`bool`、`string`
+- 当前内建函数名：`len`、`contains`、`unique`、`min`、`max`、`sum`、`keys`、`values`、`matches`
+- 未来语法保留名：`use`、`import`、`as`、`from`、`namespace`、`module`、`match`、`let`、`fn`、`return`
+- `_`
 
 ---
 
@@ -87,6 +95,7 @@ enum Status {
 - 枚举值通过 `EnumName.Variant` 使用；裸写 `EnumName` 作为运算数会报 `CFT-TYPE-005`，提示需要 `EnumName.Variant` 或 `EnumName(0)`
 - 枚举类型与 `int` 不隐式互转；枚举只能与同类型枚举比较，`rarity > 5` 报类型错误
 - 枚举类型支持六种比较运算符（`==` `!=` `<` `<=` `>` `>=`），按底层整数值比较
+- 枚举变体允许携带 `@display("text")` 和 `@deprecated`；其他注解用于枚举变体均无效
 
 **位标志枚举**使用 `@flag` 注解，所有变体值必须为 2 的幂（0 除外）：
 
@@ -357,33 +366,35 @@ all item in items {
 
 ### 5.5 `is` 类型判断
 
-`is` 判断对象的实际类型；对象的实际类型是目标类型本身或其任意子类时返回 `true`：
+`is TypeName` 是可赋值动态类型谓词：对象的实际类型等于 TypeName 或任意子类时返回 `true`。`is null` 对任意 nullable 操作数有效，对非 nullable 操作数无效：
 
 ```cft
 reward is Reward          # Reward 或任意子类均为 true
-reward is CurrencyReward  # 只有实际类型恰好是 CurrencyReward 时为 true
+reward is CurrencyReward  # CurrencyReward 或任意子类均为 true
 item is null              # null 判断
 ```
 
-`is` 的右侧只能是已定义的 `type` 名或 `null`。primitive 类型（`int`、`float`、`bool`、`string`）和 `enum` 名不允许作为目标，会以 `CFT-TYPE-014 InvalidIsPredicate` 报错。`is` 的左侧必须是对象或可空对象，否则触发 `CFT-TYPE-005 OperatorTypeMismatch`。
+`is` 的右侧只能是已定义的 `type` 名或 `null`。primitive 类型（`int`、`float`、`bool`、`string`）和 `enum` 名不允许作为目标，会以 `CFT-TYPE-014 InvalidIsPredicate` 报错。`is TypeName` 的左侧必须是对象或可空对象；`is null` 的左侧必须是 nullable 类型。否则触发 `CFT-TYPE-005 OperatorTypeMismatch`。
 
 ### 5.6 内建函数
 
 | 函数 | 参数 | 返回值 | 说明 |
 |------|------|--------|------|
-| `len(col)` | array 或 dict | int | 元素数量 |
+| `len(col)` | array 或 dict | int | 元素数量；数组中 `null` 元素照常计数 |
 | `contains(col, val)` | array + 元素，或 dict + key | bool | 存在性判断 |
-| `unique(array)` | array | bool | 元素是否唯一（支持 int、bool、string、enum） |
+| `unique(array)` | array | bool | 元素是否唯一（支持 int、bool、string、enum 及其 nullable 形式） |
 | `min(array)` | 非空 int / float / enum array | 同元素类型 | 最小值 |
 | `max(array)` | 非空 int / float / enum array | 同元素类型 | 最大值 |
-| `sum(array)` | int 或 float array | 同元素类型 | 求和，空数组返回 `0` |
+| `sum(array)` | int 或 float array | 同元素类型 | 求和 |
 | `keys(dict)` | dict | array | key 数组 |
 | `values(dict)` | dict | array | value 数组 |
 | `matches(str, pat)` | string + 正则字符串字面量 | bool | 正则匹配，pattern 使用标准双引号字符串，Unicode 感知 |
 
 注意：
-- `unique` 不支持 float、object、array、dict、null 元素
-- `min` / `max` 对空数组报 check eval error
+- `unique` 将 `null` 当作可比较值处理；除 nullable 元素外，不支持 float、object、array、dict
+- `min` / `max` 跳过 `null`，没有任何非 `null` 值时报 check eval error
+- `sum` 跳过 `null`，没有任何非 `null` 值时返回 `0`
+- `contains([T?], null)` 检查数组中是否存在 `null` 元素
 - `contains(dict, val)` 只检查 key，不检查 value
 - `<<` `>>` 两个操作数均必须是 `int`
 
@@ -407,8 +418,10 @@ item is null              # null 判断
 | `@id` | `field` | `string`、`int` | 每个继承树最多一个 `@id` 字段；子类继承父类的 `@id` | 主键，加载器用于跨表引用解析，隐含唯一性 |
 | `@ref(TypeName)` | `field` | `string`、`int` | TypeName 必须是已定义的 `type`（含 abstract） | 字符串/整数外键，加载器校验目标记录存在 |
 | `@index` | `field` | `string`、`int`、`enum` | 字段必须非 nullable | codegen 生成按此字段查询的索引 API；索引始终返回列表 |
-| `@display("text")` | `type`、`enum`、`field` | 任意 | — | 可读名称，codegen 生成 XML 注释，用于编辑器显示 |
-| `@deprecated` | `type`、`enum`、`field` | 任意 | — | 标记废弃，codegen 输出对应语言的废弃标记；子类不自动继承父类的 `@deprecated` |
+| `@display("text")` | `type`、`enum`、`field`、`enum variant` | 任意 | — | 可读名称，codegen 生成 XML 注释，用于编辑器显示 |
+| `@deprecated` | `type`、`enum`、`field`、`enum variant` | 任意 | — | 标记废弃，codegen 输出对应语言的废弃标记；子类不自动继承父类的 `@deprecated` |
+
+枚举变体只允许 `@display("text")` 和 `@deprecated`；其他注解用于枚举变体时以 `CFT-SCHEMA-023 InvalidAnnotationTarget` 报错。
 
 示例：
 
