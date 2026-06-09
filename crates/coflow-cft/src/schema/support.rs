@@ -394,11 +394,7 @@ pub(super) fn is_string_or_int(ty: &Ty, allow_nullable: bool) -> bool {
 }
 
 pub(super) fn is_indexable_field_type(ty: &Ty) -> bool {
-    match ty {
-        Ty::String | Ty::Int | Ty::Enum(_) | Ty::Unknown => true,
-        Ty::Nullable(inner) => matches!(inner.as_ref(), Ty::String | Ty::Int | Ty::Enum(_)),
-        _ => false,
-    }
+    matches!(ty, Ty::String | Ty::Int | Ty::Enum(_) | Ty::Unknown)
 }
 
 pub(super) fn types_assignable(expected: &Ty, actual: &Ty) -> bool {

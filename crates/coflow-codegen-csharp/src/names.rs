@@ -1,10 +1,10 @@
 use coflow_cft::{CftAnnotation, CftAnnotationValue};
 
-pub(crate) fn has_annotation(annotations: &[CftAnnotation], name: &str) -> bool {
+pub fn has_annotation(annotations: &[CftAnnotation], name: &str) -> bool {
     annotations.iter().any(|annotation| annotation.name == name)
 }
 
-pub(crate) fn annotation_name_arg(annotations: &[CftAnnotation], name: &str) -> Option<String> {
+pub fn annotation_name_arg(annotations: &[CftAnnotation], name: &str) -> Option<String> {
     annotations
         .iter()
         .find(|annotation| annotation.name == name)
@@ -15,18 +15,74 @@ pub(crate) fn annotation_name_arg(annotations: &[CftAnnotation], name: &str) -> 
         })
 }
 
-pub(crate) fn display_annotation(annotations: &[CftAnnotation]) -> Option<String> {
+pub fn display_annotation(annotations: &[CftAnnotation]) -> Option<String> {
     annotations
         .iter()
         .find(|annotation| annotation.name == "display")
         .and_then(|annotation| annotation.args.first())
         .and_then(|arg| match arg {
-            CftAnnotationValue::String(value) => Some(value.clone()),
+            CftAnnotationValue::String(value) => Some(xml_doc_text(value)),
             _ => None,
         })
 }
 
-pub(crate) fn pascal_case(name: &str) -> String {
+pub fn xml_doc_text(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+pub fn csharp_ident_error(value: &str) -> Option<String> {
+    if value.is_empty() {
+        return Some("identifier is empty".to_string());
+    }
+    if is_csharp_keyword(value) {
+        return Some("identifier is a C# keyword".to_string());
+    }
+
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return Some("identifier is empty".to_string());
+    };
+    if !is_csharp_ident_start(first) {
+        return Some("identifier must start with an ASCII letter or `_`".to_string());
+    }
+    if chars.any(|ch| !is_csharp_ident_continue(ch)) {
+        return Some("identifier must contain only ASCII letters, digits, or `_`".to_string());
+    }
+    None
+}
+
+pub fn csharp_namespace_error(value: &str) -> Option<String> {
+    if value.is_empty() {
+        return Some("namespace is empty".to_string());
+    }
+    for part in value.split('.') {
+        if let Some(reason) = csharp_ident_error(part) {
+            return Some(format!("namespace segment `{part}` {reason}"));
+        }
+    }
+    None
+}
+
+pub fn csharp_member_ident_error(value: &str) -> Option<String> {
+    let Some(unprefixed) = value.strip_prefix('_') else {
+        return csharp_ident_error(value);
+    };
+    if unprefixed.is_empty() {
+        return None;
+    }
+    if unprefixed.chars().any(|ch| !is_csharp_ident_continue(ch)) {
+        return Some("identifier must contain only ASCII letters, digits, or `_`".to_string());
+    }
+    None
+}
+
+pub fn pascal_case(name: &str) -> String {
     let mut out = String::new();
     let mut upper = true;
     for ch in name.chars() {
@@ -44,7 +100,98 @@ pub(crate) fn pascal_case(name: &str) -> String {
     out
 }
 
-pub(crate) fn camel_case(name: &str) -> String {
+const fn is_csharp_ident_start(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphabetic()
+}
+
+const fn is_csharp_ident_continue(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphanumeric()
+}
+
+fn is_csharp_keyword(value: &str) -> bool {
+    matches!(
+        value,
+        "abstract"
+            | "as"
+            | "base"
+            | "bool"
+            | "break"
+            | "byte"
+            | "case"
+            | "catch"
+            | "char"
+            | "checked"
+            | "class"
+            | "const"
+            | "continue"
+            | "decimal"
+            | "default"
+            | "delegate"
+            | "do"
+            | "double"
+            | "else"
+            | "enum"
+            | "event"
+            | "explicit"
+            | "extern"
+            | "false"
+            | "finally"
+            | "fixed"
+            | "float"
+            | "for"
+            | "foreach"
+            | "goto"
+            | "if"
+            | "implicit"
+            | "in"
+            | "int"
+            | "interface"
+            | "internal"
+            | "is"
+            | "lock"
+            | "long"
+            | "namespace"
+            | "new"
+            | "null"
+            | "object"
+            | "operator"
+            | "out"
+            | "override"
+            | "params"
+            | "private"
+            | "protected"
+            | "public"
+            | "readonly"
+            | "ref"
+            | "return"
+            | "sbyte"
+            | "sealed"
+            | "short"
+            | "sizeof"
+            | "stackalloc"
+            | "static"
+            | "string"
+            | "struct"
+            | "switch"
+            | "this"
+            | "throw"
+            | "true"
+            | "try"
+            | "typeof"
+            | "uint"
+            | "ulong"
+            | "unchecked"
+            | "unsafe"
+            | "ushort"
+            | "using"
+            | "virtual"
+            | "void"
+            | "volatile"
+            | "while"
+    )
+}
+
+pub fn camel_case(name: &str) -> String {
     let pascal = pascal_case(name);
     let mut chars = pascal.chars();
     let Some(first) = chars.next() else {
@@ -53,7 +200,7 @@ pub(crate) fn camel_case(name: &str) -> String {
     first.to_lowercase().collect::<String>() + chars.as_str()
 }
 
-pub(crate) fn pluralize(name: &str) -> String {
+pub fn pluralize(name: &str) -> String {
     if name.ends_with('s') {
         format!("{name}es")
     } else {
@@ -61,7 +208,7 @@ pub(crate) fn pluralize(name: &str) -> String {
     }
 }
 
-pub(crate) fn ref_property_name(field_name: &str, target: &str) -> String {
+pub fn ref_property_name(field_name: &str, target: &str) -> String {
     for suffix in ["_id", "Id", "ID"] {
         if let Some(prefix) = field_name.strip_suffix(suffix) {
             if !prefix.is_empty() {
@@ -72,15 +219,15 @@ pub(crate) fn ref_property_name(field_name: &str, target: &str) -> String {
     pascal_case(target)
 }
 
-pub(crate) fn index_var_name(type_name: &str) -> String {
+pub fn index_var_name(type_name: &str) -> String {
     format!("_{}Index", camel_case(type_name))
 }
 
-pub(crate) fn index_param_name(type_name: &str) -> String {
+pub fn index_param_name(type_name: &str) -> String {
     format!("{}Index", camel_case(type_name))
 }
 
-pub(crate) fn multi_index_var_name(type_name: &str, field_name: &str) -> String {
+pub fn multi_index_var_name(type_name: &str, field_name: &str) -> String {
     format!(
         "_{}By{}",
         camel_case(&pluralize(type_name)),
@@ -88,7 +235,7 @@ pub(crate) fn multi_index_var_name(type_name: &str, field_name: &str) -> String 
     )
 }
 
-pub(crate) fn format_float(value: f64) -> String {
+pub fn format_float(value: f64) -> String {
     let mut text = value.to_string();
     if !text.contains('.') && !text.contains('e') && !text.contains('E') {
         text.push_str(".0");
@@ -97,7 +244,7 @@ pub(crate) fn format_float(value: f64) -> String {
     text
 }
 
-pub(crate) fn escape_csharp_string(value: &str) -> String {
+pub fn escape_csharp_string(value: &str) -> String {
     value
         .replace('\\', "\\\\")
         .replace('"', "\\\"")

@@ -3,12 +3,16 @@ use crate::model::{
     CsharpParameter, CsharpPolymorphicCase, CsharpPolymorphicLoader, CsharpProperty, CsharpResolve,
     CsharpResolveCase, CsharpResolveMethod, CsharpResolveTableCall, CsharpTable, CsharpType,
 };
-use crate::names::*;
+use crate::names::{
+    annotation_name_arg, camel_case, display_annotation, escape_csharp_string, format_float,
+    has_annotation, index_param_name, index_var_name, multi_index_var_name, pascal_case, pluralize,
+    ref_property_name,
+};
 use crate::schema_view::{FieldMeta, FieldType, SchemaView, TypeMeta};
 use crate::CsharpCodegenError;
 use coflow_cft::{CftSchemaDefaultValue, CftSchemaEnum, CftSchemaField, CftSchemaType};
 
-pub(crate) fn build_csharp_enum(schema_enum: &CftSchemaEnum) -> CsharpEnum {
+pub fn build_csharp_enum(schema_enum: &CftSchemaEnum) -> CsharpEnum {
     CsharpEnum {
         name: schema_enum.name.clone(),
         is_flags: has_annotation(&schema_enum.annotations, "flag"),
@@ -27,10 +31,7 @@ pub(crate) fn build_csharp_enum(schema_enum: &CftSchemaEnum) -> CsharpEnum {
     }
 }
 
-pub(crate) fn build_csharp_type(
-    schema_type: &CftSchemaType,
-    view: &SchemaView,
-) -> Result<CsharpType, CsharpCodegenError> {
+pub fn build_csharp_type(schema_type: &CftSchemaType, view: &SchemaView) -> CsharpType {
     let mut properties = Vec::new();
 
     for field in &schema_type.fields {
@@ -41,7 +42,7 @@ pub(crate) fn build_csharp_type(
             name: pascal_case(&field.name),
             type_name: csharp_type(&field_ty, view),
             setter: "init".to_string(),
-            initializer: default_initializer(field, &field_ty)?,
+            initializer: default_initializer(field, &field_ty),
             summary: display_annotation(&field.annotations),
             obsolete: has_annotation(&field.annotations, "deprecated"),
         });
@@ -66,16 +67,16 @@ pub(crate) fn build_csharp_type(
         }
     }
 
-    Ok(CsharpType {
+    CsharpType {
         name: schema_type.name.clone(),
         declaration: type_declaration(schema_type),
         summary: display_annotation(&schema_type.annotations),
         obsolete: has_annotation(&schema_type.annotations, "deprecated"),
         properties,
-    })
+    }
 }
 
-pub(crate) fn build_csharp_database(
+pub fn build_csharp_database(
     view: &SchemaView,
     tables: &[String],
     _database_class: &str,
@@ -85,7 +86,7 @@ pub(crate) fn build_csharp_database(
         .map(|table_name| build_table_model(view, table_name))
         .collect::<Result<Vec<_>, _>>()?;
     let indexes = indexed_fields(view, tables)
-        .into_iter()
+        .iter()
         .map(|indexed| build_index_model(view, indexed))
         .collect::<Vec<_>>();
     let mut parameters = Vec::<CsharpParameter>::new();
@@ -177,7 +178,7 @@ fn build_table_model(
     })
 }
 
-fn build_index_model(view: &SchemaView, indexed: IndexedField) -> CsharpIndex {
+fn build_index_model(view: &SchemaView, indexed: &IndexedField) -> CsharpIndex {
     let storage_field = multi_index_var_name(&indexed.table, &indexed.field.name);
     CsharpIndex {
         table_name: indexed.table.clone(),
@@ -653,12 +654,9 @@ fn type_declaration(schema_type: &CftSchemaType) -> String {
     format!("{prefix} {}{parent}", schema_type.name)
 }
 
-fn default_initializer(
-    field: &CftSchemaField,
-    ty: &FieldType,
-) -> Result<Option<String>, CsharpCodegenError> {
+fn default_initializer(field: &CftSchemaField, ty: &FieldType) -> Option<String> {
     if let Some(default) = &field.default {
-        return Ok(Some(match default {
+        return Some(match default {
             CftSchemaDefaultValue::Null => "null".to_string(),
             CftSchemaDefaultValue::Int(value) => value.to_string(),
             CftSchemaDefaultValue::Float(value) => format_float(*value),
@@ -670,14 +668,14 @@ fn default_initializer(
             CftSchemaDefaultValue::EmptyArray | CftSchemaDefaultValue::EmptyObject => {
                 "new()".to_string()
             }
-        }));
+        });
     }
 
     if field.has_default || ty.is_nullable() {
-        return Ok(None);
+        return None;
     }
 
-    Ok(match ty.non_nullable() {
+    match ty.non_nullable() {
         FieldType::String => Some("\"\"".to_string()),
         FieldType::Type(_) => Some("null!".to_string()),
         FieldType::Array(_) | FieldType::Dict(_, _) => Some("new()".to_string()),
@@ -686,5 +684,5 @@ fn default_initializer(
         | FieldType::Bool
         | FieldType::Enum(_)
         | FieldType::Nullable(_) => None,
-    })
+    }
 }

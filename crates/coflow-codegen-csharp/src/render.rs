@@ -8,9 +8,7 @@ const TYPE_TEMPLATE: &str = include_str!("../templates/type.cs.tera");
 const DATABASE_TEMPLATE: &str = include_str!("../templates/database.cs.tera");
 const EXCEPTION_TEMPLATE: &str = include_str!("../templates/load_exception.cs.tera");
 
-pub(crate) fn render_project(
-    project: &CsharpProject,
-) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+pub fn render_project(project: &CsharpProject) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
     let tera = templates()?;
     let mut files = Vec::new();
 

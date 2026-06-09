@@ -4,14 +4,14 @@ use coflow_cft::{CftAnnotation, CftContainer, CftSchemaField, CftSchemaType, Cft
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
-pub(crate) struct SchemaView {
-    pub(crate) types: BTreeMap<String, TypeMeta>,
-    pub(crate) enums: BTreeSet<String>,
+pub struct SchemaView {
+    pub types: BTreeMap<String, TypeMeta>,
+    pub enums: BTreeSet<String>,
     children: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl SchemaView {
-    pub(crate) fn new(schema: &CftContainer) -> Self {
+    pub fn new(schema: &CftContainer) -> Self {
         let enums = schema
             .all_enums()
             .map(|schema_enum| schema_enum.name.clone())
@@ -44,17 +44,17 @@ impl SchemaView {
         }
     }
 
-    pub(crate) fn type_meta(&self, name: &str) -> Result<&TypeMeta, CsharpCodegenError> {
+    pub fn type_meta(&self, name: &str) -> Result<&TypeMeta, CsharpCodegenError> {
         self.types
             .get(name)
             .ok_or_else(|| CsharpCodegenError::new(format!("unknown CFT type `{name}`")))
     }
 
-    pub(crate) fn all_type_names(&self) -> Vec<String> {
+    pub fn all_type_names(&self) -> Vec<String> {
         self.types.keys().cloned().collect()
     }
 
-    pub(crate) fn non_abstract_type_names(&self) -> Vec<String> {
+    pub fn non_abstract_type_names(&self) -> Vec<String> {
         self.types
             .values()
             .filter(|ty| !ty.is_abstract)
@@ -62,7 +62,7 @@ impl SchemaView {
             .collect()
     }
 
-    pub(crate) fn table_names(&self) -> Vec<String> {
+    pub fn table_names(&self) -> Vec<String> {
         self.types
             .values()
             .filter(|ty| !ty.is_abstract && ty.id_field().is_ok())
@@ -70,7 +70,7 @@ impl SchemaView {
             .collect()
     }
 
-    pub(crate) fn polymorphic_type_names(&self) -> Vec<String> {
+    pub fn polymorphic_type_names(&self) -> Vec<String> {
         self.types
             .values()
             .filter(|ty| self.range_is_polymorphic(&ty.name))
@@ -78,7 +78,7 @@ impl SchemaView {
             .collect()
     }
 
-    pub(crate) fn range_is_polymorphic(&self, type_name: &str) -> bool {
+    pub fn range_is_polymorphic(&self, type_name: &str) -> bool {
         self.types
             .get(type_name)
             .is_some_and(|ty| ty.is_abstract || self.has_descendants(type_name))
@@ -90,7 +90,7 @@ impl SchemaView {
             .is_some_and(|children| !children.is_empty())
     }
 
-    pub(crate) fn concrete_assignable_types(
+    pub fn concrete_assignable_types(
         &self,
         type_name: &str,
     ) -> Result<Vec<String>, CsharpCodegenError> {
@@ -121,15 +121,24 @@ impl SchemaView {
         Ok(())
     }
 
-    pub(crate) fn ref_target_names(&self) -> Vec<String> {
+    pub fn ref_target_names(&self) -> Vec<String> {
         let mut out = BTreeSet::new();
         for ty in self.types.values() {
-            ty.collect_ref_targets(self, &mut out);
+            let mut visited = BTreeSet::new();
+            ty.collect_ref_targets(self, &mut out, &mut visited);
         }
         out.into_iter().collect()
     }
 
-    pub(crate) fn range_contains_ref(&self, type_name: &str) -> bool {
+    pub fn range_contains_ref(&self, type_name: &str) -> bool {
+        let mut visited = BTreeSet::new();
+        self.range_contains_ref_inner(type_name, &mut visited)
+    }
+
+    fn range_contains_ref_inner(&self, type_name: &str, visited: &mut BTreeSet<String>) -> bool {
+        if !visited.insert(type_name.to_string()) {
+            return false;
+        }
         let Some(meta) = self.types.get(type_name) else {
             return false;
         };
@@ -140,15 +149,15 @@ impl SchemaView {
             .get(type_name)
             .into_iter()
             .flatten()
-            .any(|child| self.range_contains_ref(child))
+            .any(|child| self.range_contains_ref_inner(child, visited))
     }
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct TypeMeta {
-    pub(crate) name: String,
-    pub(crate) is_abstract: bool,
-    pub(crate) all_fields: Vec<FieldMeta>,
+pub struct TypeMeta {
+    pub name: String,
+    pub is_abstract: bool,
+    pub all_fields: Vec<FieldMeta>,
 }
 
 impl TypeMeta {
@@ -164,7 +173,7 @@ impl TypeMeta {
         }
     }
 
-    pub(crate) fn id_field(&self) -> Result<&FieldMeta, CsharpCodegenError> {
+    pub fn id_field(&self) -> Result<&FieldMeta, CsharpCodegenError> {
         self.all_fields
             .iter()
             .find(|field| has_annotation(&field.annotations, "id"))
@@ -173,44 +182,63 @@ impl TypeMeta {
             })
     }
 
-    pub(crate) fn index_fields(&self) -> impl Iterator<Item = &FieldMeta> {
+    pub fn index_fields(&self) -> impl Iterator<Item = &FieldMeta> {
         self.all_fields
             .iter()
             .filter(|field| has_annotation(&field.annotations, "index"))
     }
 
-    fn collect_ref_targets(&self, view: &SchemaView, out: &mut BTreeSet<String>) {
+    fn collect_ref_targets(
+        &self,
+        view: &SchemaView,
+        out: &mut BTreeSet<String>,
+        visited: &mut BTreeSet<String>,
+    ) {
+        if !visited.insert(self.name.clone()) {
+            return;
+        }
         for field in &self.all_fields {
-            collect_ref_targets_in_field(view, field, out);
+            collect_ref_targets_in_field(view, field, out, visited);
         }
     }
 
     fn contains_ref(&self, view: &SchemaView) -> bool {
         let mut refs = BTreeSet::new();
-        self.collect_ref_targets(view, &mut refs);
+        let mut visited = BTreeSet::new();
+        self.collect_ref_targets(view, &mut refs, &mut visited);
         !refs.is_empty()
     }
 }
 
-fn collect_ref_targets_in_field(view: &SchemaView, field: &FieldMeta, out: &mut BTreeSet<String>) {
+fn collect_ref_targets_in_field(
+    view: &SchemaView,
+    field: &FieldMeta,
+    out: &mut BTreeSet<String>,
+    visited: &mut BTreeSet<String>,
+) {
     if let Some(target) = annotation_name_arg(&field.annotations, "ref") {
         out.insert(target);
         return;
     }
-    collect_ref_targets_in_type(view, &field.ty, out);
+    collect_ref_targets_in_type(view, &field.ty, out, visited);
 }
 
-fn collect_ref_targets_in_type(view: &SchemaView, ty: &FieldType, out: &mut BTreeSet<String>) {
+fn collect_ref_targets_in_type(
+    view: &SchemaView,
+    ty: &FieldType,
+    out: &mut BTreeSet<String>,
+    visited: &mut BTreeSet<String>,
+) {
     match ty {
         FieldType::Type(name) => {
             if let Some(meta) = view.types.get(name) {
-                meta.collect_ref_targets(view, out);
+                meta.collect_ref_targets(view, out, visited);
             }
         }
         FieldType::Array(inner) | FieldType::Nullable(inner) => {
-            collect_ref_targets_in_type(view, inner, out);
+            collect_ref_targets_in_type(view, inner, out, visited);
         }
-        FieldType::Dict(_, value) => collect_ref_targets_in_type(view, value, out),
+        FieldType::Dict(_, value) => collect_ref_targets_in_type(view, value, out, visited),
         FieldType::Int
         | FieldType::Float
         | FieldType::Bool
@@ -220,10 +248,10 @@ fn collect_ref_targets_in_type(view: &SchemaView, ty: &FieldType, out: &mut BTre
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct FieldMeta {
-    pub(crate) name: String,
-    pub(crate) ty: FieldType,
-    pub(crate) annotations: Vec<CftAnnotation>,
+pub struct FieldMeta {
+    pub name: String,
+    pub ty: FieldType,
+    pub annotations: Vec<CftAnnotation>,
 }
 
 impl FieldMeta {
@@ -237,20 +265,20 @@ impl FieldMeta {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum FieldType {
+pub enum FieldType {
     Int,
     Float,
     Bool,
     String,
     Type(String),
     Enum(String),
-    Array(Box<FieldType>),
-    Dict(Box<FieldType>, Box<FieldType>),
-    Nullable(Box<FieldType>),
+    Array(Box<Self>),
+    Dict(Box<Self>, Box<Self>),
+    Nullable(Box<Self>),
 }
 
 impl FieldType {
-    pub(crate) fn from_schema(ty: &CftSchemaTypeRef, enums: &BTreeSet<String>) -> Self {
+    pub fn from_schema(ty: &CftSchemaTypeRef, enums: &BTreeSet<String>) -> Self {
         match ty {
             CftSchemaTypeRef::Int => Self::Int,
             CftSchemaTypeRef::Float => Self::Float,
@@ -271,11 +299,11 @@ impl FieldType {
         }
     }
 
-    pub(crate) fn is_nullable(&self) -> bool {
+    pub const fn is_nullable(&self) -> bool {
         matches!(self, Self::Nullable(_))
     }
 
-    pub(crate) fn non_nullable(&self) -> &Self {
+    pub fn non_nullable(&self) -> &Self {
         match self {
             Self::Nullable(inner) => inner.non_nullable(),
             other => other,

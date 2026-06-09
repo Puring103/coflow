@@ -1,6 +1,8 @@
 use serde_json::Value;
 use std::io::{Read, Write};
 use std::process::{ChildStdout, Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 fn coflow() -> Command {
     Command::new(env!("CARGO_BIN_EXE_coflow"))
@@ -199,8 +201,7 @@ fn cft_lsp_publishes_project_diagnostics_for_open_document() {
             "params": null
         }),
     );
-    drop(stdin);
-    assert!(child.wait().expect("wait lsp").success());
+    assert_child_exits(&mut child);
 }
 
 #[test]
@@ -235,8 +236,8 @@ fn cft_lsp_serves_editor_language_features() {
     let source = std::fs::read_to_string(&schema_path)
         .expect("schema source")
         .replacen(
-            "const MAX_LEVEL = 100;",
-            "const MAX_LEVEL = 100; # comment",
+            "const MAX_LEVEL: int = 100;",
+            "const MAX_LEVEL: int = 100; # comment",
             1,
         );
     write_lsp(
@@ -257,57 +258,134 @@ fn cft_lsp_serves_editor_language_features() {
     let publish = read_lsp(&mut stdout);
     assert_eq!(publish["method"], "textDocument/publishDiagnostics");
 
-    let top_level_completion = request_completion(&mut stdin, &mut stdout, 2, &uri, 0, 0);
+    let top_level_completion = request_completion_at(&mut stdin, &mut stdout, 2, &uri, &source, 0);
     assert_has_completion(&top_level_completion, "type");
     assert_missing_completion(&top_level_completion, "Monster");
     assert_missing_completion(&top_level_completion, "len");
 
-    let type_ref_completion = request_completion(&mut stdin, &mut stdout, 3, &uri, 61, 9);
+    let type_ref_completion = request_completion_at(
+        &mut stdin,
+        &mut stdout,
+        3,
+        &uri,
+        &source,
+        position_after(&source, "stats: "),
+    );
     assert_has_completion(&type_ref_completion, "Monster");
     assert_has_completion(&type_ref_completion, "int");
     assert_missing_completion(&type_ref_completion, "len");
 
-    let field_default_completion = request_completion(&mut stdin, &mut stdout, 4, &uri, 28, 23);
+    let field_default_completion = request_completion_at(
+        &mut stdin,
+        &mut stdout,
+        4,
+        &uri,
+        &source,
+        position_after(&source, "rarity: Rarity = "),
+    );
     assert_has_completion(&field_default_completion, "Rarity.Common");
     assert_missing_completion(&field_default_completion, "true");
     assert_missing_completion(&field_default_completion, "MAX_LEVEL");
     assert_missing_completion(&field_default_completion, "len");
 
-    let check_completion = request_completion(&mut stdin, &mut stdout, 5, &uri, 66, 4);
+    let check_completion = request_completion_at(
+        &mut stdin,
+        &mut stdout,
+        5,
+        &uri,
+        &source,
+        position_after(&source, "    id != \"\";\n    "),
+    );
     assert_has_completion(&check_completion, "len");
     assert_has_completion(&check_completion, "id");
     assert_missing_completion(&check_completion, "Monster");
 
-    let ref_completion = request_completion(&mut stdin, &mut stdout, 6, &uri, 83, 7);
+    let ref_completion = request_completion_at(
+        &mut stdin,
+        &mut stdout,
+        6,
+        &uri,
+        &source,
+        position_after(&source, "@ref("),
+    );
     assert_has_completion(&ref_completion, "Monster");
     assert_missing_completion(&ref_completion, "int");
     assert_missing_completion(&ref_completion, "Rarity");
 
-    let string_completion = request_completion(&mut stdin, &mut stdout, 7, &uri, 34, 18);
+    let string_completion = request_completion_at(
+        &mut stdin,
+        &mut stdout,
+        7,
+        &uri,
+        &source,
+        position_after(&source, "@display(\"Item"),
+    );
     assert_no_completion(&string_completion);
 
-    let enum_dot_completion = request_completion(&mut stdin, &mut stdout, 8, &uri, 28, 26);
+    let enum_dot_completion = request_completion_at(
+        &mut stdin,
+        &mut stdout,
+        8,
+        &uri,
+        &source,
+        position_after(&source, "rarity: Rarity = Rarity."),
+    );
     assert_has_completion(&enum_dot_completion, "Common");
     assert_missing_completion(&enum_dot_completion, "len");
 
-    let field_dot_completion = request_completion(&mut stdin, &mut stdout, 9, &uri, 69, 10);
+    let field_dot_completion = request_completion_at(
+        &mut stdin,
+        &mut stdout,
+        9,
+        &uri,
+        &source,
+        position_after(&source, "stats."),
+    );
     assert_has_completion(&field_dot_completion, "hp");
     assert_missing_completion(&field_dot_completion, "Monster");
 
-    let type_predicate_completion = request_completion(&mut stdin, &mut stdout, 10, &uri, 115, 38);
+    let type_predicate_completion = request_completion_at(
+        &mut stdin,
+        &mut stdout,
+        10,
+        &uri,
+        &source,
+        position_after(&source, "reward is "),
+    );
     assert_has_completion(&type_predicate_completion, "ItemReward");
     assert_has_completion(&type_predicate_completion, "null");
     assert_missing_completion(&type_predicate_completion, "len");
 
-    let parent_type_completion = request_completion(&mut stdin, &mut stdout, 11, &uri, 82, 18);
+    let parent_type_completion = request_completion_at(
+        &mut stdin,
+        &mut stdout,
+        11,
+        &uri,
+        &source,
+        position_after(&source, "type ItemReward : "),
+    );
     assert_has_completion(&parent_type_completion, "Reward");
     assert_missing_completion(&parent_type_completion, "int");
 
-    let abstract_keyword_completion = request_completion(&mut stdin, &mut stdout, 12, &uri, 74, 8);
+    let abstract_keyword_completion = request_completion_at(
+        &mut stdin,
+        &mut stdout,
+        12,
+        &uri,
+        &source,
+        position_after(&source, "abstract "),
+    );
     assert_has_completion(&abstract_keyword_completion, "type");
     assert_missing_completion(&abstract_keyword_completion, "enum");
 
-    let comment_completion = request_completion(&mut stdin, &mut stdout, 13, &uri, 0, 26);
+    let comment_completion = request_completion_at(
+        &mut stdin,
+        &mut stdout,
+        13,
+        &uri,
+        &source,
+        position_after(&source, "# comment"),
+    );
     assert_no_completion(&comment_completion);
 
     write_lsp(
@@ -373,6 +451,43 @@ fn request_completion(
     read_lsp_response(stdout, id)["result"].clone()
 }
 
+fn request_completion_at(
+    stdin: &mut impl Write,
+    stdout: &mut ChildStdout,
+    id: u64,
+    uri: &str,
+    source: &str,
+    byte_offset: usize,
+) -> Value {
+    let (line, character) = lsp_position(source, byte_offset);
+    request_completion(stdin, stdout, id, uri, line, character)
+}
+
+fn position_after(source: &str, needle: &str) -> usize {
+    let start = source
+        .find(needle)
+        .unwrap_or_else(|| panic!("source should contain `{needle}`"));
+    start + needle.len()
+}
+
+fn lsp_position(source: &str, byte_offset: usize) -> (u64, u64) {
+    let target = byte_offset.min(source.len());
+    let mut line = 0_u64;
+    let mut character = 0_u64;
+    for (index, ch) in source.char_indices() {
+        if index >= target {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            character = 0;
+        } else {
+            character += ch.len_utf16() as u64;
+        }
+    }
+    (line, character)
+}
+
 fn assert_has_completion(completion: &Value, label: &str) {
     let items = completion.as_array().expect("completion array");
     assert!(
@@ -427,8 +542,23 @@ fn shutdown_lsp(
         }),
     );
     stdin.flush().expect("flush exit");
-    drop(stdin);
-    assert!(child.wait().expect("wait lsp").success());
+    assert_child_exits(child);
+}
+
+fn assert_child_exits(child: &mut std::process::Child) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(status) = child.try_wait().expect("poll lsp") {
+            assert!(status.success(), "lsp exit status: {status}");
+            return;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("lsp did not exit after exit notification");
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
 }
 
 fn read_lsp_response(stdout: &mut ChildStdout, id: u64) -> Value {

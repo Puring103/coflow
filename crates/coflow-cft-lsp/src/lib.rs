@@ -1,3 +1,17 @@
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::dbg_macro,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::panic_in_result_fn,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unreachable,
+        clippy::unwrap_used
+    )
+)]
+
 use coflow_cft::ast::{
     Annotation, AnnotationArg, CheckExpr, CheckExprKind, CheckStmt, ConstLiteral, DefaultExpr,
     DefaultExprKind, Item, TypeRef, TypeRefKind,
@@ -12,11 +26,18 @@ use coflow_project::{
     compile_schema_project_with_overrides, dedupe_cft_diagnostics, normalize_path, DiagnosticJson,
     Project, SchemaBuild, SchemaSourceOverride,
 };
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
+/// Runs the CFT language server over stdio.
+///
+/// # Errors
+///
+/// Returns an error when reading LSP messages, parsing JSON, handling a request,
+/// or writing a response fails.
 pub fn run(project: Project) -> Result<bool, String> {
     let stdin = io::stdin();
     let stdout = io::stdout();
@@ -26,7 +47,7 @@ pub fn run(project: Project) -> Result<bool, String> {
     while let Some(bytes) = read_message(&mut reader)? {
         let message: Value = serde_json::from_slice(&bytes)
             .map_err(|err| format!("failed to parse LSP JSON message: {err}"))?;
-        server.handle_message(message)?;
+        server.handle_message(&message)?;
         if server.should_exit {
             break;
         }
@@ -46,7 +67,7 @@ struct LspServer<W> {
 }
 
 impl<W: Write> LspServer<W> {
-    fn new(project: Project, writer: W) -> Self {
+    const fn new(project: Project, writer: W) -> Self {
         Self {
             project,
             writer,
@@ -58,7 +79,7 @@ impl<W: Write> LspServer<W> {
         }
     }
 
-    fn handle_message(&mut self, message: Value) -> Result<(), String> {
+    fn handle_message(&mut self, message: &Value) -> Result<(), String> {
         let id = message.get("id").cloned();
         let Some(method) = message.get("method").and_then(Value::as_str) else {
             return Ok(());
@@ -66,17 +87,20 @@ impl<W: Write> LspServer<W> {
         let params = message.get("params").unwrap_or(&Value::Null);
 
         match (id, method) {
-            (Some(id), "initialize") => self.initialize(id),
-            (None, "initialized") => Ok(()),
-            (Some(id), "textDocument/completion") => self.completion(id, params),
-            (Some(id), "textDocument/hover") => self.hover(id, params),
-            (Some(id), "textDocument/definition") => self.definition(id, params),
-            (Some(id), "textDocument/documentSymbol") => self.document_symbol(id, params),
-            (Some(id), "textDocument/formatting") => self.formatting(id, params),
-            (Some(id), "textDocument/semanticTokens/full") => self.semantic_tokens(id, params),
+            (Some(id), "initialize") => self.initialize(&id),
+            (Some(id), "textDocument/completion") => self.completion(&id, params),
+            (Some(id), "textDocument/hover") => self.hover(&id, params),
+            (Some(id), "textDocument/definition") => self.definition(&id, params),
+            (Some(id), "textDocument/documentSymbol") => self.document_symbol(&id, params),
+            (Some(id), "textDocument/formatting") => self.formatting(&id, params),
+            (Some(id), "textDocument/semanticTokens/full") => self.semantic_tokens(&id, params),
             (Some(id), "shutdown") => {
                 self.shutdown_requested = true;
-                self.write_response(id, Value::Null)
+                self.write_response(&id, &Value::Null)
+            }
+            (None, "exit") => {
+                self.should_exit = true;
+                Ok(())
             }
             (None, "textDocument/didOpen") => {
                 if let Some((uri, text)) = did_open_document(params) {
@@ -102,20 +126,19 @@ impl<W: Write> LspServer<W> {
             }
             (None, "textDocument/didClose") => {
                 if let Some(uri) = text_document_uri(params) {
-                    self.close_document(uri)?;
+                    self.close_document(&uri)?;
                 }
                 Ok(())
             }
-            (None, "$/cancelRequest" | "$/setTrace" | "workspace/didChangeConfiguration") => Ok(()),
-            (Some(id), _) => self.write_error(id, -32601, format!("method `{method}` not found")),
+            (Some(id), _) => self.write_error(&id, -32601, &format!("method `{method}` not found")),
             (None, _) => Ok(()),
         }
     }
 
-    fn initialize(&mut self, id: Value) -> Result<(), String> {
+    fn initialize(&mut self, id: &Value) -> Result<(), String> {
         self.write_response(
             id,
-            json!({
+            &json!({
                 "capabilities": {
                     "textDocumentSync": {
                         "openClose": true,
@@ -162,18 +185,18 @@ impl<W: Write> LspServer<W> {
             let normalized = normalize_path(&path);
             self.open_documents
                 .entry(normalized)
-                .and_modify(|document| document.text = text.clone())
+                .and_modify(|document| document.text.clone_from(&text))
                 .or_insert(OpenDocument { uri, text });
             self.validate_project()?;
         }
         Ok(())
     }
 
-    fn close_document(&mut self, uri: String) -> Result<(), String> {
-        if let Some(path) = path_from_file_uri(&uri) {
+    fn close_document(&mut self, uri: &str) -> Result<(), String> {
+        if let Some(path) = path_from_file_uri(uri) {
             self.open_documents.remove(&normalize_path(&path));
         }
-        self.publish_diagnostics(uri, Vec::new())?;
+        self.publish_diagnostics(uri, &[])?;
         self.validate_project()
     }
 
@@ -238,81 +261,81 @@ impl<W: Write> LspServer<W> {
 
         for uri in touched_uris {
             let diagnostics = by_uri.remove(&uri).unwrap_or_default();
-            self.publish_diagnostics(uri, diagnostics)?;
+            self.publish_diagnostics(&uri, &diagnostics)?;
         }
 
         self.build = Some(build);
         Ok(())
     }
 
-    fn completion(&mut self, id: Value, params: &Value) -> Result<(), String> {
+    fn completion(&mut self, id: &Value, params: &Value) -> Result<(), String> {
         let Some(request) = TextRequest::from_params(params) else {
-            return self.write_response(id, Value::Null);
+            return self.write_response(id, &Value::Null);
         };
         let Some(build) = self.ensure_build()? else {
-            return self.write_response(id, json!([]));
+            return self.write_response(id, &json!([]));
         };
         let Some(document) = build.document_by_uri(&request.uri) else {
-            return self.write_response(id, json!([]));
+            return self.write_response(id, &json!([]));
         };
         let items = completion_items(build, document, &request.position);
-        self.write_response(id, json!(items))
+        self.write_response(id, &json!(items))
     }
 
-    fn hover(&mut self, id: Value, params: &Value) -> Result<(), String> {
+    fn hover(&mut self, id: &Value, params: &Value) -> Result<(), String> {
         let Some(request) = TextRequest::from_params(params) else {
-            return self.write_response(id, Value::Null);
+            return self.write_response(id, &Value::Null);
         };
         let Some(build) = self.ensure_build()? else {
-            return self.write_response(id, Value::Null);
+            return self.write_response(id, &Value::Null);
         };
         let Some(document) = build.document_by_uri(&request.uri) else {
-            return self.write_response(id, Value::Null);
+            return self.write_response(id, &Value::Null);
         };
         let hover = hover_at(build, document, &request.position);
-        self.write_response(id, hover.unwrap_or(Value::Null))
+        self.write_response(id, &hover.unwrap_or(Value::Null))
     }
 
-    fn definition(&mut self, id: Value, params: &Value) -> Result<(), String> {
+    fn definition(&mut self, id: &Value, params: &Value) -> Result<(), String> {
         let Some(request) = TextRequest::from_params(params) else {
-            return self.write_response(id, Value::Null);
+            return self.write_response(id, &Value::Null);
         };
         let Some(build) = self.ensure_build()? else {
-            return self.write_response(id, Value::Null);
+            return self.write_response(id, &Value::Null);
         };
         let Some(document) = build.document_by_uri(&request.uri) else {
-            return self.write_response(id, Value::Null);
+            return self.write_response(id, &Value::Null);
         };
         let definitions = definitions_at(build, document, &request.position);
-        self.write_response(id, json!(definitions))
+        self.write_response(id, &json!(definitions))
     }
 
-    fn document_symbol(&mut self, id: Value, params: &Value) -> Result<(), String> {
+    fn document_symbol(&mut self, id: &Value, params: &Value) -> Result<(), String> {
         let Some(uri) = text_document_uri(params) else {
-            return self.write_response(id, json!([]));
+            return self.write_response(id, &json!([]));
         };
         let result = {
             let Some(build) = self.ensure_build()? else {
-                return self.write_response(id, json!([]));
+                return self.write_response(id, &json!([]));
             };
             let Some(document) = build.document_by_uri(&uri) else {
-                return self.write_response(id, json!([]));
+                return self.write_response(id, &json!([]));
             };
             json!(document_symbols(document))
         };
-        self.write_response(id, result)
+        self.write_response(id, &result)
     }
 
-    fn formatting(&mut self, id: Value, params: &Value) -> Result<(), String> {
+    fn formatting(&mut self, id: &Value, params: &Value) -> Result<(), String> {
         let Some(uri) = text_document_uri(params) else {
-            return self.write_response(id, Value::Null);
+            return self.write_response(id, &Value::Null);
         };
         let result = {
             let Some(build) = self.ensure_build()? else {
-                return self.write_response(id, json!([]));
+                return self.write_response(id, &json!([]));
             };
             let Some(document) = build.document_by_uri(&uri) else {
-                return self.write_response(id, json!([]));
+                return self.write_response(id, &json!([]));
             };
             let formatted = format_cft(&document.source);
             if formatted == document.source {
@@ -324,25 +347,25 @@ impl<W: Write> LspServer<W> {
                 }])
             }
         };
-        self.write_response(id, result)
+        self.write_response(id, &result)
     }
 
-    fn semantic_tokens(&mut self, id: Value, params: &Value) -> Result<(), String> {
+    fn semantic_tokens(&mut self, id: &Value, params: &Value) -> Result<(), String> {
         let Some(uri) = text_document_uri(params) else {
-            return self.write_response(id, json!({"data": []}));
+            return self.write_response(id, &json!({"data": []}));
         };
         let result = {
             let Some(build) = self.ensure_build()? else {
-                return self.write_response(id, json!({"data": []}));
+                return self.write_response(id, &json!({"data": []}));
             };
             let Some(document) = build.document_by_uri(&uri) else {
-                return self.write_response(id, json!({"data": []}));
+                return self.write_response(id, &json!({"data": []}));
             };
             json!({
                 "data": semantic_token_data(build, document)
             })
         };
-        self.write_response(id, result)
+        self.write_response(id, &result)
     }
 
     fn ensure_build(&mut self) -> Result<Option<&LspBuild>, String> {
@@ -352,18 +375,18 @@ impl<W: Write> LspServer<W> {
         Ok(self.build.as_ref())
     }
 
-    fn publish_diagnostics(&mut self, uri: String, diagnostics: Vec<Value>) -> Result<(), String> {
-        self.published_uris.insert(uri.clone());
+    fn publish_diagnostics(&mut self, uri: &str, diagnostics: &[Value]) -> Result<(), String> {
+        self.published_uris.insert(uri.to_string());
         self.write_notification(
             "textDocument/publishDiagnostics",
-            json!({
+            &json!({
                 "uri": uri,
                 "diagnostics": diagnostics
             }),
         )
     }
 
-    fn write_response(&mut self, id: Value, result: Value) -> Result<(), String> {
+    fn write_response(&mut self, id: &Value, result: &Value) -> Result<(), String> {
         self.write_json(&json!({
             "jsonrpc": "2.0",
             "id": id,
@@ -371,7 +394,7 @@ impl<W: Write> LspServer<W> {
         }))
     }
 
-    fn write_error(&mut self, id: Value, code: i64, message: String) -> Result<(), String> {
+    fn write_error(&mut self, id: &Value, code: i64, message: &str) -> Result<(), String> {
         self.write_json(&json!({
             "jsonrpc": "2.0",
             "id": id,
@@ -382,7 +405,7 @@ impl<W: Write> LspServer<W> {
         }))
     }
 
-    fn write_notification(&mut self, method: &str, params: Value) -> Result<(), String> {
+    fn write_notification(&mut self, method: &str, params: &Value) -> Result<(), String> {
         self.write_json(&json!({
             "jsonrpc": "2.0",
             "method": method,
@@ -545,7 +568,7 @@ const ANNOTATIONS: &[AnnotationCompletion] = &[
         label: "@index",
         insert_text: "@index",
         detail: "field annotation",
-        documentation: "Generate an index for a string, int, or enum field.",
+        documentation: "Generate an index for a non-nullable string, int, or enum field.",
     },
     AnnotationCompletion {
         label: "@display",
@@ -592,8 +615,7 @@ impl LspBuild {
             let path = schema
                 .paths
                 .get(module_id)
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from(module_id));
+                .map_or_else(|| PathBuf::from(module_id), PathBuf::from);
             let uri = path_to_file_uri(&path);
             let ast = parse_module(&ModuleId::new(module_id.clone()), source).ok();
             module_by_uri.insert(uri.clone(), module_id.clone());
@@ -617,7 +639,7 @@ impl LspBuild {
         }
     }
 
-    fn container(&self) -> Option<&coflow_cft::CftContainer> {
+    const fn container(&self) -> Option<&coflow_cft::CftContainer> {
         self.schema.container.as_ref()
     }
 
@@ -834,12 +856,8 @@ fn function_completion_items() -> Vec<Value> {
                 "CFT built-in function",
                 Some(documentation),
             );
-            item.as_object_mut()
-                .expect("completion item is an object")
-                .insert("insertText".to_string(), json!(format!("{label}($1)")));
-            item.as_object_mut()
-                .expect("completion item is an object")
-                .insert("insertTextFormat".to_string(), json!(2));
+            insert_object_field(&mut item, "insertText", json!(format!("{label}($1)")));
+            insert_object_field(&mut item, "insertTextFormat", json!(2));
             item
         })
         .collect()
@@ -867,9 +885,8 @@ fn field_default_completion_items(
 
 fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Vec<Value>) {
     match &ty.kind {
-        TypeRefKind::Int | TypeRefKind::Float => {}
         TypeRefKind::Bool => items.extend(literal_completion_items(false)),
-        TypeRefKind::String => {}
+        TypeRefKind::Int | TypeRefKind::Float | TypeRefKind::String => {}
         TypeRefKind::Named(name) => {
             if let Some(enum_def) = build
                 .container()
@@ -1087,17 +1104,14 @@ fn const_value_assignable_to_type(value: &CftConstValue, ty: &TypeRef) -> bool {
 }
 
 fn completion_item(label: &str, kind: u8, detail: &str, documentation: Option<&str>) -> Value {
-    let mut item = json!({
-        "label": label,
-        "kind": kind,
-        "detail": detail
-    });
+    let mut item = Map::new();
+    item.insert("label".to_string(), json!(label));
+    item.insert("kind".to_string(), json!(kind));
+    item.insert("detail".to_string(), json!(detail));
     if let Some(documentation) = documentation {
-        item.as_object_mut()
-            .expect("completion item is an object")
-            .insert("documentation".to_string(), json!(documentation));
+        item.insert("documentation".to_string(), json!(documentation));
     }
-    item
+    Value::Object(item)
 }
 
 fn annotation_completion_item(annotation: &AnnotationCompletion) -> Value {
@@ -1107,16 +1121,22 @@ fn annotation_completion_item(annotation: &AnnotationCompletion) -> Value {
         annotation.detail,
         Some(annotation.documentation),
     );
-    let object = item.as_object_mut().expect("completion item is an object");
-    object.insert("insertText".to_string(), json!(annotation.insert_text));
-    object.insert(
-        "sortText".to_string(),
+    insert_object_field(&mut item, "insertText", json!(annotation.insert_text));
+    insert_object_field(
+        &mut item,
+        "sortText",
         json!(format!("0_{}", annotation.label)),
     );
     if annotation.insert_text.contains('$') {
-        object.insert("insertTextFormat".to_string(), json!(2));
+        insert_object_field(&mut item, "insertTextFormat", json!(2));
     }
     item
+}
+
+fn insert_object_field(object: &mut Value, key: &str, value: Value) {
+    if let Value::Object(fields) = object {
+        fields.insert(key.to_string(), value);
+    }
 }
 
 fn annotation_completion_items(scope: CompletionScope) -> Vec<Value> {
@@ -1129,8 +1149,7 @@ fn annotation_completion_items(scope: CompletionScope) -> Vec<Value> {
 
 fn annotation_applies_to_scope(label: &str, scope: CompletionScope) -> bool {
     match label {
-        "@struct" => scope == CompletionScope::TopLevel,
-        "@flag" => scope == CompletionScope::TopLevel,
+        "@struct" | "@flag" => scope == CompletionScope::TopLevel,
         "@id" | "@ref" | "@index" => scope == CompletionScope::TypeBody,
         "@display" | "@deprecated" => {
             matches!(scope, CompletionScope::TopLevel | CompletionScope::TypeBody)
@@ -1145,7 +1164,7 @@ fn hover_at(build: &LspBuild, document: &LspDocument, position: &LspPosition) ->
         if let Some((_, documentation)) = annotation_documentation(annotation) {
             return Some(hover_response(
                 documentation,
-                range_from_span(&document.source, annotation.span),
+                &range_from_span(&document.source, annotation.span),
             ));
         }
     }
@@ -1154,7 +1173,7 @@ fn hover_at(build: &LspBuild, document: &LspDocument, position: &LspPosition) ->
     if let Some(documentation) = static_documentation(&word.text) {
         return Some(hover_response(
             documentation,
-            byte_range(&document.source, word.start, word.end),
+            &byte_range(&document.source, word.start, word.end),
         ));
     }
 
@@ -1166,7 +1185,7 @@ fn hover_at(build: &LspBuild, document: &LspDocument, position: &LspPosition) ->
                         "CFT enum variant `{}`.`{}` = `{}`.",
                         enum_def.name, variant.name, variant.value
                     ),
-                    byte_range(&document.source, word.start, word.end),
+                    &byte_range(&document.source, word.start, word.end),
                 ));
             }
         }
@@ -1176,7 +1195,7 @@ fn hover_at(build: &LspBuild, document: &LspDocument, position: &LspPosition) ->
                     "CFT field `{}`.`{}`: `{}`.",
                     type_name, field.name, field.ty
                 ),
-                byte_range(&document.source, word.start, word.end),
+                &byte_range(&document.source, word.start, word.end),
             ));
         }
     }
@@ -1185,7 +1204,7 @@ fn hover_at(build: &LspBuild, document: &LspDocument, position: &LspPosition) ->
         if let Some(ty) = container.resolve_type(&word.text) {
             return Some(hover_response(
                 &type_hover_text(ty),
-                byte_range(&document.source, word.start, word.end),
+                &byte_range(&document.source, word.start, word.end),
             ));
         }
         if let Some(enum_def) = container.resolve_enum(&word.text) {
@@ -1195,7 +1214,7 @@ fn hover_at(build: &LspBuild, document: &LspDocument, position: &LspPosition) ->
                     enum_def.name,
                     enum_def.variants.len()
                 ),
-                byte_range(&document.source, word.start, word.end),
+                &byte_range(&document.source, word.start, word.end),
             ));
         }
         if let Some(constant) = container.resolve_const(&word.text) {
@@ -1205,7 +1224,7 @@ fn hover_at(build: &LspBuild, document: &LspDocument, position: &LspPosition) ->
                     constant.name,
                     const_value_to_string(&constant.value)
                 ),
-                byte_range(&document.source, word.start, word.end),
+                &byte_range(&document.source, word.start, word.end),
             ));
         }
         if let Some(current_type) = current_type_at(build, document, offset) {
@@ -1219,7 +1238,7 @@ fn hover_at(build: &LspBuild, document: &LspDocument, position: &LspPosition) ->
                         "CFT field `{}`.`{}`: `{}`.",
                         current_type.name, field.name, field.ty
                     ),
-                    byte_range(&document.source, word.start, word.end),
+                    &byte_range(&document.source, word.start, word.end),
                 ));
             }
         }
@@ -1274,7 +1293,7 @@ fn document_symbols(document: &LspDocument) -> Vec<Value> {
                 SYMBOL_KIND_CONSTANT,
                 constant.span,
                 constant.name_span,
-                Vec::new(),
+                &[],
             )),
             Item::Enum(enum_def) => {
                 let children = enum_def
@@ -1287,17 +1306,17 @@ fn document_symbols(document: &LspDocument) -> Vec<Value> {
                             SYMBOL_KIND_ENUM_MEMBER,
                             variant.span,
                             variant.name_span,
-                            Vec::new(),
+                            &[],
                         )
                     })
-                    .collect();
+                    .collect::<Vec<_>>();
                 symbols.push(document_symbol(
                     &document.source,
                     &enum_def.name,
                     SYMBOL_KIND_ENUM,
                     enum_def.span,
                     enum_def.name_span,
-                    children,
+                    &children,
                 ));
             }
             Item::Type(ty) => {
@@ -1311,17 +1330,17 @@ fn document_symbols(document: &LspDocument) -> Vec<Value> {
                             SYMBOL_KIND_FIELD,
                             field.span,
                             field.name_span,
-                            Vec::new(),
+                            &[],
                         )
                     })
-                    .collect();
+                    .collect::<Vec<_>>();
                 symbols.push(document_symbol(
                     &document.source,
                     &ty.name,
                     SYMBOL_KIND_CLASS,
                     ty.span,
                     ty.name_span,
-                    children,
+                    &children,
                 ));
             }
         }
@@ -1335,7 +1354,7 @@ fn document_symbol(
     kind: u8,
     span: Span,
     name_span: Span,
-    children: Vec<Value>,
+    children: &[Value],
 ) -> Value {
     json!({
         "name": name,
@@ -1474,12 +1493,12 @@ fn add_ast_semantic_tokens(
                     push_semantic_span(&document.source, field.name_span, SEM_PROPERTY, tokens);
                     add_type_ref_semantic(build, document, &field.ty, tokens);
                     if let Some(default) = &field.default {
-                        add_default_expr_semantic(build, document, default, tokens);
+                        add_default_expr_semantic(document, default, tokens);
                     }
                 }
                 if let Some(check) = &ty.check {
                     for stmt in &check.stmts {
-                        add_check_stmt_semantic(build, document, stmt, tokens);
+                        add_check_stmt_semantic(document, stmt, tokens);
                     }
                 }
             }
@@ -1571,7 +1590,6 @@ fn add_const_literal_semantic(
 }
 
 fn add_default_expr_semantic(
-    build: &LspBuild,
     document: &LspDocument,
     expr: &DefaultExpr,
     tokens: &mut Vec<RawSemanticToken>,
@@ -1595,26 +1613,25 @@ fn add_default_expr_semantic(
         }
         DefaultExprKind::Array(items) => {
             for item in items {
-                add_default_expr_semantic(build, document, item, tokens);
+                add_default_expr_semantic(document, item, tokens);
             }
         }
         DefaultExprKind::Object(fields) => {
             for (name, value) in fields {
                 push_semantic_span(&document.source, name.span, SEM_PROPERTY, tokens);
-                add_default_expr_semantic(build, document, value, tokens);
+                add_default_expr_semantic(document, value, tokens);
             }
         }
     }
 }
 
 fn add_check_stmt_semantic(
-    build: &LspBuild,
     document: &LspDocument,
     stmt: &CheckStmt,
     tokens: &mut Vec<RawSemanticToken>,
 ) {
     match stmt {
-        CheckStmt::Expr(expr) => add_check_expr_semantic(build, document, expr, tokens),
+        CheckStmt::Expr(expr) => add_check_expr_semantic(document, expr, tokens),
         CheckStmt::Quantifier {
             binding,
             collection,
@@ -1622,24 +1639,23 @@ fn add_check_stmt_semantic(
             ..
         } => {
             push_semantic_span(&document.source, binding.span, SEM_PARAMETER, tokens);
-            add_check_expr_semantic(build, document, collection, tokens);
+            add_check_expr_semantic(document, collection, tokens);
             for stmt in body {
-                add_check_stmt_semantic(build, document, stmt, tokens);
+                add_check_stmt_semantic(document, stmt, tokens);
             }
         }
         CheckStmt::When {
             condition, body, ..
         } => {
-            add_check_expr_semantic(build, document, condition, tokens);
+            add_check_expr_semantic(document, condition, tokens);
             for stmt in body {
-                add_check_stmt_semantic(build, document, stmt, tokens);
+                add_check_stmt_semantic(document, stmt, tokens);
             }
         }
     }
 }
 
 fn add_check_expr_semantic(
-    build: &LspBuild,
     document: &LspDocument,
     expr: &CheckExpr,
     tokens: &mut Vec<RawSemanticToken>,
@@ -1658,15 +1674,15 @@ fn add_check_expr_semantic(
             push_semantic_span(&document.source, expr.span, SEM_VARIABLE, tokens);
         }
         CheckExprKind::Field { expr, name } => {
-            add_check_expr_semantic(build, document, expr, tokens);
+            add_check_expr_semantic(document, expr, tokens);
             push_semantic_span(&document.source, name.span, SEM_PROPERTY, tokens);
         }
         CheckExprKind::Index { expr, index } => {
-            add_check_expr_semantic(build, document, expr, tokens);
-            add_check_expr_semantic(build, document, index, tokens);
+            add_check_expr_semantic(document, expr, tokens);
+            add_check_expr_semantic(document, index, tokens);
         }
         CheckExprKind::Is { expr, predicate } => {
-            add_check_expr_semantic(build, document, expr, tokens);
+            add_check_expr_semantic(document, expr, tokens);
             match predicate {
                 coflow_cft::ast::TypePredicate::Type(name) => {
                     push_semantic_span(&document.source, name.span, SEM_TYPE, tokens);
@@ -1679,20 +1695,20 @@ fn add_check_expr_semantic(
         CheckExprKind::Call { name, args } => {
             push_semantic_span(&document.source, name.span, SEM_FUNCTION, tokens);
             for arg in args {
-                add_check_expr_semantic(build, document, arg, tokens);
+                add_check_expr_semantic(document, arg, tokens);
             }
         }
         CheckExprKind::BinOp { lhs, rhs, .. } => {
-            add_check_expr_semantic(build, document, lhs, tokens);
-            add_check_expr_semantic(build, document, rhs, tokens);
+            add_check_expr_semantic(document, lhs, tokens);
+            add_check_expr_semantic(document, rhs, tokens);
         }
         CheckExprKind::Unary { expr, .. } => {
-            add_check_expr_semantic(build, document, expr, tokens);
+            add_check_expr_semantic(document, expr, tokens);
         }
         CheckExprKind::CmpChain { first, rest } => {
-            add_check_expr_semantic(build, document, first, tokens);
+            add_check_expr_semantic(document, first, tokens);
             for (_, expr) in rest {
-                add_check_expr_semantic(build, document, expr, tokens);
+                add_check_expr_semantic(document, expr, tokens);
             }
         }
     }
@@ -1785,15 +1801,19 @@ fn encode_semantic_tokens(mut tokens: Vec<RawSemanticToken>) -> Vec<u32> {
         } else {
             token.character
         };
-        data.push(delta_line as u32);
-        data.push(delta_start as u32);
-        data.push(token.length as u32);
+        data.push(usize_to_u32_saturating(delta_line));
+        data.push(usize_to_u32_saturating(delta_start));
+        data.push(usize_to_u32_saturating(token.length));
         data.push(token.token_type);
         data.push(0);
         previous_line = token.line;
         previous_character = token.character;
     }
     data
+}
+
+fn usize_to_u32_saturating(value: usize) -> u32 {
+    u32::try_from(value).unwrap_or(u32::MAX)
 }
 
 fn current_type_at<'a>(
@@ -2072,9 +2092,9 @@ fn type_hover_text(ty: &CftSchemaType) -> String {
         format!("CFT {} type `{}`", flags.join(" "), ty.name)
     };
     if let Some(parent) = &ty.parent {
-        text.push_str(&format!(" extends `{parent}`"));
+        let _ = write!(text, " extends `{parent}`");
     }
-    text.push_str(&format!(" with {} field(s).", ty.all_fields.len()));
+    let _ = write!(text, " with {} field(s).", ty.all_fields.len());
     text
 }
 
@@ -2087,7 +2107,7 @@ fn const_value_to_string(value: &CftConstValue) -> String {
     }
 }
 
-fn hover_response(contents: &str, range: Value) -> Value {
+fn hover_response(contents: &str, range: &Value) -> Value {
     json!({
         "contents": {
             "kind": "markdown",
@@ -2098,7 +2118,7 @@ fn hover_response(contents: &str, range: Value) -> Value {
 }
 
 fn annotation_at(document: &LspDocument, offset: usize) -> Option<&Annotation> {
-    fn find_in<'a>(annotations: &'a [Annotation], offset: usize) -> Option<&'a Annotation> {
+    fn find_in(annotations: &[Annotation], offset: usize) -> Option<&Annotation> {
         annotations.iter().find(|annotation| {
             annotation.name_span.start <= offset && offset <= annotation.name_span.end
         })
@@ -2694,26 +2714,29 @@ fn lsp_diagnostic(diagnostic: &DiagnosticJson) -> Value {
         })
         .collect();
 
-    let mut out = json!({
-        "range": lsp_range(
+    let mut out = Map::new();
+    out.insert(
+        "range".to_string(),
+        lsp_range(
             diagnostic.start_line,
             diagnostic.start_character,
             diagnostic.end_line,
             diagnostic.end_character,
         ),
-        "severity": 1,
-        "code": &diagnostic.code,
-        "source": format!("cft {}", diagnostic.stage),
-        "message": &diagnostic.message
-    });
+    );
+    out.insert("severity".to_string(), json!(1));
+    out.insert("code".to_string(), json!(&diagnostic.code));
+    out.insert(
+        "source".to_string(),
+        json!(format!("cft {}", diagnostic.stage)),
+    );
+    out.insert("message".to_string(), json!(&diagnostic.message));
 
     if !related.is_empty() {
-        out.as_object_mut()
-            .expect("diagnostic is an object")
-            .insert("relatedInformation".to_string(), Value::Array(related));
+        out.insert("relatedInformation".to_string(), Value::Array(related));
     }
 
-    out
+    Value::Object(out)
 }
 
 fn lsp_error_diagnostic(code: &str, message: &str) -> Value {
@@ -2766,7 +2789,7 @@ fn path_to_file_uri(path: &Path) -> String {
     let mut path = path.to_string_lossy().replace('\\', "/");
     if cfg!(windows) {
         if let Some(stripped) = path.strip_prefix("//?/") {
-            path = stripped.to_string().into();
+            path = stripped.to_string();
         }
     }
     if cfg!(windows) && path.len() >= 2 && path.as_bytes()[1] == b':' {
@@ -2795,7 +2818,7 @@ fn percent_decode(value: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-fn hex_value(byte: u8) -> Option<u8> {
+const fn hex_value(byte: u8) -> Option<u8> {
     match byte {
         b'0'..=b'9' => Some(byte - b'0'),
         b'a'..=b'f' => Some(byte - b'a' + 10),
@@ -2810,11 +2833,11 @@ fn percent_encode_uri_path(value: &str) -> String {
     for byte in value.bytes() {
         match byte {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' | b':' => {
-                out.push(byte as char)
+                out.push(byte as char);
             }
             _ => {
                 out.push('%');
-                out.push_str(&format!("{byte:02X}"));
+                let _ = write!(out, "{byte:02X}");
             }
         }
     }

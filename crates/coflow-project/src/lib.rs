@@ -1,4 +1,18 @@
-use coflow_cft::{CftContainer, CftDiagnostic, CftLabel, ModuleId};
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::dbg_macro,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::panic_in_result_fn,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unreachable,
+        clippy::unwrap_used
+    )
+)]
+
+use coflow_cft::{CftContainer, CftDiagnostic, CftLabel, ModuleId, Span};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -59,6 +73,12 @@ pub struct Project {
 }
 
 impl Project {
+    /// Opens a Coflow project by resolving and parsing its config file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the config path cannot be found, read,
+    /// canonicalized, or parsed as YAML.
     pub fn open(config_or_dir: Option<&Path>) -> Result<Self, String> {
         let config_path = resolve_config_path(config_or_dir)?;
         let config_path = fs::canonicalize(&config_path).map_err(|err| {
@@ -82,6 +102,7 @@ impl Project {
         })
     }
 
+    #[must_use]
     pub fn resolve_path(&self, path: &Path) -> PathBuf {
         if path.is_absolute() {
             path.to_path_buf()
@@ -90,6 +111,12 @@ impl Project {
         }
     }
 
+    /// Returns all schema files configured for this project.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a configured schema path does not exist or a schema
+    /// directory cannot be read.
     pub fn schema_files(&self) -> Result<Vec<SchemaFile>, String> {
         let mut files = Vec::new();
         match &self.config.schema {
@@ -140,6 +167,7 @@ impl SchemaFile {
     }
 }
 
+#[derive(Debug)]
 pub struct SchemaBuild {
     pub container: Option<CftContainer>,
     pub diagnostics: Vec<CftDiagnostic>,
@@ -154,6 +182,12 @@ pub struct SchemaSourceOverride {
     pub source: String,
 }
 
+/// Compiles the project's configured CFT schema files.
+///
+/// # Errors
+///
+/// Returns an error when project schema paths cannot be read or when stdin
+/// schema input cannot be consumed.
 pub fn compile_schema_project(
     project: &Project,
     stdin_path: Option<&Path>,
@@ -180,6 +214,13 @@ pub fn compile_schema_project(
     compile_schema_project_with_overrides(project, &overrides)
 }
 
+/// Compiles the project's schema files with in-memory source overrides.
+///
+/// # Errors
+///
+/// Returns an error when schema files cannot be discovered/read, an override
+/// does not match any schema module, or schema compilation reports diagnostics
+/// without a previously compiled container.
 pub fn compile_schema_project_with_overrides(
     project: &Project,
     overrides: &[SchemaSourceOverride],
@@ -253,6 +294,12 @@ pub fn compile_schema_project_with_overrides(
     })
 }
 
+/// Resolves a config file path from an explicit path, directory, or current directory.
+///
+/// # Errors
+///
+/// Returns an error when the requested config file/directory cannot be resolved
+/// to `coflow.yaml` or `coflow.yml`.
 pub fn resolve_config_path(config_or_dir: Option<&Path>) -> Result<PathBuf, String> {
     let candidate = config_or_dir.unwrap_or_else(|| Path::new("."));
     if config_or_dir.is_some() && candidate.is_file() {
@@ -281,15 +328,15 @@ pub fn resolve_config_path(config_or_dir: Option<&Path>) -> Result<PathBuf, Stri
 }
 
 fn find_default_config(dir: &Path) -> Result<PathBuf, String> {
-    let yaml = dir.join("coflow.yaml");
-    let yml = dir.join("coflow.yml");
-    match (yaml.exists(), yml.exists()) {
-        (true, false) => Ok(yaml),
-        (false, true) => Ok(yml),
+    let yaml_path = dir.join("coflow.yaml");
+    let yml_path = dir.join("coflow.yml");
+    match (yaml_path.exists(), yml_path.exists()) {
+        (true, false) => Ok(yaml_path),
+        (false, true) => Ok(yml_path),
         (true, true) => Err(format!(
             "both `{}` and `{}` exist; specify the config file explicitly",
-            yaml.display(),
-            yml.display()
+            yaml_path.display(),
+            yml_path.display()
         )),
         (false, false) => Err(format!(
             "no coflow.yaml or coflow.yml found in `{}`",
@@ -313,7 +360,7 @@ fn collect_cft_files(
         .map_err(|err| format!("failed to read schema directory `{}`: {err}", dir.display()))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| format!("failed to read schema directory `{}`: {err}", dir.display()))?;
-    entries.sort_by_key(|entry| entry.path());
+    entries.sort_by_key(fs::DirEntry::path);
     for entry in entries {
         let path = entry.path();
         if path.is_dir() {
@@ -325,6 +372,7 @@ fn collect_cft_files(
     Ok(())
 }
 
+#[must_use]
 pub fn dedupe_cft_diagnostics(diagnostics: Vec<CftDiagnostic>) -> Vec<CftDiagnostic> {
     let mut keys = BTreeSet::new();
     let mut out = Vec::new();
@@ -391,7 +439,7 @@ impl DiagnosticJson {
     ) -> Self {
         let fallback = CftLabel {
             module: ModuleId::new(""),
-            span: Default::default(),
+            span: Span::default(),
             message: None,
         };
         let primary = diagnostic.primary.as_ref().unwrap_or(&fallback);
@@ -494,19 +542,20 @@ fn byte_position(source: &str, byte_offset: usize) -> Position {
     Position { line, character }
 }
 
+#[must_use]
 pub fn path_to_slash(path: &Path) -> String {
     path.components()
         .filter_map(|component| match component {
             Component::Normal(part) => Some(part.to_string_lossy().replace('\\', "/")),
             Component::Prefix(prefix) => Some(prefix.as_os_str().to_string_lossy().to_string()),
-            Component::RootDir => None,
-            Component::CurDir => None,
+            Component::RootDir | Component::CurDir => None,
             Component::ParentDir => Some("..".to_string()),
         })
         .collect::<Vec<_>>()
         .join("/")
 }
 
+#[must_use]
 pub fn normalize_path(path: &Path) -> PathBuf {
     fs::canonicalize(path).unwrap_or_else(|_| {
         let mut out = PathBuf::new();

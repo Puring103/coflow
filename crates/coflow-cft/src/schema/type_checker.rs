@@ -188,20 +188,24 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
         let inner_ty = self.check_expr_value(inner);
         match unwrap_nullable(&inner_ty) {
             Ty::Type(type_name) => {
-                if let Some(fields) = self.compiler.full_fields.get(type_name) {
-                    if let Some(field) = fields.get(&name.name) {
-                        field.check_ty.clone()
-                    } else {
-                        self.diag(
-                            CftErrorCode::UnknownField,
-                            name.span,
-                            format!("unknown field `{}`", name.name),
-                        );
-                        Ty::Unknown
-                    }
-                } else {
-                    Ty::Unknown
+                let type_known = self.compiler.full_fields.contains_key(type_name);
+                let field_ty = self
+                    .compiler
+                    .full_fields
+                    .get(type_name)
+                    .and_then(|fields| fields.get(&name.name))
+                    .map(|field| field.check_ty.clone());
+                if let Some(ty) = field_ty {
+                    return ty;
                 }
+                if type_known {
+                    self.diag(
+                        CftErrorCode::UnknownField,
+                        name.span,
+                        format!("unknown field `{}`", name.name),
+                    );
+                }
+                Ty::Unknown
             }
             Ty::Entry(key, value) => match name.name.as_str() {
                 "key" => *key.clone(),

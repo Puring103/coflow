@@ -222,11 +222,7 @@ impl<'a> SchemaCompiler<'a> {
                         (info.module.clone(), variant.name_span),
                     );
                 }
-                let value = if let Some(value) = &variant.value {
-                    value.value
-                } else {
-                    next
-                };
+                let value = variant.value.as_ref().map_or(next, |value| value.value);
                 if value == i64::MAX
                     && info
                         .def
@@ -332,8 +328,8 @@ impl<'a> SchemaCompiler<'a> {
                 let span = info
                     .def
                     .abstract_span
-                    .unwrap_or(info.def.span)
-                    .join(info.def.sealed_span.unwrap_or(info.def.span));
+                    .map_or(info.def.span, |span| span)
+                    .join(info.def.sealed_span.map_or(info.def.span, |span| span));
                 this.push_diag(
                     CftErrorCode::ConflictingTypeModifiers,
                     &info.module,
@@ -495,6 +491,7 @@ impl<'a> SchemaCompiler<'a> {
         visited.insert(name.to_string());
     }
 
+    #[allow(clippy::option_if_let_else)]
     fn validate_id_fields_by_tree(&mut self) {
         // Walk types in (depth_from_root, source_position) order so that the
         // earliest declared @id field in the inheritance chain is reported as
@@ -505,7 +502,7 @@ impl<'a> SchemaCompiler<'a> {
             .iter()
             .map(|(name, info)| {
                 (
-                    topo.depth.get(name).copied().unwrap_or(0),
+                    topo.depth.get(name).copied().map_or(0, |depth| depth),
                     info.module.clone(),
                     info.def.name_span,
                     name.clone(),
@@ -523,7 +520,10 @@ impl<'a> SchemaCompiler<'a> {
             let Some(info) = self.types.get(&name).cloned() else {
                 continue;
             };
-            let root = topo.root.get(&name).cloned().unwrap_or(name.clone());
+            let root = match topo.root.get(&name) {
+                Some(root) => root.clone(),
+                None => name.clone(),
+            };
             for field in &info.def.fields {
                 if !has_annotation(&field.annotations, "id") {
                     continue;
@@ -553,6 +553,7 @@ impl<'a> SchemaCompiler<'a> {
     /// known type in a single pass, with cycle-safe traversal. The previous
     /// per-type recursive helpers were O(N) each and called O(N) times, giving
     /// quadratic behavior on large schemas; this pre-pass is linear.
+    #[allow(clippy::option_if_let_else)]
     fn compute_type_topology(&self) -> TypeTopology {
         let mut depth = BTreeMap::new();
         let mut root = BTreeMap::new();
@@ -562,6 +563,7 @@ impl<'a> SchemaCompiler<'a> {
         TypeTopology { depth, root }
     }
 
+    #[allow(clippy::option_if_let_else)]
     fn fill_topology(
         &self,
         name: &str,
@@ -582,13 +584,13 @@ impl<'a> SchemaCompiler<'a> {
                 // Cycle: validate_inheritance has already reported it. Treat
                 // the entry point of the cycle as its own root with depth 0
                 // so we still produce defined values.
-                break (current.clone(), 0);
+                break (current, 0);
             }
             if let Some(known_depth) = depth.get(&current) {
-                let known_root = root
-                    .get(&current)
-                    .cloned()
-                    .unwrap_or_else(|| current.clone());
+                let known_root = match root.get(&current) {
+                    Some(known_root) => known_root.clone(),
+                    None => current.clone(),
+                };
                 break (known_root, *known_depth);
             }
             let parent = self
@@ -609,7 +611,8 @@ impl<'a> SchemaCompiler<'a> {
         // descendants in leaf-first order; reverse to assign incrementing
         // depths starting one above the anchor.
         depth.entry(root_name.clone()).or_insert(base_depth);
-        root.entry(root_name.clone()).or_insert(root_name.clone());
+        root.entry(root_name.clone())
+            .or_insert_with(|| root_name.clone());
         for (steps_from_anchor, type_name) in chain.into_iter().rev().enumerate() {
             depth.insert(type_name.clone(), base_depth + steps_from_anchor + 1);
             root.insert(type_name, root_name.clone());
@@ -760,7 +763,7 @@ impl<'a> SchemaCompiler<'a> {
                     CftErrorCode::InvalidAnnotatedFieldType,
                     module,
                     annotation.span,
-                    "@index fields must be string, int, or enum, optionally nullable",
+                    "@index fields must be non-nullable string, int, or enum",
                 );
             }
         }
@@ -830,50 +833,7 @@ impl<'a> SchemaCompiler<'a> {
                 Ty::Unknown
             }
             DefaultExprKind::EnumVariant { enum_name, variant } => {
-                match self.symbols.get(&enum_name.name) {
-                    Some(symbol) if symbol.kind == SymbolKind::Enum => {
-                        if let Some(enum_info) = self.enums.get(&enum_name.name) {
-                            if enum_info.variants.contains(&variant.name) {
-                                Ty::Enum(enum_name.name.clone())
-                            } else {
-                                self.push_diag(
-                                    CftErrorCode::UnknownEnumVariant,
-                                    module,
-                                    variant.span,
-                                    format!("unknown enum variant `{}`", variant.name),
-                                );
-                                Ty::Unknown
-                            }
-                        } else {
-                            Ty::Unknown
-                        }
-                    }
-                    Some(symbol) => {
-                        self.diagnostics.push(
-                            CftDiagnostic::error(
-                                CftErrorCode::EnumVariantOnNonEnum,
-                                module.clone(),
-                                enum_name.span,
-                                "enum variant default is used on a non-enum name",
-                            )
-                            .with_related(
-                                symbol.module.clone(),
-                                symbol.span,
-                                "name is defined here",
-                            ),
-                        );
-                        Ty::Unknown
-                    }
-                    None => {
-                        self.push_diag(
-                            CftErrorCode::EnumVariantOnNonEnum,
-                            module,
-                            enum_name.span,
-                            "enum variant default is used on an unknown enum",
-                        );
-                        Ty::Unknown
-                    }
-                }
+                self.default_enum_variant_type(module, enum_name, variant)
             }
             DefaultExprKind::Array(items) => {
                 if items.is_empty() {
@@ -900,6 +860,61 @@ impl<'a> SchemaCompiler<'a> {
                     );
                     Ty::Unknown
                 }
+            }
+        }
+    }
+
+    fn default_enum_variant_type(
+        &mut self,
+        module: &ModuleId,
+        enum_name: &crate::ast::NameRef,
+        variant: &crate::ast::NameRef,
+    ) -> Ty {
+        match self.symbols.get(&enum_name.name) {
+            Some(symbol) if symbol.kind == SymbolKind::Enum => {
+                let enum_known = self.enums.contains_key(&enum_name.name);
+                let variant_exists = self
+                    .enums
+                    .get(&enum_name.name)
+                    .is_some_and(|enum_info| enum_info.variants.contains(&variant.name));
+                if variant_exists {
+                    Ty::Enum(enum_name.name.clone())
+                } else {
+                    if enum_known {
+                        self.push_diag(
+                            CftErrorCode::UnknownEnumVariant,
+                            module,
+                            variant.span,
+                            format!("unknown enum variant `{}`", variant.name),
+                        );
+                    }
+                    Ty::Unknown
+                }
+            }
+            Some(symbol) => {
+                self.diagnostics.push(
+                    CftDiagnostic::error(
+                        CftErrorCode::EnumVariantOnNonEnum,
+                        module.clone(),
+                        enum_name.span,
+                        "enum variant default is used on a non-enum name",
+                    )
+                    .with_related(
+                        symbol.module.clone(),
+                        symbol.span,
+                        "name is defined here",
+                    ),
+                );
+                Ty::Unknown
+            }
+            None => {
+                self.push_diag(
+                    CftErrorCode::EnumVariantOnNonEnum,
+                    module,
+                    enum_name.span,
+                    "enum variant default is used on an unknown enum",
+                );
+                Ty::Unknown
             }
         }
     }
@@ -994,7 +1009,11 @@ impl<'a> SchemaCompiler<'a> {
                 .iter()
                 .map(|variant| CftSchemaEnumVariant {
                     name: variant.name.clone(),
-                    value: info.values_by_name.get(&variant.name).copied().unwrap_or(0),
+                    value: info
+                        .values_by_name
+                        .get(&variant.name)
+                        .copied()
+                        .map_or(0, |value| value),
                     annotations: Vec::new(),
                     span: variant.span,
                 })
@@ -1225,10 +1244,11 @@ impl<'a> SchemaCompiler<'a> {
                 break;
             };
             for field in &info.def.fields {
-                out.entry(field.name.clone()).or_insert(FieldOrigin {
-                    module: info.module.clone(),
-                    span: field.name_span,
-                });
+                out.entry(field.name.clone())
+                    .or_insert_with(|| FieldOrigin {
+                        module: info.module.clone(),
+                        span: field.name_span,
+                    });
             }
             current = info.def.parent.as_ref().map(|parent| parent.name.clone());
         }

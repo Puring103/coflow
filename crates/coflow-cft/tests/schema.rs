@@ -84,6 +84,18 @@ fn schema_reports_id_annotation_and_flag_errors() {
 }
 
 #[test]
+fn schema_rejects_nullable_index_fields() {
+    for source in [
+        "type A { @index value: string? = null; }",
+        "type A { @index value: int? = null; }",
+        "enum E { A, } type A { @index value: E? = null; }",
+    ] {
+        let err = compile_one(source).unwrap_err();
+        assert_has_code(&err, CftErrorCode::InvalidAnnotatedFieldType);
+    }
+}
+
+#[test]
 fn schema_reports_default_errors() {
     let source = r#"
         const NAME = "x";
