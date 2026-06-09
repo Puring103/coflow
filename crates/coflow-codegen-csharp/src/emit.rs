@@ -342,12 +342,7 @@ fn loader_methods(view: &SchemaView) -> Result<Vec<CsharpLoader>, CsharpCodegenE
                     .all_fields
                     .iter()
                     .map(|field| {
-                        let local_name = camel_case(&field.name);
-                        if let Some(reason) = csharp_ident_error(&local_name) {
-                            return Err(CsharpCodegenError::new(format!(
-                                "invalid C# field local variable name `{local_name}`: {reason}"
-                            )));
-                        }
+                        let local_name = field_local_name(&field.name)?;
                         Ok(CsharpLoadField {
                             property: pascal_case(&field.name),
                             source_name: field.name.clone(),
@@ -372,6 +367,25 @@ fn loader_methods(view: &SchemaView) -> Result<Vec<CsharpLoader>, CsharpCodegenE
             })
         })
         .collect()
+}
+
+fn field_local_name(field_name: &str) -> Result<String, CsharpCodegenError> {
+    let candidate = camel_case(field_name);
+    let local_name = if csharp_ident_error(&candidate)
+        .is_some_and(|reason| reason == "identifier is a C# keyword")
+    {
+        format!("{candidate}Value")
+    } else {
+        candidate
+    };
+
+    if let Some(reason) = csharp_ident_error(&local_name) {
+        return Err(CsharpCodegenError::new(format!(
+            "invalid C# field local variable name `{local_name}`: {reason}"
+        )));
+    }
+
+    Ok(local_name)
 }
 
 fn polymorphic_loaders(

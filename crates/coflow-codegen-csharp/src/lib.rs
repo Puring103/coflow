@@ -360,6 +360,31 @@ mod tests {
     }
 
     #[test]
+    fn codegen_renames_keyword_field_loader_locals() -> Result<(), String> {
+        let schema = compile_schema(
+            r"
+                type Item {
+                    @id id: string;
+                    params: int;
+                }
+            ",
+        )?;
+
+        let files = generate_csharp(
+            &schema,
+            &CsharpCodegenOptions::new("Game.Config")
+                .with_data_format(CsharpDataFormat::MessagePack),
+        )
+        .map_err(|err| err.to_string())?;
+        let database = generated_file(&files, "GameConfig.cs")?;
+        require_contains(database, "long paramsValue = default!;")?;
+        require_contains(database, "paramsValue = ReadInt(ref reader, fieldPath);")?;
+        require_contains(database, "Params = paramsValue,")?;
+        require_not_contains(database, "long params =")?;
+        Ok(())
+    }
+
+    #[test]
     fn codegen_struct_inheritance_emits_inherited_fields() -> Result<(), String> {
         let schema = compile_schema(
             r"
