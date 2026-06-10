@@ -8,11 +8,22 @@ use crate::names::{
 use crate::schema_view::SchemaView;
 use crate::CsharpCodegenError;
 use coflow_cft::CftContainer;
+use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct CsharpCodegenOptions {
     pub namespace: String,
     pub database_class: String,
+    pub data_format: CsharpDataFormat,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CsharpDataFormat {
+    Json,
+    #[serde(rename = "messagepack")]
+    MessagePack,
 }
 
 impl CsharpCodegenOptions {
@@ -21,12 +32,19 @@ impl CsharpCodegenOptions {
         Self {
             namespace: namespace.into(),
             database_class: "GameConfig".to_string(),
+            data_format: CsharpDataFormat::Json,
         }
     }
 
     #[must_use]
     pub fn with_database_class(mut self, database_class: impl Into<String>) -> Self {
         self.database_class = database_class.into();
+        self
+    }
+
+    #[must_use]
+    pub const fn with_data_format(mut self, data_format: CsharpDataFormat) -> Self {
+        self.data_format = data_format;
         self
     }
 }
@@ -52,11 +70,13 @@ pub fn build_project(
         .collect::<Vec<_>>();
 
     let tables = view.table_names();
-    let database = build_csharp_database(&view, &tables, &options.database_class)?;
+    let database =
+        build_csharp_database(&view, &tables, &options.database_class, options.data_format)?;
 
     Ok(CsharpProject {
         namespace: options.namespace.clone(),
         database_class: options.database_class.clone(),
+        data_format: options.data_format,
         enums,
         types,
         database,

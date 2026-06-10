@@ -14,12 +14,13 @@
 
 use clap::{Args, Parser, Subcommand};
 use coflow_cft::CftDiagnostic;
-use coflow_codegen_csharp::{generate_csharp_json, CsharpCodegenOptions};
-use coflow_excel_loader::{
+use coflow_codegen_csharp::{generate_csharp, CsharpCodegenOptions, CsharpDataFormat};
+use coflow_exporter_json::export_json_model;
+use coflow_exporter_messagepack::export_messagepack_model;
+use coflow_loader_excel::{
     load_excel, ExcelDiagnostic, ExcelDiagnostics, ExcelLoadError, ExcelLocation, ExcelSheet,
     ExcelSource,
 };
-use coflow_json_export::export_json_model;
 use coflow_project::{
     compile_schema_project, dedupe_cft_diagnostics, DiagnosticJson, Project, RelatedJson,
 };
@@ -51,6 +52,7 @@ fn run() -> Result<bool, String> {
         Command::Check(args) => project_check(&args),
         Command::Export(command) => match &command.command {
             ExportCommand::Json(args) => export_json(args),
+            ExportCommand::Messagepack(args) => export_messagepack(args),
         },
         Command::Codegen(command) => match &command.command {
             CodegenCommand::Csharp(args) => codegen_csharp(args),
@@ -137,10 +139,21 @@ struct ExportArgs {
 enum ExportCommand {
     /// Export data as JSON. The project config must declare outputs.data.type: json.
     Json(ExportJsonArgs),
+    /// Export data as `MessagePack`. The project config must declare outputs.data.type: messagepack.
+    Messagepack(ExportMessagePackArgs),
 }
 
 #[derive(Debug, Args)]
 struct ExportJsonArgs {
+    #[arg(value_name = "CONFIG_OR_DIR")]
+    config_or_dir: Option<PathBuf>,
+    /// Override outputs.data.dir for this invocation.
+    #[arg(long = "out", value_name = "DIR")]
+    out_dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+struct ExportMessagePackArgs {
     #[arg(value_name = "CONFIG_OR_DIR")]
     config_or_dir: Option<PathBuf>,
     /// Override outputs.data.dir for this invocation.
@@ -354,6 +367,57 @@ fn export_json(args: &ExportJsonArgs) -> Result<bool, String> {
     Ok(true)
 }
 
+fn export_messagepack(args: &ExportMessagePackArgs) -> Result<bool, String> {
+    let project = Project::open(args.config_or_dir.as_deref())?;
+    let output = project.config.outputs.data.as_ref().ok_or_else(|| {
+        "coflow.yaml missing outputs.data; required `type: messagepack` and `dir` for `coflow export messagepack`"
+            .to_string()
+    })?;
+    if output.output_type != "messagepack" {
+        return Err(format!(
+            "coflow.yaml outputs.data.type is `{}`; required `messagepack` for `coflow export messagepack`",
+            output.output_type
+        ));
+    }
+    let dir = args.out_dir.as_deref().map_or_else(
+        || project.resolve_path(&output.dir),
+        |path| project.resolve_path(path),
+    );
+    let build = compile_schema_project(&project, None)?;
+    let cft_diagnostics = dedupe_cft_diagnostics(build.diagnostics);
+    if !cft_diagnostics.is_empty() {
+        write_human_cft_diagnostics(&cft_diagnostics, &build.sources, &build.paths)?;
+        return Ok(false);
+    }
+    let Some(schema) = build.container else {
+        return Err("schema compilation did not produce a container".to_string());
+    };
+    let sources = excel_sources(&project);
+    let load_output = match load_excel(&schema, &sources) {
+        Ok(output) => output,
+        Err(err) => {
+            write_human_excel_error(&err)?;
+            return Ok(false);
+        }
+    };
+    if let Some(checks) = load_output.check_diagnostics {
+        write_human_excel_diagnostics(&checks)?;
+        return Ok(false);
+    }
+
+    let tables = export_messagepack_model(&schema, &load_output.model)
+        .map_err(|err| format!("failed to export MessagePack model: {err}"))?;
+    fs::create_dir_all(&dir)
+        .map_err(|err| format!("failed to create output dir `{}`: {err}", dir.display()))?;
+    for (table, bytes) in tables {
+        let path = dir.join(format!("{table}.msgpack"));
+        fs::write(&path, bytes)
+            .map_err(|err| format!("failed to write `{}`: {err}", path.display()))?;
+    }
+    println!("MessagePack data exported to {}", dir.display());
+    Ok(true)
+}
+
 fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, String> {
     let project = Project::open(args.config_or_dir.as_deref())?;
     let output = project
@@ -371,6 +435,19 @@ fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, String> {
             output.output_type
         ));
     }
+    let data_output = project.config.outputs.data.as_ref().ok_or_else(|| {
+        "coflow.yaml missing outputs.data; required `type: json` or `type: messagepack` for `coflow codegen csharp`"
+            .to_string()
+    })?;
+    let data_format = match data_output.output_type.as_str() {
+        "json" => CsharpDataFormat::Json,
+        "messagepack" => CsharpDataFormat::MessagePack,
+        other => {
+            return Err(format!(
+                "coflow.yaml outputs.data.type is `{other}`; required `json` or `messagepack` for `coflow codegen csharp`"
+            ));
+        }
+    };
     let dir = args.out_dir.as_deref().map_or_else(
         || project.resolve_path(&output.dir),
         |path| project.resolve_path(path),
@@ -390,8 +467,8 @@ fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, String> {
         return Err("schema compilation did not produce a container".to_string());
     };
 
-    let options = CsharpCodegenOptions::new(namespace);
-    let files = generate_csharp_json(&schema, &options)
+    let options = CsharpCodegenOptions::new(namespace).with_data_format(data_format);
+    let files = generate_csharp(&schema, &options)
         .map_err(|err| format!("failed to generate C# code: {err}"))?;
     fs::create_dir_all(&dir)
         .map_err(|err| format!("failed to create output dir `{}`: {err}", dir.display()))?;

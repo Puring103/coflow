@@ -1,4 +1,4 @@
-//! C# code generator for Coflow's exported JSON runtime data.
+//! C# code generator for Coflow's exported JSON and `MessagePack` runtime data.
 //!
 //! The generated C# code does not depend on CFT at runtime. CFT is consumed only
 //! by this Rust crate during generation.
@@ -28,7 +28,7 @@ use coflow_cft::CftContainer;
 use std::fmt;
 use std::path::PathBuf;
 
-pub use ir::CsharpCodegenOptions;
+pub use ir::{CsharpCodegenOptions, CsharpDataFormat};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneratedFile {
@@ -71,6 +71,23 @@ impl std::error::Error for CsharpCodegenError {}
 /// Returns an error when the compiled schema cannot be mapped to C# runtime
 /// code or when a Tera template fails to render.
 pub fn generate_csharp_json(
+    schema: &CftContainer,
+    options: &CsharpCodegenOptions,
+) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+    let options = options.clone().with_data_format(CsharpDataFormat::Json);
+    generate_csharp(schema, &options)
+}
+
+/// Generates C# type definitions and a folder loader for the configured data format.
+///
+/// JSON remains the default format for `CsharpCodegenOptions::new`.
+/// `MessagePack` output targets `coflow export messagepack` runtime data.
+///
+/// # Errors
+///
+/// Returns an error when the compiled schema cannot be mapped to C# runtime
+/// code or when a Tera template fails to render.
+pub fn generate_csharp(
     schema: &CftContainer,
     options: &CsharpCodegenOptions,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
@@ -127,6 +144,185 @@ mod tests {
         } else {
             Ok(())
         }
+    }
+
+    #[test]
+    fn data_format_serializes_messagepack_without_separator() -> Result<(), String> {
+        let value = serde::Serialize::serialize(&CsharpDataFormat::MessagePack, StringSerializer)
+            .map_err(|err| err.to_string())?;
+        assert_eq!(value, "messagepack");
+        Ok(())
+    }
+
+    #[test]
+    fn codegen_messagepack_uses_msgpack_loader_template() -> Result<(), String> {
+        let schema = compile_schema(
+            r"
+                type Item {
+                    @id id: string;
+                    value: int;
+                }
+            ",
+        )?;
+
+        let files = generate_csharp(
+            &schema,
+            &CsharpCodegenOptions::new("Game.Config")
+                .with_data_format(CsharpDataFormat::MessagePack),
+        )
+        .map_err(|err| err.to_string())?;
+        let database = generated_file(&files, "GameConfig.cs")?;
+        require_contains(database, "using MessagePack;")?;
+        require_contains(database, "Path.Combine(dataDir, \"Item.msgpack\")")?;
+        require_not_contains(database, "Newtonsoft.Json")?;
+        Ok(())
+    }
+
+    #[test]
+    fn codegen_messagepack_emits_explicit_readers_type_dispatch_and_ref_resolution(
+    ) -> Result<(), String> {
+        let schema = compile_schema(
+            r"
+                type Item { @id id: string; }
+                abstract type Reward { id: string; }
+                type ItemReward : Reward {
+                    @ref(Item)
+                    item_id: string;
+                    count: int = 1;
+                    maybe_count: int?;
+                }
+                type DropTable {
+                    @id id: string;
+                    rewards: [Reward];
+                }
+            ",
+        )?;
+
+        let files = generate_csharp(
+            &schema,
+            &CsharpCodegenOptions::new("Game.Config")
+                .with_data_format(CsharpDataFormat::MessagePack),
+        )
+        .map_err(|err| err.to_string())?;
+        let database = generated_file(&files, "GameConfig.cs")?;
+        require_contains(database, "using MessagePack;")?;
+        require_contains(database, "private delegate T MessagePackRowLoader<T>(")?;
+        require_contains(
+            database,
+            "private static Item LoadItem(ref MessagePackReader reader, string path)",
+        )?;
+        require_contains(
+            database,
+            "private static int ReadMapHeader(ref MessagePackReader reader, string path)",
+        )?;
+        require_contains(
+            database,
+            "private static int ReadArrayHeader(ref MessagePackReader reader, string path)",
+        )?;
+        require_contains(database, "var count = ReadMapHeader(ref reader, path);")?;
+        require_contains(
+            database,
+            "int count = ReadArrayHeader(ref reader, tableName);",
+        )?;
+        require_contains(database, "var count = ReadArrayHeader(ref reader, path);")?;
+        require_contains(database, "var count = ReadMapHeader(ref reader, path);")?;
+        require_not_contains(database, "var count = reader.ReadMapHeader();")?;
+        require_not_contains(database, "var count = reader.ReadArrayHeader();")?;
+        require_not_contains(database, "count = reader.ReadArrayHeader();")?;
+        require_contains(database, "var key = ReadString(ref reader, path);")?;
+        require_contains(database, "var typeKey = ReadString(ref reader, path);")?;
+        require_contains(database, "var rawKey = ReadString(ref reader, path);")?;
+        require_not_contains(database, "var key = reader.ReadString();")?;
+        require_not_contains(database, "var typeKey = reader.ReadString();")?;
+        require_not_contains(database, "var rawKey = reader.ReadString();")?;
+        require_contains(database, "case \"item_id\":")?;
+        require_contains(database, "SkipValue(ref reader, fieldPath)")?;
+        require_not_contains(database, "default:\n                    reader.Skip();")?;
+        require_contains(database, "if (result.ContainsKey(key))")?;
+        require_contains(database, "var value = readValue(ref reader, keyPath);")?;
+        require_contains(database, "result.Add(key, value);")?;
+        require_not_contains(database, "TryAdd(key, readValue(")?;
+        require_contains(database, "if (!reader.End)")?;
+        require_contains(database, "\"single MessagePack array\"")?;
+        require_contains(database, "\"trailing data\"")?;
+        require_contains(database, "ReadNil(ref reader, fieldPath) ? null :")?;
+        require_not_contains(database, ".TryReadNil() ? null")?;
+        require_contains(
+            database,
+            "private static bool ReadNil(ref MessagePackReader reader, string path)",
+        )?;
+        require_contains(database, "catch (EndOfStreamException ex)")?;
+        require_contains(database, "if (ReadNil(ref reader, path))")?;
+        if !database.contains("LoadRewardPolymorphic(ref reader, path)")
+            && !database.contains("LoadRewardPolymorphic(ref itemReader, itemPath)")
+        {
+            return Err(
+                "expected generated output to contain polymorphic Reward MessagePack loading"
+                    .to_string(),
+            );
+        }
+        require_contains(database, "ResolveRef(itemRefIndex")?;
+        require_not_contains(database, "Newtonsoft.Json")?;
+        require_not_contains(database, "JToken")?;
+        require_not_contains(database, "JObject")?;
+        require_not_contains(database, "JArray")?;
+        Ok(())
+    }
+
+    #[test]
+    fn codegen_messagepack_requires_fields_with_unrepresentable_schema_defaults(
+    ) -> Result<(), String> {
+        let project = model::CsharpProject {
+            namespace: "Game.Config".to_string(),
+            database_class: "GameConfig".to_string(),
+            data_format: CsharpDataFormat::MessagePack,
+            enums: Vec::new(),
+            types: Vec::new(),
+            database: model::CsharpDatabase {
+                tables: Vec::new(),
+                ref_indexes: Vec::new(),
+                indexes: Vec::new(),
+                constructor_parameters: Vec::new(),
+                load_steps: Vec::new(),
+                constructor_args: Vec::new(),
+                loaders: vec![model::CsharpLoader {
+                    type_name: "Item".to_string(),
+                    fields: vec![
+                        model::CsharpLoadField {
+                            property: "Items".to_string(),
+                            source_name: "items".to_string(),
+                            local_name: "items".to_string(),
+                            type_name: "List<long>".to_string(),
+                            read_expr: String::new(),
+                            messagepack_read_expr: "ReadArray(ref reader, fieldPath, static (ref MessagePackReader itemReader, string itemPath) => ReadInt(ref itemReader, itemPath))".to_string(),
+                            default_expr: None,
+                            is_required: true,
+                        },
+                        model::CsharpLoadField {
+                            property: "Count".to_string(),
+                            source_name: "count".to_string(),
+                            local_name: "count".to_string(),
+                            type_name: "long".to_string(),
+                            read_expr: String::new(),
+                            messagepack_read_expr: "ReadInt(ref reader, fieldPath)".to_string(),
+                            default_expr: Some("1".to_string()),
+                            is_required: false,
+                        },
+                    ],
+                }],
+                polymorphic_loaders: Vec::new(),
+                resolve: None,
+            },
+        };
+
+        let files = render::render_project(&project).map_err(|err| err.to_string())?;
+        let database = generated_file(&files, "GameConfig.cs")?;
+        require_contains(database, "List<long> items = default!;")?;
+        require_contains(database, "if (!hasItems)")?;
+        require_contains(database, "missing required field `items`")?;
+        require_contains(database, "long count = 1;")?;
+        require_not_contains(database, "if (!hasCount)")?;
+        Ok(())
     }
 
     #[test]
@@ -260,6 +456,101 @@ mod tests {
     }
 
     #[test]
+    fn codegen_renames_keyword_field_loader_locals() -> Result<(), String> {
+        let schema = compile_schema(
+            r"
+                type Item {
+                    @id id: string;
+                    params: int;
+                }
+            ",
+        )?;
+
+        let files = generate_csharp(
+            &schema,
+            &CsharpCodegenOptions::new("Game.Config")
+                .with_data_format(CsharpDataFormat::MessagePack),
+        )
+        .map_err(|err| err.to_string())?;
+        let database = generated_file(&files, "GameConfig.cs")?;
+        require_contains(database, "long paramsValue = default!;")?;
+        require_contains(database, "paramsValue = ReadInt(ref reader, fieldPath);")?;
+        require_contains(database, "Params = paramsValue,")?;
+        require_not_contains(database, "long params =")?;
+        Ok(())
+    }
+
+    #[test]
+    fn codegen_messagepack_renames_reserved_field_loader_locals() -> Result<(), String> {
+        let schema = compile_schema(
+            r"
+                type Item {
+                    @id id: string;
+                    has_id: string;
+                    count: int;
+                    count_value: int;
+                    params: int;
+                    params_value: int;
+                    key: string;
+                    key_value: string;
+                    reader: string;
+                    path: string;
+                    field_path: string;
+                }
+            ",
+        )?;
+
+        let files = generate_csharp(
+            &schema,
+            &CsharpCodegenOptions::new("Game.Config")
+                .with_data_format(CsharpDataFormat::MessagePack),
+        )
+        .map_err(|err| err.to_string())?;
+        let database = generated_file(&files, "GameConfig.cs")?;
+        require_contains(database, "var hasId = false;")?;
+        require_contains(database, "string hasId2 = default!;")?;
+        require_contains(database, "long countValue = default!;")?;
+        require_contains(database, "long countValue2 = default!;")?;
+        require_contains(database, "long paramsValue = default!;")?;
+        require_contains(database, "long paramsValue2 = default!;")?;
+        require_contains(database, "string keyValue = default!;")?;
+        require_contains(database, "string keyValue2 = default!;")?;
+        require_contains(database, "string readerValue = default!;")?;
+        require_contains(database, "string pathValue = default!;")?;
+        require_contains(database, "string fieldPathValue = default!;")?;
+        require_contains(database, "countValue = ReadInt(ref reader, fieldPath);")?;
+        require_contains(database, "countValue2 = ReadInt(ref reader, fieldPath);")?;
+        require_contains(database, "paramsValue = ReadInt(ref reader, fieldPath);")?;
+        require_contains(database, "paramsValue2 = ReadInt(ref reader, fieldPath);")?;
+        require_contains(database, "hasId2 = ReadString(ref reader, fieldPath);")?;
+        require_contains(database, "keyValue = ReadString(ref reader, fieldPath);")?;
+        require_contains(database, "keyValue2 = ReadString(ref reader, fieldPath);")?;
+        require_contains(database, "readerValue = ReadString(ref reader, fieldPath);")?;
+        require_contains(database, "pathValue = ReadString(ref reader, fieldPath);")?;
+        require_contains(
+            database,
+            "fieldPathValue = ReadString(ref reader, fieldPath);",
+        )?;
+        require_contains(database, "Count = countValue,")?;
+        require_contains(database, "CountValue = countValue2,")?;
+        require_contains(database, "Params = paramsValue,")?;
+        require_contains(database, "ParamsValue = paramsValue2,")?;
+        require_contains(database, "HasId = hasId2,")?;
+        require_contains(database, "Key = keyValue,")?;
+        require_contains(database, "KeyValue = keyValue2,")?;
+        require_contains(database, "Reader = readerValue,")?;
+        require_contains(database, "Path = pathValue,")?;
+        require_contains(database, "FieldPath = fieldPathValue,")?;
+        require_not_contains(database, "long count =")?;
+        require_not_contains(database, "long params =")?;
+        require_not_contains(database, "string key =")?;
+        require_not_contains(database, "string reader =")?;
+        require_not_contains(database, "string path =")?;
+        require_not_contains(database, "string fieldPath =")?;
+        Ok(())
+    }
+
+    #[test]
     fn codegen_struct_inheritance_emits_inherited_fields() -> Result<(), String> {
         let schema = compile_schema(
             r"
@@ -368,5 +659,186 @@ mod tests {
         require_contains(rarity, "/// <summary>Common display</summary>")?;
         require_contains(rarity, "[Obsolete]")?;
         Ok(())
+    }
+
+    #[derive(Debug)]
+    struct StringSerializerError(String);
+
+    impl fmt::Display for StringSerializerError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            self.0.fmt(f)
+        }
+    }
+
+    impl std::error::Error for StringSerializerError {}
+
+    impl serde::ser::Error for StringSerializerError {
+        fn custom<T: fmt::Display>(msg: T) -> Self {
+            Self(msg.to_string())
+        }
+    }
+
+    struct StringSerializer;
+
+    impl serde::Serializer for StringSerializer {
+        type Ok = String;
+        type Error = StringSerializerError;
+        type SerializeSeq = serde::ser::Impossible<String, StringSerializerError>;
+        type SerializeTuple = serde::ser::Impossible<String, StringSerializerError>;
+        type SerializeTupleStruct = serde::ser::Impossible<String, StringSerializerError>;
+        type SerializeTupleVariant = serde::ser::Impossible<String, StringSerializerError>;
+        type SerializeMap = serde::ser::Impossible<String, StringSerializerError>;
+        type SerializeStruct = serde::ser::Impossible<String, StringSerializerError>;
+        type SerializeStructVariant = serde::ser::Impossible<String, StringSerializerError>;
+
+        fn serialize_str(self, value: &str) -> Result<Self::Ok, Self::Error> {
+            Ok(value.to_string())
+        }
+
+        fn serialize_bool(self, _value: bool) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_i8(self, _value: i8) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_i16(self, _value: i16) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_i32(self, _value: i32) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_i64(self, _value: i64) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_u8(self, _value: u8) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_u16(self, _value: u16) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_u32(self, _value: u32) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_u64(self, _value: u64) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_f32(self, _value: f32) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_f64(self, _value: f64) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_char(self, _value: char) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_bytes(self, _value: &[u8]) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_some<T: ?Sized + serde::Serialize>(
+            self,
+            _value: &T,
+        ) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_unit_variant(
+            self,
+            _name: &'static str,
+            _variant_index: u32,
+            variant: &'static str,
+        ) -> Result<Self::Ok, Self::Error> {
+            Ok(variant.to_string())
+        }
+
+        fn serialize_newtype_struct<T: ?Sized + serde::Serialize>(
+            self,
+            _name: &'static str,
+            _value: &T,
+        ) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_newtype_variant<T: ?Sized + serde::Serialize>(
+            self,
+            _name: &'static str,
+            _variant_index: u32,
+            _variant: &'static str,
+            _value: &T,
+        ) -> Result<Self::Ok, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_tuple_struct(
+            self,
+            _name: &'static str,
+            _len: usize,
+        ) -> Result<Self::SerializeTupleStruct, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_tuple_variant(
+            self,
+            _name: &'static str,
+            _variant_index: u32,
+            _variant: &'static str,
+            _len: usize,
+        ) -> Result<Self::SerializeTupleVariant, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_struct(
+            self,
+            _name: &'static str,
+            _len: usize,
+        ) -> Result<Self::SerializeStruct, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
+
+        fn serialize_struct_variant(
+            self,
+            _name: &'static str,
+            _variant_index: u32,
+            _variant: &'static str,
+            _len: usize,
+        ) -> Result<Self::SerializeStructVariant, Self::Error> {
+            Err(serde::ser::Error::custom("expected string"))
+        }
     }
 }
