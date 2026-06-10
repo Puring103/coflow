@@ -1,11 +1,12 @@
 [package]
-name = "coflow-codegen-csharp"
+name = "coflow-codegen-csharp-json"
 version = "0.1.0"
 edition = "2021"
-description = "Shared C# runtime code generator core for Coflow data formats."
+description = "C# runtime code generator for Coflow JSON data."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/wtlll/ScriptForGame"
-keywords = ["config", "game-data", "codegen", "csharp"]
+readme = "../../README.md"
+keywords = ["config", "game-data", "codegen", "csharp", "json"]
 categories = ["config", "game-development"]
 publish = false
 
@@ -14,5 +15,4 @@ workspace = true
 
 [dependencies]
 coflow-cft = { path = "../coflow-cft" }
-serde = { version = "1", features = ["derive"] }
-tera = "1"
+coflow-codegen-csharp = { path = "../coflow-codegen-csharp" }

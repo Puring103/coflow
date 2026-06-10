@@ -21,6 +21,8 @@ members = [
     "crates/coflow-exporter-json",
     "crates/coflow-exporter-messagepack",
     "crates/coflow-codegen-csharp",
+    "crates/coflow-codegen-csharp-json",
+    "crates/coflow-codegen-csharp-messagepack",
     "crates/coflow-project",
     "crates/coflow-cft-lsp",
 ]
@@ -52,7 +54,8 @@ clap = { version = "4", features = ["derive"] }
 coflow-cft = { path = "crates/coflow-cft" }
 coflow-cft-lsp = { path = "crates/coflow-cft-lsp" }
 coflow-checker = { path = "crates/coflow-checker" }
-coflow-codegen-csharp = { path = "crates/coflow-codegen-csharp" }
+coflow-codegen-csharp-json = { path = "crates/coflow-codegen-csharp-json" }
+coflow-codegen-csharp-messagepack = { path = "crates/coflow-codegen-csharp-messagepack" }
 coflow-loader-excel = { path = "crates/coflow-loader-excel" }
 coflow-exporter-json = { path = "crates/coflow-exporter-json" }
 coflow-exporter-messagepack = { path = "crates/coflow-exporter-messagepack" }

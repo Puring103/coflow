@@ -36,6 +36,18 @@ pub struct GeneratedFile {
     pub contents: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CsharpTemplate {
+    pub name: &'static str,
+    pub contents: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CsharpDatabaseTemplates {
+    pub database_template: CsharpTemplate,
+    pub partials: &'static [CsharpTemplate],
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CsharpCodegenError {
     message: String,
@@ -58,30 +70,7 @@ impl fmt::Display for CsharpCodegenError {
 
 impl std::error::Error for CsharpCodegenError {}
 
-/// Generates C# type definitions and a Newtonsoft.Json based folder loader.
-///
-/// The emitted loader is a trusted artifact loader for JSON produced by
-/// `coflow export json`; it is not a validator for arbitrary JSON.
-/// It expects one `<TypeName>.json` file per table, each containing a JSON array.
-/// It targets the general-purpose `Newtonsoft.Json` package API rather than a
-/// Unity-specific serialization API.
-///
-/// # Errors
-///
-/// Returns an error when the compiled schema cannot be mapped to C# runtime
-/// code or when a Tera template fails to render.
-pub fn generate_csharp_json(
-    schema: &CftContainer,
-    options: &CsharpCodegenOptions,
-) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    let options = options.clone().with_data_format(CsharpDataFormat::Json);
-    generate_csharp(schema, &options)
-}
-
-/// Generates C# type definitions and a folder loader for the configured data format.
-///
-/// JSON remains the default format for `CsharpCodegenOptions::new`.
-/// `MessagePack` output targets `coflow export messagepack` runtime data.
+/// Generates C# files using a caller-provided database loader template set.
 ///
 /// # Errors
 ///
@@ -90,9 +79,29 @@ pub fn generate_csharp_json(
 pub fn generate_csharp(
     schema: &CftContainer,
     options: &CsharpCodegenOptions,
+    data_format: CsharpDataFormat,
+    database_templates: &CsharpDatabaseTemplates,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    let project = ir::build_project(schema, options)?;
-    render::render_project(&project)
+    generate_csharp_with_database_templates(schema, options, data_format, database_templates)
+}
+
+/// Generates C# files using a caller-provided database loader template set.
+///
+/// Format-specific crates use this to keep JSON and `MessagePack` templates out
+/// of the shared C# codegen core.
+///
+/// # Errors
+///
+/// Returns an error when the compiled schema cannot be mapped to C# runtime
+/// code or when a Tera template fails to render.
+pub fn generate_csharp_with_database_templates(
+    schema: &CftContainer,
+    options: &CsharpCodegenOptions,
+    data_format: CsharpDataFormat,
+    database_templates: &CsharpDatabaseTemplates,
+) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+    let project = ir::build_project(schema, options, data_format)?;
+    render::render_project(&project, database_templates)
 }
 
 #[cfg(test)]
@@ -146,6 +155,80 @@ mod tests {
         }
     }
 
+    fn json_database_templates() -> CsharpDatabaseTemplates {
+        CsharpDatabaseTemplates {
+            database_template: CsharpTemplate {
+                name: "database_json.cs.tera",
+                contents: include_str!(
+                    "../../coflow-codegen-csharp-json/templates/database_json.cs.tera"
+                ),
+            },
+            partials: &[
+                CsharpTemplate {
+                    name: "database_json_loaders.cs.tera",
+                    contents: include_str!(
+                        "../../coflow-codegen-csharp-json/templates/database_json_loaders.cs.tera"
+                    ),
+                },
+                CsharpTemplate {
+                    name: "database_json_readers.cs.tera",
+                    contents: include_str!(
+                        "../../coflow-codegen-csharp-json/templates/database_json_readers.cs.tera"
+                    ),
+                },
+            ],
+        }
+    }
+
+    fn messagepack_database_templates() -> CsharpDatabaseTemplates {
+        CsharpDatabaseTemplates {
+            database_template: CsharpTemplate {
+                name: "database_messagepack.cs.tera",
+                contents: include_str!(
+                    "../../coflow-codegen-csharp-messagepack/templates/database_messagepack.cs.tera"
+                ),
+            },
+            partials: &[
+                CsharpTemplate {
+                    name: "database_messagepack_loaders.cs.tera",
+                    contents: include_str!(
+                        "../../coflow-codegen-csharp-messagepack/templates/database_messagepack_loaders.cs.tera"
+                    ),
+                },
+                CsharpTemplate {
+                    name: "database_messagepack_readers.cs.tera",
+                    contents: include_str!(
+                        "../../coflow-codegen-csharp-messagepack/templates/database_messagepack_readers.cs.tera"
+                    ),
+                },
+            ],
+        }
+    }
+
+    fn generate_json(
+        schema: &CftContainer,
+        options: &CsharpCodegenOptions,
+    ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+        generate_csharp(
+            schema,
+            options,
+            CsharpDataFormat::Json,
+            &json_database_templates(),
+        )
+    }
+
+    fn generate_messagepack(
+        schema: &CftContainer,
+        options: &CsharpCodegenOptions,
+    ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+        generate_csharp(
+            schema,
+            options,
+            CsharpDataFormat::MessagePack,
+            &messagepack_database_templates(),
+        )
+    }
+
     #[test]
     fn data_format_serializes_messagepack_without_separator() -> Result<(), String> {
         let value = serde::Serialize::serialize(&CsharpDataFormat::MessagePack, StringSerializer)
@@ -165,12 +248,8 @@ mod tests {
             ",
         )?;
 
-        let files = generate_csharp(
-            &schema,
-            &CsharpCodegenOptions::new("Game.Config")
-                .with_data_format(CsharpDataFormat::MessagePack),
-        )
-        .map_err(|err| err.to_string())?;
+        let files = generate_messagepack(&schema, &CsharpCodegenOptions::new("Game.Config"))
+            .map_err(|err| err.to_string())?;
         let database = generated_file(&files, "GameConfig.cs")?;
         require_contains(database, "using MessagePack;")?;
         require_contains(database, "Path.Combine(dataDir, \"Item.msgpack\")")?;
@@ -198,12 +277,8 @@ mod tests {
             ",
         )?;
 
-        let files = generate_csharp(
-            &schema,
-            &CsharpCodegenOptions::new("Game.Config")
-                .with_data_format(CsharpDataFormat::MessagePack),
-        )
-        .map_err(|err| err.to_string())?;
+        let files = generate_messagepack(&schema, &CsharpCodegenOptions::new("Game.Config"))
+            .map_err(|err| err.to_string())?;
         let database = generated_file(&files, "GameConfig.cs")?;
         require_contains(database, "using MessagePack;")?;
         require_contains(database, "private delegate T MessagePackRowLoader<T>(")?;
@@ -275,7 +350,6 @@ mod tests {
         let project = model::CsharpProject {
             namespace: "Game.Config".to_string(),
             database_class: "GameConfig".to_string(),
-            data_format: CsharpDataFormat::MessagePack,
             enums: Vec::new(),
             types: Vec::new(),
             database: model::CsharpDatabase {
@@ -315,7 +389,8 @@ mod tests {
             },
         };
 
-        let files = render::render_project(&project).map_err(|err| err.to_string())?;
+        let files = render::render_project(&project, &messagepack_database_templates())
+            .map_err(|err| err.to_string())?;
         let database = generated_file(&files, "GameConfig.cs")?;
         require_contains(database, "List<long> items = default!;")?;
         require_contains(database, "if (!hasItems)")?;
@@ -342,7 +417,7 @@ mod tests {
         "#,
         )?;
 
-        let files = generate_csharp_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
             .map_err(|err| err.to_string())?;
         let stat_block = generated_file(&files, "StatBlock.cs")?;
         require_contains(stat_block, "public partial struct StatBlock")?;
@@ -374,7 +449,7 @@ mod tests {
             ",
         )?;
 
-        let files = generate_csharp_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
             .map_err(|err| err.to_string())?;
         let database = generated_file(&files, "GameConfig.cs")?;
         require_contains(database, "ResolveNodeRefs")?;
@@ -397,7 +472,7 @@ mod tests {
             ",
         )?;
 
-        let files = generate_csharp_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
             .map_err(|err| err.to_string())?;
         let database = generated_file(&files, "GameConfig.cs")?;
         require_contains(database, "Dictionary<string, Reward> _rewardRefIndex")?;
@@ -431,7 +506,7 @@ mod tests {
             "#,
         )?;
 
-        let files = generate_csharp_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
             .map_err(|err| err.to_string())?;
         let database = generated_file(&files, "GameConfig.cs")?;
         let item = generated_file(&files, "Item.cs")?;
@@ -466,12 +541,8 @@ mod tests {
             ",
         )?;
 
-        let files = generate_csharp(
-            &schema,
-            &CsharpCodegenOptions::new("Game.Config")
-                .with_data_format(CsharpDataFormat::MessagePack),
-        )
-        .map_err(|err| err.to_string())?;
+        let files = generate_messagepack(&schema, &CsharpCodegenOptions::new("Game.Config"))
+            .map_err(|err| err.to_string())?;
         let database = generated_file(&files, "GameConfig.cs")?;
         require_contains(database, "long paramsValue = default!;")?;
         require_contains(database, "paramsValue = ReadInt(ref reader, fieldPath);")?;
@@ -500,12 +571,8 @@ mod tests {
             ",
         )?;
 
-        let files = generate_csharp(
-            &schema,
-            &CsharpCodegenOptions::new("Game.Config")
-                .with_data_format(CsharpDataFormat::MessagePack),
-        )
-        .map_err(|err| err.to_string())?;
+        let files = generate_messagepack(&schema, &CsharpCodegenOptions::new("Game.Config"))
+            .map_err(|err| err.to_string())?;
         let database = generated_file(&files, "GameConfig.cs")?;
         require_contains(database, "var hasId = false;")?;
         require_contains(database, "string hasId2 = default!;")?;
@@ -560,7 +627,7 @@ mod tests {
             ",
         )?;
 
-        let files = generate_csharp_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
             .map_err(|err| err.to_string())?;
         let child = generated_file(&files, "Child.cs")?;
         let database = generated_file(&files, "GameConfig.cs")?;
@@ -580,16 +647,14 @@ mod tests {
     #[test]
     fn codegen_rejects_invalid_csharp_names() -> Result<(), String> {
         let unicode_type = compile_schema("type 示例 { value: int; }")?;
-        let Err(err) =
-            generate_csharp_json(&unicode_type, &CsharpCodegenOptions::new("Game.Config"))
+        let Err(err) = generate_json(&unicode_type, &CsharpCodegenOptions::new("Game.Config"))
         else {
             return Err("unicode type should fail".to_string());
         };
         require_contains(&err.to_string(), "invalid C# type name `示例`")?;
 
         let schema = compile_schema("type Item { value: int; }")?;
-        let Err(err) = generate_csharp_json(&schema, &CsharpCodegenOptions::new("Game.1Bad"))
-        else {
+        let Err(err) = generate_json(&schema, &CsharpCodegenOptions::new("Game.1Bad")) else {
             return Err("namespace should fail".to_string());
         };
         require_contains(&err.to_string(), "invalid C# namespace `Game.1Bad`")?;
@@ -609,8 +674,7 @@ mod tests {
             ",
         )?;
 
-        let Err(err) = generate_csharp_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
-        else {
+        let Err(err) = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config")) else {
             return Err("keyword-derived local variable should fail".to_string());
         };
         require_contains(
@@ -632,7 +696,7 @@ mod tests {
             "#,
         )?;
 
-        let files = generate_csharp_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
             .map_err(|err| err.to_string())?;
         let item = generated_file(&files, "Item.cs")?;
         require_contains(item, "/// <summary>A &lt; B &amp; C</summary>")?;
@@ -653,7 +717,7 @@ mod tests {
             "#,
         )?;
 
-        let files = generate_csharp_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
             .map_err(|err| err.to_string())?;
         let rarity = generated_file(&files, "Rarity.cs")?;
         require_contains(rarity, "/// <summary>Common display</summary>")?;

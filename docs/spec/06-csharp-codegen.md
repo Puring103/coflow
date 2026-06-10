@@ -92,7 +92,7 @@ struct CsharpField {
 
 Tera 模板只允许做简单的字段遍历、条件输出和命名空间包裹；类型映射、默认值、继承展开、`@ref`、`@id`、`@index`、`@display`、`@deprecated` 等规则必须在 Rust model 构建阶段完成。实现应补充 golden tests 固定复杂 schema 的输出形状。
 
-当前实现位于 `crates/coflow-codegen-csharp`。codegen 根据项目 data format 生成 JSON 或 MessagePack loader；生成出的 C# 运行时代码只依赖对应的数据文件和运行时包，不依赖 CFT parser/compiler。
+当前实现按共享核心和格式入口拆分：`crates/coflow-codegen-csharp` 负责 C# 类型模型、公共模板和渲染流程，`crates/coflow-codegen-csharp-json` 与 `crates/coflow-codegen-csharp-messagepack` 分别持有对应格式的 loader 模板和入口函数。CLI 根据项目 data format 选择调用 JSON 或 MessagePack codegen crate。生成出的 C# 运行时代码只依赖对应的数据文件和运行时包，不依赖 CFT parser/compiler。
 
 生成的 C# 是 trusted artifact loader。它只承诺加载官方 Coflow exporter 从已经通过 Rust pipeline 的数据生成的 JSON 或 MessagePack 产物，负责反序列化、构建运行时查找表并解析生成对象的引用。它不承诺为任意手写或损坏的数据文件提供稳定诊断，也不执行 CFT check。
 
@@ -110,16 +110,24 @@ crates/coflow-codegen-csharp/
   templates/
     enum.cs.tera
     type.cs.tera
-    database_json.cs.tera
-    database_json_loaders.cs.tera
-    database_json_readers.cs.tera
-    database_messagepack.cs.tera
-    database_messagepack_loaders.cs.tera
-    database_messagepack_readers.cs.tera
     database_common_members.cs.tera
     database_common_resolve.cs.tera
     database_common_indexes.cs.tera
     load_exception.cs.tera
+
+crates/coflow-codegen-csharp-json/
+  src/lib.rs
+  templates/
+    database_json.cs.tera
+    database_json_loaders.cs.tera
+    database_json_readers.cs.tera
+
+crates/coflow-codegen-csharp-messagepack/
+  src/lib.rs
+  templates/
+    database_messagepack.cs.tera
+    database_messagepack_loaders.cs.tera
+    database_messagepack_readers.cs.tera
 ```
 
 生成文件按类型拆分：
