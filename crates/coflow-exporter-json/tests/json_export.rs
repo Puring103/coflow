@@ -9,7 +9,7 @@
 
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
-use coflow_json_export::export_json_model;
+use coflow_exporter_json::export_json_model;
 use serde_json::json;
 use serde_json::Value;
 use std::collections::BTreeMap;

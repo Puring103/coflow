@@ -9,7 +9,7 @@
 
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdErrorCode, CfdIdValue, CfdValue};
-use coflow_excel_loader::{
+use coflow_loader_excel::{
     load_excel, load_excel_model, ExcelDiagnostic, ExcelLoadError, ExcelSheet, ExcelSource,
 };
 use rust_xlsxwriter::{ExcelDateTime, Format, Formula, Workbook, XlsxError};
@@ -33,7 +33,7 @@ fn compile_schema(source: &str) -> Result<CftContainer, String> {
 
 fn temp_xlsx_path(name: &str) -> PathBuf {
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!("coflow-excel-loader-{name}-{id}.xlsx"))
+    std::env::temp_dir().join(format!("coflow-loader-excel-{name}-{id}.xlsx"))
 }
 
 fn write_items_workbook(path: &PathBuf) -> Result<(), XlsxError> {

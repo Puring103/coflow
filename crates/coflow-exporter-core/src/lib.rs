@@ -1,7 +1,7 @@
-//! JSON exporter for validated Coflow data models.
+//! Shared schema-aware exporter traversal for Coflow data models.
 //!
-//! This crate converts an already-built [`CfdDataModel`] into table-oriented
-//! JSON values. It deliberately does not load files or run checks.
+//! This crate walks an already-built [`CfdDataModel`] according to the compiled
+//! CFT schema and delegates concrete value construction to an [`ExportEncoder`].
 
 #![cfg_attr(
     not(test),
@@ -21,16 +21,73 @@ use coflow_cft::{
     CftAnnotation, CftAnnotationValue, CftContainer, CftSchemaField, CftSchemaTypeRef,
 };
 use coflow_data_model::{CfdDataModel, CfdDictKey, CfdIdValue, CfdRecord, CfdTable, CfdValue};
-use serde_json::{Map, Number, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+/// Constructs output values for a concrete export format.
+///
+/// The traversal controls schema order and type semantics; encoders only build
+/// values for their target format.
+pub trait ExportEncoder {
+    type Error: fmt::Display;
+    type Value;
+
+    /// Encodes a null value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the target format cannot encode null.
+    fn null(&mut self) -> Result<Self::Value, Self::Error>;
+
+    /// Encodes a boolean value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the target format cannot encode the value.
+    fn bool(&mut self, value: bool) -> Result<Self::Value, Self::Error>;
+
+    /// Encodes an integer value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the target format cannot encode the value.
+    fn int(&mut self, value: i64) -> Result<Self::Value, Self::Error>;
+
+    /// Encodes a floating-point value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the target format cannot encode the value.
+    fn float(&mut self, value: f64) -> Result<Self::Value, Self::Error>;
+
+    /// Encodes a string value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the target format cannot encode the value.
+    fn string(&mut self, value: &str) -> Result<Self::Value, Self::Error>;
+
+    /// Encodes an array from already-encoded items.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the target format cannot encode the array.
+    fn array(&mut self, values: Vec<Self::Value>) -> Result<Self::Value, Self::Error>;
+
+    /// Encodes a map from already-encoded entries.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the target format cannot encode the map.
+    fn map(&mut self, entries: Vec<(String, Self::Value)>) -> Result<Self::Value, Self::Error>;
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct JsonExportError {
+pub struct ExportError {
     pub message: String,
 }
 
-impl JsonExportError {
+impl ExportError {
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
         Self {
@@ -39,15 +96,15 @@ impl JsonExportError {
     }
 }
 
-impl fmt::Display for JsonExportError {
+impl fmt::Display for ExportError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.message.fmt(f)
     }
 }
 
-impl std::error::Error for JsonExportError {}
+impl std::error::Error for ExportError {}
 
-/// Converts every table in the data model into one JSON array value.
+/// Exports every concrete `@id` table from the data model.
 ///
 /// The returned map key is the CFT type/table name. Values are arrays whose
 /// order follows the table's original record order in the data model.
@@ -55,29 +112,37 @@ impl std::error::Error for JsonExportError {}
 /// # Errors
 ///
 /// Returns an error when a model record or field cannot be matched back to the
-/// compiled schema. A `CfdDataModel` built from the same `CftContainer` should
-/// not hit these errors.
-pub fn export_json_model(
+/// compiled schema, or when the encoder rejects a value.
+pub fn export_model_with_encoder<E>(
     schema: &CftContainer,
     model: &CfdDataModel,
-) -> Result<BTreeMap<String, Value>, JsonExportError> {
-    JsonExporter::new(schema, model).export()
+    encoder: &mut E,
+) -> Result<BTreeMap<String, E::Value>, ExportError>
+where
+    E: ExportEncoder,
+{
+    Exporter::new(schema, model, encoder).export()
 }
 
-struct JsonExporter<'a> {
+struct Exporter<'a, E> {
     schema: SchemaView<'a>,
     model: &'a CfdDataModel,
+    encoder: &'a mut E,
 }
 
-impl<'a> JsonExporter<'a> {
-    fn new(schema: &'a CftContainer, model: &'a CfdDataModel) -> Self {
+impl<'a, E> Exporter<'a, E>
+where
+    E: ExportEncoder,
+{
+    fn new(schema: &'a CftContainer, model: &'a CfdDataModel, encoder: &'a mut E) -> Self {
         Self {
             schema: SchemaView::new(schema),
             model,
+            encoder,
         }
     }
 
-    fn export(&self) -> Result<BTreeMap<String, Value>, JsonExportError> {
+    fn export(mut self) -> Result<BTreeMap<String, E::Value>, ExportError> {
         let mut out = BTreeMap::new();
         for schema_type in self.schema.schema.all_types() {
             if schema_type.is_abstract {
@@ -95,88 +160,99 @@ impl<'a> JsonExporter<'a> {
             let value = if let Some(table) = table {
                 self.encode_table(table)?
             } else {
-                Value::Array(Vec::new())
+                self.encoder.array(Vec::new()).map_err(encoder_error)?
             };
             out.insert(schema_type.name.clone(), value);
         }
         Ok(out)
     }
 
-    fn encode_table(&self, table: &CfdTable) -> Result<Value, JsonExportError> {
+    fn encode_table(&mut self, table: &CfdTable) -> Result<E::Value, ExportError> {
         let mut records = Vec::with_capacity(table.records.len());
         for record_id in &table.records {
             let record = self.model.record(*record_id).ok_or_else(|| {
-                JsonExportError::new(format!(
+                ExportError::new(format!(
                     "table `{}` references missing record `{record_id}`",
                     table.type_name
                 ))
             })?;
             records.push(self.encode_record(&table.type_name, record, TypeTagMode::Never)?);
         }
-        Ok(Value::Array(records))
+        self.encoder.array(records).map_err(encoder_error)
     }
 
     fn encode_record(
-        &self,
+        &mut self,
         declared_type: &str,
         record: &CfdRecord,
         tag_mode: TypeTagMode,
-    ) -> Result<Value, JsonExportError> {
-        let mut object = Map::new();
+    ) -> Result<E::Value, ExportError> {
+        let mut entries = Vec::new();
         if tag_mode == TypeTagMode::WhenPolymorphic
             && self.schema.range_is_polymorphic(declared_type)
         {
-            object.insert(
+            entries.push((
                 "$type".to_string(),
-                Value::String(record.actual_type.clone()),
-            );
+                self.encoder
+                    .string(&record.actual_type)
+                    .map_err(encoder_error)?,
+            ));
         }
 
         for field in self.schema.full_fields(&record.actual_type)? {
             let value = record.fields.get(&field.name).ok_or_else(|| {
-                JsonExportError::new(format!(
+                ExportError::new(format!(
                     "record `{}` is missing field `{}`",
                     record.actual_type, field.name
                 ))
             })?;
-            object.insert(field.name.clone(), self.encode_field(&field, value)?);
+            let encoded = self.encode_field(&field, value)?;
+            entries.push((field.name, encoded));
         }
-        Ok(Value::Object(object))
+        self.encoder.map(entries).map_err(encoder_error)
     }
 
-    fn encode_field(&self, field: &FieldMeta, value: &CfdValue) -> Result<Value, JsonExportError> {
+    fn encode_field(
+        &mut self,
+        field: &FieldMeta,
+        value: &CfdValue,
+    ) -> Result<E::Value, ExportError> {
         if field.ref_target.is_some() {
-            return Self::encode_ref(value);
+            return self.encode_ref(value);
         }
         self.encode_value(&field.ty, value)
     }
 
     fn encode_value(
-        &self,
+        &mut self,
         declared_type: &CftSchemaTypeRef,
         value: &CfdValue,
-    ) -> Result<Value, JsonExportError> {
+    ) -> Result<E::Value, ExportError> {
         if let CftSchemaTypeRef::Nullable(inner) = declared_type {
             return match value {
-                CfdValue::Null => Ok(Value::Null),
+                CfdValue::Null => self.encoder.null().map_err(encoder_error),
                 other => self.encode_value(inner, other),
             };
         }
 
         match value {
-            CfdValue::Null => Ok(Value::Null),
-            CfdValue::Bool(value) => Ok(Value::Bool(*value)),
-            CfdValue::Int(value) => Ok(Value::Number(Number::from(*value))),
-            CfdValue::Float(value) => Number::from_f64(*value)
-                .map(Value::Number)
-                .ok_or_else(|| JsonExportError::new("cannot export non-finite float")),
-            CfdValue::String(value) => Ok(Value::String(value.clone())),
-            CfdValue::Enum(value) => Ok(Value::Number(Number::from(value.value))),
+            CfdValue::Null => self.encoder.null().map_err(encoder_error),
+            CfdValue::Bool(value) => self.encoder.bool(*value).map_err(encoder_error),
+            CfdValue::Int(value) => self.encoder.int(*value).map_err(encoder_error),
+            CfdValue::Float(value) => {
+                if value.is_finite() {
+                    self.encoder.float(*value).map_err(encoder_error)
+                } else {
+                    Err(ExportError::new("cannot export non-finite float"))
+                }
+            }
+            CfdValue::String(value) => self.encoder.string(value).map_err(encoder_error),
+            CfdValue::Enum(value) => self.encoder.int(value.value).map_err(encoder_error),
             CfdValue::Object(record) => {
                 let type_name = match declared_type {
                     CftSchemaTypeRef::Named(type_name) => type_name,
                     other => {
-                        return Err(JsonExportError::new(format!(
+                        return Err(ExportError::new(format!(
                             "object value has non-object declared type `{}`",
                             display_type_ref(other)
                         )))
@@ -184,50 +260,57 @@ impl<'a> JsonExporter<'a> {
                 };
                 self.encode_record(type_name, record, TypeTagMode::WhenPolymorphic)
             }
-            CfdValue::Ref { .. } => Self::encode_ref(value),
+            CfdValue::Ref { .. } => self.encode_ref(value),
             CfdValue::Array(items) => {
                 let inner = match declared_type {
                     CftSchemaTypeRef::Array(inner) => inner,
                     other => {
-                        return Err(JsonExportError::new(format!(
+                        return Err(ExportError::new(format!(
                             "array value has non-array declared type `{}`",
                             display_type_ref(other)
                         )))
                     }
                 };
-                items
+                let values = items
                     .iter()
                     .map(|item| self.encode_value(inner, item))
-                    .collect::<Result<Vec<_>, _>>()
-                    .map(Value::Array)
+                    .collect::<Result<Vec<_>, _>>()?;
+                self.encoder.array(values).map_err(encoder_error)
             }
             CfdValue::Dict(entries) => {
                 let value_ty = match declared_type {
                     CftSchemaTypeRef::Dict(_, value_ty) => value_ty,
                     other => {
-                        return Err(JsonExportError::new(format!(
+                        return Err(ExportError::new(format!(
                             "dict value has non-dict declared type `{}`",
                             display_type_ref(other)
                         )))
                     }
                 };
-                let mut object = Map::new();
+                let mut values = Vec::with_capacity(entries.len());
                 for (key, value) in entries {
-                    object.insert(dict_key_string(key), self.encode_value(value_ty, value)?);
+                    values.push((dict_key_string(key), self.encode_value(value_ty, value)?));
                 }
-                Ok(Value::Object(object))
+                self.encoder.map(values).map_err(encoder_error)
             }
         }
     }
 
-    fn encode_ref(value: &CfdValue) -> Result<Value, JsonExportError> {
+    fn encode_ref(&mut self, value: &CfdValue) -> Result<E::Value, ExportError> {
         match value {
-            CfdValue::Null => Ok(Value::Null),
-            CfdValue::Ref { id, .. } => Ok(id_to_json(id)),
-            other => Err(JsonExportError::new(format!(
+            CfdValue::Null => self.encoder.null().map_err(encoder_error),
+            CfdValue::Ref { id, .. } => self.encode_id(id),
+            other => Err(ExportError::new(format!(
                 "expected ref value, got `{}`",
                 value_kind(other)
             ))),
+        }
+    }
+
+    fn encode_id(&mut self, id: &CfdIdValue) -> Result<E::Value, ExportError> {
+        match id {
+            CfdIdValue::String(value) => self.encoder.string(value).map_err(encoder_error),
+            CfdIdValue::Int(value) => self.encoder.int(*value).map_err(encoder_error),
         }
     }
 }
@@ -260,7 +343,7 @@ impl<'a> SchemaView<'a> {
         }
     }
 
-    fn full_fields(&self, type_name: &str) -> Result<Vec<FieldMeta>, JsonExportError> {
+    fn full_fields(&self, type_name: &str) -> Result<Vec<FieldMeta>, ExportError> {
         let mut out = Vec::new();
         self.fill_fields(type_name, &mut out, &mut BTreeSet::new())?;
         Ok(out)
@@ -271,12 +354,12 @@ impl<'a> SchemaView<'a> {
         type_name: &str,
         out: &mut Vec<FieldMeta>,
         seen: &mut BTreeSet<String>,
-    ) -> Result<(), JsonExportError> {
+    ) -> Result<(), ExportError> {
         if !seen.insert(type_name.to_string()) {
             return Ok(());
         }
         let schema_type = self.schema.resolve_type(type_name).ok_or_else(|| {
-            JsonExportError::new(format!("unknown CFT type `{type_name}` during JSON export"))
+            ExportError::new(format!("unknown CFT type `{type_name}` during export"))
         })?;
         if let Some(parent) = &schema_type.parent {
             self.fill_fields(parent, out, seen)?;
@@ -330,13 +413,6 @@ fn has_annotation(annotations: &[CftAnnotation], name: &str) -> bool {
     annotations.iter().any(|annotation| annotation.name == name)
 }
 
-fn id_to_json(id: &CfdIdValue) -> Value {
-    match id {
-        CfdIdValue::String(value) => Value::String(value.clone()),
-        CfdIdValue::Int(value) => Value::Number(Number::from(*value)),
-    }
-}
-
 fn dict_key_string(key: &CfdDictKey) -> String {
     match key {
         CfdDictKey::String(value) => value.clone(),
@@ -373,4 +449,8 @@ fn display_type_ref(ty: &CftSchemaTypeRef) -> String {
         }
         CftSchemaTypeRef::Nullable(inner) => format!("{}?", display_type_ref(inner)),
     }
+}
+
+fn encoder_error(error: impl fmt::Display) -> ExportError {
+    ExportError::new(error.to_string())
 }

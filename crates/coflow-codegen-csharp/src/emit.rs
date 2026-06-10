@@ -1,3 +1,4 @@
+use crate::ir::CsharpDataFormat;
 use crate::model::{
     CsharpDatabase, CsharpEnum, CsharpEnumVariant, CsharpIndex, CsharpLoadField, CsharpLoader,
     CsharpParameter, CsharpPolymorphicCase, CsharpPolymorphicLoader, CsharpProperty,
@@ -5,13 +6,14 @@ use crate::model::{
     CsharpResolveTableCall, CsharpTable, CsharpType,
 };
 use crate::names::{
-    annotation_name_arg, camel_case, display_annotation, escape_csharp_string, format_float,
-    has_annotation, index_param_name, index_var_name, multi_index_var_name, pascal_case, pluralize,
-    ref_index_param_name, ref_index_var_name, ref_property_name,
+    annotation_name_arg, camel_case, csharp_ident_error, display_annotation, escape_csharp_string,
+    format_float, has_annotation, index_param_name, index_var_name, multi_index_var_name,
+    pascal_case, pluralize, ref_index_param_name, ref_index_var_name, ref_property_name,
 };
 use crate::schema_view::{FieldMeta, FieldType, SchemaView, TypeMeta};
 use crate::CsharpCodegenError;
 use coflow_cft::{CftSchemaDefaultValue, CftSchemaEnum, CftSchemaType};
+use std::collections::HashSet;
 
 pub fn build_csharp_enum(schema_enum: &CftSchemaEnum) -> CsharpEnum {
     CsharpEnum {
@@ -104,6 +106,7 @@ pub fn build_csharp_database(
     view: &SchemaView,
     tables: &[String],
     _database_class: &str,
+    data_format: CsharpDataFormat,
 ) -> Result<CsharpDatabase, CsharpCodegenError> {
     let table_models = tables
         .iter()
@@ -118,6 +121,11 @@ pub fn build_csharp_database(
     let mut parameters = Vec::<CsharpParameter>::new();
     let mut load_steps = Vec::new();
 
+    let load_extension = match data_format {
+        CsharpDataFormat::Json => "json",
+        CsharpDataFormat::MessagePack => "msgpack",
+    };
+
     for table in &table_models {
         parameters.push(CsharpParameter {
             ty: format!("List<{}>", table.name),
@@ -128,8 +136,8 @@ pub fn build_csharp_database(
             name: table.index_var.clone(),
         });
         load_steps.push(format!(
-            "var {} = LoadTable(Path.Combine(dataDir, \"{}.json\"), \"{}\", Load{});",
-            table.list_var, table.name, table.name, table.name
+            "var {} = LoadTable(Path.Combine(dataDir, \"{}.{}\"), \"{}\", Load{});",
+            table.list_var, table.name, load_extension, table.name, table.name
         ));
     }
 
@@ -329,21 +337,102 @@ fn loader_methods(view: &SchemaView) -> Result<Vec<CsharpLoader>, CsharpCodegenE
         .into_iter()
         .map(|type_name| {
             let ty = view.type_meta(&type_name)?;
+            let mut used_local_names = loader_reserved_local_names(ty);
             Ok(CsharpLoader {
                 type_name,
                 fields: ty
                     .all_fields
                     .iter()
                     .map(|field| {
+                        let local_name = field_local_name(&field.name, &mut used_local_names)?;
+                        let default_expr =
+                            default_value_expr(field.default.as_ref(), &field.ty, view)?;
+                        let is_required = default_expr.is_none();
                         Ok(CsharpLoadField {
                             property: pascal_case(&field.name),
+                            source_name: field.name.clone(),
+                            local_name,
+                            type_name: csharp_type(&field.ty),
                             read_expr: read_field_expr(field, "obj", "path", view)?,
+                            messagepack_read_expr: read_messagepack_field_expr(
+                                &field.ty,
+                                "reader",
+                                "fieldPath",
+                                view,
+                            )?,
+                            default_expr,
+                            is_required,
                         })
                     })
                     .collect::<Result<Vec<_>, CsharpCodegenError>>()?,
             })
         })
         .collect()
+}
+
+fn loader_reserved_local_names(ty: &TypeMeta) -> HashSet<String> {
+    ty.all_fields
+        .iter()
+        .map(|field| format!("has{}", pascal_case(&field.name)))
+        .collect()
+}
+
+fn field_local_name(
+    field_name: &str,
+    used_names: &mut HashSet<String>,
+) -> Result<String, CsharpCodegenError> {
+    let candidate = camel_case(field_name);
+    let base_name = if csharp_ident_error(&candidate)
+        .is_some_and(|reason| reason == "identifier is a C# keyword")
+        || is_reserved_loader_local_name(&candidate)
+    {
+        format!("{candidate}Value")
+    } else {
+        candidate
+    };
+    let mut local_name = base_name.clone();
+    let mut suffix = 2;
+    while used_names.contains(&local_name) {
+        local_name = format!("{base_name}{suffix}");
+        suffix += 1;
+    }
+
+    if let Some(reason) = csharp_ident_error(&local_name) {
+        return Err(CsharpCodegenError::new(format!(
+            "invalid C# field local variable name `{local_name}`: {reason}"
+        )));
+    }
+
+    used_names.insert(local_name.clone());
+    Ok(local_name)
+}
+
+fn is_reserved_loader_local_name(value: &str) -> bool {
+    matches!(
+        value,
+        "bytes"
+            | "count"
+            | "fieldPath"
+            | "i"
+            | "index"
+            | "item"
+            | "itemPath"
+            | "itemReader"
+            | "key"
+            | "keyPath"
+            | "list"
+            | "path"
+            | "rawKey"
+            | "reader"
+            | "result"
+            | "source"
+            | "token"
+            | "typeKey"
+            | "typeName"
+            | "value"
+            | "valuePath"
+            | "valueReader"
+    )
 }
 
 fn polymorphic_loaders(
@@ -721,6 +810,65 @@ fn read_token_expr(
 }
 
 fn read_dict_key_expr(ty: &FieldType, key: &str, path: &str) -> Result<String, CsharpCodegenError> {
+    match ty.non_nullable() {
+        FieldType::String => Ok(key.to_string()),
+        FieldType::Int => Ok(format!("ReadIntKey({key}, {path})")),
+        FieldType::Enum(name) => Ok(format!("ReadEnumKey<{name}>({key}, {path})")),
+        _ => Err(CsharpCodegenError::new(
+            "dictionary key type must be string, int, or enum",
+        )),
+    }
+}
+
+fn read_messagepack_field_expr(
+    ty: &FieldType,
+    reader: &str,
+    path: &str,
+    view: &SchemaView,
+) -> Result<String, CsharpCodegenError> {
+    read_messagepack_expr(ty, reader, path, view)
+}
+
+fn read_messagepack_expr(
+    ty: &FieldType,
+    reader: &str,
+    path: &str,
+    view: &SchemaView,
+) -> Result<String, CsharpCodegenError> {
+    match ty {
+        FieldType::Int => Ok(format!("ReadInt(ref {reader}, {path})")),
+        FieldType::Float => Ok(format!("ReadFloat(ref {reader}, {path})")),
+        FieldType::Bool => Ok(format!("ReadBool(ref {reader}, {path})")),
+        FieldType::String => Ok(format!("ReadString(ref {reader}, {path})")),
+        FieldType::Enum(name) => Ok(format!("ReadEnum<{name}>(ref {reader}, {path})")),
+        FieldType::Type(name) => {
+            if view.range_is_polymorphic(name) {
+                Ok(format!("Load{name}Polymorphic(ref {reader}, {path})"))
+            } else {
+                Ok(format!("Load{name}(ref {reader}, {path})"))
+            }
+        }
+        FieldType::Array(inner) => Ok(format!(
+            "ReadArray(ref {reader}, {path}, static (ref MessagePackReader itemReader, string itemPath) => {})",
+            read_messagepack_expr(inner, "itemReader", "itemPath", view)?
+        )),
+        FieldType::Dict(key, value) => Ok(format!(
+            "ReadDict(ref {reader}, {path}, static (key, keyPath) => {}, static (ref MessagePackReader valueReader, string valuePath) => {})",
+            read_messagepack_dict_key_expr(key, "key", "keyPath")?,
+            read_messagepack_expr(value, "valueReader", "valuePath", view)?
+        )),
+        FieldType::Nullable(inner) => Ok(format!(
+            "ReadNil(ref {reader}, {path}) ? null : {}",
+            read_messagepack_expr(inner, reader, path, view)?
+        )),
+    }
+}
+
+fn read_messagepack_dict_key_expr(
+    ty: &FieldType,
+    key: &str,
+    path: &str,
+) -> Result<String, CsharpCodegenError> {
     match ty.non_nullable() {
         FieldType::String => Ok(key.to_string()),
         FieldType::Int => Ok(format!("ReadIntKey({key}, {path})")),

@@ -4,6 +4,8 @@
 
 JSON 导出是 Excel 加载器的数据导出产物，供运行时加载器直接消费。格式以 `DataModel` 为输入，`@ref` 保留原始 ID，由运行时加载器负责解析引用。
 
+JSON exporter 位于 `coflow-exporter-json`，与 MessagePack exporter 共用 `coflow-exporter-core` 的 schema-aware 遍历规则。
+
 ---
 
 ## 文件结构

@@ -1,9 +1,12 @@
 use serde::Serialize;
 
+use crate::ir::CsharpDataFormat;
+
 #[derive(Debug, Serialize)]
 pub struct CsharpProject {
     pub namespace: String,
     pub database_class: String,
+    pub data_format: CsharpDataFormat,
     pub enums: Vec<CsharpEnum>,
     pub types: Vec<CsharpType>,
     pub database: CsharpDatabase,
@@ -114,7 +117,13 @@ pub struct CsharpLoader {
 #[derive(Debug, Serialize)]
 pub struct CsharpLoadField {
     pub property: String,
+    pub source_name: String,
+    pub local_name: String,
+    pub type_name: String,
     pub read_expr: String,
+    pub messagepack_read_expr: String,
+    pub default_expr: Option<String>,
+    pub is_required: bool,
 }
 
 #[derive(Debug, Serialize)]
