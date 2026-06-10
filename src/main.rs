@@ -13,23 +13,24 @@
 )]
 
 use clap::{Args, Parser, Subcommand};
-use coflow_cft::CftDiagnostic;
+use coflow_cft::{CftContainer, CftDiagnostic};
 use coflow_codegen_csharp_json::{generate_csharp_json, CsharpCodegenOptions};
 use coflow_codegen_csharp_messagepack::generate_csharp_messagepack;
 use coflow_exporter_json::export_json_model;
 use coflow_exporter_messagepack::export_messagepack_model;
 use coflow_loader_excel::{
-    load_excel, ExcelDiagnostic, ExcelDiagnostics, ExcelLoadError, ExcelLocation, ExcelSheet,
-    ExcelSource,
+    load_excel, ExcelDiagnostic, ExcelDiagnostics, ExcelLoadError, ExcelLoadOutput, ExcelLocation,
+    ExcelSheet, ExcelSource,
 };
 use coflow_project::{
-    compile_schema_project, dedupe_cft_diagnostics, DiagnosticJson, Project, RelatedJson,
+    compile_schema_project, dedupe_cft_diagnostics, DiagnosticJson, OutputConfig, Project,
+    RelatedJson, SchemaBuild,
 };
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -46,18 +47,30 @@ fn main() -> ExitCode {
 fn run() -> Result<bool, String> {
     match Cli::parse().command {
         Command::Init(args) => init_project(args),
-        Command::Cft(command) => match &command.command {
-            CftCommand::Check(args) => cft_check(args),
-            CftCommand::Lsp(args) => cft_lsp(args),
-        },
+        Command::Cft(command) => run_cft(&command),
         Command::Check(args) => project_check(&args),
-        Command::Export(command) => match &command.command {
-            ExportCommand::Json(args) => export_json(args),
-            ExportCommand::Messagepack(args) => export_messagepack(args),
-        },
-        Command::Codegen(command) => match &command.command {
-            CodegenCommand::Csharp(args) => codegen_csharp(args),
-        },
+        Command::Export(command) => run_export(&command),
+        Command::Codegen(command) => run_codegen(&command),
+    }
+}
+
+fn run_cft(command: &CftArgs) -> Result<bool, String> {
+    match &command.command {
+        CftCommand::Check(args) => cft_check(args),
+        CftCommand::Lsp(args) => cft_lsp(args),
+    }
+}
+
+fn run_export(command: &ExportArgs) -> Result<bool, String> {
+    match &command.command {
+        ExportCommand::Json(args) => export_json(args),
+        ExportCommand::Messagepack(args) => export_messagepack(args),
+    }
+}
+
+fn run_codegen(command: &CodegenArgs) -> Result<bool, String> {
+    match &command.command {
+        CodegenCommand::Csharp(args) => codegen_csharp(args),
     }
 }
 
@@ -264,94 +277,30 @@ fn cft_lsp(args: &CftLspArgs) -> Result<bool, String> {
 
 fn project_check(args: &ProjectCheckArgs) -> Result<bool, String> {
     let project = Project::open(args.config_or_dir.as_deref())?;
-    let build = compile_schema_project(&project, None)?;
-    let cft_diagnostics = dedupe_cft_diagnostics(build.diagnostics);
-    if !cft_diagnostics.is_empty() {
-        if args.json {
-            write_json_diagnostics(
-                cft_diagnostics
-                    .iter()
-                    .map(|diagnostic| {
-                        DiagnosticJson::from_cft(diagnostic, &build.sources, &build.paths)
-                    })
-                    .collect(),
-            )?;
-        } else {
-            write_human_cft_diagnostics(&cft_diagnostics, &build.sources, &build.paths)?;
-        }
+    let Some(schema) = compile_project_schema(&project, args.json)? else {
+        return Ok(false);
+    };
+    if load_project_excel(&project, &schema, args.json)?.is_none() {
         return Ok(false);
     }
-
-    let Some(schema) = build.container else {
-        return Err("schema compilation did not produce a container".to_string());
-    };
-    let sources = excel_sources(&project);
-    match load_excel(&schema, &sources) {
-        Ok(output) => {
-            if let Some(checks) = output.check_diagnostics {
-                if args.json {
-                    write_json_diagnostics(diagnostics_from_excel_checks(&checks))?;
-                } else {
-                    write_human_excel_diagnostics(&checks)?;
-                }
-                Ok(false)
-            } else {
-                if args.json {
-                    write_json_diagnostics(Vec::new())?;
-                } else {
-                    println!("Project check passed: {}", project.config_path.display());
-                }
-                Ok(true)
-            }
-        }
-        Err(err) => {
-            if args.json {
-                write_json_diagnostics(diagnostics_from_excel_error(&err))?;
-            } else {
-                write_human_excel_error(&err)?;
-            }
-            Ok(false)
-        }
+    if args.json {
+        write_json_diagnostics(Vec::new())?;
+    } else {
+        println!("Project check passed: {}", project.config_path.display());
     }
+    Ok(true)
 }
 
 fn export_json(args: &ExportJsonArgs) -> Result<bool, String> {
     let project = Project::open(args.config_or_dir.as_deref())?;
-    let output = project.config.outputs.data.as_ref().ok_or_else(|| {
-        "coflow.yaml missing outputs.data; required `type: json` and `dir` for `coflow export json`"
-            .to_string()
-    })?;
-    if output.output_type != "json" {
-        return Err(format!(
-            "coflow.yaml outputs.data.type is `{}`; required `json` for `coflow export json`",
-            output.output_type
-        ));
-    }
-    let dir = args.out_dir.as_deref().map_or_else(
-        || project.resolve_path(&output.dir),
-        |path| project.resolve_path(path),
-    );
-    let build = compile_schema_project(&project, None)?;
-    let cft_diagnostics = dedupe_cft_diagnostics(build.diagnostics);
-    if !cft_diagnostics.is_empty() {
-        write_human_cft_diagnostics(&cft_diagnostics, &build.sources, &build.paths)?;
+    let output = required_data_output(&project, "json", "coflow export json")?;
+    let dir = output_dir(&project, output, args.out_dir.as_deref());
+    let Some(schema) = compile_project_schema(&project, false)? else {
         return Ok(false);
-    }
-    let Some(schema) = build.container else {
-        return Err("schema compilation did not produce a container".to_string());
     };
-    let sources = excel_sources(&project);
-    let load_output = match load_excel(&schema, &sources) {
-        Ok(output) => output,
-        Err(err) => {
-            write_human_excel_error(&err)?;
-            return Ok(false);
-        }
-    };
-    if let Some(checks) = load_output.check_diagnostics {
-        write_human_excel_diagnostics(&checks)?;
+    let Some(load_output) = load_project_excel(&project, &schema, false)? else {
         return Ok(false);
-    }
+    };
 
     let tables = export_json_model(&schema, &load_output.model)
         .map_err(|err| format!("failed to export JSON model: {err}"))?;
@@ -370,41 +319,14 @@ fn export_json(args: &ExportJsonArgs) -> Result<bool, String> {
 
 fn export_messagepack(args: &ExportMessagePackArgs) -> Result<bool, String> {
     let project = Project::open(args.config_or_dir.as_deref())?;
-    let output = project.config.outputs.data.as_ref().ok_or_else(|| {
-        "coflow.yaml missing outputs.data; required `type: messagepack` and `dir` for `coflow export messagepack`"
-            .to_string()
-    })?;
-    if output.output_type != "messagepack" {
-        return Err(format!(
-            "coflow.yaml outputs.data.type is `{}`; required `messagepack` for `coflow export messagepack`",
-            output.output_type
-        ));
-    }
-    let dir = args.out_dir.as_deref().map_or_else(
-        || project.resolve_path(&output.dir),
-        |path| project.resolve_path(path),
-    );
-    let build = compile_schema_project(&project, None)?;
-    let cft_diagnostics = dedupe_cft_diagnostics(build.diagnostics);
-    if !cft_diagnostics.is_empty() {
-        write_human_cft_diagnostics(&cft_diagnostics, &build.sources, &build.paths)?;
+    let output = required_data_output(&project, "messagepack", "coflow export messagepack")?;
+    let dir = output_dir(&project, output, args.out_dir.as_deref());
+    let Some(schema) = compile_project_schema(&project, false)? else {
         return Ok(false);
-    }
-    let Some(schema) = build.container else {
-        return Err("schema compilation did not produce a container".to_string());
     };
-    let sources = excel_sources(&project);
-    let load_output = match load_excel(&schema, &sources) {
-        Ok(output) => output,
-        Err(err) => {
-            write_human_excel_error(&err)?;
-            return Ok(false);
-        }
-    };
-    if let Some(checks) = load_output.check_diagnostics {
-        write_human_excel_diagnostics(&checks)?;
+    let Some(load_output) = load_project_excel(&project, &schema, false)? else {
         return Ok(false);
-    }
+    };
 
     let tables = export_messagepack_model(&schema, &load_output.model)
         .map_err(|err| format!("failed to export MessagePack model: {err}"))?;
@@ -421,21 +343,7 @@ fn export_messagepack(args: &ExportMessagePackArgs) -> Result<bool, String> {
 
 fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, String> {
     let project = Project::open(args.config_or_dir.as_deref())?;
-    let output = project
-        .config
-        .outputs
-        .code
-        .as_ref()
-        .ok_or_else(|| {
-            "coflow.yaml missing outputs.code; required `type: csharp` and `dir` for `coflow codegen csharp`"
-                .to_string()
-        })?;
-    if output.output_type != "csharp" {
-        return Err(format!(
-            "coflow.yaml outputs.code.type is `{}`; required `csharp` for `coflow codegen csharp`",
-            output.output_type
-        ));
-    }
+    let output = required_code_output(&project, "csharp", "coflow codegen csharp")?;
     let data_output = project.config.outputs.data.as_ref().ok_or_else(|| {
         "coflow.yaml missing outputs.data; required `type: json` or `type: messagepack` for `coflow codegen csharp`"
             .to_string()
@@ -449,23 +357,14 @@ fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, String> {
             ));
         }
     };
-    let dir = args.out_dir.as_deref().map_or_else(
-        || project.resolve_path(&output.dir),
-        |path| project.resolve_path(path),
-    );
+    let dir = output_dir(&project, output, args.out_dir.as_deref());
     let namespace = args
         .namespace
         .as_deref()
         .or(output.namespace.as_deref())
         .unwrap_or("Game.Config");
-    let build = compile_schema_project(&project, None)?;
-    let cft_diagnostics = dedupe_cft_diagnostics(build.diagnostics);
-    if !cft_diagnostics.is_empty() {
-        write_human_cft_diagnostics(&cft_diagnostics, &build.sources, &build.paths)?;
+    let Some(schema) = compile_project_schema(&project, false)? else {
         return Ok(false);
-    }
-    let Some(schema) = build.container else {
-        return Err("schema compilation did not produce a container".to_string());
     };
 
     let options = CsharpCodegenOptions::new(namespace);
@@ -484,6 +383,127 @@ fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, String> {
     }
     println!("C# code generated to {}", dir.display());
     Ok(true)
+}
+
+fn required_data_output<'a>(
+    project: &'a Project,
+    required_type: &str,
+    command: &str,
+) -> Result<&'a OutputConfig, String> {
+    let output = project.config.outputs.data.as_ref().ok_or_else(|| {
+        format!("coflow.yaml missing outputs.data; required `type: {required_type}` and `dir` for `{command}`")
+    })?;
+    require_output_type(output, "data", required_type, command)?;
+    Ok(output)
+}
+
+fn required_code_output<'a>(
+    project: &'a Project,
+    required_type: &str,
+    command: &str,
+) -> Result<&'a OutputConfig, String> {
+    let output = project.config.outputs.code.as_ref().ok_or_else(|| {
+        format!("coflow.yaml missing outputs.code; required `type: {required_type}` and `dir` for `{command}`")
+    })?;
+    require_output_type(output, "code", required_type, command)?;
+    Ok(output)
+}
+
+fn require_output_type(
+    output: &OutputConfig,
+    output_name: &str,
+    required_type: &str,
+    command: &str,
+) -> Result<(), String> {
+    if output.output_type == required_type {
+        Ok(())
+    } else {
+        Err(format!(
+            "coflow.yaml outputs.{output_name}.type is `{}`; required `{required_type}` for `{command}`",
+            output.output_type
+        ))
+    }
+}
+
+fn output_dir(project: &Project, output: &OutputConfig, override_dir: Option<&Path>) -> PathBuf {
+    override_dir.map_or_else(
+        || project.resolve_path(&output.dir),
+        |path| project.resolve_path(path),
+    )
+}
+
+fn compile_project_schema(project: &Project, json: bool) -> Result<Option<CftContainer>, String> {
+    let build = compile_schema_project(project, None)?;
+    if !report_cft_diagnostics(&build, json)? {
+        return Ok(None);
+    }
+    build
+        .container
+        .ok_or_else(|| "schema compilation did not produce a container".to_string())
+        .map(Some)
+}
+
+fn report_cft_diagnostics(build: &SchemaBuild, json: bool) -> Result<bool, String> {
+    let diagnostics = dedupe_cft_diagnostics(build.diagnostics.clone());
+    if diagnostics.is_empty() {
+        return Ok(true);
+    }
+    if json {
+        write_json_diagnostics(
+            diagnostics
+                .iter()
+                .map(|diagnostic| {
+                    DiagnosticJson::from_cft(diagnostic, &build.sources, &build.paths)
+                })
+                .collect(),
+        )?;
+    } else {
+        write_human_cft_diagnostics(&diagnostics, &build.sources, &build.paths)?;
+    }
+    Ok(false)
+}
+
+fn load_project_excel(
+    project: &Project,
+    schema: &CftContainer,
+    json: bool,
+) -> Result<Option<ExcelLoadOutput>, String> {
+    let sources = excel_sources(project);
+    match load_excel(schema, &sources) {
+        Ok(output) => report_excel_checks(output, json),
+        Err(err) => {
+            report_excel_error(&err, json)?;
+            Ok(None)
+        }
+    }
+}
+
+fn report_excel_checks(
+    output: ExcelLoadOutput,
+    json: bool,
+) -> Result<Option<ExcelLoadOutput>, String> {
+    if let Some(checks) = &output.check_diagnostics {
+        report_excel_diagnostics(checks, json)?;
+        Ok(None)
+    } else {
+        Ok(Some(output))
+    }
+}
+
+fn report_excel_diagnostics(diagnostics: &ExcelDiagnostics, json: bool) -> Result<(), String> {
+    if json {
+        write_json_diagnostics(diagnostics_from_excel_checks(diagnostics))
+    } else {
+        write_human_excel_diagnostics(diagnostics)
+    }
+}
+
+fn report_excel_error(err: &ExcelLoadError, json: bool) -> Result<(), String> {
+    if json {
+        write_json_diagnostics(diagnostics_from_excel_error(err))
+    } else {
+        write_human_excel_error(err)
+    }
 }
 
 fn excel_sources(project: &Project) -> Vec<ExcelSource> {
