@@ -22,7 +22,7 @@
 - 根据 `outputs.data.type` 调用 JSON 或 MessagePack 导出：
   - `json`：调用 `coflow-exporter-json`，输出 `<TypeName>.json`。
   - `messagepack`：调用 `coflow-exporter-messagepack`，输出 `<TypeName>.msgpack`。
-- 调用 C# codegen，并把项目配置中的 codegen options 传给 `coflow-codegen-csharp`。
+- 调用 C# codegen，并把项目配置中的 codegen options 传给 `coflow-codegen-csharp-json` 或 `coflow-codegen-csharp-messagepack`。
 
 ---
 

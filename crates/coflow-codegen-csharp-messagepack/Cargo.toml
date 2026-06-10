@@ -1,0 +1,18 @@
+[package]
+name = "coflow-codegen-csharp-messagepack"
+version = "0.1.0"
+edition = "2021"
+description = "C# runtime code generator for Coflow MessagePack data."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/wtlll/ScriptForGame"
+readme = "../../README.md"
+keywords = ["config", "game-data", "codegen", "csharp", "messagepack"]
+categories = ["config", "game-development"]
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+coflow-cft = { path = "../coflow-cft" }
+coflow-codegen-csharp = { path = "../coflow-codegen-csharp" }

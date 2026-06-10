@@ -251,7 +251,8 @@ dependencies = [
  "coflow-cft",
  "coflow-cft-lsp",
  "coflow-checker",
- "coflow-codegen-csharp",
+ "coflow-codegen-csharp-json",
+ "coflow-codegen-csharp-messagepack",
  "coflow-exporter-json",
  "coflow-exporter-messagepack",
  "coflow-loader-excel",
@@ -302,6 +303,22 @@ dependencies = [
  "coflow-cft",
  "serde",
  "tera",
+]
+
+[[package]]
+name = "coflow-codegen-csharp-json"
+version = "0.1.0"
+dependencies = [
+ "coflow-cft",
+ "coflow-codegen-csharp",
+]
+
+[[package]]
+name = "coflow-codegen-csharp-messagepack"
+version = "0.1.0"
+dependencies = [
+ "coflow-cft",
+ "coflow-codegen-csharp",
 ]
 
 [[package]]

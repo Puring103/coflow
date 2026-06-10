@@ -15,7 +15,6 @@ use serde::Serialize;
 pub struct CsharpCodegenOptions {
     pub namespace: String,
     pub database_class: String,
-    pub data_format: CsharpDataFormat,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -32,7 +31,6 @@ impl CsharpCodegenOptions {
         Self {
             namespace: namespace.into(),
             database_class: "GameConfig".to_string(),
-            data_format: CsharpDataFormat::Json,
         }
     }
 
@@ -41,17 +39,12 @@ impl CsharpCodegenOptions {
         self.database_class = database_class.into();
         self
     }
-
-    #[must_use]
-    pub const fn with_data_format(mut self, data_format: CsharpDataFormat) -> Self {
-        self.data_format = data_format;
-        self
-    }
 }
 
 pub fn build_project(
     schema: &CftContainer,
     options: &CsharpCodegenOptions,
+    data_format: CsharpDataFormat,
 ) -> Result<CsharpProject, CsharpCodegenError> {
     validate_options(options)?;
     validate_schema_names(schema)?;
@@ -70,13 +63,11 @@ pub fn build_project(
         .collect::<Vec<_>>();
 
     let tables = view.table_names();
-    let database =
-        build_csharp_database(&view, &tables, &options.database_class, options.data_format)?;
+    let database = build_csharp_database(&view, &tables, &options.database_class, data_format)?;
 
     Ok(CsharpProject {
         namespace: options.namespace.clone(),
         database_class: options.database_class.clone(),
-        data_format: options.data_format,
         enums,
         types,
         database,
