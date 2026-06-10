@@ -13,6 +13,9 @@ use std::process::{ChildStdout, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+const TEST_SEM_ENUM: u64 = 2;
+const TEST_SEM_ENUM_MEMBER: u64 = 3;
+
 fn coflow() -> Command {
     Command::new(env!("CARGO_BIN_EXE_coflow"))
 }
@@ -724,6 +727,476 @@ fn cft_lsp_publishes_project_diagnostics_for_open_document() {
 }
 
 #[test]
+fn cft_lsp_prefers_open_document_uri_for_project_diagnostics() {
+    let suffix = format!(
+        "{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos()
+    );
+    let project_dir = std::env::temp_dir().join(format!("coflow lsp uri alias test {suffix}"));
+    let schema_dir = project_dir.join("schema");
+    if project_dir.exists() {
+        std::fs::remove_dir_all(&project_dir).expect("clean old temp dir");
+    }
+    std::fs::create_dir_all(&schema_dir).expect("create schema dir");
+    std::fs::write(project_dir.join("coflow.yaml"), "schema: schema/\n").expect("write config");
+    let schema_path = schema_dir.join("main.cft");
+    std::fs::write(&schema_path, "type Item { id: string; }\n").expect("write schema");
+
+    let mut child = coflow()
+        .args(["cft", "lsp", project_dir.to_str().expect("utf8 temp path")])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn coflow lsp");
+
+    let mut stdin = child.stdin.take().expect("lsp stdin");
+    let mut stdout = child.stdout.take().expect("lsp stdout");
+
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {}
+        }),
+    );
+    let initialize = read_lsp_response(&mut stdout, 1);
+    assert_eq!(initialize["id"], 1);
+
+    let schema_path = std::fs::canonicalize(&schema_path).expect("schema path");
+    let uri = file_uri(&schema_path);
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": uri,
+                    "languageId": "cft",
+                    "version": 1,
+                    "text": "type Broken { missing: Missing; }"
+                }
+            }
+        }),
+    );
+
+    let publish = read_lsp(&mut stdout);
+    assert_eq!(publish["method"], "textDocument/publishDiagnostics");
+    assert_eq!(publish["params"]["uri"], uri);
+    let diagnostics = publish["params"]["diagnostics"]
+        .as_array()
+        .expect("diagnostics array");
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic["code"] == "CFT-SCHEMA-006"),
+        "diagnostics: {diagnostics:?}"
+    );
+
+    shutdown_lsp(stdin, &mut stdout, &mut child, 2);
+    std::fs::remove_dir_all(project_dir).expect("clean temp dir");
+}
+
+#[test]
+fn cft_lsp_definitions_survive_unrelated_schema_diagnostics() {
+    let suffix = unique_suffix();
+    let project_dir = std::env::temp_dir().join(format!("coflow-lsp-definition-test-{suffix}"));
+    let _cleanup = TempDirCleanup(project_dir.clone());
+    let schema_dir = project_dir.join("schema");
+    std::fs::create_dir_all(&schema_dir).expect("create schema dir");
+    std::fs::write(project_dir.join("coflow.yaml"), "schema: schema/\n").expect("write config");
+    let source_path = schema_dir.join("source.cft");
+    let target_path = schema_dir.join("target.cft");
+    let broken_path = schema_dir.join("broken.cft");
+    let source = "type UsesTarget { target: Target; }\n";
+    let target = "type Target { id: string; }\n";
+    std::fs::write(&source_path, source).expect("write source schema");
+    std::fs::write(&target_path, target).expect("write target schema");
+    std::fs::write(&broken_path, "type Broken { missing: Missing; }\n")
+        .expect("write broken schema");
+
+    let mut child = coflow()
+        .args(["cft", "lsp", project_dir.to_str().expect("utf8 temp path")])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn coflow lsp");
+
+    let mut stdin = child.stdin.take().expect("lsp stdin");
+    let mut stdout = child.stdout.take().expect("lsp stdout");
+
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {}
+        }),
+    );
+    let initialize = read_lsp_response(&mut stdout, 1);
+    assert_eq!(initialize["id"], 1);
+
+    let source_path = std::fs::canonicalize(&source_path).expect("source path");
+    let source_uri = file_uri(&source_path);
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": source_uri,
+                    "languageId": "cft",
+                    "version": 1,
+                    "text": source
+                }
+            }
+        }),
+    );
+    let publish = read_lsp(&mut stdout);
+    assert_eq!(publish["method"], "textDocument/publishDiagnostics");
+
+    let definitions = request_definition_at(
+        &mut stdin,
+        &mut stdout,
+        2,
+        &source_uri,
+        source,
+        position_after(source, "target: Target"),
+    );
+    let definitions = definitions.as_array().expect("definition array");
+    assert!(
+        definitions.iter().any(|location| {
+            location["uri"]
+                .as_str()
+                .is_some_and(|uri| uri.ends_with("target.cft"))
+        }),
+        "definitions: {definitions:?}"
+    );
+
+    shutdown_lsp(stdin, &mut stdout, &mut child, 3);
+}
+
+#[test]
+fn cft_lsp_enum_variant_definitions_survive_unrelated_schema_diagnostics() {
+    let suffix = unique_suffix();
+    let project_dir =
+        std::env::temp_dir().join(format!("coflow-lsp-enum-definition-test-{suffix}"));
+    let _cleanup = TempDirCleanup(project_dir.clone());
+    let schema_dir = project_dir.join("schema");
+    std::fs::create_dir_all(&schema_dir).expect("create schema dir");
+    std::fs::write(project_dir.join("coflow.yaml"), "schema: schema/\n").expect("write config");
+    let source_path = schema_dir.join("source.cft");
+    let broken_path = schema_dir.join("broken.cft");
+    let source = r#"enum ExampleRarity {
+  Common = 0,
+  Rare = 10,
+}
+
+type UsesEnum {
+  rarity: ExampleRarity = ExampleRarity.Common;
+  check {
+    rarity >= ExampleRarity.Common;
+  }
+}
+"#;
+    std::fs::write(&source_path, source).expect("write source schema");
+    std::fs::write(&broken_path, "type Broken { missing: Missing; }\n")
+        .expect("write broken schema");
+
+    let mut child = coflow()
+        .args(["cft", "lsp", project_dir.to_str().expect("utf8 temp path")])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn coflow lsp");
+
+    let mut stdin = child.stdin.take().expect("lsp stdin");
+    let mut stdout = child.stdout.take().expect("lsp stdout");
+
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {}
+        }),
+    );
+    let initialize = read_lsp_response(&mut stdout, 1);
+    assert_eq!(initialize["id"], 1);
+
+    let source_path = std::fs::canonicalize(&source_path).expect("source path");
+    let source_uri = file_uri(&source_path);
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": source_uri,
+                    "languageId": "cft",
+                    "version": 1,
+                    "text": source
+                }
+            }
+        }),
+    );
+    let publish = read_lsp(&mut stdout);
+    assert_eq!(publish["method"], "textDocument/publishDiagnostics");
+
+    let definitions = request_definition_at(
+        &mut stdin,
+        &mut stdout,
+        2,
+        &source_uri,
+        source,
+        position_after(source, "rarity >= ExampleRarity.Common"),
+    );
+    let definitions = definitions.as_array().expect("definition array");
+    assert!(
+        definitions.iter().any(|location| {
+            location["uri"] == source_uri
+                && location["range"]
+                    == serde_json::json!({
+                        "start": { "line": 1, "character": 2 },
+                        "end": { "line": 1, "character": 8 }
+                    })
+        }),
+        "definitions: {definitions:?}"
+    );
+
+    shutdown_lsp(stdin, &mut stdout, &mut child, 3);
+}
+
+#[test]
+fn cft_lsp_semantic_tokens_classify_check_enum_values() {
+    let suffix = unique_suffix();
+    let project_dir = std::env::temp_dir().join(format!("coflow-lsp-semantic-test-{suffix}"));
+    let _cleanup = TempDirCleanup(project_dir.clone());
+    let schema_dir = project_dir.join("schema");
+    std::fs::create_dir_all(&schema_dir).expect("create schema dir");
+    std::fs::write(project_dir.join("coflow.yaml"), "schema: schema/\n").expect("write config");
+    let source_path = schema_dir.join("source.cft");
+    let source = r#"enum ExampleRarity {
+  Common = 0,
+}
+
+enum ExampleDamageType {
+  Physical = 0,
+}
+
+@flag
+enum ExamplePermission {
+  Read = 1,
+}
+
+type UsesEnum {
+  rarity: ExampleRarity = ExampleRarity.Common;
+  damage_type: ExampleDamageType = ExampleDamageType.Physical;
+  permissions: ExamplePermission = ExamplePermission.Read;
+  check {
+    rarity >= ExampleRarity.Common;
+    damage_type != ExampleDamageType.Physical;
+    (permissions & ExamplePermission.Read) != ExamplePermission(0);
+  }
+}
+"#;
+    std::fs::write(&source_path, source).expect("write source schema");
+
+    let mut child = coflow()
+        .args(["cft", "lsp", project_dir.to_str().expect("utf8 temp path")])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn coflow lsp");
+
+    let mut stdin = child.stdin.take().expect("lsp stdin");
+    let mut stdout = child.stdout.take().expect("lsp stdout");
+
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {}
+        }),
+    );
+    let initialize = read_lsp_response(&mut stdout, 1);
+    assert_eq!(initialize["id"], 1);
+
+    let source_path = std::fs::canonicalize(&source_path).expect("source path");
+    let source_uri = file_uri(&source_path);
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": source_uri,
+                    "languageId": "cft",
+                    "version": 1,
+                    "text": source
+                }
+            }
+        }),
+    );
+    let publish = read_lsp(&mut stdout);
+    assert_eq!(publish["method"], "textDocument/publishDiagnostics");
+
+    let tokens = request_semantic_tokens(&mut stdin, &mut stdout, 2, &source_uri);
+    assert_semantic_token_at(
+        &tokens,
+        source,
+        position_after(source, "rarity >= ExampleRarity"),
+        TEST_SEM_ENUM,
+    );
+    assert_semantic_token_at(
+        &tokens,
+        source,
+        position_after(source, "rarity >= ExampleRarity.Common"),
+        TEST_SEM_ENUM_MEMBER,
+    );
+    assert_semantic_token_at(
+        &tokens,
+        source,
+        position_after(source, "damage_type != ExampleDamageType"),
+        TEST_SEM_ENUM,
+    );
+    assert_semantic_token_at(
+        &tokens,
+        source,
+        position_after(source, "damage_type != ExampleDamageType.Physical"),
+        TEST_SEM_ENUM_MEMBER,
+    );
+    assert_semantic_token_at(
+        &tokens,
+        source,
+        position_after(source, "permissions & ExamplePermission.Read"),
+        TEST_SEM_ENUM_MEMBER,
+    );
+    assert_semantic_token_at(
+        &tokens,
+        source,
+        position_after(source, "!= ExamplePermission"),
+        TEST_SEM_ENUM,
+    );
+
+    shutdown_lsp(stdin, &mut stdout, &mut child, 3);
+}
+
+#[test]
+fn cft_lsp_definitions_resolve_example_cross_file_enum_references() {
+    let mut child = coflow()
+        .args(["cft", "lsp", "examples/cft"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn coflow lsp");
+
+    let mut stdin = child.stdin.take().expect("lsp stdin");
+    let mut stdout = child.stdout.take().expect("lsp stdout");
+
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {}
+        }),
+    );
+    let initialize = read_lsp_response(&mut stdout, 1);
+    assert_eq!(initialize["id"], 1);
+
+    let schema_path =
+        std::fs::canonicalize("examples/cft/03_types_fields_defaults.cft").expect("schema path");
+    let uri = file_uri(&schema_path);
+    let source = std::fs::read_to_string(&schema_path).expect("schema source");
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": uri,
+                    "languageId": "cft",
+                    "version": 1,
+                    "text": source
+                }
+            }
+        }),
+    );
+    let publish = read_lsp(&mut stdout);
+    assert_eq!(publish["method"], "textDocument/publishDiagnostics");
+
+    let enum_type_definition = request_definition_at(
+        &mut stdin,
+        &mut stdout,
+        2,
+        &uri,
+        &source,
+        position_after(&source, "rarity: ExampleRarity"),
+    );
+    assert_definition_uri_matches_path(
+        &enum_type_definition,
+        "examples/cft/02_enums_and_flags.cft",
+    );
+
+    let enum_variant_definition = request_definition_at(
+        &mut stdin,
+        &mut stdout,
+        3,
+        &uri,
+        &source,
+        position_after(&source, "ExampleRarity.Common"),
+    );
+    assert_definition_uri_matches_path(
+        &enum_variant_definition,
+        "examples/cft/02_enums_and_flags.cft",
+    );
+
+    let enum_type_definition_from_middle = request_definition_at(
+        &mut stdin,
+        &mut stdout,
+        4,
+        &uri,
+        &source,
+        position_inside(&source, "rarity: ExampleRarity", "ExampleRarity", 4),
+    );
+    assert_definition_uri_matches_path(
+        &enum_type_definition_from_middle,
+        "examples/cft/02_enums_and_flags.cft",
+    );
+
+    let enum_variant_definition_from_middle = request_definition_at(
+        &mut stdin,
+        &mut stdout,
+        5,
+        &uri,
+        &source,
+        position_inside(&source, "ExampleRarity.Common", "Common", 2),
+    );
+    assert_definition_uri_matches_path(
+        &enum_variant_definition_from_middle,
+        "examples/cft/02_enums_and_flags.cft",
+    );
+
+    shutdown_lsp(stdin, &mut stdout, &mut child, 6);
+}
+
+#[test]
 fn cft_lsp_serves_editor_language_features() {
     let mut child = coflow()
         .args(["cft", "lsp", "examples/rpg"])
@@ -1001,9 +1474,136 @@ fn request_completion_at(
     request_completion(stdin, stdout, id, uri, line, character)
 }
 
+fn request_definition(
+    stdin: &mut impl Write,
+    stdout: &mut ChildStdout,
+    id: u64,
+    uri: &str,
+    line: u64,
+    character: u64,
+) -> Value {
+    write_lsp(
+        stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "textDocument/definition",
+            "params": {
+                "textDocument": { "uri": uri },
+                "position": { "line": line, "character": character }
+            }
+        }),
+    );
+    read_lsp_response(stdout, id)["result"].clone()
+}
+
+fn request_definition_at(
+    stdin: &mut impl Write,
+    stdout: &mut ChildStdout,
+    id: u64,
+    uri: &str,
+    source: &str,
+    byte_offset: usize,
+) -> Value {
+    let (line, character) = lsp_position(source, byte_offset);
+    request_definition(stdin, stdout, id, uri, line, character)
+}
+
+fn request_semantic_tokens(
+    stdin: &mut impl Write,
+    stdout: &mut ChildStdout,
+    id: u64,
+    uri: &str,
+) -> Vec<TestSemanticToken> {
+    write_lsp(
+        stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "textDocument/semanticTokens/full",
+            "params": {
+                "textDocument": { "uri": uri }
+            }
+        }),
+    );
+    let response = read_lsp_response(stdout, id);
+    let data = response["result"]["data"]
+        .as_array()
+        .unwrap_or_else(|| panic!("semantic token data: {response:?}"));
+    assert_eq!(data.len() % 5, 0, "semantic token data: {data:?}");
+
+    let mut line = 0_u64;
+    let mut character = 0_u64;
+    let mut tokens = Vec::new();
+    for chunk in data.chunks(5) {
+        let delta_line = chunk[0].as_u64().expect("delta line");
+        let delta_start = chunk[1].as_u64().expect("delta start");
+        line += delta_line;
+        if delta_line == 0 {
+            character += delta_start;
+        } else {
+            character = delta_start;
+        }
+        tokens.push(TestSemanticToken {
+            line,
+            character,
+            length: chunk[2].as_u64().expect("length"),
+            token_type: chunk[3].as_u64().expect("token type"),
+        });
+    }
+    tokens
+}
+
+#[derive(Debug)]
+struct TestSemanticToken {
+    line: u64,
+    character: u64,
+    length: u64,
+    token_type: u64,
+}
+
+fn assert_semantic_token_at(
+    tokens: &[TestSemanticToken],
+    source: &str,
+    byte_offset: usize,
+    token_type: u64,
+) {
+    let (line, character) = lsp_position(source, byte_offset);
+    assert!(
+        tokens.iter().any(|token| {
+            token.line == line
+                && token.character <= character
+                && character <= token.character + token.length
+                && token.token_type == token_type
+        }),
+        "expected token type {token_type} at {line}:{character} in {tokens:?}"
+    );
+}
+
+fn assert_definition_uri_matches_path(definitions: &Value, path: &str) {
+    let path = std::fs::canonicalize(path).expect("definition target path");
+    let expected = file_uri(&path);
+    let definitions = definitions.as_array().expect("definition array");
+    assert!(
+        definitions
+            .iter()
+            .any(|location| location["uri"].as_str() == Some(expected.as_str())),
+        "expected definition URI `{expected}` in {definitions:?}"
+    );
+}
+
 fn position_after(source: &str, needle: &str) -> usize {
     find_line_ending_insensitive(source, needle)
         .unwrap_or_else(|| panic!("source should contain `{needle}`"))
+}
+
+fn position_inside(source: &str, context: &str, needle: &str, character_offset: usize) -> usize {
+    let context_end = position_after(source, context);
+    let context_start = context_end - context.len();
+    let relative = context
+        .find(needle)
+        .unwrap_or_else(|| panic!("context `{context}` should contain `{needle}`"));
+    context_start + relative + character_offset.min(needle.len())
 }
 
 fn find_line_ending_insensitive(source: &str, needle: &str) -> Option<usize> {
