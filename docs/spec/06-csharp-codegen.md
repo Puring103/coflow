@@ -110,7 +110,15 @@ crates/coflow-codegen-csharp/
   templates/
     enum.cs.tera
     type.cs.tera
-    database.cs.tera
+    database_json.cs.tera
+    database_json_loaders.cs.tera
+    database_json_readers.cs.tera
+    database_messagepack.cs.tera
+    database_messagepack_loaders.cs.tera
+    database_messagepack_readers.cs.tera
+    database_common_members.cs.tera
+    database_common_resolve.cs.tera
+    database_common_indexes.cs.tera
     load_exception.cs.tera
 ```
 

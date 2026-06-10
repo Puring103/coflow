@@ -1,0 +1,30 @@
+{% for table in project.database.tables %}    public IReadOnlyList<{{ table.name }}> {{ table.list_property }} { get; }
+{% endfor %}{% for table in project.database.tables %}    private readonly Dictionary<{{ table.id_type }}, {{ table.name }}> {{ table.index_field }};
+{% endfor %}{% for ref_index in project.database.ref_indexes %}    private readonly Dictionary<{{ ref_index.target_id_type }}, {{ ref_index.target_name }}> {{ ref_index.index_field }};
+{% endfor %}{% for index in project.database.indexes %}    private readonly Dictionary<{{ index.key_type }}, List<{{ index.table_name }}>> {{ index.storage_field }};
+{% endfor %}
+    private {{ project.database_class }}(
+{% for parameter in project.database.constructor_parameters %}        {{ parameter.ty }} {{ parameter.name }}{% if not loop.last %},{% endif %}
+{% endfor %}    )
+    {
+{% for table in project.database.tables %}        {{ table.list_property }} = {{ table.list_var }};
+        {{ table.index_field }} = {{ table.index_var }};
+
+{% endfor %}{% for ref_index in project.database.ref_indexes %}        {{ ref_index.index_field }} = {{ ref_index.parameter_name }};
+{% endfor %}{% for index in project.database.indexes %}        {{ index.storage_field }} = {{ index.parameter_name }};
+{% endfor %}    }
+
+{% for table in project.database.tables %}    public {{ table.name }}? Find{{ table.name }}({{ table.id_type }} id) =>
+        {{ table.index_field }}.TryGetValue(id, out var value) ? value : null;
+
+{% endfor %}{% for index in project.database.indexes %}    public IReadOnlyList<{{ index.table_name }}> Get{{ index.list_property }}By{{ index.field_property }}({{ index.key_type }} value) =>
+        {{ index.storage_field }}.TryGetValue(value, out var list) ? list : Array.Empty<{{ index.table_name }}>();
+
+{% endfor %}    public static {{ project.database_class }} Load(string dataDir)
+    {
+{% for step in project.database.load_steps %}        {{ step }}
+{% endfor %}
+        return new {{ project.database_class }}(
+{% for arg in project.database.constructor_args %}            {{ arg }}{% if not loop.last %},{% endif %}
+{% endfor %}        );
+    }

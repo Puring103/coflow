@@ -1,0 +1,23 @@
+{% if project.database.resolve %}    private static void ResolveRefs(
+{% for parameter in project.database.resolve.parameters %}        {{ parameter.ty }} {{ parameter.name }}{% if not loop.last %},{% endif %}
+{% endfor %}    )
+    {
+{% for call in project.database.resolve.table_calls %}        foreach (var {{ call.item_var }} in {{ call.list_var }})
+        {
+            Resolve{{ call.table_name }}Refs({{ call.item_var }}, {{ call.index_args }}, {{ call.path_expr }});
+        }
+
+{% endfor %}    }
+
+{% for method in project.database.resolve.methods %}    private static void Resolve{{ method.type_name }}Refs({{ method.type_name }} value{% for parameter in method.parameters %}, {{ parameter.ty }} {{ parameter.name }}{% endfor %}, string path)
+    {
+{% if method.is_polymorphic %}        switch (value)
+        {
+{% for case in method.cases %}            case {{ case.type_name }} {{ case.var_name }}:
+                Resolve{{ case.type_name }}Refs({{ case.var_name }}, {{ case.index_args }}, path);
+                break;
+{% endfor %}        }
+{% else %}{% for statement in method.statements %}        {{ statement }}
+{% endfor %}{% endif %}    }
+
+{% endfor %}{% endif %}

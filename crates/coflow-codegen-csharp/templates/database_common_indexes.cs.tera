@@ -1,0 +1,100 @@
+    private static Dictionary<TKey, TValue> BuildUniqueIndex<TKey, TValue>(
+        IEnumerable<TValue> values,
+        Func<TValue, TKey> keySelector,
+        string tableName,
+        string fieldName)
+        where TKey : notnull
+    {
+        var result = new Dictionary<TKey, TValue>();
+
+        foreach (var value in values)
+        {
+            var key = keySelector(value);
+
+            if (!result.TryAdd(key, value))
+            {
+                throw new CftLoadException(
+                    $"duplicate id `{key}` in table `{tableName}`",
+                    $"{tableName}.{fieldName}",
+                    "unique id",
+                    key.ToString());
+            }
+        }
+
+        return result;
+    }
+
+    private static Dictionary<TKey, List<TValue>> BuildMultiIndex<TKey, TValue>(
+        IEnumerable<TValue> values,
+        Func<TValue, TKey> keySelector)
+        where TKey : notnull
+    {
+        var result = new Dictionary<TKey, List<TValue>>();
+
+        foreach (var value in values)
+        {
+            var key = keySelector(value);
+
+            if (!result.TryGetValue(key, out var list))
+            {
+                list = new List<TValue>();
+                result.Add(key, list);
+            }
+
+            list.Add(value);
+        }
+
+        return result;
+    }
+
+    private readonly record struct RefIndexSource<TKey, TValue>(
+        IEnumerable<TValue> Values,
+        Func<TValue, TKey> KeySelector,
+        string TableName,
+        string FieldName)
+        where TKey : notnull;
+
+    private static Dictionary<TKey, TValue> BuildRefIndex<TKey, TValue>(
+        params RefIndexSource<TKey, TValue>[] sources)
+        where TKey : notnull
+    {
+        var result = new Dictionary<TKey, TValue>();
+
+        foreach (var source in sources)
+        {
+            foreach (var value in source.Values)
+            {
+                var key = source.KeySelector(value);
+
+                if (!result.TryAdd(key, value))
+                {
+                    throw new CftLoadException(
+                        $"duplicate id `{key}` in ref range `{typeof(TValue).Name}`",
+                        $"{source.TableName}.{source.FieldName}",
+                        "unique id",
+                        key.ToString());
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static T ResolveRef<TKey, T>(
+        Dictionary<TKey, T> index,
+        TKey id,
+        string path,
+        string targetType)
+        where TKey : notnull
+    {
+        if (index.TryGetValue(id, out var value))
+        {
+            return value;
+        }
+
+        throw new CftLoadException(
+            $"@ref target `{targetType}` with id `{id}` was not found",
+            path,
+            targetType,
+            id?.ToString());
+    }
