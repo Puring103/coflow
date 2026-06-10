@@ -232,6 +232,7 @@ impl<W: Write> LspServer<W> {
             }
         }
 
+        let preferred_uris = self.preferred_diagnostic_uris(&schema_by_path);
         let raw_build = compile_schema_project_with_overrides(&self.project, &overrides)?;
         let build = LspBuild::new(raw_build);
         let diagnostics = dedupe_cft_diagnostics(build.schema.diagnostics.clone());
@@ -240,7 +241,7 @@ impl<W: Write> LspServer<W> {
         for diagnostic in diagnostics {
             let diagnostic =
                 DiagnosticJson::from_cft(&diagnostic, &build.schema.sources, &build.schema.paths);
-            let uri = path_to_file_uri(Path::new(&diagnostic.path));
+            let uri = preferred_diagnostic_uri(&preferred_uris, Path::new(&diagnostic.path));
             by_uri
                 .entry(uri)
                 .or_default()
@@ -249,7 +250,7 @@ impl<W: Write> LspServer<W> {
 
         let mut touched_uris = self.published_uris.clone();
         for path in build.schema.paths.values() {
-            touched_uris.insert(path_to_file_uri(Path::new(path)));
+            touched_uris.insert(preferred_diagnostic_uri(&preferred_uris, Path::new(path)));
         }
         for document in self.open_documents.values() {
             touched_uris.insert(document.uri.clone());
@@ -266,6 +267,19 @@ impl<W: Write> LspServer<W> {
 
         self.build = Some(build);
         Ok(())
+    }
+
+    fn preferred_diagnostic_uris(
+        &self,
+        schema_by_path: &BTreeMap<PathBuf, (String, PathBuf)>,
+    ) -> BTreeMap<PathBuf, String> {
+        let mut preferred = BTreeMap::new();
+        for (normalized_path, document) in &self.open_documents {
+            if schema_by_path.contains_key(normalized_path) {
+                preferred.insert(normalized_path.clone(), document.uri.clone());
+            }
+        }
+        preferred
     }
 
     fn completion(&mut self, id: &Value, params: &Value) -> Result<(), String> {
@@ -1261,6 +1275,9 @@ fn definitions_at(build: &LspBuild, document: &LspDocument, position: &LspPositi
             if let Some(location) = enum_variant_location_by_chain(build, &chain) {
                 return vec![location];
             }
+            if let Some(location) = ast_enum_variant_location_by_chain(build, &chain) {
+                return vec![location];
+            }
         }
         if let Some(location) = field_location_by_chain(build, document, offset, &chain) {
             return vec![location];
@@ -1268,6 +1285,10 @@ fn definitions_at(build: &LspBuild, document: &LspDocument, position: &LspPositi
     }
 
     if let Some(location) = global_location(build, &word.text) {
+        return vec![location];
+    }
+
+    if let Some(location) = ast_global_location(build, &word.text) {
         return vec![location];
     }
 
@@ -1498,7 +1519,7 @@ fn add_ast_semantic_tokens(
                 }
                 if let Some(check) = &ty.check {
                     for stmt in &check.stmts {
-                        add_check_stmt_semantic(document, stmt, tokens);
+                        add_check_stmt_semantic(build, document, stmt, tokens);
                     }
                 }
             }
@@ -1551,10 +1572,7 @@ fn add_type_ref_semantic(
             push_semantic_span(&document.source, ty.span, SEM_TYPE, tokens);
         }
         TypeRefKind::Named(name) => {
-            let token_type = if build
-                .container()
-                .is_some_and(|container| container.resolve_enum(name).is_some())
-            {
+            let token_type = if enum_name_exists(build, name) {
                 SEM_ENUM
             } else {
                 SEM_TYPE
@@ -1626,12 +1644,13 @@ fn add_default_expr_semantic(
 }
 
 fn add_check_stmt_semantic(
+    build: &LspBuild,
     document: &LspDocument,
     stmt: &CheckStmt,
     tokens: &mut Vec<RawSemanticToken>,
 ) {
     match stmt {
-        CheckStmt::Expr(expr) => add_check_expr_semantic(document, expr, tokens),
+        CheckStmt::Expr(expr) => add_check_expr_semantic(build, document, expr, tokens),
         CheckStmt::Quantifier {
             binding,
             collection,
@@ -1639,23 +1658,24 @@ fn add_check_stmt_semantic(
             ..
         } => {
             push_semantic_span(&document.source, binding.span, SEM_PARAMETER, tokens);
-            add_check_expr_semantic(document, collection, tokens);
+            add_check_expr_semantic(build, document, collection, tokens);
             for stmt in body {
-                add_check_stmt_semantic(document, stmt, tokens);
+                add_check_stmt_semantic(build, document, stmt, tokens);
             }
         }
         CheckStmt::When {
             condition, body, ..
         } => {
-            add_check_expr_semantic(document, condition, tokens);
+            add_check_expr_semantic(build, document, condition, tokens);
             for stmt in body {
-                add_check_stmt_semantic(document, stmt, tokens);
+                add_check_stmt_semantic(build, document, stmt, tokens);
             }
         }
     }
 }
 
 fn add_check_expr_semantic(
+    build: &LspBuild,
     document: &LspDocument,
     expr: &CheckExpr,
     tokens: &mut Vec<RawSemanticToken>,
@@ -1674,15 +1694,22 @@ fn add_check_expr_semantic(
             push_semantic_span(&document.source, expr.span, SEM_VARIABLE, tokens);
         }
         CheckExprKind::Field { expr, name } => {
-            add_check_expr_semantic(document, expr, tokens);
+            if let CheckExprKind::Name(enum_name) = &expr.kind {
+                if enum_variant_exists(build, enum_name, &name.name) {
+                    push_semantic_span(&document.source, expr.span, SEM_ENUM, tokens);
+                    push_semantic_span(&document.source, name.span, SEM_ENUM_MEMBER, tokens);
+                    return;
+                }
+            }
+            add_check_expr_semantic(build, document, expr, tokens);
             push_semantic_span(&document.source, name.span, SEM_PROPERTY, tokens);
         }
         CheckExprKind::Index { expr, index } => {
-            add_check_expr_semantic(document, expr, tokens);
-            add_check_expr_semantic(document, index, tokens);
+            add_check_expr_semantic(build, document, expr, tokens);
+            add_check_expr_semantic(build, document, index, tokens);
         }
         CheckExprKind::Is { expr, predicate } => {
-            add_check_expr_semantic(document, expr, tokens);
+            add_check_expr_semantic(build, document, expr, tokens);
             match predicate {
                 coflow_cft::ast::TypePredicate::Type(name) => {
                     push_semantic_span(&document.source, name.span, SEM_TYPE, tokens);
@@ -1693,22 +1720,27 @@ fn add_check_expr_semantic(
             }
         }
         CheckExprKind::Call { name, args } => {
-            push_semantic_span(&document.source, name.span, SEM_FUNCTION, tokens);
+            let token_type = if enum_name_exists(build, &name.name) {
+                SEM_ENUM
+            } else {
+                SEM_FUNCTION
+            };
+            push_semantic_span(&document.source, name.span, token_type, tokens);
             for arg in args {
-                add_check_expr_semantic(document, arg, tokens);
+                add_check_expr_semantic(build, document, arg, tokens);
             }
         }
         CheckExprKind::BinOp { lhs, rhs, .. } => {
-            add_check_expr_semantic(document, lhs, tokens);
-            add_check_expr_semantic(document, rhs, tokens);
+            add_check_expr_semantic(build, document, lhs, tokens);
+            add_check_expr_semantic(build, document, rhs, tokens);
         }
         CheckExprKind::Unary { expr, .. } => {
-            add_check_expr_semantic(document, expr, tokens);
+            add_check_expr_semantic(build, document, expr, tokens);
         }
         CheckExprKind::CmpChain { first, rest } => {
-            add_check_expr_semantic(document, first, tokens);
+            add_check_expr_semantic(build, document, first, tokens);
             for (_, expr) in rest {
-                add_check_expr_semantic(document, expr, tokens);
+                add_check_expr_semantic(build, document, expr, tokens);
             }
         }
     }
@@ -2015,6 +2047,27 @@ fn enum_variant_location_by_chain(build: &LspBuild, chain: &[String]) -> Option<
     Some(location(document, span))
 }
 
+fn ast_enum_variant_location_by_chain(build: &LspBuild, chain: &[String]) -> Option<Value> {
+    if chain.len() != 2 {
+        return None;
+    }
+    ast_enum_variant_location(build, &chain[0], &chain[1])
+}
+
+fn ast_enum_variant_location(
+    build: &LspBuild,
+    enum_name: &str,
+    variant_name: &str,
+) -> Option<Value> {
+    for document in build.documents.values() {
+        let Some(span) = ast_enum_variant_name_span(document, enum_name, variant_name) else {
+            continue;
+        };
+        return Some(location(document, span));
+    }
+    None
+}
+
 fn ast_enum_variant_name_span(
     document: &LspDocument,
     enum_name: &str,
@@ -2033,6 +2086,28 @@ fn ast_enum_variant_name_span(
         }
     }
     None
+}
+
+fn enum_name_exists(build: &LspBuild, enum_name: &str) -> bool {
+    build
+        .container()
+        .is_some_and(|container| container.resolve_enum(enum_name).is_some())
+        || ast_enum_name_exists(build, enum_name)
+}
+
+fn enum_variant_exists(build: &LspBuild, enum_name: &str, variant_name: &str) -> bool {
+    enum_variant_by_chain(build, &[enum_name.to_string(), variant_name.to_string()]).is_some()
+        || ast_enum_variant_location(build, enum_name, variant_name).is_some()
+}
+
+fn ast_enum_name_exists(build: &LspBuild, enum_name: &str) -> bool {
+    build.documents.values().any(|document| {
+        document.ast.as_ref().is_some_and(|ast| {
+            ast.items
+                .iter()
+                .any(|item| matches!(item, Item::Enum(enum_def) if enum_def.name == enum_name))
+        })
+    })
 }
 
 fn global_location(build: &LspBuild, name: &str) -> Option<Value> {
@@ -2057,6 +2132,29 @@ fn global_location(build: &LspBuild, name: &str) -> Option<Value> {
             document,
             ast_top_level_name_span(document, name).unwrap_or(constant.span),
         ));
+    }
+    None
+}
+
+fn ast_global_location(build: &LspBuild, name: &str) -> Option<Value> {
+    for document in build.documents.values() {
+        let Some(ast) = &document.ast else {
+            continue;
+        };
+        for item in &ast.items {
+            match item {
+                Item::Const(constant) if constant.name == name => {
+                    return Some(location(document, constant.name_span));
+                }
+                Item::Enum(enum_def) if enum_def.name == name => {
+                    return Some(location(document, enum_def.name_span));
+                }
+                Item::Type(ty) if ty.name == name => {
+                    return Some(location(document, ty.name_span));
+                }
+                Item::Const(_) | Item::Enum(_) | Item::Type(_) => {}
+            }
+        }
     }
     None
 }
@@ -2747,6 +2845,13 @@ fn lsp_error_diagnostic(code: &str, message: &str) -> Value {
         "source": "cft LSP",
         "message": message
     })
+}
+
+fn preferred_diagnostic_uri(preferred_uris: &BTreeMap<PathBuf, String>, path: &Path) -> String {
+    preferred_uris
+        .get(&normalize_path(path))
+        .cloned()
+        .unwrap_or_else(|| path_to_file_uri(path))
 }
 
 fn lsp_range(

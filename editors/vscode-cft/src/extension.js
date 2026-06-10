@@ -340,15 +340,26 @@ class CftDefinitionProvider {
   }
 
   async provideDefinition(document, position) {
+    const localLocations = await localDefinitionLocations(document, position);
+    if (localLocations) {
+      return localLocations;
+    }
+
     const definitions = await this.diagnostics.request(
       document,
       "textDocument/definition",
       textPositionParams(document, position)
     );
-    if (Array.isArray(definitions)) {
-      return definitions.map(lspLocationToVsCode).filter(Boolean);
+    const lspLocations = lspDefinitionLocations(definitions);
+    if (lspLocations) {
+      return lspLocations;
     }
 
+    return undefined;
+  }
+}
+
+async function localDefinitionLocations(document, position) {
     const range = document.getWordRangeAtPosition(position, IDENT_WORD_RE);
     if (!range) {
       return undefined;
@@ -381,7 +392,6 @@ class CftDefinitionProvider {
 
     const localField = directFieldLocations(workspace, document, position, word);
     return localField.length > 0 ? localField : undefined;
-  }
 }
 
 class CftDiagnostics {
@@ -833,7 +843,7 @@ class CftLspSession {
       return Promise.resolve(undefined);
     }
     return new Promise((resolve) => {
-      const id = this.sendRequest(method, params);
+      const id = this.nextId++;
       const timer = setTimeout(() => {
         this.pending.delete(id);
         resolve(undefined);
@@ -847,6 +857,12 @@ class CftLspSession {
           clearTimeout(timer);
           resolve(undefined);
         }
+      });
+      this.send({
+        jsonrpc: "2.0",
+        id,
+        method,
+        params
       });
     });
   }
@@ -1582,6 +1598,14 @@ function markdown(text) {
 }
 
 async function collectCftPaths(uri) {
+  const projectDir = findNearestCoflowConfigDir(path.dirname(uri.fsPath));
+  if (projectDir) {
+    const configured = await collectConfiguredSchemaPaths(projectDir);
+    if (configured.length > 0) {
+      return configured;
+    }
+  }
+
   const folder = vscode.workspace.getWorkspaceFolder(uri);
   if (!folder) {
     return [normalizePath(uri.fsPath)];
@@ -1592,6 +1616,134 @@ async function collectCftPaths(uri) {
     new vscode.RelativePattern(folder, "**/{target,node_modules,.git}/**")
   );
   return files.map((file) => normalizePath(file.fsPath));
+}
+
+async function collectConfiguredSchemaPaths(projectDir) {
+  const configPath = coflowConfigPath(projectDir);
+  if (!configPath) {
+    return [];
+  }
+
+  let entries;
+  try {
+    const text = await fs.promises.readFile(configPath, "utf8");
+    entries = schemaEntriesFromCoflowConfigText(text);
+  } catch {
+    return [];
+  }
+
+  const paths = [];
+  for (const entry of entries) {
+    const resolved = normalizePath(path.resolve(projectDir, entry));
+    try {
+      const stat = await fs.promises.stat(resolved);
+      if (stat.isDirectory()) {
+        paths.push(...await collectCftFilesInDir(resolved));
+      } else if (stat.isFile() && resolved.toLowerCase().endsWith(".cft")) {
+        paths.push(resolved);
+      }
+    } catch {
+      // Diagnostics cover missing schema files; local language features skip them.
+    }
+  }
+  return [...new Set(paths)].sort((left, right) => left.localeCompare(right));
+}
+
+function coflowConfigPath(projectDir) {
+  const yaml = path.join(projectDir, "coflow.yaml");
+  if (fs.existsSync(yaml)) {
+    return yaml;
+  }
+  const yml = path.join(projectDir, "coflow.yml");
+  return fs.existsSync(yml) ? yml : undefined;
+}
+
+function schemaEntriesFromCoflowConfigText(text) {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const entries = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = stripYamlComment(lines[index]);
+    const match = line.match(/^(\s*)schema\s*:\s*(.*?)\s*$/);
+    if (!match) {
+      continue;
+    }
+
+    const indent = match[1].length;
+    const inline = unquoteYamlScalar(match[2].trim());
+    if (inline) {
+      return [inline];
+    }
+
+    for (index += 1; index < lines.length; index += 1) {
+      const child = stripYamlComment(lines[index]);
+      if (!child.trim()) {
+        continue;
+      }
+      const childIndent = child.match(/^\s*/)[0].length;
+      if (childIndent <= indent) {
+        index -= 1;
+        break;
+      }
+      const item = child.trim().match(/^-\s*(.*?)\s*$/);
+      if (item) {
+        const value = unquoteYamlScalar(item[1].trim());
+        if (value) {
+          entries.push(value);
+        }
+      }
+    }
+    return entries;
+  }
+
+  return entries;
+}
+
+function stripYamlComment(line) {
+  let inSingle = false;
+  let inDouble = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const ch = line[index];
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle;
+    } else if (ch === "\"" && !inSingle) {
+      inDouble = !inDouble;
+    } else if (ch === "#" && !inSingle && !inDouble) {
+      return line.slice(0, index);
+    }
+  }
+  return line;
+}
+
+function unquoteYamlScalar(value) {
+  if (
+    (value.startsWith("\"") && value.endsWith("\"")) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+async function collectCftFilesInDir(dir) {
+  const output = [];
+  let entries;
+  try {
+    entries = await fs.promises.readdir(dir, { withFileTypes: true });
+  } catch {
+    return output;
+  }
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (![".git", "node_modules", "target"].includes(entry.name)) {
+        output.push(...await collectCftFilesInDir(fullPath));
+      }
+    } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".cft")) {
+      output.push(normalizePath(fullPath));
+    }
+  }
+  return output;
 }
 
 async function collectWorkspaceSymbols(document) {
@@ -2187,6 +2339,15 @@ function lspDocumentSymbolToVsCode(raw) {
   return symbol;
 }
 
+function lspDefinitionLocations(definitions) {
+  if (!Array.isArray(definitions)) {
+    return undefined;
+  }
+
+  const locations = definitions.map(lspLocationToVsCode).filter(Boolean);
+  return locations.length > 0 ? locations : undefined;
+}
+
 function lspSymbolKindToVsCode(kind) {
   switch (kind) {
     case 5:
@@ -2273,5 +2434,15 @@ function normalizePath(filePath) {
 
 module.exports = {
   activate,
-  deactivate
+  deactivate,
+  __test: {
+    CftLspSession,
+    collectConfiguredSchemaPaths,
+    localDefinitionLocations,
+    schemaEntriesFromCoflowConfigText,
+    lspDefinitionLocations,
+    vscodePosition: vscode.Position,
+    vscodeRange: vscode.Range,
+    vscodeUriFile: vscode.Uri.file
+  }
 };
