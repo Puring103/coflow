@@ -1,0 +1,269 @@
+    private static List<T> LoadTable<T>(
+        string file,
+        string tableName,
+        MessagePackRowLoader<T> loadRow)
+    {
+        MessagePackReader reader;
+
+        try
+        {
+            var bytes = File.ReadAllBytes(file);
+            reader = new MessagePackReader(new ReadOnlySequence<byte>(bytes));
+        }
+        catch (IOException ex)
+        {
+            throw new CftLoadException(
+                $"failed to read table `{tableName}` MessagePack: {ex.Message}",
+                tableName,
+                "readable MessagePack file",
+                ex.Message);
+        }
+
+        int count = ReadArrayHeader(ref reader, tableName);
+
+        var result = new List<T>(count);
+
+        for (var index = 0; index < count; index++)
+        {
+            result.Add(loadRow(ref reader, $"{tableName}[{index}]"));
+        }
+
+        if (!reader.End)
+        {
+            throw new CftLoadException(
+                $"table `{tableName}` MessagePack contains trailing data",
+                tableName,
+                "single MessagePack array",
+                "trailing data");
+        }
+
+        return result;
+    }
+
+    private static List<T> ReadArray<T>(
+        ref MessagePackReader reader,
+        string path,
+        MessagePackItemReader<T> readItem)
+    {
+        var count = ReadArrayHeader(ref reader, path);
+        var result = new List<T>(count);
+
+        for (var i = 0; i < count; i++)
+        {
+            result.Add(readItem(ref reader, $"{path}[{i}]"));
+        }
+
+        return result;
+    }
+
+    private static Dictionary<TKey, TValue> ReadDict<TKey, TValue>(
+        ref MessagePackReader reader,
+        string path,
+        MessagePackKeyReader<TKey> readKey,
+        MessagePackItemReader<TValue> readValue)
+        where TKey : notnull
+    {
+        var count = ReadMapHeader(ref reader, path);
+        var result = new Dictionary<TKey, TValue>();
+
+        for (var i = 0; i < count; i++)
+        {
+            var rawKey = ReadString(ref reader, path);
+
+            var keyPath = $"{path}.{rawKey}";
+            var key = readKey(rawKey, keyPath);
+
+            if (result.ContainsKey(key))
+            {
+                throw new CftLoadException(
+                    $"duplicate dictionary key `{rawKey}`",
+                    keyPath,
+                    "unique key",
+                    rawKey);
+            }
+
+            var value = readValue(ref reader, keyPath);
+            result.Add(key, value);
+        }
+
+        return result;
+    }
+
+    private static int ReadMapHeader(ref MessagePackReader reader, string path)
+    {
+        try
+        {
+            return reader.ReadMapHeader();
+        }
+        catch (MessagePackSerializationException ex)
+        {
+            throw TypeError(path, "MessagePack map", ex.Message);
+        }
+        catch (EndOfStreamException ex)
+        {
+            throw TypeError(path, "MessagePack map", ex.Message);
+        }
+    }
+
+    private static int ReadArrayHeader(ref MessagePackReader reader, string path)
+    {
+        try
+        {
+            return reader.ReadArrayHeader();
+        }
+        catch (MessagePackSerializationException ex)
+        {
+            throw TypeError(path, "MessagePack array", ex.Message);
+        }
+        catch (EndOfStreamException ex)
+        {
+            throw TypeError(path, "MessagePack array", ex.Message);
+        }
+    }
+
+    private static string ReadString(ref MessagePackReader reader, string path)
+    {
+        if (ReadNil(ref reader, path))
+        {
+            throw TypeError(path, "string", "nil");
+        }
+
+        try
+        {
+            var value = reader.ReadString();
+            if (value != null)
+            {
+                return value;
+            }
+
+            throw TypeError(path, "string", "nil");
+        }
+        catch (MessagePackSerializationException ex)
+        {
+            throw TypeError(path, "string", ex.Message);
+        }
+        catch (EndOfStreamException ex)
+        {
+            throw TypeError(path, "string", ex.Message);
+        }
+    }
+
+    private static void SkipValue(ref MessagePackReader reader, string path)
+    {
+        try
+        {
+            reader.Skip();
+        }
+        catch (MessagePackSerializationException ex)
+        {
+            throw TypeError(path, "MessagePack value", ex.Message);
+        }
+        catch (EndOfStreamException ex)
+        {
+            throw TypeError(path, "MessagePack value", ex.Message);
+        }
+    }
+
+    private static bool ReadNil(ref MessagePackReader reader, string path)
+    {
+        try
+        {
+            return reader.TryReadNil();
+        }
+        catch (MessagePackSerializationException ex)
+        {
+            throw TypeError(path, "MessagePack value", ex.Message);
+        }
+        catch (EndOfStreamException ex)
+        {
+            throw TypeError(path, "MessagePack value", ex.Message);
+        }
+    }
+
+    private static long ReadInt(ref MessagePackReader reader, string path)
+    {
+        try
+        {
+            return reader.ReadInt64();
+        }
+        catch (MessagePackSerializationException ex)
+        {
+            throw TypeError(path, "integer", ex.Message);
+        }
+        catch (EndOfStreamException ex)
+        {
+            throw TypeError(path, "integer", ex.Message);
+        }
+    }
+
+    private static float ReadFloat(ref MessagePackReader reader, string path)
+    {
+        try
+        {
+            return reader.NextMessagePackType switch
+            {
+                MessagePackType.Integer => (float)ReadInt(ref reader, path),
+                MessagePackType.Float => (float)reader.ReadDouble(),
+                _ => throw TypeError(path, "number", reader.NextMessagePackType.ToString()),
+            };
+        }
+        catch (MessagePackSerializationException ex)
+        {
+            throw TypeError(path, "number", ex.Message);
+        }
+        catch (EndOfStreamException ex)
+        {
+            throw TypeError(path, "number", ex.Message);
+        }
+    }
+
+    private static bool ReadBool(ref MessagePackReader reader, string path)
+    {
+        try
+        {
+            return reader.ReadBoolean();
+        }
+        catch (MessagePackSerializationException ex)
+        {
+            throw TypeError(path, "boolean", ex.Message);
+        }
+        catch (EndOfStreamException ex)
+        {
+            throw TypeError(path, "boolean", ex.Message);
+        }
+    }
+
+    private static TEnum ReadEnum<TEnum>(ref MessagePackReader reader, string path)
+        where TEnum : struct, Enum
+    {
+        return (TEnum)Enum.ToObject(typeof(TEnum), ReadInt(ref reader, path));
+    }
+
+    private static long ReadIntKey(string key, string path)
+    {
+        if (long.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+        {
+            return value;
+        }
+
+        throw new CftLoadException(
+            $"dictionary key `{key}` must be an integer",
+            path,
+            "integer key",
+            key);
+    }
+
+    private static TEnum ReadEnumKey<TEnum>(string key, string path)
+        where TEnum : struct, Enum
+    {
+        return (TEnum)Enum.ToObject(typeof(TEnum), ReadIntKey(key, path));
+    }
+
+    private static CftLoadException TypeError(string path, string expected, string actual)
+    {
+        return new CftLoadException(
+            $"field `{path}` must be {expected}",
+            path,
+            expected,
+            actual);
+    }

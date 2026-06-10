@@ -6,9 +6,23 @@ use tera::{Context, Tera};
 
 const ENUM_TEMPLATE: &str = include_str!("../templates/enum.cs.tera");
 const TYPE_TEMPLATE: &str = include_str!("../templates/type.cs.tera");
-const DATABASE_JSON_TEMPLATE: &str = include_str!("../templates/database.cs.tera");
+const DATABASE_JSON_TEMPLATE: &str = include_str!("../templates/database_json.cs.tera");
 const DATABASE_MESSAGEPACK_TEMPLATE: &str =
     include_str!("../templates/database_messagepack.cs.tera");
+const DATABASE_COMMON_MEMBERS_TEMPLATE: &str =
+    include_str!("../templates/database_common_members.cs.tera");
+const DATABASE_COMMON_RESOLVE_TEMPLATE: &str =
+    include_str!("../templates/database_common_resolve.cs.tera");
+const DATABASE_COMMON_INDEXES_TEMPLATE: &str =
+    include_str!("../templates/database_common_indexes.cs.tera");
+const DATABASE_JSON_LOADERS_TEMPLATE: &str =
+    include_str!("../templates/database_json_loaders.cs.tera");
+const DATABASE_JSON_READERS_TEMPLATE: &str =
+    include_str!("../templates/database_json_readers.cs.tera");
+const DATABASE_MESSAGEPACK_LOADERS_TEMPLATE: &str =
+    include_str!("../templates/database_messagepack_loaders.cs.tera");
+const DATABASE_MESSAGEPACK_READERS_TEMPLATE: &str =
+    include_str!("../templates/database_messagepack_readers.cs.tera");
 const EXCEPTION_TEMPLATE: &str = include_str!("../templates/load_exception.cs.tera");
 
 pub fn render_project(project: &CsharpProject) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
@@ -73,6 +87,57 @@ fn templates() -> Result<Tera, CsharpCodegenError> {
     .map_err(|err| {
         CsharpCodegenError::new(format!(
             "failed to add MessagePack database template: {err}"
+        ))
+    })?;
+    tera.add_raw_template(
+        "database_common_members.cs.tera",
+        DATABASE_COMMON_MEMBERS_TEMPLATE,
+    )
+    .map_err(|err| {
+        CsharpCodegenError::new(format!("failed to add database members template: {err}"))
+    })?;
+    tera.add_raw_template(
+        "database_common_resolve.cs.tera",
+        DATABASE_COMMON_RESOLVE_TEMPLATE,
+    )
+    .map_err(|err| {
+        CsharpCodegenError::new(format!("failed to add database resolve template: {err}"))
+    })?;
+    tera.add_raw_template(
+        "database_common_indexes.cs.tera",
+        DATABASE_COMMON_INDEXES_TEMPLATE,
+    )
+    .map_err(|err| {
+        CsharpCodegenError::new(format!(
+            "failed to add database index helpers template: {err}"
+        ))
+    })?;
+    tera.add_raw_template(
+        "database_json_loaders.cs.tera",
+        DATABASE_JSON_LOADERS_TEMPLATE,
+    )
+    .map_err(|err| CsharpCodegenError::new(format!("failed to add JSON loader template: {err}")))?;
+    tera.add_raw_template(
+        "database_json_readers.cs.tera",
+        DATABASE_JSON_READERS_TEMPLATE,
+    )
+    .map_err(|err| {
+        CsharpCodegenError::new(format!("failed to add JSON reader helpers template: {err}"))
+    })?;
+    tera.add_raw_template(
+        "database_messagepack_loaders.cs.tera",
+        DATABASE_MESSAGEPACK_LOADERS_TEMPLATE,
+    )
+    .map_err(|err| {
+        CsharpCodegenError::new(format!("failed to add MessagePack loader template: {err}"))
+    })?;
+    tera.add_raw_template(
+        "database_messagepack_readers.cs.tera",
+        DATABASE_MESSAGEPACK_READERS_TEMPLATE,
+    )
+    .map_err(|err| {
+        CsharpCodegenError::new(format!(
+            "failed to add MessagePack reader helpers template: {err}"
         ))
     })?;
     tera.add_raw_template("load_exception.cs.tera", EXCEPTION_TEMPLATE)

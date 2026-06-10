@@ -1,0 +1,83 @@
+{% for loader in project.database.loaders %}    private static {{ loader.type_name }} Load{{ loader.type_name }}(ref MessagePackReader reader, string path)
+    {
+        var count = ReadMapHeader(ref reader, path);
+        return Load{{ loader.type_name }}Body(ref reader, path, count);
+    }
+
+    private static {{ loader.type_name }} Load{{ loader.type_name }}Body(ref MessagePackReader reader, string path, int count)
+    {
+{% for field in loader.fields %}        {{ field.type_name }} {{ field.local_name }} = {% if field.default_expr %}{{ field.default_expr }}{% else %}default!{% endif %};
+        var has{{ field.property }} = false;
+{% endfor %}
+        for (var i = 0; i < count; i++)
+        {
+            var key = ReadString(ref reader, path);
+
+            var fieldPath = $"{path}.{key}";
+
+            switch (key)
+            {
+{% for field in loader.fields %}                case "{{ field.source_name }}":
+                    if (has{{ field.property }})
+                    {
+                        throw new CftLoadException(
+                            $"duplicate field `{{ field.source_name }}`",
+                            fieldPath,
+                            "unique field",
+                            "{{ field.source_name }}");
+                    }
+
+                    has{{ field.property }} = true;
+                    {{ field.local_name }} = {{ field.messagepack_read_expr }};
+                    break;
+{% endfor %}                default:
+                    SkipValue(ref reader, fieldPath);
+                    break;
+            }
+        }
+
+{% for field in loader.fields %}{% if field.is_required %}        if (!has{{ field.property }})
+        {
+            throw new CftLoadException(
+                $"missing required field `{{ field.source_name }}`",
+                $"{path}.{{ field.source_name }}",
+                "present property",
+                "missing");
+        }
+
+{% endif %}{% endfor %}        return new {{ loader.type_name }} {
+{% for field in loader.fields %}            {{ field.property }} = {{ field.local_name }},
+{% endfor %}        };
+    }
+
+{% endfor %}{% for loader in project.database.polymorphic_loaders %}    private static {{ loader.type_name }} Load{{ loader.type_name }}Polymorphic(ref MessagePackReader reader, string path)
+    {
+        var count = ReadMapHeader(ref reader, path);
+        if (count <= 0)
+        {
+            throw new CftLoadException(
+                $"polymorphic object `{path}` must include `$type`",
+                path,
+                "$type",
+                "empty object");
+        }
+
+        var typeKey = ReadString(ref reader, path);
+        if (typeKey != "$type")
+        {
+            throw new CftLoadException(
+                $"polymorphic object `{path}` must start with `$type`",
+                path,
+                "$type",
+                typeKey ?? "nil");
+        }
+
+        var typeName = ReadString(ref reader, $"{path}.$type");
+        return typeName switch
+        {
+{% for case in loader.cases %}            "{{ case.type_name }}" => Load{{ case.type_name }}Body(ref reader, path, count - 1),
+{% endfor %}            _ => throw new CftLoadException($"unknown polymorphic type `{typeName}`", $"{path}.$type", "{{ loader.expected }}", typeName),
+        };
+    }
+
+{% endfor %}

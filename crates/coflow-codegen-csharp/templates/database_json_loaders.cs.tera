@@ -1,0 +1,22 @@
+{% for loader in project.database.loaders %}    private static {{ loader.type_name }} Load{{ loader.type_name }}(JToken token, string path)
+    {
+        var obj = RequireObject(token, path);
+
+        return new {{ loader.type_name }} {
+{% for field in loader.fields %}            {{ field.property }} = {{ field.read_expr }},
+{% endfor %}        };
+    }
+
+{% endfor %}{% for loader in project.database.polymorphic_loaders %}    private static {{ loader.type_name }} Load{{ loader.type_name }}Polymorphic(JToken token, string path)
+    {
+        var obj = RequireObject(token, path);
+        var typeName = ReadRequired(obj, "$type", path, ReadString);
+
+        return typeName switch
+        {
+{% for case in loader.cases %}            "{{ case.type_name }}" => Load{{ case.type_name }}(token, path),
+{% endfor %}            _ => throw new CftLoadException($"unknown polymorphic type `{typeName}`", $"{path}.$type", "{{ loader.expected }}", typeName),
+        };
+    }
+
+{% endfor %}
