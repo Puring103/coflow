@@ -245,11 +245,11 @@
         throw TypeError(path, "integer", token);
     }
 
-    private static float ReadFloat(JToken token, string path)
+    private static double ReadFloat(JToken token, string path)
     {
         if (token.Type == JTokenType.Integer || token.Type == JTokenType.Float)
         {
-            return token.Value<float>();
+            return token.Value<double>();
         }
 
         throw TypeError(path, "number", token);
