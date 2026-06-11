@@ -186,6 +186,7 @@ fn validate_generated_file_names(
     options: &CsharpCodegenOptions,
 ) -> Result<(), CsharpCodegenError> {
     let mut reserved = BTreeSet::new();
+    reserved.insert("GameConfig.cs".to_string());
     reserved.insert(format!("{}.cs", options.database_class));
     reserved.insert("CftLoadException.cs".to_string());
 

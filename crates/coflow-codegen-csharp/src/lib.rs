@@ -696,6 +696,24 @@ mod tests {
 
         let schema = compile_schema(
             r"
+                type GameConfig { value: int; }
+            ",
+        )?;
+        let Err(err) = generate_json(
+            &schema,
+            &CsharpCodegenOptions::new("Game.Config").with_database_class("RuntimeConfig"),
+        ) else {
+            return Err(
+                "GameConfig should remain reserved even with custom database class".to_string(),
+            );
+        };
+        require_contains(
+            &err.to_string(),
+            "generated C# file name `GameConfig.cs` is reserved",
+        )?;
+
+        let schema = compile_schema(
+            r"
                 type FooBar { value: int; }
                 type Foo_Bar { value: int; }
             ",
