@@ -306,6 +306,9 @@ fn collect_input_records(
                 });
             }
 
+            let (range_start_row, range_start_col) = range.start().unwrap_or((0, 0));
+            let header_excel_row = range_start_row as usize + 1;
+            let header_excel_col = range_start_col as usize + 1;
             let mut rows = range.rows();
             let Some(header_row) = rows.next() else {
                 return Err(ExcelLoadError::MissingSheet {
@@ -314,17 +317,25 @@ fn collect_input_records(
                 });
             };
 
-            let columns = resolve_columns(source, sheet, type_name, &fields, header_row)?;
+            let columns = resolve_columns(
+                source,
+                sheet,
+                type_name,
+                &fields,
+                header_row,
+                header_excel_row,
+                header_excel_col,
+            )?;
             for (zero_based_data_row, row) in rows.enumerate() {
-                if is_empty_row(row) {
+                if is_empty_mapped_row(row, &columns) {
                     continue;
                 }
-                let excel_row = zero_based_data_row + 2;
+                let excel_row = range_start_row as usize + zero_based_data_row + 2;
                 let mut input_fields = BTreeMap::new();
                 for column in &columns {
                     let location = ExcelLocation::new(source.file.clone())
                         .sheet(sheet.sheet.clone())
-                        .cell(excel_row, column.index + 1);
+                        .cell(excel_row, column.excel_column);
                     let text = cell_text(row.get(column.index), location.clone())?;
                     let parsed = parse_cell(schema, &column.field_type, &text).map_err(|err| {
                         ExcelLoadError::CellParse {
@@ -354,6 +365,7 @@ fn collect_input_records(
 #[derive(Debug, Clone)]
 struct ResolvedColumn {
     index: usize,
+    excel_column: usize,
     field: String,
     field_type: String,
 }
@@ -423,7 +435,7 @@ impl ExcelRecordOrigin {
             row,
             fields: columns
                 .iter()
-                .map(|column| (column.field.clone(), column.index + 1))
+                .map(|column| (column.field.clone(), column.excel_column))
                 .collect(),
         }
     }
@@ -443,16 +455,19 @@ fn resolve_columns(
     type_name: &str,
     fields: &BTreeMap<String, String>,
     header_row: &[Data],
+    header_excel_row: usize,
+    header_excel_col: usize,
 ) -> Result<Vec<ResolvedColumn>, ExcelLoadError> {
     let mut columns = Vec::new();
     let mut seen_fields = BTreeMap::<String, String>::new();
 
     for (index, cell) in header_row.iter().enumerate() {
+        let excel_column = header_excel_col + index;
         let column = cell_text(
             Some(cell),
             ExcelLocation::new(source.file.clone())
                 .sheet(sheet.sheet.clone())
-                .cell(1, index + 1),
+                .cell(header_excel_row, excel_column),
         )?;
         let column = column.trim();
         if column.is_empty() {
@@ -467,7 +482,7 @@ fn resolve_columns(
                 location: Box::new(
                     ExcelLocation::new(source.file.clone())
                         .sheet(sheet.sheet.clone())
-                        .cell(1, index + 1),
+                        .cell(header_excel_row, excel_column),
                 ),
                 type_name: type_name.to_string(),
                 column: column.to_string(),
@@ -479,7 +494,7 @@ fn resolve_columns(
                 location: Box::new(
                     ExcelLocation::new(source.file.clone())
                         .sheet(sheet.sheet.clone())
-                        .cell(1, index + 1),
+                        .cell(header_excel_row, excel_column),
                 ),
                 field,
                 first_column,
@@ -488,6 +503,7 @@ fn resolve_columns(
         }
         columns.push(ResolvedColumn {
             index,
+            excel_column,
             field,
             field_type: field_type.clone(),
         });
@@ -532,8 +548,10 @@ fn root_field(path: &CfdPath) -> Option<&str> {
     })
 }
 
-fn is_empty_row(row: &[Data]) -> bool {
-    row.iter().all(is_empty_cell)
+fn is_empty_mapped_row(row: &[Data], columns: &[ResolvedColumn]) -> bool {
+    columns
+        .iter()
+        .all(|column| row.get(column.index).is_none_or(is_empty_cell))
 }
 
 fn is_empty_cell(cell: &Data) -> bool {
