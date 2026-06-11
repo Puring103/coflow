@@ -58,6 +58,203 @@ fn full_project_check_loads_example_excel() {
 }
 
 #[test]
+fn build_exports_data_and_generates_csharp_for_json_project() {
+    let suffix = unique_suffix();
+    let root_dir = std::env::temp_dir().join(format!("coflow-build-json-test-{suffix}"));
+    let project_dir = root_dir.join("rpg");
+    let data_dir = root_dir.join("data-out");
+    let code_dir = root_dir.join("code-out");
+    if root_dir.exists() {
+        std::fs::remove_dir_all(&root_dir).expect("clean old temp dir");
+    }
+    copy_dir_recursive(std::path::Path::new("examples/rpg"), &project_dir)
+        .expect("copy example project");
+
+    let output = coflow()
+        .args([
+            "build",
+            project_dir.to_str().expect("utf8 temp path"),
+            "--data-out",
+            data_dir.to_str().expect("utf8 temp path"),
+            "--code-out",
+            code_dir.to_str().expect("utf8 temp path"),
+            "--namespace",
+            "Game.Config",
+        ])
+        .output()
+        .expect("run coflow build");
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(data_dir.join("Item.json").exists());
+    assert!(data_dir.join("DropTable.json").exists());
+    let game_config =
+        std::fs::read_to_string(code_dir.join("GameConfig.cs")).expect("GameConfig.cs");
+    assert!(game_config.contains("namespace Game.Config;"));
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("Build completed"),
+        "stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    std::fs::remove_dir_all(root_dir).expect("clean temp dir");
+}
+
+#[test]
+fn build_exports_messagepack_when_configured() {
+    let suffix = unique_suffix();
+    let root_dir = std::env::temp_dir().join(format!("coflow-build-messagepack-test-{suffix}"));
+    let project_dir = root_dir.join("rpg");
+    let data_dir = root_dir.join("data-out");
+    if root_dir.exists() {
+        std::fs::remove_dir_all(&root_dir).expect("clean old temp dir");
+    }
+    copy_dir_recursive(std::path::Path::new("examples/rpg"), &project_dir)
+        .expect("copy example project");
+    let config_path = project_dir.join("coflow.yaml");
+    let config = std::fs::read_to_string(&config_path).expect("read coflow.yaml");
+    std::fs::write(
+        &config_path,
+        config.replacen("type: json", "type: messagepack", 1),
+    )
+    .expect("write coflow.yaml");
+
+    let output = coflow()
+        .args([
+            "build",
+            project_dir.to_str().expect("utf8 temp path"),
+            "--data-out",
+            data_dir.to_str().expect("utf8 temp path"),
+        ])
+        .output()
+        .expect("run coflow build");
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(data_dir.join("Item.msgpack").exists());
+    assert!(data_dir.join("DropTable.msgpack").exists());
+
+    std::fs::remove_dir_all(root_dir).expect("clean temp dir");
+}
+
+#[test]
+fn config_validation_rejects_unknown_fields_and_invalid_outputs() {
+    let suffix = unique_suffix();
+    let root_dir = std::env::temp_dir().join(format!("coflow-config-validation-test-{suffix}"));
+    let project_dir = root_dir.join("project");
+    if root_dir.exists() {
+        std::fs::remove_dir_all(&root_dir).expect("clean old temp dir");
+    }
+    std::fs::create_dir_all(project_dir.join("schema")).expect("create schema dir");
+    std::fs::write(
+        project_dir.join("schema").join("main.cft"),
+        "type Item { id: string; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(
+        project_dir.join("coflow.yaml"),
+        "schema: schema/\nunknown: true\noutputs:\n  data:\n    type: yaml\n    dir: generated/data\n",
+    )
+    .expect("write config");
+
+    let output = coflow()
+        .args(["check", project_dir.to_str().expect("utf8 temp path")])
+        .output()
+        .expect("run coflow check");
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("unknown field"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    std::fs::write(
+        project_dir.join("coflow.yaml"),
+        "schema: schema/\noutputs:\n  data:\n    type: yaml\n    dir: generated/data\n  code:\n    type: python\n    dir: generated/code\n",
+    )
+    .expect("write config");
+    let output = coflow()
+        .args(["check", project_dir.to_str().expect("utf8 temp path")])
+        .output()
+        .expect("run coflow check");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("outputs.data.type is `yaml`; expected `json` or `messagepack`"),
+        "stderr: {stderr}"
+    );
+
+    std::fs::remove_dir_all(root_dir).expect("clean temp dir");
+}
+
+#[test]
+fn config_validation_rejects_invalid_sources_and_sheets() {
+    let suffix = unique_suffix();
+    let root_dir =
+        std::env::temp_dir().join(format!("coflow-config-source-validation-test-{suffix}"));
+    let project_dir = root_dir.join("project");
+    if root_dir.exists() {
+        std::fs::remove_dir_all(&root_dir).expect("clean old temp dir");
+    }
+    std::fs::create_dir_all(project_dir.join("schema")).expect("create schema dir");
+    std::fs::write(
+        project_dir.join("schema").join("main.cft"),
+        "type Item { id: string; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(
+        project_dir.join("coflow.yaml"),
+        "schema: schema/\nsources:\n  - file: data/missing.xlsx\n    sheets: []\n",
+    )
+    .expect("write config");
+
+    let output = coflow()
+        .args(["check", project_dir.to_str().expect("utf8 temp path")])
+        .output()
+        .expect("run coflow check");
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("sources[0].file `data/missing.xlsx` does not exist"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    std::fs::create_dir_all(project_dir.join("data")).expect("create data dir");
+    std::fs::write(project_dir.join("data").join("missing.xlsx"), "").expect("write placeholder");
+    std::fs::write(
+        project_dir.join("coflow.yaml"),
+        "schema: schema/\nsources:\n  - file: data/missing.xlsx\n    sheets:\n      - sheet: \"\"\n        columns:\n          A: id\n",
+    )
+    .expect("write config");
+
+    let output = coflow()
+        .args(["check", project_dir.to_str().expect("utf8 temp path")])
+        .output()
+        .expect("run coflow check");
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("sources[0].sheets[0].sheet is empty"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    std::fs::remove_dir_all(root_dir).expect("clean temp dir");
+}
+
+#[test]
 fn export_json_validates_declared_output_type() {
     let out_dir =
         std::env::temp_dir().join(format!("coflow-json-export-test-{}", std::process::id()));
@@ -352,7 +549,7 @@ fn codegen_csharp_rejects_unsupported_data_output_type() {
     assert!(!output.status.success());
     assert!(
         String::from_utf8_lossy(&output.stderr)
-            .contains("required `json` or `messagepack` for `coflow codegen csharp`"),
+            .contains("outputs.data.type is `yaml`; expected `json` or `messagepack`"),
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
