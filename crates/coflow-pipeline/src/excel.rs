@@ -6,20 +6,19 @@ use coflow_loader_excel::{
 use coflow_project::{DiagnosticJson, Project, RelatedJson};
 use std::path::Path;
 
-pub(crate) fn load_project_excel(
+pub fn load_project_excel(
     project: &Project,
     schema: &CftContainer,
-) -> Result<Result<ExcelLoadOutput, Vec<DiagnosticJson>>, String> {
+) -> Result<ExcelLoadOutput, Vec<DiagnosticJson>> {
     let sources = excel_sources(project);
     match load_excel(schema, &sources) {
-        Ok(output) => {
-            if let Some(checks) = &output.check_diagnostics {
-                Ok(Err(diagnostics_from_excel_checks(checks)))
-            } else {
-                Ok(Ok(output))
-            }
-        }
-        Err(err) => Ok(Err(diagnostics_from_excel_error(&err))),
+        Ok(output) => output
+            .check_diagnostics
+            .clone()
+            .map_or(Ok(output), |checks| {
+                Err(diagnostics_from_excel_checks(&checks))
+            }),
+        Err(err) => Err(diagnostics_from_excel_error(&err)),
     }
 }
 

@@ -33,7 +33,7 @@ pub enum DataFormat {
 
 impl DataFormat {
     #[must_use]
-    pub fn as_config_value(self) -> &'static str {
+    pub const fn as_config_value(self) -> &'static str {
         match self {
             Self::Json => "json",
             Self::Messagepack => "messagepack",
@@ -41,7 +41,7 @@ impl DataFormat {
     }
 
     #[must_use]
-    pub fn display_name(self) -> &'static str {
+    pub const fn display_name(self) -> &'static str {
         match self {
             Self::Json => "JSON",
             Self::Messagepack => "MessagePack",
@@ -65,14 +65,14 @@ pub enum CodegenTarget {
 
 impl CodegenTarget {
     #[must_use]
-    pub fn as_config_value(self) -> &'static str {
+    pub const fn as_config_value(self) -> &'static str {
         match self {
             Self::Csharp => "csharp",
         }
     }
 
     #[must_use]
-    pub fn display_name(self) -> &'static str {
+    pub const fn display_name(self) -> &'static str {
         match self {
             Self::Csharp => "C#",
         }
@@ -85,19 +85,19 @@ pub enum PipelineOutcome<T> {
     Diagnostics(Vec<DiagnosticJson>),
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct BuildOptions<'a> {
     pub data_out_dir: Option<&'a Path>,
     pub code_out_dir: Option<&'a Path>,
     pub namespace: Option<&'a str>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ExportOptions<'a> {
     pub out_dir: Option<&'a Path>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct CodegenOptions<'a> {
     pub out_dir: Option<&'a Path>,
     pub namespace: Option<&'a str>,
@@ -124,18 +124,33 @@ pub struct BuildReport {
     pub code: Option<CodegenReport>,
 }
 
+/// Runs schema, data loading, and CFT check validation for a project.
+///
+/// # Errors
+///
+/// Returns an error for project configuration errors or unrecoverable I/O and
+/// artifact errors. Schema, Excel, data-model, and check diagnostics are
+/// returned as `PipelineOutcome::Diagnostics`.
 pub fn check_project(project: &Project) -> Result<PipelineOutcome<CheckReport>, String> {
     let schema = match compile_project_schema(project)? {
         Ok(schema) => schema,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
     project.validate_for_data()?;
-    match load_project_excel(project, &schema)? {
+    match load_project_excel(project, &schema) {
         Ok(_) => Ok(PipelineOutcome::Success(CheckReport)),
         Err(diagnostics) => Ok(PipelineOutcome::Diagnostics(diagnostics)),
     }
 }
 
+/// Runs validation, data export, and configured code generation.
+///
+/// # Errors
+///
+/// Returns an error for invalid project/output configuration, unsupported
+/// output targets, or artifact write/codegen failures. Schema, Excel,
+/// data-model, and check diagnostics are returned as
+/// `PipelineOutcome::Diagnostics`.
 pub fn build_project(
     project: &Project,
     options: BuildOptions<'_>,
@@ -146,7 +161,7 @@ pub fn build_project(
         Ok(schema) => schema,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
-    let load_output = match load_project_excel(project, &schema)? {
+    let load_output = match load_project_excel(project, &schema) {
         Ok(output) => output,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
@@ -182,6 +197,14 @@ pub fn build_project(
     Ok(PipelineOutcome::Success(BuildReport { data, code }))
 }
 
+/// Exports project data in the requested format.
+///
+/// # Errors
+///
+/// Returns an error for invalid project/output configuration, unsupported data
+/// format configuration, or artifact write failures. Schema, Excel,
+/// data-model, and check diagnostics are returned as
+/// `PipelineOutcome::Diagnostics`.
 pub fn export_project_data(
     project: &Project,
     format: DataFormat,
@@ -198,7 +221,7 @@ pub fn export_project_data(
         Ok(schema) => schema,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
-    let load_output = match load_project_excel(project, &schema)? {
+    let load_output = match load_project_excel(project, &schema) {
         Ok(output) => output,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
@@ -206,6 +229,13 @@ pub fn export_project_data(
     Ok(PipelineOutcome::Success(ExportReport { format, dir }))
 }
 
+/// Generates project code for the requested target.
+///
+/// # Errors
+///
+/// Returns an error for invalid codegen configuration, unsupported target/data
+/// format combinations, or code artifact write failures. Schema diagnostics are
+/// returned as `PipelineOutcome::Diagnostics`.
 pub fn generate_project_code(
     project: &Project,
     target: CodegenTarget,

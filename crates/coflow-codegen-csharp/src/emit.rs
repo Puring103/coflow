@@ -598,119 +598,16 @@ fn push_resolve_nested_value(
 ) -> Result<(), CsharpCodegenError> {
     match ty {
         FieldType::Type(type_name) => {
-            let args = resolve_index_argument_list(ref_targets);
-            if view.type_is_struct(type_name) {
-                out.push(format!(
-                    "{access} = Resolve{type_name}Refs({access}, {args}, $\"{{path}}.{path_suffix}\");"
-                ));
-            } else {
-                out.push(format!(
-                    "Resolve{type_name}Refs({access}, {args}, $\"{{path}}.{path_suffix}\");"
-                ));
-            }
+            push_resolve_type_value(out, view, type_name, access, path_suffix, ref_targets);
         }
         FieldType::Array(inner) => {
-            if value_needs_resolve(inner, view) {
-                out.push("{".to_string());
-                out.push(format!(
-                    "    var list = (List<{}>){access};",
-                    csharp_type(inner)
-                ));
-                out.push("    for (var i = 0; i < list.Count; i++)".to_string());
-                out.push("    {".to_string());
-                let item_access = if value_needs_resolve_writeback(inner, view) {
-                    "list[i]".to_string()
-                } else {
-                    format!("{access}[i]")
-                };
-                let mut inner_statements = Vec::new();
-                push_resolve_nested_value(
-                    &mut inner_statements,
-                    view,
-                    inner,
-                    &item_access,
-                    &format!("{path_suffix}[{{i}}]"),
-                    ref_targets,
-                )?;
-                out.extend(
-                    inner_statements
-                        .into_iter()
-                        .map(|line| format!("        {line}")),
-                );
-                out.push("    }".to_string());
-                out.push("}".to_string());
-            }
+            push_resolve_array_value(out, view, inner, access, path_suffix, ref_targets)?;
         }
-        FieldType::Dict(_, value) => {
-            if value_needs_resolve(value, view) {
-                let FieldType::Dict(key, value) = ty else {
-                    unreachable!();
-                };
-                out.push("{".to_string());
-                out.push(format!(
-                    "    var dictionary = (Dictionary<{}, {}>){access};",
-                    csharp_type(key),
-                    csharp_type(value)
-                ));
-                out.push(format!(
-                    "    foreach (var key in new List<{}>(dictionary.Keys))",
-                    csharp_type(key)
-                ));
-                out.push("    {".to_string());
-                let mut inner_statements = Vec::new();
-                let value_access = if value_needs_resolve_writeback(value, view) {
-                    "dictionary[key]".to_string()
-                } else {
-                    format!("{access}[key]")
-                };
-                push_resolve_nested_value(
-                    &mut inner_statements,
-                    view,
-                    value,
-                    &value_access,
-                    &format!("{path_suffix}[{{key}}]"),
-                    ref_targets,
-                )?;
-                out.extend(
-                    inner_statements
-                        .into_iter()
-                        .map(|line| format!("        {line}")),
-                );
-                out.push("    }".to_string());
-                out.push("}".to_string());
-            }
+        FieldType::Dict(key, value) => {
+            push_resolve_dict_value(out, view, key, value, access, path_suffix, ref_targets)?;
         }
         FieldType::Nullable(inner) => {
-            if value_needs_resolve(inner, view) {
-                out.push(format!("if ({access} != null)"));
-                out.push("{".to_string());
-                let mut inner_statements = Vec::new();
-                let nested_access = if value_needs_resolve_writeback(inner, view) {
-                    "nullableValue"
-                } else {
-                    access
-                };
-                if value_needs_resolve_writeback(inner, view) {
-                    out.push(format!("    var nullableValue = {access}.Value;"));
-                }
-                push_resolve_nested_value(
-                    &mut inner_statements,
-                    view,
-                    inner,
-                    nested_access,
-                    path_suffix,
-                    ref_targets,
-                )?;
-                out.extend(
-                    inner_statements
-                        .into_iter()
-                        .map(|line| format!("    {line}")),
-                );
-                if value_needs_resolve_writeback(inner, view) {
-                    out.push(format!("    {access} = nullableValue;"));
-                }
-                out.push("}".to_string());
-            }
+            push_resolve_nullable_value(out, view, inner, access, path_suffix, ref_targets)?;
         }
         FieldType::Int
         | FieldType::Float
@@ -718,6 +615,169 @@ fn push_resolve_nested_value(
         | FieldType::String
         | FieldType::Enum(_) => {}
     }
+    Ok(())
+}
+
+fn push_resolve_type_value(
+    out: &mut Vec<String>,
+    view: &SchemaView,
+    type_name: &str,
+    access: &str,
+    path_suffix: &str,
+    ref_targets: &[String],
+) {
+    let args = resolve_index_argument_list(ref_targets);
+    if view.type_is_struct(type_name) {
+        out.push(format!(
+            "{access} = Resolve{type_name}Refs({access}, {args}, $\"{{path}}.{path_suffix}\");"
+        ));
+    } else {
+        out.push(format!(
+            "Resolve{type_name}Refs({access}, {args}, $\"{{path}}.{path_suffix}\");"
+        ));
+    }
+}
+
+fn push_resolve_array_value(
+    out: &mut Vec<String>,
+    view: &SchemaView,
+    inner: &FieldType,
+    access: &str,
+    path_suffix: &str,
+    ref_targets: &[String],
+) -> Result<(), CsharpCodegenError> {
+    if !value_needs_resolve(inner, view) {
+        return Ok(());
+    }
+    out.push("{".to_string());
+    out.push(format!(
+        "    var list = (List<{}>){access};",
+        csharp_type(inner)
+    ));
+    out.push("    for (var i = 0; i < list.Count; i++)".to_string());
+    out.push("    {".to_string());
+    let item_access = if value_needs_resolve_writeback(inner, view) {
+        "list[i]".to_string()
+    } else {
+        format!("{access}[i]")
+    };
+    push_indented_resolve_nested_value(
+        out,
+        view,
+        inner,
+        &item_access,
+        &format!("{path_suffix}[{{i}}]"),
+        ref_targets,
+        "        ",
+    )?;
+    out.push("    }".to_string());
+    out.push("}".to_string());
+    Ok(())
+}
+
+fn push_resolve_dict_value(
+    out: &mut Vec<String>,
+    view: &SchemaView,
+    key: &FieldType,
+    value: &FieldType,
+    access: &str,
+    path_suffix: &str,
+    ref_targets: &[String],
+) -> Result<(), CsharpCodegenError> {
+    if !value_needs_resolve(value, view) {
+        return Ok(());
+    }
+    out.push("{".to_string());
+    out.push(format!(
+        "    var dictionary = (Dictionary<{}, {}>){access};",
+        csharp_type(key),
+        csharp_type(value)
+    ));
+    out.push(format!(
+        "    foreach (var key in new List<{}>(dictionary.Keys))",
+        csharp_type(key)
+    ));
+    out.push("    {".to_string());
+    let value_access = if value_needs_resolve_writeback(value, view) {
+        "dictionary[key]".to_string()
+    } else {
+        format!("{access}[key]")
+    };
+    push_indented_resolve_nested_value(
+        out,
+        view,
+        value,
+        &value_access,
+        &format!("{path_suffix}[{{key}}]"),
+        ref_targets,
+        "        ",
+    )?;
+    out.push("    }".to_string());
+    out.push("}".to_string());
+    Ok(())
+}
+
+fn push_resolve_nullable_value(
+    out: &mut Vec<String>,
+    view: &SchemaView,
+    inner: &FieldType,
+    access: &str,
+    path_suffix: &str,
+    ref_targets: &[String],
+) -> Result<(), CsharpCodegenError> {
+    if !value_needs_resolve(inner, view) {
+        return Ok(());
+    }
+    out.push(format!("if ({access} != null)"));
+    out.push("{".to_string());
+    let needs_writeback = value_needs_resolve_writeback(inner, view);
+    let nested_access = if needs_writeback {
+        "nullableValue"
+    } else {
+        access
+    };
+    if needs_writeback {
+        out.push(format!("    var nullableValue = {access}.Value;"));
+    }
+    push_indented_resolve_nested_value(
+        out,
+        view,
+        inner,
+        nested_access,
+        path_suffix,
+        ref_targets,
+        "    ",
+    )?;
+    if needs_writeback {
+        out.push(format!("    {access} = nullableValue;"));
+    }
+    out.push("}".to_string());
+    Ok(())
+}
+
+fn push_indented_resolve_nested_value(
+    out: &mut Vec<String>,
+    view: &SchemaView,
+    ty: &FieldType,
+    access: &str,
+    path_suffix: &str,
+    ref_targets: &[String],
+    indent: &str,
+) -> Result<(), CsharpCodegenError> {
+    let mut inner_statements = Vec::new();
+    push_resolve_nested_value(
+        &mut inner_statements,
+        view,
+        ty,
+        access,
+        path_suffix,
+        ref_targets,
+    )?;
+    out.extend(
+        inner_statements
+            .into_iter()
+            .map(|line| format!("{indent}{line}")),
+    );
     Ok(())
 }
 
