@@ -20,6 +20,7 @@ use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProjectConfig {
     pub schema: SchemaConfig,
     #[serde(default)]
@@ -36,6 +37,7 @@ pub enum SchemaConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SourceConfig {
     pub file: PathBuf,
     #[serde(default)]
@@ -43,6 +45,7 @@ pub struct SourceConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SheetConfig {
     pub sheet: String,
     #[serde(rename = "type")]
@@ -52,12 +55,14 @@ pub struct SheetConfig {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OutputsConfig {
     pub data: Option<OutputConfig>,
     pub code: Option<OutputConfig>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OutputConfig {
     #[serde(rename = "type")]
     pub output_type: String,
@@ -95,6 +100,7 @@ impl Project {
             .map_err(|err| format!("failed to read `{}`: {err}", config_path.display()))?;
         let config = serde_yaml::from_str(&source)
             .map_err(|err| format!("failed to parse `{}`: {err}", config_path.display()))?;
+        validate_project_config(&root_dir, &config)?;
         Ok(Self {
             config_path,
             root_dir,
@@ -141,6 +147,115 @@ impl Project {
         } else {
             Err(format!("schema path `{}` does not exist", path.display()))
         }
+    }
+}
+
+fn validate_project_config(root_dir: &Path, config: &ProjectConfig) -> Result<(), String> {
+    validate_schema_config(root_dir, &config.schema)?;
+    validate_sources(root_dir, &config.sources)?;
+    validate_outputs(&config.outputs)?;
+    Ok(())
+}
+
+fn validate_schema_config(root_dir: &Path, schema: &SchemaConfig) -> Result<(), String> {
+    match schema {
+        SchemaConfig::One(path) => validate_schema_path(root_dir, path, "schema"),
+        SchemaConfig::Many(paths) => {
+            if paths.is_empty() {
+                return Err("schema list is empty".to_string());
+            }
+            for (index, path) in paths.iter().enumerate() {
+                validate_schema_path(root_dir, path, &format!("schema[{index}]"))?;
+            }
+            Ok(())
+        }
+    }
+}
+
+fn validate_schema_path(root_dir: &Path, path: &Path, label: &str) -> Result<(), String> {
+    if path.as_os_str().is_empty() {
+        return Err(format!("{label} path is empty"));
+    }
+    let resolved = resolve_project_relative(root_dir, path);
+    if !resolved.exists() {
+        return Err(format!("{label} path `{}` does not exist", path.display()));
+    }
+    Ok(())
+}
+
+fn validate_sources(root_dir: &Path, sources: &[SourceConfig]) -> Result<(), String> {
+    for (source_index, source) in sources.iter().enumerate() {
+        let source_label = format!("sources[{source_index}]");
+        if source.file.as_os_str().is_empty() {
+            return Err(format!("{source_label}.file is empty"));
+        }
+        if !resolve_project_relative(root_dir, &source.file).is_file() {
+            return Err(format!(
+                "{source_label}.file `{}` does not exist",
+                source.file.display()
+            ));
+        }
+        if source.sheets.is_empty() {
+            return Err(format!("{source_label}.sheets is empty"));
+        }
+        for (sheet_index, sheet) in source.sheets.iter().enumerate() {
+            let sheet_label = format!("{source_label}.sheets[{sheet_index}]");
+            if sheet.sheet.trim().is_empty() {
+                return Err(format!("{sheet_label}.sheet is empty"));
+            }
+            if let Some(type_name) = &sheet.type_name {
+                if type_name.trim().is_empty() {
+                    return Err(format!("{sheet_label}.type is empty"));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_outputs(outputs: &OutputsConfig) -> Result<(), String> {
+    if let Some(data) = &outputs.data {
+        if !matches!(data.output_type.as_str(), "json" | "messagepack") {
+            return Err(format!(
+                "outputs.data.type is `{}`; expected `json` or `messagepack`",
+                data.output_type
+            ));
+        }
+        validate_output_dir("outputs.data.dir", &data.dir)?;
+        if data.namespace.is_some() {
+            return Err("outputs.data.namespace is only valid for code outputs".to_string());
+        }
+    }
+    if let Some(code) = &outputs.code {
+        if code.output_type != "csharp" {
+            return Err(format!(
+                "outputs.code.type is `{}`; expected `csharp`",
+                code.output_type
+            ));
+        }
+        validate_output_dir("outputs.code.dir", &code.dir)?;
+        if let Some(namespace) = &code.namespace {
+            if namespace.trim().is_empty() {
+                return Err("outputs.code.namespace is empty".to_string());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_output_dir(label: &str, path: &Path) -> Result<(), String> {
+    if path.as_os_str().is_empty() {
+        Err(format!("{label} is empty"))
+    } else {
+        Ok(())
+    }
+}
+
+fn resolve_project_relative(root_dir: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        root_dir.join(path)
     }
 }
 
