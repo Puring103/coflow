@@ -3,7 +3,7 @@ use coflow_project::{
     compile_schema_project, dedupe_cft_diagnostics, DiagnosticJson, Project, SchemaBuild,
 };
 
-pub(crate) fn compile_project_schema(
+pub fn compile_project_schema(
     project: &Project,
 ) -> Result<Result<CftContainer, Vec<DiagnosticJson>>, String> {
     let build = compile_schema_project(project, None)?;

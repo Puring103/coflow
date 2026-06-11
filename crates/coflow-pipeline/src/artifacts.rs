@@ -9,7 +9,7 @@ use coflow_project::{OutputConfig, Project};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub(crate) fn output_dir(
+pub fn output_dir(
     project: &Project,
     output: &OutputConfig,
     override_dir: Option<&Path>,
@@ -20,7 +20,7 @@ pub(crate) fn output_dir(
     )
 }
 
-pub(crate) fn write_data_tables(
+pub fn write_data_tables(
     schema: &CftContainer,
     load_output: &ExcelLoadOutput,
     format: DataFormat,
@@ -32,7 +32,7 @@ pub(crate) fn write_data_tables(
     }
 }
 
-pub(crate) fn write_csharp_files(
+pub fn write_csharp_files(
     schema: &CftContainer,
     data_format: DataFormat,
     namespace: &str,
@@ -59,7 +59,7 @@ pub(crate) fn write_csharp_files(
     Ok(())
 }
 
-pub(crate) fn required_data_output<'a>(
+pub fn required_data_output<'a>(
     project: &'a Project,
     required_format: DataFormat,
     command: &str,
@@ -74,7 +74,7 @@ pub(crate) fn required_data_output<'a>(
     Ok(output)
 }
 
-pub(crate) fn required_code_output<'a>(
+pub fn required_code_output<'a>(
     project: &'a Project,
     required_target: CodegenTarget,
     command: &str,
@@ -89,10 +89,7 @@ pub(crate) fn required_code_output<'a>(
     Ok(output)
 }
 
-pub(crate) fn configured_data_format(
-    project: &Project,
-    command: &str,
-) -> Result<DataFormat, String> {
+pub fn configured_data_format(project: &Project, command: &str) -> Result<DataFormat, String> {
     let output = project.config.outputs.data.as_ref().ok_or_else(|| {
         format!(
             "coflow.yaml missing outputs.data; required `type: json` or `type: messagepack` for `{command}`"
@@ -106,7 +103,7 @@ pub(crate) fn configured_data_format(
     })
 }
 
-pub(crate) fn configured_data_output<'a>(
+pub fn configured_data_output<'a>(
     project: &'a Project,
     command: &str,
 ) -> Result<(&'a OutputConfig, DataFormat), String> {

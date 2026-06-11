@@ -89,13 +89,7 @@ impl<W: Write> LspServer<W> {
         match self.handle_message_inner(message) {
             Ok(()) => Ok(()),
             Err(err) if is_fatal_lsp_handler_error(&err) => Err(err),
-            Err(err) => {
-                if let Some(id) = id {
-                    self.write_error(&id, -32603, &err)
-                } else {
-                    Ok(())
-                }
-            }
+            Err(err) => id.map_or(Ok(()), |id| self.write_error(&id, -32603, &err)),
         }
     }
 
@@ -107,15 +101,13 @@ impl<W: Write> LspServer<W> {
         let params = message.get("params").unwrap_or(&Value::Null);
 
         if self.shutdown_requested && method != "exit" {
-            return if let Some(id) = id {
+            return id.map_or(Ok(()), |id| {
                 self.write_error(
                     &id,
                     -32600,
                     "server is shut down; only the exit notification is accepted",
                 )
-            } else {
-                Ok(())
-            };
+            });
         }
 
         match (id, method) {
@@ -2936,13 +2928,15 @@ fn lsp_range(
 
 fn path_from_file_uri(uri: &str) -> Option<PathBuf> {
     let rest = uri.strip_prefix("file://")?;
-    let (authority, path) = if let Some(stripped) = rest.strip_prefix('/') {
-        ("", format!("/{stripped}"))
-    } else if let Some((authority, path)) = rest.split_once('/') {
-        (authority, format!("/{path}"))
-    } else {
-        (rest, String::new())
-    };
+    let (authority, path) = rest.strip_prefix('/').map_or_else(
+        || {
+            rest.split_once('/').map_or_else(
+                || (rest, String::new()),
+                |(authority, path)| (authority, format!("/{path}")),
+            )
+        },
+        |stripped| ("", format!("/{stripped}")),
+    );
     let authority = percent_decode(authority)?;
     let decoded = percent_decode(&path)?;
     let path = if cfg!(windows) {
@@ -3028,6 +3022,7 @@ fn percent_encode_uri_path(value: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
