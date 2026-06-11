@@ -2,10 +2,15 @@
 {% for parameter in project.database.resolve.parameters %}        {{ parameter.ty }} {{ parameter.name }}{% if not loop.last %},{% endif %}
 {% endfor %}    )
     {
-{% for call in project.database.resolve.table_calls %}        foreach (var {{ call.item_var }} in {{ call.list_var }})
+{% for call in project.database.resolve.table_calls %}{% if call.returns_value %}        for (var i = 0; i < {{ call.list_var }}.Count; i++)
+        {
+            {{ call.list_var }}[i] = Resolve{{ call.table_name }}Refs({{ call.list_var }}[i], {{ call.index_args }}, {{ call.path_expr }});
+        }
+{% else %}        foreach (var {{ call.item_var }} in {{ call.list_var }})
         {
             Resolve{{ call.table_name }}Refs({{ call.item_var }}, {{ call.index_args }}, {{ call.path_expr }});
         }
+{% endif %}
 
 {% endfor %}    }
 
