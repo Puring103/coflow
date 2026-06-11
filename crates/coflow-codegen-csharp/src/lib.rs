@@ -891,6 +891,28 @@ mod tests {
     }
 
     #[test]
+    fn codegen_top_level_struct_tables_write_back_resolved_refs() -> Result<(), String> {
+        let schema = compile_schema(
+            r"
+                type Target { @id id: string; }
+                @struct
+                sealed type Record {
+                    @id id: string;
+                    @ref(Target)
+                    target_id: string;
+                }
+            ",
+        )?;
+
+        let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+            .map_err(|err| err.to_string())?;
+        let database = generated_file(&files, "GameConfig.cs")?;
+        require_contains(database, "records[i] = ResolveRecordRefs(")?;
+        require_not_contains(database, "foreach (var record in records)")?;
+        Ok(())
+    }
+
+    #[test]
     fn codegen_rejects_invalid_csharp_names() -> Result<(), String> {
         let unicode_type = compile_schema("type 示例 { value: int; }")?;
         let Err(err) = generate_json(&unicode_type, &CsharpCodegenOptions::new("Game.Config"))
