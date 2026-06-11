@@ -255,6 +255,45 @@ fn config_validation_rejects_invalid_sources_and_sheets() {
 }
 
 #[test]
+fn config_validation_rejects_duplicate_column_keys() {
+    let root = temp_project_dir("duplicate-column-keys");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        "type Item { id: string; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data").join("items.xlsx"), "").expect("write placeholder");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - file: data/items.xlsx
+    sheets:
+      - sheet: Items
+        columns:
+          A: id
+          A: name
+",
+    )
+    .expect("write config");
+
+    let output = coflow()
+        .args(["check", root.to_str().expect("utf8 temp path")])
+        .output()
+        .expect("run coflow check");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("duplicate columns key `A`"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
 fn schema_only_commands_do_not_require_excel_sources() {
     let root = temp_project_dir("schema-only-missing-source");
     let _cleanup = TempDirCleanup(root.clone());
@@ -315,6 +354,29 @@ outputs:
         String::from_utf8_lossy(&codegen.stderr)
     );
     assert!(codegen_dir.join("GameConfig.cs").exists());
+}
+
+#[test]
+fn init_existing_config_has_no_side_effects() {
+    let root = temp_project_dir("init-existing-config");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(&root).expect("create temp root");
+    std::fs::write(root.join("coflow.yaml"), "schema: schema/\n").expect("write config");
+
+    let output = coflow()
+        .args(["init", root.to_str().expect("utf8 temp path")])
+        .output()
+        .expect("run coflow init");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("coflow.yaml") && stderr.contains("already exists"),
+        "stderr: {stderr}"
+    );
+    assert!(!root.join("schema").exists());
+    assert!(!root.join("data").exists());
+    assert!(!root.join("generated").exists());
 }
 
 #[test]
@@ -670,6 +732,11 @@ fn codegen_csharp_rejects_unsupported_data_output_type() {
 
 #[test]
 fn generated_csharp_compiles_and_loads_exported_json() {
+    if std::env::var_os("COFLOW_RUN_DOTNET_E2E").is_none() {
+        eprintln!("skipping dotnet E2E test; set COFLOW_RUN_DOTNET_E2E=1 to run");
+        return;
+    }
+
     let suffix = format!(
         "{}-{}",
         std::process::id(),
@@ -813,6 +880,11 @@ Console.WriteLine("loaded");
 
 #[test]
 fn generated_csharp_compiles_and_loads_exported_messagepack() {
+    if std::env::var_os("COFLOW_RUN_DOTNET_E2E").is_none() {
+        eprintln!("skipping dotnet E2E test; set COFLOW_RUN_DOTNET_E2E=1 to run");
+        return;
+    }
+
     let suffix = unique_suffix();
     let root_dir = std::env::temp_dir().join(format!("coflow-csharp-messagepack-e2e-{suffix}"));
     let project_dir = root_dir.join("rpg");
@@ -891,7 +963,7 @@ fn generated_csharp_compiles_and_loads_exported_messagepack() {
 
     let add_package_output = Command::new("dotnet")
         .current_dir(&dotnet_dir)
-        .args(["add", "package", "MessagePack"])
+        .args(["add", "package", "MessagePack", "--version", "3.1.4"])
         .output()
         .expect("run dotnet add package");
     assert!(

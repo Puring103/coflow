@@ -13,7 +13,8 @@
 )]
 
 use coflow_cft::{CftContainer, CftDiagnostic, CftLabel, ModuleId, Span};
-use serde::{Deserialize, Serialize};
+use serde::de::{self, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{self, Read};
@@ -50,7 +51,7 @@ pub struct SheetConfig {
     pub sheet: String,
     #[serde(rename = "type")]
     pub type_name: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_columns")]
     pub columns: BTreeMap<String, String>,
 }
 
@@ -68,6 +69,36 @@ pub struct OutputConfig {
     pub output_type: String,
     pub dir: PathBuf,
     pub namespace: Option<String>,
+}
+
+fn deserialize_columns<'de, D>(deserializer: D) -> Result<BTreeMap<String, String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct ColumnsVisitor;
+
+    impl<'de> Visitor<'de> for ColumnsVisitor {
+        type Value = BTreeMap<String, String>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a mapping of Excel column names to CFT field names")
+        }
+
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: MapAccess<'de>,
+        {
+            let mut columns = BTreeMap::new();
+            while let Some((key, value)) = map.next_entry::<String, String>()? {
+                if columns.insert(key.clone(), value).is_some() {
+                    return Err(de::Error::custom(format!("duplicate columns key `{key}`")));
+                }
+            }
+            Ok(columns)
+        }
+    }
+
+    deserializer.deserialize_map(ColumnsVisitor)
 }
 
 #[derive(Debug)]
