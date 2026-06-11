@@ -90,7 +90,10 @@ fn validate_options(options: &CsharpCodegenOptions) -> Result<(), CsharpCodegenE
             options.database_class
         )));
     }
-    if options.database_class == "CftLoadException" {
+    if options
+        .database_class
+        .eq_ignore_ascii_case("CftLoadException")
+    {
         return Err(CsharpCodegenError::new(
             "generated C# database file `CftLoadException.cs` collides with reserved load exception file",
         ));
@@ -101,15 +104,27 @@ fn validate_options(options: &CsharpCodegenOptions) -> Result<(), CsharpCodegenE
 fn validate_schema_names(schema: &CftContainer) -> Result<(), CsharpCodegenError> {
     for schema_enum in schema.all_enums() {
         validate_ident("enum", &schema_enum.name)?;
+        validate_ident("enum", &csharp_type_name(&schema_enum.name))?;
+        let mut variants = BTreeMap::<String, String>::new();
         for variant in &schema_enum.variants {
             validate_ident("enum variant", &variant.name)?;
+            let csharp_variant = pascal_case(&variant.name);
+            validate_ident("enum variant", &csharp_variant)?;
+            insert_generated_enum_variant_name(
+                &mut variants,
+                &schema_enum.name,
+                &csharp_variant,
+                &variant.name,
+            )?;
         }
     }
 
     for schema_type in schema.all_types() {
         validate_ident("type", &schema_type.name)?;
+        validate_ident("type", &csharp_type_name(&schema_type.name))?;
         if let Some(parent) = &schema_type.parent {
             validate_ident("parent type", parent)?;
+            validate_ident("parent type", &csharp_type_name(parent))?;
         }
         for field in &schema_type.fields {
             let property_name = pascal_case(&field.name);
@@ -136,16 +151,17 @@ fn validate_generated_names(
     validate_generated_member_names(view)?;
 
     for table_name in &tables {
-        let list_property = pluralize(table_name);
+        let csharp_table = view.csharp_type_name(table_name);
+        let list_property = pluralize(&csharp_table);
         validate_member_ident("table list property", &list_property)?;
 
         let list_var = camel_case(&list_property);
         validate_ident("table list variable", &list_var)?;
 
-        let index_field = index_var_name(table_name);
+        let index_field = index_var_name(&csharp_table);
         validate_member_ident("table index field", &index_field)?;
 
-        let index_param = index_param_name(table_name);
+        let index_param = index_param_name(&csharp_table);
         validate_ident("table index parameter", &index_param)?;
 
         if resolves_refs {
@@ -155,7 +171,7 @@ fn validate_generated_names(
 
         let table = view.type_meta(table_name)?;
         for field in table.index_fields() {
-            let storage_field = multi_index_var_name(table_name, &field.name);
+            let storage_field = multi_index_var_name(&csharp_table, &field.name);
             validate_member_ident("multi-index storage field", &storage_field)?;
 
             let parameter_name = storage_field.trim_start_matches('_');
@@ -164,10 +180,11 @@ fn validate_generated_names(
     }
 
     for target in &ref_targets {
-        let ref_index_field = ref_index_var_name(target);
+        let csharp_target = view.csharp_type_name(target);
+        let ref_index_field = ref_index_var_name(&csharp_target);
         validate_member_ident("ref index field", &ref_index_field)?;
 
-        let ref_index_arg = ref_index_param_name(target);
+        let ref_index_arg = ref_index_param_name(&csharp_target);
         validate_ident("ref index parameter", &ref_index_arg)?;
     }
 
@@ -186,17 +203,20 @@ fn validate_generated_file_names(
     options: &CsharpCodegenOptions,
 ) -> Result<(), CsharpCodegenError> {
     let mut reserved = BTreeSet::new();
-    reserved.insert("GameConfig.cs".to_string());
-    reserved.insert(format!("{}.cs", options.database_class));
-    reserved.insert("CftLoadException.cs".to_string());
+    reserved.insert(case_insensitive_file_key("GameConfig.cs"));
+    reserved.insert(case_insensitive_file_key(&format!(
+        "{}.cs",
+        options.database_class
+    )));
+    reserved.insert(case_insensitive_file_key("CftLoadException.cs"));
 
     let mut file_sources = BTreeMap::<String, String>::new();
     for enum_name in &view.enums {
-        let file_name = format!("{}.cs", csharp_type_name(enum_name));
+        let file_name = format!("{}.cs", view.csharp_enum_name(enum_name));
         insert_generated_file_name(&mut file_sources, &reserved, &file_name, "enum", enum_name)?;
     }
     for type_name in view.all_type_names() {
-        let file_name = format!("{}.cs", csharp_type_name(&type_name));
+        let file_name = format!("{}.cs", view.csharp_type_name(&type_name));
         insert_generated_file_name(&mut file_sources, &reserved, &file_name, "type", &type_name)?;
     }
     Ok(())
@@ -209,17 +229,22 @@ fn insert_generated_file_name(
     kind: &str,
     source_name: &str,
 ) -> Result<(), CsharpCodegenError> {
-    if reserved.contains(file_name) {
+    let file_key = case_insensitive_file_key(file_name);
+    if reserved.contains(&file_key) {
         return Err(CsharpCodegenError::new(format!(
             "generated C# file name `{file_name}` is reserved for {kind} `{source_name}`"
         )));
     }
-    if let Some(existing) = file_sources.insert(file_name.to_string(), source_name.to_string()) {
+    if let Some(existing) = file_sources.insert(file_key, source_name.to_string()) {
         return Err(CsharpCodegenError::new(format!(
             "generated C# file name `{file_name}` collides between `{existing}` and `{source_name}`"
         )));
     }
     Ok(())
+}
+
+fn case_insensitive_file_key(file_name: &str) -> String {
+    file_name.to_ascii_lowercase()
 }
 
 fn validate_generated_member_names(view: &SchemaView) -> Result<(), CsharpCodegenError> {
@@ -251,6 +276,20 @@ fn insert_generated_member_name(
     if let Some(existing) = members.insert(member_name.to_string(), source_name.to_string()) {
         return Err(CsharpCodegenError::new(format!(
             "generated C# member name `{member_name}` collides in type `{type_name}` between fields `{existing}` and `{source_name}`"
+        )));
+    }
+    Ok(())
+}
+
+fn insert_generated_enum_variant_name(
+    variants: &mut BTreeMap<String, String>,
+    enum_name: &str,
+    variant_name: &str,
+    source_name: &str,
+) -> Result<(), CsharpCodegenError> {
+    if let Some(existing) = variants.insert(variant_name.to_string(), source_name.to_string()) {
+        return Err(CsharpCodegenError::new(format!(
+            "generated C# enum variant name `{variant_name}` collides in enum `{enum_name}` between variants `{existing}` and `{source_name}`"
         )));
     }
     Ok(())

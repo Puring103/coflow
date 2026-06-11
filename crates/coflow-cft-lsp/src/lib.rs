@@ -89,7 +89,13 @@ impl<W: Write> LspServer<W> {
         match self.handle_message_inner(message) {
             Ok(()) => Ok(()),
             Err(err) if is_fatal_lsp_handler_error(&err) => Err(err),
-            Err(err) => id.map_or(Ok(()), |id| self.write_error(&id, -32603, &err)),
+            Err(err) => {
+                if let Some(id) = id {
+                    self.write_error(&id, -32603, &err)
+                } else {
+                    self.write_log_message(1, &err)
+                }
+            }
         }
     }
 
@@ -460,6 +466,16 @@ impl<W: Write> LspServer<W> {
             "method": method,
             "params": params
         }))
+    }
+
+    fn write_log_message(&mut self, message_type: u8, message: &str) -> Result<(), String> {
+        self.write_notification(
+            "window/logMessage",
+            &json!({
+                "type": message_type,
+                "message": message
+            }),
+        )
     }
 
     fn write_json(&mut self, value: &Value) -> Result<(), String> {
@@ -3049,6 +3065,35 @@ mod tests {
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0]["id"], 7);
         assert!(messages[0]["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("schema path")));
+    }
+
+    #[test]
+    fn notification_errors_are_logged_without_returning_from_handler() {
+        let (_cleanup, project) =
+            test_project("lsp-notification-error", "type Item { id: string; }\n");
+        let schema_path = project.root_dir.join("schema");
+        std::fs::remove_dir_all(schema_path).expect("remove schema dir");
+        let mut server = LspServer::new(project, Vec::new());
+
+        let result = server.handle_message(&json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": "file:///missing.cft",
+                    "text": "type Item { id: string; }\n"
+                }
+            }
+        }));
+
+        assert!(result.is_ok(), "handler should isolate notification errors");
+        let messages = written_messages(&server.writer);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["method"], "window/logMessage");
+        assert_eq!(messages[0]["params"]["type"], 1);
+        assert!(messages[0]["params"]["message"]
             .as_str()
             .is_some_and(|message| message.contains("schema path")));
     }
