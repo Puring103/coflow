@@ -365,7 +365,9 @@ fn ignores_rows_that_are_empty_in_mapped_columns() -> TestResult {
         return Err("expected Item table".to_string());
     };
     assert_eq!(table.records.len(), 1);
-    assert!(table.primary_index.contains_key(&CfdIdValue::from("item_1")));
+    assert!(table
+        .primary_index
+        .contains_key(&CfdIdValue::from("item_1")));
     Ok(())
 }
 
