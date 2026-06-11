@@ -100,6 +100,10 @@ pub fn pascal_case(name: &str) -> String {
     out
 }
 
+pub fn csharp_type_name(name: &str) -> String {
+    pascal_case(name)
+}
+
 const fn is_csharp_ident_start(ch: char) -> bool {
     ch == '_' || ch.is_ascii_alphabetic()
 }
@@ -248,7 +252,6 @@ pub fn format_float(value: f64) -> String {
     if !text.contains('.') && !text.contains('e') && !text.contains('E') {
         text.push_str(".0");
     }
-    text.push('f');
     text
 }
 

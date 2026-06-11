@@ -61,6 +61,7 @@ pub struct CsharpDatabase {
 #[derive(Debug, Serialize)]
 pub struct CsharpTable {
     pub name: String,
+    pub source_name: String,
     pub list_property: String,
     pub list_var: String,
     pub item_var: String,
@@ -85,6 +86,7 @@ pub struct CsharpIndex {
 #[derive(Debug, Serialize)]
 pub struct CsharpRefIndex {
     pub target_name: String,
+    pub target_source_name: String,
     pub target_id_type: String,
     pub index_field: String,
     pub parameter_name: String,
@@ -95,6 +97,7 @@ pub struct CsharpRefIndex {
 pub struct CsharpRefIndexSource {
     pub list_var: String,
     pub table_name: String,
+    pub index_var: String,
     pub id_property: String,
     pub id_source_name: String,
 }
@@ -133,6 +136,7 @@ pub struct CsharpPolymorphicLoader {
 #[derive(Debug, Serialize)]
 pub struct CsharpPolymorphicCase {
     pub type_name: String,
+    pub source_name: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -145,16 +149,19 @@ pub struct CsharpResolve {
 #[derive(Debug, Serialize)]
 pub struct CsharpResolveTableCall {
     pub table_name: String,
+    pub source_name: String,
     pub list_var: String,
     pub item_var: String,
     pub id_property: String,
     pub index_args: String,
     pub path_expr: String,
+    pub returns_value: bool,
 }
 
 #[derive(Debug, Serialize)]
 pub struct CsharpResolveMethod {
     pub type_name: String,
+    pub returns_value: bool,
     pub is_polymorphic: bool,
     pub parameters: Vec<CsharpParameter>,
     pub statements: Vec<String>,

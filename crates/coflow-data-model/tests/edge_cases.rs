@@ -914,6 +914,32 @@ fn empty_array_default_does_not_constrain_element_type() {
     );
 }
 
+#[test]
+fn nullable_collection_defaults_apply_empty_values() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                @id id: string;
+                tags: [int]? = [];
+                attrs: {string: int}? = {};
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("Item", [("id", CfdInputValue::from("i1"))]);
+    let model = builder.build().expect("nullable defaults should build");
+    let id = record_id_at(&model, 0);
+    assert_eq!(
+        model.record(id).and_then(|r| r.field("tags")),
+        Some(&CfdValue::Array(Vec::new()))
+    );
+    assert_eq!(
+        model.record(id).and_then(|r| r.field("attrs")),
+        Some(&CfdValue::Dict(Vec::new()))
+    );
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // 4. Inheritance + reference resolution edge cases
 // ───────────────────────────────────────────────────────────────────────────
