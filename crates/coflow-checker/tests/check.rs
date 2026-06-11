@@ -596,6 +596,26 @@ fn sum_reports_integer_overflow_consistently_with_other_arithmetic() {
 }
 
 #[test]
+fn unary_negation_reports_overflow() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                value: int;
+                check { -value > 0; }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("Item", [("value", CfdInputValue::from(i64::MIN))]);
+    let model = builder.build().expect("data model should build");
+    let result = std::panic::catch_unwind(|| model.run_checks(&schema));
+    assert!(result.is_ok(), "check runner should not panic");
+    let err = result.unwrap().expect_err("overflow eval error");
+    assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
+}
+
+#[test]
 fn sum_of_empty_float_array_uses_declared_element_type() {
     let schema = compile_schema(
         r#"
@@ -614,6 +634,27 @@ fn sum_of_empty_float_array_uses_declared_element_type() {
     model
         .run_checks(&schema)
         .expect("empty float sum should evaluate as 0.0");
+}
+
+#[test]
+fn sum_values_of_empty_float_dict_uses_value_type() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                scores: {string: float} = {};
+                check { sum(values(scores)) == 0.0; }
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(CfdInputRecord::new(
+        "Item",
+        std::iter::empty::<(&str, CfdInputValue)>(),
+    ));
+    let model = builder.build().expect("data model should build");
+    model
+        .run_checks(&schema)
+        .expect("empty float dict values should sum to 0.0");
 }
 
 #[test]
