@@ -212,6 +212,10 @@ struct CodegenCsharpArgs {
 
 fn init_project(args: InitArgs) -> Result<bool, String> {
     let dir = args.dir.unwrap_or_else(|| PathBuf::from("."));
+    let config_path = dir.join("coflow.yaml");
+    if config_path.exists() {
+        return Err(format!("`{}` already exists", config_path.display()));
+    }
     fs::create_dir_all(dir.join("schema"))
         .map_err(|err| format!("failed to create `{}`: {err}", dir.join("schema").display()))?;
     fs::create_dir_all(dir.join("data"))
@@ -228,10 +232,6 @@ fn init_project(args: InitArgs) -> Result<bool, String> {
             dir.join("generated").join("csharp").display()
         )
     })?;
-    let config_path = dir.join("coflow.yaml");
-    if config_path.exists() {
-        return Err(format!("`{}` already exists", config_path.display()));
-    }
     let config = r"schema: schema/
 
 sources: []
