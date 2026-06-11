@@ -205,7 +205,7 @@ impl<'a> CheckEvaluator<'a> {
                     })
                     .collect(),
             ),
-            CheckValue::Dict(entries) => Some(
+            CheckValue::Dict { entries, .. } => Some(
                 entries
                     .into_iter()
                     .enumerate()
@@ -432,7 +432,7 @@ impl<'a> CheckEvaluator<'a> {
                         );
                     })
             }
-            CheckValue::Dict(entries) => {
+            CheckValue::Dict { entries, .. } => {
                 let Some(key) = dict_key_from_check_value(&index.value) else {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
@@ -514,7 +514,7 @@ impl<'a> CheckEvaluator<'a> {
                         CheckValue::Int(items.len() as i64),
                         arg_value.path,
                     )),
-                    CheckValue::Dict(entries) => Ok(LocatedCheckValue::new(
+                    CheckValue::Dict { entries, .. } => Ok(LocatedCheckValue::new(
                         CheckValue::Int(entries.len() as i64),
                         arg_value.path,
                     )),
@@ -593,7 +593,10 @@ impl<'a> CheckEvaluator<'a> {
                     return Err(());
                 };
                 let arg_value = self.eval_expr(arg)?;
-                let CheckValue::Dict(entries) = arg_value.value else {
+                let CheckValue::Dict {
+                    entries, key_type, ..
+                } = arg_value.value
+                else {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         arg_value.path,
@@ -604,7 +607,7 @@ impl<'a> CheckEvaluator<'a> {
                 Ok(LocatedCheckValue::new(
                     CheckValue::Array {
                         items: entries.into_iter().map(|entry| *entry.key).collect(),
-                        element_type: None,
+                        element_type: key_type,
                     },
                     arg_value.path,
                 ))
@@ -618,7 +621,12 @@ impl<'a> CheckEvaluator<'a> {
                     return Err(());
                 };
                 let arg_value = self.eval_expr(arg)?;
-                let CheckValue::Dict(entries) = arg_value.value else {
+                let CheckValue::Dict {
+                    entries,
+                    value_type,
+                    ..
+                } = arg_value.value
+                else {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         arg_value.path,
@@ -629,7 +637,7 @@ impl<'a> CheckEvaluator<'a> {
                 Ok(LocatedCheckValue::new(
                     CheckValue::Array {
                         items: entries.into_iter().map(|entry| entry.value).collect(),
-                        element_type: None,
+                        element_type: value_type,
                     },
                     arg_value.path,
                 ))
@@ -803,11 +811,13 @@ impl<'a> CheckEvaluator<'a> {
     fn contains_value(&mut self, collection: &CheckValue, value: &CheckValue) -> bool {
         match collection {
             CheckValue::Array { items, .. } => items.iter().any(|item| values_equal(item, value)),
-            CheckValue::Dict(entries) => dict_key_from_check_value(value).is_some_and(|key| {
-                entries
-                    .iter()
-                    .any(|entry| entry.key_key() == Some(key.clone()))
-            }),
+            CheckValue::Dict { entries, .. } => {
+                dict_key_from_check_value(value).is_some_and(|key| {
+                    entries
+                        .iter()
+                        .any(|entry| entry.key_key() == Some(key.clone()))
+                })
+            }
             _ => false,
         }
     }
@@ -823,7 +833,7 @@ impl<'a> CheckEvaluator<'a> {
                 Ok(LocatedCheckValue::new(CheckValue::Bool(!value), path))
             }
             (CftSchemaUnaryOp::Neg, CheckValue::Int(value)) => {
-                Ok(LocatedCheckValue::new(CheckValue::Int(-value), path))
+                self.checked_int(value.checked_neg(), path, "integer negation overflowed")
             }
             (CftSchemaUnaryOp::Neg, CheckValue::Float(value)) => {
                 Ok(LocatedCheckValue::new(CheckValue::Float(-value), path))
