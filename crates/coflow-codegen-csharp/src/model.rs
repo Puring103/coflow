@@ -150,11 +150,13 @@ pub struct CsharpResolveTableCall {
     pub id_property: String,
     pub index_args: String,
     pub path_expr: String,
+    pub returns_value: bool,
 }
 
 #[derive(Debug, Serialize)]
 pub struct CsharpResolveMethod {
     pub type_name: String,
+    pub returns_value: bool,
     pub is_polymorphic: bool,
     pub parameters: Vec<CsharpParameter>,
     pub statements: Vec<String>,

@@ -196,14 +196,14 @@
         }
     }
 
-    private static float ReadFloat(ref MessagePackReader reader, string path)
+    private static double ReadFloat(ref MessagePackReader reader, string path)
     {
         try
         {
             return reader.NextMessagePackType switch
             {
-                MessagePackType.Integer => (float)ReadInt(ref reader, path),
-                MessagePackType.Float => (float)reader.ReadDouble(),
+                MessagePackType.Integer => (double)ReadInt(ref reader, path),
+                MessagePackType.Float => reader.ReadDouble(),
                 _ => throw TypeError(path, "number", reader.NextMessagePackType.ToString()),
             };
         }

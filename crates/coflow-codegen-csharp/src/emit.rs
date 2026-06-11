@@ -63,7 +63,11 @@ pub fn build_csharp_type(schema_type: &CftSchemaType, view: &SchemaView) -> Csha
         properties.push(CsharpProperty {
             name: pascal_case(&field.name),
             type_name: csharp_property_type(&field_ty),
-            setter: "init".to_string(),
+            setter: if field_needs_resolve_writeback(&field_ty, view) {
+                "internal set".to_string()
+            } else {
+                "init".to_string()
+            },
             initializer: if is_struct {
                 None
             } else {
@@ -475,6 +479,7 @@ fn build_resolve_model(
                 camel_case(table_name),
                 pascal_case(&id_field.name)
             ),
+            returns_value: table.is_struct,
         });
     }
 
@@ -506,6 +511,7 @@ fn build_type_resolver(
     }
     Ok(CsharpResolveMethod {
         type_name: ty.name.clone(),
+        returns_value: ty.is_struct,
         is_polymorphic: false,
         parameters: resolve_index_parameter_models(view, ref_targets)?,
         statements,
@@ -520,6 +526,7 @@ fn build_polymorphic_resolver(
 ) -> Result<CsharpResolveMethod, CsharpCodegenError> {
     Ok(CsharpResolveMethod {
         type_name: ty.name.clone(),
+        returns_value: false,
         is_polymorphic: true,
         parameters: resolve_index_parameter_models(view, ref_targets)?,
         statements: Vec::new(),
@@ -591,50 +598,85 @@ fn push_resolve_nested_value(
 ) -> Result<(), CsharpCodegenError> {
     match ty {
         FieldType::Type(type_name) => {
-            out.push(format!(
-                "Resolve{type_name}Refs({access}, {}, $\"{{path}}.{path_suffix}\");",
-                resolve_index_argument_list(ref_targets)
-            ));
+            let args = resolve_index_argument_list(ref_targets);
+            if view.type_is_struct(type_name) {
+                out.push(format!(
+                    "{access} = Resolve{type_name}Refs({access}, {args}, $\"{{path}}.{path_suffix}\");"
+                ));
+            } else {
+                out.push(format!(
+                    "Resolve{type_name}Refs({access}, {args}, $\"{{path}}.{path_suffix}\");"
+                ));
+            }
         }
         FieldType::Array(inner) => {
             if value_needs_resolve(inner, view) {
-                out.push(format!("for (var i = 0; i < {access}.Count; i++)"));
                 out.push("{".to_string());
+                out.push(format!(
+                    "    var list = (List<{}>){access};",
+                    csharp_type(inner)
+                ));
+                out.push("    for (var i = 0; i < list.Count; i++)".to_string());
+                out.push("    {".to_string());
+                let item_access = if value_needs_resolve_writeback(inner, view) {
+                    "list[i]".to_string()
+                } else {
+                    format!("{access}[i]")
+                };
                 let mut inner_statements = Vec::new();
                 push_resolve_nested_value(
                     &mut inner_statements,
                     view,
                     inner,
-                    &format!("{access}[i]"),
+                    &item_access,
                     &format!("{path_suffix}[{{i}}]"),
                     ref_targets,
                 )?;
                 out.extend(
                     inner_statements
                         .into_iter()
-                        .map(|line| format!("    {line}")),
+                        .map(|line| format!("        {line}")),
                 );
+                out.push("    }".to_string());
                 out.push("}".to_string());
             }
         }
         FieldType::Dict(_, value) => {
             if value_needs_resolve(value, view) {
-                out.push(format!("foreach (var pair in {access})"));
+                let FieldType::Dict(key, value) = ty else {
+                    unreachable!();
+                };
                 out.push("{".to_string());
+                out.push(format!(
+                    "    var dictionary = (Dictionary<{}, {}>){access};",
+                    csharp_type(key),
+                    csharp_type(value)
+                ));
+                out.push(format!(
+                    "    foreach (var key in new List<{}>(dictionary.Keys))",
+                    csharp_type(key)
+                ));
+                out.push("    {".to_string());
                 let mut inner_statements = Vec::new();
+                let value_access = if value_needs_resolve_writeback(value, view) {
+                    "dictionary[key]".to_string()
+                } else {
+                    format!("{access}[key]")
+                };
                 push_resolve_nested_value(
                     &mut inner_statements,
                     view,
                     value,
-                    "pair.Value",
-                    &format!("{path_suffix}[{{pair.Key}}]"),
+                    &value_access,
+                    &format!("{path_suffix}[{{key}}]"),
                     ref_targets,
                 )?;
                 out.extend(
                     inner_statements
                         .into_iter()
-                        .map(|line| format!("    {line}")),
+                        .map(|line| format!("        {line}")),
                 );
+                out.push("    }".to_string());
                 out.push("}".to_string());
             }
         }
@@ -643,11 +685,19 @@ fn push_resolve_nested_value(
                 out.push(format!("if ({access} != null)"));
                 out.push("{".to_string());
                 let mut inner_statements = Vec::new();
+                let nested_access = if value_needs_resolve_writeback(inner, view) {
+                    "nullableValue"
+                } else {
+                    access
+                };
+                if value_needs_resolve_writeback(inner, view) {
+                    out.push(format!("    var nullableValue = {access}.Value;"));
+                }
                 push_resolve_nested_value(
                     &mut inner_statements,
                     view,
                     inner,
-                    access,
+                    nested_access,
                     path_suffix,
                     ref_targets,
                 )?;
@@ -656,6 +706,9 @@ fn push_resolve_nested_value(
                         .into_iter()
                         .map(|line| format!("    {line}")),
                 );
+                if value_needs_resolve_writeback(inner, view) {
+                    out.push(format!("    {access} = nullableValue;"));
+                }
                 out.push("}".to_string());
             }
         }
@@ -673,6 +726,25 @@ fn value_needs_resolve(ty: &FieldType, view: &SchemaView) -> bool {
         FieldType::Type(name) => view.range_contains_ref(name),
         FieldType::Array(inner) | FieldType::Nullable(inner) => value_needs_resolve(inner, view),
         FieldType::Dict(_, value) => value_needs_resolve(value, view),
+        FieldType::Int
+        | FieldType::Float
+        | FieldType::Bool
+        | FieldType::String
+        | FieldType::Enum(_) => false,
+    }
+}
+
+fn field_needs_resolve_writeback(ty: &FieldType, view: &SchemaView) -> bool {
+    value_needs_resolve_writeback(ty, view)
+}
+
+fn value_needs_resolve_writeback(ty: &FieldType, view: &SchemaView) -> bool {
+    match ty {
+        FieldType::Type(name) => view.type_is_struct(name) && view.range_contains_ref(name),
+        FieldType::Array(inner) | FieldType::Nullable(inner) => {
+            value_needs_resolve_writeback(inner, view)
+        }
+        FieldType::Dict(_, value) => value_needs_resolve_writeback(value, view),
         FieldType::Int
         | FieldType::Float
         | FieldType::Bool
@@ -882,7 +954,7 @@ fn read_messagepack_dict_key_expr(
 fn csharp_type(ty: &FieldType) -> String {
     match ty {
         FieldType::Int => "long".to_string(),
-        FieldType::Float => "float".to_string(),
+        FieldType::Float => "double".to_string(),
         FieldType::Bool => "bool".to_string(),
         FieldType::String => "string".to_string(),
         FieldType::Type(name) | FieldType::Enum(name) => name.clone(),
