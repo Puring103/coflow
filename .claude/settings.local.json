@@ -11,7 +11,8 @@
       "Bash(node *)",
       "Bash(cargo check *)",
       "Bash(cargo fix *)",
-      "Bash(cargo clippy *)"
+      "Bash(cargo clippy *)",
+      "Bash(git stash *)"
     ]
   }
 }
