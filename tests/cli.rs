@@ -587,7 +587,7 @@ fn codegen_csharp_writes_newtonsoft_json_loader() {
     assert!(game_config.contains("using Newtonsoft.Json.Linq;"));
     assert!(game_config.contains("DuplicatePropertyNameHandling.Error"));
     assert!(game_config.contains("LoadRewardPolymorphic"));
-    assert!(game_config.contains("ResolveRewardRefs(value.Rewards[i]"));
+    assert!(game_config.contains("ResolveRewardRefs(list1[i1]"));
 
     let item_reward =
         std::fs::read_to_string(out_dir.join("ItemReward.cs")).expect("ItemReward.cs");

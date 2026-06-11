@@ -75,7 +75,7 @@
         var typeName = ReadString(ref reader, $"{path}.$type");
         return typeName switch
         {
-{% for case in loader.cases %}            "{{ case.type_name }}" => Load{{ case.type_name }}Body(ref reader, path, count - 1),
+{% for case in loader.cases %}            "{{ case.source_name }}" => Load{{ case.type_name }}Body(ref reader, path, count - 1),
 {% endfor %}            _ => throw new CftLoadException($"unknown polymorphic type `{typeName}`", $"{path}.$type", "{{ loader.expected }}", typeName),
         };
     }

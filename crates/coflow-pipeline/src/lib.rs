@@ -132,11 +132,11 @@ pub struct BuildReport {
 /// artifact errors. Schema, Excel, data-model, and check diagnostics are
 /// returned as `PipelineOutcome::Diagnostics`.
 pub fn check_project(project: &Project) -> Result<PipelineOutcome<CheckReport>, String> {
+    project.validate_for_data()?;
     let schema = match compile_project_schema(project)? {
         Ok(schema) => schema,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
-    project.validate_for_data()?;
     match load_project_excel(project, &schema) {
         Ok(_) => Ok(PipelineOutcome::Success(CheckReport)),
         Err(diagnostics) => Ok(PipelineOutcome::Diagnostics(diagnostics)),

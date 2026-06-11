@@ -49,6 +49,40 @@ fn check_project_returns_schema_diagnostics() {
 }
 
 #[test]
+fn check_project_validates_excel_sources_before_schema_diagnostics() {
+    let root = temp_project_dir("coflow-pipeline-check-source-before-schema");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::write(
+        root.join("schema").join("bad.cft"),
+        "type Broken { value: Missing; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - file: data/missing.xlsx
+    sheets:
+      - sheet: Items
+        type: Item
+        columns:
+          A: id
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+
+    let err = check_project(&project).expect_err("missing source should be validated first");
+
+    assert!(err.contains("sources[0].file `data/missing.xlsx` does not exist"));
+}
+
+#[test]
 fn export_project_data_writes_json_tables() {
     let project = Project::open_schema_only(Some(workspace_path("examples/rpg").as_path()))
         .expect("open project");

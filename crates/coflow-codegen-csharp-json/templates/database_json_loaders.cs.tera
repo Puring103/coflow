@@ -14,7 +14,7 @@
 
         return typeName switch
         {
-{% for case in loader.cases %}            "{{ case.type_name }}" => Load{{ case.type_name }}(token, path),
+{% for case in loader.cases %}            "{{ case.source_name }}" => Load{{ case.type_name }}(token, path),
 {% endfor %}            _ => throw new CftLoadException($"unknown polymorphic type `{typeName}`", $"{path}.$type", "{{ loader.expected }}", typeName),
         };
     }
