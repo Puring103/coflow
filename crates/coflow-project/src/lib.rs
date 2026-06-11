@@ -85,6 +85,19 @@ impl Project {
     /// Returns an error when the config path cannot be found, read,
     /// canonicalized, or parsed as YAML.
     pub fn open(config_or_dir: Option<&Path>) -> Result<Self, String> {
+        let project = Self::open_schema_only(config_or_dir)?;
+        project.validate_for_data()?;
+        Ok(project)
+    }
+
+    /// Opens a Coflow project without validating data-stage source files.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the config path cannot be found, read,
+    /// canonicalized, parsed as YAML, or references invalid schema/output
+    /// configuration.
+    pub fn open_schema_only(config_or_dir: Option<&Path>) -> Result<Self, String> {
         let config_path = resolve_config_path(config_or_dir)?;
         let config_path = fs::canonicalize(&config_path).map_err(|err| {
             format!(
@@ -100,12 +113,52 @@ impl Project {
             .map_err(|err| format!("failed to read `{}`: {err}", config_path.display()))?;
         let config = serde_yaml::from_str(&source)
             .map_err(|err| format!("failed to parse `{}`: {err}", config_path.display()))?;
-        validate_project_config(&root_dir, &config)?;
+        validate_project_config_schema_only(&root_dir, &config)?;
         Ok(Self {
             config_path,
             root_dir,
             config,
         })
+    }
+
+    /// Validates source settings required by data loading commands.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when an Excel source file is missing or a data-stage
+    /// source/sheet setting is invalid.
+    pub fn validate_for_data(&self) -> Result<(), String> {
+        validate_sources(&self.root_dir, &self.config.sources)
+    }
+
+    /// Validates output settings required by C# code generation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when code or data output settings are missing or use
+    /// unsupported output types.
+    pub fn validate_for_codegen(&self) -> Result<(), String> {
+        let code = self.config.outputs.code.as_ref().ok_or_else(|| {
+            "coflow.yaml missing outputs.code; required `type: csharp` for `coflow codegen csharp`"
+                .to_string()
+        })?;
+        if code.output_type != "csharp" {
+            return Err(format!(
+                "coflow.yaml outputs.code.type is `{}`; expected `csharp`",
+                code.output_type
+            ));
+        }
+        let data = self.config.outputs.data.as_ref().ok_or_else(|| {
+            "coflow.yaml missing outputs.data; required `type: json` or `type: messagepack` for `coflow codegen csharp`"
+                .to_string()
+        })?;
+        if !matches!(data.output_type.as_str(), "json" | "messagepack") {
+            return Err(format!(
+                "coflow.yaml outputs.data.type is `{}`; expected `json` or `messagepack`",
+                data.output_type
+            ));
+        }
+        Ok(())
     }
 
     #[must_use]
@@ -150,10 +203,13 @@ impl Project {
     }
 }
 
-fn validate_project_config(root_dir: &Path, config: &ProjectConfig) -> Result<(), String> {
+fn validate_project_config_schema_only(
+    root_dir: &Path,
+    config: &ProjectConfig,
+) -> Result<(), String> {
     validate_schema_config(root_dir, &config.schema)?;
-    validate_sources(root_dir, &config.sources)?;
     validate_outputs(&config.outputs)?;
+    validate_source_shapes(&config.sources)?;
     Ok(())
 }
 
@@ -184,11 +240,9 @@ fn validate_schema_path(root_dir: &Path, path: &Path, label: &str) -> Result<(),
 }
 
 fn validate_sources(root_dir: &Path, sources: &[SourceConfig]) -> Result<(), String> {
+    validate_source_shapes(sources)?;
     for (source_index, source) in sources.iter().enumerate() {
         let source_label = format!("sources[{source_index}]");
-        if source.file.as_os_str().is_empty() {
-            return Err(format!("{source_label}.file is empty"));
-        }
         if !resolve_project_relative(root_dir, &source.file).is_file() {
             return Err(format!(
                 "{source_label}.file `{}` does not exist",
@@ -197,6 +251,16 @@ fn validate_sources(root_dir: &Path, sources: &[SourceConfig]) -> Result<(), Str
         }
         if source.sheets.is_empty() {
             return Err(format!("{source_label}.sheets is empty"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_source_shapes(sources: &[SourceConfig]) -> Result<(), String> {
+    for (source_index, source) in sources.iter().enumerate() {
+        let source_label = format!("sources[{source_index}]");
+        if source.file.as_os_str().is_empty() {
+            return Err(format!("{source_label}.file is empty"));
         }
         for (sheet_index, sheet) in source.sheets.iter().enumerate() {
             let sheet_label = format!("{source_label}.sheets[{sheet_index}]");
