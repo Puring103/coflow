@@ -255,6 +255,117 @@ fn config_validation_rejects_invalid_sources_and_sheets() {
 }
 
 #[test]
+fn schema_only_commands_do_not_require_excel_sources() {
+    let root = temp_project_dir("schema-only-missing-source");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        "type Item { @id id: string; value: int; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - file: data/missing.xlsx
+    sheets:
+      - sheet: Items
+        type: Item
+        columns:
+          A: id
+outputs:
+  data:
+    type: json
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Game.Config
+",
+    )
+    .expect("write config");
+
+    let cft_check = coflow()
+        .args(["cft", "check", root.to_str().expect("utf8 path")])
+        .output()
+        .expect("run cft check");
+    assert!(
+        cft_check.status.success(),
+        "cft check should not require xlsx\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&cft_check.stdout),
+        String::from_utf8_lossy(&cft_check.stderr)
+    );
+
+    let codegen_dir = root.join("generated").join("csharp");
+    let codegen = coflow()
+        .args([
+            "codegen",
+            "csharp",
+            root.to_str().expect("utf8 path"),
+            "--out",
+            codegen_dir.to_str().expect("utf8 path"),
+        ])
+        .output()
+        .expect("run codegen");
+    assert!(
+        codegen.status.success(),
+        "codegen should not require xlsx\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&codegen.stdout),
+        String::from_utf8_lossy(&codegen.stderr)
+    );
+    assert!(codegen_dir.join("GameConfig.cs").exists());
+}
+
+#[test]
+fn data_commands_require_excel_sources() {
+    let root = temp_project_dir("data-missing-source");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        "type Item { @id id: string; value: int; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - file: data/missing.xlsx
+    sheets:
+      - sheet: Items
+        type: Item
+        columns:
+          A: id
+outputs:
+  data:
+    type: json
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Game.Config
+",
+    )
+    .expect("write config");
+
+    for args in [
+        vec!["check", root.to_str().expect("utf8 path")],
+        vec!["build", root.to_str().expect("utf8 path")],
+        vec!["export", "json", root.to_str().expect("utf8 path")],
+    ] {
+        let output = coflow().args(args).output().expect("run data command");
+        assert!(!output.status.success());
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains("sources[0].file `data/missing.xlsx` does not exist"),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
 fn export_json_validates_declared_output_type() {
     let out_dir =
         std::env::temp_dir().join(format!("coflow-json-export-test-{}", std::process::id()));
@@ -1626,6 +1737,14 @@ fn unique_suffix() -> String {
             .expect("system time")
             .as_nanos()
     )
+}
+
+fn temp_project_dir(name: &str) -> std::path::PathBuf {
+    let root = std::env::temp_dir().join(format!("coflow-{name}-{}", unique_suffix()));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean old temp dir");
+    }
+    root
 }
 
 struct TempDirCleanup(std::path::PathBuf);
