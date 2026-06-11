@@ -2,14 +2,19 @@
 {% for parameter in project.database.resolve.parameters %}        {{ parameter.ty }} {{ parameter.name }}{% if not loop.last %},{% endif %}
 {% endfor %}    )
     {
-{% for call in project.database.resolve.table_calls %}        foreach (var {{ call.item_var }} in {{ call.list_var }})
+{% for call in project.database.resolve.table_calls %}{% if call.returns_value %}        for (var i = 0; i < {{ call.list_var }}.Count; i++)
+        {
+            {{ call.list_var }}[i] = Resolve{{ call.table_name }}Refs({{ call.list_var }}[i], {{ call.index_args }}, {{ call.path_expr }});
+        }
+{% else %}        foreach (var {{ call.item_var }} in {{ call.list_var }})
         {
             Resolve{{ call.table_name }}Refs({{ call.item_var }}, {{ call.index_args }}, {{ call.path_expr }});
         }
+{% endif %}
 
 {% endfor %}    }
 
-{% for method in project.database.resolve.methods %}    private static void Resolve{{ method.type_name }}Refs({{ method.type_name }} value{% for parameter in method.parameters %}, {{ parameter.ty }} {{ parameter.name }}{% endfor %}, string path)
+{% for method in project.database.resolve.methods %}    private static {% if method.returns_value %}{{ method.type_name }}{% else %}void{% endif %} Resolve{{ method.type_name }}Refs({{ method.type_name }} value{% for parameter in method.parameters %}, {{ parameter.ty }} {{ parameter.name }}{% endfor %}, string path)
     {
 {% if method.is_polymorphic %}        switch (value)
         {
@@ -18,6 +23,7 @@
                 break;
 {% endfor %}        }
 {% else %}{% for statement in method.statements %}        {{ statement }}
-{% endfor %}{% endif %}    }
+{% endfor %}{% if method.returns_value %}        return value;
+{% endif %}{% endif %}    }
 
 {% endfor %}{% endif %}

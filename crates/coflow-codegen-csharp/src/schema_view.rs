@@ -1,4 +1,4 @@
-use crate::names::{annotation_name_arg, has_annotation};
+use crate::names::{annotation_name_arg, csharp_type_name, has_annotation};
 use crate::CsharpCodegenError;
 use coflow_cft::{
     CftAnnotation, CftContainer, CftSchemaDefaultValue, CftSchemaField, CftSchemaType,
@@ -11,6 +11,8 @@ pub struct SchemaView {
     pub types: BTreeMap<String, TypeMeta>,
     pub enums: BTreeSet<String>,
     children: BTreeMap<String, BTreeSet<String>>,
+    csharp_types: BTreeMap<String, String>,
+    csharp_enums: BTreeMap<String, String>,
 }
 
 impl SchemaView {
@@ -39,11 +41,31 @@ impl SchemaView {
                 )
             })
             .collect::<BTreeMap<_, _>>();
+        let csharp_types = schema
+            .all_types()
+            .map(|schema_type| {
+                (
+                    schema_type.name.clone(),
+                    csharp_type_name(&schema_type.name),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        let csharp_enums = schema
+            .all_enums()
+            .map(|schema_enum| {
+                (
+                    schema_enum.name.clone(),
+                    csharp_type_name(&schema_enum.name),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
 
         Self {
             types,
             enums,
             children,
+            csharp_types,
+            csharp_enums,
         }
     }
 
@@ -89,6 +111,28 @@ impl SchemaView {
 
     pub fn type_is_struct(&self, type_name: &str) -> bool {
         self.types.get(type_name).is_some_and(|ty| ty.is_struct)
+    }
+
+    pub fn csharp_type_name(&self, type_name: &str) -> String {
+        self.csharp_types
+            .get(type_name)
+            .cloned()
+            .unwrap_or_else(|| csharp_type_name(type_name))
+    }
+
+    pub fn csharp_enum_name(&self, enum_name: &str) -> String {
+        self.csharp_enums
+            .get(enum_name)
+            .cloned()
+            .unwrap_or_else(|| csharp_type_name(enum_name))
+    }
+
+    pub fn csharp_named_type(&self, name: &str) -> String {
+        if self.enums.contains(name) {
+            self.csharp_enum_name(name)
+        } else {
+            self.csharp_type_name(name)
+        }
     }
 
     fn has_descendants(&self, type_name: &str) -> bool {

@@ -19,7 +19,11 @@ pub(super) enum CheckValue {
         items: Vec<CheckValue>,
         element_type: Option<CftSchemaTypeRef>,
     },
-    Dict(Vec<CheckEntry>),
+    Dict {
+        entries: Vec<CheckEntry>,
+        key_type: Option<CftSchemaTypeRef>,
+        value_type: Option<CftSchemaTypeRef>,
+    },
 }
 
 impl CheckValue {
@@ -66,8 +70,8 @@ impl CheckValue {
                     element_type,
                 }
             }
-            CfdValue::Dict(entries) => Self::Dict(
-                entries
+            CfdValue::Dict(entries) => Self::Dict {
+                entries: entries
                     .iter()
                     .map(|(key, value)| CheckEntry {
                         key: Box::new(Self::from_dict_key(key)),
@@ -78,7 +82,9 @@ impl CheckValue {
                         ),
                     })
                     .collect(),
-            ),
+                key_type: dict_key_type(ty).cloned(),
+                value_type: dict_value_type(ty).cloned(),
+            },
         }
     }
 
@@ -175,6 +181,14 @@ fn dict_value_type(ty: Option<&CftSchemaTypeRef>) -> Option<&CftSchemaTypeRef> {
     match ty {
         Some(CftSchemaTypeRef::Nullable(inner)) => dict_value_type(Some(inner)),
         Some(CftSchemaTypeRef::Dict(_, value)) => Some(value),
+        _ => None,
+    }
+}
+
+fn dict_key_type(ty: Option<&CftSchemaTypeRef>) -> Option<&CftSchemaTypeRef> {
+    match ty {
+        Some(CftSchemaTypeRef::Nullable(inner)) => dict_key_type(Some(inner)),
+        Some(CftSchemaTypeRef::Dict(key, _)) => Some(key),
         _ => None,
     }
 }

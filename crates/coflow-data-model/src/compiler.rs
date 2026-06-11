@@ -482,10 +482,14 @@ impl ModelCompiler {
                     value: *value,
                 })
             }
-            CftSchemaDefaultValue::EmptyArray if matches!(ty, CfdType::Array(_)) => {
+            CftSchemaDefaultValue::EmptyArray
+                if matches!(non_nullable_type(ty), CfdType::Array(_)) =>
+            {
                 CfdValue::Array(Vec::new())
             }
-            CftSchemaDefaultValue::EmptyObject if matches!(ty, CfdType::Dict(_, _)) => {
+            CftSchemaDefaultValue::EmptyObject
+                if matches!(non_nullable_type(ty), CfdType::Dict(_, _)) =>
+            {
                 CfdValue::Dict(Vec::new())
             }
             _ => {
@@ -810,5 +814,12 @@ impl ModelCompiler {
 
     fn push(&mut self, diagnostic: CfdDiagnostic) {
         self.diagnostics.push(diagnostic);
+    }
+}
+
+fn non_nullable_type(ty: &CfdType) -> &CfdType {
+    match ty {
+        CfdType::Nullable(inner) => non_nullable_type(inner),
+        _ => ty,
     }
 }

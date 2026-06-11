@@ -332,6 +332,46 @@ fn accepts_boolean_cells_for_bool_fields() -> TestResult {
 }
 
 #[test]
+fn ignores_rows_that_are_empty_in_mapped_columns() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                @id
+                id: string;
+            }
+        "#,
+    )?;
+    let path = temp_xlsx_path("mapped-empty-row");
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "item_1")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(2, 25, "ignored note")
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
+
+    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
+    let model = load_excel_model(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+
+    let Some(table) = model.table("Item") else {
+        return Err("expected Item table".to_string());
+    };
+    assert_eq!(table.records.len(), 1);
+    assert!(table
+        .primary_index
+        .contains_key(&CfdIdValue::from("item_1")));
+    Ok(())
+}
+
+#[test]
 fn returns_check_diagnostics_without_discarding_model() -> TestResult {
     let schema = compile_schema(
         r#"

@@ -45,8 +45,13 @@ pub fn run(project: Project) -> Result<bool, String> {
     let mut reader = BufReader::new(stdin.lock());
 
     while let Some(bytes) = read_message(&mut reader)? {
-        let message: Value = serde_json::from_slice(&bytes)
-            .map_err(|err| format!("failed to parse LSP JSON message: {err}"))?;
+        let message: Value = match serde_json::from_slice(&bytes) {
+            Ok(message) => message,
+            Err(err) => {
+                server.write_parse_error(&format!("failed to parse LSP JSON message: {err}"))?;
+                continue;
+            }
+        };
         server.handle_message(&message)?;
         if server.should_exit {
             break;
@@ -81,10 +86,35 @@ impl<W: Write> LspServer<W> {
 
     fn handle_message(&mut self, message: &Value) -> Result<(), String> {
         let id = message.get("id").cloned();
+        match self.handle_message_inner(message) {
+            Ok(()) => Ok(()),
+            Err(err) if is_fatal_lsp_handler_error(&err) => Err(err),
+            Err(err) => {
+                if let Some(id) = id {
+                    self.write_error(&id, -32603, &err)
+                } else {
+                    self.write_log_message(1, &err)
+                }
+            }
+        }
+    }
+
+    fn handle_message_inner(&mut self, message: &Value) -> Result<(), String> {
+        let id = message.get("id").cloned();
         let Some(method) = message.get("method").and_then(Value::as_str) else {
             return Ok(());
         };
         let params = message.get("params").unwrap_or(&Value::Null);
+
+        if self.shutdown_requested && method != "exit" {
+            return id.map_or(Ok(()), |id| {
+                self.write_error(
+                    &id,
+                    -32600,
+                    "server is shut down; only the exit notification is accepted",
+                )
+            });
+        }
 
         match (id, method) {
             (Some(id), "initialize") => self.initialize(&id),
@@ -419,12 +449,33 @@ impl<W: Write> LspServer<W> {
         }))
     }
 
+    fn write_parse_error(&mut self, message: &str) -> Result<(), String> {
+        self.write_json(&json!({
+            "jsonrpc": "2.0",
+            "id": Value::Null,
+            "error": {
+                "code": -32700,
+                "message": message
+            }
+        }))
+    }
+
     fn write_notification(&mut self, method: &str, params: &Value) -> Result<(), String> {
         self.write_json(&json!({
             "jsonrpc": "2.0",
             "method": method,
             "params": params
         }))
+    }
+
+    fn write_log_message(&mut self, message_type: u8, message: &str) -> Result<(), String> {
+        self.write_notification(
+            "window/logMessage",
+            &json!({
+                "type": message_type,
+                "message": message
+            }),
+        )
     }
 
     fn write_json(&mut self, value: &Value) -> Result<(), String> {
@@ -495,6 +546,8 @@ const SEM_OPERATOR: u32 = 11;
 const SEM_DECORATOR: u32 = 12;
 const SEM_PARAMETER: u32 = 13;
 
+const MAX_LSP_CONTENT_LENGTH: usize = 16 * 1024 * 1024;
+
 const KEYWORDS: &[(&str, &str)] = &[
     ("const", "Define a compile-time constant."),
     ("enum", "Define an enum."),
@@ -522,6 +575,12 @@ const LITERALS: &[(&str, &str)] = &[
     ("false", "Boolean false."),
     ("null", "Nullable value."),
 ];
+
+fn is_fatal_lsp_handler_error(message: &str) -> bool {
+    message.starts_with("failed to write LSP")
+        || message.starts_with("failed to flush LSP")
+        || message.starts_with("failed to serialize LSP")
+}
 
 const BUILTIN_FUNCTIONS: &[(&str, &str)] = &[
     (
@@ -1174,6 +1233,9 @@ fn annotation_applies_to_scope(label: &str, scope: CompletionScope) -> bool {
 
 fn hover_at(build: &LspBuild, document: &LspDocument, position: &LspPosition) -> Option<Value> {
     let offset = byte_offset_from_position(&document.source, *position);
+    if is_trivia_position(&document.source, offset) {
+        return None;
+    }
     if let Some(annotation) = annotation_at(document, offset) {
         if let Some((_, documentation)) = annotation_documentation(annotation) {
             return Some(hover_response(
@@ -1263,6 +1325,9 @@ fn hover_at(build: &LspBuild, document: &LspDocument, position: &LspPosition) ->
 
 fn definitions_at(build: &LspBuild, document: &LspDocument, position: &LspPosition) -> Vec<Value> {
     let offset = byte_offset_from_position(&document.source, *position);
+    if is_trivia_position(&document.source, offset) {
+        return Vec::new();
+    }
     let Some(word) = word_at(&document.source, offset) else {
         return Vec::new();
     };
@@ -2747,6 +2812,11 @@ fn read_message<R: BufRead>(reader: &mut R) -> Result<Option<Vec<u8>>, String> {
 
     let content_length =
         content_length.ok_or_else(|| "missing LSP Content-Length header".to_string())?;
+    if content_length > MAX_LSP_CONTENT_LENGTH {
+        return Err(format!(
+            "LSP Content-Length {content_length} exceeds maximum {MAX_LSP_CONTENT_LENGTH}"
+        ));
+    }
     let mut body = vec![0; content_length];
     reader
         .read_exact(&mut body)
@@ -2874,18 +2944,35 @@ fn lsp_range(
 
 fn path_from_file_uri(uri: &str) -> Option<PathBuf> {
     let rest = uri.strip_prefix("file://")?;
-    let decoded = percent_decode(rest)?;
+    let (authority, path) = rest.strip_prefix('/').map_or_else(
+        || {
+            rest.split_once('/').map_or_else(
+                || (rest, String::new()),
+                |(authority, path)| (authority, format!("/{path}")),
+            )
+        },
+        |stripped| ("", format!("/{stripped}")),
+    );
+    let authority = percent_decode(authority)?;
+    let decoded = percent_decode(&path)?;
     let path = if cfg!(windows) {
-        let without_leading_slash =
-            if decoded.len() >= 3 && decoded.as_bytes()[0] == b'/' && decoded.as_bytes()[2] == b':'
+        if authority.is_empty() || authority.eq_ignore_ascii_case("localhost") {
+            let without_leading_slash = if decoded.len() >= 3
+                && decoded.as_bytes()[0] == b'/'
+                && decoded.as_bytes()[2] == b':'
             {
                 &decoded[1..]
             } else {
                 decoded.as_str()
             };
-        without_leading_slash.replace('/', "\\")
-    } else {
+            without_leading_slash.replace('/', "\\")
+        } else {
+            format!(r"\\{}{}", authority, decoded.replace('/', r"\"))
+        }
+    } else if authority.is_empty() || authority == "localhost" {
         decoded
+    } else {
+        format!("//{authority}{decoded}")
     };
     Some(PathBuf::from(path))
 }
@@ -2948,4 +3035,219 @@ fn percent_encode_uri_path(value: &str) -> String {
     }
 
     out
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn request_errors_are_reported_without_returning_from_handler() {
+        let (_cleanup, project) = test_project("lsp-request-error", "type Item { id: string; }\n");
+        let schema_path = project.root_dir.join("schema");
+        std::fs::remove_dir_all(schema_path).expect("remove schema dir");
+        let mut server = LspServer::new(project, Vec::new());
+
+        let result = server.handle_message(&json!({
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "textDocument/hover",
+            "params": {
+                "textDocument": { "uri": "file:///missing.cft" },
+                "position": { "line": 0, "character": 0 }
+            }
+        }));
+
+        assert!(result.is_ok(), "handler should isolate request errors");
+        let messages = written_messages(&server.writer);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["id"], 7);
+        assert!(messages[0]["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("schema path")));
+    }
+
+    #[test]
+    fn notification_errors_are_logged_without_returning_from_handler() {
+        let (_cleanup, project) =
+            test_project("lsp-notification-error", "type Item { id: string; }\n");
+        let schema_path = project.root_dir.join("schema");
+        std::fs::remove_dir_all(schema_path).expect("remove schema dir");
+        let mut server = LspServer::new(project, Vec::new());
+
+        let result = server.handle_message(&json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": "file:///missing.cft",
+                    "text": "type Item { id: string; }\n"
+                }
+            }
+        }));
+
+        assert!(result.is_ok(), "handler should isolate notification errors");
+        let messages = written_messages(&server.writer);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["method"], "window/logMessage");
+        assert_eq!(messages[0]["params"]["type"], 1);
+        assert!(messages[0]["params"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("schema path")));
+    }
+
+    #[test]
+    fn requests_after_shutdown_return_invalid_request() {
+        let (_cleanup, project) = test_project("lsp-shutdown", "type Item { id: string; }\n");
+        let mut server = LspServer::new(project, Vec::new());
+
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "shutdown",
+                "params": null
+            }))
+            .expect("shutdown");
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "initialize",
+                "params": {}
+            }))
+            .expect("initialize after shutdown");
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "method": "exit",
+                "params": null
+            }))
+            .expect("exit");
+
+        let messages = written_messages(&server.writer);
+        assert_eq!(messages[0]["id"], 1);
+        assert_eq!(messages[0]["result"], Value::Null);
+        assert_eq!(messages[1]["id"], 2);
+        assert_eq!(messages[1]["error"]["code"], -32600);
+        assert!(server.should_exit);
+    }
+
+    #[test]
+    fn oversized_content_length_is_rejected_before_body_allocation() {
+        let mut reader =
+            io::Cursor::new(format!("Content-Length: {}\r\n\r\n", 16 * 1024 * 1024 + 1));
+
+        let err = read_message(&mut reader).expect_err("expected content length cap error");
+
+        assert!(err.contains("exceeds"), "expected cap error, got `{err}`");
+    }
+
+    #[test]
+    fn file_uri_parser_handles_windows_localhost_and_unc_forms() {
+        if cfg!(windows) {
+            assert_eq!(
+                path_from_file_uri("file:///C:/Game/schema/main.cft"),
+                Some(PathBuf::from(r"C:\Game\schema\main.cft"))
+            );
+            assert_eq!(
+                path_from_file_uri("file://localhost/C:/Game/schema/main.cft"),
+                Some(PathBuf::from(r"C:\Game\schema\main.cft"))
+            );
+            assert_eq!(
+                path_from_file_uri("file://server/share/schema/main.cft"),
+                Some(PathBuf::from(r"\\server\share\schema\main.cft"))
+            );
+        } else {
+            assert_eq!(
+                path_from_file_uri("file://localhost/tmp/schema/main.cft"),
+                Some(PathBuf::from("/tmp/schema/main.cft"))
+            );
+        }
+    }
+
+    #[test]
+    fn hover_and_definition_ignore_comment_and_string_words() {
+        let source = "type Monster { id: string; }\n\
+type Item {\n\
+  note: string = \"Monster\";\n\
+  # Monster\n\
+  target: Monster;\n\
+}\n";
+        let (_cleanup, project) = test_project("lsp-trivia", source);
+        let build = LspBuild::new(
+            compile_schema_project_with_overrides(&project, &[]).expect("compile schema"),
+        );
+        let document = build
+            .documents
+            .values()
+            .next()
+            .expect("document should exist");
+
+        let string_position =
+            position_from_byte(source, position_inside(source, "\"Monster\"", "Monster", 1));
+        let comment_position =
+            position_from_byte(source, position_inside(source, "# Monster", "Monster", 1));
+
+        assert_eq!(hover_at(&build, document, &string_position), None);
+        assert_eq!(hover_at(&build, document, &comment_position), None);
+        assert!(definitions_at(&build, document, &string_position).is_empty());
+        assert!(definitions_at(&build, document, &comment_position).is_empty());
+    }
+
+    struct TempProject(PathBuf);
+
+    impl Drop for TempProject {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn test_project(name: &str, source: &str) -> (TempProject, Project) {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("coflow-{name}-{suffix}"));
+        let schema = root.join("schema");
+        std::fs::create_dir_all(&schema).expect("create schema dir");
+        std::fs::write(root.join("coflow.yaml"), "schema: schema/\n").expect("write config");
+        std::fs::write(schema.join("main.cft"), source).expect("write schema");
+        let project = Project::open_schema_only(Some(&root)).expect("open project");
+        (TempProject(root), project)
+    }
+
+    fn written_messages(bytes: &[u8]) -> Vec<Value> {
+        let text = String::from_utf8(bytes.to_vec()).expect("utf8 output");
+        let mut messages = Vec::new();
+        let mut rest = text.as_str();
+        while let Some(header_end) = rest.find("\r\n\r\n") {
+            let (header, after_header) = rest.split_at(header_end);
+            let body_start = header_end + 4;
+            let content_length = header
+                .lines()
+                .find_map(|line| line.strip_prefix("Content-Length:"))
+                .expect("content length")
+                .trim()
+                .parse::<usize>()
+                .expect("parse content length");
+            let body = &rest[body_start..body_start + content_length];
+            messages.push(serde_json::from_str(body).expect("parse response"));
+            rest = &after_header[4 + content_length..];
+        }
+        messages
+    }
+
+    fn position_inside(
+        source: &str,
+        context: &str,
+        needle: &str,
+        character_offset: usize,
+    ) -> usize {
+        let context_start = source.find(context).expect("context");
+        let needle_start = context.find(needle).expect("needle");
+        context_start + needle_start + character_offset
+    }
 }
