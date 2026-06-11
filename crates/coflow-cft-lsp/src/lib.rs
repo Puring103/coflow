@@ -3097,17 +3097,12 @@ mod tests {
 
     #[test]
     fn oversized_content_length_is_rejected_before_body_allocation() {
-        let mut reader = io::Cursor::new(format!(
-            "Content-Length: {}\r\n\r\n",
-            16 * 1024 * 1024 + 1
-        ));
+        let mut reader =
+            io::Cursor::new(format!("Content-Length: {}\r\n\r\n", 16 * 1024 * 1024 + 1));
 
         let err = read_message(&mut reader).expect_err("expected content length cap error");
 
-        assert!(
-            err.contains("exceeds"),
-            "expected cap error, got `{err}`"
-        );
+        assert!(err.contains("exceeds"), "expected cap error, got `{err}`");
     }
 
     #[test]
@@ -3142,16 +3137,19 @@ type Item {\n\
   target: Monster;\n\
 }\n";
         let (_cleanup, project) = test_project("lsp-trivia", source);
-        let build = LspBuild::new(compile_schema_project_with_overrides(&project, &[])
-            .expect("compile schema"));
+        let build = LspBuild::new(
+            compile_schema_project_with_overrides(&project, &[]).expect("compile schema"),
+        );
         let document = build
             .documents
             .values()
             .next()
             .expect("document should exist");
 
-        let string_position = position_from_byte(source, position_inside(source, "\"Monster\"", "Monster", 1));
-        let comment_position = position_from_byte(source, position_inside(source, "# Monster", "Monster", 1));
+        let string_position =
+            position_from_byte(source, position_inside(source, "\"Monster\"", "Monster", 1));
+        let comment_position =
+            position_from_byte(source, position_inside(source, "# Monster", "Monster", 1));
 
         assert_eq!(hover_at(&build, document, &string_position), None);
         assert_eq!(hover_at(&build, document, &comment_position), None);

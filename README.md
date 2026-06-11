@@ -163,6 +163,12 @@ Common built-ins in checks include `len`, `contains`, `unique`, `min`, `max`, `s
 
 Generated JSON C# loaders use `Newtonsoft.Json`. Generated MessagePack C# loaders use MessagePack-CSharp and explicit `MessagePackReader` code paths designed for normal .NET and Unity/IL2CPP-style environments.
 
+## Internal Crate Boundaries
+
+- `coflow-project` owns project configuration, path resolution, and CFT schema compilation.
+- `coflow-pipeline` owns project execution for check, build, export, and codegen commands.
+- The CLI crate owns command-line parsing and terminal output.
+
 ## More Docs
 
 Detailed specs live in `docs/spec`.

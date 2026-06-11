@@ -144,6 +144,16 @@ generated/csharp/
 
 第一版必须生成类型定义、枚举、继承、默认值、`@ref` 双属性、`@id` 主键查询和 `@index` 查询 API。加载器根据 `outputs.data.type` 生成 JSON 或 MessagePack 版本，但生成结构必须保持两遍加载：先构造对象和主键索引，再解析 `@ref`。
 
+### 目标约束
+
+C# target 在生成前必须校验生成物契约：
+
+- CFT `float` 固定映射为 C# `double`；JSON 和 MessagePack loader 均读取 64 位浮点值，不降为 `float` / `Single`。
+- CFT 类型名、字段名和生成的 ref 属性名经过 C# casing 转换后必须唯一。比如 `foo_bar` 与 `fooBar` 同时生成 `FooBar` 时必须报错，而不是自动加后缀。
+- 生成文件名必须唯一，且 `GameConfig.cs`、配置的数据库类文件和 `CftLoadException.cs` 为保留文件名。CFT 不能声明会生成这些文件名的类型或 enum。
+- `@ref(Target)` 字段的非 nullable ID 类型必须与 `Target` 继承范围内所有 concrete type 的 `@id` 类型一致；nullable ref 只在比较时剥离外层 `?`。
+- `@struct` 内含或嵌套 `@ref` 是合法语义。resolver 对 struct 返回更新后的 struct value，并在父字段、数组元素和字典值位置写回。
+
 ---
 
 ## 2. 命名约定
@@ -251,7 +261,7 @@ public partial class Stats
 {
     public long Hp { get; init; }
     public long Attack { get; init; }
-    public float Speed { get; init; } = 1.0f;
+    public double Speed { get; init; } = 1.0;
 }
 ```
 
@@ -304,8 +314,8 @@ sealed type Vector2 {
 ```csharp
 public partial struct Vector2
 {
-    public float X { get; init; }
-    public float Y { get; init; }
+    public double X { get; init; }
+    public double Y { get; init; }
 }
 ```
 
@@ -373,14 +383,14 @@ type Monster {
 public partial class Monster
 {
     public IReadOnlyList<string> Tags { get; init; } = [];
-    public IReadOnlyDictionary<DamageType, float> Resistances { get; init; }
-        = new Dictionary<DamageType, float>();
+    public IReadOnlyDictionary<DamageType, double> Resistances { get; init; }
+        = new Dictionary<DamageType, double>();
 }
 ```
 
 ### `@ref` 字段
 
-当前 CFT 语义中，`@ref` 字段本身存储目标记录的 `@id` 值，字段类型必须是 `string` 或 `int`，也可以是对应 nullable 形式。JSON 和 MessagePack 导出仍然输出原始 ID 值，运行时加载器负责解析引用。
+当前 CFT 语义中，`@ref` 字段本身存储目标记录的 `@id` 值，字段类型必须与目标类型继承范围内的 `@id` 类型一致，也可以是对应 nullable 形式。JSON 和 MessagePack 导出仍然输出原始 ID 值，运行时加载器负责解析引用。
 
 `@ref` 字段生成两个属性：原始 ID 和解析后的引用：
 
@@ -464,7 +474,7 @@ public Skill? OptionalSkill { get; internal set; }
 | CFT 默认值 | C# 生成 |
 |-----------|---------|
 | `0` | `= 0` |
-| `1.0` | `= 1.0f` |
+| `1.0` | `= 1.0` |
 | `""` | `= ""` |
 | `true`/`false` | `= true`/`= false` |
 | `[]` | `= []` |
@@ -744,7 +754,7 @@ public partial class Stats
 {
     public long Hp { get; init; }
     public long Attack { get; init; }
-    public float Speed { get; init; } = 1.0f;
+    public double Speed { get; init; } = 1.0;
 }
 
 public abstract partial class Reward
