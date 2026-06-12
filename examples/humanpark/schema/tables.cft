@@ -1,0 +1,115 @@
+# =========================================================================
+# Tables (Luban __tables__.xml -> Configs.xlsx sheets)
+# =========================================================================
+
+@display("地块Tag配置")
+type TileTagConfig {
+  @id
+  id: TileTagFlags;
+  name: string;
+  desc: string;
+}
+
+@struct
+@display("地形配置")
+sealed type TerrainConfig {
+  @id
+  id: TerrainType;
+  name: string;
+  desc: string;
+  @expand
+  EnvironmentConfig: TerrainEnvironmentConfig;
+  @expand
+  InitialConfig: TerrainInitialConfig;
+}
+
+@KeyAsEnumValue
+@display("物质配置")
+type SubstanceConfig {
+  @id
+  id: string;
+  name: string;
+  desc: string;
+  ratioOfAir: float;
+}
+
+@display("属性配置")
+type AttributeConfig {
+  @id
+  id: CreatureAttribute;
+  name: string;
+  is_base: bool = false;
+  defaultValue: float = 0.0;
+  evolution_range: float = 0.0;
+}
+
+@KeyAsEnumValue
+@display("能力配置")
+type AbilityConfig {
+  @id
+  id: string;
+  name: localizedString;
+  desc: string? = null;
+  isInit: bool = false;
+}
+
+@KeyAsEnumValue
+@display("基因配置")
+type GeneConfig {
+  @id
+  id: string;
+  name: string;
+  desc: string? = null;
+
+  # parentGeneId is empty for top-level genes; nullable matches that semantics.
+  @ref(GeneConfig)
+  parentGeneId: string? = null;
+
+  price: int;
+  consumeDNA: int;
+  isInitial: bool = false;
+}
+
+@KeyAsEnumValue
+@display("表皮配置")
+type SkinConfig {
+  @id
+  id: string;
+  name: string;
+  desc: string? = null;
+}
+
+@KeyAsEnumValue
+@display("阶段配置")
+type PhaseConfig {
+  @id
+  id: string;
+  desc: string;
+  unlockAreaCount: int;
+  areaUnlockPrice: int;
+  unlockFeatureList: [GameFeature] = [];
+  unlockGeneIdList: [string] = [];
+}
+
+@display("功能配置")
+type GameFeatureConfig {
+  @id
+  id: GameFeature;
+  name: localizedString;
+  desc: string;
+}
+
+@display("生物残骸配置")
+type BioRemainsConfig {
+  @id
+  id: string;
+  name: string;
+
+  @ref(GeneConfig)
+  geneId: string;
+
+  desc: string? = null;
+  consumeBiomass: int;
+  debrisCount: int;
+  generateTerrainTypes: [TerrainType] = [];
+}
