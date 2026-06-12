@@ -1,4 +1,4 @@
-use crate::names::{annotation_name_arg, csharp_type_name, has_annotation};
+use crate::names::{annotation_name_arg, annotation_string_arg, csharp_type_name, has_annotation};
 use crate::CsharpCodegenError;
 use coflow_cft::{
     CftAnnotation, CftContainer, CftSchemaDefaultValue, CftSchemaField, CftSchemaType,
@@ -133,6 +133,15 @@ impl SchemaView {
         } else {
             self.csharp_type_name(name)
         }
+    }
+
+    pub fn ref_target_id_csharp_enum_override(&self, target: &str) -> Option<String> {
+        self.types
+            .get(target)?
+            .id_field()
+            .ok()?
+            .csharp_enum_override
+            .clone()
     }
 
     fn has_descendants(&self, type_name: &str) -> bool {
@@ -307,6 +316,7 @@ pub struct FieldMeta {
     pub has_default: bool,
     pub default: Option<CftSchemaDefaultValue>,
     pub annotations: Vec<CftAnnotation>,
+    pub csharp_enum_override: Option<String>,
 }
 
 impl FieldMeta {
@@ -317,6 +327,7 @@ impl FieldMeta {
             has_default: field.has_default,
             default: field.default.clone(),
             annotations: field.annotations.clone(),
+            csharp_enum_override: annotation_string_arg(&field.annotations, "KeyAsEnum"),
         }
     }
 }

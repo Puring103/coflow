@@ -337,14 +337,7 @@ fn collect_input_records(
                 for column in &columns {
                     if let Some(children) = &column.expand {
                         let nested = build_expanded_object(
-                            schema,
-                            source,
-                            sheet,
-                            type_name,
-                            column,
-                            children,
-                            row,
-                            excel_row,
+                            schema, source, sheet, type_name, column, children, row, excel_row,
                         )?;
                         input_fields.insert(column.field.clone(), nested);
                         continue;
@@ -553,10 +546,7 @@ fn resolve_columns(
             // field count). Sub-field assignment is positional, following the
             // inner type's declared field order — adjacent header text is
             // ignored (it is typically merged-blank in source files).
-            let inner_order = expand_inner_order
-                .get(&field)
-                .cloned()
-                .unwrap_or_default();
+            let inner_order = expand_inner_order.get(&field).cloned().unwrap_or_default();
             let mut consumed = Vec::with_capacity(inner_order.len());
             // First child uses the parent column itself.
             if let Some(first_inner) = inner_order.first() {
@@ -628,13 +618,14 @@ fn build_expanded_object(
             .sheet(sheet.sheet.clone())
             .cell(excel_row, child.excel_column);
         let text = cell_text(row.get(child.index), location.clone())?;
-        let parsed =
-            parse_cell(schema, &child.field_type, &text).map_err(|err| ExcelLoadError::CellParse {
+        let parsed = parse_cell(schema, &child.field_type, &text).map_err(|err| {
+            ExcelLoadError::CellParse {
                 location: Box::new(location),
                 type_name: parent_type.to_string(),
                 field: format!("{}.{}", column.field, child.field),
                 diagnostics: err,
-            })?;
+            }
+        })?;
         if let ParsedCell::Value(value) = parsed {
             fields.insert(child.field.clone(), value);
         }

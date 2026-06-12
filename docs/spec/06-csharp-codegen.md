@@ -239,6 +239,56 @@ public enum Rarity
 }
 ```
 
+### `@KeyAsEnum`
+
+字段级 `@KeyAsEnum("EnumName")` 只能用于 `string` 类型的 `@id` 字段。
+它不改变 CFT 类型系统、数据模型、JSON 或 MessagePack 导出格式：schema
+检查、Excel 加载、`@ref` 解析和数据导出仍然把该字段当作 `string`。
+
+C# codegen 会额外生成名为 `EnumName` 的 enum，并把该 `@id` 字段的 C# 类型
+从 `string` 提升为 `EnumName`。所有 `@ref(Target)` 字段如果指向的 Target
+的 `@id` 带有 `@KeyAsEnum`，原始 ID 属性也会跟随提升为 `EnumName` /
+`EnumName?`。
+
+```cft
+type GeneConfig {
+  @KeyAsEnum("GeneId")
+  @id
+  id: string;
+}
+
+type BioRemainsConfig {
+  @id id: string;
+  @ref(GeneConfig)
+  gene_id: string?;
+}
+```
+
+`coflow build` 已经加载数据，因此会按表中实际 id 的出现顺序生成 enum 变体：
+
+```csharp
+public enum GeneId
+{
+    Gene_Spore = 0,
+    Gene_Mating = 1,
+}
+
+public partial class GeneConfig
+{
+    public GeneId Id { get; init; }
+}
+
+public partial class BioRemainsConfig
+{
+    public GeneId? GeneId { get; init; }
+    public GeneConfig? Gene { get; internal set; }
+}
+```
+
+单独运行 `coflow codegen csharp` 不加载 Excel 数据，所以仍会生成空的
+`EnumName` 占位 enum，保证生成代码结构完整；完整变体集合只由 `build`
+路径提供。
+
 ---
 
 ## 4. type 生成

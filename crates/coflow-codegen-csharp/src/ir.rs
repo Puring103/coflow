@@ -1,5 +1,5 @@
 use crate::emit::{build_csharp_database, build_csharp_enum, build_csharp_type};
-use crate::model::CsharpProject;
+use crate::model::{CsharpEnum, CsharpEnumVariant, CsharpProject};
 use crate::names::{
     annotation_name_arg, camel_case, csharp_ident_error, csharp_member_ident_error,
     csharp_namespace_error, csharp_type_name, index_param_name, index_var_name,
@@ -47,17 +47,24 @@ pub fn build_project(
     schema: &CftContainer,
     options: &CsharpCodegenOptions,
     data_format: CsharpDataFormat,
+    key_as_enum_variants: BTreeMap<String, Vec<String>>,
 ) -> Result<CsharpProject, CsharpCodegenError> {
     validate_options(options)?;
     validate_schema_names(schema)?;
+    let key_as_enum_names = key_as_enum_names(schema);
+    validate_key_as_enum_variants(&key_as_enum_names, &key_as_enum_variants)?;
 
     let view = SchemaView::new(schema);
-    validate_generated_names(&view, options)?;
+    validate_generated_names(&view, options, &key_as_enum_names)?;
 
-    let enums = schema
+    let mut enums = schema
         .all_enums()
         .map(build_csharp_enum)
         .collect::<Vec<_>>();
+    enums.extend(build_key_as_enums(
+        &key_as_enum_names,
+        key_as_enum_variants,
+    )?);
 
     let types = schema
         .all_types()
@@ -141,12 +148,13 @@ fn validate_schema_names(schema: &CftContainer) -> Result<(), CsharpCodegenError
 fn validate_generated_names(
     view: &SchemaView,
     options: &CsharpCodegenOptions,
+    key_as_enum_names: impl IntoIterator<Item = impl AsRef<str>>,
 ) -> Result<(), CsharpCodegenError> {
     let tables = view.table_names();
     let ref_targets = view.ref_target_names();
     let resolves_refs = !ref_targets.is_empty();
 
-    validate_generated_file_names(view, options)?;
+    validate_generated_file_names(view, options, key_as_enum_names)?;
     validate_generated_member_names(view)?;
 
     for table_name in &tables {
@@ -200,6 +208,7 @@ fn validate_generated_names(
 fn validate_generated_file_names(
     view: &SchemaView,
     options: &CsharpCodegenOptions,
+    key_as_enum_names: impl IntoIterator<Item = impl AsRef<str>>,
 ) -> Result<(), CsharpCodegenError> {
     let mut reserved = BTreeSet::new();
     reserved.insert(case_insensitive_file_key("GameConfig.cs"));
@@ -214,11 +223,89 @@ fn validate_generated_file_names(
         let file_name = format!("{}.cs", view.csharp_enum_name(enum_name));
         insert_generated_file_name(&mut file_sources, &reserved, &file_name, "enum", enum_name)?;
     }
+    for enum_name in key_as_enum_names {
+        let enum_name = enum_name.as_ref();
+        let file_name = format!("{}.cs", csharp_type_name(enum_name));
+        insert_generated_file_name(
+            &mut file_sources,
+            &reserved,
+            &file_name,
+            "@KeyAsEnum enum",
+            enum_name,
+        )?;
+    }
     for type_name in view.all_type_names() {
         let file_name = format!("{}.cs", view.csharp_type_name(&type_name));
         insert_generated_file_name(&mut file_sources, &reserved, &file_name, "type", &type_name)?;
     }
     Ok(())
+}
+
+fn key_as_enum_names(schema: &CftContainer) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for schema_type in schema.all_types() {
+        for field in &schema_type.all_fields {
+            if let Some(enum_name) =
+                crate::names::annotation_string_arg(&field.annotations, "KeyAsEnum")
+            {
+                out.insert(enum_name);
+            }
+        }
+    }
+    out
+}
+
+fn validate_key_as_enum_variants(
+    declared: &BTreeSet<String>,
+    variants: &BTreeMap<String, Vec<String>>,
+) -> Result<(), CsharpCodegenError> {
+    for enum_name in variants.keys() {
+        if !declared.contains(enum_name) {
+            return Err(CsharpCodegenError::new(format!(
+                "@KeyAsEnum variants provided for undeclared enum `{enum_name}`"
+            )));
+        }
+        validate_ident("@KeyAsEnum enum", enum_name)?;
+        for variant in variants.get(enum_name).into_iter().flatten() {
+            validate_ident("@KeyAsEnum enum variant", variant)?;
+        }
+    }
+    Ok(())
+}
+
+fn build_key_as_enums(
+    declared: &BTreeSet<String>,
+    mut variants: BTreeMap<String, Vec<String>>,
+) -> Result<Vec<CsharpEnum>, CsharpCodegenError> {
+    let mut out = Vec::new();
+    for name in declared {
+        let mut enum_variants = Vec::new();
+        for (index, variant) in variants
+            .remove(name)
+            .unwrap_or_default()
+            .into_iter()
+            .enumerate()
+        {
+            enum_variants.push(CsharpEnumVariant {
+                name: variant,
+                value: i64::try_from(index).map_err(|_| {
+                    CsharpCodegenError::new(format!(
+                        "@KeyAsEnum enum `{name}` has too many variants"
+                    ))
+                })?,
+                summary: None,
+                obsolete: false,
+            });
+        }
+        out.push(CsharpEnum {
+            name: csharp_type_name(name),
+            is_flags: false,
+            summary: None,
+            obsolete: false,
+            variants: enum_variants,
+        });
+    }
+    Ok(out)
 }
 
 fn insert_generated_file_name(

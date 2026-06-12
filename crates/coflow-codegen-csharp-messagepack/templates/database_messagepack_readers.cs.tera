@@ -239,6 +239,22 @@
         return (TEnum)Enum.ToObject(typeof(TEnum), ReadInt(ref reader, path));
     }
 
+    private static TEnum ReadStringEnum<TEnum>(ref MessagePackReader reader, string path)
+        where TEnum : struct, Enum
+    {
+        var value = ReadString(ref reader, path);
+        if (Enum.TryParse<TEnum>(value, out var parsed))
+        {
+            return parsed;
+        }
+
+        throw new CftLoadException(
+            $"field `{path}` must be a valid {typeof(TEnum).Name}",
+            path,
+            typeof(TEnum).Name,
+            value);
+    }
+
     private static long ReadIntKey(string key, string path)
     {
         if (long.TryParse(key, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))

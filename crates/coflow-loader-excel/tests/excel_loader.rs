@@ -58,11 +58,7 @@ fn write_items_workbook(path: &PathBuf) -> Result<(), XlsxError> {
     workbook.save(path)
 }
 
-fn rewrite_xlsx_entry(
-    path: &PathBuf,
-    entry_name: &str,
-    replacement: &str,
-) -> Result<(), String> {
+fn rewrite_xlsx_entry(path: &PathBuf, entry_name: &str, replacement: &str) -> Result<(), String> {
     let input = File::open(path).map_err(|err| format!("open xlsx for rewrite: {err}"))?;
     let mut archive = ZipArchive::new(input).map_err(|err| format!("read xlsx zip: {err}"))?;
     let rewritten_path = path.with_extension("rewritten.xlsx");
@@ -768,7 +764,7 @@ fn write_terrain_workbook_with_expand(path: &PathBuf) -> Result<(), XlsxError> {
     sheet.write_string(0, 0, "id")?;
     sheet.write_string(0, 1, "name")?;
     sheet.write_string(0, 2, "env")?; // @expand parent
-    // D1 / E1 deliberately left blank.
+                                      // D1 / E1 deliberately left blank.
     sheet.write_string(1, 0, "Water")?;
     sheet.write_string(1, 1, "lake")?;
     sheet.write_number(1, 2, 4.0)?; // env.shc
@@ -803,8 +799,7 @@ fn expand_consumes_parent_and_adjacent_columns_for_inner_fields() -> TestResult 
     )?;
 
     let path = temp_xlsx_path("terrain_expand");
-    write_terrain_workbook_with_expand(&path)
-        .map_err(|err| format!("write workbook: {err:?}"))?;
+    write_terrain_workbook_with_expand(&path).map_err(|err| format!("write workbook: {err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Terrain").with_type("Terrain")]);
     let model = load_excel_model(&schema, &[source]).map_err(|err| format!("{err:?}"))?;

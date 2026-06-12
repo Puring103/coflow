@@ -1,9 +1,9 @@
 use super::support::{
     build_schema_type_ref, const_value, convert_annotations, convert_check_block, find_annotation,
-    format_type_ref, has_annotation, is_i64_power_of_two, is_indexable_field_type,
-    is_reserved_identifier, is_id_compatible_type, is_valid_dict_key, types_assignable, unwrap_nullable,
-    AnnotationSpec, AnnotationTarget, ConstInfo, EnumInfo, FieldInfo, FieldOrigin, Symbol,
-    SymbolKind, Ty, TypeInfo,
+    format_type_ref, has_annotation, is_i64_power_of_two, is_id_compatible_type,
+    is_indexable_field_type, is_reserved_identifier, is_valid_dict_key, types_assignable,
+    unwrap_nullable, AnnotationSpec, AnnotationTarget, ConstInfo, EnumInfo, FieldInfo, FieldOrigin,
+    Symbol, SymbolKind, Ty, TypeInfo,
 };
 use super::type_checker::TypeChecker;
 use super::{
@@ -666,6 +666,7 @@ impl<'a> SchemaCompiler<'a> {
             }
         });
 
+        let mut key_as_enum_names = BTreeMap::<String, (ModuleId, Span)>::new();
         self.each_type(|this, info| {
             this.validate_annotation_list(
                 &info.module,
@@ -689,6 +690,28 @@ impl<'a> SchemaCompiler<'a> {
                     &field.annotations,
                 );
                 this.validate_field_annotations(&info.module, field);
+                if let Some(annotation) = find_annotation(&field.annotations, "KeyAsEnum") {
+                    if let Some(AnnotationArg::String(enum_name, _)) = annotation.args.first() {
+                        if let Some((first_module, first_span)) = key_as_enum_names.get(enum_name) {
+                            this.diagnostics.push(
+                                CftDiagnostic::error(
+                                    CftErrorCode::DuplicateGlobalName,
+                                    info.module.clone(),
+                                    annotation.span,
+                                    format!("duplicate @KeyAsEnum enum name `{enum_name}`"),
+                                )
+                                .with_related(
+                                    first_module.clone(),
+                                    *first_span,
+                                    "first @KeyAsEnum enum name is here",
+                                ),
+                            );
+                        } else {
+                            key_as_enum_names
+                                .insert(enum_name.clone(), (info.module.clone(), annotation.span));
+                        }
+                    }
+                }
             }
         });
     }
@@ -822,6 +845,69 @@ impl<'a> SchemaCompiler<'a> {
                 );
             }
         }
+        if let Some(annotation) = find_annotation(&field.annotations, "KeyAsEnum") {
+            self.validate_key_as_enum_annotation(module, field, annotation);
+        }
+    }
+
+    fn validate_key_as_enum_annotation(
+        &mut self,
+        module: &ModuleId,
+        field: &FieldDef,
+        annotation: &Annotation,
+    ) {
+        if find_annotation(&field.annotations, "id").is_none() {
+            self.push_diag(
+                CftErrorCode::InvalidAnnotatedFieldType,
+                module,
+                annotation.span,
+                "@KeyAsEnum must be applied to an @id field",
+            );
+        }
+        if !matches!(self.resolve_field_type(&field.ty), Ty::String | Ty::Unknown) {
+            self.push_diag(
+                CftErrorCode::InvalidAnnotatedFieldType,
+                module,
+                annotation.span,
+                "@KeyAsEnum fields must have type string",
+            );
+        }
+        if let Some(AnnotationArg::String(enum_name, _)) = annotation.args.first() {
+            self.validate_key_as_enum_name(module, annotation, enum_name);
+        }
+    }
+
+    fn validate_key_as_enum_name(
+        &mut self,
+        module: &ModuleId,
+        annotation: &Annotation,
+        enum_name: &str,
+    ) {
+        if !is_valid_csharp_identifier(enum_name) {
+            self.push_diag(
+                CftErrorCode::InvalidAnnotationArgument,
+                module,
+                annotation.span,
+                format!("@KeyAsEnum enum name `{enum_name}` is not a valid C# identifier"),
+            );
+        }
+        if let Some(symbol) = self.symbols.get(enum_name) {
+            self.diagnostics.push(
+                CftDiagnostic::error(
+                    CftErrorCode::DuplicateGlobalName,
+                    module.clone(),
+                    annotation.span,
+                    format!(
+                        "@KeyAsEnum enum name `{enum_name}` collides with an existing schema name"
+                    ),
+                )
+                .with_related(
+                    symbol.module.clone(),
+                    symbol.span,
+                    "existing schema name is here",
+                ),
+            );
+        }
     }
 
     fn validate_ref_id_contract(
@@ -833,7 +919,10 @@ impl<'a> SchemaCompiler<'a> {
     ) {
         let field_ty = self.resolve_field_type(&field.ty);
         let field_id_ty = unwrap_nullable(&field_ty);
-        if !matches!(field_id_ty, Ty::String | Ty::Int | Ty::Enum(_) | Ty::Unknown) {
+        if !matches!(
+            field_id_ty,
+            Ty::String | Ty::Int | Ty::Enum(_) | Ty::Unknown
+        ) {
             return;
         }
         let Some(target_id) = self.visible_id_field(target_type) else {
@@ -1418,4 +1507,97 @@ fn ty_display(ty: &Ty) -> String {
         Ty::EmptyObject => "{}".to_string(),
         Ty::Unknown => "<unknown>".to_string(),
     }
+}
+
+fn is_valid_csharp_identifier(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    !is_csharp_keyword(value)
+        && (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn is_csharp_keyword(value: &str) -> bool {
+    matches!(
+        value,
+        "abstract"
+            | "as"
+            | "base"
+            | "bool"
+            | "break"
+            | "byte"
+            | "case"
+            | "catch"
+            | "char"
+            | "checked"
+            | "class"
+            | "const"
+            | "continue"
+            | "decimal"
+            | "default"
+            | "delegate"
+            | "do"
+            | "double"
+            | "else"
+            | "enum"
+            | "event"
+            | "explicit"
+            | "extern"
+            | "false"
+            | "finally"
+            | "fixed"
+            | "float"
+            | "for"
+            | "foreach"
+            | "goto"
+            | "if"
+            | "implicit"
+            | "in"
+            | "int"
+            | "interface"
+            | "internal"
+            | "is"
+            | "lock"
+            | "long"
+            | "namespace"
+            | "new"
+            | "null"
+            | "object"
+            | "operator"
+            | "out"
+            | "override"
+            | "params"
+            | "private"
+            | "protected"
+            | "public"
+            | "readonly"
+            | "ref"
+            | "return"
+            | "sbyte"
+            | "sealed"
+            | "short"
+            | "sizeof"
+            | "stackalloc"
+            | "static"
+            | "string"
+            | "struct"
+            | "switch"
+            | "this"
+            | "throw"
+            | "true"
+            | "try"
+            | "typeof"
+            | "uint"
+            | "ulong"
+            | "unchecked"
+            | "unsafe"
+            | "ushort"
+            | "using"
+            | "virtual"
+            | "void"
+            | "volatile"
+            | "while"
+    )
 }

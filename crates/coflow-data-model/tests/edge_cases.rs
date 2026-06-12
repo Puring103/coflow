@@ -1382,20 +1382,14 @@ fn enum_typed_id_indexes_records_under_cfd_id_value_enum() {
     builder.add_record(
         "Palette",
         [
-            (
-                "id",
-                CfdInputValue::enum_variant("Color", "Red"),
-            ),
+            ("id", CfdInputValue::enum_variant("Color", "Red")),
             ("name", CfdInputValue::from("rouge")),
         ],
     );
     builder.add_record(
         "Palette",
         [
-            (
-                "id",
-                CfdInputValue::enum_variant("Color", "Blue"),
-            ),
+            ("id", CfdInputValue::enum_variant("Color", "Blue")),
             ("name", CfdInputValue::from("azure")),
         ],
     );
@@ -1451,10 +1445,7 @@ fn enum_typed_ref_resolves_to_target_record() {
         "Brush",
         [
             ("bid", CfdInputValue::from("brush_1")),
-            (
-                "color",
-                CfdInputValue::enum_variant("Color", "Green"),
-            ),
+            ("color", CfdInputValue::enum_variant("Color", "Green")),
         ],
     );
 
@@ -1500,8 +1491,145 @@ fn enum_typed_id_rejects_string_input() {
         ],
     );
 
-    let err = builder.build().expect_err("string id under enum @id should fail");
+    let err = builder
+        .build()
+        .expect_err("string id under enum @id should fail");
     assert_has_code(&err, CfdErrorCode::TypeMismatch);
+}
+
+#[test]
+fn key_as_enum_id_rejects_values_that_are_not_csharp_enum_variants() {
+    let schema = compile_schema(
+        r#"
+            type GeneConfig {
+                @KeyAsEnum("GeneId")
+                @id
+                id: string;
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("GeneConfig", [("id", CfdInputValue::from("1Bad"))]);
+
+    let err = builder
+        .build()
+        .expect_err("@KeyAsEnum id value should be a legal enum variant");
+    let diag = diagnostic_with_code(&err, CfdErrorCode::InvalidEnumVariant);
+    assert_eq!(
+        primary_path_segments(diag),
+        &[CfdPathSegment::Field("id".to_string())]
+    );
+}
+
+#[test]
+fn key_as_enum_accepts_legal_id_and_ref_values() {
+    let schema = compile_schema(
+        r#"
+            type GeneConfig {
+                @KeyAsEnum("GeneId")
+                @id
+                id: string;
+            }
+            type BioRemainsConfig {
+                @id
+                id: string;
+                @ref(GeneConfig)
+                gene_id: string;
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("GeneConfig", [("id", CfdInputValue::from("Gene_Spore"))]);
+    builder.add_record(
+        "BioRemainsConfig",
+        [
+            ("id", CfdInputValue::from("remains_1")),
+            ("gene_id", CfdInputValue::from("Gene_Spore")),
+        ],
+    );
+
+    let model = builder
+        .build()
+        .expect("legal @KeyAsEnum id and ref values should build");
+    assert_eq!(model.record_count(), 2);
+}
+
+#[test]
+fn key_as_enum_ref_rejects_values_that_are_not_csharp_enum_variants() {
+    let schema = compile_schema(
+        r#"
+            type GeneConfig {
+                @KeyAsEnum("GeneId")
+                @id
+                id: string;
+            }
+            type BioRemainsConfig {
+                @id
+                id: string;
+                @ref(GeneConfig)
+                gene_id: string;
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("GeneConfig", [("id", CfdInputValue::from("GoodGene"))]);
+    builder.add_record(
+        "BioRemainsConfig",
+        [
+            ("id", CfdInputValue::from("remains_1")),
+            ("gene_id", CfdInputValue::from("bad-value")),
+        ],
+    );
+
+    let err = builder
+        .build()
+        .expect_err("@KeyAsEnum ref value should be a legal enum variant");
+    let diag = diagnostic_with_code(&err, CfdErrorCode::InvalidEnumVariant);
+    assert_eq!(
+        primary_path_segments(diag),
+        &[CfdPathSegment::Field("gene_id".to_string())]
+    );
+}
+
+#[test]
+fn key_as_enum_explicit_ref_rejects_values_that_are_not_csharp_enum_variants() {
+    let schema = compile_schema(
+        r#"
+            type GeneConfig {
+                @KeyAsEnum("GeneId")
+                @id
+                id: string;
+            }
+            type BioRemainsConfig {
+                @id
+                id: string;
+                @ref(GeneConfig)
+                gene_id: string;
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("GeneConfig", [("id", CfdInputValue::from("GoodGene"))]);
+    builder.add_record(
+        "BioRemainsConfig",
+        [
+            ("id", CfdInputValue::from("remains_1")),
+            ("gene_id", CfdInputValue::Ref(CfdIdValue::from("bad-value"))),
+        ],
+    );
+
+    let err = builder
+        .build()
+        .expect_err("@KeyAsEnum explicit ref should be a legal enum variant");
+    let diag = diagnostic_with_code(&err, CfdErrorCode::InvalidEnumVariant);
+    assert_eq!(
+        primary_path_segments(diag),
+        &[CfdPathSegment::Field("gene_id".to_string())]
+    );
 }
 
 // Smoke check: CfdDataModel still emits an empty ordered entry list for dict defaults.

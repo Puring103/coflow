@@ -121,6 +121,13 @@ impl SchemaView {
             .and_then(|meta| meta.variants.get(variant))
             .copied()
     }
+
+    pub(crate) fn id_key_as_enum(&self, target_type: &str) -> Option<&str> {
+        self.full_fields(target_type)
+            .iter()
+            .find(|field| field.is_id)
+            .and_then(|field| field.key_as_enum.as_deref())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -152,6 +159,7 @@ pub(crate) struct FieldMeta {
     pub(crate) ty: CfdType,
     pub(crate) default: Option<CftSchemaDefaultValue>,
     pub(crate) ref_target: Option<String>,
+    pub(crate) key_as_enum: Option<String>,
     pub(crate) is_id: bool,
     pub(crate) is_index: bool,
 }
@@ -163,6 +171,7 @@ impl FieldMeta {
             ty: CfdType::from_schema(&field.ty_ref, schema),
             default: field.default.clone(),
             ref_target: annotation_name_arg(&field.annotations, "ref"),
+            key_as_enum: annotation_string_arg(&field.annotations, "KeyAsEnum"),
             is_id: has_annotation(&field.annotations, "id"),
             is_index: has_annotation(&field.annotations, "index"),
         }
@@ -250,6 +259,17 @@ fn annotation_name_arg(annotations: &[CftAnnotation], name: &str) -> Option<Stri
         .and_then(|annotation| annotation.args.first())
         .and_then(|arg| match arg {
             CftAnnotationValue::Name(name) => Some(name.clone()),
+            _ => None,
+        })
+}
+
+fn annotation_string_arg(annotations: &[CftAnnotation], name: &str) -> Option<String> {
+    annotations
+        .iter()
+        .find(|annotation| annotation.name == name)
+        .and_then(|annotation| annotation.args.first())
+        .and_then(|arg| match arg {
+            CftAnnotationValue::String(value) => Some(value.clone()),
             _ => None,
         })
 }

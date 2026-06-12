@@ -128,9 +128,13 @@ pub(super) struct AnnotationSpec {
 impl AnnotationSpec {
     pub(super) fn for_name(name: &str) -> Option<Self> {
         Some(match name {
-            "struct" | "KeyAsEnumValue" => Self {
+            "struct" => Self {
                 targets: &[AnnotationTarget::Type],
                 args: AnnotationArgs::None,
+            },
+            "KeyAsEnum" => Self {
+                targets: &[AnnotationTarget::Field],
+                args: AnnotationArgs::OneString,
             },
             "flag" => Self {
                 targets: &[AnnotationTarget::Enum],

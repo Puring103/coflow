@@ -1,7 +1,7 @@
 //! Coverage for the migration-driven annotation extensions:
 //!   - `@id` / `@ref` / `@index` accept enum-typed fields
 //!   - `@expand` parent fields must reference a concrete type
-//!   - `@KeyAsEnumValue` is accepted on type definitions
+//!   - `@KeyAsEnum("Name")` is accepted on string @id fields
 
 #![allow(
     clippy::unwrap_used,
@@ -157,32 +157,98 @@ fn expand_on_nullable_field_is_rejected() {
 }
 
 #[test]
-fn key_as_enum_value_compiles_on_string_id_table() {
+fn key_as_enum_compiles_on_string_id_field() {
     compile_one(
         r#"
-            @KeyAsEnumValue
             type Item {
+                @KeyAsEnum("ItemId")
                 @id
                 id: string;
                 name: string;
             }
         "#,
     )
-    .expect("@KeyAsEnumValue should compile on a type with string @id");
+    .expect("@KeyAsEnum should compile on a string @id field");
 }
 
 #[test]
-fn key_as_enum_value_on_field_is_rejected() {
+fn key_as_enum_on_non_id_field_is_rejected() {
     let err = compile_one(
         r#"
             type Item {
-                @KeyAsEnumValue
                 @id
                 id: string;
+                @KeyAsEnum("ItemName")
                 name: string;
             }
         "#,
     )
-    .expect_err("@KeyAsEnumValue is type-level only");
-    assert_has_code(&err, CftErrorCode::InvalidAnnotationTarget);
+    .expect_err("@KeyAsEnum requires @id");
+    assert_has_code(&err, CftErrorCode::InvalidAnnotatedFieldType);
+}
+
+#[test]
+fn key_as_enum_on_non_string_id_field_is_rejected() {
+    let err = compile_one(
+        r#"
+            type Item {
+                @KeyAsEnum("ItemId")
+                @id
+                id: int;
+            }
+        "#,
+    )
+    .expect_err("@KeyAsEnum requires string field type");
+    assert_has_code(&err, CftErrorCode::InvalidAnnotatedFieldType);
+}
+
+#[test]
+fn key_as_enum_rejects_invalid_csharp_enum_name() {
+    let err = compile_one(
+        r#"
+            type Item {
+                @KeyAsEnum("1Bad")
+                @id
+                id: string;
+            }
+        "#,
+    )
+    .expect_err("@KeyAsEnum enum name must be a C# identifier");
+    assert_has_code(&err, CftErrorCode::InvalidAnnotationArgument);
+}
+
+#[test]
+fn key_as_enum_rejects_existing_global_name() {
+    let err = compile_one(
+        r#"
+            enum ItemId { Existing }
+            type Item {
+                @KeyAsEnum("ItemId")
+                @id
+                id: string;
+            }
+        "#,
+    )
+    .expect_err("@KeyAsEnum enum name must not collide with schema globals");
+    assert_has_code(&err, CftErrorCode::DuplicateGlobalName);
+}
+
+#[test]
+fn key_as_enum_rejects_duplicate_generated_enum_name() {
+    let err = compile_one(
+        r#"
+            type Item {
+                @KeyAsEnum("SharedId")
+                @id
+                id: string;
+            }
+            type Quest {
+                @KeyAsEnum("SharedId")
+                @id
+                id: string;
+            }
+        "#,
+    )
+    .expect_err("@KeyAsEnum enum names must be unique");
+    assert_has_code(&err, CftErrorCode::DuplicateGlobalName);
 }

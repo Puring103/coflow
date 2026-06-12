@@ -1,11 +1,14 @@
 use crate::{CodegenTarget, DataFormat};
 use coflow_cft::CftContainer;
-use coflow_codegen_csharp_json::{generate_csharp_json, CsharpCodegenOptions};
-use coflow_codegen_csharp_messagepack::generate_csharp_messagepack;
+use coflow_codegen_csharp_json::{
+    generate_csharp_json_with_key_as_enum_variants, CsharpCodegenOptions,
+};
+use coflow_codegen_csharp_messagepack::generate_csharp_messagepack_with_key_as_enum_variants;
 use coflow_exporter_json::export_json_model;
 use coflow_exporter_messagepack::export_messagepack_model;
 use coflow_loader_excel::ExcelLoadOutput;
 use coflow_project::{OutputConfig, Project};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -37,14 +40,20 @@ pub fn write_csharp_files(
     data_format: DataFormat,
     namespace: &str,
     dir: &Path,
+    key_as_enum_variants: BTreeMap<String, Vec<String>>,
 ) -> Result<(), String> {
-    let generate = match data_format {
-        DataFormat::Json => generate_csharp_json,
-        DataFormat::Messagepack => generate_csharp_messagepack,
-    };
     let options = CsharpCodegenOptions::new(namespace);
-    let files =
-        generate(schema, &options).map_err(|err| format!("failed to generate C# code: {err}"))?;
+    let files = match data_format {
+        DataFormat::Json => {
+            generate_csharp_json_with_key_as_enum_variants(schema, &options, key_as_enum_variants)
+        }
+        DataFormat::Messagepack => generate_csharp_messagepack_with_key_as_enum_variants(
+            schema,
+            &options,
+            key_as_enum_variants,
+        ),
+    }
+    .map_err(|err| format!("failed to generate C# code: {err}"))?;
     fs::create_dir_all(dir)
         .map_err(|err| format!("failed to create output dir `{}`: {err}", dir.display()))?;
     for file in files {
