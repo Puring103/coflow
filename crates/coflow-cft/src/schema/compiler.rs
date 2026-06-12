@@ -126,41 +126,51 @@ impl<'a> SchemaCompiler<'a> {
                 match item {
                     Item::Const(def) => {
                         self.validate_identifier(&def.name, module_id, def.name_span);
-                        self.insert_symbol(&def.name, SymbolKind::Const, module_id, def.name_span);
-                        self.consts.insert(
-                            def.name.clone(),
-                            ConstInfo {
-                                module: module_id.clone(),
-                                def,
-                                value: const_value(&def.value),
-                            },
-                        );
+                        if self.insert_symbol(
+                            &def.name,
+                            SymbolKind::Const,
+                            module_id,
+                            def.name_span,
+                        ) {
+                            self.consts.insert(
+                                def.name.clone(),
+                                ConstInfo {
+                                    module: module_id.clone(),
+                                    def,
+                                    value: const_value(&def.value),
+                                },
+                            );
+                        }
                     }
                     Item::Enum(def) => {
                         self.validate_identifier(&def.name, module_id, def.name_span);
-                        self.insert_symbol(&def.name, SymbolKind::Enum, module_id, def.name_span);
-                        self.enums.insert(
-                            def.name.clone(),
-                            EnumInfo {
-                                module: module_id.clone(),
-                                def,
-                                variants: BTreeSet::new(),
-                                values: BTreeMap::new(),
-                                values_by_name: BTreeMap::new(),
-                                is_flag: has_annotation(&def.annotations, "flag"),
-                            },
-                        );
+                        if self.insert_symbol(&def.name, SymbolKind::Enum, module_id, def.name_span)
+                        {
+                            self.enums.insert(
+                                def.name.clone(),
+                                EnumInfo {
+                                    module: module_id.clone(),
+                                    def,
+                                    variants: BTreeSet::new(),
+                                    values: BTreeMap::new(),
+                                    values_by_name: BTreeMap::new(),
+                                    is_flag: has_annotation(&def.annotations, "flag"),
+                                },
+                            );
+                        }
                     }
                     Item::Type(def) => {
                         self.validate_identifier(&def.name, module_id, def.name_span);
-                        self.insert_symbol(&def.name, SymbolKind::Type, module_id, def.name_span);
-                        self.types.insert(
-                            def.name.clone(),
-                            TypeInfo {
-                                module: module_id.clone(),
-                                def,
-                            },
-                        );
+                        if self.insert_symbol(&def.name, SymbolKind::Type, module_id, def.name_span)
+                        {
+                            self.types.insert(
+                                def.name.clone(),
+                                TypeInfo {
+                                    module: module_id.clone(),
+                                    def,
+                                },
+                            );
+                        }
                     }
                 }
             }
@@ -178,7 +188,17 @@ impl<'a> SchemaCompiler<'a> {
         }
     }
 
-    fn insert_symbol(&mut self, name: &str, kind: SymbolKind, module_id: &ModuleId, span: Span) {
+    /// Registers `name` in the global symbol table. Returns `true` on success
+    /// and `false` when the name is already taken (a diagnostic is emitted in
+    /// that case). Callers should skip inserting into secondary maps on `false`
+    /// so that every map consistently holds the first-seen definition.
+    fn insert_symbol(
+        &mut self,
+        name: &str,
+        kind: SymbolKind,
+        module_id: &ModuleId,
+        span: Span,
+    ) -> bool {
         if let Some(first) = self.symbols.get(name) {
             let diagnostic = CftDiagnostic::error(
                 CftErrorCode::DuplicateGlobalName,
@@ -188,6 +208,7 @@ impl<'a> SchemaCompiler<'a> {
             )
             .with_related(first.module.clone(), first.span, "first definition is here");
             self.diagnostics.push(diagnostic);
+            false
         } else {
             self.symbols.insert(
                 name.to_string(),
@@ -197,6 +218,7 @@ impl<'a> SchemaCompiler<'a> {
                     span,
                 },
             );
+            true
         }
     }
 
@@ -411,7 +433,7 @@ impl<'a> SchemaCompiler<'a> {
         let mut visiting = HashSet::new();
         let mut visited = HashSet::new();
         for name in &names {
-            self.detect_cycle(name, &mut visiting, &mut visited, &mut Vec::new());
+            self.detect_cycle(name, &mut visiting, &mut visited);
         }
 
         for name in &names {
@@ -435,7 +457,7 @@ impl<'a> SchemaCompiler<'a> {
                             ),
                         );
                     }
-                    let inherited = self.collect_ancestor_fields(&parent.name);
+                    let inherited = self.collect_ancestor_fields(Some(&parent.name));
                     for field in &info.def.fields {
                         if let Some(first) = inherited.get(&field.name) {
                             self.diagnostics.push(
@@ -465,7 +487,6 @@ impl<'a> SchemaCompiler<'a> {
         name: &str,
         visiting: &mut HashSet<String>,
         visited: &mut HashSet<String>,
-        stack: &mut Vec<String>,
     ) {
         if visited.contains(name) {
             return;
@@ -487,7 +508,6 @@ impl<'a> SchemaCompiler<'a> {
             }
             return;
         }
-        stack.push(name.to_string());
         if let Some(parent) = self
             .types
             .get(name)
@@ -495,10 +515,9 @@ impl<'a> SchemaCompiler<'a> {
             .map(|parent| parent.name.clone())
         {
             if self.types.contains_key(&parent) {
-                self.detect_cycle(&parent, visiting, visited, stack);
+                self.detect_cycle(&parent, visiting, visited);
             }
         }
-        stack.pop();
         visiting.remove(name);
         visited.insert(name.to_string());
     }
@@ -842,10 +861,7 @@ impl<'a> SchemaCompiler<'a> {
         self.each_type(|this, info| {
             let mut field_names = this
                 .collect_ancestor_fields(
-                    info.def
-                        .parent
-                        .as_ref()
-                        .map_or("", |parent| parent.name.as_str()),
+                    info.def.parent.as_ref().map(|parent| parent.name.as_str()),
                 )
                 .into_keys()
                 .collect::<BTreeSet<_>>();
@@ -941,23 +957,20 @@ impl<'a> SchemaCompiler<'a> {
     ) -> Ty {
         match self.symbols.get(&enum_name.name) {
             Some(symbol) if symbol.kind == SymbolKind::Enum => {
-                let enum_known = self.enums.contains_key(&enum_name.name);
-                let variant_exists = self
-                    .enums
-                    .get(&enum_name.name)
-                    .is_some_and(|enum_info| enum_info.variants.contains(&variant.name));
-                if variant_exists {
-                    Ty::Enum(enum_name.name.clone())
-                } else {
-                    if enum_known {
+                match self.enums.get(&enum_name.name) {
+                    Some(enum_info) if enum_info.variants.contains(&variant.name) => {
+                        Ty::Enum(enum_name.name.clone())
+                    }
+                    Some(_) => {
                         self.push_diag(
                             CftErrorCode::UnknownEnumVariant,
                             module,
                             variant.span,
                             format!("unknown enum variant `{}`", variant.name),
                         );
+                        Ty::Unknown
                     }
-                    Ty::Unknown
+                    None => Ty::Unknown,
                 }
             }
             Some(symbol) => {
@@ -1295,9 +1308,9 @@ impl<'a> SchemaCompiler<'a> {
         declared.clone()
     }
 
-    fn collect_ancestor_fields(&self, parent_name: &str) -> BTreeMap<String, FieldOrigin> {
+    fn collect_ancestor_fields(&self, parent_name: Option<&str>) -> BTreeMap<String, FieldOrigin> {
         let mut out = BTreeMap::new();
-        let mut current = Some(parent_name.to_string());
+        let mut current = parent_name.map(str::to_string);
         let mut seen = HashSet::new();
         while let Some(name) = current {
             if !seen.insert(name.clone()) {
@@ -1343,28 +1356,33 @@ impl<'a> SchemaCompiler<'a> {
             .push(CftDiagnostic::error(code, module.clone(), span, message));
     }
 
-    /// Iterates over every type info, releasing the borrow on `self.types`
-    /// for each iteration so the body can call `&mut self` methods. Replaces
-    /// the previous `self.types.values().cloned().collect::<Vec<_>>()` boilerplate
-    /// scattered across the `validate_*` passes.
+    /// Iterates over every type, releasing the borrow on `self.types` for each
+    /// call so the body can use `&mut self`. Only the key snapshot is allocated
+    /// upfront; each info is cloned one at a time inside the loop.
     fn each_type<F: FnMut(&mut Self, &TypeInfo<'a>)>(&mut self, mut body: F) {
-        let infos: Vec<TypeInfo<'a>> = self.types.values().cloned().collect();
-        for info in infos {
-            body(self, &info);
+        let keys: Vec<String> = self.types.keys().cloned().collect();
+        for key in keys {
+            if let Some(info) = self.types.get(&key).cloned() {
+                body(self, &info);
+            }
         }
     }
 
     fn each_enum<F: FnMut(&mut Self, &EnumInfo<'a>)>(&mut self, mut body: F) {
-        let infos: Vec<EnumInfo<'a>> = self.enums.values().cloned().collect();
-        for info in infos {
-            body(self, &info);
+        let keys: Vec<String> = self.enums.keys().cloned().collect();
+        for key in keys {
+            if let Some(info) = self.enums.get(&key).cloned() {
+                body(self, &info);
+            }
         }
     }
 
     fn each_const<F: FnMut(&mut Self, &ConstInfo<'a>)>(&mut self, mut body: F) {
-        let infos: Vec<ConstInfo<'a>> = self.consts.values().cloned().collect();
-        for info in infos {
-            body(self, &info);
+        let keys: Vec<String> = self.consts.keys().cloned().collect();
+        for key in keys {
+            if let Some(info) = self.consts.get(&key).cloned() {
+                body(self, &info);
+            }
         }
     }
 }
