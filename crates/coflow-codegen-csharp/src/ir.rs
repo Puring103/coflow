@@ -6,7 +6,7 @@ use crate::names::{
     multi_index_var_name, pascal_case, pluralize, ref_index_param_name, ref_index_var_name,
     ref_property_name,
 };
-use crate::schema_view::{FieldMeta, FieldType, SchemaView};
+use crate::schema_view::SchemaView;
 use crate::CsharpCodegenError;
 use coflow_cft::CftContainer;
 use serde::Serialize;
@@ -53,7 +53,6 @@ pub fn build_project(
 
     let view = SchemaView::new(schema);
     validate_generated_names(&view, options)?;
-    validate_ref_id_types(&view)?;
 
     let enums = schema
         .all_enums()
@@ -293,84 +292,6 @@ fn insert_generated_enum_variant_name(
         )));
     }
     Ok(())
-}
-
-fn validate_ref_id_types(view: &SchemaView) -> Result<(), CsharpCodegenError> {
-    for ty in view.types.values() {
-        for field in &ty.all_fields {
-            let Some(target) = annotation_name_arg(&field.annotations, "ref") else {
-                continue;
-            };
-            let target_id_type = target_range_id_type(view, &target)?;
-            let field_id_type = field.ty.non_nullable();
-            if field_id_type != &target_id_type {
-                return Err(CsharpCodegenError::new(format!(
-                    "@ref({target}) field `{}` id type `{}` does not match target @id type `{}`",
-                    field.name,
-                    field_type_display(&field.ty),
-                    field_type_display(&target_id_type)
-                )));
-            }
-        }
-    }
-    Ok(())
-}
-
-fn target_range_id_type(view: &SchemaView, target: &str) -> Result<FieldType, CsharpCodegenError> {
-    let assignable = view.concrete_assignable_types(target)?;
-    let type_names = if assignable.is_empty() {
-        vec![target.to_string()]
-    } else {
-        assignable
-    };
-    let mut id_type = None::<FieldType>;
-    for type_name in type_names {
-        let ty = view.type_meta(&type_name)?;
-        let source_id = inherited_id_field(view, ty)?.ty.non_nullable().clone();
-        if let Some(existing) = &id_type {
-            if existing != &source_id {
-                return Err(CsharpCodegenError::new(format!(
-                    "@ref({target}) target range has inconsistent @id type `{}` for `{}` and `{}` for `{}`",
-                    field_type_display(existing),
-                    target,
-                    field_type_display(&source_id),
-                    type_name
-                )));
-            }
-        } else {
-            id_type = Some(source_id);
-        }
-    }
-    id_type.ok_or_else(|| CsharpCodegenError::new(format!("type `{target}` has no @id field")))
-}
-
-fn inherited_id_field<'a>(
-    view: &'a SchemaView,
-    ty: &'a crate::schema_view::TypeMeta,
-) -> Result<&'a FieldMeta, CsharpCodegenError> {
-    if let Ok(field) = ty.id_field() {
-        return Ok(field);
-    }
-    view.type_meta(&ty.name)?.id_field()
-}
-
-fn field_type_display(ty: &FieldType) -> String {
-    match ty {
-        FieldType::Int => "int".to_string(),
-        FieldType::Float => "float".to_string(),
-        FieldType::Bool => "bool".to_string(),
-        FieldType::String => "string".to_string(),
-        FieldType::Type(name) | FieldType::Enum(name) => name.clone(),
-        FieldType::Array(inner) => format!("[{}]", field_type_display(inner)),
-        FieldType::Dict(key, value) => {
-            format!(
-                "{{{}: {}}}",
-                field_type_display(key),
-                field_type_display(value)
-            )
-        }
-        FieldType::Nullable(inner) => format!("{}?", field_type_display(inner)),
-    }
 }
 
 fn validate_ident(kind: &str, value: &str) -> Result<(), CsharpCodegenError> {

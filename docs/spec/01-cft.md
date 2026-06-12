@@ -207,6 +207,8 @@ type Quest {
 
 `@ref` 的目标类型可以是 `abstract type` 或有子类的普通 `type`，表示持有该类型赋值兼容范围内任意实例的 ID。该范围内的所有记录共享一个继承树索引，`@id` 字段值必须唯一。
 
+`@ref(TypeName)` 只有在 `TypeName` 本身或其可见继承字段中存在 `@id` 时才可解析。目标 `@id` 必须是非 nullable 的 `string` 或 `int`；`@ref` 字段允许同类型或同类型 nullable 形式。比如目标 `@id id: string;` 时，`@ref(Target)` 字段可以是 `string` 或 `string?`，不能是 `int` 或 `int?`。子类私有的 `@id` 不会让父类引用范围可寻址。
+
 ### 4.5 nullable
 
 `T?` 是 `T | null` 的简写：
@@ -614,8 +616,10 @@ pub struct CftSchemaConst {
 | `CFT-SCHEMA-029` | `UnknownEnumVariant` | 默认值引用未知枚举变体 |
 | `CFT-SCHEMA-030` | `InvalidConstValue` | `const` 值不是允许的字面量类型 |
 | `CFT-SCHEMA-031` | `ReservedIdentifier` | `const`、`enum`、`type`、字段、枚举变体或量词变量使用保留名 |
+| `CFT-SCHEMA-032` | `RefTargetHasNoId` | `@ref(TypeName)` 的目标类型没有可见 `@id` |
+| `CFT-SCHEMA-033` | `RefIdTypeMismatch` | `@ref` 字段 ID 类型与目标 `@id` 类型不一致 |
 
-`@ref` 字段类型允许 `string`、`int` 以及对应 nullable 形式；`@index` 字段类型只允许非 nullable 的 `string`、`int`、`enum`。
+`@id` 字段类型只允许非 nullable 的 `string`、`int`；`@ref` 字段类型允许 `string`、`int` 以及对应 nullable 形式，且必须与目标 `@id` 类型一致；`@index` 字段类型只允许非 nullable 的 `string`、`int`、`enum`。
 
 #### TYPE
 

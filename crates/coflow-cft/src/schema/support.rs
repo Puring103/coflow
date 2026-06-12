@@ -454,7 +454,7 @@ pub(super) fn types_assignable(expected: &Ty, actual: &Ty) -> bool {
     match (expected, actual) {
         (Ty::Nullable(inner), Ty::Null) => !matches!(inner.as_ref(), Ty::Unknown),
         (Ty::Nullable(inner), other) => types_assignable(inner, other),
-        (Ty::Array(_), Ty::EmptyArray) | (Ty::Dict(_, _), Ty::EmptyObject) => true,
+        (Ty::Array(_), Ty::EmptyArray) | (Ty::Dict(_, _) | Ty::Type(_), Ty::EmptyObject) => true,
         (Ty::Enum(left), Ty::Enum(right)) | (Ty::Type(left), Ty::Type(right)) => left == right,
         _ => expected == actual,
     }

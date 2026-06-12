@@ -1219,6 +1219,64 @@ fn deep_nested_default_values_propagate() {
 }
 
 #[test]
+fn empty_object_default_builds_nominal_object_with_field_defaults() {
+    let schema = compile_schema(
+        r#"
+            type Stats {
+                hp: int = 100;
+                speed: float = 1.0;
+            }
+            type Monster {
+                @id id: string;
+                stats: Stats = {};
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("Monster", [("id", CfdInputValue::from("m1"))]);
+    let model = builder.build().unwrap();
+    let id = record_id_at(&model, 0);
+    let CfdValue::Object(stats) = model.record(id).unwrap().field("stats").unwrap() else {
+        panic!("expected stats object");
+    };
+    assert_eq!(stats.actual_type, "Stats");
+    assert_eq!(stats.field("hp"), Some(&CfdValue::Int(100)));
+    assert_eq!(stats.field("speed"), Some(&CfdValue::Float(1.0)));
+}
+
+#[test]
+fn empty_object_default_builds_nested_nominal_defaults() {
+    let schema = compile_schema(
+        r#"
+            type Inner {
+                amount: int = 7;
+            }
+            type Stats {
+                inner: Inner = {};
+            }
+            type Monster {
+                @id id: string;
+                stats: Stats = {};
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("Monster", [("id", CfdInputValue::from("m1"))]);
+    let model = builder.build().unwrap();
+    let id = record_id_at(&model, 0);
+    let CfdValue::Object(stats) = model.record(id).unwrap().field("stats").unwrap() else {
+        panic!("expected stats object");
+    };
+    let CfdValue::Object(inner) = stats.field("inner").unwrap() else {
+        panic!("expected inner object");
+    };
+    assert_eq!(inner.actual_type, "Inner");
+    assert_eq!(inner.field("amount"), Some(&CfdValue::Int(7)));
+}
+
+#[test]
 fn missing_id_field_value_at_top_level_reports_missing_id_field() {
     // The id field exists in the schema, but the record provides nothing for it
     // and the field has no default. This path goes through MissingRequiredField
