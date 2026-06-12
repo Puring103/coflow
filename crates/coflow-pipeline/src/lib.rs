@@ -14,7 +14,6 @@
 
 mod artifacts;
 mod excel;
-mod key_as_enum;
 mod schema;
 
 use artifacts::{
@@ -24,6 +23,7 @@ use artifacts::{
 use coflow_project::{DiagnosticJson, Project};
 use excel::load_project_excel;
 use schema::compile_project_schema;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,12 +186,13 @@ pub fn build_project(
             .namespace
             .or(code_output.namespace.as_deref())
             .unwrap_or("Game.Config");
-        write_csharp_files(&schema, data_format, namespace, &code_dir)?;
-        key_as_enum::write_key_as_enum_value_files(
+        let key_as_enum_variants = collect_key_as_enum_variants(&schema, &load_output.model);
+        write_csharp_files(
             &schema,
-            &load_output.model,
+            data_format,
             namespace,
             &code_dir,
+            key_as_enum_variants,
         )?;
         Some(CodegenReport {
             target: CodegenTarget::Csharp,
@@ -260,6 +261,52 @@ pub fn generate_project_code(
         Ok(schema) => schema,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
-    write_csharp_files(&schema, data_format, namespace, &dir)?;
+    write_csharp_files(&schema, data_format, namespace, &dir, BTreeMap::new())?;
     Ok(PipelineOutcome::Success(CodegenReport { target, dir }))
+}
+
+fn collect_key_as_enum_variants(
+    schema: &coflow_cft::CftContainer,
+    model: &coflow_data_model::CfdDataModel,
+) -> BTreeMap<String, Vec<String>> {
+    let mut out = BTreeMap::new();
+    for schema_type in schema.all_types() {
+        let Some(id_field) = schema_type.all_fields.iter().find(|field| {
+            field
+                .annotations
+                .iter()
+                .any(|annotation| annotation.name == "id")
+        }) else {
+            continue;
+        };
+        let Some(enum_name) = annotation_string_arg(&id_field.annotations, "KeyAsEnum") else {
+            continue;
+        };
+
+        let mut seen = BTreeSet::new();
+        let mut variants = Vec::new();
+        for (_record_id, record) in model.records_of_type(&schema_type.name) {
+            let Some(coflow_data_model::CfdValue::String(value)) =
+                record.fields.get(&id_field.name)
+            else {
+                continue;
+            };
+            if seen.insert(value.clone()) {
+                variants.push(value.clone());
+            }
+        }
+        out.insert(enum_name, variants);
+    }
+    out
+}
+
+fn annotation_string_arg(annotations: &[coflow_cft::CftAnnotation], name: &str) -> Option<String> {
+    annotations
+        .iter()
+        .find(|annotation| annotation.name == name)
+        .and_then(|annotation| annotation.args.first())
+        .and_then(|arg| match arg {
+            coflow_cft::CftAnnotationValue::String(value) => Some(value.clone()),
+            _ => None,
+        })
 }

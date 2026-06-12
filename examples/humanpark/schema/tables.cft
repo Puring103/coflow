@@ -23,9 +23,9 @@ sealed type TerrainConfig {
   InitialConfig: TerrainInitialConfig;
 }
 
-@KeyAsEnumValue
 @display("物质配置")
 type SubstanceConfig {
+  @KeyAsEnum("SubstanceId")
   @id
   id: string;
   name: string;
@@ -43,9 +43,9 @@ type AttributeConfig {
   evolution_range: float = 0.0;
 }
 
-@KeyAsEnumValue
 @display("能力配置")
 type AbilityConfig {
+  @KeyAsEnum("AbilityId")
   @id
   id: string;
   name: localizedString;
@@ -53,9 +53,9 @@ type AbilityConfig {
   isInit: bool = false;
 }
 
-@KeyAsEnumValue
 @display("基因配置")
 type GeneConfig {
+  @KeyAsEnum("GeneId")
   @id
   id: string;
   name: string;
@@ -70,18 +70,18 @@ type GeneConfig {
   isInitial: bool = false;
 }
 
-@KeyAsEnumValue
 @display("表皮配置")
 type SkinConfig {
+  @KeyAsEnum("SkinId")
   @id
   id: string;
   name: string;
   desc: string? = null;
 }
 
-@KeyAsEnumValue
 @display("阶段配置")
 type PhaseConfig {
+  @KeyAsEnum("PhaseId")
   @id
   id: string;
   desc: string;

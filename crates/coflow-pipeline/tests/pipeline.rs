@@ -10,6 +10,7 @@ use coflow_pipeline::{
     CodegenOptions, CodegenTarget, DataFormat, ExportOptions, PipelineOutcome,
 };
 use coflow_project::Project;
+use rust_xlsxwriter::Workbook;
 
 #[test]
 fn check_project_passes_for_rpg_example() {
@@ -238,6 +239,80 @@ fn build_project_exports_data_and_code() {
     assert!(code_dir.join("GameConfig.cs").exists());
 }
 
+#[test]
+fn build_project_generates_key_as_enum_from_loaded_ids() {
+    let root = temp_project_dir("coflow-pipeline-key-as-enum");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        r#"
+            type GeneConfig {
+                @KeyAsEnum("GeneId")
+                @id
+                id: string;
+            }
+            type BioRemainsConfig {
+                @id id: string;
+                @ref(GeneConfig)
+                gene_id: string?;
+            }
+        "#,
+    )
+    .expect("write schema");
+    let workbook_path = root.join("data").join("configs.xlsx");
+    write_key_as_enum_workbook(&workbook_path).expect("write workbook");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - file: data/configs.xlsx
+    sheets:
+      - sheet: GeneConfig
+        columns:
+          id: id
+      - sheet: BioRemainsConfig
+        columns:
+          id: id
+          gene_id: gene_id
+outputs:
+  data:
+    type: json
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Game.Config
+",
+    )
+    .expect("write config");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+
+    let outcome = build_project(
+        &project,
+        BuildOptions {
+            data_out_dir: Some(root.join("out-data").as_path()),
+            code_out_dir: Some(root.join("out-code").as_path()),
+            namespace: Some("Game.Config"),
+        },
+    )
+    .expect("build project");
+
+    assert!(matches!(outcome, PipelineOutcome::Success(_)));
+    let out_code = root.join("out-code");
+    let gene_id = std::fs::read_to_string(out_code.join("GeneId.cs")).expect("GeneId.cs");
+    assert!(gene_id.contains("public enum GeneId"));
+    assert!(gene_id.contains("Gene_Spore = 0"));
+    assert!(gene_id.contains("Gene_Mating = 1"));
+    assert!(!out_code.join("GeneConfigId.cs").exists());
+    let gene = std::fs::read_to_string(out_code.join("GeneConfig.cs")).expect("GeneConfig.cs");
+    assert!(gene.contains("public GeneId Id { get; init; }"));
+    let remains =
+        std::fs::read_to_string(out_code.join("BioRemainsConfig.cs")).expect("BioRemainsConfig.cs");
+    assert!(remains.contains("public GeneId? GeneId { get; init; }"));
+}
+
 fn write_project_with_missing_excel_source(root: &std::path::Path, include_code_output: bool) {
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
     std::fs::write(
@@ -292,6 +367,24 @@ fn workspace_path(path: &str) -> std::path::PathBuf {
         .join("..")
         .join("..")
         .join(path)
+}
+
+fn write_key_as_enum_workbook(path: &std::path::Path) -> Result<(), rust_xlsxwriter::XlsxError> {
+    let mut workbook = Workbook::new();
+    let genes = workbook.add_worksheet();
+    genes.set_name("GeneConfig")?;
+    genes.write_string(0, 0, "id")?;
+    genes.write_string(1, 0, "Gene_Spore")?;
+    genes.write_string(2, 0, "Gene_Mating")?;
+
+    let remains = workbook.add_worksheet();
+    remains.set_name("BioRemainsConfig")?;
+    remains.write_string(0, 0, "id")?;
+    remains.write_string(0, 1, "gene_id")?;
+    remains.write_string(1, 0, "remains_1")?;
+    remains.write_string(1, 1, "Gene_Spore")?;
+
+    workbook.save(path)
 }
 
 struct TempDirCleanup(std::path::PathBuf);

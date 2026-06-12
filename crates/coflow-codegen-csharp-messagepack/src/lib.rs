@@ -19,10 +19,11 @@
 
 use coflow_cft::CftContainer;
 use coflow_codegen_csharp::{
-    generate_csharp_with_database_templates, CsharpDataFormat, CsharpDatabaseTemplates,
-    CsharpTemplate,
+    generate_csharp_with_database_templates, generate_csharp_with_key_as_enum_variants,
+    CsharpDataFormat, CsharpDatabaseTemplates, CsharpTemplate,
 };
 pub use coflow_codegen_csharp::{CsharpCodegenError, CsharpCodegenOptions, GeneratedFile};
+use std::collections::BTreeMap;
 
 const DATABASE_TEMPLATES: CsharpDatabaseTemplates = CsharpDatabaseTemplates {
     database_template: CsharpTemplate {
@@ -60,6 +61,27 @@ pub fn generate_csharp_messagepack(
         options,
         CsharpDataFormat::MessagePack,
         &DATABASE_TEMPLATES,
+    )
+}
+
+/// Generates C# `MessagePack` loader files and includes data-driven
+/// `@KeyAsEnum` variants.
+///
+/// # Errors
+///
+/// Returns an error when the compiled schema cannot be mapped to C# runtime
+/// code or when a Tera template fails to render.
+pub fn generate_csharp_messagepack_with_key_as_enum_variants(
+    schema: &CftContainer,
+    options: &CsharpCodegenOptions,
+    key_as_enum_variants: BTreeMap<String, Vec<String>>,
+) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+    generate_csharp_with_key_as_enum_variants(
+        schema,
+        options,
+        CsharpDataFormat::MessagePack,
+        &DATABASE_TEMPLATES,
+        key_as_enum_variants,
     )
 }
 

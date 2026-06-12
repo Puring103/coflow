@@ -15,6 +15,17 @@ pub fn annotation_name_arg(annotations: &[CftAnnotation], name: &str) -> Option<
         })
 }
 
+pub fn annotation_string_arg(annotations: &[CftAnnotation], name: &str) -> Option<String> {
+    annotations
+        .iter()
+        .find(|annotation| annotation.name == name)
+        .and_then(|annotation| annotation.args.first())
+        .and_then(|arg| match arg {
+            CftAnnotationValue::String(value) => Some(value.clone()),
+            _ => None,
+        })
+}
+
 pub fn display_annotation(annotations: &[CftAnnotation]) -> Option<String> {
     annotations
         .iter()

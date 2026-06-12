@@ -697,10 +697,7 @@ fn ref_cell_with_enum_id_resolves_via_enum_variant() -> TestResult {
     );
     builder.add_record(
         "Brush",
-        [
-            ("bid", CfdInputValue::from("brush_1")),
-            ("color", parsed),
-        ],
+        [("bid", CfdInputValue::from("brush_1")), ("color", parsed)],
     );
     let model = build_model(builder)?;
     let Some((_, brush)) = model.records().nth(1) else {
@@ -708,11 +705,14 @@ fn ref_cell_with_enum_id_resolves_via_enum_variant() -> TestResult {
     };
     match brush.field("color") {
         Some(CfdValue::Ref { id, .. }) => {
-            assert_eq!(id, &coflow_data_model::CfdIdValue::Enum(coflow_data_model::CfdEnumValue {
-                enum_name: "Color".to_string(),
-                variant: Some("Green".to_string()),
-                value: 1,
-            }));
+            assert_eq!(
+                id,
+                &coflow_data_model::CfdIdValue::Enum(coflow_data_model::CfdEnumValue {
+                    enum_name: "Color".to_string(),
+                    variant: Some("Green".to_string()),
+                    value: 1,
+                })
+            );
         }
         other => return Err(format!("expected ref, got {other:?}")),
     }

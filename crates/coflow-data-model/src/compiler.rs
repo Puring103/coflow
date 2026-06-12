@@ -344,7 +344,35 @@ impl<'s> Validator<'s> {
         if let Some(target_type) = &field.ref_target {
             return self.validate_ref_field(field, target_type, value, record, path);
         }
+        if let Some(enum_name) = &field.key_as_enum {
+            return self.validate_key_as_enum_value(enum_name, &field.ty, value, record, path);
+        }
         self.validate_value(&field.ty, value, record, path)
+    }
+
+    fn validate_key_as_enum_value(
+        &mut self,
+        enum_name: &str,
+        ty: &CfdType,
+        value: &CfdInputValue,
+        record: Option<CfdRecordId>,
+        path: CfdPath,
+    ) -> Option<CfdValueDraft> {
+        if let CfdType::Nullable(inner) = ty {
+            return if matches!(value, CfdInputValue::Null) {
+                Some(CfdValueDraft::Value(CfdValue::Null))
+            } else {
+                self.validate_key_as_enum_value(enum_name, inner, value, record, path)
+            };
+        }
+
+        match (ty, value) {
+            (CfdType::String, CfdInputValue::String(value)) => {
+                self.validate_key_as_enum_variant(enum_name, value, record, path)?;
+                Some(CfdValueDraft::Value(CfdValue::String(value.clone())))
+            }
+            _ => self.validate_value(ty, value, record, path),
+        }
     }
 
     fn validate_ref_field(
@@ -363,9 +391,19 @@ impl<'s> Validator<'s> {
             return None;
         }
 
+        let key_as_enum = self.schema.id_key_as_enum(target_type);
+
         let id = match value {
-            CfdInputValue::Ref(id) => id.clone(),
-            CfdInputValue::String(value) => CfdIdValue::String(value.clone()),
+            CfdInputValue::Ref(id) => {
+                self.validate_key_as_enum_id(key_as_enum, id, record, path.clone())?;
+                id.clone()
+            }
+            CfdInputValue::String(value) => {
+                if let Some(enum_name) = key_as_enum {
+                    self.validate_key_as_enum_variant(enum_name, value, record, path.clone())?;
+                }
+                CfdIdValue::String(value.clone())
+            }
             CfdInputValue::Int(value) => CfdIdValue::Int(*value),
             CfdInputValue::EnumVariant { enum_name, variant } => {
                 let enum_value =
@@ -568,6 +606,9 @@ impl<'s> Validator<'s> {
         path: CfdPath,
     ) -> Option<CfdValueDraft> {
         let Some(target_type) = &field.ref_target else {
+            if let Some(enum_name) = &field.key_as_enum {
+                return self.default_key_as_enum_value(enum_name, &field.ty, value, record, path);
+            }
             return self.default_value(&field.ty, value, record, path);
         };
 
@@ -578,6 +619,9 @@ impl<'s> Validator<'s> {
             CftSchemaDefaultValue::String(value)
                 if id_matches_type(&CfdIdValue::String(value.clone()), &field.ty) =>
             {
+                if let Some(enum_name) = self.schema.id_key_as_enum(target_type) {
+                    self.validate_key_as_enum_variant(enum_name, value, record, path)?;
+                }
                 Some(CfdValueDraft::PendingRef {
                     target_type: target_type.clone(),
                     id: CfdIdValue::String(value.clone()),
@@ -602,6 +646,27 @@ impl<'s> Validator<'s> {
                 None
             }
         }
+    }
+
+    fn default_key_as_enum_value(
+        &mut self,
+        enum_name: &str,
+        ty: &CfdType,
+        default: &CftSchemaDefaultValue,
+        record: Option<CfdRecordId>,
+        path: CfdPath,
+    ) -> Option<CfdValueDraft> {
+        if matches!(default, CftSchemaDefaultValue::Null) && ty.is_nullable() {
+            return Some(CfdValueDraft::Value(CfdValue::Null));
+        }
+        let CftSchemaDefaultValue::String(value) = default else {
+            return self.default_value(ty, default, record, path);
+        };
+        if !type_accepts_default(ty, &CfdType::String) {
+            return self.default_value(ty, default, record, path);
+        }
+        self.validate_key_as_enum_variant(enum_name, value, record, path)?;
+        Some(CfdValueDraft::Value(CfdValue::String(value.clone())))
     }
 
     fn default_value(
@@ -859,6 +924,39 @@ impl<'s> Validator<'s> {
         })
     }
 
+    fn validate_key_as_enum_id(
+        &mut self,
+        enum_name: Option<&str>,
+        id: &CfdIdValue,
+        record: Option<CfdRecordId>,
+        path: CfdPath,
+    ) -> Option<()> {
+        if let (Some(enum_name), CfdIdValue::String(value)) = (enum_name, id) {
+            self.validate_key_as_enum_variant(enum_name, value, record, path)?;
+        }
+        Some(())
+    }
+
+    fn validate_key_as_enum_variant(
+        &mut self,
+        enum_name: &str,
+        variant: &str,
+        record: Option<CfdRecordId>,
+        path: CfdPath,
+    ) -> Option<()> {
+        if is_valid_csharp_identifier(variant) {
+            return Some(());
+        }
+        self.push(
+            CfdDiagnostic::error(
+                CfdErrorCode::InvalidEnumVariant,
+                format!("@KeyAsEnum value `{enum_name}.{variant}` is not a legal enum variant"),
+            )
+            .with_primary(record, path),
+        );
+        None
+    }
+
     fn type_mismatch(
         &mut self,
         expected: &str,
@@ -885,4 +983,97 @@ fn non_nullable_type(ty: &CfdType) -> &CfdType {
         CfdType::Nullable(inner) => non_nullable_type(inner),
         _ => ty,
     }
+}
+
+fn is_valid_csharp_identifier(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    !is_csharp_keyword(value)
+        && (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn is_csharp_keyword(value: &str) -> bool {
+    matches!(
+        value,
+        "abstract"
+            | "as"
+            | "base"
+            | "bool"
+            | "break"
+            | "byte"
+            | "case"
+            | "catch"
+            | "char"
+            | "checked"
+            | "class"
+            | "const"
+            | "continue"
+            | "decimal"
+            | "default"
+            | "delegate"
+            | "do"
+            | "double"
+            | "else"
+            | "enum"
+            | "event"
+            | "explicit"
+            | "extern"
+            | "false"
+            | "finally"
+            | "fixed"
+            | "float"
+            | "for"
+            | "foreach"
+            | "goto"
+            | "if"
+            | "implicit"
+            | "in"
+            | "int"
+            | "interface"
+            | "internal"
+            | "is"
+            | "lock"
+            | "long"
+            | "namespace"
+            | "new"
+            | "null"
+            | "object"
+            | "operator"
+            | "out"
+            | "override"
+            | "params"
+            | "private"
+            | "protected"
+            | "public"
+            | "readonly"
+            | "ref"
+            | "return"
+            | "sbyte"
+            | "sealed"
+            | "short"
+            | "sizeof"
+            | "stackalloc"
+            | "static"
+            | "string"
+            | "struct"
+            | "switch"
+            | "this"
+            | "throw"
+            | "true"
+            | "try"
+            | "typeof"
+            | "uint"
+            | "ulong"
+            | "unchecked"
+            | "unsafe"
+            | "ushort"
+            | "using"
+            | "virtual"
+            | "void"
+            | "volatile"
+            | "while"
+    )
 }

@@ -25,6 +25,7 @@ mod render;
 mod schema_view;
 
 use coflow_cft::CftContainer;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 
@@ -100,7 +101,30 @@ pub fn generate_csharp_with_database_templates(
     data_format: CsharpDataFormat,
     database_templates: &CsharpDatabaseTemplates,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    let project = ir::build_project(schema, options, data_format)?;
+    generate_csharp_with_key_as_enum_variants(
+        schema,
+        options,
+        data_format,
+        database_templates,
+        BTreeMap::new(),
+    )
+}
+
+/// Generates C# files and includes data-driven enum variants for fields marked
+/// with `@KeyAsEnum`.
+///
+/// # Errors
+///
+/// Returns an error when the compiled schema cannot be mapped to C# runtime
+/// code or when a Tera template fails to render.
+pub fn generate_csharp_with_key_as_enum_variants(
+    schema: &CftContainer,
+    options: &CsharpCodegenOptions,
+    data_format: CsharpDataFormat,
+    database_templates: &CsharpDatabaseTemplates,
+    key_as_enum_variants: BTreeMap<String, Vec<String>>,
+) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+    let project = ir::build_project(schema, options, data_format, key_as_enum_variants)?;
     render::render_project(&project, database_templates)
 }
 
@@ -117,6 +141,7 @@ mod tests {
 
     use super::*;
     use coflow_cft::{CftContainer, ModuleId};
+    use std::collections::BTreeMap;
 
     fn compile_schema(source: &str) -> Result<CftContainer, String> {
         let mut container = CftContainer::new();
@@ -229,6 +254,20 @@ mod tests {
         )
     }
 
+    fn generate_json_with_key_as_enum_variants(
+        schema: &CftContainer,
+        options: &CsharpCodegenOptions,
+        variants: BTreeMap<String, Vec<String>>,
+    ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+        generate_csharp_with_key_as_enum_variants(
+            schema,
+            options,
+            CsharpDataFormat::Json,
+            &json_database_templates(),
+            variants,
+        )
+    }
+
     #[test]
     fn data_format_serializes_messagepack_without_separator() -> Result<(), String> {
         let value = serde::Serialize::serialize(&CsharpDataFormat::MessagePack, StringSerializer)
@@ -254,6 +293,79 @@ mod tests {
         require_contains(database, "using MessagePack;")?;
         require_contains(database, "Path.Combine(dataDir, \"Item.msgpack\")")?;
         require_not_contains(database, "Newtonsoft.Json")?;
+        Ok(())
+    }
+
+    #[test]
+    fn codegen_key_as_enum_generates_enum_and_strongly_typed_id_and_ref() -> Result<(), String> {
+        let schema = compile_schema(
+            r#"
+                type GeneConfig {
+                    @KeyAsEnum("GeneId")
+                    @id
+                    id: string;
+                }
+
+                type BioRemainsConfig {
+                    @id
+                    id: string;
+                    @ref(GeneConfig)
+                    gene_id: string?;
+                    @ref(GeneConfig)
+                    fallback_gene_id: string = "Gene_Mating";
+                }
+            "#,
+        )?;
+        let mut variants = BTreeMap::new();
+        variants.insert(
+            "GeneId".to_string(),
+            vec!["Gene_Spore".to_string(), "Gene_Mating".to_string()],
+        );
+
+        let files = generate_json_with_key_as_enum_variants(
+            &schema,
+            &CsharpCodegenOptions::new("Game.Config"),
+            variants,
+        )
+        .map_err(|err| err.to_string())?;
+
+        let gene_id = generated_file(&files, "GeneId.cs")?;
+        require_contains(gene_id, "public enum GeneId")?;
+        require_contains(gene_id, "Gene_Spore = 0")?;
+        require_contains(gene_id, "Gene_Mating = 1")?;
+
+        let gene = generated_file(&files, "GeneConfig.cs")?;
+        require_contains(gene, "public GeneId Id { get; init; }")?;
+        require_not_contains(gene, "public string Id")?;
+        require_not_contains(gene, " = \"\";")?;
+
+        let remains = generated_file(&files, "BioRemainsConfig.cs")?;
+        require_contains(remains, "public GeneId? GeneId { get; init; }")?;
+        require_contains(
+            remains,
+            "public GeneId FallbackGeneId { get; init; } = (GeneId)Enum.Parse(typeof(GeneId), \"Gene_Mating\");",
+        )?;
+        require_contains(remains, "public GeneConfig? Gene { get; internal set; }")?;
+        require_contains(
+            remains,
+            "public GeneConfig FallbackGene { get; internal set; } = null!;",
+        )?;
+
+        let database = generated_file(&files, "GameConfig.cs")?;
+        require_contains(database, "GeneId = ReadRequiredNullable")?;
+        require_contains(
+            database,
+            "FallbackGeneId = ReadWithDefault(obj, \"fallback_gene_id\", path, (GeneId)Enum.Parse(typeof(GeneId), \"Gene_Mating\")",
+        )?;
+        require_contains(database, "ReadStringEnum<GeneId>")?;
+        require_contains(
+            database,
+            "Dictionary<GeneId, GeneConfig> _geneConfigRefIndex",
+        )?;
+        require_contains(
+            database,
+            "ResolveRef(geneConfigRefIndex, value.GeneId.Value",
+        )?;
         Ok(())
     }
 
