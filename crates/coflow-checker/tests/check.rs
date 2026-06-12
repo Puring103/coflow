@@ -101,6 +101,43 @@ fn check_runner_reports_false_conditions() {
 }
 
 #[test]
+fn check_runner_uses_spec_logical_operator_precedence() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                check { true || false && false; }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("Item", std::iter::empty::<(&str, CfdInputValue)>());
+    let model = builder.build().expect("data model should build");
+    let err = model
+        .run_checks(&schema)
+        .expect_err("same-precedence logical operators should evaluate left-to-right");
+    assert_has_code(&err, CfdErrorCode::CheckFailed);
+}
+
+#[test]
+fn check_runner_uses_spec_bitwise_operator_precedence() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                check { 1 | 2 & 0 == 0; }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("Item", std::iter::empty::<(&str, CfdInputValue)>());
+    let model = builder.build().expect("data model should build");
+    model
+        .run_checks(&schema)
+        .expect("same-precedence bitwise operators should evaluate left-to-right");
+}
+
+#[test]
 fn check_runner_short_circuits_nullable_guards_and_reports_null_access() {
     let guarded = compile_schema(
         r#"
