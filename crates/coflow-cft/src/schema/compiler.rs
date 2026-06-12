@@ -1,7 +1,7 @@
 use super::support::{
     build_schema_type_ref, const_value, convert_annotations, convert_check_block, find_annotation,
     format_type_ref, has_annotation, is_i64_power_of_two, is_indexable_field_type,
-    is_reserved_identifier, is_string_or_int, is_valid_dict_key, types_assignable, unwrap_nullable,
+    is_reserved_identifier, is_id_compatible_type, is_valid_dict_key, types_assignable, unwrap_nullable,
     AnnotationSpec, AnnotationTarget, ConstInfo, EnumInfo, FieldInfo, FieldOrigin, Symbol,
     SymbolKind, Ty, TypeInfo,
 };
@@ -748,22 +748,22 @@ impl<'a> SchemaCompiler<'a> {
 
     fn validate_field_annotations(&mut self, module: &ModuleId, field: &FieldDef) {
         if let Some(annotation) = find_annotation(&field.annotations, "id") {
-            if !is_string_or_int(&self.resolve_field_type(&field.ty), false) {
+            if !is_id_compatible_type(&self.resolve_field_type(&field.ty), false) {
                 self.push_diag(
                     CftErrorCode::InvalidAnnotatedFieldType,
                     module,
                     annotation.span,
-                    "@id fields must be string or int",
+                    "@id fields must be string, int, or enum",
                 );
             }
         }
         if let Some(annotation) = find_annotation(&field.annotations, "ref") {
-            if !is_string_or_int(&self.resolve_field_type(&field.ty), true) {
+            if !is_id_compatible_type(&self.resolve_field_type(&field.ty), true) {
                 self.push_diag(
                     CftErrorCode::InvalidAnnotatedFieldType,
                     module,
                     annotation.span,
-                    "@ref fields must be string or int, optionally nullable",
+                    "@ref fields must be string, int, or enum (optionally nullable)",
                 );
             }
             if let Some(AnnotationArg::Name(target)) = annotation.args.first() {
@@ -807,6 +807,21 @@ impl<'a> SchemaCompiler<'a> {
                 );
             }
         }
+        if let Some(annotation) = find_annotation(&field.annotations, "expand") {
+            // @expand requires the field to reference a concrete `type`. Arrays,
+            // dicts, primitives, enums, and nullable wrappers don't make sense
+            // because the loader needs a known set of inner field names to
+            // consume across adjacent header columns.
+            let resolved = self.resolve_field_type(&field.ty);
+            if !matches!(resolved, Ty::Type(_) | Ty::Unknown) {
+                self.push_diag(
+                    CftErrorCode::InvalidAnnotatedFieldType,
+                    module,
+                    annotation.span,
+                    "@expand fields must reference a concrete type (no nullable, arrays, dicts, enums, or primitives)",
+                );
+            }
+        }
     }
 
     fn validate_ref_id_contract(
@@ -818,7 +833,7 @@ impl<'a> SchemaCompiler<'a> {
     ) {
         let field_ty = self.resolve_field_type(&field.ty);
         let field_id_ty = unwrap_nullable(&field_ty);
-        if !matches!(field_id_ty, Ty::String | Ty::Int | Ty::Unknown) {
+        if !matches!(field_id_ty, Ty::String | Ty::Int | Ty::Enum(_) | Ty::Unknown) {
             return;
         }
         let Some(target_id) = self.visible_id_field(target_type) else {

@@ -758,6 +758,80 @@ fn maps_multiple_invalid_input_rows_to_their_original_excel_rows() -> TestResult
     Ok(())
 }
 
+fn write_terrain_workbook_with_expand(path: &PathBuf) -> Result<(), XlsxError> {
+    // Sheet shape mirrors a simplified Luban-style layout: the @expand parent
+    // header `env` covers columns C..E, and only column C carries the parent
+    // header text — the inner-field column slots D..E are header-blank and
+    // data-only, exactly as Luban writes its merged-header expansions.
+    let mut workbook = Workbook::new();
+    let sheet = workbook.add_worksheet().set_name("Terrain")?;
+    sheet.write_string(0, 0, "id")?;
+    sheet.write_string(0, 1, "name")?;
+    sheet.write_string(0, 2, "env")?; // @expand parent
+    // D1 / E1 deliberately left blank.
+    sheet.write_string(1, 0, "Water")?;
+    sheet.write_string(1, 1, "lake")?;
+    sheet.write_number(1, 2, 4.0)?; // env.shc
+    sheet.write_number(1, 3, 20.0)?; // env.temperature
+    sheet.write_number(1, 4, 0.5)?; // env.diffusion
+    sheet.write_string(2, 0, "Soil")?;
+    sheet.write_string(2, 1, "earth")?;
+    sheet.write_number(2, 2, 1.0)?;
+    sheet.write_number(2, 3, 25.0)?;
+    sheet.write_number(2, 4, 0.1)?;
+    workbook.save(path)
+}
+
+#[test]
+fn expand_consumes_parent_and_adjacent_columns_for_inner_fields() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            enum TerrainKind { Water = 0, Soil = 1, Sand = 2, }
+            @struct sealed type EnvCfg {
+                shc: float;
+                temperature: float;
+                diffusion: float;
+            }
+            type Terrain {
+                @id
+                id: TerrainKind;
+                name: string;
+                @expand
+                env: EnvCfg;
+            }
+        "#,
+    )?;
+
+    let path = temp_xlsx_path("terrain_expand");
+    write_terrain_workbook_with_expand(&path)
+        .map_err(|err| format!("write workbook: {err:?}"))?;
+
+    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Terrain").with_type("Terrain")]);
+    let model = load_excel_model(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+    let table = model
+        .table("Terrain")
+        .ok_or_else(|| "expected Terrain table".to_string())?;
+    assert_eq!(table.records.len(), 2);
+
+    let first_id = table.records[0];
+    let first = model
+        .record(first_id)
+        .ok_or_else(|| "expected first record".to_string())?;
+    let env = first
+        .field("env")
+        .ok_or_else(|| "expected env field".to_string())?;
+    let CfdValue::Object(env_record) = env else {
+        return Err(format!("expected env to be object, got {env:?}"));
+    };
+    assert_eq!(env_record.field("shc"), Some(&CfdValue::Float(4.0)));
+    assert_eq!(
+        env_record.field("temperature"),
+        Some(&CfdValue::Float(20.0))
+    );
+    assert_eq!(env_record.field("diffusion"), Some(&CfdValue::Float(0.5)));
+    Ok(())
+}
+
 fn diagnostic_with_code(
     diagnostics: &[ExcelDiagnostic],
     code: CfdErrorCode,

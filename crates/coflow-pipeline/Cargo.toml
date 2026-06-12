@@ -16,6 +16,7 @@ coflow-codegen-csharp-json = { path = "../coflow-codegen-csharp-json" }
 coflow-codegen-csharp-messagepack = { path = "../coflow-codegen-csharp-messagepack" }
 coflow-exporter-json = { path = "../coflow-exporter-json" }
 coflow-exporter-messagepack = { path = "../coflow-exporter-messagepack" }
+coflow-data-model = { path = "../coflow-data-model" }
 coflow-loader-excel = { path = "../coflow-loader-excel" }
 coflow-project = { path = "../coflow-project" }
 serde_json = { version = "1", features = ["preserve_order"] }

@@ -1361,6 +1361,149 @@ fn build_consumes_builder_so_repeated_build_is_compile_error() {
     // let _ = builder.build();
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// Enum-typed @id support
+// ───────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn enum_typed_id_indexes_records_under_cfd_id_value_enum() {
+    let schema = compile_schema(
+        r#"
+            enum Color { Red = 0, Green = 1, Blue = 2, }
+            type Palette {
+                @id
+                id: Color;
+                name: string;
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Palette",
+        [
+            (
+                "id",
+                CfdInputValue::enum_variant("Color", "Red"),
+            ),
+            ("name", CfdInputValue::from("rouge")),
+        ],
+    );
+    builder.add_record(
+        "Palette",
+        [
+            (
+                "id",
+                CfdInputValue::enum_variant("Color", "Blue"),
+            ),
+            ("name", CfdInputValue::from("azure")),
+        ],
+    );
+
+    let model = builder.build().expect("model should build");
+
+    let red_key = CfdIdValue::Enum(CfdEnumValue {
+        enum_name: "Color".to_string(),
+        variant: Some("Red".to_string()),
+        value: 0,
+    });
+    let blue_key = CfdIdValue::Enum(CfdEnumValue {
+        enum_name: "Color".to_string(),
+        variant: Some("Blue".to_string()),
+        value: 2,
+    });
+
+    assert!(model.lookup("Palette", &red_key).is_some());
+    assert!(model.lookup("Palette", &blue_key).is_some());
+    let table = model.table("Palette").expect("Palette table");
+    assert!(table.primary_index.contains_key(&red_key));
+    assert!(table.primary_index.contains_key(&blue_key));
+}
+
+#[test]
+fn enum_typed_ref_resolves_to_target_record() {
+    let schema = compile_schema(
+        r#"
+            enum Color { Red = 0, Green = 1, Blue = 2, }
+            type Palette {
+                @id
+                id: Color;
+                name: string;
+            }
+            type Brush {
+                @id
+                bid: string;
+                @ref(Palette)
+                color: Color;
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Palette",
+        [
+            ("id", CfdInputValue::enum_variant("Color", "Green")),
+            ("name", CfdInputValue::from("verde")),
+        ],
+    );
+    builder.add_record(
+        "Brush",
+        [
+            ("bid", CfdInputValue::from("brush_1")),
+            (
+                "color",
+                CfdInputValue::enum_variant("Color", "Green"),
+            ),
+        ],
+    );
+
+    let model = builder.build().expect("model should build");
+    let brush_id = record_id_at(&model, 1);
+    let brush = model.record(brush_id).expect("brush record");
+    let color_field = brush.field("color").expect("color field");
+
+    let CfdValue::Ref { id, target } = color_field else {
+        panic!("expected ref, got {color_field:?}");
+    };
+    assert_eq!(
+        id,
+        &CfdIdValue::Enum(CfdEnumValue {
+            enum_name: "Color".to_string(),
+            variant: Some("Green".to_string()),
+            value: 1,
+        })
+    );
+    assert!(model.record(*target).is_some());
+}
+
+#[test]
+fn enum_typed_id_rejects_string_input() {
+    let schema = compile_schema(
+        r#"
+            enum Color { Red = 0, Green = 1, }
+            type Palette {
+                @id
+                id: Color;
+                name: string;
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    // Plain string input under an enum-typed @id should not silently coerce.
+    builder.add_record(
+        "Palette",
+        [
+            ("id", CfdInputValue::from("Red")),
+            ("name", CfdInputValue::from("rouge")),
+        ],
+    );
+
+    let err = builder.build().expect_err("string id under enum @id should fail");
+    assert_has_code(&err, CfdErrorCode::TypeMismatch);
+}
+
 // Smoke check: CfdDataModel still emits an empty ordered entry list for dict defaults.
 #[test]
 fn empty_dict_default_uses_empty_entries() {

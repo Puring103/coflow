@@ -89,9 +89,32 @@ fn parses_schema_guided_scalar_values() -> TestResult {
         parse_ok(&schema, "bool", "true")?,
         ParsedCell::Value(CfdInputValue::Bool(true))
     );
+    for accepted in ["TRUE", "True", "1", "yes", "Y"] {
+        assert_eq!(
+            parse_ok(&schema, "bool", accepted)?,
+            ParsedCell::Value(CfdInputValue::Bool(true)),
+            "{accepted} should parse as true",
+        );
+    }
+    for accepted in ["FALSE", "False", "0", "no", "N"] {
+        assert_eq!(
+            parse_ok(&schema, "bool", accepted)?,
+            ParsedCell::Value(CfdInputValue::Bool(false)),
+            "{accepted} should parse as false",
+        );
+    }
     assert_eq!(
         parse_ok(&schema, "string", "hello world")?,
         ParsedCell::Value(CfdInputValue::String("hello world".to_string()))
+    );
+    // string context should NOT coerce these as booleans
+    assert_eq!(
+        parse_ok(&schema, "string", "1")?,
+        ParsedCell::Value(CfdInputValue::String("1".to_string()))
+    );
+    assert_eq!(
+        parse_ok(&schema, "string", "yes")?,
+        ParsedCell::Value(CfdInputValue::String("yes".to_string()))
     );
     assert_eq!(
         parse_ok(&schema, "string", r#""hello, world""#)?,
@@ -636,6 +659,63 @@ fn ref_cells_parse_as_their_declared_id_type_for_data_model_resolution() -> Test
             target: item_record_id,
         })
     );
+    Ok(())
+}
+
+#[test]
+fn ref_cell_with_enum_id_resolves_via_enum_variant() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            enum Color { Red = 0, Green = 1, Blue = 2, }
+            type Palette {
+                @id
+                id: Color;
+                name: string;
+            }
+            type Brush {
+                @id
+                bid: string;
+                @ref(Palette)
+                color: Color;
+            }
+        "#,
+    )?;
+
+    // The ref cell text is just the enum variant name (or with a prefix).
+    let parsed = parse_value(&schema, "Color", "Green")?;
+    assert_eq!(parsed, CfdInputValue::enum_variant("Color", "Green"));
+    let prefixed = parse_value(&schema, "Color", "Color.Green")?;
+    assert_eq!(prefixed, parsed);
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Palette",
+        [
+            ("id", CfdInputValue::enum_variant("Color", "Green")),
+            ("name", CfdInputValue::from("verde")),
+        ],
+    );
+    builder.add_record(
+        "Brush",
+        [
+            ("bid", CfdInputValue::from("brush_1")),
+            ("color", parsed),
+        ],
+    );
+    let model = build_model(builder)?;
+    let Some((_, brush)) = model.records().nth(1) else {
+        return Err("expected brush record".to_string());
+    };
+    match brush.field("color") {
+        Some(CfdValue::Ref { id, .. }) => {
+            assert_eq!(id, &coflow_data_model::CfdIdValue::Enum(coflow_data_model::CfdEnumValue {
+                enum_name: "Color".to_string(),
+                variant: Some("Green".to_string()),
+                value: 1,
+            }));
+        }
+        other => return Err(format!("expected ref, got {other:?}")),
+    }
     Ok(())
 }
 

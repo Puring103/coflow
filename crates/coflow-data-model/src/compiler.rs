@@ -367,6 +367,11 @@ impl<'s> Validator<'s> {
             CfdInputValue::Ref(id) => id.clone(),
             CfdInputValue::String(value) => CfdIdValue::String(value.clone()),
             CfdInputValue::Int(value) => CfdIdValue::Int(*value),
+            CfdInputValue::EnumVariant { enum_name, variant } => {
+                let enum_value =
+                    self.resolve_enum_value(enum_name, variant, record, path.clone())?;
+                CfdIdValue::Enum(enum_value)
+            }
             _ => {
                 self.type_mismatch("@ref id", value, record, path);
                 return None;

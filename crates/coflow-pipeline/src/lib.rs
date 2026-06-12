@@ -14,6 +14,7 @@
 
 mod artifacts;
 mod excel;
+mod key_as_enum;
 mod schema;
 
 use artifacts::{
@@ -186,6 +187,12 @@ pub fn build_project(
             .or(code_output.namespace.as_deref())
             .unwrap_or("Game.Config");
         write_csharp_files(&schema, data_format, namespace, &code_dir)?;
+        key_as_enum::write_key_as_enum_value_files(
+            &schema,
+            &load_output.model,
+            namespace,
+            &code_dir,
+        )?;
         Some(CodegenReport {
             target: CodegenTarget::Csharp,
             dir: code_dir,
