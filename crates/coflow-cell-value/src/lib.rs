@@ -384,7 +384,7 @@ fn validate_actual_type(
             }],
         });
     }
-    if !is_assignable(schema, actual_type, expected_type) {
+    if !schema.is_assignable(actual_type, expected_type) {
         return Err(CellValueDiagnostics {
             diagnostics: vec![CellValueDiagnostic {
                 code: CellValueErrorCode::ObjectTypeMismatch,
@@ -393,19 +393,6 @@ fn validate_actual_type(
         });
     }
     Ok(())
-}
-
-fn is_assignable(schema: &CftContainer, actual_type: &str, expected_type: &str) -> bool {
-    let mut current = Some(actual_type);
-    while let Some(type_name) = current {
-        if type_name == expected_type {
-            return true;
-        }
-        current = schema
-            .resolve_type(type_name)
-            .and_then(|schema_type| schema_type.parent.as_deref());
-    }
-    false
 }
 
 fn parse_named_object(
@@ -443,8 +430,11 @@ fn parse_named_object(
                 }],
             });
         }
-        if value_text == "_" || value_text.is_empty() {
+        if value_text == "_" {
             continue;
+        }
+        if value_text.is_empty() {
+            return Err(syntax(format!("field `{name}` has an empty value")));
         }
         out.insert(
             name.to_string(),
@@ -467,8 +457,11 @@ fn parse_positional_object(
     let mut out = BTreeMap::new();
     for (field, part) in fields.iter().zip(parts) {
         let part = part.trim();
-        if part == "_" || part.is_empty() {
+        if part == "_" {
             continue;
+        }
+        if part.is_empty() {
+            return Err(syntax("positional object field has an empty value"));
         }
         out.insert(
             field.name.clone(),
@@ -680,20 +673,6 @@ fn full_fields(
     schema: &CftContainer,
     type_name: &str,
 ) -> Result<Vec<FieldMeta>, CellValueDiagnostics> {
-    let mut out = Vec::new();
-    fill_fields(schema, type_name, &mut out, &mut BTreeSet::new())?;
-    Ok(out)
-}
-
-fn fill_fields(
-    schema: &CftContainer,
-    type_name: &str,
-    out: &mut Vec<FieldMeta>,
-    seen: &mut BTreeSet<String>,
-) -> Result<(), CellValueDiagnostics> {
-    if !seen.insert(type_name.to_string()) {
-        return Ok(());
-    }
     let Some(schema_type) = schema.resolve_type(type_name) else {
         return Err(CellValueDiagnostics {
             diagnostics: vec![CellValueDiagnostic {
@@ -702,13 +681,11 @@ fn fill_fields(
             }],
         });
     };
-    if let Some(parent) = &schema_type.parent {
-        fill_fields(schema, parent, out, seen)?;
-    }
-    for field in &schema_type.fields {
-        out.push(field_meta(schema, field)?);
-    }
-    Ok(())
+    schema_type
+        .all_fields
+        .iter()
+        .map(|field| field_meta(schema, field))
+        .collect()
 }
 
 fn field_meta(
