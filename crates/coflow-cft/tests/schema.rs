@@ -45,12 +45,19 @@ fn schema_reports_duplicate_field_enum_value_and_unknown_type() {
 #[test]
 fn schema_rejects_reserved_identifiers() {
     let cases = [
+        "const true = 1;",
+        "type type { value: string; }",
         "type int { value: string; }",
         "enum len { A, }",
+        "enum E { true, }",
         "const match = 1;",
         "const export = 1;",
+        "type Item { type: string; }",
+        "type Item { true: bool; }",
+        "type Item { check: int; }",
         "type Item { from: string; }",
         "enum E { _, }",
+        "type Item { values: [int]; check { all all in values { true; } } }",
     ];
 
     for source in cases {
@@ -260,6 +267,20 @@ fn schema_does_not_duplicate_unknown_field_type_diagnostic() {
             "expected exactly one UnknownNamedType for `{source}`, got {count}"
         );
     }
+}
+
+#[test]
+fn schema_does_not_duplicate_invalid_ref_annotation_argument() {
+    let err = compile_one("type A { @ref id: string; }").unwrap_err();
+    let count = err
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == CftErrorCode::InvalidAnnotationArgument)
+        .count();
+    assert_eq!(
+        count, 1,
+        "expected exactly one InvalidAnnotationArgument diagnostic, got {count}"
+    );
 }
 
 /// Regression: `{ [int]: int }` used to push InvalidDictKeyType twice — once

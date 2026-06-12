@@ -333,7 +333,7 @@ impl<'a> Parser<'a> {
                 dangling_annotations.append(&mut pending_annotations);
                 break;
             }
-            if self.at(&TokenKind::Check) {
+            if self.at(&TokenKind::Check) && self.next_at(&TokenKind::LBrace) {
                 if seen_check {
                     return self.err(CftErrorCode::DuplicateCheckBlock, "duplicate check block");
                 }
@@ -693,19 +693,17 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_or_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
-        let mut expr = self.parse_and_expr()?;
-        while self.eat(&TokenKind::PipePipe).is_some() {
-            let rhs = self.parse_and_expr()?;
-            expr = bin_expr(BinOp::Or, expr, rhs);
-        }
-        Ok(expr)
-    }
-
-    fn parse_and_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
         let mut expr = self.parse_is_expr()?;
-        while self.eat(&TokenKind::AmpAmp).is_some() {
+        loop {
+            let op = if self.eat(&TokenKind::PipePipe).is_some() {
+                BinOp::Or
+            } else if self.eat(&TokenKind::AmpAmp).is_some() {
+                BinOp::And
+            } else {
+                break;
+            };
             let rhs = self.parse_is_expr()?;
-            expr = bin_expr(BinOp::And, expr, rhs);
+            expr = bin_expr(op, expr, rhs);
         }
         Ok(expr)
     }
@@ -752,28 +750,19 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_bitor_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
-        let mut expr = self.parse_bitxor_expr()?;
-        while self.eat(&TokenKind::Pipe).is_some() {
-            let rhs = self.parse_bitxor_expr()?;
-            expr = bin_expr(BinOp::BitOr, expr, rhs);
-        }
-        Ok(expr)
-    }
-
-    fn parse_bitxor_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
-        let mut expr = self.parse_bitand_expr()?;
-        while self.eat(&TokenKind::Caret).is_some() {
-            let rhs = self.parse_bitand_expr()?;
-            expr = bin_expr(BinOp::BitXor, expr, rhs);
-        }
-        Ok(expr)
-    }
-
-    fn parse_bitand_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
         let mut expr = self.parse_add_expr()?;
-        while self.eat(&TokenKind::Amp).is_some() {
+        loop {
+            let op = if self.eat(&TokenKind::Pipe).is_some() {
+                BinOp::BitOr
+            } else if self.eat(&TokenKind::Caret).is_some() {
+                BinOp::BitXor
+            } else if self.eat(&TokenKind::Amp).is_some() {
+                BinOp::BitAnd
+            } else {
+                break;
+            };
             let rhs = self.parse_add_expr()?;
-            expr = bin_expr(BinOp::BitAnd, expr, rhs);
+            expr = bin_expr(op, expr, rhs);
         }
         Ok(expr)
     }
@@ -1092,10 +1081,18 @@ impl<'a> Parser<'a> {
     }
 
     fn expect_ident(&mut self) -> Result<NameRef, CftDiagnostics> {
-        self.expect_ident_with_code(CftErrorCode::ExpectedIdentifier)
+        self.expect_name(CftErrorCode::ExpectedIdentifier, true)
     }
 
     fn expect_ident_with_code(&mut self, code: CftErrorCode) -> Result<NameRef, CftDiagnostics> {
+        self.expect_name(code, false)
+    }
+
+    fn expect_name(
+        &mut self,
+        code: CftErrorCode,
+        allow_reserved_keywords: bool,
+    ) -> Result<NameRef, CftDiagnostics> {
         let token = self.peek().clone();
         match token.kind {
             TokenKind::Ident(name) => {
@@ -1104,6 +1101,17 @@ impl<'a> Parser<'a> {
                     name,
                     span: token.span,
                 })
+            }
+            _ if allow_reserved_keywords => {
+                if let Some(name) = reserved_keyword_name(&token.kind) {
+                    self.bump();
+                    Ok(NameRef {
+                        name: name.to_string(),
+                        span: token.span,
+                    })
+                } else {
+                    self.err(code, "expected identifier")
+                }
             }
             _ => self.err(code, "expected identifier"),
         }
@@ -1131,6 +1139,12 @@ impl<'a> Parser<'a> {
 
     fn at(&self, kind: &TokenKind) -> bool {
         std::mem::discriminant(&self.peek().kind) == std::mem::discriminant(kind)
+    }
+
+    fn next_at(&self, kind: &TokenKind) -> bool {
+        self.tokens.get(self.pos + 1).is_some_and(|token| {
+            std::mem::discriminant(&token.kind) == std::mem::discriminant(kind)
+        })
     }
 
     fn bump(&mut self) -> Token {
@@ -1262,5 +1276,26 @@ fn token_name(kind: &TokenKind) -> &'static str {
         TokenKind::Question => "?",
         TokenKind::In => "in",
         _ => "token",
+    }
+}
+
+fn reserved_keyword_name(kind: &TokenKind) -> Option<&'static str> {
+    match kind {
+        TokenKind::Const => Some("const"),
+        TokenKind::Enum => Some("enum"),
+        TokenKind::Type => Some("type"),
+        TokenKind::Abstract => Some("abstract"),
+        TokenKind::Sealed => Some("sealed"),
+        TokenKind::Check => Some("check"),
+        TokenKind::When => Some("when"),
+        TokenKind::All => Some("all"),
+        TokenKind::Any => Some("any"),
+        TokenKind::None => Some("none"),
+        TokenKind::In => Some("in"),
+        TokenKind::Is => Some("is"),
+        TokenKind::True => Some("true"),
+        TokenKind::False => Some("false"),
+        TokenKind::Null => Some("null"),
+        _ => None,
     }
 }
