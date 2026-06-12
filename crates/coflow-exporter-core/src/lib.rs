@@ -311,6 +311,9 @@ where
         match id {
             CfdIdValue::String(value) => self.encoder.string(value).map_err(encoder_error),
             CfdIdValue::Int(value) => self.encoder.int(*value).map_err(encoder_error),
+            // Enum-typed @id is exported as the underlying integer value, the
+            // same physical representation Luban-style runtimes already use.
+            CfdIdValue::Enum(value) => self.encoder.int(value.value).map_err(encoder_error),
         }
     }
 }

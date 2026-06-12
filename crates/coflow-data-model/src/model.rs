@@ -194,6 +194,7 @@ pub enum CfdValue {
 pub enum CfdIdValue {
     String(String),
     Int(i64),
+    Enum(CfdEnumValue),
 }
 
 impl From<&str> for CfdIdValue {
@@ -211,6 +212,12 @@ impl From<String> for CfdIdValue {
 impl From<i64> for CfdIdValue {
     fn from(value: i64) -> Self {
         Self::Int(value)
+    }
+}
+
+impl From<CfdEnumValue> for CfdIdValue {
+    fn from(value: CfdEnumValue) -> Self {
+        Self::Enum(value)
     }
 }
 

@@ -372,6 +372,7 @@ dependencies = [
  "coflow-cft",
  "coflow-codegen-csharp-json",
  "coflow-codegen-csharp-messagepack",
+ "coflow-data-model",
  "coflow-exporter-json",
  "coflow-exporter-messagepack",
  "coflow-loader-excel",

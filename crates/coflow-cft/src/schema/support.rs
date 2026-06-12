@@ -128,7 +128,7 @@ pub(super) struct AnnotationSpec {
 impl AnnotationSpec {
     pub(super) fn for_name(name: &str) -> Option<Self> {
         Some(match name {
-            "struct" => Self {
+            "struct" | "KeyAsEnumValue" => Self {
                 targets: &[AnnotationTarget::Type],
                 args: AnnotationArgs::None,
             },
@@ -136,7 +136,7 @@ impl AnnotationSpec {
                 targets: &[AnnotationTarget::Enum],
                 args: AnnotationArgs::None,
             },
-            "id" | "index" => Self {
+            "id" | "index" | "expand" => Self {
                 targets: &[AnnotationTarget::Field],
                 args: AnnotationArgs::None,
             },
@@ -435,10 +435,12 @@ pub(super) fn is_valid_dict_key(ty: &Ty) -> bool {
     matches!(ty, Ty::Int | Ty::String | Ty::Enum(_) | Ty::Unknown)
 }
 
-pub(super) fn is_string_or_int(ty: &Ty, allow_nullable: bool) -> bool {
+pub(super) fn is_id_compatible_type(ty: &Ty, allow_nullable: bool) -> bool {
     match ty {
-        Ty::String | Ty::Int | Ty::Unknown => true,
-        Ty::Nullable(inner) if allow_nullable => matches!(inner.as_ref(), Ty::String | Ty::Int),
+        Ty::String | Ty::Int | Ty::Enum(_) | Ty::Unknown => true,
+        Ty::Nullable(inner) if allow_nullable => {
+            matches!(inner.as_ref(), Ty::String | Ty::Int | Ty::Enum(_))
+        }
         _ => false,
     }
 }

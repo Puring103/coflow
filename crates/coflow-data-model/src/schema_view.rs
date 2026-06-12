@@ -266,6 +266,7 @@ pub(crate) fn id_matches_type(id: &CfdIdValue, ty: &CfdType) -> bool {
         CfdType::Nullable(inner) => id_matches_type(id, inner),
         CfdType::String => matches!(id, CfdIdValue::String(_)),
         CfdType::Int => matches!(id, CfdIdValue::Int(_)),
+        CfdType::Enum(name) => matches!(id, CfdIdValue::Enum(value) if &value.enum_name == name),
         _ => false,
     }
 }
@@ -279,6 +280,7 @@ pub(crate) fn id_from_fields(
             Some(CfdIdValue::String(value.clone()))
         }
         Some(CfdValueDraft::Value(CfdValue::Int(value))) => Some(CfdIdValue::Int(*value)),
+        Some(CfdValueDraft::Value(CfdValue::Enum(value))) => Some(CfdIdValue::Enum(value.clone())),
         _ => None,
     }
 }

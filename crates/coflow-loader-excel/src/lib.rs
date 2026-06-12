@@ -22,8 +22,8 @@ use calamine::{open_workbook_auto, Data, Reader};
 use coflow_cell_value::{parse_cell, CellValueDiagnostics, ParsedCell};
 use coflow_cft::CftContainer;
 use coflow_data_model::{
-    CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdInputRecord, CfdLabel, CfdPath, CfdPathSegment,
-    CfdRecordId,
+    CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdInputRecord, CfdInputValue, CfdLabel, CfdPath,
+    CfdPathSegment, CfdRecordId,
 };
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -258,6 +258,7 @@ struct LoadedInput {
     origins: ExcelOrigins,
 }
 
+#[allow(clippy::too_many_lines)]
 fn collect_input_records(
     schema: &CftContainer,
     sources: &[ExcelSource],
@@ -318,6 +319,7 @@ fn collect_input_records(
             };
 
             let columns = resolve_columns(
+                schema,
                 source,
                 sheet,
                 type_name,
@@ -333,6 +335,20 @@ fn collect_input_records(
                 let excel_row = range_start_row as usize + zero_based_data_row + 2;
                 let mut input_fields = BTreeMap::new();
                 for column in &columns {
+                    if let Some(children) = &column.expand {
+                        let nested = build_expanded_object(
+                            schema,
+                            source,
+                            sheet,
+                            type_name,
+                            column,
+                            children,
+                            row,
+                            excel_row,
+                        )?;
+                        input_fields.insert(column.field.clone(), nested);
+                        continue;
+                    }
                     let location = ExcelLocation::new(source.file.clone())
                         .sheet(sheet.sheet.clone())
                         .cell(excel_row, column.excel_column);
@@ -364,6 +380,19 @@ fn collect_input_records(
 
 #[derive(Debug, Clone)]
 struct ResolvedColumn {
+    index: usize,
+    excel_column: usize,
+    field: String,
+    field_type: String,
+    /// When set, this column represents an `@expand` parent field that
+    /// consumes additional adjacent columns. The vector lists each consumed
+    /// column's source-row index, the inner field name on the expanded type,
+    /// and the inner field's CFT type name.
+    expand: Option<Vec<ExpandedSubColumn>>,
+}
+
+#[derive(Debug, Clone)]
+struct ExpandedSubColumn {
     index: usize,
     excel_column: usize,
     field: String,
@@ -449,7 +478,9 @@ impl ExcelRecordOrigin {
     }
 }
 
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 fn resolve_columns(
+    schema: &CftContainer,
     source: &ExcelSource,
     sheet: &ExcelSheet,
     type_name: &str,
@@ -458,9 +489,9 @@ fn resolve_columns(
     header_excel_row: usize,
     header_excel_col: usize,
 ) -> Result<Vec<ResolvedColumn>, ExcelLoadError> {
-    let mut columns = Vec::new();
-    let mut seen_fields = BTreeMap::<String, String>::new();
-
+    // Read the entire header row first so we can scan ahead for @expand
+    // children that occupy adjacent columns.
+    let mut header = Vec::with_capacity(header_row.len());
     for (index, cell) in header_row.iter().enumerate() {
         let excel_column = header_excel_col + index;
         let column = cell_text(
@@ -469,14 +500,28 @@ fn resolve_columns(
                 .sheet(sheet.sheet.clone())
                 .cell(header_excel_row, excel_column),
         )?;
-        let column = column.trim();
-        if column.is_empty() {
+        header.push((index, excel_column, column.trim().to_string()));
+    }
+
+    let expand_fields = expand_field_index(schema, type_name);
+    let expand_inner_order = expand_field_order_index(schema, type_name);
+    let mut columns = Vec::new();
+    let mut seen_fields = BTreeMap::<String, String>::new();
+
+    let mut cursor = 0;
+    while cursor < header.len() {
+        let (index, excel_column, column_text) = &header[cursor];
+        let index = *index;
+        let excel_column = *excel_column;
+        let column_text = column_text.clone();
+        cursor += 1;
+        if column_text.is_empty() {
             continue;
         }
         let field = sheet
             .columns
-            .get(column)
-            .map_or_else(|| column.to_string(), Clone::clone);
+            .get(&column_text)
+            .map_or_else(|| column_text.clone(), Clone::clone);
         let Some(field_type) = fields.get(&field) else {
             return Err(ExcelLoadError::UnknownColumn {
                 location: Box::new(
@@ -485,11 +530,11 @@ fn resolve_columns(
                         .cell(header_excel_row, excel_column),
                 ),
                 type_name: type_name.to_string(),
-                column: column.to_string(),
+                column: column_text,
                 field,
             });
         };
-        if let Some(first_column) = seen_fields.insert(field.clone(), column.to_string()) {
+        if let Some(first_column) = seen_fields.insert(field.clone(), column_text.clone()) {
             return Err(ExcelLoadError::DuplicateFieldColumn {
                 location: Box::new(
                     ExcelLocation::new(source.file.clone())
@@ -498,18 +543,169 @@ fn resolve_columns(
                 ),
                 field,
                 first_column,
-                duplicate_column: column.to_string(),
+                duplicate_column: column_text,
             });
         }
+
+        let expand = if let Some(child_fields) = expand_fields.get(&field) {
+            // The @expand field consumes the parent header column itself plus
+            // the N-1 following data columns (where N is the inner type's
+            // field count). Sub-field assignment is positional, following the
+            // inner type's declared field order — adjacent header text is
+            // ignored (it is typically merged-blank in source files).
+            let inner_order = expand_inner_order
+                .get(&field)
+                .cloned()
+                .unwrap_or_default();
+            let mut consumed = Vec::with_capacity(inner_order.len());
+            // First child uses the parent column itself.
+            if let Some(first_inner) = inner_order.first() {
+                let inner_ty = child_fields.get(first_inner).cloned().unwrap_or_default();
+                consumed.push(ExpandedSubColumn {
+                    index,
+                    excel_column,
+                    field: first_inner.clone(),
+                    field_type: inner_ty,
+                });
+            }
+            // Remaining children come from the columns immediately after.
+            for inner_field in inner_order.iter().skip(1) {
+                if cursor >= header.len() {
+                    return Err(ExcelLoadError::UnknownColumn {
+                        location: Box::new(
+                            ExcelLocation::new(source.file.clone())
+                                .sheet(sheet.sheet.clone())
+                                .cell(header_excel_row, excel_column),
+                        ),
+                        type_name: type_name.to_string(),
+                        column: column_text,
+                        field: format!(
+                            "{field} (@expand): not enough columns to cover inner field `{inner_field}`"
+                        ),
+                    });
+                }
+                let (next_index, next_excel_col, _next_text) = &header[cursor];
+                let inner_ty = child_fields.get(inner_field).cloned().unwrap_or_default();
+                consumed.push(ExpandedSubColumn {
+                    index: *next_index,
+                    excel_column: *next_excel_col,
+                    field: inner_field.clone(),
+                    field_type: inner_ty,
+                });
+                cursor += 1;
+            }
+            Some(consumed)
+        } else {
+            None
+        };
+
         columns.push(ResolvedColumn {
             index,
             excel_column,
             field,
             field_type: field_type.clone(),
+            expand,
         });
     }
 
     Ok(columns)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_expanded_object(
+    schema: &CftContainer,
+    source: &ExcelSource,
+    sheet: &ExcelSheet,
+    parent_type: &str,
+    column: &ResolvedColumn,
+    children: &[ExpandedSubColumn],
+    row: &[Data],
+    excel_row: usize,
+) -> Result<CfdInputValue, ExcelLoadError> {
+    let mut fields = BTreeMap::new();
+    for child in children {
+        let location = ExcelLocation::new(source.file.clone())
+            .sheet(sheet.sheet.clone())
+            .cell(excel_row, child.excel_column);
+        let text = cell_text(row.get(child.index), location.clone())?;
+        let parsed =
+            parse_cell(schema, &child.field_type, &text).map_err(|err| ExcelLoadError::CellParse {
+                location: Box::new(location),
+                type_name: parent_type.to_string(),
+                field: format!("{}.{}", column.field, child.field),
+                diagnostics: err,
+            })?;
+        if let ParsedCell::Value(value) = parsed {
+            fields.insert(child.field.clone(), value);
+        }
+    }
+    Ok(CfdInputValue::Object {
+        actual_type: None,
+        fields,
+    })
+}
+
+/// Returns a map from `@expand` field name -> map of inner field name to inner
+/// CFT type. Inner type lookups follow the resolved field type.
+fn expand_field_index(
+    schema: &CftContainer,
+    type_name: &str,
+) -> BTreeMap<String, BTreeMap<String, String>> {
+    let mut out = BTreeMap::new();
+    let Some(schema_type) = schema.resolve_type(type_name) else {
+        return out;
+    };
+    for field in &schema_type.all_fields {
+        if !field
+            .annotations
+            .iter()
+            .any(|annotation| annotation.name == "expand")
+        {
+            continue;
+        }
+        let Some(inner_type) = schema.resolve_type(&field.ty) else {
+            continue;
+        };
+        let inner_fields = inner_type
+            .all_fields
+            .iter()
+            .map(|inner| (inner.name.clone(), inner.ty.clone()))
+            .collect();
+        out.insert(field.name.clone(), inner_fields);
+    }
+    out
+}
+
+/// Returns a map from `@expand` field name -> ordered list of inner field
+/// names (declaration order on the expanded type). Excel data is read
+/// positionally in this order.
+fn expand_field_order_index(
+    schema: &CftContainer,
+    type_name: &str,
+) -> BTreeMap<String, Vec<String>> {
+    let mut out = BTreeMap::new();
+    let Some(schema_type) = schema.resolve_type(type_name) else {
+        return out;
+    };
+    for field in &schema_type.all_fields {
+        if !field
+            .annotations
+            .iter()
+            .any(|annotation| annotation.name == "expand")
+        {
+            continue;
+        }
+        let Some(inner_type) = schema.resolve_type(&field.ty) else {
+            continue;
+        };
+        let order = inner_type
+            .all_fields
+            .iter()
+            .map(|inner| inner.name.clone())
+            .collect();
+        out.insert(field.name.clone(), order);
+    }
+    out
 }
 
 fn full_field_types(schema: &CftContainer, type_name: &str) -> Option<BTreeMap<String, String>> {
@@ -531,9 +727,16 @@ fn root_field(path: &CfdPath) -> Option<&str> {
 }
 
 fn is_empty_mapped_row(row: &[Data], columns: &[ResolvedColumn]) -> bool {
-    columns
-        .iter()
-        .all(|column| row.get(column.index).is_none_or(is_empty_cell))
+    columns.iter().all(|column| {
+        column.expand.as_ref().map_or_else(
+            || row.get(column.index).is_none_or(is_empty_cell),
+            |children| {
+                children
+                    .iter()
+                    .all(|child| row.get(child.index).is_none_or(is_empty_cell))
+            },
+        )
+    })
 }
 
 fn is_empty_cell(cell: &Data) -> bool {

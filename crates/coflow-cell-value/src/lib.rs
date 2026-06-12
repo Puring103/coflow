@@ -264,9 +264,9 @@ fn parse_value(
                 Err(type_mismatch("finite float"))
             }
         }
-        CellType::Bool => match text {
-            "true" => Ok(CfdInputValue::Bool(true)),
-            "false" => Ok(CfdInputValue::Bool(false)),
+        CellType::Bool => match text.to_ascii_lowercase().as_str() {
+            "true" | "1" | "yes" | "y" => Ok(CfdInputValue::Bool(true)),
+            "false" | "0" | "no" | "n" => Ok(CfdInputValue::Bool(false)),
             _ => Err(type_mismatch("bool")),
         },
         CellType::String => parse_string(text).map(CfdInputValue::String),
