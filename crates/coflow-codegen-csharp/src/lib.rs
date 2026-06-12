@@ -914,54 +914,6 @@ mod tests {
     }
 
     #[test]
-    fn codegen_rejects_ref_id_type_mismatches() -> Result<(), String> {
-        let schema = compile_schema(
-            r"
-                type Target { @id id: string; }
-                type Holder {
-                    @id id: string;
-                    @ref(Target)
-                    target_id: int?;
-                }
-            ",
-        )?;
-
-        let Err(err) = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config")) else {
-            return Err("@ref id type mismatch should fail".to_string());
-        };
-        require_contains(
-            &err.to_string(),
-            "@ref(Target) field `target_id` id type `int?` does not match target @id type `string`",
-        )?;
-        Ok(())
-    }
-
-    #[test]
-    fn codegen_rejects_polymorphic_ref_id_type_mismatches() -> Result<(), String> {
-        let schema = compile_schema(
-            r"
-                abstract type Target { @id id: string; }
-                type StringTarget : Target { }
-                type OtherTarget : Target { }
-                type Holder {
-                    @id id: string;
-                    @ref(Target)
-                    target_id: int;
-                }
-            ",
-        )?;
-
-        let Err(err) = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config")) else {
-            return Err("polymorphic @ref id type mismatch should fail".to_string());
-        };
-        require_contains(
-            &err.to_string(),
-            "@ref(Target) field `target_id` id type `int` does not match target @id type `string`",
-        )?;
-        Ok(())
-    }
-
-    #[test]
     fn codegen_maps_float_to_double_everywhere() -> Result<(), String> {
         let schema = compile_schema(
             r"

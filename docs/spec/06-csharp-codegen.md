@@ -90,7 +90,7 @@ struct CsharpField {
 }
 ```
 
-Tera 模板只允许做简单的字段遍历、条件输出和命名空间包裹；类型映射、默认值、继承展开、`@ref`、`@id`、`@index`、`@display`、`@deprecated` 等规则必须在 Rust model 构建阶段完成。实现应补充 golden tests 固定复杂 schema 的输出形状。
+Tera 模板只允许做简单的字段遍历、条件输出和命名空间包裹；类型映射、默认值、继承展开、`@ref`、`@id`、`@index`、`@display`、`@deprecated` 等生成规则必须在 Rust model 构建阶段完成。CFT schema 语义约束（例如 `@ref` 字段 ID 类型必须匹配目标 `@id` 类型）由 CFT 编译阶段负责，C# codegen 只消费已经通过编译的 schema。实现应补充 golden tests 固定复杂 schema 的输出形状。
 
 当前实现按共享核心和格式入口拆分：`crates/coflow-codegen-csharp` 负责 C# 类型模型、公共模板和渲染流程，`crates/coflow-codegen-csharp-json` 与 `crates/coflow-codegen-csharp-messagepack` 分别持有对应格式的 loader 模板和入口函数。CLI 根据项目 data format 选择调用 JSON 或 MessagePack codegen crate。生成出的 C# 运行时代码只依赖对应的数据文件和运行时包，不依赖 CFT parser/compiler。
 
@@ -151,7 +151,6 @@ C# target 在生成前必须校验生成物契约：
 - CFT `float` 固定映射为 C# `double`；JSON 和 MessagePack loader 均读取 64 位浮点值，不降为 `float` / `Single`。
 - CFT 类型名、字段名和生成的 ref 属性名经过 C# casing 转换后必须唯一。比如 `foo_bar` 与 `fooBar` 同时生成 `FooBar` 时必须报错，而不是自动加后缀。
 - 生成文件名必须唯一，且 `GameConfig.cs`、配置的数据库类文件和 `CftLoadException.cs` 为保留文件名。CFT 不能声明会生成这些文件名的类型或 enum。
-- `@ref(Target)` 字段的非 nullable ID 类型必须与 `Target` 继承范围内所有 concrete type 的 `@id` 类型一致；nullable ref 只在比较时剥离外层 `?`。
 - `@struct` 内含或嵌套 `@ref` 是合法语义。resolver 对 struct 返回更新后的 struct value，并在父字段、数组元素和字典值位置写回。
 
 ---

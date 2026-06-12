@@ -290,7 +290,7 @@ fn polymorphic_object_fields_need_actual_type_markers() {
 }
 
 #[test]
-fn ref_resolution_reports_missing_targets_and_targets_without_id() {
+fn ref_resolution_reports_missing_targets() {
     let missing_schema = compile_schema(
         r#"
             type Item { @id id: string; }
@@ -304,53 +304,20 @@ fn ref_resolution_reports_missing_targets_and_targets_without_id() {
     );
     let missing = missing_builder.build().expect_err("missing ref target");
     assert_has_code(&missing, CfdErrorCode::RefTargetNotFound);
-
-    let no_id_schema = compile_schema(
-        r#"
-            type Item { name: string; }
-            type Drop { @ref(Item) item_id: string; }
-        "#,
-    );
-    let mut no_id_builder = CfdDataModel::builder(&no_id_schema);
-    no_id_builder.add_record("Item", [("name", CfdInputValue::from("Potion"))]);
-    no_id_builder.add_record(
-        "Drop",
-        [("item_id", CfdInputValue::Ref(CfdIdValue::from("potion")))],
-    );
-    let no_id = no_id_builder.build().expect_err("ref target without id");
-    assert_has_code(&no_id, CfdErrorCode::RefTargetHasNoId);
 }
 
 #[test]
-fn child_only_id_does_not_make_parent_ref_range_addressable() {
+fn child_ref_range_remains_addressable_when_child_declares_id() {
     let schema = compile_schema(
         r#"
             type Base { name: string; }
             type Child : Base { @id id: string; }
-            type Holder {
-                @ref(Base)
-                base_id: string;
-            }
             type ChildHolder {
                 @ref(Child)
                 child_id: string;
             }
         "#,
     );
-
-    let mut parent_ref_builder = CfdDataModel::builder(&schema);
-    parent_ref_builder.add_record(
-        "Child",
-        [
-            ("name", CfdInputValue::from("child")),
-            ("id", CfdInputValue::from("child_1")),
-        ],
-    );
-    parent_ref_builder.add_record("Holder", [("base_id", CfdInputValue::from("child_1"))]);
-    let parent_err = parent_ref_builder
-        .build()
-        .expect_err("parent ref range should not be addressable");
-    assert_has_code(&parent_err, CfdErrorCode::RefTargetHasNoId);
 
     let mut child_ref_builder = CfdDataModel::builder(&schema);
     child_ref_builder.add_record(
