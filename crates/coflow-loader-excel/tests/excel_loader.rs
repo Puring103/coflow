@@ -13,8 +13,12 @@ use coflow_loader_excel::{
     load_excel, load_excel_model, ExcelDiagnostic, ExcelLoadError, ExcelSheet, ExcelSource,
 };
 use rust_xlsxwriter::{ExcelDateTime, Format, Formula, Workbook, XlsxError};
+use std::fs::File;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use zip::write::SimpleFileOptions;
+use zip::{ZipArchive, ZipWriter};
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
@@ -52,6 +56,47 @@ fn write_items_workbook(path: &PathBuf) -> Result<(), XlsxError> {
     sheet.write_string(3, 2, "Common")?;
     sheet.write_string(3, 3, "consumable")?;
     workbook.save(path)
+}
+
+fn rewrite_xlsx_entry(
+    path: &PathBuf,
+    entry_name: &str,
+    replacement: &str,
+) -> Result<(), String> {
+    let input = File::open(path).map_err(|err| format!("open xlsx for rewrite: {err}"))?;
+    let mut archive = ZipArchive::new(input).map_err(|err| format!("read xlsx zip: {err}"))?;
+    let rewritten_path = path.with_extension("rewritten.xlsx");
+    let output =
+        File::create(&rewritten_path).map_err(|err| format!("create rewritten xlsx: {err}"))?;
+    let mut writer = ZipWriter::new(output);
+
+    for index in 0..archive.len() {
+        let mut file = archive
+            .by_index(index)
+            .map_err(|err| format!("read xlsx entry {index}: {err}"))?;
+        let name = file.name().to_string();
+        writer
+            .start_file(name.clone(), SimpleFileOptions::default())
+            .map_err(|err| format!("start xlsx entry {name}: {err}"))?;
+        if name == entry_name {
+            writer
+                .write_all(replacement.as_bytes())
+                .map_err(|err| format!("write replacement entry {name}: {err}"))?;
+        } else {
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes)
+                .map_err(|err| format!("read xlsx entry {name}: {err}"))?;
+            writer
+                .write_all(&bytes)
+                .map_err(|err| format!("copy xlsx entry {name}: {err}"))?;
+        }
+    }
+
+    writer
+        .finish()
+        .map_err(|err| format!("finish rewritten xlsx: {err}"))?;
+    std::fs::rename(&rewritten_path, path).map_err(|err| format!("replace xlsx: {err}"))?;
+    Ok(())
 }
 
 #[test]
@@ -282,6 +327,73 @@ fn rejects_native_excel_datetime_cells() -> TestResult {
     assert!(
         kind.contains("DateTime"),
         "expected DateTime kind, got {kind}"
+    );
+    Ok(())
+}
+
+#[test]
+fn rejects_typed_iso_excel_datetime_cells() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                id: string;
+                value: string;
+            }
+        "#,
+    )?;
+    let path = temp_xlsx_path("typed-iso-datetime-cell");
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "value")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "item_1")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 1, "placeholder")
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
+
+    rewrite_xlsx_entry(
+        &path,
+        "xl/worksheets/sheet1.xml",
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:B2"/>
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="inlineStr"><is><t>id</t></is></c>
+      <c r="B1" t="inlineStr"><is><t>value</t></is></c>
+    </row>
+    <row r="2">
+      <c r="A2" t="inlineStr"><is><t>item_1</t></is></c>
+      <c r="B2" t="d"><v>2026-06-09T00:00:00Z</v></c>
+    </row>
+  </sheetData>
+</worksheet>"#,
+    )?;
+
+    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
+    let Err(err) = load_excel_model(&schema, &[source]) else {
+        return Err("expected unsupported cell value".to_string());
+    };
+
+    let ExcelLoadError::UnsupportedCellValue { location, kind } = err else {
+        return Err(format!("expected unsupported cell value, got {err:?}"));
+    };
+    assert_eq!(location.sheet.as_deref(), Some("Item"));
+    assert_eq!(location.row, Some(2));
+    assert_eq!(location.column, Some(2));
+    assert!(
+        kind.contains("DateTimeIso"),
+        "expected DateTimeIso kind, got {kind}"
     );
     Ok(())
 }

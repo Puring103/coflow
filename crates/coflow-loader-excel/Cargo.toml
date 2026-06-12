@@ -22,3 +22,4 @@ coflow-data-model = { path = "../coflow-data-model" }
 
 [dev-dependencies]
 rust_xlsxwriter = "0.95"
+zip = { version = "7.2", default-features = false }

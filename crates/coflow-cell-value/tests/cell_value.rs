@@ -200,6 +200,26 @@ fn rejects_duplicate_named_object_fields() -> TestResult {
 }
 
 #[test]
+fn rejects_empty_object_field_values() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Stats {
+                hp: int;
+                attack: int;
+                speed: int = 1;
+            }
+        "#,
+    )?;
+
+    let named = parse_err(&schema, "Stats", "hp: , attack: 2")?;
+    assert_has_code(&named, CellValueErrorCode::Syntax);
+
+    let positional = parse_err(&schema, "Stats", "100,,3")?;
+    assert_has_code(&positional, CellValueErrorCode::Syntax);
+    Ok(())
+}
+
+#[test]
 fn parses_omitted_and_nullable_cells() -> TestResult {
     let schema = compile_schema("")?;
 

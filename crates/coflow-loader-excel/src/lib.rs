@@ -20,12 +20,12 @@
 
 use calamine::{open_workbook_auto, Data, Reader};
 use coflow_cell_value::{parse_cell, CellValueDiagnostics, ParsedCell};
-use coflow_cft::{CftContainer, CftSchemaField};
+use coflow_cft::CftContainer;
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdInputRecord, CfdLabel, CfdPath, CfdPathSegment,
     CfdRecordId,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -513,32 +513,14 @@ fn resolve_columns(
 }
 
 fn full_field_types(schema: &CftContainer, type_name: &str) -> Option<BTreeMap<String, String>> {
-    let mut out = BTreeMap::new();
-    fill_field_types(schema, type_name, &mut out, &mut BTreeSet::new())?;
-    Some(out)
-}
-
-fn fill_field_types(
-    schema: &CftContainer,
-    type_name: &str,
-    out: &mut BTreeMap<String, String>,
-    seen: &mut BTreeSet<String>,
-) -> Option<()> {
-    if !seen.insert(type_name.to_string()) {
-        return Some(());
-    }
     let schema_type = schema.resolve_type(type_name)?;
-    if let Some(parent) = &schema_type.parent {
-        fill_field_types(schema, parent, out, seen)?;
-    }
-    for field in &schema_type.fields {
-        insert_field_type(out, field);
-    }
-    Some(())
-}
-
-fn insert_field_type(out: &mut BTreeMap<String, String>, field: &CftSchemaField) {
-    out.insert(field.name.clone(), field.ty.clone());
+    Some(
+        schema_type
+            .all_fields
+            .iter()
+            .map(|field| (field.name.clone(), field.ty.clone()))
+            .collect(),
+    )
 }
 
 fn root_field(path: &CfdPath) -> Option<&str> {
@@ -571,9 +553,7 @@ fn is_empty_cell(cell: &Data) -> bool {
 fn cell_text(cell: Option<&Data>, location: ExcelLocation) -> Result<String, ExcelLoadError> {
     match cell {
         None | Some(Data::Empty) => Ok(String::new()),
-        Some(Data::String(value) | Data::DateTimeIso(value) | Data::DurationIso(value)) => {
-            Ok(value.clone())
-        }
+        Some(Data::String(value)) => Ok(value.clone()),
         Some(Data::Float(value)) if is_whole_float(*value) => Ok(format!("{value:.0}")),
         Some(Data::Float(value)) => Ok(value.to_string()),
         Some(Data::Int(value)) => Ok(value.to_string()),
@@ -581,6 +561,14 @@ fn cell_text(cell: Option<&Data>, location: ExcelLocation) -> Result<String, Exc
         Some(Data::DateTime(value)) => Err(ExcelLoadError::UnsupportedCellValue {
             location: Box::new(location),
             kind: format!("DateTime({value})"),
+        }),
+        Some(Data::DateTimeIso(value)) => Err(ExcelLoadError::UnsupportedCellValue {
+            location: Box::new(location),
+            kind: format!("DateTimeIso({value})"),
+        }),
+        Some(Data::DurationIso(value)) => Err(ExcelLoadError::UnsupportedCellValue {
+            location: Box::new(location),
+            kind: format!("DurationIso({value})"),
         }),
         Some(Data::Error(value)) => Err(ExcelLoadError::UnsupportedCellValue {
             location: Box::new(location),

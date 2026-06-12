@@ -362,6 +362,7 @@ dependencies = [
  "coflow-checker",
  "coflow-data-model",
  "rust_xlsxwriter",
+ "zip",
 ]
 
 [[package]]
