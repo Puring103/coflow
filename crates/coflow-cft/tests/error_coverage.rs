@@ -297,6 +297,18 @@ fn cases() -> Vec<Case> {
             codes: &[CftErrorCode::RefTargetMustBeType],
         },
         Case {
+            name: "ref target has no id",
+            phase: Phase::Compile,
+            source: "type Target {} type A { @ref(Target) id: string; }",
+            codes: &[CftErrorCode::RefTargetHasNoId],
+        },
+        Case {
+            name: "ref id type mismatch",
+            phase: Phase::Compile,
+            source: "type Target { @id id: string; } type A { @ref(Target) id: int; }",
+            codes: &[CftErrorCode::RefIdTypeMismatch],
+        },
+        Case {
             name: "enum variant default on non-enum",
             phase: Phase::Compile,
             source: "const C = 1; type A { value: int = C.Value; }",

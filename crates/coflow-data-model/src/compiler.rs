@@ -447,6 +447,23 @@ impl ModelCompiler {
         record: Option<CfdRecordId>,
         path: CfdPath,
     ) -> Option<CfdValueDraft> {
+        if matches!(value, CftSchemaDefaultValue::EmptyObject) {
+            return match non_nullable_type(ty) {
+                CfdType::Dict(_, _) => Some(CfdValueDraft::Value(CfdValue::Dict(Vec::new()))),
+                CfdType::Type(type_name) => self.default_object_value(type_name, record, path),
+                _ => {
+                    self.push(
+                        CfdDiagnostic::error(
+                            CfdErrorCode::TypeMismatch,
+                            "schema default does not match field type",
+                        )
+                        .with_primary(record, path),
+                    );
+                    None
+                }
+            };
+        }
+
         let out = match value {
             CftSchemaDefaultValue::Null if ty.is_nullable() => CfdValue::Null,
             CftSchemaDefaultValue::Int(value) if type_accepts_default(ty, &CfdType::Int) => {
@@ -487,11 +504,6 @@ impl ModelCompiler {
             {
                 CfdValue::Array(Vec::new())
             }
-            CftSchemaDefaultValue::EmptyObject
-                if matches!(non_nullable_type(ty), CfdType::Dict(_, _)) =>
-            {
-                CfdValue::Dict(Vec::new())
-            }
             _ => {
                 self.push(
                     CfdDiagnostic::error(
@@ -504,6 +516,17 @@ impl ModelCompiler {
             }
         };
         Some(CfdValueDraft::Value(out))
+    }
+
+    fn default_object_value(
+        &mut self,
+        type_name: &str,
+        record: Option<CfdRecordId>,
+        path: CfdPath,
+    ) -> Option<CfdValueDraft> {
+        let fields = BTreeMap::new();
+        let draft = self.validate_record(Some(type_name), type_name, &fields, record, path)?;
+        Some(CfdValueDraft::Object(Box::new(draft)))
     }
 
     fn build_indexes(

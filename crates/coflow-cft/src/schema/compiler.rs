@@ -1,9 +1,9 @@
 use super::support::{
     build_schema_type_ref, const_value, convert_annotations, convert_check_block, find_annotation,
     format_type_ref, has_annotation, is_i64_power_of_two, is_indexable_field_type,
-    is_reserved_identifier, is_string_or_int, is_valid_dict_key, types_assignable, AnnotationSpec,
-    AnnotationTarget, ConstInfo, EnumInfo, FieldInfo, FieldOrigin, Symbol, SymbolKind, Ty,
-    TypeInfo,
+    is_reserved_identifier, is_string_or_int, is_valid_dict_key, types_assignable, unwrap_nullable,
+    AnnotationSpec, AnnotationTarget, ConstInfo, EnumInfo, FieldInfo, FieldOrigin, Symbol,
+    SymbolKind, Ty, TypeInfo,
 };
 use super::type_checker::TypeChecker;
 use super::{
@@ -24,6 +24,11 @@ struct TypeTopology {
     depth: BTreeMap<String, usize>,
     /// `type name -> root type at the top of its inheritance chain`.
     root: BTreeMap<String, String>,
+}
+
+struct VisibleIdField<'a> {
+    module: ModuleId,
+    field: &'a FieldDef,
 }
 
 pub(super) struct SchemaCompiler<'a> {
@@ -744,7 +749,9 @@ impl<'a> SchemaCompiler<'a> {
             }
             if let Some(AnnotationArg::Name(target)) = annotation.args.first() {
                 match self.symbols.get(&target.name) {
-                    Some(symbol) if symbol.kind == SymbolKind::Type => {}
+                    Some(symbol) if symbol.kind == SymbolKind::Type => {
+                        self.validate_ref_id_contract(module, field, annotation, &target.name);
+                    }
                     Some(symbol) => {
                         self.diagnostics.push(
                             CftDiagnostic::error(
@@ -780,6 +787,54 @@ impl<'a> SchemaCompiler<'a> {
                     "@index fields must be non-nullable string, int, or enum",
                 );
             }
+        }
+    }
+
+    fn validate_ref_id_contract(
+        &mut self,
+        module: &ModuleId,
+        field: &FieldDef,
+        annotation: &Annotation,
+        target_type: &str,
+    ) {
+        let field_ty = self.resolve_field_type(&field.ty);
+        let field_id_ty = unwrap_nullable(&field_ty);
+        if !matches!(field_id_ty, Ty::String | Ty::Int | Ty::Unknown) {
+            return;
+        }
+        let Some(target_id) = self.visible_id_field(target_type) else {
+            self.push_diag(
+                CftErrorCode::RefTargetHasNoId,
+                module,
+                annotation.span,
+                format!("ref target `{target_type}` has no visible @id field"),
+            );
+            return;
+        };
+        let target_id_ty = self.resolve_field_type(&target_id.field.ty);
+        let target_id_ty = unwrap_nullable(&target_id_ty);
+        if matches!(field_id_ty, Ty::Unknown) || matches!(target_id_ty, Ty::Unknown) {
+            return;
+        }
+        if field_id_ty != target_id_ty {
+            self.diagnostics.push(
+                CftDiagnostic::error(
+                    CftErrorCode::RefIdTypeMismatch,
+                    module.clone(),
+                    annotation.span,
+                    format!(
+                        "@ref({target_type}) field `{}` id type `{}` does not match target @id type `{}`",
+                        field.name,
+                        ty_display(&field_ty),
+                        ty_display(target_id_ty)
+                    ),
+                )
+                .with_related(
+                    target_id.module.clone(),
+                    target_id.field.name_span,
+                    "target @id field is here",
+                ),
+            );
         }
     }
 
@@ -1269,6 +1324,20 @@ impl<'a> SchemaCompiler<'a> {
         out
     }
 
+    fn visible_id_field(&self, type_name: &str) -> Option<VisibleIdField<'a>> {
+        for info in self.ancestry_chain(type_name) {
+            for field in &info.def.fields {
+                if has_annotation(&field.annotations, "id") {
+                    return Some(VisibleIdField {
+                        module: info.module.clone(),
+                        field,
+                    });
+                }
+            }
+        }
+        None
+    }
+
     fn push_diag(
         &mut self,
         code: CftErrorCode,
@@ -1303,5 +1372,23 @@ impl<'a> SchemaCompiler<'a> {
         for info in infos {
             body(self, &info);
         }
+    }
+}
+
+fn ty_display(ty: &Ty) -> String {
+    match ty {
+        Ty::Int => "int".to_string(),
+        Ty::Float => "float".to_string(),
+        Ty::Bool => "bool".to_string(),
+        Ty::String => "string".to_string(),
+        Ty::Null => "null".to_string(),
+        Ty::Type(name) | Ty::Enum(name) | Ty::EnumNamespace(name) => name.clone(),
+        Ty::Array(inner) => format!("[{}]", ty_display(inner)),
+        Ty::Dict(key, value) => format!("{{{}: {}}}", ty_display(key), ty_display(value)),
+        Ty::Nullable(inner) => format!("{}?", ty_display(inner)),
+        Ty::Entry(key, value) => format!("entry<{}, {}>", ty_display(key), ty_display(value)),
+        Ty::EmptyArray => "[]".to_string(),
+        Ty::EmptyObject => "{}".to_string(),
+        Ty::Unknown => "<unknown>".to_string(),
     }
 }

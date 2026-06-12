@@ -120,6 +120,83 @@ fn schema_rejects_nullable_index_fields() {
 }
 
 #[test]
+fn schema_rejects_nullable_id_fields() {
+    for source in [
+        "type A { @id value: string? = null; }",
+        "type A { @id value: int? = null; }",
+    ] {
+        let err = compile_one(source).unwrap_err();
+        assert_has_code(&err, CftErrorCode::InvalidAnnotatedFieldType);
+    }
+}
+
+#[test]
+fn schema_rejects_ref_target_without_visible_id() {
+    let err = compile_one(
+        r#"
+            type Target {}
+            type Holder {
+                @ref(Target)
+                target_id: string;
+            }
+        "#,
+    )
+    .unwrap_err();
+
+    assert_has_code(&err, CftErrorCode::RefTargetHasNoId);
+}
+
+#[test]
+fn schema_rejects_parent_ref_when_only_child_declares_id() {
+    let err = compile_one(
+        r#"
+            abstract type Target {}
+            type Child : Target { @id id: string; }
+            type Holder {
+                @ref(Target)
+                target_id: string;
+            }
+        "#,
+    )
+    .unwrap_err();
+
+    assert_has_code(&err, CftErrorCode::RefTargetHasNoId);
+}
+
+#[test]
+fn schema_rejects_ref_id_type_mismatch() {
+    let err = compile_one(
+        r#"
+            type Target { @id id: string; }
+            type Holder {
+                @ref(Target)
+                target_id: int?;
+            }
+        "#,
+    )
+    .unwrap_err();
+
+    assert_has_code(&err, CftErrorCode::RefIdTypeMismatch);
+}
+
+#[test]
+fn schema_rejects_polymorphic_ref_id_type_mismatch() {
+    let err = compile_one(
+        r#"
+            abstract type Target { @id id: string; }
+            type Child : Target { value: int; }
+            type Holder {
+                @ref(Target)
+                target_id: int;
+            }
+        "#,
+    )
+    .unwrap_err();
+
+    assert_has_code(&err, CftErrorCode::RefIdTypeMismatch);
+}
+
+#[test]
 fn schema_reports_default_errors() {
     let source = r#"
         const NAME = "x";
