@@ -941,7 +941,7 @@ impl<'a> SchemaCompiler<'a> {
             for info in chain {
                 for field in &info.def.fields {
                     let declared_ty = self.resolve_field_type(&field.ty);
-                    let check_ty = self.check_type_for_field(&info.module, field, &declared_ty);
+                    let check_ty = Self::check_type_for_field(field, &declared_ty);
                     map.insert(field.name.clone(), FieldInfo { check_ty });
                 }
             }
@@ -1226,7 +1226,7 @@ impl<'a> SchemaCompiler<'a> {
         }
     }
 
-    fn check_type_for_field(&mut self, module: &ModuleId, field: &FieldDef, declared: &Ty) -> Ty {
+    fn check_type_for_field(field: &FieldDef, declared: &Ty) -> Ty {
         if let Some(annotation) = find_annotation(&field.annotations, "ref") {
             if let Some(AnnotationArg::Name(target)) = annotation.args.first() {
                 let target_ty = Ty::Type(target.name.clone());
@@ -1236,12 +1236,6 @@ impl<'a> SchemaCompiler<'a> {
                     target_ty
                 };
             }
-            self.push_diag(
-                CftErrorCode::InvalidAnnotationArgument,
-                module,
-                annotation.span,
-                "@ref requires a type-name argument",
-            );
         }
         declared.clone()
     }

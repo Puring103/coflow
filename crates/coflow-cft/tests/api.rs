@@ -69,6 +69,23 @@ fn failed_compile_keeps_previously_published_schema() {
 }
 
 #[test]
+fn failed_add_module_keeps_previously_published_schema() {
+    let mut container = CftContainer::new();
+    container
+        .add_module(ModuleId::from("ok"), "type A { id: string; }")
+        .unwrap();
+    container.compile().unwrap();
+    assert!(container.has_type("A"));
+
+    let err = container
+        .add_module(ModuleId::from("bad"), "type B { value: ; }")
+        .unwrap_err();
+    assert_has_code(&err, CftErrorCode::ExpectedIdentifier);
+    assert!(container.has_type("A"));
+    assert_eq!(container.all_types().count(), 1);
+}
+
+#[test]
 fn failed_recompile_without_new_modules_keeps_old_schema() {
     // If the only thing that changed between two compile calls is that the
     // second one fails (e.g. because callers staged invalid modules earlier

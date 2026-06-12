@@ -475,8 +475,9 @@ impl CftContainer {
     pub fn compile(&mut self) -> Result<(), CftDiagnostics>;
 
     // schema 反射，用于代码生成和 Excel 加载器字段映射；返回的引用在
-    // 下次 add_module 或下次成功调用 compile 之前保持稳定。add_module
-    // 会立即使已发布 schema 失效；失败的 compile 不发布新 schema。
+    // 下次成功 add_module 或下次成功调用 compile 之前保持稳定。成功
+    // add_module 会使已发布 schema 失效；失败的 add_module 不改变容器，
+    // 也不废弃已发布 schema。失败的 compile 不发布新 schema。
     pub fn schema(&self, id: &ModuleId) -> Option<&CftSchemaModule>;
     pub fn resolve_type(&self, name: &str) -> Option<&CftSchemaType>;
     pub fn resolve_enum(&self, name: &str) -> Option<&CftSchemaEnum>;
