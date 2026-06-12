@@ -25,6 +25,12 @@ impl CfdDiagnostics {
     }
 }
 
+impl From<CfdDiagnostic> for CfdDiagnostics {
+    fn from(diagnostic: CfdDiagnostic) -> Self {
+        Self::one(diagnostic)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CfdDiagnostic {
     pub code: CfdErrorCode,

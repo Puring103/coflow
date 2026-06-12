@@ -54,10 +54,8 @@ impl SchemaView {
         }
     }
 
-    pub(crate) fn full_fields(&self, type_name: &str) -> Vec<FieldMeta> {
-        self.types
-            .get(type_name)
-            .map_or_else(Vec::new, |meta| meta.fields.clone())
+    pub(crate) fn full_fields(&self, type_name: &str) -> &[FieldMeta] {
+        self.types.get(type_name).map_or(&[], |meta| &meta.fields)
     }
 
     pub(crate) fn is_assignable(&self, actual_type: &str, expected_type: &str) -> bool {
@@ -93,21 +91,28 @@ impl SchemaView {
         out
     }
 
-    pub(crate) fn id_field_for_actual(&self, actual_type: &str) -> Option<FieldMeta> {
+    /// Returns the name of the `@id` field for `actual_type`, or `None` if
+    /// there is no `@id` field. Only the name is cloned; the full `FieldMeta`
+    /// is not copied.
+    pub(crate) fn id_field_name(&self, actual_type: &str) -> Option<String> {
         self.full_fields(actual_type)
-            .into_iter()
+            .iter()
             .find(|field| field.is_id)
+            .map(|field| field.name.clone())
     }
 
-    pub(crate) fn index_fields_for_actual(&self, actual_type: &str) -> Vec<FieldMeta> {
+    /// Returns the names of all `@index` fields for `actual_type`. Only the
+    /// names are cloned; the full `FieldMeta` structs are not copied.
+    pub(crate) fn index_field_names(&self, actual_type: &str) -> Vec<String> {
         self.full_fields(actual_type)
-            .into_iter()
+            .iter()
             .filter(|field| field.is_index)
+            .map(|field| field.name.clone())
             .collect()
     }
 
     pub(crate) fn range_has_id(&self, target_type: &str) -> bool {
-        self.id_field_for_actual(target_type).is_some()
+        self.full_fields(target_type).iter().any(|f| f.is_id)
     }
 
     pub(crate) fn enum_variant_value(&self, enum_name: &str, variant: &str) -> Option<i64> {

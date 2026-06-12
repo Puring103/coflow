@@ -26,18 +26,22 @@ impl ModelCompiler {
     }
 
     pub(crate) fn build(mut self) -> Result<CfdDataModel, CfdDiagnostics> {
+        // Phase 1: validate input records into drafts.
         let mut drafts = Vec::new();
         let input = std::mem::take(&mut self.input);
-        for (input_index, record) in input.into_iter().enumerate() {
-            let id = CfdRecordId::new(input_index);
-            if let Some(draft) = self.validate_record(
-                None,
-                &record.actual_type,
-                &record.fields,
-                Some(id),
-                CfdPath::root(),
-            ) {
-                drafts.push(draft);
+        {
+            let mut v = Validator::new(&self.schema, &mut self.diagnostics);
+            for (input_index, record) in input.into_iter().enumerate() {
+                let id = CfdRecordId::new(input_index);
+                if let Some(draft) = v.validate_record(
+                    None,
+                    &record.actual_type,
+                    &record.fields,
+                    Some(id),
+                    CfdPath::root(),
+                ) {
+                    drafts.push(draft);
+                }
             }
         }
 
@@ -45,27 +49,32 @@ impl ModelCompiler {
             return Err(CfdDiagnostics::new(self.diagnostics));
         }
 
+        // Phase 2: build primary / secondary / polymorphic indexes.
         let (tables, inheritance_index) = self.build_indexes(&drafts);
         if !self.diagnostics.is_empty() {
             return Err(CfdDiagnostics::new(self.diagnostics));
         }
 
+        // Phase 3: resolve PendingRef drafts into concrete CfdValue::Ref.
         let mut records = Vec::with_capacity(drafts.len());
-        for (index, draft) in drafts.iter().enumerate() {
-            let record_id = CfdRecordId::new(index);
-            let Some(fields) = self.resolve_fields(
-                &draft.fields,
-                Some(record_id),
-                &CfdPath::root(),
-                &tables,
-                &inheritance_index,
-            ) else {
-                continue;
-            };
-            records.push(CfdRecord {
-                actual_type: draft.actual_type.clone(),
-                fields,
-            });
+        {
+            let mut v = Validator::new(&self.schema, &mut self.diagnostics);
+            for (index, draft) in drafts.iter().enumerate() {
+                let record_id = CfdRecordId::new(index);
+                let Some(fields) = v.resolve_fields(
+                    &draft.fields,
+                    Some(record_id),
+                    &CfdPath::root(),
+                    &tables,
+                    &inheritance_index,
+                ) else {
+                    continue;
+                };
+                records.push(CfdRecord {
+                    actual_type: draft.actual_type.clone(),
+                    fields,
+                });
+            }
         }
 
         if !self.diagnostics.is_empty() {
@@ -79,6 +88,154 @@ impl ModelCompiler {
         })
     }
 
+    fn build_indexes(
+        &mut self,
+        drafts: &[RecordDraft],
+    ) -> (
+        BTreeMap<String, CfdTable>,
+        BTreeMap<String, CfdPolymorphicIndex>,
+    ) {
+        let mut tables = BTreeMap::<String, CfdTable>::new();
+        let mut inheritance_index = BTreeMap::<String, CfdPolymorphicIndex>::new();
+
+        for (index, draft) in drafts.iter().enumerate() {
+            let record_id = CfdRecordId::new(index);
+            let table = tables
+                .entry(draft.actual_type.clone())
+                .or_insert_with(|| CfdTable {
+                    type_name: draft.actual_type.clone(),
+                    records: Vec::new(),
+                    primary_index: BTreeMap::new(),
+                    secondary_indexes: BTreeMap::new(),
+                });
+            table.records.push(record_id);
+
+            if let Some(id_field_name) = self.schema.id_field_name(&draft.actual_type) {
+                if let Some(id) = id_from_fields(&draft.fields, &id_field_name) {
+                    if let Some(first) = table.primary_index.insert(id.clone(), record_id) {
+                        self.push(
+                            CfdDiagnostic::error(
+                                CfdErrorCode::DuplicateId,
+                                format!("duplicate id in table `{}`", draft.actual_type),
+                            )
+                            .with_primary(
+                                Some(record_id),
+                                CfdPath::root().field(id_field_name.clone()),
+                            )
+                            .with_related(
+                                Some(first),
+                                CfdPath::root().field(id_field_name.clone()),
+                                "first id is here",
+                            ),
+                        );
+                    }
+                    self.add_polymorphic_ids(
+                        &mut inheritance_index,
+                        &draft.actual_type,
+                        &id,
+                        record_id,
+                        &id_field_name,
+                    );
+                } else {
+                    self.push(
+                        CfdDiagnostic::error(
+                            CfdErrorCode::MissingIdField,
+                            format!("record `{}` has no usable @id field", draft.actual_type),
+                        )
+                        .with_primary(Some(record_id), CfdPath::root().field(id_field_name)),
+                    );
+                }
+            }
+
+            for field_name in self.schema.index_field_names(&draft.actual_type) {
+                let Some(value) = draft.fields.get(&field_name) else {
+                    continue;
+                };
+                let Some(key) = index_key_from_draft(value) else {
+                    continue;
+                };
+                if let Some(table) = tables.get_mut(&draft.actual_type) {
+                    table
+                        .secondary_indexes
+                        .entry(field_name)
+                        .or_default()
+                        .entry(key)
+                        .or_default()
+                        .push(record_id);
+                }
+            }
+        }
+
+        (tables, inheritance_index)
+    }
+
+    fn add_polymorphic_ids(
+        &mut self,
+        inheritance_index: &mut BTreeMap<String, CfdPolymorphicIndex>,
+        actual_type: &str,
+        id: &CfdIdValue,
+        record_id: CfdRecordId,
+        id_field_name: &str,
+    ) {
+        for target_type in self.schema.assignable_target_names(actual_type) {
+            if !self.schema.range_is_polymorphic(&target_type) {
+                continue;
+            }
+            if !self.schema.range_has_id(&target_type) {
+                continue;
+            }
+            let index = inheritance_index
+                .entry(target_type.clone())
+                .or_insert_with(|| CfdPolymorphicIndex {
+                    records: BTreeMap::new(),
+                });
+            if let Some(first) = index.records.insert(id.clone(), record_id) {
+                self.push(
+                    CfdDiagnostic::error(
+                        CfdErrorCode::DuplicatePolymorphicId,
+                        format!("duplicate id in polymorphic range `{target_type}`"),
+                    )
+                    .with_primary(
+                        Some(record_id),
+                        CfdPath::root().field(id_field_name.to_string()),
+                    )
+                    .with_related(
+                        Some(first),
+                        CfdPath::root().field(id_field_name.to_string()),
+                        "first id is here",
+                    ),
+                );
+            }
+        }
+    }
+
+    fn push(&mut self, diagnostic: CfdDiagnostic) {
+        self.diagnostics.push(diagnostic);
+    }
+}
+
+/// Validation and resolution helper.
+///
+/// Separating `schema` (a copied `&'s SchemaView` reference) from
+/// `diagnostics` (a mutable borrow) lets every method call
+/// `schema.full_fields(type)` and obtain a `&'s [FieldMeta]` slice whose
+/// lifetime is tied to the outer `SchemaView`, **not** to `self`. The slice
+/// can therefore be iterated while `&mut self` methods are called to emit
+/// diagnostics — something impossible when the schema is an owned field of
+/// the same struct.
+struct Validator<'s> {
+    schema: &'s SchemaView,
+    diagnostics: &'s mut Vec<CfdDiagnostic>,
+}
+
+impl<'s> Validator<'s> {
+    fn new(schema: &'s SchemaView, diagnostics: &'s mut Vec<CfdDiagnostic>) -> Self {
+        Self {
+            schema,
+            diagnostics,
+        }
+    }
+
     fn validate_record(
         &mut self,
         expected_type: Option<&str>,
@@ -87,13 +244,13 @@ impl ModelCompiler {
         record: Option<CfdRecordId>,
         path: CfdPath,
     ) -> Option<RecordDraft> {
+        // Copy the shared schema reference so that the &'s [FieldMeta] slice
+        // obtained below has a lifetime independent of `self`, allowing
+        // &mut self methods to be called while iterating over the fields.
+        let schema = self.schema;
         let diagnostic_start = self.diagnostics.len();
-        let Some(is_abstract) = self
-            .schema
-            .types
-            .get(actual_type)
-            .map(|meta| meta.is_abstract)
-        else {
+
+        let Some(is_abstract) = schema.types.get(actual_type).map(|meta| meta.is_abstract) else {
             self.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::UnknownType,
@@ -114,7 +271,7 @@ impl ModelCompiler {
             return None;
         }
         if let Some(expected) = expected_type {
-            if !self.schema.is_assignable(actual_type, expected) {
+            if !schema.is_assignable(actual_type, expected) {
                 self.push(
                     CfdDiagnostic::error(
                         CfdErrorCode::ObjectTypeMismatch,
@@ -126,7 +283,9 @@ impl ModelCompiler {
             }
         }
 
-        let fields = self.schema.full_fields(actual_type);
+        // `fields` has lifetime 's — independent of `self` — so it can be
+        // held across calls to &mut self methods below.
+        let fields = schema.full_fields(actual_type);
         let known_fields = fields
             .iter()
             .map(|field| field.name.as_str())
@@ -147,9 +306,9 @@ impl ModelCompiler {
         for field in fields {
             let field_path = path.clone().field(field.name.clone());
             let value = if let Some(value) = input_fields.get(&field.name) {
-                self.validate_field_value(&field, value, record, field_path)
+                self.validate_field_value(field, value, record, field_path)
             } else if let Some(default) = &field.default {
-                self.default_field_value(&field, default, record, field_path)
+                self.default_field_value(field, default, record, field_path)
             } else {
                 self.push(
                     CfdDiagnostic::error(
@@ -161,7 +320,7 @@ impl ModelCompiler {
                 None
             };
             if let Some(value) = value {
-                out.insert(field.name, value);
+                out.insert(field.name.clone(), value);
             }
         }
 
@@ -492,7 +651,7 @@ impl ModelCompiler {
                 enum_name,
                 variant,
                 value,
-            } if type_accepts_default(ty, &CfdType::Enum(enum_name.clone())) => {
+            } if matches!(non_nullable_type(ty), CfdType::Enum(name) if name == enum_name) => {
                 CfdValue::Enum(CfdEnumValue {
                     enum_name: enum_name.clone(),
                     variant: Some(variant.clone()),
@@ -527,130 +686,6 @@ impl ModelCompiler {
         let fields = BTreeMap::new();
         let draft = self.validate_record(Some(type_name), type_name, &fields, record, path)?;
         Some(CfdValueDraft::Object(Box::new(draft)))
-    }
-
-    fn build_indexes(
-        &mut self,
-        drafts: &[RecordDraft],
-    ) -> (
-        BTreeMap<String, CfdTable>,
-        BTreeMap<String, CfdPolymorphicIndex>,
-    ) {
-        let mut tables = BTreeMap::<String, CfdTable>::new();
-        let mut inheritance_index = BTreeMap::<String, CfdPolymorphicIndex>::new();
-
-        for (index, draft) in drafts.iter().enumerate() {
-            let record_id = CfdRecordId::new(index);
-            let table = tables
-                .entry(draft.actual_type.clone())
-                .or_insert_with(|| CfdTable {
-                    type_name: draft.actual_type.clone(),
-                    records: Vec::new(),
-                    primary_index: BTreeMap::new(),
-                    secondary_indexes: BTreeMap::new(),
-                });
-            table.records.push(record_id);
-
-            if let Some(id_field) = self.schema.id_field_for_actual(&draft.actual_type) {
-                if let Some(id) = id_from_fields(&draft.fields, &id_field.name) {
-                    if let Some(first) = table.primary_index.insert(id.clone(), record_id) {
-                        self.push(
-                            CfdDiagnostic::error(
-                                CfdErrorCode::DuplicateId,
-                                format!("duplicate id in table `{}`", draft.actual_type),
-                            )
-                            .with_primary(
-                                Some(record_id),
-                                CfdPath::root().field(id_field.name.clone()),
-                            )
-                            .with_related(
-                                Some(first),
-                                CfdPath::root().field(id_field.name.clone()),
-                                "first id is here",
-                            ),
-                        );
-                    }
-                    self.add_polymorphic_ids(
-                        &mut inheritance_index,
-                        &draft.actual_type,
-                        &id,
-                        record_id,
-                        &id_field.name,
-                    );
-                } else {
-                    self.push(
-                        CfdDiagnostic::error(
-                            CfdErrorCode::MissingIdField,
-                            format!("record `{}` has no usable @id field", draft.actual_type),
-                        )
-                        .with_primary(
-                            Some(record_id),
-                            CfdPath::root().field(id_field.name.clone()),
-                        ),
-                    );
-                }
-            }
-
-            for field in self.schema.index_fields_for_actual(&draft.actual_type) {
-                let Some(value) = draft.fields.get(&field.name) else {
-                    continue;
-                };
-                let Some(key) = index_key_from_draft(value) else {
-                    continue;
-                };
-                if let Some(table) = tables.get_mut(&draft.actual_type) {
-                    table
-                        .secondary_indexes
-                        .entry(field.name.clone())
-                        .or_default()
-                        .entry(key)
-                        .or_default()
-                        .push(record_id);
-                }
-            }
-        }
-
-        (tables, inheritance_index)
-    }
-
-    fn add_polymorphic_ids(
-        &mut self,
-        inheritance_index: &mut BTreeMap<String, CfdPolymorphicIndex>,
-        actual_type: &str,
-        id: &CfdIdValue,
-        record_id: CfdRecordId,
-        id_field_name: &str,
-    ) {
-        for target_type in self.schema.assignable_target_names(actual_type) {
-            if !self.schema.range_is_polymorphic(&target_type) {
-                continue;
-            }
-            if !self.schema.range_has_id(&target_type) {
-                continue;
-            }
-            let index = inheritance_index
-                .entry(target_type.clone())
-                .or_insert_with(|| CfdPolymorphicIndex {
-                    records: BTreeMap::new(),
-                });
-            if let Some(first) = index.records.insert(id.clone(), record_id) {
-                self.push(
-                    CfdDiagnostic::error(
-                        CfdErrorCode::DuplicatePolymorphicId,
-                        format!("duplicate id in polymorphic range `{target_type}`"),
-                    )
-                    .with_primary(
-                        Some(record_id),
-                        CfdPath::root().field(id_field_name.to_string()),
-                    )
-                    .with_related(
-                        Some(first),
-                        CfdPath::root().field(id_field_name.to_string()),
-                        "first id is here",
-                    ),
-                );
-            }
-        }
     }
 
     fn resolve_fields(
