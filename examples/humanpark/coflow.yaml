@@ -1,0 +1,34 @@
+schema: schema/
+
+sources:
+  - file: data/Configs.coflow.xlsx
+    sheets:
+      - sheet: 地块tag
+        type: TileTagConfig
+      - sheet: 地块
+        type: TerrainConfig
+      - sheet: 物质
+        type: SubstanceConfig
+      - sheet: 属性
+        type: AttributeConfig
+      - sheet: 能力
+        type: AbilityConfig
+      - sheet: 基因
+        type: GeneConfig
+      - sheet: 表皮
+        type: SkinConfig
+      - sheet: 阶段
+        type: PhaseConfig
+      - sheet: 功能
+        type: GameFeatureConfig
+      - sheet: 生物残骸
+        type: BioRemainsConfig
+
+outputs:
+  data:
+    type: json
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Core.Data.Config
