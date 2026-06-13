@@ -13,7 +13,8 @@ sealed type localizedString {
 @display("数值修改操作")
 sealed type ModifyValueOperation {
   operation: OperationType;
-  attribute: CreatureAttribute;
+  @GenAsEnum("CreatureAttribute")
+  attribute: string;
   value: float;
 }
 

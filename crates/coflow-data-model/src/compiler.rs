@@ -950,7 +950,9 @@ impl<'s> Validator<'s> {
         self.push(
             CfdDiagnostic::error(
                 CfdErrorCode::InvalidEnumVariant,
-                format!("@KeyAsEnum value `{enum_name}.{variant}` is not a legal enum variant"),
+                format!(
+                    "@IdAsEnum/@GenAsEnum value `{enum_name}.{variant}` is not a legal enum variant"
+                ),
             )
             .with_primary(record, path),
         );

@@ -668,6 +668,23 @@ impl<'a> SchemaCompiler<'a> {
 
         let mut key_as_enum_names = BTreeMap::<String, (ModuleId, Span)>::new();
         self.each_type(|this, info| {
+            for field in &info.def.fields {
+                if let Some(annotation) = find_annotation(&field.annotations, "IdAsEnum") {
+                    if find_annotation(&field.annotations, "id").is_some() {
+                        if let Some(AnnotationArg::String(enum_name, _)) = annotation.args.first() {
+                            this.register_key_as_enum_name(
+                                &mut key_as_enum_names,
+                                &info.module,
+                                annotation,
+                                enum_name,
+                            );
+                        }
+                    }
+                }
+            }
+        });
+
+        self.each_type(|this, info| {
             this.validate_annotation_list(
                 &info.module,
                 AnnotationTarget::Type,
@@ -689,31 +706,52 @@ impl<'a> SchemaCompiler<'a> {
                     AnnotationTarget::Field,
                     &field.annotations,
                 );
-                this.validate_field_annotations(&info.module, field);
-                if let Some(annotation) = find_annotation(&field.annotations, "KeyAsEnum") {
-                    if let Some(AnnotationArg::String(enum_name, _)) = annotation.args.first() {
-                        if let Some((first_module, first_span)) = key_as_enum_names.get(enum_name) {
-                            this.diagnostics.push(
-                                CftDiagnostic::error(
-                                    CftErrorCode::DuplicateGlobalName,
-                                    info.module.clone(),
-                                    annotation.span,
-                                    format!("duplicate @KeyAsEnum enum name `{enum_name}`"),
-                                )
-                                .with_related(
-                                    first_module.clone(),
-                                    *first_span,
-                                    "first @KeyAsEnum enum name is here",
-                                ),
-                            );
-                        } else {
-                            key_as_enum_names
-                                .insert(enum_name.clone(), (info.module.clone(), annotation.span));
-                        }
-                    }
-                }
+                this.validate_field_annotations(&info.module, field, &key_as_enum_names);
             }
         });
+    }
+
+    fn register_key_as_enum_name(
+        &mut self,
+        key_as_enum_names: &mut BTreeMap<String, (ModuleId, Span)>,
+        module: &ModuleId,
+        annotation: &Annotation,
+        enum_name: &str,
+    ) {
+        if let Some((first_module, first_span)) = key_as_enum_names.get(enum_name) {
+            self.diagnostics.push(
+                CftDiagnostic::error(
+                    CftErrorCode::DuplicateGlobalName,
+                    module.clone(),
+                    annotation.span,
+                    format!("duplicate @IdAsEnum enum name `{enum_name}`"),
+                )
+                .with_related(
+                    first_module.clone(),
+                    *first_span,
+                    "first @IdAsEnum enum name is here",
+                ),
+            );
+        } else {
+            key_as_enum_names.insert(enum_name.to_string(), (module.clone(), annotation.span));
+        }
+    }
+
+    fn validate_key_as_enum_reference(
+        &mut self,
+        module: &ModuleId,
+        annotation: &Annotation,
+        enum_name: &str,
+        key_as_enum_names: &BTreeMap<String, (ModuleId, Span)>,
+    ) {
+        if !key_as_enum_names.contains_key(enum_name) {
+            self.push_diag(
+                CftErrorCode::InvalidAnnotationArgument,
+                module,
+                annotation.span,
+                format!("@GenAsEnum enum name `{enum_name}` is not declared by an @IdAsEnum field"),
+            );
+        }
     }
 
     fn validate_annotation_list(
@@ -769,7 +807,12 @@ impl<'a> SchemaCompiler<'a> {
         }
     }
 
-    fn validate_field_annotations(&mut self, module: &ModuleId, field: &FieldDef) {
+    fn validate_field_annotations(
+        &mut self,
+        module: &ModuleId,
+        field: &FieldDef,
+        key_as_enum_names: &BTreeMap<String, (ModuleId, Span)>,
+    ) {
         if let Some(annotation) = find_annotation(&field.annotations, "id") {
             if !is_id_compatible_type(&self.resolve_field_type(&field.ty), false) {
                 self.push_diag(
@@ -845,12 +888,15 @@ impl<'a> SchemaCompiler<'a> {
                 );
             }
         }
-        if let Some(annotation) = find_annotation(&field.annotations, "KeyAsEnum") {
-            self.validate_key_as_enum_annotation(module, field, annotation);
+        if let Some(annotation) = find_annotation(&field.annotations, "IdAsEnum") {
+            self.validate_id_as_enum_annotation(module, field, annotation);
+        }
+        if let Some(annotation) = find_annotation(&field.annotations, "GenAsEnum") {
+            self.validate_as_enum_annotation(module, field, annotation, key_as_enum_names);
         }
     }
 
-    fn validate_key_as_enum_annotation(
+    fn validate_id_as_enum_annotation(
         &mut self,
         module: &ModuleId,
         field: &FieldDef,
@@ -861,23 +907,54 @@ impl<'a> SchemaCompiler<'a> {
                 CftErrorCode::InvalidAnnotatedFieldType,
                 module,
                 annotation.span,
-                "@KeyAsEnum must be applied to an @id field",
+                "@IdAsEnum must be applied to an @id field",
             );
         }
-        if !matches!(self.resolve_field_type(&field.ty), Ty::String | Ty::Unknown) {
+        let resolved = self.resolve_field_type(&field.ty);
+        if !matches!(resolved, Ty::String | Ty::Unknown) {
             self.push_diag(
                 CftErrorCode::InvalidAnnotatedFieldType,
                 module,
                 annotation.span,
-                "@KeyAsEnum fields must have type string",
+                "@IdAsEnum fields must have type string",
             );
         }
         if let Some(AnnotationArg::String(enum_name, _)) = annotation.args.first() {
-            self.validate_key_as_enum_name(module, annotation, enum_name);
+            self.validate_id_as_enum_name(module, annotation, enum_name);
         }
     }
 
-    fn validate_key_as_enum_name(
+    fn validate_as_enum_annotation(
+        &mut self,
+        module: &ModuleId,
+        field: &FieldDef,
+        annotation: &Annotation,
+        key_as_enum_names: &BTreeMap<String, (ModuleId, Span)>,
+    ) {
+        if find_annotation(&field.annotations, "id").is_some() {
+            self.push_diag(
+                CftErrorCode::InvalidAnnotatedFieldType,
+                module,
+                annotation.span,
+                "@GenAsEnum cannot be applied to an @id field; use @IdAsEnum",
+            );
+        }
+        let resolved = self.resolve_field_type(&field.ty);
+        if !matches!(unwrap_nullable(&resolved), Ty::String | Ty::Unknown) {
+            self.push_diag(
+                CftErrorCode::InvalidAnnotatedFieldType,
+                module,
+                annotation.span,
+                "@GenAsEnum fields must have type string or string?",
+            );
+        }
+        if let Some(AnnotationArg::String(enum_name, _)) = annotation.args.first() {
+            self.validate_id_as_enum_name(module, annotation, enum_name);
+            self.validate_key_as_enum_reference(module, annotation, enum_name, key_as_enum_names);
+        }
+    }
+
+    fn validate_id_as_enum_name(
         &mut self,
         module: &ModuleId,
         annotation: &Annotation,
@@ -888,7 +965,7 @@ impl<'a> SchemaCompiler<'a> {
                 CftErrorCode::InvalidAnnotationArgument,
                 module,
                 annotation.span,
-                format!("@KeyAsEnum enum name `{enum_name}` is not a valid C# identifier"),
+                format!("@IdAsEnum/GenAsEnum enum name `{enum_name}` is not a valid C# identifier"),
             );
         }
         if let Some(symbol) = self.symbols.get(enum_name) {
@@ -898,7 +975,7 @@ impl<'a> SchemaCompiler<'a> {
                     module.clone(),
                     annotation.span,
                     format!(
-                        "@KeyAsEnum enum name `{enum_name}` collides with an existing schema name"
+                        "@IdAsEnum/GenAsEnum enum name `{enum_name}` collides with an existing schema name"
                     ),
                 )
                 .with_related(

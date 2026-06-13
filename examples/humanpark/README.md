@@ -28,8 +28,8 @@ cargo run --quiet -- build examples/humanpark
 
 - `generated/data/<Type>.json`
 - 命名空间为 `Core.Data.Config` 的 `generated/csharp/<Type>.cs`
-- 对带 `@KeyAsEnum("...")` 注解的 `@id` 字段，按表内实际 id 生成真正的
-  C# enum，并把对应 `Id` / `@ref` 原始 ID 属性提升为 enum 类型。
+- 对带 `@IdAsEnum("...")` 注解的 `@id` 字段，按表内实际 id 生成真正的
+  C# enum；其他字段可用 `@GenAsEnum("...")` 引用这个 enum，但不会生成成员。
 
 ## 用到的 coflow 特性
 
@@ -43,13 +43,16 @@ cargo run --quiet -- build examples/humanpark
   `{a, b, c}`。
 - **`@ref` 跨表引用**：`GeneConfig.parentGeneId`、`BioRemainsConfig.geneId`
   指向 `GeneConfig`；`@ref` 字段允许用 `string?` 表达"可选引用"。
-- **`@KeyAsEnum` codegen**：用于"id 是策划起的字符串、没有合理整数枚举可绑"的表
+- **`@IdAsEnum` codegen**：用于"id 是策划起的字符串、没有合理整数枚举可绑"的表
   （`GeneConfig`、`SkinConfig`、`PhaseConfig`），以及"原本 luban 端是枚举但仅在 @id
   上使用、没有别的地方当字段类型引用"的表（`AbilityConfig`、`SubstanceConfig`）。
   这两种情况下 schema 直接用 `id: string`，但在 `@id` 字段上加
-  `@KeyAsEnum("GeneId")` 这类注解。build 时按表内实际 id 生成对应的 C# enum
+  `@IdAsEnum("GeneId")` 这类注解。build 时按表内实际 id 生成对应的 C# enum
   （例如 `GeneId.cs`），并让引用字段如 `BioRemainsConfig.GeneId` 自动变成
   `GeneId`。
+- **`@GenAsEnum` codegen**：用于普通 `string` / `string?` 字段引用已有
+  `@IdAsEnum` 枚举，例如 `ModifyValueOperation.attribute` 引用
+  `CreatureAttribute`。它只影响 C# 类型和读取校验，不会生成 enum 成员。
 - **宽松 bool 解析**：`is_base`、`isInit`、`isInitial` 在 xlsx 里仍是 `0`/`1`，
   cell parser 会接受。
 - **schema 多文件**：`schema:` 目录指向 `schema/`，coflow 自动加载里面的所
@@ -67,7 +70,7 @@ cargo run --quiet -- build examples/humanpark
 coflow 端直接支持。
 
 > 注：`AbilityConfig` / `SubstanceConfig` 由于 schema 改用 `id: string` +
-> `@KeyAsEnum`，导出 JSON 中这两张表的 `id` 字段从整数变成了字符串
+> `@IdAsEnum`，导出 JSON 中这两张表的 `id` 字段从整数变成了字符串
 > （例如 `"Ability_Eat"`、`"Matter_Nutrition"`）。如果下游运行时硬绑了这些
 > 整数 id，需要要么改回 `enum @id` 形式，要么把读取侧迁移到字符串 id。
 

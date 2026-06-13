@@ -1502,7 +1502,7 @@ fn key_as_enum_id_rejects_values_that_are_not_csharp_enum_variants() {
     let schema = compile_schema(
         r#"
             type GeneConfig {
-                @KeyAsEnum("GeneId")
+                @IdAsEnum("GeneId")
                 @id
                 id: string;
             }
@@ -1514,7 +1514,7 @@ fn key_as_enum_id_rejects_values_that_are_not_csharp_enum_variants() {
 
     let err = builder
         .build()
-        .expect_err("@KeyAsEnum id value should be a legal enum variant");
+        .expect_err("@IdAsEnum id value should be a legal enum variant");
     let diag = diagnostic_with_code(&err, CfdErrorCode::InvalidEnumVariant);
     assert_eq!(
         primary_path_segments(diag),
@@ -1527,7 +1527,7 @@ fn key_as_enum_accepts_legal_id_and_ref_values() {
     let schema = compile_schema(
         r#"
             type GeneConfig {
-                @KeyAsEnum("GeneId")
+                @IdAsEnum("GeneId")
                 @id
                 id: string;
             }
@@ -1552,7 +1552,7 @@ fn key_as_enum_accepts_legal_id_and_ref_values() {
 
     let model = builder
         .build()
-        .expect("legal @KeyAsEnum id and ref values should build");
+        .expect("legal @IdAsEnum id and ref values should build");
     assert_eq!(model.record_count(), 2);
 }
 
@@ -1561,7 +1561,7 @@ fn key_as_enum_ref_rejects_values_that_are_not_csharp_enum_variants() {
     let schema = compile_schema(
         r#"
             type GeneConfig {
-                @KeyAsEnum("GeneId")
+                @IdAsEnum("GeneId")
                 @id
                 id: string;
             }
@@ -1586,7 +1586,7 @@ fn key_as_enum_ref_rejects_values_that_are_not_csharp_enum_variants() {
 
     let err = builder
         .build()
-        .expect_err("@KeyAsEnum ref value should be a legal enum variant");
+        .expect_err("@IdAsEnum ref value should be a legal enum variant");
     let diag = diagnostic_with_code(&err, CfdErrorCode::InvalidEnumVariant);
     assert_eq!(
         primary_path_segments(diag),
@@ -1599,7 +1599,7 @@ fn key_as_enum_explicit_ref_rejects_values_that_are_not_csharp_enum_variants() {
     let schema = compile_schema(
         r#"
             type GeneConfig {
-                @KeyAsEnum("GeneId")
+                @IdAsEnum("GeneId")
                 @id
                 id: string;
             }
@@ -1624,7 +1624,7 @@ fn key_as_enum_explicit_ref_rejects_values_that_are_not_csharp_enum_variants() {
 
     let err = builder
         .build()
-        .expect_err("@KeyAsEnum explicit ref should be a legal enum variant");
+        .expect_err("@IdAsEnum explicit ref should be a legal enum variant");
     let diag = diagnostic_with_code(&err, CfdErrorCode::InvalidEnumVariant);
     assert_eq!(
         primary_path_segments(diag),

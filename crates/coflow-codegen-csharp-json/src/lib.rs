@@ -66,7 +66,7 @@ pub fn generate_csharp_json(
     )
 }
 
-/// Generates C# JSON loader files and includes data-driven `@KeyAsEnum`
+/// Generates C# JSON loader files and includes data-driven `@IdAsEnum`
 /// variants.
 ///
 /// # Errors

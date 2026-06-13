@@ -279,7 +279,7 @@ fn collect_key_as_enum_variants(
         }) else {
             continue;
         };
-        let Some(enum_name) = annotation_string_arg(&id_field.annotations, "KeyAsEnum") else {
+        let Some(enum_name) = annotation_string_arg(&id_field.annotations, "IdAsEnum") else {
             continue;
         };
 

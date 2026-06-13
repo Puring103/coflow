@@ -249,7 +249,7 @@ fn build_project_generates_key_as_enum_from_loaded_ids() {
         root.join("schema").join("main.cft"),
         r#"
             type GeneConfig {
-                @KeyAsEnum("GeneId")
+                @IdAsEnum("GeneId")
                 @id
                 id: string;
             }

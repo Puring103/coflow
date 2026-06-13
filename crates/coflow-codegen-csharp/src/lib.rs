@@ -111,7 +111,7 @@ pub fn generate_csharp_with_database_templates(
 }
 
 /// Generates C# files and includes data-driven enum variants for fields marked
-/// with `@KeyAsEnum`.
+/// with `@IdAsEnum`.
 ///
 /// # Errors
 ///
@@ -301,7 +301,7 @@ mod tests {
         let schema = compile_schema(
             r#"
                 type GeneConfig {
-                    @KeyAsEnum("GeneId")
+                    @IdAsEnum("GeneId")
                     @id
                     id: string;
                 }
@@ -366,6 +366,55 @@ mod tests {
             database,
             "ResolveRef(geneConfigRefIndex, value.GeneId.Value",
         )?;
+        Ok(())
+    }
+
+    #[test]
+    fn codegen_key_as_enum_generates_strongly_typed_string_field() -> Result<(), String> {
+        let schema = compile_schema(
+            r#"
+                type AttributeConfig {
+                    @id
+                    @IdAsEnum("CreatureAttribute")
+                    id: string;
+                }
+
+                sealed type ModifyValueOperation {
+                    @GenAsEnum("CreatureAttribute")
+                    attribute: string;
+                    value: float;
+                }
+            "#,
+        )?;
+        let mut variants = BTreeMap::new();
+        variants.insert(
+            "CreatureAttribute".to_string(),
+            vec!["Body_Hp".to_string(), "Energy_Limit".to_string()],
+        );
+
+        let files = generate_json_with_key_as_enum_variants(
+            &schema,
+            &CsharpCodegenOptions::new("Game.Config"),
+            variants,
+        )
+        .map_err(|err| err.to_string())?;
+
+        assert_eq!(
+            files
+                .iter()
+                .filter(|file| file.relative_path.ends_with("CreatureAttribute.cs"))
+                .count(),
+            1
+        );
+        let modifier = generated_file(&files, "ModifyValueOperation.cs")?;
+        require_contains(
+            modifier,
+            "public CreatureAttribute Attribute { get; init; }",
+        )?;
+        require_not_contains(modifier, "public string Attribute")?;
+
+        let database = generated_file(&files, "GameConfig.cs")?;
+        require_contains(database, "ReadStringEnum<CreatureAttribute>")?;
         Ok(())
     }
 
