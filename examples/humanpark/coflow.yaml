@@ -1,7 +1,7 @@
 schema: schema/
 
 sources:
-  - file: data/Configs.coflow.xlsx
+  - file: data/Configs.xlsx
     sheets:
       - sheet: 地块tag
         type: TileTagConfig

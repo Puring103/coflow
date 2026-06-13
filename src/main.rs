@@ -23,15 +23,17 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+
+const DIAGNOSTIC_SEPARATOR: &str = "----------------------------------------";
 
 fn main() -> ExitCode {
     match run() {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::FAILURE,
         Err(message) => {
-            let _ = writeln!(io::stderr().lock(), "{message}");
+            let _ = write_cli_error(&message);
             ExitCode::FAILURE
         }
     }
@@ -253,7 +255,8 @@ outputs:
 
 fn cft_check(args: &CftCheckArgs) -> Result<bool, String> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    let build = compile_schema_project(&project, args.stdin_path.as_deref())?;
+    let build = compile_schema_project(&project, args.stdin_path.as_deref())
+        .map_err(|message| relativize_message_paths(&message, &project.root_dir))?;
     let diagnostics = dedupe_cft_diagnostics(build.diagnostics);
     if args.json {
         write_json_diagnostics(
@@ -267,38 +270,43 @@ fn cft_check(args: &CftCheckArgs) -> Result<bool, String> {
     } else if diagnostics.is_empty() {
         println!(
             "CFT check passed: {}",
-            project
-                .config_path
-                .strip_prefix(&project.root_dir)
-                .map_or_else(
-                    |_| project.config_path.display().to_string(),
-                    |path| path.display().to_string()
-                )
+            project_path(&project, &project.config_path)
         );
     } else {
-        write_human_cft_diagnostics(&diagnostics, &build.sources, &build.paths)?;
+        write_human_cft_diagnostics(
+            &diagnostics,
+            &build.sources,
+            &build.paths,
+            &project.root_dir,
+        )?;
     }
     Ok(diagnostics.is_empty())
 }
 
 fn cft_lsp(args: &CftLspArgs) -> Result<bool, String> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    coflow_cft_lsp::run(project)
+    let root_dir = project.root_dir.clone();
+    coflow_cft_lsp::run(project).map_err(|message| relativize_message_paths(&message, &root_dir))
 }
 
 fn project_check(args: &ProjectCheckArgs) -> Result<bool, String> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    match check_project(&project)? {
+    match check_project(&project)
+        .map_err(|message| relativize_message_paths(&message, &project.root_dir))?
+    {
         PipelineOutcome::Success(_) => {
             if args.json {
                 write_json_diagnostics(Vec::new())?;
             } else {
-                println!("Project check passed: {}", project.config_path.display());
+                println!(
+                    "Project check passed: {}",
+                    project_path(&project, &project.config_path)
+                );
             }
             Ok(true)
         }
         PipelineOutcome::Diagnostics(diagnostics) => {
-            write_project_diagnostics(diagnostics, args.json)?;
+            write_project_diagnostics(diagnostics, args.json, &project.root_dir)?;
             Ok(false)
         }
     }
@@ -313,25 +321,30 @@ fn project_build(args: &BuildArgs) -> Result<bool, String> {
             code_out_dir: args.code_out_dir.as_deref(),
             namespace: args.namespace.as_deref(),
         },
-    )? {
+    )
+    .map_err(|message| relativize_message_paths(&message, &project.root_dir))?
+    {
         PipelineOutcome::Success(report) => {
             println!(
                 "{} data exported to {}",
                 report.data.format.display_name(),
-                report.data.dir.display()
+                project_path(&project, &report.data.dir)
             );
             if let Some(code) = report.code {
                 println!(
                     "{} code generated to {}",
                     code.target.display_name(),
-                    code.dir.display()
+                    project_path(&project, &code.dir)
                 );
             }
-            println!("Build completed: {}", project.config_path.display());
+            println!(
+                "Build completed: {}",
+                project_path(&project, &project.config_path)
+            );
             Ok(true)
         }
         PipelineOutcome::Diagnostics(diagnostics) => {
-            write_project_diagnostics(diagnostics, false)?;
+            write_project_diagnostics(diagnostics, false, &project.root_dir)?;
             Ok(false)
         }
     }
@@ -345,13 +358,18 @@ fn export_json(args: &ExportJsonArgs) -> Result<bool, String> {
         ExportOptions {
             out_dir: args.out_dir.as_deref(),
         },
-    )? {
+    )
+    .map_err(|message| relativize_message_paths(&message, &project.root_dir))?
+    {
         PipelineOutcome::Success(report) => {
-            println!("JSON data exported to {}", report.dir.display());
+            println!(
+                "JSON data exported to {}",
+                project_path(&project, &report.dir)
+            );
             Ok(true)
         }
         PipelineOutcome::Diagnostics(diagnostics) => {
-            write_project_diagnostics(diagnostics, false)?;
+            write_project_diagnostics(diagnostics, false, &project.root_dir)?;
             Ok(false)
         }
     }
@@ -365,13 +383,18 @@ fn export_messagepack(args: &ExportMessagePackArgs) -> Result<bool, String> {
         ExportOptions {
             out_dir: args.out_dir.as_deref(),
         },
-    )? {
+    )
+    .map_err(|message| relativize_message_paths(&message, &project.root_dir))?
+    {
         PipelineOutcome::Success(report) => {
-            println!("MessagePack data exported to {}", report.dir.display());
+            println!(
+                "MessagePack data exported to {}",
+                project_path(&project, &report.dir)
+            );
             Ok(true)
         }
         PipelineOutcome::Diagnostics(diagnostics) => {
-            write_project_diagnostics(diagnostics, false)?;
+            write_project_diagnostics(diagnostics, false, &project.root_dir)?;
             Ok(false)
         }
     }
@@ -386,13 +409,18 @@ fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, String> {
             out_dir: args.out_dir.as_deref(),
             namespace: args.namespace.as_deref(),
         },
-    )? {
+    )
+    .map_err(|message| relativize_message_paths(&message, &project.root_dir))?
+    {
         PipelineOutcome::Success(report) => {
-            println!("C# code generated to {}", report.dir.display());
+            println!(
+                "C# code generated to {}",
+                project_path(&project, &report.dir)
+            );
             Ok(true)
         }
         PipelineOutcome::Diagnostics(diagnostics) => {
-            write_project_diagnostics(diagnostics, false)?;
+            write_project_diagnostics(diagnostics, false, &project.root_dir)?;
             Ok(false)
         }
     }
@@ -410,28 +438,26 @@ fn write_json_diagnostics(diagnostics: Vec<DiagnosticJson>) -> Result<(), String
     Ok(())
 }
 
-fn write_project_diagnostics(diagnostics: Vec<DiagnosticJson>, json: bool) -> Result<(), String> {
+fn write_project_diagnostics(
+    diagnostics: Vec<DiagnosticJson>,
+    json: bool,
+    root_dir: &Path,
+) -> Result<(), String> {
     if json {
         write_json_diagnostics(diagnostics)
     } else {
-        write_human_project_diagnostics(&diagnostics)
+        write_human_diagnostics(&diagnostics, Some(root_dir))
     }
 }
 
-fn write_human_project_diagnostics(diagnostics: &[DiagnosticJson]) -> Result<(), String> {
+fn write_human_diagnostics(
+    diagnostics: &[DiagnosticJson],
+    root_dir: Option<&Path>,
+) -> Result<(), String> {
     let mut stderr = io::stderr().lock();
     for diagnostic in diagnostics {
-        writeln!(
-            stderr,
-            "{} [{}] {}:{}:{} {}",
-            diagnostic.code,
-            diagnostic.stage,
-            diagnostic.path,
-            diagnostic.start_line + 1,
-            diagnostic.start_character + 1,
-            diagnostic.message
-        )
-        .map_err(|err| format!("failed to write diagnostics: {err}"))?;
+        write_diagnostic_block(&mut stderr, diagnostic, root_dir)
+            .map_err(|err| format!("failed to write diagnostics: {err}"))?;
     }
     Ok(())
 }
@@ -440,21 +466,111 @@ fn write_human_cft_diagnostics(
     diagnostics: &[CftDiagnostic],
     sources: &BTreeMap<String, String>,
     paths: &BTreeMap<String, String>,
+    root_dir: &Path,
 ) -> Result<(), String> {
+    let diagnostics = diagnostics
+        .iter()
+        .map(|diagnostic| DiagnosticJson::from_cft(diagnostic, sources, paths))
+        .collect::<Vec<_>>();
+    write_human_diagnostics(&diagnostics, Some(root_dir))
+}
+
+fn write_cli_error(message: &str) -> Result<(), String> {
     let mut stderr = io::stderr().lock();
-    for diagnostic in diagnostics {
-        let json = DiagnosticJson::from_cft(diagnostic, sources, paths);
+    writeln!(stderr, "{DIAGNOSTIC_SEPARATOR}")
+        .map_err(|err| format!("failed to write diagnostics: {err}"))?;
+    writeln!(stderr, "[CLI-ERROR] [CLI]")
+        .map_err(|err| format!("failed to write diagnostics: {err}"))?;
+    write_message_field(&mut stderr, message)
+        .map_err(|err| format!("failed to write diagnostics: {err}"))
+}
+
+fn write_diagnostic_block(
+    stderr: &mut impl Write,
+    diagnostic: &DiagnosticJson,
+    root_dir: Option<&Path>,
+) -> io::Result<()> {
+    writeln!(stderr, "{DIAGNOSTIC_SEPARATOR}")?;
+    writeln!(stderr, "[{}] [{}]", diagnostic.code, diagnostic.stage)?;
+    if !diagnostic.path.is_empty() {
         writeln!(
             stderr,
-            "{} [{}] {}:{}:{} {}",
-            diagnostic.code.as_str(),
-            diagnostic.stage,
-            json.path,
-            json.start_line + 1,
-            json.start_character + 1,
-            diagnostic.message
-        )
-        .map_err(|err| format!("failed to write diagnostics: {err}"))?;
+            "{:<8}{}",
+            "file",
+            display_path(&diagnostic.path, root_dir)
+        )?;
+    }
+    if let Some(sheet) = &diagnostic.sheet {
+        writeln!(stderr, "{:<8}{sheet}", "sheet")?;
+    }
+    if let Some(cell) = &diagnostic.cell {
+        writeln!(stderr, "{:<8}{cell}", "cell")?;
+    } else {
+        writeln!(stderr, "{:<8}{}", "line", diagnostic.start_line + 1)?;
+        writeln!(stderr, "{:<8}{}", "column", diagnostic.start_character + 1)?;
+    }
+    let message = root_dir.map_or_else(
+        || diagnostic.message.clone(),
+        |root_dir| relativize_message_paths(&diagnostic.message, root_dir),
+    );
+    write_message_field(stderr, &message)
+}
+
+fn write_message_field(stderr: &mut impl Write, message: &str) -> io::Result<()> {
+    writeln!(stderr, "message")?;
+    for line in message.lines() {
+        writeln!(stderr, "  {line}")?;
+    }
+    if message.is_empty() {
+        writeln!(stderr, "  ")?;
     }
     Ok(())
+}
+
+fn display_path(path: &str, root_dir: Option<&Path>) -> String {
+    let cleaned_path = strip_windows_extended_prefix(path);
+    let path = PathBuf::from(&cleaned_path);
+    if let Some(root_dir) = root_dir {
+        let cleaned_root = strip_windows_extended_prefix(&root_dir.display().to_string());
+        let root = PathBuf::from(cleaned_root);
+        if let Ok(relative) = path.strip_prefix(&root) {
+            let value = slash_path(relative);
+            return if value.is_empty() {
+                ".".to_string()
+            } else {
+                value
+            };
+        }
+    }
+    slash_path(&path)
+}
+
+fn project_path(project: &Project, path: &Path) -> String {
+    display_path(&path.display().to_string(), Some(&project.root_dir))
+}
+
+fn relativize_message_paths(message: &str, root_dir: &Path) -> String {
+    let mut out = String::with_capacity(message.len());
+    let mut rest = message;
+    while let Some(start) = rest.find('`') {
+        out.push_str(&rest[..=start]);
+        let after_start = &rest[start + 1..];
+        let Some(end) = after_start.find('`') else {
+            out.push_str(after_start);
+            return out;
+        };
+        out.push_str(&display_path(&after_start[..end], Some(root_dir)));
+        out.push('`');
+        rest = &after_start[end + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn strip_windows_extended_prefix(path: &str) -> String {
+    path.strip_prefix(r"\\?\").unwrap_or(path).to_string()
+}
+
+fn slash_path(path: &Path) -> String {
+    path.display().to_string().replace('\\', "/")
 }

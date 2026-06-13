@@ -28,6 +28,9 @@ use coflow_data_model::{
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+const IMPORT_CONTROL_COLUMN: &str = "#";
+const SKIP_IMPORT_ROW_MARKER: &str = "##";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExcelSource {
     pub file: PathBuf,
@@ -318,7 +321,7 @@ fn collect_input_records(
                 });
             };
 
-            let columns = resolve_columns(
+            let resolved = resolve_columns(
                 schema,
                 source,
                 sheet,
@@ -328,7 +331,11 @@ fn collect_input_records(
                 header_excel_row,
                 header_excel_col,
             )?;
+            let columns = resolved.columns;
             for (zero_based_data_row, row) in rows.enumerate() {
+                if should_skip_import_row(row, resolved.control_column) {
+                    continue;
+                }
                 if is_empty_mapped_row(row, &columns) {
                     continue;
                 }
@@ -369,6 +376,12 @@ fn collect_input_records(
         }
     }
     Ok(LoadedInput { records, origins })
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedColumns {
+    columns: Vec<ResolvedColumn>,
+    control_column: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -481,7 +494,7 @@ fn resolve_columns(
     header_row: &[Data],
     header_excel_row: usize,
     header_excel_col: usize,
-) -> Result<Vec<ResolvedColumn>, ExcelLoadError> {
+) -> Result<ResolvedColumns, ExcelLoadError> {
     // Read the entire header row first so we can scan ahead for @expand
     // children that occupy adjacent columns.
     let mut header = Vec::with_capacity(header_row.len());
@@ -499,6 +512,7 @@ fn resolve_columns(
     let expand_fields = expand_field_index(schema, type_name);
     let expand_inner_order = expand_field_order_index(schema, type_name);
     let mut columns = Vec::new();
+    let mut control_column = None;
     let mut seen_fields = BTreeMap::<String, String>::new();
 
     let mut cursor = 0;
@@ -509,6 +523,10 @@ fn resolve_columns(
         let column_text = column_text.clone();
         cursor += 1;
         if column_text.is_empty() {
+            continue;
+        }
+        if column_text == IMPORT_CONTROL_COLUMN {
+            control_column = Some(index);
             continue;
         }
         let field = sheet
@@ -598,7 +616,10 @@ fn resolve_columns(
         });
     }
 
-    Ok(columns)
+    Ok(ResolvedColumns {
+        columns,
+        control_column,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -727,6 +748,16 @@ fn is_empty_mapped_row(row: &[Data], columns: &[ResolvedColumn]) -> bool {
                     .all(|child| row.get(child.index).is_none_or(is_empty_cell))
             },
         )
+    })
+}
+
+fn should_skip_import_row(row: &[Data], control_column: Option<usize>) -> bool {
+    let Some(index) = control_column else {
+        return false;
+    };
+    row.get(index).is_some_and(|cell| match cell {
+        Data::String(value) => value.trim() == SKIP_IMPORT_ROW_MARKER,
+        _ => false,
     })
 }
 

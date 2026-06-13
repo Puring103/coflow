@@ -11,19 +11,14 @@ schema 和代码生成目标，全部通过 Coflow CLI 跑通。
 - `schema/enums.cft` / `beans.cft` / `tables.cft` — 由 Luban 的
   `__beans__.xml`、`__tables__.xml`、`enums/*.xml`、`enums_gen/*.xml`
   迁移过来的 CFT schema，按"枚举 / 共享结构 / 数据表"拆分到三个文件。
-- `data/Configs.coflow.xlsx` — 由 `tools/convert_luban_xlsx.py` 从原
-  `Configs.xlsx` 转换得到的 coflow 兼容版本。
-- `tools/convert_luban_xlsx.py` — 一次性转换脚本（幂等，直接读取原 Luban
-  xlsx）。
-- `coflow.yaml` — 项目配置；指向 schema 目录、转换后的 xlsx，以及
+- `data/Configs.xlsx` — 单行表头的 coflow 兼容配置表；可选的 `#` 控制列中
+  写 `##` 的数据行不会被导入。
+- `coflow.yaml` — 项目配置；指向 schema 目录、配置表，以及
   `generated/` 下的 JSON 和 C# 输出。
 
 ## 运行方式
 
 ```powershell
-# Luban 端有改动时重新生成转换后的 xlsx
-python tools/convert_luban_xlsx.py
-
 # 跑 coflow 流水线
 cargo run --quiet -- check examples/humanpark
 cargo run --quiet -- build examples/humanpark
@@ -60,18 +55,15 @@ cargo run --quiet -- build examples/humanpark
 - **schema 多文件**：`schema:` 目录指向 `schema/`，coflow 自动加载里面的所
   有 `.cft`，所有顶层定义共享同一全局命名空间。
 
-## 转换脚本目前还在做的事
+## Excel 表格式约定
 
-经过 coflow 端的功能扩展之后，转换脚本只剩两类必须的"格式适配"：
+- 每个 sheet 的第一行是字段名；第二行开始是数据行。
+- 表头为 `#` 的列是可选导入控制列，不映射到 schema 字段；该列值为 `##`
+  的数据行会被 loader 跳过。
+- 空行会被跳过；只填了 id、其它列全空的占位行仍需要用 `# = ##` 显式跳过。
+- 数组使用 coflow 单元格语法里的 `|` 分隔。
 
-- **删除多余表头**。Luban 的 xlsx 有三行表头（`##var`、`##type`、`##` 中文
-  描述）+ 一个控制列；coflow 期望单行表头。脚本剥掉这些。
-- **删除占位行**。控制列以 `##` 开头的行会被丢；只填了 id、其它列全空的
-  行（如 地块tag 表里的 `Drought`/`Toxic`/`Humid`）也会被丢，与 Luban 实
-  际不导出这些行的行为一致。
-- **数组分隔符** `,` → `|`，匹配 coflow 的单元格语法。
-
-枚举名 → int、bool 转换、嵌套对象打包等之前的 workaround **都已不再需要**——
+枚举名 → int、bool 转换、嵌套对象打包等之前的 workaround 都已不再需要：
 coflow 端直接支持。
 
 > 注：`AbilityConfig` / `SubstanceConfig` 由于 schema 改用 `id: string` +
@@ -86,5 +78,5 @@ coflow 端直接支持。
 - Luban 端的校验脚本（`Tools/LubanFeishuValidator/validator.mjs`）未做迁移。
   对应规则可以用相关 type 的 `check { ... }` 块表达，留作后续工作。
 - Luban xlsx 中以中文/英文混合的可选字段（`name` 这种 localizedString）目
-  前在 cell 里只填了 key；如果以后要支持双语 fallback，可在转换脚本里把
+  前在 cell 里只填了 key；如果以后要支持双语 fallback，可在表格里把
   cell 写成 `key, "fallback text"` 形式。

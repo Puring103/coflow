@@ -480,6 +480,65 @@ fn ignores_rows_that_are_empty_in_mapped_columns() -> TestResult {
 }
 
 #[test]
+fn optional_hash_control_column_skips_marked_rows_without_mapping_to_schema() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                @id
+                id: string;
+                level: int;
+            }
+        "#,
+    )?;
+    let path = temp_xlsx_path("hash-control-column");
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "#")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 2, "level")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "##")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 1, "skip_me")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 2, "not_int")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(2, 1, "keep_me")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_number(2, 2, 7.0)
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
+
+    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
+    let model = load_excel_model(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+
+    let Some(table) = model.table("Item") else {
+        return Err("expected Item table".to_string());
+    };
+    assert_eq!(table.records.len(), 1);
+    assert!(!table
+        .primary_index
+        .contains_key(&CfdIdValue::from("skip_me")));
+    assert!(table
+        .primary_index
+        .contains_key(&CfdIdValue::from("keep_me")));
+    Ok(())
+}
+
+#[test]
 fn returns_check_diagnostics_without_discarding_model() -> TestResult {
     let schema = compile_schema(
         r#"

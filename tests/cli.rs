@@ -428,6 +428,230 @@ outputs:
 }
 
 #[test]
+fn excel_cell_diagnostics_include_sheet_and_a1_cell_in_human_output() {
+    let root = temp_project_dir("excel-diagnostic-location");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        "type Item { @id id: string; level: int; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - file: data/items.xlsx
+    sheets:
+      - sheet: Items
+        type: Item
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+
+    let xlsx_path = root.join("data").join("items.xlsx");
+    let mut workbook = rust_xlsxwriter::Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Items")
+        .expect("set sheet name");
+    sheet.write_string(0, 0, "id").expect("write id header");
+    sheet
+        .write_string(0, 1, "level")
+        .expect("write level header");
+    sheet.write_string(1, 0, "item_1").expect("write id");
+    sheet
+        .write_string(1, 1, "not_int")
+        .expect("write bad level");
+    workbook.save(&xlsx_path).expect("write xlsx");
+
+    let output = coflow()
+        .args(["check", root.to_str().expect("utf8 temp path")])
+        .output()
+        .expect("run coflow check");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("[CELL-TypeMismatch] [CELL]"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("----------------------------------------"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("file    data/items.xlsx"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("sheet   Items"), "stderr: {stderr}");
+    assert!(stderr.contains("cell    B2"), "stderr: {stderr}");
+    assert!(
+        stderr.contains("message\n  failed to parse `Item.level` cell: expected int"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains(root.to_string_lossy().as_ref()),
+        "stderr should use project-relative paths: {stderr}"
+    );
+}
+
+#[test]
+fn excel_missing_sheet_diagnostics_include_sheet_in_human_output() {
+    let root = temp_project_dir("excel-missing-sheet-location");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        "type Item { @id id: string; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - file: data/items.xlsx
+    sheets:
+      - sheet: Missing
+        type: Item
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+
+    let xlsx_path = root.join("data").join("items.xlsx");
+    let mut workbook = rust_xlsxwriter::Workbook::new();
+    workbook
+        .add_worksheet()
+        .set_name("Other")
+        .expect("set sheet name");
+    workbook.save(&xlsx_path).expect("write xlsx");
+
+    let output = coflow()
+        .args(["check", root.to_str().expect("utf8 temp path")])
+        .output()
+        .expect("run coflow check");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("[EXCEL-SHEET] [EXCEL]"), "stderr: {stderr}");
+    assert!(
+        stderr.contains("file    data/items.xlsx"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("sheet   Missing"), "stderr: {stderr}");
+    assert!(
+        stderr.contains("message\n  workbook `data/items.xlsx` is missing sheet `Missing`"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains(root.to_string_lossy().as_ref()),
+        "stderr should use project-relative paths: {stderr}"
+    );
+}
+
+#[test]
+fn cft_diagnostics_use_readable_relative_human_output() {
+    let root = temp_project_dir("cft-diagnostic-format");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        "type Item { value: Missing; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema/\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+
+    let output = coflow()
+        .args(["cft", "check", root.to_str().expect("utf8 temp path")])
+        .output()
+        .expect("run coflow cft check");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("----------------------------------------"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("[CFT-SCHEMA-"), "stderr: {stderr}");
+    assert!(
+        stderr.contains("file    schema/main.cft"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("line    "), "stderr: {stderr}");
+    assert!(stderr.contains("column  "), "stderr: {stderr}");
+    assert!(
+        stderr.contains("message\n  unknown field type `Missing`"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn top_level_cli_errors_use_readable_human_output() {
+    let output = coflow()
+        .args(["check", "definitely-missing-project"])
+        .output()
+        .expect("run coflow check");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("----------------------------------------"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("[CLI-ERROR] [CLI]"), "stderr: {stderr}");
+    assert!(
+        stderr
+            .contains("message\n  config or directory `definitely-missing-project` does not exist"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn project_scoped_cli_errors_use_relative_paths_in_message() {
+    let root = temp_project_dir("project-error-relative-path");
+    let _cleanup = TempDirCleanup(root.clone());
+    copy_dir_recursive(std::path::Path::new("examples/rpg"), &root).expect("copy example project");
+    let output_path = root.join("generated").join("data");
+    std::fs::create_dir_all(root.join("generated")).expect("create generated dir");
+    std::fs::write(&output_path, "not a directory").expect("create blocking file");
+
+    let output = coflow()
+        .args(["build", root.to_str().expect("utf8 temp path")])
+        .output()
+        .expect("run coflow build");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("----------------------------------------"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("[CLI-ERROR] [CLI]"), "stderr: {stderr}");
+    assert!(
+        stderr.contains("message\n  failed to create output dir `generated/data`:"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains(root.to_string_lossy().as_ref()),
+        "stderr should use project-relative paths: {stderr}"
+    );
+}
+
+#[test]
 fn export_json_validates_declared_output_type() {
     let out_dir =
         std::env::temp_dir().join(format!("coflow-json-export-test-{}", std::process::id()));

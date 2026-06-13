@@ -630,6 +630,10 @@ pub struct DiagnosticJson {
     pub severity: String,
     pub message: String,
     pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sheet: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cell: Option<String>,
     #[serde(rename = "startLine")]
     pub start_line: usize,
     #[serde(rename = "startCharacter")]
@@ -663,6 +667,8 @@ impl DiagnosticJson {
             severity: "error".to_string(),
             message: diagnostic.message.clone(),
             path,
+            sheet: None,
+            cell: None,
             start_line: range.start.line,
             start_character: range.start.character,
             end_line: range.end.line,
@@ -679,6 +685,10 @@ impl DiagnosticJson {
 #[derive(Debug, Serialize)]
 pub struct RelatedJson {
     pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sheet: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cell: Option<String>,
     #[serde(rename = "startLine")]
     pub start_line: usize,
     #[serde(rename = "startCharacter")]
@@ -703,6 +713,8 @@ impl RelatedJson {
             .map_or_else(|| label.module.as_str().to_string(), Clone::clone);
         Self {
             path,
+            sheet: None,
+            cell: None,
             start_line: range.start.line,
             start_character: range.start.character,
             end_line: range.end.line,
