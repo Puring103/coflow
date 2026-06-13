@@ -2,7 +2,8 @@
 #nullable enable
 using System;
 
-namespace {{ namespace }};
+namespace {{ namespace }}
+{
 
 public sealed class CftLoadException : Exception
 {
@@ -21,4 +22,5 @@ public sealed class CftLoadException : Exception
         Expected = expected;
         Actual = actual;
     }
+}
 }

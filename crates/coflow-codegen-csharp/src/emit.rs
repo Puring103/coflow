@@ -67,7 +67,7 @@ pub fn build_csharp_type(schema_type: &CftSchemaType, view: &SchemaView) -> Csha
             setter: if field_needs_resolve_writeback(&field_ty, view) {
                 "internal set".to_string()
             } else {
-                "init".to_string()
+                "set".to_string()
             },
             initializer: if is_struct {
                 None
@@ -588,6 +588,10 @@ fn push_resolve_field(
                 field.name
             ));
         }
+        return Ok(());
+    }
+
+    if !value_needs_resolve(&field.ty, view) {
         return Ok(());
     }
 

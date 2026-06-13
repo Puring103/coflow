@@ -22,7 +22,9 @@ use coflow_codegen_csharp::{
     generate_csharp_with_database_templates, generate_csharp_with_key_as_enum_variants,
     CsharpDataFormat, CsharpDatabaseTemplates, CsharpTemplate,
 };
-pub use coflow_codegen_csharp::{CsharpCodegenError, CsharpCodegenOptions, GeneratedFile};
+pub use coflow_codegen_csharp::{
+    CsharpCodegenError, CsharpCodegenOptions, CsharpKeyAsEnumVariant, GeneratedFile,
+};
 use std::collections::BTreeMap;
 
 const DATABASE_TEMPLATES: CsharpDatabaseTemplates = CsharpDatabaseTemplates {
@@ -76,7 +78,7 @@ pub fn generate_csharp_json(
 pub fn generate_csharp_json_with_key_as_enum_variants(
     schema: &CftContainer,
     options: &CsharpCodegenOptions,
-    key_as_enum_variants: BTreeMap<String, Vec<String>>,
+    key_as_enum_variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
     generate_csharp_with_key_as_enum_variants(
         schema,

@@ -27,6 +27,12 @@ pub enum CsharpDataFormat {
     MessagePack,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CsharpKeyAsEnumVariant {
+    pub name: String,
+    pub value: i64,
+}
+
 impl CsharpCodegenOptions {
     #[must_use]
     pub fn new(namespace: impl Into<String>) -> Self {
@@ -47,7 +53,7 @@ pub fn build_project(
     schema: &CftContainer,
     options: &CsharpCodegenOptions,
     data_format: CsharpDataFormat,
-    key_as_enum_variants: BTreeMap<String, Vec<String>>,
+    key_as_enum_variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
 ) -> Result<CsharpProject, CsharpCodegenError> {
     validate_options(options)?;
     validate_schema_names(schema)?;
@@ -271,7 +277,7 @@ fn key_as_enum_names(schema: &CftContainer) -> BTreeSet<String> {
 
 fn validate_key_as_enum_variants(
     declared: &BTreeSet<String>,
-    variants: &BTreeMap<String, Vec<String>>,
+    variants: &BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
 ) -> Result<(), CsharpCodegenError> {
     for enum_name in variants.keys() {
         if !declared.contains(enum_name) {
@@ -280,8 +286,15 @@ fn validate_key_as_enum_variants(
             )));
         }
         validate_ident("@IdAsEnum enum", enum_name)?;
+        let mut values = BTreeMap::<i64, String>::new();
         for variant in variants.get(enum_name).into_iter().flatten() {
-            validate_ident("@IdAsEnum enum variant", variant)?;
+            validate_ident("@IdAsEnum enum variant", &variant.name)?;
+            if let Some(existing) = values.insert(variant.value, variant.name.clone()) {
+                return Err(CsharpCodegenError::new(format!(
+                    "@IdAsEnum enum `{enum_name}` value `{}` is used by both `{existing}` and `{}`",
+                    variant.value, variant.name
+                )));
+            }
         }
     }
     Ok(())
@@ -289,24 +302,15 @@ fn validate_key_as_enum_variants(
 
 fn build_key_as_enums(
     declared: &BTreeSet<String>,
-    mut variants: BTreeMap<String, Vec<String>>,
+    mut variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
 ) -> Result<Vec<CsharpEnum>, CsharpCodegenError> {
     let mut out = Vec::new();
     for name in declared {
         let mut enum_variants = Vec::new();
-        for (index, variant) in variants
-            .remove(name)
-            .unwrap_or_default()
-            .into_iter()
-            .enumerate()
-        {
+        for variant in variants.remove(name).unwrap_or_default().into_iter() {
             enum_variants.push(CsharpEnumVariant {
-                name: variant,
-                value: i64::try_from(index).map_err(|_| {
-                    CsharpCodegenError::new(format!(
-                        "@IdAsEnum enum `{name}` has too many variants"
-                    ))
-                })?,
+                name: variant.name,
+                value: variant.value,
                 summary: None,
                 obsolete: false,
             });

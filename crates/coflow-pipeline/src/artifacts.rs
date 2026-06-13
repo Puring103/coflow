@@ -1,5 +1,6 @@
 use crate::{CodegenTarget, DataFormat};
 use coflow_cft::CftContainer;
+use coflow_codegen_csharp_json::CsharpKeyAsEnumVariant;
 use coflow_codegen_csharp_json::{
     generate_csharp_json_with_key_as_enum_variants, CsharpCodegenOptions,
 };
@@ -40,7 +41,7 @@ pub fn write_csharp_files(
     data_format: DataFormat,
     namespace: &str,
     dir: &Path,
-    key_as_enum_variants: BTreeMap<String, Vec<String>>,
+    key_as_enum_variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
 ) -> Result<(), String> {
     let options = CsharpCodegenOptions::new(namespace);
     let files = match data_format {
@@ -56,6 +57,7 @@ pub fn write_csharp_files(
     .map_err(|err| format!("failed to generate C# code: {err}"))?;
     fs::create_dir_all(dir)
         .map_err(|err| format!("failed to create output dir `{}`: {err}", dir.display()))?;
+    clean_generated_csharp_files(dir)?;
     for file in files {
         let path = dir.join(&file.relative_path);
         if let Some(parent) = path.parent() {
@@ -64,6 +66,25 @@ pub fn write_csharp_files(
         }
         fs::write(&path, file.contents)
             .map_err(|err| format!("failed to write `{}`: {err}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn clean_generated_csharp_files(dir: &Path) -> Result<(), String> {
+    if !dir.exists() {
+        return Ok(());
+    }
+
+    let entries = fs::read_dir(dir)
+        .map_err(|err| format!("failed to read output dir `{}`: {err}", dir.display()))?;
+    for entry in entries {
+        let entry =
+            entry.map_err(|err| format!("failed to read `{}` entry: {err}", dir.display()))?;
+        let path = entry.path();
+        if path.extension().is_some_and(|extension| extension == "cs") {
+            fs::remove_file(&path)
+                .map_err(|err| format!("failed to remove stale `{}`: {err}", path.display()))?;
+        }
     }
     Ok(())
 }

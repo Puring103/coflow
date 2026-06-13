@@ -131,7 +131,7 @@ fn generate_project_code_writes_csharp_files() {
     assert_eq!(report.target, CodegenTarget::Csharp);
     assert_eq!(report.dir, out_dir);
     let game_config = std::fs::read_to_string(out_dir.join("GameConfig.cs")).expect("GameConfig");
-    assert!(game_config.contains("namespace Game.Config;"));
+    assert!(game_config.contains("namespace Game.Config\n{"));
 }
 
 #[test]
@@ -154,6 +154,55 @@ fn generate_project_code_does_not_require_excel_sources() {
 
     assert!(matches!(outcome, PipelineOutcome::Success(_)));
     assert!(out_dir.join("GameConfig.cs").exists());
+}
+
+#[test]
+fn generate_project_code_writes_key_as_enum_lockfile_for_declared_enums() {
+    let root = temp_project_dir("coflow-pipeline-codegen-key-as-enum-lockfile");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        r#"
+            type GeneConfig {
+                @IdAsEnum("GeneId")
+                @id
+                id: string;
+            }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+outputs:
+  data:
+    type: json
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Game.Config
+",
+    )
+    .expect("write config");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+    let out_dir = root.join("out-code");
+
+    let outcome = generate_project_code(
+        &project,
+        CodegenTarget::Csharp,
+        CodegenOptions {
+            out_dir: Some(out_dir.as_path()),
+            namespace: Some("Game.Config"),
+        },
+    )
+    .expect("generate csharp");
+
+    assert!(matches!(outcome, PipelineOutcome::Success(_)));
+    let lockfile =
+        std::fs::read_to_string(out_dir.join("coflow.enum.lock.json")).expect("enum lockfile");
+    assert!(lockfile.contains("\"GeneId\": {}"));
 }
 
 #[test]
@@ -307,10 +356,124 @@ outputs:
     assert!(gene_id.contains("Gene_Mating = 1"));
     assert!(!out_code.join("GeneConfigId.cs").exists());
     let gene = std::fs::read_to_string(out_code.join("GeneConfig.cs")).expect("GeneConfig.cs");
-    assert!(gene.contains("public GeneId Id { get; init; }"));
+    assert!(gene.contains("public GeneId Id { get; set; }"));
     let remains =
         std::fs::read_to_string(out_code.join("BioRemainsConfig.cs")).expect("BioRemainsConfig.cs");
-    assert!(remains.contains("public GeneId? GeneId { get; init; }"));
+    assert!(remains.contains("public GeneId? GeneId { get; set; }"));
+}
+
+#[test]
+fn build_project_writes_key_as_enum_lockfile() {
+    let root = temp_project_dir("coflow-pipeline-key-as-enum-lockfile");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_key_as_enum_project(&root, &["Gene_Spore", "Gene_Mating"]).expect("write project");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+    let data_dir = root.join("out-data");
+    let code_dir = root.join("out-code");
+
+    let outcome = build_project(
+        &project,
+        BuildOptions {
+            data_out_dir: Some(data_dir.as_path()),
+            code_out_dir: Some(code_dir.as_path()),
+            namespace: Some("Game.Config"),
+        },
+    )
+    .expect("build project");
+
+    assert!(matches!(outcome, PipelineOutcome::Success(_)));
+    let lockfile =
+        std::fs::read_to_string(code_dir.join("coflow.enum.lock.json")).expect("enum lockfile");
+    assert!(lockfile.contains("\"GeneId\""));
+    assert!(lockfile.contains("\"Gene_Spore\": 0"));
+    assert!(lockfile.contains("\"Gene_Mating\": 1"));
+    let gene_id = std::fs::read_to_string(code_dir.join("GeneId.cs")).expect("GeneId.cs");
+    assert!(gene_id.contains("Gene_Spore = 0"));
+    assert!(gene_id.contains("Gene_Mating = 1"));
+}
+
+#[test]
+fn build_project_preserves_key_as_enum_lockfile_values_and_appends_new_ids() {
+    let root = temp_project_dir("coflow-pipeline-key-as-enum-lockfile-stable");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_key_as_enum_project(&root, &["Gene_Spore", "Gene_Mating"])
+        .expect("write initial project");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+    let data_dir = root.join("out-data");
+    let code_dir = root.join("out-code");
+
+    build_project(
+        &project,
+        BuildOptions {
+            data_out_dir: Some(data_dir.as_path()),
+            code_out_dir: Some(code_dir.as_path()),
+            namespace: Some("Game.Config"),
+        },
+    )
+    .expect("initial build");
+
+    write_key_as_enum_project(&root, &["Gene_Mating", "Gene_New", "Gene_Spore"])
+        .expect("rewrite project with reordered ids");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("reopen project");
+    build_project(
+        &project,
+        BuildOptions {
+            data_out_dir: Some(data_dir.as_path()),
+            code_out_dir: Some(code_dir.as_path()),
+            namespace: Some("Game.Config"),
+        },
+    )
+    .expect("second build");
+
+    let gene_id = std::fs::read_to_string(code_dir.join("GeneId.cs")).expect("GeneId.cs");
+    assert!(gene_id.contains("Gene_Spore = 0"));
+    assert!(gene_id.contains("Gene_Mating = 1"));
+    assert!(gene_id.contains("Gene_New = 2"));
+    let lockfile =
+        std::fs::read_to_string(code_dir.join("coflow.enum.lock.json")).expect("enum lockfile");
+    assert!(lockfile.contains("\"Gene_Spore\": 0"));
+    assert!(lockfile.contains("\"Gene_Mating\": 1"));
+    assert!(lockfile.contains("\"Gene_New\": 2"));
+}
+
+#[test]
+fn build_project_removes_stale_generated_csharp_files_after_key_as_enum_rename() {
+    let root = temp_project_dir("coflow-pipeline-stale-csharp-cleanup");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_renamable_key_as_enum_project(&root, "OldGeneId").expect("write initial project");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+    let data_dir = root.join("out-data");
+    let code_dir = root.join("out-code");
+
+    build_project(
+        &project,
+        BuildOptions {
+            data_out_dir: Some(data_dir.as_path()),
+            code_out_dir: Some(code_dir.as_path()),
+            namespace: Some("Game.Config"),
+        },
+    )
+    .expect("initial build");
+    assert!(code_dir.join("OldGeneId.cs").exists());
+
+    write_renamable_key_as_enum_project(&root, "NewGeneId").expect("rewrite project");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("reopen project");
+    build_project(
+        &project,
+        BuildOptions {
+            data_out_dir: Some(data_dir.as_path()),
+            code_out_dir: Some(code_dir.as_path()),
+            namespace: Some("Game.Config"),
+        },
+    )
+    .expect("second build");
+
+    assert!(code_dir.join("NewGeneId.cs").exists());
+    assert!(!code_dir.join("OldGeneId.cs").exists());
+    let lockfile =
+        std::fs::read_to_string(code_dir.join("coflow.enum.lock.json")).expect("enum lockfile");
+    assert!(lockfile.contains("\"NewGeneId\""));
+    assert!(!lockfile.contains("\"OldGeneId\""));
 }
 
 fn write_project_with_missing_excel_source(root: &std::path::Path, include_code_output: bool) {
@@ -344,6 +507,129 @@ outputs:
         ),
     )
     .expect("write config");
+}
+
+fn write_key_as_enum_project(
+    root: &std::path::Path,
+    gene_ids: &[&str],
+) -> Result<(), rust_xlsxwriter::XlsxError> {
+    assert!(!gene_ids.is_empty(), "test requires at least one gene id");
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        r#"
+            type GeneConfig {
+                @IdAsEnum("GeneId")
+                @id
+                id: string;
+            }
+            type BioRemainsConfig {
+                @id id: string;
+                @ref(GeneConfig)
+                gene_id: string?;
+            }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - file: data/configs.xlsx
+    sheets:
+      - sheet: GeneConfig
+        columns:
+          id: id
+      - sheet: BioRemainsConfig
+        columns:
+          id: id
+          gene_id: gene_id
+outputs:
+  data:
+    type: json
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Game.Config
+",
+    )
+    .expect("write config");
+
+    let workbook_path = root.join("data").join("configs.xlsx");
+    if workbook_path.exists() {
+        std::fs::remove_file(&workbook_path).expect("remove old workbook");
+    }
+
+    let mut workbook = Workbook::new();
+    let genes = workbook.add_worksheet();
+    genes.set_name("GeneConfig")?;
+    genes.write_string(0, 0, "id")?;
+    for (index, id) in gene_ids.iter().enumerate() {
+        genes.write_string((index + 1) as u32, 0, *id)?;
+    }
+
+    let remains = workbook.add_worksheet();
+    remains.set_name("BioRemainsConfig")?;
+    remains.write_string(0, 0, "id")?;
+    remains.write_string(0, 1, "gene_id")?;
+    remains.write_string(1, 0, "remains_1")?;
+    remains.write_string(1, 1, gene_ids[0])?;
+
+    workbook.save(workbook_path)
+}
+
+fn write_renamable_key_as_enum_project(
+    root: &std::path::Path,
+    enum_name: &str,
+) -> Result<(), rust_xlsxwriter::XlsxError> {
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        format!(
+            r#"
+            type GeneConfig {{
+                @IdAsEnum("{enum_name}")
+                @id
+                id: string;
+            }}
+        "#
+        ),
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - file: data/configs.xlsx
+    sheets:
+      - sheet: GeneConfig
+        columns:
+          id: id
+outputs:
+  data:
+    type: json
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Game.Config
+",
+    )
+    .expect("write config");
+
+    let workbook_path = root.join("data").join("configs.xlsx");
+    if workbook_path.exists() {
+        std::fs::remove_file(&workbook_path).expect("remove old workbook");
+    }
+    let mut workbook = Workbook::new();
+    let genes = workbook.add_worksheet();
+    genes.set_name("GeneConfig")?;
+    genes.write_string(0, 0, "id")?;
+    genes.write_string(1, 0, "Gene_Spore")?;
+    workbook.save(workbook_path)
 }
 
 fn temp_project_dir(name: &str) -> std::path::PathBuf {

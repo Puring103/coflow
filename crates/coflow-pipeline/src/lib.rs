@@ -20,11 +20,15 @@ use artifacts::{
     configured_data_format, configured_data_output, output_dir, required_code_output,
     required_data_output, write_csharp_files, write_data_tables,
 };
+use coflow_codegen_csharp_json::CsharpKeyAsEnumVariant;
 use coflow_project::{DiagnosticJson, Project};
 use excel::load_project_excel;
 use schema::compile_project_schema;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::path::{Path, PathBuf};
+
+const ENUM_LOCKFILE_NAME: &str = "coflow.enum.lock.json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DataFormat {
@@ -186,7 +190,8 @@ pub fn build_project(
             .namespace
             .or(code_output.namespace.as_deref())
             .unwrap_or("Game.Config");
-        let key_as_enum_variants = collect_key_as_enum_variants(&schema, &load_output.model);
+        let key_as_enum_ids = collect_key_as_enum_ids(&schema, &load_output.model);
+        let key_as_enum_variants = merge_key_as_enum_lockfile(&code_dir, key_as_enum_ids)?;
         write_csharp_files(
             &schema,
             data_format,
@@ -261,15 +266,38 @@ pub fn generate_project_code(
         Ok(schema) => schema,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
-    write_csharp_files(&schema, data_format, namespace, &dir, BTreeMap::new())?;
+    let key_as_enum_ids = collect_declared_key_as_enum_ids(&schema);
+    let key_as_enum_variants = merge_key_as_enum_lockfile(&dir, key_as_enum_ids)?;
+    write_csharp_files(&schema, data_format, namespace, &dir, key_as_enum_variants)?;
     Ok(PipelineOutcome::Success(CodegenReport { target, dir }))
 }
 
-fn collect_key_as_enum_variants(
+fn collect_declared_key_as_enum_ids(
+    schema: &coflow_cft::CftContainer,
+) -> BTreeMap<String, Vec<String>> {
+    let mut out = BTreeMap::new();
+    for schema_type in schema.all_types() {
+        for field in &schema_type.all_fields {
+            if !field
+                .annotations
+                .iter()
+                .any(|annotation| annotation.name == "id")
+            {
+                continue;
+            }
+            if let Some(enum_name) = annotation_string_arg(&field.annotations, "IdAsEnum") {
+                out.entry(enum_name).or_default();
+            }
+        }
+    }
+    out
+}
+
+fn collect_key_as_enum_ids(
     schema: &coflow_cft::CftContainer,
     model: &coflow_data_model::CfdDataModel,
 ) -> BTreeMap<String, Vec<String>> {
-    let mut out = BTreeMap::new();
+    let mut out = collect_declared_key_as_enum_ids(schema);
     for schema_type in schema.all_types() {
         let Some(id_field) = schema_type.all_fields.iter().find(|field| {
             field
@@ -298,6 +326,89 @@ fn collect_key_as_enum_variants(
         out.insert(enum_name, variants);
     }
     out
+}
+
+fn merge_key_as_enum_lockfile(
+    code_dir: &Path,
+    current_ids: BTreeMap<String, Vec<String>>,
+) -> Result<BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>, String> {
+    if current_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+
+    let lockfile = code_dir.join(ENUM_LOCKFILE_NAME);
+    let mut locked = read_key_as_enum_lockfile(&lockfile)?;
+    locked.retain(|enum_name, _| current_ids.contains_key(enum_name));
+
+    for (enum_name, ids) in current_ids {
+        let entries = locked.entry(enum_name).or_default();
+        let mut next_value = entries
+            .values()
+            .copied()
+            .max()
+            .map_or(Ok(0), |value| next_key_as_enum_value(value))?;
+        for id in ids {
+            if entries.contains_key(&id) {
+                continue;
+            }
+            while entries.values().any(|value| *value == next_value) {
+                next_value = next_key_as_enum_value(next_value)?;
+            }
+            entries.insert(id, next_value);
+            next_value = next_key_as_enum_value(next_value)?;
+        }
+    }
+
+    write_key_as_enum_lockfile(&lockfile, &locked)?;
+
+    Ok(locked
+        .into_iter()
+        .map(|(enum_name, entries)| {
+            let mut variants = entries
+                .into_iter()
+                .map(|(name, value)| CsharpKeyAsEnumVariant { name, value })
+                .collect::<Vec<_>>();
+            variants.sort_by(|left, right| {
+                left.value
+                    .cmp(&right.value)
+                    .then_with(|| left.name.cmp(&right.name))
+            });
+            (enum_name, variants)
+        })
+        .collect())
+}
+
+fn next_key_as_enum_value(value: i64) -> Result<i64, String> {
+    value
+        .checked_add(1)
+        .ok_or_else(|| "@IdAsEnum lockfile exhausted i64 enum values".to_string())
+}
+
+fn read_key_as_enum_lockfile(
+    path: &Path,
+) -> Result<BTreeMap<String, BTreeMap<String, i64>>, String> {
+    if !path.exists() {
+        return Ok(BTreeMap::new());
+    }
+
+    let contents = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read `{}`: {err}", path.display()))?;
+    serde_json::from_str(&contents)
+        .map_err(|err| format!("failed to parse `{}`: {err}", path.display()))
+}
+
+fn write_key_as_enum_lockfile(
+    path: &Path,
+    locked: &BTreeMap<String, BTreeMap<String, i64>>,
+) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create `{}`: {err}", parent.display()))?;
+    }
+    let file = fs::File::create(path)
+        .map_err(|err| format!("failed to create `{}`: {err}", path.display()))?;
+    serde_json::to_writer_pretty(file, locked)
+        .map_err(|err| format!("failed to write `{}`: {err}", path.display()))
 }
 
 fn annotation_string_arg(annotations: &[coflow_cft::CftAnnotation], name: &str) -> Option<String> {
