@@ -8,7 +8,7 @@ use crate::names::{
 };
 use crate::schema_view::SchemaView;
 use crate::CsharpCodegenError;
-use coflow_cft::CftContainer;
+use coflow_cft::{CftAnnotationValue, CftContainer};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -230,7 +230,7 @@ fn validate_generated_file_names(
             &mut file_sources,
             &reserved,
             &file_name,
-            "@KeyAsEnum enum",
+            "@IdAsEnum enum",
             enum_name,
         )?;
     }
@@ -245,9 +245,23 @@ fn key_as_enum_names(schema: &CftContainer) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for schema_type in schema.all_types() {
         for field in &schema_type.all_fields {
-            if let Some(enum_name) =
-                crate::names::annotation_string_arg(&field.annotations, "KeyAsEnum")
+            if !field
+                .annotations
+                .iter()
+                .any(|annotation| annotation.name == "id")
             {
+                continue;
+            }
+            if let Some(enum_name) = field.annotations.iter().find_map(|annotation| {
+                if annotation.name == "IdAsEnum" {
+                    match annotation.args.first() {
+                        Some(CftAnnotationValue::String(value)) => Some(value.clone()),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            }) {
                 out.insert(enum_name);
             }
         }
@@ -262,12 +276,12 @@ fn validate_key_as_enum_variants(
     for enum_name in variants.keys() {
         if !declared.contains(enum_name) {
             return Err(CsharpCodegenError::new(format!(
-                "@KeyAsEnum variants provided for undeclared enum `{enum_name}`"
+                "@IdAsEnum variants provided for undeclared enum `{enum_name}`"
             )));
         }
-        validate_ident("@KeyAsEnum enum", enum_name)?;
+        validate_ident("@IdAsEnum enum", enum_name)?;
         for variant in variants.get(enum_name).into_iter().flatten() {
-            validate_ident("@KeyAsEnum enum variant", variant)?;
+            validate_ident("@IdAsEnum enum variant", variant)?;
         }
     }
     Ok(())
@@ -290,7 +304,7 @@ fn build_key_as_enums(
                 name: variant,
                 value: i64::try_from(index).map_err(|_| {
                     CsharpCodegenError::new(format!(
-                        "@KeyAsEnum enum `{name}` has too many variants"
+                        "@IdAsEnum enum `{name}` has too many variants"
                     ))
                 })?,
                 summary: None,

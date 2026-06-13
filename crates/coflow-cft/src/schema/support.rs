@@ -132,7 +132,7 @@ impl AnnotationSpec {
                 targets: &[AnnotationTarget::Type],
                 args: AnnotationArgs::None,
             },
-            "KeyAsEnum" => Self {
+            "IdAsEnum" | "GenAsEnum" => Self {
                 targets: &[AnnotationTarget::Field],
                 args: AnnotationArgs::OneString,
             },

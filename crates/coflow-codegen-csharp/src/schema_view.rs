@@ -327,7 +327,8 @@ impl FieldMeta {
             has_default: field.has_default,
             default: field.default.clone(),
             annotations: field.annotations.clone(),
-            csharp_enum_override: annotation_string_arg(&field.annotations, "KeyAsEnum"),
+            csharp_enum_override: annotation_string_arg(&field.annotations, "IdAsEnum")
+                .or_else(|| annotation_string_arg(&field.annotations, "GenAsEnum")),
         }
     }
 }

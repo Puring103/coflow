@@ -65,7 +65,7 @@ pub fn generate_csharp_messagepack(
 }
 
 /// Generates C# `MessagePack` loader files and includes data-driven
-/// `@KeyAsEnum` variants.
+/// `@IdAsEnum` variants.
 ///
 /// # Errors
 ///

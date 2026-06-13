@@ -171,7 +171,8 @@ impl FieldMeta {
             ty: CfdType::from_schema(&field.ty_ref, schema),
             default: field.default.clone(),
             ref_target: annotation_name_arg(&field.annotations, "ref"),
-            key_as_enum: annotation_string_arg(&field.annotations, "KeyAsEnum"),
+            key_as_enum: annotation_string_arg(&field.annotations, "IdAsEnum")
+                .or_else(|| annotation_string_arg(&field.annotations, "GenAsEnum")),
             is_id: has_annotation(&field.annotations, "id"),
             is_index: has_annotation(&field.annotations, "index"),
         }
