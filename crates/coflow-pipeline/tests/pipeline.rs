@@ -131,7 +131,9 @@ fn generate_project_code_writes_csharp_files() {
     assert_eq!(report.target, CodegenTarget::Csharp);
     assert_eq!(report.dir, out_dir);
     let game_config = std::fs::read_to_string(out_dir.join("GameConfig.cs")).expect("GameConfig");
-    assert!(game_config.contains("namespace Game.Config\n{"));
+    assert!(game_config
+        .replace("\r\n", "\n")
+        .contains("namespace Game.Config\n{"));
 }
 
 #[test]

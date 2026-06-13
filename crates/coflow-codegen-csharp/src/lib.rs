@@ -399,7 +399,8 @@ mod tests {
         let load_exception = generated_file(&files, "CftLoadException.cs")?;
 
         for output in [item, target, database, load_exception] {
-            require_contains(output, "namespace Game.Config\n{")?;
+            let normalized = output.replace("\r\n", "\n");
+            require_contains(&normalized, "namespace Game.Config\n{")?;
             require_not_contains(output, "namespace Game.Config;")?;
             require_not_contains(output, "get; init;")?;
             require_not_contains(output, "record struct")?;
