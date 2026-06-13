@@ -7,7 +7,8 @@ using System.IO;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-namespace {{ project.namespace }};
+namespace {{ project.namespace }}
+{
 
 public partial class {{ project.database_class }}
 {
@@ -16,4 +17,5 @@ public partial class {{ project.database_class }}
 {% include "database_common_resolve.cs.tera" %}
 {% include "database_json_readers.cs.tera" %}
 {% include "database_common_indexes.cs.tera" %}
+}
 }

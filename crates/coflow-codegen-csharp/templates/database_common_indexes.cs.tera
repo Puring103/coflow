@@ -47,12 +47,26 @@
         return result;
     }
 
-    private readonly record struct RefIndexSource<TKey, TValue>(
-        IEnumerable<TValue> Values,
-        Func<TValue, TKey> KeySelector,
-        string TableName,
-        string FieldName)
-        where TKey : notnull;
+    private readonly struct RefIndexSource<TKey, TValue>
+        where TKey : notnull
+    {
+        public RefIndexSource(
+            IEnumerable<TValue> values,
+            Func<TValue, TKey> keySelector,
+            string tableName,
+            string fieldName)
+        {
+            Values = values;
+            KeySelector = keySelector;
+            TableName = tableName;
+            FieldName = fieldName;
+        }
+
+        public IEnumerable<TValue> Values { get; }
+        public Func<TValue, TKey> KeySelector { get; }
+        public string TableName { get; }
+        public string FieldName { get; }
+    }
 
     private static Dictionary<TKey, TValue> BuildRefIndex<TKey, TValue>(
         params RefIndexSource<TKey, TValue>[] sources)

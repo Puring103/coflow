@@ -29,7 +29,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 
-pub use ir::{CsharpCodegenOptions, CsharpDataFormat};
+pub use ir::{CsharpCodegenOptions, CsharpDataFormat, CsharpKeyAsEnumVariant};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneratedFile {
@@ -122,7 +122,7 @@ pub fn generate_csharp_with_key_as_enum_variants(
     options: &CsharpCodegenOptions,
     data_format: CsharpDataFormat,
     database_templates: &CsharpDatabaseTemplates,
-    key_as_enum_variants: BTreeMap<String, Vec<String>>,
+    key_as_enum_variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
     let project = ir::build_project(schema, options, data_format, key_as_enum_variants)?;
     render::render_project(&project, database_templates)
@@ -257,7 +257,7 @@ mod tests {
     fn generate_json_with_key_as_enum_variants(
         schema: &CftContainer,
         options: &CsharpCodegenOptions,
-        variants: BTreeMap<String, Vec<String>>,
+        variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
     ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
         generate_csharp_with_key_as_enum_variants(
             schema,
@@ -319,7 +319,16 @@ mod tests {
         let mut variants = BTreeMap::new();
         variants.insert(
             "GeneId".to_string(),
-            vec!["Gene_Spore".to_string(), "Gene_Mating".to_string()],
+            vec![
+                CsharpKeyAsEnumVariant {
+                    name: "Gene_Spore".to_string(),
+                    value: 0,
+                },
+                CsharpKeyAsEnumVariant {
+                    name: "Gene_Mating".to_string(),
+                    value: 1,
+                },
+            ],
         );
 
         let files = generate_json_with_key_as_enum_variants(
@@ -335,15 +344,15 @@ mod tests {
         require_contains(gene_id, "Gene_Mating = 1")?;
 
         let gene = generated_file(&files, "GeneConfig.cs")?;
-        require_contains(gene, "public GeneId Id { get; init; }")?;
+        require_contains(gene, "public GeneId Id { get; set; }")?;
         require_not_contains(gene, "public string Id")?;
         require_not_contains(gene, " = \"\";")?;
 
         let remains = generated_file(&files, "BioRemainsConfig.cs")?;
-        require_contains(remains, "public GeneId? GeneId { get; init; }")?;
+        require_contains(remains, "public GeneId? GeneId { get; set; }")?;
         require_contains(
             remains,
-            "public GeneId FallbackGeneId { get; init; } = (GeneId)Enum.Parse(typeof(GeneId), \"Gene_Mating\");",
+            "public GeneId FallbackGeneId { get; set; } = (GeneId)Enum.Parse(typeof(GeneId), \"Gene_Mating\");",
         )?;
         require_contains(remains, "public GeneConfig? Gene { get; internal set; }")?;
         require_contains(
@@ -370,6 +379,36 @@ mod tests {
     }
 
     #[test]
+    fn codegen_emits_unity_compatible_csharp_syntax() -> Result<(), String> {
+        let schema = compile_schema(
+            r"
+                type Target { @id id: string; }
+                type Item {
+                    @id id: string;
+                    @ref(Target)
+                    target_id: string;
+                }
+            ",
+        )?;
+
+        let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+            .map_err(|err| err.to_string())?;
+        let item = generated_file(&files, "Item.cs")?;
+        let target = generated_file(&files, "Target.cs")?;
+        let database = generated_file(&files, "GameConfig.cs")?;
+        let load_exception = generated_file(&files, "CftLoadException.cs")?;
+
+        for output in [item, target, database, load_exception] {
+            require_contains(output, "namespace Game.Config\n{")?;
+            require_not_contains(output, "namespace Game.Config;")?;
+            require_not_contains(output, "get; init;")?;
+            require_not_contains(output, "record struct")?;
+        }
+
+        Ok(())
+    }
+
+    #[test]
     fn codegen_key_as_enum_generates_strongly_typed_string_field() -> Result<(), String> {
         let schema = compile_schema(
             r#"
@@ -389,7 +428,16 @@ mod tests {
         let mut variants = BTreeMap::new();
         variants.insert(
             "CreatureAttribute".to_string(),
-            vec!["Body_Hp".to_string(), "Energy_Limit".to_string()],
+            vec![
+                CsharpKeyAsEnumVariant {
+                    name: "Body_Hp".to_string(),
+                    value: 0,
+                },
+                CsharpKeyAsEnumVariant {
+                    name: "Energy_Limit".to_string(),
+                    value: 1,
+                },
+            ],
         );
 
         let files = generate_json_with_key_as_enum_variants(
@@ -407,10 +455,7 @@ mod tests {
             1
         );
         let modifier = generated_file(&files, "ModifyValueOperation.cs")?;
-        require_contains(
-            modifier,
-            "public CreatureAttribute Attribute { get; init; }",
-        )?;
+        require_contains(modifier, "public CreatureAttribute Attribute { get; set; }")?;
         require_not_contains(modifier, "public string Attribute")?;
 
         let database = generated_file(&files, "GameConfig.cs")?;
@@ -588,8 +633,8 @@ mod tests {
         let item = generated_file(&files, "Item.cs")?;
         require_contains(database, "Speed = ReadWithDefault")?;
         require_contains(database, "Crit = ReadWithDefault")?;
-        require_contains(item, "public StatBlock Stats { get; init; }")?;
-        require_not_contains(item, "public StatBlock Stats { get; init; } = null!;")?;
+        require_contains(item, "public StatBlock Stats { get; set; }")?;
+        require_not_contains(item, "public StatBlock Stats { get; set; } = null!;")?;
         Ok(())
     }
 
@@ -671,7 +716,7 @@ mod tests {
             .map_err(|err| err.to_string())?;
         let database = generated_file(&files, "GameConfig.cs")?;
         let item = generated_file(&files, "Item.cs")?;
-        require_contains(item, "public IReadOnlyList<string> Tags { get; init; }")?;
+        require_contains(item, "public IReadOnlyList<string> Tags { get; set; }")?;
         require_contains(
             database,
             "Name = ReadWithDefault(obj, \"name\", path, \"unknown\"",
@@ -792,8 +837,8 @@ mod tests {
             .map_err(|err| err.to_string())?;
         let child = generated_file(&files, "Child.cs")?;
         let database = generated_file(&files, "GameConfig.cs")?;
-        require_contains(child, "public long BaseValue { get; init; }")?;
-        require_contains(child, "public long ChildValue { get; init; }")?;
+        require_contains(child, "public long BaseValue { get; set; }")?;
+        require_contains(child, "public long ChildValue { get; set; }")?;
         require_contains(
             database,
             "BaseValue = ReadRequired(obj, \"base_value\", path",
@@ -953,7 +998,7 @@ mod tests {
         let database = generated_file(&files, "GameConfig.cs")?;
         require_contains(rarity, "public enum ItemRarity")?;
         require_contains(item, "public partial class ItemData")?;
-        require_contains(item, "public ItemRarity Rarity { get; init; }")?;
+        require_contains(item, "public ItemRarity Rarity { get; set; }")?;
         require_contains(loot_table, "public ItemData Item { get; internal set; }")?;
         require_contains(database, "public IReadOnlyList<ItemData> ItemDatas")?;
         require_contains(
@@ -1090,8 +1135,8 @@ mod tests {
             .map_err(|err| err.to_string())?;
         let item = generated_file(&json_files, "Item.cs")?;
         let database = generated_file(&json_files, "GameConfig.cs")?;
-        require_contains(item, "public double Scalar { get; init; } = 1.0;")?;
-        require_contains(item, "public IReadOnlyList<double> Amounts { get; init; }")?;
+        require_contains(item, "public double Scalar { get; set; } = 1.0;")?;
+        require_contains(item, "public IReadOnlyList<double> Amounts { get; set; }")?;
         require_contains(
             database,
             "private static double ReadFloat(JToken token, string path)",
@@ -1140,8 +1185,18 @@ mod tests {
         let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
             .map_err(|err| err.to_string())?;
         let child = generated_file(&files, "Child.cs")?;
+        let parent = generated_file(&files, "Parent.cs")?;
         let database = generated_file(&files, "GameConfig.cs")?;
         require_contains(child, "public Target Target { get; internal set; }")?;
+        require_contains(parent, "public Child Child { get; internal set; }")?;
+        require_contains(
+            parent,
+            "public IReadOnlyList<Child> Children { get; internal set; }",
+        )?;
+        require_contains(
+            parent,
+            "public IReadOnlyDictionary<string, Child> ByName { get; internal set; }",
+        )?;
         require_contains(database, "private static Child ResolveChildRefs(")?;
         require_contains(database, "return value;")?;
         require_contains(database, "value.Child = ResolveChildRefs(")?;
@@ -1169,7 +1224,39 @@ mod tests {
             .map_err(|err| err.to_string())?;
         let database = generated_file(&files, "GameConfig.cs")?;
         require_contains(database, "records[i] = ResolveRecordRefs(")?;
+        require_contains(database, "var record = records[i];")?;
+        require_contains(database, "$\"Record[{record.Id}]\"")?;
         require_not_contains(database, "foreach (var record in records)")?;
+        Ok(())
+    }
+
+    #[test]
+    fn codegen_does_not_write_back_nested_structs_without_refs() -> Result<(), String> {
+        let schema = compile_schema(
+            r"
+                type Target { @id id: string; }
+                type RefRecord {
+                    @id id: string;
+                    @ref(Target)
+                    target_id: string;
+                }
+                @struct
+                sealed type ValueBlock {
+                    amount: int;
+                }
+                type Holder {
+                    @id id: string;
+                    block: ValueBlock;
+                }
+            ",
+        )?;
+
+        let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+            .map_err(|err| err.to_string())?;
+        let holder = generated_file(&files, "Holder.cs")?;
+        let database = generated_file(&files, "GameConfig.cs")?;
+        require_contains(holder, "public ValueBlock Block { get; set; }")?;
+        require_not_contains(database, "value.Block = ResolveValueBlockRefs(")?;
         Ok(())
     }
 

@@ -6,8 +6,8 @@
 type TileTagConfig {
   @id
   id: TileTagFlags;
-  name: string;
-  desc: string;
+  name: string? = null;
+  desc: string? = null;
 }
 
 @struct
@@ -25,7 +25,7 @@ sealed type TerrainConfig {
 
 @display("物质配置")
 type SubstanceConfig {
-  @IdAsEnum("SubstanceId")
+  @IdAsEnum("MatterType")
   @id
   id: string;
   name: string;
@@ -46,7 +46,7 @@ type AttributeConfig {
 
 @display("能力配置")
 type AbilityConfig {
-  @IdAsEnum("AbilityId")
+  @IdAsEnum("Ability")
   @id
   id: string;
   name: localizedString;
