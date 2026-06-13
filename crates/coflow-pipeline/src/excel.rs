@@ -60,6 +60,8 @@ fn excel_diagnostic_json(diagnostic: &ExcelDiagnostic) -> DiagnosticJson {
         severity: "error".to_string(),
         message: diagnostic.source.message.clone(),
         path: location.file.display().to_string(),
+        sheet: location.sheet.clone(),
+        cell: excel_cell(location),
         start_line: line,
         start_character: character,
         end_line: line,
@@ -84,6 +86,8 @@ fn excel_error_json(
         severity: "error".to_string(),
         message,
         path: file.display().to_string(),
+        sheet: None,
+        cell: None,
         start_line: 0,
         start_character: 0,
         end_line: 0,
@@ -105,6 +109,8 @@ fn excel_location_json(
         severity: "error".to_string(),
         message,
         path: location.file.display().to_string(),
+        sheet: location.sheet.clone(),
+        cell: excel_cell(location),
         start_line: line,
         start_character: character,
         end_line: line,
@@ -117,6 +123,8 @@ fn excel_related_json(location: &ExcelLocation, label: Option<String>) -> Relate
     let (line, character) = excel_position(location);
     RelatedJson {
         path: location.file.display().to_string(),
+        sheet: location.sheet.clone(),
+        cell: excel_cell(location),
         start_line: line,
         start_character: character,
         end_line: line,
@@ -130,6 +138,25 @@ fn excel_position(location: &ExcelLocation) -> (usize, usize) {
         location.row.unwrap_or(1).saturating_sub(1),
         location.column.unwrap_or(1).saturating_sub(1),
     )
+}
+
+fn excel_cell(location: &ExcelLocation) -> Option<String> {
+    Some(format!(
+        "{}{}",
+        excel_column_name(location.column?),
+        location.row?
+    ))
+}
+
+fn excel_column_name(column: usize) -> String {
+    let mut value = column;
+    let mut name = Vec::new();
+    while value > 0 {
+        value -= 1;
+        name.push((b'A' + (value % 26) as u8) as char);
+        value /= 26;
+    }
+    name.iter().rev().collect()
 }
 
 fn diagnostics_from_excel_checks(checks: &ExcelDiagnostics) -> Vec<DiagnosticJson> {
@@ -154,12 +181,15 @@ fn diagnostics_from_excel_error(err: &ExcelLoadError) -> Vec<DiagnosticJson> {
             message.clone(),
             location,
         )],
-        ExcelLoadError::MissingSheet { file, sheet } => vec![excel_error_json(
-            "EXCEL-SHEET",
-            "EXCEL",
-            format!("workbook `{}` is missing sheet `{sheet}`", file.display()),
-            file,
-        )],
+        ExcelLoadError::MissingSheet { file, sheet } => {
+            let location = ExcelLocation::new(file.clone()).sheet(sheet.clone());
+            vec![excel_location_json(
+                "EXCEL-SHEET",
+                "EXCEL",
+                format!("workbook `{}` is missing sheet `{sheet}`", file.display()),
+                &location,
+            )]
+        }
         ExcelLoadError::EmptySheet { location } => vec![excel_location_json(
             "EXCEL-SHEET",
             "EXCEL",
