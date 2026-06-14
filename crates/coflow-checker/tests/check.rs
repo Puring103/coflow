@@ -1348,7 +1348,7 @@ fn dict_keys_and_values_preserve_entry_order() {
 }
 
 #[test]
-fn inherited_check_hard_error_stops_child_checks_but_failures_continue() {
+fn inherited_check_hard_error_does_not_skip_child_checks() {
     let hard_stop_schema = compile_schema(
         r#"
             abstract type Base {
@@ -1372,9 +1372,10 @@ fn inherited_check_hard_error_stops_child_checks_but_failures_continue() {
     let hard_stop_model = hard_stop_builder.build().expect("data model should build");
     let hard_stop_err = hard_stop_model
         .run_checks(&hard_stop_schema)
-        .expect_err("base hard error should stop child checks");
-    assert_eq!(hard_stop_err.diagnostics.len(), 1);
+        .expect_err("base hard error and child failure should both report");
+    assert_eq!(hard_stop_err.diagnostics.len(), 2);
     assert_has_code(&hard_stop_err, CfdErrorCode::CheckIndexOutOfBounds);
+    assert_has_code(&hard_stop_err, CfdErrorCode::CheckFailed);
 
     let soft_fail_schema = compile_schema(
         r#"
