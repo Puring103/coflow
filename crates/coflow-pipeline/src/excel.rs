@@ -1,10 +1,9 @@
 use coflow_cft::CftContainer;
 use coflow_loader_excel::{
-    load_excel, ExcelDiagnostic, ExcelDiagnostics, ExcelLoadError, ExcelLoadOutput, ExcelLocation,
-    ExcelSheet, ExcelSource,
+    load_excel, ExcelDiagnostic, ExcelDiagnostics, ExcelLoadOutput, ExcelLocation, ExcelSheet,
+    ExcelSource,
 };
 use coflow_project::{DiagnosticJson, Project, RelatedJson};
-use std::path::Path;
 
 pub fn load_project_excel(
     project: &Project,
@@ -18,7 +17,7 @@ pub fn load_project_excel(
             .map_or(Ok(output), |checks| {
                 Err(diagnostics_from_excel_checks(&checks))
             }),
-        Err(err) => Err(diagnostics_from_excel_error(&err)),
+        Err(err) => Err(diagnostics_from_excel_checks(&err)),
     }
 }
 
@@ -55,10 +54,10 @@ fn excel_diagnostic_json(diagnostic: &ExcelDiagnostic) -> DiagnosticJson {
         .map_or(&fallback, |label| &label.location);
     let (line, character) = excel_position(location);
     DiagnosticJson {
-        code: diagnostic.source.code.as_str().to_string(),
-        stage: diagnostic.source.stage.to_string(),
+        code: diagnostic.code.clone(),
+        stage: diagnostic.stage.clone(),
         severity: "error".to_string(),
-        message: diagnostic.source.message.clone(),
+        message: diagnostic.message.clone(),
         path: location.file.display().to_string(),
         sheet: location.sheet.clone(),
         cell: excel_cell(location),
@@ -71,51 +70,6 @@ fn excel_diagnostic_json(diagnostic: &ExcelDiagnostic) -> DiagnosticJson {
             .iter()
             .map(|label| excel_related_json(&label.location, label.message.clone()))
             .collect(),
-    }
-}
-
-fn excel_error_json(
-    code: impl Into<String>,
-    stage: impl Into<String>,
-    message: String,
-    file: &Path,
-) -> DiagnosticJson {
-    DiagnosticJson {
-        code: code.into(),
-        stage: stage.into(),
-        severity: "error".to_string(),
-        message,
-        path: file.display().to_string(),
-        sheet: None,
-        cell: None,
-        start_line: 0,
-        start_character: 0,
-        end_line: 0,
-        end_character: 1,
-        related: Vec::new(),
-    }
-}
-
-fn excel_location_json(
-    code: impl Into<String>,
-    stage: impl Into<String>,
-    message: String,
-    location: &ExcelLocation,
-) -> DiagnosticJson {
-    let (line, character) = excel_position(location);
-    DiagnosticJson {
-        code: code.into(),
-        stage: stage.into(),
-        severity: "error".to_string(),
-        message,
-        path: location.file.display().to_string(),
-        sheet: location.sheet.clone(),
-        cell: excel_cell(location),
-        start_line: line,
-        start_character: character,
-        end_line: line,
-        end_character: character.saturating_add(1),
-        related: Vec::new(),
     }
 }
 
@@ -167,100 +121,11 @@ fn diagnostics_from_excel_checks(checks: &ExcelDiagnostics) -> Vec<DiagnosticJso
         .collect()
 }
 
-fn diagnostics_from_excel_error(err: &ExcelLoadError) -> Vec<DiagnosticJson> {
-    match err {
-        ExcelLoadError::OpenWorkbook { file, message } => vec![excel_error_json(
-            "EXCEL-OPEN",
-            "EXCEL",
-            format!("failed to open workbook `{}`: {message}", file.display()),
-            file,
-        )],
-        ExcelLoadError::ReadSheet { location, message } => vec![excel_location_json(
-            "EXCEL-SHEET",
-            "EXCEL",
-            message.clone(),
-            location,
-        )],
-        ExcelLoadError::MissingSheet { file, sheet } => {
-            let location = ExcelLocation::new(file.clone()).sheet(sheet.clone());
-            vec![excel_location_json(
-                "EXCEL-SHEET",
-                "EXCEL",
-                format!("workbook `{}` is missing sheet `{sheet}`", file.display()),
-                &location,
-            )]
-        }
-        ExcelLoadError::EmptySheet { location } => vec![excel_location_json(
-            "EXCEL-SHEET",
-            "EXCEL",
-            "sheet is empty".to_string(),
-            location,
-        )],
-        ExcelLoadError::UnknownType {
-            location,
-            type_name,
-        } => vec![excel_location_json(
-            "EXCEL-TYPE",
-            "EXCEL",
-            format!("unknown CFT type `{type_name}`"),
-            location,
-        )],
-        ExcelLoadError::UnknownColumn {
-            location,
-            type_name,
-            column,
-            field,
-        } => vec![excel_location_json(
-            "EXCEL-COLUMN",
-            "EXCEL",
-            format!("column `{column}` maps to unknown field `{field}` on type `{type_name}`"),
-            location,
-        )],
-        ExcelLoadError::DuplicateFieldColumn {
-            location,
-            field,
-            first_column,
-            duplicate_column,
-        } => vec![excel_location_json(
-            "EXCEL-COLUMN",
-            "EXCEL",
-            format!("field `{field}` is mapped by both `{first_column}` and `{duplicate_column}`"),
-            location,
-        )],
-        ExcelLoadError::CellParse {
-            location,
-            type_name,
-            field,
-            diagnostics,
-        } => diagnostics
-            .diagnostics
-            .iter()
-            .map(|diag| {
-                excel_location_json(
-                    format!("CELL-{:?}", diag.code),
-                    "CELL",
-                    format!(
-                        "failed to parse `{type_name}.{field}` cell: {}",
-                        diag.message
-                    ),
-                    location,
-                )
-            })
-            .collect(),
-        ExcelLoadError::UnsupportedCellValue { location, kind } => vec![excel_location_json(
-            "EXCEL-CELL",
-            "EXCEL",
-            format!("unsupported Excel cell value `{kind}`"),
-            location,
-        )],
-        ExcelLoadError::DataModel(diagnostics) => diagnostics_from_excel_checks(diagnostics),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use coflow_data_model::{CfdDiagnostic, CfdErrorCode};
+    use std::path::Path;
 
     #[test]
     fn excel_cell_omits_partial_coordinates_and_handles_multi_letter_columns() {
@@ -288,7 +153,10 @@ mod tests {
     #[test]
     fn excel_diagnostic_without_primary_uses_empty_fallback_location() {
         let diagnostic = ExcelDiagnostic {
-            source: CfdDiagnostic::error(CfdErrorCode::CheckFailed, "bad check"),
+            code: CfdErrorCode::CheckFailed.as_str().to_string(),
+            stage: "CHECK".to_string(),
+            message: "bad check".to_string(),
+            source: Some(CfdDiagnostic::error(CfdErrorCode::CheckFailed, "bad check")),
             primary: None,
             related: Vec::new(),
         };

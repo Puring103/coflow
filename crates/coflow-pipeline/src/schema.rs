@@ -6,6 +6,10 @@ use coflow_project::{
 pub fn compile_project_schema(
     project: &Project,
 ) -> Result<Result<CftContainer, Vec<DiagnosticJson>>, String> {
+    let project_diagnostics = project.schema_diagnostics();
+    if !project_diagnostics.is_empty() {
+        return Ok(Err(project_diagnostics));
+    }
     let build = compile_schema_project(project, None)?;
     let diagnostics = diagnostics_from_schema_build(&build);
     if diagnostics.is_empty() {
