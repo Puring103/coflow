@@ -1,3 +1,4 @@
 target/
 examples/*/generated/
 node_modules/
+~$*.xlsx
