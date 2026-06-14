@@ -8,7 +8,7 @@
 )]
 
 use coflow_cft::{CftContainer, ModuleId};
-use coflow_data_model::{CfdErrorCode, CfdIdValue, CfdValue};
+use coflow_data_model::{CfdErrorCode, CfdValue};
 use coflow_loader_excel::{load_excel, load_excel_model, ExcelDiagnostic, ExcelSheet, ExcelSource};
 use rust_xlsxwriter::{ExcelDateTime, Format, Formula, Workbook, XlsxError};
 use std::fs::File;
@@ -99,8 +99,6 @@ fn loads_configured_xlsx_sheets_without_yaml_parsing() -> TestResult {
         r#"
             enum Rarity { Common = 0, Rare = 10, }
             type Item {
-                @id
-                id: string;
                 name: string;
                 rarity: Rarity = Rarity.Common;
                 tags: [string] = [];
@@ -124,12 +122,8 @@ fn loads_configured_xlsx_sheets_without_yaml_parsing() -> TestResult {
         return Err("expected Item table".to_string());
     };
     assert_eq!(table.records.len(), 2);
-    assert!(table
-        .primary_index
-        .contains_key(&CfdIdValue::from("sword_01")));
-    assert!(table
-        .primary_index
-        .contains_key(&CfdIdValue::from("potion_01")));
+    assert!(table.primary_index.contains_key("sword_01"));
+    assert!(table.primary_index.contains_key("potion_01"));
 
     let first_id = table.records[0];
     let Some(first) = model.record(first_id) else {
@@ -139,6 +133,7 @@ fn loads_configured_xlsx_sheets_without_yaml_parsing() -> TestResult {
         first.field("name"),
         Some(&CfdValue::String("铁剑".to_string()))
     );
+    assert_eq!(first.field("id"), None);
     assert_eq!(
         first.field("tags"),
         Some(&CfdValue::Array(vec![
@@ -154,7 +149,6 @@ fn reports_missing_sheet_before_read_sheet_errors() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
-                id: string;
             }
         "#,
     )?;
@@ -188,7 +182,6 @@ fn reports_cell_parse_location_for_bad_cell_values() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
-                id: string;
                 level: int;
             }
         "#,
@@ -232,11 +225,95 @@ fn reports_cell_parse_location_for_bad_cell_values() -> TestResult {
 }
 
 #[test]
+fn requires_id_column_on_every_loaded_sheet() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                level: int;
+            }
+        "#,
+    )?;
+    let path = temp_xlsx_path("missing-id-column");
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "level")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_number(1, 0, 1.0)
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
+
+    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
+    let Err(err) = load_excel_model(&schema, &[source]) else {
+        return Err("expected missing id column error".to_string());
+    };
+
+    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-ID")?;
+    assert!(diagnostic.message.contains("id"));
+    let location = &diagnostic
+        .primary
+        .as_ref()
+        .ok_or_else(|| "expected primary location".to_string())?
+        .location;
+    assert_eq!(location.sheet.as_deref(), Some("Item"));
+    assert_eq!(location.row, Some(1));
+    assert_eq!(location.column, None);
+    Ok(())
+}
+
+#[test]
+fn rejects_empty_id_cells_on_data_rows() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                level: int;
+            }
+        "#,
+    )?;
+    let path = temp_xlsx_path("empty-id-cell");
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "level")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_number(1, 1, 1.0)
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
+
+    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
+    let Err(err) = load_excel_model(&schema, &[source]) else {
+        return Err("expected empty id cell error".to_string());
+    };
+
+    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-ID")?;
+    assert!(diagnostic.message.contains("empty id"));
+    let location = &diagnostic
+        .primary
+        .as_ref()
+        .ok_or_else(|| "expected primary location".to_string())?
+        .location;
+    assert_eq!(location.sheet.as_deref(), Some("Item"));
+    assert_eq!(location.row, Some(2));
+    assert_eq!(location.column, Some(1));
+    Ok(())
+}
+
+#[test]
 fn rejects_excel_error_cells() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
-                id: string;
                 value: string;
             }
         "#,
@@ -288,7 +365,6 @@ fn rejects_native_excel_datetime_cells() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
-                id: string;
                 value: string;
             }
         "#,
@@ -345,7 +421,6 @@ fn rejects_typed_iso_excel_datetime_cells() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
-                id: string;
                 value: string;
             }
         "#,
@@ -416,7 +491,6 @@ fn accepts_boolean_cells_for_bool_fields() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
-                id: string;
                 enabled: bool;
             }
         "#,
@@ -461,8 +535,6 @@ fn ignores_rows_that_are_empty_in_mapped_columns() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
-                @id
-                id: string;
             }
         "#,
     )?;
@@ -490,9 +562,7 @@ fn ignores_rows_that_are_empty_in_mapped_columns() -> TestResult {
         return Err("expected Item table".to_string());
     };
     assert_eq!(table.records.len(), 1);
-    assert!(table
-        .primary_index
-        .contains_key(&CfdIdValue::from("item_1")));
+    assert!(table.primary_index.contains_key("item_1"));
     Ok(())
 }
 
@@ -501,8 +571,6 @@ fn optional_hash_control_column_skips_marked_rows_without_mapping_to_schema() ->
     let schema = compile_schema(
         r#"
             type Item {
-                @id
-                id: string;
                 level: int;
             }
         "#,
@@ -546,12 +614,8 @@ fn optional_hash_control_column_skips_marked_rows_without_mapping_to_schema() ->
         return Err("expected Item table".to_string());
     };
     assert_eq!(table.records.len(), 1);
-    assert!(!table
-        .primary_index
-        .contains_key(&CfdIdValue::from("skip_me")));
-    assert!(table
-        .primary_index
-        .contains_key(&CfdIdValue::from("keep_me")));
+    assert!(!table.primary_index.contains_key("skip_me"));
+    assert!(table.primary_index.contains_key("keep_me"));
     Ok(())
 }
 
@@ -560,8 +624,6 @@ fn returns_check_diagnostics_without_discarding_model() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
-                @id
-                id: string;
                 level: int;
                 check { level > 0; }
             }
@@ -620,7 +682,6 @@ fn rejects_unknown_header_columns_before_model_build() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
-                id: string;
             }
         "#,
     )?;
@@ -663,8 +724,6 @@ fn maps_duplicate_id_diagnostics_to_source_cells() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
-                @id
-                id: string;
                 level: int;
             }
         "#,
@@ -730,7 +789,6 @@ fn maps_missing_required_field_diagnostics_to_source_cells() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
-                id: string;
                 level: int;
             }
         "#,
@@ -780,7 +838,6 @@ fn maps_multiple_invalid_input_rows_to_their_original_excel_rows() -> TestResult
     let schema = compile_schema(
         r#"
             type Item {
-                id: string;
                 level: int;
             }
         "#,
@@ -859,8 +916,6 @@ fn expand_consumes_parent_and_adjacent_columns_for_inner_fields() -> TestResult 
                 diffusion: float;
             }
             type Terrain {
-                @id
-                id: TerrainKind;
                 name: string;
                 @expand
                 env: EnvCfg;
@@ -902,7 +957,6 @@ fn rejects_empty_sheets_and_duplicate_mapped_columns() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
-                id: string;
                 level: int = 0;
             }
         "#,
@@ -958,8 +1012,7 @@ fn rejects_empty_sheets_and_duplicate_mapped_columns() -> TestResult {
         return Err("expected duplicate mapped column error".to_string());
     };
     let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-COLUMN")?;
-    assert!(diagnostic.message.contains("field `id`"));
-    assert!(diagnostic.message.contains("`id`"));
+    assert!(diagnostic.message.contains("special `id` column"));
     assert!(diagnostic.message.contains("`alias`"));
     let location = &diagnostic
         .primary
@@ -981,8 +1034,6 @@ fn rejects_expand_headers_without_enough_adjacent_columns() -> TestResult {
                 diffusion: float;
             }
             type Terrain {
-                @id
-                id: string;
                 @expand
                 env: EnvCfg;
             }

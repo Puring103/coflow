@@ -16,13 +16,13 @@ sources:
           Tags: tags
           Attributes: attributes
           Elemental Bonus: elemental_bonus
-          Upgrade Item ID: upgrade_item_id
+          Upgrade Item ID: upgrade_item
           Legacy Power: legacy_power
       - sheet: Equipment
         columns:
           Equipment ID: id
           Name: name
-          Name Text ID: name_text_id
+          Name Text ID: name_text
           Rarity: rarity
           Slot: slot
           Level Requirement: level_requirement
@@ -32,13 +32,13 @@ sources:
           Tags: tags
           Attributes: attributes
           Elemental Bonus: elemental_bonus
-          Upgrade Item ID: upgrade_item_id
+          Upgrade Item ID: upgrade_item
           Legacy Power: legacy_power
           Required Class: required_class
           Stat Bonus: stat_bonus
           Allowed Classes: allowed_classes
           Upgrade Costs: upgrade_costs
-          Set Piece ID: set_piece_id
+          Set Piece ID: set_piece
       - sheet: Skill
         columns:
           Skill ID: id
@@ -48,8 +48,8 @@ sources:
           Cooldown: cooldown
           Tags: tags
           Passive: is_passive
-          Follow Up ID: follow_up_id
-          Buff ID: buff_id
+          Follow Up ID: follow_up
+          Buff ID: buff
           Costs: costs
           Allowed Slots: allowed_slots
           Coefficient: coefficient
@@ -58,7 +58,7 @@ sources:
         columns:
           Buff ID: id
           Name: name
-          Name Text ID: name_text_id
+          Name Text ID: name_text
           Tags: tags
           Duration: duration
           Max Stacks: max_stacks
@@ -67,7 +67,7 @@ sources:
           Stat Modifiers: stat_modifiers
           Trigger Chances: trigger_chances
           Required Element: required_element
-          Source Skill ID: source_skill_id
+          Source Skill ID: source_skill
       - sheet: Monster
         columns:
           Monster ID: id
@@ -77,8 +77,8 @@ sources:
           Stats: stats
           Position: position
           Resistances: resistances
-          Skill ID: skill_id
-          Signature Item ID: signature_item_id
+          Skill ID: skill
+          Signature Item ID: signature_item
           Abilities: abilities
           Phases: phases
           Spawn Points: spawn_points
@@ -86,7 +86,7 @@ sources:
       - sheet: DropTable
         columns:
           Drop ID: id
-          Monster ID: monster_id
+          Monster ID: monster
           Conditions: conditions
           Rewards: rewards
           Weights: weights
@@ -97,25 +97,25 @@ sources:
       - sheet: Stage
         columns:
           Stage ID: id
-          Name Text ID: name_text_id
+          Name Text ID: name_text
           Kind: kind
           Unlock Level: unlock_level
           Recommended Power: recommended_power
           Positions: positions
           Spawns: spawns
-          Drop Table ID: drop_table_id
+          Drop Table ID: drop_table
           First Clear Reward: first_clear_reward
           Modifiers: modifiers
       - sheet: Quest
         columns:
           Quest ID: id
           Kind: kind
-          Title Text ID: title_text_id
+          Title Text ID: title_text
           Title: title
           Min Level: min_level
-          Stage ID: stage_id
-          Target Monster ID: target_monster_id
-          Reward Item ID: reward_item_id
+          Stage ID: stage
+          Target Monster ID: target_monster
+          Reward Item ID: reward_item
           Prerequisites: prerequisites
           Objectives: objectives
           Reward Preview: reward_preview
@@ -124,11 +124,11 @@ sources:
       - sheet: Shop
         columns:
           Shop ID: id
-          Name Text ID: name_text_id
+          Name Text ID: name_text
           Kind: kind
           Open Day: open_day
           Close Day: close_day
-          Stage Gate ID: stage_gate_id
+          Stage Gate ID: stage_gate
           Entries: entries
           Currencies: currencies
       - sheet: Text

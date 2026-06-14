@@ -1,11 +1,19 @@
-{% for loader in project.database.loaders %}    private static {{ loader.type_name }} Load{{ loader.type_name }}(ref MessagePackReader reader, string path)
+{% for loader in project.database.loaders %}    private static {{ loader.type_name }} Load{{ loader.type_name }}Row(ref MessagePackReader reader, string path)
     {
         var count = ReadMapHeader(ref reader, path);
-        return Load{{ loader.type_name }}Body(ref reader, path, count);
+        return Load{{ loader.type_name }}Body(ref reader, path, count, true);
     }
 
-    private static {{ loader.type_name }} Load{{ loader.type_name }}Body(ref MessagePackReader reader, string path, int count)
+    private static {{ loader.type_name }} Load{{ loader.type_name }}(ref MessagePackReader reader, string path)
     {
+        var count = ReadMapHeader(ref reader, path);
+        return Load{{ loader.type_name }}Body(ref reader, path, count, false);
+    }
+
+    private static {{ loader.type_name }} Load{{ loader.type_name }}Body(ref MessagePackReader reader, string path, int count, bool requireId)
+    {
+        {{ loader.key_type_name }} {{ loader.key_local_name }} = default!;
+        var hasId = false;
 {% for field in loader.fields %}        {{ field.type_name }} {{ field.local_name }} = {% if field.default_expr %}{{ field.default_expr }}{% else %}default!{% endif %};
         var has{{ field.property }} = false;
 {% endfor %}
@@ -17,6 +25,19 @@
 
             switch (key)
             {
+                case "id":
+                    if (hasId)
+                    {
+                        throw new CftLoadException(
+                            $"duplicate field `id`",
+                            fieldPath,
+                            "unique field",
+                            "id");
+                    }
+
+                    hasId = true;
+                    {{ loader.key_local_name }} = {{ loader.key_messagepack_read_expr }};
+                    break;
 {% for field in loader.fields %}                case "{{ field.source_name }}":
                     if (has{{ field.property }})
                     {
@@ -36,6 +57,15 @@
             }
         }
 
+        if (requireId && !hasId)
+        {
+            throw new CftLoadException(
+                $"missing required field `id`",
+                $"{path}.id",
+                "present property",
+                "missing");
+        }
+
 {% for field in loader.fields %}{% if field.is_required %}        if (!has{{ field.property }})
         {
             throw new CftLoadException(
@@ -46,8 +76,9 @@
         }
 
 {% endif %}{% endfor %}        return new {{ loader.type_name }} {
-{% for field in loader.fields %}            {{ field.property }} = {{ field.local_name }},
-{% endfor %}        };
+            Id = requireId ? {{ loader.key_local_name }} : default!,
+{% for field in loader.fields %}{% for assignment in field.assignments %}            {{ assignment.property }} = {{ assignment.expr }},
+{% endfor %}{% endfor %}        };
     }
 
 {% endfor %}{% for loader in project.database.polymorphic_loaders %}    private static {{ loader.type_name }} Load{{ loader.type_name }}Polymorphic(ref MessagePackReader reader, string path)
@@ -75,7 +106,7 @@
         var typeName = ReadString(ref reader, $"{path}.$type");
         return typeName switch
         {
-{% for case in loader.cases %}            "{{ case.source_name }}" => Load{{ case.type_name }}Body(ref reader, path, count - 1),
+{% for case in loader.cases %}            "{{ case.source_name }}" => Load{{ case.type_name }}Body(ref reader, path, count - 1, false),
 {% endfor %}            _ => throw new CftLoadException($"unknown polymorphic type `{typeName}`", $"{path}.$type", "{{ loader.expected }}", typeName),
         };
     }

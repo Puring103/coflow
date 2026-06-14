@@ -107,7 +107,7 @@
         }
 
         throw new CftLoadException(
-            $"@ref target `{targetType}` with id `{id}` was not found",
+            $"reference target `{targetType}` with id `{id}` was not found",
             path,
             targetType,
             id?.ToString());

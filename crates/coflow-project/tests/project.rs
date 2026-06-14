@@ -106,11 +106,8 @@ fn resolve_config_path_uses_current_directory_when_no_path_is_given() -> TestRes
 fn project_validation_reports_schema_source_and_output_edges() -> TestResult {
     let root = temp_project_dir("coflow-project-validation");
     std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
-    std::fs::write(
-        root.join("schema/main.cft"),
-        "type Item { @id id: string; }",
-    )
-    .map_err(|err| err.to_string())?;
+    std::fs::write(root.join("schema/main.cft"), "type Item { value: string; }")
+        .map_err(|err| err.to_string())?;
     std::fs::write(root.join("data.xlsx"), "").map_err(|err| err.to_string())?;
 
     let cases = [
@@ -270,11 +267,11 @@ fn validate_for_codegen_reports_unvalidated_output_combinations() -> TestResult 
 fn schema_files_recurses_only_cft_files_and_sorts_module_ids() -> TestResult {
     let root = temp_project_dir("coflow-project-schema-files");
     std::fs::create_dir_all(root.join("schema/nested")).map_err(|err| err.to_string())?;
-    std::fs::write(root.join("schema/z.cft"), "type Zed { @id id: string; }")
+    std::fs::write(root.join("schema/z.cft"), "type Zed { value: string; }")
         .map_err(|err| err.to_string())?;
     std::fs::write(
         root.join("schema/nested/a.cft"),
-        "type Alpha { @id id: string; }",
+        "type Alpha { value: string; }",
     )
     .map_err(|err| err.to_string())?;
     std::fs::write(root.join("schema/ignored.txt"), "type Ignored { }")
@@ -298,7 +295,7 @@ fn schema_files_accept_absolute_schema_paths_outside_project_root() -> TestResul
     let root = temp_project_dir("coflow-project-schema-files-absolute-root");
     let external = temp_project_dir("coflow-project-schema-files-absolute-external");
     let schema_path = external.join("external.cft");
-    std::fs::write(&schema_path, "type External { @id id: string; }")
+    std::fs::write(&schema_path, "type External { value: string; }")
         .map_err(|err| err.to_string())?;
     std::fs::write(
         root.join("coflow.yaml"),
@@ -326,7 +323,7 @@ fn schema_overrides_match_by_module_or_path_and_reject_unmatched() -> TestResult
     let root = temp_project_dir("coflow-project-overrides");
     std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
     let schema_path = root.join("schema/main.cft");
-    std::fs::write(&schema_path, "type Item { @id id: string; }").map_err(|err| err.to_string())?;
+    std::fs::write(&schema_path, "type Item { value: string; }").map_err(|err| err.to_string())?;
     std::fs::write(root.join("coflow.yaml"), "schema: schema/main.cft\n")
         .map_err(|err| err.to_string())?;
     let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
@@ -334,7 +331,7 @@ fn schema_overrides_match_by_module_or_path_and_reject_unmatched() -> TestResult
     let by_module = SchemaSourceOverride {
         requested_module: Some("schema/main.cft".to_string()),
         normalized_path: normalize_path(&root.join("not-used.cft")),
-        source: "type Replacement { @id id: string; }".to_string(),
+        source: "type Replacement { value: string; }".to_string(),
     };
     let build = compile_schema_project_with_overrides(&project, &[by_module])
         .map_err(|err| err.to_string())?;
@@ -344,7 +341,7 @@ fn schema_overrides_match_by_module_or_path_and_reject_unmatched() -> TestResult
     let by_path = SchemaSourceOverride {
         requested_module: None,
         normalized_path: normalize_path(&schema_path),
-        source: "type PathReplacement { @id id: string; }".to_string(),
+        source: "type PathReplacement { value: string; }".to_string(),
     };
     let build = compile_schema_project_with_overrides(&project, &[by_path])
         .map_err(|err| err.to_string())?;
@@ -354,7 +351,7 @@ fn schema_overrides_match_by_module_or_path_and_reject_unmatched() -> TestResult
     let unmatched = SchemaSourceOverride {
         requested_module: Some("schema/missing.cft".to_string()),
         normalized_path: normalize_path(&root.join("schema/missing.cft")),
-        source: "type Missing { @id id: string; }".to_string(),
+        source: "type Missing { value: string; }".to_string(),
     };
     let err = compile_schema_project_with_overrides(&project, &[unmatched])
         .expect_err("unmatched override should fail");
@@ -393,12 +390,12 @@ fn schema_compile_with_override_parse_error_keeps_sources_and_paths() -> TestRes
     let root = temp_project_dir("coflow-project-override-parse-error");
     std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
     let schema_path = root.join("schema/main.cft");
-    std::fs::write(&schema_path, "type Item { @id id: string; }").map_err(|err| err.to_string())?;
+    std::fs::write(&schema_path, "type Item { value: string; }").map_err(|err| err.to_string())?;
     std::fs::write(root.join("coflow.yaml"), "schema: schema/main.cft\n")
         .map_err(|err| err.to_string())?;
     let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
 
-    let override_source = "type Broken { @id id: string;".to_string();
+    let override_source = "type Broken { value: string;".to_string();
     let build = compile_schema_project_with_overrides(
         &project,
         &[SchemaSourceOverride {

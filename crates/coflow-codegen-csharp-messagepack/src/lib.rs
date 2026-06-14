@@ -67,7 +67,7 @@ pub fn generate_csharp_messagepack(
 }
 
 /// Generates C# `MessagePack` loader files and includes data-driven
-/// `@IdAsEnum` variants.
+/// `@keyAsEnum` variants.
 ///
 /// # Errors
 ///
@@ -98,10 +98,7 @@ mod tests {
     fn generates_messagepack_loader_from_messagepack_crate() -> Result<(), String> {
         let mut schema = CftContainer::new();
         schema
-            .add_module(
-                ModuleId::from("main"),
-                "type Item { @id id: string; value: int; }",
-            )
+            .add_module(ModuleId::from("main"), "type Item { value: int; }")
             .map_err(|err| format!("{err:?}"))?;
         schema.compile().map_err(|err| format!("{err:?}"))?;
 

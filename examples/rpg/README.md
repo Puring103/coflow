@@ -5,7 +5,7 @@ intended to exercise the full CFT surface in one coherent game-config example.
 
 It includes:
 
-- CFT schema in `schema/rpg.cft`.
+- CFT schema split across `schema/*.cft`.
 - Excel data in `data/rpg.xlsx`.
 - Project configuration in `coflow.yaml`.
 - Declared JSON data and C# code outputs.
@@ -27,9 +27,9 @@ The schema demonstrates:
 
 - typed constants and literal defaults;
 - plain enums and `@flag` enums;
-- `@display`, `@deprecated`, `@struct`, `@id`, `@index`, and `@ref`;
+- `@display`, `@deprecated`, and `@struct`;
 - sealed structs, abstract base types, multi-level inheritance, and polymorphic values;
-- nullable references, self/forward references, arrays, dictionaries, and nested objects;
+- record-key based references, nullable references, self/forward references, arrays, dictionaries, and nested objects;
 - `check` expressions with chained comparisons, arithmetic, bitwise and shift operators;
 - `when`, `all`, `any`, `none`, field/index access, `is`, and built-in functions such as
   `len`, `contains`, `unique`, `min`, `max`, `sum`, `keys`, `values`, and `matches`.

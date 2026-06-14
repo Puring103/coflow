@@ -37,7 +37,7 @@ pub use diagnostic::{
     CfdStage,
 };
 pub use model::{
-    CfdDataModel, CfdDictKey, CfdEnumValue, CfdIdValue, CfdIndexKey, CfdInputDictKey,
-    CfdInputRecord, CfdInputValue, CfdModelBuilder, CfdPolymorphicIndex, CfdRecord, CfdRecordId,
+    CfdDataModel, CfdDictKey, CfdEnumValue, CfdInputDictKey, CfdInputRecord, CfdInputRefIndex,
+    CfdInputValue, CfdModelBuilder, CfdPolymorphicIndex, CfdRecord, CfdRecordId, CfdRefPathSegment,
     CfdTable, CfdValue,
 };

@@ -1,0 +1,195 @@
+sealed type DropCondition {
+  min_level: int = 1;
+  required_element: Element? = null;
+  flags: SkillTag = SkillTag.Damage;
+
+  check {
+    1 <= min_level <= MAX_LEVEL;
+    (flags & SkillTag.Damage) != SkillTag(0)
+      || (flags & SkillTag.Control) != SkillTag(0)
+      || (flags & SkillTag.Heal) != SkillTag(0)
+      || (flags & SkillTag.Ultimate) != SkillTag(0);
+
+    when required_element != null {
+      required_element >= Element.Physical;
+    }
+  }
+}
+
+sealed type MonsterAbility {
+  skill: Skill;
+
+  priority: int = 1;
+  chance: float = 1.0;
+
+  check {
+    skill.id != "";
+    priority > 0;
+    0.0 < chance <= 1.0;
+
+    when skill.is_passive {
+      chance == 1.0;
+    }
+  }
+}
+
+sealed type MonsterPhase {
+  threshold_hp_pct: float;
+
+  added_skill: Skill? = null;
+
+  buffs: [SkillTag] = [];
+
+  check {
+    0.0 < threshold_hp_pct <= 1.0;
+    unique(buffs);
+
+    when added_skill != null {
+      added_skill.power >= 0;
+    }
+  }
+}
+
+sealed type SpawnPoint {
+  region: string = DEFAULT_REGION;
+  point: Vector2;
+  radius: float;
+  conditions: {string: int} = {};
+
+  check {
+    region != "";
+    radius > 0.0;
+
+    all entry in conditions {
+      entry.key != "";
+      entry.value >= 0;
+    }
+  }
+}
+
+@display("Monster")
+type Monster {
+  name: string;
+  level: int;
+
+  rarity: Rarity;
+
+  stats: StatBlock;
+  position: Vector2;
+  resistances: {Element: float};
+
+  skill: Skill;
+
+  signature_item: Item? = null;
+
+  abilities: [MonsterAbility];
+  phases: [MonsterPhase] = [];
+  spawn_points: {int: SpawnPoint};
+  flags: SkillTag = SkillTag.Damage;
+
+  check {
+    id != "";
+    name != "";
+    matches(id, "^[a-z][a-z0-9_]*$");
+    1 <= level <= MAX_LEVEL;
+    stats.hp > 0;
+    stats.speed >= MIN_SPEED;
+    skill.power > 0;
+    contains(resistances, Element.Physical);
+    contains(keys(resistances), Element.Fire);
+    len(abilities) > 0;
+    any ability in abilities { ability.skill.id == skill.id; }
+    contains(spawn_points, 1);
+    spawn_points[1].radius > 0.0;
+    max(keys(spawn_points)) >= min(keys(spawn_points));
+    (flags | SkillTag.Control) != SkillTag(0);
+    (flags & SkillTag.Damage) != SkillTag(0)
+      || (flags & SkillTag.Control) != SkillTag(0)
+      || (flags & SkillTag.Ultimate) != SkillTag(0);
+
+    when signature_item != null {
+      signature_item.rarity >= rarity;
+    }
+
+    when level >= 40 {
+      rarity >= Rarity.Epic;
+      any phase in phases { phase.added_skill != null; }
+    }
+
+    all entry in resistances {
+      entry.key >= Element.Physical;
+      0.0 <= entry.value <= 2.0;
+    }
+
+    all ability in abilities {
+      ability.skill.element >= Element.Physical;
+    }
+
+    all entry in spawn_points {
+      entry.key > 0;
+      entry.value.region != "";
+    }
+
+    none phase in phases {
+      phase.threshold_hp_pct <= 0.0;
+    }
+  }
+}
+
+type DropTable {
+  monster: Monster;
+
+  conditions: DropCondition;
+  rewards: [Reward];
+  weights: [int];
+  bonus_by_rarity: {Rarity: int} = {};
+  currency_curve: {int: int} = {};
+  guaranteed_reward: Reward? = null;
+  notes: [string] = [];
+
+  check {
+    id != "";
+    matches(id, "^drop_[a-z][a-z0-9_]*$");
+    monster.level >= conditions.min_level;
+    len(rewards) == len(weights);
+    len(rewards) > 0;
+    sum(weights) == 100;
+    min(weights) > 0;
+    max(weights) <= 100;
+    unique(weights);
+    any reward in rewards { reward is ItemReward; }
+    any reward in rewards { reward is CurrencyReward; }
+    none reward in rewards { reward is LegacyReward; }
+    contains(bonus_by_rarity, Rarity.Rare);
+    contains(currency_curve, 1);
+    currency_curve[1] >= 0;
+    guaranteed_reward is null || guaranteed_reward is Reward;
+
+    when guaranteed_reward != null {
+      guaranteed_reward.key != "";
+    }
+
+    all reward in rewards {
+      reward is Reward;
+      reward.key != "";
+    }
+
+    all weight in weights {
+      weight > 0;
+    }
+
+    all entry in bonus_by_rarity {
+      entry.key >= Rarity.Common;
+      entry.value >= 0;
+    }
+
+    all entry in currency_curve {
+      entry.key > 0;
+      entry.value >= 0;
+    }
+
+    none note in notes {
+      note == "";
+    }
+  }
+}

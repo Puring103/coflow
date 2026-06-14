@@ -2,7 +2,7 @@
 # all, any, and none iterate over arrays or dicts.
 
 type ExampleSkill {
-  id: string;
+  name: string;
   is_passive: bool;
   cooldown: float? = null;
   range: float? = null;
@@ -10,6 +10,7 @@ type ExampleSkill {
 
   check {
     id != "";
+    name != "";
 
     when !is_passive {
       cooldown != null;

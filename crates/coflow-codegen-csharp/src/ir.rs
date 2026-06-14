@@ -1,14 +1,13 @@
 use crate::emit::{build_csharp_database, build_csharp_enum, build_csharp_type};
 use crate::model::{CsharpEnum, CsharpEnumVariant, CsharpProject};
 use crate::names::{
-    annotation_name_arg, camel_case, csharp_ident_error, csharp_member_ident_error,
-    csharp_namespace_error, csharp_type_name, index_param_name, index_var_name,
-    multi_index_var_name, pascal_case, pluralize, ref_index_param_name, ref_index_var_name,
-    ref_property_name,
+    annotation_string_arg, camel_case, csharp_ident_error, csharp_member_ident_error,
+    csharp_namespace_error, csharp_type_name, index_param_name, index_var_name, pascal_case,
+    pluralize, ref_index_param_name, ref_index_var_name,
 };
 use crate::schema_view::SchemaView;
 use crate::CsharpCodegenError;
-use coflow_cft::{CftAnnotationValue, CftContainer};
+use coflow_cft::CftContainer;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -190,14 +189,6 @@ fn validate_schema_names(schema: &CftContainer, diagnostics: &mut Vec<CsharpCode
         for field in &schema_type.fields {
             let property_name = pascal_case(&field.name);
             validate_ident("field property", &property_name, diagnostics);
-
-            if let Some(target) = annotation_name_arg(&field.annotations, "ref") {
-                validate_ident(
-                    "ref property",
-                    &ref_property_name(&field.name, &target),
-                    diagnostics,
-                );
-            }
         }
     }
 }
@@ -232,17 +223,6 @@ fn validate_generated_names(
         if resolves_refs {
             let item_var = camel_case(table_name);
             validate_ident("table item variable", &item_var, diagnostics);
-        }
-
-        let Ok(table) = view.type_meta(table_name) else {
-            continue;
-        };
-        for field in table.index_fields() {
-            let storage_field = multi_index_var_name(&csharp_table, &field.name);
-            validate_member_ident("multi-index storage field", &storage_field, diagnostics);
-
-            let parameter_name = storage_field.trim_start_matches('_');
-            validate_ident("multi-index parameter", parameter_name, diagnostics);
         }
     }
 
@@ -298,7 +278,7 @@ fn validate_generated_file_names(
             &mut file_sources,
             &reserved,
             &file_name,
-            "@IdAsEnum enum",
+            "@keyAsEnum enum",
             enum_name,
             diagnostics,
         );
@@ -319,26 +299,8 @@ fn validate_generated_file_names(
 fn key_as_enum_names(schema: &CftContainer) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for schema_type in schema.all_types() {
-        for field in &schema_type.all_fields {
-            if !field
-                .annotations
-                .iter()
-                .any(|annotation| annotation.name == "id")
-            {
-                continue;
-            }
-            if let Some(enum_name) = field.annotations.iter().find_map(|annotation| {
-                if annotation.name == "IdAsEnum" {
-                    match annotation.args.first() {
-                        Some(CftAnnotationValue::String(value)) => Some(value.clone()),
-                        _ => None,
-                    }
-                } else {
-                    None
-                }
-            }) {
-                out.insert(enum_name);
-            }
+        if let Some(enum_name) = annotation_string_arg(&schema_type.annotations, "keyAsEnum") {
+            out.insert(enum_name);
         }
     }
     out
@@ -353,18 +315,18 @@ fn validate_key_as_enum_variants(
         if !declared.contains(enum_name) {
             push_codegen_diagnostic(
                 diagnostics,
-                format!("@IdAsEnum variants provided for undeclared enum `{enum_name}`"),
+                format!("@keyAsEnum variants provided for undeclared enum `{enum_name}`"),
             );
         }
-        validate_ident("@IdAsEnum enum", enum_name, diagnostics);
+        validate_ident("@keyAsEnum enum", enum_name, diagnostics);
         let mut values = BTreeMap::<i64, String>::new();
         for variant in variants.get(enum_name).into_iter().flatten() {
-            validate_ident("@IdAsEnum enum variant", &variant.name, diagnostics);
+            validate_ident("@keyAsEnum enum variant", &variant.name, diagnostics);
             if let Some(existing) = values.insert(variant.value, variant.name.clone()) {
                 push_codegen_diagnostic(
                     diagnostics,
                     format!(
-                    "@IdAsEnum enum `{enum_name}` value `{}` is used by both `{existing}` and `{}`",
+                    "@keyAsEnum enum `{enum_name}` value `{}` is used by both `{existing}` and `{}`",
                     variant.value, variant.name
                 ),
                 );
@@ -444,16 +406,6 @@ fn validate_generated_member_names(
                 &field.name,
                 diagnostics,
             );
-            if let Some(target) = annotation_name_arg(&field.annotations, "ref") {
-                let ref_name = ref_property_name(&field.name, &target);
-                insert_generated_member_name(
-                    &mut members,
-                    &ty.name,
-                    &ref_name,
-                    &format!("{} @ref({target})", field.name),
-                    diagnostics,
-                );
-            }
         }
     }
 }

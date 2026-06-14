@@ -19,8 +19,8 @@ use coflow_cft::ast::{
 use coflow_cft::lexer::{lex, TokenKind};
 use coflow_cft::parser::parse_module;
 use coflow_cft::{
-    CftAnnotationValue, CftConstValue, CftSchemaEnum, CftSchemaEnumVariant, CftSchemaField,
-    CftSchemaType, CftSchemaTypeRef, ModuleId, Span,
+    CftConstValue, CftSchemaEnum, CftSchemaEnumVariant, CftSchemaField, CftSchemaType,
+    CftSchemaTypeRef, ModuleId, Span,
 };
 use coflow_project::{
     compile_schema_project_with_overrides, dedupe_cft_diagnostics, normalize_path, DiagnosticJson,
@@ -626,22 +626,10 @@ const ANNOTATIONS: &[AnnotationCompletion] = &[
         documentation: "Mark an enum as bit flags. Non-zero values must be powers of two.",
     },
     AnnotationCompletion {
-        label: "@id",
-        insert_text: "@id",
-        detail: "field annotation",
-        documentation: "Mark a string or int field as the primary key.",
-    },
-    AnnotationCompletion {
-        label: "@ref",
-        insert_text: "@ref(${1:TypeName})",
-        detail: "field annotation",
-        documentation: "Mark a string or int field as a reference to a type.",
-    },
-    AnnotationCompletion {
-        label: "@index",
-        insert_text: "@index",
-        detail: "field annotation",
-        documentation: "Generate an index for a non-nullable string, int, or enum field.",
+        label: "@keyAsEnum",
+        insert_text: "@keyAsEnum(\"${1:Name}\")",
+        detail: "type annotation",
+        documentation: "Generate a stable enum from this type's record keys.",
     },
     AnnotationCompletion {
         label: "@display",
@@ -805,10 +793,6 @@ fn completion_items(
         return dot_completion_items(build, document, offset, &chain);
     }
 
-    if is_ref_annotation_context(line_prefix) {
-        return named_type_completion_items(build);
-    }
-
     if top_level_needs_type_keyword(line_prefix) {
         return top_level_completion_items(line_prefix);
     }
@@ -863,6 +847,12 @@ fn check_expression_completion_items(
     items.extend(const_completion_items(build));
 
     if let Some(current_type) = current_type_at(build, document, offset) {
+        items.push(completion_item(
+            "id",
+            COMPLETION_KIND_FIELD,
+            &format!("{} record key", current_type.name),
+            None,
+        ));
         for field in &current_type.all_fields {
             items.push(completion_item(
                 &field.name,
@@ -1223,7 +1213,7 @@ fn annotation_completion_items(scope: CompletionScope) -> Vec<Value> {
 fn annotation_applies_to_scope(label: &str, scope: CompletionScope) -> bool {
     match label {
         "@struct" | "@flag" => scope == CompletionScope::TopLevel,
-        "@id" | "@ref" | "@index" => scope == CompletionScope::TypeBody,
+        "@keyAsEnum" => scope == CompletionScope::TopLevel,
         "@display" | "@deprecated" => {
             matches!(scope, CompletionScope::TopLevel | CompletionScope::TypeBody)
         }
@@ -2018,19 +2008,7 @@ fn field_by_type<'a>(
 }
 
 fn field_receiver_type(field: &CftSchemaField) -> CftSchemaTypeRef {
-    ref_target(field).map_or_else(|| field.ty_ref.clone(), CftSchemaTypeRef::Named)
-}
-
-fn ref_target(field: &CftSchemaField) -> Option<String> {
-    field
-        .annotations
-        .iter()
-        .find(|annotation| annotation.name == "ref")
-        .and_then(|annotation| annotation.args.first())
-        .and_then(|arg| match arg {
-            CftAnnotationValue::Name(name) | CftAnnotationValue::String(name) => Some(name.clone()),
-            _ => None,
-        })
+    field.ty_ref.clone()
 }
 
 fn type_name_of_schema_ref(ty: &CftSchemaTypeRef) -> Option<&str> {
@@ -2416,15 +2394,6 @@ fn is_type_predicate_context(line_prefix: &str) -> bool {
     trimmed[..trimmed.len() - last_word.len()]
         .trim_end()
         .ends_with("is")
-}
-
-fn is_ref_annotation_context(line_prefix: &str) -> bool {
-    let trimmed = line_prefix.trim_end();
-    let Some(open) = trimmed.rfind('(') else {
-        return false;
-    };
-    let before_open = trimmed[..open].trim_end();
-    before_open.ends_with("@ref")
 }
 
 fn is_type_header_parent_context(line_prefix: &str) -> bool {
@@ -3045,7 +3014,7 @@ mod tests {
 
     #[test]
     fn request_errors_are_reported_without_returning_from_handler() {
-        let (_cleanup, project) = test_project("lsp-request-error", "type Item { id: string; }\n");
+        let (_cleanup, project) = test_project("lsp-request-error", "type Item { key: string; }\n");
         let schema_path = project.root_dir.join("schema");
         std::fs::remove_dir_all(schema_path).expect("remove schema dir");
         let mut server = LspServer::new(project, Vec::new());
@@ -3072,7 +3041,7 @@ mod tests {
     #[test]
     fn notification_errors_are_logged_without_returning_from_handler() {
         let (_cleanup, project) =
-            test_project("lsp-notification-error", "type Item { id: string; }\n");
+            test_project("lsp-notification-error", "type Item { key: string; }\n");
         let schema_path = project.root_dir.join("schema");
         std::fs::remove_dir_all(schema_path).expect("remove schema dir");
         let mut server = LspServer::new(project, Vec::new());
@@ -3083,7 +3052,7 @@ mod tests {
             "params": {
                 "textDocument": {
                     "uri": "file:///missing.cft",
-                    "text": "type Item { id: string; }\n"
+                    "text": "type Item { key: string; }\n"
                 }
             }
         }));
@@ -3100,7 +3069,7 @@ mod tests {
 
     #[test]
     fn requests_after_shutdown_return_invalid_request() {
-        let (_cleanup, project) = test_project("lsp-shutdown", "type Item { id: string; }\n");
+        let (_cleanup, project) = test_project("lsp-shutdown", "type Item { key: string; }\n");
         let mut server = LspServer::new(project, Vec::new());
 
         server
@@ -3137,7 +3106,7 @@ mod tests {
 
     #[test]
     fn handler_ignores_malformed_notifications_and_reports_unknown_requests() {
-        let (_cleanup, project) = test_project("lsp-handler-edges", "type Item { id: string; }\n");
+        let (_cleanup, project) = test_project("lsp-handler-edges", "type Item { key: string; }\n");
         let mut server = LspServer::new(project, Vec::new());
 
         server
@@ -3184,7 +3153,7 @@ mod tests {
 
     #[test]
     fn did_save_with_text_updates_document_and_without_text_revalidates_project() {
-        let source = "type Item { id: string; }\n";
+        let source = "type Item { key: string; }\n";
         let (_cleanup, project) = test_project("lsp-save-edges", source);
         let schema_path = project.root_dir.join("schema").join("main.cft");
         let uri = path_to_file_uri(&schema_path);
@@ -3199,7 +3168,7 @@ mod tests {
             .expect("open document");
         server.writer.clear();
 
-        let changed = "type Item { id: int; }\n";
+        let changed = "type Item { key: int; }\n";
         server
             .handle_message(&json!({
                 "jsonrpc": "2.0",
@@ -3238,7 +3207,7 @@ mod tests {
 
     #[test]
     fn feature_requests_return_empty_results_for_missing_params_and_unknown_documents() {
-        let source = "type Item { id: string; }\n";
+        let source = "type Item { key: string; }\n";
         let (_cleanup, project) = test_project("lsp-request-param-edges", source);
         let mut server = LspServer::new(project, Vec::new());
         server.validate_project().expect("initial validation");
@@ -3298,7 +3267,7 @@ mod tests {
 
     #[test]
     fn formatting_requests_handle_idempotent_unknown_and_dirty_documents() {
-        let source = "type Item {\n  id: string;\n}\n";
+        let source = "type Item {\n  key: string;\n}\n";
         let (_cleanup, project) = test_project("lsp-formatting-edges", source);
         let schema_path = project.root_dir.join("schema").join("main.cft");
         let schema_uri = path_to_file_uri(&schema_path);
@@ -3312,7 +3281,7 @@ mod tests {
                 "params": {
                     "textDocument": {
                         "uri": extra_uri,
-                        "text": "type Extra { id: string; }\n"
+                        "text": "type Extra { key: string; }\n"
                     }
                 }
             }))
@@ -3340,7 +3309,7 @@ mod tests {
         assert_eq!(written_messages(&server.writer)[0]["result"], json!([]));
         server.writer.clear();
 
-        let dirty = "type Item {\nid: string;\n}";
+        let dirty = "type Item {\nkey: string;\n}";
         server
             .handle_message(&json!({
                 "jsonrpc": "2.0",
@@ -3366,7 +3335,7 @@ mod tests {
         assert_eq!(edits.len(), 1);
         assert!(edits[0]["newText"]
             .as_str()
-            .is_some_and(|text| text.contains("  id: string;")));
+            .is_some_and(|text| text.contains("  key: string;")));
     }
 
     #[test]
@@ -3404,7 +3373,7 @@ mod tests {
 
     #[test]
     fn hover_and_definition_ignore_comment_and_string_words() {
-        let source = "type Monster { id: string; }\n\
+        let source = "type Monster { key: string; }\n\
 type Item {\n\
   note: string = \"Monster\";\n\
   # Monster\n\
@@ -3435,15 +3404,15 @@ type Item {\n\
     fn hover_and_definition_cover_symbol_resolution_boundaries() {
         let source = "const LIMIT: int = 5;\n\
 @display(\"target\")\n\
-type Target { @id id: string; value: int; }\n\
+type Target { key: string; value: int; }\n\
 enum Kind { One = 1, Two = 2, }\n\
 type Item {\n\
   @display(\"kind\")\n\
   kind: Kind = Kind.One;\n\
-  @ref(Target) target_id: string;\n\
+  target: Target;\n\
   count: int = LIMIT;\n\
   check {\n\
-    target_id.value >= LIMIT;\n\
+    target.value >= LIMIT;\n\
     kind == Kind.Two;\n\
     count > 0;\n\
     true;\n\
@@ -3463,11 +3432,11 @@ type Item {\n\
                 "enum variant",
             ),
             (
-                position_inside(source, "target_id.value", "value", 1),
+                position_inside(source, "target.value", "value", 1),
                 "Target`.`value",
             ),
             (
-                position_inside(source, "@ref(Target)", "Target", 1),
+                position_inside(source, "target: Target", "Target", 1),
                 "CFT type",
             ),
             (position_inside(source, "kind: Kind", "Kind", 1), "CFT enum"),
@@ -3494,7 +3463,7 @@ type Item {\n\
 
         for offset in [
             position_inside(source, "Kind.Two", "Two", 1),
-            position_inside(source, "target_id.value", "value", 1),
+            position_inside(source, "target.value", "value", 1),
             position_inside(source, "LIMIT;", "LIMIT", 1),
             position_inside(source, "count > 0", "count", 1),
         ] {
@@ -3515,8 +3484,8 @@ type Item {\n\
     fn completion_scope_uses_boundary_offsets_and_missing_ast_as_top_level() {
         let source = "enum Kind { One = 1, }\n\
 type Item {\n\
-  id: string;\n\
-  check { id != \"\"; }\n\
+  key: string;\n\
+  check { key != \"\"; }\n\
 }\n";
         let (_cleanup, build) = test_lsp_build("lsp-completion-scope", source);
         let document = first_document(&build);
@@ -3577,9 +3546,9 @@ type Item {\n\
 
     #[test]
     fn completion_items_suppress_trivia_and_restrict_predicate_context() {
-        let source = "type Target { id: string; }\n\
+        let source = "type Target { key: string; }\n\
 type Item {\n\
-  id: string;\n\
+  key: string;\n\
   target: Target;\n\
   note: string = \"tar\";\n\
   # tar\n\
@@ -3613,7 +3582,7 @@ type Item {\n\
         let source = "const LIMIT: int = 5;\n\
 const NAME: string = \"boss\";\n\
 enum Kind { One = 1, Two = 2, }\n\
-type Target { @id id: string; value: int; }\n\
+type Target { key: string; value: int; }\n\
 type Item {\n\
   enabled: bool = true;\n\
   kind: Kind = Kind.One;\n\
@@ -3621,7 +3590,7 @@ type Item {\n\
   xs: [int] = [];\n\
   attrs: {string: int} = {};\n\
   target: Target;\n\
-  @ref(Target) target_id: string;\n\
+  other: Target;\n\
   check { all value in xs { value > LIMIT; } }\n\
 }\n";
         let (_cleanup, build) = test_lsp_build("lsp-completion-boundaries", source);
@@ -3629,10 +3598,13 @@ type Item {\n\
 
         let top_labels = completion_labels(annotation_completion_items(CompletionScope::TopLevel));
         assert!(top_labels.contains(&"@struct".to_string()));
+        assert!(top_labels.contains(&"@keyAsEnum".to_string()));
         assert!(!top_labels.contains(&"@id".to_string()));
 
         let type_labels = completion_labels(annotation_completion_items(CompletionScope::TypeBody));
-        assert!(type_labels.contains(&"@id".to_string()));
+        assert!(type_labels.contains(&"@display".to_string()));
+        assert!(!type_labels.contains(&"@id".to_string()));
+        assert!(!type_labels.contains(&"@keyAsEnum".to_string()));
         assert!(!type_labels.contains(&"@struct".to_string()));
 
         let enum_labels = completion_labels(annotation_completion_items(CompletionScope::EnumBody));
@@ -3653,14 +3625,6 @@ type Item {\n\
         assert!(type_ref_labels.contains(&"Target".to_string()));
         assert!(type_ref_labels.contains(&"Kind".to_string()));
         assert!(type_ref_labels.contains(&"string".to_string()));
-
-        let ref_position = position_from_byte(
-            source,
-            source.find("@ref(Target)").expect("ref") + "@ref(".len(),
-        );
-        let ref_labels = completion_labels(completion_items(&build, document, &ref_position));
-        assert!(ref_labels.contains(&"Target".to_string()));
-        assert!(!ref_labels.contains(&"Kind".to_string()));
 
         let const_position = position_from_byte(
             source,
@@ -3723,8 +3687,9 @@ type Item {\n\
             document,
             check_offset,
         ));
+        assert!(check_labels.contains(&"id".to_string()));
         assert!(check_labels.contains(&"value".to_string()));
-        assert!(check_labels.contains(&"target_id".to_string()));
+        assert!(check_labels.contains(&"target".to_string()));
         assert!(check_labels.contains(&"LIMIT".to_string()));
 
         assert_eq!(
@@ -3740,9 +3705,9 @@ type Item {\n\
             &build,
             document,
             check_offset,
-            &[s("target_id")],
+            &[s("target")],
         ));
-        assert!(ref_field_labels.contains(&"id".to_string()));
+        assert!(ref_field_labels.contains(&"key".to_string()));
         assert!(ref_field_labels.contains(&"value".to_string()));
         assert!(dot_completion_items(&build, document, check_offset, &[s("missing")]).is_empty());
     }
@@ -3779,7 +3744,7 @@ type Item {\n\
     fn semantic_tokens_and_protocol_helpers_cover_malformed_boundaries() {
         let (_cleanup, build) = test_lsp_build(
             "lsp-semantic-helper-boundaries",
-            "type Item { id: string; }\n",
+            "type Item { key: string; }\n",
         );
         let invalid_document = LspDocument {
             module_id: "broken".to_string(),
@@ -3833,10 +3798,10 @@ type Item {\n\
 
     #[test]
     fn scope_type_helpers_return_none_for_invalid_or_non_object_chains() {
-        let source = "type Target { @id id: string; value: int; }\n\
+        let source = "type Target { key: string; value: int; }\n\
 type Holder {\n\
-  @id id: string;\n\
-  @ref(Target) target: string;\n\
+  key: string;\n\
+  target: Target;\n\
   count: int;\n\
   check { target.value == 1; }\n\
 }\n";
@@ -3909,8 +3874,8 @@ values: [string] = [\n\
             "type Item {\n  values: [string] = [\n    \"{\" # string brace does not indent\n  ] # closing bracket in comment } }\n}\n"
         );
         assert_eq!(
-            format_cft("type Item {\n\nid: string;\n}"),
-            "type Item {\n\n  id: string;\n}"
+            format_cft("type Item {\n\nkey: string;\n}"),
+            "type Item {\n\n  key: string;\n}"
         );
     }
 

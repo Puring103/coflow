@@ -16,7 +16,7 @@
 #![allow(clippy::missing_const_for_fn, clippy::similar_names, clippy::use_self)]
 
 use coflow_cft::{CftContainer, CftSchemaField};
-use coflow_data_model::{CfdInputDictKey, CfdInputValue};
+use coflow_data_model::{CfdInputDictKey, CfdInputRefIndex, CfdInputValue, CfdRefPathSegment};
 use std::collections::{BTreeMap, BTreeSet};
 use unicode_ident::{is_xid_continue, is_xid_start};
 
@@ -51,6 +51,7 @@ pub enum CellValueErrorCode {
     InvalidEnumVariant,
     MixedObjectStyle,
     StringNeedsQuotes,
+    ReferenceNeedsMarker,
 }
 
 /// Parses one cell value using a CFT declared type as context.
@@ -312,6 +313,14 @@ fn parse_object(
     text: &str,
     context: ValueContext,
 ) -> Result<CfdInputValue, CellValueDiagnostics> {
+    let expected_fields = full_fields(schema, expected_type)?;
+    if let Some(reference) = parse_ref_value(text)? {
+        return Ok(reference);
+    }
+    if looks_like_bare_record_key(text) {
+        return Err(reference_needs_marker(text));
+    }
+
     let ObjectContent {
         actual_type,
         content,
@@ -323,10 +332,11 @@ fn parse_object(
     if let Some(actual) = &actual_type {
         validate_actual_type(schema, expected_type, actual)?;
     }
-    let field_type = actual_type
-        .as_deref()
-        .map_or(expected_type, |actual| actual);
-    let fields = full_fields(schema, field_type)?;
+    let fields = if let Some(actual) = actual_type.as_deref() {
+        full_fields(schema, actual)?
+    } else {
+        expected_fields
+    };
     let content = content.trim();
     if content.is_empty() {
         return Ok(object_value(actual_type, std::iter::empty()));
@@ -360,6 +370,127 @@ fn parse_object(
         parse_named_object(schema, actual_type, &fields, &parts, &colon_positions)
     } else {
         parse_positional_object(schema, actual_type, &fields, &parts)
+    }
+}
+
+fn parse_ref_value(text: &str) -> Result<Option<CfdInputValue>, CellValueDiagnostics> {
+    let text = text.trim();
+    let Some(rest) = text.strip_prefix('@') else {
+        return Ok(None);
+    };
+    let mut parser = RefParser::new(rest);
+    Ok(Some(parser.parse()?))
+}
+
+fn looks_like_bare_record_key(text: &str) -> bool {
+    let text = text.trim();
+    !text.is_empty()
+        && !matches!(text, "_" | "null")
+        && is_type_marker_name(text)
+        && !text.starts_with('{')
+        && !text.starts_with('[')
+        && !text.starts_with('"')
+        && !text.contains(',')
+        && !text.contains(':')
+        && !text.contains('{')
+        && !text.contains('}')
+        && !text.contains('[')
+        && !text.contains(']')
+        && text.chars().next().is_some_and(|ch| ch != '@')
+}
+
+struct RefParser<'a> {
+    text: &'a str,
+    pos: usize,
+}
+
+impl<'a> RefParser<'a> {
+    fn new(text: &'a str) -> Self {
+        Self { text, pos: 0 }
+    }
+
+    fn parse(&mut self) -> Result<CfdInputValue, CellValueDiagnostics> {
+        let root = self.parse_name("reference key")?;
+        let mut segments = Vec::new();
+        while !self.is_eof() {
+            if self.eat('.') {
+                segments.push(CfdRefPathSegment::Field(self.parse_name("path field")?));
+                continue;
+            }
+            if self.eat('[') {
+                let index = self.parse_index()?;
+                if !self.eat(']') {
+                    return Err(syntax("reference path index is missing `]`"));
+                }
+                segments.push(CfdRefPathSegment::Index(index));
+                continue;
+            }
+            return Err(syntax("invalid reference path syntax"));
+        }
+
+        if segments.is_empty() {
+            Ok(CfdInputValue::record_ref(root))
+        } else {
+            Ok(CfdInputValue::path_ref(root, segments))
+        }
+    }
+
+    fn parse_name(&mut self, label: &str) -> Result<String, CellValueDiagnostics> {
+        let start = self.pos;
+        while let Some(ch) = self.peek() {
+            if matches!(ch, '.' | '[' | ']' | ' ' | '\t' | '\r' | '\n') {
+                break;
+            }
+            self.pos += ch.len_utf8();
+        }
+        if self.pos == start {
+            return Err(syntax(format!("{label} is missing")));
+        }
+        Ok(self.text[start..self.pos].to_string())
+    }
+
+    fn parse_index(&mut self) -> Result<CfdInputRefIndex, CellValueDiagnostics> {
+        let start = self.pos;
+        while let Some(ch) = self.peek() {
+            if ch == ']' {
+                break;
+            }
+            self.pos += ch.len_utf8();
+        }
+        let raw = self.text[start..self.pos].trim();
+        if raw.is_empty() {
+            return Err(syntax("reference path index is empty"));
+        }
+        if let Ok(value) = raw.parse::<i64>() {
+            return Ok(CfdInputRefIndex::Int(value));
+        }
+        if let Some((enum_name, variant)) = raw.split_once('.') {
+            if enum_name.is_empty() || variant.is_empty() {
+                return Err(syntax("invalid enum reference path index"));
+            }
+            return Ok(CfdInputRefIndex::EnumVariant {
+                enum_name: enum_name.to_string(),
+                variant: variant.to_string(),
+            });
+        }
+        Ok(CfdInputRefIndex::Variant(raw.to_string()))
+    }
+
+    fn eat(&mut self, expected: char) -> bool {
+        if self.peek() == Some(expected) {
+            self.pos += expected.len_utf8();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn peek(&self) -> Option<char> {
+        self.text[self.pos..].chars().next()
+    }
+
+    fn is_eof(&self) -> bool {
+        self.pos == self.text.len()
     }
 }
 
@@ -836,6 +967,15 @@ fn type_mismatch(expected: &str) -> CellValueDiagnostics {
         diagnostics: vec![CellValueDiagnostic {
             code: CellValueErrorCode::TypeMismatch,
             message: format!("expected {expected}"),
+        }],
+    }
+}
+
+fn reference_needs_marker(text: &str) -> CellValueDiagnostics {
+    CellValueDiagnostics {
+        diagnostics: vec![CellValueDiagnostic {
+            code: CellValueErrorCode::ReferenceNeedsMarker,
+            message: format!("object reference `{text}` must be written as `@{text}`"),
         }],
     }
 }

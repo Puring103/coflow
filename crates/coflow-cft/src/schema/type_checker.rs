@@ -153,6 +153,9 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 return field.check_ty.clone();
             }
         }
+        if name == "id" {
+            return Ty::String;
+        }
         if let Some(info) = self.compiler.consts.get(name) {
             return Ty::from_const(&info.value);
         }
@@ -195,6 +198,9 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
         let inner_ty = self.check_expr_value(inner);
         match unwrap_nullable(&inner_ty) {
             Ty::Type(type_name) => {
+                if name.name == "id" {
+                    return Ty::String;
+                }
                 let type_known = self.compiler.full_fields.contains_key(type_name);
                 let field_ty = self
                     .compiler

@@ -4,10 +4,10 @@ These files demonstrate core CFT syntax and are designed to compile together as 
 
 - `01_constants.cft`: constants and literal defaults.
 - `02_enums_and_flags.cft`: plain enums and `@flag` enums.
-- `03_types_fields_defaults.cft`: type declarations, fields, annotations, and defaults.
+- `03_types_fields_defaults.cft`: type declarations, fields, annotations, virtual `id`, and defaults.
 - `04_arrays_and_dicts.cft`: arrays, dictionaries, and dict entry checks.
 - `05_inheritance.cft`: abstract types, inheritance, and sealed types.
-- `06_nullable_and_ref.cft`: nullable fields and `@ref`.
+- `06_nullable_and_ref.cft`: nullable fields and record-key references.
 - `07_check_expressions.cft`: operators and chained comparisons.
 - `08_when_and_quantifiers.cft`: `when`, `all`, `any`, and `none`.
 - `09_builtin_functions.cft`: built-in check functions.

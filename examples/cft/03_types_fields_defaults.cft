@@ -8,13 +8,9 @@ sealed type ExampleVector2 {
 
 @display("Example item")
 type ExampleItem {
-  @id
-  id: string;
-
   @display("Display name")
   name: string;
 
-  @index
   rarity: ExampleRarity = ExampleRarity.Common;
 
   price: int = 0;

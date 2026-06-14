@@ -13,9 +13,6 @@ type ExampleMonsterStats {
 }
 
 type ExampleMonster {
-  @id
-  id: string;
-
   name: string;
   level: int;
   rarity: ExampleRarity = ExampleRarity.Common;

@@ -12,7 +12,7 @@ namespace {{ namespace }}
 {
 {% for property in type.properties %}{% if property.summary %}    /// <summary>{{ property.summary }}</summary>
 {% endif %}{% if property.obsolete %}    [Obsolete]
-{% endif %}    public {{ property.type_name }} {{ property.name }} { get; {{ property.setter }}; }{% if property.initializer %} = {{ property.initializer }};{% endif %}
+{% endif %}    {{ property.visibility }} {{ property.type_name }} {{ property.name }} { get; {{ property.setter }}; }{% if property.initializer %} = {{ property.initializer }};{% endif %}
 {% if not loop.last %}
 {% endif %}{% endfor %}}
 }

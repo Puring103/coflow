@@ -43,20 +43,20 @@ Excel 加载器的输入是：
 
 ### 第二阶段：逐行解析记录
 
-对每个数据行，按列名（经过 `columns` 映射后）找到对应字段，根据字段的 CFT 类型 schema-guided 解析单元格内容（见第 3 节）。
+对每个数据行，先读取特殊 `id` 列作为 record key；`id` 不映射到 CFT 字段，且 CFT 禁止声明名为 `id` 的字段。随后按列名（经过 `columns` 映射后）找到对应字段，根据字段的 CFT 类型 schema-guided 解析单元格内容（见第 3 节）。
 
-解析结果构造为 `Record`，加入对应 `Table` 的 `records` 列表。同时将 `@id` 字段值注册到该类型的 `primary_index`，重复 ID 立即报错。
+解析结果构造为 `Record`，加入对应 `Table` 的 `records` 列表。同时将 record key 注册到该类型的 `primary_index`，重复 key 立即报错。空 key 立即报错。
 
-如果该类型属于带 `@id` 的继承树，加载器还要把记录注册到相关 `inheritance_index`。同一继承树索引中的 ID 必须唯一，兄弟子类之间重复 ID 也立即报错。
+如果该类型属于继承树，加载器还要把记录注册到相关 `inheritance_index`。同一继承树索引中的 key 必须唯一，兄弟子类之间重复 key 也立即报错。
 
 同一类型的 records 按 `ExcelSource` 中 sources 顺序追加（见 [02-data-model.md](02-data-model.md)）。
 
 ### 第三阶段：解析跨表引用
 
-遍历所有 Record，将 `@ref` 字段的值（string 或 int）按目标类型的赋值兼容范围查找，替换为 `Value::Ref { id, target }`。
+遍历所有 Record，将对象字段中的 `@key` / `@key.path[index]` 输入按目标类型解析，替换为 `Value::Ref { key, target }` 或路径结果值。
 
-- `@ref(TypeName)` 中 TypeName 是 `sealed type` 或无子类的普通 `type` 时，在该类型的 `primary_index` 中查找
-- `@ref(TypeName)` 中 TypeName 是 `abstract type` 或有子类的普通 `type` 时，在对应 `inheritance_index` 中查找
+- 字段声明类型是 `sealed type` 或无子类的普通 `type` 时，在该类型的 `primary_index` 中查找
+- 字段声明类型是 `abstract type` 或有子类的普通 `type` 时，在对应 `inheritance_index` 中查找
 - 允许循环引用（A.ref → B，B.ref → A）；两遍设计天然支持，不会无限递归
 - 找不到目标则报错
 
@@ -81,6 +81,7 @@ Excel 加载器的输入是：
 | 空单元格 | 字段有默认值时使用默认值；无默认值且非 nullable 时报错 |
 | `_` | 同空单元格 |
 | `null` | 显式填 null；字段类型必须是 `T?`，否则报错 |
+| `@key` | 对象字段的记录引用；目标类型为 string 时保留为普通字符串 |
 
 ---
 
@@ -96,6 +97,6 @@ Excel 加载器的输入是：
 | 阶段 | 错误类型 |
 |------|---------|
 | Excel 解析 | 文件不存在、sheet 不存在、`type` 指定的类型未定义 |
-| 记录解析 | 列名找不到对应字段、单元格值类型不匹配、`@id` 重复、继承树 ID 重复、字典 key 重复、多态字段缺少类型标记 |
-| 跨表引用解析 | `@ref` 目标类型不存在、目标 ID 找不到 |
+| 记录解析 | 缺少 `id` 列、空 record key、列名找不到对应字段、单元格值类型不匹配、record key 重复、继承树 key 重复、字典 key 重复、多态字段缺少类型标记 |
+| 跨表引用解析 | 引用目标类型不存在、目标 key 找不到、路径字段/索引不存在、路径结果类型不匹配 |
 | check 执行 | 条件为假、类型错误、越界 |

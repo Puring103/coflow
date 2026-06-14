@@ -157,7 +157,9 @@ Examples:
 - duplicate module, type, field, enum variant, or enum value;
 - unknown named type;
 - invalid inheritance;
-- invalid `@id`, `@index`, `@ref`, `@struct`, `@IdAsEnum`, or `@GenAsEnum` usage;
+- invalid `@struct`, `@expand`, `@flag`, `@display`, `@deprecated`, or `@keyAsEnum` usage;
+- legacy field-level `@id`, `@index`, `@ref`, `@IdAsEnum`, and `@GenAsEnum` annotations;
+- reserved `id` field declarations;
 - invalid default value;
 - invalid enum value sequence;
 - reference target has no ID;
@@ -338,8 +340,8 @@ Examples:
 - generated file name collision;
 - generated member name collision;
 - configured database file name collision;
-- invalid `@IdAsEnum` generated variant;
-- duplicate `@IdAsEnum` variant values.
+- invalid `@keyAsEnum` generated variant;
+- duplicate `@keyAsEnum` variant values.
 
 When these diagnostics are present, Coflow does not read or write the enum
 lockfile, does not clean stale `.cs` files, and does not generate new `.cs`
