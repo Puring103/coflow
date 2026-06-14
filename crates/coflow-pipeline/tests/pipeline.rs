@@ -378,6 +378,30 @@ sources:
 }
 
 #[test]
+fn check_project_returns_check_diagnostics_after_successful_load() {
+    let root = temp_project_dir("coflow-pipeline-check-diagnostics");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_invalid_check_project(&root).expect("write project");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+
+    let outcome = check_project(&project).expect("check project");
+
+    let PipelineOutcome::Diagnostics(diagnostics) = outcome else {
+        panic!("expected check diagnostics");
+    };
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "CFD-CHECK-001"
+                && diagnostic.stage == "CHECK"
+                && diagnostic.path.ends_with("configs.xlsx")
+                && diagnostic.sheet.as_deref() == Some("Item")
+                && diagnostic.cell.as_deref() == Some("B2")),
+        "diagnostics: {diagnostics:?}"
+    );
+}
+
+#[test]
 fn export_project_data_requires_excel_sources() {
     let root = temp_project_dir("coflow-pipeline-export-missing-source");
     let _cleanup = TempDirCleanup(root.clone());
@@ -890,6 +914,50 @@ outputs:
         }
     }
     std::fs::write(root.join("coflow.yaml"), config).expect("write config");
+    Ok(())
+}
+
+fn write_invalid_check_project(root: &Path) -> Result<(), rust_xlsxwriter::XlsxError> {
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        r#"
+            type Item {
+                @id
+                id: string;
+                level: int;
+                check { level > 0; }
+            }
+        "#,
+    )
+    .expect("write schema");
+    let workbook_path = root.join("data").join("configs.xlsx");
+    let mut workbook = Workbook::new();
+    let sheet = workbook.add_worksheet();
+    sheet.set_name("Item")?;
+    sheet.write_string(0, 0, "id")?;
+    sheet.write_string(0, 1, "level")?;
+    sheet.write_string(1, 0, "item_1")?;
+    sheet.write_number(1, 1, 0.0)?;
+    workbook.save(&workbook_path)?;
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - file: data/configs.xlsx
+    sheets:
+      - sheet: Item
+        columns:
+          id: id
+          level: level
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
     Ok(())
 }
 

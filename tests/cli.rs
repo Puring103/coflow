@@ -58,6 +58,77 @@ fn full_project_check_loads_example_excel() {
 }
 
 #[test]
+fn full_project_check_failure_uses_check_diagnostics_in_human_output() {
+    let root = temp_project_dir("check-failure-human");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_invalid_check_project(&root).expect("write invalid check project");
+
+    let output = coflow()
+        .args(["check", root.to_str().expect("utf8 temp path")])
+        .output()
+        .expect("run coflow check");
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stdout).is_empty(),
+        "stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("[CFD-CHECK-001] [CHECK]"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("file    data/configs.xlsx"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("sheet   Item"), "stderr: {stderr}");
+    assert!(stderr.contains("cell    B2"), "stderr: {stderr}");
+    assert!(
+        stderr.contains("message\n  check condition evaluated to false"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains(root.to_string_lossy().as_ref()),
+        "stderr should use project-relative paths: {stderr}"
+    );
+}
+
+#[test]
+fn full_project_check_failure_uses_check_diagnostics_in_json_output() {
+    let root = temp_project_dir("check-failure-json");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_invalid_check_project(&root).expect("write invalid check project");
+
+    let output = coflow()
+        .args(["check", root.to_str().expect("utf8 temp path"), "--json"])
+        .output()
+        .expect("run coflow check");
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).is_empty(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).expect("diagnostics json");
+    let diagnostics = json["diagnostics"].as_array().expect("diagnostics array");
+    assert_eq!(diagnostics.len(), 1);
+    let diagnostic = &diagnostics[0];
+    assert_eq!(diagnostic["code"], "CFD-CHECK-001");
+    assert_eq!(diagnostic["stage"], "CHECK");
+    assert!(
+        diagnostic["path"]
+            .as_str()
+            .is_some_and(|path| path.ends_with("configs.xlsx")),
+        "diagnostic: {diagnostic:?}"
+    );
+    assert_eq!(diagnostic["sheet"], "Item");
+    assert_eq!(diagnostic["cell"], "B2");
+}
+
+#[test]
 fn build_exports_data_and_generates_csharp_for_json_project() {
     let suffix = unique_suffix();
     let root_dir = std::env::temp_dir().join(format!("coflow-build-json-test-{suffix}"));
@@ -2047,6 +2118,50 @@ fn temp_project_dir(name: &str) -> std::path::PathBuf {
         std::fs::remove_dir_all(&root).expect("clean old temp dir");
     }
     root
+}
+
+fn write_invalid_check_project(root: &std::path::Path) -> Result<(), rust_xlsxwriter::XlsxError> {
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        r#"
+            type Item {
+                @id
+                id: string;
+                level: int;
+                check { level > 0; }
+            }
+        "#,
+    )
+    .expect("write schema");
+    let workbook_path = root.join("data").join("configs.xlsx");
+    let mut workbook = rust_xlsxwriter::Workbook::new();
+    let sheet = workbook.add_worksheet();
+    sheet.set_name("Item")?;
+    sheet.write_string(0, 0, "id")?;
+    sheet.write_string(0, 1, "level")?;
+    sheet.write_string(1, 0, "item_1")?;
+    sheet.write_number(1, 1, 0.0)?;
+    workbook.save(&workbook_path)?;
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - file: data/configs.xlsx
+    sheets:
+      - sheet: Item
+        columns:
+          id: id
+          level: level
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+    Ok(())
 }
 
 struct TempDirCleanup(std::path::PathBuf);

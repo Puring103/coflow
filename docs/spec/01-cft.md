@@ -265,6 +265,8 @@ type CurrencyReward : Reward {
 # 执行顺序：Reward.check → CurrencyReward.check
 ```
 
+如果父类 `check` 只产生普通条件失败（`CheckFailed`），子类 `check` 仍继续执行并累计诊断。如果父类 `check` 产生执行期硬错误（例如 null access、越界、类型错误），则停止该对象后续 `check`，包括子类 `check`。
+
 ### 5.1 条件语句
 
 一个表达式加分号，求值结果必须为 `bool`。多条语句相互独立，不能依赖前面语句的结果；条件为假时继续执行后续语句，收集全部错误：
@@ -398,14 +400,22 @@ item is null              # null 判断
 - `sum` 跳过 `null`，没有任何非 `null` 值时返回 `0`
 - `contains([T?], null)` 检查数组中是否存在 `null` 元素
 - `contains(dict, val)` 只检查 key，不检查 value
+- `keys(dict)` / `values(dict)` 保留数据模型中 dict entries 的顺序，不按 key 排序
+- `matches` 使用 Rust `regex` 语义，默认 Unicode-aware；匹配是子串匹配，需要全量匹配时显式写 `^...$`
+- `matches` 的 pattern 必须是字符串字面量；`const` 或字段提供的动态 pattern 不允许
 - `<<` `>>` 两个操作数均必须是 `int`
 
 ### 5.7 执行规则
 
 - 多条语句顺序求值，条件为假时继续收集后续错误
-- 求值中出现类型错误或越界时，立即停止当前对象的校验
+- 求值中出现类型错误、null access、越界、缺失 dict key、空 `min/max` 等硬错误时，立即停止当前对象的校验
 - 同一对象被多处引用时，其 check 只执行一次（按 identity 去重）
 - check 在所有数据加载完成（含 `@ref` 解析）后执行，执行期间对象图不可变
+- 诊断输出顺序稳定：top-level records 按模型顺序，同一对象按父类到子类，同一 check block 按语句顺序，数组按 index，dict 按 entries 顺序
+
+### 5.8 float 边界
+
+数据模型阶段只接受有限 `float` 值；`NaN`、`inf`、`-inf` 等非有限值不会进入 check 执行阶段。check 中有限 `float` 运算遵循 Rust `f64` 语义：`1.0 / 0.0` 得到正无穷并可参与后续比较，`-0.0 == 0.0` 为 true。
 
 ---
 

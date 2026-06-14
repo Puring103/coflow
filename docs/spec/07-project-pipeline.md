@@ -54,6 +54,19 @@
 
 ---
 
+## check 诊断处理
+
+`coflow-pipeline::check_project` 在 schema、Excel、data model 均成功但 CFT `check` 失败时，返回 `PipelineOutcome::Diagnostics`，不返回 `Err`。`Err` 只表示配置错误、I/O 错误或不可恢复的 artifact 错误。
+
+CLI `coflow check` 对 `PipelineOutcome::Diagnostics` 的处理规则：
+
+- 退出码为非 0。
+- 默认 human 输出写入 stderr，包含诊断 code、stage、项目相对文件路径、sheet/cell（如果来自 Excel）和 message。
+- `--json` 输出写入 stdout，格式为 `{"diagnostics":[...]}`，退出码仍为非 0。
+- check 诊断使用 `CFD-CHECK-*` code，stage 为 `CHECK`。
+
+---
+
 ## 非职责
 
 - 不重新实现 CFT parser、schema compiler 或 schema 反射模型。
