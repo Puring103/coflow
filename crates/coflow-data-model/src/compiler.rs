@@ -1,11 +1,12 @@
 use crate::diagnostic::{CfdDiagnostic, CfdDiagnostics, CfdErrorCode, CfdPath};
 use crate::model::{
-    CfdDataModel, CfdDictKey, CfdEnumValue, CfdIdValue, CfdInputDictKey, CfdInputRecord,
-    CfdInputValue, CfdPolymorphicIndex, CfdRecord, CfdRecordId, CfdTable, CfdValue,
+    CfdDataModel, CfdDictKey, CfdEnumValue, CfdInputDictKey, CfdInputRecord, CfdInputRefIndex,
+    CfdInputValue, CfdPolymorphicIndex, CfdRecord, CfdRecordId, CfdRefPathSegment, CfdTable,
+    CfdValue,
 };
 use crate::schema_view::{
-    id_from_fields, id_matches_type, index_key_from_draft, input_value_kind, type_accepts_default,
-    CfdType, CfdValueDraft, FieldMeta, RecordDraft, SchemaView,
+    input_value_kind, type_accepts_default, CfdType, CfdValueDraft, FieldMeta, RecordDraft,
+    SchemaView,
 };
 use coflow_cft::{CftContainer, CftSchemaDefaultValue};
 use std::collections::{BTreeMap, BTreeSet};
@@ -35,6 +36,7 @@ impl ModelCompiler {
                 let id = CfdRecordId::new(input_index);
                 if let Some(draft) = v.validate_record(
                     None,
+                    &record.key,
                     &record.actual_type,
                     &record.fields,
                     Some(id),
@@ -65,12 +67,14 @@ impl ModelCompiler {
                     &draft.fields,
                     Some(record_id),
                     &CfdPath::root(),
+                    &drafts,
                     &tables,
                     &inheritance_index,
                 ) else {
                     continue;
                 };
                 records.push(CfdRecord {
+                    key: draft.key.clone(),
                     actual_type: draft.actual_type.clone(),
                     fields,
                 });
@@ -106,64 +110,40 @@ impl ModelCompiler {
                     type_name: draft.actual_type.clone(),
                     records: Vec::new(),
                     primary_index: BTreeMap::new(),
-                    secondary_indexes: BTreeMap::new(),
                 });
             table.records.push(record_id);
 
-            if let Some(id_field_name) = self.schema.id_field_name(&draft.actual_type) {
-                if let Some(id) = id_from_fields(&draft.fields, &id_field_name) {
-                    if let Some(first) = table.primary_index.insert(id.clone(), record_id) {
-                        self.push(
-                            CfdDiagnostic::error(
-                                CfdErrorCode::DuplicateId,
-                                format!("duplicate id in table `{}`", draft.actual_type),
-                            )
-                            .with_primary(
-                                Some(record_id),
-                                CfdPath::root().field(id_field_name.clone()),
-                            )
-                            .with_related(
-                                Some(first),
-                                CfdPath::root().field(id_field_name.clone()),
-                                "first id is here",
-                            ),
-                        );
-                    }
-                    self.add_polymorphic_ids(
-                        &mut inheritance_index,
-                        &draft.actual_type,
-                        &id,
-                        record_id,
-                        &id_field_name,
-                    );
-                } else {
-                    self.push(
-                        CfdDiagnostic::error(
-                            CfdErrorCode::MissingIdField,
-                            format!("record `{}` has no usable @id field", draft.actual_type),
-                        )
-                        .with_primary(Some(record_id), CfdPath::root().field(id_field_name)),
-                    );
-                }
+            if draft.key.is_empty() {
+                self.push(
+                    CfdDiagnostic::error(
+                        CfdErrorCode::MissingIdField,
+                        format!("record `{}` has an empty key", draft.actual_type),
+                    )
+                    .with_primary(Some(record_id), CfdPath::root().field("id")),
+                );
+                continue;
             }
 
-            for field_name in self.schema.index_field_names(&draft.actual_type) {
-                let Some(value) = draft.fields.get(&field_name) else {
-                    continue;
-                };
-                let Some(key) = index_key_from_draft(value) else {
-                    continue;
-                };
-                if let Some(table) = tables.get_mut(&draft.actual_type) {
-                    table
-                        .secondary_indexes
-                        .entry(field_name)
-                        .or_default()
-                        .entry(key)
-                        .or_default()
-                        .push(record_id);
-                }
+            if let Some(first) = table.primary_index.insert(draft.key.clone(), record_id) {
+                self.push(
+                    CfdDiagnostic::error(
+                        CfdErrorCode::DuplicateId,
+                        format!("duplicate key in table `{}`", draft.actual_type),
+                    )
+                    .with_primary(Some(record_id), CfdPath::root().field("id"))
+                    .with_related(
+                        Some(first),
+                        CfdPath::root().field("id"),
+                        "first key is here",
+                    ),
+                );
             }
+            self.add_polymorphic_ids(
+                &mut inheritance_index,
+                &draft.actual_type,
+                &draft.key,
+                record_id,
+            );
         }
 
         (tables, inheritance_index)
@@ -173,15 +153,11 @@ impl ModelCompiler {
         &mut self,
         inheritance_index: &mut BTreeMap<String, CfdPolymorphicIndex>,
         actual_type: &str,
-        id: &CfdIdValue,
+        key: &str,
         record_id: CfdRecordId,
-        id_field_name: &str,
     ) {
         for target_type in self.schema.assignable_target_names(actual_type) {
             if !self.schema.range_is_polymorphic(&target_type) {
-                continue;
-            }
-            if !self.schema.range_has_id(&target_type) {
                 continue;
             }
             let index = inheritance_index
@@ -189,20 +165,17 @@ impl ModelCompiler {
                 .or_insert_with(|| CfdPolymorphicIndex {
                     records: BTreeMap::new(),
                 });
-            if let Some(first) = index.records.insert(id.clone(), record_id) {
+            if let Some(first) = index.records.insert(key.to_string(), record_id) {
                 self.push(
                     CfdDiagnostic::error(
                         CfdErrorCode::DuplicatePolymorphicId,
-                        format!("duplicate id in polymorphic range `{target_type}`"),
+                        format!("duplicate key in polymorphic range `{target_type}`"),
                     )
-                    .with_primary(
-                        Some(record_id),
-                        CfdPath::root().field(id_field_name.to_string()),
-                    )
+                    .with_primary(Some(record_id), CfdPath::root().field("id"))
                     .with_related(
                         Some(first),
-                        CfdPath::root().field(id_field_name.to_string()),
-                        "first id is here",
+                        CfdPath::root().field("id"),
+                        "first key is here",
                     ),
                 );
             }
@@ -239,6 +212,7 @@ impl<'s> Validator<'s> {
     fn validate_record(
         &mut self,
         expected_type: Option<&str>,
+        key: &str,
         actual_type: &str,
         input_fields: &BTreeMap<String, CfdInputValue>,
         record: Option<CfdRecordId>,
@@ -326,6 +300,7 @@ impl<'s> Validator<'s> {
 
         if self.diagnostics.len() == diagnostic_start {
             Some(RecordDraft {
+                key: key.to_string(),
                 actual_type: actual_type.to_string(),
                 fields: out,
             })
@@ -341,96 +316,7 @@ impl<'s> Validator<'s> {
         record: Option<CfdRecordId>,
         path: CfdPath,
     ) -> Option<CfdValueDraft> {
-        if let Some(target_type) = &field.ref_target {
-            return self.validate_ref_field(field, target_type, value, record, path);
-        }
-        if let Some(enum_name) = &field.key_as_enum {
-            return self.validate_key_as_enum_value(enum_name, &field.ty, value, record, path);
-        }
         self.validate_value(&field.ty, value, record, path)
-    }
-
-    fn validate_key_as_enum_value(
-        &mut self,
-        enum_name: &str,
-        ty: &CfdType,
-        value: &CfdInputValue,
-        record: Option<CfdRecordId>,
-        path: CfdPath,
-    ) -> Option<CfdValueDraft> {
-        if let CfdType::Nullable(inner) = ty {
-            return if matches!(value, CfdInputValue::Null) {
-                Some(CfdValueDraft::Value(CfdValue::Null))
-            } else {
-                self.validate_key_as_enum_value(enum_name, inner, value, record, path)
-            };
-        }
-
-        match (ty, value) {
-            (CfdType::String, CfdInputValue::String(value)) => {
-                self.validate_key_as_enum_variant(enum_name, value, record, path)?;
-                Some(CfdValueDraft::Value(CfdValue::String(value.clone())))
-            }
-            _ => self.validate_value(ty, value, record, path),
-        }
-    }
-
-    fn validate_ref_field(
-        &mut self,
-        field: &FieldMeta,
-        target_type: &str,
-        value: &CfdInputValue,
-        record: Option<CfdRecordId>,
-        path: CfdPath,
-    ) -> Option<CfdValueDraft> {
-        if matches!(value, CfdInputValue::Null) {
-            if field.ty.is_nullable() {
-                return Some(CfdValueDraft::Value(CfdValue::Null));
-            }
-            self.type_mismatch("non-null @ref id", value, record, path);
-            return None;
-        }
-
-        let key_as_enum = self.schema.id_key_as_enum(target_type);
-
-        let id = match value {
-            CfdInputValue::Ref(id) => {
-                self.validate_key_as_enum_id(key_as_enum, id, record, path.clone())?;
-                id.clone()
-            }
-            CfdInputValue::String(value) => {
-                if let Some(enum_name) = key_as_enum {
-                    self.validate_key_as_enum_variant(enum_name, value, record, path.clone())?;
-                }
-                CfdIdValue::String(value.clone())
-            }
-            CfdInputValue::Int(value) => CfdIdValue::Int(*value),
-            CfdInputValue::EnumVariant { enum_name, variant } => {
-                let enum_value =
-                    self.resolve_enum_value(enum_name, variant, record, path.clone())?;
-                CfdIdValue::Enum(enum_value)
-            }
-            _ => {
-                self.type_mismatch("@ref id", value, record, path);
-                return None;
-            }
-        };
-
-        if !id_matches_type(&id, &field.ty) {
-            self.push(
-                CfdDiagnostic::error(
-                    CfdErrorCode::TypeMismatch,
-                    "@ref id does not match the field id type",
-                )
-                .with_primary(record, path),
-            );
-            return None;
-        }
-
-        Some(CfdValueDraft::PendingRef {
-            target_type: target_type.to_string(),
-            id,
-        })
     }
 
     fn validate_value(
@@ -485,6 +371,17 @@ impl<'s> Validator<'s> {
                 let enum_value = self.resolve_enum_value(enum_name, variant, record, path)?;
                 Some(CfdValueDraft::Value(CfdValue::Enum(enum_value)))
             }
+            (CfdType::Type(expected), CfdInputValue::RecordRef(key)) => {
+                Some(CfdValueDraft::PendingRef {
+                    target_type: expected.clone(),
+                    key: key.clone(),
+                })
+            }
+            (expected, CfdInputValue::PathRef { root, segments }) => Some(CfdValueDraft::PathRef {
+                expected_type: expected.clone(),
+                root: root.clone(),
+                segments: segments.clone(),
+            }),
             (
                 CfdType::Type(expected),
                 CfdInputValue::Object {
@@ -506,7 +403,8 @@ impl<'s> Validator<'s> {
                 } else {
                     expected.clone()
                 };
-                let draft = self.validate_record(Some(expected), &actual, fields, record, path)?;
+                let draft =
+                    self.validate_record(Some(expected), "", &actual, fields, record, path)?;
                 Some(CfdValueDraft::Object(Box::new(draft)))
             }
             (CfdType::Array(inner), CfdInputValue::Array(items)) => {
@@ -605,68 +503,7 @@ impl<'s> Validator<'s> {
         record: Option<CfdRecordId>,
         path: CfdPath,
     ) -> Option<CfdValueDraft> {
-        let Some(target_type) = &field.ref_target else {
-            if let Some(enum_name) = &field.key_as_enum {
-                return self.default_key_as_enum_value(enum_name, &field.ty, value, record, path);
-            }
-            return self.default_value(&field.ty, value, record, path);
-        };
-
-        match value {
-            CftSchemaDefaultValue::Null if field.ty.is_nullable() => {
-                Some(CfdValueDraft::Value(CfdValue::Null))
-            }
-            CftSchemaDefaultValue::String(value)
-                if id_matches_type(&CfdIdValue::String(value.clone()), &field.ty) =>
-            {
-                if let Some(enum_name) = self.schema.id_key_as_enum(target_type) {
-                    self.validate_key_as_enum_variant(enum_name, value, record, path)?;
-                }
-                Some(CfdValueDraft::PendingRef {
-                    target_type: target_type.clone(),
-                    id: CfdIdValue::String(value.clone()),
-                })
-            }
-            CftSchemaDefaultValue::Int(value)
-                if id_matches_type(&CfdIdValue::Int(*value), &field.ty) =>
-            {
-                Some(CfdValueDraft::PendingRef {
-                    target_type: target_type.clone(),
-                    id: CfdIdValue::Int(*value),
-                })
-            }
-            _ => {
-                self.push(
-                    CfdDiagnostic::error(
-                        CfdErrorCode::TypeMismatch,
-                        "schema default does not match @ref field type",
-                    )
-                    .with_primary(record, path),
-                );
-                None
-            }
-        }
-    }
-
-    fn default_key_as_enum_value(
-        &mut self,
-        enum_name: &str,
-        ty: &CfdType,
-        default: &CftSchemaDefaultValue,
-        record: Option<CfdRecordId>,
-        path: CfdPath,
-    ) -> Option<CfdValueDraft> {
-        if matches!(default, CftSchemaDefaultValue::Null) && ty.is_nullable() {
-            return Some(CfdValueDraft::Value(CfdValue::Null));
-        }
-        let CftSchemaDefaultValue::String(value) = default else {
-            return self.default_value(ty, default, record, path);
-        };
-        if !type_accepts_default(ty, &CfdType::String) {
-            return self.default_value(ty, default, record, path);
-        }
-        self.validate_key_as_enum_variant(enum_name, value, record, path)?;
-        Some(CfdValueDraft::Value(CfdValue::String(value.clone())))
+        self.default_value(&field.ty, value, record, path)
     }
 
     fn default_value(
@@ -754,7 +591,7 @@ impl<'s> Validator<'s> {
         path: CfdPath,
     ) -> Option<CfdValueDraft> {
         let fields = BTreeMap::new();
-        let draft = self.validate_record(Some(type_name), type_name, &fields, record, path)?;
+        let draft = self.validate_record(Some(type_name), "", type_name, &fields, record, path)?;
         Some(CfdValueDraft::Object(Box::new(draft)))
     }
 
@@ -763,6 +600,7 @@ impl<'s> Validator<'s> {
         fields: &BTreeMap<String, CfdValueDraft>,
         record: Option<CfdRecordId>,
         path: &CfdPath,
+        drafts: &[RecordDraft],
         tables: &BTreeMap<String, CfdTable>,
         inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
     ) -> Option<BTreeMap<String, CfdValue>> {
@@ -771,7 +609,7 @@ impl<'s> Validator<'s> {
         for (name, value) in fields {
             let value_path = path.clone().field(name.clone());
             let Some(value) =
-                self.resolve_value(value, record, value_path, tables, inheritance_index)
+                self.resolve_value(value, record, value_path, drafts, tables, inheritance_index)
             else {
                 continue;
             };
@@ -789,34 +627,51 @@ impl<'s> Validator<'s> {
         value: &CfdValueDraft,
         record: Option<CfdRecordId>,
         path: CfdPath,
+        drafts: &[RecordDraft],
         tables: &BTreeMap<String, CfdTable>,
         inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
     ) -> Option<CfdValue> {
         match value {
             CfdValueDraft::Value(value) => Some(value.clone()),
-            CfdValueDraft::PendingRef { target_type, id } => {
+            CfdValueDraft::PendingRef { target_type, key } => {
                 let target = self.resolve_ref_target(
                     target_type,
-                    id,
+                    key,
                     tables,
                     inheritance_index,
                     record,
                     path,
                 )?;
                 Some(CfdValue::Ref {
-                    id: id.clone(),
+                    key: key.clone(),
                     target,
                 })
             }
+            CfdValueDraft::PathRef {
+                expected_type,
+                root,
+                segments,
+            } => self.resolve_path_ref(
+                expected_type,
+                root,
+                segments,
+                record,
+                path,
+                drafts,
+                tables,
+                inheritance_index,
+            ),
             CfdValueDraft::Object(record_draft) => {
                 let fields = self.resolve_fields(
                     &record_draft.fields,
                     record,
                     &path,
+                    drafts,
                     tables,
                     inheritance_index,
                 )?;
                 Some(CfdValue::Object(Box::new(CfdRecord {
+                    key: record_draft.key.clone(),
                     actual_type: record_draft.actual_type.clone(),
                     fields,
                 })))
@@ -828,6 +683,7 @@ impl<'s> Validator<'s> {
                         item,
                         record,
                         path.clone().index(index),
+                        drafts,
                         tables,
                         inheritance_index,
                     ) else {
@@ -844,6 +700,7 @@ impl<'s> Validator<'s> {
                         value,
                         record,
                         path.clone().dict_key_value(key),
+                        drafts,
                         tables,
                         inheritance_index,
                     ) else {
@@ -859,32 +716,21 @@ impl<'s> Validator<'s> {
     fn resolve_ref_target(
         &mut self,
         target_type: &str,
-        id: &CfdIdValue,
+        key: &str,
         tables: &BTreeMap<String, CfdTable>,
         inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
         record: Option<CfdRecordId>,
         path: CfdPath,
     ) -> Option<CfdRecordId> {
-        if !self.schema.range_has_id(target_type) {
-            self.push(
-                CfdDiagnostic::error(
-                    CfdErrorCode::RefTargetHasNoId,
-                    format!("ref target `{target_type}` has no @id field"),
-                )
-                .with_primary(record, path),
-            );
-            return None;
-        }
-
         let target = if self.schema.range_is_polymorphic(target_type) {
             inheritance_index
                 .get(target_type)
-                .and_then(|index| index.records.get(id))
+                .and_then(|index| index.records.get(key))
                 .copied()
         } else {
             tables
                 .get(target_type)
-                .and_then(|table| table.primary_index.get(id))
+                .and_then(|table| table.primary_index.get(key))
                 .copied()
         };
 
@@ -892,12 +738,219 @@ impl<'s> Validator<'s> {
             self.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::RefTargetNotFound,
-                    format!("ref target `{target_type}` with id was not found"),
+                    format!("ref target `{target_type}` with key `{key}` was not found"),
                 )
                 .with_primary(record, path),
             );
         }
         target
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_path_ref(
+        &mut self,
+        expected_type: &CfdType,
+        root: &str,
+        segments: &[CfdRefPathSegment],
+        record: Option<CfdRecordId>,
+        path: CfdPath,
+        drafts: &[RecordDraft],
+        tables: &BTreeMap<String, CfdTable>,
+        inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
+    ) -> Option<CfdValue> {
+        let root_id = self.lookup_any_key(root, tables, inheritance_index)?;
+        let root_draft = drafts.get(root_id.index())?;
+        let mut current_ty = CfdType::Type(root_draft.actual_type.clone());
+        let mut current_value = CfdValueDraft::Object(Box::new(root_draft.clone()));
+        let mut current_path = path.clone();
+
+        for segment in segments {
+            match segment {
+                CfdRefPathSegment::Field(name) => {
+                    current_path = current_path.field(name.clone());
+                    let CfdType::Type(type_name) = non_nullable_type(&current_ty) else {
+                        self.push(
+                            CfdDiagnostic::error(
+                                CfdErrorCode::TypeMismatch,
+                                "path field access requires an object",
+                            )
+                            .with_primary(record, current_path),
+                        );
+                        return None;
+                    };
+                    let field = self
+                        .schema
+                        .full_fields(type_name)
+                        .iter()
+                        .find(|field| field.name == *name)?;
+                    let CfdValueDraft::Object(record_draft) = &current_value else {
+                        return None;
+                    };
+                    let Some(next) = record_draft.fields.get(name).cloned() else {
+                        self.push(
+                            CfdDiagnostic::error(
+                                CfdErrorCode::UnknownField,
+                                format!("path field `{name}` was not found"),
+                            )
+                            .with_primary(record, current_path),
+                        );
+                        return None;
+                    };
+                    current_ty = field.ty.clone();
+                    current_value = next;
+                }
+                CfdRefPathSegment::Index(index) => match non_nullable_type(&current_ty) {
+                    CfdType::Array(inner) => {
+                        current_path = match index {
+                            CfdInputRefIndex::Int(raw_index) => match usize::try_from(*raw_index) {
+                                Ok(i) => current_path.index(i),
+                                Err(_) => current_path.index(usize::MAX),
+                            },
+                            _ => current_path.dict_key(format_ref_index(index)),
+                        };
+                        let CfdInputRefIndex::Int(raw_index) = index else {
+                            self.push(
+                                CfdDiagnostic::error(
+                                    CfdErrorCode::TypeMismatch,
+                                    "array path index must be int",
+                                )
+                                .with_primary(record, current_path),
+                            );
+                            return None;
+                        };
+                        let Ok(item_index) = usize::try_from(*raw_index) else {
+                            self.push(
+                                CfdDiagnostic::error(
+                                    CfdErrorCode::CheckIndexOutOfBounds,
+                                    "array path index is out of bounds",
+                                )
+                                .with_primary(record, current_path),
+                            );
+                            return None;
+                        };
+                        let CfdValueDraft::Array(items) = &current_value else {
+                            return None;
+                        };
+                        let Some(next) = items.get(item_index).cloned() else {
+                            self.push(
+                                CfdDiagnostic::error(
+                                    CfdErrorCode::CheckIndexOutOfBounds,
+                                    "array path index is out of bounds",
+                                )
+                                .with_primary(record, current_path),
+                            );
+                            return None;
+                        };
+                        current_ty = *inner.clone();
+                        current_value = next;
+                    }
+                    CfdType::Dict(key_ty, value_ty) => {
+                        current_path = current_path.dict_key(format_ref_index(index));
+                        let Some(key) =
+                            self.ref_index_to_dict_key(key_ty, index, record, current_path.clone())
+                        else {
+                            return None;
+                        };
+                        let CfdValueDraft::Dict(entries) = &current_value else {
+                            return None;
+                        };
+                        let Some((_, next)) =
+                            entries.iter().find(|(entry_key, _)| entry_key == &key)
+                        else {
+                            self.push(
+                                CfdDiagnostic::error(
+                                    CfdErrorCode::CheckMissingDictKey,
+                                    "dict path key was not found",
+                                )
+                                .with_primary(record, current_path),
+                            );
+                            return None;
+                        };
+                        current_ty = *value_ty.clone();
+                        current_value = next.clone();
+                    }
+                    _ => {
+                        self.push(
+                            CfdDiagnostic::error(
+                                CfdErrorCode::TypeMismatch,
+                                "path index access requires an array or dict",
+                            )
+                            .with_primary(record, current_path),
+                        );
+                        return None;
+                    }
+                },
+            }
+        }
+
+        if !types_compatible(expected_type, &current_ty, self.schema) {
+            self.push(
+                CfdDiagnostic::error(
+                    CfdErrorCode::TypeMismatch,
+                    "path ref result type does not match field type",
+                )
+                .with_primary(record, path),
+            );
+            return None;
+        }
+
+        self.resolve_value(
+            &current_value,
+            record,
+            path,
+            drafts,
+            tables,
+            inheritance_index,
+        )
+    }
+
+    fn lookup_any_key(
+        &self,
+        key: &str,
+        tables: &BTreeMap<String, CfdTable>,
+        inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
+    ) -> Option<CfdRecordId> {
+        tables
+            .values()
+            .find_map(|table| table.primary_index.get(key).copied())
+            .or_else(|| {
+                inheritance_index
+                    .values()
+                    .find_map(|index| index.records.get(key).copied())
+            })
+    }
+
+    fn ref_index_to_dict_key(
+        &mut self,
+        ty: &CfdType,
+        index: &CfdInputRefIndex,
+        record: Option<CfdRecordId>,
+        path: CfdPath,
+    ) -> Option<CfdDictKey> {
+        match (ty, index) {
+            (
+                CfdType::String,
+                CfdInputRefIndex::String(value) | CfdInputRefIndex::Variant(value),
+            ) => Some(CfdDictKey::String(value.clone())),
+            (CfdType::Int, CfdInputRefIndex::Int(value)) => Some(CfdDictKey::Int(*value)),
+            (CfdType::Enum(enum_name), CfdInputRefIndex::Variant(variant)) => {
+                let value = self.resolve_enum_value(enum_name, variant, record, path)?;
+                Some(CfdDictKey::Enum(value))
+            }
+            (CfdType::Enum(expected), CfdInputRefIndex::EnumVariant { enum_name, variant })
+                if enum_name == expected =>
+            {
+                let value = self.resolve_enum_value(enum_name, variant, record, path)?;
+                Some(CfdDictKey::Enum(value))
+            }
+            _ => {
+                self.push(
+                    CfdDiagnostic::error(CfdErrorCode::TypeMismatch, "dict path key type mismatch")
+                        .with_primary(record, path),
+                );
+                None
+            }
+        }
     }
 
     fn resolve_enum_value(
@@ -922,41 +975,6 @@ impl<'s> Validator<'s> {
             variant: Some(variant.to_string()),
             value,
         })
-    }
-
-    fn validate_key_as_enum_id(
-        &mut self,
-        enum_name: Option<&str>,
-        id: &CfdIdValue,
-        record: Option<CfdRecordId>,
-        path: CfdPath,
-    ) -> Option<()> {
-        if let (Some(enum_name), CfdIdValue::String(value)) = (enum_name, id) {
-            self.validate_key_as_enum_variant(enum_name, value, record, path)?;
-        }
-        Some(())
-    }
-
-    fn validate_key_as_enum_variant(
-        &mut self,
-        enum_name: &str,
-        variant: &str,
-        record: Option<CfdRecordId>,
-        path: CfdPath,
-    ) -> Option<()> {
-        if is_valid_csharp_identifier(variant) {
-            return Some(());
-        }
-        self.push(
-            CfdDiagnostic::error(
-                CfdErrorCode::InvalidEnumVariant,
-                format!(
-                    "@IdAsEnum/@GenAsEnum value `{enum_name}.{variant}` is not a legal enum variant"
-                ),
-            )
-            .with_primary(record, path),
-        );
-        None
     }
 
     fn type_mismatch(
@@ -987,95 +1005,27 @@ fn non_nullable_type(ty: &CfdType) -> &CfdType {
     }
 }
 
-fn is_valid_csharp_identifier(value: &str) -> bool {
-    let mut chars = value.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    !is_csharp_keyword(value)
-        && (first == '_' || first.is_ascii_alphabetic())
-        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+fn types_compatible(expected: &CfdType, actual: &CfdType, schema: &SchemaView) -> bool {
+    match (expected, actual) {
+        (CfdType::Nullable(inner), other) | (other, CfdType::Nullable(inner)) => {
+            types_compatible(inner, other, schema)
+        }
+        (CfdType::Type(expected), CfdType::Type(actual)) => schema.is_assignable(actual, expected),
+        (CfdType::Array(left), CfdType::Array(right)) => types_compatible(left, right, schema),
+        (CfdType::Dict(left_key, left_value), CfdType::Dict(right_key, right_value)) => {
+            types_compatible(left_key, right_key, schema)
+                && types_compatible(left_value, right_value, schema)
+        }
+        _ => expected == actual,
+    }
 }
 
-fn is_csharp_keyword(value: &str) -> bool {
-    matches!(
-        value,
-        "abstract"
-            | "as"
-            | "base"
-            | "bool"
-            | "break"
-            | "byte"
-            | "case"
-            | "catch"
-            | "char"
-            | "checked"
-            | "class"
-            | "const"
-            | "continue"
-            | "decimal"
-            | "default"
-            | "delegate"
-            | "do"
-            | "double"
-            | "else"
-            | "enum"
-            | "event"
-            | "explicit"
-            | "extern"
-            | "false"
-            | "finally"
-            | "fixed"
-            | "float"
-            | "for"
-            | "foreach"
-            | "goto"
-            | "if"
-            | "implicit"
-            | "in"
-            | "int"
-            | "interface"
-            | "internal"
-            | "is"
-            | "lock"
-            | "long"
-            | "namespace"
-            | "new"
-            | "null"
-            | "object"
-            | "operator"
-            | "out"
-            | "override"
-            | "params"
-            | "private"
-            | "protected"
-            | "public"
-            | "readonly"
-            | "ref"
-            | "return"
-            | "sbyte"
-            | "sealed"
-            | "short"
-            | "sizeof"
-            | "stackalloc"
-            | "static"
-            | "string"
-            | "struct"
-            | "switch"
-            | "this"
-            | "throw"
-            | "true"
-            | "try"
-            | "typeof"
-            | "uint"
-            | "ulong"
-            | "unchecked"
-            | "unsafe"
-            | "ushort"
-            | "using"
-            | "virtual"
-            | "void"
-            | "volatile"
-            | "while"
-    )
+fn format_ref_index(index: &CfdInputRefIndex) -> String {
+    match index {
+        CfdInputRefIndex::Int(value) => value.to_string(),
+        CfdInputRefIndex::String(value) | CfdInputRefIndex::Variant(value) => value.clone(),
+        CfdInputRefIndex::EnumVariant { enum_name, variant } => {
+            format!("{enum_name}.{variant}")
+        }
+    }
 }

@@ -3,1653 +3,312 @@
     clippy::needless_raw_string_hashes,
     clippy::panic,
     clippy::panic_in_result_fn,
-    clippy::too_many_lines,
-    clippy::unwrap_used,
-    clippy::doc_markdown
+    clippy::unwrap_used
 )]
-
-//! Edge-case and regression tests for `coflow-data-model`.
-//!
-//! Organised into four sections:
-//! 1. Public API regression tests (record_count, lookup, tables iterator, etc.)
-//! 2. Diagnostic path correctness (especially dict keys).
-//! 3. Type-system edge cases (nullables, nesting, recursion).
-//! 4. Inheritance + reference resolution edge cases.
 
 mod common;
 use common::*;
 
-fn dict_get<'a>(entries: &'a [(CfdDictKey, CfdValue)], key: &CfdDictKey) -> Option<&'a CfdValue> {
-    entries
-        .iter()
-        .find_map(|(entry_key, value)| (entry_key == key).then_some(value))
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// 1. Public API regression tests
-// ───────────────────────────────────────────────────────────────────────────
-
 #[test]
-fn record_count_is_zero_for_empty_model() {
-    let schema = compile_schema(r#"type Item { @id id: string; }"#);
-    let model = CfdDataModel::builder(&schema)
-        .build()
-        .expect("empty model should build");
-    assert_eq!(model.record_count(), 0);
-    assert!(model.is_empty());
-}
-
-#[test]
-fn record_count_tracks_top_level_records() {
-    let schema = compile_schema(r#"type Item { @id id: string; }"#);
-    let mut builder = CfdDataModel::builder(&schema);
-    for i in 0..5 {
-        builder.add_record("Item", [("id", CfdInputValue::from(format!("item_{i}")))]);
-    }
-    let model = builder.build().expect("model should build");
-    assert_eq!(model.record_count(), 5);
-    assert!(!model.is_empty());
-}
-
-#[test]
-fn records_of_type_iterates_in_insertion_order() {
+fn path_refs_resolve_fields_arrays_and_enum_dict_keys() {
     let schema = compile_schema(
         r#"
-            type Item { @id id: string; }
-            type Quest { @id qid: string; }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("id", CfdInputValue::from("a"))]);
-    builder.add_record("Quest", [("qid", CfdInputValue::from("q1"))]);
-    builder.add_record("Item", [("id", CfdInputValue::from("b"))]);
-    builder.add_record("Item", [("id", CfdInputValue::from("c"))]);
-    builder.add_record("Quest", [("qid", CfdInputValue::from("q2"))]);
-
-    let model = builder.build().expect("model should build");
-
-    let item_ids: Vec<&CfdValue> = model
-        .records_of_type("Item")
-        .filter_map(|(_, rec)| rec.field("id"))
-        .collect();
-    assert_eq!(
-        item_ids,
-        vec![
-            &CfdValue::String("a".to_string()),
-            &CfdValue::String("b".to_string()),
-            &CfdValue::String("c".to_string()),
-        ]
-    );
-
-    let quest_ids: Vec<&CfdValue> = model
-        .records_of_type("Quest")
-        .filter_map(|(_, rec)| rec.field("qid"))
-        .collect();
-    assert_eq!(
-        quest_ids,
-        vec![
-            &CfdValue::String("q1".to_string()),
-            &CfdValue::String("q2".to_string()),
-        ]
-    );
-}
-
-#[test]
-fn records_of_type_returns_empty_for_unknown_type() {
-    let schema = compile_schema(r#"type Item { @id id: string; }"#);
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("id", CfdInputValue::from("a"))]);
-    let model = builder.build().unwrap();
-
-    assert_eq!(model.records_of_type("Nonexistent").count(), 0);
-}
-
-#[test]
-fn tables_iterator_yields_all_typed_tables() {
-    let schema = compile_schema(
-        r#"
-            type Item { @id id: string; }
-            type Quest { @id qid: string; }
-            type Currency { @id cid: string; }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("id", CfdInputValue::from("a"))]);
-    builder.add_record("Quest", [("qid", CfdInputValue::from("q1"))]);
-    let model = builder.build().unwrap();
-
-    let names: Vec<&str> = model.tables().map(|(name, _)| name).collect();
-    // Empty Currency table is not produced (only types with records get tables).
-    assert_eq!(names, vec!["Item", "Quest"]);
-
-    let item_table = model.table("Item").unwrap();
-    assert_eq!(item_table.records.len(), 1);
-}
-
-#[test]
-fn lookup_finds_records_in_concrete_table() {
-    let schema = compile_schema(r#"type Item { @id id: string; value: int; }"#);
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Item",
-        [
-            ("id", CfdInputValue::from("a")),
-            ("value", CfdInputValue::from(1_i64)),
-        ],
-    );
-    let model = builder.build().unwrap();
-    let id = record_id_at(&model, 0);
-
-    assert_eq!(model.lookup("Item", &CfdIdValue::from("a")), Some(id));
-    assert_eq!(model.lookup("Item", &CfdIdValue::from("missing")), None);
-    assert_eq!(model.lookup("Unknown", &CfdIdValue::from("a")), None);
-}
-
-#[test]
-fn lookup_finds_records_in_polymorphic_range() {
-    let schema = compile_schema(
-        r#"
-            abstract type Reward { @id id: string; }
-            type ItemReward : Reward { count: int; }
-            type CurrencyReward : Reward { amount: int; }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "ItemReward",
-        [
-            ("id", CfdInputValue::from("r1")),
-            ("count", CfdInputValue::from(1_i64)),
-        ],
-    );
-    builder.add_record(
-        "CurrencyReward",
-        [
-            ("id", CfdInputValue::from("r2")),
-            ("amount", CfdInputValue::from(50_i64)),
-        ],
-    );
-    let model = builder.build().unwrap();
-    let item_reward_id = record_id_at(&model, 0);
-    let currency_reward_id = record_id_at(&model, 1);
-
-    // Both ids are reachable through the abstract Reward range.
-    assert_eq!(
-        model.lookup("Reward", &CfdIdValue::from("r1")),
-        Some(item_reward_id)
-    );
-    assert_eq!(
-        model.lookup("Reward", &CfdIdValue::from("r2")),
-        Some(currency_reward_id)
-    );
-
-    // And through their concrete types.
-    assert_eq!(
-        model.lookup("ItemReward", &CfdIdValue::from("r1")),
-        Some(item_reward_id)
-    );
-    assert_eq!(
-        model.lookup("CurrencyReward", &CfdIdValue::from("r2")),
-        Some(currency_reward_id)
-    );
-
-    // Looking up a CurrencyReward id under ItemReward fails (different concrete table).
-    assert_eq!(model.lookup("ItemReward", &CfdIdValue::from("r2")), None);
-}
-
-#[test]
-fn polymorphic_index_returns_none_for_concrete_types_without_descendants() {
-    let schema = compile_schema(r#"type Item { @id id: string; }"#);
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("id", CfdInputValue::from("a"))]);
-    let model = builder.build().unwrap();
-
-    assert!(model.polymorphic_index("Item").is_none());
-    assert!(model.polymorphic_index("Unknown").is_none());
-}
-
-#[test]
-fn polymorphic_index_returns_some_for_abstract_root() {
-    let schema = compile_schema(
-        r#"
-            abstract type Reward { @id id: string; }
-            type ItemReward : Reward { count: int; }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "ItemReward",
-        [
-            ("id", CfdInputValue::from("r1")),
-            ("count", CfdInputValue::from(1_i64)),
-        ],
-    );
-    let model = builder.build().unwrap();
-
-    let index = model.polymorphic_index("Reward").unwrap();
-    assert!(index.records.contains_key(&CfdIdValue::from("r1")));
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// 2. Diagnostic path correctness (regression for dict-key path fix)
-// ───────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn dict_path_uses_actual_string_key_for_value_errors() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                @id id: string;
-                attrs: {string: int};
+            enum Element { Fire, Ice, }
+            type Skill { power: int; }
+            type DropTable {
+                rewards: [Skill];
+                resistances: {Element: float};
+            }
+            type Holder {
+                first_reward: Skill;
+                fire_resistance: float;
             }
         "#,
     );
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
-        "Item",
+        "table_1",
+        "DropTable",
         [
-            ("id", CfdInputValue::from("i1")),
             (
-                "attrs",
-                CfdInputValue::dict([
-                    (CfdInputDictKey::from("ok"), CfdInputValue::from(1_i64)),
-                    (
-                        CfdInputDictKey::from("broken"),
-                        CfdInputValue::from("not_int"),
-                    ),
-                ]),
+                "rewards",
+                CfdInputValue::Array(vec![CfdInputValue::object_with_declared_type([(
+                    "power",
+                    CfdInputValue::from(7_i64),
+                )])]),
             ),
-        ],
-    );
-
-    let err = builder.build().expect_err("dict value type mismatch");
-    let diag = diagnostic_with_code(&err, CfdErrorCode::TypeMismatch);
-    let segments = primary_path_segments(diag);
-    assert_eq!(
-        segments,
-        &[
-            CfdPathSegment::Field("attrs".to_string()),
-            CfdPathSegment::DictKey("\"broken\"".to_string()),
-        ]
-    );
-}
-
-#[test]
-fn dict_path_uses_int_key_for_value_errors() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                @id id: string;
-                slots: {int: string};
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Item",
-        [
-            ("id", CfdInputValue::from("i1")),
             (
-                "slots",
-                CfdInputValue::dict([
-                    (CfdInputDictKey::from(1_i64), CfdInputValue::from("ok")),
-                    (CfdInputDictKey::from(42_i64), CfdInputValue::from(99_i64)),
-                ]),
-            ),
-        ],
-    );
-
-    let err = builder.build().expect_err("dict value type mismatch");
-    let diag = diagnostic_with_code(&err, CfdErrorCode::TypeMismatch);
-    let segments = primary_path_segments(diag);
-    assert_eq!(
-        segments,
-        &[
-            CfdPathSegment::Field("slots".to_string()),
-            CfdPathSegment::DictKey("42".to_string()),
-        ]
-    );
-}
-
-#[test]
-fn dict_path_uses_enum_variant_for_value_errors() {
-    let schema = compile_schema(
-        r#"
-            enum Element { Fire, Ice, Lightning, }
-            type Monster {
-                @id id: string;
-                resist: {Element: float};
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Monster",
-        [
-            ("id", CfdInputValue::from("m1")),
-            (
-                "resist",
-                CfdInputValue::dict([
-                    (
-                        CfdInputDictKey::enum_variant("Element", "Fire"),
-                        CfdInputValue::from(0.5_f64),
-                    ),
-                    (
-                        CfdInputDictKey::enum_variant("Element", "Ice"),
-                        CfdInputValue::from("not_float"),
-                    ),
-                ]),
-            ),
-        ],
-    );
-
-    let err = builder.build().expect_err("dict value type mismatch");
-    let diag = diagnostic_with_code(&err, CfdErrorCode::TypeMismatch);
-    let segments = primary_path_segments(diag);
-    assert_eq!(
-        segments,
-        &[
-            CfdPathSegment::Field("resist".to_string()),
-            CfdPathSegment::DictKey("Element.Ice".to_string()),
-        ]
-    );
-}
-
-#[test]
-fn dict_path_for_invalid_key_uses_input_key_form() {
-    // When the key itself fails validation, we don't have a CfdDictKey yet,
-    // so the path uses the raw input form.
-    let schema = compile_schema(
-        r#"
-            enum Rarity { Common, Rare, }
-            type Item {
-                @id id: string;
-                bag: {Rarity: int};
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Item",
-        [
-            ("id", CfdInputValue::from("i1")),
-            (
-                "bag",
+                "resistances",
                 CfdInputValue::dict([(
-                    CfdInputDictKey::enum_variant("Rarity", "MissingVariant"),
-                    CfdInputValue::from(1_i64),
+                    CfdInputDictKey::enum_variant("Element", "Fire"),
+                    CfdInputValue::from(0.5_f64),
                 )]),
             ),
         ],
     );
-
-    let err = builder.build().expect_err("invalid enum key variant");
-    let diag = diagnostic_with_code(&err, CfdErrorCode::InvalidEnumVariant);
-    let segments = primary_path_segments(diag);
-    assert_eq!(
-        segments,
-        &[
-            CfdPathSegment::Field("bag".to_string()),
-            CfdPathSegment::DictKey("Rarity.MissingVariant".to_string()),
-        ]
-    );
-}
-
-#[test]
-fn duplicate_dict_key_reports_actual_key_in_path() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                @id id: string;
-                attrs: {string: int};
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
-        "Item",
+        "holder_1",
+        "Holder",
         [
-            ("id", CfdInputValue::from("i1")),
             (
-                "attrs",
-                CfdInputValue::dict([
-                    (CfdInputDictKey::from("dup"), CfdInputValue::from(1_i64)),
-                    (CfdInputDictKey::from("dup"), CfdInputValue::from(2_i64)),
-                ]),
+                "first_reward",
+                CfdInputValue::path_ref(
+                    "table_1",
+                    [
+                        CfdRefPathSegment::Field("rewards".to_string()),
+                        CfdRefPathSegment::Index(CfdInputRefIndex::Int(0)),
+                    ],
+                ),
+            ),
+            (
+                "fire_resistance",
+                CfdInputValue::path_ref(
+                    "table_1",
+                    [
+                        CfdRefPathSegment::Field("resistances".to_string()),
+                        CfdRefPathSegment::Index(CfdInputRefIndex::Variant("Fire".to_string())),
+                    ],
+                ),
             ),
         ],
     );
 
-    let err = builder.build().expect_err("duplicate key");
-    let diag = diagnostic_with_code(&err, CfdErrorCode::DuplicateDictKey);
-    let segments = primary_path_segments(diag);
-    assert_eq!(
-        segments,
-        &[
-            CfdPathSegment::Field("attrs".to_string()),
-            CfdPathSegment::DictKey("\"dup\"".to_string()),
-        ]
-    );
-    assert!(!diag.related.is_empty());
+    let model = builder.build().expect("path refs should build");
+    let holder_id = record_id_at(&model, 1);
+    let holder = model.record(holder_id).expect("holder record");
+    assert!(matches!(
+        holder.field("first_reward"),
+        Some(CfdValue::Object(skill)) if skill.field("power") == Some(&CfdValue::Int(7))
+    ));
+    assert_eq!(holder.field("fire_resistance"), Some(&CfdValue::Float(0.5)));
 }
 
 #[test]
-fn nested_field_error_reports_full_path() {
+fn path_refs_report_array_bounds_and_missing_dict_keys() {
     let schema = compile_schema(
         r#"
-            type Stats { hp: int; speed: float; }
-            type Monster {
-                @id id: string;
-                stats: Stats;
+            type Skill { power: int; }
+            type DropTable {
+                rewards: [Skill];
+                weights: {string: int};
+            }
+            type Holder {
+                missing_reward: Skill;
+                missing_weight: int;
             }
         "#,
     );
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
-        "Monster",
+        "table_1",
+        "DropTable",
         [
-            ("id", CfdInputValue::from("m1")),
             (
-                "stats",
-                CfdInputValue::object_with_declared_type([
-                    ("hp", CfdInputValue::from("not_int")),
-                    ("speed", CfdInputValue::from(1.5_f64)),
-                ]),
+                "rewards",
+                CfdInputValue::Array(vec![CfdInputValue::object_with_declared_type([(
+                    "power",
+                    CfdInputValue::from(7_i64),
+                )])]),
+            ),
+            (
+                "weights",
+                CfdInputValue::dict([(
+                    CfdInputDictKey::from("common"),
+                    CfdInputValue::from(10_i64),
+                )]),
+            ),
+        ],
+    );
+    builder.add_record(
+        "holder_1",
+        "Holder",
+        [
+            (
+                "missing_reward",
+                CfdInputValue::path_ref(
+                    "table_1",
+                    [
+                        CfdRefPathSegment::Field("rewards".to_string()),
+                        CfdRefPathSegment::Index(CfdInputRefIndex::Int(3)),
+                    ],
+                ),
+            ),
+            (
+                "missing_weight",
+                CfdInputValue::path_ref(
+                    "table_1",
+                    [
+                        CfdRefPathSegment::Field("weights".to_string()),
+                        CfdRefPathSegment::Index(CfdInputRefIndex::String("rare".to_string())),
+                    ],
+                ),
             ),
         ],
     );
 
-    let err = builder.build().expect_err("nested type error");
-    let diag = diagnostic_with_code(&err, CfdErrorCode::TypeMismatch);
-    let segments = primary_path_segments(diag);
-    assert_eq!(
-        segments,
-        &[
-            CfdPathSegment::Field("stats".to_string()),
-            CfdPathSegment::Field("hp".to_string()),
-        ]
-    );
+    let err = builder.build().expect_err("path refs should fail");
+    assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
+    assert_has_code(&err, CfdErrorCode::CheckMissingDictKey);
 }
 
 #[test]
-fn array_element_error_reports_index_path() {
+fn path_ref_result_type_must_match_destination_field() {
     let schema = compile_schema(
         r#"
-            type Item {
-                @id id: string;
-                tags: [int];
-            }
+            type Skill { power: int; }
+            type DropTable { rewards: [Skill]; }
+            type Holder { power: int; }
         "#,
     );
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
-        "Item",
-        [
-            ("id", CfdInputValue::from("i1")),
-            (
-                "tags",
-                CfdInputValue::Array(vec![
-                    CfdInputValue::from(1_i64),
-                    CfdInputValue::from("wrong"),
-                    CfdInputValue::from(3_i64),
-                ]),
+        "table_1",
+        "DropTable",
+        [(
+            "rewards",
+            CfdInputValue::Array(vec![CfdInputValue::object_with_declared_type([(
+                "power",
+                CfdInputValue::from(7_i64),
+            )])]),
+        )],
+    );
+    builder.add_record(
+        "holder_1",
+        "Holder",
+        [(
+            "power",
+            CfdInputValue::path_ref(
+                "table_1",
+                [
+                    CfdRefPathSegment::Field("rewards".to_string()),
+                    CfdRefPathSegment::Index(CfdInputRefIndex::Int(0)),
+                ],
             ),
-        ],
+        )],
     );
 
-    let err = builder.build().expect_err("array element error");
-    let diag = diagnostic_with_code(&err, CfdErrorCode::TypeMismatch);
-    let segments = primary_path_segments(diag);
-    assert_eq!(
-        segments,
-        &[
-            CfdPathSegment::Field("tags".to_string()),
-            CfdPathSegment::Index(1),
-        ]
-    );
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// 3. Type-system edge cases
-// ───────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn nullable_field_accepts_explicit_null() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                @id id: string;
-                maybe: int?;
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Item",
-        [
-            ("id", CfdInputValue::from("i1")),
-            ("maybe", CfdInputValue::Null),
-        ],
-    );
-    let model = builder.build().expect("nullable null should succeed");
-    let id = record_id_at(&model, 0);
-    assert_eq!(
-        model.record(id).and_then(|r| r.field("maybe")),
-        Some(&CfdValue::Null)
-    );
-}
-
-#[test]
-fn nullable_field_accepts_inner_value() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                @id id: string;
-                maybe: int?;
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Item",
-        [
-            ("id", CfdInputValue::from("i1")),
-            ("maybe", CfdInputValue::from(7_i64)),
-        ],
-    );
-    let model = builder.build().unwrap();
-    let id = record_id_at(&model, 0);
-    assert_eq!(
-        model.record(id).and_then(|r| r.field("maybe")),
-        Some(&CfdValue::Int(7))
-    );
-}
-
-#[test]
-fn non_nullable_field_rejects_null() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                @id id: string;
-                value: int;
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Item",
-        [
-            ("id", CfdInputValue::from("i1")),
-            ("value", CfdInputValue::Null),
-        ],
-    );
-    let err = builder.build().expect_err("non-null required");
+    let err = builder
+        .build()
+        .expect_err("object path result should not satisfy int field");
     assert_has_code(&err, CfdErrorCode::TypeMismatch);
 }
 
 #[test]
-fn nullable_array_accepts_null() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                @id id: string;
-                tags: [string]?;
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Item",
-        [
-            ("id", CfdInputValue::from("i1")),
-            ("tags", CfdInputValue::Null),
-        ],
-    );
-    let model = builder.build().unwrap();
-    let id = record_id_at(&model, 0);
-    assert_eq!(
-        model.record(id).and_then(|r| r.field("tags")),
-        Some(&CfdValue::Null)
-    );
-}
-
-#[test]
-fn nested_array_validates_recursively() {
-    let schema = compile_schema(
-        r#"
-            type Grid {
-                @id id: string;
-                cells: [[int]];
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Grid",
-        [
-            ("id", CfdInputValue::from("g1")),
-            (
-                "cells",
-                CfdInputValue::Array(vec![
-                    CfdInputValue::Array(vec![
-                        CfdInputValue::from(1_i64),
-                        CfdInputValue::from(2_i64),
-                    ]),
-                    CfdInputValue::Array(vec![CfdInputValue::from(3_i64)]),
-                ]),
-            ),
-        ],
-    );
-    let model = builder.build().unwrap();
-    let id = record_id_at(&model, 0);
-    let CfdValue::Array(rows) = model.record(id).unwrap().field("cells").unwrap() else {
-        panic!("expected nested array");
-    };
-    assert_eq!(rows.len(), 2);
-    let CfdValue::Array(first_row) = &rows[0] else {
-        panic!("expected inner array");
-    };
-    assert_eq!(first_row.len(), 2);
-    assert_eq!(first_row[0], CfdValue::Int(1));
-}
-
-#[test]
-fn nested_array_reports_inner_type_mismatch_with_full_path() {
-    let schema = compile_schema(
-        r#"
-            type Grid {
-                @id id: string;
-                cells: [[int]];
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Grid",
-        [
-            ("id", CfdInputValue::from("g1")),
-            (
-                "cells",
-                CfdInputValue::Array(vec![CfdInputValue::Array(vec![
-                    CfdInputValue::from(1_i64),
-                    CfdInputValue::from("wrong"),
-                ])]),
-            ),
-        ],
-    );
-
-    let err = builder.build().expect_err("inner element wrong type");
-    let diag = diagnostic_with_code(&err, CfdErrorCode::TypeMismatch);
-    let segments = primary_path_segments(diag);
-    assert_eq!(
-        segments,
-        &[
-            CfdPathSegment::Field("cells".to_string()),
-            CfdPathSegment::Index(0),
-            CfdPathSegment::Index(1),
-        ]
-    );
-}
-
-#[test]
-fn dict_with_int_keys_round_trips_correctly() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                @id id: string;
-                slots: {int: string};
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Item",
-        [
-            ("id", CfdInputValue::from("i1")),
-            (
-                "slots",
-                CfdInputValue::dict([
-                    (CfdInputDictKey::from(1_i64), CfdInputValue::from("a")),
-                    (CfdInputDictKey::from(2_i64), CfdInputValue::from("b")),
-                ]),
-            ),
-        ],
-    );
-    let model = builder.build().unwrap();
-    let id = record_id_at(&model, 0);
-    let CfdValue::Dict(slots) = model.record(id).unwrap().field("slots").unwrap() else {
-        panic!("expected dict");
-    };
-    assert_eq!(slots.len(), 2);
-    assert_eq!(
-        dict_get(slots, &CfdDictKey::Int(1)),
-        Some(&CfdValue::String("a".to_string()))
-    );
-    assert_eq!(
-        dict_get(slots, &CfdDictKey::Int(2)),
-        Some(&CfdValue::String("b".to_string()))
-    );
-}
-
-#[test]
-fn dict_with_enum_keys_resolves_variant_values() {
-    let schema = compile_schema(
-        r#"
-            enum Element { Fire = 1, Ice = 2, }
-            type Monster {
-                @id id: string;
-                resist: {Element: float};
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Monster",
-        [
-            ("id", CfdInputValue::from("m1")),
-            (
-                "resist",
-                CfdInputValue::dict([
-                    (
-                        CfdInputDictKey::enum_variant("Element", "Fire"),
-                        CfdInputValue::from(0.25_f64),
-                    ),
-                    (
-                        CfdInputDictKey::enum_variant("Element", "Ice"),
-                        CfdInputValue::from(0.75_f64),
-                    ),
-                ]),
-            ),
-        ],
-    );
-    let model = builder.build().unwrap();
-    let id = record_id_at(&model, 0);
-    let CfdValue::Dict(resist) = model.record(id).unwrap().field("resist").unwrap() else {
-        panic!("expected dict");
-    };
-    assert_eq!(resist.len(), 2);
-    let fire_key = CfdDictKey::Enum(CfdEnumValue {
-        enum_name: "Element".to_string(),
-        variant: Some("Fire".to_string()),
-        value: 1,
-    });
-    assert_eq!(dict_get(resist, &fire_key), Some(&CfdValue::Float(0.25)));
-}
-
-#[test]
-fn float_field_rejects_int_value() {
-    // CFT is strict about int/float separation.
-    let schema = compile_schema(
-        r#"
-            type Item {
-                @id id: string;
-                speed: float;
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Item",
-        [
-            ("id", CfdInputValue::from("i1")),
-            ("speed", CfdInputValue::from(1_i64)),
-        ],
-    );
-    let err = builder.build().expect_err("int passed for float");
-    assert_has_code(&err, CfdErrorCode::TypeMismatch);
-}
-
-#[test]
-fn float_field_rejects_non_finite_values() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                @id id: string;
-                speed: float;
-            }
-        "#,
-    );
-
-    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        let mut builder = CfdDataModel::builder(&schema);
-        builder.add_record(
-            "Item",
-            [
-                ("id", CfdInputValue::from("i1")),
-                ("speed", CfdInputValue::from(value)),
-            ],
-        );
-        let err = builder.build().expect_err("non-finite float");
-        assert_has_code(&err, CfdErrorCode::TypeMismatch);
-    }
-}
-
-#[test]
-fn int_id_field_works_for_indexing_and_refs() {
-    let schema = compile_schema(
-        r#"
-            type Item { @id id: int; }
-            type Drop { @ref(Item) item_id: int; }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("id", CfdInputValue::from(42_i64))]);
-    builder.add_record(
-        "Drop",
-        [("item_id", CfdInputValue::Ref(CfdIdValue::from(42_i64)))],
-    );
-
-    let model = builder.build().unwrap();
-    let item_id = record_id_at(&model, 0);
-    let drop_id = record_id_at(&model, 1);
-    assert_eq!(
-        model.record(drop_id).and_then(|r| r.field("item_id")),
-        Some(&CfdValue::Ref {
-            id: CfdIdValue::Int(42),
-            target: item_id,
-        })
-    );
-}
-
-#[test]
-fn wrong_id_value_type_rejected() {
-    let schema = compile_schema(
-        r#"
-            type Item { @id id: string; }
-            type Drop { @ref(Item) item_id: string; }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("id", CfdInputValue::from("a"))]);
-    // The @ref field expects a string id but we pass an int.
-    builder.add_record(
-        "Drop",
-        [("item_id", CfdInputValue::Ref(CfdIdValue::from(42_i64)))],
-    );
-
-    let err = builder.build().expect_err("wrong id type");
-    assert_has_code(&err, CfdErrorCode::TypeMismatch);
-}
-
-#[test]
-fn empty_array_default_does_not_constrain_element_type() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                @id id: string;
-                tags: [int] = [];
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("id", CfdInputValue::from("a"))]);
-    let model = builder.build().unwrap();
-    let id = record_id_at(&model, 0);
-    assert_eq!(
-        model.record(id).and_then(|r| r.field("tags")),
-        Some(&CfdValue::Array(Vec::new()))
-    );
-}
-
-#[test]
-fn nullable_collection_defaults_apply_empty_values() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                @id id: string;
-                tags: [int]? = [];
-                attrs: {string: int}? = {};
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("id", CfdInputValue::from("i1"))]);
-    let model = builder.build().expect("nullable defaults should build");
-    let id = record_id_at(&model, 0);
-    assert_eq!(
-        model.record(id).and_then(|r| r.field("tags")),
-        Some(&CfdValue::Array(Vec::new()))
-    );
-    assert_eq!(
-        model.record(id).and_then(|r| r.field("attrs")),
-        Some(&CfdValue::Dict(Vec::new()))
-    );
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// 4. Inheritance + reference resolution edge cases
-// ───────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn inherited_id_field_indexes_concrete_table() {
-    let schema = compile_schema(
-        r#"
-            abstract type Base { @id id: string; }
-            type Child : Base { value: int; }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Child",
-        [
-            ("id", CfdInputValue::from("child_1")),
-            ("value", CfdInputValue::from(10_i64)),
-        ],
-    );
-    let model = builder.build().unwrap();
-    let id = record_id_at(&model, 0);
-    let table = model.table("Child").unwrap();
-    assert_eq!(
-        table.primary_index.get(&CfdIdValue::from("child_1")),
-        Some(&id)
-    );
-}
-
-#[test]
-fn inherited_index_field_appears_in_secondary_indexes() {
-    let schema = compile_schema(
-        r#"
-            enum Rarity { Common, Rare, }
-            abstract type Base {
-                @id id: string;
-                @index
-                rarity: Rarity;
-            }
-            type Child : Base { value: int; }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Child",
-        [
-            ("id", CfdInputValue::from("c1")),
-            ("rarity", CfdInputValue::enum_variant("Rarity", "Rare")),
-            ("value", CfdInputValue::from(5_i64)),
-        ],
-    );
-    let model = builder.build().unwrap();
-    let table = model.table("Child").unwrap();
-    assert!(table.secondary_indexes.contains_key("rarity"));
-}
-
-#[test]
-fn multi_level_inheritance_collects_all_fields() {
-    let schema = compile_schema(
-        r#"
-            abstract type A { @id id: string; }
-            abstract type B : A { name: string; }
-            type C : B { value: int; }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "C",
-        [
-            ("id", CfdInputValue::from("c")),
-            ("name", CfdInputValue::from("hello")),
-            ("value", CfdInputValue::from(3_i64)),
-        ],
-    );
-    let model = builder.build().unwrap();
-    let id = record_id_at(&model, 0);
-    let record = model.record(id).unwrap();
-    assert_eq!(record.field("id"), Some(&CfdValue::String("c".to_string())));
-    assert_eq!(
-        record.field("name"),
-        Some(&CfdValue::String("hello".to_string()))
-    );
-    assert_eq!(record.field("value"), Some(&CfdValue::Int(3)));
-}
-
-#[test]
-fn nullable_ref_with_null_value_succeeds() {
-    let schema = compile_schema(
-        r#"
-            type Item { @id id: string; }
-            type Drop {
-                @ref(Item)
-                item_id: string?;
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("id", CfdInputValue::from("i1"))]);
-    builder.add_record("Drop", [("item_id", CfdInputValue::Null)]);
-    let model = builder.build().unwrap();
-    let drop_id = record_id_at(&model, 1);
-    assert_eq!(
-        model.record(drop_id).and_then(|r| r.field("item_id")),
-        Some(&CfdValue::Null)
-    );
-}
-
-#[test]
-fn forward_reference_resolves_when_target_added_later() {
-    // The Drop record is added BEFORE the Item it references.
-    // Because resolution happens in a second pass, this should still work.
-    let schema = compile_schema(
-        r#"
-            type Item { @id id: string; }
-            type Drop { @ref(Item) item_id: string; }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Drop",
-        [("item_id", CfdInputValue::Ref(CfdIdValue::from("late")))],
-    );
-    builder.add_record("Item", [("id", CfdInputValue::from("late"))]);
-    let model = builder.build().expect("forward ref should resolve");
-
-    let drop_id = record_id_at(&model, 0);
-    let item_id = record_id_at(&model, 1);
-    assert_eq!(
-        model.record(drop_id).and_then(|r| r.field("item_id")),
-        Some(&CfdValue::Ref {
-            id: CfdIdValue::from("late"),
-            target: item_id,
-        })
-    );
-}
-
-#[test]
-fn self_referential_record_resolves_correctly() {
+fn cyclic_record_refs_are_allowed_because_resolution_is_two_phase() {
     let schema = compile_schema(
         r#"
             type Person {
-                @id
-                id: string;
-                @ref(Person)
-                parent_id: string?;
+                parent: Person?;
             }
         "#,
     );
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "alice",
         "Person",
-        [
-            ("id", CfdInputValue::from("alice")),
-            ("parent_id", CfdInputValue::Null),
-        ],
+        [("parent", CfdInputValue::record_ref("bob"))],
     );
     builder.add_record(
+        "bob",
         "Person",
-        [
-            ("id", CfdInputValue::from("bob")),
-            ("parent_id", CfdInputValue::Ref(CfdIdValue::from("alice"))),
-        ],
+        [("parent", CfdInputValue::record_ref("alice"))],
     );
-    let model = builder.build().unwrap();
+
+    let model = builder.build().expect("cycles should resolve");
     let alice_id = record_id_at(&model, 0);
     let bob_id = record_id_at(&model, 1);
     assert_eq!(
-        model.record(bob_id).and_then(|r| r.field("parent_id")),
+        model
+            .record(alice_id)
+            .and_then(|record| record.field("parent")),
         Some(&CfdValue::Ref {
-            id: CfdIdValue::from("alice"),
+            key: "bob".to_string(),
+            target: bob_id,
+        })
+    );
+    assert_eq!(
+        model
+            .record(bob_id)
+            .and_then(|record| record.field("parent")),
+        Some(&CfdValue::Ref {
+            key: "alice".to_string(),
             target: alice_id,
         })
     );
 }
 
 #[test]
-fn polymorphic_object_field_with_actual_type_uses_concrete_fields() {
+fn unresolved_record_ref_reports_reference_stage_diagnostic() {
     let schema = compile_schema(
         r#"
-            abstract type Reward { @id id: string; }
-            type ItemReward : Reward { count: int; }
-            type CurrencyReward : Reward { amount: int; }
-            type Drop { reward: Reward; }
+            type Item { name: string; }
+            type Drop { item: Item; }
         "#,
     );
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "drop_1",
         "Drop",
-        [(
-            "reward",
-            CfdInputValue::object(
-                "CurrencyReward",
-                [
-                    ("id", CfdInputValue::from("r1")),
-                    ("amount", CfdInputValue::from(99_i64)),
-                ],
-            ),
-        )],
+        [("item", CfdInputValue::record_ref("missing"))],
     );
-    let model = builder.build().unwrap();
-    let drop_id = record_id_at(&model, 0);
-    let CfdValue::Object(reward) = model
-        .record(drop_id)
-        .and_then(|r| r.field("reward"))
-        .unwrap()
-    else {
-        panic!("expected reward object");
-    };
-    assert_eq!(reward.actual_type, "CurrencyReward");
-    assert_eq!(reward.field("amount"), Some(&CfdValue::Int(99)));
+
+    let err = builder.build().expect_err("missing ref should fail");
+    let diag = diagnostic_with_code(&err, CfdErrorCode::RefTargetNotFound);
+    assert_eq!(diag.stage, CfdStage::Reference);
+    assert_eq!(
+        diag.primary.as_ref().map(|label| label.path.clone()),
+        Some(CfdPath::root().field("item"))
+    );
 }
 
 #[test]
-fn polymorphic_object_with_non_assignable_actual_type_rejected() {
+fn top_level_abstract_records_are_rejected() {
     let schema = compile_schema(
         r#"
-            type A { @id id: string; }
-            type B { @id id: string; }
-            type Holder { item: A; }
+            abstract type Reward {}
+            type CoinReward : Reward { amount: int; }
         "#,
     );
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
-        "Holder",
-        [(
-            "item",
-            CfdInputValue::object("B", [("id", CfdInputValue::from("b1"))]),
-        )],
-    );
-    let err = builder.build().expect_err("type B not assignable to A");
-    assert_has_code(&err, CfdErrorCode::ObjectTypeMismatch);
-}
-
-#[test]
-fn deep_nested_default_values_propagate() {
-    let schema = compile_schema(
-        r#"
-            type Stats {
-                hp: int = 100;
-                speed: float = 1.0;
-            }
-            type Monster {
-                @id id: string;
-                stats: Stats;
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Monster",
-        [
-            ("id", CfdInputValue::from("m1")),
-            (
-                "stats",
-                CfdInputValue::object_with_declared_type(
-                    std::iter::empty::<(&str, CfdInputValue)>(),
-                ),
-            ),
-        ],
-    );
-    let model = builder.build().unwrap();
-    let id = record_id_at(&model, 0);
-    let CfdValue::Object(stats) = model.record(id).unwrap().field("stats").unwrap() else {
-        panic!("expected stats");
-    };
-    assert_eq!(stats.field("hp"), Some(&CfdValue::Int(100)));
-    assert_eq!(stats.field("speed"), Some(&CfdValue::Float(1.0)));
-}
-
-#[test]
-fn empty_object_default_builds_nominal_object_with_field_defaults() {
-    let schema = compile_schema(
-        r#"
-            type Stats {
-                hp: int = 100;
-                speed: float = 1.0;
-            }
-            type Monster {
-                @id id: string;
-                stats: Stats = {};
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Monster", [("id", CfdInputValue::from("m1"))]);
-    let model = builder.build().unwrap();
-    let id = record_id_at(&model, 0);
-    let CfdValue::Object(stats) = model.record(id).unwrap().field("stats").unwrap() else {
-        panic!("expected stats object");
-    };
-    assert_eq!(stats.actual_type, "Stats");
-    assert_eq!(stats.field("hp"), Some(&CfdValue::Int(100)));
-    assert_eq!(stats.field("speed"), Some(&CfdValue::Float(1.0)));
-}
-
-#[test]
-fn empty_object_default_builds_nested_nominal_defaults() {
-    let schema = compile_schema(
-        r#"
-            type Inner {
-                amount: int = 7;
-            }
-            type Stats {
-                inner: Inner = {};
-            }
-            type Monster {
-                @id id: string;
-                stats: Stats = {};
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Monster", [("id", CfdInputValue::from("m1"))]);
-    let model = builder.build().unwrap();
-    let id = record_id_at(&model, 0);
-    let CfdValue::Object(stats) = model.record(id).unwrap().field("stats").unwrap() else {
-        panic!("expected stats object");
-    };
-    let CfdValue::Object(inner) = stats.field("inner").unwrap() else {
-        panic!("expected inner object");
-    };
-    assert_eq!(inner.actual_type, "Inner");
-    assert_eq!(inner.field("amount"), Some(&CfdValue::Int(7)));
-}
-
-#[test]
-fn missing_id_field_value_at_top_level_reports_missing_id_field() {
-    // The id field exists in the schema, but the record provides nothing for it
-    // and the field has no default. This path goes through MissingRequiredField
-    // not MissingIdField (since the record fails validation before indexing).
-    let schema = compile_schema(r#"type Item { @id id: string; }"#);
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_input_record(CfdInputRecord::new(
-        "Item",
+        "reward_1",
+        "Reward",
         std::iter::empty::<(&str, CfdInputValue)>(),
-    ));
-    let err = builder.build().expect_err("missing id");
-    assert_has_code(&err, CfdErrorCode::MissingRequiredField);
+    );
+    let err = builder
+        .build()
+        .expect_err("abstract top-level record should fail");
+    assert_has_code(&err, CfdErrorCode::AbstractRecordType);
 }
 
 #[test]
-fn type_with_no_id_field_has_no_primary_index() {
-    let schema = compile_schema(r#"type Item { value: int; }"#);
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("value", CfdInputValue::from(1_i64))]);
-    builder.add_record("Item", [("value", CfdInputValue::from(2_i64))]);
-    let model = builder.build().unwrap();
-
-    let table = model.table("Item").unwrap();
-    assert_eq!(table.records.len(), 2);
-    assert!(table.primary_index.is_empty());
-}
-
-#[test]
-fn dict_value_in_resolved_form_preserves_insertion_order() {
-    // Dict values are ordered data-model entries, not a sorted map.
+fn invalid_enum_and_non_finite_float_inputs_are_rejected() {
     let schema = compile_schema(
         r#"
+            enum Rarity { Common, Rare, }
             type Item {
-                @id id: string;
-                attrs: {string: int};
+                rarity: Rarity;
+                weight: float;
             }
         "#,
     );
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "item_1",
         "Item",
         [
-            ("id", CfdInputValue::from("i1")),
-            (
-                "attrs",
-                CfdInputValue::dict([
-                    (CfdInputDictKey::from("zeta"), CfdInputValue::from(3_i64)),
-                    (CfdInputDictKey::from("alpha"), CfdInputValue::from(1_i64)),
-                    (CfdInputDictKey::from("mu"), CfdInputValue::from(2_i64)),
-                ]),
-            ),
+            ("rarity", CfdInputValue::enum_variant("Rarity", "Missing")),
+            ("weight", CfdInputValue::from(f64::NAN)),
         ],
     );
-    let model = builder.build().unwrap();
-    let id = record_id_at(&model, 0);
-    let CfdValue::Dict(attrs) = model.record(id).unwrap().field("attrs").unwrap() else {
-        panic!("expected dict");
-    };
-
-    let keys: Vec<&CfdDictKey> = attrs.iter().map(|(key, _)| key).collect();
-    assert_eq!(
-        keys,
-        vec![
-            &CfdDictKey::String("zeta".to_string()),
-            &CfdDictKey::String("alpha".to_string()),
-            &CfdDictKey::String("mu".to_string()),
-        ]
-    );
-}
-
-#[test]
-fn build_consumes_builder_so_repeated_build_is_compile_error() {
-    // This test documents the API: build() consumes self, so calling it twice
-    // is statically prevented. We only need it to compile.
-    let schema = compile_schema(r#"type Item { @id id: string; }"#);
-    let _ = CfdDataModel::builder(&schema).build();
-
-    // Uncommenting the following would be a compile error:
-    // let builder = CfdDataModel::builder(&schema);
-    // let _ = builder.build();
-    // let _ = builder.build();
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// Enum-typed @id support
-// ───────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn enum_typed_id_indexes_records_under_cfd_id_value_enum() {
-    let schema = compile_schema(
-        r#"
-            enum Color { Red = 0, Green = 1, Blue = 2, }
-            type Palette {
-                @id
-                id: Color;
-                name: string;
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Palette",
-        [
-            ("id", CfdInputValue::enum_variant("Color", "Red")),
-            ("name", CfdInputValue::from("rouge")),
-        ],
-    );
-    builder.add_record(
-        "Palette",
-        [
-            ("id", CfdInputValue::enum_variant("Color", "Blue")),
-            ("name", CfdInputValue::from("azure")),
-        ],
-    );
-
-    let model = builder.build().expect("model should build");
-
-    let red_key = CfdIdValue::Enum(CfdEnumValue {
-        enum_name: "Color".to_string(),
-        variant: Some("Red".to_string()),
-        value: 0,
-    });
-    let blue_key = CfdIdValue::Enum(CfdEnumValue {
-        enum_name: "Color".to_string(),
-        variant: Some("Blue".to_string()),
-        value: 2,
-    });
-
-    assert!(model.lookup("Palette", &red_key).is_some());
-    assert!(model.lookup("Palette", &blue_key).is_some());
-    let table = model.table("Palette").expect("Palette table");
-    assert!(table.primary_index.contains_key(&red_key));
-    assert!(table.primary_index.contains_key(&blue_key));
-}
-
-#[test]
-fn enum_typed_ref_resolves_to_target_record() {
-    let schema = compile_schema(
-        r#"
-            enum Color { Red = 0, Green = 1, Blue = 2, }
-            type Palette {
-                @id
-                id: Color;
-                name: string;
-            }
-            type Brush {
-                @id
-                bid: string;
-                @ref(Palette)
-                color: Color;
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Palette",
-        [
-            ("id", CfdInputValue::enum_variant("Color", "Green")),
-            ("name", CfdInputValue::from("verde")),
-        ],
-    );
-    builder.add_record(
-        "Brush",
-        [
-            ("bid", CfdInputValue::from("brush_1")),
-            ("color", CfdInputValue::enum_variant("Color", "Green")),
-        ],
-    );
-
-    let model = builder.build().expect("model should build");
-    let brush_id = record_id_at(&model, 1);
-    let brush = model.record(brush_id).expect("brush record");
-    let color_field = brush.field("color").expect("color field");
-
-    let CfdValue::Ref { id, target } = color_field else {
-        panic!("expected ref, got {color_field:?}");
-    };
-    assert_eq!(
-        id,
-        &CfdIdValue::Enum(CfdEnumValue {
-            enum_name: "Color".to_string(),
-            variant: Some("Green".to_string()),
-            value: 1,
-        })
-    );
-    assert!(model.record(*target).is_some());
-}
-
-#[test]
-fn enum_typed_id_rejects_string_input() {
-    let schema = compile_schema(
-        r#"
-            enum Color { Red = 0, Green = 1, }
-            type Palette {
-                @id
-                id: Color;
-                name: string;
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    // Plain string input under an enum-typed @id should not silently coerce.
-    builder.add_record(
-        "Palette",
-        [
-            ("id", CfdInputValue::from("Red")),
-            ("name", CfdInputValue::from("rouge")),
-        ],
-    );
-
-    let err = builder
-        .build()
-        .expect_err("string id under enum @id should fail");
+    let err = builder.build().expect_err("invalid values should fail");
+    assert_has_code(&err, CfdErrorCode::InvalidEnumVariant);
     assert_has_code(&err, CfdErrorCode::TypeMismatch);
-}
-
-#[test]
-fn key_as_enum_id_rejects_values_that_are_not_csharp_enum_variants() {
-    let schema = compile_schema(
-        r#"
-            type GeneConfig {
-                @IdAsEnum("GeneId")
-                @id
-                id: string;
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("GeneConfig", [("id", CfdInputValue::from("1Bad"))]);
-
-    let err = builder
-        .build()
-        .expect_err("@IdAsEnum id value should be a legal enum variant");
-    let diag = diagnostic_with_code(&err, CfdErrorCode::InvalidEnumVariant);
-    assert_eq!(
-        primary_path_segments(diag),
-        &[CfdPathSegment::Field("id".to_string())]
-    );
-}
-
-#[test]
-fn key_as_enum_accepts_legal_id_and_ref_values() {
-    let schema = compile_schema(
-        r#"
-            type GeneConfig {
-                @IdAsEnum("GeneId")
-                @id
-                id: string;
-            }
-            type BioRemainsConfig {
-                @id
-                id: string;
-                @ref(GeneConfig)
-                gene_id: string;
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("GeneConfig", [("id", CfdInputValue::from("Gene_Spore"))]);
-    builder.add_record(
-        "BioRemainsConfig",
-        [
-            ("id", CfdInputValue::from("remains_1")),
-            ("gene_id", CfdInputValue::from("Gene_Spore")),
-        ],
-    );
-
-    let model = builder
-        .build()
-        .expect("legal @IdAsEnum id and ref values should build");
-    assert_eq!(model.record_count(), 2);
-}
-
-#[test]
-fn key_as_enum_ref_rejects_values_that_are_not_csharp_enum_variants() {
-    let schema = compile_schema(
-        r#"
-            type GeneConfig {
-                @IdAsEnum("GeneId")
-                @id
-                id: string;
-            }
-            type BioRemainsConfig {
-                @id
-                id: string;
-                @ref(GeneConfig)
-                gene_id: string;
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("GeneConfig", [("id", CfdInputValue::from("GoodGene"))]);
-    builder.add_record(
-        "BioRemainsConfig",
-        [
-            ("id", CfdInputValue::from("remains_1")),
-            ("gene_id", CfdInputValue::from("bad-value")),
-        ],
-    );
-
-    let err = builder
-        .build()
-        .expect_err("@IdAsEnum ref value should be a legal enum variant");
-    let diag = diagnostic_with_code(&err, CfdErrorCode::InvalidEnumVariant);
-    assert_eq!(
-        primary_path_segments(diag),
-        &[CfdPathSegment::Field("gene_id".to_string())]
-    );
-}
-
-#[test]
-fn key_as_enum_explicit_ref_rejects_values_that_are_not_csharp_enum_variants() {
-    let schema = compile_schema(
-        r#"
-            type GeneConfig {
-                @IdAsEnum("GeneId")
-                @id
-                id: string;
-            }
-            type BioRemainsConfig {
-                @id
-                id: string;
-                @ref(GeneConfig)
-                gene_id: string;
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("GeneConfig", [("id", CfdInputValue::from("GoodGene"))]);
-    builder.add_record(
-        "BioRemainsConfig",
-        [
-            ("id", CfdInputValue::from("remains_1")),
-            ("gene_id", CfdInputValue::Ref(CfdIdValue::from("bad-value"))),
-        ],
-    );
-
-    let err = builder
-        .build()
-        .expect_err("@IdAsEnum explicit ref should be a legal enum variant");
-    let diag = diagnostic_with_code(&err, CfdErrorCode::InvalidEnumVariant);
-    assert_eq!(
-        primary_path_segments(diag),
-        &[CfdPathSegment::Field("gene_id".to_string())]
-    );
-}
-
-// Smoke check: CfdDataModel still emits an empty ordered entry list for dict defaults.
-#[test]
-fn empty_dict_default_uses_empty_entries() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                @id id: string;
-                attrs: {string: int} = {};
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("id", CfdInputValue::from("i1"))]);
-    let model = builder.build().unwrap();
-    let id = record_id_at(&model, 0);
-    assert_eq!(
-        model.record(id).and_then(|r| r.field("attrs")),
-        Some(&CfdValue::Dict(Vec::new()))
-    );
 }

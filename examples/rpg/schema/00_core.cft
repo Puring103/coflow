@@ -1,0 +1,115 @@
+const MAX_LEVEL: int = 100;
+const MAX_POWER: int = 999;
+const MIN_SPEED: float = 0.1;
+const DEFAULT_REGION: string = "world";
+const DEFAULT_SOURCE: string = "system";
+const FEATURE_RAID_ENABLED: bool = true;
+const DEFAULT_REWARD_COUNT = 1;
+
+@display("Item rarity")
+enum Rarity {
+  Common = 0,
+  Rare = 10,
+  Epic = 20,
+  Legendary,
+}
+
+enum Element {
+  Physical,
+  Fire,
+  Ice,
+  Lightning,
+  Holy,
+  Shadow,
+}
+
+enum ItemSlot {
+  None = 0,
+  Weapon = 10,
+  Armor,
+  Accessory,
+  Consumable = 50,
+  Material = 60,
+}
+
+enum QuestKind {
+  Story = 0,
+  Side,
+  Daily,
+  Raid = 10,
+}
+
+enum StageKind {
+  Story = 0,
+  Elite,
+  Raid = 10,
+}
+
+enum ShopKind {
+  General = 0,
+  Event,
+  Raid = 10,
+}
+
+@flag
+@display("Skill tags")
+enum SkillTag {
+  Damage = 1,
+  Control = 2,
+  Heal = 4,
+  Passive = 8,
+  Ultimate = 16,
+}
+
+@struct
+@display("2D position")
+sealed type Vector2 {
+  x: float;
+  y: float;
+
+  check {
+    -10000.0 <= x <= 10000.0;
+    -10000.0 <= y <= 10000.0;
+  }
+}
+
+@struct
+sealed type StatBlock {
+  hp: int;
+  attack: int;
+  defense: int;
+  speed: float = 1.0;
+  crit: int = 5;
+
+  check {
+    hp > 0;
+    0 <= attack <= MAX_POWER;
+    0 <= defense <= MAX_POWER;
+    speed >= MIN_SPEED;
+    0 <= crit <= 100;
+    attack + defense <= MAX_POWER * 2;
+    speed / 1.0 >= MIN_SPEED;
+    attack // 1 == attack;
+    attack % 1 == 0;
+    attack ** 1 == attack;
+    (1 << 2) == 4;
+    (8 >> 1) == 4;
+    ~0 != 0;
+  }
+}
+
+sealed type Targeting {
+  shape: string;
+  params: {string: float} = {};
+
+  check {
+    shape != "";
+    contains(params, "range");
+    params["range"] >= 0.0;
+
+    all entry in params {
+      entry.key != "";
+      entry.value >= 0.0;
+    }
+  }
+}

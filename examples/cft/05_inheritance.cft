@@ -2,9 +2,6 @@
 # Abstract types cannot be instantiated directly.
 
 abstract type ExampleReward {
-  @id
-  id: string;
-
   check {
     id != "";
   }

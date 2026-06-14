@@ -1,12 +1,13 @@
-use crate::model::{CfdDictKey, CfdIdValue, CfdIndexKey, CfdInputValue, CfdValue};
+use crate::model::{CfdDictKey, CfdInputValue, CfdRefPathSegment, CfdValue};
 use coflow_cft::{
-    CftAnnotation, CftAnnotationValue, CftContainer, CftSchemaDefaultValue, CftSchemaEnum,
-    CftSchemaField, CftSchemaType, CftSchemaTypeRef,
+    CftContainer, CftSchemaDefaultValue, CftSchemaEnum, CftSchemaField, CftSchemaType,
+    CftSchemaTypeRef,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RecordDraft {
+    pub(crate) key: String,
     pub(crate) actual_type: String,
     pub(crate) fields: BTreeMap<String, CfdValueDraft>,
 }
@@ -15,7 +16,15 @@ pub(crate) struct RecordDraft {
 pub(crate) enum CfdValueDraft {
     Value(CfdValue),
     Object(Box<RecordDraft>),
-    PendingRef { target_type: String, id: CfdIdValue },
+    PendingRef {
+        target_type: String,
+        key: String,
+    },
+    PathRef {
+        expected_type: CfdType,
+        root: String,
+        segments: Vec<CfdRefPathSegment>,
+    },
     Array(Vec<CfdValueDraft>),
     Dict(Vec<(CfdDictKey, CfdValueDraft)>),
 }
@@ -91,42 +100,11 @@ impl SchemaView {
         out
     }
 
-    /// Returns the name of the `@id` field for `actual_type`, or `None` if
-    /// there is no `@id` field. Only the name is cloned; the full `FieldMeta`
-    /// is not copied.
-    pub(crate) fn id_field_name(&self, actual_type: &str) -> Option<String> {
-        self.full_fields(actual_type)
-            .iter()
-            .find(|field| field.is_id)
-            .map(|field| field.name.clone())
-    }
-
-    /// Returns the names of all `@index` fields for `actual_type`. Only the
-    /// names are cloned; the full `FieldMeta` structs are not copied.
-    pub(crate) fn index_field_names(&self, actual_type: &str) -> Vec<String> {
-        self.full_fields(actual_type)
-            .iter()
-            .filter(|field| field.is_index)
-            .map(|field| field.name.clone())
-            .collect()
-    }
-
-    pub(crate) fn range_has_id(&self, target_type: &str) -> bool {
-        self.full_fields(target_type).iter().any(|f| f.is_id)
-    }
-
     pub(crate) fn enum_variant_value(&self, enum_name: &str, variant: &str) -> Option<i64> {
         self.enums
             .get(enum_name)
             .and_then(|meta| meta.variants.get(variant))
             .copied()
-    }
-
-    pub(crate) fn id_key_as_enum(&self, target_type: &str) -> Option<&str> {
-        self.full_fields(target_type)
-            .iter()
-            .find(|field| field.is_id)
-            .and_then(|field| field.key_as_enum.as_deref())
     }
 }
 
@@ -158,10 +136,6 @@ pub(crate) struct FieldMeta {
     pub(crate) name: String,
     pub(crate) ty: CfdType,
     pub(crate) default: Option<CftSchemaDefaultValue>,
-    pub(crate) ref_target: Option<String>,
-    pub(crate) key_as_enum: Option<String>,
-    pub(crate) is_id: bool,
-    pub(crate) is_index: bool,
 }
 
 impl FieldMeta {
@@ -170,11 +144,6 @@ impl FieldMeta {
             name: field.name.clone(),
             ty: CfdType::from_schema(&field.ty_ref, schema),
             default: field.default.clone(),
-            ref_target: annotation_name_arg(&field.annotations, "ref"),
-            key_as_enum: annotation_string_arg(&field.annotations, "IdAsEnum")
-                .or_else(|| annotation_string_arg(&field.annotations, "GenAsEnum")),
-            is_id: has_annotation(&field.annotations, "id"),
-            is_index: has_annotation(&field.annotations, "index"),
         }
     }
 }
@@ -249,69 +218,10 @@ impl CfdType {
     }
 }
 
-fn has_annotation(annotations: &[CftAnnotation], name: &str) -> bool {
-    annotations.iter().any(|annotation| annotation.name == name)
-}
-
-fn annotation_name_arg(annotations: &[CftAnnotation], name: &str) -> Option<String> {
-    annotations
-        .iter()
-        .find(|annotation| annotation.name == name)
-        .and_then(|annotation| annotation.args.first())
-        .and_then(|arg| match arg {
-            CftAnnotationValue::Name(name) => Some(name.clone()),
-            _ => None,
-        })
-}
-
-fn annotation_string_arg(annotations: &[CftAnnotation], name: &str) -> Option<String> {
-    annotations
-        .iter()
-        .find(|annotation| annotation.name == name)
-        .and_then(|annotation| annotation.args.first())
-        .and_then(|arg| match arg {
-            CftAnnotationValue::String(value) => Some(value.clone()),
-            _ => None,
-        })
-}
-
 pub(crate) fn type_accepts_default(expected: &CfdType, actual: &CfdType) -> bool {
     match expected {
         CfdType::Nullable(inner) => type_accepts_default(inner, actual),
         _ => expected == actual,
-    }
-}
-
-pub(crate) fn id_matches_type(id: &CfdIdValue, ty: &CfdType) -> bool {
-    match ty {
-        CfdType::Nullable(inner) => id_matches_type(id, inner),
-        CfdType::String => matches!(id, CfdIdValue::String(_)),
-        CfdType::Int => matches!(id, CfdIdValue::Int(_)),
-        CfdType::Enum(name) => matches!(id, CfdIdValue::Enum(value) if &value.enum_name == name),
-        _ => false,
-    }
-}
-
-pub(crate) fn id_from_fields(
-    fields: &BTreeMap<String, CfdValueDraft>,
-    name: &str,
-) -> Option<CfdIdValue> {
-    match fields.get(name) {
-        Some(CfdValueDraft::Value(CfdValue::String(value))) => {
-            Some(CfdIdValue::String(value.clone()))
-        }
-        Some(CfdValueDraft::Value(CfdValue::Int(value))) => Some(CfdIdValue::Int(*value)),
-        Some(CfdValueDraft::Value(CfdValue::Enum(value))) => Some(CfdIdValue::Enum(value.clone())),
-        _ => None,
-    }
-}
-
-pub(crate) fn index_key_from_draft(value: &CfdValueDraft) -> Option<CfdIndexKey> {
-    match value {
-        CfdValueDraft::Value(CfdValue::String(value)) => Some(CfdIndexKey::String(value.clone())),
-        CfdValueDraft::Value(CfdValue::Int(value)) => Some(CfdIndexKey::Int(*value)),
-        CfdValueDraft::Value(CfdValue::Enum(value)) => Some(CfdIndexKey::Enum(value.clone())),
-        _ => None,
     }
 }
 
@@ -324,7 +234,8 @@ pub(crate) fn input_value_kind(value: &CfdInputValue) -> &'static str {
         CfdInputValue::String(_) => "string",
         CfdInputValue::EnumVariant { .. } => "enum",
         CfdInputValue::Object { .. } => "object",
-        CfdInputValue::Ref(_) => "ref",
+        CfdInputValue::RecordRef(_) => "record ref",
+        CfdInputValue::PathRef { .. } => "path ref",
         CfdInputValue::Array(_) => "array",
         CfdInputValue::Dict(_) => "dict",
     }

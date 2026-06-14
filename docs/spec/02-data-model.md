@@ -15,14 +15,15 @@ DataModel {
 Table {
   type_name:     TypeName,
   records:       Vec<Rc<Record>>,          // 保持数据源顺序；多个 sheet 映射同一类型时按配置文件顺序追加
-  primary_index: Map<IdValue, Rc<Record>>, // @id 字段值 → Record；每个继承树最多一个 @id 字段
+  primary_index: Map<String, Rc<Record>>,  // record key → Record
 }
 
 PolymorphicIndex {
-  records:   Map<IdValue, Rc<Record>>,     // root type 赋值兼容范围内的所有可引用记录；root type 由所属 inheritance_index 的 key 确定
+  records:   Map<String, Rc<Record>>,      // root type 赋值兼容范围内的所有可引用记录；root type 由所属 inheritance_index 的 key 确定
 }
 
 Record {
+  key:         String,                      // 数据源记录 key；导出时写为保留字段 id
   actual_type: TypeName,                   // 运行时类型，用于 is 判断和继承 check
   fields:      Map<FieldName, Value>,
 }
@@ -41,13 +42,9 @@ Value =
   | String(String)
   | Enum { enum_name: TypeName, variant: String, value: i64 }
   | Object(Box<Record>)                    // 内联嵌套对象，无独立 identity
-  | Ref { id: IdValue, target: Rc<Record> } // @ref 解析后的共享引用
+  | Ref { key: String, target: Rc<Record> } // record-key 解析后的共享引用
   | Array(Vec<Value>)
   | Dict(Vec<(DictKey, Value)>)            // 保持插入顺序
-
-IdValue =
-  | String(String)
-  | Int(i64)
 
 DictKey =
   | String(String)
@@ -57,18 +54,18 @@ DictKey =
 
 **`Object` 和 `Ref` 的区别：**
 
-- `Object`：内联嵌套对象，无独立 identity，不可被其他记录引用。字段类型是 `type` 且无 `@ref` 注解时，值为 `Object`
-- `Ref`：跨表引用，保留原始 ID 用于序列化和调试，同时持有目标 Record 的共享引用。字段有 `@ref` 注解时，值为 `Ref`
+- `Object`：内联嵌套对象，无独立 identity，不可被其他记录引用
+- `Ref`：跨表引用，保留原始 record key 用于序列化和调试，同时持有目标 Record 的共享引用
 
 内联对象只属于所在 Record，不可能被多处共享。
 
 **标量 key 的限制：**
 
-- `IdValue` 只允许 `string` 和 `int`，对应 `@id` / `@ref` 的字段类型限制
+- 记录 key 固定为非空 `string`，由 Excel 特殊 `id` 列或其他 loader 的等价输入提供
 - `DictKey` 只允许 `string`、`int`、`enum`，对应 CFT 字典 key 类型限制
 - `Enum` 值必须携带 `enum_name`，因为不同枚举可以有相同 variant 名或相同底层整数值；比较、去重和字典 key 等价判断均以 `enum_name + value` 为准
 - `Float` 只允许有限 `f64` 值；`NaN`、`+/-inf` 不是合法数据值
-- `Float` 不能作为 `@id`、`@ref` 或字典 key
+- `Float` 不能作为字典 key
 
 **字典 key 重复：**
 
@@ -90,19 +87,19 @@ DictKey =
 
 ---
 
-## @ref 与继承树
+## 记录引用与继承树
 
-`@ref(TypeName)` 的查找范围是 `TypeName` 的赋值兼容范围：
+对象字段如果输入为 `RecordRef(key)`，查找范围是字段声明类型的赋值兼容范围：
 
 - `TypeName` 是 `abstract type`：查找所有具体子类
 - `TypeName` 是普通 `type` 且存在子类：查找该类型本身及所有子类
 - `TypeName` 是 `sealed type` 或无子类的普通 `type`：只查找该类型本身
 
-加载器为存在继承关系的类型建立 `inheritance_index`。每个 `PolymorphicIndex` 覆盖一个 root type 的赋值兼容范围，用于 `@ref(root)` 和跨子类 ID 唯一性校验。
+加载器为存在继承关系的类型建立 `inheritance_index`。每个 `PolymorphicIndex` 覆盖一个 root type 的赋值兼容范围，用于父类字段引用和跨子类 key 唯一性校验。
 
-如果某个类型继承树中存在 `@id` 字段，则该 `@id` 字段由声明它的祖先类型定义，并被所有子类继承。同一 `PolymorphicIndex` 范围内的 `IdValue` 必须唯一。子类不能重新声明另一个 `@id` 字段。
+同一具体类型内 record key 必须唯一。同一 `PolymorphicIndex` 范围内的 record key 也必须唯一，否则父类字段引用无法判定目标。子类 key 可以满足父类字段；父类 key 不能满足子类字段。
 
-`@ref(TypeName)` 只有在 `TypeName` 本身或其可见继承字段中存在 `@id` 时才可解析。子类私有的 `@id` 只让该子类自己的引用范围可寻址，不会让父类范围变成可寻址；因此 `@ref(Base)` 不能依赖 `Child : Base` 上才声明的 `@id`。
+路径引用 `PathRef { root, segments }` 先按任意顶层记录 key 找到根记录，再按字段访问和数组/字典索引访问定位值。路径结果仍必须与目标字段类型兼容。
 
 ---
 

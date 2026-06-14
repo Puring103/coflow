@@ -17,20 +17,20 @@ fn type_checker_reports_name_field_enum_function_quantifier_index_and_regex_erro
         const PAT = "^[a";
         enum Rarity { Common, Rare, }
         type Item {
-            id: string;
+            key: string;
             rarity: Rarity;
             tags: [string];
             scores: {string: int};
             check {
                 missing != "";
-                id.missing != "";
+                key.missing != "";
                 Rarity.Missing == rarity;
                 rarity > 5;
-                len(id);
-                all ch in id { ch != ""; }
+                len(key);
+                all ch in key { ch != ""; }
                 tags["x"] != "";
-                matches(id, PAT);
-                matches(id, "[");
+                matches(key, PAT);
+                matches(key, "[");
             }
         }
     "#;
@@ -62,24 +62,21 @@ fn type_checker_rejects_reserved_quantifier_binding() {
 }
 
 #[test]
-fn type_checker_accepts_nullable_guarded_access_and_ref_object_view() {
+fn type_checker_accepts_nullable_guarded_access_and_object_fields() {
     let source = r#"
         type Item {
-            @id
-            id: string;
+            key: string;
             rarity: int;
         }
 
         type Holder {
             maybe: Item? = null;
-
-            @ref(Item)
-            item_id: string;
+            item: Item;
 
             check {
-                maybe != null && maybe.id != "";
-                item_id.id != "";
-                item_id.rarity >= 0;
+                maybe != null && maybe.key != "";
+                item.key != "";
+                item.rarity >= 0;
             }
         }
     "#;
@@ -91,7 +88,7 @@ fn type_checker_accepts_nullable_guarded_access_and_ref_object_view() {
 fn type_checker_allows_is_null_for_nullable_operands() {
     compile_one(
         r#"
-            type Child { id: string; }
+            type Child { key: string; }
             type Holder {
                 maybe_int: int? = null;
                 maybe_child: Child? = null;
@@ -160,11 +157,11 @@ fn type_checker_reports_is_predicate_and_condition_edges() {
     let source = r#"
         enum E { A, }
         type Item {
-            id: string;
+            key: string;
             check {
-                id is E;
-                id;
-                when id { true; }
+                key is E;
+                key;
+                when key { true; }
             }
         }
     "#;
@@ -178,9 +175,9 @@ fn type_checker_reports_is_predicate_and_condition_edges() {
 fn type_checker_reports_is_on_non_object_left_operand() {
     let source = r#"
         type Item {
-            id: string;
+            key: string;
             check {
-                id is Item;
+                key is Item;
             }
         }
     "#;
@@ -192,7 +189,7 @@ fn type_checker_reports_is_on_non_object_left_operand() {
 #[test]
 fn type_checker_reports_unknown_field_on_known_object_operand() {
     let source = r#"
-        type Child { id: string; }
+        type Child { key: string; }
         type Holder {
             child: Child;
             check {
@@ -332,24 +329,24 @@ fn type_checker_rejects_runtime_only_eval_edges_before_checker_runs() {
         enum Rarity { Common, Rare, }
         enum Element { Fire, Ice, }
         type Item {
-            id: string;
+            key: string;
             rarity: Rarity;
             nums: [int];
             texts: [string];
             resistances: {Element: float};
             check {
-                id;
-                when id { true; }
+                key;
+                when key { true; }
                 MissingEnum(0) == Rarity.Common;
                 Rarity("x") == rarity;
                 rarity | Element.Fire == rarity;
                 rarity << 1 == rarity;
-                id.missing != "";
-                len(id) > 0;
+                key.missing != "";
+                len(key) > 0;
                 keys(nums);
                 values(nums);
                 sum(texts) > 0;
-                min(id) > 0;
+                min(key) > 0;
                 matches(1, "[");
                 all entry in resistances {
                     entry.missing != 0;
@@ -375,28 +372,28 @@ fn type_checker_reports_builtin_arity_and_operator_edges() {
         enum Flags { A = 1, B = 2, }
         enum Rarity { Common, Rare, }
         type Item {
-            id: string;
+            key: string;
             flags: Flags;
             rarity: Rarity;
             nums: [int];
             weights: {string: int};
             check {
-                !id;
+                !key;
                 -flags == flags;
                 ~rarity == rarity;
                 true + false == 0;
                 1 // 1.0 == 1;
-                id[0] != "";
-                contains(id, 1);
+                key[0] != "";
+                contains(key, 1);
                 contains(nums);
                 unique();
                 min();
                 sum();
                 keys();
                 values();
-                matches(id);
-                matches(id, "[");
-                matches(id, id);
+                matches(key);
+                matches(key, "[");
+                matches(key, key);
                 all entry in weights {
                     entry.key > 0;
                 }
@@ -419,7 +416,7 @@ fn type_checker_reports_builtin_arity_and_operator_edges() {
 fn type_checker_reports_non_enum_variant_and_contains_dict_key_edges() {
     let source = r#"
         type Item {
-            id: string;
+            key: string;
             tags: {string: int};
             check {
                 Item.Missing == 0;
@@ -565,7 +562,7 @@ fn type_checker_reports_array_contains_dict_contains_and_matches_arg_edges() {
         type Item {
             nums: [int];
             attrs: {Damage: int};
-            id: string;
+            key: string;
             check {
                 contains(nums, "1");
                 contains(attrs, "Fire");

@@ -28,31 +28,23 @@ cargo run --quiet -- build examples/humanpark
 
 - `generated/data/<Type>.json`
 - 命名空间为 `Core.Data.Config` 的 `generated/csharp/<Type>.cs`
-- 对带 `@IdAsEnum("...")` 注解的 `@id` 字段，按表内实际 id 生成真正的
-  C# enum；其他字段可用 `@GenAsEnum("...")` 引用这个 enum，但不会生成成员。
+- 对带 `@keyAsEnum("...")` 注解的类型，按表内实际记录 key 生成真正的
+  C# enum，并让生成类型的 `Id` 属性使用该 enum。
 
 ## 用到的 coflow 特性
 
-- **枚举类型的 `@id`**：保留给字段类型同时也被引用的枚举做主键，
-  例如 `TerrainConfig.id: TerrainType`、`TileTagConfig.id: TileTagFlags`、
-  `GameFeatureConfig.id: GameFeature`、`AttributeConfig.id: CreatureAttribute`。
-  cell 里写枚举名（`Water`、`LifeCycle_LifeSpan`），导出 JSON 时落为整数。
+- **Excel `id` 特殊列**：每个 sheet 的 `id` 列是记录 key，不需要也不能在
+  CFT 中声明 `id` 字段。check 中的 `id` 是虚拟只读 key。
+- **类型级 `@keyAsEnum` codegen**：用于“key 是策划起的字符串、希望 C# 强类型化”的表
+  （`GeneConfig`、`SkinConfig`、`PhaseConfig`、`AbilityConfig`、`SubstanceConfig` 等）。
+  build 时按表内实际 key 生成对应的 C# enum（例如 `GeneId.cs`），并让引用字段如
+  `BioRemainsConfig.Gene` 使用解析后的强类型对象。
 - **`@expand` 行内展开**：`TerrainConfig` 的 `EnvironmentConfig`、
   `InitialConfig` 字段加 `@expand` 后，loader 把父字段及其后续连续若干列
   按内层 type 字段顺序读取并组装成嵌套对象——不需要在 xlsx 单元格里写
   `{a, b, c}`。
-- **`@ref` 跨表引用**：`GeneConfig.parentGeneId`、`BioRemainsConfig.geneId`
-  指向 `GeneConfig`；`@ref` 字段允许用 `string?` 表达"可选引用"。
-- **`@IdAsEnum` codegen**：用于"id 是策划起的字符串、没有合理整数枚举可绑"的表
-  （`GeneConfig`、`SkinConfig`、`PhaseConfig`），以及"原本 luban 端是枚举但仅在 @id
-  上使用、没有别的地方当字段类型引用"的表（`AbilityConfig`、`SubstanceConfig`）。
-  这两种情况下 schema 直接用 `id: string`，但在 `@id` 字段上加
-  `@IdAsEnum("GeneId")` 这类注解。build 时按表内实际 id 生成对应的 C# enum
-  （例如 `GeneId.cs`），并让引用字段如 `BioRemainsConfig.GeneId` 自动变成
-  `GeneId`。
-- **`@GenAsEnum` codegen**：用于普通 `string` / `string?` 字段引用已有
-  `@IdAsEnum` 枚举，例如 `ModifyValueOperation.attribute` 引用
-  `CreatureAttribute`。它只影响 C# 类型和读取校验，不会生成 enum 成员。
+- **显式 `@key` 跨表引用**：`GeneConfig.parentGene`、`BioRemainsConfig.gene`
+  指向 `GeneConfig`；Excel 中引用单元格写成 `@Gene_Spore`，可空引用留空即可。
 - **宽松 bool 解析**：`is_base`、`isInit`、`isInitial` 在 xlsx 里仍是 `0`/`1`，
   cell parser 会接受。
 - **schema 多文件**：`schema:` 目录指向 `schema/`，coflow 自动加载里面的所
@@ -61,18 +53,20 @@ cargo run --quiet -- build examples/humanpark
 ## Excel 表格式约定
 
 - 每个 sheet 的第一行是字段名；第二行开始是数据行。
+- `id` 列是特殊记录 key 列，不映射到 CFT 字段。
 - 表头为 `#` 的列是可选导入控制列，不映射到 schema 字段；该列值为 `##`
   的数据行会被 loader 跳过。
 - 空行会被跳过；只填了 id、其它列全空的占位行仍需要用 `# = ##` 显式跳过。
 - 数组使用 coflow 单元格语法里的 `|` 分隔。
+- 对象引用必须写 `@key`，例如 `@Gene_Spore`；数组引用写成
+  `@Gene_A|@Gene_B`。
 
 枚举名 → int、bool 转换、嵌套对象打包等之前的 workaround 都已不再需要：
 coflow 端直接支持。
 
-> 注：`AbilityConfig` / `SubstanceConfig` 由于 schema 改用 `id: string` +
-> `@IdAsEnum`，导出 JSON 中这两张表的 `id` 字段从整数变成了字符串
-> （例如 `"Ability_Eat"`、`"Matter_Nutrition"`）。如果下游运行时硬绑了这些
-> 整数 id，需要要么改回 `enum @id` 形式，要么把读取侧迁移到字符串 id。
+> 注：导出 JSON 中所有表都会写出保留字段 `"id"`，其值来自 Excel 的记录 key。
+> 对带 `@keyAsEnum` 的类型，C# 端会把 `Id` 提升为生成 enum，但 JSON 仍保持
+> 原始 key 字符串。
 
 ## 未覆盖的部分
 

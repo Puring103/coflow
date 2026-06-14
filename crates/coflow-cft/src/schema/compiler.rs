@@ -1,9 +1,8 @@
 use super::support::{
     build_schema_type_ref, const_value, convert_annotations, convert_check_block, find_annotation,
-    format_type_ref, has_annotation, is_i64_power_of_two, is_id_compatible_type,
-    is_indexable_field_type, is_reserved_identifier, is_valid_dict_key, types_assignable,
-    unwrap_nullable, AnnotationSpec, AnnotationTarget, ConstInfo, EnumInfo, FieldInfo, FieldOrigin,
-    Symbol, SymbolKind, Ty, TypeInfo,
+    format_type_ref, has_annotation, is_i64_power_of_two, is_reserved_identifier,
+    is_valid_dict_key, types_assignable, AnnotationSpec, AnnotationTarget, ConstInfo, EnumInfo,
+    FieldInfo, FieldOrigin, Symbol, SymbolKind, Ty, TypeInfo,
 };
 use super::type_checker::TypeChecker;
 use super::{
@@ -11,25 +10,12 @@ use super::{
     CftSchemaField, CftSchemaModule, CftSchemaType, CompiledSchema,
 };
 use crate::ast::{
-    Annotation, AnnotationArg, ConstLiteral, DefaultExpr, DefaultExprKind, FieldDef, Item, TypeRef,
-    TypeRefKind,
+    Annotation, ConstLiteral, DefaultExpr, DefaultExprKind, FieldDef, Item, TypeRef, TypeRefKind,
 };
 use crate::container::{CftContainer, ModuleId};
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::span::Span;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-
-struct TypeTopology {
-    /// `type name -> distance to its inheritance root` (0 for root types).
-    depth: BTreeMap<String, usize>,
-    /// `type name -> root type at the top of its inheritance chain`.
-    root: BTreeMap<String, String>,
-}
-
-struct VisibleIdField<'a> {
-    module: ModuleId,
-    field: &'a FieldDef,
-}
 
 pub(super) struct SchemaCompiler<'a> {
     pub(super) container: &'a CftContainer,
@@ -478,8 +464,6 @@ impl<'a> SchemaCompiler<'a> {
                 }
             }
         }
-
-        self.validate_id_fields_by_tree();
     }
 
     fn detect_cycle(
@@ -522,134 +506,6 @@ impl<'a> SchemaCompiler<'a> {
         visited.insert(name.to_string());
     }
 
-    #[allow(clippy::option_if_let_else)]
-    fn validate_id_fields_by_tree(&mut self) {
-        // Walk types in (depth_from_root, source_position) order so that the
-        // earliest declared @id field in the inheritance chain is reported as
-        // the original, regardless of alphabetical name order.
-        let topo = self.compute_type_topology();
-        let mut entries: Vec<(usize, ModuleId, Span, String)> = self
-            .types
-            .iter()
-            .map(|(name, info)| {
-                (
-                    topo.depth.get(name).copied().map_or(0, |depth| depth),
-                    info.module.clone(),
-                    info.def.name_span,
-                    name.clone(),
-                )
-            })
-            .collect();
-        entries.sort_by(|a, b| {
-            a.0.cmp(&b.0)
-                .then_with(|| a.1.as_str().cmp(b.1.as_str()))
-                .then_with(|| a.2.start.cmp(&b.2.start))
-        });
-
-        let mut first_by_root: BTreeMap<String, (ModuleId, Span)> = BTreeMap::new();
-        for (_, _, _, name) in entries {
-            let Some(info) = self.types.get(&name).cloned() else {
-                continue;
-            };
-            let root = match topo.root.get(&name) {
-                Some(root) => root.clone(),
-                None => name.clone(),
-            };
-            for field in &info.def.fields {
-                if !has_annotation(&field.annotations, "id") {
-                    continue;
-                }
-                if let Some(first) = first_by_root.get(&root) {
-                    self.diagnostics.push(
-                        CftDiagnostic::error(
-                            CftErrorCode::MultipleIdFieldsInTree,
-                            info.module.clone(),
-                            field.name_span,
-                            "inheritance tree already has an @id field",
-                        )
-                        .with_related(
-                            first.0.clone(),
-                            first.1,
-                            "first @id field is here",
-                        ),
-                    );
-                } else {
-                    first_by_root.insert(root.clone(), (info.module.clone(), field.name_span));
-                }
-            }
-        }
-    }
-
-    /// Computes inheritance depth (distance to root) and root type for every
-    /// known type in a single pass, with cycle-safe traversal. The previous
-    /// per-type recursive helpers were O(N) each and called O(N) times, giving
-    /// quadratic behavior on large schemas; this pre-pass is linear.
-    #[allow(clippy::option_if_let_else)]
-    fn compute_type_topology(&self) -> TypeTopology {
-        let mut depth = BTreeMap::new();
-        let mut root = BTreeMap::new();
-        for name in self.types.keys() {
-            self.fill_topology(name, &mut depth, &mut root);
-        }
-        TypeTopology { depth, root }
-    }
-
-    #[allow(clippy::option_if_let_else)]
-    fn fill_topology(
-        &self,
-        name: &str,
-        depth: &mut BTreeMap<String, usize>,
-        root: &mut BTreeMap<String, String>,
-    ) {
-        if depth.contains_key(name) {
-            return;
-        }
-        // Walk towards the root, collecting unresolved ancestors. Stop when we
-        // hit (a) a cycle, (b) an already-resolved ancestor, or (c) a type
-        // with no parent (the actual root of the chain).
-        let mut chain: Vec<String> = Vec::new();
-        let mut current = name.to_string();
-        let mut seen = HashSet::new();
-        let (root_name, base_depth) = loop {
-            if !seen.insert(current.clone()) {
-                // Cycle: validate_inheritance has already reported it. Treat
-                // the entry point of the cycle as its own root with depth 0
-                // so we still produce defined values.
-                break (current, 0);
-            }
-            if let Some(known_depth) = depth.get(&current) {
-                let known_root = match root.get(&current) {
-                    Some(known_root) => known_root.clone(),
-                    None => current.clone(),
-                };
-                break (known_root, *known_depth);
-            }
-            let parent = self
-                .types
-                .get(&current)
-                .and_then(|info| info.def.parent.as_ref())
-                .map(|parent| parent.name.clone())
-                .filter(|parent| self.types.contains_key(parent));
-            match parent {
-                Some(parent) => {
-                    chain.push(current);
-                    current = parent;
-                }
-                None => break (current, 0),
-            }
-        };
-        // Anchor (`current` / `root_name`) is not in `chain`. `chain` holds
-        // descendants in leaf-first order; reverse to assign incrementing
-        // depths starting one above the anchor.
-        depth.entry(root_name.clone()).or_insert(base_depth);
-        root.entry(root_name.clone())
-            .or_insert_with(|| root_name.clone());
-        for (steps_from_anchor, type_name) in chain.into_iter().rev().enumerate() {
-            depth.insert(type_name.clone(), base_depth + steps_from_anchor + 1);
-            root.insert(type_name, root_name.clone());
-        }
-    }
-
     fn validate_annotations(&mut self) {
         self.each_enum(|this, info| {
             this.validate_annotation_list(
@@ -668,23 +524,6 @@ impl<'a> SchemaCompiler<'a> {
 
         let mut key_as_enum_names = BTreeMap::<String, (ModuleId, Span)>::new();
         self.each_type(|this, info| {
-            for field in &info.def.fields {
-                if let Some(annotation) = find_annotation(&field.annotations, "IdAsEnum") {
-                    if find_annotation(&field.annotations, "id").is_some() {
-                        if let Some(AnnotationArg::String(enum_name, _)) = annotation.args.first() {
-                            this.register_key_as_enum_name(
-                                &mut key_as_enum_names,
-                                &info.module,
-                                annotation,
-                                enum_name,
-                            );
-                        }
-                    }
-                }
-            }
-        });
-
-        self.each_type(|this, info| {
             this.validate_annotation_list(
                 &info.module,
                 AnnotationTarget::Type,
@@ -700,13 +539,29 @@ impl<'a> SchemaCompiler<'a> {
                     );
                 }
             }
+            if let Some(annotation) = find_annotation(&info.def.annotations, "keyAsEnum") {
+                if let Some(crate::ast::AnnotationArg::String(enum_name, _)) =
+                    annotation.args.first()
+                {
+                    this.validate_key_as_enum_name(&info.module, annotation, enum_name);
+                    this.register_key_as_enum_name(
+                        &mut key_as_enum_names,
+                        &info.module,
+                        annotation,
+                        enum_name,
+                    );
+                }
+            }
+        });
+
+        self.each_type(|this, info| {
             for field in &info.def.fields {
                 this.validate_annotation_list(
                     &info.module,
                     AnnotationTarget::Field,
                     &field.annotations,
                 );
-                this.validate_field_annotations(&info.module, field, &key_as_enum_names);
+                this.validate_field_annotations(&info.module, field);
             }
         });
     }
@@ -724,33 +579,16 @@ impl<'a> SchemaCompiler<'a> {
                     CftErrorCode::DuplicateGlobalName,
                     module.clone(),
                     annotation.span,
-                    format!("duplicate @IdAsEnum enum name `{enum_name}`"),
+                    format!("duplicate @keyAsEnum enum name `{enum_name}`"),
                 )
                 .with_related(
                     first_module.clone(),
                     *first_span,
-                    "first @IdAsEnum enum name is here",
+                    "first @keyAsEnum enum name is here",
                 ),
             );
         } else {
             key_as_enum_names.insert(enum_name.to_string(), (module.clone(), annotation.span));
-        }
-    }
-
-    fn validate_key_as_enum_reference(
-        &mut self,
-        module: &ModuleId,
-        annotation: &Annotation,
-        enum_name: &str,
-        key_as_enum_names: &BTreeMap<String, (ModuleId, Span)>,
-    ) {
-        if !key_as_enum_names.contains_key(enum_name) {
-            self.push_diag(
-                CftErrorCode::InvalidAnnotationArgument,
-                module,
-                annotation.span,
-                format!("@GenAsEnum enum name `{enum_name}` is not declared by an @IdAsEnum field"),
-            );
         }
     }
 
@@ -807,72 +645,7 @@ impl<'a> SchemaCompiler<'a> {
         }
     }
 
-    fn validate_field_annotations(
-        &mut self,
-        module: &ModuleId,
-        field: &FieldDef,
-        key_as_enum_names: &BTreeMap<String, (ModuleId, Span)>,
-    ) {
-        if let Some(annotation) = find_annotation(&field.annotations, "id") {
-            if !is_id_compatible_type(&self.resolve_field_type(&field.ty), false) {
-                self.push_diag(
-                    CftErrorCode::InvalidAnnotatedFieldType,
-                    module,
-                    annotation.span,
-                    "@id fields must be string, int, or enum",
-                );
-            }
-        }
-        if let Some(annotation) = find_annotation(&field.annotations, "ref") {
-            if !is_id_compatible_type(&self.resolve_field_type(&field.ty), true) {
-                self.push_diag(
-                    CftErrorCode::InvalidAnnotatedFieldType,
-                    module,
-                    annotation.span,
-                    "@ref fields must be string, int, or enum (optionally nullable)",
-                );
-            }
-            if let Some(AnnotationArg::Name(target)) = annotation.args.first() {
-                match self.symbols.get(&target.name) {
-                    Some(symbol) if symbol.kind == SymbolKind::Type => {
-                        self.validate_ref_id_contract(module, field, annotation, &target.name);
-                    }
-                    Some(symbol) => {
-                        self.diagnostics.push(
-                            CftDiagnostic::error(
-                                CftErrorCode::RefTargetMustBeType,
-                                module.clone(),
-                                target.span,
-                                "@ref target must be a type",
-                            )
-                            .with_related(
-                                symbol.module.clone(),
-                                symbol.span,
-                                "name is defined here",
-                            ),
-                        );
-                    }
-                    None => {
-                        self.push_diag(
-                            CftErrorCode::RefTargetMustBeType,
-                            module,
-                            target.span,
-                            "@ref target must be a known type",
-                        );
-                    }
-                }
-            }
-        }
-        if let Some(annotation) = find_annotation(&field.annotations, "index") {
-            if !is_indexable_field_type(&self.resolve_field_type(&field.ty)) {
-                self.push_diag(
-                    CftErrorCode::InvalidAnnotatedFieldType,
-                    module,
-                    annotation.span,
-                    "@index fields must be non-nullable string, int, or enum",
-                );
-            }
-        }
+    fn validate_field_annotations(&mut self, module: &ModuleId, field: &FieldDef) {
         if let Some(annotation) = find_annotation(&field.annotations, "expand") {
             // @expand requires the field to reference a concrete `type`. Arrays,
             // dicts, primitives, enums, and nullable wrappers don't make sense
@@ -888,73 +661,9 @@ impl<'a> SchemaCompiler<'a> {
                 );
             }
         }
-        if let Some(annotation) = find_annotation(&field.annotations, "IdAsEnum") {
-            self.validate_id_as_enum_annotation(module, field, annotation);
-        }
-        if let Some(annotation) = find_annotation(&field.annotations, "GenAsEnum") {
-            self.validate_as_enum_annotation(module, field, annotation, key_as_enum_names);
-        }
     }
 
-    fn validate_id_as_enum_annotation(
-        &mut self,
-        module: &ModuleId,
-        field: &FieldDef,
-        annotation: &Annotation,
-    ) {
-        if find_annotation(&field.annotations, "id").is_none() {
-            self.push_diag(
-                CftErrorCode::InvalidAnnotatedFieldType,
-                module,
-                annotation.span,
-                "@IdAsEnum must be applied to an @id field",
-            );
-        }
-        let resolved = self.resolve_field_type(&field.ty);
-        if !matches!(resolved, Ty::String | Ty::Unknown) {
-            self.push_diag(
-                CftErrorCode::InvalidAnnotatedFieldType,
-                module,
-                annotation.span,
-                "@IdAsEnum fields must have type string",
-            );
-        }
-        if let Some(AnnotationArg::String(enum_name, _)) = annotation.args.first() {
-            self.validate_id_as_enum_name(module, annotation, enum_name);
-        }
-    }
-
-    fn validate_as_enum_annotation(
-        &mut self,
-        module: &ModuleId,
-        field: &FieldDef,
-        annotation: &Annotation,
-        key_as_enum_names: &BTreeMap<String, (ModuleId, Span)>,
-    ) {
-        if find_annotation(&field.annotations, "id").is_some() {
-            self.push_diag(
-                CftErrorCode::InvalidAnnotatedFieldType,
-                module,
-                annotation.span,
-                "@GenAsEnum cannot be applied to an @id field; use @IdAsEnum",
-            );
-        }
-        let resolved = self.resolve_field_type(&field.ty);
-        if !matches!(unwrap_nullable(&resolved), Ty::String | Ty::Unknown) {
-            self.push_diag(
-                CftErrorCode::InvalidAnnotatedFieldType,
-                module,
-                annotation.span,
-                "@GenAsEnum fields must have type string or string?",
-            );
-        }
-        if let Some(AnnotationArg::String(enum_name, _)) = annotation.args.first() {
-            self.validate_id_as_enum_name(module, annotation, enum_name);
-            self.validate_key_as_enum_reference(module, annotation, enum_name, key_as_enum_names);
-        }
-    }
-
-    fn validate_id_as_enum_name(
+    fn validate_key_as_enum_name(
         &mut self,
         module: &ModuleId,
         annotation: &Annotation,
@@ -965,7 +674,7 @@ impl<'a> SchemaCompiler<'a> {
                 CftErrorCode::InvalidAnnotationArgument,
                 module,
                 annotation.span,
-                format!("@IdAsEnum/GenAsEnum enum name `{enum_name}` is not a valid C# identifier"),
+                format!("@keyAsEnum enum name `{enum_name}` is not a valid C# identifier"),
             );
         }
         if let Some(symbol) = self.symbols.get(enum_name) {
@@ -975,64 +684,13 @@ impl<'a> SchemaCompiler<'a> {
                     module.clone(),
                     annotation.span,
                     format!(
-                        "@IdAsEnum/GenAsEnum enum name `{enum_name}` collides with an existing schema name"
+                        "@keyAsEnum enum name `{enum_name}` collides with an existing schema name"
                     ),
                 )
                 .with_related(
                     symbol.module.clone(),
                     symbol.span,
                     "existing schema name is here",
-                ),
-            );
-        }
-    }
-
-    fn validate_ref_id_contract(
-        &mut self,
-        module: &ModuleId,
-        field: &FieldDef,
-        annotation: &Annotation,
-        target_type: &str,
-    ) {
-        let field_ty = self.resolve_field_type(&field.ty);
-        let field_id_ty = unwrap_nullable(&field_ty);
-        if !matches!(
-            field_id_ty,
-            Ty::String | Ty::Int | Ty::Enum(_) | Ty::Unknown
-        ) {
-            return;
-        }
-        let Some(target_id) = self.visible_id_field(target_type) else {
-            self.push_diag(
-                CftErrorCode::RefTargetHasNoId,
-                module,
-                annotation.span,
-                format!("ref target `{target_type}` has no visible @id field"),
-            );
-            return;
-        };
-        let target_id_ty = self.resolve_field_type(&target_id.field.ty);
-        let target_id_ty = unwrap_nullable(&target_id_ty);
-        if matches!(field_id_ty, Ty::Unknown) || matches!(target_id_ty, Ty::Unknown) {
-            return;
-        }
-        if field_id_ty != target_id_ty {
-            self.diagnostics.push(
-                CftDiagnostic::error(
-                    CftErrorCode::RefIdTypeMismatch,
-                    module.clone(),
-                    annotation.span,
-                    format!(
-                        "@ref({target_type}) field `{}` id type `{}` does not match target @id type `{}`",
-                        field.name,
-                        ty_display(&field_ty),
-                        ty_display(target_id_ty)
-                    ),
-                )
-                .with_related(
-                    target_id.module.clone(),
-                    target_id.field.name_span,
-                    "target @id field is here",
                 ),
             );
         }
@@ -1190,7 +848,7 @@ impl<'a> SchemaCompiler<'a> {
             for info in chain {
                 for field in &info.def.fields {
                     let declared_ty = self.resolve_field_type(&field.ty);
-                    let check_ty = Self::check_type_for_field(field, &declared_ty);
+                    let check_ty = declared_ty;
                     map.insert(field.name.clone(), FieldInfo { check_ty });
                 }
             }
@@ -1475,20 +1133,6 @@ impl<'a> SchemaCompiler<'a> {
         }
     }
 
-    fn check_type_for_field(field: &FieldDef, declared: &Ty) -> Ty {
-        if let Some(annotation) = find_annotation(&field.annotations, "ref") {
-            if let Some(AnnotationArg::Name(target)) = annotation.args.first() {
-                let target_ty = Ty::Type(target.name.clone());
-                return if declared.is_nullable() {
-                    Ty::Nullable(Box::new(target_ty))
-                } else {
-                    target_ty
-                };
-            }
-        }
-        declared.clone()
-    }
-
     fn collect_ancestor_fields(&self, parent_name: Option<&str>) -> BTreeMap<String, FieldOrigin> {
         let mut out = BTreeMap::new();
         let mut current = parent_name.map(str::to_string);
@@ -1510,20 +1154,6 @@ impl<'a> SchemaCompiler<'a> {
             current = info.def.parent.as_ref().map(|parent| parent.name.clone());
         }
         out
-    }
-
-    fn visible_id_field(&self, type_name: &str) -> Option<VisibleIdField<'a>> {
-        for info in self.ancestry_chain(type_name) {
-            for field in &info.def.fields {
-                if has_annotation(&field.annotations, "id") {
-                    return Some(VisibleIdField {
-                        module: info.module.clone(),
-                        field,
-                    });
-                }
-            }
-        }
-        None
     }
 
     fn push_diag(
@@ -1565,24 +1195,6 @@ impl<'a> SchemaCompiler<'a> {
                 body(self, &info);
             }
         }
-    }
-}
-
-fn ty_display(ty: &Ty) -> String {
-    match ty {
-        Ty::Int => "int".to_string(),
-        Ty::Float => "float".to_string(),
-        Ty::Bool => "bool".to_string(),
-        Ty::String => "string".to_string(),
-        Ty::Null => "null".to_string(),
-        Ty::Type(name) | Ty::Enum(name) | Ty::EnumNamespace(name) => name.clone(),
-        Ty::Array(inner) => format!("[{}]", ty_display(inner)),
-        Ty::Dict(key, value) => format!("{{{}: {}}}", ty_display(key), ty_display(value)),
-        Ty::Nullable(inner) => format!("{}?", ty_display(inner)),
-        Ty::Entry(key, value) => format!("entry<{}, {}>", ty_display(key), ty_display(value)),
-        Ty::EmptyArray => "[]".to_string(),
-        Ty::EmptyObject => "{}".to_string(),
-        Ty::Unknown => "<unknown>".to_string(),
     }
 }
 

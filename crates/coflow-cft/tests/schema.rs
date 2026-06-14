@@ -15,7 +15,7 @@ use common::*;
 fn schema_reports_cross_module_duplicate_with_related_label() {
     let mut container = CftContainer::new();
     container
-        .add_module(ModuleId::from("a"), "type Item { id: string; }")
+        .add_module(ModuleId::from("a"), "type Item { key: string; }")
         .unwrap();
     container
         .add_module(ModuleId::from("b"), "enum Item { A, }")
@@ -56,6 +56,7 @@ fn schema_rejects_reserved_identifiers() {
         "type Item { true: bool; }",
         "type Item { check: int; }",
         "type Item { from: string; }",
+        "type Item { id: string; }",
         "enum E { _, }",
         "type Item { values: [int]; check { all all in values { true; } } }",
     ];
@@ -74,9 +75,9 @@ fn schema_allows_underscore_prefixed_identifiers() {
 #[test]
 fn schema_reports_inheritance_and_modifier_errors() {
     let source = r#"
-        sealed type Parent { id: string; }
+        sealed type Parent { key: string; }
         abstract sealed type Bad { x: int; }
-        type Child : Parent { id: string; }
+        type Child : Parent { key: string; }
         type A : B { x: int; }
         type B : A { y: int; }
     "#;
@@ -88,119 +89,27 @@ fn schema_reports_inheritance_and_modifier_errors() {
 }
 
 #[test]
-fn schema_reports_id_annotation_and_flag_errors() {
+fn schema_reports_removed_record_annotations_and_flag_errors() {
     let source = r#"
         @flag
         enum Flags { A = 1, B = 3, }
 
-        type Base { @id id: string; }
-        type Child : Base { @id other: int; }
-
         @struct
         type NotSealed { x: int; }
 
-        type BadRef {
+        type OldAnnotations {
+            @id
+            key: string;
             @ref(Flags)
-            flag_id: string;
+            flag: string;
             @index
-            xs: [int];
+            name: string;
         }
     "#;
     let err = compile_one(source).unwrap_err();
     assert_has_code(&err, CftErrorCode::InvalidFlagEnumValue);
-    assert_has_code(&err, CftErrorCode::MultipleIdFieldsInTree);
     assert_has_code(&err, CftErrorCode::StructRequiresSealedType);
-    assert_has_code(&err, CftErrorCode::RefTargetMustBeType);
-    assert_has_code(&err, CftErrorCode::InvalidAnnotatedFieldType);
-}
-
-#[test]
-fn schema_rejects_nullable_index_fields() {
-    for source in [
-        "type A { @index value: string? = null; }",
-        "type A { @index value: int? = null; }",
-        "enum E { A, } type A { @index value: E? = null; }",
-    ] {
-        let err = compile_one(source).unwrap_err();
-        assert_has_code(&err, CftErrorCode::InvalidAnnotatedFieldType);
-    }
-}
-
-#[test]
-fn schema_rejects_nullable_id_fields() {
-    for source in [
-        "type A { @id value: string? = null; }",
-        "type A { @id value: int? = null; }",
-    ] {
-        let err = compile_one(source).unwrap_err();
-        assert_has_code(&err, CftErrorCode::InvalidAnnotatedFieldType);
-    }
-}
-
-#[test]
-fn schema_rejects_ref_target_without_visible_id() {
-    let err = compile_one(
-        r#"
-            type Target {}
-            type Holder {
-                @ref(Target)
-                target_id: string;
-            }
-        "#,
-    )
-    .unwrap_err();
-
-    assert_has_code(&err, CftErrorCode::RefTargetHasNoId);
-}
-
-#[test]
-fn schema_rejects_parent_ref_when_only_child_declares_id() {
-    let err = compile_one(
-        r#"
-            abstract type Target {}
-            type Child : Target { @id id: string; }
-            type Holder {
-                @ref(Target)
-                target_id: string;
-            }
-        "#,
-    )
-    .unwrap_err();
-
-    assert_has_code(&err, CftErrorCode::RefTargetHasNoId);
-}
-
-#[test]
-fn schema_rejects_ref_id_type_mismatch() {
-    let err = compile_one(
-        r#"
-            type Target { @id id: string; }
-            type Holder {
-                @ref(Target)
-                target_id: int?;
-            }
-        "#,
-    )
-    .unwrap_err();
-
-    assert_has_code(&err, CftErrorCode::RefIdTypeMismatch);
-}
-
-#[test]
-fn schema_rejects_polymorphic_ref_id_type_mismatch() {
-    let err = compile_one(
-        r#"
-            abstract type Target { @id id: string; }
-            type Child : Target { value: int; }
-            type Holder {
-                @ref(Target)
-                target_id: int;
-            }
-        "#,
-    )
-    .unwrap_err();
-
-    assert_has_code(&err, CftErrorCode::RefIdTypeMismatch);
+    assert_has_code(&err, CftErrorCode::UnknownAnnotation);
 }
 
 #[test]
@@ -209,9 +118,9 @@ fn schema_reports_default_errors() {
         const NAME = "x";
         enum Rarity { Common, }
         type Item {
-            id: int = NAME;
+            key: int = NAME;
             bad: int = Missing;
-            field_ref: int = id;
+            field_ref: int = key;
             rarity: Rarity = Rarity.Missing;
             xs: [int] = [1];
         }
@@ -292,9 +201,9 @@ fn schema_reports_enum_default_on_non_enum_and_unknown_enum_names() {
 #[test]
 fn schema_reports_parent_field_default_references() {
     let source = r#"
-        type Base { base_id: int; }
+        type Base { base_key: int; }
         type Child : Base {
-            copy: int = base_id;
+            copy: int = base_key;
         }
     "#;
 
@@ -361,7 +270,7 @@ fn schema_rejects_invalid_enum_variant_annotations() {
     let err = compile_one(
         r#"
             enum Rarity {
-                @index
+                @keyAsEnum("RarityKey")
                 Common,
             }
         "#,
@@ -376,14 +285,10 @@ fn schema_rejects_duplicate_annotations_and_invalid_annotation_arguments() {
         @flag(1)
         enum Flags { A = 1, }
 
-        type Target { @id id: string; }
+        @keyAsEnum("ItemKey")
+        @keyAsEnum("ItemKey2")
         type Holder {
-            @id
-            @id
-            id: string;
-
-            @ref("Target")
-            target_id: string;
+            key: string;
 
             @display
             name: string;
@@ -443,8 +348,7 @@ fn schema_reports_enum_auto_numbering_overflow_only_when_next_variant_needs_valu
 fn schema_does_not_duplicate_unknown_field_type_diagnostic() {
     let cases = [
         "type T { x: Missing; }",
-        "type T { @id x: Missing; }",
-        "type T { @id @display(\"x\") x: Missing; }",
+        "type T { @display(\"x\") x: Missing; }",
         "const C = 1; type T { x: Missing = C; }",
     ];
     for source in cases {
@@ -459,20 +363,6 @@ fn schema_does_not_duplicate_unknown_field_type_diagnostic() {
             "expected exactly one UnknownNamedType for `{source}`, got {count}"
         );
     }
-}
-
-#[test]
-fn schema_does_not_duplicate_invalid_ref_annotation_argument() {
-    let err = compile_one("type A { @ref id: string; }").unwrap_err();
-    let count = err
-        .diagnostics
-        .iter()
-        .filter(|d| d.code == CftErrorCode::InvalidAnnotationArgument)
-        .count();
-    assert_eq!(
-        count, 1,
-        "expected exactly one InvalidAnnotationArgument diagnostic, got {count}"
-    );
 }
 
 /// Regression: `{ [int]: int }` used to push InvalidDictKeyType twice — once
@@ -505,36 +395,5 @@ fn schema_emits_single_invalid_annotation_target_for_struct_on_enum() {
     assert_eq!(
         count, 1,
         "expected one InvalidAnnotationTarget for @struct on enum, got {count}"
-    );
-}
-
-/// Regression: `MultipleIdFieldsInTree` used to report the alphabetically
-/// first type as the "original" and the rest as duplicates, even when source
-/// order said otherwise. The traversal now walks the inheritance tree from
-/// the root downwards, so the parent's `@id` is always recorded as the
-/// canonical declaration regardless of how the types are named.
-#[test]
-fn schema_reports_id_conflict_with_parent_first_regardless_of_alphabetical_order() {
-    // Parent name "Z" sorts after child name "A" alphabetically.
-    let source = "type Z { @id z_id: string; } type A : Z { @id a_id: string; }";
-    let err = compile_one(source).unwrap_err();
-    let diag = err
-        .diagnostics
-        .iter()
-        .find(|d| d.code == CftErrorCode::MultipleIdFieldsInTree)
-        .expect("MultipleIdFieldsInTree diagnostic");
-    let primary = diag.primary.as_ref().expect("primary label");
-    let related = diag.related.first().expect("related label");
-
-    let parent_id_offset = source.find("z_id").expect("z_id span");
-    let child_id_offset = source.find("a_id").expect("a_id span");
-
-    assert_eq!(
-        primary.span.start, child_id_offset,
-        "primary should point at the redundant child @id"
-    );
-    assert_eq!(
-        related.span.start, parent_id_offset,
-        "related should point at the original parent @id"
     );
 }

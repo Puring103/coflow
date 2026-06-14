@@ -1,10 +1,25 @@
-{% for loader in project.database.loaders %}    private static {{ loader.type_name }} Load{{ loader.type_name }}(JToken token, string path)
+{% for loader in project.database.loaders %}    private static {{ loader.type_name }} Load{{ loader.type_name }}Row(JToken token, string path)
     {
         var obj = RequireObject(token, path);
 
+        var {{ loader.key_local_name }} = {{ loader.key_read_expr }};
+{% for field in loader.fields %}        var {{ field.local_name }} = {{ field.read_expr }};
+{% endfor %}
         return new {{ loader.type_name }} {
-{% for field in loader.fields %}            {{ field.property }} = {{ field.read_expr }},
-{% endfor %}        };
+            Id = {{ loader.key_local_name }},
+{% for field in loader.fields %}{% for assignment in field.assignments %}            {{ assignment.property }} = {{ assignment.expr }},
+{% endfor %}{% endfor %}        };
+    }
+
+    private static {{ loader.type_name }} Load{{ loader.type_name }}(JToken token, string path)
+    {
+        var obj = RequireObject(token, path);
+
+{% for field in loader.fields %}        var {{ field.local_name }} = {{ field.read_expr }};
+{% endfor %}
+        return new {{ loader.type_name }} {
+{% for field in loader.fields %}{% for assignment in field.assignments %}            {{ assignment.property }} = {{ assignment.expr }},
+{% endfor %}{% endfor %}        };
     }
 
 {% endfor %}{% for loader in project.database.polymorphic_loaders %}    private static {{ loader.type_name }} Load{{ loader.type_name }}Polymorphic(JToken token, string path)

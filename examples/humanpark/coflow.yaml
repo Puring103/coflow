@@ -15,14 +15,20 @@ sources:
         type: AbilityConfig
       - sheet: 基因
         type: GeneConfig
+        columns:
+          parentGeneId: parentGene
       - sheet: 表皮
         type: SkinConfig
       - sheet: 阶段
         type: PhaseConfig
+        columns:
+          unlockGeneIdList: unlockGeneList
       - sheet: 功能
         type: GameFeatureConfig
       - sheet: 生物残骸
         type: BioRemainsConfig
+        columns:
+          geneId: gene
 
 outputs:
   data:
