@@ -171,4 +171,6 @@ Generated JSON C# loaders use `Newtonsoft.Json`. Generated MessagePack C# loader
 
 ## More Docs
 
-Detailed specs live in `docs/spec`.
+- [CLI reference](docs/cli.md)
+- [Diagnostics and error output](docs/diagnostics.md)
+- Detailed specs live in `docs/spec`.
