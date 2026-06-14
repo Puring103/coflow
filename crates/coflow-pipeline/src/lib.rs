@@ -184,17 +184,8 @@ pub fn build_project(
     };
 
     let data_dir = output_dir(project, data_output, options.data_out_dir);
-    let artifact_diagnostics = artifact_diagnostics_for_dirs([&data_dir]);
-    if !artifact_diagnostics.is_empty() {
-        return Ok(PipelineOutcome::Diagnostics(artifact_diagnostics));
-    }
-    write_data_tables(&schema, &load_output, data_format, &data_dir)?;
-    let data = ExportReport {
-        format: data_format,
-        dir: data_dir,
-    };
-
-    let code = if let Some(code_output) = project.config.outputs.code.as_ref() {
+    let mut preflight_diagnostics = artifact_diagnostics_for_dirs([&data_dir]);
+    let code_plan = if let Some(code_output) = project.config.outputs.code.as_ref() {
         if code_output.output_type != CodegenTarget::Csharp.as_config_value() {
             return Err(format!(
                 "coflow.yaml outputs.code.type is `{}`; expected `csharp`",
@@ -205,22 +196,33 @@ pub fn build_project(
         let namespace = options
             .namespace
             .or(code_output.namespace.as_deref())
-            .unwrap_or("Game.Config");
-        let codegen_diagnostics =
-            diagnostics_from_codegen_preflight(preflight_csharp_files(&schema, namespace));
-        if !codegen_diagnostics.is_empty() {
-            return Ok(PipelineOutcome::Diagnostics(codegen_diagnostics));
-        }
-        let artifact_diagnostics = artifact_diagnostics_for_dirs([&code_dir]);
-        if !artifact_diagnostics.is_empty() {
-            return Ok(PipelineOutcome::Diagnostics(artifact_diagnostics));
-        }
+            .unwrap_or("Game.Config")
+            .to_string();
+        preflight_diagnostics.extend(diagnostics_from_codegen_preflight(preflight_csharp_files(
+            &schema, &namespace,
+        )));
+        preflight_diagnostics.extend(artifact_diagnostics_for_dirs([&code_dir]));
+        Some((code_dir, namespace))
+    } else {
+        None
+    };
+    if !preflight_diagnostics.is_empty() {
+        return Ok(PipelineOutcome::Diagnostics(preflight_diagnostics));
+    }
+
+    write_data_tables(&schema, &load_output, data_format, &data_dir)?;
+    let data = ExportReport {
+        format: data_format,
+        dir: data_dir,
+    };
+
+    let code = if let Some((code_dir, namespace)) = code_plan {
         let key_as_enum_ids = collect_key_as_enum_ids(&schema, &load_output.model);
         let key_as_enum_variants = merge_key_as_enum_lockfile(&code_dir, key_as_enum_ids)?;
         write_csharp_files(
             &schema,
             data_format,
-            namespace,
+            &namespace,
             &code_dir,
             key_as_enum_variants,
         )?;

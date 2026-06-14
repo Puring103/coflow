@@ -631,6 +631,49 @@ fn build_project_reports_data_output_path_that_is_existing_file() {
 }
 
 #[test]
+fn build_project_does_not_write_data_when_codegen_preflight_reports_diagnostics() {
+    let root = temp_project_dir("coflow-pipeline-build-codegen-preflight-gates-data");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_single_item_project(
+        &root,
+        OutputsConfig {
+            data: Some(output_config("json", "generated/data", None)),
+            code: Some(output_config(
+                "csharp",
+                "generated/csharp",
+                Some("Game.1Bad"),
+            )),
+        },
+    )
+    .expect("write project");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+    let data_dir = root.join("out-data");
+    let code_dir = root.join("out-code");
+
+    let outcome = build_project(
+        &project,
+        BuildOptions {
+            data_out_dir: Some(data_dir.as_path()),
+            code_out_dir: Some(code_dir.as_path()),
+            namespace: None,
+        },
+    )
+    .expect("build project should return codegen diagnostics");
+
+    let PipelineOutcome::Diagnostics(diagnostics) = outcome else {
+        panic!("expected codegen diagnostics");
+    };
+    assert!(
+        diagnostics.iter().any(|diagnostic| diagnostic
+            .message
+            .contains("invalid C# namespace `Game.1Bad`")),
+        "diagnostics: {diagnostics:?}"
+    );
+    assert!(!data_dir.join("Item.json").exists());
+    assert!(!code_dir.join("GameConfig.cs").exists());
+}
+
+#[test]
 fn generate_project_code_uses_messagepack_data_output_config() {
     let root = temp_project_dir("coflow-pipeline-codegen-messagepack");
     let _cleanup = TempDirCleanup(root.clone());
