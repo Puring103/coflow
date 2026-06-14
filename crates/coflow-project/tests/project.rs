@@ -197,15 +197,21 @@ fn project_validation_reports_schema_source_and_output_edges() -> TestResult {
     for (name, yaml, expected, schema_only) in cases {
         let config = root.join(format!("{name}.yaml"));
         std::fs::write(&config, yaml).map_err(|err| err.to_string())?;
-        let err = if schema_only {
-            Project::open_schema_only(Some(&config))
-                .expect_err("schema-only validation should fail")
+        let message = if schema_only {
+            let project =
+                Project::open_schema_only(Some(&config)).map_err(|err| err.to_string())?;
+            project
+                .schema_diagnostics()
+                .into_iter()
+                .map(|diagnostic| diagnostic.message)
+                .collect::<Vec<_>>()
+                .join("\n")
         } else {
             Project::open(Some(&config)).expect_err("data validation should fail")
         };
         assert!(
-            err.contains(expected),
-            "case {name} expected `{expected}`, got `{err}`"
+            message.contains(expected),
+            "case {name} expected `{expected}`, got `{message}`"
         );
     }
 

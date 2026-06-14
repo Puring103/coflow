@@ -255,6 +255,11 @@ outputs:
 
 fn cft_check(args: &CftCheckArgs) -> Result<bool, String> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
+    let project_diagnostics = project.schema_diagnostics();
+    if !project_diagnostics.is_empty() {
+        write_project_diagnostics(project_diagnostics, args.json, &project.root_dir)?;
+        return Ok(false);
+    }
     let build = compile_schema_project(&project, args.stdin_path.as_deref())
         .map_err(|message| relativize_message_paths(&message, &project.root_dir))?;
     let diagnostics = dedupe_cft_diagnostics(build.diagnostics);

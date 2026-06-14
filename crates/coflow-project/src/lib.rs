@@ -20,6 +20,8 @@ use std::fs;
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 
+const PROJECT_DIAGNOSTIC_STAGE: &str = "PROJECT";
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectConfig {
@@ -117,6 +119,14 @@ impl Project {
     /// canonicalized, or parsed as YAML.
     pub fn open(config_or_dir: Option<&Path>) -> Result<Self, String> {
         let project = Self::open_schema_only(config_or_dir)?;
+        let schema_diagnostics = project.schema_diagnostics();
+        if !schema_diagnostics.is_empty() {
+            return Err(schema_diagnostics
+                .into_iter()
+                .map(|diagnostic| diagnostic.message)
+                .collect::<Vec<_>>()
+                .join("\n"));
+        }
         project.validate_for_data()?;
         Ok(project)
     }
@@ -144,7 +154,6 @@ impl Project {
             .map_err(|err| format!("failed to read `{}`: {err}", config_path.display()))?;
         let config = serde_yaml::from_str(&source)
             .map_err(|err| format!("failed to parse `{}`: {err}", config_path.display()))?;
-        validate_project_config_schema_only(&root_dir, &config)?;
         Ok(Self {
             config_path,
             root_dir,
@@ -193,6 +202,27 @@ impl Project {
     }
 
     #[must_use]
+    pub fn schema_diagnostics(&self) -> Vec<DiagnosticJson> {
+        diagnostics_from_messages(validate_project_config_schema_only_collecting(
+            &self.root_dir,
+            &self.config,
+        ))
+    }
+
+    #[must_use]
+    pub fn data_diagnostics(&self) -> Vec<DiagnosticJson> {
+        diagnostics_from_messages(validate_sources_collecting(
+            &self.root_dir,
+            &self.config.sources,
+        ))
+    }
+
+    #[must_use]
+    pub fn codegen_diagnostics(&self) -> Vec<DiagnosticJson> {
+        diagnostics_from_messages(validate_for_codegen_collecting(&self.config.outputs))
+    }
+
+    #[must_use]
     pub fn resolve_path(&self, path: &Path) -> PathBuf {
         if path.is_absolute() {
             path.to_path_buf()
@@ -209,13 +239,23 @@ impl Project {
     /// directory cannot be read.
     pub fn schema_files(&self) -> Result<Vec<SchemaFile>, String> {
         let mut files = Vec::new();
+        let mut errors = Vec::new();
         match &self.config.schema {
-            SchemaConfig::One(path) => self.push_schema_path(path, &mut files)?,
-            SchemaConfig::Many(paths) => {
-                for path in paths {
-                    self.push_schema_path(path, &mut files)?;
+            SchemaConfig::One(path) => {
+                if let Err(err) = self.push_schema_path(path, &mut files) {
+                    errors.push(err);
                 }
             }
+            SchemaConfig::Many(paths) => {
+                for path in paths {
+                    if let Err(err) = self.push_schema_path(path, &mut files) {
+                        errors.push(err);
+                    }
+                }
+            }
+        }
+        if !errors.is_empty() {
+            return Err(errors.join("\n"));
         }
         files.sort_by(|left, right| left.module_id.cmp(&right.module_id));
         Ok(files)
@@ -234,29 +274,38 @@ impl Project {
     }
 }
 
-fn validate_project_config_schema_only(
+fn validate_project_config_schema_only_collecting(
     root_dir: &Path,
     config: &ProjectConfig,
-) -> Result<(), String> {
-    validate_schema_config(root_dir, &config.schema)?;
-    validate_outputs(&config.outputs)?;
-    validate_source_shapes(&config.sources)?;
-    Ok(())
+) -> Vec<String> {
+    let mut diagnostics = Vec::new();
+    diagnostics.extend(validate_schema_config_collecting(root_dir, &config.schema));
+    diagnostics.extend(validate_outputs_collecting(&config.outputs));
+    diagnostics.extend(validate_source_shapes_collecting(&config.sources));
+    diagnostics
 }
 
-fn validate_schema_config(root_dir: &Path, schema: &SchemaConfig) -> Result<(), String> {
+fn validate_schema_config_collecting(root_dir: &Path, schema: &SchemaConfig) -> Vec<String> {
+    let mut diagnostics = Vec::new();
     match schema {
-        SchemaConfig::One(path) => validate_schema_path(root_dir, path, "schema"),
+        SchemaConfig::One(path) => {
+            if let Err(err) = validate_schema_path(root_dir, path, "schema") {
+                diagnostics.push(err);
+            }
+        }
         SchemaConfig::Many(paths) => {
             if paths.is_empty() {
-                return Err("schema list is empty".to_string());
+                diagnostics.push("schema list is empty".to_string());
             }
             for (index, path) in paths.iter().enumerate() {
-                validate_schema_path(root_dir, path, &format!("schema[{index}]"))?;
+                if let Err(err) = validate_schema_path(root_dir, path, &format!("schema[{index}]"))
+                {
+                    diagnostics.push(err);
+                }
             }
-            Ok(())
         }
     }
+    diagnostics
 }
 
 fn validate_schema_path(root_dir: &Path, path: &Path, label: &str) -> Result<(), String> {
@@ -271,71 +320,129 @@ fn validate_schema_path(root_dir: &Path, path: &Path, label: &str) -> Result<(),
 }
 
 fn validate_sources(root_dir: &Path, sources: &[SourceConfig]) -> Result<(), String> {
-    validate_source_shapes(sources)?;
+    let diagnostics = validate_sources_collecting(root_dir, sources);
+    if !diagnostics.is_empty() {
+        return Err(diagnostics.join("\n"));
+    }
+    Ok(())
+}
+
+fn validate_sources_collecting(root_dir: &Path, sources: &[SourceConfig]) -> Vec<String> {
+    let mut diagnostics = validate_source_shapes_collecting(sources);
     for (source_index, source) in sources.iter().enumerate() {
         let source_label = format!("sources[{source_index}]");
         if !resolve_project_relative(root_dir, &source.file).is_file() {
-            return Err(format!(
+            diagnostics.push(format!(
                 "{source_label}.file `{}` does not exist",
                 source.file.display()
             ));
         }
         if source.sheets.is_empty() {
-            return Err(format!("{source_label}.sheets is empty"));
+            diagnostics.push(format!("{source_label}.sheets is empty"));
         }
     }
-    Ok(())
+    diagnostics
 }
 
-fn validate_source_shapes(sources: &[SourceConfig]) -> Result<(), String> {
+fn validate_source_shapes_collecting(sources: &[SourceConfig]) -> Vec<String> {
+    let mut diagnostics = Vec::new();
     for (source_index, source) in sources.iter().enumerate() {
         let source_label = format!("sources[{source_index}]");
         if source.file.as_os_str().is_empty() {
-            return Err(format!("{source_label}.file is empty"));
+            diagnostics.push(format!("{source_label}.file is empty"));
         }
         for (sheet_index, sheet) in source.sheets.iter().enumerate() {
             let sheet_label = format!("{source_label}.sheets[{sheet_index}]");
             if sheet.sheet.trim().is_empty() {
-                return Err(format!("{sheet_label}.sheet is empty"));
+                diagnostics.push(format!("{sheet_label}.sheet is empty"));
             }
             if let Some(type_name) = &sheet.type_name {
                 if type_name.trim().is_empty() {
-                    return Err(format!("{sheet_label}.type is empty"));
+                    diagnostics.push(format!("{sheet_label}.type is empty"));
                 }
             }
         }
     }
-    Ok(())
+    diagnostics
 }
 
-fn validate_outputs(outputs: &OutputsConfig) -> Result<(), String> {
+fn validate_outputs_collecting(outputs: &OutputsConfig) -> Vec<String> {
+    let mut diagnostics = Vec::new();
     if let Some(data) = &outputs.data {
         if !matches!(data.output_type.as_str(), "json" | "messagepack") {
-            return Err(format!(
+            diagnostics.push(format!(
                 "outputs.data.type is `{}`; expected `json` or `messagepack`",
                 data.output_type
             ));
         }
-        validate_output_dir("outputs.data.dir", &data.dir)?;
+        if let Err(err) = validate_output_dir("outputs.data.dir", &data.dir) {
+            diagnostics.push(err);
+        }
         if data.namespace.is_some() {
-            return Err("outputs.data.namespace is only valid for code outputs".to_string());
+            diagnostics.push("outputs.data.namespace is only valid for code outputs".to_string());
         }
     }
     if let Some(code) = &outputs.code {
         if code.output_type != "csharp" {
-            return Err(format!(
+            diagnostics.push(format!(
                 "outputs.code.type is `{}`; expected `csharp`",
                 code.output_type
             ));
         }
-        validate_output_dir("outputs.code.dir", &code.dir)?;
+        if let Err(err) = validate_output_dir("outputs.code.dir", &code.dir) {
+            diagnostics.push(err);
+        }
         if let Some(namespace) = &code.namespace {
             if namespace.trim().is_empty() {
-                return Err("outputs.code.namespace is empty".to_string());
+                diagnostics.push("outputs.code.namespace is empty".to_string());
             }
         }
     }
-    Ok(())
+    diagnostics
+}
+
+fn validate_for_codegen_collecting(outputs: &OutputsConfig) -> Vec<String> {
+    let mut diagnostics = Vec::new();
+    match outputs.code.as_ref() {
+        Some(code) => {
+            if code.output_type != "csharp" {
+                diagnostics.push(format!(
+                    "coflow.yaml outputs.code.type is `{}`; expected `csharp`",
+                    code.output_type
+                ));
+            }
+            if let Err(err) = validate_output_dir("outputs.code.dir", &code.dir) {
+                diagnostics.push(err);
+            }
+            if let Some(namespace) = &code.namespace {
+                if namespace.trim().is_empty() {
+                    diagnostics.push("outputs.code.namespace is empty".to_string());
+                }
+            }
+        }
+        None => diagnostics.push(
+            "coflow.yaml missing outputs.code; required `type: csharp` for `coflow codegen csharp`"
+                .to_string(),
+        ),
+    }
+    match outputs.data.as_ref() {
+        Some(data) => {
+            if !matches!(data.output_type.as_str(), "json" | "messagepack") {
+                diagnostics.push(format!(
+                    "coflow.yaml outputs.data.type is `{}`; expected `json` or `messagepack`",
+                    data.output_type
+                ));
+            }
+            if let Err(err) = validate_output_dir("outputs.data.dir", &data.dir) {
+                diagnostics.push(err);
+            }
+        }
+        None => diagnostics.push(
+            "coflow.yaml missing outputs.data; required `type: json` or `type: messagepack` for `coflow codegen csharp`"
+                .to_string(),
+        ),
+    }
+    diagnostics
 }
 
 fn validate_output_dir(label: &str, path: &Path) -> Result<(), String> {
@@ -646,6 +753,46 @@ pub struct DiagnosticJson {
 }
 
 impl DiagnosticJson {
+    #[must_use]
+    pub fn project(message: impl Into<String>) -> Self {
+        Self::plain("PROJECT-001", PROJECT_DIAGNOSTIC_STAGE, message)
+    }
+
+    #[must_use]
+    pub fn artifact(message: impl Into<String>) -> Self {
+        Self::plain("ARTIFACT-001", "ARTIFACT", message)
+    }
+
+    #[must_use]
+    pub fn codegen(
+        code: impl Into<String>,
+        stage: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::plain(code, stage, message)
+    }
+
+    fn plain(
+        code: impl Into<String>,
+        stage: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            code: code.into(),
+            stage: stage.into(),
+            severity: "error".to_string(),
+            message: message.into(),
+            path: String::new(),
+            sheet: None,
+            cell: None,
+            start_line: 0,
+            start_character: 0,
+            end_line: 0,
+            end_character: 1,
+            related: Vec::new(),
+        }
+    }
+
     pub fn from_cft(
         diagnostic: &CftDiagnostic,
         sources: &BTreeMap<String, String>,
@@ -680,6 +827,10 @@ impl DiagnosticJson {
                 .collect(),
         }
     }
+}
+
+fn diagnostics_from_messages(messages: Vec<String>) -> Vec<DiagnosticJson> {
+    messages.into_iter().map(DiagnosticJson::project).collect()
 }
 
 #[derive(Debug, Serialize)]

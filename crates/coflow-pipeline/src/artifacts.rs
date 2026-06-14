@@ -1,9 +1,9 @@
 use crate::{CodegenTarget, DataFormat};
 use coflow_cft::CftContainer;
-use coflow_codegen_csharp_json::CsharpKeyAsEnumVariant;
 use coflow_codegen_csharp_json::{
-    generate_csharp_json_with_key_as_enum_variants, CsharpCodegenOptions,
+    generate_csharp_json_with_key_as_enum_variants, preflight_csharp_codegen, CsharpCodegenOptions,
 };
+use coflow_codegen_csharp_json::{CsharpCodegenDiagnostic, CsharpKeyAsEnumVariant};
 use coflow_codegen_csharp_messagepack::generate_csharp_messagepack_with_key_as_enum_variants;
 use coflow_exporter_json::export_json_model;
 use coflow_exporter_messagepack::export_messagepack_model;
@@ -68,6 +68,14 @@ pub fn write_csharp_files(
             .map_err(|err| format!("failed to write `{}`: {err}", path.display()))?;
     }
     Ok(())
+}
+
+pub fn preflight_csharp_files(
+    schema: &CftContainer,
+    namespace: &str,
+) -> Vec<CsharpCodegenDiagnostic> {
+    let options = CsharpCodegenOptions::new(namespace);
+    preflight_csharp_codegen(schema, &options, BTreeMap::new())
 }
 
 fn clean_generated_csharp_files(dir: &Path) -> Result<(), String> {

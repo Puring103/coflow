@@ -101,7 +101,10 @@ pub struct ExcelDiagnostics {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExcelDiagnostic {
-    pub source: CfdDiagnostic,
+    pub code: String,
+    pub stage: String,
+    pub message: String,
+    pub source: Option<CfdDiagnostic>,
     pub primary: Option<ExcelLabel>,
     pub related: Vec<ExcelLabel>,
 }
@@ -215,7 +218,7 @@ impl ExcelLocation {
 pub fn load_excel_model(
     schema: &CftContainer,
     sources: &[ExcelSource],
-) -> Result<CfdDataModel, ExcelLoadError> {
+) -> Result<CfdDataModel, ExcelDiagnostics> {
     let loaded = collect_input_records(schema, sources)?;
     let mut builder = CfdDataModel::builder(schema);
     for record in loaded.records {
@@ -223,7 +226,7 @@ pub fn load_excel_model(
     }
     builder
         .build()
-        .map_err(|diagnostics| ExcelLoadError::DataModel(loaded.origins.map(diagnostics)))
+        .map_err(|diagnostics| loaded.origins.map(diagnostics))
 }
 
 /// Loads configured Excel sheets and runs CFT `check` blocks against the model.
@@ -237,15 +240,15 @@ pub fn load_excel_model(
 pub fn load_excel(
     schema: &CftContainer,
     sources: &[ExcelSource],
-) -> Result<ExcelLoadOutput, ExcelLoadError> {
+) -> Result<ExcelLoadOutput, ExcelDiagnostics> {
     let loaded = collect_input_records(schema, sources)?;
     let mut builder = CfdDataModel::builder(schema);
     for record in loaded.records {
         builder.add_input_record(record);
     }
-    let model = builder.build().map_err(|diagnostics| {
-        ExcelLoadError::DataModel(loaded.origins.clone().map(diagnostics))
-    })?;
+    let model = builder
+        .build()
+        .map_err(|diagnostics| loaded.origins.clone().map(diagnostics))?;
     let check_diagnostics = coflow_checker::run_checks(schema, &model)
         .err()
         .map(|diagnostics| loaded.origins.map(diagnostics));
@@ -265,49 +268,63 @@ struct LoadedInput {
 fn collect_input_records(
     schema: &CftContainer,
     sources: &[ExcelSource],
-) -> Result<LoadedInput, ExcelLoadError> {
+) -> Result<LoadedInput, ExcelDiagnostics> {
     let mut records = Vec::new();
     let mut origins = ExcelOrigins::default();
+    let mut diagnostics = Vec::new();
     for source in sources {
-        let mut workbook =
-            open_workbook_auto(&source.file).map_err(|err| ExcelLoadError::OpenWorkbook {
-                file: source.file.clone(),
-                message: err.to_string(),
-            })?;
+        let mut workbook = match open_workbook_auto(&source.file) {
+            Ok(workbook) => workbook,
+            Err(err) => {
+                diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::OpenWorkbook {
+                    file: source.file.clone(),
+                    message: err.to_string(),
+                }));
+                continue;
+            }
+        };
         let sheet_names = workbook.sheet_names();
 
         for sheet in &source.sheets {
             let type_name = sheet.type_name();
-            let fields =
-                full_field_types(schema, type_name).ok_or_else(|| ExcelLoadError::UnknownType {
+            let Some(fields) = full_field_types(schema, type_name) else {
+                diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::UnknownType {
                     location: Box::new(
                         ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()),
                     ),
                     type_name: type_name.to_string(),
-                })?;
+                }));
+                continue;
+            };
 
             if !sheet_names.iter().any(|name| name == &sheet.sheet) {
-                return Err(ExcelLoadError::MissingSheet {
+                diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::MissingSheet {
                     file: source.file.clone(),
                     sheet: sheet.sheet.clone(),
-                });
+                }));
+                continue;
             }
 
-            let range = workbook.worksheet_range(&sheet.sheet).map_err(|err| {
-                ExcelLoadError::ReadSheet {
-                    location: Box::new(
-                        ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()),
-                    ),
-                    message: err.to_string(),
+            let range = match workbook.worksheet_range(&sheet.sheet) {
+                Ok(range) => range,
+                Err(err) => {
+                    diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::ReadSheet {
+                        location: Box::new(
+                            ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()),
+                        ),
+                        message: err.to_string(),
+                    }));
+                    continue;
                 }
-            })?;
+            };
 
             if range.is_empty() {
-                return Err(ExcelLoadError::EmptySheet {
+                diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::EmptySheet {
                     location: Box::new(
                         ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()),
                     ),
-                });
+                }));
+                continue;
             }
 
             let (range_start_row, range_start_col) = range.start().unwrap_or((0, 0));
@@ -315,13 +332,14 @@ fn collect_input_records(
             let header_excel_col = range_start_col as usize + 1;
             let mut rows = range.rows();
             let Some(header_row) = rows.next() else {
-                return Err(ExcelLoadError::MissingSheet {
+                diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::MissingSheet {
                     file: source.file.clone(),
                     sheet: sheet.sheet.clone(),
-                });
+                }));
+                continue;
             };
 
-            let resolved = resolve_columns(
+            let resolved = match resolve_columns(
                 schema,
                 source,
                 sheet,
@@ -330,7 +348,13 @@ fn collect_input_records(
                 header_row,
                 header_excel_row,
                 header_excel_col,
-            )?;
+            ) {
+                Ok(resolved) => resolved,
+                Err(sheet_diagnostics) => {
+                    diagnostics.extend(sheet_diagnostics.diagnostics);
+                    continue;
+                }
+            };
             let columns = resolved.columns;
             for (zero_based_data_row, row) in rows.enumerate() {
                 if should_skip_import_row(row, resolved.control_column) {
@@ -341,29 +365,53 @@ fn collect_input_records(
                 }
                 let excel_row = range_start_row as usize + zero_based_data_row + 2;
                 let mut input_fields = BTreeMap::new();
+                let row_diagnostic_start = diagnostics.len();
                 for column in &columns {
                     if let Some(children) = &column.expand {
-                        let nested = build_expanded_object(
-                            schema, source, sheet, type_name, column, children, row, excel_row,
-                        )?;
+                        let Some(nested) = build_expanded_object(
+                            schema,
+                            source,
+                            sheet,
+                            type_name,
+                            column,
+                            children,
+                            row,
+                            excel_row,
+                            &mut diagnostics,
+                        ) else {
+                            continue;
+                        };
                         input_fields.insert(column.field.clone(), nested);
                         continue;
                     }
                     let location = ExcelLocation::new(source.file.clone())
                         .sheet(sheet.sheet.clone())
                         .cell(excel_row, column.excel_column);
-                    let text = cell_text(row.get(column.index), location.clone())?;
-                    let parsed = parse_cell(schema, &column.field_type, &text).map_err(|err| {
-                        ExcelLoadError::CellParse {
-                            location: Box::new(location),
-                            type_name: type_name.to_string(),
-                            field: column.field.clone(),
-                            diagnostics: err,
+                    let Some(text) =
+                        cell_text(row.get(column.index), location.clone(), &mut diagnostics)
+                    else {
+                        continue;
+                    };
+                    let parsed = match parse_cell(schema, &column.field_type, &text) {
+                        Ok(parsed) => parsed,
+                        Err(err) => {
+                            diagnostics.extend(excel_load_error_diagnostics(
+                                ExcelLoadError::CellParse {
+                                    location: Box::new(location),
+                                    type_name: type_name.to_string(),
+                                    field: column.field.clone(),
+                                    diagnostics: err,
+                                },
+                            ));
+                            continue;
                         }
-                    })?;
+                    };
                     if let ParsedCell::Value(value) = parsed {
                         input_fields.insert(column.field.clone(), value);
                     }
+                }
+                if diagnostics.len() != row_diagnostic_start {
+                    continue;
                 }
                 origins.push(ExcelRecordOrigin::new(
                     source.file.clone(),
@@ -375,7 +423,120 @@ fn collect_input_records(
             }
         }
     }
-    Ok(LoadedInput { records, origins })
+    if diagnostics.is_empty() {
+        Ok(LoadedInput { records, origins })
+    } else {
+        Err(ExcelDiagnostics { diagnostics })
+    }
+}
+
+impl ExcelDiagnostic {
+    #[must_use]
+    pub fn excel(
+        code: impl Into<String>,
+        stage: impl Into<String>,
+        message: impl Into<String>,
+        location: ExcelLocation,
+    ) -> Self {
+        Self {
+            code: code.into(),
+            stage: stage.into(),
+            message: message.into(),
+            source: None,
+            primary: Some(ExcelLabel {
+                location,
+                message: None,
+            }),
+            related: Vec::new(),
+        }
+    }
+}
+
+fn excel_load_error_diagnostics(err: ExcelLoadError) -> Vec<ExcelDiagnostic> {
+    match err {
+        ExcelLoadError::OpenWorkbook { file, message } => vec![ExcelDiagnostic::excel(
+            "EXCEL-OPEN",
+            "EXCEL",
+            format!("failed to open workbook `{}`: {message}", file.display()),
+            ExcelLocation::new(file),
+        )],
+        ExcelLoadError::ReadSheet { location, message } => vec![ExcelDiagnostic::excel(
+            "EXCEL-SHEET",
+            "EXCEL",
+            message,
+            *location,
+        )],
+        ExcelLoadError::MissingSheet { file, sheet } => vec![ExcelDiagnostic::excel(
+            "EXCEL-SHEET",
+            "EXCEL",
+            format!("workbook `{}` is missing sheet `{sheet}`", file.display()),
+            ExcelLocation::new(file).sheet(sheet),
+        )],
+        ExcelLoadError::EmptySheet { location } => vec![ExcelDiagnostic::excel(
+            "EXCEL-SHEET",
+            "EXCEL",
+            "sheet is empty",
+            *location,
+        )],
+        ExcelLoadError::UnknownType {
+            location,
+            type_name,
+        } => vec![ExcelDiagnostic::excel(
+            "EXCEL-TYPE",
+            "EXCEL",
+            format!("unknown CFT type `{type_name}`"),
+            *location,
+        )],
+        ExcelLoadError::UnknownColumn {
+            location,
+            type_name,
+            column,
+            field,
+        } => vec![ExcelDiagnostic::excel(
+            "EXCEL-COLUMN",
+            "EXCEL",
+            format!("column `{column}` maps to unknown field `{field}` on type `{type_name}`"),
+            *location,
+        )],
+        ExcelLoadError::DuplicateFieldColumn {
+            location,
+            field,
+            first_column,
+            duplicate_column,
+        } => vec![ExcelDiagnostic::excel(
+            "EXCEL-COLUMN",
+            "EXCEL",
+            format!("field `{field}` is mapped by both `{first_column}` and `{duplicate_column}`"),
+            *location,
+        )],
+        ExcelLoadError::CellParse {
+            location,
+            type_name,
+            field,
+            diagnostics,
+        } => diagnostics
+            .diagnostics
+            .into_iter()
+            .map(|diag| {
+                ExcelDiagnostic::excel(
+                    format!("CELL-{:?}", diag.code),
+                    "CELL",
+                    format!(
+                        "failed to parse `{type_name}.{field}` cell: {}",
+                        diag.message
+                    ),
+                    (*location).clone(),
+                )
+            })
+            .collect(),
+        ExcelLoadError::UnsupportedCellValue { location, kind } => vec![ExcelDiagnostic::excel(
+            "EXCEL-CELL",
+            "EXCEL",
+            format!("unsupported Excel cell value `{kind}`"),
+            *location,
+        )],
+        ExcelLoadError::DataModel(diagnostics) => diagnostics.diagnostics,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -427,6 +588,9 @@ impl ExcelOrigins {
 
     fn map_diagnostic(&self, diagnostic: CfdDiagnostic) -> ExcelDiagnostic {
         ExcelDiagnostic {
+            code: diagnostic.code.as_str().to_string(),
+            stage: diagnostic.stage.to_string(),
+            message: diagnostic.message.clone(),
             primary: diagnostic
                 .primary
                 .as_ref()
@@ -436,7 +600,7 @@ impl ExcelOrigins {
                 .iter()
                 .filter_map(|label| self.map_label(label))
                 .collect(),
-            source: diagnostic,
+            source: Some(diagnostic),
         }
     }
 
@@ -494,18 +658,22 @@ fn resolve_columns(
     header_row: &[Data],
     header_excel_row: usize,
     header_excel_col: usize,
-) -> Result<ResolvedColumns, ExcelLoadError> {
+) -> Result<ResolvedColumns, ExcelDiagnostics> {
+    let mut diagnostics = Vec::new();
     // Read the entire header row first so we can scan ahead for @expand
     // children that occupy adjacent columns.
     let mut header = Vec::with_capacity(header_row.len());
     for (index, cell) in header_row.iter().enumerate() {
         let excel_column = header_excel_col + index;
-        let column = cell_text(
+        let Some(column) = cell_text(
             Some(cell),
             ExcelLocation::new(source.file.clone())
                 .sheet(sheet.sheet.clone())
                 .cell(header_excel_row, excel_column),
-        )?;
+            &mut diagnostics,
+        ) else {
+            continue;
+        };
         header.push((index, excel_column, column.trim().to_string()));
     }
 
@@ -534,28 +702,34 @@ fn resolve_columns(
             .get(&column_text)
             .map_or_else(|| column_text.clone(), Clone::clone);
         let Some(field_type) = fields.get(&field) else {
-            return Err(ExcelLoadError::UnknownColumn {
-                location: Box::new(
-                    ExcelLocation::new(source.file.clone())
-                        .sheet(sheet.sheet.clone())
-                        .cell(header_excel_row, excel_column),
-                ),
-                type_name: type_name.to_string(),
-                column: column_text,
-                field,
-            });
+            diagnostics.extend(excel_load_error_diagnostics(
+                ExcelLoadError::UnknownColumn {
+                    location: Box::new(
+                        ExcelLocation::new(source.file.clone())
+                            .sheet(sheet.sheet.clone())
+                            .cell(header_excel_row, excel_column),
+                    ),
+                    type_name: type_name.to_string(),
+                    column: column_text,
+                    field,
+                },
+            ));
+            continue;
         };
         if let Some(first_column) = seen_fields.insert(field.clone(), column_text.clone()) {
-            return Err(ExcelLoadError::DuplicateFieldColumn {
-                location: Box::new(
-                    ExcelLocation::new(source.file.clone())
-                        .sheet(sheet.sheet.clone())
-                        .cell(header_excel_row, excel_column),
-                ),
-                field,
-                first_column,
-                duplicate_column: column_text,
-            });
+            diagnostics.extend(excel_load_error_diagnostics(
+                ExcelLoadError::DuplicateFieldColumn {
+                    location: Box::new(
+                        ExcelLocation::new(source.file.clone())
+                            .sheet(sheet.sheet.clone())
+                            .cell(header_excel_row, excel_column),
+                    ),
+                    field,
+                    first_column,
+                    duplicate_column: column_text,
+                },
+            ));
+            continue;
         }
 
         let expand = if let Some(child_fields) = expand_fields.get(&field) {
@@ -579,7 +753,7 @@ fn resolve_columns(
             // Remaining children come from the columns immediately after.
             for inner_field in inner_order.iter().skip(1) {
                 if cursor >= header.len() {
-                    return Err(ExcelLoadError::UnknownColumn {
+                    diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::UnknownColumn {
                         location: Box::new(
                             ExcelLocation::new(source.file.clone())
                                 .sheet(sheet.sheet.clone())
@@ -590,7 +764,8 @@ fn resolve_columns(
                         field: format!(
                             "{field} (@expand): not enough columns to cover inner field `{inner_field}`"
                         ),
-                    });
+                    }));
+                    break;
                 }
                 let (next_index, next_excel_col, _next_text) = &header[cursor];
                 let inner_ty = child_fields.get(inner_field).cloned().unwrap_or_default();
@@ -616,10 +791,14 @@ fn resolve_columns(
         });
     }
 
-    Ok(ResolvedColumns {
-        columns,
-        control_column,
-    })
+    if diagnostics.is_empty() {
+        Ok(ResolvedColumns {
+            columns,
+            control_column,
+        })
+    } else {
+        Err(ExcelDiagnostics { diagnostics })
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -632,29 +811,41 @@ fn build_expanded_object(
     children: &[ExpandedSubColumn],
     row: &[Data],
     excel_row: usize,
-) -> Result<CfdInputValue, ExcelLoadError> {
+    diagnostics: &mut Vec<ExcelDiagnostic>,
+) -> Option<CfdInputValue> {
     let mut fields = BTreeMap::new();
+    let diagnostic_start = diagnostics.len();
     for child in children {
         let location = ExcelLocation::new(source.file.clone())
             .sheet(sheet.sheet.clone())
             .cell(excel_row, child.excel_column);
-        let text = cell_text(row.get(child.index), location.clone())?;
-        let parsed = parse_cell(schema, &child.field_type, &text).map_err(|err| {
-            ExcelLoadError::CellParse {
-                location: Box::new(location),
-                type_name: parent_type.to_string(),
-                field: format!("{}.{}", column.field, child.field),
-                diagnostics: err,
+        let Some(text) = cell_text(row.get(child.index), location.clone(), diagnostics) else {
+            continue;
+        };
+        let parsed = match parse_cell(schema, &child.field_type, &text) {
+            Ok(parsed) => parsed,
+            Err(err) => {
+                diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::CellParse {
+                    location: Box::new(location),
+                    type_name: parent_type.to_string(),
+                    field: format!("{}.{}", column.field, child.field),
+                    diagnostics: err,
+                }));
+                continue;
             }
-        })?;
+        };
         if let ParsedCell::Value(value) = parsed {
             fields.insert(child.field.clone(), value);
         }
     }
-    Ok(CfdInputValue::Object {
-        actual_type: None,
-        fields,
-    })
+    if diagnostics.len() == diagnostic_start {
+        Some(CfdInputValue::Object {
+            actual_type: None,
+            fields,
+        })
+    } else {
+        None
+    }
 }
 
 /// Returns a map from `@expand` field name -> map of inner field name to inner
@@ -775,30 +966,54 @@ fn is_empty_cell(cell: &Data) -> bool {
     }
 }
 
-fn cell_text(cell: Option<&Data>, location: ExcelLocation) -> Result<String, ExcelLoadError> {
+fn cell_text(
+    cell: Option<&Data>,
+    location: ExcelLocation,
+    diagnostics: &mut Vec<ExcelDiagnostic>,
+) -> Option<String> {
     match cell {
-        None | Some(Data::Empty) => Ok(String::new()),
-        Some(Data::String(value)) => Ok(value.clone()),
-        Some(Data::Float(value)) if is_whole_float(*value) => Ok(format!("{value:.0}")),
-        Some(Data::Float(value)) => Ok(value.to_string()),
-        Some(Data::Int(value)) => Ok(value.to_string()),
-        Some(Data::Bool(value)) => Ok(value.to_string()),
-        Some(Data::DateTime(value)) => Err(ExcelLoadError::UnsupportedCellValue {
-            location: Box::new(location),
-            kind: format!("DateTime({value})"),
-        }),
-        Some(Data::DateTimeIso(value)) => Err(ExcelLoadError::UnsupportedCellValue {
-            location: Box::new(location),
-            kind: format!("DateTimeIso({value})"),
-        }),
-        Some(Data::DurationIso(value)) => Err(ExcelLoadError::UnsupportedCellValue {
-            location: Box::new(location),
-            kind: format!("DurationIso({value})"),
-        }),
-        Some(Data::Error(value)) => Err(ExcelLoadError::UnsupportedCellValue {
-            location: Box::new(location),
-            kind: format!("Error({value})"),
-        }),
+        None | Some(Data::Empty) => Some(String::new()),
+        Some(Data::String(value)) => Some(value.clone()),
+        Some(Data::Float(value)) if is_whole_float(*value) => Some(format!("{value:.0}")),
+        Some(Data::Float(value)) => Some(value.to_string()),
+        Some(Data::Int(value)) => Some(value.to_string()),
+        Some(Data::Bool(value)) => Some(value.to_string()),
+        Some(Data::DateTime(value)) => {
+            diagnostics.extend(excel_load_error_diagnostics(
+                ExcelLoadError::UnsupportedCellValue {
+                    location: Box::new(location),
+                    kind: format!("DateTime({value})"),
+                },
+            ));
+            None
+        }
+        Some(Data::DateTimeIso(value)) => {
+            diagnostics.extend(excel_load_error_diagnostics(
+                ExcelLoadError::UnsupportedCellValue {
+                    location: Box::new(location),
+                    kind: format!("DateTimeIso({value})"),
+                },
+            ));
+            None
+        }
+        Some(Data::DurationIso(value)) => {
+            diagnostics.extend(excel_load_error_diagnostics(
+                ExcelLoadError::UnsupportedCellValue {
+                    location: Box::new(location),
+                    kind: format!("DurationIso({value})"),
+                },
+            ));
+            None
+        }
+        Some(Data::Error(value)) => {
+            diagnostics.extend(excel_load_error_diagnostics(
+                ExcelLoadError::UnsupportedCellValue {
+                    location: Box::new(location),
+                    kind: format!("Error({value})"),
+                },
+            ));
+            None
+        }
     }
 }
 
