@@ -886,6 +886,135 @@ fn expand_consumes_parent_and_adjacent_columns_for_inner_fields() -> TestResult 
     Ok(())
 }
 
+#[test]
+fn rejects_empty_sheets_and_duplicate_mapped_columns() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                id: string;
+                level: int = 0;
+            }
+        "#,
+    )?;
+
+    let empty_path = temp_xlsx_path("empty-sheet");
+    Workbook::new()
+        .save(&empty_path)
+        .map_err(|err| format!("{err:?}"))?;
+    let empty_source = ExcelSource::new(
+        &empty_path,
+        vec![ExcelSheet::new("Sheet1").with_type("Item")],
+    );
+    let Err(err) = load_excel_model(&schema, &[empty_source]) else {
+        return Err("expected empty sheet error".to_string());
+    };
+    let ExcelLoadError::EmptySheet { location } = err else {
+        return Err(format!("expected empty sheet error, got {err:?}"));
+    };
+    assert_eq!(location.sheet.as_deref(), Some("Sheet1"));
+
+    let duplicate_path = temp_xlsx_path("duplicate-column");
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "alias")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "item_1")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 1, "ignored")
+        .map_err(|err| format!("{err:?}"))?;
+    workbook
+        .save(&duplicate_path)
+        .map_err(|err| format!("{err:?}"))?;
+
+    let duplicate_source = ExcelSource::new(
+        &duplicate_path,
+        vec![ExcelSheet::new("Item").with_columns([("alias", "id")])],
+    );
+    let Err(err) = load_excel_model(&schema, &[duplicate_source]) else {
+        return Err("expected duplicate mapped column error".to_string());
+    };
+    let ExcelLoadError::DuplicateFieldColumn {
+        field,
+        first_column,
+        duplicate_column,
+        location,
+    } = err
+    else {
+        return Err(format!("expected duplicate mapped column, got {err:?}"));
+    };
+    assert_eq!(field, "id");
+    assert_eq!(first_column, "id");
+    assert_eq!(duplicate_column, "alias");
+    assert_eq!(location.row, Some(1));
+    assert_eq!(location.column, Some(2));
+    Ok(())
+}
+
+#[test]
+fn rejects_expand_headers_without_enough_adjacent_columns() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            @struct sealed type EnvCfg {
+                shc: float;
+                temperature: float;
+                diffusion: float;
+            }
+            type Terrain {
+                @id
+                id: string;
+                @expand
+                env: EnvCfg;
+            }
+        "#,
+    )?;
+    let path = temp_xlsx_path("expand-too-short");
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Terrain")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "env")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "Water")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_number(1, 1, 4.0)
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
+
+    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Terrain")]);
+    let Err(err) = load_excel_model(&schema, &[source]) else {
+        return Err("expected @expand header width error".to_string());
+    };
+    let ExcelLoadError::UnknownColumn {
+        field, location, ..
+    } = err
+    else {
+        return Err(format!(
+            "expected @expand unknown column error, got {err:?}"
+        ));
+    };
+    assert!(field.contains("@expand"));
+    assert!(field.contains("temperature"));
+    assert_eq!(location.row, Some(1));
+    assert_eq!(location.column, Some(2));
+    Ok(())
+}
+
 fn diagnostic_with_code(
     diagnostics: &[ExcelDiagnostic],
     code: CfdErrorCode,

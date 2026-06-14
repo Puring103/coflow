@@ -3136,6 +3136,240 @@ mod tests {
     }
 
     #[test]
+    fn handler_ignores_malformed_notifications_and_reports_unknown_requests() {
+        let (_cleanup, project) = test_project("lsp-handler-edges", "type Item { id: string; }\n");
+        let mut server = LspServer::new(project, Vec::new());
+
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": { "textDocument": { "uri": "not-a-file-uri", "text": "broken" } }
+            }))
+            .expect("invalid didOpen URI is ignored");
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didChange",
+                "params": {
+                    "textDocument": { "uri": "not-a-file-uri" },
+                    "contentChanges": [{ "range": {}, "text": "ignored" }]
+                }
+            }))
+            .expect("invalid didChange URI is ignored");
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 99,
+                "method": "workspace/unknown",
+                "params": {}
+            }))
+            .expect("unknown request should be converted to an LSP error response");
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "method": "workspace/unknownNotification",
+                "params": {}
+            }))
+            .expect("unknown notifications are ignored");
+
+        let messages = written_messages(&server.writer);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["id"], 99);
+        assert_eq!(messages[0]["error"]["code"], -32601);
+        assert!(messages[0]["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("workspace/unknown")));
+    }
+
+    #[test]
+    fn did_save_with_text_updates_document_and_without_text_revalidates_project() {
+        let source = "type Item { id: string; }\n";
+        let (_cleanup, project) = test_project("lsp-save-edges", source);
+        let schema_path = project.root_dir.join("schema").join("main.cft");
+        let uri = path_to_file_uri(&schema_path);
+        let mut server = LspServer::new(project, Vec::new());
+
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": { "textDocument": { "uri": uri, "text": source } }
+            }))
+            .expect("open document");
+        server.writer.clear();
+
+        let changed = "type Item { id: int; }\n";
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didSave",
+                "params": {
+                    "textDocument": { "uri": uri },
+                    "text": changed
+                }
+            }))
+            .expect("didSave with text");
+        let normalized = normalize_path(&schema_path);
+        assert_eq!(
+            server
+                .open_documents
+                .get(&normalized)
+                .map(|document| document.text.as_str()),
+            Some(changed)
+        );
+
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didSave",
+                "params": { "textDocument": { "uri": uri } }
+            }))
+            .expect("didSave without text revalidates");
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didClose",
+                "params": { "textDocument": { "uri": uri } }
+            }))
+            .expect("didClose removes document");
+        assert!(!server.open_documents.contains_key(&normalized));
+    }
+
+    #[test]
+    fn feature_requests_return_empty_results_for_missing_params_and_unknown_documents() {
+        let source = "type Item { id: string; }\n";
+        let (_cleanup, project) = test_project("lsp-request-param-edges", source);
+        let mut server = LspServer::new(project, Vec::new());
+        server.validate_project().expect("initial validation");
+        server.writer.clear();
+
+        let unknown_doc = json!({
+            "textDocument": { "uri": "file:///not-in-project.cft" },
+            "position": { "line": 0, "character": 0 }
+        });
+        let unknown_uri = json!({
+            "textDocument": { "uri": "file:///not-in-project.cft" }
+        });
+        let requests = [
+            ("textDocument/completion", json!({}), Value::Null),
+            ("textDocument/hover", json!({}), Value::Null),
+            ("textDocument/definition", json!({}), Value::Null),
+            ("textDocument/documentSymbol", json!({}), json!([])),
+            ("textDocument/formatting", json!({}), Value::Null),
+            (
+                "textDocument/semanticTokens/full",
+                json!({}),
+                json!({"data": []}),
+            ),
+            ("textDocument/completion", unknown_doc.clone(), json!([])),
+            ("textDocument/hover", unknown_doc.clone(), Value::Null),
+            ("textDocument/definition", unknown_doc, Value::Null),
+            (
+                "textDocument/documentSymbol",
+                unknown_uri.clone(),
+                json!([]),
+            ),
+            ("textDocument/formatting", unknown_uri.clone(), json!([])),
+            (
+                "textDocument/semanticTokens/full",
+                unknown_uri,
+                json!({"data": []}),
+            ),
+        ];
+
+        for (index, (method, params, _)) in requests.iter().enumerate() {
+            server
+                .handle_message(&json!({
+                    "jsonrpc": "2.0",
+                    "id": index,
+                    "method": method,
+                    "params": params
+                }))
+                .expect("request should be handled");
+        }
+
+        let messages = written_messages(&server.writer);
+        assert_eq!(messages.len(), requests.len());
+        for (message, (_, _, expected)) in messages.iter().zip(requests) {
+            assert_eq!(message["result"], expected);
+        }
+    }
+
+    #[test]
+    fn formatting_requests_handle_idempotent_unknown_and_dirty_documents() {
+        let source = "type Item {\n  id: string;\n}\n";
+        let (_cleanup, project) = test_project("lsp-formatting-edges", source);
+        let schema_path = project.root_dir.join("schema").join("main.cft");
+        let schema_uri = path_to_file_uri(&schema_path);
+        let extra_uri = path_to_file_uri(&project.root_dir.join("outside.cft"));
+        let mut server = LspServer::new(project, Vec::new());
+
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": extra_uri,
+                        "text": "type Extra { id: string; }\n"
+                    }
+                }
+            }))
+            .expect("non-schema open should be diagnosed, not fatal");
+        assert!(written_messages(&server.writer).iter().any(|message| {
+            message["method"] == "textDocument/publishDiagnostics"
+                && message["params"]["diagnostics"]
+                    .as_array()
+                    .is_some_and(|diagnostics| {
+                        diagnostics
+                            .iter()
+                            .any(|diagnostic| diagnostic["code"] == "CFT-LSP")
+                    })
+        }));
+        server.writer.clear();
+
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "textDocument/formatting",
+                "params": { "textDocument": { "uri": schema_uri } }
+            }))
+            .expect("formatting request");
+        assert_eq!(written_messages(&server.writer)[0]["result"], json!([]));
+        server.writer.clear();
+
+        let dirty = "type Item {\nid: string;\n}";
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didChange",
+                "params": {
+                    "textDocument": { "uri": schema_uri },
+                    "contentChanges": [{ "text": dirty }]
+                }
+            }))
+            .expect("dirty change");
+        server.writer.clear();
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "textDocument/formatting",
+                "params": { "textDocument": { "uri": schema_uri } }
+            }))
+            .expect("formatting dirty document");
+
+        let messages = written_messages(&server.writer);
+        let edits = messages[0]["result"].as_array().expect("edits");
+        assert_eq!(edits.len(), 1);
+        assert!(edits[0]["newText"]
+            .as_str()
+            .is_some_and(|text| text.contains("  id: string;")));
+    }
+
+    #[test]
     fn oversized_content_length_is_rejected_before_body_allocation() {
         let mut reader =
             io::Cursor::new(format!("Content-Length: {}\r\n\r\n", 16 * 1024 * 1024 + 1));
@@ -3197,6 +3431,489 @@ type Item {\n\
         assert!(definitions_at(&build, document, &comment_position).is_empty());
     }
 
+    #[test]
+    fn hover_and_definition_cover_symbol_resolution_boundaries() {
+        let source = "const LIMIT: int = 5;\n\
+@display(\"target\")\n\
+type Target { @id id: string; value: int; }\n\
+enum Kind { One = 1, Two = 2, }\n\
+type Item {\n\
+  @display(\"kind\")\n\
+  kind: Kind = Kind.One;\n\
+  @ref(Target) target_id: string;\n\
+  count: int = LIMIT;\n\
+  check {\n\
+    target_id.value >= LIMIT;\n\
+    kind == Kind.Two;\n\
+    count > 0;\n\
+    true;\n\
+  }\n\
+}\n";
+        let (_cleanup, build) = test_lsp_build("lsp-symbol-boundaries", source);
+        let document = first_document(&build);
+
+        let hover_cases = [
+            (
+                position_inside(source, "@display(\"target\")", "@display", 1),
+                "display",
+            ),
+            (position_inside(source, "type Target", "type", 1), "Define"),
+            (
+                position_inside(source, "Kind.Two", "Two", 1),
+                "enum variant",
+            ),
+            (
+                position_inside(source, "target_id.value", "value", 1),
+                "Target`.`value",
+            ),
+            (
+                position_inside(source, "@ref(Target)", "Target", 1),
+                "CFT type",
+            ),
+            (position_inside(source, "kind: Kind", "Kind", 1), "CFT enum"),
+            (
+                position_inside(source, "LIMIT;", "LIMIT", 1),
+                "CFT constant",
+            ),
+            (
+                position_inside(source, "count > 0", "count", 1),
+                "Item`.`count",
+            ),
+        ];
+
+        for (offset, expected) in hover_cases {
+            let hover = hover_at(&build, document, &position_from_byte(source, offset))
+                .unwrap_or_else(|| panic!("expected hover containing {expected}"));
+            assert!(
+                hover["contents"]["value"]
+                    .as_str()
+                    .is_some_and(|text| text.contains(expected)),
+                "hover {hover:?} did not contain {expected}"
+            );
+        }
+
+        for offset in [
+            position_inside(source, "Kind.Two", "Two", 1),
+            position_inside(source, "target_id.value", "value", 1),
+            position_inside(source, "LIMIT;", "LIMIT", 1),
+            position_inside(source, "count > 0", "count", 1),
+        ] {
+            assert!(
+                !definitions_at(&build, document, &position_from_byte(source, offset)).is_empty(),
+                "definition should resolve at offset {offset}"
+            );
+        }
+        assert!(definitions_at(
+            &build,
+            document,
+            &position_from_byte(source, position_inside(source, "true;", "true", 1))
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn completion_scope_uses_boundary_offsets_and_missing_ast_as_top_level() {
+        let source = "enum Kind { One = 1, }\n\
+type Item {\n\
+  id: string;\n\
+  check { id != \"\"; }\n\
+}\n";
+        let (_cleanup, build) = test_lsp_build("lsp-completion-scope", source);
+        let document = first_document(&build);
+        let ast = document.ast.as_ref().expect("ast");
+        let enum_def = ast
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Enum(enum_def) => Some(enum_def),
+                _ => None,
+            })
+            .expect("enum");
+        let type_def = ast
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Type(ty) => Some(ty),
+                _ => None,
+            })
+            .expect("type");
+        let check = type_def.check.as_ref().expect("check");
+        let no_ast_document = LspDocument {
+            module_id: document.module_id.clone(),
+            uri: document.uri.clone(),
+            source: document.source.clone(),
+            ast: None,
+        };
+
+        assert_eq!(
+            completion_scope(document, enum_def.span.start),
+            CompletionScope::EnumBody
+        );
+        assert_eq!(
+            completion_scope(document, enum_def.span.end),
+            CompletionScope::EnumBody
+        );
+        assert_eq!(
+            completion_scope(document, type_def.span.start),
+            CompletionScope::TypeBody
+        );
+        assert_eq!(
+            completion_scope(document, check.span.start),
+            CompletionScope::CheckBlock
+        );
+        assert_eq!(
+            completion_scope(document, check.span.end),
+            CompletionScope::CheckBlock
+        );
+        assert_eq!(
+            completion_scope(document, source.len()),
+            CompletionScope::TopLevel
+        );
+        assert_eq!(
+            completion_scope(&no_ast_document, check.span.start),
+            CompletionScope::TopLevel
+        );
+    }
+
+    #[test]
+    fn completion_items_suppress_trivia_and_restrict_predicate_context() {
+        let source = "type Target { id: string; }\n\
+type Item {\n\
+  id: string;\n\
+  target: Target;\n\
+  note: string = \"tar\";\n\
+  # tar\n\
+  check { target is Target; }\n\
+}\n";
+        let (_cleanup, build) = test_lsp_build("lsp-completion-context", source);
+        let document = first_document(&build);
+
+        let string_position =
+            position_from_byte(source, position_inside(source, "\"tar\"", "tar", 1));
+        let comment_position =
+            position_from_byte(source, position_inside(source, "# tar", "tar", 1));
+        let predicate_position = position_from_byte(
+            source,
+            source.find("target is Target").expect("predicate") + "target is ".len(),
+        );
+
+        assert!(completion_items(&build, document, &string_position).is_empty());
+        assert!(completion_items(&build, document, &comment_position).is_empty());
+
+        let labels = completion_labels(completion_items(&build, document, &predicate_position));
+        assert!(labels.contains(&"Target".to_string()));
+        assert!(labels.contains(&"Item".to_string()));
+        assert!(labels.contains(&"null".to_string()));
+        assert!(!labels.contains(&"when".to_string()));
+        assert!(!labels.contains(&"check".to_string()));
+    }
+
+    #[test]
+    fn completion_items_cover_context_filters_and_default_boundaries() {
+        let source = "const LIMIT: int = 5;\n\
+const NAME: string = \"boss\";\n\
+enum Kind { One = 1, Two = 2, }\n\
+type Target { @id id: string; value: int; }\n\
+type Item {\n\
+  enabled: bool = true;\n\
+  kind: Kind = Kind.One;\n\
+  maybe: int? = null;\n\
+  xs: [int] = [];\n\
+  attrs: {string: int} = {};\n\
+  target: Target;\n\
+  @ref(Target) target_id: string;\n\
+  check { all value in xs { value > LIMIT; } }\n\
+}\n";
+        let (_cleanup, build) = test_lsp_build("lsp-completion-boundaries", source);
+        let document = first_document(&build);
+
+        let top_labels = completion_labels(annotation_completion_items(CompletionScope::TopLevel));
+        assert!(top_labels.contains(&"@struct".to_string()));
+        assert!(!top_labels.contains(&"@id".to_string()));
+
+        let type_labels = completion_labels(annotation_completion_items(CompletionScope::TypeBody));
+        assert!(type_labels.contains(&"@id".to_string()));
+        assert!(!type_labels.contains(&"@struct".to_string()));
+
+        let enum_labels = completion_labels(annotation_completion_items(CompletionScope::EnumBody));
+        assert!(enum_labels.is_empty());
+        assert!(!enum_labels.contains(&"@id".to_string()));
+
+        assert_eq!(
+            completion_labels(top_level_completion_items("abstract ")),
+            vec!["type".to_string()]
+        );
+
+        let type_ref_position = position_from_byte(
+            source,
+            source.find("target: Target").expect("target") + "target: ".len(),
+        );
+        let type_ref_labels =
+            completion_labels(completion_items(&build, document, &type_ref_position));
+        assert!(type_ref_labels.contains(&"Target".to_string()));
+        assert!(type_ref_labels.contains(&"Kind".to_string()));
+        assert!(type_ref_labels.contains(&"string".to_string()));
+
+        let ref_position = position_from_byte(
+            source,
+            source.find("@ref(Target)").expect("ref") + "@ref(".len(),
+        );
+        let ref_labels = completion_labels(completion_items(&build, document, &ref_position));
+        assert!(ref_labels.contains(&"Target".to_string()));
+        assert!(!ref_labels.contains(&"Kind".to_string()));
+
+        let const_position = position_from_byte(
+            source,
+            source.find("const LIMIT: int = 5").expect("const") + "const LIMIT: int = ".len(),
+        );
+        let const_labels = completion_labels(completion_items(&build, document, &const_position));
+        assert!(const_labels.contains(&"true".to_string()));
+        assert!(!const_labels.contains(&"null".to_string()));
+
+        let bool_position = position_from_byte(
+            source,
+            source.find("enabled: bool = true").expect("bool") + "enabled: bool = ".len(),
+        );
+        let bool_labels = completion_labels(completion_items(&build, document, &bool_position));
+        assert!(bool_labels.contains(&"true".to_string()));
+        assert!(bool_labels.contains(&"false".to_string()));
+        assert!(!bool_labels.contains(&"null".to_string()));
+
+        let enum_position = position_from_byte(
+            source,
+            source.find("kind: Kind = Kind.One").expect("kind") + "kind: Kind = ".len(),
+        );
+        let enum_labels = completion_labels(completion_items(&build, document, &enum_position));
+        assert!(enum_labels.contains(&"Kind.One".to_string()));
+        assert!(enum_labels.contains(&"Kind.Two".to_string()));
+        assert!(!enum_labels.contains(&"LIMIT".to_string()));
+
+        let nullable_position = position_from_byte(
+            source,
+            source.find("maybe: int? = null").expect("nullable") + "maybe: int? = ".len(),
+        );
+        let nullable_labels =
+            completion_labels(completion_items(&build, document, &nullable_position));
+        assert!(nullable_labels.contains(&"null".to_string()));
+        assert!(nullable_labels.contains(&"LIMIT".to_string()));
+        assert!(!nullable_labels.contains(&"NAME".to_string()));
+
+        let array_position = position_from_byte(
+            source,
+            source.find("xs: [int] = []").expect("array") + "xs: [int] = ".len(),
+        );
+        assert!(
+            completion_labels(completion_items(&build, document, &array_position))
+                .contains(&"[]".to_string())
+        );
+
+        let dict_position = position_from_byte(
+            source,
+            source.find("attrs: {string: int} = {}").expect("dict")
+                + "attrs: {string: int} = ".len(),
+        );
+        assert!(
+            completion_labels(completion_items(&build, document, &dict_position))
+                .contains(&"{}".to_string())
+        );
+
+        let check_offset = source.find("value > LIMIT").expect("check body");
+        let check_labels = completion_labels(check_expression_completion_items(
+            &build,
+            document,
+            check_offset,
+        ));
+        assert!(check_labels.contains(&"value".to_string()));
+        assert!(check_labels.contains(&"target_id".to_string()));
+        assert!(check_labels.contains(&"LIMIT".to_string()));
+
+        assert_eq!(
+            completion_labels(dot_completion_items(
+                &build,
+                document,
+                check_offset,
+                &[s("Kind")]
+            )),
+            vec!["One".to_string(), "Two".to_string()]
+        );
+        let ref_field_labels = completion_labels(dot_completion_items(
+            &build,
+            document,
+            check_offset,
+            &[s("target_id")],
+        ));
+        assert!(ref_field_labels.contains(&"id".to_string()));
+        assert!(ref_field_labels.contains(&"value".to_string()));
+        assert!(dot_completion_items(&build, document, check_offset, &[s("missing")]).is_empty());
+    }
+
+    #[test]
+    fn semantic_range_helpers_ignore_empty_multiline_and_overlapping_tokens() {
+        let source = "ab\ncd";
+        let mut tokens = Vec::new();
+
+        push_semantic_span(source, Span::new(1, 1), SEM_TYPE, &mut tokens);
+        push_semantic_span(source, Span::new(1, 4), SEM_TYPE, &mut tokens);
+        assert!(tokens.is_empty());
+
+        push_semantic_span(source, Span::new(0, 2), SEM_TYPE, &mut tokens);
+        push_semantic_span(source, Span::new(1, 2), SEM_PROPERTY, &mut tokens);
+        push_semantic_span(source, Span::new(3, 5), SEM_STRING, &mut tokens);
+
+        let encoded = encode_semantic_tokens(tokens);
+
+        assert_eq!(
+            encoded,
+            vec![
+                0, 0, 2, SEM_TYPE, 0, // overlapping property token is dropped
+                1, 0, 2, SEM_STRING, 0,
+            ]
+        );
+        assert_eq!(
+            range_from_span(source, Span::new(2, 2)),
+            lsp_range(0, 2, 1, 0)
+        );
+    }
+
+    #[test]
+    fn semantic_tokens_and_protocol_helpers_cover_malformed_boundaries() {
+        let (_cleanup, build) = test_lsp_build(
+            "lsp-semantic-helper-boundaries",
+            "type Item { id: string; }\n",
+        );
+        let invalid_document = LspDocument {
+            module_id: "broken".to_string(),
+            uri: "file:///broken.cft".to_string(),
+            source: "type Broken { $".to_string(),
+            ast: None,
+        };
+
+        assert!(document_symbols(&invalid_document).is_empty());
+        assert!(semantic_token_data(&build, &invalid_document).is_empty());
+        assert_eq!(comment_start_in_line("\"#\" # real"), Some(4));
+        assert_eq!(comment_start_in_line("\"unterminated # still string"), None);
+        assert!(is_inside_string(
+            "value = \"unterminated",
+            "value = \"unterminated".len()
+        ));
+        assert!(is_after_line_comment("\"#\" # real"));
+        assert!(!is_after_line_comment("\"# not comment\""));
+        assert_eq!(
+            word_at("abc", 3).map(|word| word.text),
+            Some("abc".to_string())
+        );
+        assert!(word_at("! ", 1).is_none());
+
+        let mut missing_length = io::Cursor::new("X-Header: value\r\n\r\n");
+        assert!(read_message(&mut missing_length)
+            .expect_err("missing content length")
+            .contains("missing"));
+
+        let mut invalid_length = io::Cursor::new("Content-Length: NaN\r\n\r\n");
+        assert!(read_message(&mut invalid_length)
+            .expect_err("invalid content length")
+            .contains("invalid"));
+
+        let mut eof_headers = io::Cursor::new("Content-Length: 5\r\n");
+        assert!(read_message(&mut eof_headers)
+            .expect_err("unexpected header EOF")
+            .contains("unexpected EOF"));
+
+        let mut short_body = io::Cursor::new("Content-Length: 5\r\n\r\nhi");
+        assert!(read_message(&mut short_body)
+            .expect_err("short body")
+            .contains("failed to read LSP body"));
+
+        assert!(path_from_file_uri("file:///bad%ZZ").is_none());
+        assert!(percent_decode("%E0%A4%A").is_none());
+        assert_eq!(hex_value(b'f'), Some(15));
+        assert_eq!(hex_value(b'F'), Some(15));
+        assert_eq!(hex_value(b'?'), None);
+    }
+
+    #[test]
+    fn scope_type_helpers_return_none_for_invalid_or_non_object_chains() {
+        let source = "type Target { @id id: string; value: int; }\n\
+type Holder {\n\
+  @id id: string;\n\
+  @ref(Target) target: string;\n\
+  count: int;\n\
+  check { target.value == 1; }\n\
+}\n";
+        let (_cleanup, build) = test_lsp_build("lsp-scope-type", source);
+        let document = first_document(&build);
+        let offset = source.find("target.value").expect("chain");
+
+        assert_eq!(
+            type_name_of_schema_ref(
+                &type_of_chain(&build, document, offset, &[s("target")]).expect("target type")
+            ),
+            Some("Target")
+        );
+        assert!(matches!(
+            type_of_chain(&build, document, offset, &[s("target"), s("value")]),
+            Some(CftSchemaTypeRef::Int)
+        ));
+        assert!(type_of_chain(&build, document, offset, &[]).is_none());
+        assert!(type_of_chain(&build, document, offset, &[s("missing")]).is_none());
+        assert!(type_of_chain(&build, document, offset, &[s("count"), s("value")]).is_none());
+        assert!(field_by_chain(&build, document, offset, &[]).is_none());
+        assert!(field_by_chain(&build, document, offset, &[s("target"), s("missing")]).is_none());
+        assert!(
+            field_location_by_chain(&build, document, offset, &[s("count"), s("value")]).is_none()
+        );
+    }
+
+    #[test]
+    fn dotted_word_parsing_rejects_partial_empty_or_punctuated_chains() {
+        assert_eq!(
+            parse_dotted_ident_chain(" target . child_1 "),
+            Some(vec![s("target"), s("child_1")])
+        );
+        assert_eq!(parse_dotted_ident_chain(""), None);
+        assert_eq!(parse_dotted_ident_chain("target."), None);
+        assert_eq!(parse_dotted_ident_chain("target..child"), None);
+        assert_eq!(parse_dotted_ident_chain("target.child!"), None);
+
+        assert_eq!(
+            receiver_chain_before_dot("  target.child.  partial"),
+            Some(vec![s("target"), s("child")])
+        );
+        assert_eq!(receiver_chain_before_dot("target.child.!"), None);
+
+        let source = "check { target . child; other }";
+        let word = word_at(source, source.find("child").expect("child")).expect("word");
+        assert_eq!(
+            dotted_chain_at(source, &word),
+            Some(vec![s("target"), s("child")])
+        );
+
+        let punctuated = "check { target . child + other }";
+        let word = word_at(punctuated, punctuated.find("child").expect("child")).expect("word");
+        assert_eq!(
+            dotted_chain_at(punctuated, &word),
+            Some(vec![s("target"), s("child")])
+        );
+    }
+
+    #[test]
+    fn formatter_ignores_delimiters_inside_strings_and_comments() {
+        let source = "type Item {\n\
+values: [string] = [\n\
+\"{\" # string brace does not indent\n\
+] # closing bracket in comment } }\n\
+}\n";
+
+        assert_eq!(
+            format_cft(source),
+            "type Item {\n  values: [string] = [\n    \"{\" # string brace does not indent\n  ] # closing bracket in comment } }\n}\n"
+        );
+        assert_eq!(
+            format_cft("type Item {\n\nid: string;\n}"),
+            "type Item {\n\n  id: string;\n}"
+        );
+    }
+
     struct TempProject(PathBuf);
 
     impl Drop for TempProject {
@@ -3217,6 +3934,37 @@ type Item {\n\
         std::fs::write(schema.join("main.cft"), source).expect("write schema");
         let project = Project::open_schema_only(Some(&root)).expect("open project");
         (TempProject(root), project)
+    }
+
+    fn test_lsp_build(name: &str, source: &str) -> (TempProject, LspBuild) {
+        let (cleanup, project) = test_project(name, source);
+        let build = LspBuild::new(
+            compile_schema_project_with_overrides(&project, &[]).expect("compile schema"),
+        );
+        (cleanup, build)
+    }
+
+    fn first_document(build: &LspBuild) -> &LspDocument {
+        build
+            .documents
+            .values()
+            .next()
+            .expect("document should exist")
+    }
+
+    fn completion_labels(items: Vec<Value>) -> Vec<String> {
+        items
+            .into_iter()
+            .filter_map(|item| {
+                item.get("label")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+            .collect()
+    }
+
+    fn s(value: &str) -> String {
+        value.to_string()
     }
 
     fn written_messages(bytes: &[u8]) -> Vec<Value> {

@@ -39,6 +39,18 @@ enum QuestKind {
   Raid = 10,
 }
 
+enum StageKind {
+  Story = 0,
+  Elite,
+  Raid = 10,
+}
+
+enum ShopKind {
+  General = 0,
+  Event,
+  Raid = 10,
+}
+
 @flag
 @display("Skill tags")
 enum SkillTag {
@@ -166,6 +178,47 @@ type Item {
   }
 }
 
+@display("Equipment")
+type Equipment : Item {
+  @ref(Text)
+  name_text_id: string;
+
+  required_class: string;
+  stat_bonus: StatBlock;
+  allowed_classes: [string] = [];
+  upgrade_costs: {int: int} = {};
+
+  @ref(Equipment)
+  set_piece_id: string? = null;
+
+  check {
+    name_text_id.id != "";
+    required_class != "";
+    contains(allowed_classes, required_class);
+    unique(allowed_classes);
+    slot == ItemSlot.Weapon || slot == ItemSlot.Armor || slot == ItemSlot.Accessory;
+    stat_bonus.hp > 0;
+    stat_bonus.attack + stat_bonus.defense > 0;
+    contains(upgrade_costs, 1);
+    min(keys(upgrade_costs)) >= 1;
+    max(values(upgrade_costs)) <= MAX_POWER * 10;
+
+    all class in allowed_classes {
+      class != "";
+    }
+
+    all entry in upgrade_costs {
+      entry.key > 0;
+      entry.value >= 0;
+    }
+
+    when set_piece_id != null {
+      set_piece_id.id != id;
+      set_piece_id.required_class == required_class;
+    }
+  }
+}
+
 @display("Skill")
 type Skill {
   @id
@@ -183,6 +236,9 @@ type Skill {
 
   @ref(Skill)
   follow_up_id: string? = null;
+
+  @ref(Buff)
+  buff_id: string? = null;
 
   costs: [int] = [];
   allowed_slots: [ItemSlot] = [];
@@ -219,6 +275,79 @@ type Skill {
     when follow_up_id != null {
       follow_up_id.id != id;
       follow_up_id.power <= power;
+    }
+
+    when buff_id != null {
+      buff_id.id != "";
+      buff_id.required_element == null || buff_id.required_element == element;
+    }
+  }
+}
+
+@display("Buff")
+type Buff {
+  @id
+  id: string;
+
+  name: string;
+
+  @ref(Text)
+  name_text_id: string;
+
+  tags: SkillTag = SkillTag.Damage;
+  duration: float = 0.0;
+  max_stacks: int = 1;
+  tick_interval: float? = null;
+  exclusive_group: string = "";
+  stat_modifiers: {string: int} = {};
+  trigger_chances: {string: float} = {};
+  required_element: Element? = null;
+
+  @ref(Skill)
+  source_skill_id: string? = null;
+
+  check {
+    id != "";
+    name != "";
+    name_text_id.id != "";
+    matches(id, "^[a-z][a-z0-9_]*$");
+    duration >= 0.0;
+    1 <= max_stacks <= 10;
+    len(stat_modifiers) > 0;
+    contains(trigger_chances, "apply");
+    0.0 <= trigger_chances["apply"] <= 1.0;
+
+    when duration > 0.0 {
+      tick_interval != null;
+      tick_interval > 0.0;
+    }
+
+    when duration == 0.0 {
+      tick_interval == null;
+      (tags & SkillTag.Passive) != SkillTag(0);
+    }
+
+    when max_stacks == 1 {
+      exclusive_group != "";
+    }
+
+    when required_element != null {
+      required_element >= Element.Physical;
+    }
+
+    when source_skill_id != null {
+      source_skill_id.id != "";
+      required_element == null || source_skill_id.element == required_element;
+    }
+
+    all entry in stat_modifiers {
+      entry.key != "";
+      -MAX_POWER <= entry.value <= MAX_POWER;
+    }
+
+    all entry in trigger_chances {
+      entry.key != "";
+      0.0 <= entry.value <= 1.0;
     }
   }
 }
@@ -493,6 +622,78 @@ type DropTable {
   }
 }
 
+sealed type StageSpawn {
+  @ref(Monster)
+  monster_id: string;
+
+  count: int = 1;
+  level_offset: int = 0;
+  weight: int = 1;
+
+  check {
+    monster_id.id != "";
+    count > 0;
+    -10 <= level_offset <= 10;
+    weight > 0;
+  }
+}
+
+@display("Stage")
+type Stage {
+  @id
+  id: string;
+
+  @ref(Text)
+  name_text_id: string;
+
+  kind: StageKind = StageKind.Story;
+  unlock_level: int = 1;
+  recommended_power: int = 1;
+  positions: [Vector2] = [];
+  spawns: [StageSpawn];
+
+  @ref(DropTable)
+  drop_table_id: string;
+
+  first_clear_reward: Reward;
+  modifiers: {string: int} = {};
+
+  check {
+    id != "";
+    name_text_id.id != "";
+    matches(id, "^stage_[a-z][a-z0-9_]*$");
+    1 <= unlock_level <= MAX_LEVEL;
+    recommended_power > 0;
+    len(spawns) > 0;
+    len(positions) == len(spawns);
+    drop_table_id.monster_id.level >= unlock_level;
+    first_clear_reward is Reward;
+    contains(modifiers, "stamina");
+    modifiers["stamina"] > 0;
+
+    when kind == StageKind.Raid {
+      FEATURE_RAID_ENABLED;
+      unlock_level >= 40;
+      drop_table_id.monster_id.rarity >= Rarity.Epic;
+      recommended_power >= 500;
+    }
+
+    all spawn in spawns {
+      spawn.count > 0;
+      spawn.monster_id.level + spawn.level_offset >= 1;
+    }
+
+    any spawn in spawns {
+      spawn.monster_id.id == drop_table_id.monster_id.id;
+    }
+
+    all entry in modifiers {
+      entry.key != "";
+      entry.value >= 0;
+    }
+  }
+}
+
 type QuestObjective {
   key: string;
   target_count: int;
@@ -535,8 +736,14 @@ type Quest {
   @index
   kind: QuestKind;
 
+  @ref(Text)
+  title_text_id: string;
+
   title: string;
   min_level: int = 1;
+
+  @ref(Stage)
+  stage_id: string;
 
   @ref(Monster)
   target_monster_id: string? = null;
@@ -553,8 +760,10 @@ type Quest {
   check {
     id != "";
     title != "";
+    title_text_id.id != "";
     matches(id, "^quest_[a-z][a-z0-9_]*$");
     1 <= min_level <= MAX_LEVEL;
+    stage_id.unlock_level <= min_level;
     reward_item_id.name != "";
     reward_preview is Reward;
     len(objectives) > 0;
@@ -567,12 +776,16 @@ type Quest {
 
     when target_monster_id != null {
       target_monster_id.level >= min_level;
+      any spawn in stage_id.spawns {
+        spawn.monster_id.id == target_monster_id.id;
+      }
     }
 
     when kind == QuestKind.Raid {
       FEATURE_RAID_ENABLED;
       target_monster_id != null;
       target_monster_id.rarity >= Rarity.Epic;
+      stage_id.kind == StageKind.Raid;
     }
 
     all objective in objectives {
@@ -585,6 +798,120 @@ type Quest {
 
     none prerequisite in prerequisites {
       prerequisite == id;
+    }
+  }
+}
+
+sealed type ShopEntry {
+  @ref(Item)
+  item_id: string;
+
+  price: int;
+  stock: int = 1;
+  unlock_level: int = 1;
+
+  @ref(Quest)
+  required_quest: string? = null;
+
+  discount_by_day: {int: int} = {};
+
+  check {
+    item_id.name != "";
+    price >= item_id.price;
+    stock > 0;
+    1 <= unlock_level <= MAX_LEVEL;
+    contains(discount_by_day, 1);
+    min(values(discount_by_day)) >= 0;
+    max(values(discount_by_day)) <= 100;
+
+    when item_id.slot == ItemSlot.Material {
+      stock > 1;
+    }
+
+    when required_quest != null {
+      required_quest.id != "";
+    }
+
+    all entry in discount_by_day {
+      entry.key > 0;
+      0 <= entry.value <= 100;
+    }
+  }
+}
+
+@display("Shop")
+type Shop {
+  @id
+  id: string;
+
+  @ref(Text)
+  name_text_id: string;
+
+  kind: ShopKind = ShopKind.General;
+  open_day: int = 1;
+  close_day: int = 999;
+
+  @ref(Stage)
+  stage_gate_id: string? = null;
+
+  entries: [ShopEntry];
+  currencies: [string] = [];
+
+  check {
+    id != "";
+    name_text_id.id != "";
+    matches(id, "^shop_[a-z][a-z0-9_]*$");
+    1 <= open_day <= close_day;
+    len(entries) > 0;
+    len(currencies) > 0;
+    unique(currencies);
+    any entry in entries { entry.stock > 0; }
+
+    when kind == ShopKind.Raid {
+      stage_gate_id != null;
+      stage_gate_id.kind == StageKind.Raid;
+      any entry in entries { entry.item_id.rarity >= Rarity.Epic; }
+    }
+
+    when stage_gate_id != null {
+      any entry in entries {
+        entry.unlock_level >= stage_gate_id.unlock_level;
+      }
+    }
+
+    all currency in currencies {
+      currency != "";
+    }
+
+    all entry in entries {
+      entry.price >= 0;
+      entry.unlock_level <= close_day;
+    }
+  }
+}
+
+type Text {
+  @id
+  id: string;
+
+  zh_cn: string;
+  en_us: string;
+  context: string = "";
+  max_length: int = 80;
+  tags: [string] = [];
+
+  check {
+    id != "";
+    zh_cn != "";
+    en_us != "";
+    context != "";
+    matches(id, "^[a-z][a-z0-9_.]*$");
+    len(tags) > 0;
+    unique(tags);
+    max_length > 0;
+
+    none tag in tags {
+      tag == "";
     }
   }
 }

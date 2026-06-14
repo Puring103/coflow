@@ -9,8 +9,12 @@ use coflow_pipeline::{
     build_project, check_project, export_project_data, generate_project_code, BuildOptions,
     CodegenOptions, CodegenTarget, DataFormat, ExportOptions, PipelineOutcome,
 };
-use coflow_project::Project;
+use coflow_project::{
+    OutputConfig, OutputsConfig, Project, ProjectConfig, SchemaConfig, SheetConfig, SourceConfig,
+};
 use rust_xlsxwriter::Workbook;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 #[test]
 fn check_project_passes_for_rpg_example() {
@@ -208,6 +212,131 @@ outputs:
 }
 
 #[test]
+fn generate_project_code_reports_missing_or_incompatible_outputs() {
+    let (missing_code, _missing_code_cleanup) = schema_only_project_with_outputs(
+        "coflow-pipeline-codegen-missing-code-output",
+        OutputsConfig {
+            data: Some(output_config("json", "generated/data", None)),
+            code: None,
+        },
+    );
+    let err = generate_project_code(
+        &missing_code,
+        CodegenTarget::Csharp,
+        CodegenOptions::default(),
+    )
+    .expect_err("missing code output should fail before codegen");
+    assert!(err.contains("missing outputs.code"));
+
+    let (missing_data, _missing_data_cleanup) = schema_only_project_with_outputs(
+        "coflow-pipeline-codegen-missing-data-output",
+        OutputsConfig {
+            data: None,
+            code: Some(output_config("csharp", "generated/csharp", None)),
+        },
+    );
+    let err = generate_project_code(
+        &missing_data,
+        CodegenTarget::Csharp,
+        CodegenOptions::default(),
+    )
+    .expect_err("missing data output should fail before codegen");
+    assert!(err.contains("missing outputs.data"));
+}
+
+#[test]
+fn export_project_data_requires_matching_configured_format() {
+    let (project, _cleanup) = schema_only_project_with_outputs(
+        "coflow-pipeline-export-wrong-format",
+        OutputsConfig {
+            data: Some(output_config("json", "generated/data", None)),
+            code: None,
+        },
+    );
+
+    let err = export_project_data(&project, DataFormat::Messagepack, ExportOptions::default())
+        .expect_err("messagepack export should reject json output config");
+
+    assert!(err.contains("outputs.data.type is `json`; required `messagepack`"));
+}
+
+#[test]
+fn build_project_reports_missing_data_output_and_wrong_code_output_type() {
+    let (missing_data, _missing_data_cleanup) = schema_only_project_with_outputs(
+        "coflow-pipeline-build-missing-data-output",
+        OutputsConfig {
+            data: None,
+            code: Some(output_config(
+                "csharp",
+                "generated/csharp",
+                Some("Game.Config"),
+            )),
+        },
+    );
+    let err = build_project(&missing_data, BuildOptions::default())
+        .expect_err("build should require data output");
+    assert!(err.contains("missing outputs.data"));
+
+    let (wrong_code_type, _wrong_code_type_cleanup) = project_with_unvalidated_outputs(
+        "coflow-pipeline-build-wrong-code-output-type",
+        OutputsConfig {
+            data: Some(output_config("json", "generated/data", None)),
+            code: Some(output_config("java", "generated/java", Some("Game.Config"))),
+        },
+    );
+    let err = build_project(&wrong_code_type, BuildOptions::default())
+        .expect_err("build should reject non-csharp code output after data export setup");
+    assert!(err.contains("outputs.code.type is `java`; expected `csharp`"));
+}
+
+#[test]
+fn codegen_reports_malformed_enum_lockfile_before_overwriting_it() {
+    let root = temp_project_dir("coflow-pipeline-codegen-bad-lockfile");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("generated").join("csharp")).expect("create code dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        r#"
+            type GeneConfig {
+                @IdAsEnum("GeneId")
+                @id
+                id: string;
+            }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+outputs:
+  data:
+    type: json
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Game.Config
+",
+    )
+    .expect("write config");
+    std::fs::write(
+        root.join("generated")
+            .join("csharp")
+            .join("coflow.enum.lock.json"),
+        "{bad json",
+    )
+    .expect("write malformed lockfile");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+
+    let err = generate_project_code(&project, CodegenTarget::Csharp, CodegenOptions::default())
+        .expect_err("malformed enum lockfile should fail");
+
+    assert!(err.contains("failed to parse"));
+    assert!(err.contains("coflow.enum.lock.json"));
+}
+
+#[test]
 fn check_project_excel_open_diagnostic_contains_file_path() {
     let root = temp_project_dir("coflow-pipeline-excel-open-path");
     let _cleanup = TempDirCleanup(root.clone());
@@ -288,6 +417,142 @@ fn build_project_exports_data_and_code() {
     assert!(report.code.is_some());
     assert!(data_dir.join("Item.json").exists());
     assert!(code_dir.join("GameConfig.cs").exists());
+}
+
+#[test]
+fn rpg_example_covers_validation_heavy_game_config_tables() {
+    let project = Project::open_schema_only(Some(workspace_path("examples/rpg").as_path()))
+        .expect("open project");
+    let data_dir = temp_project_dir("coflow-pipeline-rpg-complete-data");
+    let code_dir = temp_project_dir("coflow-pipeline-rpg-complete-code");
+    let _data_cleanup = TempDirCleanup(data_dir.clone());
+    let _code_cleanup = TempDirCleanup(code_dir.clone());
+
+    let outcome = build_project(
+        &project,
+        BuildOptions {
+            data_out_dir: Some(data_dir.as_path()),
+            code_out_dir: Some(code_dir.as_path()),
+            namespace: Some("Game.Config"),
+        },
+    )
+    .expect("build RPG example");
+
+    assert!(matches!(outcome, PipelineOutcome::Success(_)));
+    for table in [
+        "Item",
+        "Equipment",
+        "Skill",
+        "Buff",
+        "Monster",
+        "DropTable",
+        "Stage",
+        "Quest",
+        "Shop",
+        "Text",
+    ] {
+        assert!(
+            data_dir.join(format!("{table}.json")).exists(),
+            "missing exported table {table}"
+        );
+        assert!(
+            code_dir.join(format!("{table}.cs")).exists(),
+            "missing generated C# type {table}"
+        );
+    }
+}
+
+#[test]
+fn build_project_with_data_only_output_does_not_generate_code() {
+    let root = temp_project_dir("coflow-pipeline-build-data-only");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_single_item_project(
+        &root,
+        OutputsConfig {
+            data: Some(output_config("json", "generated/data", None)),
+            code: None,
+        },
+    )
+    .expect("write project");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+    let data_dir = root.join("out-data");
+
+    let outcome = build_project(
+        &project,
+        BuildOptions {
+            data_out_dir: Some(data_dir.as_path()),
+            code_out_dir: None,
+            namespace: None,
+        },
+    )
+    .expect("build project");
+
+    let PipelineOutcome::Success(report) = outcome else {
+        panic!("expected build success");
+    };
+    assert!(report.code.is_none());
+    assert!(data_dir.join("Item.json").exists());
+    assert!(!root.join("generated").join("csharp").exists());
+}
+
+#[test]
+fn build_project_reports_data_output_path_that_is_existing_file() {
+    let root = temp_project_dir("coflow-pipeline-build-data-output-file");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_single_item_project(
+        &root,
+        OutputsConfig {
+            data: Some(output_config("json", "generated/data", None)),
+            code: None,
+        },
+    )
+    .expect("write project");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+    let data_out_file = root.join("not-a-dir");
+    std::fs::write(&data_out_file, "already a file").expect("write output collision");
+
+    let err = build_project(
+        &project,
+        BuildOptions {
+            data_out_dir: Some(data_out_file.as_path()),
+            code_out_dir: None,
+            namespace: None,
+        },
+    )
+    .expect_err("file output path should fail when creating data dir");
+
+    assert!(err.contains("failed to create output dir"));
+    assert!(err.contains("not-a-dir"));
+}
+
+#[test]
+fn generate_project_code_uses_messagepack_data_output_config() {
+    let root = temp_project_dir("coflow-pipeline-codegen-messagepack");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_single_item_project(
+        &root,
+        OutputsConfig {
+            data: Some(output_config("messagepack", "generated/data", None)),
+            code: Some(output_config(
+                "csharp",
+                "generated/csharp",
+                Some("Game.Config"),
+            )),
+        },
+    )
+    .expect("write project");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+
+    let outcome = generate_project_code(&project, CodegenTarget::Csharp, CodegenOptions::default())
+        .expect("messagepack codegen");
+
+    let PipelineOutcome::Success(report) = outcome else {
+        panic!("expected codegen success");
+    };
+    assert!(report.dir.ends_with(Path::new("generated").join("csharp")));
+    let game_config =
+        std::fs::read_to_string(report.dir.join("GameConfig.cs")).expect("GameConfig.cs");
+    assert!(game_config.contains("MessagePack"));
 }
 
 #[test]
@@ -478,7 +743,70 @@ fn build_project_removes_stale_generated_csharp_files_after_key_as_enum_rename()
     assert!(!lockfile.contains("\"OldGeneId\""));
 }
 
-fn write_project_with_missing_excel_source(root: &std::path::Path, include_code_output: bool) {
+#[test]
+fn build_project_reports_duplicate_key_as_enum_ids_before_codegen() {
+    let root = temp_project_dir("coflow-pipeline-key-as-enum-duplicates");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_key_as_enum_project(&root, &["Gene_Spore", "Gene_Spore", "Gene_Mating"])
+        .expect("write project with duplicate ids");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+    let data_dir = root.join("out-data");
+    let code_dir = root.join("out-code");
+
+    let outcome = build_project(
+        &project,
+        BuildOptions {
+            data_out_dir: Some(data_dir.as_path()),
+            code_out_dir: Some(code_dir.as_path()),
+            namespace: Some("Game.Config"),
+        },
+    )
+    .expect("duplicate ids should be returned as diagnostics");
+
+    let PipelineOutcome::Diagnostics(diagnostics) = outcome else {
+        panic!("expected duplicate id diagnostics");
+    };
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "CFD-DATA-011"),
+        "diagnostics: {diagnostics:?}"
+    );
+    assert!(!code_dir.exists());
+}
+
+#[test]
+fn codegen_writes_empty_key_as_enum_lockfile_when_only_declared_ids_exist() {
+    let (declared_only, _declared_only_cleanup) = schema_only_project_with_outputs(
+        "coflow-pipeline-key-as-enum-declared-only",
+        OutputsConfig {
+            data: Some(output_config("json", "generated/data", None)),
+            code: Some(output_config(
+                "csharp",
+                "generated/csharp",
+                Some("Game.Config"),
+            )),
+        },
+    );
+    let outcome = generate_project_code(
+        &declared_only,
+        CodegenTarget::Csharp,
+        CodegenOptions::default(),
+    )
+    .expect("declared enum without loaded ids should still write empty lockfile");
+    assert!(matches!(outcome, PipelineOutcome::Success(_)));
+    let lockfile = std::fs::read_to_string(
+        declared_only
+            .root_dir
+            .join("generated")
+            .join("csharp")
+            .join("coflow.enum.lock.json"),
+    )
+    .expect("enum lockfile");
+    assert!(lockfile.contains("\"GeneId\": {}"));
+}
+
+fn write_project_with_missing_excel_source(root: &Path, include_code_output: bool) {
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
     std::fs::write(
         root.join("schema").join("main.cft"),
@@ -511,8 +839,137 @@ outputs:
     .expect("write config");
 }
 
+fn write_single_item_project(
+    root: &Path,
+    outputs: OutputsConfig,
+) -> Result<(), rust_xlsxwriter::XlsxError> {
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        "type Item { @id id: string; value: int; }\n",
+    )
+    .expect("write schema");
+    let workbook_path = root.join("data").join("configs.xlsx");
+    let mut workbook = Workbook::new();
+    let sheet = workbook.add_worksheet();
+    sheet.set_name("Item")?;
+    sheet.write_string(0, 0, "id")?;
+    sheet.write_string(0, 1, "value")?;
+    sheet.write_string(1, 0, "item_1")?;
+    sheet.write_number(1, 1, 1.0)?;
+    workbook.save(&workbook_path)?;
+
+    let mut config = String::from(
+        r"schema: schema/
+sources:
+  - file: data/configs.xlsx
+    sheets:
+      - sheet: Item
+        columns:
+          id: id
+          value: value
+outputs:
+",
+    );
+    if let Some(data) = outputs.data {
+        config.push_str(&format!(
+            "  data:\n    type: {}\n    dir: {}\n",
+            data.output_type,
+            data.dir.display()
+        ));
+    }
+    if let Some(code) = outputs.code {
+        config.push_str(&format!(
+            "  code:\n    type: {}\n    dir: {}\n",
+            code.output_type,
+            code.dir.display()
+        ));
+        if let Some(namespace) = code.namespace {
+            config.push_str(&format!("    namespace: {namespace}\n"));
+        }
+    }
+    std::fs::write(root.join("coflow.yaml"), config).expect("write config");
+    Ok(())
+}
+
+fn schema_only_project_with_outputs(
+    name: &str,
+    outputs: OutputsConfig,
+) -> (Project, TempDirCleanup) {
+    let root = temp_project_dir(name);
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        r#"
+            type GeneConfig {
+                @IdAsEnum("GeneId")
+                @id
+                id: string;
+            }
+        "#,
+    )
+    .expect("write schema");
+    let project = Project {
+        config_path: root.join("coflow.yaml"),
+        root_dir: root.clone(),
+        config: ProjectConfig {
+            schema: SchemaConfig::One(PathBuf::from("schema")),
+            sources: Vec::new(),
+            outputs,
+        },
+    };
+    (project, TempDirCleanup(root))
+}
+
+fn project_with_unvalidated_outputs(
+    name: &str,
+    outputs: OutputsConfig,
+) -> (Project, TempDirCleanup) {
+    let root = temp_project_dir(name);
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        "type Item { @id id: string; }\n",
+    )
+    .expect("write schema");
+    let workbook_path = root.join("data").join("configs.xlsx");
+    let mut workbook = Workbook::new();
+    let sheet = workbook.add_worksheet();
+    sheet.set_name("Item").expect("set sheet name");
+    sheet.write_string(0, 0, "id").expect("write header");
+    sheet.write_string(1, 0, "item_1").expect("write row");
+    workbook.save(&workbook_path).expect("save workbook");
+    let project = Project {
+        config_path: root.join("coflow.yaml"),
+        root_dir: root.clone(),
+        config: ProjectConfig {
+            schema: SchemaConfig::One(PathBuf::from("schema")),
+            sources: vec![SourceConfig {
+                file: PathBuf::from("data/configs.xlsx"),
+                sheets: vec![SheetConfig {
+                    sheet: "Item".to_string(),
+                    type_name: None,
+                    columns: BTreeMap::from([("id".to_string(), "id".to_string())]),
+                }],
+            }],
+            outputs,
+        },
+    };
+    (project, TempDirCleanup(root))
+}
+
+fn output_config(output_type: &str, dir: &str, namespace: Option<&str>) -> OutputConfig {
+    OutputConfig {
+        output_type: output_type.to_string(),
+        dir: PathBuf::from(dir),
+        namespace: namespace.map(str::to_string),
+    }
+}
+
 fn write_key_as_enum_project(
-    root: &std::path::Path,
+    root: &Path,
     gene_ids: &[&str],
 ) -> Result<(), rust_xlsxwriter::XlsxError> {
     assert!(!gene_ids.is_empty(), "test requires at least one gene id");
@@ -583,7 +1040,7 @@ outputs:
 }
 
 fn write_renamable_key_as_enum_project(
-    root: &std::path::Path,
+    root: &Path,
     enum_name: &str,
 ) -> Result<(), rust_xlsxwriter::XlsxError> {
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
@@ -634,7 +1091,7 @@ outputs:
     workbook.save(workbook_path)
 }
 
-fn temp_project_dir(name: &str) -> std::path::PathBuf {
+fn temp_project_dir(name: &str) -> PathBuf {
     let suffix = format!(
         "{}-{}",
         std::process::id(),
@@ -650,14 +1107,14 @@ fn temp_project_dir(name: &str) -> std::path::PathBuf {
     root
 }
 
-fn workspace_path(path: &str) -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+fn workspace_path(path: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
         .join(path)
 }
 
-fn write_key_as_enum_workbook(path: &std::path::Path) -> Result<(), rust_xlsxwriter::XlsxError> {
+fn write_key_as_enum_workbook(path: &Path) -> Result<(), rust_xlsxwriter::XlsxError> {
     let mut workbook = Workbook::new();
     let genes = workbook.add_worksheet();
     genes.set_name("GeneConfig")?;
@@ -675,7 +1132,7 @@ fn write_key_as_enum_workbook(path: &std::path::Path) -> Result<(), rust_xlsxwri
     workbook.save(path)
 }
 
-struct TempDirCleanup(std::path::PathBuf);
+struct TempDirCleanup(PathBuf);
 
 impl Drop for TempDirCleanup {
     fn drop(&mut self) {

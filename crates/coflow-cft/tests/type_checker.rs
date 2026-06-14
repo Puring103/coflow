@@ -190,6 +190,22 @@ fn type_checker_reports_is_on_non_object_left_operand() {
 }
 
 #[test]
+fn type_checker_reports_unknown_field_on_known_object_operand() {
+    let source = r#"
+        type Child { id: string; }
+        type Holder {
+            child: Child;
+            check {
+                child.missing != "";
+            }
+        }
+    "#;
+
+    let err = compile_one(source).expect_err("unknown object field should fail");
+    assert_has_code(&err, CftErrorCode::UnknownField);
+}
+
+#[test]
 fn type_checker_reports_bitwise_shift_and_function_edges() {
     let source = r#"
         @flag
@@ -308,4 +324,264 @@ fn type_checker_reports_enum_constructor_and_dict_index_edges() {
     assert_has_code(&err, CftErrorCode::FunctionArgTypeMismatch);
     assert_has_code(&err, CftErrorCode::FunctionArityMismatch);
     assert_has_code(&err, CftErrorCode::IndexTypeMismatch);
+}
+
+#[test]
+fn type_checker_rejects_runtime_only_eval_edges_before_checker_runs() {
+    let source = r#"
+        enum Rarity { Common, Rare, }
+        enum Element { Fire, Ice, }
+        type Item {
+            id: string;
+            rarity: Rarity;
+            nums: [int];
+            texts: [string];
+            resistances: {Element: float};
+            check {
+                id;
+                when id { true; }
+                MissingEnum(0) == Rarity.Common;
+                Rarity("x") == rarity;
+                rarity | Element.Fire == rarity;
+                rarity << 1 == rarity;
+                id.missing != "";
+                len(id) > 0;
+                keys(nums);
+                values(nums);
+                sum(texts) > 0;
+                min(id) > 0;
+                matches(1, "[");
+                all entry in resistances {
+                    entry.missing != 0;
+                }
+            }
+        }
+    "#;
+
+    let err = compile_one(source).expect_err("invalid check expressions should be typed away");
+    assert_has_code(&err, CftErrorCode::ConditionMustBeBool);
+    assert_has_code(&err, CftErrorCode::UnknownFunction);
+    assert_has_code(&err, CftErrorCode::FunctionArgTypeMismatch);
+    assert_has_code(&err, CftErrorCode::BitwiseRequiresIntOrFlagEnum);
+    assert_has_code(&err, CftErrorCode::ShiftRequiresInt);
+    assert_has_code(&err, CftErrorCode::FieldAccessOnNonObject);
+    assert_has_code(&err, CftErrorCode::UnknownField);
+}
+
+#[test]
+fn type_checker_reports_builtin_arity_and_operator_edges() {
+    let source = r#"
+        @flag
+        enum Flags { A = 1, B = 2, }
+        enum Rarity { Common, Rare, }
+        type Item {
+            id: string;
+            flags: Flags;
+            rarity: Rarity;
+            nums: [int];
+            weights: {string: int};
+            check {
+                !id;
+                -flags == flags;
+                ~rarity == rarity;
+                true + false == 0;
+                1 // 1.0 == 1;
+                id[0] != "";
+                contains(id, 1);
+                contains(nums);
+                unique();
+                min();
+                sum();
+                keys();
+                values();
+                matches(id);
+                matches(id, "[");
+                matches(id, id);
+                all entry in weights {
+                    entry.key > 0;
+                }
+            }
+        }
+    "#;
+
+    let err = compile_one(source).expect_err("invalid expression edges should fail type checking");
+    assert_has_code(&err, CftErrorCode::OperatorTypeMismatch);
+    assert_has_code(&err, CftErrorCode::BitwiseRequiresIntOrFlagEnum);
+    assert_has_code(&err, CftErrorCode::IndexOnNonIndexable);
+    assert_has_code(&err, CftErrorCode::FunctionArgTypeMismatch);
+    assert_has_code(&err, CftErrorCode::FunctionArityMismatch);
+    assert_has_code(&err, CftErrorCode::InvalidRegexPattern);
+    assert_has_code(&err, CftErrorCode::RegexPatternMustBeLiteral);
+    assert_has_code(&err, CftErrorCode::ComparisonTypeMismatch);
+}
+
+#[test]
+fn type_checker_reports_non_enum_variant_and_contains_dict_key_edges() {
+    let source = r#"
+        type Item {
+            id: string;
+            tags: {string: int};
+            check {
+                Item.Missing == 0;
+                contains(tags, 1);
+            }
+        }
+    "#;
+
+    let err = compile_one(source)
+        .expect_err("non-enum variant access and wrong dict contains key should fail");
+    assert_has_code(&err, CftErrorCode::TypeEnumVariantOnNonEnum);
+    assert_has_code(&err, CftErrorCode::FunctionArgTypeMismatch);
+}
+
+#[test]
+fn type_checker_allows_int_div_mod_shift_and_flag_bitnot_edges() {
+    compile_one(
+        r#"
+            @flag
+            enum Flags { A = 1, B = 2, }
+            type Item {
+                flags: Flags;
+                check {
+                    7 // 2 == 3;
+                    7 % 2 == 1;
+                    1 << 2 == 4;
+                    4 >> 1 == 2;
+                    ~flags != Flags(0);
+                    !true;
+                }
+            }
+        "#,
+    )
+    .expect("valid int-only and flag-only operators should type check");
+}
+
+#[test]
+fn type_checker_suppresses_cascaded_operator_errors_when_operand_is_unknown() {
+    let err = compile_one(
+        r#"
+            type Item {
+                value: int;
+                check {
+                    missing && true;
+                    missing + value > 0;
+                    missing < value;
+                    when missing { true; }
+                }
+            }
+        "#,
+    )
+    .expect_err("unknown names should be reported without cascaded bool/operator errors");
+
+    assert_has_code(&err, CftErrorCode::UnknownValueName);
+    assert_eq!(
+        err.diagnostics
+            .iter()
+            .filter(|diag| diag.code == CftErrorCode::ConditionMustBeBool)
+            .count(),
+        0,
+        "unknown values should not cascade into condition diagnostics"
+    );
+    assert_eq!(
+        err.diagnostics
+            .iter()
+            .filter(|diag| diag.code == CftErrorCode::OperatorTypeMismatch)
+            .count(),
+        0,
+        "unknown values should not cascade into operator diagnostics"
+    );
+    assert_eq!(
+        err.diagnostics
+            .iter()
+            .filter(|diag| diag.code == CftErrorCode::ComparisonTypeMismatch)
+            .count(),
+        0,
+        "unknown values should not cascade into comparison diagnostics"
+    );
+}
+
+#[test]
+fn type_checker_suppresses_cascaded_function_and_field_errors_when_operand_is_unknown() {
+    let err = compile_one(
+        r#"
+            type Item {
+                nums: [int];
+                attrs: {string: int};
+                check {
+                    nums[missing] > 0;
+                    attrs[missing] > 0;
+                    MissingEnum(missing) == 0;
+                    contains(nums, missing);
+                    contains(attrs, missing);
+                    matches(missing, "[");
+                    missing.value == 0;
+                    !missing;
+                    missing | 1 == 1;
+                }
+            }
+        "#,
+    )
+    .expect_err("unknown operands should not cascade into unrelated type errors");
+
+    assert_has_code(&err, CftErrorCode::UnknownValueName);
+    assert_eq!(
+        err.diagnostics
+            .iter()
+            .filter(|diag| diag.code == CftErrorCode::IndexTypeMismatch)
+            .count(),
+        0,
+        "unknown index operands should not emit index type mismatches"
+    );
+    assert_eq!(
+        err.diagnostics
+            .iter()
+            .filter(|diag| diag.code == CftErrorCode::FunctionArgTypeMismatch)
+            .count(),
+        0,
+        "unknown function operands should not emit function arg mismatches"
+    );
+    assert_eq!(
+        err.diagnostics
+            .iter()
+            .filter(|diag| diag.code == CftErrorCode::FieldAccessOnNonObject)
+            .count(),
+        0,
+        "unknown field bases should not emit field-access errors"
+    );
+    assert_eq!(
+        err.diagnostics
+            .iter()
+            .filter(|diag| diag.code == CftErrorCode::OperatorTypeMismatch)
+            .count(),
+        0,
+        "unknown unary/binary operands should not emit operator mismatches"
+    );
+}
+
+#[test]
+fn type_checker_reports_array_contains_dict_contains_and_matches_arg_edges() {
+    let source = r#"
+        enum Damage { Fire, Ice, }
+        type Item {
+            nums: [int];
+            attrs: {Damage: int};
+            id: string;
+            check {
+                contains(nums, "1");
+                contains(attrs, "Fire");
+                matches(1, ".*");
+            }
+        }
+    "#;
+
+    let err = compile_one(source)
+        .expect_err("wrong contains and matches argument types should fail type checking");
+    assert_has_code(&err, CftErrorCode::FunctionArgTypeMismatch);
+    assert_eq!(
+        err.diagnostics
+            .iter()
+            .filter(|diag| diag.code == CftErrorCode::FunctionArgTypeMismatch)
+            .count(),
+        3
+    );
 }

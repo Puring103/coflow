@@ -94,7 +94,9 @@ fn build_exports_data_and_generates_csharp_for_json_project() {
     assert!(data_dir.join("DropTable.json").exists());
     let game_config =
         std::fs::read_to_string(code_dir.join("GameConfig.cs")).expect("GameConfig.cs");
-    assert!(game_config.contains("namespace Game.Config;"));
+    assert!(game_config
+        .replace("\r\n", "\n")
+        .contains("namespace Game.Config\n{"));
     assert!(
         String::from_utf8_lossy(&output.stdout).contains("Build completed"),
         "stdout: {}",
@@ -626,6 +628,10 @@ fn project_scoped_cli_errors_use_relative_paths_in_message() {
     let _cleanup = TempDirCleanup(root.clone());
     copy_dir_recursive(std::path::Path::new("examples/rpg"), &root).expect("copy example project");
     let output_path = root.join("generated").join("data");
+    let copied_generated = root.join("generated");
+    if copied_generated.exists() {
+        std::fs::remove_dir_all(&copied_generated).expect("remove copied generated outputs");
+    }
     std::fs::create_dir_all(root.join("generated")).expect("create generated dir");
     std::fs::write(&output_path, "not a directory").expect("create blocking file");
 
@@ -815,7 +821,7 @@ fn codegen_csharp_writes_newtonsoft_json_loader() {
 
     let item_reward =
         std::fs::read_to_string(out_dir.join("ItemReward.cs")).expect("ItemReward.cs");
-    assert!(item_reward.contains("public string ItemId { get; init; }"));
+    assert!(item_reward.contains("public string ItemId { get; set; }"));
     assert!(item_reward.contains("public Item Item { get; internal set; }"));
 
     std::fs::remove_dir_all(out_dir).expect("clean output dir");

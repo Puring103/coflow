@@ -18,6 +18,27 @@ sources:
           Elemental Bonus: elemental_bonus
           Upgrade Item ID: upgrade_item_id
           Legacy Power: legacy_power
+      - sheet: Equipment
+        columns:
+          Equipment ID: id
+          Name: name
+          Name Text ID: name_text_id
+          Rarity: rarity
+          Slot: slot
+          Level Requirement: level_requirement
+          Stack Limit: stack_limit
+          Price: price
+          Origin: origin
+          Tags: tags
+          Attributes: attributes
+          Elemental Bonus: elemental_bonus
+          Upgrade Item ID: upgrade_item_id
+          Legacy Power: legacy_power
+          Required Class: required_class
+          Stat Bonus: stat_bonus
+          Allowed Classes: allowed_classes
+          Upgrade Costs: upgrade_costs
+          Set Piece ID: set_piece_id
       - sheet: Skill
         columns:
           Skill ID: id
@@ -28,10 +49,25 @@ sources:
           Tags: tags
           Passive: is_passive
           Follow Up ID: follow_up_id
+          Buff ID: buff_id
           Costs: costs
           Allowed Slots: allowed_slots
           Coefficient: coefficient
           Targeting: targeting
+      - sheet: Buff
+        columns:
+          Buff ID: id
+          Name: name
+          Name Text ID: name_text_id
+          Tags: tags
+          Duration: duration
+          Max Stacks: max_stacks
+          Tick Interval: tick_interval
+          Exclusive Group: exclusive_group
+          Stat Modifiers: stat_modifiers
+          Trigger Chances: trigger_chances
+          Required Element: required_element
+          Source Skill ID: source_skill_id
       - sheet: Monster
         columns:
           Monster ID: id
@@ -58,12 +94,26 @@ sources:
           Currency Curve: currency_curve
           Guaranteed Reward: guaranteed_reward
           Notes: notes
+      - sheet: Stage
+        columns:
+          Stage ID: id
+          Name Text ID: name_text_id
+          Kind: kind
+          Unlock Level: unlock_level
+          Recommended Power: recommended_power
+          Positions: positions
+          Spawns: spawns
+          Drop Table ID: drop_table_id
+          First Clear Reward: first_clear_reward
+          Modifiers: modifiers
       - sheet: Quest
         columns:
           Quest ID: id
           Kind: kind
+          Title Text ID: title_text_id
           Title: title
           Min Level: min_level
+          Stage ID: stage_id
           Target Monster ID: target_monster_id
           Reward Item ID: reward_item_id
           Prerequisites: prerequisites
@@ -71,6 +121,24 @@ sources:
           Reward Preview: reward_preview
           Availability: availability
           Dialogue: dialogue
+      - sheet: Shop
+        columns:
+          Shop ID: id
+          Name Text ID: name_text_id
+          Kind: kind
+          Open Day: open_day
+          Close Day: close_day
+          Stage Gate ID: stage_gate_id
+          Entries: entries
+          Currencies: currencies
+      - sheet: Text
+        columns:
+          Text ID: id
+          ZH-CN: zh_cn
+          EN-US: en_us
+          Context: context
+          Max Length: max_length
+          Tags: tags
 
 outputs:
   data:

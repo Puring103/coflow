@@ -256,3 +256,63 @@ fn diagnostics_from_excel_error(err: &ExcelLoadError) -> Vec<DiagnosticJson> {
         ExcelLoadError::DataModel(diagnostics) => diagnostics_from_excel_checks(diagnostics),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use coflow_data_model::{CfdDiagnostic, CfdErrorCode};
+
+    #[test]
+    fn excel_cell_omits_partial_coordinates_and_handles_multi_letter_columns() {
+        let file = Path::new("data.xlsx");
+        assert_eq!(excel_cell(&ExcelLocation::new(file).with_row(3)), None);
+        assert_eq!(
+            excel_cell(&ExcelLocation::new(file).with_column(Some(27))),
+            None
+        );
+        assert_eq!(
+            excel_cell(&ExcelLocation::new(file).cell(12, 28)),
+            Some("AB12".to_string())
+        );
+    }
+
+    #[test]
+    fn excel_position_saturates_zero_and_defaults_missing_coordinates() {
+        assert_eq!(excel_position(&ExcelLocation::new("data.xlsx")), (0, 0));
+        assert_eq!(
+            excel_position(&ExcelLocation::new("data.xlsx").cell(0, 0)),
+            (0, 0)
+        );
+    }
+
+    #[test]
+    fn excel_diagnostic_without_primary_uses_empty_fallback_location() {
+        let diagnostic = ExcelDiagnostic {
+            source: CfdDiagnostic::error(CfdErrorCode::CheckFailed, "bad check"),
+            primary: None,
+            related: Vec::new(),
+        };
+
+        let json = excel_diagnostic_json(&diagnostic);
+
+        assert_eq!(json.path, "");
+        assert_eq!(json.cell, None);
+        assert_eq!(json.start_line, 0);
+        assert_eq!(json.end_character, 1);
+    }
+
+    #[test]
+    fn excel_related_json_preserves_optional_sheet_cell_and_label() {
+        let related = excel_related_json(
+            &ExcelLocation::new("data.xlsx").sheet("Items").cell(2, 52),
+            Some("duplicate here".to_string()),
+        );
+
+        assert_eq!(related.path, "data.xlsx");
+        assert_eq!(related.sheet.as_deref(), Some("Items"));
+        assert_eq!(related.cell.as_deref(), Some("AZ2"));
+        assert_eq!(related.start_line, 1);
+        assert_eq!(related.start_character, 51);
+        assert_eq!(related.label.as_deref(), Some("duplicate here"));
+    }
+}

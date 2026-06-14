@@ -225,6 +225,71 @@ fn schema_reports_default_errors() {
 }
 
 #[test]
+fn schema_accepts_empty_array_and_object_defaults_only_for_matching_composites() {
+    let schema = compile_one(
+        r#"
+            type Stats { hp: int = 10; }
+            type Item {
+                tags: [string] = [];
+                attrs: {string: int} = {};
+                stats: Stats = {};
+            }
+        "#,
+    )
+    .expect("empty composite defaults should compile for matching fields");
+
+    let item = schema.resolve_type("Item").expect("Item type");
+    assert_eq!(
+        item.fields[0].default,
+        Some(coflow_cft::CftSchemaDefaultValue::EmptyArray)
+    );
+    assert_eq!(
+        item.fields[1].default,
+        Some(coflow_cft::CftSchemaDefaultValue::EmptyObject)
+    );
+    assert_eq!(
+        item.fields[2].default,
+        Some(coflow_cft::CftSchemaDefaultValue::EmptyObject)
+    );
+
+    let err = compile_one(
+        r#"
+            type Bad {
+                number: int = {};
+                words: [string] = {};
+            }
+        "#,
+    )
+    .unwrap_err();
+    assert_has_code(&err, CftErrorCode::DefaultTypeMismatch);
+}
+
+#[test]
+fn schema_reports_enum_default_on_non_enum_and_unknown_enum_names() {
+    let err = compile_one(
+        r#"
+            const Prefix = "item";
+            type Item {
+                from_const: string = Prefix.Common;
+                from_missing: string = Missing.Common;
+            }
+        "#,
+    )
+    .unwrap_err();
+
+    let diagnostics = err
+        .diagnostics
+        .iter()
+        .filter(|diag| diag.code == CftErrorCode::EnumVariantOnNonEnum)
+        .collect::<Vec<_>>();
+    assert_eq!(diagnostics.len(), 2);
+    assert!(
+        diagnostics.iter().any(|diag| !diag.related.is_empty()),
+        "non-enum symbol should include related definition"
+    );
+}
+
+#[test]
 fn schema_reports_parent_field_default_references() {
     let source = r#"
         type Base { base_id: int; }
@@ -244,6 +309,32 @@ fn schema_accepts_explicit_i64_max_enum_value_without_following_auto_variant() {
 
     let enum_schema = container.resolve_enum("Limit").unwrap();
     assert_eq!(enum_schema.variants[0].value, i64::MAX);
+}
+
+#[test]
+fn schema_accepts_zero_flag_value_and_rejects_negative_flag_values() {
+    compile_one(
+        r#"
+            @flag
+            enum Permissions {
+                None = 0,
+                Read = 1,
+                Write = 2,
+            }
+        "#,
+    )
+    .expect("zero and powers of two are valid @flag enum values");
+
+    let err = compile_one(
+        r#"
+            @flag
+            enum Permissions {
+                Invalid = -1,
+            }
+        "#,
+    )
+    .unwrap_err();
+    assert_has_code(&err, CftErrorCode::InvalidFlagEnumValue);
 }
 
 #[test]
@@ -277,6 +368,30 @@ fn schema_rejects_invalid_enum_variant_annotations() {
     )
     .expect_err("invalid variant annotation should fail");
     assert_has_code(&err, CftErrorCode::InvalidAnnotationTarget);
+}
+
+#[test]
+fn schema_rejects_duplicate_annotations_and_invalid_annotation_arguments() {
+    let source = r#"
+        @flag(1)
+        enum Flags { A = 1, }
+
+        type Target { @id id: string; }
+        type Holder {
+            @id
+            @id
+            id: string;
+
+            @ref("Target")
+            target_id: string;
+
+            @display
+            name: string;
+        }
+    "#;
+    let err = compile_one(source).unwrap_err();
+    assert_has_code(&err, CftErrorCode::DuplicateAnnotation);
+    assert_has_code(&err, CftErrorCode::InvalidAnnotationArgument);
 }
 
 /// Regression for B4: the lexer used to parse the magnitude as `i64`, so
