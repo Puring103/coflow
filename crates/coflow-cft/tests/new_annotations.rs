@@ -209,6 +209,74 @@ fn gen_as_enum_on_string_field_requires_declared_enum() {
 }
 
 #[test]
+fn gen_as_enum_rejects_id_fields_non_string_fields_and_invalid_names() {
+    let err = compile_one(
+        r#"
+            type Item {
+                @IdAsEnum("ItemId")
+                @id
+                id: string;
+            }
+            type Modifier {
+                @id
+                id: string;
+                @GenAsEnum("ItemId")
+                id_alias: string;
+                @GenAsEnum("ItemId")
+                bad_number: int;
+                @GenAsEnum("class")
+                keyword_name: string;
+            }
+        "#,
+    )
+    .expect_err("@GenAsEnum should reject invalid field and enum-name edges");
+
+    assert_has_code(&err, CftErrorCode::InvalidAnnotatedFieldType);
+    assert_has_code(&err, CftErrorCode::InvalidAnnotationArgument);
+}
+
+#[test]
+fn gen_as_enum_rejects_use_on_id_field_even_when_declared_enum_exists() {
+    let err = compile_one(
+        r#"
+            type Item {
+                @IdAsEnum("ItemId")
+                @id
+                id: string;
+            }
+            type Modifier {
+                @GenAsEnum("ItemId")
+                @id
+                id: string;
+            }
+        "#,
+    )
+    .expect_err("@GenAsEnum should not be accepted on an @id field");
+
+    assert_has_code(&err, CftErrorCode::InvalidAnnotatedFieldType);
+}
+
+#[test]
+fn gen_as_enum_accepts_nullable_string_fields() {
+    compile_one(
+        r#"
+            type Item {
+                @IdAsEnum("ItemId")
+                @id
+                id: string;
+            }
+            type Modifier {
+                @id
+                id: string;
+                @GenAsEnum("ItemId")
+                maybe_item: string?;
+            }
+        "#,
+    )
+    .expect("@GenAsEnum should allow string? fields");
+}
+
+#[test]
 fn id_as_enum_on_non_id_field_is_rejected() {
     let err = compile_one(
         r#"
@@ -268,6 +336,53 @@ fn key_as_enum_rejects_invalid_csharp_enum_name() {
     )
     .expect_err("@IdAsEnum enum name must be a C# identifier");
     assert_has_code(&err, CftErrorCode::InvalidAnnotationArgument);
+}
+
+#[test]
+fn key_as_enum_rejects_empty_keyword_and_non_ascii_enum_names() {
+    for enum_name in ["", "class", "物品Id"] {
+        let source = format!(
+            r#"
+                type Item {{
+                    @IdAsEnum("{enum_name}")
+                    @id
+                    id: string;
+                }}
+            "#
+        );
+        let err = compile_one(&source).expect_err("invalid C# enum name should fail");
+        assert_has_code(&err, CftErrorCode::InvalidAnnotationArgument);
+    }
+}
+
+#[test]
+fn id_as_enum_and_gen_as_enum_require_single_string_argument() {
+    let err = compile_one(
+        r#"
+            type Item {
+                @IdAsEnum(ItemId)
+                @id
+                id: string;
+            }
+            type Modifier {
+                @id
+                id: string;
+                @GenAsEnum(1)
+                item: string;
+            }
+        "#,
+    )
+    .expect_err("generated enum annotations require string arguments");
+
+    let invalid_arg_count = err
+        .diagnostics
+        .iter()
+        .filter(|diag| diag.code == CftErrorCode::InvalidAnnotationArgument)
+        .count();
+    assert!(
+        invalid_arg_count >= 2,
+        "expected both annotations to reject argument shape, got {invalid_arg_count}"
+    );
 }
 
 #[test]

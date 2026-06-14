@@ -162,3 +162,46 @@ fn parser_requires_check_to_be_last_and_unique() {
     let duplicate = add_source("type A { check { true; } check { true; } }").unwrap_err();
     assert_has_code(&duplicate, CftErrorCode::DuplicateCheckBlock);
 }
+
+#[test]
+fn parser_reports_unterminated_and_invalid_annotation_edges() {
+    let unterminated = add_source("@display(").unwrap_err();
+    assert_has_code(&unterminated, CftErrorCode::InvalidAnnotationSyntax);
+
+    let invalid_arg = add_source("@display([1]) type A {}").unwrap_err();
+    assert_has_code(&invalid_arg, CftErrorCode::InvalidAnnotationSyntax);
+
+    let overflow_arg = add_source("@display(9223372036854775808) type A {}").unwrap_err();
+    assert_has_code(&overflow_arg, CftErrorCode::InvalidIntLiteral);
+}
+
+#[test]
+fn parser_reports_default_and_check_block_boundary_errors() {
+    let array_default = add_source("type A { xs: [int] = [1,").unwrap_err();
+    assert_has_code(&array_default, CftErrorCode::UnexpectedEof);
+
+    let object_default = add_source("type A { child: A = { child: null,").unwrap_err();
+    assert_has_code(&object_default, CftErrorCode::UnexpectedEof);
+
+    let check_block = add_source("type A { check { true;").unwrap_err();
+    assert_has_code(&check_block, CftErrorCode::UnexpectedEof);
+
+    let negative_default = add_source("type A { value: int = -true; }").unwrap_err();
+    assert_has_code(&negative_default, CftErrorCode::InvalidDefaultExpression);
+}
+
+#[test]
+fn parser_rejects_invalid_check_expression_postfix_and_signed_int_edges() {
+    let non_name_call = add_source("type A { check { (true)(false); } }").unwrap_err();
+    assert_has_code(&non_name_call, CftErrorCode::UnexpectedToken);
+
+    let unterminated_call = add_source("type A { check { len(1; } }").unwrap_err();
+    assert_has_code(&unterminated_call, CftErrorCode::ExpectedToken);
+
+    let check_int_overflow =
+        add_source("type A { check { -9223372036854775809 == 0; } }").unwrap_err();
+    assert_has_code(&check_int_overflow, CftErrorCode::InvalidIntLiteral);
+
+    let enum_non_int_value = add_source("enum E { A = 1.5, }").unwrap_err();
+    assert_has_code(&enum_non_int_value, CftErrorCode::ExpectedToken);
+}

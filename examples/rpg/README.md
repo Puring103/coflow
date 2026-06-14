@@ -9,6 +9,19 @@ It includes:
 - Excel data in `data/rpg.xlsx`.
 - Project configuration in `coflow.yaml`.
 - Declared JSON data and C# code outputs.
+- A workbook builder script in `scripts/build-rpg-workbook.mjs`.
+
+The workbook contains a validation-heavy RPG slice:
+
+- `Item`, `Equipment`, `Skill`, `Buff`, `Monster`, `DropTable`, `Stage`, `Quest`,
+  `Shop`, and `Text` tables.
+- Field-level checks for IDs, ranges, names, prices, percentages, coordinates, and stat caps.
+- Collection checks for unique arrays, dictionary key/value rules, drop weight sums, and matched
+  reward/weight lengths.
+- Conditional checks for active/passive skills, timed/passive buffs, raid stages, raid quests, and
+  raid-gated shops.
+- Cross-table checks for equipment text keys, skill buffs, monster skills/items, stage drops,
+  quest stages/targets, shop quest gates, and localized text references.
 
 The schema demonstrates:
 
@@ -39,3 +52,12 @@ Export JSON data and generate C# runtime loading code:
 cargo run --quiet -p coflow -- export json examples/rpg
 cargo run --quiet -p coflow -- codegen csharp examples/rpg
 ```
+
+Regenerate the sample workbook after changing the table data:
+
+```powershell
+node examples/rpg/scripts/build-rpg-workbook.mjs
+```
+
+The script expects `@oai/artifact-tool` to be available through local Node module
+resolution.
