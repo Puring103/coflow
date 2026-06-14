@@ -29,7 +29,10 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 
-pub use ir::{CsharpCodegenOptions, CsharpDataFormat, CsharpKeyAsEnumVariant};
+pub use ir::{
+    preflight_csharp_codegen, CsharpCodegenDiagnostic, CsharpCodegenOptions, CsharpDataFormat,
+    CsharpKeyAsEnumVariant,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneratedFile {
@@ -870,6 +873,53 @@ mod tests {
             &err.to_string(),
             "generated C# member name `FooBar` collides",
         )?;
+        Ok(())
+    }
+
+    #[test]
+    fn codegen_preflight_collects_multiple_naming_diagnostics() -> Result<(), String> {
+        let schema = compile_schema(
+            r"
+                type FooBar { value: int; }
+                type Foo_Bar {
+                    foo_bar: int;
+                    fooBar: int;
+                }
+            ",
+        )?;
+
+        let diagnostics = preflight_csharp_codegen(
+            &schema,
+            &CsharpCodegenOptions::new("Game.1Bad"),
+            BTreeMap::new(),
+        );
+
+        let messages = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.message.as_str())
+            .collect::<Vec<_>>();
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.contains("invalid C# namespace `Game.1Bad`")),
+            "messages: {messages:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| { message.contains("generated C# file name `FooBar.cs` collides") }),
+            "messages: {messages:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| { message.contains("generated C# member name `FooBar` collides") }),
+            "messages: {messages:?}"
+        );
+        assert!(
+            diagnostics.len() >= 3,
+            "expected at least three diagnostics, got {messages:?}"
+        );
         Ok(())
     }
 

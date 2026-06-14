@@ -408,6 +408,37 @@ fn check_runner_reports_index_and_empty_minmax_eval_errors() {
 }
 
 #[test]
+fn hard_stop_in_one_check_block_does_not_skip_later_blocks() {
+    let schema = compile_schema(
+        r#"
+            abstract type Base {
+                xs: [int];
+                check { xs[0] > 0; }
+            }
+
+            type Item : Base {
+                value: int;
+                check { value > 0; }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "Item",
+        [
+            ("xs", CfdInputValue::Array(Vec::new())),
+            ("value", CfdInputValue::from(0_i64)),
+        ],
+    );
+    let model = builder.build().expect("data model should build");
+    let err = model.run_checks(&schema).expect_err("checks should fail");
+
+    assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
+    assert_has_code(&err, CfdErrorCode::CheckFailed);
+}
+
+#[test]
 fn check_runner_reports_empty_minmax_eval_errors() {
     let schema = compile_schema(
         r#"

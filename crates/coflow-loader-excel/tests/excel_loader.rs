@@ -9,9 +9,7 @@
 
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdErrorCode, CfdIdValue, CfdValue};
-use coflow_loader_excel::{
-    load_excel, load_excel_model, ExcelDiagnostic, ExcelLoadError, ExcelSheet, ExcelSource,
-};
+use coflow_loader_excel::{load_excel, load_excel_model, ExcelDiagnostic, ExcelSheet, ExcelSource};
 use rust_xlsxwriter::{ExcelDateTime, Format, Formula, Workbook, XlsxError};
 use std::fs::File;
 use std::io::{Read, Write};
@@ -173,11 +171,15 @@ fn reports_missing_sheet_before_read_sheet_errors() -> TestResult {
         return Err("expected missing sheet error".to_string());
     };
 
-    let ExcelLoadError::MissingSheet { file, sheet } = err else {
-        return Err(format!("expected missing sheet error, got {err:?}"));
-    };
-    assert_eq!(file, path);
-    assert_eq!(sheet, "Missing");
+    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-SHEET")?;
+    assert!(diagnostic.message.contains("missing sheet `Missing`"));
+    let location = &diagnostic
+        .primary
+        .as_ref()
+        .ok_or_else(|| "expected primary location".to_string())?
+        .location;
+    assert_eq!(location.file, path);
+    assert_eq!(location.sheet.as_deref(), Some("Missing"));
     Ok(())
 }
 
@@ -216,13 +218,13 @@ fn reports_cell_parse_location_for_bad_cell_values() -> TestResult {
         return Err("expected cell parse error".to_string());
     };
 
-    let ExcelLoadError::CellParse {
-        location, field, ..
-    } = err
-    else {
-        return Err(format!("expected cell parse error, got {err:?}"));
-    };
-    assert_eq!(field, "level");
+    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "CELL-TypeMismatch")?;
+    assert!(diagnostic.message.contains("Item.level"));
+    let location = &diagnostic
+        .primary
+        .as_ref()
+        .ok_or_else(|| "expected primary location".to_string())?
+        .location;
     assert_eq!(location.sheet.as_deref(), Some("Item"));
     assert_eq!(location.row, Some(2));
     assert_eq!(location.column, Some(2));
@@ -264,13 +266,20 @@ fn rejects_excel_error_cells() -> TestResult {
         return Err("expected unsupported cell value".to_string());
     };
 
-    let ExcelLoadError::UnsupportedCellValue { location, kind } = err else {
-        return Err(format!("expected unsupported cell value, got {err:?}"));
-    };
+    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-CELL")?;
+    let location = &diagnostic
+        .primary
+        .as_ref()
+        .ok_or_else(|| "expected primary location".to_string())?
+        .location;
     assert_eq!(location.sheet.as_deref(), Some("Item"));
     assert_eq!(location.row, Some(2));
     assert_eq!(location.column, Some(2));
-    assert!(kind.contains("Error"), "expected Error kind, got {kind}");
+    assert!(
+        diagnostic.message.contains("Error"),
+        "expected Error kind, got {}",
+        diagnostic.message
+    );
     Ok(())
 }
 
@@ -314,15 +323,19 @@ fn rejects_native_excel_datetime_cells() -> TestResult {
         return Err("expected unsupported cell value".to_string());
     };
 
-    let ExcelLoadError::UnsupportedCellValue { location, kind } = err else {
-        return Err(format!("expected unsupported cell value, got {err:?}"));
-    };
+    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-CELL")?;
+    let location = &diagnostic
+        .primary
+        .as_ref()
+        .ok_or_else(|| "expected primary location".to_string())?
+        .location;
     assert_eq!(location.sheet.as_deref(), Some("Item"));
     assert_eq!(location.row, Some(2));
     assert_eq!(location.column, Some(2));
     assert!(
-        kind.contains("DateTime"),
-        "expected DateTime kind, got {kind}"
+        diagnostic.message.contains("DateTime"),
+        "expected DateTime kind, got {}",
+        diagnostic.message
     );
     Ok(())
 }
@@ -381,15 +394,19 @@ fn rejects_typed_iso_excel_datetime_cells() -> TestResult {
         return Err("expected unsupported cell value".to_string());
     };
 
-    let ExcelLoadError::UnsupportedCellValue { location, kind } = err else {
-        return Err(format!("expected unsupported cell value, got {err:?}"));
-    };
+    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-CELL")?;
+    let location = &diagnostic
+        .primary
+        .as_ref()
+        .ok_or_else(|| "expected primary location".to_string())?
+        .location;
     assert_eq!(location.sheet.as_deref(), Some("Item"));
     assert_eq!(location.row, Some(2));
     assert_eq!(location.column, Some(2));
     assert!(
-        kind.contains("DateTimeIso"),
-        "expected DateTimeIso kind, got {kind}"
+        diagnostic.message.contains("DateTimeIso"),
+        "expected DateTimeIso kind, got {}",
+        diagnostic.message
     );
     Ok(())
 }
@@ -629,13 +646,13 @@ fn rejects_unknown_header_columns_before_model_build() -> TestResult {
         return Err("expected unknown column".to_string());
     };
 
-    let ExcelLoadError::UnknownColumn {
-        field, location, ..
-    } = err
-    else {
-        return Err(format!("expected unknown column, got {err:?}"));
-    };
-    assert_eq!(field, "extra");
+    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-COLUMN")?;
+    assert!(diagnostic.message.contains("unknown field `extra`"));
+    let location = &diagnostic
+        .primary
+        .as_ref()
+        .ok_or_else(|| "expected primary location".to_string())?
+        .location;
     assert_eq!(location.row, Some(1));
     assert_eq!(location.column, Some(2));
     Ok(())
@@ -682,11 +699,8 @@ fn maps_duplicate_id_diagnostics_to_source_cells() -> TestResult {
     let Err(err) = load_excel_model(&schema, &[source]) else {
         return Err("expected data model diagnostics".to_string());
     };
-    let ExcelLoadError::DataModel(diagnostics) = err else {
-        return Err(format!("expected data model diagnostics, got {err:?}"));
-    };
 
-    let duplicate = diagnostic_with_code(&diagnostics.diagnostics, CfdErrorCode::DuplicateId)?;
+    let duplicate = diagnostic_with_code(&err.diagnostics, CfdErrorCode::DuplicateId)?;
     assert_eq!(
         duplicate
             .primary
@@ -742,12 +756,8 @@ fn maps_missing_required_field_diagnostics_to_source_cells() -> TestResult {
     let Err(err) = load_excel_model(&schema, &[source]) else {
         return Err("expected data model diagnostics".to_string());
     };
-    let ExcelLoadError::DataModel(diagnostics) = err else {
-        return Err(format!("expected data model diagnostics, got {err:?}"));
-    };
 
-    let missing =
-        diagnostic_with_code(&diagnostics.diagnostics, CfdErrorCode::MissingRequiredField)?;
+    let missing = diagnostic_with_code(&err.diagnostics, CfdErrorCode::MissingRequiredField)?;
     assert_eq!(
         missing
             .primary
@@ -799,14 +809,15 @@ fn maps_multiple_invalid_input_rows_to_their_original_excel_rows() -> TestResult
     let Err(err) = load_excel_model(&schema, &[source]) else {
         return Err("expected data model diagnostics".to_string());
     };
-    let ExcelLoadError::DataModel(diagnostics) = err else {
-        return Err(format!("expected data model diagnostics, got {err:?}"));
-    };
 
-    let rows: Vec<usize> = diagnostics
+    let rows: Vec<usize> = err
         .diagnostics
         .iter()
-        .filter(|diag| diag.source.code == CfdErrorCode::MissingRequiredField)
+        .filter(|diag| {
+            diag.source
+                .as_ref()
+                .is_some_and(|source| source.code == CfdErrorCode::MissingRequiredField)
+        })
         .filter_map(|diag| diag.primary.as_ref()?.location.row)
         .collect();
     assert_eq!(rows, vec![2, 3]);
@@ -908,9 +919,13 @@ fn rejects_empty_sheets_and_duplicate_mapped_columns() -> TestResult {
     let Err(err) = load_excel_model(&schema, &[empty_source]) else {
         return Err("expected empty sheet error".to_string());
     };
-    let ExcelLoadError::EmptySheet { location } = err else {
-        return Err(format!("expected empty sheet error, got {err:?}"));
-    };
+    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-SHEET")?;
+    assert!(diagnostic.message.contains("sheet is empty"));
+    let location = &diagnostic
+        .primary
+        .as_ref()
+        .ok_or_else(|| "expected primary location".to_string())?
+        .location;
     assert_eq!(location.sheet.as_deref(), Some("Sheet1"));
 
     let duplicate_path = temp_xlsx_path("duplicate-column");
@@ -942,18 +957,15 @@ fn rejects_empty_sheets_and_duplicate_mapped_columns() -> TestResult {
     let Err(err) = load_excel_model(&schema, &[duplicate_source]) else {
         return Err("expected duplicate mapped column error".to_string());
     };
-    let ExcelLoadError::DuplicateFieldColumn {
-        field,
-        first_column,
-        duplicate_column,
-        location,
-    } = err
-    else {
-        return Err(format!("expected duplicate mapped column, got {err:?}"));
-    };
-    assert_eq!(field, "id");
-    assert_eq!(first_column, "id");
-    assert_eq!(duplicate_column, "alias");
+    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-COLUMN")?;
+    assert!(diagnostic.message.contains("field `id`"));
+    assert!(diagnostic.message.contains("`id`"));
+    assert!(diagnostic.message.contains("`alias`"));
+    let location = &diagnostic
+        .primary
+        .as_ref()
+        .ok_or_else(|| "expected primary location".to_string())?
+        .location;
     assert_eq!(location.row, Some(1));
     assert_eq!(location.column, Some(2));
     Ok(())
@@ -1000,19 +1012,35 @@ fn rejects_expand_headers_without_enough_adjacent_columns() -> TestResult {
     let Err(err) = load_excel_model(&schema, &[source]) else {
         return Err("expected @expand header width error".to_string());
     };
-    let ExcelLoadError::UnknownColumn {
-        field, location, ..
-    } = err
-    else {
-        return Err(format!(
-            "expected @expand unknown column error, got {err:?}"
-        ));
-    };
-    assert!(field.contains("@expand"));
-    assert!(field.contains("temperature"));
+    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-COLUMN")?;
+    assert!(diagnostic.message.contains("@expand"));
+    assert!(diagnostic.message.contains("temperature"));
+    let location = &diagnostic
+        .primary
+        .as_ref()
+        .ok_or_else(|| "expected primary location".to_string())?
+        .location;
     assert_eq!(location.row, Some(1));
     assert_eq!(location.column, Some(2));
     Ok(())
+}
+
+fn diagnostic_with_string_code<'a>(
+    diagnostics: &'a [ExcelDiagnostic],
+    code: &str,
+) -> Result<&'a ExcelDiagnostic, String> {
+    diagnostics
+        .iter()
+        .find(|diag| diag.code == code)
+        .ok_or_else(|| {
+            format!(
+                "expected {code}, got {:?}",
+                diagnostics
+                    .iter()
+                    .map(|diag| diag.code.as_str())
+                    .collect::<Vec<_>>()
+            )
+        })
 }
 
 fn diagnostic_with_code(
@@ -1021,13 +1049,17 @@ fn diagnostic_with_code(
 ) -> Result<&ExcelDiagnostic, String> {
     diagnostics
         .iter()
-        .find(|diag| diag.source.code == code)
+        .find(|diag| {
+            diag.source
+                .as_ref()
+                .is_some_and(|source| source.code == code)
+        })
         .ok_or_else(|| {
             format!(
                 "expected {code}, got {:?}",
                 diagnostics
                     .iter()
-                    .map(|diag| diag.source.code)
+                    .filter_map(|diag| diag.source.as_ref().map(|source| source.code))
                     .collect::<Vec<_>>()
             )
         })
