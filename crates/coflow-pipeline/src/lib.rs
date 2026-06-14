@@ -17,9 +17,10 @@ mod excel;
 mod schema;
 
 use artifacts::{
-    configured_data_format, configured_data_output, output_dir, required_code_output,
-    required_data_output, write_csharp_files, write_data_tables,
+    configured_data_format, configured_data_output, output_dir, preflight_csharp_files,
+    required_code_output, required_data_output, write_csharp_files, write_data_tables,
 };
+use coflow_codegen_csharp_json::CsharpCodegenDiagnostic;
 use coflow_codegen_csharp_json::CsharpKeyAsEnumVariant;
 use coflow_project::{DiagnosticJson, Project};
 use excel::load_project_excel;
@@ -137,7 +138,11 @@ pub struct BuildReport {
 /// artifact errors. Schema, Excel, data-model, and check diagnostics are
 /// returned as `PipelineOutcome::Diagnostics`.
 pub fn check_project(project: &Project) -> Result<PipelineOutcome<CheckReport>, String> {
-    project.validate_for_data()?;
+    let mut diagnostics = project.schema_diagnostics();
+    diagnostics.extend(project.data_diagnostics());
+    if !diagnostics.is_empty() {
+        return Ok(PipelineOutcome::Diagnostics(diagnostics));
+    }
     let schema = match compile_project_schema(project)? {
         Ok(schema) => schema,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
@@ -160,7 +165,14 @@ pub fn build_project(
     project: &Project,
     options: BuildOptions<'_>,
 ) -> Result<PipelineOutcome<BuildReport>, String> {
-    project.validate_for_data()?;
+    let mut diagnostics = project.schema_diagnostics();
+    diagnostics.extend(project.data_diagnostics());
+    if let Err(message) = configured_data_output(project, "coflow build") {
+        diagnostics.push(DiagnosticJson::project(message));
+    }
+    if !diagnostics.is_empty() {
+        return Ok(PipelineOutcome::Diagnostics(diagnostics));
+    }
     let (data_output, data_format) = configured_data_output(project, "coflow build")?;
     let schema = match compile_project_schema(project)? {
         Ok(schema) => schema,
@@ -172,6 +184,10 @@ pub fn build_project(
     };
 
     let data_dir = output_dir(project, data_output, options.data_out_dir);
+    let artifact_diagnostics = artifact_diagnostics_for_dirs([&data_dir]);
+    if !artifact_diagnostics.is_empty() {
+        return Ok(PipelineOutcome::Diagnostics(artifact_diagnostics));
+    }
     write_data_tables(&schema, &load_output, data_format, &data_dir)?;
     let data = ExportReport {
         format: data_format,
@@ -190,6 +206,15 @@ pub fn build_project(
             .namespace
             .or(code_output.namespace.as_deref())
             .unwrap_or("Game.Config");
+        let codegen_diagnostics =
+            diagnostics_from_codegen_preflight(preflight_csharp_files(&schema, namespace));
+        if !codegen_diagnostics.is_empty() {
+            return Ok(PipelineOutcome::Diagnostics(codegen_diagnostics));
+        }
+        let artifact_diagnostics = artifact_diagnostics_for_dirs([&code_dir]);
+        if !artifact_diagnostics.is_empty() {
+            return Ok(PipelineOutcome::Diagnostics(artifact_diagnostics));
+        }
         let key_as_enum_ids = collect_key_as_enum_ids(&schema, &load_output.model);
         let key_as_enum_variants = merge_key_as_enum_lockfile(&code_dir, key_as_enum_ids)?;
         write_csharp_files(
@@ -223,12 +248,16 @@ pub fn export_project_data(
     format: DataFormat,
     options: ExportOptions<'_>,
 ) -> Result<PipelineOutcome<ExportReport>, String> {
-    project.validate_for_data()?;
-    let output = required_data_output(
-        project,
-        format,
-        &format!("coflow export {}", format.as_config_value()),
-    )?;
+    let mut diagnostics = project.schema_diagnostics();
+    diagnostics.extend(project.data_diagnostics());
+    let command = format!("coflow export {}", format.as_config_value());
+    if let Err(message) = required_data_output(project, format, &command) {
+        diagnostics.push(DiagnosticJson::project(message));
+    }
+    if !diagnostics.is_empty() {
+        return Ok(PipelineOutcome::Diagnostics(diagnostics));
+    }
+    let output = required_data_output(project, format, &command)?;
     let dir = output_dir(project, output, options.out_dir);
     let schema = match compile_project_schema(project)? {
         Ok(schema) => schema,
@@ -238,6 +267,10 @@ pub fn export_project_data(
         Ok(output) => output,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
+    let artifact_diagnostics = artifact_diagnostics_for_dirs([&dir]);
+    if !artifact_diagnostics.is_empty() {
+        return Ok(PipelineOutcome::Diagnostics(artifact_diagnostics));
+    }
     write_data_tables(&schema, &load_output, format, &dir)?;
     Ok(PipelineOutcome::Success(ExportReport { format, dir }))
 }
@@ -254,7 +287,11 @@ pub fn generate_project_code(
     target: CodegenTarget,
     options: CodegenOptions<'_>,
 ) -> Result<PipelineOutcome<CodegenReport>, String> {
-    project.validate_for_codegen()?;
+    let mut diagnostics = project.schema_diagnostics();
+    diagnostics.extend(project.codegen_diagnostics());
+    if !diagnostics.is_empty() {
+        return Ok(PipelineOutcome::Diagnostics(diagnostics));
+    }
     let output = required_code_output(project, target, "coflow codegen csharp")?;
     let data_format = configured_data_format(project, "coflow codegen csharp")?;
     let dir = output_dir(project, output, options.out_dir);
@@ -266,10 +303,44 @@ pub fn generate_project_code(
         Ok(schema) => schema,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
+    let codegen_diagnostics =
+        diagnostics_from_codegen_preflight(preflight_csharp_files(&schema, namespace));
+    if !codegen_diagnostics.is_empty() {
+        return Ok(PipelineOutcome::Diagnostics(codegen_diagnostics));
+    }
+    let artifact_diagnostics = artifact_diagnostics_for_dirs([&dir]);
+    if !artifact_diagnostics.is_empty() {
+        return Ok(PipelineOutcome::Diagnostics(artifact_diagnostics));
+    }
     let key_as_enum_ids = collect_declared_key_as_enum_ids(&schema);
     let key_as_enum_variants = merge_key_as_enum_lockfile(&dir, key_as_enum_ids)?;
     write_csharp_files(&schema, data_format, namespace, &dir, key_as_enum_variants)?;
     Ok(PipelineOutcome::Success(CodegenReport { target, dir }))
+}
+
+fn artifact_diagnostics_for_dirs<'a>(
+    dirs: impl IntoIterator<Item = &'a PathBuf>,
+) -> Vec<DiagnosticJson> {
+    dirs.into_iter()
+        .filter(|dir| dir.exists() && !dir.is_dir())
+        .map(|dir| {
+            DiagnosticJson::artifact(format!(
+                "output dir `{}` already exists and is not a directory",
+                dir.display()
+            ))
+        })
+        .collect()
+}
+
+fn diagnostics_from_codegen_preflight(
+    diagnostics: Vec<CsharpCodegenDiagnostic>,
+) -> Vec<DiagnosticJson> {
+    diagnostics
+        .into_iter()
+        .map(|diagnostic| {
+            DiagnosticJson::codegen(diagnostic.code, diagnostic.stage, diagnostic.message)
+        })
+        .collect()
 }
 
 fn collect_declared_key_as_enum_ids(

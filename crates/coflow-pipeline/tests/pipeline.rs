@@ -82,9 +82,12 @@ outputs:
     .expect("write config");
     let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
 
-    let err = check_project(&project).expect_err("missing source should be validated first");
+    let outcome = check_project(&project).expect("missing source diagnostics");
 
-    assert!(err.contains("sources[0].file `data/missing.xlsx` does not exist"));
+    assert_diagnostic_message_contains(
+        outcome,
+        "sources[0].file `data/missing.xlsx` does not exist",
+    );
 }
 
 #[test]
@@ -220,13 +223,13 @@ fn generate_project_code_reports_missing_or_incompatible_outputs() {
             code: None,
         },
     );
-    let err = generate_project_code(
+    let outcome = generate_project_code(
         &missing_code,
         CodegenTarget::Csharp,
         CodegenOptions::default(),
     )
-    .expect_err("missing code output should fail before codegen");
-    assert!(err.contains("missing outputs.code"));
+    .expect("missing code output diagnostics");
+    assert_diagnostic_message_contains(outcome, "missing outputs.code");
 
     let (missing_data, _missing_data_cleanup) = schema_only_project_with_outputs(
         "coflow-pipeline-codegen-missing-data-output",
@@ -235,13 +238,13 @@ fn generate_project_code_reports_missing_or_incompatible_outputs() {
             code: Some(output_config("csharp", "generated/csharp", None)),
         },
     );
-    let err = generate_project_code(
+    let outcome = generate_project_code(
         &missing_data,
         CodegenTarget::Csharp,
         CodegenOptions::default(),
     )
-    .expect_err("missing data output should fail before codegen");
-    assert!(err.contains("missing outputs.data"));
+    .expect("missing data output diagnostics");
+    assert_diagnostic_message_contains(outcome, "missing outputs.data");
 }
 
 #[test]
@@ -254,10 +257,13 @@ fn export_project_data_requires_matching_configured_format() {
         },
     );
 
-    let err = export_project_data(&project, DataFormat::Messagepack, ExportOptions::default())
-        .expect_err("messagepack export should reject json output config");
+    let outcome = export_project_data(&project, DataFormat::Messagepack, ExportOptions::default())
+        .expect("messagepack export diagnostics");
 
-    assert!(err.contains("outputs.data.type is `json`; required `messagepack`"));
+    assert_diagnostic_message_contains(
+        outcome,
+        "outputs.data.type is `json`; required `messagepack`",
+    );
 }
 
 #[test]
@@ -273,9 +279,9 @@ fn build_project_reports_missing_data_output_and_wrong_code_output_type() {
             )),
         },
     );
-    let err = build_project(&missing_data, BuildOptions::default())
-        .expect_err("build should require data output");
-    assert!(err.contains("missing outputs.data"));
+    let outcome =
+        build_project(&missing_data, BuildOptions::default()).expect("missing data diagnostics");
+    assert_diagnostic_message_contains(outcome, "missing outputs.data");
 
     let (wrong_code_type, _wrong_code_type_cleanup) = project_with_unvalidated_outputs(
         "coflow-pipeline-build-wrong-code-output-type",
@@ -284,9 +290,9 @@ fn build_project_reports_missing_data_output_and_wrong_code_output_type() {
             code: Some(output_config("java", "generated/java", Some("Game.Config"))),
         },
     );
-    let err = build_project(&wrong_code_type, BuildOptions::default())
-        .expect_err("build should reject non-csharp code output after data export setup");
-    assert!(err.contains("outputs.code.type is `java`; expected `csharp`"));
+    let outcome =
+        build_project(&wrong_code_type, BuildOptions::default()).expect("wrong code diagnostics");
+    assert_diagnostic_message_contains(outcome, "outputs.code.type is `java`; expected `csharp`");
 }
 
 #[test]
@@ -337,6 +343,93 @@ outputs:
 }
 
 #[test]
+fn codegen_preflight_reports_multiple_diagnostics_before_lockfile_or_writes() {
+    let root = temp_project_dir("coflow-pipeline-codegen-preflight");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("generated").join("csharp")).expect("create code dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        r#"
+            type FooBar { value: int; }
+            type Foo_Bar {
+                @IdAsEnum("GeneId")
+                @id
+                id: string;
+                foo_bar: int;
+                fooBar: int;
+            }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+outputs:
+  data:
+    type: json
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Game.1Bad
+",
+    )
+    .expect("write config");
+    std::fs::write(
+        root.join("generated")
+            .join("csharp")
+            .join("coflow.enum.lock.json"),
+        "{bad json",
+    )
+    .expect("write malformed lockfile");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+
+    let outcome = generate_project_code(&project, CodegenTarget::Csharp, CodegenOptions::default())
+        .expect("codegen preflight diagnostics should not read malformed lockfile");
+
+    let PipelineOutcome::Diagnostics(diagnostics) = outcome else {
+        panic!("expected codegen diagnostics");
+    };
+    let messages = diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.message.as_str())
+        .collect::<Vec<_>>();
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("invalid C# namespace `Game.1Bad`")),
+        "messages: {messages:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("generated C# file name `FooBar.cs` collides")),
+        "messages: {messages:?}"
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("generated C# member name `FooBar` collides")),
+        "messages: {messages:?}"
+    );
+    assert!(!root
+        .join("generated")
+        .join("csharp")
+        .join("GameConfig.cs")
+        .exists());
+    assert_eq!(
+        std::fs::read_to_string(
+            root.join("generated")
+                .join("csharp")
+                .join("coflow.enum.lock.json")
+        )
+        .expect("lockfile should remain readable"),
+        "{bad json"
+    );
+}
+
+#[test]
 fn check_project_excel_open_diagnostic_contains_file_path() {
     let root = temp_project_dir("coflow-pipeline-excel-open-path");
     let _cleanup = TempDirCleanup(root.clone());
@@ -384,10 +477,13 @@ fn export_project_data_requires_excel_sources() {
     write_project_with_missing_excel_source(&root, false);
     let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
 
-    let err = export_project_data(&project, DataFormat::Json, ExportOptions { out_dir: None })
-        .expect_err("missing source should be a stage validation error");
+    let outcome = export_project_data(&project, DataFormat::Json, ExportOptions { out_dir: None })
+        .expect("missing source diagnostics");
 
-    assert!(err.contains("sources[0].file `data/missing.xlsx` does not exist"));
+    assert_diagnostic_message_contains(
+        outcome,
+        "sources[0].file `data/missing.xlsx` does not exist",
+    );
 }
 
 #[test]
@@ -511,7 +607,7 @@ fn build_project_reports_data_output_path_that_is_existing_file() {
     let data_out_file = root.join("not-a-dir");
     std::fs::write(&data_out_file, "already a file").expect("write output collision");
 
-    let err = build_project(
+    let outcome = build_project(
         &project,
         BuildOptions {
             data_out_dir: Some(data_out_file.as_path()),
@@ -519,10 +615,19 @@ fn build_project_reports_data_output_path_that_is_existing_file() {
             namespace: None,
         },
     )
-    .expect_err("file output path should fail when creating data dir");
+    .expect("file output path should return artifact diagnostics");
 
-    assert!(err.contains("failed to create output dir"));
-    assert!(err.contains("not-a-dir"));
+    let PipelineOutcome::Diagnostics(diagnostics) = outcome else {
+        panic!("expected artifact diagnostics");
+    };
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "ARTIFACT-001"
+                && diagnostic.message.contains("not-a-dir")),
+        "diagnostics: {diagnostics:?}"
+    );
+    assert!(!data_out_file.join("Item.json").exists());
 }
 
 #[test]
@@ -966,6 +1071,18 @@ fn output_config(output_type: &str, dir: &str, namespace: Option<&str>) -> Outpu
         dir: PathBuf::from(dir),
         namespace: namespace.map(str::to_string),
     }
+}
+
+fn assert_diagnostic_message_contains<T>(outcome: PipelineOutcome<T>, expected: &str) {
+    let PipelineOutcome::Diagnostics(diagnostics) = outcome else {
+        panic!("expected diagnostics containing `{expected}`");
+    };
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains(expected)),
+        "missing `{expected}` in diagnostics: {diagnostics:?}"
+    );
 }
 
 fn write_key_as_enum_project(

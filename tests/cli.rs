@@ -200,6 +200,117 @@ fn config_validation_rejects_unknown_fields_and_invalid_outputs() {
 }
 
 #[test]
+fn config_validation_collects_multiple_project_diagnostics() {
+    let root = temp_project_dir("config-multiple-diagnostics");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        "type Item { id: string; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/
+sources:
+  - file: data/missing.xlsx
+    sheets: []
+outputs:
+  data:
+    type: yaml
+    dir: ""
+    namespace: Bad.Data
+  code:
+    type: python
+    dir: ""
+    namespace: ""
+"#,
+    )
+    .expect("write config");
+
+    let output = coflow()
+        .args(["check", root.to_str().expect("utf8 temp path"), "--json"])
+        .output()
+        .expect("run coflow check");
+
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: Value = serde_json::from_str(stdout.trim()).expect("diagnostics json");
+    let diagnostics = json["diagnostics"].as_array().expect("diagnostics array");
+    for expected in [
+        "sources[0].file `data/missing.xlsx` does not exist",
+        "sources[0].sheets is empty",
+        "outputs.data.type is `yaml`; expected `json` or `messagepack`",
+        "outputs.data.dir is empty",
+        "outputs.data.namespace is only valid for code outputs",
+        "outputs.code.type is `python`; expected `csharp`",
+        "outputs.code.dir is empty",
+        "outputs.code.namespace is empty",
+    ] {
+        assert!(
+            diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic["message"].as_str() == Some(expected)),
+            "missing `{expected}` in diagnostics: {diagnostics:?}"
+        );
+    }
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic["stage"].as_str() == Some("PROJECT")),
+        "diagnostics: {diagnostics:?}"
+    );
+}
+
+#[test]
+fn schema_path_validation_collects_multiple_missing_paths() {
+    let root = temp_project_dir("schema-multiple-missing-paths");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(&root).expect("create project dir");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema:
+  - missing-a.cft
+  - missing-b/
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+
+    let output = coflow()
+        .args([
+            "cft",
+            "check",
+            root.to_str().expect("utf8 temp path"),
+            "--json",
+        ])
+        .output()
+        .expect("run coflow cft check");
+
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: Value = serde_json::from_str(stdout.trim()).expect("diagnostics json");
+    let diagnostics = json["diagnostics"].as_array().expect("diagnostics array");
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic["message"].as_str()
+                == Some("schema[0] path `missing-a.cft` does not exist")),
+        "diagnostics: {diagnostics:?}"
+    );
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic["message"].as_str()
+                == Some("schema[1] path `missing-b/` does not exist")),
+        "diagnostics: {diagnostics:?}"
+    );
+}
+
+#[test]
 fn config_validation_rejects_invalid_sources_and_sheets() {
     let suffix = unique_suffix();
     let root_dir =
@@ -504,6 +615,65 @@ outputs:
 }
 
 #[test]
+fn excel_cell_diagnostics_collect_multiple_bad_cells() {
+    let root = temp_project_dir("excel-multiple-bad-cells");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        "type Item { @id id: string; level: int; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - file: data/items.xlsx
+    sheets:
+      - sheet: Items
+        type: Item
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+
+    let xlsx_path = root.join("data").join("items.xlsx");
+    let mut workbook = rust_xlsxwriter::Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Items")
+        .expect("set sheet name");
+    sheet.write_string(0, 0, "id").expect("write id header");
+    sheet
+        .write_string(0, 1, "level")
+        .expect("write level header");
+    sheet.write_string(1, 0, "item_1").expect("write id 1");
+    sheet
+        .write_string(1, 1, "bad_1")
+        .expect("write bad level 1");
+    sheet.write_string(2, 0, "item_2").expect("write id 2");
+    sheet
+        .write_string(2, 1, "bad_2")
+        .expect("write bad level 2");
+    workbook.save(&xlsx_path).expect("write xlsx");
+
+    let output = coflow()
+        .args(["check", root.to_str().expect("utf8 temp path")])
+        .output()
+        .expect("run coflow check");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("cell    B2"), "stderr: {stderr}");
+    assert!(stderr.contains("cell    B3"), "stderr: {stderr}");
+    assert_eq!(stderr.matches("[CELL-TypeMismatch] [CELL]").count(), 2);
+}
+
+#[test]
 fn excel_missing_sheet_diagnostics_include_sheet_in_human_output() {
     let root = temp_project_dir("excel-missing-sheet-location");
     let _cleanup = TempDirCleanup(root.clone());
@@ -559,6 +729,116 @@ outputs:
         !stderr.contains(root.to_string_lossy().as_ref()),
         "stderr should use project-relative paths: {stderr}"
     );
+}
+
+#[test]
+fn excel_diagnostics_collect_multiple_missing_sheets() {
+    let root = temp_project_dir("excel-multiple-missing-sheets");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        "type Item { @id id: string; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - file: data/items.xlsx
+    sheets:
+      - sheet: MissingA
+        type: Item
+      - sheet: MissingB
+        type: Item
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+
+    let xlsx_path = root.join("data").join("items.xlsx");
+    let mut workbook = rust_xlsxwriter::Workbook::new();
+    workbook
+        .add_worksheet()
+        .set_name("Other")
+        .expect("set sheet name");
+    workbook.save(&xlsx_path).expect("write xlsx");
+
+    let output = coflow()
+        .args(["check", root.to_str().expect("utf8 temp path")])
+        .output()
+        .expect("run coflow check");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("sheet   MissingA"), "stderr: {stderr}");
+    assert!(stderr.contains("sheet   MissingB"), "stderr: {stderr}");
+    assert_eq!(stderr.matches("[EXCEL-SHEET] [EXCEL]").count(), 2);
+}
+
+#[test]
+fn excel_diagnostics_collect_multiple_unknown_columns() {
+    let root = temp_project_dir("excel-multiple-unknown-columns");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        "type Item { @id id: string; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - file: data/items.xlsx
+    sheets:
+      - sheet: Items
+        type: Item
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+
+    let xlsx_path = root.join("data").join("items.xlsx");
+    let mut workbook = rust_xlsxwriter::Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Items")
+        .expect("set sheet name");
+    sheet.write_string(0, 0, "id").expect("write id header");
+    sheet
+        .write_string(0, 1, "missing_a")
+        .expect("write missing header a");
+    sheet
+        .write_string(0, 2, "missing_b")
+        .expect("write missing header b");
+    sheet.write_string(1, 0, "item_1").expect("write id");
+    workbook.save(&xlsx_path).expect("write xlsx");
+
+    let output = coflow()
+        .args(["check", root.to_str().expect("utf8 temp path")])
+        .output()
+        .expect("run coflow check");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("column `missing_a` maps to unknown field `missing_a` on type `Item`"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("column `missing_b` maps to unknown field `missing_b` on type `Item`"),
+        "stderr: {stderr}"
+    );
+    assert_eq!(stderr.matches("[EXCEL-COLUMN] [EXCEL]").count(), 2);
 }
 
 #[test]
@@ -646,9 +926,14 @@ fn project_scoped_cli_errors_use_relative_paths_in_message() {
         stderr.contains("----------------------------------------"),
         "stderr: {stderr}"
     );
-    assert!(stderr.contains("[CLI-ERROR] [CLI]"), "stderr: {stderr}");
     assert!(
-        stderr.contains("message\n  failed to create output dir `generated/data`:"),
+        stderr.contains("[ARTIFACT-001] [ARTIFACT]"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains(
+            "message\n  output dir `generated/data` already exists and is not a directory"
+        ),
         "stderr: {stderr}"
     );
     assert!(
@@ -870,6 +1155,74 @@ fn codegen_csharp_uses_messagepack_loader_when_data_output_is_messagepack() {
     assert!(!game_config.contains("Newtonsoft.Json"));
 
     std::fs::remove_dir_all(root_dir).expect("clean temp dir");
+}
+
+#[test]
+fn codegen_csharp_preflight_outputs_multiple_diagnostics_without_writing_files() {
+    let root = temp_project_dir("codegen-preflight");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("generated").join("csharp")).expect("create code dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        r#"
+            type FooBar { value: int; }
+            type Foo_Bar {
+                @IdAsEnum("GeneId")
+                @id
+                id: string;
+                foo_bar: int;
+                fooBar: int;
+            }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+outputs:
+  data:
+    type: json
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Game.1Bad
+",
+    )
+    .expect("write config");
+    let lockfile = root
+        .join("generated")
+        .join("csharp")
+        .join("coflow.enum.lock.json");
+    std::fs::write(&lockfile, "{bad json").expect("write malformed lockfile");
+
+    let output = coflow()
+        .args(["codegen", "csharp", root.to_str().expect("utf8 path")])
+        .output()
+        .expect("run codegen");
+
+    assert!(
+        !output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("[CODEGEN-CSHARP-001] [CODEGEN]"));
+    assert!(stderr.contains("invalid C# namespace `Game.1Bad`"));
+    assert!(stderr.contains("generated C# file name `FooBar.cs` collides"));
+    assert!(stderr.contains("generated C# member name `FooBar` collides"));
+    assert!(!stderr.contains("failed to parse"));
+    assert_eq!(
+        std::fs::read_to_string(&lockfile).expect("lockfile remains"),
+        "{bad json"
+    );
+    assert!(!root
+        .join("generated")
+        .join("csharp")
+        .join("GameConfig.cs")
+        .exists());
 }
 
 #[test]

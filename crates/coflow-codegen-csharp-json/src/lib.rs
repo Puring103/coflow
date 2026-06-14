@@ -23,7 +23,8 @@ use coflow_codegen_csharp::{
     CsharpDataFormat, CsharpDatabaseTemplates, CsharpTemplate,
 };
 pub use coflow_codegen_csharp::{
-    CsharpCodegenError, CsharpCodegenOptions, CsharpKeyAsEnumVariant, GeneratedFile,
+    preflight_csharp_codegen, CsharpCodegenDiagnostic, CsharpCodegenError, CsharpCodegenOptions,
+    CsharpKeyAsEnumVariant, GeneratedFile,
 };
 use std::collections::BTreeMap;
 
