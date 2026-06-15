@@ -84,24 +84,6 @@ const ANNOTATIONS = [
     documentation: "Mark an enum as bit flags. Non-zero values must be powers of two."
   },
   {
-    label: "@id",
-    insertText: "@id",
-    detail: "field annotation",
-    documentation: "Mark a string or int field as the primary key."
-  },
-  {
-    label: "@ref",
-    insertText: "@ref(${1:TypeName})",
-    detail: "field annotation",
-    documentation: "Mark a string or int field as a reference to a type."
-  },
-  {
-    label: "@index",
-    insertText: "@index",
-    detail: "field annotation",
-    documentation: "Generate an index for a string, int, or enum field."
-  },
-  {
     label: "@display",
     insertText: "@display(\"${1:text}\")",
     detail: "type, enum, or field annotation",
@@ -200,12 +182,6 @@ class CftCompletionProvider {
         ),
         simpleItem("null", vscode.CompletionItemKind.Keyword, "Null predicate")
       ];
-    }
-
-    if (isRefAnnotationContext(linePrefix)) {
-      return workspaceTypes(workspace).map((type) =>
-        simpleItem(type.name, vscode.CompletionItemKind.Class, "CFT type")
-      );
     }
 
     if (topLevelNeedsTypeKeyword(linePrefix)) {
@@ -1162,10 +1138,6 @@ function annotationAppliesTo(label, target) {
       return target === "type" || target === "unknown";
     case "@flag":
       return target === "enum" || target === "unknown";
-    case "@id":
-    case "@ref":
-    case "@index":
-      return target === "field" || target === "unknown";
     case "@display":
     case "@deprecated":
       return target === "type" || target === "enum" || target === "field" || target === "unknown";
@@ -1224,10 +1196,6 @@ function isInsideString(linePrefix) {
 function isTypePredicateContext(linePrefix) {
   const trimmed = linePrefix.trimEnd();
   return new RegExp(`(?:^|[^${IDENT_CONTINUE.slice(1, -1)}])is(?:\\s+${IDENT_CONTINUE}*)?$`, "u").test(trimmed);
-}
-
-function isRefAnnotationContext(linePrefix) {
-  return new RegExp(`@\\s*ref\\s*\\(\\s*${IDENT_CONTINUE}*$`, "u").test(linePrefix);
 }
 
 function topLevelNeedsTypeKeyword(linePrefix) {
@@ -1388,7 +1356,6 @@ function parseFields(masked, bodyStart, bodyEnd) {
     "gu"
   );
   for (const match of fieldBody.matchAll(fieldRegex)) {
-    const annotations = match[1] || "";
     const name = match[2];
     const rawType = (match[3] || "").trim();
     if (PRIMITIVE_TYPES.some(([primitive]) => primitive === name)) {
@@ -1401,8 +1368,7 @@ function parseFields(masked, bodyStart, bodyEnd) {
       end: start + name.length,
       typeRef: parseTypeRefText(rawType),
       typeName: namedTypeFromTypeRef(rawType),
-      rawType,
-      refTarget: refTargetFromAnnotations(annotations)
+      rawType
     });
   }
   return fields;
@@ -1500,11 +1466,6 @@ function typeNameOf(typeRef) {
     return typeNameOf(typeRef.inner);
   }
   return undefined;
-}
-
-function refTargetFromAnnotations(annotations) {
-  const match = annotations.match(new RegExp(`@ref\\s*\\(\\s*(${IDENT})\\s*\\)`, "u"));
-  return match ? match[1] : undefined;
 }
 
 function currentTypeAt(symbols, offset) {
@@ -2063,12 +2024,6 @@ function quantifierBindingType(collectionType) {
 }
 
 function fieldReceiverType(field) {
-  if (field.refTarget) {
-    return {
-      kind: "named",
-      name: field.refTarget
-    };
-  }
   return field.typeRef;
 }
 
@@ -2436,6 +2391,7 @@ module.exports = {
   activate,
   deactivate,
   __test: {
+    CftCompletionProvider,
     CftLspSession,
     collectConfiguredSchemaPaths,
     localDefinitionLocations,
@@ -2443,6 +2399,7 @@ module.exports = {
     lspDefinitionLocations,
     vscodePosition: vscode.Position,
     vscodeRange: vscode.Range,
-    vscodeUriFile: vscode.Uri.file
+    vscodeUriFile: vscode.Uri.file,
+    vscodeWorkspace: vscode.workspace
   }
 };

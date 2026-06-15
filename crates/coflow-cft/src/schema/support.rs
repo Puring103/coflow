@@ -65,51 +65,7 @@ pub(super) enum SymbolKind {
 }
 
 pub(super) fn is_reserved_identifier(name: &str) -> bool {
-    matches!(
-        name,
-        "_" | "id"
-            | "const"
-            | "enum"
-            | "type"
-            | "abstract"
-            | "sealed"
-            | "check"
-            | "when"
-            | "all"
-            | "any"
-            | "none"
-            | "in"
-            | "is"
-            | "true"
-            | "false"
-            | "null"
-            | "int"
-            | "float"
-            | "bool"
-            | "string"
-            | "len"
-            | "contains"
-            | "unique"
-            | "min"
-            | "max"
-            | "sum"
-            | "keys"
-            | "values"
-            | "matches"
-            | "if"
-            | "else"
-            | "match"
-            | "case"
-            | "for"
-            | "while"
-            | "let"
-            | "module"
-            | "import"
-            | "export"
-            | "from"
-            | "as"
-            | "use"
-    )
+    crate::is_cft_reserved_identifier(name)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

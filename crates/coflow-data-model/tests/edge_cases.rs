@@ -54,6 +54,7 @@ fn path_refs_resolve_fields_arrays_and_enum_dict_keys() {
             (
                 "first_reward",
                 CfdInputValue::path_ref(
+                    "DropTable",
                     "table_1",
                     [
                         CfdRefPathSegment::Field("rewards".to_string()),
@@ -64,6 +65,7 @@ fn path_refs_resolve_fields_arrays_and_enum_dict_keys() {
             (
                 "fire_resistance",
                 CfdInputValue::path_ref(
+                    "DropTable",
                     "table_1",
                     [
                         CfdRefPathSegment::Field("resistances".to_string()),
@@ -128,6 +130,7 @@ fn path_refs_report_array_bounds_and_missing_dict_keys() {
             (
                 "missing_reward",
                 CfdInputValue::path_ref(
+                    "DropTable",
                     "table_1",
                     [
                         CfdRefPathSegment::Field("rewards".to_string()),
@@ -138,6 +141,7 @@ fn path_refs_report_array_bounds_and_missing_dict_keys() {
             (
                 "missing_weight",
                 CfdInputValue::path_ref(
+                    "DropTable",
                     "table_1",
                     [
                         CfdRefPathSegment::Field("weights".to_string()),
@@ -181,6 +185,7 @@ fn path_ref_result_type_must_match_destination_field() {
         [(
             "power",
             CfdInputValue::path_ref(
+                "DropTable",
                 "table_1",
                 [
                     CfdRefPathSegment::Field("rewards".to_string()),
@@ -210,12 +215,12 @@ fn cyclic_record_refs_are_allowed_because_resolution_is_two_phase() {
     builder.add_record(
         "alice",
         "Person",
-        [("parent", CfdInputValue::record_ref("bob"))],
+        [("parent", CfdInputValue::record_ref("Person", "bob"))],
     );
     builder.add_record(
         "bob",
         "Person",
-        [("parent", CfdInputValue::record_ref("alice"))],
+        [("parent", CfdInputValue::record_ref("Person", "alice"))],
     );
 
     let model = builder.build().expect("cycles should resolve");
@@ -254,7 +259,7 @@ fn unresolved_record_ref_reports_reference_stage_diagnostic() {
     builder.add_record(
         "drop_1",
         "Drop",
-        [("item", CfdInputValue::record_ref("missing"))],
+        [("item", CfdInputValue::record_ref("Item", "missing"))],
     );
 
     let err = builder.build().expect_err("missing ref should fail");

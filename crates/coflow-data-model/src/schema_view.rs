@@ -22,7 +22,8 @@ pub(crate) enum CfdValueDraft {
     },
     PathRef {
         expected_type: CfdType,
-        root: String,
+        target_type: String,
+        key: String,
         segments: Vec<CfdRefPathSegment>,
     },
     Array(Vec<CfdValueDraft>),
@@ -234,7 +235,7 @@ pub(crate) fn input_value_kind(value: &CfdInputValue) -> &'static str {
         CfdInputValue::String(_) => "string",
         CfdInputValue::EnumVariant { .. } => "enum",
         CfdInputValue::Object { .. } => "object",
-        CfdInputValue::RecordRef(_) => "record ref",
+        CfdInputValue::RecordRef { .. } => "record ref",
         CfdInputValue::PathRef { .. } => "path ref",
         CfdInputValue::Array(_) => "array",
         CfdInputValue::Dict(_) => "dict",

@@ -299,6 +299,7 @@ dependencies = [
  "coflow-cft",
  "serde",
  "tera",
+ "unicode-ident",
 ]
 
 [[package]]

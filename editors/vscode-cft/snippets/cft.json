@@ -60,11 +60,6 @@
     "body": ["none ${1:item} in ${2:items} {", "\t${3:condition};", "}"],
     "description": "Define a none quantifier check."
   },
-  "ref annotation": {
-    "prefix": "@ref",
-    "body": ["@ref(${1:TypeName})"],
-    "description": "Annotate a string or int field as a reference."
-  },
   "display annotation": {
     "prefix": "@display",
     "body": ["@display(\"${1:text}\")"],

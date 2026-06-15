@@ -310,6 +310,53 @@ fn rejects_empty_id_cells_on_data_rows() -> TestResult {
 }
 
 #[test]
+fn rejects_non_identifier_id_cells_on_data_rows() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                level: int;
+            }
+        "#,
+    )?;
+    let path = temp_xlsx_path("invalid-id-cell");
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "level")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "fire-ball")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_number(1, 1, 1.0)
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
+
+    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
+    let Err(err) = load_excel_model(&schema, &[source]) else {
+        return Err("expected invalid id cell error".to_string());
+    };
+
+    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-ID")?;
+    assert!(diagnostic.message.contains("invalid record key"));
+    let location = &diagnostic
+        .primary
+        .as_ref()
+        .ok_or_else(|| "expected primary location".to_string())?
+        .location;
+    assert_eq!(location.sheet.as_deref(), Some("Item"));
+    assert_eq!(location.row, Some(2));
+    assert_eq!(location.column, Some(1));
+    Ok(())
+}
+
+#[test]
 fn rejects_excel_error_cells() -> TestResult {
     let schema = compile_schema(
         r#"
@@ -949,6 +996,86 @@ fn expand_consumes_parent_and_adjacent_columns_for_inner_fields() -> TestResult 
         Some(&CfdValue::Float(20.0))
     );
     assert_eq!(env_record.field("diffusion"), Some(&CfdValue::Float(0.5)));
+    Ok(())
+}
+
+#[test]
+fn resolves_direct_reference_shorthand_cells_by_field_type() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                name: string;
+            }
+            type Drop {
+                item: Item;
+            }
+        "#,
+    )?;
+
+    let path = temp_xlsx_path("direct-ref-shorthand");
+    let mut workbook = Workbook::new();
+    let items = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    items
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    items
+        .write_string(0, 1, "name")
+        .map_err(|err| format!("{err:?}"))?;
+    items
+        .write_string(1, 0, "sword_01")
+        .map_err(|err| format!("{err:?}"))?;
+    items
+        .write_string(1, 1, "Sword")
+        .map_err(|err| format!("{err:?}"))?;
+
+    let drops = workbook
+        .add_worksheet()
+        .set_name("Drop")
+        .map_err(|err| format!("{err:?}"))?;
+    drops
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    drops
+        .write_string(0, 1, "item")
+        .map_err(|err| format!("{err:?}"))?;
+    drops
+        .write_string(1, 0, "drop_01")
+        .map_err(|err| format!("{err:?}"))?;
+    drops
+        .write_string(1, 1, "&sword_01")
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
+
+    let source = ExcelSource::new(
+        &path,
+        vec![
+            ExcelSheet::new("Item").with_type("Item"),
+            ExcelSheet::new("Drop").with_type("Drop"),
+        ],
+    );
+    let model = load_excel_model(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+    let item_id = *model
+        .table("Item")
+        .and_then(|table| table.primary_index.get("sword_01"))
+        .ok_or_else(|| "expected sword_01 item".to_string())?;
+    let drop_id = *model
+        .table("Drop")
+        .and_then(|table| table.primary_index.get("drop_01"))
+        .ok_or_else(|| "expected drop_01 drop".to_string())?;
+    let drop = model
+        .record(drop_id)
+        .ok_or_else(|| "expected drop record".to_string())?;
+
+    assert_eq!(
+        drop.field("item"),
+        Some(&CfdValue::Ref {
+            key: "sword_01".to_string(),
+            target: item_id,
+        })
+    );
     Ok(())
 }
 

@@ -80,7 +80,11 @@ Module._load = function load(request, parent, isMain) {
     },
     languages: {},
     workspace: {
-      textDocuments: []
+      textDocuments: [],
+      getWorkspaceFolder() {
+        return undefined;
+      },
+      findFiles: async () => []
     }
   };
 };
@@ -161,6 +165,22 @@ async function main() {
     new Promise((resolve) => setTimeout(() => resolve("timed-out"), 25))
   ]);
   assert.notStrictEqual(immediate, "timed-out");
+
+  const completionSource = "type Item {}\ntype Holder {\n  item: Item;\n  @ref(\n}\n";
+  const completionDocument = textDocument(path.join(os.tmpdir(), "completion.cft"), completionSource);
+  extension.__test.vscodeWorkspace.textDocuments.push(completionDocument);
+  const completionProvider = new extension.__test.CftCompletionProvider({
+    request: async () => undefined
+  });
+  const refItems = await completionProvider.provideCompletionItems(
+    completionDocument,
+    completionDocument.positionAt(completionSource.indexOf("@ref(") + "@ref(".length)
+  );
+  assert(
+    !refItems.some((item) => item.label === "Item"),
+    "legacy @ref annotation context must not offer type completions"
+  );
+  extension.__test.vscodeWorkspace.textDocuments.pop();
 }
 
 function textDocument(filePath, text) {

@@ -303,9 +303,13 @@ pub enum CfdInputValue {
         actual_type: Option<String>,
         fields: BTreeMap<String, CfdInputValue>,
     },
-    RecordRef(String),
+    RecordRef {
+        target_type: String,
+        key: String,
+    },
     PathRef {
-        root: String,
+        target_type: String,
+        key: String,
         segments: Vec<CfdRefPathSegment>,
     },
     Array(Vec<CfdInputValue>),
@@ -354,17 +358,22 @@ impl CfdInputValue {
     }
 
     #[must_use]
-    pub fn record_ref(key: impl Into<String>) -> Self {
-        Self::RecordRef(key.into())
+    pub fn record_ref(target_type: impl Into<String>, key: impl Into<String>) -> Self {
+        Self::RecordRef {
+            target_type: target_type.into(),
+            key: key.into(),
+        }
     }
 
     #[must_use]
     pub fn path_ref(
-        root: impl Into<String>,
+        target_type: impl Into<String>,
+        key: impl Into<String>,
         segments: impl IntoIterator<Item = CfdRefPathSegment>,
     ) -> Self {
         Self::PathRef {
-            root: root.into(),
+            target_type: target_type.into(),
+            key: key.into(),
             segments: segments.into_iter().collect(),
         }
     }

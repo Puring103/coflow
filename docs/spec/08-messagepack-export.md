@@ -47,7 +47,7 @@ Item.msgpack:
 | `type`（多态） | map，带 `$type` string | `$type` 写实际类型名 |
 | `[T]` | array | 元素按数组顺序写出 |
 | `{K: V}` | map | key 统一编码为 string |
-| 记录引用 | 目标 record key | string，不内联目标对象 |
+| 记录引用 | 目标 record key | string，不内联目标对象，不带 `Type.` 前缀 |
 
 每条顶层记录都会先导出保留字段 `id`，其值来自 record key，不来自 CFT 字段。所有 CFT 字段均显式导出，含有默认值的字段也写出，不依赖消费端自行填充默认值。
 

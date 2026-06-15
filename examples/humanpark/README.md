@@ -43,8 +43,8 @@ cargo run --quiet -- build examples/humanpark
   `InitialConfig` 字段加 `@expand` 后，loader 把父字段及其后续连续若干列
   按内层 type 字段顺序读取并组装成嵌套对象——不需要在 xlsx 单元格里写
   `{a, b, c}`。
-- **显式 `@key` 跨表引用**：`GeneConfig.parentGene`、`BioRemainsConfig.gene`
-  指向 `GeneConfig`；Excel 中引用单元格写成 `@Gene_Spore`，可空引用留空即可。
+- **显式 typed ref 跨表引用**：`GeneConfig.parentGene`、`BioRemainsConfig.gene`
+  指向 `GeneConfig`；Excel 中引用单元格可以写成 `@GeneConfig.Gene_Spore`，同类型直接引用也可以写成 `&Gene_Spore`，可空引用留空即可。
 - **宽松 bool 解析**：`is_base`、`isInit`、`isInitial` 在 xlsx 里仍是 `0`/`1`，
   cell parser 会接受。
 - **schema 多文件**：`schema:` 目录指向 `schema/`，coflow 自动加载里面的所
@@ -58,8 +58,8 @@ cargo run --quiet -- build examples/humanpark
   的数据行会被 loader 跳过。
 - 空行会被跳过；只填了 id、其它列全空的占位行仍需要用 `# = ##` 显式跳过。
 - 数组使用 coflow 单元格语法里的 `|` 分隔。
-- 对象引用必须写 `@key`，例如 `@Gene_Spore`；数组引用写成
-  `@Gene_A|@Gene_B`。
+- 对象引用使用 `@Type.key`，例如 `@GeneConfig.Gene_Spore`；当前字段类型就是引用根类型时也可以写 `&key`。路径引用必须写完整 `@Type.key.path`。数组引用写成
+  `@GeneConfig.Gene_A|@GeneConfig.Gene_B` 或 `&Gene_A|&Gene_B`。
 
 枚举名 → int、bool 转换、嵌套对象打包等之前的 workaround 都已不再需要：
 coflow 端直接支持。

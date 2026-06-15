@@ -8,7 +8,38 @@
 )]
 
 mod common;
+use coflow_cft::{is_cft_identifier, record_key_ident_error};
 use common::*;
+
+#[test]
+fn record_key_identifier_helper_accepts_only_cft_identifiers() {
+    for key in ["fireball", "Gene_孢子", "_private"] {
+        assert!(
+            is_cft_identifier(key),
+            "expected `{key}` to be a valid identifier key"
+        );
+        assert_eq!(record_key_ident_error(key), None);
+    }
+
+    for key in [
+        "",
+        "id",
+        "type",
+        "fire-ball",
+        "fire.ball",
+        "123abc",
+        "\"fireball\"",
+    ] {
+        assert!(
+            !is_cft_identifier(key),
+            "expected `{key}` to be rejected as an identifier key"
+        );
+        assert!(
+            record_key_ident_error(key).is_some(),
+            "expected an error for `{key}`"
+        );
+    }
+}
 
 #[test]
 fn api_exposes_schema_only_after_successful_compile() {

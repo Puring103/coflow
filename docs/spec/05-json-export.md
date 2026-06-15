@@ -42,7 +42,7 @@ out/
 | `type`（多态） | object + `$type` | `{ "$type": "CurrencyReward", "amount": 100 }` |
 | `[T]` | array | `[1, 2, 3]` |
 | `{K: V}` | object，key 统一转为十进制字符串 | 见下方字典编码规则 |
-| 记录引用 | 目标 record key 字符串 | `"sword_01"` |
+| 记录引用 | 目标 record key 字符串；不带 `Type.` 前缀 | `"sword_01"` |
 
 每条顶层记录都会先导出保留字段 `id`，其值来自 record key，不来自 CFT 字段。所有 CFT 字段均显式导出，含有默认值的字段也写出，不依赖消费端自行填充默认值。
 `float` 在数据模型阶段已保证是有限值，因此导出的 JSON number 不会包含 `NaN` 或 `Infinity`。

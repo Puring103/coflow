@@ -20,7 +20,7 @@
 
 use calamine::{open_workbook_auto, Data, Reader};
 use coflow_cell_value::{parse_cell, CellValueDiagnostics, ParsedCell};
-use coflow_cft::CftContainer;
+use coflow_cft::{record_key_ident_error, CftContainer};
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdInputRecord, CfdInputValue, CfdLabel, CfdPath,
     CfdPathSegment, CfdRecordId,
@@ -159,6 +159,11 @@ pub enum ExcelLoadError {
     },
     EmptyIdCell {
         location: Box<ExcelLocation>,
+    },
+    InvalidIdCell {
+        location: Box<ExcelLocation>,
+        key: String,
+        reason: String,
     },
     CellParse {
         location: Box<ExcelLocation>,
@@ -392,6 +397,16 @@ fn collect_input_records(
                     diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::EmptyIdCell {
                         location: Box::new(id_location),
                     }));
+                } else if let Some(key) = record_key.as_deref() {
+                    if let Some(reason) = record_key_ident_error(key) {
+                        diagnostics.extend(excel_load_error_diagnostics(
+                            ExcelLoadError::InvalidIdCell {
+                                location: Box::new(id_location),
+                                key: key.to_string(),
+                                reason,
+                            },
+                        ));
+                    }
                 }
                 for column in &columns {
                     if let Some(children) = &column.expand {
@@ -564,6 +579,16 @@ fn excel_load_error_diagnostics(err: ExcelLoadError) -> Vec<ExcelDiagnostic> {
             "EXCEL-ID",
             "EXCEL",
             "empty id cell",
+            *location,
+        )],
+        ExcelLoadError::InvalidIdCell {
+            location,
+            key,
+            reason,
+        } => vec![ExcelDiagnostic::excel(
+            "EXCEL-ID",
+            "EXCEL",
+            format!("invalid record key `{key}` in id cell: {reason}"),
             *location,
         )],
         ExcelLoadError::CellParse {

@@ -16,3 +16,4 @@ workspace = true
 coflow-cft = { path = "../coflow-cft" }
 serde = { version = "1", features = ["derive"] }
 tera = "1"
+unicode-ident = "1"

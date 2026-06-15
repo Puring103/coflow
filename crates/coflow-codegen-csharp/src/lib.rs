@@ -363,6 +363,35 @@ mod tests {
     }
 
     #[test]
+    fn codegen_key_as_enum_accepts_unicode_identifier_variants() -> Result<(), String> {
+        let schema = compile_schema(
+            r#"
+                @keyAsEnum("GeneId")
+                type GeneConfig {}
+            "#,
+        )?;
+        let mut variants = BTreeMap::new();
+        variants.insert(
+            "GeneId".to_string(),
+            vec![CsharpKeyAsEnumVariant {
+                name: "Gene_孢子".to_string(),
+                value: 0,
+            }],
+        );
+
+        let files = generate_json_with_key_as_enum_variants(
+            &schema,
+            &CsharpCodegenOptions::new("Game.Config"),
+            variants,
+        )
+        .map_err(|err| err.to_string())?;
+
+        let gene_id = generated_file(&files, "GeneId.cs")?;
+        require_contains(gene_id, "Gene_孢子 = 0")?;
+        Ok(())
+    }
+
+    #[test]
     fn codegen_emits_unity_compatible_csharp_syntax() -> Result<(), String> {
         let schema = compile_schema(
             r"
@@ -1363,13 +1392,6 @@ mod tests {
 
     #[test]
     fn codegen_rejects_invalid_csharp_names() -> Result<(), String> {
-        let unicode_type = compile_schema("type 示例 { value: int; }")?;
-        let Err(err) = generate_json(&unicode_type, &CsharpCodegenOptions::new("Game.Config"))
-        else {
-            return Err("unicode type should fail".to_string());
-        };
-        require_contains(&err.to_string(), "invalid C# type name `示例`")?;
-
         let schema = compile_schema("type Item { value: int; }")?;
         let Err(err) = generate_json(&schema, &CsharpCodegenOptions::new("Game.1Bad")) else {
             return Err("namespace should fail".to_string());

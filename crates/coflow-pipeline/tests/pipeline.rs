@@ -9,6 +9,7 @@
     clippy::unwrap_used
 )]
 
+use coflow_data_model::CfdErrorCode;
 use coflow_pipeline::{
     build_project, check_project, export_project_data, generate_project_code, BuildOptions,
     CodegenOptions, CodegenTarget, DataFormat, ExportOptions, PipelineOutcome,
@@ -932,7 +933,7 @@ fn build_project_reports_duplicate_key_as_enum_keys_before_codegen() {
     assert!(
         diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.code == "CFD-DATA-011"),
+            .any(|diagnostic| diagnostic.code == CfdErrorCode::DuplicateId.as_str()),
         "diagnostics: {diagnostics:?}"
     );
     assert!(!code_dir.exists());
@@ -1239,7 +1240,7 @@ outputs:
     remains.write_string(0, 0, "id")?;
     remains.write_string(0, 1, "gene_id")?;
     remains.write_string(1, 0, "remains_1")?;
-    remains.write_string(1, 1, format!("@{}", gene_ids[0]))?;
+    remains.write_string(1, 1, format!("@GeneConfig.{}", gene_ids[0]))?;
 
     workbook.save(workbook_path)
 }
@@ -1329,7 +1330,7 @@ fn write_key_as_enum_workbook(path: &Path) -> Result<(), rust_xlsxwriter::XlsxEr
     remains.write_string(0, 0, "id")?;
     remains.write_string(0, 1, "gene_id")?;
     remains.write_string(1, 0, "remains_1")?;
-    remains.write_string(1, 1, "@Gene_Spore")?;
+    remains.write_string(1, 1, "@GeneConfig.Gene_Spore")?;
 
     workbook.save(path)
 }
