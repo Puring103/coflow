@@ -732,7 +732,7 @@ fn resolve_columns(
             continue;
         }
 
-        let expand = if let Some(child_fields) = expand_fields.get(&field) {
+        let expand = expand_fields.get(&field).map(|child_fields| {
             // The @expand field consumes the parent header column itself plus
             // the N-1 following data columns (where N is the inner type's
             // field count). Sub-field assignment is positional, following the
@@ -760,7 +760,7 @@ fn resolve_columns(
                                 .cell(header_excel_row, excel_column),
                         ),
                         type_name: type_name.to_string(),
-                        column: column_text,
+                        column: column_text.clone(),
                         field: format!(
                             "{field} (@expand): not enough columns to cover inner field `{inner_field}`"
                         ),
@@ -777,10 +777,8 @@ fn resolve_columns(
                 });
                 cursor += 1;
             }
-            Some(consumed)
-        } else {
-            None
-        };
+            consumed
+        });
 
         columns.push(ResolvedColumn {
             index,

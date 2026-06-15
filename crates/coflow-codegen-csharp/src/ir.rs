@@ -62,7 +62,7 @@ pub fn build_project(
     data_format: CsharpDataFormat,
     key_as_enum_variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
 ) -> Result<CsharpProject, CsharpCodegenError> {
-    let diagnostics = preflight_csharp_codegen(schema, options, key_as_enum_variants.clone());
+    let diagnostics = preflight_csharp_codegen(schema, options, &key_as_enum_variants);
     if !diagnostics.is_empty() {
         return Err(CsharpCodegenError::new(
             diagnostics
@@ -79,10 +79,7 @@ pub fn build_project(
         .all_enums()
         .map(build_csharp_enum)
         .collect::<Vec<_>>();
-    enums.extend(build_key_as_enums(
-        &key_as_enum_names,
-        key_as_enum_variants,
-    )?);
+    enums.extend(build_key_as_enums(&key_as_enum_names, key_as_enum_variants));
 
     let types = schema
         .all_types()
@@ -101,16 +98,17 @@ pub fn build_project(
     })
 }
 
+#[must_use]
 pub fn preflight_csharp_codegen(
     schema: &CftContainer,
     options: &CsharpCodegenOptions,
-    key_as_enum_variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
+    key_as_enum_variants: &BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
 ) -> Vec<CsharpCodegenDiagnostic> {
     let mut diagnostics = Vec::new();
     validate_options(options, &mut diagnostics);
     validate_schema_names(schema, &mut diagnostics);
     let key_as_enum_names = key_as_enum_names(schema);
-    validate_key_as_enum_variants(&key_as_enum_names, &key_as_enum_variants, &mut diagnostics);
+    validate_key_as_enum_variants(&key_as_enum_names, key_as_enum_variants, &mut diagnostics);
     let view = SchemaView::new(schema);
     validate_generated_names(&view, options, &key_as_enum_names, &mut diagnostics);
     diagnostics
@@ -376,11 +374,11 @@ fn validate_key_as_enum_variants(
 fn build_key_as_enums(
     declared: &BTreeSet<String>,
     mut variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
-) -> Result<Vec<CsharpEnum>, CsharpCodegenError> {
+) -> Vec<CsharpEnum> {
     let mut out = Vec::new();
     for name in declared {
         let mut enum_variants = Vec::new();
-        for variant in variants.remove(name).unwrap_or_default().into_iter() {
+        for variant in variants.remove(name).unwrap_or_default() {
             enum_variants.push(CsharpEnumVariant {
                 name: variant.name,
                 value: variant.value,
@@ -396,7 +394,7 @@ fn build_key_as_enums(
             variants: enum_variants,
         });
     }
-    Ok(out)
+    out
 }
 
 fn insert_generated_file_name(
