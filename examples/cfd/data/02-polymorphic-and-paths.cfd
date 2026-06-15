@@ -1,0 +1,30 @@
+# Polymorphic grouping and typed path references.
+
+Reward {
+  sword_reward: ItemReward {
+    item: &sword_fire,
+    count: 1,
+  }
+
+  coin_reward: CurrencyReward {
+    amount: 50,
+  }
+}
+
+default_drops: DropTable {
+  rewards: [
+    @Reward.sword_reward,
+    @Reward.coin_reward,
+  ],
+  weights: {
+    Fire: 70,
+    Ice: 30,
+  },
+}
+
+fire_encounter: Encounter {
+  monster: &basic_monster,
+  first_reward: @DropTable.default_drops.rewards[0],
+  featured_item: @ItemReward.sword_reward.item,
+  weakness_hint: @Monster.basic_monster.weaknesses[Fire],
+}

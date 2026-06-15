@@ -1,0 +1,47 @@
+enum Element {
+  Fire = 1,
+  Ice = 2,
+}
+
+type Stats {
+  hp: int;
+  attack: int;
+}
+
+type Item {
+  name: string;
+  element: Element;
+  price: int;
+  tags: [string] = [];
+}
+
+abstract type Reward {}
+
+type ItemReward : Reward {
+  item: Item;
+  count: int = 1;
+}
+
+type CurrencyReward : Reward {
+  currency: string = "gold";
+  amount: int;
+}
+
+type DropTable {
+  rewards: [Reward];
+  weights: {Element: int};
+}
+
+type Monster {
+  name: string;
+  stats: Stats;
+  weaknesses: {Element: float};
+  drop: DropTable;
+}
+
+type Encounter {
+  monster: Monster;
+  first_reward: Reward;
+  featured_item: Item;
+  weakness_hint: float;
+}
