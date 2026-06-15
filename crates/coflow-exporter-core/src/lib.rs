@@ -17,10 +17,8 @@
     )
 )]
 
-use coflow_cft::{
-    CftAnnotation, CftAnnotationValue, CftContainer, CftSchemaField, CftSchemaTypeRef,
-};
-use coflow_data_model::{CfdDataModel, CfdDictKey, CfdIdValue, CfdRecord, CfdTable, CfdValue};
+use coflow_cft::{CftContainer, CftSchemaField, CftSchemaTypeRef};
+use coflow_data_model::{CfdDataModel, CfdDictKey, CfdRecord, CfdTable, CfdValue};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
@@ -104,7 +102,7 @@ impl fmt::Display for ExportError {
 
 impl std::error::Error for ExportError {}
 
-/// Exports every concrete `@id` table from the data model.
+/// Exports every concrete table from the data model.
 ///
 /// The returned map key is the CFT type/table name. Values are arrays whose
 /// order follows the table's original record order in the data model.
@@ -148,14 +146,6 @@ where
             if schema_type.is_abstract {
                 continue;
             }
-            let has_id_field = schema_type
-                .all_fields
-                .iter()
-                .any(|field| has_annotation(&field.annotations, "id"));
-            if !has_id_field {
-                continue;
-            }
-
             let table = self.model.table(&schema_type.name);
             let value = if let Some(table) = table {
                 self.encode_table(table)?
@@ -188,6 +178,12 @@ where
         tag_mode: TypeTagMode,
     ) -> Result<E::Value, ExportError> {
         let mut entries = Vec::new();
+        if tag_mode == TypeTagMode::Never {
+            entries.push((
+                "id".to_string(),
+                self.encoder.string(record.key()).map_err(encoder_error)?,
+            ));
+        }
         if tag_mode == TypeTagMode::WhenPolymorphic
             && self.schema.range_is_polymorphic(declared_type)
         {
@@ -217,9 +213,6 @@ where
         field: &FieldMeta,
         value: &CfdValue,
     ) -> Result<E::Value, ExportError> {
-        if field.ref_target.is_some() {
-            return self.encode_ref(value);
-        }
         self.encode_value(&field.ty, value)
     }
 
@@ -299,21 +292,11 @@ where
     fn encode_ref(&mut self, value: &CfdValue) -> Result<E::Value, ExportError> {
         match value {
             CfdValue::Null => self.encoder.null().map_err(encoder_error),
-            CfdValue::Ref { id, .. } => self.encode_id(id),
+            CfdValue::Ref { key, .. } => self.encoder.string(key).map_err(encoder_error),
             other => Err(ExportError::new(format!(
                 "expected ref value, got `{}`",
                 value_kind(other)
             ))),
-        }
-    }
-
-    fn encode_id(&mut self, id: &CfdIdValue) -> Result<E::Value, ExportError> {
-        match id {
-            CfdIdValue::String(value) => self.encoder.string(value).map_err(encoder_error),
-            CfdIdValue::Int(value) => self.encoder.int(*value).map_err(encoder_error),
-            // Enum-typed @id is exported as the underlying integer value, the
-            // same physical representation Luban-style runtimes already use.
-            CfdIdValue::Enum(value) => self.encoder.int(value.value).map_err(encoder_error),
         }
     }
 }
@@ -388,7 +371,6 @@ impl<'a> SchemaView<'a> {
 struct FieldMeta {
     name: String,
     ty: CftSchemaTypeRef,
-    ref_target: Option<String>,
 }
 
 impl FieldMeta {
@@ -396,24 +378,8 @@ impl FieldMeta {
         Self {
             name: field.name.clone(),
             ty: field.ty_ref.clone(),
-            ref_target: ref_target(&field.annotations),
         }
     }
-}
-
-fn ref_target(annotations: &[CftAnnotation]) -> Option<String> {
-    annotations
-        .iter()
-        .find(|annotation| annotation.name == "ref")
-        .and_then(|annotation| annotation.args.first())
-        .and_then(|arg| match arg {
-            CftAnnotationValue::Name(name) => Some(name.clone()),
-            _ => None,
-        })
-}
-
-fn has_annotation(annotations: &[CftAnnotation], name: &str) -> bool {
-    annotations.iter().any(|annotation| annotation.name == name)
 }
 
 fn dict_key_string(key: &CfdDictKey) -> String {

@@ -158,8 +158,8 @@ impl CftContainer {
 
     /// Returns true when `actual_type` is `expected_type` itself or a
     /// descendant via single inheritance. Both must be names of known types.
-    /// Used by data-model construction (`@ref` and polymorphic field
-    /// assignment) and by the runtime check evaluator (`is` predicate).
+    /// Used by data-model construction (record references and polymorphic
+    /// field assignment) and by the runtime check evaluator (`is` predicate).
     #[must_use]
     pub fn is_assignable(&self, actual_type: &str, expected_type: &str) -> bool {
         let mut current = Some(actual_type);

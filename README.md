@@ -81,7 +81,7 @@ cargo run -- cft lsp examples/rpg
 
 ## CFT Syntax Overview
 
-CFT describes game data shape, defaults, references, indexes, and validation rules.
+CFT describes game data shape, defaults, record-key references, and validation rules.
 
 Constants:
 
@@ -104,15 +104,10 @@ Types and fields:
 
 ```cft
 @display("Item")
+@keyAsEnum("ItemId")
 type Item {
-  @id
-  id: string;
-
   name: string;
-
-  @index
   rarity: Rarity = Rarity.Common;
-
   tags: [string] = [];
   attributes: {string: int} = {};
 }
@@ -122,12 +117,11 @@ Inheritance and polymorphic values:
 
 ```cft
 abstract type Reward {
-  id: string;
+  check { id != ""; }
 }
 
 sealed type ItemReward : Reward {
-  @ref(Item)
-  item_id: string;
+  item: Item;
   count: int = 1;
 }
 ```
@@ -136,8 +130,6 @@ Checks:
 
 ```cft
 type Monster {
-  @id
-  id: string;
   level: int;
   drops: [Reward] = [];
 
@@ -150,12 +142,15 @@ type Monster {
 
 Common annotations:
 
-- `@id` marks the primary key field for a table.
-- `@index` generates lookup APIs in generated runtime code.
-- `@ref(Type)` stores another table record's ID and resolves it in generated loaders.
+- `@keyAsEnum("Name")` generates a C# enum from loaded record keys.
 - `@display("text")` emits user-facing descriptions where supported.
 - `@deprecated` marks generated C# symbols as obsolete.
 - `@struct` generates a C# struct for sealed value-like types.
+- `@expand` lets Excel columns expand into a nested object field.
+
+Excel sheets must include an `id` column. That column is the record key and is
+not a CFT field. Object references in cells are explicit, for example `@sword_01`
+or `@drop_01.rewards[0]`; bare strings remain strings.
 
 Common built-ins in checks include `len`, `contains`, `unique`, `min`, `max`, `sum`, `keys`, `values`, and `matches`.
 

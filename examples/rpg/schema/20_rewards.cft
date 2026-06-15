@@ -1,0 +1,59 @@
+abstract type Reward {
+  key: string;
+
+  source_note: string = DEFAULT_SOURCE;
+
+  check {
+    key != "";
+    source_note != "";
+    matches(key, "^[a-z][a-z0-9_]*$");
+  }
+}
+
+abstract type StackableReward : Reward {
+  count: int = DEFAULT_REWARD_COUNT;
+
+  check {
+    count >= DEFAULT_REWARD_COUNT;
+  }
+}
+
+type ItemReward : StackableReward {
+  item: Item;
+
+  check {
+    item.name != "";
+    count == 1 || item.stack_limit >= count;
+  }
+}
+
+type CurrencyReward : StackableReward {
+  currency: string = "gold";
+  amount: int;
+
+  check {
+    currency != "";
+    amount > 0;
+    count == 1;
+  }
+}
+
+type SkillUnlockReward : Reward {
+  skill: Skill;
+
+  required_level: int = 1;
+
+  check {
+    skill.id != "";
+    1 <= required_level <= MAX_LEVEL;
+  }
+}
+
+@deprecated
+type LegacyReward : Reward {
+  legacy_code: string;
+
+  check {
+    legacy_code != "";
+  }
+}

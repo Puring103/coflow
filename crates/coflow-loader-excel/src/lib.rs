@@ -148,6 +148,18 @@ pub enum ExcelLoadError {
         first_column: String,
         duplicate_column: String,
     },
+    MissingIdColumn {
+        location: Box<ExcelLocation>,
+        type_name: String,
+    },
+    DuplicateIdColumn {
+        location: Box<ExcelLocation>,
+        first_column: String,
+        duplicate_column: String,
+    },
+    EmptyIdCell {
+        location: Box<ExcelLocation>,
+    },
     CellParse {
         location: Box<ExcelLocation>,
         type_name: String,
@@ -356,16 +368,31 @@ fn collect_input_records(
                 }
             };
             let columns = resolved.columns;
+            let id_column = resolved.id_column;
             for (zero_based_data_row, row) in rows.enumerate() {
                 if should_skip_import_row(row, resolved.control_column) {
                     continue;
                 }
-                if is_empty_mapped_row(row, &columns) {
+                if is_empty_mapped_row(row, &columns, &id_column) {
                     continue;
                 }
                 let excel_row = range_start_row as usize + zero_based_data_row + 2;
                 let mut input_fields = BTreeMap::new();
                 let row_diagnostic_start = diagnostics.len();
+                let id_location = ExcelLocation::new(source.file.clone())
+                    .sheet(sheet.sheet.clone())
+                    .cell(excel_row, id_column.excel_column);
+                let record_key = cell_text(
+                    row.get(id_column.index),
+                    id_location.clone(),
+                    &mut diagnostics,
+                )
+                .map(|text| text.trim().to_string());
+                if record_key.as_deref().is_none_or(str::is_empty) {
+                    diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::EmptyIdCell {
+                        location: Box::new(id_location),
+                    }));
+                }
                 for column in &columns {
                     if let Some(children) = &column.expand {
                         let Some(nested) = build_expanded_object(
@@ -418,8 +445,11 @@ fn collect_input_records(
                     sheet.sheet.clone(),
                     excel_row,
                     &columns,
+                    id_column.excel_column,
                 ));
-                records.push(CfdInputRecord::new(type_name, input_fields));
+                if let Some(record_key) = record_key {
+                    records.push(CfdInputRecord::new(record_key, type_name, input_fields));
+                }
             }
         }
     }
@@ -509,6 +539,33 @@ fn excel_load_error_diagnostics(err: ExcelLoadError) -> Vec<ExcelDiagnostic> {
             format!("field `{field}` is mapped by both `{first_column}` and `{duplicate_column}`"),
             *location,
         )],
+        ExcelLoadError::MissingIdColumn {
+            location,
+            type_name,
+        } => vec![ExcelDiagnostic::excel(
+            "EXCEL-ID",
+            "EXCEL",
+            format!("sheet for type `{type_name}` must contain an `id` column"),
+            *location,
+        )],
+        ExcelLoadError::DuplicateIdColumn {
+            location,
+            first_column,
+            duplicate_column,
+        } => vec![ExcelDiagnostic::excel(
+            "EXCEL-COLUMN",
+            "EXCEL",
+            format!(
+                "special `id` column is mapped by both `{first_column}` and `{duplicate_column}`"
+            ),
+            *location,
+        )],
+        ExcelLoadError::EmptyIdCell { location } => vec![ExcelDiagnostic::excel(
+            "EXCEL-ID",
+            "EXCEL",
+            "empty id cell",
+            *location,
+        )],
         ExcelLoadError::CellParse {
             location,
             type_name,
@@ -542,7 +599,14 @@ fn excel_load_error_diagnostics(err: ExcelLoadError) -> Vec<ExcelDiagnostic> {
 #[derive(Debug, Clone)]
 struct ResolvedColumns {
     columns: Vec<ResolvedColumn>,
+    id_column: IdColumn,
     control_column: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+struct IdColumn {
+    index: usize,
+    excel_column: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -623,15 +687,23 @@ struct ExcelRecordOrigin {
     file: PathBuf,
     sheet: String,
     row: usize,
+    id_column: usize,
     fields: BTreeMap<String, usize>,
 }
 
 impl ExcelRecordOrigin {
-    fn new(file: PathBuf, sheet: String, row: usize, columns: &[ResolvedColumn]) -> Self {
+    fn new(
+        file: PathBuf,
+        sheet: String,
+        row: usize,
+        columns: &[ResolvedColumn],
+        id_column: usize,
+    ) -> Self {
         Self {
             file,
             sheet,
             row,
+            id_column,
             fields: columns
                 .iter()
                 .map(|column| (column.field.clone(), column.excel_column))
@@ -640,7 +712,13 @@ impl ExcelRecordOrigin {
     }
 
     fn location_for_path(&self, path: &CfdPath) -> ExcelLocation {
-        let column = root_field(path).and_then(|field| self.fields.get(field).copied());
+        let column = root_field(path).and_then(|field| {
+            if field == "id" {
+                Some(self.id_column)
+            } else {
+                self.fields.get(field).copied()
+            }
+        });
         ExcelLocation::new(self.file.clone())
             .sheet(self.sheet.clone())
             .with_row(self.row)
@@ -680,6 +758,7 @@ fn resolve_columns(
     let expand_fields = expand_field_index(schema, type_name);
     let expand_inner_order = expand_field_order_index(schema, type_name);
     let mut columns = Vec::new();
+    let mut id_column = None::<(usize, usize, String)>;
     let mut control_column = None;
     let mut seen_fields = BTreeMap::<String, String>::new();
 
@@ -701,6 +780,24 @@ fn resolve_columns(
             .columns
             .get(&column_text)
             .map_or_else(|| column_text.clone(), Clone::clone);
+        if field == "id" {
+            if let Some((_, _, first_column)) =
+                id_column.replace((index, excel_column, column_text.clone()))
+            {
+                diagnostics.extend(excel_load_error_diagnostics(
+                    ExcelLoadError::DuplicateIdColumn {
+                        location: Box::new(
+                            ExcelLocation::new(source.file.clone())
+                                .sheet(sheet.sheet.clone())
+                                .cell(header_excel_row, excel_column),
+                        ),
+                        first_column,
+                        duplicate_column: column_text,
+                    },
+                ));
+            }
+            continue;
+        }
         let Some(field_type) = fields.get(&field) else {
             diagnostics.extend(excel_load_error_diagnostics(
                 ExcelLoadError::UnknownColumn {
@@ -789,9 +886,28 @@ fn resolve_columns(
         });
     }
 
+    let id_column = id_column.map(|(index, excel_column, _)| IdColumn {
+        index,
+        excel_column,
+    });
+    let Some(id_column) = id_column else {
+        diagnostics.extend(excel_load_error_diagnostics(
+            ExcelLoadError::MissingIdColumn {
+                location: Box::new(
+                    ExcelLocation::new(source.file.clone())
+                        .sheet(sheet.sheet.clone())
+                        .with_row(header_excel_row),
+                ),
+                type_name: type_name.to_string(),
+            },
+        ));
+        return Err(ExcelDiagnostics { diagnostics });
+    };
+
     if diagnostics.is_empty() {
         Ok(ResolvedColumns {
             columns,
+            id_column,
             control_column,
         })
     } else {
@@ -927,17 +1043,18 @@ fn root_field(path: &CfdPath) -> Option<&str> {
     })
 }
 
-fn is_empty_mapped_row(row: &[Data], columns: &[ResolvedColumn]) -> bool {
-    columns.iter().all(|column| {
-        column.expand.as_ref().map_or_else(
-            || row.get(column.index).is_none_or(is_empty_cell),
-            |children| {
-                children
-                    .iter()
-                    .all(|child| row.get(child.index).is_none_or(is_empty_cell))
-            },
-        )
-    })
+fn is_empty_mapped_row(row: &[Data], columns: &[ResolvedColumn], id_column: &IdColumn) -> bool {
+    row.get(id_column.index).is_none_or(is_empty_cell)
+        && columns.iter().all(|column| {
+            column.expand.as_ref().map_or_else(
+                || row.get(column.index).is_none_or(is_empty_cell),
+                |children| {
+                    children
+                        .iter()
+                        .all(|child| row.get(child.index).is_none_or(is_empty_cell))
+                },
+            )
+        })
 }
 
 fn should_skip_import_row(row: &[Data], control_column: Option<usize>) -> bool {

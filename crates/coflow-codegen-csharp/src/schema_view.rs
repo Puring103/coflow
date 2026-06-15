@@ -1,4 +1,4 @@
-use crate::names::{annotation_name_arg, annotation_string_arg, csharp_type_name, has_annotation};
+use crate::names::{annotation_string_arg, csharp_type_name, has_annotation};
 use crate::CsharpCodegenError;
 use coflow_cft::{
     CftAnnotation, CftContainer, CftSchemaDefaultValue, CftSchemaField, CftSchemaType,
@@ -88,11 +88,7 @@ impl SchemaView {
     }
 
     pub fn table_names(&self) -> Vec<String> {
-        self.types
-            .values()
-            .filter(|ty| !ty.is_abstract && ty.id_field().is_ok())
-            .map(|ty| ty.name.clone())
-            .collect()
+        self.non_abstract_type_names()
     }
 
     pub fn polymorphic_type_names(&self) -> Vec<String> {
@@ -111,6 +107,10 @@ impl SchemaView {
 
     pub fn type_is_struct(&self, type_name: &str) -> bool {
         self.types.get(type_name).is_some_and(|ty| ty.is_struct)
+    }
+
+    pub fn type_is_abstract(&self, type_name: &str) -> bool {
+        self.types.get(type_name).is_some_and(|ty| ty.is_abstract)
     }
 
     pub fn csharp_type_name(&self, type_name: &str) -> String {
@@ -135,13 +135,21 @@ impl SchemaView {
         }
     }
 
-    pub fn ref_target_id_csharp_enum_override(&self, target: &str) -> Option<String> {
-        self.types
-            .get(target)?
-            .id_field()
-            .ok()?
-            .csharp_enum_override
-            .clone()
+    pub fn key_as_enum(&self, type_name: &str) -> Option<String> {
+        let mut current = Some(type_name);
+        while let Some(name) = current {
+            let meta = self.types.get(name)?;
+            if let Some(enum_name) = &meta.key_as_enum {
+                return Some(enum_name.clone());
+            }
+            current = meta.parent.as_deref();
+        }
+        None
+    }
+
+    pub fn key_field_type(&self, type_name: &str) -> FieldType {
+        self.key_as_enum(type_name)
+            .map_or(FieldType::String, FieldType::Enum)
     }
 
     fn has_descendants(&self, type_name: &str) -> bool {
@@ -216,8 +224,10 @@ impl SchemaView {
 #[derive(Debug, Clone)]
 pub struct TypeMeta {
     pub name: String,
+    pub parent: Option<String>,
     pub is_abstract: bool,
     pub is_struct: bool,
+    pub key_as_enum: Option<String>,
     pub all_fields: Vec<FieldMeta>,
 }
 
@@ -225,29 +235,16 @@ impl TypeMeta {
     fn from_schema(schema_type: &CftSchemaType, enums: &BTreeSet<String>) -> Self {
         Self {
             name: schema_type.name.clone(),
+            parent: schema_type.parent.clone(),
             is_abstract: schema_type.is_abstract,
             is_struct: has_annotation(&schema_type.annotations, "struct"),
+            key_as_enum: annotation_string_arg(&schema_type.annotations, "keyAsEnum"),
             all_fields: schema_type
                 .all_fields
                 .iter()
                 .map(|field| FieldMeta::from_schema(field, enums))
                 .collect(),
         }
-    }
-
-    pub fn id_field(&self) -> Result<&FieldMeta, CsharpCodegenError> {
-        self.all_fields
-            .iter()
-            .find(|field| has_annotation(&field.annotations, "id"))
-            .ok_or_else(|| {
-                CsharpCodegenError::new(format!("type `{}` has no @id field", self.name))
-            })
-    }
-
-    pub fn index_fields(&self) -> impl Iterator<Item = &FieldMeta> {
-        self.all_fields
-            .iter()
-            .filter(|field| has_annotation(&field.annotations, "index"))
     }
 
     fn collect_ref_targets(
@@ -278,10 +275,6 @@ fn collect_ref_targets_in_field(
     out: &mut BTreeSet<String>,
     visited: &mut BTreeSet<String>,
 ) {
-    if let Some(target) = annotation_name_arg(&field.annotations, "ref") {
-        out.insert(target);
-        return;
-    }
     collect_ref_targets_in_type(view, &field.ty, out, visited);
 }
 
@@ -293,6 +286,7 @@ fn collect_ref_targets_in_type(
 ) {
     match ty {
         FieldType::Type(name) => {
+            out.insert(name.clone());
             if let Some(meta) = view.types.get(name) {
                 meta.collect_ref_targets(view, out, visited);
             }
@@ -316,7 +310,6 @@ pub struct FieldMeta {
     pub has_default: bool,
     pub default: Option<CftSchemaDefaultValue>,
     pub annotations: Vec<CftAnnotation>,
-    pub csharp_enum_override: Option<String>,
 }
 
 impl FieldMeta {
@@ -327,8 +320,6 @@ impl FieldMeta {
             has_default: field.has_default,
             default: field.default.clone(),
             annotations: field.annotations.clone(),
-            csharp_enum_override: annotation_string_arg(&field.annotations, "IdAsEnum")
-                .or_else(|| annotation_string_arg(&field.annotations, "GenAsEnum")),
         }
     }
 }

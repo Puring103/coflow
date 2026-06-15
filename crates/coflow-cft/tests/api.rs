@@ -53,7 +53,7 @@ fn failed_compile_keeps_previously_published_schema() {
     // get a transient empty view.
     let mut container = CftContainer::new();
     container
-        .add_module(ModuleId::from("ok"), "type A { id: string; }")
+        .add_module(ModuleId::from("ok"), "type A { key: string; }")
         .unwrap();
     container.compile().unwrap();
     assert!(container.has_type("A"));
@@ -72,7 +72,7 @@ fn failed_compile_keeps_previously_published_schema() {
 fn failed_add_module_keeps_previously_published_schema() {
     let mut container = CftContainer::new();
     container
-        .add_module(ModuleId::from("ok"), "type A { id: string; }")
+        .add_module(ModuleId::from("ok"), "type A { key: string; }")
         .unwrap();
     container.compile().unwrap();
     assert!(container.has_type("A"));
@@ -93,7 +93,7 @@ fn failed_recompile_without_new_modules_keeps_old_schema() {
     // remain observable.
     let mut container = CftContainer::new();
     container
-        .add_module(ModuleId::from("ok"), "type A { id: string; }")
+        .add_module(ModuleId::from("ok"), "type A { key: string; }")
         .unwrap();
     container.compile().unwrap();
     assert!(container.has_type("A"));
@@ -150,9 +150,9 @@ fn spec_comprehensive_example_compiles() {
         }
 
         @display("物品")
+        @keyAsEnum("ItemKey")
         type Item {
-          @id
-          id: string;
+          key: string;
 
           @display("名称")
           name: string;
@@ -162,22 +162,21 @@ fn spec_comprehensive_example_compiles() {
 
           check {
             id != "";
+            key != "";
             name != "";
-            matches(id, "^[a-z][a-z0-9_]*$");
+            matches(key, "^[a-z][a-z0-9_]*$");
             none tag in tags { tag == ""; }
           }
         }
 
         abstract type Reward {
-          @id
-          id: string;
+          key: string;
 
-          check { id != ""; }
+          check { id != ""; key != ""; }
         }
 
         type ItemReward : Reward {
-          @ref(Item)
-          item_id: string;
+          item: Item;
 
           count: int = 1;
 
@@ -204,14 +203,13 @@ fn spec_comprehensive_example_compiles() {
         }
 
         @display("怪物")
+        @keyAsEnum("MonsterKey")
         type Monster {
-          @id
-          id: string;
+          key: string;
 
           @display("名称")
           name: string;
 
-          @index
           rarity: Rarity;
 
           level:       int;
@@ -223,6 +221,7 @@ fn spec_comprehensive_example_compiles() {
 
           check {
             id != "";
+            key != "";
             name != "";
             1 <= level <= MAX_LEVEL;
             stats.hp > 0;
@@ -240,13 +239,14 @@ fn spec_comprehensive_example_compiles() {
         }
 
         type Skill {
-          id:         string;
+          key:        string;
           is_passive: bool;
           cooldown:   float? = null;
           range:      float? = null;
 
           check {
             id != "";
+            key != "";
             when !is_passive {
               cooldown != null;
               cooldown > 0.0;

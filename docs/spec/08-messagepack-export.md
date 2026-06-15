@@ -2,9 +2,9 @@
 
 **依赖文档**：[02-data-model.md](02-data-model.md)
 
-MessagePack 导出是 JSON 导出的二进制等价格式。它的输入是已经通过 schema 编译、Excel loader 加载、`DataModel` 构建和 check 检查的 `CfdDataModel`，`@ref` 保留原始 ID，由运行时加载器负责解析引用。
+MessagePack 导出是 JSON 导出的二进制等价格式。它的输入是已经通过 schema 编译、Excel loader 加载、`DataModel` 构建和 check 检查的 `CfdDataModel`，记录 key 以保留字段 `id` 导出，引用字段保留目标 key，由运行时加载器负责解析引用。
 
-MessagePack exporter 位于 `coflow-exporter-messagepack`。它与 `coflow-exporter-json` 共用 `coflow-exporter-core` 的 schema-aware 遍历规则，因此表选择、字段顺序、多态 `$type`、字典 key 和 `@ref` ID 保留语义与 JSON 导出一致。
+MessagePack exporter 位于 `coflow-exporter-messagepack`。它与 `coflow-exporter-json` 共用 `coflow-exporter-core` 的 schema-aware 遍历规则，因此表选择、字段顺序、多态 `$type`、字典 key 和引用 key 保留语义与 JSON 导出一致。
 
 ---
 
@@ -47,9 +47,9 @@ Item.msgpack:
 | `type`（多态） | map，带 `$type` string | `$type` 写实际类型名 |
 | `[T]` | array | 元素按数组顺序写出 |
 | `{K: V}` | map | key 统一编码为 string |
-| `@ref` 字段 | 原始 ID 值 | string 或 integer，不内联目标对象 |
+| 记录引用 | 目标 record key | string，不内联目标对象 |
 
-所有字段均显式导出，含有默认值的字段也写出，不依赖消费端自行填充默认值。
+每条顶层记录都会先导出保留字段 `id`，其值来自 record key，不来自 CFT 字段。所有 CFT 字段均显式导出，含有默认值的字段也写出，不依赖消费端自行填充默认值。
 
 ---
 
@@ -71,7 +71,7 @@ MessagePack map key 可以不是 string，但 Coflow 导出为了和 JSON 保持
 | `int` | `"1"`、`"42"` | 十进制数字字符串 |
 | `enum` | `"1"`、`"10"` | 枚举底层整数值的十进制字符串 |
 
-`@ref` 字段导出为原始 ID 值，不内联目标对象，避免数据膨胀和循环引用问题。运行时加载器根据 ID 和 schema 中 `@ref` 的目标类型解析引用。
+引用字段导出为目标 record key，不内联目标对象，避免数据膨胀和循环引用问题。运行时加载器根据字段 schema 的目标类型和 key 索引解析引用。
 
 ---
 

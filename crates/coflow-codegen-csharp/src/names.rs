@@ -4,17 +4,6 @@ pub fn has_annotation(annotations: &[CftAnnotation], name: &str) -> bool {
     annotations.iter().any(|annotation| annotation.name == name)
 }
 
-pub fn annotation_name_arg(annotations: &[CftAnnotation], name: &str) -> Option<String> {
-    annotations
-        .iter()
-        .find(|annotation| annotation.name == name)
-        .and_then(|annotation| annotation.args.first())
-        .and_then(|arg| match arg {
-            CftAnnotationValue::Name(name) => Some(name.clone()),
-            _ => None,
-        })
-}
-
 pub fn annotation_string_arg(annotations: &[CftAnnotation], name: &str) -> Option<String> {
     annotations
         .iter()
@@ -223,17 +212,6 @@ pub fn pluralize(name: &str) -> String {
     }
 }
 
-pub fn ref_property_name(field_name: &str, target: &str) -> String {
-    for suffix in ["_id", "Id", "ID"] {
-        if let Some(prefix) = field_name.strip_suffix(suffix) {
-            if !prefix.is_empty() {
-                return pascal_case(prefix);
-            }
-        }
-    }
-    pascal_case(target)
-}
-
 pub fn index_var_name(type_name: &str) -> String {
     format!("_{}Index", camel_case(type_name))
 }
@@ -248,14 +226,6 @@ pub fn ref_index_param_name(type_name: &str) -> String {
 
 pub fn ref_index_var_name(type_name: &str) -> String {
     format!("_{}RefIndex", camel_case(type_name))
-}
-
-pub fn multi_index_var_name(type_name: &str, field_name: &str) -> String {
-    format!(
-        "_{}By{}",
-        camel_case(&pluralize(type_name)),
-        pascal_case(field_name)
-    )
 }
 
 pub fn format_float(value: f64) -> String {

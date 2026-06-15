@@ -65,8 +65,6 @@ fn exports_tables_as_messagepack_arrays_with_json_export_shape() -> TestResult {
         r#"
             enum Rarity { Common = 0, Rare = 10, }
             type Item {
-                @id
-                id: string;
                 name: string = "unknown";
                 rarity: Rarity = Rarity.Common;
                 tags: [string] = [];
@@ -77,9 +75,9 @@ fn exports_tables_as_messagepack_arrays_with_json_export_shape() -> TestResult {
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "iron_sword",
         "Item",
         [
-            ("id", CfdInputValue::from("iron_sword")),
             ("rarity", CfdInputValue::enum_variant("Rarity", "Rare")),
             (
                 "tags",
@@ -120,22 +118,19 @@ fn exports_tables_as_messagepack_arrays_with_json_export_shape() -> TestResult {
 }
 
 #[test]
-fn exports_refs_raw_ids_and_polymorphic_objects_with_type_tag_first() -> TestResult {
+fn exports_refs_raw_keys_and_polymorphic_objects_with_type_tag_first() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Item { @id id: string; name: string; }
-            abstract type Reward { id: string; }
+            type Item { name: string; }
+            abstract type Reward {}
             type ItemReward : Reward {
-                @ref(Item)
-                item_id: string;
+                item: Item;
                 count: int = 1;
             }
             type CurrencyReward : Reward {
                 amount: int;
             }
             type DropTable {
-                @id
-                id: string;
                 rewards: [Reward];
                 weights: [int];
             }
@@ -144,33 +139,27 @@ fn exports_refs_raw_ids_and_polymorphic_objects_with_type_tag_first() -> TestRes
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "iron_sword",
         "Item",
-        [
-            ("id", CfdInputValue::from("iron_sword")),
-            ("name", CfdInputValue::from("Iron Sword")),
-        ],
+        [("name", CfdInputValue::from("Iron Sword"))],
     );
     builder.add_record(
+        "drop_1",
         "DropTable",
         [
-            ("id", CfdInputValue::from("drop_1")),
             (
                 "rewards",
                 CfdInputValue::Array(vec![
                     CfdInputValue::object(
                         "ItemReward",
                         [
-                            ("id", CfdInputValue::from("reward_sword")),
-                            ("item_id", CfdInputValue::from("iron_sword")),
+                            ("item", CfdInputValue::record_ref("iron_sword")),
                             ("count", CfdInputValue::from(2_i64)),
                         ],
                     ),
                     CfdInputValue::object(
                         "CurrencyReward",
-                        [
-                            ("id", CfdInputValue::from("reward_gold")),
-                            ("amount", CfdInputValue::from(50_i64)),
-                        ],
+                        [("amount", CfdInputValue::from(50_i64))],
                     ),
                 ]),
             ),
@@ -195,13 +184,11 @@ fn exports_refs_raw_ids_and_polymorphic_objects_with_type_tag_first() -> TestRes
                 Value::Array(vec![
                     map(vec![
                         ("$type", Value::from("ItemReward")),
-                        ("id", Value::from("reward_sword")),
-                        ("item_id", Value::from("iron_sword")),
+                        ("item", Value::from("iron_sword")),
                         ("count", Value::from(2)),
                     ]),
                     map(vec![
                         ("$type", Value::from("CurrencyReward")),
-                        ("id", Value::from("reward_gold")),
                         ("amount", Value::from(50)),
                     ]),
                 ])
@@ -238,8 +225,6 @@ fn exports_nullable_values_and_arrays_as_messagepack_values() -> TestResult {
                 hp: int;
             }
             type Holder {
-                @id
-                id: string;
                 maybe_stats: Stats?;
                 maybe_tags: [string]?;
                 maybe_attrs: {string: int}?;
@@ -249,9 +234,9 @@ fn exports_nullable_values_and_arrays_as_messagepack_values() -> TestResult {
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "h1",
         "Holder",
         [
-            ("id", CfdInputValue::from("h1")),
             (
                 "maybe_stats",
                 CfdInputValue::object_with_declared_type([("hp", CfdInputValue::from(10_i64))]),
@@ -270,9 +255,9 @@ fn exports_nullable_values_and_arrays_as_messagepack_values() -> TestResult {
         ],
     );
     builder.add_record(
+        "h2",
         "Holder",
         [
-            ("id", CfdInputValue::from("h2")),
             ("maybe_stats", CfdInputValue::Null),
             ("maybe_tags", CfdInputValue::Null),
             ("maybe_attrs", CfdInputValue::Null),

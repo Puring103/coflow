@@ -35,16 +35,16 @@ impl CfdDataModel {
         self.tables.get(type_name)
     }
 
-    /// Looks up a record by type name and id.
+    /// Looks up a record by type name and record key.
     /// Works for both concrete tables and polymorphic (abstract/inherited) ranges.
     #[must_use]
-    pub fn lookup(&self, type_name: &str, id: &CfdIdValue) -> Option<CfdRecordId> {
+    pub fn lookup(&self, type_name: &str, key: &str) -> Option<CfdRecordId> {
         if let Some(index) = self.inheritance_index.get(type_name) {
-            return index.records.get(id).copied();
+            return index.records.get(key).copied();
         }
         self.tables
             .get(type_name)
-            .and_then(|table| table.primary_index.get(id))
+            .and_then(|table| table.primary_index.get(key))
             .copied()
     }
 
@@ -101,10 +101,12 @@ impl<'a> CfdModelBuilder<'a> {
 
     pub fn add_record(
         &mut self,
+        key: impl Into<String>,
         actual_type: impl Into<String>,
         fields: impl IntoIterator<Item = (impl Into<String>, CfdInputValue)>,
     ) -> &mut Self {
-        self.records.push(CfdInputRecord::new(actual_type, fields));
+        self.records
+            .push(CfdInputRecord::new(key, actual_type, fields));
         self
     }
 
@@ -118,7 +120,7 @@ impl<'a> CfdModelBuilder<'a> {
     /// # Errors
     ///
     /// Returns data-model diagnostics for schema/type mismatches, missing
-    /// fields, duplicate ids, duplicate dict keys, or unresolved references.
+    /// fields, duplicate keys, duplicate dict keys, or unresolved references.
     pub fn build(self) -> Result<CfdDataModel, CfdDiagnostics> {
         ModelCompiler::new(self.schema, self.records).build()
     }
@@ -128,27 +130,32 @@ impl<'a> CfdModelBuilder<'a> {
 pub struct CfdTable {
     pub type_name: String,
     pub records: Vec<CfdRecordId>,
-    pub primary_index: BTreeMap<CfdIdValue, CfdRecordId>,
-    pub secondary_indexes: BTreeMap<String, BTreeMap<CfdIndexKey, Vec<CfdRecordId>>>,
+    pub primary_index: BTreeMap<String, CfdRecordId>,
 }
 
 /// Index of records assignable to a given root type (`abstract type` or any
-/// concrete type with subclasses), keyed by `@id` value.
+/// concrete type with subclasses), keyed by record key.
 ///
 /// The owning `CfdDataModel.inheritance_index` map keys identify the root
 /// type — readers obtain it from the lookup, so it is not duplicated here.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdPolymorphicIndex {
-    pub records: BTreeMap<CfdIdValue, CfdRecordId>,
+    pub records: BTreeMap<String, CfdRecordId>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdRecord {
+    pub key: String,
     pub actual_type: String,
     pub fields: BTreeMap<String, CfdValue>,
 }
 
 impl CfdRecord {
+    #[must_use]
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+
     #[must_use]
     pub fn field(&self, name: &str) -> Option<&CfdValue> {
         self.fields.get(name)
@@ -185,51 +192,13 @@ pub enum CfdValue {
     String(String),
     Enum(CfdEnumValue),
     Object(Box<CfdRecord>),
-    Ref { id: CfdIdValue, target: CfdRecordId },
+    Ref { key: String, target: CfdRecordId },
     Array(Vec<CfdValue>),
     Dict(Vec<(CfdDictKey, CfdValue)>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum CfdIdValue {
-    String(String),
-    Int(i64),
-    Enum(CfdEnumValue),
-}
-
-impl From<&str> for CfdIdValue {
-    fn from(value: &str) -> Self {
-        Self::String(value.to_string())
-    }
-}
-
-impl From<String> for CfdIdValue {
-    fn from(value: String) -> Self {
-        Self::String(value)
-    }
-}
-
-impl From<i64> for CfdIdValue {
-    fn from(value: i64) -> Self {
-        Self::Int(value)
-    }
-}
-
-impl From<CfdEnumValue> for CfdIdValue {
-    fn from(value: CfdEnumValue) -> Self {
-        Self::Enum(value)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CfdDictKey {
-    String(String),
-    Int(i64),
-    Enum(CfdEnumValue),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum CfdIndexKey {
     String(String),
     Int(i64),
     Enum(CfdEnumValue),
@@ -282,6 +251,7 @@ impl Hash for CfdEnumValue {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdInputRecord {
+    pub key: String,
     pub actual_type: String,
     pub fields: BTreeMap<String, CfdInputValue>,
 }
@@ -289,10 +259,12 @@ pub struct CfdInputRecord {
 impl CfdInputRecord {
     #[must_use]
     pub fn new(
+        key: impl Into<String>,
         actual_type: impl Into<String>,
         fields: impl IntoIterator<Item = (impl Into<String>, CfdInputValue)>,
     ) -> Self {
         Self {
+            key: key.into(),
             actual_type: actual_type.into(),
             fields: fields
                 .into_iter()
@@ -300,6 +272,20 @@ impl CfdInputRecord {
                 .collect(),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CfdRefPathSegment {
+    Field(String),
+    Index(CfdInputRefIndex),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CfdInputRefIndex {
+    Int(i64),
+    String(String),
+    Variant(String),
+    EnumVariant { enum_name: String, variant: String },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -317,7 +303,11 @@ pub enum CfdInputValue {
         actual_type: Option<String>,
         fields: BTreeMap<String, CfdInputValue>,
     },
-    Ref(CfdIdValue),
+    RecordRef(String),
+    PathRef {
+        root: String,
+        segments: Vec<CfdRefPathSegment>,
+    },
     Array(Vec<CfdInputValue>),
     Dict(Vec<(CfdInputDictKey, CfdInputValue)>),
 }
@@ -361,6 +351,22 @@ impl CfdInputValue {
     #[must_use]
     pub fn dict(entries: impl IntoIterator<Item = (CfdInputDictKey, CfdInputValue)>) -> Self {
         Self::Dict(entries.into_iter().collect())
+    }
+
+    #[must_use]
+    pub fn record_ref(key: impl Into<String>) -> Self {
+        Self::RecordRef(key.into())
+    }
+
+    #[must_use]
+    pub fn path_ref(
+        root: impl Into<String>,
+        segments: impl IntoIterator<Item = CfdRefPathSegment>,
+    ) -> Self {
+        Self::PathRef {
+            root: root.into(),
+            segments: segments.into_iter().collect(),
+        }
     }
 }
 

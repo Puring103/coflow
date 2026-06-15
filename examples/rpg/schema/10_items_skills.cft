@@ -1,0 +1,218 @@
+@display("Item")
+type Item {
+  @display("Display name")
+  name: string;
+
+  rarity: Rarity = Rarity.Common;
+
+  slot: ItemSlot = ItemSlot.Material;
+
+  level_requirement: int = 1;
+  stack_limit: int = 1;
+  price: int = 0;
+  origin: Vector2;
+  tags: [string] = [];
+  attributes: {string: int} = {};
+  elemental_bonus: {Element: int} = {};
+
+  upgrade_item: Item? = null;
+
+  @deprecated
+  @display("Legacy combat score")
+  legacy_power: int = 0;
+
+  check {
+    id != "";
+    name != "";
+    matches(id, "^[a-z][a-z0-9_]*$");
+    rarity >= Rarity.Common;
+    slot != ItemSlot.None;
+    1 <= level_requirement <= MAX_LEVEL;
+    stack_limit > 0;
+    price >= 0;
+    len(tags) > 0;
+    unique(tags);
+    none tag in tags { tag == ""; }
+    len(attributes) > 0;
+    min(values(attributes)) >= 0;
+    max(values(attributes)) <= MAX_POWER;
+    contains(keys(attributes), "power") || slot != ItemSlot.Weapon;
+    contains(tags, "weapon") || slot != ItemSlot.Weapon;
+
+    all entry in attributes {
+      entry.key != "";
+      entry.value >= 0;
+    }
+
+    all entry in elemental_bonus {
+      entry.key >= Element.Physical;
+      entry.value >= 0;
+    }
+
+    when upgrade_item != null {
+      upgrade_item.id != id;
+      upgrade_item.rarity >= rarity;
+    }
+  }
+}
+
+@display("Equipment")
+type Equipment : Item {
+  name_text: Text;
+
+  required_class: string;
+  stat_bonus: StatBlock;
+  allowed_classes: [string] = [];
+  upgrade_costs: {int: int} = {};
+
+  set_piece: Equipment? = null;
+
+  check {
+    name_text.id != "";
+    required_class != "";
+    contains(allowed_classes, required_class);
+    unique(allowed_classes);
+    slot == ItemSlot.Weapon || slot == ItemSlot.Armor || slot == ItemSlot.Accessory;
+    stat_bonus.hp > 0;
+    stat_bonus.attack + stat_bonus.defense > 0;
+    contains(upgrade_costs, 1);
+    min(keys(upgrade_costs)) >= 1;
+    max(values(upgrade_costs)) <= MAX_POWER * 10;
+
+    all class in allowed_classes {
+      class != "";
+    }
+
+    all entry in upgrade_costs {
+      entry.key > 0;
+      entry.value >= 0;
+    }
+
+    when set_piece != null {
+      set_piece.id != id;
+      set_piece.required_class == required_class;
+    }
+  }
+}
+
+@display("Skill")
+type Skill {
+  name: string;
+  element: Element;
+  power: int;
+  cooldown: float;
+
+  tags: SkillTag = SkillTag.Damage;
+
+  is_passive: bool = false;
+
+  follow_up: Skill? = null;
+
+  buff: Buff? = null;
+
+  costs: [int] = [];
+  allowed_slots: [ItemSlot] = [];
+  coefficient: float = 1.0;
+  targeting: Targeting;
+
+  check {
+    id != "";
+    name != "";
+    matches(id, "^[a-z][a-z0-9_]*$");
+    0 <= power <= MAX_POWER;
+    cooldown >= 0.0;
+    coefficient > 0.0;
+    unique(costs);
+    unique(allowed_slots);
+    any cost in costs { cost == 0; }
+    none cost in costs { cost < 0; }
+    any slot in allowed_slots { slot != ItemSlot.None; }
+    targeting.shape != "";
+    targeting.params["range"] >= 0.0;
+
+    when !is_passive {
+      power > 0;
+      cooldown > 0.0;
+      (tags & SkillTag.Passive) == SkillTag(0);
+    }
+
+    when is_passive {
+      power == 0;
+      cooldown == 0.0;
+      (tags & SkillTag.Passive) != SkillTag(0);
+    }
+
+    when follow_up != null {
+      follow_up.id != id;
+      follow_up.power <= power;
+    }
+
+    when buff != null {
+      buff.id != "";
+      buff.required_element == null || buff.required_element == element;
+    }
+  }
+}
+
+@display("Buff")
+type Buff {
+  name: string;
+
+  name_text: Text;
+
+  tags: SkillTag = SkillTag.Damage;
+  duration: float = 0.0;
+  max_stacks: int = 1;
+  tick_interval: float? = null;
+  exclusive_group: string = "";
+  stat_modifiers: {string: int} = {};
+  trigger_chances: {string: float} = {};
+  required_element: Element? = null;
+
+  source_skill: Skill? = null;
+
+  check {
+    id != "";
+    name != "";
+    name_text.id != "";
+    matches(id, "^[a-z][a-z0-9_]*$");
+    duration >= 0.0;
+    1 <= max_stacks <= 10;
+    len(stat_modifiers) > 0;
+    contains(trigger_chances, "apply");
+    0.0 <= trigger_chances["apply"] <= 1.0;
+
+    when duration > 0.0 {
+      tick_interval != null;
+      tick_interval > 0.0;
+    }
+
+    when duration == 0.0 {
+      tick_interval == null;
+      (tags & SkillTag.Passive) != SkillTag(0);
+    }
+
+    when max_stacks == 1 {
+      exclusive_group != "";
+    }
+
+    when required_element != null {
+      required_element >= Element.Physical;
+    }
+
+    when source_skill != null {
+      source_skill.id != "";
+      required_element == null || source_skill.element == required_element;
+    }
+
+    all entry in stat_modifiers {
+      entry.key != "";
+      -MAX_POWER <= entry.value <= MAX_POWER;
+    }
+
+    all entry in trigger_chances {
+      entry.key != "";
+      0.0 <= entry.value <= 1.0;
+    }
+  }
+}

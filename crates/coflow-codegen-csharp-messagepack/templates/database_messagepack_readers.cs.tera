@@ -164,6 +164,11 @@
         }
     }
 
+    private static bool NextIsString(ref MessagePackReader reader)
+    {
+        return reader.NextMessagePackType == MessagePackType.String;
+    }
+
     private static bool ReadNil(ref MessagePackReader reader, string path)
     {
         try

@@ -323,6 +323,9 @@ impl<'a> CheckEvaluator<'a> {
         let CheckValue::Record(record) = &self.current else {
             return None;
         };
+        if name == "id" {
+            return self.virtual_id(record, record.path());
+        }
         let field_type = self.field_type_for_record(record, name);
         record.field(self.model, field_type, name)
     }
@@ -352,6 +355,15 @@ impl<'a> CheckEvaluator<'a> {
         }
         match target.value {
             CheckValue::Record(record) => {
+                if name == "id" {
+                    return self.virtual_id(&record, target.path).ok_or_else(|| {
+                        self.diag_at(
+                            CfdErrorCode::CheckEvalTypeError,
+                            None,
+                            "record has no virtual id",
+                        );
+                    });
+                }
                 let field_type = self.field_type_for_record(&record, name);
                 record.field(self.model, field_type, name).ok_or_else(|| {
                     self.diag_at(
@@ -382,6 +394,25 @@ impl<'a> CheckEvaluator<'a> {
                 Err(())
             }
         }
+    }
+
+    fn virtual_id(
+        &self,
+        record: &super::value::CheckRecordRef,
+        path: Option<CfdPath>,
+    ) -> Option<LocatedCheckValue> {
+        let key = record
+            .key(self.model)
+            .filter(|key| !key.is_empty())
+            .or_else(|| {
+                self.root_record
+                    .and_then(|id| self.model.record(id).map(|record| record.key()))
+            })?;
+        let key = key.to_string();
+        let path = path
+            .map(|path| path.field("id"))
+            .or_else(|| Some(self.root_path.clone().field("id")));
+        Some(LocatedCheckValue::new(CheckValue::String(key), path))
     }
 
     fn eval_index(

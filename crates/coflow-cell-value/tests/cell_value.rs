@@ -9,7 +9,9 @@
 
 use coflow_cell_value::{parse_cell, CellValueDiagnostics, CellValueErrorCode, ParsedCell};
 use coflow_cft::{CftContainer, ModuleId};
-use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue, CfdValue};
+use coflow_data_model::{
+    CfdDataModel, CfdInputDictKey, CfdInputRefIndex, CfdInputValue, CfdRefPathSegment, CfdValue,
+};
 
 type TestResult = Result<(), String>;
 
@@ -159,7 +161,7 @@ fn parses_positional_object_cells_using_field_order() -> TestResult {
 
     let stats = parse_value(&schema, "Stats", "100, 50")?;
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Monster", [("stats", stats)]);
+    builder.add_record("monster_1", "Monster", [("stats", stats)]);
     let model = build_model(builder)?;
     let Some((_, monster)) = model.records().next() else {
         return Err("expected monster record".to_string());
@@ -191,7 +193,7 @@ fn parses_named_object_cells_and_omits_skipped_fields() -> TestResult {
 
     let stats = parse_value(&schema, "Stats", "speed: 2.0, hp: 100")?;
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Monster", [("stats", stats)]);
+    builder.add_record("monster_1", "Monster", [("stats", stats)]);
     let model = build_model(builder)?;
     let Some((_, monster)) = model.records().next() else {
         return Err("expected monster record".to_string());
@@ -226,7 +228,7 @@ fn named_and_positional_object_cells_skip_explicit_underscore_values() -> TestRe
 
     for stats in [named, positional] {
         let mut builder = CfdDataModel::builder(&schema);
-        builder.add_record("Monster", [("stats", stats)]);
+        builder.add_record("monster_1", "Monster", [("stats", stats)]);
         let model = build_model(builder)?;
         let Some((_, monster)) = model.records().next() else {
             return Err("expected monster record".to_string());
@@ -338,7 +340,7 @@ fn parses_nested_objects_inside_array_cells() -> TestResult {
                 attack: int;
             }
             type Monster {
-                id: string;
+                key: string;
                 level: int;
                 stats: Stats;
             }
@@ -353,7 +355,7 @@ fn parses_nested_objects_inside_array_cells() -> TestResult {
         )?,
         ParsedCell::Value(CfdInputValue::Array(vec![
             CfdInputValue::object_with_declared_type([
-                ("id", CfdInputValue::String("slime".to_string())),
+                ("key", CfdInputValue::String("slime".to_string())),
                 ("level", CfdInputValue::Int(5)),
                 (
                     "stats",
@@ -364,7 +366,7 @@ fn parses_nested_objects_inside_array_cells() -> TestResult {
                 ),
             ]),
             CfdInputValue::object_with_declared_type([
-                ("id", CfdInputValue::String("goblin".to_string())),
+                ("key", CfdInputValue::String("goblin".to_string())),
                 ("level", CfdInputValue::Int(10)),
                 (
                     "stats",
@@ -482,7 +484,7 @@ fn rejects_invalid_dict_entries_and_key_types() -> TestResult {
 fn unknown_declared_enum_names_are_treated_as_object_types() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Item { id: string; }
+            type Item { key: string; }
         "#,
     )?;
 
@@ -568,13 +570,13 @@ fn validates_polymorphic_type_markers_are_assignable_and_concrete() -> TestResul
     let schema = compile_schema(
         r#"
             abstract type Reward {
-                id: string;
+                key: string;
             }
             type CurrencyReward : Reward {
                 amount: int;
             }
             type Item {
-                id: string;
+                key: string;
             }
         "#,
     )?;
@@ -685,7 +687,7 @@ fn rejects_declared_type_and_nested_scan_edge_cases() -> TestResult {
 fn object_type_markers_require_identifier_names_and_closed_boundaries() -> TestResult {
     let schema = compile_schema(
         r#"
-            abstract type Reward { id: string; }
+            abstract type Reward { key: string; }
             type CurrencyReward : Reward { amount: int; }
         "#,
     )?;
@@ -752,7 +754,7 @@ fn parses_full_nested_root_object_example() -> TestResult {
     let schema = compile_schema(
         r#"
             abstract type Reward {
-                id: string;
+                key: string;
             }
             type CurrencyReward : Reward {
                 amount: int;
@@ -781,14 +783,14 @@ fn parses_full_nested_root_object_example() -> TestResult {
                     CfdInputValue::object(
                         "CurrencyReward",
                         [
-                            ("id", CfdInputValue::String("r1".to_string())),
+                            ("key", CfdInputValue::String("r1".to_string())),
                             ("amount", CfdInputValue::Int(100)),
                         ],
                     ),
                     CfdInputValue::object(
                         "ItemReward",
                         [
-                            ("id", CfdInputValue::String("r2".to_string())),
+                            ("key", CfdInputValue::String("r2".to_string())),
                             ("item_id", CfdInputValue::String("sword_01".to_string())),
                             ("count", CfdInputValue::Int(1)),
                         ],
@@ -809,7 +811,7 @@ fn parses_polymorphic_object_type_markers() -> TestResult {
     let schema = compile_schema(
         r#"
             abstract type Reward {
-                id: string;
+                key: string;
             }
             type CurrencyReward : Reward {
                 amount: int;
@@ -822,7 +824,7 @@ fn parses_polymorphic_object_type_markers() -> TestResult {
         ParsedCell::Value(CfdInputValue::object(
             "CurrencyReward",
             [
-                ("id", CfdInputValue::String("r1".to_string())),
+                ("key", CfdInputValue::String("r1".to_string())),
                 ("amount", CfdInputValue::Int(100)),
             ],
         ))
@@ -835,7 +837,7 @@ fn parses_unicode_polymorphic_object_type_markers() -> TestResult {
     let schema = compile_schema(
         r#"
             abstract type 奖励 {
-                id: string;
+                key: string;
             }
             type 金币奖励 : 奖励 {
                 数量: int;
@@ -848,7 +850,7 @@ fn parses_unicode_polymorphic_object_type_markers() -> TestResult {
         ParsedCell::Value(CfdInputValue::object(
             "金币奖励",
             [
-                ("id", CfdInputValue::String("r1".to_string())),
+                ("key", CfdInputValue::String("r1".to_string())),
                 ("数量", CfdInputValue::Int(100)),
             ],
         ))
@@ -857,27 +859,122 @@ fn parses_unicode_polymorphic_object_type_markers() -> TestResult {
 }
 
 #[test]
-fn ref_cells_parse_as_their_declared_id_type_for_data_model_resolution() -> TestResult {
+fn object_cells_parse_explicit_record_and_path_refs() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
-                @id
-                id: string;
+                name: string;
             }
-            type Drop {
-                @ref(Item)
-                item_id: string;
+            type DropTable {
+                rewards: [Item];
             }
         "#,
     )?;
 
-    let item_id = parse_value(&schema, "string", "item_1")?;
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Item",
-        [("id", CfdInputValue::String("item_1".to_string()))],
+    assert_eq!(
+        parse_value(&schema, "Item", "@item_1")?,
+        CfdInputValue::record_ref("item_1")
     );
-    builder.add_record("Drop", [("item_id", item_id)]);
+    assert_eq!(
+        parse_value(&schema, "Item?", "@item_1")?,
+        CfdInputValue::record_ref("item_1")
+    );
+    assert_eq!(
+        parse_value(&schema, "[Item]", "@item_1 | @item_2")?,
+        CfdInputValue::Array(vec![
+            CfdInputValue::record_ref("item_1"),
+            CfdInputValue::record_ref("item_2"),
+        ])
+    );
+    assert_eq!(
+        parse_value(&schema, "{string: Item}", "main: @item_1")?,
+        CfdInputValue::dict([(
+            CfdInputDictKey::from("main"),
+            CfdInputValue::record_ref("item_1"),
+        )])
+    );
+    assert_eq!(
+        parse_value(&schema, "Item", "@drop_table.rewards[0]")?,
+        CfdInputValue::path_ref(
+            "drop_table",
+            [
+                CfdRefPathSegment::Field("rewards".to_string()),
+                CfdRefPathSegment::Index(CfdInputRefIndex::Int(0)),
+            ],
+        )
+    );
+    assert_eq!(
+        parse_value(&schema, "Item", r#"@drop_table.rewards["rare"]"#)?,
+        CfdInputValue::path_ref(
+            "drop_table",
+            [
+                CfdRefPathSegment::Field("rewards".to_string()),
+                CfdRefPathSegment::Index(CfdInputRefIndex::String("rare".to_string())),
+            ],
+        )
+    );
+    assert_eq!(
+        parse_value(&schema, "Item", r#"@drop_table.rewards["ra\"re"]"#)?,
+        CfdInputValue::path_ref(
+            "drop_table",
+            [
+                CfdRefPathSegment::Field("rewards".to_string()),
+                CfdRefPathSegment::Index(CfdInputRefIndex::String("ra\"re".to_string())),
+            ],
+        )
+    );
+    Ok(())
+}
+
+#[test]
+fn string_cells_keep_at_prefixed_text_as_plain_strings() -> TestResult {
+    let schema = compile_schema("")?;
+
+    assert_eq!(
+        parse_ok(&schema, "string", "@item_1")?,
+        ParsedCell::Value(CfdInputValue::String("@item_1".to_string()))
+    );
+    Ok(())
+}
+
+#[test]
+fn object_cells_reject_bare_reference_keys_with_marker_hint() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                name: string;
+            }
+        "#,
+    )?;
+
+    let err = parse_err(&schema, "Item", "item_1")?;
+    assert_has_code(&err, CellValueErrorCode::ReferenceNeedsMarker);
+    assert!(
+        err.diagnostics
+            .iter()
+            .any(|diag| diag.message.contains("@item_1")),
+        "expected marker hint, got {err:?}",
+    );
+    Ok(())
+}
+
+#[test]
+fn explicit_record_refs_resolve_to_cfd_refs() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                name: string;
+            }
+            type Drop {
+                item: Item;
+            }
+        "#,
+    )?;
+
+    let parsed = parse_value(&schema, "Item", "@item_1")?;
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("item_1", "Item", [("name", CfdInputValue::from("Sword"))]);
+    builder.add_record("drop_1", "Drop", [("item", parsed)]);
     let model = build_model(builder)?;
     let Some(item_record_id) = model.records().next().map(|(id, _)| id) else {
         return Err("expected item record".to_string());
@@ -887,69 +984,12 @@ fn ref_cells_parse_as_their_declared_id_type_for_data_model_resolution() -> Test
     };
 
     assert_eq!(
-        drop_record.field("item_id"),
+        drop_record.field("item"),
         Some(&CfdValue::Ref {
-            id: "item_1".into(),
+            key: "item_1".into(),
             target: item_record_id,
         })
     );
-    Ok(())
-}
-
-#[test]
-fn ref_cell_with_enum_id_resolves_via_enum_variant() -> TestResult {
-    let schema = compile_schema(
-        r#"
-            enum Color { Red = 0, Green = 1, Blue = 2, }
-            type Palette {
-                @id
-                id: Color;
-                name: string;
-            }
-            type Brush {
-                @id
-                bid: string;
-                @ref(Palette)
-                color: Color;
-            }
-        "#,
-    )?;
-
-    // The ref cell text is just the enum variant name (or with a prefix).
-    let parsed = parse_value(&schema, "Color", "Green")?;
-    assert_eq!(parsed, CfdInputValue::enum_variant("Color", "Green"));
-    let prefixed = parse_value(&schema, "Color", "Color.Green")?;
-    assert_eq!(prefixed, parsed);
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Palette",
-        [
-            ("id", CfdInputValue::enum_variant("Color", "Green")),
-            ("name", CfdInputValue::from("verde")),
-        ],
-    );
-    builder.add_record(
-        "Brush",
-        [("bid", CfdInputValue::from("brush_1")), ("color", parsed)],
-    );
-    let model = build_model(builder)?;
-    let Some((_, brush)) = model.records().nth(1) else {
-        return Err("expected brush record".to_string());
-    };
-    match brush.field("color") {
-        Some(CfdValue::Ref { id, .. }) => {
-            assert_eq!(
-                id,
-                &coflow_data_model::CfdIdValue::Enum(coflow_data_model::CfdEnumValue {
-                    enum_name: "Color".to_string(),
-                    variant: Some("Green".to_string()),
-                    value: 1,
-                })
-            );
-        }
-        other => return Err(format!("expected ref, got {other:?}")),
-    }
     Ok(())
 }
 

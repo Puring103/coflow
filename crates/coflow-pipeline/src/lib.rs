@@ -350,17 +350,8 @@ fn collect_declared_key_as_enum_ids(
 ) -> BTreeMap<String, Vec<String>> {
     let mut out = BTreeMap::new();
     for schema_type in schema.all_types() {
-        for field in &schema_type.all_fields {
-            if !field
-                .annotations
-                .iter()
-                .any(|annotation| annotation.name == "id")
-            {
-                continue;
-            }
-            if let Some(enum_name) = annotation_string_arg(&field.annotations, "IdAsEnum") {
-                out.entry(enum_name).or_default();
-            }
+        if let Some(enum_name) = annotation_string_arg(&schema_type.annotations, "keyAsEnum") {
+            out.entry(enum_name).or_default();
         }
     }
     out
@@ -372,28 +363,24 @@ fn collect_key_as_enum_ids(
 ) -> BTreeMap<String, Vec<String>> {
     let mut out = collect_declared_key_as_enum_ids(schema);
     for schema_type in schema.all_types() {
-        let Some(id_field) = schema_type.all_fields.iter().find(|field| {
-            field
-                .annotations
-                .iter()
-                .any(|annotation| annotation.name == "id")
-        }) else {
-            continue;
-        };
-        let Some(enum_name) = annotation_string_arg(&id_field.annotations, "IdAsEnum") else {
+        let Some(enum_name) = annotation_string_arg(&schema_type.annotations, "keyAsEnum") else {
             continue;
         };
 
         let mut seen = BTreeSet::new();
         let mut variants = Vec::new();
-        for (_record_id, record) in model.records_of_type(&schema_type.name) {
-            let Some(coflow_data_model::CfdValue::String(value)) =
-                record.fields.get(&id_field.name)
-            else {
-                continue;
-            };
-            if seen.insert(value.clone()) {
-                variants.push(value.clone());
+        if let Some(index) = model.polymorphic_index(&schema_type.name) {
+            for key in index.records.keys() {
+                if seen.insert(key.clone()) {
+                    variants.push(key.clone());
+                }
+            }
+        } else {
+            for (_record_id, record) in model.records_of_type(&schema_type.name) {
+                let key = record.key();
+                if seen.insert(key.to_string()) {
+                    variants.push(key.to_string());
+                }
             }
         }
         out.insert(enum_name, variants);
@@ -454,7 +441,7 @@ fn merge_key_as_enum_lockfile(
 fn next_key_as_enum_value(value: i64) -> Result<i64, String> {
     value
         .checked_add(1)
-        .ok_or_else(|| "@IdAsEnum lockfile exhausted i64 enum values".to_string())
+        .ok_or_else(|| "@keyAsEnum lockfile exhausted i64 enum values".to_string())
 }
 
 fn read_key_as_enum_lockfile(

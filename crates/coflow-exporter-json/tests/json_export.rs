@@ -41,13 +41,11 @@ fn export_tables(
 }
 
 #[test]
-fn exports_tables_with_schema_order_defaults_and_scalar_values() -> TestResult {
+fn exports_tables_with_schema_order_defaults_and_record_key_id() -> TestResult {
     let schema = compile_schema(
         r#"
             enum Rarity { Common = 0, Rare = 10, }
             type Item {
-                @id
-                id: string;
                 name: string = "unknown";
                 rarity: Rarity = Rarity.Common;
                 tags: [string] = [];
@@ -58,9 +56,9 @@ fn exports_tables_with_schema_order_defaults_and_scalar_values() -> TestResult {
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "iron_sword",
         "Item",
         [
-            ("id", CfdInputValue::from("iron_sword")),
             ("rarity", CfdInputValue::enum_variant("Rarity", "Rare")),
             (
                 "tags",
@@ -100,61 +98,38 @@ fn exports_tables_with_schema_order_defaults_and_scalar_values() -> TestResult {
 }
 
 #[test]
-fn exports_empty_tables_for_concrete_id_types() -> TestResult {
+fn exports_empty_tables_for_concrete_types() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Item { @id id: string; }
-            type Monster { @id id: string; }
+            type Item { name: string; }
+            type Monster { level: int; }
         "#,
     )?;
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("id", CfdInputValue::from("item_1"))]);
+    builder.add_record("item_1", "Item", [("name", CfdInputValue::from("Sword"))]);
     let model = build_model(builder)?;
     let tables = export_tables(&schema, &model)?;
 
-    assert_eq!(tables["Item"], json!([{ "id": "item_1" }]));
+    assert_eq!(tables["Item"], json!([{ "id": "item_1", "name": "Sword" }]));
     assert_eq!(tables["Monster"], json!([]));
     Ok(())
 }
 
 #[test]
-fn skips_concrete_non_id_types_even_with_records() -> TestResult {
+fn exports_refs_as_keys_and_polymorphic_objects_with_type_tags() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Item { @id id: string; }
-            type Inline { value: string; }
-        "#,
-    )?;
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("id", CfdInputValue::from("item_1"))]);
-    builder.add_record("Inline", [("value", CfdInputValue::from("embedded"))]);
-    let model = build_model(builder)?;
-    let tables = export_tables(&schema, &model)?;
-
-    assert!(tables.contains_key("Item"));
-    assert!(!tables.contains_key("Inline"));
-    Ok(())
-}
-
-#[test]
-fn exports_refs_as_ids_and_polymorphic_objects_with_type_tags() -> TestResult {
-    let schema = compile_schema(
-        r#"
-            type Item { @id id: string; name: string; }
-            abstract type Reward { id: string; }
+            type Item { name: string; }
+            abstract type Reward {}
             type ItemReward : Reward {
-                @ref(Item)
-                item_id: string;
+                item: Item;
                 count: int = 1;
             }
             type CurrencyReward : Reward {
                 amount: int;
             }
             type DropTable {
-                @id
-                id: string;
                 rewards: [Reward];
                 weights: [int];
             }
@@ -163,33 +138,27 @@ fn exports_refs_as_ids_and_polymorphic_objects_with_type_tags() -> TestResult {
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "iron_sword",
         "Item",
-        [
-            ("id", CfdInputValue::from("iron_sword")),
-            ("name", CfdInputValue::from("Iron Sword")),
-        ],
+        [("name", CfdInputValue::from("Iron Sword"))],
     );
     builder.add_record(
+        "drop_1",
         "DropTable",
         [
-            ("id", CfdInputValue::from("drop_1")),
             (
                 "rewards",
                 CfdInputValue::Array(vec![
                     CfdInputValue::object(
                         "ItemReward",
                         [
-                            ("id", CfdInputValue::from("reward_sword")),
-                            ("item_id", CfdInputValue::from("iron_sword")),
+                            ("item", CfdInputValue::record_ref("iron_sword")),
                             ("count", CfdInputValue::from(2_i64)),
                         ],
                     ),
                     CfdInputValue::object(
                         "CurrencyReward",
-                        [
-                            ("id", CfdInputValue::from("reward_gold")),
-                            ("amount", CfdInputValue::from(50_i64)),
-                        ],
+                        [("amount", CfdInputValue::from(50_i64))],
                     ),
                 ]),
             ),
@@ -213,13 +182,11 @@ fn exports_refs_as_ids_and_polymorphic_objects_with_type_tags() -> TestResult {
                 "rewards": [
                     {
                         "$type": "ItemReward",
-                        "id": "reward_sword",
-                        "item_id": "iron_sword",
+                        "item": "iron_sword",
                         "count": 2
                     },
                     {
                         "$type": "CurrencyReward",
-                        "id": "reward_gold",
                         "amount": 50
                     }
                 ],
@@ -234,11 +201,9 @@ fn exports_refs_as_ids_and_polymorphic_objects_with_type_tags() -> TestResult {
 fn exports_type_tag_for_concrete_parent_ranges_even_when_actual_is_parent() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Reward { id: string; }
+            type Reward { name: string; }
             type ItemReward : Reward { count: int; }
             type Holder {
-                @id
-                id: string;
                 reward: Reward;
             }
         "#,
@@ -246,14 +211,12 @@ fn exports_type_tag_for_concrete_parent_ranges_even_when_actual_is_parent() -> T
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "holder_1",
         "Holder",
-        [
-            ("id", CfdInputValue::from("holder_1")),
-            (
-                "reward",
-                CfdInputValue::object("Reward", [("id", CfdInputValue::from("base_reward"))]),
-            ),
-        ],
+        [(
+            "reward",
+            CfdInputValue::object("Reward", [("name", CfdInputValue::from("Base"))]),
+        )],
     );
     let model = build_model(builder)?;
     let tables = export_tables(&schema, &model)?;
@@ -265,7 +228,7 @@ fn exports_type_tag_for_concrete_parent_ranges_even_when_actual_is_parent() -> T
                 "id": "holder_1",
                 "reward": {
                     "$type": "Reward",
-                    "id": "base_reward"
+                    "name": "Base"
                 }
             }
         ])
@@ -279,8 +242,6 @@ fn exports_dict_keys_as_json_object_keys() -> TestResult {
         r#"
             enum DamageType { Physical = 0, Fire = 1, Ice = 2, }
             type Resistances {
-                @id
-                id: string;
                 by_enum: {DamageType: float};
                 by_int: {int: string};
             }
@@ -289,9 +250,9 @@ fn exports_dict_keys_as_json_object_keys() -> TestResult {
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "resist_1",
         "Resistances",
         [
-            ("id", CfdInputValue::from("resist_1")),
             (
                 "by_enum",
                 CfdInputValue::dict([
@@ -344,8 +305,6 @@ fn exports_nullable_composite_values_using_schema_type_refs() -> TestResult {
                 hp: int;
             }
             type Holder {
-                @id
-                id: string;
                 maybe_stats: Stats?;
                 maybe_tags: [string]?;
                 maybe_attrs: {string: int}?;
@@ -355,9 +314,9 @@ fn exports_nullable_composite_values_using_schema_type_refs() -> TestResult {
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "h1",
         "Holder",
         [
-            ("id", CfdInputValue::from("h1")),
             (
                 "maybe_stats",
                 CfdInputValue::object_with_declared_type([("hp", CfdInputValue::from(10_i64))]),
@@ -376,9 +335,9 @@ fn exports_nullable_composite_values_using_schema_type_refs() -> TestResult {
         ],
     );
     builder.add_record(
+        "h2",
         "Holder",
         [
-            ("id", CfdInputValue::from("h2")),
             ("maybe_stats", CfdInputValue::Null),
             ("maybe_tags", CfdInputValue::Null),
             ("maybe_attrs", CfdInputValue::Null),
