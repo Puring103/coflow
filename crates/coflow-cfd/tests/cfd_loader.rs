@@ -8,6 +8,8 @@
 use coflow_cfd::{load_cfd_model, parse_cfd_input_records, CfdTextErrorCode, CfdTextLoadError};
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdInputRefIndex, CfdInputValue, CfdRefPathSegment, CfdValue};
+use std::fs;
+use std::path::Path;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -488,6 +490,52 @@ fn cfd_rejects_check_blocks_as_data_syntax() {
     .expect_err("check blocks are not CFD data syntax");
 
     assert_has_text_code(&err, CfdTextErrorCode::Syntax);
+}
+
+#[test]
+fn examples_cfd_files_load_together() -> TestResult {
+    let examples_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/cfd");
+    let schema = compile_schema(&fs::read_to_string(examples_dir.join("schema.cft"))?);
+    let source = [
+        "data/01-records.cfd",
+        "data/02-polymorphic-and-paths.cfd",
+        "data/03-spread.cfd",
+    ]
+    .into_iter()
+    .map(|path| fs::read_to_string(examples_dir.join(path)))
+    .collect::<Result<Vec<_>, _>>()?
+    .join("\n");
+
+    let model = load_cfd_model(&schema, &source)?;
+
+    let elite_id = model
+        .lookup("Monster", "elite_monster")
+        .expect("elite monster");
+    let elite = model.record(elite_id).expect("elite monster record");
+    assert_eq!(
+        elite.field("name"),
+        Some(&CfdValue::String("Elite Training Dummy".to_string()))
+    );
+
+    let Some(CfdValue::Object(stats)) = elite.field("stats") else {
+        panic!("expected stats object");
+    };
+    assert_eq!(stats.field("hp"), Some(&CfdValue::Int(250)));
+    assert_eq!(stats.field("attack"), Some(&CfdValue::Int(5)));
+
+    let encounter_id = model
+        .lookup("Encounter", "elite_encounter")
+        .expect("elite encounter");
+    let encounter = model.record(encounter_id).expect("encounter record");
+    assert_eq!(
+        encounter.field("weakness_hint"),
+        Some(&CfdValue::Float(1.5))
+    );
+    assert!(matches!(
+        encounter.field("featured_item"),
+        Some(CfdValue::Ref { key, .. }) if key == "sword_fire"
+    ));
+    Ok(())
 }
 
 fn assert_has_text_code(err: &CfdTextLoadError, code: CfdTextErrorCode) {

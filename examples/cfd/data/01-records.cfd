@@ -1,0 +1,30 @@
+# Basic records and grouped records of the same CFT type.
+
+Item {
+  sword_fire {
+    name: "Fire Sword",
+    element: Fire,
+    price: 100,
+    tags: ["weapon", "melee"],
+  }
+
+  staff_ice {
+    name: "Ice Staff",
+    element: Ice,
+    price: 150,
+    tags: ["weapon", "magic"],
+  }
+}
+
+basic_monster: Monster {
+  name: "Training Dummy",
+  stats: { hp: 100, attack: 5 },
+  weaknesses: { Fire: 1.25, Ice: 1.0 },
+  drop: {
+    rewards: [
+      ItemReward { item: &sword_fire, count: 1 },
+      CurrencyReward { amount: 10 },
+    ],
+    weights: { Fire: 10, Ice: 5 },
+  },
+}
