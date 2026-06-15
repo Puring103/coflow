@@ -6,16 +6,17 @@
 )]
 
 mod common;
+use coflow_data_model::CfdRecord;
 use common::*;
 
 #[test]
 fn record_keys_build_indexes_and_record_refs_resolve_by_expected_type() {
     let schema = compile_schema(
-        r#"
+        r"
             abstract type Reward {}
             type ItemReward : Reward { count: int; }
             type Drop { reward: Reward; }
-        "#,
+        ",
     );
 
     let mut builder = CfdDataModel::builder(&schema);
@@ -36,7 +37,7 @@ fn record_keys_build_indexes_and_record_refs_resolve_by_expected_type() {
     assert_eq!(model.lookup("Reward", "reward_1"), Some(reward_id));
     assert_eq!(model.lookup("ItemReward", "reward_1"), Some(reward_id));
     assert_eq!(
-        model.record(reward_id).map(|record| record.key()),
+        model.record(reward_id).map(CfdRecord::key),
         Some("reward_1")
     );
     assert_eq!(
@@ -53,11 +54,11 @@ fn record_keys_build_indexes_and_record_refs_resolve_by_expected_type() {
 #[test]
 fn parent_records_cannot_satisfy_child_typed_refs() {
     let schema = compile_schema(
-        r#"
+        r"
             type Base { name: string; }
             type Child : Base { power: int; }
             type Holder { child: Child; }
-        "#,
+        ",
     );
 
     let mut builder = CfdDataModel::builder(&schema);
@@ -77,11 +78,11 @@ fn parent_records_cannot_satisfy_child_typed_refs() {
 #[test]
 fn child_fields_reject_parent_typed_reference_prefixes() {
     let schema = compile_schema(
-        r#"
+        r"
             abstract type Reward {}
             type ItemReward : Reward { count: int; }
             type Drop { item_reward: ItemReward; }
-        "#,
+        ",
     );
 
     let mut builder = CfdDataModel::builder(&schema);
@@ -108,10 +109,10 @@ fn child_fields_reject_parent_typed_reference_prefixes() {
 #[test]
 fn object_typed_fields_do_not_accept_bare_string_refs() {
     let schema = compile_schema(
-        r#"
+        r"
             type Item { name: string; }
             type Holder { item: Item; }
-        "#,
+        ",
     );
 
     let mut builder = CfdDataModel::builder(&schema);
@@ -131,7 +132,7 @@ fn object_typed_fields_do_not_accept_bare_string_refs() {
 #[test]
 fn path_refs_resolve_fields_arrays_and_dict_keys() {
     let schema = compile_schema(
-        r#"
+        r"
             enum Element { Fire, Ice, }
             type Skill { power: int; }
             type DropTable {
@@ -142,7 +143,7 @@ fn path_refs_resolve_fields_arrays_and_dict_keys() {
                 first_reward: Skill;
                 fire_resistance: float;
             }
-        "#,
+        ",
     );
 
     let mut builder = CfdDataModel::builder(&schema);
@@ -208,11 +209,11 @@ fn path_refs_resolve_fields_arrays_and_dict_keys() {
 #[test]
 fn path_refs_can_follow_record_refs_before_field_access() {
     let schema = compile_schema(
-        r#"
+        r"
             type Skill { power: int; }
             type Loadout { primary: Skill; }
             type Holder { copied_power: int; }
-        "#,
+        ",
     );
 
     let mut builder = CfdDataModel::builder(&schema);
@@ -249,11 +250,11 @@ fn path_refs_can_follow_record_refs_before_field_access() {
 #[test]
 fn duplicate_keys_are_reported_for_concrete_and_polymorphic_ranges() {
     let schema = compile_schema(
-        r#"
+        r"
             abstract type Reward {}
             type ItemReward : Reward { count: int; }
             type CurrencyReward : Reward { amount: int; }
-        "#,
+        ",
     );
 
     let mut concrete = CfdDataModel::builder(&schema);

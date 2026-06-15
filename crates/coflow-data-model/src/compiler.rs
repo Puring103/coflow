@@ -833,7 +833,7 @@ impl<'s> Validator<'s> {
                         );
                         return None;
                     };
-                    let Some(record_draft) = self.path_record_draft(
+                    let record_draft = self.path_record_draft(
                         &current_ty,
                         &current_value,
                         record,
@@ -841,9 +841,7 @@ impl<'s> Validator<'s> {
                         drafts,
                         tables,
                         inheritance_index,
-                    ) else {
-                        return None;
-                    };
+                    )?;
                     let Some(next) = record_draft.fields.get(name).cloned() else {
                         self.push(
                             CfdDiagnostic::error(
@@ -904,11 +902,12 @@ impl<'s> Validator<'s> {
                     }
                     CfdType::Dict(key_ty, value_ty) => {
                         current_path = current_path.dict_key(format_ref_index(index));
-                        let Some(key) =
-                            self.ref_index_to_dict_key(key_ty, index, record, current_path.clone())
-                        else {
-                            return None;
-                        };
+                        let key = self.ref_index_to_dict_key(
+                            key_ty,
+                            index,
+                            record,
+                            current_path.clone(),
+                        )?;
                         let CfdValueDraft::Dict(entries) = &current_value else {
                             return None;
                         };

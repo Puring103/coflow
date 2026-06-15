@@ -1212,8 +1212,7 @@ fn annotation_completion_items(scope: CompletionScope) -> Vec<Value> {
 
 fn annotation_applies_to_scope(label: &str, scope: CompletionScope) -> bool {
     match label {
-        "@struct" | "@flag" => scope == CompletionScope::TopLevel,
-        "@keyAsEnum" => scope == CompletionScope::TopLevel,
+        "@struct" | "@flag" | "@keyAsEnum" => scope == CompletionScope::TopLevel,
         "@display" | "@deprecated" => {
             matches!(scope, CompletionScope::TopLevel | CompletionScope::TypeBody)
         }

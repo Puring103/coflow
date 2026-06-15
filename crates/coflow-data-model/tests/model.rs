@@ -247,9 +247,8 @@ fn non_identifier_record_keys_are_rejected() {
         let mut builder = CfdDataModel::builder(&schema);
         builder.add_record(key, "Item", [("value", CfdInputValue::from(1_i64))]);
 
-        let err = match builder.build() {
-            Ok(_) => panic!("`{key}` should fail as a record key"),
-            Err(err) => err,
+        let Err(err) = builder.build() else {
+            panic!("`{key}` should fail as a record key")
         };
         assert_has_code(&err, CfdErrorCode::InvalidRecordKey);
     }
