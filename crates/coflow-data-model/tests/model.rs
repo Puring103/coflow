@@ -171,6 +171,230 @@ fn inline_objects_use_declared_type_when_not_polymorphic() {
 }
 
 #[test]
+fn object_spread_merges_path_refs_before_local_overrides() {
+    let schema = compile_schema(
+        r#"
+            type Stats { hp: int; attack: int; }
+            type Monster { name: string; stats: Stats; }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "base",
+        "Monster",
+        [
+            ("name", CfdInputValue::from("Base")),
+            (
+                "stats",
+                CfdInputValue::object_with_declared_type([
+                    ("hp", CfdInputValue::from(100_i64)),
+                    ("attack", CfdInputValue::from(20_i64)),
+                ]),
+            ),
+        ],
+    );
+    builder.add_record(
+        "elite",
+        "Monster",
+        [
+            ("name", CfdInputValue::from("Elite")),
+            (
+                "stats",
+                CfdInputValue::object_spread(
+                    [CfdInputValue::path_ref(
+                        "Monster",
+                        "base",
+                        [CfdRefPathSegment::Field("stats".to_string())],
+                    )],
+                    [("hp", CfdInputValue::from(180_i64))],
+                ),
+            ),
+        ],
+    );
+
+    let model = builder.build().expect("spread should build");
+    let elite_id = record_id_at(&model, 1);
+    let Some(CfdValue::Object(stats)) = model
+        .record(elite_id)
+        .and_then(|record| record.field("stats"))
+    else {
+        panic!("expected stats object");
+    };
+    assert_eq!(stats.field("hp"), Some(&CfdValue::Int(180)));
+    assert_eq!(stats.field("attack"), Some(&CfdValue::Int(20)));
+}
+
+#[test]
+fn object_path_spread_source_must_be_assignable_to_destination_type() {
+    let schema = compile_schema(
+        r#"
+            type A { value: int; }
+            type B { value: int; }
+            type Wrapper { a: A; }
+            type Holder { b: B; }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "source",
+        "Wrapper",
+        [(
+            "a",
+            CfdInputValue::object_with_declared_type([("value", CfdInputValue::from(1_i64))]),
+        )],
+    );
+    builder.add_record(
+        "holder",
+        "Holder",
+        [(
+            "b",
+            CfdInputValue::object_spread(
+                [CfdInputValue::path_ref(
+                    "Wrapper",
+                    "source",
+                    [CfdRefPathSegment::Field("a".to_string())],
+                )],
+                std::iter::empty::<(&str, CfdInputValue)>(),
+            ),
+        )],
+    );
+
+    let err = builder
+        .build()
+        .expect_err("unrelated object type must not satisfy object spread");
+    assert_has_code(&err, CfdErrorCode::TypeMismatch);
+}
+
+#[test]
+fn dict_spread_merges_path_refs_before_local_overrides() {
+    let schema = compile_schema(
+        r#"
+            enum Element { Fire, Ice, }
+            type Table { weights: {Element: int}; }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "base",
+        "Table",
+        [(
+            "weights",
+            CfdInputValue::dict([
+                (
+                    CfdInputDictKey::enum_variant("Element", "Fire"),
+                    CfdInputValue::from(10_i64),
+                ),
+                (
+                    CfdInputDictKey::enum_variant("Element", "Ice"),
+                    CfdInputValue::from(5_i64),
+                ),
+            ]),
+        )],
+    );
+    builder.add_record(
+        "elite",
+        "Table",
+        [(
+            "weights",
+            CfdInputValue::dict_spread(
+                [CfdInputValue::path_ref(
+                    "Table",
+                    "base",
+                    [CfdRefPathSegment::Field("weights".to_string())],
+                )],
+                [(
+                    CfdInputDictKey::enum_variant("Element", "Fire"),
+                    CfdInputValue::from(20_i64),
+                )],
+            ),
+        )],
+    );
+
+    let model = builder.build().expect("dict spread should build");
+    let elite_id = record_id_at(&model, 1);
+    let Some(CfdValue::Dict(weights)) = model
+        .record(elite_id)
+        .and_then(|record| record.field("weights"))
+    else {
+        panic!("expected dict");
+    };
+    assert_eq!(weights.len(), 2);
+    assert!(weights.iter().any(|(_, value)| value == &CfdValue::Int(20)));
+    assert!(weights.iter().any(|(_, value)| value == &CfdValue::Int(5)));
+}
+
+#[test]
+fn path_refs_can_index_dict_spread_results_and_continue_to_object_fields() {
+    let schema = compile_schema(
+        r#"
+            type Item { name: string; }
+            type Table { by_name: {string: Item}; }
+            type Holder { label: string; }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "base",
+        "Table",
+        [(
+            "by_name",
+            CfdInputValue::dict([(
+                CfdInputDictKey::from("main"),
+                CfdInputValue::object_with_declared_type([(
+                    "name",
+                    CfdInputValue::from("Base Sword"),
+                )]),
+            )]),
+        )],
+    );
+    builder.add_record(
+        "merged",
+        "Table",
+        [(
+            "by_name",
+            CfdInputValue::dict_spread(
+                [CfdInputValue::path_ref(
+                    "Table",
+                    "base",
+                    [CfdRefPathSegment::Field("by_name".to_string())],
+                )],
+                std::iter::empty::<(CfdInputDictKey, CfdInputValue)>(),
+            ),
+        )],
+    );
+    builder.add_record(
+        "holder",
+        "Holder",
+        [(
+            "label",
+            CfdInputValue::path_ref(
+                "Table",
+                "merged",
+                [
+                    CfdRefPathSegment::Field("by_name".to_string()),
+                    CfdRefPathSegment::Index(CfdInputRefIndex::String("main".to_string())),
+                    CfdRefPathSegment::Field("name".to_string()),
+                ],
+            ),
+        )],
+    );
+
+    let model = builder
+        .build()
+        .expect("path refs should traverse dict spread object values");
+    let holder_id = record_id_at(&model, 2);
+    let holder = model.record(holder_id).expect("holder record");
+    assert_eq!(
+        holder.field("label"),
+        Some(&CfdValue::String("Base Sword".to_string()))
+    );
+}
+
+#[test]
 fn semantic_edges_report_data_model_diagnostics() {
     let schema = compile_schema(
         r#"

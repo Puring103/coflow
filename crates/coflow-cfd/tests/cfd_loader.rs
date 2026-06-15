@@ -21,21 +21,21 @@ fn compile_schema(source: &str) -> CftContainer {
 }
 
 #[test]
-fn records_use_top_level_names_as_keys_and_do_not_emit_id_fields() -> TestResult {
+fn records_use_colon_blocks_and_do_not_emit_id_fields() -> TestResult {
     let schema = compile_schema(
-        r"
+        r#"
             type Item {
                 name: string;
             }
-        ",
+        "#,
     );
 
     let records = parse_cfd_input_records(
         &schema,
         r#"
-            sword: Item = {
-                name: "Iron Sword";
-            };
+            sword: Item {
+                name: "Iron Sword",
+            }
         "#,
     )?;
 
@@ -51,9 +51,9 @@ fn records_use_top_level_names_as_keys_and_do_not_emit_id_fields() -> TestResult
 }
 
 #[test]
-fn explicit_record_and_path_refs_follow_latest_model() -> TestResult {
+fn typed_refs_and_direct_ref_shorthand_follow_latest_model() -> TestResult {
     let schema = compile_schema(
-        r"
+        r#"
             type Item { name: string; }
             type Reward { item: Item; count: int; }
             type DropTable { rewards: [Reward]; }
@@ -61,34 +61,35 @@ fn explicit_record_and_path_refs_follow_latest_model() -> TestResult {
                 item: Item;
                 first_item: Item;
             }
-        ",
+        "#,
     );
 
     let records = parse_cfd_input_records(
         &schema,
         r#"
-            sword: Item = { name: "Iron Sword"; };
+            sword: Item { name: "Iron Sword" }
 
-            reward_holder: Holder = {
-                item: @sword;
-                first_item: @drop_1.rewards[0].item;
-            };
-
-            drop_1: DropTable = {
+            drop_1: DropTable {
                 rewards: [
-                    { item: @sword; count: 2; }
-                ];
-            };
+                    { item: &sword, count: 2 },
+                ],
+            }
+
+            holder: Holder {
+                item: &sword,
+                first_item: @DropTable.drop_1.rewards[0].item,
+            }
         "#,
     )?;
 
     assert_eq!(
-        records[1].fields.get("item"),
-        Some(&CfdInputValue::record_ref("sword"))
+        records[2].fields.get("item"),
+        Some(&CfdInputValue::record_ref("Item", "sword"))
     );
     assert_eq!(
-        records[1].fields.get("first_item"),
+        records[2].fields.get("first_item"),
         Some(&CfdInputValue::path_ref(
+            "DropTable",
             "drop_1",
             [
                 CfdRefPathSegment::Field("rewards".to_string()),
@@ -101,21 +102,19 @@ fn explicit_record_and_path_refs_follow_latest_model() -> TestResult {
     let model = load_cfd_model(
         &schema,
         r#"
-            sword: Item = { name: "Iron Sword"; };
-            reward_holder: Holder = {
-                item: @sword;
-                first_item: @drop_1.rewards[0].item;
-            };
-            drop_1: DropTable = {
-                rewards: [{ item: @sword; count: 2; }];
-            };
+            sword: Item { name: "Iron Sword" }
+            drop_1: DropTable {
+                rewards: [{ item: &sword, count: 2 }],
+            }
+            holder: Holder {
+                item: &sword,
+                first_item: @DropTable.drop_1.rewards[0].item,
+            }
         "#,
     )?;
 
     let item_id = model.lookup("Item", "sword").expect("item record");
-    let holder_id = model
-        .lookup("Holder", "reward_holder")
-        .expect("holder record");
+    let holder_id = model.lookup("Holder", "holder").expect("holder record");
     let holder = model.record(holder_id).expect("holder");
     assert_eq!(
         holder.field("item"),
@@ -135,22 +134,172 @@ fn explicit_record_and_path_refs_follow_latest_model() -> TestResult {
 }
 
 #[test]
+fn cfd_rejects_legacy_and_bare_object_references() {
+    let schema = compile_schema(
+        r#"
+            type Item { name: string; }
+            type Holder { item: Item; }
+        "#,
+    );
+
+    let legacy_at = parse_cfd_input_records(
+        &schema,
+        r#"
+            sword: Item { name: "Iron Sword" }
+            holder: Holder { item: @sword }
+        "#,
+    )
+    .expect_err("@key is no longer valid");
+    assert_has_text_code(&legacy_at, CfdTextErrorCode::Syntax);
+
+    let direct_path = parse_cfd_input_records(
+        &schema,
+        r#"
+            sword: Item { name: "Iron Sword" }
+            holder: Holder { item: &sword.name }
+        "#,
+    )
+    .expect_err("&key must not support paths");
+    assert_has_text_code(&direct_path, CfdTextErrorCode::Syntax);
+
+    let bare = parse_cfd_input_records(
+        &schema,
+        r#"
+            sword: Item { name: "Iron Sword" }
+            holder: Holder { item: sword }
+        "#,
+    )
+    .expect_err("object references must use markers");
+    assert_has_text_code(&bare, CfdTextErrorCode::ReferenceNeedsMarker);
+}
+
+#[test]
+fn grouped_records_expand_to_records_of_the_same_type() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item { name: string; }
+        "#,
+    );
+
+    let records = parse_cfd_input_records(
+        &schema,
+        r#"
+            Item {
+                sword { name: "Sword" }
+                shield { name: "Shield" }
+            }
+        "#,
+    )?;
+
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].key, "sword");
+    assert_eq!(records[0].actual_type, "Item");
+    assert_eq!(records[1].key, "shield");
+    assert_eq!(records[1].actual_type, "Item");
+    Ok(())
+}
+
+#[test]
+fn grouped_polymorphic_records_can_choose_concrete_types() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item { name: string; }
+            abstract type Reward {}
+            type CurrencyReward : Reward { amount: int; }
+            type ItemReward : Reward { item: Item; count: int; }
+        "#,
+    );
+
+    let model = load_cfd_model(
+        &schema,
+        r#"
+            sword: Item { name: "Sword" }
+
+            Reward {
+                coin: CurrencyReward { amount: 100 }
+                item: ItemReward { item: &sword, count: 1 }
+            }
+        "#,
+    )?;
+
+    let coin_id = model
+        .lookup("CurrencyReward", "coin")
+        .expect("currency reward");
+    let item_id = model.lookup("ItemReward", "item").expect("item reward");
+    assert_eq!(model.lookup("Reward", "coin"), Some(coin_id));
+    assert_eq!(model.lookup("Reward", "item"), Some(item_id));
+    Ok(())
+}
+
+#[test]
+fn cfd_object_and_dict_spreads_merge_before_local_overrides() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            enum Element { Fire, Ice, }
+            type Stats { hp: int; attack: int; }
+            type Monster {
+                name: string;
+                stats: Stats;
+                weights: {Element: int};
+            }
+        "#,
+    );
+
+    let model = load_cfd_model(
+        &schema,
+        r#"
+            base: Monster {
+                name: "Base",
+                stats: { hp: 100, attack: 20 },
+                weights: { Fire: 10, Ice: 5 },
+            }
+
+            elite: Monster {
+                ...@Monster.base,
+                name: "Elite",
+                stats: { ...@Monster.base.stats, hp: 180 },
+                weights: { ...@Monster.base.weights, Fire: 20 },
+            }
+        "#,
+    )?;
+
+    let elite_id = model.lookup("Monster", "elite").expect("elite record");
+    let elite = model.record(elite_id).expect("elite");
+    assert_eq!(
+        elite.field("name"),
+        Some(&CfdValue::String("Elite".to_string()))
+    );
+    let Some(CfdValue::Object(stats)) = elite.field("stats") else {
+        panic!("expected stats object");
+    };
+    assert_eq!(stats.field("hp"), Some(&CfdValue::Int(180)));
+    assert_eq!(stats.field("attack"), Some(&CfdValue::Int(20)));
+    let Some(CfdValue::Dict(weights)) = elite.field("weights") else {
+        panic!("expected weights dict");
+    };
+    assert_eq!(weights.len(), 2);
+    assert!(weights.iter().any(|(_, value)| value == &CfdValue::Int(20)));
+    assert!(weights.iter().any(|(_, value)| value == &CfdValue::Int(5)));
+    Ok(())
+}
+
+#[test]
 fn cfd_rejects_reserved_id_fields() {
     let schema = compile_schema(
-        r"
+        r#"
             type Item {
                 name: string;
             }
-        ",
+        "#,
     );
 
     let err = parse_cfd_input_records(
         &schema,
         r#"
-            sword: Item = {
-                id: "sword";
-                name: "Iron Sword";
-            };
+            sword: Item {
+                id: "sword",
+                name: "Iron Sword",
+            }
         "#,
     )
     .expect_err("id must be reserved");
@@ -159,44 +308,21 @@ fn cfd_rejects_reserved_id_fields() {
 }
 
 #[test]
-fn cfd_rejects_bare_object_references_with_marker_hint() {
-    let schema = compile_schema(
-        r"
-            type Item { name: string; }
-            type Holder { item: Item; }
-        ",
-    );
-
-    let err = parse_cfd_input_records(
-        &schema,
-        r#"
-            sword: Item = { name: "Iron Sword"; };
-            holder: Holder = {
-                item: sword;
-            };
-        "#,
-    )
-    .expect_err("object references must use @");
-
-    assert_has_text_code(&err, CfdTextErrorCode::ReferenceNeedsMarker);
-}
-
-#[test]
 fn cfd_allows_cyclic_record_references() -> TestResult {
     let schema = compile_schema(
-        r"
+        r#"
             type Node {
                 label: string;
                 next: Node? = null;
             }
-        ",
+        "#,
     );
 
     let model = load_cfd_model(
         &schema,
         r#"
-            a: Node = { label: "A"; next: @b; };
-            b: Node = { label: "B"; next: @a; };
+            a: Node { label: "A", next: &b }
+            b: Node { label: "B", next: &a }
         "#,
     )?;
 
@@ -220,35 +346,9 @@ fn cfd_allows_cyclic_record_references() -> TestResult {
 }
 
 #[test]
-fn cfd_accepts_equals_field_separators_and_keeps_at_strings_plain() -> TestResult {
-    let schema = compile_schema(
-        r"
-            type Text {
-                value: string;
-            }
-        ",
-    );
-
-    let records = parse_cfd_input_records(
-        &schema,
-        r"
-            text_1: Text = {
-                value = @not_a_ref;
-            };
-        ",
-    )?;
-
-    assert_eq!(
-        records[0].fields.get("value"),
-        Some(&CfdInputValue::from("@not_a_ref"))
-    );
-    Ok(())
-}
-
-#[test]
 fn cfd_path_refs_parse_string_and_enum_indexes() -> TestResult {
     let schema = compile_schema(
-        r"
+        r#"
             enum Element { Fire, Ice, }
             type Item { name: string; }
             type Tables {
@@ -259,26 +359,27 @@ fn cfd_path_refs_parse_string_and_enum_indexes() -> TestResult {
                 named: Item;
                 elemental: Item;
             }
-        ",
+        "#,
     );
 
     let records = parse_cfd_input_records(
         &schema,
         r#"
-            tables: Tables = {
-                by_name: { "main": { name: "Main"; } };
-                by_element: { Fire: { name: "Fire"; } };
-            };
-            holder: Holder = {
-                named: @tables.by_name["main"];
-                elemental: @tables.by_element[Element.Fire];
-            };
+            tables: Tables {
+                by_name: { "main": { name: "Main" } },
+                by_element: { Fire: { name: "Fire" } },
+            }
+            holder: Holder {
+                named: @Tables.tables.by_name["main"],
+                elemental: @Tables.tables.by_element[Element.Fire],
+            }
         "#,
     )?;
 
     assert_eq!(
         records[1].fields.get("named"),
         Some(&CfdInputValue::path_ref(
+            "Tables",
             "tables",
             [
                 CfdRefPathSegment::Field("by_name".to_string()),
@@ -289,6 +390,7 @@ fn cfd_path_refs_parse_string_and_enum_indexes() -> TestResult {
     assert_eq!(
         records[1].fields.get("elemental"),
         Some(&CfdInputValue::path_ref(
+            "Tables",
             "tables",
             [
                 CfdRefPathSegment::Field("by_element".to_string()),
@@ -305,7 +407,7 @@ fn cfd_path_refs_parse_string_and_enum_indexes() -> TestResult {
 #[test]
 fn cfd_path_refs_can_target_scalar_fields() -> TestResult {
     let schema = compile_schema(
-        r"
+        r#"
             enum Element { Fire, Ice, }
             type Tables {
                 resistances: {Element: float};
@@ -315,24 +417,25 @@ fn cfd_path_refs_can_target_scalar_fields() -> TestResult {
                 fire_resistance: float;
                 label: string;
             }
-        ",
+        "#,
     );
 
     let source = r#"
-        tables: Tables = {
-            resistances: { Fire: 0.5; };
-            labels: { "main": "primary"; };
-        };
-        holder: Holder = {
-            fire_resistance: @tables.resistances[Fire];
-            label: @tables.labels["main"];
-        };
+        tables: Tables {
+            resistances: { Fire: 0.5 },
+            labels: { "main": "primary" },
+        }
+        holder: Holder {
+            fire_resistance: @Tables.tables.resistances[Fire],
+            label: @Tables.tables.labels["main"],
+        }
     "#;
 
     let records = parse_cfd_input_records(&schema, source)?;
     assert_eq!(
         records[1].fields.get("fire_resistance"),
         Some(&CfdInputValue::path_ref(
+            "Tables",
             "tables",
             [
                 CfdRefPathSegment::Field("resistances".to_string()),
@@ -343,6 +446,7 @@ fn cfd_path_refs_can_target_scalar_fields() -> TestResult {
     assert_eq!(
         records[1].fields.get("label"),
         Some(&CfdInputValue::path_ref(
+            "Tables",
             "tables",
             [
                 CfdRefPathSegment::Field("labels".to_string()),
@@ -365,20 +469,20 @@ fn cfd_path_refs_can_target_scalar_fields() -> TestResult {
 #[test]
 fn cfd_rejects_check_blocks_as_data_syntax() {
     let schema = compile_schema(
-        r"
+        r#"
             type Item {
                 name: string;
             }
-        ",
+        "#,
     );
 
     let err = parse_cfd_input_records(
         &schema,
         r#"
-            sword: Item = {
-                name: "Iron Sword";
-                check { true; }
-            };
+            sword: Item {
+                name: "Iron Sword",
+                check { true }
+            }
         "#,
     )
     .expect_err("check blocks are not CFD data syntax");

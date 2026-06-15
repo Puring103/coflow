@@ -28,6 +28,10 @@ pub(crate) enum CfdValueDraft {
     },
     Array(Vec<CfdValueDraft>),
     Dict(Vec<(CfdDictKey, CfdValueDraft)>),
+    DictSpread {
+        spreads: Vec<CfdValueDraft>,
+        entries: Vec<(CfdDictKey, CfdValueDraft)>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -235,9 +239,11 @@ pub(crate) fn input_value_kind(value: &CfdInputValue) -> &'static str {
         CfdInputValue::String(_) => "string",
         CfdInputValue::EnumVariant { .. } => "enum",
         CfdInputValue::Object { .. } => "object",
+        CfdInputValue::ObjectSpread { .. } => "object spread",
         CfdInputValue::RecordRef { .. } => "record ref",
         CfdInputValue::PathRef { .. } => "path ref",
         CfdInputValue::Array(_) => "array",
         CfdInputValue::Dict(_) => "dict",
+        CfdInputValue::DictSpread { .. } => "dict spread",
     }
 }
