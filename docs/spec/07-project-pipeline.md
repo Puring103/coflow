@@ -20,6 +20,25 @@
 
 ---
 
+## 配置发现和路径规则
+
+命令的 `CONFIG_OR_DIR` 参数由 project 层统一解析：
+
+- 未提供时，在当前目录查找 `coflow.yaml`，然后查找 `coflow.yml`。
+- 参数是目录时，在该目录下查找 `coflow.yaml`，然后查找 `coflow.yml`。
+- 参数是文件时，直接作为项目配置读取。
+
+项目相对路径均以配置文件所在目录为根。`schema` 可以是单个文件、单个目录
+或文件/目录列表；目录会递归发现 `.cft` 文件，忽略其他扩展名。schema
+文件按 module id 排序后注册到 `CftContainer`，因此同一项目在不同文件系统
+遍历顺序下仍保持稳定。绝对 schema 路径允许指向项目根之外的文件。
+
+`coflow.yaml` 的结构使用严格字段集。顶层、source、sheet 和 output 中的
+未知字段会在 YAML 反序列化阶段失败。`columns` 映射拒绝重复 Excel header
+key，避免 YAML map 后写覆盖导致隐式丢配置。
+
+---
+
 ## 职责
 
 - 解析项目配置并解析项目相对路径。
@@ -37,24 +56,79 @@
 
 项目打开分为三个阶段：
 
-- `Project::open_schema_only`：解析 `coflow.yaml`，校验 schema path、output 配置和 source 配置形状；不要求 Excel workbook 存在。
+- `Project::open_schema_only`：只解析并反序列化 `coflow.yaml`；不要求 Excel workbook 存在。
+- `Project::schema_diagnostics`：schema-only 命令在打开项目后调用，聚合 schema path、output 配置和 source 配置形状诊断；仍不要求 Excel workbook 存在。
 - `Project::validate_for_data`：在 schema-only 之上校验数据阶段 source，要求 workbook 文件存在且每个 source 至少有一个 sheet。
 - `Project::validate_for_codegen`：校验 C# codegen 需要的 `outputs.code.type: csharp` 和 `outputs.data.type: json | messagepack`；不要求 Excel workbook 存在。
 
 命令阶段矩阵：
 
-| Command | Schema | Excel source existence | Data model | Codegen target |
+| 命令 | Schema | Excel source 存在性 | Data model | Codegen 目标 |
 | --- | --- | --- | --- | --- |
-| `cft check` | yes | no | no | no |
-| `cft lsp` | yes | no | no | no |
-| `check` | yes | yes | yes | no |
-| `build` | yes | yes | yes | optional |
-| `export json/messagepack` | yes | yes | yes | no |
-| `codegen csharp` | yes | no | no | yes |
+| `cft check` | 是 | 否 | 否 | 否 |
+| `cft lsp` | 是 | 否 | 否 | 否 |
+| `check` | 是 | 是 | 是 | 否 |
+| `build` | 是 | 是 | 是 | 可选 |
+| `export json/messagepack` | 是 | 是 | 是 | 否 |
+| `codegen csharp` | 是 | 否 | 否 | 是 |
 
 ---
 
-## check 诊断处理
+## Schema 覆盖与 LSP 边界
+
+`compile_schema_project` 支持 `--stdin-path` 覆盖单个 schema 文件内容，用于
+编辑器把未保存内容传入编译。覆盖目标必须匹配已经配置的 schema 文件：
+
+- 可按 project-relative module id 匹配，例如 `schema/main.cft`。
+- 也可按从项目根解析出的实际文件路径匹配。
+- 未匹配到任何已配置 schema 文件时返回 CLI 错误：
+  `` `--stdin-path ...` is not part of the configured schema ``。
+
+LSP 只使用 schema-only 加载和 schema 编译，不进入 Excel、data model、导出
+或 codegen 阶段。它维护打开文档的内存覆盖层，发布项目 schema 诊断，并提供
+completion、hover、definition、document symbol、formatting 和 semantic tokens。
+
+---
+
+## 配置解析错误边界
+
+`coflow.yaml` 的顶层和嵌套配置结构使用严格字段集。未知字段、YAML
+语法错误、重复 `columns` key、无法读取配置文件等问题发生在结构化项目
+诊断之前，CLI 以不可聚合错误返回；这些问题不会进入 `PROJECT-001`
+诊断列表。
+
+`PROJECT-001` 只覆盖配置文件已经成功读取和反序列化之后的可聚合
+项目预检问题，例如路径为空、schema/source/output 配置缺失或类型不支持。
+
+---
+
+## 产物写入安全
+
+所有会写产物的命令都在写入前执行可聚合诊断和 artifact preflight：
+
+- `build`：先完成项目、schema、Excel、data model、引用和 check；再检查
+  data output path；如果配置了 `outputs.code`，还会检查 C# codegen preflight
+  和 code output path。任一诊断存在时不写数据，也不写代码。
+- `export json/messagepack`：先完成数据校验，再检查目标输出目录；有诊断时
+  不写任何导出文件。
+- `codegen csharp`：先完成 schema-only 校验、codegen 配置校验、schema 编译、
+  codegen preflight 和 code output path 检查；有诊断时不读写 enum lockfile，
+  不清理旧 `.cs` 文件，也不生成新 `.cs` 文件。
+
+artifact preflight 当前只检查目标输出路径是否已经存在且不是目录。目录不存在
+时由写入阶段创建；权限错误、写入失败、读写 lockfile 失败等运行时 I/O 问题
+以不可聚合 CLI error 返回。
+
+C# codegen 成功写入时，项目管线先维护 `coflow.enum.lock.json`，再清理代码
+输出目录顶层的旧 `.cs` 文件，最后写入本次生成的 `.cs` 文件。清理只针对该
+目录的顶层 `.cs` 文件；`coflow.enum.lock.json` 不是 `.cs` 文件，不会被清理。
+
+`build` 的 codegen 是可选阶段。项目没有配置 `outputs.code` 时，`build` 仍会
+完成数据校验和数据导出，但不会生成代码，也不会要求 code output 配置存在。
+
+---
+
+## Check 诊断处理
 
 `coflow-pipeline::check_project` 在 schema、Excel、data model 均成功但 CFT `check` 失败时，返回 `PipelineOutcome::Diagnostics`，不返回 `Err`。`Err` 只表示配置错误、I/O 错误或不可恢复的 artifact 错误。
 

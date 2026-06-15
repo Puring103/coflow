@@ -31,9 +31,11 @@ Excel 加载器的输入是：
 
 ## 2. 加载流程
 
-加载结果为 `DataModel`，结构定义见 [02-data-model.md](02-data-model.md)。
+加载结果为 `CfdDataModel`，结构定义见 [02-data-model.md](02-data-model.md)。
 
-模型构建分为以下几个阶段，任一阶段出错则停止并报告错误。CFT check 诊断不属于模型构建硬错误；`load_excel` 在模型构建完成后收集并返回 check 诊断。
+模型构建分为以下几个阶段。Excel 文件、工作表、表头和单元格问题会尽量跨数据源、工作表和数据行聚合；但某个工作表的表头无法可靠映射时，该工作表的数据行会被跳过。只有前置结构和单元格解析都没有硬错误时，加载器才进入数据模型构建、引用解析和后续 check。
+
+CFT check 诊断不属于模型构建硬错误；`load_excel` 在模型构建完成后收集并返回 check 诊断。
 
 ### 第一阶段：解析 Excel 结构
 
@@ -41,11 +43,22 @@ Excel 加载器的输入是：
 
 每个 sheet 的**第一行**为列名行，后续行为数据行。空行跳过。
 
+列名为 `#` 的列是可选导入控制列，不映射到 CFT 字段，也不参与未知
+字段检查。数据行中该列的文本值去除首尾空白后等于 `##` 时，整行跳过，
+不会读取 `id`，也不会解析任何字段。其他值没有特殊含义。
+
+Excel 原生单元格先转换为单元格文本，再交给 schema-guided cell parser：
+文本、整数、浮点和布尔单元格会被转换为对应文本；整数值的浮点单元格会去掉
+`.0` 后缀。Excel error、原生 date/time、typed ISO date/time 和 typed ISO
+duration 单元格不进入 cell parser，直接报告 `EXCEL-CELL`。日期、时间和持续
+时间如果要按 Coflow 语法解析，应在 Excel 中保存为普通文本。
+
 ### 第二阶段：逐行解析记录
 
 对每个数据行，先读取特殊 `id` 列作为 record key；`id` 不映射到 CFT 字段，且 CFT 禁止声明名为 `id` 的字段。随后按列名（经过 `columns` 映射后）找到对应字段，根据字段的 CFT 类型 schema-guided 解析单元格内容（见第 3 节）。
 
-解析结果构造为 `Record`，加入对应 `Table` 的 `records` 列表。同时将 record key 注册到该类型的 `primary_index`，重复 key 立即报错。空 key 立即报错。
+解析结果先构造为与来源无关的 `CfdInputRecord`，后续由数据模型构建器生成
+`CfdRecord`，加入对应 `CfdTable.records` 列表。同时将 record key 注册到该类型的 `primary_index`，重复 key 作为数据模型诊断报告。空 key 或非法 key 在 Excel 阶段报告。
 
 如果该类型属于继承树，加载器还要把记录注册到相关 `inheritance_index`。同一继承树索引中的 key 必须唯一，兄弟子类之间重复 key 也立即报错。
 
@@ -86,12 +99,14 @@ Excel 加载器的输入是：
 | `@Type.key` | 对象字段的显式记录引用；目标类型为 string 时保留为普通字符串 |
 | `&key` | 对象字段的直接记录引用简写；目标类型为 string 时保留为普通字符串 |
 
+`#` 控制列只在整行导入决策中生效，不作为普通单元格值交给字段解析器。
+
 ---
 
 ## 4. API 语义
 
-- `load_excel_model` builds a data model and does not run CFT checks.
-- `load_excel` builds a data model and runs CFT checks.
+- `load_excel_model(schema, sources)`：加载 Excel、构建 `CfdDataModel` 并解析引用；不执行 CFT `check {}`。
+- `load_excel(schema, sources)`：在 `load_excel_model` 的模型构建语义之上执行 CFT `check {}`，返回 `ExcelLoadOutput { model, check_diagnostics }`。check 失败不会丢弃已经构建完成的 model。
 
 ---
 
@@ -100,6 +115,6 @@ Excel 加载器的输入是：
 | 阶段 | 错误类型 |
 |------|---------|
 | Excel 解析 | 文件不存在、sheet 不存在、`type` 指定的类型未定义 |
-| 记录解析 | 缺少 `id` 列、空 record key、列名找不到对应字段、单元格值类型不匹配、record key 重复、继承树 key 重复、字典 key 重复、多态字段缺少类型标记 |
+| 记录解析 | 缺少 `id` 列、空 record key、非法 record key、列名找不到对应字段、单元格值类型不匹配、record key 重复、继承树 key 重复、字典 key 重复、多态字段缺少类型标记 |
 | 跨表引用解析 | 引用目标类型不存在、目标 key 找不到、路径字段/索引不存在、路径结果类型不匹配 |
 | check 执行 | 条件为假、类型错误、越界 |

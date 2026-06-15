@@ -2,7 +2,8 @@
 
 **依赖文档**：[02-data-model.md](02-data-model.md)
 
-MessagePack 导出是 JSON 导出的二进制等价格式。它的输入是已经通过 schema 编译、Excel loader 加载、`DataModel` 构建和 check 检查的 `CfdDataModel`，记录 key 以保留字段 `id` 导出，引用字段保留目标 key，由运行时加载器负责解析引用。
+MessagePack 导出是 JSON 导出的二进制等价格式。它的输入是已经通过 schema
+编译、Excel loader 加载、`CfdDataModel` 构建和 check 检查的数据模型，记录 key 以保留字段 `id` 导出，引用字段保留目标 key，由运行时加载器负责解析引用。
 
 MessagePack exporter 位于 `coflow-exporter-messagepack`。它与 `coflow-exporter-json` 共用 `coflow-exporter-core` 的 schema-aware 遍历规则，因此表选择、字段顺序、多态 `$type`、字典 key 和引用 key 保留语义与 JSON 导出一致。
 
@@ -10,7 +11,8 @@ MessagePack exporter 位于 `coflow-exporter-messagepack`。它与 `coflow-expor
 
 ## 文件结构
 
-MessagePack 导出产物是一个输出目录。每个 table（对应 CFT 类型名）导出为一个 `<TypeName>.msgpack` 文件：
+MessagePack 导出产物是一个输出目录。每个非 `abstract` CFT type 都导出为一个
+`<TypeName>.msgpack` 文件；即使该 table 没有记录，也会写出空数组：
 
 ```text
 out/
