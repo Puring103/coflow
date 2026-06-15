@@ -1,5 +1,5 @@
 # Nullable fields use T?.
-# Object fields can hold inline objects or explicit @record-key references in data files.
+# Object fields can hold inline objects, explicit @Type.key references, or direct &key shorthand in data files.
 
 type ExampleQuestStep {
   title: string;

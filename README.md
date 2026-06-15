@@ -149,8 +149,12 @@ Common annotations:
 - `@expand` lets Excel columns expand into a nested object field.
 
 Excel sheets must include an `id` column. That column is the record key and is
-not a CFT field. Object references in cells are explicit, for example `@sword_01`
-or `@drop_01.rewards[0]`; bare strings remain strings.
+not a CFT field. Record keys are string identifiers. Object references in cells
+are explicit typed refs, for example `@Item.sword_01` or
+`@DropTable.drop_01.rewards[0]`. A direct same-type reference can use the
+`&sword_01` shorthand; path references still require the explicit `@Type.key`
+root. Bare strings remain strings. Exported JSON and MessagePack keep references
+as plain key strings such as `"sword_01"`, not `"Item.sword_01"`.
 
 Common built-ins in checks include `len`, `contains`, `unique`, `min`, `max`, `sum`, `keys`, `values`, and `matches`.
 

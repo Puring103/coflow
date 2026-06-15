@@ -1,4 +1,5 @@
 use coflow_cft::{CftAnnotation, CftAnnotationValue};
+use unicode_ident::{is_xid_continue, is_xid_start};
 
 pub fn has_annotation(annotations: &[CftAnnotation], name: &str) -> bool {
     annotations.iter().any(|annotation| annotation.name == name)
@@ -49,10 +50,12 @@ pub fn csharp_ident_error(value: &str) -> Option<String> {
         return Some("identifier is empty".to_string());
     };
     if !is_csharp_ident_start(first) {
-        return Some("identifier must start with an ASCII letter or `_`".to_string());
+        return Some("identifier must start with `_` or a Unicode identifier start".to_string());
     }
     if chars.any(|ch| !is_csharp_ident_continue(ch)) {
-        return Some("identifier must contain only ASCII letters, digits, or `_`".to_string());
+        return Some(
+            "identifier must contain only `_` or Unicode identifier characters".to_string(),
+        );
     }
     None
 }
@@ -77,7 +80,9 @@ pub fn csharp_member_ident_error(value: &str) -> Option<String> {
         return None;
     }
     if unprefixed.chars().any(|ch| !is_csharp_ident_continue(ch)) {
-        return Some("identifier must contain only ASCII letters, digits, or `_`".to_string());
+        return Some(
+            "identifier must contain only `_` or Unicode identifier characters".to_string(),
+        );
     }
     None
 }
@@ -104,12 +109,12 @@ pub fn csharp_type_name(name: &str) -> String {
     pascal_case(name)
 }
 
-const fn is_csharp_ident_start(ch: char) -> bool {
-    ch == '_' || ch.is_ascii_alphabetic()
+fn is_csharp_ident_start(ch: char) -> bool {
+    ch == '_' || is_xid_start(ch)
 }
 
-const fn is_csharp_ident_continue(ch: char) -> bool {
-    ch == '_' || ch.is_ascii_alphanumeric()
+fn is_csharp_ident_continue(ch: char) -> bool {
+    ch == '_' || is_xid_continue(ch)
 }
 
 fn is_csharp_keyword(value: &str) -> bool {

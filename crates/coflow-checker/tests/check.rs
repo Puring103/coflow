@@ -60,7 +60,7 @@ fn check_runner_accepts_virtual_ids_record_refs_and_quantifiers() {
         "drop_1",
         "Drop",
         [
-            ("item", CfdInputValue::record_ref("item_1")),
+            ("item", CfdInputValue::record_ref("Item", "item_1")),
             (
                 "weights",
                 CfdInputValue::Array(vec![
@@ -568,8 +568,8 @@ fn top_level_ref_targets_run_checks_once_by_identity() {
         "holder_1",
         "Holder",
         [
-            ("first", CfdInputValue::record_ref("target_1")),
-            ("second", CfdInputValue::record_ref("target_1")),
+            ("first", CfdInputValue::record_ref("Target", "target_1")),
+            ("second", CfdInputValue::record_ref("Target", "target_1")),
         ],
     );
     let model = build_model(&schema, builder);

@@ -15,7 +15,7 @@
 )]
 #![allow(clippy::missing_const_for_fn, clippy::similar_names, clippy::use_self)]
 
-use coflow_cft::{CftContainer, CftSchemaField};
+use coflow_cft::{record_key_ident_error, CftContainer, CftSchemaField};
 use coflow_data_model::{CfdInputDictKey, CfdInputRefIndex, CfdInputValue, CfdRefPathSegment};
 use std::collections::{BTreeMap, BTreeSet};
 use unicode_ident::{is_xid_continue, is_xid_start};
@@ -314,7 +314,10 @@ fn parse_object(
     context: ValueContext,
 ) -> Result<CfdInputValue, CellValueDiagnostics> {
     let expected_fields = full_fields(schema, expected_type)?;
-    if let Some(reference) = parse_ref_value(text)? {
+    if let Some(reference) = parse_ref_value(schema, text)? {
+        return Ok(reference);
+    }
+    if let Some(reference) = parse_direct_ref_shorthand(expected_type, text)? {
         return Ok(reference);
     }
     if looks_like_bare_record_key(text) {
@@ -373,13 +376,41 @@ fn parse_object(
     }
 }
 
-fn parse_ref_value(text: &str) -> Result<Option<CfdInputValue>, CellValueDiagnostics> {
+fn parse_ref_value(
+    schema: &CftContainer,
+    text: &str,
+) -> Result<Option<CfdInputValue>, CellValueDiagnostics> {
     let text = text.trim();
     let Some(rest) = text.strip_prefix('@') else {
         return Ok(None);
     };
-    let mut parser = RefParser::new(rest);
+    let mut parser = RefParser::new(schema, rest);
     Ok(Some(parser.parse()?))
+}
+
+fn parse_direct_ref_shorthand(
+    expected_type: &str,
+    text: &str,
+) -> Result<Option<CfdInputValue>, CellValueDiagnostics> {
+    let text = text.trim();
+    let Some(key) = text.strip_prefix('&') else {
+        return Ok(None);
+    };
+    if key.contains('.') || key.contains('[') || key.contains(']') {
+        return Err(syntax(
+            "direct reference shorthand does not support paths; use `@Type.key.path`",
+        ));
+    }
+    if key.trim() != key {
+        return Err(syntax("direct reference key cannot contain whitespace"));
+    }
+    if key.is_empty() {
+        return Err(syntax("reference key is missing"));
+    }
+    if let Some(reason) = record_key_ident_error(key) {
+        return Err(syntax(format!("invalid reference key `{key}`: {reason}")));
+    }
+    Ok(Some(CfdInputValue::record_ref(expected_type, key)))
 }
 
 fn looks_like_bare_record_key(text: &str) -> bool {
@@ -400,17 +431,36 @@ fn looks_like_bare_record_key(text: &str) -> bool {
 }
 
 struct RefParser<'a> {
+    schema: &'a CftContainer,
     text: &'a str,
     pos: usize,
 }
 
 impl<'a> RefParser<'a> {
-    fn new(text: &'a str) -> Self {
-        Self { text, pos: 0 }
+    fn new(schema: &'a CftContainer, text: &'a str) -> Self {
+        Self {
+            schema,
+            text,
+            pos: 0,
+        }
     }
 
     fn parse(&mut self) -> Result<CfdInputValue, CellValueDiagnostics> {
-        let root = self.parse_name("reference key")?;
+        let target_type = self.parse_name("reference type")?;
+        if !self.eat('.') {
+            return Err(syntax("typed reference must be written as `@Type.key`"));
+        }
+        if self.schema.resolve_type(&target_type).is_none() {
+            return Err(CellValueDiagnostics {
+                diagnostics: vec![CellValueDiagnostic {
+                    code: CellValueErrorCode::UnknownType,
+                    message: format!(
+                        "unknown reference type `{target_type}`; typed references must be written as `@Type.key`"
+                    ),
+                }],
+            });
+        }
+        let key = self.parse_record_key()?;
         let mut segments = Vec::new();
         while !self.is_eof() {
             if self.eat('.') {
@@ -429,10 +479,18 @@ impl<'a> RefParser<'a> {
         }
 
         if segments.is_empty() {
-            Ok(CfdInputValue::record_ref(root))
+            Ok(CfdInputValue::record_ref(target_type, key))
         } else {
-            Ok(CfdInputValue::path_ref(root, segments))
+            Ok(CfdInputValue::path_ref(target_type, key, segments))
         }
+    }
+
+    fn parse_record_key(&mut self) -> Result<String, CellValueDiagnostics> {
+        let key = self.parse_name("reference key")?;
+        if let Some(reason) = record_key_ident_error(&key) {
+            return Err(syntax(format!("invalid reference key `{key}`: {reason}")));
+        }
+        Ok(key)
     }
 
     fn parse_name(&mut self, label: &str) -> Result<String, CellValueDiagnostics> {
@@ -999,7 +1057,9 @@ fn reference_needs_marker(text: &str) -> CellValueDiagnostics {
     CellValueDiagnostics {
         diagnostics: vec![CellValueDiagnostic {
             code: CellValueErrorCode::ReferenceNeedsMarker,
-            message: format!("object reference `{text}` must be written as `@{text}`"),
+            message: format!(
+                "object reference `{text}` must be written as `@Type.{text}` or `&{text}`"
+            ),
         }],
     }
 }

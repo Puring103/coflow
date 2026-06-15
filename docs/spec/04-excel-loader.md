@@ -53,10 +53,12 @@ Excel 加载器的输入是：
 
 ### 第三阶段：解析跨表引用
 
-遍历所有 Record，将对象字段中的 `@key` / `@key.path[index]` 输入按目标类型解析，替换为 `Value::Ref { key, target }` 或路径结果值。
+遍历所有 Record，将对象字段中的 `@Type.key`、`&key` 或 `@Type.key.path[index]` 输入按目标类型解析，替换为 `Value::Ref { key, target }` 或路径结果值。`Type` 必须是 CFT 类型名，`key` 必须是 string identifier record key。`&key` 是直接引用简写，使用当前字段期望类型作为查找根类型，不支持路径。
 
-- 字段声明类型是 `sealed type` 或无子类的普通 `type` 时，在该类型的 `primary_index` 中查找
-- 字段声明类型是 `abstract type` 或有子类的普通 `type` 时，在对应 `inheritance_index` 中查找
+- `Type` 是 `sealed type` 或无子类的普通 `type` 时，在该类型的 `primary_index` 中查找
+- `Type` 是 `abstract type` 或有子类的普通 `type` 时，在对应 `inheritance_index` 中查找
+- 引用前缀 `Type` 还必须能赋给字段声明类型；子类引用可用于父类字段，父类引用不能用于子类字段
+- `&key` 按字段声明类型执行同样的查找规则；如需跨根类型路径访问，必须写 `@Type.key.path[index]`
 - 允许循环引用（A.ref → B，B.ref → A）；两遍设计天然支持，不会无限递归
 - 找不到目标则报错
 
@@ -81,7 +83,8 @@ Excel 加载器的输入是：
 | 空单元格 | 字段有默认值时使用默认值；无默认值且非 nullable 时报错 |
 | `_` | 同空单元格 |
 | `null` | 显式填 null；字段类型必须是 `T?`，否则报错 |
-| `@key` | 对象字段的记录引用；目标类型为 string 时保留为普通字符串 |
+| `@Type.key` | 对象字段的显式记录引用；目标类型为 string 时保留为普通字符串 |
+| `&key` | 对象字段的直接记录引用简写；目标类型为 string 时保留为普通字符串 |
 
 ---
 

@@ -81,8 +81,14 @@ fn object_typed_record_refs_resolve_by_expected_type() {
         "drop_1",
         "Drop",
         [
-            ("reward", CfdInputValue::record_ref("reward_1")),
-            ("item_reward", CfdInputValue::record_ref("reward_1")),
+            (
+                "reward",
+                CfdInputValue::record_ref("ItemReward", "reward_1"),
+            ),
+            (
+                "item_reward",
+                CfdInputValue::record_ref("ItemReward", "reward_1"),
+            ),
         ],
     );
     let model = builder.build().expect("data model should build");
@@ -124,13 +130,13 @@ fn parent_record_keys_do_not_satisfy_child_typed_refs() {
     builder.add_record(
         "holder_1",
         "Holder",
-        [("child", CfdInputValue::record_ref("base_1"))],
+        [("child", CfdInputValue::record_ref("Base", "base_1"))],
     );
 
     let err = builder
         .build()
-        .expect_err("parent key should not satisfy child field");
-    assert_has_code(&err, CfdErrorCode::RefTargetNotFound);
+        .expect_err("parent-typed ref should not satisfy child field");
+    assert_has_code(&err, CfdErrorCode::TypeMismatch);
 }
 
 #[test]
@@ -231,4 +237,20 @@ fn empty_record_keys_are_rejected() {
         diag.primary.as_ref().map(|label| label.path.clone()),
         Some(CfdPath::root().field("id"))
     );
+}
+
+#[test]
+fn non_identifier_record_keys_are_rejected() {
+    let schema = compile_schema("type Item { value: int; }");
+
+    for key in ["123", "fire-ball", "fire.ball", "type"] {
+        let mut builder = CfdDataModel::builder(&schema);
+        builder.add_record(key, "Item", [("value", CfdInputValue::from(1_i64))]);
+
+        let err = match builder.build() {
+            Ok(_) => panic!("`{key}` should fail as a record key"),
+            Err(err) => err,
+        };
+        assert_has_code(&err, CfdErrorCode::InvalidRecordKey);
+    }
 }

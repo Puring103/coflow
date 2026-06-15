@@ -47,7 +47,7 @@
 - 目标类型是 `type` 时，`{...}` 按对象解析
 - 目标类型是 `{K: V}` 时，`{...}` 按字典解析
 - 目标类型是 `string` 时，`true`、`123`、`Rare` 都是字符串内容，不会按 bool、int、enum 解析
-- 目标类型是对象时，`@key` 解析为记录引用，`@key.path[index]` 解析为路径引用；裸 `key` 不会被当作引用
+- 目标类型是对象时，`@Type.key` 解析为显式记录引用，`@Type.key.path[index]` 解析为路径引用，`&key` 解析为当前期望类型的直接记录引用简写；裸 `key` 不会被当作引用
 
 数组永远使用 `|` 分隔。对象和字典永远使用 `,` 分隔。**不支持逗号数组**。
 
@@ -196,17 +196,22 @@ level: 5, stats: {hp: 100, attack: 50}
 
 ### 5.4 记录引用
 
-目标类型为对象或可空对象时，单元格可以写显式记录引用：
+目标类型为对象或可空对象时，单元格可以写显式记录引用或直接引用简写：
 
 ```
-@sword_01
-@drop_01.rewards[0]
-@table.weights[Fire]
+@Item.sword_01
+@DropTable.drop_01.rewards[0]
+@DropTable.table.weights[Fire]
+&sword_01
 ```
 
-`@key` 引用某条顶层记录。后续 `.field` 和 `[index]` 片段在 DataModel 阶段解析，字段访问可以穿过已经解析的引用。数组 index 必须是 int；字典 index 按字典 key 类型解析，支持 string、int、enum 变体或 `Enum.Variant`。
+`@Type.key` 引用某个 CFT 类型下的顶层记录。`Type` 是引用查找的根类型，必须是 CFT 类型名；`key` 必须是 string identifier record key。后续 `.field` 和 `[index]` 片段在 DataModel 阶段解析，字段访问可以穿过已经解析的引用。数组 index 必须是 int；字典 index 按字典 key 类型解析，支持 string、int、enum 变体或 `Enum.Variant`。
 
-目标类型为 `string` 时，`@sword_01` 只是普通字符串。目标类型为对象时，裸 `sword_01` 会报错并提示写成 `@sword_01`，避免字符串和引用混淆。
+`&key` 是直接记录引用简写，只能在目标类型是对象时使用，等价于用当前期望类型作为 `Type` 的 `@Type.key`。例如字段类型是 `Item` 时，`&sword_01` 等价于 `@Item.sword_01`；字段类型是 `Reward` 父类时，`&reward_01` 在 `Reward` 的多态范围内查找。`&key` 不支持路径；需要字段、数组或字典访问时必须写完整的 `@Type.key.path[index]`。
+
+目标类型为 `string` 时，`@Item.sword_01` 和 `&sword_01` 都只是普通字符串。目标类型为对象时，裸 `sword_01` 会报错并提示写成 `@Type.sword_01` 或 `&sword_01`，避免字符串和引用混淆。JSON 和 MessagePack 导出引用时只输出 plain key string，例如 `"sword_01"`，不会输出 `Type.key`。
+
+`#` 仍然是 CFT 注释符，不作为引用简写符号。
 
 ---
 
@@ -281,7 +286,7 @@ id: slime, attrs: {hp_bonus: 10, atk_bonus: 5}
 ```
 // Reward 字段
 CurrencyReward{r1, 100}
-ItemReward{r2, sword_01, 1}
+ItemReward{r2, &sword_01, 1}
 ```
 
 `TypeName{...}` 中的 `TypeName` 必须是目标类型的具体可赋值类型。`{...}` 内部仍然按对象 positional 或 named 规则解析。
@@ -290,13 +295,13 @@ ItemReward{r2, sword_01, 1}
 
 ```
 // [Reward]
-CurrencyReward{r1, 100} | ItemReward{r2, sword_01, 1} | CurrencyReward{r3, 50}
+CurrencyReward{r1, 100} | ItemReward{r2, &sword_01, 1} | CurrencyReward{r3, 50}
 ```
 
 多态数组嵌套在对象字段中时，数组本身必须写 `[]`：
 
 ```
-rewards: [CurrencyReward{r1, 100} | ItemReward{r2, sword_01, 1}]
+rewards: [CurrencyReward{r1, 100} | ItemReward{r2, &sword_01, 1}]
 ```
 
 ---
@@ -352,7 +357,7 @@ sword_01, 铁剑, Rare, [weapon | melee]
 {100, 50} | {200, 80, 1.5} | {300, 150}
 
 // [Reward]（root polymorphic array）
-CurrencyReward{r1, 100} | ItemReward{r2, sword_01, 1} | CurrencyReward{r3, 50}
+CurrencyReward{r1, 100} | ItemReward{r2, &sword_01, 1} | CurrencyReward{r3, 50}
 
 // {DamageType: float}（root dict，省略最外层 {}）
 Fire: 0.5, Ice: 0.2, Physical: 1.0
@@ -367,5 +372,5 @@ id: slime, level: 5, stats: {100, 50}, tags: [warrior | melee]
 null, 3
 
 // DropTable（嵌套数组必须写 []）
-rewards: [CurrencyReward{r1, 100} | ItemReward{r2, sword_01, 1}], weights: [60 | 40]
+rewards: [CurrencyReward{r1, 100} | ItemReward{r2, &sword_01, 1}], weights: [60 | 40]
 ```

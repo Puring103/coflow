@@ -33,6 +33,7 @@
 pub mod ast;
 mod container;
 mod error;
+mod identifier;
 pub mod lexer;
 pub mod parser;
 mod schema;
@@ -40,6 +41,7 @@ mod span;
 
 pub use container::{CftContainer, ModuleId};
 pub use error::{CftDiagnostic, CftDiagnostics, CftErrorCode, CftLabel, CftSeverity, CftStage};
+pub use identifier::{is_cft_identifier, is_cft_reserved_identifier, record_key_ident_error};
 pub use schema::{
     CftAnnotation, CftAnnotationValue, CftConstValue, CftSchemaBinOp, CftSchemaCheckBlock,
     CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaConst,

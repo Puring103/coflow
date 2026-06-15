@@ -158,7 +158,9 @@ Examples:
 - unknown named type;
 - invalid inheritance;
 - invalid `@struct`, `@expand`, `@flag`, `@display`, `@deprecated`, or `@keyAsEnum` usage;
-- legacy field-level `@id`, `@index`, `@ref`, `@IdAsEnum`, and `@GenAsEnum` annotations;
+- legacy field-level `@id`, `@index`, `@ref`, `@IdAsEnum`, and `@GenAsEnum`
+  annotations have been removed; use the field's CFT type and `@Type.key` or `&key`
+  cell references instead;
 - reserved `id` field declarations;
 - invalid default value;
 - invalid enum value sequence;
@@ -289,6 +291,7 @@ Codes include:
 | `CFD-DATA-010` | missing ID field |
 | `CFD-DATA-011` | duplicate ID |
 | `CFD-DATA-012` | duplicate ID in polymorphic range |
+| `CFD-DATA-013` | invalid record key identifier |
 
 Data model diagnostics are aggregated within the data model stage. Reference
 resolution and checks do not run if the data model is invalid.

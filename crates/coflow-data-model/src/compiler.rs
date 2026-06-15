@@ -8,7 +8,7 @@ use crate::schema_view::{
     input_value_kind, type_accepts_default, CfdType, CfdValueDraft, FieldMeta, RecordDraft,
     SchemaView,
 };
-use coflow_cft::{CftContainer, CftSchemaDefaultValue};
+use coflow_cft::{record_key_ident_error, CftContainer, CftSchemaDefaultValue};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) struct ModelCompiler {
@@ -118,6 +118,16 @@ impl ModelCompiler {
                     CfdDiagnostic::error(
                         CfdErrorCode::MissingIdField,
                         format!("record `{}` has an empty key", draft.actual_type),
+                    )
+                    .with_primary(Some(record_id), CfdPath::root().field("id")),
+                );
+                continue;
+            }
+            if let Some(reason) = record_key_ident_error(&draft.key) {
+                self.push(
+                    CfdDiagnostic::error(
+                        CfdErrorCode::InvalidRecordKey,
+                        format!("invalid record key `{}`: {reason}", draft.key),
                     )
                     .with_primary(Some(record_id), CfdPath::root().field("id")),
                 );
@@ -371,15 +381,35 @@ impl<'s> Validator<'s> {
                 let enum_value = self.resolve_enum_value(enum_name, variant, record, path)?;
                 Some(CfdValueDraft::Value(CfdValue::Enum(enum_value)))
             }
-            (CfdType::Type(expected), CfdInputValue::RecordRef(key)) => {
+            (CfdType::Type(expected), CfdInputValue::RecordRef { target_type, key }) => {
+                if !self.schema.is_assignable(target_type, expected) {
+                    self.push(
+                        CfdDiagnostic::error(
+                            CfdErrorCode::TypeMismatch,
+                            format!(
+                                "reference type `{target_type}` is not assignable to `{expected}`"
+                            ),
+                        )
+                        .with_primary(record, path),
+                    );
+                    return None;
+                }
                 Some(CfdValueDraft::PendingRef {
-                    target_type: expected.clone(),
+                    target_type: target_type.clone(),
                     key: key.clone(),
                 })
             }
-            (expected, CfdInputValue::PathRef { root, segments }) => Some(CfdValueDraft::PathRef {
+            (
+                expected,
+                CfdInputValue::PathRef {
+                    target_type,
+                    key,
+                    segments,
+                },
+            ) => Some(CfdValueDraft::PathRef {
                 expected_type: expected.clone(),
-                root: root.clone(),
+                target_type: target_type.clone(),
+                key: key.clone(),
                 segments: segments.clone(),
             }),
             (
@@ -649,11 +679,13 @@ impl<'s> Validator<'s> {
             }
             CfdValueDraft::PathRef {
                 expected_type,
-                root,
+                target_type,
+                key,
                 segments,
             } => self.resolve_path_ref(
                 expected_type,
-                root,
+                target_type,
+                key,
                 segments,
                 record,
                 path,
@@ -750,7 +782,8 @@ impl<'s> Validator<'s> {
     fn resolve_path_ref(
         &mut self,
         expected_type: &CfdType,
-        root: &str,
+        target_type: &str,
+        key: &str,
         segments: &[CfdRefPathSegment],
         record: Option<CfdRecordId>,
         path: CfdPath,
@@ -758,7 +791,14 @@ impl<'s> Validator<'s> {
         tables: &BTreeMap<String, CfdTable>,
         inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
     ) -> Option<CfdValue> {
-        let root_id = self.lookup_any_key(root, tables, inheritance_index)?;
+        let root_id = self.resolve_ref_target(
+            target_type,
+            key,
+            tables,
+            inheritance_index,
+            record,
+            path.clone(),
+        )?;
         let root_draft = drafts.get(root_id.index())?;
         let mut current_ty = CfdType::Type(root_draft.actual_type.clone());
         let mut current_value = CfdValueDraft::Object(Box::new(root_draft.clone()));
@@ -968,22 +1008,6 @@ impl<'s> Validator<'s> {
                 None
             }
         }
-    }
-
-    fn lookup_any_key(
-        &self,
-        key: &str,
-        tables: &BTreeMap<String, CfdTable>,
-        inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
-    ) -> Option<CfdRecordId> {
-        tables
-            .values()
-            .find_map(|table| table.primary_index.get(key).copied())
-            .or_else(|| {
-                inheritance_index
-                    .values()
-                    .find_map(|index| index.records.get(key).copied())
-            })
     }
 
     fn ref_index_to_dict_key(

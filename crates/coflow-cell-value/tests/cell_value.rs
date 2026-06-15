@@ -872,30 +872,31 @@ fn object_cells_parse_explicit_record_and_path_refs() -> TestResult {
     )?;
 
     assert_eq!(
-        parse_value(&schema, "Item", "@item_1")?,
-        CfdInputValue::record_ref("item_1")
+        parse_value(&schema, "Item", "@Item.item_1")?,
+        CfdInputValue::record_ref("Item", "item_1")
     );
     assert_eq!(
-        parse_value(&schema, "Item?", "@item_1")?,
-        CfdInputValue::record_ref("item_1")
+        parse_value(&schema, "Item?", "@Item.item_1")?,
+        CfdInputValue::record_ref("Item", "item_1")
     );
     assert_eq!(
-        parse_value(&schema, "[Item]", "@item_1 | @item_2")?,
+        parse_value(&schema, "[Item]", "@Item.item_1 | @Item.item_2")?,
         CfdInputValue::Array(vec![
-            CfdInputValue::record_ref("item_1"),
-            CfdInputValue::record_ref("item_2"),
+            CfdInputValue::record_ref("Item", "item_1"),
+            CfdInputValue::record_ref("Item", "item_2"),
         ])
     );
     assert_eq!(
-        parse_value(&schema, "{string: Item}", "main: @item_1")?,
+        parse_value(&schema, "{string: Item}", "main: @Item.item_1")?,
         CfdInputValue::dict([(
             CfdInputDictKey::from("main"),
-            CfdInputValue::record_ref("item_1"),
+            CfdInputValue::record_ref("Item", "item_1"),
         )])
     );
     assert_eq!(
-        parse_value(&schema, "Item", "@drop_table.rewards[0]")?,
+        parse_value(&schema, "Item", "@DropTable.drop_table.rewards[0]")?,
         CfdInputValue::path_ref(
+            "DropTable",
             "drop_table",
             [
                 CfdRefPathSegment::Field("rewards".to_string()),
@@ -904,8 +905,9 @@ fn object_cells_parse_explicit_record_and_path_refs() -> TestResult {
         )
     );
     assert_eq!(
-        parse_value(&schema, "Item", r#"@drop_table.rewards["rare"]"#)?,
+        parse_value(&schema, "Item", r#"@DropTable.drop_table.rewards["rare"]"#)?,
         CfdInputValue::path_ref(
+            "DropTable",
             "drop_table",
             [
                 CfdRefPathSegment::Field("rewards".to_string()),
@@ -914,14 +916,122 @@ fn object_cells_parse_explicit_record_and_path_refs() -> TestResult {
         )
     );
     assert_eq!(
-        parse_value(&schema, "Item", r#"@drop_table.rewards["ra\"re"]"#)?,
+        parse_value(
+            &schema,
+            "Item",
+            r#"@DropTable.drop_table.rewards["ra\"re"]"#
+        )?,
         CfdInputValue::path_ref(
+            "DropTable",
             "drop_table",
             [
                 CfdRefPathSegment::Field("rewards".to_string()),
                 CfdRefPathSegment::Index(CfdInputRefIndex::String("ra\"re".to_string())),
             ],
         )
+    );
+    assert_eq!(
+        parse_value(
+            &schema,
+            "Item",
+            r#"@DropTable.drop_table[0]["data"].arefdata[0]"#
+        )?,
+        CfdInputValue::path_ref(
+            "DropTable",
+            "drop_table",
+            [
+                CfdRefPathSegment::Index(CfdInputRefIndex::Int(0)),
+                CfdRefPathSegment::Index(CfdInputRefIndex::String("data".to_string())),
+                CfdRefPathSegment::Field("arefdata".to_string()),
+                CfdRefPathSegment::Index(CfdInputRefIndex::Int(0)),
+            ],
+        )
+    );
+    Ok(())
+}
+
+#[test]
+fn object_cells_parse_direct_record_ref_shorthand_from_expected_type() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            abstract type Reward {}
+            type Item {
+                name: string;
+            }
+            type ItemReward : Reward {
+                item: Item;
+            }
+        "#,
+    )?;
+
+    assert_eq!(
+        parse_value(&schema, "Item", "&item_1")?,
+        CfdInputValue::record_ref("Item", "item_1")
+    );
+    assert_eq!(
+        parse_value(&schema, "Item?", "&item_1")?,
+        CfdInputValue::record_ref("Item", "item_1")
+    );
+    assert_eq!(
+        parse_value(&schema, "[Item]", "&item_1 | &item_2")?,
+        CfdInputValue::Array(vec![
+            CfdInputValue::record_ref("Item", "item_1"),
+            CfdInputValue::record_ref("Item", "item_2"),
+        ])
+    );
+    assert_eq!(
+        parse_value(&schema, "{string: Item}", "main: &item_1")?,
+        CfdInputValue::dict([(
+            CfdInputDictKey::from("main"),
+            CfdInputValue::record_ref("Item", "item_1"),
+        )])
+    );
+    assert_eq!(
+        parse_value(&schema, "Reward", "&reward_1")?,
+        CfdInputValue::record_ref("Reward", "reward_1")
+    );
+    assert_eq!(
+        parse_value(&schema, "ItemReward", "item: &item_1")?,
+        CfdInputValue::object_with_declared_type([(
+            "item",
+            CfdInputValue::record_ref("Item", "item_1"),
+        )])
+    );
+    Ok(())
+}
+
+#[test]
+fn direct_record_ref_shorthand_rejects_paths_and_invalid_keys() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                name: string;
+            }
+        "#,
+    )?;
+
+    let path = parse_err(&schema, "Item", "&item_1.name")?;
+    assert_has_code(&path, CellValueErrorCode::Syntax);
+    assert!(
+        path.diagnostics
+            .iter()
+            .any(|diag| diag.message.contains("@Type.key.path")),
+        "expected explicit path hint, got {path:?}",
+    );
+
+    let invalid_key = parse_err(&schema, "Item", "&fire-ball")?;
+    assert_has_code(&invalid_key, CellValueErrorCode::Syntax);
+    assert!(
+        invalid_key
+            .diagnostics
+            .iter()
+            .any(|diag| diag.message.contains("invalid reference key")),
+        "expected invalid key hint, got {invalid_key:?}",
+    );
+
+    assert_eq!(
+        parse_ok(&schema, "string", "&item_1.name")?,
+        ParsedCell::Value(CfdInputValue::String("&item_1.name".to_string()))
     );
     Ok(())
 }
@@ -952,9 +1062,39 @@ fn object_cells_reject_bare_reference_keys_with_marker_hint() -> TestResult {
     assert!(
         err.diagnostics
             .iter()
-            .any(|diag| diag.message.contains("@item_1")),
+            .any(|diag| diag.message.contains("@Type.item_1")),
         "expected marker hint, got {err:?}",
     );
+    Ok(())
+}
+
+#[test]
+fn object_cells_reject_legacy_bare_at_references() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item { name: string; }
+            type DropTable { rewards: [Item]; }
+        "#,
+    )?;
+
+    for text in ["@item_1", "@drop_table.rewards[0]", "@Item.fire-ball"] {
+        let err = parse_err(&schema, "Item", text)?;
+        assert!(
+            err.diagnostics.iter().any(|diag| matches!(
+                diag.code,
+                CellValueErrorCode::Syntax | CellValueErrorCode::UnknownType
+            )),
+            "expected legacy reference `{text}` to fail as syntax or unknown type, got {err:?}",
+        );
+        assert!(
+            err.diagnostics
+                .iter()
+                .any(|diag| diag.message.contains("@Type.key")
+                    || diag.message.contains("field")
+                    || diag.message.contains("invalid reference key")),
+            "expected typed reference hint for `{text}`, got {err:?}",
+        );
+    }
     Ok(())
 }
 
@@ -971,7 +1111,7 @@ fn explicit_record_refs_resolve_to_cfd_refs() -> TestResult {
         "#,
     )?;
 
-    let parsed = parse_value(&schema, "Item", "@item_1")?;
+    let parsed = parse_value(&schema, "Item", "@Item.item_1")?;
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record("item_1", "Item", [("name", CfdInputValue::from("Sword"))]);
     builder.add_record("drop_1", "Drop", [("item", parsed)]);
@@ -988,6 +1128,46 @@ fn explicit_record_refs_resolve_to_cfd_refs() -> TestResult {
         Some(&CfdValue::Ref {
             key: "item_1".into(),
             target: item_record_id,
+        })
+    );
+    Ok(())
+}
+
+#[test]
+fn direct_record_ref_shorthand_resolves_to_cfd_refs_by_expected_type() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            abstract type Reward {}
+            type ItemReward : Reward {
+                count: int;
+            }
+            type Drop {
+                reward: Reward;
+            }
+        "#,
+    )?;
+
+    let parsed = parse_value(&schema, "Reward", "&reward_1")?;
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "reward_1",
+        "ItemReward",
+        [("count", CfdInputValue::from(3_i64))],
+    );
+    builder.add_record("drop_1", "Drop", [("reward", parsed)]);
+    let model = build_model(builder)?;
+    let Some(reward_record_id) = model.records().next().map(|(id, _)| id) else {
+        return Err("expected reward record".to_string());
+    };
+    let Some((_, drop_record)) = model.records().nth(1) else {
+        return Err("expected drop record".to_string());
+    };
+
+    assert_eq!(
+        drop_record.field("reward"),
+        Some(&CfdValue::Ref {
+            key: "reward_1".into(),
+            target: reward_record_id,
         })
     );
     Ok(())

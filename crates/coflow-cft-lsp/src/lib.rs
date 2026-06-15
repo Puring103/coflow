@@ -1442,6 +1442,10 @@ fn document_symbol(
 }
 
 fn semantic_token_data(build: &LspBuild, document: &LspDocument) -> Vec<u32> {
+    encode_semantic_tokens(semantic_raw_tokens(build, document))
+}
+
+fn semantic_raw_tokens(build: &LspBuild, document: &LspDocument) -> Vec<RawSemanticToken> {
     let mut tokens = Vec::new();
     add_comment_semantic_tokens(&document.source, &mut tokens);
     if let Ok(lexed) = lex(&ModuleId::new(document.module_id.clone()), &document.source) {
@@ -1452,7 +1456,7 @@ fn semantic_token_data(build: &LspBuild, document: &LspDocument) -> Vec<u32> {
     if let Some(ast) = &document.ast {
         add_ast_semantic_tokens(build, document, ast, &mut tokens);
     }
-    encode_semantic_tokens(tokens)
+    tokens
 }
 
 fn add_lex_semantic_token(
@@ -1596,12 +1600,7 @@ fn add_annotation_semantic(
     for arg in &annotation.args {
         match arg {
             AnnotationArg::Name(name) => {
-                let token_type = if matches!(annotation.name.as_str(), "ref") {
-                    SEM_TYPE
-                } else {
-                    SEM_VARIABLE
-                };
-                push_semantic_span(&document.source, name.span, token_type, tokens);
+                push_semantic_span(&document.source, name.span, SEM_VARIABLE, tokens);
             }
             AnnotationArg::String(_, span) => {
                 push_semantic_span(&document.source, *span, SEM_STRING, tokens);
@@ -3600,16 +3599,22 @@ type Item {\n\
         assert!(top_labels.contains(&"@struct".to_string()));
         assert!(top_labels.contains(&"@keyAsEnum".to_string()));
         assert!(!top_labels.contains(&"@id".to_string()));
+        assert!(!top_labels.contains(&"@ref".to_string()));
+        assert!(!top_labels.contains(&"@index".to_string()));
 
         let type_labels = completion_labels(annotation_completion_items(CompletionScope::TypeBody));
         assert!(type_labels.contains(&"@display".to_string()));
         assert!(!type_labels.contains(&"@id".to_string()));
+        assert!(!type_labels.contains(&"@ref".to_string()));
+        assert!(!type_labels.contains(&"@index".to_string()));
         assert!(!type_labels.contains(&"@keyAsEnum".to_string()));
         assert!(!type_labels.contains(&"@struct".to_string()));
 
         let enum_labels = completion_labels(annotation_completion_items(CompletionScope::EnumBody));
         assert!(enum_labels.is_empty());
         assert!(!enum_labels.contains(&"@id".to_string()));
+        assert!(!enum_labels.contains(&"@ref".to_string()));
+        assert!(!enum_labels.contains(&"@index".to_string()));
 
         assert_eq!(
             completion_labels(top_level_completion_items("abstract ")),
@@ -3794,6 +3799,33 @@ type Item {\n\
         assert_eq!(hex_value(b'f'), Some(15));
         assert_eq!(hex_value(b'F'), Some(15));
         assert_eq!(hex_value(b'?'), None);
+    }
+
+    #[test]
+    fn semantic_tokens_do_not_treat_legacy_ref_annotation_arg_as_type() {
+        let source = "type Target { key: string; }\n\
+type Item { @ref(Target) target: string; }\n";
+        let (_cleanup, build) = test_lsp_build("lsp-semantic-legacy-ref-annotation", source);
+        let document = first_document(&build);
+        let target_offset =
+            source.find("@ref(Target)").expect("legacy ref annotation") + "@ref(".len();
+        let target_start = position_from_byte(source, target_offset);
+        let target_len = "Target".len();
+        let raw_tokens = semantic_raw_tokens(&build, document);
+
+        let token_matches_target = |token: &&RawSemanticToken| {
+            token.line == target_start.line
+                && token.character == target_start.character
+                && token.length == target_len
+        };
+        assert!(raw_tokens
+            .iter()
+            .filter(token_matches_target)
+            .any(|token| token.token_type == SEM_VARIABLE));
+        assert!(!raw_tokens
+            .iter()
+            .filter(token_matches_target)
+            .any(|token| token.token_type == SEM_TYPE));
     }
 
     #[test]

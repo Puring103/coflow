@@ -1,6 +1,6 @@
 # `@KeyAsEnum` 迁移计划
 
-> 历史归档：本文记录的是旧的字段级 `@id/@ref/@KeyAsEnum` 设计迁移方案，不代表当前实现。当前语义见 `docs/spec/01-cft.md`、`docs/spec/02-data-model.md`、`docs/spec/06-csharp-codegen.md`：记录 key 来自数据记录的保留 `id`，引用使用显式 `@key`，类型级注解为 `@keyAsEnum("EnumName")`。
+> 历史归档：本文记录的是旧的字段级 `@id/@ref/@KeyAsEnum` 设计迁移方案，不代表当前实现。当前语义见 `docs/spec/01-cft.md`、`docs/spec/02-data-model.md`、`docs/spec/06-csharp-codegen.md`：记录 key 来自数据记录的保留 `id`，引用使用显式 `@Type.key`，类型级注解为 `@keyAsEnum("EnumName")`。
 
 把当前的 `@KeyAsEnumValue`（type 级，仅生成 `<Type>Id.cs` 字符串常量类）
 完全替换成字段级 `@KeyAsEnum("EnumName")`，让 codegen 阶段生成真正的

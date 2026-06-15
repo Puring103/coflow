@@ -27,7 +27,7 @@ fn record_keys_build_indexes_and_record_refs_resolve_by_expected_type() {
     builder.add_record(
         "drop_1",
         "Drop",
-        [("reward", CfdInputValue::record_ref("reward_1"))],
+        [("reward", CfdInputValue::record_ref("Reward", "reward_1"))],
     );
     let model = builder.build().expect("record-key refs should build");
     let reward_id = record_id_at(&model, 0);
@@ -65,13 +65,44 @@ fn parent_records_cannot_satisfy_child_typed_refs() {
     builder.add_record(
         "holder_1",
         "Holder",
-        [("child", CfdInputValue::record_ref("base_1"))],
+        [("child", CfdInputValue::record_ref("Base", "base_1"))],
     );
 
     let err = builder
         .build()
-        .expect_err("parent key should not satisfy child field");
-    assert_has_code(&err, CfdErrorCode::RefTargetNotFound);
+        .expect_err("parent-typed ref should not satisfy child field");
+    assert_has_code(&err, CfdErrorCode::TypeMismatch);
+}
+
+#[test]
+fn child_fields_reject_parent_typed_reference_prefixes() {
+    let schema = compile_schema(
+        r#"
+            abstract type Reward {}
+            type ItemReward : Reward { count: int; }
+            type Drop { item_reward: ItemReward; }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "reward_1",
+        "ItemReward",
+        [("count", CfdInputValue::from(3_i64))],
+    );
+    builder.add_record(
+        "drop_1",
+        "Drop",
+        [(
+            "item_reward",
+            CfdInputValue::record_ref("Reward", "reward_1"),
+        )],
+    );
+
+    let err = builder
+        .build()
+        .expect_err("wide prefix type must not satisfy narrower field");
+    assert_has_code(&err, CfdErrorCode::TypeMismatch);
 }
 
 #[test]
@@ -142,6 +173,7 @@ fn path_refs_resolve_fields_arrays_and_dict_keys() {
             (
                 "first_reward",
                 CfdInputValue::path_ref(
+                    "DropTable",
                     "table_1",
                     [
                         CfdRefPathSegment::Field("rewards".to_string()),
@@ -152,6 +184,7 @@ fn path_refs_resolve_fields_arrays_and_dict_keys() {
             (
                 "fire_resistance",
                 CfdInputValue::path_ref(
+                    "DropTable",
                     "table_1",
                     [
                         CfdRefPathSegment::Field("resistances".to_string()),
@@ -187,7 +220,7 @@ fn path_refs_can_follow_record_refs_before_field_access() {
     builder.add_record(
         "loadout_1",
         "Loadout",
-        [("primary", CfdInputValue::record_ref("skill_1"))],
+        [("primary", CfdInputValue::record_ref("Skill", "skill_1"))],
     );
     builder.add_record(
         "holder_1",
@@ -195,6 +228,7 @@ fn path_refs_can_follow_record_refs_before_field_access() {
         [(
             "copied_power",
             CfdInputValue::path_ref(
+                "Loadout",
                 "loadout_1",
                 [
                     CfdRefPathSegment::Field("primary".to_string()),

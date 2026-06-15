@@ -89,7 +89,7 @@ DictKey =
 
 ## 记录引用与继承树
 
-对象字段如果输入为 `RecordRef(key)`，查找范围是字段声明类型的赋值兼容范围：
+对象字段如果输入为 `RecordRef { target_type, key }`，先在 `target_type` 的赋值兼容范围内按 record key 查找目标记录，再检查 `target_type` 能否赋给字段声明类型。Cell value 层的 `&key` 简写会被转换成 `target_type` 等于当前期望对象类型的 `RecordRef`：
 
 - `TypeName` 是 `abstract type`：查找所有具体子类
 - `TypeName` 是普通 `type` 且存在子类：查找该类型本身及所有子类
@@ -97,9 +97,9 @@ DictKey =
 
 加载器为存在继承关系的类型建立 `inheritance_index`。每个 `PolymorphicIndex` 覆盖一个 root type 的赋值兼容范围，用于父类字段引用和跨子类 key 唯一性校验。
 
-同一具体类型内 record key 必须唯一。同一 `PolymorphicIndex` 范围内的 record key 也必须唯一，否则父类字段引用无法判定目标。子类 key 可以满足父类字段；父类 key 不能满足子类字段。
+record key 必须是 string identifier。同一具体类型内 record key 必须唯一。同一 `PolymorphicIndex` 范围内的 record key 也必须唯一，否则父类字段引用无法判定目标。子类 key 可以满足父类字段；父类 key 不能满足子类字段。
 
-路径引用 `PathRef { root, segments }` 先按任意顶层记录 key 找到根记录，再按字段访问和数组/字典索引访问定位值。路径结果仍必须与目标字段类型兼容。
+路径引用 `PathRef { target_type, key, segments }` 先在 `target_type` 的赋值兼容范围内按 record key 找到根记录，再按字段访问和数组/字典索引访问定位值。路径结果仍必须与目标字段类型兼容。`&key` 简写不会生成 `PathRef`；路径引用必须带显式根类型。
 
 ---
 
