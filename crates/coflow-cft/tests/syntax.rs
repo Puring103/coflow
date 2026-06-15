@@ -12,7 +12,7 @@ use common::*;
 
 #[test]
 fn lexer_reports_invalid_character() {
-    let err = add_source("type A { id: string; } $").unwrap_err();
+    let err = add_source("type A { key: string; } $").unwrap_err();
     assert_primary_stage(&err, CftErrorCode::UnexpectedCharacter, CftStage::Lex);
 }
 
@@ -48,21 +48,25 @@ fn parser_accepts_core_syntax() {
         enum Permission { Read = 1, Write = 2, }
         enum Rarity { Common, Rare = 10, Epic, }
 
+        @struct
+        sealed type Position { x: float; y: float; }
+
         @display("Item")
+        @keyAsEnum("BaseKey")
         abstract type Base {
-            @id
-            id: string;
-            check { id != ""; }
+            key: string;
+            check { key != ""; }
         }
 
         sealed type Item : Base {
-            @index
             rarity: Rarity = Rarity.Common;
+            @expand
+            pos: Position;
             tags: [string] = [];
             attrs: {string: int} = {};
             check {
                 0 < MAX <= 20;
-                when rarity >= Rarity.Common { id != ""; }
+                when rarity >= Rarity.Common { key != ""; }
                 all tag in tags { tag != ""; }
             }
         }

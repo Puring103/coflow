@@ -229,7 +229,7 @@ fn config_validation_rejects_unknown_fields_and_invalid_outputs() {
     std::fs::create_dir_all(project_dir.join("schema")).expect("create schema dir");
     std::fs::write(
         project_dir.join("schema").join("main.cft"),
-        "type Item { id: string; }\n",
+        "type Item { key: string; }\n",
     )
     .expect("write schema");
     std::fs::write(
@@ -277,7 +277,7 @@ fn config_validation_collects_multiple_project_diagnostics() {
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
     std::fs::write(
         root.join("schema").join("main.cft"),
-        "type Item { id: string; }\n",
+        "type Item { key: string; }\n",
     )
     .expect("write schema");
     std::fs::write(
@@ -393,7 +393,7 @@ fn config_validation_rejects_invalid_sources_and_sheets() {
     std::fs::create_dir_all(project_dir.join("schema")).expect("create schema dir");
     std::fs::write(
         project_dir.join("schema").join("main.cft"),
-        "type Item { id: string; }\n",
+        "type Item { key: string; }\n",
     )
     .expect("write schema");
     std::fs::write(
@@ -446,7 +446,7 @@ fn config_validation_rejects_duplicate_column_keys() {
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
     std::fs::write(
         root.join("schema").join("main.cft"),
-        "type Item { id: string; }\n",
+        "type Item { key: string; }\n",
     )
     .expect("write schema");
     std::fs::write(root.join("data").join("items.xlsx"), "").expect("write placeholder");
@@ -484,7 +484,7 @@ fn schema_only_commands_do_not_require_excel_sources() {
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
     std::fs::write(
         root.join("schema").join("main.cft"),
-        "type Item { @id id: string; value: int; }\n",
+        "type Item { value: int; }\n",
     )
     .expect("write schema");
     std::fs::write(
@@ -570,7 +570,7 @@ fn data_commands_require_excel_sources() {
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
     std::fs::write(
         root.join("schema").join("main.cft"),
-        "type Item { @id id: string; value: int; }\n",
+        "type Item { value: int; }\n",
     )
     .expect("write schema");
     std::fs::write(
@@ -619,7 +619,7 @@ fn excel_cell_diagnostics_include_sheet_and_a1_cell_in_human_output() {
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
     std::fs::write(
         root.join("schema").join("main.cft"),
-        "type Item { @id id: string; level: int; }\n",
+        "type Item { level: int; }\n",
     )
     .expect("write schema");
     std::fs::write(
@@ -693,7 +693,7 @@ fn excel_cell_diagnostics_collect_multiple_bad_cells() {
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
     std::fs::write(
         root.join("schema").join("main.cft"),
-        "type Item { @id id: string; level: int; }\n",
+        "type Item { level: int; }\n",
     )
     .expect("write schema");
     std::fs::write(
@@ -750,11 +750,7 @@ fn excel_missing_sheet_diagnostics_include_sheet_in_human_output() {
     let _cleanup = TempDirCleanup(root.clone());
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
-    std::fs::write(
-        root.join("schema").join("main.cft"),
-        "type Item { @id id: string; }\n",
-    )
-    .expect("write schema");
+    std::fs::write(root.join("schema").join("main.cft"), "type Item {}\n").expect("write schema");
     std::fs::write(
         root.join("coflow.yaml"),
         r"schema: schema/
@@ -808,11 +804,7 @@ fn excel_diagnostics_collect_multiple_missing_sheets() {
     let _cleanup = TempDirCleanup(root.clone());
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
-    std::fs::write(
-        root.join("schema").join("main.cft"),
-        "type Item { @id id: string; }\n",
-    )
-    .expect("write schema");
+    std::fs::write(root.join("schema").join("main.cft"), "type Item {}\n").expect("write schema");
     std::fs::write(
         root.join("coflow.yaml"),
         r"schema: schema/
@@ -857,11 +849,7 @@ fn excel_diagnostics_collect_multiple_unknown_columns() {
     let _cleanup = TempDirCleanup(root.clone());
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
-    std::fs::write(
-        root.join("schema").join("main.cft"),
-        "type Item { @id id: string; }\n",
-    )
-    .expect("write schema");
+    std::fs::write(root.join("schema").join("main.cft"), "type Item {}\n").expect("write schema");
     std::fs::write(
         root.join("coflow.yaml"),
         r"schema: schema/
@@ -1046,7 +1034,7 @@ fn export_json_validates_declared_output_type() {
     let drop_table = std::fs::read_to_string(out_dir.join("DropTable.json"))
         .expect("DropTable.json should be written");
     assert!(drop_table.contains(r#""$type": "ItemReward""#));
-    assert!(drop_table.contains(r#""monster_id": "goblin_warrior""#));
+    assert!(drop_table.contains(r#""monster": "goblin_warrior""#));
     std::fs::remove_dir_all(out_dir).expect("clean output dir");
 }
 
@@ -1173,11 +1161,12 @@ fn codegen_csharp_writes_newtonsoft_json_loader() {
     assert!(game_config.contains("using Newtonsoft.Json.Linq;"));
     assert!(game_config.contains("DuplicatePropertyNameHandling.Error"));
     assert!(game_config.contains("LoadRewardPolymorphic"));
-    assert!(game_config.contains("ResolveRewardRefs(list1[i1]"));
+    assert!(game_config.contains("ResolveDialogueNodeRefs(list1[i1]"));
 
     let item_reward =
         std::fs::read_to_string(out_dir.join("ItemReward.cs")).expect("ItemReward.cs");
-    assert!(item_reward.contains("public string ItemId { get; set; }"));
+    assert!(item_reward.contains("public string Id { get; internal set; }"));
+    assert!(!item_reward.contains("public string ItemId { get; set; }"));
     assert!(item_reward.contains("public Item Item { get; internal set; }"));
 
     std::fs::remove_dir_all(out_dir).expect("clean output dir");
@@ -1238,10 +1227,8 @@ fn codegen_csharp_preflight_outputs_multiple_diagnostics_without_writing_files()
         root.join("schema").join("main.cft"),
         r#"
             type FooBar { value: int; }
+            @keyAsEnum("GeneId")
             type Foo_Bar {
-                @IdAsEnum("GeneId")
-                @id
-                id: string;
                 foo_bar: int;
                 fooBar: int;
             }
@@ -1685,8 +1672,17 @@ Console.WriteLine("loaded");
 
 #[test]
 fn cft_lsp_publishes_project_diagnostics_for_open_document() {
+    let suffix = unique_suffix();
+    let project_dir = std::env::temp_dir().join(format!("coflow-lsp-project-diagnostics-{suffix}"));
+    let _cleanup = TempDirCleanup(project_dir.clone());
+    let schema_dir = project_dir.join("schema");
+    std::fs::create_dir_all(&schema_dir).expect("create schema dir");
+    std::fs::write(project_dir.join("coflow.yaml"), "schema: schema/\n").expect("write config");
+    let schema_path = schema_dir.join("main.cft");
+    std::fs::write(&schema_path, "type Item { name: string; }\n").expect("write schema");
+
     let mut child = coflow()
-        .args(["cft", "lsp", "examples/rpg"])
+        .args(["cft", "lsp", project_dir.to_str().expect("utf8 temp path")])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -1708,7 +1704,7 @@ fn cft_lsp_publishes_project_diagnostics_for_open_document() {
     assert_eq!(initialize["id"], 1);
     assert!(initialize["result"]["capabilities"]["textDocumentSync"].is_object());
 
-    let schema_path = std::fs::canonicalize("examples/rpg/schema/rpg.cft").expect("schema path");
+    let schema_path = std::fs::canonicalize(&schema_path).expect("schema path");
     let uri = file_uri(&schema_path);
     write_lsp(
         &mut stdin,
@@ -1778,7 +1774,7 @@ fn cft_lsp_prefers_open_document_uri_for_project_diagnostics() {
     std::fs::create_dir_all(&schema_dir).expect("create schema dir");
     std::fs::write(project_dir.join("coflow.yaml"), "schema: schema/\n").expect("write config");
     let schema_path = schema_dir.join("main.cft");
-    std::fs::write(&schema_path, "type Item { id: string; }\n").expect("write schema");
+    std::fs::write(&schema_path, "type Item { key: string; }\n").expect("write schema");
 
     let mut child = coflow()
         .args(["cft", "lsp", project_dir.to_str().expect("utf8 temp path")])
@@ -1849,7 +1845,7 @@ fn cft_lsp_definitions_survive_unrelated_schema_diagnostics() {
     let target_path = schema_dir.join("target.cft");
     let broken_path = schema_dir.join("broken.cft");
     let source = "type UsesTarget { target: Target; }\n";
-    let target = "type Target { id: string; }\n";
+    let target = "type Target { key: string; }\n";
     std::fs::write(&source_path, source).expect("write source schema");
     std::fs::write(&target_path, target).expect("write target schema");
     std::fs::write(&broken_path, "type Broken { missing: Missing; }\n")
@@ -2257,15 +2253,12 @@ fn cft_lsp_serves_editor_language_features() {
     assert_eq!(capabilities["documentFormattingProvider"], true);
     assert!(capabilities["semanticTokensProvider"].is_object());
 
-    let schema_path = std::fs::canonicalize("examples/rpg/schema/rpg.cft").expect("schema path");
+    let schema_path =
+        std::fs::canonicalize("examples/rpg/schema/30_monsters_drops.cft").expect("schema path");
     let uri = file_uri(&schema_path);
     let source = std::fs::read_to_string(&schema_path)
         .expect("schema source")
-        .replacen(
-            "const MAX_LEVEL: int = 100;",
-            "const MAX_LEVEL: int = 100; # comment",
-            1,
-        );
+        .replacen("type Monster {", "type Monster { # comment", 1);
     write_lsp(
         &mut stdin,
         &serde_json::json!({
@@ -2284,7 +2277,8 @@ fn cft_lsp_serves_editor_language_features() {
     let publish = read_lsp(&mut stdout);
     assert_eq!(publish["method"], "textDocument/publishDiagnostics");
 
-    let top_level_completion = request_completion_at(&mut stdin, &mut stdout, 2, &uri, &source, 0);
+    let top_level_completion =
+        request_completion_at(&mut stdin, &mut stdout, 2, &uri, &source, source.len());
     assert_has_completion(&top_level_completion, "type");
     assert_missing_completion(&top_level_completion, "Monster");
     assert_missing_completion(&top_level_completion, "len");
@@ -2307,9 +2301,9 @@ fn cft_lsp_serves_editor_language_features() {
         4,
         &uri,
         &source,
-        position_after(&source, "rarity: Rarity = "),
+        position_after(&source, "flags: SkillTag = "),
     );
-    assert_has_completion(&field_default_completion, "Rarity.Common");
+    assert_has_completion(&field_default_completion, "SkillTag.Damage");
     assert_missing_completion(&field_default_completion, "true");
     assert_missing_completion(&field_default_completion, "MAX_LEVEL");
     assert_missing_completion(&field_default_completion, "len");
@@ -2326,43 +2320,31 @@ fn cft_lsp_serves_editor_language_features() {
     assert_has_completion(&check_completion, "id");
     assert_missing_completion(&check_completion, "Monster");
 
-    let ref_completion = request_completion_at(
+    let string_completion = request_completion_at(
         &mut stdin,
         &mut stdout,
         6,
         &uri,
         &source,
-        position_after(&source, "@ref("),
-    );
-    assert_has_completion(&ref_completion, "Monster");
-    assert_missing_completion(&ref_completion, "int");
-    assert_missing_completion(&ref_completion, "Rarity");
-
-    let string_completion = request_completion_at(
-        &mut stdin,
-        &mut stdout,
-        7,
-        &uri,
-        &source,
-        position_after(&source, "@display(\"Item"),
+        position_after(&source, "@display(\"Monster"),
     );
     assert_no_completion(&string_completion);
 
     let enum_dot_completion = request_completion_at(
         &mut stdin,
         &mut stdout,
-        8,
+        7,
         &uri,
         &source,
-        position_after(&source, "rarity: Rarity = Rarity."),
+        position_after(&source, "flags: SkillTag = SkillTag."),
     );
-    assert_has_completion(&enum_dot_completion, "Common");
+    assert_has_completion(&enum_dot_completion, "Damage");
     assert_missing_completion(&enum_dot_completion, "len");
 
     let field_dot_completion = request_completion_at(
         &mut stdin,
         &mut stdout,
-        9,
+        8,
         &uri,
         &source,
         position_after(&source, "stats."),
@@ -2373,7 +2355,7 @@ fn cft_lsp_serves_editor_language_features() {
     let type_predicate_completion = request_completion_at(
         &mut stdin,
         &mut stdout,
-        10,
+        9,
         &uri,
         &source,
         position_after(&source, "reward is "),
@@ -2382,32 +2364,21 @@ fn cft_lsp_serves_editor_language_features() {
     assert_has_completion(&type_predicate_completion, "null");
     assert_missing_completion(&type_predicate_completion, "len");
 
-    let parent_type_completion = request_completion_at(
+    let modifier_keyword_completion = request_completion_at(
         &mut stdin,
         &mut stdout,
-        11,
+        10,
         &uri,
         &source,
-        position_after(&source, "type ItemReward : "),
+        position_after(&source, "sealed "),
     );
-    assert_has_completion(&parent_type_completion, "Reward");
-    assert_missing_completion(&parent_type_completion, "int");
-
-    let abstract_keyword_completion = request_completion_at(
-        &mut stdin,
-        &mut stdout,
-        12,
-        &uri,
-        &source,
-        position_after(&source, "abstract "),
-    );
-    assert_has_completion(&abstract_keyword_completion, "type");
-    assert_missing_completion(&abstract_keyword_completion, "enum");
+    assert_has_completion(&modifier_keyword_completion, "type");
+    assert_missing_completion(&modifier_keyword_completion, "enum");
 
     let comment_completion = request_completion_at(
         &mut stdin,
         &mut stdout,
-        13,
+        11,
         &uri,
         &source,
         position_after(&source, "# comment"),
@@ -2480,8 +2451,6 @@ fn write_invalid_check_project(root: &std::path::Path) -> Result<(), rust_xlsxwr
         root.join("schema").join("main.cft"),
         r#"
             type Item {
-                @id
-                id: string;
                 level: int;
                 check { level > 0; }
             }

@@ -207,12 +207,6 @@ fn cases() -> Vec<Case> {
             codes: &[CftErrorCode::ConflictingTypeModifiers],
         },
         Case {
-            name: "multiple id fields in tree",
-            phase: Phase::Compile,
-            source: "type Base { @id id: int; } type Child : Base { @id other: int; }",
-            codes: &[CftErrorCode::MultipleIdFieldsInTree],
-        },
-        Case {
             name: "invalid dict key type",
             phase: Phase::Compile,
             source: "type A { values: {[int]: int}; }",
@@ -269,7 +263,7 @@ fn cases() -> Vec<Case> {
         Case {
             name: "invalid annotation target",
             phase: Phase::Compile,
-            source: "@id type A {}",
+            source: "@keyAsEnum(\"AKey\") enum A { X, }",
             codes: &[CftErrorCode::InvalidAnnotationTarget],
         },
         Case {
@@ -281,7 +275,7 @@ fn cases() -> Vec<Case> {
         Case {
             name: "invalid annotated field type",
             phase: Phase::Compile,
-            source: "type A { @id value: float; }",
+            source: "type Pos { x: float; } type A { @expand value: float; }",
             codes: &[CftErrorCode::InvalidAnnotatedFieldType],
         },
         Case {
@@ -289,24 +283,6 @@ fn cases() -> Vec<Case> {
             phase: Phase::Compile,
             source: "@struct type A {}",
             codes: &[CftErrorCode::StructRequiresSealedType],
-        },
-        Case {
-            name: "ref target must be type",
-            phase: Phase::Compile,
-            source: "enum E { A, } type A { @ref(E) id: string; }",
-            codes: &[CftErrorCode::RefTargetMustBeType],
-        },
-        Case {
-            name: "ref target has no id",
-            phase: Phase::Compile,
-            source: "type Target {} type A { @ref(Target) id: string; }",
-            codes: &[CftErrorCode::RefTargetHasNoId],
-        },
-        Case {
-            name: "ref id type mismatch",
-            phase: Phase::Compile,
-            source: "type Target { @id id: string; } type A { @ref(Target) id: int; }",
-            codes: &[CftErrorCode::RefIdTypeMismatch],
         },
         Case {
             name: "enum variant default on non-enum",
@@ -329,7 +305,7 @@ fn cases() -> Vec<Case> {
         Case {
             name: "reserved identifier",
             phase: Phase::Compile,
-            source: "type A { from: string; }",
+            source: "type A { id: string; }",
             codes: &[CftErrorCode::ReservedIdentifier],
         },
         Case {
@@ -513,32 +489,20 @@ fn important_error_code_branches_emit_stable_codes() {
         Case {
             name: "invalid annotation target enum variant",
             phase: Phase::Compile,
-            source: "enum E { @index A, }",
+            source: "enum E { @keyAsEnum(\"EKey\") A, }",
             codes: &[CftErrorCode::InvalidAnnotationTarget],
         },
         Case {
-            name: "invalid annotation argument ref missing args",
+            name: "invalid annotation argument keyAsEnum name arg",
             phase: Phase::Compile,
-            source: "type A { @ref id: string; }",
+            source: "@keyAsEnum(AKey) type A { key: string; }",
             codes: &[CftErrorCode::InvalidAnnotationArgument],
         },
         Case {
-            name: "invalid annotated field type ref",
+            name: "invalid annotated field type expand",
             phase: Phase::Compile,
-            source: "type Target {} type A { @ref(Target) id: float; }",
+            source: "type A { @expand values: [int]; }",
             codes: &[CftErrorCode::InvalidAnnotatedFieldType],
-        },
-        Case {
-            name: "invalid annotated field type index",
-            phase: Phase::Compile,
-            source: "type A { @index values: [int]; }",
-            codes: &[CftErrorCode::InvalidAnnotatedFieldType],
-        },
-        Case {
-            name: "ref target unknown",
-            phase: Phase::Compile,
-            source: "type A { @ref(Missing) id: string; }",
-            codes: &[CftErrorCode::RefTargetMustBeType],
         },
         Case {
             name: "enum variant default unknown enum",

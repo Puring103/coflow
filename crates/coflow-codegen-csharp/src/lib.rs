@@ -113,8 +113,8 @@ pub fn generate_csharp_with_database_templates(
     )
 }
 
-/// Generates C# files and includes data-driven enum variants for fields marked
-/// with `@IdAsEnum`.
+/// Generates C# files and includes data-driven enum variants for types marked
+/// with `@keyAsEnum`.
 ///
 /// # Errors
 ///
@@ -284,7 +284,6 @@ mod tests {
         let schema = compile_schema(
             r"
                 type Item {
-                    @id id: string;
                     value: int;
                 }
             ",
@@ -303,19 +302,12 @@ mod tests {
     fn codegen_key_as_enum_generates_enum_and_strongly_typed_id_and_ref() -> Result<(), String> {
         let schema = compile_schema(
             r#"
-                type GeneConfig {
-                    @IdAsEnum("GeneId")
-                    @id
-                    id: string;
-                }
+                @keyAsEnum("GeneId")
+                type GeneConfig {}
 
                 type BioRemainsConfig {
-                    @id
-                    id: string;
-                    @ref(GeneConfig)
-                    gene_id: string?;
-                    @ref(GeneConfig)
-                    fallback_gene_id: string = "Gene_Mating";
+                    gene: GeneConfig?;
+                    fallback_gene: GeneConfig;
                 }
             "#,
         )?;
@@ -347,16 +339,11 @@ mod tests {
         require_contains(gene_id, "Gene_Mating = 1")?;
 
         let gene = generated_file(&files, "GeneConfig.cs")?;
-        require_contains(gene, "public GeneId Id { get; set; }")?;
+        require_contains(gene, "public GeneId Id { get; internal set; }")?;
         require_not_contains(gene, "public string Id")?;
         require_not_contains(gene, " = \"\";")?;
 
         let remains = generated_file(&files, "BioRemainsConfig.cs")?;
-        require_contains(remains, "public GeneId? GeneId { get; set; }")?;
-        require_contains(
-            remains,
-            "public GeneId FallbackGeneId { get; set; } = (GeneId)Enum.Parse(typeof(GeneId), \"Gene_Mating\");",
-        )?;
         require_contains(remains, "public GeneConfig? Gene { get; internal set; }")?;
         require_contains(
             remains,
@@ -364,20 +351,14 @@ mod tests {
         )?;
 
         let database = generated_file(&files, "GameConfig.cs")?;
-        require_contains(database, "GeneId = ReadRequiredNullable")?;
-        require_contains(
-            database,
-            "FallbackGeneId = ReadWithDefault(obj, \"fallback_gene_id\", path, (GeneId)Enum.Parse(typeof(GeneId), \"Gene_Mating\")",
-        )?;
+        require_contains(database, "var gene = ReadRequiredNullable")?;
+        require_contains(database, "var fallbackGene = ReadRequired")?;
         require_contains(database, "ReadStringEnum<GeneId>")?;
         require_contains(
             database,
             "Dictionary<GeneId, GeneConfig> _geneConfigRefIndex",
         )?;
-        require_contains(
-            database,
-            "ResolveRef(geneConfigRefIndex, value.GeneId.Value",
-        )?;
+        require_contains(database, "ResolveRef(geneConfigRefIndex")?;
         Ok(())
     }
 
@@ -385,11 +366,9 @@ mod tests {
     fn codegen_emits_unity_compatible_csharp_syntax() -> Result<(), String> {
         let schema = compile_schema(
             r"
-                type Target { @id id: string; }
+                type Target {}
                 type Item {
-                    @id id: string;
-                    @ref(Target)
-                    target_id: string;
+                    target: Target;
                 }
             ",
         )?;
@@ -416,14 +395,10 @@ mod tests {
     fn codegen_key_as_enum_generates_strongly_typed_string_field() -> Result<(), String> {
         let schema = compile_schema(
             r#"
-                type AttributeConfig {
-                    @id
-                    @IdAsEnum("CreatureAttribute")
-                    id: string;
-                }
+                @keyAsEnum("CreatureAttribute")
+                type AttributeConfig {}
 
                 sealed type ModifyValueOperation {
-                    @GenAsEnum("CreatureAttribute")
                     attribute: string;
                     value: float;
                 }
@@ -458,12 +433,16 @@ mod tests {
                 .count(),
             1
         );
+        let attribute = generated_file(&files, "AttributeConfig.cs")?;
+        require_contains(
+            attribute,
+            "public CreatureAttribute Id { get; internal set; }",
+        )?;
         let modifier = generated_file(&files, "ModifyValueOperation.cs")?;
-        require_contains(modifier, "public CreatureAttribute Attribute { get; set; }")?;
-        require_not_contains(modifier, "public string Attribute")?;
+        require_contains(modifier, "public string Attribute { get; set; }")?;
 
         let database = generated_file(&files, "GameConfig.cs")?;
-        require_contains(database, "ReadStringEnum<CreatureAttribute>")?;
+        require_contains(database, "Id = id")?;
         Ok(())
     }
 
@@ -472,16 +451,14 @@ mod tests {
     ) -> Result<(), String> {
         let schema = compile_schema(
             r"
-                type Item { @id id: string; }
-                abstract type Reward { id: string; }
+                type Item {}
+                abstract type Reward {}
                 type ItemReward : Reward {
-                    @ref(Item)
-                    item_id: string;
+                    item: Item;
                     count: int = 1;
                     maybe_count: int?;
                 }
                 type DropTable {
-                    @id id: string;
                     rewards: [Reward];
                 }
             ",
@@ -520,7 +497,7 @@ mod tests {
         require_not_contains(database, "var key = reader.ReadString();")?;
         require_not_contains(database, "var typeKey = reader.ReadString();")?;
         require_not_contains(database, "var rawKey = reader.ReadString();")?;
-        require_contains(database, "case \"item_id\":")?;
+        require_contains(database, "case \"item\":")?;
         require_contains(database, "SkipValue(ref reader, fieldPath)")?;
         require_not_contains(database, "default:\n                    reader.Skip();")?;
         require_contains(database, "if (result.ContainsKey(key))")?;
@@ -565,12 +542,15 @@ mod tests {
             database: model::CsharpDatabase {
                 tables: Vec::new(),
                 ref_indexes: Vec::new(),
-                indexes: Vec::new(),
                 constructor_parameters: Vec::new(),
                 load_steps: Vec::new(),
                 constructor_args: Vec::new(),
                 loaders: vec![model::CsharpLoader {
                     type_name: "Item".to_string(),
+                    key_type_name: "string".to_string(),
+                    key_local_name: "id".to_string(),
+                    key_read_expr: String::new(),
+                    key_messagepack_read_expr: "ReadString(ref reader, fieldPath)".to_string(),
                     fields: vec![
                         model::CsharpLoadField {
                             property: "Items".to_string(),
@@ -581,6 +561,10 @@ mod tests {
                             messagepack_read_expr: "ReadArray(ref reader, fieldPath, static (ref MessagePackReader itemReader, string itemPath) => ReadInt(ref itemReader, itemPath))".to_string(),
                             default_expr: None,
                             is_required: true,
+                            assignments: vec![model::CsharpLoadAssignment {
+                                property: "Items".to_string(),
+                                expr: "items".to_string(),
+                            }],
                         },
                         model::CsharpLoadField {
                             property: "Count".to_string(),
@@ -591,6 +575,10 @@ mod tests {
                             messagepack_read_expr: "ReadInt(ref reader, fieldPath)".to_string(),
                             default_expr: Some("1".to_string()),
                             is_required: false,
+                            assignments: vec![model::CsharpLoadAssignment {
+                                property: "Count".to_string(),
+                                expr: "count".to_string(),
+                            }],
                         },
                     ],
                 }],
@@ -620,10 +608,7 @@ mod tests {
                 crit: int = 5;
             }
 
-            type Item {
-                @id id: string;
-                stats: StatBlock;
-            }
+                type Item { stats: StatBlock; }
         "#,
         )?;
 
@@ -635,9 +620,9 @@ mod tests {
         require_not_contains(stat_block, "= 5;")?;
         let database = generated_file(&files, "GameConfig.cs")?;
         let item = generated_file(&files, "Item.cs")?;
-        require_contains(database, "Speed = ReadWithDefault")?;
-        require_contains(database, "Crit = ReadWithDefault")?;
-        require_contains(item, "public StatBlock Stats { get; set; }")?;
+        require_contains(database, "var speed = ReadWithDefault")?;
+        require_contains(database, "var crit = ReadWithDefault")?;
+        require_contains(item, "public StatBlock Stats { get; internal set; }")?;
         require_not_contains(item, "public StatBlock Stats { get; set; } = null!;")?;
         Ok(())
     }
@@ -646,14 +631,12 @@ mod tests {
     fn codegen_handles_recursive_type_graph_when_collecting_refs() -> Result<(), String> {
         let schema = compile_schema(
             r"
-                type Target { @id id: string; }
+                type Target {}
                 type Node {
                     child: Node? = null;
-                    @ref(Target)
-                    target_id: string;
+                    target: Target;
                 }
                 type Table {
-                    @id id: string;
                     root: Node;
                 }
             ",
@@ -671,13 +654,11 @@ mod tests {
     fn codegen_builds_polymorphic_ref_indexes_for_abstract_targets() -> Result<(), String> {
         let schema = compile_schema(
             r"
-                abstract type Reward { @id id: string; }
+                abstract type Reward {}
                 type ItemReward : Reward { count: int; }
                 type CurrencyReward : Reward { amount: int; }
                 type Drop {
-                    @id id: string;
-                    @ref(Reward)
-                    reward_id: string;
+                    reward: Reward;
                 }
             ",
         )?;
@@ -707,7 +688,6 @@ mod tests {
                 }
 
                 type Item {
-                    @id id: string;
                     name: string = "unknown";
                     maybe: int?;
                     element: Element? = null;
@@ -723,19 +703,19 @@ mod tests {
         require_contains(item, "public IReadOnlyList<string> Tags { get; set; }")?;
         require_contains(
             database,
-            "Name = ReadWithDefault(obj, \"name\", path, \"unknown\"",
+            "var name = ReadWithDefault(obj, \"name\", path, \"unknown\"",
         )?;
         require_contains(
             database,
-            "Maybe = ReadRequiredNullable(obj, \"maybe\", path",
+            "var maybe = ReadRequiredNullable(obj, \"maybe\", path",
         )?;
         require_contains(
             database,
-            "Element = ReadNullableWithDefault(obj, \"element\", path, (Element?)null",
+            "var element = ReadNullableWithDefault(obj, \"element\", path, (Element?)null",
         )?;
         require_contains(
             database,
-            "Tags = ReadWithDefault(obj, \"tags\", path, new List<string>()",
+            "var tags = ReadWithDefault(obj, \"tags\", path, new List<string>()",
         )?;
         Ok(())
     }
@@ -745,7 +725,6 @@ mod tests {
         let schema = compile_schema(
             r"
                 type Item {
-                    @id id: string;
                     params: int;
                 }
             ",
@@ -766,7 +745,6 @@ mod tests {
         let schema = compile_schema(
             r"
                 type Item {
-                    @id id: string;
                     has_id: string;
                     count: int;
                     count_value: int;
@@ -845,11 +823,11 @@ mod tests {
         require_contains(child, "public long ChildValue { get; set; }")?;
         require_contains(
             database,
-            "BaseValue = ReadRequired(obj, \"base_value\", path",
+            "var baseValue = ReadRequired(obj, \"base_value\", path",
         )?;
         require_contains(
             database,
-            "ChildValue = ReadRequired(obj, \"child_value\", path",
+            "var childValue = ReadRequired(obj, \"child_value\", path",
         )?;
         Ok(())
     }
@@ -859,7 +837,6 @@ mod tests {
         let schema = compile_schema(
             r"
                 type Item {
-                    @id id: string;
                     foo_bar: int;
                     fooBar: int;
                 }
@@ -1021,21 +998,16 @@ mod tests {
             r"
                 enum item_rarity { common, rare }
                 type item_data {
-                    @id item_id: string;
                     rarity: item_rarity;
                 }
                 type loot_table {
-                    @id table_id: string;
-                    @ref(item_data)
-                    item_id: string;
+                    item: item_data;
                 }
-                abstract type reward_base { @id reward_id: string; }
+                abstract type reward_base {}
                 type item_reward : reward_base {
-                    @ref(item_data)
-                    item_id: string;
+                    item: item_data;
                 }
                 type reward_holder {
-                    @id holder_id: string;
                     reward: reward_base;
                 }
             ",
@@ -1058,7 +1030,7 @@ mod tests {
         )?;
         require_contains(
             database,
-            "LoadTable(Path.Combine(dataDir, \"item_data.json\"), \"item_data\", LoadItemData)",
+            "LoadTable(Path.Combine(dataDir, \"item_data.json\"), \"item_data\", LoadItemDataRow)",
         )?;
         require_contains(database, "var itemDataRefIndex = itemDataIndex;")?;
         require_not_contains(database, "var itemDataRefIndex = item_dataIndex;")?;
@@ -1175,7 +1147,6 @@ mod tests {
         let schema = compile_schema(
             r"
                 type Item {
-                    @id id: string;
                     scalar: float = 1.0;
                     amounts: [float] = [];
                 }
@@ -1214,11 +1185,10 @@ mod tests {
     fn codegen_struct_refs_return_updated_values_and_write_back() -> Result<(), String> {
         let schema = compile_schema(
             r"
-                type Target { @id id: string; }
+                type Target {}
                 @struct
                 sealed type Child {
-                    @ref(Target)
-                    target_id: string;
+                    target: Target;
                 }
                 @struct
                 sealed type Parent {
@@ -1227,7 +1197,6 @@ mod tests {
                     by_name: {string: Child} = {};
                 }
                 type Holder {
-                    @id id: string;
                     parent: Parent;
                 }
             ",
@@ -1261,12 +1230,10 @@ mod tests {
     fn codegen_top_level_struct_tables_write_back_resolved_refs() -> Result<(), String> {
         let schema = compile_schema(
             r"
-                type Target { @id id: string; }
+                type Target {}
                 @struct
                 sealed type Record {
-                    @id id: string;
-                    @ref(Target)
-                    target_id: string;
+                    target: Target;
                 }
             ",
         )?;
@@ -1285,18 +1252,15 @@ mod tests {
     fn codegen_does_not_write_back_nested_structs_without_refs() -> Result<(), String> {
         let schema = compile_schema(
             r"
-                type Target { @id id: string; }
+                type Target {}
                 type RefRecord {
-                    @id id: string;
-                    @ref(Target)
-                    target_id: string;
+                    target: Target;
                 }
                 @struct
                 sealed type ValueBlock {
                     amount: int;
                 }
                 type Holder {
-                    @id id: string;
                     block: ValueBlock;
                 }
             ",
@@ -1306,7 +1270,7 @@ mod tests {
             .map_err(|err| err.to_string())?;
         let holder = generated_file(&files, "Holder.cs")?;
         let database = generated_file(&files, "GameConfig.cs")?;
-        require_contains(holder, "public ValueBlock Block { get; set; }")?;
+        require_contains(holder, "public ValueBlock Block { get; internal set; }")?;
         require_not_contains(database, "value.Block = ResolveValueBlockRefs(")?;
         Ok(())
     }
@@ -1315,11 +1279,10 @@ mod tests {
     fn codegen_nested_struct_ref_containers_use_distinct_resolver_locals() -> Result<(), String> {
         let schema = compile_schema(
             r"
-                type Target { @id id: string; }
+                type Target {}
                 @struct
                 sealed type Child {
-                    @ref(Target)
-                    target_id: string;
+                    target: Target;
                 }
                 @struct
                 sealed type Parent {
@@ -1327,7 +1290,6 @@ mod tests {
                     nested_by_name: {string: {string: Child}} = {};
                 }
                 type Holder {
-                    @id id: string;
                     parent: Parent;
                 }
             ",
@@ -1371,14 +1333,12 @@ mod tests {
     fn codegen_nullable_struct_ref_collections_do_not_use_nullable_value() -> Result<(), String> {
         let schema = compile_schema(
             r"
-                type Target { @id id: string; }
+                type Target {}
                 @struct
                 sealed type Child {
-                    @ref(Target)
-                    target_id: string;
+                    target: Target;
                 }
                 type Holder {
-                    @id id: string;
                     maybe_child: Child?;
                     maybe_children: [Child]?;
                     maybe_by_name: {string: Child}?;
@@ -1422,11 +1382,9 @@ mod tests {
     fn codegen_rejects_invalid_generated_csharp_names() -> Result<(), String> {
         let schema = compile_schema(
             r"
-                type Target { @id id: string; }
+                type Target {}
                 type Class {
-                    @id id: string;
-                    @ref(Target)
-                    target_id: string;
+                    target: Target;
                 }
             ",
         )?;

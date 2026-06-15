@@ -1,16 +1,15 @@
 # Nullable fields use T?.
-# @ref fields store an id but are type-checked in checks as the target object.
+# Object fields can hold inline objects or explicit @record-key references in data files.
 
 type ExampleQuestStep {
   title: string;
   optional_target: ExampleItem? = null;
 
-  @ref(ExampleItem)
-  required_item_id: string;
+  required_item: ExampleItem;
 
   check {
     title != "";
-    required_item_id.id != "";
+    required_item.id != "";
 
     when optional_target != null {
       optional_target.rarity >= ExampleRarity.Common;
@@ -19,9 +18,6 @@ type ExampleQuestStep {
 }
 
 type ExampleQuest {
-  @id
-  id: string;
-
   name: string;
   steps: [ExampleQuestStep] = [];
   reward: ExampleReward;

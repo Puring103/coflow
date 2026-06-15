@@ -14,9 +14,9 @@
             if (!result.TryAdd(key, value))
             {
                 throw new CftLoadException(
-                    $"duplicate id `{key}` in table `{tableName}`",
+                    $"duplicate key `{key}` in table `{tableName}`",
                     $"{tableName}.{fieldName}",
-                    "unique id",
+                    "unique key",
                     key.ToString());
             }
         }
@@ -83,9 +83,9 @@
                 if (!result.TryAdd(key, value))
                 {
                     throw new CftLoadException(
-                        $"duplicate id `{key}` in ref range `{typeof(TValue).Name}`",
+                        $"duplicate key `{key}` in reference range `{typeof(TValue).Name}`",
                         $"{source.TableName}.{source.FieldName}",
-                        "unique id",
+                        "unique key",
                         key.ToString());
                 }
             }
@@ -107,7 +107,7 @@
         }
 
         throw new CftLoadException(
-            $"@ref target `{targetType}` with id `{id}` was not found",
+            $"reference target `{targetType}` with key `{id}` was not found",
             path,
             targetType,
             id?.ToString());

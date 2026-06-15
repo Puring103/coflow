@@ -37,6 +37,7 @@ pub struct CsharpType {
 
 #[derive(Debug, Serialize)]
 pub struct CsharpProperty {
+    pub visibility: String,
     pub name: String,
     pub type_name: String,
     pub setter: String,
@@ -49,7 +50,6 @@ pub struct CsharpProperty {
 pub struct CsharpDatabase {
     pub tables: Vec<CsharpTable>,
     pub ref_indexes: Vec<CsharpRefIndex>,
-    pub indexes: Vec<CsharpIndex>,
     pub constructor_parameters: Vec<CsharpParameter>,
     pub load_steps: Vec<String>,
     pub constructor_args: Vec<String>,
@@ -73,23 +73,13 @@ pub struct CsharpTable {
 }
 
 #[derive(Debug, Serialize)]
-pub struct CsharpIndex {
-    pub table_name: String,
-    pub list_property: String,
-    pub list_var: String,
-    pub field_property: String,
-    pub key_type: String,
-    pub storage_field: String,
-    pub parameter_name: String,
-}
-
-#[derive(Debug, Serialize)]
 pub struct CsharpRefIndex {
     pub target_name: String,
     pub target_source_name: String,
     pub target_id_type: String,
     pub index_field: String,
     pub parameter_name: String,
+    pub placeholder_name: Option<String>,
     pub assignable_sources: Vec<CsharpRefIndexSource>,
 }
 
@@ -111,6 +101,10 @@ pub struct CsharpParameter {
 #[derive(Debug, Serialize)]
 pub struct CsharpLoader {
     pub type_name: String,
+    pub key_type_name: String,
+    pub key_local_name: String,
+    pub key_read_expr: String,
+    pub key_messagepack_read_expr: String,
     pub fields: Vec<CsharpLoadField>,
 }
 
@@ -124,6 +118,13 @@ pub struct CsharpLoadField {
     pub messagepack_read_expr: String,
     pub default_expr: Option<String>,
     pub is_required: bool,
+    pub assignments: Vec<CsharpLoadAssignment>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CsharpLoadAssignment {
+    pub property: String,
+    pub expr: String,
 }
 
 #[derive(Debug, Serialize)]

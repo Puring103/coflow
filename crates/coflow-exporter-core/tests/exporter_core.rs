@@ -89,30 +89,31 @@ fn export_tables(
 }
 
 #[test]
-fn exports_every_concrete_id_table_and_empty_arrays_for_missing_id_types() -> TestResult {
+fn exports_every_concrete_table_with_synthesized_record_keys() -> TestResult {
     let schema = compile_schema(
         r#"
-            type Item { @id id: string; }
-            type Monster { @id id: string; }
-            type InlineOnly { value: string; }
+            type Item { name: string = "unknown"; }
+            type Monster { level: int; }
         "#,
     )?;
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("id", CfdInputValue::from("item_1"))]);
-    builder.add_record("InlineOnly", [("value", CfdInputValue::from("embedded"))]);
+    builder.add_record(
+        "item_1",
+        "Item",
+        std::iter::empty::<(&str, CfdInputValue)>(),
+    );
     let model = build_model(builder)?;
     let tables = export_tables(&schema, &model)?;
 
     assert_eq!(
         tables["Item"],
-        TestValue::Array(vec![TestValue::Map(vec![(
-            "id".to_string(),
-            TestValue::String("item_1".to_string())
-        )])])
+        TestValue::Array(vec![TestValue::Map(vec![
+            ("id".to_string(), TestValue::String("item_1".to_string())),
+            ("name".to_string(), TestValue::String("unknown".to_string())),
+        ])])
     );
     assert_eq!(tables["Monster"], TestValue::Array(Vec::new()));
-    assert!(!tables.contains_key("InlineOnly"));
     Ok(())
 }
 
@@ -121,8 +122,6 @@ fn exports_fields_in_inherited_schema_order() -> TestResult {
     let schema = compile_schema(
         r#"
             type Base {
-                @id
-                id: string;
                 parent_field: int;
             }
             type Child : Base {
@@ -133,9 +132,9 @@ fn exports_fields_in_inherited_schema_order() -> TestResult {
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "child_1",
         "Child",
         [
-            ("id", CfdInputValue::from("child_1")),
             ("parent_field", CfdInputValue::from(7_i64)),
             ("child_field", CfdInputValue::from("leaf")),
         ],
@@ -158,14 +157,12 @@ fn exports_fields_in_inherited_schema_order() -> TestResult {
 }
 
 #[test]
-fn exports_polymorphic_objects_with_type_tag_as_first_entry() -> TestResult {
+fn exports_polymorphic_inline_objects_with_type_tag_only() -> TestResult {
     let schema = compile_schema(
         r#"
-            abstract type Reward { id: string; }
+            abstract type Reward {}
             type CurrencyReward : Reward { amount: int; }
             type DropTable {
-                @id
-                id: string;
                 reward: Reward;
             }
         "#,
@@ -173,20 +170,12 @@ fn exports_polymorphic_objects_with_type_tag_as_first_entry() -> TestResult {
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "drop_1",
         "DropTable",
-        [
-            ("id", CfdInputValue::from("drop_1")),
-            (
-                "reward",
-                CfdInputValue::object(
-                    "CurrencyReward",
-                    [
-                        ("id", CfdInputValue::from("reward_gold")),
-                        ("amount", CfdInputValue::from(50_i64)),
-                    ],
-                ),
-            ),
-        ],
+        [(
+            "reward",
+            CfdInputValue::object("CurrencyReward", [("amount", CfdInputValue::from(50_i64))]),
+        )],
     );
     let model = build_model(builder)?;
     let tables = export_tables(&schema, &model)?;
@@ -202,10 +191,6 @@ fn exports_polymorphic_objects_with_type_tag_as_first_entry() -> TestResult {
                         "$type".to_string(),
                         TestValue::String("CurrencyReward".to_string())
                     ),
-                    (
-                        "id".to_string(),
-                        TestValue::String("reward_gold".to_string())
-                    ),
                     ("amount".to_string(), TestValue::Int(50)),
                 ])
             ),
@@ -219,12 +204,9 @@ fn exports_refs_enums_and_dict_keys_as_exporter_scalars() -> TestResult {
     let schema = compile_schema(
         r#"
             enum Rarity { Common = 0, Rare = 10, }
-            type Item { @id id: string; }
+            type Item { name: string; }
             type Holder {
-                @id
-                id: int;
-                @ref(Item)
-                item_id: string;
+                item: Item;
                 rarity: Rarity;
                 by_int: {int: string};
             }
@@ -232,12 +214,12 @@ fn exports_refs_enums_and_dict_keys_as_exporter_scalars() -> TestResult {
     )?;
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("id", CfdInputValue::from("item_1"))]);
+    builder.add_record("item_1", "Item", [("name", CfdInputValue::from("Sword"))]);
     builder.add_record(
+        "holder_1",
         "Holder",
         [
-            ("id", CfdInputValue::from(42_i64)),
-            ("item_id", CfdInputValue::from("item_1")),
+            ("item", CfdInputValue::record_ref("item_1")),
             ("rarity", CfdInputValue::enum_variant("Rarity", "Rare")),
             (
                 "by_int",
@@ -251,11 +233,8 @@ fn exports_refs_enums_and_dict_keys_as_exporter_scalars() -> TestResult {
     assert_eq!(
         tables["Holder"],
         TestValue::Array(vec![TestValue::Map(vec![
-            ("id".to_string(), TestValue::Int(42)),
-            (
-                "item_id".to_string(),
-                TestValue::String("item_1".to_string())
-            ),
+            ("id".to_string(), TestValue::String("holder_1".to_string())),
+            ("item".to_string(), TestValue::String("item_1".to_string())),
             ("rarity".to_string(), TestValue::Int(10)),
             (
                 "by_int".to_string(),
@@ -270,59 +249,22 @@ fn exports_refs_enums_and_dict_keys_as_exporter_scalars() -> TestResult {
 }
 
 #[test]
-fn exports_nullable_fields_as_null_or_inner_value() -> TestResult {
+fn exports_nullable_and_array_fields() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item {
-                @id
-                id: string;
                 maybe_name: string?;
-                maybe_count: int?;
-            }
-        "#,
-    )?;
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Item",
-        [
-            ("id", CfdInputValue::from("null_item")),
-            ("maybe_name", CfdInputValue::Null),
-            ("maybe_count", CfdInputValue::from(3_i64)),
-        ],
-    );
-    let model = build_model(builder)?;
-    let tables = export_tables(&schema, &model)?;
-
-    assert_eq!(
-        tables["Item"],
-        TestValue::Array(vec![TestValue::Map(vec![
-            ("id".to_string(), TestValue::String("null_item".to_string())),
-            ("maybe_name".to_string(), TestValue::Null),
-            ("maybe_count".to_string(), TestValue::Int(3)),
-        ])])
-    );
-    Ok(())
-}
-
-#[test]
-fn exports_array_fields_as_arrays() -> TestResult {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                @id
-                id: string;
                 tags: [string];
-                scores: [int];
             }
         "#,
     )?;
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "item_1",
         "Item",
         [
-            ("id", CfdInputValue::from("array_item")),
+            ("maybe_name", CfdInputValue::Null),
             (
                 "tags",
                 CfdInputValue::Array(vec![
@@ -330,10 +272,6 @@ fn exports_array_fields_as_arrays() -> TestResult {
                     CfdInputValue::from("beta"),
                 ]),
             ),
-            (
-                "scores",
-                CfdInputValue::Array(vec![CfdInputValue::from(7_i64), CfdInputValue::from(9_i64)]),
-            ),
         ],
     );
     let model = build_model(builder)?;
@@ -342,20 +280,14 @@ fn exports_array_fields_as_arrays() -> TestResult {
     assert_eq!(
         tables["Item"],
         TestValue::Array(vec![TestValue::Map(vec![
-            (
-                "id".to_string(),
-                TestValue::String("array_item".to_string())
-            ),
+            ("id".to_string(), TestValue::String("item_1".to_string())),
+            ("maybe_name".to_string(), TestValue::Null),
             (
                 "tags".to_string(),
                 TestValue::Array(vec![
                     TestValue::String("alpha".to_string()),
                     TestValue::String("beta".to_string()),
                 ])
-            ),
-            (
-                "scores".to_string(),
-                TestValue::Array(vec![TestValue::Int(7), TestValue::Int(9)])
             ),
         ])])
     );
@@ -400,14 +332,10 @@ impl ExportEncoder for FailingEncoder {
 
 #[test]
 fn converts_encoder_errors_to_export_error_display_string() -> TestResult {
-    let schema = compile_schema(
-        r#"
-            type Item { @id id: string; }
-        "#,
-    )?;
+    let schema = compile_schema("type Item { name: string; }")?;
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("id", CfdInputValue::from("item_1"))]);
+    builder.add_record("item_1", "Item", [("name", CfdInputValue::from("Sword"))]);
     let model = build_model(builder)?;
     let mut encoder = FailingEncoder;
     let err = export_model_with_encoder(&schema, &model, &mut encoder)
@@ -418,13 +346,11 @@ fn converts_encoder_errors_to_export_error_display_string() -> TestResult {
 }
 
 #[test]
-fn does_not_emit_type_tag_for_non_polymorphic_declared_object() -> TestResult {
+fn does_not_emit_type_tag_or_id_for_non_polymorphic_inline_object() -> TestResult {
     let schema = compile_schema(
         r#"
             type Stats { hp: int; }
             type Holder {
-                @id
-                id: string;
                 stats: Stats;
             }
         "#,
@@ -432,14 +358,12 @@ fn does_not_emit_type_tag_for_non_polymorphic_declared_object() -> TestResult {
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "holder_1",
         "Holder",
-        [
-            ("id", CfdInputValue::from("holder_1")),
-            (
-                "stats",
-                CfdInputValue::object_with_declared_type([("hp", CfdInputValue::from(10_i64))]),
-            ),
-        ],
+        [(
+            "stats",
+            CfdInputValue::object_with_declared_type([("hp", CfdInputValue::from(10_i64))]),
+        )],
     );
     let model = build_model(builder)?;
     let tables = export_tables(&schema, &model)?;

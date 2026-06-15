@@ -177,11 +177,8 @@ fn generate_project_code_writes_key_as_enum_lockfile_for_declared_enums() {
     std::fs::write(
         root.join("schema").join("main.cft"),
         r#"
-            type GeneConfig {
-                @IdAsEnum("GeneId")
-                @id
-                id: string;
-            }
+            @keyAsEnum("GeneId")
+            type GeneConfig {}
         "#,
     )
     .expect("write schema");
@@ -308,11 +305,8 @@ fn codegen_reports_malformed_enum_lockfile_before_overwriting_it() {
     std::fs::write(
         root.join("schema").join("main.cft"),
         r#"
-            type GeneConfig {
-                @IdAsEnum("GeneId")
-                @id
-                id: string;
-            }
+            @keyAsEnum("GeneId")
+            type GeneConfig {}
         "#,
     )
     .expect("write schema");
@@ -356,10 +350,8 @@ fn codegen_preflight_reports_multiple_diagnostics_before_lockfile_or_writes() {
         root.join("schema").join("main.cft"),
         r#"
             type FooBar { value: int; }
+            @keyAsEnum("GeneId")
             type Foo_Bar {
-                @IdAsEnum("GeneId")
-                @id
-                id: string;
                 foo_bar: int;
                 fooBar: int;
             }
@@ -441,7 +433,7 @@ fn check_project_excel_open_diagnostic_contains_file_path() {
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
     std::fs::write(
         root.join("schema").join("main.cft"),
-        "type Item { @id id: string; value: int; }\n",
+        "type Item { value: int; }\n",
     )
     .expect("write schema");
     std::fs::write(root.join("data").join("bad.xlsx"), "not an xlsx").expect("write bad xlsx");
@@ -740,15 +732,10 @@ fn build_project_generates_key_as_enum_from_loaded_ids() {
     std::fs::write(
         root.join("schema").join("main.cft"),
         r#"
-            type GeneConfig {
-                @IdAsEnum("GeneId")
-                @id
-                id: string;
-            }
+            @keyAsEnum("GeneId")
+            type GeneConfig {}
             type BioRemainsConfig {
-                @id id: string;
-                @ref(GeneConfig)
-                gene_id: string?;
+                gene: GeneConfig?;
             }
         "#,
     )
@@ -767,7 +754,7 @@ sources:
       - sheet: BioRemainsConfig
         columns:
           id: id
-          gene_id: gene_id
+          gene_id: gene
 outputs:
   data:
     type: json
@@ -799,10 +786,10 @@ outputs:
     assert!(gene_id.contains("Gene_Mating = 1"));
     assert!(!out_code.join("GeneConfigId.cs").exists());
     let gene = std::fs::read_to_string(out_code.join("GeneConfig.cs")).expect("GeneConfig.cs");
-    assert!(gene.contains("public GeneId Id { get; set; }"));
+    assert!(gene.contains("public GeneId Id { get; internal set; }"));
     let remains =
         std::fs::read_to_string(out_code.join("BioRemainsConfig.cs")).expect("BioRemainsConfig.cs");
-    assert!(remains.contains("public GeneId? GeneId { get; set; }"));
+    assert!(remains.contains("public GeneConfig? Gene { get; internal set; }"));
 }
 
 #[test]
@@ -920,11 +907,11 @@ fn build_project_removes_stale_generated_csharp_files_after_key_as_enum_rename()
 }
 
 #[test]
-fn build_project_reports_duplicate_key_as_enum_ids_before_codegen() {
+fn build_project_reports_duplicate_key_as_enum_keys_before_codegen() {
     let root = temp_project_dir("coflow-pipeline-key-as-enum-duplicates");
     let _cleanup = TempDirCleanup(root.clone());
     write_key_as_enum_project(&root, &["Gene_Spore", "Gene_Spore", "Gene_Mating"])
-        .expect("write project with duplicate ids");
+        .expect("write project with duplicate keys");
     let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
     let data_dir = root.join("out-data");
     let code_dir = root.join("out-code");
@@ -937,10 +924,10 @@ fn build_project_reports_duplicate_key_as_enum_ids_before_codegen() {
             namespace: Some("Game.Config"),
         },
     )
-    .expect("duplicate ids should be returned as diagnostics");
+    .expect("duplicate keys should be returned as diagnostics");
 
     let PipelineOutcome::Diagnostics(diagnostics) = outcome else {
-        panic!("expected duplicate id diagnostics");
+        panic!("expected duplicate key diagnostics");
     };
     assert!(
         diagnostics
@@ -986,7 +973,7 @@ fn write_project_with_missing_excel_source(root: &Path, include_code_output: boo
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
     std::fs::write(
         root.join("schema").join("main.cft"),
-        "type Item { @id id: string; value: int; }\n",
+        "type Item { value: int; }\n",
     )
     .expect("write schema");
     let code_output = if include_code_output {
@@ -1023,7 +1010,7 @@ fn write_single_item_project(
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
     std::fs::write(
         root.join("schema").join("main.cft"),
-        "type Item { @id id: string; value: int; }\n",
+        "type Item { value: int; }\n",
     )
     .expect("write schema");
     let workbook_path = root.join("data").join("configs.xlsx");
@@ -1076,8 +1063,6 @@ fn write_invalid_check_project(root: &Path) -> Result<(), rust_xlsxwriter::XlsxE
         root.join("schema").join("main.cft"),
         r#"
             type Item {
-                @id
-                id: string;
                 level: int;
                 check { level > 0; }
             }
@@ -1122,11 +1107,8 @@ fn schema_only_project_with_outputs(
     std::fs::write(
         root.join("schema").join("main.cft"),
         r#"
-            type GeneConfig {
-                @IdAsEnum("GeneId")
-                @id
-                id: string;
-            }
+            @keyAsEnum("GeneId")
+            type GeneConfig {}
         "#,
     )
     .expect("write schema");
@@ -1149,11 +1131,7 @@ fn project_with_unvalidated_outputs(
     let root = temp_project_dir(name);
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
-    std::fs::write(
-        root.join("schema").join("main.cft"),
-        "type Item { @id id: string; }\n",
-    )
-    .expect("write schema");
+    std::fs::write(root.join("schema").join("main.cft"), "type Item {}\n").expect("write schema");
     let workbook_path = root.join("data").join("configs.xlsx");
     let mut workbook = Workbook::new();
     let sheet = workbook.add_worksheet();
@@ -1210,15 +1188,10 @@ fn write_key_as_enum_project(
     std::fs::write(
         root.join("schema").join("main.cft"),
         r#"
-            type GeneConfig {
-                @IdAsEnum("GeneId")
-                @id
-                id: string;
-            }
+            @keyAsEnum("GeneId")
+            type GeneConfig {}
             type BioRemainsConfig {
-                @id id: string;
-                @ref(GeneConfig)
-                gene_id: string?;
+                gene: GeneConfig?;
             }
         "#,
     )
@@ -1235,7 +1208,7 @@ sources:
       - sheet: BioRemainsConfig
         columns:
           id: id
-          gene_id: gene_id
+          gene_id: gene
 outputs:
   data:
     type: json
@@ -1266,7 +1239,7 @@ outputs:
     remains.write_string(0, 0, "id")?;
     remains.write_string(0, 1, "gene_id")?;
     remains.write_string(1, 0, "remains_1")?;
-    remains.write_string(1, 1, gene_ids[0])?;
+    remains.write_string(1, 1, format!("@{}", gene_ids[0]))?;
 
     workbook.save(workbook_path)
 }
@@ -1281,11 +1254,8 @@ fn write_renamable_key_as_enum_project(
         root.join("schema").join("main.cft"),
         format!(
             r#"
-            type GeneConfig {{
-                @IdAsEnum("{enum_name}")
-                @id
-                id: string;
-            }}
+            @keyAsEnum("{enum_name}")
+            type GeneConfig {{}}
         "#
         ),
     )
@@ -1359,7 +1329,7 @@ fn write_key_as_enum_workbook(path: &Path) -> Result<(), rust_xlsxwriter::XlsxEr
     remains.write_string(0, 0, "id")?;
     remains.write_string(0, 1, "gene_id")?;
     remains.write_string(1, 0, "remains_1")?;
-    remains.write_string(1, 1, "Gene_Spore")?;
+    remains.write_string(1, 1, "@Gene_Spore")?;
 
     workbook.save(path)
 }

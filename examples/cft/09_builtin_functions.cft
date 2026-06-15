@@ -1,7 +1,6 @@
 # Built-in functions are available in check expressions.
 
 type ExampleBuiltinFunctions {
-  id: string;
   numbers: [int] = [];
   names: [string] = [];
   scores: {string: int} = {};

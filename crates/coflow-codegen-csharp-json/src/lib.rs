@@ -69,7 +69,7 @@ pub fn generate_csharp_json(
     )
 }
 
-/// Generates C# JSON loader files and includes data-driven `@IdAsEnum`
+/// Generates C# JSON loader files and includes data-driven `@keyAsEnum`
 /// variants.
 ///
 /// # Errors
@@ -101,10 +101,7 @@ mod tests {
     fn generates_json_loader_from_json_crate() -> Result<(), String> {
         let mut schema = CftContainer::new();
         schema
-            .add_module(
-                ModuleId::from("main"),
-                "type Item { @id id: string; value: int; }",
-            )
+            .add_module(ModuleId::from("main"), "type Item { value: int; }")
             .map_err(|err| format!("{err:?}"))?;
         schema.compile().map_err(|err| format!("{err:?}"))?;
 

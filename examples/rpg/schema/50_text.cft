@@ -1,0 +1,22 @@
+type Text {
+  zh_cn: string;
+  en_us: string;
+  context: string = "";
+  max_length: int = 80;
+  tags: [string] = [];
+
+  check {
+    id != "";
+    zh_cn != "";
+    en_us != "";
+    context != "";
+    matches(id, "^[a-z][a-z0-9_.]*$");
+    len(tags) > 0;
+    unique(tags);
+    max_length > 0;
+
+    none tag in tags {
+      tag == "";
+    }
+  }
+}

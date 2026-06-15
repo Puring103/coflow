@@ -4,8 +4,6 @@
 
 @display("地块Tag配置")
 type TileTagConfig {
-  @id
-  id: TileTagFlags;
   name: string? = null;
   desc: string? = null;
 }
@@ -13,8 +11,6 @@ type TileTagConfig {
 @struct
 @display("地形配置")
 sealed type TerrainConfig {
-  @id
-  id: TerrainType;
   name: string;
   desc: string;
   @expand
@@ -24,20 +20,16 @@ sealed type TerrainConfig {
 }
 
 @display("物质配置")
+@keyAsEnum("MatterType")
 type SubstanceConfig {
-  @IdAsEnum("MatterType")
-  @id
-  id: string;
   name: string;
   desc: string;
   ratioOfAir: float;
 }
 
 @display("属性配置")
+@keyAsEnum("CreatureAttribute")
 type AttributeConfig {
-  @id
-  @IdAsEnum("CreatureAttribute")
-  id: string;
   name: string;
   is_base: bool = false;
   defaultValue: float = 0.0;
@@ -45,26 +37,21 @@ type AttributeConfig {
 }
 
 @display("能力配置")
+@keyAsEnum("Ability")
 type AbilityConfig {
-  @IdAsEnum("Ability")
-  @id
-  id: string;
   name: localizedString;
   desc: string? = null;
   isInit: bool = false;
 }
 
 @display("基因配置")
+@keyAsEnum("GeneId")
 type GeneConfig {
-  @IdAsEnum("GeneId")
-  @id
-  id: string;
   name: string;
   desc: string? = null;
 
   # parentGeneId is empty for top-level genes; nullable matches that semantics.
-  @ref(GeneConfig)
-  parentGeneId: string? = null;
+  parentGene: GeneConfig? = null;
 
   price: int;
   consumeDNA: int;
@@ -72,42 +59,33 @@ type GeneConfig {
 }
 
 @display("表皮配置")
+@keyAsEnum("SkinId")
 type SkinConfig {
-  @IdAsEnum("SkinId")
-  @id
-  id: string;
   name: string;
   desc: string? = null;
 }
 
 @display("阶段配置")
+@keyAsEnum("PhaseId")
 type PhaseConfig {
-  @IdAsEnum("PhaseId")
-  @id
-  id: string;
   desc: string;
   unlockAreaCount: int;
   areaUnlockPrice: int;
   unlockFeatureList: [GameFeature] = [];
-  unlockGeneIdList: [string] = [];
+  unlockGeneList: [GeneConfig] = [];
 }
 
 @display("功能配置")
 type GameFeatureConfig {
-  @id
-  id: GameFeature;
   name: localizedString;
   desc: string;
 }
 
 @display("生物残骸配置")
 type BioRemainsConfig {
-  @id
-  id: string;
   name: string;
 
-  @ref(GeneConfig)
-  geneId: string;
+  gene: GeneConfig;
 
   desc: string? = null;
   consumeBiomass: int;

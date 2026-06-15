@@ -216,7 +216,7 @@ outputs:
 | `json` | Newtonsoft.Json loader |
 | `messagepack` | MessagePack-CSharp loader |
 
-`codegen csharp` does not require Excel sources to exist. For `@IdAsEnum`, it
+`codegen csharp` does not require Excel sources to exist. For `@keyAsEnum`, it
 generates declared enum files but cannot add data-driven variants because it
 does not load data. `coflow build` can add those variants because it has loaded
 the data model.

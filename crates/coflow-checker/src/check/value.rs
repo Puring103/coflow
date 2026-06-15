@@ -147,6 +147,13 @@ impl CheckRecordRef {
         }
     }
 
+    pub(super) fn key<'a>(&'a self, model: &'a CfdDataModel) -> Option<&'a str> {
+        match self {
+            Self::Top(id) => model.record(*id).map(CfdRecord::key),
+            Self::Inline { record, .. } => Some(record.key()),
+        }
+    }
+
     pub(super) fn field(
         &self,
         model: &CfdDataModel,

@@ -1,0 +1,246 @@
+sealed type StageSpawn {
+  monster: Monster;
+
+  count: int = 1;
+  level_offset: int = 0;
+  weight: int = 1;
+
+  check {
+    monster.id != "";
+    count > 0;
+    -10 <= level_offset <= 10;
+    weight > 0;
+  }
+}
+
+@display("Stage")
+type Stage {
+  name_text: Text;
+
+  kind: StageKind = StageKind.Story;
+  unlock_level: int = 1;
+  recommended_power: int = 1;
+  positions: [Vector2] = [];
+  spawns: [StageSpawn];
+
+  drop_table: DropTable;
+
+  first_clear_reward: Reward;
+  modifiers: {string: int} = {};
+
+  check {
+    id != "";
+    name_text.id != "";
+    matches(id, "^stage_[a-z][a-z0-9_]*$");
+    1 <= unlock_level <= MAX_LEVEL;
+    recommended_power > 0;
+    len(spawns) > 0;
+    len(positions) == len(spawns);
+    drop_table.monster.level >= unlock_level;
+    first_clear_reward is Reward;
+    contains(modifiers, "stamina");
+    modifiers["stamina"] > 0;
+
+    when kind == StageKind.Raid {
+      FEATURE_RAID_ENABLED;
+      unlock_level >= 40;
+      drop_table.monster.rarity >= Rarity.Epic;
+      recommended_power >= 500;
+    }
+
+    all spawn in spawns {
+      spawn.count > 0;
+      spawn.monster.level + spawn.level_offset >= 1;
+    }
+
+    any spawn in spawns {
+      spawn.monster.id == drop_table.monster.id;
+    }
+
+    all entry in modifiers {
+      entry.key != "";
+      entry.value >= 0;
+    }
+  }
+}
+
+type QuestObjective {
+  key: string;
+  target_count: int;
+  counters: {string: int} = {};
+
+  check {
+    key != "";
+    target_count > 0;
+    contains(counters, "kill") || contains(counters, "collect");
+    sum(values(counters)) >= 0;
+
+    all entry in counters {
+      entry.key != "";
+      entry.value >= 0;
+    }
+  }
+}
+
+type DialogueNode {
+  key: string;
+  text: string;
+  next: [DialogueNode] = [];
+
+  check {
+    key != "";
+    text != "";
+    len(next) <= 3;
+
+    all child in next {
+      child.key != key;
+      child.text != "";
+    }
+  }
+}
+
+type Quest {
+  kind: QuestKind;
+
+  title_text: Text;
+
+  title: string;
+  min_level: int = 1;
+
+  stage: Stage;
+
+  target_monster: Monster? = null;
+
+  reward_item: Item;
+
+  prerequisites: [string] = [];
+  objectives: [QuestObjective];
+  reward_preview: Reward;
+  availability: {string: int};
+  dialogue: DialogueNode;
+
+  check {
+    id != "";
+    title != "";
+    title_text.id != "";
+    matches(id, "^quest_[a-z][a-z0-9_]*$");
+    1 <= min_level <= MAX_LEVEL;
+    stage.unlock_level <= min_level;
+    reward_item.name != "";
+    reward_preview is Reward;
+    len(objectives) > 0;
+    unique(prerequisites);
+    contains(availability, "start_day");
+    contains(availability, "end_day");
+    availability["start_day"] >= 1;
+    availability["end_day"] >= availability["start_day"];
+    dialogue.key != "";
+
+    when target_monster != null {
+      target_monster.level >= min_level;
+      any spawn in stage.spawns {
+        spawn.monster.id == target_monster.id;
+      }
+    }
+
+    when kind == QuestKind.Raid {
+      FEATURE_RAID_ENABLED;
+      target_monster != null;
+      target_monster.rarity >= Rarity.Epic;
+      stage.kind == StageKind.Raid;
+    }
+
+    all objective in objectives {
+      objective.target_count > 0;
+    }
+
+    any objective in objectives {
+      contains(objective.counters, "kill");
+    }
+
+    none prerequisite in prerequisites {
+      prerequisite == id;
+    }
+  }
+}
+
+sealed type ShopEntry {
+  item: Item;
+
+  price: int;
+  stock: int = 1;
+  unlock_level: int = 1;
+
+  required_quest: Quest? = null;
+
+  discount_by_day: {int: int} = {};
+
+  check {
+    item.name != "";
+    price >= item.price;
+    stock > 0;
+    1 <= unlock_level <= MAX_LEVEL;
+    contains(discount_by_day, 1);
+    min(values(discount_by_day)) >= 0;
+    max(values(discount_by_day)) <= 100;
+
+    when item.slot == ItemSlot.Material {
+      stock > 1;
+    }
+
+    when required_quest != null {
+      required_quest.id != "";
+    }
+
+    all entry in discount_by_day {
+      entry.key > 0;
+      0 <= entry.value <= 100;
+    }
+  }
+}
+
+@display("Shop")
+type Shop {
+  name_text: Text;
+
+  kind: ShopKind = ShopKind.General;
+  open_day: int = 1;
+  close_day: int = 999;
+
+  stage_gate: Stage? = null;
+
+  entries: [ShopEntry];
+  currencies: [string] = [];
+
+  check {
+    id != "";
+    name_text.id != "";
+    matches(id, "^shop_[a-z][a-z0-9_]*$");
+    1 <= open_day <= close_day;
+    len(entries) > 0;
+    len(currencies) > 0;
+    unique(currencies);
+    any entry in entries { entry.stock > 0; }
+
+    when kind == ShopKind.Raid {
+      stage_gate != null;
+      stage_gate.kind == StageKind.Raid;
+      any entry in entries { entry.item.rarity >= Rarity.Epic; }
+    }
+
+    when stage_gate != null {
+      any entry in entries {
+        entry.unlock_level >= stage_gate.unlock_level;
+      }
+    }
+
+    all currency in currencies {
+      currency != "";
+    }
+
+    all entry in entries {
+      entry.price >= 0;
+      entry.unlock_level <= close_day;
+    }
+  }
+}

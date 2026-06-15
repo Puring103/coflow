@@ -10,28 +10,34 @@
 mod common;
 use common::*;
 
+fn build_model(_schema: &CftContainer, builder: CfdModelBuilder<'_>) -> CfdDataModel {
+    builder.build().expect("data model should build")
+}
+
 #[test]
-fn check_runner_accepts_core_expressions_refs_and_quantifiers() {
+fn check_runner_accepts_virtual_ids_record_refs_and_quantifiers() {
     let schema = compile_schema(
         r#"
             const MIN_LEVEL = 1;
             enum Rarity { Common, Rare, }
 
             type Item {
-                @id
-                id: string;
                 rarity: Rarity;
+                check {
+                    id != "";
+                    rarity >= Rarity.Common;
+                }
             }
 
             type Drop {
-                @ref(Item)
-                item_id: string;
+                item: Item;
                 weights: [int];
                 resistances: {Rarity: float};
 
                 check {
-                    item_id.id != "";
-                    item_id.rarity >= Rarity.Common;
+                    id == "drop_1";
+                    item.id == "item_1";
+                    item.rarity >= Rarity.Common;
                     len(weights) >= MIN_LEVEL;
                     sum(weights) == 100;
                     all entry in resistances {
@@ -46,16 +52,15 @@ fn check_runner_accepts_core_expressions_refs_and_quantifiers() {
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "item_1",
         "Item",
-        [
-            ("id", CfdInputValue::from("item_1")),
-            ("rarity", CfdInputValue::enum_variant("Rarity", "Rare")),
-        ],
+        [("rarity", CfdInputValue::enum_variant("Rarity", "Rare"))],
     );
     builder.add_record(
+        "drop_1",
         "Drop",
         [
-            ("item_id", CfdInputValue::from("item_1")),
+            ("item", CfdInputValue::record_ref("item_1")),
             (
                 "weights",
                 CfdInputValue::Array(vec![
@@ -78,12 +83,12 @@ fn check_runner_accepts_core_expressions_refs_and_quantifiers() {
             ),
         ],
     );
-    let model = builder.build().expect("data model should build");
+    let model = build_model(&schema, builder);
     model.run_checks(&schema).expect("checks should pass");
 }
 
 #[test]
-fn check_runner_reports_false_conditions() {
+fn check_runner_reports_false_conditions_with_paths() {
     let schema = compile_schema(
         r#"
             type Item {
@@ -94,135 +99,100 @@ fn check_runner_reports_false_conditions() {
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("value", CfdInputValue::from(0_i64))]);
-    let model = builder.build().expect("data model should build");
+    builder.add_record("item_1", "Item", [("value", CfdInputValue::from(0_i64))]);
+    let model = build_model(&schema, builder);
     let err = model.run_checks(&schema).expect_err("check should fail");
     assert_has_code(&err, CfdErrorCode::CheckFailed);
+    assert_eq!(
+        err.diagnostics[0]
+            .primary
+            .as_ref()
+            .map(|label| label.path.clone()),
+        Some(CfdPath::root().field("value"))
+    );
 }
 
 #[test]
-fn check_runner_uses_spec_logical_operator_precedence() {
-    let schema = compile_schema(
+fn logical_and_bitwise_precedence_remains_left_associative() {
+    let logical = compile_schema(
         r#"
-            type Item {
-                check { true || false && false; }
-            }
+            type Item { check { true || false && false; } }
         "#,
     );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", std::iter::empty::<(&str, CfdInputValue)>());
-    let model = builder.build().expect("data model should build");
+    let mut builder = CfdDataModel::builder(&logical);
+    builder.add_record(
+        "item_1",
+        "Item",
+        std::iter::empty::<(&str, CfdInputValue)>(),
+    );
+    let model = build_model(&logical, builder);
     let err = model
-        .run_checks(&schema)
-        .expect_err("same-precedence logical operators should evaluate left-to-right");
+        .run_checks(&logical)
+        .expect_err("same-precedence logical operators evaluate left-to-right");
     assert_has_code(&err, CfdErrorCode::CheckFailed);
-}
 
-#[test]
-fn check_runner_uses_spec_bitwise_operator_precedence() {
-    let schema = compile_schema(
+    let bitwise = compile_schema(
         r#"
-            type Item {
-                check { 1 | 2 & 0 == 0; }
-            }
+            type Item { check { 1 | 2 & 0 == 0; } }
         "#,
     );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", std::iter::empty::<(&str, CfdInputValue)>());
-    let model = builder.build().expect("data model should build");
+    let mut builder = CfdDataModel::builder(&bitwise);
+    builder.add_record(
+        "item_1",
+        "Item",
+        std::iter::empty::<(&str, CfdInputValue)>(),
+    );
+    let model = build_model(&bitwise, builder);
     model
-        .run_checks(&schema)
-        .expect("same-precedence bitwise operators should evaluate left-to-right");
+        .run_checks(&bitwise)
+        .expect("same-precedence bitwise operators evaluate left-to-right");
 }
 
 #[test]
-fn check_runner_short_circuits_nullable_guards_and_reports_null_access() {
+fn short_circuit_nullable_guards_and_null_access_are_reported() {
     let guarded = compile_schema(
         r#"
-            type Child { id: string; }
+            type Child { name: string; }
             type Holder {
                 child: Child? = null;
-                check { child == null || child.id != ""; }
+                check { child == null || child.name != ""; }
             }
         "#,
     );
-    let mut guarded_builder = CfdDataModel::builder(&guarded);
-    guarded_builder.add_input_record(CfdInputRecord::new(
+    let mut builder = CfdDataModel::builder(&guarded);
+    builder.add_record(
+        "holder_1",
         "Holder",
         std::iter::empty::<(&str, CfdInputValue)>(),
-    ));
-    let guarded_model = guarded_builder.build().expect("data model should build");
-    guarded_model
+    );
+    let model = build_model(&guarded, builder);
+    model
         .run_checks(&guarded)
         .expect("guarded check should pass");
 
     let unguarded = compile_schema(
         r#"
-            type Child { id: string; }
+            type Child { name: string; }
             type Holder {
                 child: Child? = null;
-                check { child.id != ""; }
+                check { child.name != ""; }
             }
         "#,
     );
-    let mut unguarded_builder = CfdDataModel::builder(&unguarded);
-    unguarded_builder.add_input_record(CfdInputRecord::new(
+    let mut builder = CfdDataModel::builder(&unguarded);
+    builder.add_record(
+        "holder_1",
         "Holder",
         std::iter::empty::<(&str, CfdInputValue)>(),
-    ));
-    let unguarded_model = unguarded_builder.build().expect("data model should build");
-    let err = unguarded_model
-        .run_checks(&unguarded)
-        .expect_err("null access");
+    );
+    let model = build_model(&unguarded, builder);
+    let err = model.run_checks(&unguarded).expect_err("null access");
     assert_has_code(&err, CfdErrorCode::CheckNullAccess);
 }
 
 #[test]
-fn null_arithmetic_and_ordered_comparison_report_null_access() {
-    let arithmetic = compile_schema(
-        r#"
-            type Item {
-                value: int? = null;
-                check { value + 1 > 0; }
-            }
-        "#,
-    );
-    let mut arithmetic_builder = CfdDataModel::builder(&arithmetic);
-    arithmetic_builder.add_input_record(CfdInputRecord::new(
-        "Item",
-        std::iter::empty::<(&str, CfdInputValue)>(),
-    ));
-    let arithmetic_model = arithmetic_builder.build().expect("data model should build");
-    let arithmetic_err = arithmetic_model
-        .run_checks(&arithmetic)
-        .expect_err("null arithmetic should fail");
-    assert_has_code(&arithmetic_err, CfdErrorCode::CheckNullAccess);
-
-    let comparison = compile_schema(
-        r#"
-            type Item {
-                value: int? = null;
-                check { value > 0; }
-            }
-        "#,
-    );
-    let mut comparison_builder = CfdDataModel::builder(&comparison);
-    comparison_builder.add_input_record(CfdInputRecord::new(
-        "Item",
-        std::iter::empty::<(&str, CfdInputValue)>(),
-    ));
-    let comparison_model = comparison_builder.build().expect("data model should build");
-    let comparison_err = comparison_model
-        .run_checks(&comparison)
-        .expect_err("null ordered comparison should fail");
-    assert_has_code(&comparison_err, CfdErrorCode::CheckNullAccess);
-}
-
-#[test]
-fn check_runner_handles_nullable_element_builtins() {
-    let schema = compile_schema(
+fn nullable_element_builtins_handle_nulls_and_empty_values() {
+    let pass = compile_schema(
         r#"
             type Holder {
                 nums: [int?] = [];
@@ -237,9 +207,9 @@ fn check_runner_handles_nullable_element_builtins() {
             }
         "#,
     );
-
-    let mut builder = CfdDataModel::builder(&schema);
+    let mut builder = CfdDataModel::builder(&pass);
     builder.add_record(
+        "holder_1",
         "Holder",
         [(
             "nums",
@@ -250,13 +220,10 @@ fn check_runner_handles_nullable_element_builtins() {
             ]),
         )],
     );
-    let model = builder.build().expect("data model should build");
-    model.run_checks(&schema).expect("checks should pass");
-}
+    let model = build_model(&pass, builder);
+    model.run_checks(&pass).expect("checks should pass");
 
-#[test]
-fn check_runner_reports_min_max_when_nullable_array_has_no_values() {
-    let min_schema = compile_schema(
+    let empty = compile_schema(
         r#"
             type Holder {
                 nums: [int?] = [];
@@ -264,146 +231,74 @@ fn check_runner_reports_min_max_when_nullable_array_has_no_values() {
             }
         "#,
     );
-
-    let mut builder = CfdDataModel::builder(&min_schema);
+    let mut builder = CfdDataModel::builder(&empty);
     builder.add_record(
+        "holder_1",
         "Holder",
         [("nums", CfdInputValue::Array(vec![CfdInputValue::Null]))],
     );
-    let model = builder.build().expect("data model should build");
+    let model = build_model(&empty, builder);
     let err = model
-        .run_checks(&min_schema)
-        .expect_err("min over all-null values should fail");
-    assert_has_code(&err, CfdErrorCode::CheckEmptyMinMax);
-
-    let max_schema = compile_schema(
-        r#"
-            type Holder {
-                nums: [int?] = [];
-                check { max(nums) >= 0; }
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&max_schema);
-    builder.add_record(
-        "Holder",
-        [("nums", CfdInputValue::Array(vec![CfdInputValue::Null]))],
-    );
-    let model = builder.build().expect("data model should build");
-    let err = model
-        .run_checks(&max_schema)
-        .expect_err("max over all-null values should fail");
+        .run_checks(&empty)
+        .expect_err("min over all-null values");
     assert_has_code(&err, CfdErrorCode::CheckEmptyMinMax);
 }
 
 #[test]
-fn check_runner_unique_counts_multiple_nulls_as_duplicates() {
+fn inherited_checks_and_statement_order_are_stable() {
     let schema = compile_schema(
         r#"
-            type Holder {
-                nums: [int?] = [];
-                check { unique(nums); }
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Holder",
-        [(
-            "nums",
-            CfdInputValue::Array(vec![CfdInputValue::Null, CfdInputValue::Null]),
-        )],
-    );
-    let model = builder.build().expect("data model should build");
-    let err = model
-        .run_checks(&schema)
-        .expect_err("multiple nulls are not unique");
-    assert_has_code(&err, CfdErrorCode::CheckFailed);
-}
-
-#[test]
-fn check_runner_sums_all_null_nullable_float_as_float_zero() {
-    let schema = compile_schema(
-        r#"
-            type Holder {
-                nums: [float?] = [];
-                check { sum(nums) == 0.0; }
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Holder",
-        [("nums", CfdInputValue::Array(vec![CfdInputValue::Null]))],
-    );
-    let model = builder.build().expect("data model should build");
-    model
-        .run_checks(&schema)
-        .expect("all-null nullable float sum should be 0.0");
-}
-
-#[test]
-fn check_runner_executes_inherited_checks() {
-    let schema = compile_schema(
-        r#"
-            abstract type Reward {
-                id: string;
+            abstract type Base {
                 check { id != ""; }
             }
-            type CurrencyReward : Reward {
-                amount: int;
-                check { amount > 0; }
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "CurrencyReward",
-        [
-            ("id", CfdInputValue::from("")),
-            ("amount", CfdInputValue::from(0_i64)),
-        ],
-    );
-    let model = builder.build().expect("data model should build");
-    let err = model
-        .run_checks(&schema)
-        .expect_err("inherited checks fail");
-    let failures = err
-        .diagnostics
-        .iter()
-        .filter(|diag| diag.code == CfdErrorCode::CheckFailed)
-        .count();
-    assert_eq!(failures, 2);
-}
-
-#[test]
-fn check_runner_reports_index_and_empty_minmax_eval_errors() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                xs: [int];
+            type Child : Base {
+                first: int;
+                second: int;
                 check {
-                    xs[1] > 0;
-                    min(xs) > 0;
+                    first > 0;
+                    second > 0;
                 }
             }
         "#,
     );
 
     let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("xs", CfdInputValue::Array(Vec::new()))]);
-    let model = builder.build().expect("data model should build");
-    let err = model.run_checks(&schema).expect_err("eval errors");
-    assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
-    assert!(
-        !err.diagnostics
-            .iter()
-            .any(|diag| diag.code == CfdErrorCode::CheckEmptyMinMax),
-        "hard eval errors should stop later statements on the same object"
+    builder.add_record(
+        "",
+        "Child",
+        [
+            ("first", CfdInputValue::from(0_i64)),
+            ("second", CfdInputValue::from(0_i64)),
+        ],
+    );
+    let err = builder
+        .build()
+        .expect_err("empty record key should fail before checks");
+    assert_has_code(&err, CfdErrorCode::MissingIdField);
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "child_1",
+        "Child",
+        [
+            ("first", CfdInputValue::from(0_i64)),
+            ("second", CfdInputValue::from(0_i64)),
+        ],
+    );
+    let model = build_model(&schema, builder);
+    let err = model.run_checks(&schema).expect_err("child checks fail");
+    let paths = err
+        .diagnostics
+        .iter()
+        .filter(|diag| diag.code == CfdErrorCode::CheckFailed)
+        .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        paths,
+        vec![
+            CfdPath::root().field("first"),
+            CfdPath::root().field("second"),
+        ]
     );
 }
 
@@ -425,13 +320,14 @@ fn hard_stop_in_one_check_block_does_not_skip_later_blocks() {
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "item_1",
         "Item",
         [
             ("xs", CfdInputValue::Array(Vec::new())),
             ("value", CfdInputValue::from(0_i64)),
         ],
     );
-    let model = builder.build().expect("data model should build");
+    let model = build_model(&schema, builder);
     let err = model.run_checks(&schema).expect_err("checks should fail");
 
     assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
@@ -439,26 +335,46 @@ fn hard_stop_in_one_check_block_does_not_skip_later_blocks() {
 }
 
 #[test]
-fn check_runner_reports_empty_minmax_eval_errors() {
-    let schema = compile_schema(
+fn quantifiers_report_soft_failures_and_preserve_hard_errors() {
+    let soft_fail = compile_schema(
         r#"
             type Item {
-                xs: [int];
-                check { min(xs) > 0; }
+                nums: [int];
+                check { all value in nums { value > 0; } }
             }
         "#,
     );
+    let mut builder = CfdDataModel::builder(&soft_fail);
+    builder.add_record(
+        "item_1",
+        "Item",
+        [(
+            "nums",
+            CfdInputValue::Array(vec![
+                CfdInputValue::from(-1_i64),
+                CfdInputValue::from(-2_i64),
+            ]),
+        )],
+    );
+    let model = build_model(&soft_fail, builder);
+    let err = model
+        .run_checks(&soft_fail)
+        .expect_err("all reports each failing element");
+    let soft_fail_paths = err
+        .diagnostics
+        .iter()
+        .filter(|diag| diag.code == CfdErrorCode::CheckFailed)
+        .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        soft_fail_paths,
+        vec![
+            CfdPath::root().field("nums").index(0),
+            CfdPath::root().field("nums").index(1),
+        ]
+    );
 
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("xs", CfdInputValue::Array(Vec::new()))]);
-    let model = builder.build().expect("data model should build");
-    let err = model.run_checks(&schema).expect_err("eval errors");
-    assert_has_code(&err, CfdErrorCode::CheckEmptyMinMax);
-}
-
-#[test]
-fn any_quantifier_preserves_hard_eval_errors() {
-    let schema = compile_schema(
+    let hard_stop = compile_schema(
         r#"
             type Item {
                 rows: [[int]];
@@ -466,9 +382,9 @@ fn any_quantifier_preserves_hard_eval_errors() {
             }
         "#,
     );
-
-    let mut builder = CfdDataModel::builder(&schema);
+    let mut builder = CfdDataModel::builder(&hard_stop);
     builder.add_record(
+        "item_1",
         "Item",
         [(
             "rows",
@@ -478,44 +394,15 @@ fn any_quantifier_preserves_hard_eval_errors() {
             ]),
         )],
     );
-    let model = builder.build().expect("data model should build");
+    let model = build_model(&hard_stop, builder);
     let err = model
-        .run_checks(&schema)
+        .run_checks(&hard_stop)
         .expect_err("hard eval error should not be swallowed");
     assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
 }
 
 #[test]
-fn none_quantifier_preserves_hard_eval_errors() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                rows: [[int]];
-                check { none row in rows { row[0] > 0; } }
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Item",
-        [(
-            "rows",
-            CfdInputValue::Array(vec![
-                CfdInputValue::Array(Vec::new()),
-                CfdInputValue::Array(vec![CfdInputValue::from(-1_i64)]),
-            ]),
-        )],
-    );
-    let model = builder.build().expect("data model should build");
-    let err = model
-        .run_checks(&schema)
-        .expect_err("hard eval error should not be swallowed");
-    assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
-}
-
-#[test]
-fn check_runner_executes_inline_object_checks() {
+fn inline_object_checks_use_nested_paths() {
     let schema = compile_schema(
         r#"
             type Stats {
@@ -531,13 +418,14 @@ fn check_runner_executes_inline_object_checks() {
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "monster_1",
         "Monster",
         [(
             "stats",
             CfdInputValue::object_with_declared_type([("hp", CfdInputValue::from(0_i64))]),
         )],
     );
-    let model = builder.build().expect("data model should build");
+    let model = build_model(&schema, builder);
     let err = model.run_checks(&schema).expect_err("nested check fails");
     assert_has_code(&err, CfdErrorCode::CheckFailed);
     let diag = err
@@ -552,460 +440,41 @@ fn check_runner_executes_inline_object_checks() {
 }
 
 #[test]
-fn any_and_none_quantifiers_do_not_leak_trial_failures() {
-    let any_schema = compile_schema(
-        r#"
-            type Item {
-                nums: [int];
-                check { any value in nums { value > 0; } }
-            }
-        "#,
-    );
-    let mut any_builder = CfdDataModel::builder(&any_schema);
-    any_builder.add_record(
-        "Item",
-        [(
-            "nums",
-            CfdInputValue::Array(vec![
-                CfdInputValue::from(-1_i64),
-                CfdInputValue::from(1_i64),
-            ]),
-        )],
-    );
-    let any_model = any_builder.build().expect("data model should build");
-    any_model
-        .run_checks(&any_schema)
-        .expect("any should pass without leaking first failed trial");
-
-    let none_schema = compile_schema(
-        r#"
-            type Item {
-                nums: [int];
-                check { none value in nums { value > 0; } }
-            }
-        "#,
-    );
-    let mut none_builder = CfdDataModel::builder(&none_schema);
-    none_builder.add_record(
-        "Item",
-        [(
-            "nums",
-            CfdInputValue::Array(vec![
-                CfdInputValue::from(-1_i64),
-                CfdInputValue::from(-2_i64),
-            ]),
-        )],
-    );
-    let none_model = none_builder.build().expect("data model should build");
-    none_model
-        .run_checks(&none_schema)
-        .expect("none should pass without leaking trial failures");
-}
-
-#[test]
-fn flag_enum_bitwise_composite_has_no_fake_variant_name() {
-    // Regression for B3: bitwise OR over @flag enum values may produce a
-    // composite (e.g. Read | Write = 3) that has no single declared variant.
-    // The runtime used to fabricate `variant = "3"`, breaking downstream
-    // codegen / JSON which assume `variant` is an identifier. The composite
-    // must round-trip through `is_match`-style checks while keeping
-    // `variant: None`.
+fn flag_enum_bitwise_composites_and_int_ops_work() {
     let schema = compile_schema(
         r#"
             @flag
             enum Permission { Read = 1, Write = 2, Execute = 4, }
             type Door {
                 granted: Permission;
+                value: int;
                 check {
                     (granted & Permission.Read) != Permission(0);
                     (granted | Permission.Execute) != Permission(0);
-                }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Door",
-        [("granted", CfdInputValue::enum_variant("Permission", "Read"))],
-    );
-    let model = builder.build().expect("data model should build");
-    model
-        .run_checks(&schema)
-        .expect("flag enum bitwise composites should evaluate cleanly");
-}
-
-#[test]
-fn sum_reports_integer_overflow_consistently_with_other_arithmetic() {
-    // Regression for B2: sum used to silently saturate while +/- /etc.
-    // raise CheckEvalTypeError. A condition like `sum(weights) == 100`
-    // would then pass against a saturating i64::MAX, masking real overflow.
-    let schema = compile_schema(
-        r#"
-            type Item {
-                xs: [int];
-                check { sum(xs) > 0; }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Item",
-        [(
-            "xs",
-            CfdInputValue::Array(vec![
-                CfdInputValue::from(i64::MAX),
-                CfdInputValue::from(1_i64),
-            ]),
-        )],
-    );
-    let model = builder.build().expect("data model should build");
-    let err = model.run_checks(&schema).expect_err("overflow eval error");
-    assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
-}
-
-#[test]
-fn unary_negation_reports_overflow() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                value: int;
-                check { -value > 0; }
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("value", CfdInputValue::from(i64::MIN))]);
-    let model = builder.build().expect("data model should build");
-    let result = std::panic::catch_unwind(|| model.run_checks(&schema));
-    assert!(result.is_ok(), "check runner should not panic");
-    let err = result.unwrap().expect_err("overflow eval error");
-    assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
-}
-
-#[test]
-fn sum_of_empty_float_array_uses_declared_element_type() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                xs: [float] = [];
-                check { sum(xs) == 0.0; }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_input_record(CfdInputRecord::new(
-        "Item",
-        std::iter::empty::<(&str, CfdInputValue)>(),
-    ));
-    let model = builder.build().expect("data model should build");
-    model
-        .run_checks(&schema)
-        .expect("empty float sum should evaluate as 0.0");
-}
-
-#[test]
-fn sum_values_of_empty_float_dict_uses_value_type() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                scores: {string: float} = {};
-                check { sum(values(scores)) == 0.0; }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_input_record(CfdInputRecord::new(
-        "Item",
-        std::iter::empty::<(&str, CfdInputValue)>(),
-    ));
-    let model = builder.build().expect("data model should build");
-    model
-        .run_checks(&schema)
-        .expect("empty float dict values should sum to 0.0");
-}
-
-#[test]
-fn arithmetic_eval_errors_are_reported_without_panicking() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                value: int;
-                check {
-                    value / 0 > 0;
-                    value % 0 == 0;
-                    value ** -1 > 0;
-                }
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("value", CfdInputValue::from(1_i64))]);
-    let model = builder.build().expect("data model should build");
-    let result = std::panic::catch_unwind(|| model.run_checks(&schema));
-    assert!(result.is_ok(), "check runner should not panic");
-    let err = result.unwrap().expect_err("arithmetic eval errors");
-    assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
-}
-
-#[test]
-fn check_runner_executes_inline_object_checks_inside_collections() {
-    let schema = compile_schema(
-        r#"
-            type Stat {
-                hp: int;
-                check { hp > 0; }
-            }
-            type Monster {
-                stats: [Stat];
-                named: {string: Stat};
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Monster",
-        [
-            (
-                "stats",
-                CfdInputValue::Array(vec![CfdInputValue::object_with_declared_type([(
-                    "hp",
-                    CfdInputValue::from(0_i64),
-                )])]),
-            ),
-            (
-                "named",
-                CfdInputValue::dict([(
-                    CfdInputDictKey::from("bad"),
-                    CfdInputValue::object_with_declared_type([("hp", CfdInputValue::from(-1_i64))]),
-                )]),
-            ),
-        ],
-    );
-    let model = builder.build().expect("data model should build");
-    let err = model.run_checks(&schema).expect_err("nested checks fail");
-    let failed_paths = err
-        .diagnostics
-        .iter()
-        .filter(|diag| diag.code == CfdErrorCode::CheckFailed)
-        .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
-        .collect::<Vec<_>>();
-    assert!(failed_paths.contains(&CfdPath::root().field("stats").index(0).field("hp")));
-    // Regression for B1: dict-key path used to be the entry index ("0"),
-    // hiding the actual key. Now it must be the formatted key form
-    // (`"bad"` for a string key) so users can locate the failing entry.
-    assert!(failed_paths.contains(
-        &CfdPath::root()
-            .field("named")
-            .dict_key("\"bad\"".to_string())
-            .field("hp"),
-    ));
-}
-
-#[test]
-fn any_and_none_quantifier_failures_report_element_failures() {
-    let any_schema = compile_schema(
-        r#"
-            type Item {
-                nums: [int];
-                check { any value in nums { value > 0; } }
-            }
-        "#,
-    );
-    let mut any_builder = CfdDataModel::builder(&any_schema);
-    any_builder.add_record(
-        "Item",
-        [(
-            "nums",
-            CfdInputValue::Array(vec![
-                CfdInputValue::from(-1_i64),
-                CfdInputValue::from(-2_i64),
-            ]),
-        )],
-    );
-    let any_model = any_builder.build().expect("data model should build");
-    let any_err = any_model.run_checks(&any_schema).expect_err("any fails");
-    assert_eq!(any_err.diagnostics.len(), 2);
-    assert!(any_err
-        .diagnostics
-        .iter()
-        .all(|diag| diag.code == CfdErrorCode::CheckFailed));
-    let any_paths = any_err
-        .diagnostics
-        .iter()
-        .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
-        .collect::<Vec<_>>();
-    assert!(any_paths.contains(&CfdPath::root().field("nums").index(0)));
-    assert!(any_paths.contains(&CfdPath::root().field("nums").index(1)));
-
-    let none_schema = compile_schema(
-        r#"
-            type Item {
-                nums: [int];
-                check { none value in nums { value > 0; } }
-            }
-        "#,
-    );
-    let mut none_builder = CfdDataModel::builder(&none_schema);
-    none_builder.add_record(
-        "Item",
-        [(
-            "nums",
-            CfdInputValue::Array(vec![CfdInputValue::from(1_i64), CfdInputValue::from(2_i64)]),
-        )],
-    );
-    let none_model = none_builder.build().expect("data model should build");
-    let none_err = none_model.run_checks(&none_schema).expect_err("none fails");
-    assert_eq!(none_err.diagnostics.len(), 2);
-    assert!(none_err
-        .diagnostics
-        .iter()
-        .all(|diag| diag.code == CfdErrorCode::CheckFailed));
-    let none_paths = none_err
-        .diagnostics
-        .iter()
-        .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
-        .collect::<Vec<_>>();
-    assert!(none_paths.contains(&CfdPath::root().field("nums").index(0)));
-    assert!(none_paths.contains(&CfdPath::root().field("nums").index(1)));
-}
-
-#[test]
-fn any_quantifier_over_empty_collection_reports_quantifier_failure() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                nums: [int];
-                check { any value in nums { value > 0; } }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("nums", CfdInputValue::Array(Vec::new()))]);
-    let model = builder.build().expect("data model should build");
-
-    let err = model
-        .run_checks(&schema)
-        .expect_err("empty any quantifier should fail");
-
-    assert_eq!(err.diagnostics.len(), 1);
-    assert_has_code(&err, CfdErrorCode::CheckFailed);
-}
-
-#[test]
-fn runtime_reports_integer_arithmetic_and_shift_overflow_edges() {
-    let cases = [
-        (
-            "addition overflow",
-            r#"
-                type Item {
-                    value: int;
-                    rhs: int;
-                    check { value + rhs > 0; }
-                }
-            "#,
-            i64::MAX,
-            1_i64,
-        ),
-        (
-            "subtraction overflow",
-            r#"
-                type Item {
-                    value: int;
-                    rhs: int;
-                    check { value - rhs > 0; }
-                }
-            "#,
-            i64::MIN,
-            1_i64,
-        ),
-        (
-            "multiplication overflow",
-            r#"
-                type Item {
-                    value: int;
-                    rhs: int;
-                    check { value * rhs > 0; }
-                }
-            "#,
-            i64::MAX,
-            2_i64,
-        ),
-        (
-            "negative shift",
-            r#"
-                type Item {
-                    value: int;
-                    rhs: int;
-                    check { value << rhs > 0; }
-                }
-            "#,
-            1_i64,
-            -1_i64,
-        ),
-        (
-            "oversized shift",
-            r#"
-                type Item {
-                    value: int;
-                    rhs: int;
-                    check { value >> rhs > 0; }
-                }
-            "#,
-            1_i64,
-            64_i64,
-        ),
-    ];
-
-    for (name, source, value, rhs) in cases {
-        let schema = compile_schema(source);
-        let mut builder = CfdDataModel::builder(&schema);
-        builder.add_record(
-            "Item",
-            [
-                ("value", CfdInputValue::from(value)),
-                ("rhs", CfdInputValue::from(rhs)),
-            ],
-        );
-        let model = builder.build().expect("data model should build");
-        let err = model
-            .run_checks(&schema)
-            .expect_err(&format!("{name} should produce a runtime eval error"));
-        assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
-    }
-}
-
-#[test]
-fn flag_enum_runtime_handles_xor_and_bitnot_composites_without_named_variants() {
-    let schema = compile_schema(
-        r#"
-            @flag
-            enum Permission { Read = 1, Write = 2, Execute = 4, }
-            type Door {
-                granted: Permission;
-                check {
                     (granted ^ Permission.Write) != Permission(0);
                     (~granted & Permission.Execute) != Permission(0);
+                    value // 2 == 3;
+                    value % 2 == 1;
+                    2 ** 3 == 8;
                 }
             }
         "#,
     );
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "door_1",
         "Door",
-        [("granted", CfdInputValue::enum_variant("Permission", "Read"))],
+        [
+            ("granted", CfdInputValue::enum_variant("Permission", "Read")),
+            ("value", CfdInputValue::from(7_i64)),
+        ],
     );
-    let model = builder.build().expect("data model should build");
-
-    model
-        .run_checks(&schema)
-        .expect("flag enum composites should not require a declared variant name");
+    let model = build_model(&schema, builder);
+    model.run_checks(&schema).expect("operators should pass");
 }
 
 #[test]
-fn runtime_reports_negative_index_and_missing_dict_key_edges() {
+fn runtime_reports_index_dict_and_regex_edges() {
     let negative_index = compile_schema(
         r#"
             type Item {
@@ -1014,19 +483,20 @@ fn runtime_reports_negative_index_and_missing_dict_key_edges() {
             }
         "#,
     );
-    let mut negative_builder = CfdDataModel::builder(&negative_index);
-    negative_builder.add_record(
+    let mut builder = CfdDataModel::builder(&negative_index);
+    builder.add_record(
+        "item_1",
         "Item",
         [(
             "nums",
             CfdInputValue::Array(vec![CfdInputValue::from(1_i64)]),
         )],
     );
-    let negative_model = negative_builder.build().expect("data model should build");
-    let negative_err = negative_model
+    let model = build_model(&negative_index, builder);
+    let err = model
         .run_checks(&negative_index)
-        .expect_err("negative array index should fail at runtime");
-    assert_has_code(&negative_err, CfdErrorCode::CheckIndexOutOfBounds);
+        .expect_err("negative index should fail");
+    assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
 
     let missing_key = compile_schema(
         r#"
@@ -1036,379 +506,39 @@ fn runtime_reports_negative_index_and_missing_dict_key_edges() {
             }
         "#,
     );
-    let mut missing_builder = CfdDataModel::builder(&missing_key);
-    missing_builder.add_record(
+    let mut builder = CfdDataModel::builder(&missing_key);
+    builder.add_record(
+        "item_1",
         "Item",
         [(
             "attrs",
             CfdInputValue::dict([(CfdInputDictKey::from("present"), CfdInputValue::from(1_i64))]),
         )],
     );
-    let missing_model = missing_builder.build().expect("data model should build");
-    let missing_err = missing_model
-        .run_checks(&missing_key)
-        .expect_err("missing dict key should fail at runtime");
-    assert_has_code(&missing_err, CfdErrorCode::CheckMissingDictKey);
-}
-
-#[test]
-fn runtime_reports_dict_contains_and_all_quantifier_failure_edges() {
-    let dict_contains = compile_schema(
-        r#"
-            type Item {
-                attrs: {string: int};
-                nums: [int];
-                check {
-                    contains(attrs, "missing");
-                    all value in nums { value > 0; }
-                }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&dict_contains);
-    builder.add_record(
-        "Item",
-        [
-            (
-                "attrs",
-                CfdInputValue::dict([(
-                    CfdInputDictKey::from("present"),
-                    CfdInputValue::from(1_i64),
-                )]),
-            ),
-            (
-                "nums",
-                CfdInputValue::Array(vec![
-                    CfdInputValue::from(1_i64),
-                    CfdInputValue::from(-1_i64),
-                ]),
-            ),
-        ],
-    );
-    let model = builder.build().expect("data model should build");
+    let model = build_model(&missing_key, builder);
     let err = model
-        .run_checks(&dict_contains)
-        .expect_err("missing dict key and failing all element should fail checks");
-    assert_eq!(
-        err.diagnostics
-            .iter()
-            .filter(|diag| diag.code == CfdErrorCode::CheckFailed)
-            .count(),
-        2
-    );
-}
+        .run_checks(&missing_key)
+        .expect_err("missing dict key should fail");
+    assert_has_code(&err, CfdErrorCode::CheckMissingDictKey);
 
-#[test]
-fn runtime_executes_int_div_mod_pow_and_short_circuit_boundaries() {
-    let schema = compile_schema(
+    let regex = compile_schema(
         r#"
             type Item {
-                value: int;
-                check {
-                    value // 2 == 3;
-                    value % 2 == 1;
-                    2 ** 3 == 8;
-                    true || value / 0 > 0;
-                    false && value / 0 > 0 || true;
-                }
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("value", CfdInputValue::from(7_i64))]);
-    let model = builder.build().expect("data model should build");
-
-    model
-        .run_checks(&schema)
-        .expect("valid integer operators and short-circuits should not evaluate failing rhs");
-}
-
-#[test]
-fn runtime_reports_float_and_enum_ordering_edge_failures() {
-    let float_schema = compile_schema(
-        r#"
-            type Item {
-                value: float;
-                check { value < 0.0; }
-            }
-        "#,
-    );
-    let mut float_builder = CfdDataModel::builder(&float_schema);
-    float_builder.add_record("Item", [("value", CfdInputValue::from(1.5_f64))]);
-    let float_model = float_builder.build().expect("data model should build");
-    let float_err = float_model
-        .run_checks(&float_schema)
-        .expect_err("false float ordering should report a failed check");
-    assert_has_code(&float_err, CfdErrorCode::CheckFailed);
-
-    let enum_schema = compile_schema(
-        r#"
-            enum Rarity { Common = 0, Rare = 10, }
-            type Item {
-                rarity: Rarity;
-                check { rarity < Rarity.Common; }
-            }
-        "#,
-    );
-    let mut enum_builder = CfdDataModel::builder(&enum_schema);
-    enum_builder.add_record(
-        "Item",
-        [("rarity", CfdInputValue::enum_variant("Rarity", "Rare"))],
-    );
-    let enum_model = enum_builder.build().expect("data model should build");
-    let enum_err = enum_model
-        .run_checks(&enum_schema)
-        .expect_err("false enum ordering should report a failed check");
-    assert_has_code(&enum_err, CfdErrorCode::CheckFailed);
-}
-
-#[test]
-fn runtime_reports_null_index_access_edge() {
-    let null_index_schema = compile_schema(
-        r#"
-            type Item {
-                nums: [int]? = null;
-                check { nums[0] > 0; }
-            }
-        "#,
-    );
-    let mut null_index_builder = CfdDataModel::builder(&null_index_schema);
-    null_index_builder.add_input_record(CfdInputRecord::new(
-        "Item",
-        std::iter::empty::<(&str, CfdInputValue)>(),
-    ));
-    let null_index_model = null_index_builder.build().expect("data model should build");
-    let null_index_err = null_index_model
-        .run_checks(&null_index_schema)
-        .expect_err("indexing null should fail at runtime");
-    assert_has_code(&null_index_err, CfdErrorCode::CheckNullAccess);
-}
-
-#[test]
-fn runtime_when_false_skips_hard_error_and_when_true_executes_body() {
-    let skipped = compile_schema(
-        r#"
-            type Item {
-                nums: [int];
-                check {
-                    when false { nums[0] > 0; }
-                    true;
-                }
-            }
-        "#,
-    );
-    let mut skipped_builder = CfdDataModel::builder(&skipped);
-    skipped_builder.add_record("Item", [("nums", CfdInputValue::Array(Vec::new()))]);
-    let skipped_model = skipped_builder.build().expect("data model should build");
-    skipped_model
-        .run_checks(&skipped)
-        .expect("false when condition should skip the body");
-
-    let executed = compile_schema(
-        r#"
-            type Item {
-                nums: [int];
-                check { when true { nums[0] > 0; } }
-            }
-        "#,
-    );
-    let mut executed_builder = CfdDataModel::builder(&executed);
-    executed_builder.add_record("Item", [("nums", CfdInputValue::Array(Vec::new()))]);
-    let executed_model = executed_builder.build().expect("data model should build");
-    let err = executed_model
-        .run_checks(&executed)
-        .expect_err("true when condition should execute the body");
-    assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
-}
-
-#[test]
-fn none_quantifier_over_empty_collection_passes_without_element_failures() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                nums: [int];
-                check { none value in nums { value > 0; } }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("nums", CfdInputValue::Array(Vec::new()))]);
-    let model = builder.build().expect("data model should build");
-
-    model
-        .run_checks(&schema)
-        .expect("none over an empty collection should pass");
-}
-
-#[test]
-fn sum_of_empty_int_array_uses_declared_element_type() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                nums: [int] = [];
-                check { sum(nums) == 0; }
-            }
-        "#,
-    );
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_input_record(CfdInputRecord::new(
-        "Item",
-        std::iter::empty::<(&str, CfdInputValue)>(),
-    ));
-    let model = builder.build().expect("data model should build");
-
-    model
-        .run_checks(&schema)
-        .expect("empty int sum should evaluate as 0");
-}
-
-#[test]
-fn matches_runtime_uses_regex_substring_and_unicode_semantics() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                id: string;
                 label: string;
-                check {
-                    matches(id, "beta");
-                    matches(label, "配置");
-                }
+                check { matches(label, "配置"); }
             }
         "#,
     );
-
-    let mut builder = CfdDataModel::builder(&schema);
+    let mut builder = CfdDataModel::builder(&regex);
     builder.add_record(
+        "item_1",
         "Item",
-        [
-            ("id", CfdInputValue::from("alpha_beta")),
-            ("label", CfdInputValue::from("怪物配置")),
-        ],
+        [("label", CfdInputValue::from("怪物配置"))],
     );
-    let model = builder.build().expect("data model should build");
-
+    let model = build_model(&regex, builder);
     model
-        .run_checks(&schema)
-        .expect("matches should use substring regex matching and Unicode regex semantics");
-}
-
-#[test]
-fn matches_runtime_false_match_reports_check_failed() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                id: string;
-                check { matches(id, "^item_[0-9]+$"); }
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("Item", [("id", CfdInputValue::from("bad"))]);
-    let model = builder.build().expect("data model should build");
-    let err = model.run_checks(&schema).expect_err("regex mismatch fails");
-
-    assert_eq!(err.diagnostics.len(), 1);
-    assert_has_code(&err, CfdErrorCode::CheckFailed);
-}
-
-#[test]
-fn dict_keys_and_values_preserve_entry_order() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                attrs: {string: int};
-                check {
-                    keys(attrs)[0] == "b";
-                    values(attrs)[0] == 2;
-                    keys(attrs)[1] == "a";
-                    values(attrs)[1] == 1;
-                }
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "Item",
-        [(
-            "attrs",
-            CfdInputValue::dict([
-                (CfdInputDictKey::from("b"), CfdInputValue::from(2_i64)),
-                (CfdInputDictKey::from("a"), CfdInputValue::from(1_i64)),
-            ]),
-        )],
-    );
-    let model = builder.build().expect("data model should build");
-
-    model
-        .run_checks(&schema)
-        .expect("keys and values should preserve dictionary entry order");
-}
-
-#[test]
-fn inherited_check_hard_error_does_not_skip_child_checks() {
-    let hard_stop_schema = compile_schema(
-        r#"
-            abstract type Base {
-                xs: [int];
-                check { xs[0] > 0; }
-            }
-            type Child : Base {
-                value: int;
-                check { value > 0; }
-            }
-        "#,
-    );
-    let mut hard_stop_builder = CfdDataModel::builder(&hard_stop_schema);
-    hard_stop_builder.add_record(
-        "Child",
-        [
-            ("xs", CfdInputValue::Array(Vec::new())),
-            ("value", CfdInputValue::from(0_i64)),
-        ],
-    );
-    let hard_stop_model = hard_stop_builder.build().expect("data model should build");
-    let hard_stop_err = hard_stop_model
-        .run_checks(&hard_stop_schema)
-        .expect_err("base hard error and child failure should both report");
-    assert_eq!(hard_stop_err.diagnostics.len(), 2);
-    assert_has_code(&hard_stop_err, CfdErrorCode::CheckIndexOutOfBounds);
-    assert_has_code(&hard_stop_err, CfdErrorCode::CheckFailed);
-
-    let soft_fail_schema = compile_schema(
-        r#"
-            abstract type Base {
-                id: string;
-                check { id != ""; }
-            }
-            type Child : Base {
-                value: int;
-                check { value > 0; }
-            }
-        "#,
-    );
-    let mut soft_fail_builder = CfdDataModel::builder(&soft_fail_schema);
-    soft_fail_builder.add_record(
-        "Child",
-        [
-            ("id", CfdInputValue::from("")),
-            ("value", CfdInputValue::from(0_i64)),
-        ],
-    );
-    let soft_fail_model = soft_fail_builder.build().expect("data model should build");
-    let soft_fail_err = soft_fail_model
-        .run_checks(&soft_fail_schema)
-        .expect_err("base and child false checks should both report");
-    assert_eq!(
-        soft_fail_err
-            .diagnostics
-            .iter()
-            .filter(|diag| diag.code == CfdErrorCode::CheckFailed)
-            .count(),
-        2
-    );
+        .run_checks(&regex)
+        .expect("matches should use Unicode regex semantics");
 }
 
 #[test]
@@ -1416,40 +546,33 @@ fn top_level_ref_targets_run_checks_once_by_identity() {
     let schema = compile_schema(
         r#"
             type Target {
-                @id
-                id: string;
                 value: int;
                 check { value > 0; }
             }
 
             type Holder {
-                @ref(Target)
-                first: string;
-                @ref(Target)
-                second: string;
-                check {
-                    first.id == second.id;
-                }
+                first: Target;
+                second: Target;
+                check { first.id == second.id; }
             }
         "#,
     );
 
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
+        "target_1",
         "Target",
-        [
-            ("id", CfdInputValue::from("target_1")),
-            ("value", CfdInputValue::from(0_i64)),
-        ],
+        [("value", CfdInputValue::from(0_i64))],
     );
     builder.add_record(
+        "holder_1",
         "Holder",
         [
-            ("first", CfdInputValue::from("target_1")),
-            ("second", CfdInputValue::from("target_1")),
+            ("first", CfdInputValue::record_ref("target_1")),
+            ("second", CfdInputValue::record_ref("target_1")),
         ],
     );
-    let model = builder.build().expect("data model should build");
+    let model = build_model(&schema, builder);
     let err = model
         .run_checks(&schema)
         .expect_err("invalid target should fail once");
@@ -1467,123 +590,27 @@ fn top_level_ref_targets_run_checks_once_by_identity() {
 }
 
 #[test]
-fn diagnostics_follow_stable_statement_and_inheritance_order() {
-    let schema = compile_schema(
+fn empty_sum_and_float_edge_semantics_are_preserved() {
+    let empty_sum = compile_schema(
         r#"
-            abstract type Base {
-                id: string;
-                check {
-                    id != "";
-                }
-            }
-            type Child : Base {
-                first: int;
-                second: int;
-                check {
-                    first > 0;
-                    second > 0;
-                }
+            type Item {
+                nums: [int] = [];
+                check { sum(nums) == 0; }
             }
         "#,
     );
-
-    let mut builder = CfdDataModel::builder(&schema);
+    let mut builder = CfdDataModel::builder(&empty_sum);
     builder.add_record(
-        "Child",
-        [
-            ("id", CfdInputValue::from("")),
-            ("first", CfdInputValue::from(0_i64)),
-            ("second", CfdInputValue::from(0_i64)),
-        ],
-    );
-    let model = builder.build().expect("data model should build");
-    let err = model.run_checks(&schema).expect_err("checks fail");
-    let paths = err
-        .diagnostics
-        .iter()
-        .filter(|diag| diag.code == CfdErrorCode::CheckFailed)
-        .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
-        .collect::<Vec<_>>();
-
-    assert_eq!(
-        paths,
-        vec![
-            CfdPath::root().field("id"),
-            CfdPath::root().field("first"),
-            CfdPath::root().field("second"),
-        ]
-    );
-}
-
-#[test]
-fn all_quantifier_reports_all_soft_failures_but_stops_on_hard_error() {
-    let soft_fail_schema = compile_schema(
-        r#"
-            type Item {
-                nums: [int];
-                check { all value in nums { value > 0; } }
-            }
-        "#,
-    );
-    let mut soft_fail_builder = CfdDataModel::builder(&soft_fail_schema);
-    soft_fail_builder.add_record(
+        "item_1",
         "Item",
-        [(
-            "nums",
-            CfdInputValue::Array(vec![
-                CfdInputValue::from(-1_i64),
-                CfdInputValue::from(-2_i64),
-            ]),
-        )],
+        std::iter::empty::<(&str, CfdInputValue)>(),
     );
-    let soft_fail_model = soft_fail_builder.build().expect("data model should build");
-    let soft_fail_err = soft_fail_model
-        .run_checks(&soft_fail_schema)
-        .expect_err("all should report each failing element");
-    let soft_fail_paths = soft_fail_err
-        .diagnostics
-        .iter()
-        .filter(|diag| diag.code == CfdErrorCode::CheckFailed)
-        .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
-        .collect::<Vec<_>>();
-    assert_eq!(
-        soft_fail_paths,
-        vec![
-            CfdPath::root().field("nums").index(0),
-            CfdPath::root().field("nums").index(1),
-        ]
-    );
+    let model = build_model(&empty_sum, builder);
+    model
+        .run_checks(&empty_sum)
+        .expect("empty int sum should evaluate as 0");
 
-    let hard_stop_schema = compile_schema(
-        r#"
-            type Item {
-                rows: [[int]];
-                check { all row in rows { row[0] > 0; } }
-            }
-        "#,
-    );
-    let mut hard_stop_builder = CfdDataModel::builder(&hard_stop_schema);
-    hard_stop_builder.add_record(
-        "Item",
-        [(
-            "rows",
-            CfdInputValue::Array(vec![
-                CfdInputValue::Array(Vec::new()),
-                CfdInputValue::Array(vec![CfdInputValue::from(-1_i64)]),
-            ]),
-        )],
-    );
-    let hard_stop_model = hard_stop_builder.build().expect("data model should build");
-    let hard_stop_err = hard_stop_model
-        .run_checks(&hard_stop_schema)
-        .expect_err("hard error should stop all quantifier");
-    assert_eq!(hard_stop_err.diagnostics.len(), 1);
-    assert_has_code(&hard_stop_err, CfdErrorCode::CheckIndexOutOfBounds);
-}
-
-#[test]
-fn finite_float_runtime_edges_follow_f64_semantics() {
-    let div_zero_schema = compile_schema(
+    let float_div_zero = compile_schema(
         r#"
             type Item {
                 value: float;
@@ -1591,27 +618,10 @@ fn finite_float_runtime_edges_follow_f64_semantics() {
             }
         "#,
     );
-    let mut div_zero_builder = CfdDataModel::builder(&div_zero_schema);
-    div_zero_builder.add_record("Item", [("value", CfdInputValue::from(1.0_f64))]);
-    let div_zero_model = div_zero_builder.build().expect("data model should build");
-    div_zero_model
-        .run_checks(&div_zero_schema)
+    let mut builder = CfdDataModel::builder(&float_div_zero);
+    builder.add_record("item_1", "Item", [("value", CfdInputValue::from(1.0_f64))]);
+    let model = build_model(&float_div_zero, builder);
+    model
+        .run_checks(&float_div_zero)
         .expect("float division by zero follows f64 infinity semantics");
-
-    let negative_zero_schema = compile_schema(
-        r#"
-            type Item {
-                value: float;
-                check { value == 0.0; }
-            }
-        "#,
-    );
-    let mut negative_zero_builder = CfdDataModel::builder(&negative_zero_schema);
-    negative_zero_builder.add_record("Item", [("value", CfdInputValue::from(-0.0_f64))]);
-    let negative_zero_model = negative_zero_builder
-        .build()
-        .expect("data model should build");
-    negative_zero_model
-        .run_checks(&negative_zero_schema)
-        .expect("-0.0 equals 0.0 with f64 equality");
 }

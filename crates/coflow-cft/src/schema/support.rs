@@ -67,7 +67,8 @@ pub(super) enum SymbolKind {
 pub(super) fn is_reserved_identifier(name: &str) -> bool {
     matches!(
         name,
-        "_" | "const"
+        "_" | "id"
+            | "const"
             | "enum"
             | "type"
             | "abstract"
@@ -132,21 +133,17 @@ impl AnnotationSpec {
                 targets: &[AnnotationTarget::Type],
                 args: AnnotationArgs::None,
             },
-            "IdAsEnum" | "GenAsEnum" => Self {
-                targets: &[AnnotationTarget::Field],
+            "keyAsEnum" => Self {
+                targets: &[AnnotationTarget::Type],
                 args: AnnotationArgs::OneString,
             },
             "flag" => Self {
                 targets: &[AnnotationTarget::Enum],
                 args: AnnotationArgs::None,
             },
-            "id" | "index" | "expand" => Self {
+            "expand" => Self {
                 targets: &[AnnotationTarget::Field],
                 args: AnnotationArgs::None,
-            },
-            "ref" => Self {
-                targets: &[AnnotationTarget::Field],
-                args: AnnotationArgs::OneName,
             },
             "display" => Self {
                 targets: &[
@@ -173,9 +170,6 @@ impl AnnotationSpec {
     pub(super) fn args_valid(&self, annotation: &Annotation) -> bool {
         match self.args {
             AnnotationArgs::None => annotation.args.is_empty(),
-            AnnotationArgs::OneName => {
-                matches!(annotation.args.as_slice(), [AnnotationArg::Name(_)])
-            }
             AnnotationArgs::OneString => {
                 matches!(annotation.args.as_slice(), [AnnotationArg::String(_, _)])
             }
@@ -186,7 +180,6 @@ impl AnnotationSpec {
 #[derive(Debug, Clone, Copy)]
 enum AnnotationArgs {
     None,
-    OneName,
     OneString,
 }
 
@@ -217,10 +210,6 @@ impl Ty {
             CftConstValue::Bool(_) => Self::Bool,
             CftConstValue::String(_) => Self::String,
         }
-    }
-
-    pub(super) fn is_nullable(&self) -> bool {
-        matches!(self, Self::Nullable(_))
     }
 }
 
@@ -437,20 +426,6 @@ pub(super) fn build_schema_type_ref(ty: &TypeRef) -> super::CftSchemaTypeRef {
 
 pub(super) fn is_valid_dict_key(ty: &Ty) -> bool {
     matches!(ty, Ty::Int | Ty::String | Ty::Enum(_) | Ty::Unknown)
-}
-
-pub(super) fn is_id_compatible_type(ty: &Ty, allow_nullable: bool) -> bool {
-    match ty {
-        Ty::String | Ty::Int | Ty::Enum(_) | Ty::Unknown => true,
-        Ty::Nullable(inner) if allow_nullable => {
-            matches!(inner.as_ref(), Ty::String | Ty::Int | Ty::Enum(_))
-        }
-        _ => false,
-    }
-}
-
-pub(super) fn is_indexable_field_type(ty: &Ty) -> bool {
-    matches!(ty, Ty::String | Ty::Int | Ty::Enum(_) | Ty::Unknown)
 }
 
 pub(super) fn types_assignable(expected: &Ty, actual: &Ty) -> bool {
