@@ -132,10 +132,10 @@ pub fn build_csharp_database(
     _database_class: &str,
     data_format: CsharpDataFormat,
 ) -> Result<CsharpDatabase, CsharpCodegenError> {
-    let table_models = tables
+    let table_models: Vec<CsharpTable> = tables
         .iter()
         .map(|table_name| build_table_model(view, table_name))
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect();
     let ref_targets = view.ref_target_names();
     let ref_indexes = build_ref_indexes(view, tables, &ref_targets)?;
     let mut parameters = Vec::<CsharpParameter>::new();
@@ -210,13 +210,10 @@ pub fn build_csharp_database(
     })
 }
 
-fn build_table_model(
-    view: &SchemaView,
-    table_name: &str,
-) -> Result<CsharpTable, CsharpCodegenError> {
+fn build_table_model(view: &SchemaView, table_name: &str) -> CsharpTable {
     let csharp_name = view.csharp_type_name(table_name);
     let id_ty = view.key_field_type(table_name);
-    Ok(CsharpTable {
+    CsharpTable {
         name: csharp_name.clone(),
         source_name: table_name.to_string(),
         list_property: pluralize(&csharp_name),
@@ -227,7 +224,7 @@ fn build_table_model(
         id_source_name: "id".to_string(),
         index_field: index_var_name(&csharp_name),
         index_var: index_param_name(&csharp_name),
-    })
+    }
 }
 
 fn build_ref_indexes(
@@ -273,7 +270,7 @@ fn build_ref_indexes(
             parameter_name: ref_index_param_name(&csharp_target),
             placeholder_name: view
                 .type_is_abstract(target)
-                .then(|| format!("__Coflow{}Ref", csharp_target)),
+                .then(|| format!("__Coflow{csharp_target}Ref")),
             assignable_sources,
         });
     }
@@ -362,7 +359,7 @@ fn loader_methods(view: &SchemaView) -> Result<Vec<CsharpLoader>, CsharpCodegenE
                             is_required,
                             assignments: vec![CsharpLoadAssignment {
                                 property: pascal_case(&field.name),
-                                expr: local_name.clone(),
+                                expr: local_name,
                             }],
                         })
                     })
@@ -467,7 +464,7 @@ fn build_resolve_model(
     tables: &[String],
     ref_targets: &[String],
 ) -> Result<CsharpResolve, CsharpCodegenError> {
-    let parameters = resolve_parameters(view, tables, ref_targets)?;
+    let parameters = resolve_parameters(view, tables, ref_targets);
     let mut table_calls = Vec::new();
     for table_name in tables {
         let table = view.type_meta(table_name)?;
@@ -479,7 +476,7 @@ fn build_resolve_model(
             item_var: camel_case(table_name),
             id_property: "Id".to_string(),
             index_args: resolve_index_argument_list(view, ref_targets),
-            path_expr: format!("$\"{table_name}[{{{}.Id}}]\"", camel_case(table_name),),
+            path_expr: format!("$\"{table_name}[{{{}.Id}}]\"", camel_case(table_name)),
             returns_value: table.is_struct,
         });
     }
@@ -514,7 +511,7 @@ fn build_type_resolver(
         type_name: view.csharp_type_name(&ty.name),
         returns_value: ty.is_struct,
         is_polymorphic: false,
-        parameters: resolve_index_parameter_models(view, ref_targets)?,
+        parameters: resolve_index_parameter_models(view, ref_targets),
         statements,
         cases: Vec::new(),
     })
@@ -529,7 +526,7 @@ fn build_polymorphic_resolver(
         type_name: view.csharp_type_name(&ty.name),
         returns_value: false,
         is_polymorphic: true,
-        parameters: resolve_index_parameter_models(view, ref_targets)?,
+        parameters: resolve_index_parameter_models(view, ref_targets),
         statements: Vec::new(),
         cases: view
             .concrete_assignable_types(&ty.name)?
@@ -551,7 +548,7 @@ fn push_resolve_field(
 ) -> Result<(), CsharpCodegenError> {
     let property = pascal_case(&field.name);
 
-    if !value_needs_resolve(&field.ty, view) {
+    if !value_needs_resolve(&field.ty) {
         return Ok(());
     }
 
@@ -693,7 +690,7 @@ fn push_resolve_array_value(
     access: &str,
     path_suffix: &str,
 ) -> Result<(), CsharpCodegenError> {
-    if !value_needs_resolve(inner, context.view) {
+    if !value_needs_resolve(inner) {
         return Ok(());
     }
     let list_name = context.locals.list();
@@ -729,7 +726,7 @@ fn push_resolve_dict_value(
     access: &str,
     path_suffix: &str,
 ) -> Result<(), CsharpCodegenError> {
-    if !value_needs_resolve(value, context.view) {
+    if !value_needs_resolve(value) {
         return Ok(());
     }
     let dictionary_name = context.locals.dictionary();
@@ -766,7 +763,7 @@ fn push_resolve_nullable_value(
     access: &str,
     path_suffix: &str,
 ) -> Result<(), CsharpCodegenError> {
-    if !value_needs_resolve(inner, context.view) {
+    if !value_needs_resolve(inner) {
         return Ok(());
     }
     out.push(format!("if ({access} != null)"));
@@ -815,11 +812,11 @@ fn push_indented_resolve_nested_value(
     Ok(())
 }
 
-fn value_needs_resolve(ty: &FieldType, view: &SchemaView) -> bool {
+fn value_needs_resolve(ty: &FieldType) -> bool {
     match ty {
         FieldType::Type(_) => true,
-        FieldType::Array(inner) | FieldType::Nullable(inner) => value_needs_resolve(inner, view),
-        FieldType::Dict(_, value) => value_needs_resolve(value, view),
+        FieldType::Array(inner) | FieldType::Nullable(inner) => value_needs_resolve(inner),
+        FieldType::Dict(_, value) => value_needs_resolve(value),
         FieldType::Int
         | FieldType::Float
         | FieldType::Bool
@@ -853,7 +850,7 @@ fn resolve_parameters(
     view: &SchemaView,
     tables: &[String],
     ref_targets: &[String],
-) -> Result<Vec<CsharpParameter>, CsharpCodegenError> {
+) -> Vec<CsharpParameter> {
     let mut out = Vec::new();
 
     for table_name in tables {
@@ -873,13 +870,13 @@ fn resolve_parameters(
         });
     }
 
-    Ok(out)
+    out
 }
 
 fn resolve_index_parameter_models(
     view: &SchemaView,
     ref_targets: &[String],
-) -> Result<Vec<CsharpParameter>, CsharpCodegenError> {
+) -> Vec<CsharpParameter> {
     let mut out = Vec::new();
     for target in ref_targets {
         let csharp_target = view.csharp_type_name(target);
@@ -889,7 +886,7 @@ fn resolve_index_parameter_models(
             name: ref_index_param_name(&csharp_target),
         });
     }
-    Ok(out)
+    out
 }
 
 fn resolve_arguments(view: &SchemaView, tables: &[String], ref_targets: &[String]) -> Vec<String> {
@@ -1218,7 +1215,7 @@ fn type_has_nested_resolvable_fields(type_name: &str, view: &SchemaView) -> bool
     view.type_meta(type_name).is_ok_and(|ty| {
         ty.all_fields
             .iter()
-            .any(|field| value_needs_resolve(&field.ty, view))
+            .any(|field| value_needs_resolve(&field.ty))
     })
 }
 

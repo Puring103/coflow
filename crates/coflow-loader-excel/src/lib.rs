@@ -497,6 +497,7 @@ impl ExcelDiagnostic {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn excel_load_error_diagnostics(err: ExcelLoadError) -> Vec<ExcelDiagnostic> {
     match err {
         ExcelLoadError::OpenWorkbook { file, message } => vec![ExcelDiagnostic::excel(

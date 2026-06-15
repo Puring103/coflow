@@ -406,7 +406,7 @@ impl<'a> CheckEvaluator<'a> {
             .filter(|key| !key.is_empty())
             .or_else(|| {
                 self.root_record
-                    .and_then(|id| self.model.record(id).map(|record| record.key()))
+                    .and_then(|id| self.model.record(id).map(coflow_data_model::CfdRecord::key))
             })?;
         let key = key.to_string();
         let path = path
