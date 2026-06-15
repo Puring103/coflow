@@ -1,3 +1,14 @@
+#![allow(
+    clippy::expect_used,
+    clippy::implicit_clone,
+    clippy::needless_raw_string_hashes,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::redundant_clone,
+    clippy::too_many_lines,
+    clippy::unwrap_used
+)]
+
 use coflow_cft::{CftDiagnostic, CftErrorCode, ModuleId, Span};
 use coflow_project::{
     compile_schema_project_with_overrides, dedupe_cft_diagnostics, normalize_path, path_to_slash,
