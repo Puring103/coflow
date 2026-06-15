@@ -253,6 +253,7 @@ impl Hash for CfdEnumValue {
 pub struct CfdInputRecord {
     pub key: String,
     pub actual_type: String,
+    pub spreads: Vec<CfdInputValue>,
     pub fields: BTreeMap<String, CfdInputValue>,
 }
 
@@ -266,6 +267,25 @@ impl CfdInputRecord {
         Self {
             key: key.into(),
             actual_type: actual_type.into(),
+            spreads: Vec::new(),
+            fields: fields
+                .into_iter()
+                .map(|(name, value)| (name.into(), value))
+                .collect(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_spreads(
+        key: impl Into<String>,
+        actual_type: impl Into<String>,
+        spreads: impl IntoIterator<Item = CfdInputValue>,
+        fields: impl IntoIterator<Item = (impl Into<String>, CfdInputValue)>,
+    ) -> Self {
+        Self {
+            key: key.into(),
+            actual_type: actual_type.into(),
+            spreads: spreads.into_iter().collect(),
             fields: fields
                 .into_iter()
                 .map(|(name, value)| (name.into(), value))
@@ -303,6 +323,11 @@ pub enum CfdInputValue {
         actual_type: Option<String>,
         fields: BTreeMap<String, CfdInputValue>,
     },
+    ObjectSpread {
+        actual_type: Option<String>,
+        spreads: Vec<CfdInputValue>,
+        fields: BTreeMap<String, CfdInputValue>,
+    },
     RecordRef {
         target_type: String,
         key: String,
@@ -314,6 +339,10 @@ pub enum CfdInputValue {
     },
     Array(Vec<CfdInputValue>),
     Dict(Vec<(CfdInputDictKey, CfdInputValue)>),
+    DictSpread {
+        spreads: Vec<CfdInputValue>,
+        entries: Vec<(CfdInputDictKey, CfdInputValue)>,
+    },
 }
 
 impl CfdInputValue {
@@ -353,8 +382,50 @@ impl CfdInputValue {
     }
 
     #[must_use]
+    pub fn object_spread(
+        spreads: impl IntoIterator<Item = CfdInputValue>,
+        fields: impl IntoIterator<Item = (impl Into<String>, CfdInputValue)>,
+    ) -> Self {
+        Self::ObjectSpread {
+            actual_type: None,
+            spreads: spreads.into_iter().collect(),
+            fields: fields
+                .into_iter()
+                .map(|(name, value)| (name.into(), value))
+                .collect(),
+        }
+    }
+
+    #[must_use]
+    pub fn object_spread_with_actual_type(
+        actual_type: impl Into<String>,
+        spreads: impl IntoIterator<Item = CfdInputValue>,
+        fields: impl IntoIterator<Item = (impl Into<String>, CfdInputValue)>,
+    ) -> Self {
+        Self::ObjectSpread {
+            actual_type: Some(actual_type.into()),
+            spreads: spreads.into_iter().collect(),
+            fields: fields
+                .into_iter()
+                .map(|(name, value)| (name.into(), value))
+                .collect(),
+        }
+    }
+
+    #[must_use]
     pub fn dict(entries: impl IntoIterator<Item = (CfdInputDictKey, CfdInputValue)>) -> Self {
         Self::Dict(entries.into_iter().collect())
+    }
+
+    #[must_use]
+    pub fn dict_spread(
+        spreads: impl IntoIterator<Item = CfdInputValue>,
+        entries: impl IntoIterator<Item = (CfdInputDictKey, CfdInputValue)>,
+    ) -> Self {
+        Self::DictSpread {
+            spreads: spreads.into_iter().collect(),
+            entries: entries.into_iter().collect(),
+        }
     }
 
     #[must_use]

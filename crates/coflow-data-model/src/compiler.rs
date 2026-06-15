@@ -38,6 +38,7 @@ impl ModelCompiler {
                     None,
                     &record.key,
                     &record.actual_type,
+                    &record.spreads,
                     &record.fields,
                     Some(id),
                     CfdPath::root(),
@@ -224,6 +225,7 @@ impl<'s> Validator<'s> {
         expected_type: Option<&str>,
         key: &str,
         actual_type: &str,
+        input_spreads: &[CfdInputValue],
         input_fields: &BTreeMap<String, CfdInputValue>,
         record: Option<CfdRecordId>,
         path: CfdPath,
@@ -287,10 +289,21 @@ impl<'s> Validator<'s> {
         }
 
         let mut out = BTreeMap::new();
+        for spread in input_spreads {
+            let Some(spread_fields) =
+                self.validate_object_spread(actual_type, spread, record, path.clone())
+            else {
+                continue;
+            };
+            out.extend(spread_fields);
+        }
+
         for field in fields {
             let field_path = path.clone().field(field.name.clone());
             let value = if let Some(value) = input_fields.get(&field.name) {
                 self.validate_field_value(field, value, record, field_path)
+            } else if out.contains_key(&field.name) {
+                continue;
             } else if let Some(default) = &field.default {
                 self.default_field_value(field, default, record, field_path)
             } else {
@@ -417,6 +430,11 @@ impl<'s> Validator<'s> {
                 CfdInputValue::Object {
                     actual_type,
                     fields,
+                }
+                | CfdInputValue::ObjectSpread {
+                    actual_type,
+                    spreads: _,
+                    fields,
                 },
             ) => {
                 let actual = if let Some(actual) = actual_type {
@@ -433,8 +451,19 @@ impl<'s> Validator<'s> {
                 } else {
                     expected.clone()
                 };
-                let draft =
-                    self.validate_record(Some(expected), "", &actual, fields, record, path)?;
+                let spreads = match value {
+                    CfdInputValue::ObjectSpread { spreads, .. } => spreads.as_slice(),
+                    _ => &[],
+                };
+                let draft = self.validate_record(
+                    Some(expected),
+                    "",
+                    &actual,
+                    spreads,
+                    fields,
+                    record,
+                    path,
+                )?;
                 Some(CfdValueDraft::Object(Box::new(draft)))
             }
             (CfdType::Array(inner), CfdInputValue::Array(items)) => {
@@ -450,44 +479,248 @@ impl<'s> Validator<'s> {
                 Some(CfdValueDraft::Array(out))
             }
             (CfdType::Dict(key_ty, value_ty), CfdInputValue::Dict(entries)) => {
-                let mut seen = BTreeMap::<CfdDictKey, CfdPath>::new();
-                let mut out = Vec::with_capacity(entries.len());
-                for (key, value) in entries {
-                    let key_path = path.clone().dict_key_input(key);
-                    let Some(key) = self.validate_dict_key(key_ty, key, record, key_path.clone())
-                    else {
-                        continue;
-                    };
-                    let value_path = path.clone().dict_key_value(&key);
-                    if let Some(first) = seen.get(&key) {
-                        self.push(
-                            CfdDiagnostic::error(
-                                CfdErrorCode::DuplicateDictKey,
-                                "duplicate dict key",
-                            )
-                            .with_primary(record, value_path)
-                            .with_related(
-                                record,
-                                first.clone(),
-                                "first key is here",
-                            ),
-                        );
-                        continue;
-                    }
-                    seen.insert(key.clone(), value_path.clone());
-                    let Some(value) = self.validate_value(value_ty, value, record, value_path)
-                    else {
-                        continue;
-                    };
-                    out.push((key, value));
-                }
+                let out = self.validate_dict_entries(key_ty, value_ty, entries, record, path);
                 Some(CfdValueDraft::Dict(out))
+            }
+            (CfdType::Dict(key_ty, value_ty), CfdInputValue::DictSpread { spreads, entries }) => {
+                let mut out_spreads = Vec::with_capacity(spreads.len());
+                for spread in spreads {
+                    let Some(spread) = self.validate_value(ty, spread, record, path.clone()) else {
+                        continue;
+                    };
+                    out_spreads.push(spread);
+                }
+                let out_entries =
+                    self.validate_dict_entries(key_ty, value_ty, entries, record, path);
+                Some(CfdValueDraft::DictSpread {
+                    spreads: out_spreads,
+                    entries: out_entries,
+                })
             }
             _ => {
                 self.type_mismatch(&ty.display(), value, record, path);
                 None
             }
         }
+    }
+
+    fn validate_object_spread(
+        &mut self,
+        type_name: &str,
+        spread: &CfdInputValue,
+        record: Option<CfdRecordId>,
+        path: CfdPath,
+    ) -> Option<BTreeMap<String, CfdValueDraft>> {
+        match spread {
+            CfdInputValue::RecordRef { target_type, key } => {
+                if !self.schema.is_assignable(target_type, type_name) {
+                    self.push(
+                        CfdDiagnostic::error(
+                            CfdErrorCode::TypeMismatch,
+                            format!(
+                                "spread type `{target_type}` is not assignable to `{type_name}`"
+                            ),
+                        )
+                        .with_primary(record, path),
+                    );
+                    return None;
+                }
+                Some(
+                    self.schema
+                        .full_fields(type_name)
+                        .iter()
+                        .map(|field| {
+                            (
+                                field.name.clone(),
+                                CfdValueDraft::PathRef {
+                                    expected_type: field.ty.clone(),
+                                    target_type: target_type.clone(),
+                                    key: key.clone(),
+                                    segments: vec![CfdRefPathSegment::Field(field.name.clone())],
+                                },
+                            )
+                        })
+                        .collect(),
+                )
+            }
+            CfdInputValue::PathRef {
+                target_type,
+                key,
+                segments,
+            } => {
+                let Some(spread_type) =
+                    self.path_ref_result_type(target_type, segments, record, path.clone())
+                else {
+                    return None;
+                };
+                let CfdType::Type(spread_type_name) = non_nullable_type(&spread_type) else {
+                    self.push(
+                        CfdDiagnostic::error(
+                            CfdErrorCode::TypeMismatch,
+                            "object spread requires an object value",
+                        )
+                        .with_primary(record, path),
+                    );
+                    return None;
+                };
+                if !self.schema.is_assignable(spread_type_name, type_name) {
+                    self.push(
+                        CfdDiagnostic::error(
+                            CfdErrorCode::TypeMismatch,
+                            format!(
+                                "spread type `{spread_type_name}` is not assignable to `{type_name}`"
+                            ),
+                        )
+                        .with_primary(record, path),
+                    );
+                    return None;
+                }
+                Some(
+                    self.schema
+                        .full_fields(type_name)
+                        .iter()
+                        .map(|field| {
+                            let mut field_segments = segments.clone();
+                            field_segments.push(CfdRefPathSegment::Field(field.name.clone()));
+                            (
+                                field.name.clone(),
+                                CfdValueDraft::PathRef {
+                                    expected_type: field.ty.clone(),
+                                    target_type: target_type.clone(),
+                                    key: key.clone(),
+                                    segments: field_segments,
+                                },
+                            )
+                        })
+                        .collect(),
+                )
+            }
+            CfdInputValue::Object { .. } | CfdInputValue::ObjectSpread { .. } => {
+                let draft = self.validate_value(
+                    &CfdType::Type(type_name.to_string()),
+                    spread,
+                    record,
+                    path,
+                )?;
+                let CfdValueDraft::Object(record_draft) = draft else {
+                    return None;
+                };
+                Some(record_draft.fields)
+            }
+            _ => {
+                self.push(
+                    CfdDiagnostic::error(
+                        CfdErrorCode::TypeMismatch,
+                        "object spread requires an object value",
+                    )
+                    .with_primary(record, path),
+                );
+                None
+            }
+        }
+    }
+
+    fn path_ref_result_type(
+        &mut self,
+        target_type: &str,
+        segments: &[CfdRefPathSegment],
+        record: Option<CfdRecordId>,
+        path: CfdPath,
+    ) -> Option<CfdType> {
+        let Some(meta) = self.schema.types.get(target_type) else {
+            self.push(
+                CfdDiagnostic::error(
+                    CfdErrorCode::UnknownType,
+                    format!("unknown type `{target_type}`"),
+                )
+                .with_primary(record, path),
+            );
+            return None;
+        };
+        if meta.is_abstract {
+            self.push(
+                CfdDiagnostic::error(
+                    CfdErrorCode::AbstractRecordType,
+                    format!("abstract type `{target_type}` cannot be used as path root type"),
+                )
+                .with_primary(record, path),
+            );
+            return None;
+        }
+
+        let mut current_ty = CfdType::Type(target_type.to_string());
+        let mut current_path = path;
+        for segment in segments {
+            match segment {
+                CfdRefPathSegment::Field(name) => {
+                    current_path = current_path.field(name.clone());
+                    let CfdType::Type(type_name) = non_nullable_type(&current_ty) else {
+                        self.push(
+                            CfdDiagnostic::error(
+                                CfdErrorCode::TypeMismatch,
+                                "path field access requires an object",
+                            )
+                            .with_primary(record, current_path),
+                        );
+                        return None;
+                    };
+                    let Some(field) = self
+                        .schema
+                        .full_fields(type_name)
+                        .iter()
+                        .find(|field| field.name == *name)
+                    else {
+                        self.push(
+                            CfdDiagnostic::error(
+                                CfdErrorCode::UnknownField,
+                                format!("path field `{name}` was not found"),
+                            )
+                            .with_primary(record, current_path),
+                        );
+                        return None;
+                    };
+                    current_ty = field.ty.clone();
+                }
+                CfdRefPathSegment::Index(index) => match non_nullable_type(&current_ty) {
+                    CfdType::Array(inner) => {
+                        current_path = match index {
+                            CfdInputRefIndex::Int(raw_index) => match usize::try_from(*raw_index) {
+                                Ok(i) => current_path.index(i),
+                                Err(_) => current_path.index(usize::MAX),
+                            },
+                            _ => current_path.dict_key(format_ref_index(index)),
+                        };
+                        if !matches!(index, CfdInputRefIndex::Int(_)) {
+                            self.push(
+                                CfdDiagnostic::error(
+                                    CfdErrorCode::TypeMismatch,
+                                    "array path index must be int",
+                                )
+                                .with_primary(record, current_path),
+                            );
+                            return None;
+                        }
+                        current_ty = *inner.clone();
+                    }
+                    CfdType::Dict(key_ty, value_ty) => {
+                        current_path = current_path.dict_key(format_ref_index(index));
+                        self.ref_index_to_dict_key(key_ty, index, record, current_path.clone())?;
+                        current_ty = *value_ty.clone();
+                    }
+                    _ => {
+                        self.push(
+                            CfdDiagnostic::error(
+                                CfdErrorCode::TypeMismatch,
+                                "path index access requires an array or dict",
+                            )
+                            .with_primary(record, current_path),
+                        );
+                        return None;
+                    }
+                },
+            }
+        }
+        Some(current_ty)
     }
 
     fn validate_dict_key(
@@ -524,6 +757,39 @@ impl<'s> Validator<'s> {
                 None
             }
         }
+    }
+
+    fn validate_dict_entries(
+        &mut self,
+        key_ty: &CfdType,
+        value_ty: &CfdType,
+        entries: &[(CfdInputDictKey, CfdInputValue)],
+        record: Option<CfdRecordId>,
+        path: CfdPath,
+    ) -> Vec<(CfdDictKey, CfdValueDraft)> {
+        let mut seen = BTreeMap::<CfdDictKey, CfdPath>::new();
+        let mut out = Vec::with_capacity(entries.len());
+        for (key, value) in entries {
+            let key_path = path.clone().dict_key_input(key);
+            let Some(key) = self.validate_dict_key(key_ty, key, record, key_path) else {
+                continue;
+            };
+            let value_path = path.clone().dict_key_value(&key);
+            if let Some(first) = seen.get(&key) {
+                self.push(
+                    CfdDiagnostic::error(CfdErrorCode::DuplicateDictKey, "duplicate dict key")
+                        .with_primary(record, value_path)
+                        .with_related(record, first.clone(), "first key is here"),
+                );
+                continue;
+            }
+            seen.insert(key.clone(), value_path.clone());
+            let Some(value) = self.validate_value(value_ty, value, record, value_path) else {
+                continue;
+            };
+            out.push((key, value));
+        }
+        out
     }
 
     fn default_field_value(
@@ -621,7 +887,8 @@ impl<'s> Validator<'s> {
         path: CfdPath,
     ) -> Option<CfdValueDraft> {
         let fields = BTreeMap::new();
-        let draft = self.validate_record(Some(type_name), "", type_name, &fields, record, path)?;
+        let draft =
+            self.validate_record(Some(type_name), "", type_name, &[], &fields, record, path)?;
         Some(CfdValueDraft::Object(Box::new(draft)))
     }
 
@@ -726,20 +993,26 @@ impl<'s> Validator<'s> {
                 Some(CfdValue::Array(out))
             }
             CfdValueDraft::Dict(entries) => {
-                let mut out = Vec::with_capacity(entries.len());
-                for (key, value) in entries {
-                    let Some(value) = self.resolve_value(
-                        value,
-                        record,
-                        path.clone().dict_key_value(key),
-                        drafts,
-                        tables,
-                        inheritance_index,
-                    ) else {
-                        continue;
-                    };
-                    out.push((key.clone(), value));
-                }
+                let out = self.resolve_dict_entries(
+                    entries,
+                    record,
+                    path,
+                    drafts,
+                    tables,
+                    inheritance_index,
+                )?;
+                Some(CfdValue::Dict(out))
+            }
+            CfdValueDraft::DictSpread { spreads, entries } => {
+                let out = self.resolve_dict_spread(
+                    spreads,
+                    entries,
+                    record,
+                    path,
+                    drafts,
+                    tables,
+                    inheritance_index,
+                )?;
                 Some(CfdValue::Dict(out))
             }
         }
@@ -776,6 +1049,176 @@ impl<'s> Validator<'s> {
             );
         }
         target
+    }
+
+    fn resolve_dict_entries(
+        &mut self,
+        entries: &[(CfdDictKey, CfdValueDraft)],
+        record: Option<CfdRecordId>,
+        path: CfdPath,
+        drafts: &[RecordDraft],
+        tables: &BTreeMap<String, CfdTable>,
+        inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
+    ) -> Option<Vec<(CfdDictKey, CfdValue)>> {
+        let diagnostic_start = self.diagnostics.len();
+        let mut out = Vec::with_capacity(entries.len());
+        for (key, value) in entries {
+            let Some(value) = self.resolve_value(
+                value,
+                record,
+                path.clone().dict_key_value(key),
+                drafts,
+                tables,
+                inheritance_index,
+            ) else {
+                continue;
+            };
+            out.push((key.clone(), value));
+        }
+        if self.diagnostics.len() == diagnostic_start {
+            Some(out)
+        } else {
+            None
+        }
+    }
+
+    fn resolve_dict_spread(
+        &mut self,
+        spreads: &[CfdValueDraft],
+        entries: &[(CfdDictKey, CfdValueDraft)],
+        record: Option<CfdRecordId>,
+        path: CfdPath,
+        drafts: &[RecordDraft],
+        tables: &BTreeMap<String, CfdTable>,
+        inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
+    ) -> Option<Vec<(CfdDictKey, CfdValue)>> {
+        let diagnostic_start = self.diagnostics.len();
+        let mut merged = BTreeMap::<CfdDictKey, CfdValue>::new();
+        for spread in spreads {
+            let Some(CfdValue::Dict(entries)) = self.resolve_value(
+                spread,
+                record,
+                path.clone(),
+                drafts,
+                tables,
+                inheritance_index,
+            ) else {
+                if self.diagnostics.len() == diagnostic_start {
+                    self.push(
+                        CfdDiagnostic::error(
+                            CfdErrorCode::TypeMismatch,
+                            "dict spread requires a dict value",
+                        )
+                        .with_primary(record, path.clone()),
+                    );
+                }
+                continue;
+            };
+            for (key, value) in entries {
+                merged.insert(key, value);
+            }
+        }
+
+        for (key, value) in entries {
+            let Some(value) = self.resolve_value(
+                value,
+                record,
+                path.clone().dict_key_value(key),
+                drafts,
+                tables,
+                inheritance_index,
+            ) else {
+                continue;
+            };
+            merged.insert(key.clone(), value);
+        }
+
+        if self.diagnostics.len() == diagnostic_start {
+            Some(merged.into_iter().collect())
+        } else {
+            None
+        }
+    }
+
+    fn flatten_dict_draft_entries(
+        &mut self,
+        value: &CfdValueDraft,
+        record: Option<CfdRecordId>,
+        path: CfdPath,
+        drafts: &[RecordDraft],
+        tables: &BTreeMap<String, CfdTable>,
+        inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
+    ) -> Option<Vec<(CfdDictKey, CfdValueDraft)>> {
+        match value {
+            CfdValueDraft::Dict(entries) => Some(entries.clone()),
+            CfdValueDraft::DictSpread { spreads, entries } => {
+                let diagnostic_start = self.diagnostics.len();
+                let mut merged = BTreeMap::<CfdDictKey, CfdValueDraft>::new();
+                for spread in spreads {
+                    let Some(spread_entries) = self.flatten_dict_draft_entries(
+                        spread,
+                        record,
+                        path.clone(),
+                        drafts,
+                        tables,
+                        inheritance_index,
+                    ) else {
+                        continue;
+                    };
+                    for (key, value) in spread_entries {
+                        merged.insert(key, value);
+                    }
+                }
+                for (key, value) in entries {
+                    merged.insert(key.clone(), value.clone());
+                }
+                if self.diagnostics.len() == diagnostic_start {
+                    Some(merged.into_iter().collect())
+                } else {
+                    None
+                }
+            }
+            CfdValueDraft::PathRef {
+                expected_type,
+                target_type,
+                key,
+                segments,
+            } => {
+                let CfdValue::Dict(entries) = self.resolve_path_ref(
+                    expected_type,
+                    target_type,
+                    key,
+                    segments,
+                    record,
+                    path,
+                    drafts,
+                    tables,
+                    inheritance_index,
+                )?
+                else {
+                    return None;
+                };
+                Some(
+                    entries
+                        .into_iter()
+                        .map(|(key, value)| (key, cfd_value_to_draft(value)))
+                        .collect(),
+                )
+            }
+            other => {
+                let CfdValue::Dict(entries) =
+                    self.resolve_value(other, record, path, drafts, tables, inheritance_index)?
+                else {
+                    return None;
+                };
+                Some(
+                    entries
+                        .into_iter()
+                        .map(|(key, value)| (key, cfd_value_to_draft(value)))
+                        .collect(),
+                )
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -908,7 +1351,14 @@ impl<'s> Validator<'s> {
                             record,
                             current_path.clone(),
                         )?;
-                        let CfdValueDraft::Dict(entries) = &current_value else {
+                        let Some(entries) = self.flatten_dict_draft_entries(
+                            &current_value,
+                            record,
+                            current_path.clone(),
+                            drafts,
+                            tables,
+                            inheritance_index,
+                        ) else {
                             return None;
                         };
                         let Some((_, next)) =
@@ -962,16 +1412,16 @@ impl<'s> Validator<'s> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn path_record_draft<'a>(
+    fn path_record_draft(
         &mut self,
         ty: &CfdType,
-        value: &'a CfdValueDraft,
+        value: &CfdValueDraft,
         record: Option<CfdRecordId>,
         path: CfdPath,
-        drafts: &'a [RecordDraft],
+        drafts: &[RecordDraft],
         tables: &BTreeMap<String, CfdTable>,
         inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
-    ) -> Option<&'a RecordDraft> {
+    ) -> Option<RecordDraft> {
         let CfdType::Type(_) = non_nullable_type(ty) else {
             self.push(
                 CfdDiagnostic::error(
@@ -984,7 +1434,7 @@ impl<'s> Validator<'s> {
         };
 
         match value {
-            CfdValueDraft::Object(record_draft) => Some(record_draft),
+            CfdValueDraft::Object(record_draft) => Some((**record_draft).clone()),
             CfdValueDraft::PendingRef { target_type, key } => {
                 let target = self.resolve_ref_target(
                     target_type,
@@ -994,7 +1444,13 @@ impl<'s> Validator<'s> {
                     record,
                     path,
                 )?;
-                drafts.get(target.index())
+                drafts.get(target.index()).cloned()
+            }
+            CfdValueDraft::Value(CfdValue::Object(record)) => {
+                Some(record_value_to_draft(record.as_ref()))
+            }
+            CfdValueDraft::Value(CfdValue::Ref { target, .. }) => {
+                drafts.get(target.index()).cloned()
             }
             _ => {
                 self.push(
@@ -1106,6 +1562,34 @@ fn types_compatible(expected: &CfdType, actual: &CfdType, schema: &SchemaView) -
                 && types_compatible(left_value, right_value, schema)
         }
         _ => expected == actual,
+    }
+}
+
+fn cfd_value_to_draft(value: CfdValue) -> CfdValueDraft {
+    match value {
+        CfdValue::Object(record) => CfdValueDraft::Object(Box::new(record_value_to_draft(&record))),
+        CfdValue::Array(items) => {
+            CfdValueDraft::Array(items.into_iter().map(cfd_value_to_draft).collect())
+        }
+        CfdValue::Dict(entries) => CfdValueDraft::Dict(
+            entries
+                .into_iter()
+                .map(|(key, value)| (key, cfd_value_to_draft(value)))
+                .collect(),
+        ),
+        scalar_or_ref => CfdValueDraft::Value(scalar_or_ref),
+    }
+}
+
+fn record_value_to_draft(record: &CfdRecord) -> RecordDraft {
+    RecordDraft {
+        key: record.key.clone(),
+        actual_type: record.actual_type.clone(),
+        fields: record
+            .fields
+            .iter()
+            .map(|(name, value)| (name.clone(), cfd_value_to_draft(value.clone())))
+            .collect(),
     }
 }
 
