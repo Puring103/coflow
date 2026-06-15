@@ -3038,7 +3038,7 @@ fn percent_encode_uri_path(value: &str) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic)]
+#[allow(clippy::expect_used, clippy::panic, clippy::too_many_lines)]
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};

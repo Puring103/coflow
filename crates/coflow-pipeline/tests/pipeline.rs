@@ -1,7 +1,11 @@
 #![allow(
+    clippy::cast_possible_truncation,
     clippy::expect_used,
+    clippy::format_push_string,
+    clippy::needless_raw_string_hashes,
     clippy::panic,
     clippy::panic_in_result_fn,
+    clippy::too_many_lines,
     clippy::unwrap_used
 )]
 
