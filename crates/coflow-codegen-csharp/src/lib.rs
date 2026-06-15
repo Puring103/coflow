@@ -891,7 +891,7 @@ mod tests {
         let diagnostics = preflight_csharp_codegen(
             &schema,
             &CsharpCodegenOptions::new("Game.1Bad"),
-            BTreeMap::new(),
+            &BTreeMap::new(),
         );
 
         let messages = diagnostics

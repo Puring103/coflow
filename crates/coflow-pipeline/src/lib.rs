@@ -419,7 +419,7 @@ fn merge_key_as_enum_lockfile(
             .values()
             .copied()
             .max()
-            .map_or(Ok(0), |value| next_key_as_enum_value(value))?;
+            .map_or(Ok(0), next_key_as_enum_value)?;
         for id in ids {
             if entries.contains_key(&id) {
                 continue;

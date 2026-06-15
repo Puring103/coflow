@@ -75,7 +75,7 @@ pub fn preflight_csharp_files(
     namespace: &str,
 ) -> Vec<CsharpCodegenDiagnostic> {
     let options = CsharpCodegenOptions::new(namespace);
-    preflight_csharp_codegen(schema, &options, BTreeMap::new())
+    preflight_csharp_codegen(schema, &options, &BTreeMap::new())
 }
 
 fn clean_generated_csharp_files(dir: &Path) -> Result<(), String> {

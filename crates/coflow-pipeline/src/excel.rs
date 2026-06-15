@@ -107,7 +107,10 @@ fn excel_column_name(column: usize) -> String {
     let mut name = Vec::new();
     while value > 0 {
         value -= 1;
-        name.push((b'A' + (value % 26) as u8) as char);
+        // `value % 26` is always in 0..25, so the conversion to u8 cannot truncate.
+        #[allow(clippy::cast_possible_truncation)]
+        let offset = (value % 26) as u8;
+        name.push((b'A' + offset) as char);
         value /= 26;
     }
     name.iter().rev().collect()
