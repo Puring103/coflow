@@ -50,6 +50,8 @@ outputs:
 
 MessagePack loader 不使用 typeless、反射式或动态 resolver 反序列化；生成代码直接调用低层 `MessagePackReader`，以兼容普通 .NET 和 Unity/IL2CPP/AOT。
 
+CLI 项目配置目前只暴露 `outputs.code.namespace`。数据库类名由 codegen options 提供，项目管线默认使用 `GameConfig`；底层 Rust API 可通过 `CsharpCodegenOptions::with_database_class` 改写数据库类名，但 `coflow.yaml` 没有对应字段。
+
 实现使用 Tera 渲染模板文件，但模板只负责文本展开，不承载 CFT 语义判断。codegen crate 内部流程为：
 
 1. 接收 `CftContainer` 和 C# codegen options
@@ -70,27 +72,37 @@ struct CsharpProject {
 
 struct CsharpType {
     name: String,
-    kind: CsharpTypeKind, // class / abstract class / sealed class / struct
-    parent: Option<String>,
+    declaration: String, // class / abstract class / sealed class / struct
     summary: Option<String>,
     obsolete: bool,
-    fields: Vec<CsharpField>,
+    properties: Vec<CsharpProperty>,
 }
 
-struct CsharpField {
-    name: String,        // C# 属性名，如 SkillId
-    source_name: String, // CFT 字段名，如 skill_id
-    ty: String,          // C# 类型，如 string / long / IReadOnlyList<string>
-    default: Option<String>,
+struct CsharpProperty {
+    visibility: String,      // public / internal
+    name: String,            // C# 属性名，如 SkillId
+    type_name: String,       // C# 类型，如 string / long / IReadOnlyList<string>
+    setter: String,          // set / internal set
+    initializer: Option<String>,
     summary: Option<String>,
     obsolete: bool,
-    may_reference_record: bool,
 }
 ```
 
-Tera 模板只允许做简单的字段遍历、条件输出和命名空间包裹；类型映射、默认值、继承展开、记录 key、引用解析、`@keyAsEnum`、`@display`、`@deprecated` 等生成规则必须在 Rust model 构建阶段完成。C# codegen 只消费已经通过编译的 schema。实现应补充 golden tests 固定复杂 schema 的输出形状。
+模板只做简单的属性遍历、条件输出和命名空间包裹。类型映射、默认值、
+setter 选择、继承展开、记录 key、引用解析、`@keyAsEnum`、`@display`、
+`@deprecated` 等生成规则必须在 Rust model 构建阶段完成。
 
-当前实现按共享核心和格式入口拆分：`crates/coflow-codegen-csharp` 负责 C# 类型模型、公共模板和渲染流程，`crates/coflow-codegen-csharp-json` 与 `crates/coflow-codegen-csharp-messagepack` 分别持有对应格式的 loader 模板和入口函数。CLI 根据项目 data format 选择调用 JSON 或 MessagePack codegen crate。生成出的 C# 运行时代码只依赖对应的数据文件和运行时包，不依赖 CFT parser/compiler。
+C# codegen 只消费已经通过编译的 schema。golden tests 需要固定复杂 schema
+的输出形状，避免模板输入结构变化时悄悄改变生成代码。
+
+当前实现按共享核心和格式入口拆分：
+
+- `crates/coflow-codegen-csharp` 负责 C# 类型模型、公共模板和渲染流程。
+- `crates/coflow-codegen-csharp-json` 持有 JSON loader 模板和入口函数。
+- `crates/coflow-codegen-csharp-messagepack` 持有 MessagePack loader 模板和入口函数。
+
+CLI 根据项目 data format 选择调用 JSON 或 MessagePack codegen crate。生成出的 C# 运行时代码只依赖对应的数据文件和运行时包，不依赖 CFT parser/compiler。
 
 生成的 C# 是 trusted artifact loader。它只承诺加载官方 Coflow exporter 从已经通过 Rust pipeline 的数据生成的 JSON 或 MessagePack 产物，负责反序列化、构建运行时查找表并解析生成对象的引用。它不承诺为任意手写或损坏的数据文件提供稳定诊断，也不执行 CFT check。
 
@@ -140,7 +152,15 @@ generated/csharp/
   CftLoadException.cs
 ```
 
-第一版必须生成类型定义、枚举、继承、默认值、每个 table 的 `Id` 属性、按 key 查询 API，以及 object 字段的引用解析。加载器根据 `outputs.data.type` 生成 JSON 或 MessagePack 版本，但生成结构必须保持两遍加载：先构造对象和 key 索引，再解析引用。
+项目管线负责把 codegen crate 返回的文件落盘。成功写入时，它会创建输出目录
+（如果不存在），清理输出目录顶层已有的 `.cs` 文件，然后写入本次生成的文件。
+清理不递归进入子目录，也不删除 `coflow.enum.lock.json` 或其他非 `.cs` 文件。
+如果 codegen preflight 或 artifact preflight 产生诊断，则不会读取/写入
+lockfile，也不会清理或写出任何 `.cs` 文件。
+
+当前生成器负责生成类型定义、枚举、继承、默认值、每个 table 的 `Id`
+属性、按 key 查询 API，以及 object 字段的引用解析。加载器根据
+`outputs.data.type` 生成 JSON 或 MessagePack 版本，但生成结构必须保持两遍加载：先构造对象和 key 索引，再解析引用。
 
 ### 目标约束
 
@@ -150,6 +170,7 @@ C# target 在生成前必须校验生成物契约：
 - CFT 类型名、字段名和生成的 ref 属性名经过 C# casing 转换后必须唯一。比如 `foo_bar` 与 `fooBar` 同时生成 `FooBar` 时必须报错，而不是自动加后缀。
 - 生成文件名必须唯一，且 `GameConfig.cs`、配置的数据库类文件和 `CftLoadException.cs` 为保留文件名。CFT 不能声明会生成这些文件名的类型或 enum。
 - `@struct` 内含或嵌套对象引用是合法语义。resolver 对 struct 返回更新后的 struct value，并在父字段、数组元素和字典值位置写回。
+- 生成代码兼容普通 .NET 和 Unity/IL2CPP 常见 C# 版本，不使用 `init` accessor 或 file-scoped namespace。
 
 ---
 
@@ -160,7 +181,7 @@ C# target 在生成前必须校验生成物契约：
 | 类型名 | 保持原名（PascalCase） |
 | 字段名 | PascalCase（`snake_case` → `SnakeCase`） |
 | 枚举变体名 | 保持原名（PascalCase） |
-| 数据库类 | `{命名空间}Config`，如 `GameConfig` |
+| 数据库类 | 项目管线默认 `GameConfig`；底层 codegen options 可覆盖 |
 | `@display("text")` | 生成 `/// <summary>text</summary>` XML 注释，应用于 type、enum、field、enum variant |
 | `@deprecated` | 生成 `[Obsolete]`，应用于 type、enum、field、enum variant；子类不自动继承父类的 `[Obsolete]` |
 
@@ -273,9 +294,18 @@ public partial class BioRemainsConfig
 }
 ```
 
-单独运行 `coflow codegen csharp` 不加载 Excel 数据，所以仍会生成空的
-`EnumName` 占位 enum，保证生成代码结构完整；完整变体集合只由 `build`
-路径提供。
+单独运行 `coflow codegen csharp` 不加载 Excel 数据，所以只能生成 schema
+中声明的 `EnumName` 文件，并保留 lockfile 中已有的变体；没有 lockfile
+时该 enum 为空。新增 record key 变体只由已加载数据模型的 `build` 路径提供。
+
+项目管线会在代码输出目录维护 `coflow.enum.lock.json`，用于稳定
+`@keyAsEnum` 变体的整数值：
+
+- 新出现的 record key 追加分配下一个未使用整数值。
+- 已存在的 record key 保持原有整数值，即使数据顺序变化。
+- 当前 schema 中不再声明的 `@keyAsEnum` enum 会从 lockfile 中移除。
+- `coflow codegen csharp` 不加载 Excel 数据，只会保留当前 schema 声明的 enum 和 lockfile 中已有的变体。
+- 如果 codegen preflight 有诊断，lockfile 不会被读取、写入或清理。
 
 ---
 
@@ -296,18 +326,16 @@ type Stats {
 ```csharp
 public partial class Stats
 {
-    public long Hp { get; init; }
-    public long Attack { get; init; }
-    public double Speed { get; init; } = 1.0;
+    public long Hp { get; set; }
+    public long Attack { get; set; }
+    public double Speed { get; set; } = 1.0;
 }
 ```
 
 ### `abstract type`
 
 ```cft
-abstract type Reward {
-  check { id != ""; }
-}
+abstract type Reward {}
 ```
 
 生成：
@@ -331,7 +359,7 @@ sealed type CurrencyReward : Reward {
 ```csharp
 public sealed partial class CurrencyReward : Reward
 {
-    public long Amount { get; init; }
+    public long Amount { get; set; }
 }
 ```
 
@@ -350,8 +378,8 @@ sealed type Vector2 {
 ```csharp
 public partial struct Vector2
 {
-    public double X { get; init; }
-    public double Y { get; init; }
+    public double X { get; set; }
+    public double Y { get; set; }
 }
 ```
 
@@ -374,14 +402,14 @@ type Item {
 [Obsolete]
 public partial class OldReward
 {
-    public string Id { get; init; } = "";
+    public string Id { get; internal set; } = "";
 }
 
 public partial class Item
 {
     /// <summary>旧价格</summary>
     [Obsolete]
-    public long OldPrice { get; init; } = 0;
+    public long OldPrice { get; set; } = 0;
 }
 ```
 
@@ -399,8 +427,8 @@ type Drop {
 ```csharp
 public partial class Drop
 {
-    public Item? Item { get; init; } = null;
-    public Item? Backup { get; init; }
+    public Item? Item { get; internal set; } = null;
+    public Item? Backup { get; internal set; }
 }
 ```
 
@@ -418,8 +446,8 @@ type Monster {
 ```csharp
 public partial class Monster
 {
-    public IReadOnlyList<string> Tags { get; init; } = [];
-    public IReadOnlyDictionary<DamageType, double> Resistances { get; init; }
+    public IReadOnlyList<string> Tags { get; set; } = new List<string>();
+    public IReadOnlyDictionary<DamageType, double> Resistances { get; set; }
         = new Dictionary<DamageType, double>();
 }
 ```
@@ -441,7 +469,7 @@ type ItemReward : Reward {
 public partial class ItemReward : Reward
 {
     public Item Item { get; internal set; } = null!;    // inline object 或解析后的引用
-    public long Count { get; init; } = 1;
+    public long Count { get; set; } = 1;
 }
 ```
 
@@ -464,6 +492,13 @@ public partial class Quest
 
 加载器内部会为引用占位对象保存 `__CoflowRefKey`，第二遍通过目标类型 key 索引替换为真实对象；inline object 则递归解析其内部引用。
 
+属性 setter 规则：
+
+- `Id` 始终生成 `{ get; internal set; }`。
+- 字段类型是 CFT 对象类型（含 nullable 对象）时生成 `{ get; internal set; }`，因为加载器可能需要在第二遍写回解析后的引用或嵌套对象。
+- 数组/字典字段只有在内部 struct 值含有需要 resolver 写回的对象引用时，才生成 `{ get; internal set; }`；普通集合字段生成 `{ get; set; }`，resolver 通过内部 `List` / `Dictionary` 写回元素。
+- primitive、enum、纯标量数组和纯标量字典字段也生成 `{ get; set; }`。
+
 ### 默认值生成规则
 
 | CFT 默认值 | C# 生成 |
@@ -472,10 +507,13 @@ public partial class Quest
 | `1.0` | `= 1.0` |
 | `""` | `= ""` |
 | `true`/`false` | `= true`/`= false` |
-| `[]` | `= []` |
+| `[]` | `= new List<T>()` |
 | `{}` | `= new Dictionary<K, V>()` |
 | 枚举值 | `= Rarity.Common` |
-| 无默认值 | 不生成初始化 |
+| 无默认值的 `string` | `= ""` |
+| 无默认值的非 struct 对象 | `= null!` |
+| 无默认值的数组/字典 | 对应空 `List` / `Dictionary` |
+| 其他无默认值字段 | 不生成初始化 |
 
 ---
 
@@ -690,7 +728,7 @@ enum Rarity { Common = 0, Rare = 10, Epic = 20, }
 
 type Stats { hp: int; attack: int; speed: float = 1.0; }
 
-abstract type Reward { check { id != ""; } }
+abstract type Reward {}
 sealed type CurrencyReward : Reward { amount: int; }
 sealed type ItemReward : Reward {
   item: Item;
@@ -725,9 +763,9 @@ public enum Rarity
 
 public partial class Stats
 {
-    public long Hp { get; init; }
-    public long Attack { get; init; }
-    public double Speed { get; init; } = 1.0;
+    public long Hp { get; set; }
+    public long Attack { get; set; }
+    public double Speed { get; set; } = 1.0;
 }
 
 public abstract partial class Reward
@@ -736,13 +774,13 @@ public abstract partial class Reward
 
 public sealed partial class CurrencyReward : Reward
 {
-    public long Amount { get; init; }
+    public long Amount { get; set; }
 }
 
 public sealed partial class ItemReward : Reward
 {
     public Item Item { get; internal set; } = null!;
-    public long Count { get; init; } = 1;
+    public long Count { get; set; } = 1;
 }
 
 /// <summary>物品</summary>
@@ -750,16 +788,16 @@ public partial class Item
 {
     public ItemId Id { get; internal set; }
     /// <summary>名称</summary>
-    public string Name { get; init; } = "";
-    public Rarity Rarity { get; init; } = Rarity.Common;
+    public string Name { get; set; } = "";
+    public Rarity Rarity { get; set; } = Rarity.Common;
 }
 
 public partial class Monster
 {
     public string Id { get; internal set; } = "";
-    public Rarity Rarity { get; init; }
-    public long Level { get; init; }
-    public Stats Stats { get; init; } = null!;
+    public Rarity Rarity { get; set; }
+    public long Level { get; set; }
+    public Stats Stats { get; internal set; } = null!;
 }
 ```
 

@@ -175,7 +175,9 @@ type Weapon {
 
 ```cft
 abstract type Reward {
-  check { id != ""; }
+  source: string = "drop";
+
+  check { source != ""; }
 }
 
 type ItemReward : Reward {
@@ -206,7 +208,7 @@ type Quest {
 
 字段类型为普通 `type` 时，可以填入该类型本身或任意子类实例。
 
-对象字段的数据可以是内联对象，也可以是数据源中的记录引用。Excel 单元格用 `@Type.key` 显式引用记录，用 `@Type.key.path[index]` 引用某条记录的字段或集合元素；`Type` 是引用查找的根类型，不一定等于当前字段类型。直接引用也可以写成 `&key` 简写，表示按当前字段期望类型查找同名记录；简写不支持路径。`Type` 必须是 CFT 类型名，`key` 必须是 string identifier record key。旧 CFT 字段注解 `@ref(Type)` 已移除，不再作为兼容语法。引用解析在 DataModel build 阶段执行，并按字段的声明类型检查兼容性：子类记录可以赋给父类字段，父类记录不能赋给子类字段。
+对象字段的数据可以是内联对象，也可以是数据源中的记录引用。Excel 单元格用 `@Type.key` 显式引用记录，用 `@Type.key.path[index]` 引用某条记录的字段或集合元素；`Type` 是引用查找的根类型，不一定等于当前字段类型。直接引用也可以写成 `&key` 简写，表示按当前字段期望类型查找同名记录；简写不支持路径。`Type` 必须是 CFT 类型名，`key` 必须是 string identifier record key。旧 CFT 字段注解 `@ref(Type)` 已移除，不再作为兼容语法。引用解析在 `CfdDataModel` build 阶段执行，并按字段的声明类型检查兼容性：子类记录可以赋给父类字段，父类记录不能赋给子类字段。
 
 记录 key 在同一具体类型内必须唯一；如果引用目标是 `abstract type` 或有子类的普通 `type`，该类型赋值兼容范围内的 key 也必须唯一。允许循环引用，因为解析是两阶段完成的。
 
@@ -255,7 +257,9 @@ type B { value: int; }
 
 ```cft
 abstract type Reward {
-  check { id != ""; }                   # 对所有子类实例执行
+  source: string = "drop";
+
+  check { source != ""; }               # 对所有子类实例执行
 }
 
 type CurrencyReward : Reward {
@@ -458,11 +462,13 @@ type Item {
 
 `.cft` 没有 `use` 导入语句。所有已注册模块共享同一个全局命名空间，宿主负责将文件批量注册到 `CftContainer`。
 
-**ModuleId** 由宿主指定，推荐使用相对项目根的路径去掉扩展名：
+**ModuleId** 由宿主指定。Coflow project loader 使用项目相对路径并保留
+`.cft` 扩展名，这也是 CLI/LSP 诊断和 `--stdin-path` 覆盖匹配时看到的
+module id：
 
 ```
-schema/item.cft   →  "schema/item"
-schema/enemy.cft  →  "schema/enemy"
+schema/item.cft   →  "schema/item.cft"
+schema/enemy.cft  →  "schema/enemy.cft"
 ```
 
 **Loader 本身无 I/O**，路径解析和文件读取由宿主负责：
@@ -496,6 +502,9 @@ impl CftContainer {
     pub fn all_enums(&self) -> impl Iterator<Item = &CftSchemaEnum>;
     pub fn has_type(&self, name: &str) -> bool;
     pub fn has_enum(&self, name: &str) -> bool;
+    pub fn source(&self, id: &ModuleId) -> Option<&str>;
+    pub fn is_assignable(&self, actual_type: &str, expected_type: &str) -> bool;
+    pub fn enum_variant_value(&self, enum_name: &str, variant: &str) -> Option<i64>;
 }
 ```
 
@@ -509,38 +518,84 @@ pub struct CftSchemaModule {
 }
 
 pub struct CftSchemaType {
+    pub module:      ModuleId,
     pub name:        String,
     pub parent:      Option<String>,
     pub is_abstract: bool,
     pub is_sealed:   bool,
-    pub fields:      Vec<CftSchemaField>,
+    pub fields:      Vec<CftSchemaField>,  // 自身字段，不含继承字段
+    pub all_fields:  Vec<CftSchemaField>,  // 含继承字段的有效字段列表
+    pub check:       Option<CftSchemaCheckBlock>,
     pub annotations: Vec<CftAnnotation>,
+    pub span:        Span,
+}
+
+pub enum CftSchemaTypeRef {
+    Int,
+    Float,
+    Bool,
+    String,
+    Named(String),
+    Array(Box<CftSchemaTypeRef>),
+    Dict(Box<CftSchemaTypeRef>, Box<CftSchemaTypeRef>),
+    Nullable(Box<CftSchemaTypeRef>),
 }
 
 pub struct CftSchemaField {
     pub name:        String,
     pub ty:          String,
+    pub ty_ref:      CftSchemaTypeRef,
     pub has_default: bool,
+    pub default:     Option<CftSchemaDefaultValue>,
     pub annotations: Vec<CftAnnotation>,
+    pub span:        Span,
+}
+
+pub enum CftSchemaDefaultValue {
+    Null,
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    String(String),
+    Enum { enum_name: String, variant: String, value: i64 },
+    EmptyArray,
+    EmptyObject,
 }
 
 pub struct CftSchemaEnum {
-    pub name:     String,
-    pub variants: Vec<CftSchemaEnumVariant>,
+    pub module:      ModuleId,
+    pub name:        String,
+    pub variants:    Vec<CftSchemaEnumVariant>,
     pub annotations: Vec<CftAnnotation>,
+    pub span:        Span,
 }
 
 pub struct CftSchemaEnumVariant {
-    pub name:  String,
-    pub value: i64,
+    pub name:        String,
+    pub value:       i64,
     pub annotations: Vec<CftAnnotation>,
+    pub span:        Span,
 }
 
 pub struct CftSchemaConst {
-    pub name:  String,
-    pub value: CftConstValue,
+    pub module: ModuleId,
+    pub name:   String,
+    pub value:  CftConstValue,
+    pub span:   Span,
+}
+
+pub enum CftConstValue {
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    String(String),
 }
 ```
+
+`CftSchemaCheckBlock`、`CftSchemaCheckStmt` 和 `CftSchemaCheckExpr` 暴露
+编译后的 check 反射树；详见 [02-schema-api.md](02-schema-api.md)。消费者
+应优先使用 `ty_ref`、`default`、`all_fields` 和 `module/span`，避免重新解析
+原始 AST。
 
 ---
 
@@ -622,7 +677,7 @@ pub struct CftSchemaConst {
 | `CFT-SCHEMA-030` | `InvalidConstValue` | `const` 值不是允许的字面量类型 |
 | `CFT-SCHEMA-031` | `ReservedIdentifier` | `const`、`enum`、`type`、字段、枚举变体或量词变量使用保留名 |
 | `CFT-SCHEMA-032` | `RefTargetHasNoId` | 保留的历史错误码；record key 由数据源提供 |
-| `CFT-SCHEMA-033` | `RefIdTypeMismatch` | 保留的历史错误码；引用类型兼容在 DataModel 阶段检查 |
+| `CFT-SCHEMA-033` | `RefIdTypeMismatch` | 保留的历史错误码；引用类型兼容在 `CfdDataModel` 阶段检查 |
 
 旧的字段级 `@id`、`@ref`、`@index`、`@IdAsEnum`、`@GenAsEnum` 不在当前注解白名单中，会以未知注解或非法目标报错。字段名 `id` 是保留名，会以 `ReservedIdentifier` 报错。
 
@@ -750,7 +805,9 @@ type Item {
 }
 
 abstract type Reward {
-  check { id != ""; }
+  key: string;
+
+  check { key != ""; }
 }
 
 type ItemReward : Reward {
