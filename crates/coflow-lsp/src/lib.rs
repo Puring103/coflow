@@ -377,10 +377,34 @@ impl<W: Write> LspServer<W> {
                     }
                 }
             }
+            if let Some((type_name, field_name)) =
+                cfd::definition_field_name(&ast, self.schema(), offset)
+            {
+                self.ensure_build()?;
+                if let Some(build) = &self.build {
+                    if let Some(location) =
+                        cfd_schema_field_definition_location(build, &type_name, field_name)
+                    {
+                        return self.write_response(id, &json!(location));
+                    }
+                }
+            }
+            if let Some((type_name, field_name)) =
+                cfd::definition_ref_path_field(&ast, self.schema(), offset)
+            {
+                self.ensure_build()?;
+                if let Some(build) = &self.build {
+                    if let Some(location) =
+                        cfd_schema_field_definition_location(build, &type_name, &field_name)
+                    {
+                        return self.write_response(id, &json!(location));
+                    }
+                }
+            }
             if let Some(ref_key) = cfd::definition_ref_key(&ast, offset) {
                 let ref_key = ref_key.to_string();
                 if let Some(location) =
-                    cfd_record_definition_location(&self.open_documents, &ref_key)
+                    cfd_record_definition_location(&self.project, &self.open_documents, &ref_key)
                 {
                     return self.write_response(id, &json!(location));
                 }
@@ -601,8 +625,10 @@ const SEMANTIC_TOKEN_TYPES: &[&str] = &[
     "decorator",
     "parameter",
 ];
-const SEMANTIC_TOKEN_MODIFIERS: &[&str] = &[];
+const SEMANTIC_TOKEN_MODIFIERS: &[&str] = &["declaration", "reference", "path", "record", "schema"];
 
+#[cfg(test)]
+const SEM_NAMESPACE: u32 = 0;
 const SEM_TYPE: u32 = 1;
 const SEM_ENUM: u32 = 2;
 const SEM_ENUM_MEMBER: u32 = 3;
@@ -616,6 +642,13 @@ const SEM_COMMENT: u32 = 10;
 const SEM_OPERATOR: u32 = 11;
 const SEM_DECORATOR: u32 = 12;
 const SEM_PARAMETER: u32 = 13;
+
+const MOD_DECLARATION: u32 = 1 << 0;
+const MOD_REFERENCE: u32 = 1 << 1;
+const MOD_PATH: u32 = 1 << 2;
+#[cfg(test)]
+const MOD_RECORD: u32 = 1 << 3;
+const MOD_SCHEMA: u32 = 1 << 4;
 
 const MAX_LSP_CONTENT_LENGTH: usize = 16 * 1024 * 1024;
 
@@ -1578,7 +1611,7 @@ fn add_lex_semantic_token(
         | TokenKind::Equal => SEM_OPERATOR,
         _ => return,
     };
-    push_semantic_span(source, span, token_type, tokens);
+    push_semantic_span_plain(source, span, token_type, tokens);
 }
 
 fn add_ast_semantic_tokens(
@@ -1596,7 +1629,13 @@ fn add_ast_semantic_tokens(
                 for annotation in &constant.annotations {
                     add_annotation_semantic(document, annotation, tokens);
                 }
-                push_semantic_span(&document.source, constant.name_span, SEM_VARIABLE, tokens);
+                push_semantic_span(
+                    &document.source,
+                    constant.name_span,
+                    SEM_VARIABLE,
+                    MOD_DECLARATION | MOD_SCHEMA,
+                    tokens,
+                );
                 if let Some(ty) = &constant.ty {
                     add_type_ref_semantic(build, document, ty, tokens);
                 }
@@ -1609,7 +1648,13 @@ fn add_ast_semantic_tokens(
                 for annotation in &enum_def.dangling_annotations {
                     add_annotation_semantic(document, annotation, tokens);
                 }
-                push_semantic_span(&document.source, enum_def.name_span, SEM_ENUM, tokens);
+                push_semantic_span(
+                    &document.source,
+                    enum_def.name_span,
+                    SEM_ENUM,
+                    MOD_DECLARATION | MOD_SCHEMA,
+                    tokens,
+                );
                 for variant in &enum_def.variants {
                     for annotation in &variant.annotations {
                         add_annotation_semantic(document, annotation, tokens);
@@ -1618,10 +1663,11 @@ fn add_ast_semantic_tokens(
                         &document.source,
                         variant.name_span,
                         SEM_ENUM_MEMBER,
+                        MOD_DECLARATION | MOD_SCHEMA,
                         tokens,
                     );
                     if let Some(value) = &variant.value {
-                        push_semantic_span(&document.source, value.span, SEM_NUMBER, tokens);
+                        push_semantic_span_plain(&document.source, value.span, SEM_NUMBER, tokens);
                     }
                 }
             }
@@ -1632,15 +1678,33 @@ fn add_ast_semantic_tokens(
                 for annotation in &ty.dangling_annotations {
                     add_annotation_semantic(document, annotation, tokens);
                 }
-                push_semantic_span(&document.source, ty.name_span, SEM_TYPE, tokens);
+                push_semantic_span(
+                    &document.source,
+                    ty.name_span,
+                    SEM_TYPE,
+                    MOD_DECLARATION | MOD_SCHEMA,
+                    tokens,
+                );
                 if let Some(parent) = &ty.parent {
-                    push_semantic_span(&document.source, parent.span, SEM_TYPE, tokens);
+                    push_semantic_span(
+                        &document.source,
+                        parent.span,
+                        SEM_TYPE,
+                        MOD_REFERENCE | MOD_SCHEMA,
+                        tokens,
+                    );
                 }
                 for field in &ty.fields {
                     for annotation in &field.annotations {
                         add_annotation_semantic(document, annotation, tokens);
                     }
-                    push_semantic_span(&document.source, field.name_span, SEM_PROPERTY, tokens);
+                    push_semantic_span(
+                        &document.source,
+                        field.name_span,
+                        SEM_PROPERTY,
+                        MOD_DECLARATION | MOD_SCHEMA,
+                        tokens,
+                    );
                     add_type_ref_semantic(build, document, &field.ty, tokens);
                     if let Some(default) = &field.default {
                         add_default_expr_semantic(document, default, tokens);
@@ -1661,7 +1725,7 @@ fn add_annotation_semantic(
     annotation: &Annotation,
     tokens: &mut Vec<RawSemanticToken>,
 ) {
-    push_semantic_span(
+    push_semantic_span_plain(
         &document.source,
         annotation.name_span,
         SEM_DECORATOR,
@@ -1670,16 +1734,16 @@ fn add_annotation_semantic(
     for arg in &annotation.args {
         match arg {
             AnnotationArg::Name(name) => {
-                push_semantic_span(&document.source, name.span, SEM_VARIABLE, tokens);
+                push_semantic_span_plain(&document.source, name.span, SEM_VARIABLE, tokens);
             }
             AnnotationArg::String(_, span) => {
-                push_semantic_span(&document.source, *span, SEM_STRING, tokens);
+                push_semantic_span_plain(&document.source, *span, SEM_STRING, tokens);
             }
             AnnotationArg::Int(_, span) | AnnotationArg::Float(_, span) => {
-                push_semantic_span(&document.source, *span, SEM_NUMBER, tokens);
+                push_semantic_span_plain(&document.source, *span, SEM_NUMBER, tokens);
             }
             AnnotationArg::Bool(_, span) | AnnotationArg::Null(span) => {
-                push_semantic_span(&document.source, *span, SEM_KEYWORD, tokens);
+                push_semantic_span_plain(&document.source, *span, SEM_KEYWORD, tokens);
             }
         }
     }
@@ -1693,7 +1757,13 @@ fn add_type_ref_semantic(
 ) {
     match &ty.kind {
         TypeRefKind::Int | TypeRefKind::Float | TypeRefKind::Bool | TypeRefKind::String => {
-            push_semantic_span(&document.source, ty.span, SEM_TYPE, tokens);
+            push_semantic_span(
+                &document.source,
+                ty.span,
+                SEM_TYPE,
+                MOD_REFERENCE | MOD_SCHEMA,
+                tokens,
+            );
         }
         TypeRefKind::Named(name) => {
             let token_type = if enum_name_exists(build, name) {
@@ -1701,7 +1771,13 @@ fn add_type_ref_semantic(
             } else {
                 SEM_TYPE
             };
-            push_semantic_span(&document.source, ty.span, token_type, tokens);
+            push_semantic_span(
+                &document.source,
+                ty.span,
+                token_type,
+                MOD_REFERENCE | MOD_SCHEMA,
+                tokens,
+            );
         }
         TypeRefKind::Array(inner) | TypeRefKind::Nullable(inner) => {
             add_type_ref_semantic(build, document, inner, tokens);
@@ -1720,13 +1796,13 @@ fn add_const_literal_semantic(
 ) {
     match literal {
         ConstLiteral::Int(_, span) | ConstLiteral::Float(_, span) => {
-            push_semantic_span(&document.source, *span, SEM_NUMBER, tokens);
+            push_semantic_span_plain(&document.source, *span, SEM_NUMBER, tokens);
         }
         ConstLiteral::Bool(_, span) => {
-            push_semantic_span(&document.source, *span, SEM_KEYWORD, tokens);
+            push_semantic_span_plain(&document.source, *span, SEM_KEYWORD, tokens);
         }
         ConstLiteral::String(_, span) => {
-            push_semantic_span(&document.source, *span, SEM_STRING, tokens);
+            push_semantic_span_plain(&document.source, *span, SEM_STRING, tokens);
         }
     }
 }
@@ -1738,20 +1814,38 @@ fn add_default_expr_semantic(
 ) {
     match &expr.kind {
         DefaultExprKind::Int(_) | DefaultExprKind::Float(_) => {
-            push_semantic_span(&document.source, expr.span, SEM_NUMBER, tokens);
+            push_semantic_span_plain(&document.source, expr.span, SEM_NUMBER, tokens);
         }
         DefaultExprKind::Bool(_) | DefaultExprKind::Null => {
-            push_semantic_span(&document.source, expr.span, SEM_KEYWORD, tokens);
+            push_semantic_span_plain(&document.source, expr.span, SEM_KEYWORD, tokens);
         }
         DefaultExprKind::String(_) => {
-            push_semantic_span(&document.source, expr.span, SEM_STRING, tokens);
+            push_semantic_span_plain(&document.source, expr.span, SEM_STRING, tokens);
         }
         DefaultExprKind::Name(name) => {
-            push_semantic_span(&document.source, name.span, SEM_VARIABLE, tokens);
+            push_semantic_span(
+                &document.source,
+                name.span,
+                SEM_VARIABLE,
+                MOD_REFERENCE | MOD_SCHEMA,
+                tokens,
+            );
         }
         DefaultExprKind::EnumVariant { enum_name, variant } => {
-            push_semantic_span(&document.source, enum_name.span, SEM_ENUM, tokens);
-            push_semantic_span(&document.source, variant.span, SEM_ENUM_MEMBER, tokens);
+            push_semantic_span(
+                &document.source,
+                enum_name.span,
+                SEM_ENUM,
+                MOD_REFERENCE | MOD_SCHEMA,
+                tokens,
+            );
+            push_semantic_span(
+                &document.source,
+                variant.span,
+                SEM_ENUM_MEMBER,
+                MOD_REFERENCE | MOD_SCHEMA,
+                tokens,
+            );
         }
         DefaultExprKind::Array(items) => {
             for item in items {
@@ -1760,7 +1854,13 @@ fn add_default_expr_semantic(
         }
         DefaultExprKind::Object(fields) => {
             for (name, value) in fields {
-                push_semantic_span(&document.source, name.span, SEM_PROPERTY, tokens);
+                push_semantic_span(
+                    &document.source,
+                    name.span,
+                    SEM_PROPERTY,
+                    MOD_DECLARATION | MOD_SCHEMA,
+                    tokens,
+                );
                 add_default_expr_semantic(document, value, tokens);
             }
         }
@@ -1781,7 +1881,13 @@ fn add_check_stmt_semantic(
             body,
             ..
         } => {
-            push_semantic_span(&document.source, binding.span, SEM_PARAMETER, tokens);
+            push_semantic_span(
+                &document.source,
+                binding.span,
+                SEM_PARAMETER,
+                MOD_DECLARATION,
+                tokens,
+            );
             add_check_expr_semantic(build, document, collection, tokens);
             for stmt in body {
                 add_check_stmt_semantic(build, document, stmt, tokens);
@@ -1806,27 +1912,51 @@ fn add_check_expr_semantic(
 ) {
     match &expr.kind {
         CheckExprKind::Int(_) | CheckExprKind::Float(_) => {
-            push_semantic_span(&document.source, expr.span, SEM_NUMBER, tokens);
+            push_semantic_span_plain(&document.source, expr.span, SEM_NUMBER, tokens);
         }
         CheckExprKind::Bool(_) | CheckExprKind::Null => {
-            push_semantic_span(&document.source, expr.span, SEM_KEYWORD, tokens);
+            push_semantic_span_plain(&document.source, expr.span, SEM_KEYWORD, tokens);
         }
         CheckExprKind::String(_) => {
-            push_semantic_span(&document.source, expr.span, SEM_STRING, tokens);
+            push_semantic_span_plain(&document.source, expr.span, SEM_STRING, tokens);
         }
         CheckExprKind::Name(_) => {
-            push_semantic_span(&document.source, expr.span, SEM_VARIABLE, tokens);
+            push_semantic_span(
+                &document.source,
+                expr.span,
+                SEM_VARIABLE,
+                MOD_REFERENCE,
+                tokens,
+            );
         }
         CheckExprKind::Field { expr, name } => {
             if let CheckExprKind::Name(enum_name) = &expr.kind {
                 if enum_variant_exists(build, enum_name, &name.name) {
-                    push_semantic_span(&document.source, expr.span, SEM_ENUM, tokens);
-                    push_semantic_span(&document.source, name.span, SEM_ENUM_MEMBER, tokens);
+                    push_semantic_span(
+                        &document.source,
+                        expr.span,
+                        SEM_ENUM,
+                        MOD_REFERENCE | MOD_SCHEMA,
+                        tokens,
+                    );
+                    push_semantic_span(
+                        &document.source,
+                        name.span,
+                        SEM_ENUM_MEMBER,
+                        MOD_REFERENCE | MOD_SCHEMA,
+                        tokens,
+                    );
                     return;
                 }
             }
             add_check_expr_semantic(build, document, expr, tokens);
-            push_semantic_span(&document.source, name.span, SEM_PROPERTY, tokens);
+            push_semantic_span(
+                &document.source,
+                name.span,
+                SEM_PROPERTY,
+                MOD_REFERENCE | MOD_PATH | MOD_SCHEMA,
+                tokens,
+            );
         }
         CheckExprKind::Index { expr, index } => {
             add_check_expr_semantic(build, document, expr, tokens);
@@ -1836,10 +1966,16 @@ fn add_check_expr_semantic(
             add_check_expr_semantic(build, document, expr, tokens);
             match predicate {
                 coflow_cft::ast::TypePredicate::Type(name) => {
-                    push_semantic_span(&document.source, name.span, SEM_TYPE, tokens);
+                    push_semantic_span(
+                        &document.source,
+                        name.span,
+                        SEM_TYPE,
+                        MOD_REFERENCE | MOD_SCHEMA,
+                        tokens,
+                    );
                 }
                 coflow_cft::ast::TypePredicate::Null(span) => {
-                    push_semantic_span(&document.source, *span, SEM_KEYWORD, tokens);
+                    push_semantic_span_plain(&document.source, *span, SEM_KEYWORD, tokens);
                 }
             }
         }
@@ -1849,7 +1985,12 @@ fn add_check_expr_semantic(
             } else {
                 SEM_FUNCTION
             };
-            push_semantic_span(&document.source, name.span, token_type, tokens);
+            let modifiers = if token_type == SEM_ENUM {
+                MOD_REFERENCE | MOD_SCHEMA
+            } else {
+                MOD_REFERENCE
+            };
+            push_semantic_span(&document.source, name.span, token_type, modifiers, tokens);
             for arg in args {
                 add_check_expr_semantic(build, document, arg, tokens);
             }
@@ -1876,7 +2017,7 @@ fn add_comment_semantic_tokens(source: &str, tokens: &mut Vec<RawSemanticToken>)
         if let Some(comment_start) = comment_start_in_line(line) {
             let start = line_start + comment_start;
             let end = line_start + line.trim_end_matches(['\r', '\n']).len();
-            push_semantic_span(source, Span::new(start, end), SEM_COMMENT, tokens);
+            push_semantic_span_plain(source, Span::new(start, end), SEM_COMMENT, tokens);
         }
         line_start += line.len();
     }
@@ -1909,12 +2050,14 @@ struct RawSemanticToken {
     character: usize,
     length: usize,
     token_type: u32,
+    token_modifiers: u32,
 }
 
 fn push_semantic_span(
     source: &str,
     span: Span,
     token_type: u32,
+    token_modifiers: u32,
     tokens: &mut Vec<RawSemanticToken>,
 ) {
     if span.end <= span.start {
@@ -1930,7 +2073,17 @@ fn push_semantic_span(
         character: start.character,
         length: end.character - start.character,
         token_type,
+        token_modifiers,
     });
+}
+
+fn push_semantic_span_plain(
+    source: &str,
+    span: Span,
+    token_type: u32,
+    tokens: &mut Vec<RawSemanticToken>,
+) {
+    push_semantic_span(source, span, token_type, 0, tokens);
 }
 
 fn encode_semantic_tokens(mut tokens: Vec<RawSemanticToken>) -> Vec<u32> {
@@ -1961,7 +2114,7 @@ fn encode_semantic_tokens(mut tokens: Vec<RawSemanticToken>) -> Vec<u32> {
         data.push(usize_to_u32_saturating(delta_start));
         data.push(usize_to_u32_saturating(token.length));
         data.push(token.token_type);
-        data.push(0);
+        data.push(token.token_modifiers);
         previous_line = token.line;
         previous_character = token.character;
     }
@@ -3054,29 +3207,124 @@ fn cfd_type_definition_location(build: &LspBuild, type_name: &str) -> Option<Val
     None
 }
 
+/// Find the LSP location of a CFT field definition by owning type and field name.
+fn cfd_schema_field_definition_location(
+    build: &LspBuild,
+    type_name: &str,
+    field_name: &str,
+) -> Option<Value> {
+    field_location(build, type_name, field_name)
+}
+
 /// Find the LSP location (uri + range) of a CFD record definition by key.
 ///
-/// Searches all open CFD documents for a top-level record whose key matches.
+/// Searches configured CFD source files and open CFD documents for a top-level
+/// record whose key matches. Open documents override disk content for the same
+/// path so dirty editor buffers can still be targeted.
 fn cfd_record_definition_location(
+    project: &Project,
     open_documents: &BTreeMap<PathBuf, OpenDocument>,
     key: &str,
 ) -> Option<Value> {
-    for (path, doc) in open_documents {
-        if !is_cfd_path(path) {
-            continue;
-        }
-        let (ast, _) = parse_cfd(&doc.text);
-        for record in &ast.records {
-            if record.key == key {
-                let range = cfd::byte_range(&doc.text, record.key_span.start, record.key_span.end);
-                return Some(json!({
-                    "uri": doc.uri,
-                    "range": range,
-                }));
-            }
+    for source in cfd_project_sources(project, open_documents) {
+        if let Some(location) =
+            cfd_record_definition_location_in_source(&source.uri, &source.text, key)
+        {
+            return Some(location);
         }
     }
     None
+}
+
+fn cfd_record_definition_location_in_source(uri: &str, text: &str, key: &str) -> Option<Value> {
+    let (ast, _) = parse_cfd(text);
+    for record in &ast.records {
+        if record.key == key {
+            let range = cfd::byte_range(text, record.key_span.start, record.key_span.end);
+            return Some(json!({
+                "uri": uri,
+                "range": range,
+            }));
+        }
+    }
+    None
+}
+
+struct CfdProjectSource {
+    path: PathBuf,
+    uri: String,
+    text: String,
+}
+
+fn cfd_project_sources(
+    project: &Project,
+    open_documents: &BTreeMap<PathBuf, OpenDocument>,
+) -> Vec<CfdProjectSource> {
+    let mut sources = Vec::new();
+    for source in &project.config.sources {
+        let Some(path) = source.file.as_ref().or(source.dir.as_ref()) else {
+            continue;
+        };
+        let resolved = project.resolve_path(path);
+        if resolved.is_dir() {
+            sources.extend(cfd_sources_in_dir(&resolved));
+        } else if is_cfd_path(&resolved) {
+            if let Some(source) = cfd_source_from_path(&resolved) {
+                sources.push(source);
+            }
+        }
+    }
+    let mut project_paths = sources
+        .iter()
+        .map(|source| source.path.clone())
+        .collect::<BTreeSet<_>>();
+    for source in &mut sources {
+        if let Some(document) = open_documents.get(&source.path) {
+            source.uri.clone_from(&document.uri);
+            source.text.clone_from(&document.text);
+        }
+    }
+    for (path, document) in open_documents {
+        if is_cfd_path(path) && project_paths.insert(path.clone()) {
+            sources.push(CfdProjectSource {
+                path: path.clone(),
+                uri: document.uri.clone(),
+                text: document.text.clone(),
+            });
+        }
+    }
+    sources.sort_by(|left, right| left.path.cmp(&right.path));
+    sources
+}
+
+fn cfd_sources_in_dir(dir: &Path) -> Vec<CfdProjectSource> {
+    let mut sources = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return sources;
+    };
+    let mut entries = entries.filter_map(Result::ok).collect::<Vec<_>>();
+    entries.sort_by_key(std::fs::DirEntry::path);
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            sources.extend(cfd_sources_in_dir(&path));
+        } else if is_cfd_path(&path) {
+            if let Some(source) = cfd_source_from_path(&path) {
+                sources.push(source);
+            }
+        }
+    }
+    sources
+}
+
+fn cfd_source_from_path(path: &Path) -> Option<CfdProjectSource> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let normalized = normalize_path(path);
+    Some(CfdProjectSource {
+        uri: path_to_file_uri(&normalized),
+        path: normalized,
+        text,
+    })
 }
 
 fn path_to_file_uri(path: &Path) -> String {
@@ -3396,6 +3644,336 @@ mod tests {
         for (message, (_, _, expected)) in messages.iter().zip(requests) {
             assert_eq!(message["result"], expected);
         }
+    }
+
+    #[test]
+    fn initialize_advertises_semantic_token_modifiers() {
+        let (_cleanup, project) = test_project(
+            "lsp-semantic-modifier-legend",
+            "type Item { key: string; }\n",
+        );
+        let mut server = LspServer::new(project, Vec::new());
+
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {}
+            }))
+            .expect("initialize");
+
+        let messages = written_messages(&server.writer);
+        let modifiers = messages[0]["result"]["capabilities"]["semanticTokensProvider"]["legend"]
+            ["tokenModifiers"]
+            .as_array()
+            .expect("token modifiers");
+        let modifier_names = modifiers
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            modifier_names,
+            vec!["declaration", "reference", "path", "record", "schema"]
+        );
+    }
+
+    #[test]
+    fn cfd_definition_request_returns_schema_field_location() {
+        let schema_source = "type Item {\n  key: string;\n  damage: int;\n}\n";
+        let (_cleanup, project) = test_project("lsp-cfd-field-definition", schema_source);
+        let cfd_path = project.root_dir.join("data.cfd");
+        let cfd_uri = path_to_file_uri(&cfd_path);
+        let cfd_source = "sword: Item { damage: 10 }\n";
+        let field_offset = cfd_source.find("damage").expect("damage") + 1;
+        let position = position_from_byte(cfd_source, field_offset);
+        let mut server = LspServer::new(project, Vec::new());
+
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": cfd_uri,
+                        "text": cfd_source
+                    }
+                }
+            }))
+            .expect("open cfd document");
+        server.writer.clear();
+
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 7,
+                "method": "textDocument/definition",
+                "params": {
+                    "textDocument": { "uri": cfd_uri },
+                    "position": {
+                        "line": position.line,
+                        "character": position.character
+                    }
+                }
+            }))
+            .expect("definition request");
+
+        let messages = written_messages(&server.writer);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["id"], 7);
+        assert_eq!(messages[0]["result"]["range"]["start"]["line"], 2);
+        assert_eq!(messages[0]["result"]["range"]["start"]["character"], 2);
+        assert_eq!(messages[0]["result"]["range"]["end"]["line"], 2);
+        assert_eq!(messages[0]["result"]["range"]["end"]["character"], 8);
+    }
+
+    #[test]
+    fn cfd_definition_request_resolves_record_keys_across_project_sources() {
+        let schema_source = "type Item { key: string; }\n\
+type Holder { key: string; item: Item; }\n";
+        let (_cleanup, project) =
+            test_project_with_config("lsp-cfd-cross-file-key-definition", schema_source, "data");
+        let data_dir = project.root_dir.join("data");
+        std::fs::create_dir_all(&data_dir).expect("create data dir");
+        let target_path = data_dir.join("items.cfd");
+        let source_path = data_dir.join("holders.cfd");
+        let target_source = "sword: Item { }\n";
+        let source = "holder: Holder { item: &sword }\n";
+        std::fs::write(&target_path, target_source).expect("write target cfd");
+        std::fs::write(&source_path, source).expect("write source cfd");
+        let source_uri = path_to_file_uri(&source_path);
+        let ref_offset = source.find("sword").expect("sword") + 1;
+        let position = position_from_byte(source, ref_offset);
+        let mut server = LspServer::new(project, Vec::new());
+
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": source_uri,
+                        "text": source
+                    }
+                }
+            }))
+            .expect("open cfd document");
+        server.writer.clear();
+
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 8,
+                "method": "textDocument/definition",
+                "params": {
+                    "textDocument": { "uri": source_uri },
+                    "position": {
+                        "line": position.line,
+                        "character": position.character
+                    }
+                }
+            }))
+            .expect("definition request");
+
+        let messages = written_messages(&server.writer);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["id"], 8);
+        assert_eq!(messages[0]["result"]["uri"], path_to_file_uri(&target_path));
+        assert_eq!(messages[0]["result"]["range"]["start"]["line"], 0);
+        assert_eq!(messages[0]["result"]["range"]["start"]["character"], 0);
+        assert_eq!(messages[0]["result"]["range"]["end"]["character"], 5);
+    }
+
+    #[test]
+    fn cfd_definition_request_resolves_examples_cfd_basic_monster() {
+        let examples_dir = std::fs::canonicalize(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/cfd"),
+        )
+        .expect("canonical examples/cfd");
+        let project = Project::open_schema_only(Some(&examples_dir)).expect("open examples/cfd");
+        let source_path = examples_dir.join("data").join("03-spread.cfd");
+        let target_path = examples_dir.join("data").join("01-records.cfd");
+        let source = std::fs::read_to_string(&source_path).expect("read spread cfd");
+        let source_uri = path_to_file_uri(&source_path);
+        let offset = source.find("basic_monster").expect("basic_monster") + 1;
+        let position = position_from_byte(&source, offset);
+        let mut server = LspServer::new(project, Vec::new());
+
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": source_uri,
+                        "text": source
+                    }
+                }
+            }))
+            .expect("open cfd document");
+        server.writer.clear();
+
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 9,
+                "method": "textDocument/definition",
+                "params": {
+                    "textDocument": { "uri": source_uri },
+                    "position": {
+                        "line": position.line,
+                        "character": position.character
+                    }
+                }
+            }))
+            .expect("definition request");
+
+        let messages = written_messages(&server.writer);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["id"], 9);
+        assert_eq!(messages[0]["result"]["uri"], path_to_file_uri(&target_path));
+        assert_eq!(messages[0]["result"]["range"]["start"]["line"], 18);
+        assert_eq!(messages[0]["result"]["range"]["start"]["character"], 0);
+        assert_eq!(messages[0]["result"]["range"]["end"]["character"], 13);
+    }
+
+    #[test]
+    fn cfd_definition_request_resolves_each_path_field_segment() {
+        let schema_source = "type Stats {\n  hp: int;\n}\n\
+type Monster {\n  key: string;\n  stats: Stats;\n}\n\
+type Holder {\n  key: string;\n  hp: int;\n}\n";
+        let (_cleanup, project) =
+            test_project_with_config("lsp-cfd-path-field-definition", schema_source, "data");
+        let data_dir = project.root_dir.join("data");
+        std::fs::create_dir_all(&data_dir).expect("create data dir");
+        let source_path = data_dir.join("holders.cfd");
+        let source = "holder: Holder { hp: @Monster.base.stats.hp }\n";
+        std::fs::write(
+            data_dir.join("monsters.cfd"),
+            "base: Monster { stats: { hp: 10 } }\n",
+        )
+        .expect("write target cfd");
+        std::fs::write(&source_path, source).expect("write source cfd");
+        let source_uri = path_to_file_uri(&source_path);
+        let mut server = LspServer::new(project, Vec::new());
+
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": source_uri,
+                        "text": source
+                    }
+                }
+            }))
+            .expect("open cfd document");
+        server.writer.clear();
+
+        let stats = cfd_definition_result_at(&mut server, &source_uri, source, "stats");
+        assert_eq!(stats["range"]["start"]["line"], 5);
+        assert_eq!(stats["range"]["start"]["character"], 2);
+        assert_eq!(stats["range"]["end"]["character"], 7);
+
+        let hp = cfd_definition_result_at(&mut server, &source_uri, source, ".hp");
+        assert_eq!(hp["range"]["start"]["line"], 1);
+        assert_eq!(hp["range"]["start"]["character"], 2);
+        assert_eq!(hp["range"]["end"]["character"], 4);
+    }
+
+    #[test]
+    fn cfd_definition_request_resolves_path_segments_in_top_level_spread() {
+        let schema_source = "type Stats {\n  hp: int;\n}\n\
+type Monster {\n  key: string;\n  stats: Stats;\n}\n";
+        let (_cleanup, project) = test_project_with_config(
+            "lsp-cfd-top-level-spread-path-definition",
+            schema_source,
+            "data",
+        );
+        let data_dir = project.root_dir.join("data");
+        std::fs::create_dir_all(&data_dir).expect("create data dir");
+        let source_path = data_dir.join("monsters.cfd");
+        let source = "base: Monster { stats: { hp: 10 } }\n\
+elite: Monster { ...@Monster.base.stats.hp }\n";
+        std::fs::write(&source_path, source).expect("write source cfd");
+        let source_uri = path_to_file_uri(&source_path);
+        let mut server = LspServer::new(project, Vec::new());
+
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": source_uri,
+                        "text": source
+                    }
+                }
+            }))
+            .expect("open cfd document");
+        server.writer.clear();
+
+        let stats = cfd_definition_result_at_context(
+            &mut server,
+            &source_uri,
+            source,
+            "@Monster.base.stats.hp",
+            "stats",
+        );
+        assert_eq!(stats["range"]["start"]["line"], 5);
+        assert_eq!(stats["range"]["start"]["character"], 2);
+        assert_eq!(stats["range"]["end"]["character"], 7);
+
+        let hp = cfd_definition_result_at_context(
+            &mut server,
+            &source_uri,
+            source,
+            "@Monster.base.stats.hp",
+            "hp",
+        );
+        assert_eq!(hp["range"]["start"]["line"], 1);
+        assert_eq!(hp["range"]["start"]["character"], 2);
+        assert_eq!(hp["range"]["end"]["character"], 4);
+    }
+
+    #[test]
+    fn cfd_definition_request_resolves_each_nested_object_field() {
+        let schema_source = "type Stats {\n  hp: int;\n}\n\
+type Monster {\n  key: string;\n  stats: Stats;\n}\n";
+        let (_cleanup, project) =
+            test_project_with_config("lsp-cfd-nested-field-definition", schema_source, "data");
+        let data_dir = project.root_dir.join("data");
+        std::fs::create_dir_all(&data_dir).expect("create data dir");
+        let source_path = data_dir.join("monsters.cfd");
+        let source = "base: Monster { stats: { hp: 10 } }\n";
+        std::fs::write(&source_path, source).expect("write source cfd");
+        let source_uri = path_to_file_uri(&source_path);
+        let mut server = LspServer::new(project, Vec::new());
+
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": source_uri,
+                        "text": source
+                    }
+                }
+            }))
+            .expect("open cfd document");
+        server.writer.clear();
+
+        let stats = cfd_definition_result_at(&mut server, &source_uri, source, "stats");
+        assert_eq!(stats["range"]["start"]["line"], 5);
+        assert_eq!(stats["range"]["start"]["character"], 2);
+        assert_eq!(stats["range"]["end"]["character"], 7);
+
+        let hp = cfd_definition_result_at(&mut server, &source_uri, source, "hp");
+        assert_eq!(hp["range"]["start"]["line"], 1);
+        assert_eq!(hp["range"]["start"]["character"], 2);
+        assert_eq!(hp["range"]["end"]["character"], 4);
     }
 
     #[test]
@@ -3856,13 +4434,13 @@ type Item {\n\
         let source = "ab\ncd";
         let mut tokens = Vec::new();
 
-        push_semantic_span(source, Span::new(1, 1), SEM_TYPE, &mut tokens);
-        push_semantic_span(source, Span::new(1, 4), SEM_TYPE, &mut tokens);
+        push_semantic_span_plain(source, Span::new(1, 1), SEM_TYPE, &mut tokens);
+        push_semantic_span_plain(source, Span::new(1, 4), SEM_TYPE, &mut tokens);
         assert!(tokens.is_empty());
 
-        push_semantic_span(source, Span::new(0, 2), SEM_TYPE, &mut tokens);
-        push_semantic_span(source, Span::new(1, 2), SEM_PROPERTY, &mut tokens);
-        push_semantic_span(source, Span::new(3, 5), SEM_STRING, &mut tokens);
+        push_semantic_span_plain(source, Span::new(0, 2), SEM_TYPE, &mut tokens);
+        push_semantic_span_plain(source, Span::new(1, 2), SEM_PROPERTY, &mut tokens);
+        push_semantic_span_plain(source, Span::new(3, 5), SEM_STRING, &mut tokens);
 
         let encoded = encode_semantic_tokens(tokens);
 
@@ -3877,6 +4455,145 @@ type Item {\n\
             range_from_span(source, Span::new(2, 2)),
             lsp_range(0, 2, 1, 0)
         );
+    }
+
+    #[test]
+    fn encoded_semantic_tokens_preserve_modifiers() {
+        let source = "ab cd";
+        let mut tokens = Vec::new();
+        push_semantic_span(
+            source,
+            Span::new(0, 2),
+            SEM_NAMESPACE,
+            MOD_DECLARATION | MOD_RECORD,
+            &mut tokens,
+        );
+        push_semantic_span(
+            source,
+            Span::new(3, 5),
+            SEM_NAMESPACE,
+            MOD_REFERENCE | MOD_RECORD,
+            &mut tokens,
+        );
+
+        let encoded = encode_semantic_tokens(tokens);
+
+        assert_eq!(
+            encoded,
+            vec![
+                0,
+                0,
+                2,
+                SEM_NAMESPACE,
+                MOD_DECLARATION | MOD_RECORD,
+                0,
+                3,
+                2,
+                SEM_NAMESPACE,
+                MOD_REFERENCE | MOD_RECORD,
+            ]
+        );
+    }
+
+    #[test]
+    fn cft_semantic_tokens_distinguish_schema_declarations_references_and_paths() {
+        let source = "type Target { key: string; value: int; }\n\
+type Holder {\n\
+  target: Target;\n\
+  check { target.value == 1; }\n\
+}\n";
+        let (_cleanup, build) = test_lsp_build("lsp-cft-semantic-modifiers", source);
+        let document = first_document(&build);
+        let raw_tokens = semantic_raw_tokens(&build, document);
+
+        assert!(has_semantic_token(
+            source,
+            &raw_tokens,
+            "type Target",
+            "Target",
+            SEM_TYPE,
+            MOD_DECLARATION | MOD_SCHEMA,
+        ));
+        assert!(has_semantic_token(
+            source,
+            &raw_tokens,
+            "target: Target",
+            "target",
+            SEM_PROPERTY,
+            MOD_DECLARATION | MOD_SCHEMA,
+        ));
+        assert!(has_semantic_token(
+            source,
+            &raw_tokens,
+            "target: Target",
+            "Target",
+            SEM_TYPE,
+            MOD_REFERENCE | MOD_SCHEMA,
+        ));
+        assert!(has_semantic_token(
+            source,
+            &raw_tokens,
+            "target.value",
+            "target",
+            SEM_VARIABLE,
+            MOD_REFERENCE,
+        ));
+        assert!(has_semantic_token(
+            source,
+            &raw_tokens,
+            "target.value",
+            "value",
+            SEM_PROPERTY,
+            MOD_REFERENCE | MOD_PATH | MOD_SCHEMA,
+        ));
+    }
+
+    #[test]
+    fn cfd_semantic_tokens_distinguish_record_refs_paths_and_schema_fields() {
+        let source = "base: Monster { stats: { hp: 10 } }\n\
+elite: Monster { target: @Monster.base.stats.hp }\n";
+        let (ast, _) = parse_cfd(source);
+        let result = cfd::semantic_tokens(source, &ast);
+        let tokens = decode_semantic_tokens(source, &result["data"]);
+
+        assert!(
+            tokens.contains(&DecodedSemanticToken {
+                text: "base".to_string(),
+                token_type: SEM_NAMESPACE,
+                modifiers: MOD_DECLARATION | MOD_RECORD,
+            }),
+            "{tokens:?}"
+        );
+        assert!(tokens.contains(&DecodedSemanticToken {
+            text: "target".to_string(),
+            token_type: SEM_PROPERTY,
+            modifiers: MOD_DECLARATION | MOD_SCHEMA,
+        }));
+        assert!(tokens.contains(&DecodedSemanticToken {
+            text: "@".to_string(),
+            token_type: SEM_OPERATOR,
+            modifiers: 0,
+        }));
+        assert!(tokens.contains(&DecodedSemanticToken {
+            text: "Monster".to_string(),
+            token_type: SEM_TYPE,
+            modifiers: MOD_REFERENCE | MOD_SCHEMA,
+        }));
+        assert!(tokens.contains(&DecodedSemanticToken {
+            text: "base".to_string(),
+            token_type: SEM_NAMESPACE,
+            modifiers: MOD_REFERENCE | MOD_RECORD,
+        }));
+        assert!(tokens.contains(&DecodedSemanticToken {
+            text: "stats".to_string(),
+            token_type: SEM_PROPERTY,
+            modifiers: MOD_REFERENCE | MOD_PATH | MOD_SCHEMA,
+        }));
+        assert!(tokens.contains(&DecodedSemanticToken {
+            text: "hp".to_string(),
+            token_type: SEM_PROPERTY,
+            modifiers: MOD_REFERENCE | MOD_PATH | MOD_SCHEMA,
+        }));
     }
 
     #[test]
@@ -4067,6 +4784,28 @@ values: [string] = [\n\
         (TempProject(root), project)
     }
 
+    fn test_project_with_config(
+        name: &str,
+        source: &str,
+        source_dir: &str,
+    ) -> (TempProject, Project) {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("coflow-{name}-{suffix}"));
+        let schema = root.join("schema");
+        std::fs::create_dir_all(&schema).expect("create schema dir");
+        std::fs::write(
+            root.join("coflow.yaml"),
+            format!("schema: schema/\nsources:\n  - dir: {source_dir}\n"),
+        )
+        .expect("write config");
+        std::fs::write(schema.join("main.cft"), source).expect("write schema");
+        let project = Project::open_schema_only(Some(&root)).expect("open project");
+        (TempProject(root), project)
+    }
+
     fn test_lsp_build(name: &str, source: &str) -> (TempProject, LspBuild) {
         let (cleanup, project) = test_project(name, source);
         let build = LspBuild::new(
@@ -4096,6 +4835,148 @@ values: [string] = [\n\
 
     fn s(value: &str) -> String {
         value.to_string()
+    }
+
+    fn cfd_definition_result_at(
+        server: &mut LspServer<Vec<u8>>,
+        uri: &str,
+        source: &str,
+        needle: &str,
+    ) -> Value {
+        server.writer.clear();
+        let offset = source.find(needle).expect("needle") + needle.len().saturating_sub(1);
+        let position = position_from_byte(source, offset);
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 100,
+                "method": "textDocument/definition",
+                "params": {
+                    "textDocument": { "uri": uri },
+                    "position": {
+                        "line": position.line,
+                        "character": position.character
+                    }
+                }
+            }))
+            .expect("definition request");
+        written_messages(&server.writer)
+            .into_iter()
+            .next()
+            .expect("response")["result"]
+            .clone()
+    }
+
+    fn cfd_definition_result_at_context(
+        server: &mut LspServer<Vec<u8>>,
+        uri: &str,
+        source: &str,
+        context: &str,
+        needle: &str,
+    ) -> Value {
+        server.writer.clear();
+        let offset = position_inside(source, context, needle, needle.len().saturating_sub(1));
+        let position = position_from_byte(source, offset);
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "id": 101,
+                "method": "textDocument/definition",
+                "params": {
+                    "textDocument": { "uri": uri },
+                    "position": {
+                        "line": position.line,
+                        "character": position.character
+                    }
+                }
+            }))
+            .expect("definition request");
+        written_messages(&server.writer)
+            .into_iter()
+            .next()
+            .expect("response")["result"]
+            .clone()
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct DecodedSemanticToken {
+        text: String,
+        token_type: u32,
+        modifiers: u32,
+    }
+
+    fn decode_semantic_tokens(source: &str, data: &Value) -> Vec<DecodedSemanticToken> {
+        let mut line = 0usize;
+        let mut character = 0usize;
+        let mut tokens = Vec::new();
+        let Some(data) = data.as_array() else {
+            return tokens;
+        };
+
+        for chunk in data.chunks(5) {
+            if chunk.len() < 5 {
+                break;
+            }
+            let delta_line = usize::try_from(chunk[0].as_u64().unwrap_or(0)).unwrap_or(usize::MAX);
+            let delta_start = usize::try_from(chunk[1].as_u64().unwrap_or(0)).unwrap_or(usize::MAX);
+            let length = usize::try_from(chunk[2].as_u64().unwrap_or(0)).unwrap_or(usize::MAX);
+            line += delta_line;
+            character = if delta_line == 0 {
+                character + delta_start
+            } else {
+                delta_start
+            };
+            if let Some(text) = text_at_utf16_range(source, line, character, length) {
+                tokens.push(DecodedSemanticToken {
+                    text,
+                    token_type: u32::try_from(chunk[3].as_u64().unwrap_or(0)).unwrap_or(u32::MAX),
+                    modifiers: u32::try_from(chunk[4].as_u64().unwrap_or(0)).unwrap_or(u32::MAX),
+                });
+            }
+        }
+        tokens
+    }
+
+    fn text_at_utf16_range(
+        source: &str,
+        target_line: usize,
+        start_character: usize,
+        length: usize,
+    ) -> Option<String> {
+        let start = byte_offset_from_position(
+            source,
+            LspPosition {
+                line: target_line,
+                character: start_character,
+            },
+        );
+        let end = byte_offset_from_position(
+            source,
+            LspPosition {
+                line: target_line,
+                character: start_character + length,
+            },
+        );
+        source.get(start..end).map(str::to_string)
+    }
+
+    fn has_semantic_token(
+        source: &str,
+        tokens: &[RawSemanticToken],
+        context: &str,
+        needle: &str,
+        token_type: u32,
+        token_modifiers: u32,
+    ) -> bool {
+        let offset = position_inside(source, context, needle, 0);
+        let position = position_from_byte(source, offset);
+        tokens.iter().any(|token| {
+            token.line == position.line
+                && token.character == position.character
+                && token.length == needle.encode_utf16().count()
+                && token.token_type == token_type
+                && token.token_modifiers == token_modifiers
+        })
     }
 
     fn written_messages(bytes: &[u8]) -> Vec<Value> {
@@ -4241,6 +5122,31 @@ values: [string] = [\n\
         // Offset 0 is inside the key "sword", not the type name.
         let name = cfd::definition_type_name(&ast, 0);
         assert_eq!(name, None);
+    }
+
+    #[test]
+    fn cfd_definition_field_name_extracts_record_field_at_offset() {
+        let source = "sword: Item { damage: 10 }\n";
+        let (ast, _) = parse_cfd(source);
+        let field_offset = source.find("damage").expect("damage") + 1;
+
+        let field = cfd::definition_field_name(&ast, None, field_offset);
+
+        assert_eq!(field, Some(("Item".to_string(), "damage")));
+    }
+
+    #[test]
+    fn cfd_schema_field_definition_location_finds_field_name_span() {
+        let source = "type Item {\n  key: string;\n  damage: int;\n}\n";
+        let (_cleanup, build) = test_lsp_build("cfd-schema-field-goto-def", source);
+
+        let result = cfd_schema_field_definition_location(&build, "Item", "damage")
+            .expect("damage field definition");
+
+        assert_eq!(result["range"]["start"]["line"], 2);
+        assert_eq!(result["range"]["start"]["character"], 2);
+        assert_eq!(result["range"]["end"]["line"], 2);
+        assert_eq!(result["range"]["end"]["character"], 8);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 #![allow(clippy::panic, clippy::unwrap_used)]
 
-use coflow_cfd::{parse_cfd, CfdAst, CfdValue};
+use coflow_cfd::{parse_cfd, CfdAst, CfdBlockEntry, CfdValue};
 
 fn parse_ok(source: &str) -> CfdAst {
     let (ast, errors) = parse_cfd(source);
@@ -220,8 +220,8 @@ fn error_recovery_continues_after_bad_record() {
 fn spread_in_block() {
     let ast = parse_ok("r: T { ...@T.base, x: 1 }");
     let r = &ast.records[0];
-    // First entry should be a spread from the block entries.
-    // Fields only: x. The spread is in block entries but not in flat fields.
+    assert_eq!(r.entries.len(), 2);
+    assert!(matches!(r.entries[0], CfdBlockEntry::Spread(_, _)));
     assert_eq!(r.fields.len(), 1);
     assert_eq!(r.fields[0].name, "x");
 }

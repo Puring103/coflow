@@ -58,7 +58,12 @@ Module._load = function load(request, parent, isMain) {
     },
     RelativePattern: class {},
     SemanticTokensBuilder: class {},
-    SemanticTokensLegend: class {},
+    SemanticTokensLegend: class {
+      constructor(tokenTypes, tokenModifiers) {
+        this.tokenTypes = tokenTypes;
+        this.tokenModifiers = tokenModifiers;
+      }
+    },
     SnippetString: class {},
     SymbolKind: {},
     TextEdit: class {},
@@ -90,6 +95,7 @@ Module._load = function load(request, parent, isMain) {
 };
 
 const extension = require("../src/extension.js");
+const extensionPackage = require("../package.json");
 
 async function main() {
   assert.deepStrictEqual(
@@ -143,6 +149,38 @@ async function main() {
   assert.strictEqual(path.normalize(variantLocations[0].uri.fsPath), path.normalize(enumPath));
   assert.strictEqual(variantLocations[0].range.start.line, 1);
   assert.strictEqual(variantLocations[0].range.start.character, 2);
+
+  const singleLocation = extension.__test.lspDefinitionLocations({
+    uri: `file://${sourcePath.replace(/\\/g, "/")}`,
+    range: { start: { line: 2, character: 2 }, end: { line: 2, character: 8 } }
+  });
+  assert.strictEqual(singleLocation.length, 1);
+  assert.strictEqual(singleLocation[0].range.start.line, 2);
+  assert.strictEqual(singleLocation[0].range.start.character, 2);
+
+  assert.deepStrictEqual(extension.__test.semanticTokensLegend.tokenModifiers, [
+    "declaration",
+    "reference",
+    "path",
+    "record",
+    "schema"
+  ]);
+  assert.deepStrictEqual(
+    extensionPackage.contributes.semanticTokenModifiers.map((modifier) => modifier.id),
+    ["reference", "path", "record", "schema"]
+  );
+  assert(
+    extensionPackage.contributes.configurationDefaults["editor.semanticTokenColorCustomizations"].rules[
+      "namespace.declaration.record:cfd"
+    ],
+    "CFD record declarations should have a default semantic token color"
+  );
+  assert(
+    extensionPackage.contributes.configurationDefaults["editor.semanticTokenColorCustomizations"].rules[
+      "property.reference.path.schema:cfd"
+    ],
+    "CFD reference path segments should have a default semantic token color"
+  );
 
   fs.rmSync(project, { recursive: true, force: true });
 

@@ -91,6 +91,70 @@
         "path": "./syntaxes/cfd.tmLanguage.json"
       }
     ],
+    "semanticTokenModifiers": [
+      {
+        "id": "reference",
+        "description": "A symbol reference."
+      },
+      {
+        "id": "path",
+        "description": "A field or index segment inside a reference path."
+      },
+      {
+        "id": "record",
+        "description": "A CFD record key or record reference."
+      },
+      {
+        "id": "schema",
+        "description": "A schema type, field, enum, or related reference."
+      }
+    ],
+    "configurationDefaults": {
+      "editor.semanticHighlighting.enabled": true,
+      "editor.semanticTokenColorCustomizations": {
+        "rules": {
+          "namespace.declaration.record:cfd": {
+            "foreground": "#4EC9B0",
+            "fontStyle": "bold"
+          },
+          "namespace.reference.record:cfd": {
+            "foreground": "#9CDCFE"
+          },
+          "property.declaration.schema:cfd": {
+            "foreground": "#DCDCAA"
+          },
+          "property.reference.path.schema:cfd": {
+            "foreground": "#C586C0"
+          },
+          "type.reference.schema:cfd": {
+            "foreground": "#4EC9B0"
+          },
+          "property.declaration.schema:cft": {
+            "foreground": "#DCDCAA"
+          },
+          "property.reference.path.schema:cft": {
+            "foreground": "#C586C0"
+          },
+          "type.declaration.schema:cft": {
+            "foreground": "#4EC9B0",
+            "fontStyle": "bold"
+          },
+          "type.reference.schema:cft": {
+            "foreground": "#4EC9B0"
+          },
+          "enum.declaration.schema:cft": {
+            "foreground": "#B8D7A3",
+            "fontStyle": "bold"
+          },
+          "enumMember.declaration.schema:cft": {
+            "foreground": "#B8D7A3"
+          },
+          "enumMember.reference.schema:cft": {
+            "foreground": "#B8D7A3"
+          }
+        }
+      }
+    },
     "snippets": [
       {
         "language": "cft",
