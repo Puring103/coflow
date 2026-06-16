@@ -27,7 +27,7 @@ const CFT_SEMANTIC_TOKENS_LEGEND = new vscode.SemanticTokensLegend(
     "decorator",
     "parameter"
   ],
-  []
+  ["declaration", "reference", "path", "record", "schema"]
 );
 
 const KEYWORDS = [
@@ -2339,11 +2339,16 @@ function lspDocumentSymbolToVsCode(raw) {
 }
 
 function lspDefinitionLocations(definitions) {
-  if (!Array.isArray(definitions)) {
+  const rawDefinitions = Array.isArray(definitions)
+    ? definitions
+    : definitions?.uri
+      ? [definitions]
+      : undefined;
+  if (!rawDefinitions) {
     return undefined;
   }
 
-  const locations = definitions.map(lspLocationToVsCode).filter(Boolean);
+  const locations = rawDefinitions.map((definition) => lspLocationToVsCode(definition)).filter(Boolean);
   return locations.length > 0 ? locations : undefined;
 }
 
@@ -2438,6 +2443,7 @@ module.exports = {
     CftCompletionProvider,
     CftLspSession,
     collectConfiguredSchemaPaths,
+    semanticTokensLegend: CFT_SEMANTIC_TOKENS_LEGEND,
     localDefinitionLocations,
     schemaEntriesFromCoflowConfigText,
     lspDefinitionLocations,

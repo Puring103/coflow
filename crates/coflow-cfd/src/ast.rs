@@ -12,6 +12,7 @@ pub struct CfdRecord {
     pub key_span: Span,
     pub type_name: String,
     pub type_span: Span,
+    pub entries: Vec<CfdBlockEntry>,
     pub fields: Vec<CfdField>,
     pub span: Span,
 }

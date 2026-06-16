@@ -3,7 +3,7 @@
 //! Each function takes the parsed [`CfdAst`] (plus optional compiled schema)
 //! and returns a JSON [`Value`] ready to send as an LSP response.
 
-use coflow_cfd::{CfdAst, CfdRecord, CfdSyntaxDiagnostic};
+use coflow_cfd::{CfdAst, CfdBlockEntry, CfdRecord, CfdSyntaxDiagnostic, CfdValue};
 use coflow_cft::{CftContainer, CftSchemaTypeRef, Span};
 use serde_json::{json, Value};
 
@@ -18,6 +18,12 @@ const SEM_NUMBER: u32 = 8; // numeric scalar
 const SEM_COMMENT: u32 = 10; // // and # comments
 const SEM_KEYWORD: u32 = 7; // null / true / false
 const SEM_OPERATOR: u32 = 11; // @ & ...
+
+const MOD_DECLARATION: u32 = 1 << 0;
+const MOD_REFERENCE: u32 = 1 << 1;
+const MOD_PATH: u32 = 1 << 2;
+const MOD_RECORD: u32 = 1 << 3;
+const MOD_SCHEMA: u32 = 1 << 4;
 
 // ── Public helpers used by LspServer ─────────────────────────────────────────
 
@@ -85,47 +91,53 @@ pub fn semantic_tokens(source: &str, ast: &CfdAst) -> Value {
 
     // Walk the AST for structured tokens.
     for record in &ast.records {
-        collector.add(record.key_span, SEM_NAMESPACE);
-        collector.add(record.type_span, SEM_TYPE);
-        for field in &record.fields {
-            collector.add(field.name_span, SEM_PROPERTY);
-            collect_value_tokens(&field.value, &mut collector);
+        collector.add(record.key_span, SEM_NAMESPACE, MOD_DECLARATION | MOD_RECORD);
+        collector.add(record.type_span, SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA);
+        for entry in &record.entries {
+            match entry {
+                CfdBlockEntry::Field(field) => {
+                    collector.add(field.name_span, SEM_PROPERTY, MOD_DECLARATION | MOD_SCHEMA);
+                    collect_value_tokens(&field.value, &mut collector);
+                }
+                CfdBlockEntry::Spread(value, _) => {
+                    collect_value_tokens(value, &mut collector);
+                }
+            }
         }
     }
 
     collector.into_lsp_data()
 }
 
-fn collect_value_tokens(value: &coflow_cfd::CfdValue, c: &mut TokenCollector<'_>) {
-    use coflow_cfd::CfdValue;
+fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
     match value {
         CfdValue::Scalar(text, span) => {
             if text == "null" || text == "true" || text == "false" {
-                c.add(*span, SEM_KEYWORD);
+                c.add_plain(*span, SEM_KEYWORD);
             } else if text
                 .bytes()
                 .next()
                 .is_some_and(|b| b.is_ascii_digit() || b == b'-')
             {
-                c.add(*span, SEM_NUMBER);
+                c.add_plain(*span, SEM_NUMBER);
             } else if text.bytes().next().is_some_and(|b| b.is_ascii_uppercase()) {
                 // PascalCase bare identifier → enum variant
-                c.add(*span, SEM_ENUM_MEMBER);
+                c.add(*span, SEM_ENUM_MEMBER, MOD_REFERENCE | MOD_SCHEMA);
             }
         }
-        CfdValue::QuotedString(_, span) => c.add(*span, SEM_STRING),
-        CfdValue::Null(span) => c.add(*span, SEM_KEYWORD),
+        CfdValue::QuotedString(_, span) => c.add_plain(*span, SEM_STRING),
+        CfdValue::Null(span) => c.add_plain(*span, SEM_KEYWORD),
         CfdValue::Block(block) => {
             if let Some((_, span)) = &block.type_marker {
-                c.add(*span, SEM_TYPE);
+                c.add(*span, SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA);
             }
             for entry in &block.entries {
                 match entry {
-                    coflow_cfd::CfdBlockEntry::Field(f) => {
-                        c.add(f.name_span, SEM_PROPERTY);
+                    CfdBlockEntry::Field(f) => {
+                        c.add(f.name_span, SEM_PROPERTY, MOD_DECLARATION | MOD_SCHEMA);
                         collect_value_tokens(&f.value, c);
                     }
-                    coflow_cfd::CfdBlockEntry::Spread(v, _) => collect_value_tokens(v, c),
+                    CfdBlockEntry::Spread(v, _) => collect_value_tokens(v, c),
                 }
             }
         }
@@ -138,27 +150,27 @@ fn collect_value_tokens(value: &coflow_cfd::CfdValue, c: &mut TokenCollector<'_>
             use coflow_cfd::{CfdPathSeg, CfdRefKind};
             match r.kind {
                 CfdRefKind::Typed => {
-                    // Emit @TypeName as one SEM_TYPE span (@ included).
+                    c.add_plain(Span::new(r.span.start, r.span.start + 1), SEM_OPERATOR);
                     if let Some((_, type_span)) = &r.type_name {
-                        c.add(Span::new(r.span.start, type_span.end), SEM_TYPE);
+                        c.add(*type_span, SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA);
                     }
-                    c.add(r.key.1, SEM_NAMESPACE);
+                    c.add(r.key.1, SEM_NAMESPACE, MOD_REFERENCE | MOD_RECORD);
                 }
                 CfdRefKind::Direct => {
-                    // Emit &key as one SEM_NAMESPACE span (& included).
-                    c.add(Span::new(r.span.start, r.key.1.end), SEM_NAMESPACE);
+                    c.add_plain(Span::new(r.span.start, r.span.start + 1), SEM_OPERATOR);
+                    c.add(r.key.1, SEM_NAMESPACE, MOD_REFERENCE | MOD_RECORD);
                 }
             }
             for seg in &r.path {
                 match seg {
                     CfdPathSeg::Field(_, span) | CfdPathSeg::Index(_, span) => {
-                        c.add(*span, SEM_PROPERTY);
+                        c.add(*span, SEM_PROPERTY, MOD_REFERENCE | MOD_PATH | MOD_SCHEMA);
                     }
                 }
             }
         }
         CfdValue::Spread(inner, span) => {
-            c.add(Span::new(span.start, span.start + 3), SEM_OPERATOR); // ...
+            c.add_plain(Span::new(span.start, span.start + 3), SEM_OPERATOR); // ...
             collect_value_tokens(inner, c);
         }
     }
@@ -173,7 +185,7 @@ fn collect_comment_tokens(source: &str, c: &mut TokenCollector<'_>) {
             while i < bytes.len() && bytes[i] != b'\n' {
                 i += 1;
             }
-            c.add(Span::new(start, i), SEM_COMMENT);
+            c.add_plain(Span::new(start, i), SEM_COMMENT);
         } else if bytes[i] == b'"' {
             // Skip quoted strings so we don't misidentify `//` inside them.
             i += 1;
@@ -292,17 +304,247 @@ pub fn definition_type_name(ast: &CfdAst, offset: usize) -> Option<&str> {
         if span_contains(record.type_span, offset) {
             return Some(&record.type_name);
         }
-        for field in &record.fields {
-            if let coflow_cfd::CfdValue::Block(block) = &field.value {
-                if let Some((name, span)) = &block.type_marker {
-                    if span_contains(*span, offset) {
-                        return Some(name.as_str());
-                    }
-                }
+        for entry in &record.entries {
+            if let Some(type_name) = type_name_in_entry(entry, offset) {
+                return Some(type_name);
             }
         }
     }
     None
+}
+
+fn type_name_in_entry(entry: &CfdBlockEntry, offset: usize) -> Option<&str> {
+    match entry {
+        CfdBlockEntry::Field(field) => type_name_in_value(&field.value, offset),
+        CfdBlockEntry::Spread(value, _) => type_name_in_value(value, offset),
+    }
+}
+
+fn type_name_in_value(value: &CfdValue, offset: usize) -> Option<&str> {
+    match value {
+        CfdValue::Block(block) => {
+            if let Some((name, span)) = &block.type_marker {
+                if span_contains(*span, offset) {
+                    return Some(name.as_str());
+                }
+            }
+            for entry in &block.entries {
+                if let Some(type_name) = type_name_in_entry(entry, offset) {
+                    return Some(type_name);
+                }
+            }
+            None
+        }
+        CfdValue::Array(items, _) => {
+            for item in items {
+                if let Some(type_name) = type_name_in_value(item, offset) {
+                    return Some(type_name);
+                }
+            }
+            None
+        }
+        CfdValue::Spread(inner, _) => type_name_in_value(inner, offset),
+        _ => None,
+    }
+}
+
+/// Definition: return the owning type and field name when the cursor is on a
+/// CFD record field.
+pub fn definition_field_name<'a>(
+    ast: &'a CfdAst,
+    schema: Option<&CftContainer>,
+    offset: usize,
+) -> Option<(String, &'a str)> {
+    for record in &ast.records {
+        let type_name = record.type_name.clone();
+        for entry in &record.entries {
+            if let Some(field) = field_name_in_entry(entry, schema, type_name.clone(), offset) {
+                return Some(field);
+            }
+        }
+    }
+    None
+}
+
+fn field_name_in_entry<'a>(
+    entry: &'a CfdBlockEntry,
+    schema: Option<&CftContainer>,
+    owner_type: String,
+    offset: usize,
+) -> Option<(String, &'a str)> {
+    match entry {
+        CfdBlockEntry::Field(field) => {
+            field_name_in_fields(std::slice::from_ref(field), schema, owner_type, offset)
+        }
+        CfdBlockEntry::Spread(value, _) => field_name_in_value(value, schema, owner_type, offset),
+    }
+}
+
+fn field_name_in_fields<'a>(
+    fields: &'a [coflow_cfd::CfdField],
+    schema: Option<&CftContainer>,
+    owner_type: String,
+    offset: usize,
+) -> Option<(String, &'a str)> {
+    for field in fields {
+        if span_contains(field.name_span, offset) {
+            return Some((owner_type, &field.name));
+        }
+        let next_owner = schema
+            .and_then(|schema| schema.resolve_type(&owner_type))
+            .and_then(|ty| {
+                ty.all_fields
+                    .iter()
+                    .find(|schema_field| schema_field.name == field.name)
+            })
+            .and_then(|schema_field| named_type_name(&schema_field.ty_ref))
+            .map(str::to_string);
+        if let Some(next_owner) = next_owner {
+            if let Some(result) = field_name_in_value(&field.value, schema, next_owner, offset) {
+                return Some(result);
+            }
+        }
+    }
+    None
+}
+
+fn field_name_in_value<'a>(
+    value: &'a CfdValue,
+    schema: Option<&CftContainer>,
+    owner_type: String,
+    offset: usize,
+) -> Option<(String, &'a str)> {
+    match value {
+        CfdValue::Block(block) => {
+            let owner_type = block
+                .type_marker
+                .as_ref()
+                .map_or(owner_type, |(name, _)| name.clone());
+            for entry in &block.entries {
+                let result = match entry {
+                    CfdBlockEntry::Field(field) => field_name_in_fields(
+                        std::slice::from_ref(field),
+                        schema,
+                        owner_type.clone(),
+                        offset,
+                    ),
+                    CfdBlockEntry::Spread(value, _) => {
+                        field_name_in_value(value, schema, owner_type.clone(), offset)
+                    }
+                };
+                if result.is_some() {
+                    return result;
+                }
+            }
+            None
+        }
+        CfdValue::Array(items, _) => {
+            for item in items {
+                if let Some(result) = field_name_in_value(item, schema, owner_type.clone(), offset)
+                {
+                    return Some(result);
+                }
+            }
+            None
+        }
+        CfdValue::Spread(inner, _) => field_name_in_value(inner, schema, owner_type, offset),
+        _ => None,
+    }
+}
+
+/// Definition: return the owning type and field name for a field segment in a
+/// typed reference path such as `@Monster.base.stats.hp`.
+pub fn definition_ref_path_field(
+    ast: &CfdAst,
+    schema: Option<&CftContainer>,
+    offset: usize,
+) -> Option<(String, String)> {
+    let schema = schema?;
+    for record in &ast.records {
+        for entry in &record.entries {
+            if let Some(result) = ref_path_field_in_entry(entry, schema, offset) {
+                return Some(result);
+            }
+        }
+    }
+    None
+}
+
+fn ref_path_field_in_entry(
+    entry: &CfdBlockEntry,
+    schema: &CftContainer,
+    offset: usize,
+) -> Option<(String, String)> {
+    match entry {
+        CfdBlockEntry::Field(field) => ref_path_field_in_value(&field.value, schema, offset),
+        CfdBlockEntry::Spread(value, _) => ref_path_field_in_value(value, schema, offset),
+    }
+}
+
+fn ref_path_field_in_value(
+    value: &CfdValue,
+    schema: &CftContainer,
+    offset: usize,
+) -> Option<(String, String)> {
+    use coflow_cfd::{CfdBlockEntry, CfdPathSeg};
+    match value {
+        CfdValue::Ref(reference) => {
+            let (type_name, _) = reference.type_name.as_ref()?;
+            let mut current_type = type_name.as_str();
+            for segment in &reference.path {
+                match segment {
+                    CfdPathSeg::Field(field_name, span) => {
+                        let field_type = schema
+                            .resolve_type(current_type)
+                            .and_then(|ty| {
+                                ty.all_fields.iter().find(|field| field.name == *field_name)
+                            })
+                            .map(|field| &field.ty_ref)?;
+                        if span_contains(*span, offset) {
+                            return Some((current_type.to_string(), field_name.clone()));
+                        }
+                        current_type = named_type_name(field_type)?;
+                    }
+                    CfdPathSeg::Index(_, _) => {}
+                }
+            }
+            None
+        }
+        CfdValue::Block(block) => {
+            for entry in &block.entries {
+                let result = match entry {
+                    CfdBlockEntry::Field(field) => {
+                        ref_path_field_in_value(&field.value, schema, offset)
+                    }
+                    CfdBlockEntry::Spread(value, _) => {
+                        ref_path_field_in_value(value, schema, offset)
+                    }
+                };
+                if result.is_some() {
+                    return result;
+                }
+            }
+            None
+        }
+        CfdValue::Array(items, _) => {
+            for item in items {
+                if let Some(result) = ref_path_field_in_value(item, schema, offset) {
+                    return Some(result);
+                }
+            }
+            None
+        }
+        CfdValue::Spread(inner, _) => ref_path_field_in_value(inner, schema, offset),
+        _ => None,
+    }
+}
+
+fn named_type_name(ty: &CftSchemaTypeRef) -> Option<&str> {
+    match ty {
+        CftSchemaTypeRef::Named(name) => Some(name),
+        CftSchemaTypeRef::Nullable(inner) => named_type_name(inner),
+        _ => None,
+    }
 }
 
 /// Definition: return the key string when the cursor is on a reference key.
@@ -311,8 +553,8 @@ pub fn definition_type_name(ast: &CfdAst, offset: usize) -> Option<&str> {
 /// span contains `offset`.
 pub fn definition_ref_key(ast: &CfdAst, offset: usize) -> Option<&str> {
     for record in &ast.records {
-        for field in &record.fields {
-            if let Some(key) = ref_key_in_value(&field.value, offset) {
+        for entry in &record.entries {
+            if let Some(key) = ref_key_in_entry(entry, offset) {
                 return Some(key);
             }
         }
@@ -320,7 +562,14 @@ pub fn definition_ref_key(ast: &CfdAst, offset: usize) -> Option<&str> {
     None
 }
 
-fn ref_key_in_value(value: &coflow_cfd::CfdValue, offset: usize) -> Option<&str> {
+fn ref_key_in_entry(entry: &CfdBlockEntry, offset: usize) -> Option<&str> {
+    match entry {
+        CfdBlockEntry::Field(field) => ref_key_in_value(&field.value, offset),
+        CfdBlockEntry::Spread(value, _) => ref_key_in_value(value, offset),
+    }
+}
+
+fn ref_key_in_value(value: &CfdValue, offset: usize) -> Option<&str> {
     use coflow_cfd::{CfdBlockEntry, CfdValue};
     match value {
         CfdValue::Ref(r) => {
@@ -405,7 +654,7 @@ fn position_from_byte(source: &str, byte_offset: usize) -> (usize, usize) {
 
 struct TokenCollector<'a> {
     source: &'a str,
-    tokens: Vec<(usize, usize, u32)>, // (byte_start, byte_end, token_type)
+    tokens: Vec<(usize, usize, u32, u32)>, // (byte_start, byte_end, token_type, modifiers)
 }
 
 impl<'a> TokenCollector<'a> {
@@ -416,15 +665,20 @@ impl<'a> TokenCollector<'a> {
         }
     }
 
-    fn add(&mut self, span: Span, token_type: u32) {
+    fn add(&mut self, span: Span, token_type: u32, modifiers: u32) {
         if span.start < span.end {
-            self.tokens.push((span.start, span.end, token_type));
+            self.tokens
+                .push((span.start, span.end, token_type, modifiers));
         }
+    }
+
+    fn add_plain(&mut self, span: Span, token_type: u32) {
+        self.add(span, token_type, 0);
     }
 
     fn into_lsp_data(mut self) -> Value {
         // Sort by start, then remove same-start duplicates and overlapping tokens.
-        self.tokens.sort_by_key(|&(start, _, _)| start);
+        self.tokens.sort_by_key(|&(start, _, _, _)| start);
         self.tokens.dedup_by_key(|t| t.0);
 
         let mut data: Vec<u32> = Vec::new();
@@ -432,7 +686,7 @@ impl<'a> TokenCollector<'a> {
         let mut prev_char = 0usize;
         let mut prev_end = 0usize; // track end of last emitted token to skip overlaps
 
-        for (start, end, token_type) in self.tokens {
+        for (start, end, token_type, modifiers) in self.tokens {
             // Skip tokens that overlap with the previous one.
             if start < prev_end {
                 continue;
@@ -459,7 +713,7 @@ impl<'a> TokenCollector<'a> {
                 data.push(length_utf16 as u32);
             }
             data.push(token_type);
-            data.push(0); // modifiers
+            data.push(modifiers);
 
             prev_line = line;
             prev_char = character;

@@ -76,12 +76,14 @@ impl<'a> Parser<'a> {
             let type_span = Span::new(type_start, self.pos);
             let block = self.parse_block()?;
             let span = Span::new(first.span.start, block.span.end);
+            let (entries, fields) = block.into_entries_and_fields();
             Ok(vec![CfdRecord {
                 key: first.text,
                 key_span: first.span,
                 type_name,
                 type_span,
-                fields: block_to_fields(block),
+                entries,
+                fields,
                 span,
             }])
         } else if self.peek_char() == Some('{') {
@@ -117,12 +119,14 @@ impl<'a> Parser<'a> {
 
             let block = self.parse_block()?;
             let span = Span::new(key.span.start, block.span.end);
+            let (entries, fields) = block.into_entries_and_fields();
             records.push(CfdRecord {
                 key: key.text,
                 key_span: key.span,
                 type_name,
                 type_span,
-                fields: block_to_fields(block),
+                entries,
+                fields,
                 span,
             });
         }
@@ -561,15 +565,18 @@ fn is_value_boundary(ch: char) -> bool {
     ch.is_whitespace() || matches!(ch, ',' | ';' | '}' | ']' | '|' | ':')
 }
 
-fn block_to_fields(block: CfdBlock) -> Vec<CfdField> {
-    block
-        .entries
-        .into_iter()
-        .filter_map(|entry| match entry {
-            CfdBlockEntry::Field(f) => Some(f),
-            CfdBlockEntry::Spread(_, _) => None,
-        })
-        .collect()
+impl CfdBlock {
+    fn into_entries_and_fields(self) -> (Vec<CfdBlockEntry>, Vec<CfdField>) {
+        let fields = self
+            .entries
+            .iter()
+            .filter_map(|entry| match entry {
+                CfdBlockEntry::Field(f) => Some(f.clone()),
+                CfdBlockEntry::Spread(_, _) => None,
+            })
+            .collect();
+        (self.entries, fields)
+    }
 }
 
 struct Token {
