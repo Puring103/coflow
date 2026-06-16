@@ -158,10 +158,13 @@ Rust LSP 应逐步成为编辑器语义能力的主要事实来源。VS Code 插
 - Excel loader 错误路径：`crates/coflow-loader-excel/tests/excel_loader.rs`
 - data model 引用、重复、类型错误：`crates/coflow-data-model/tests/`
 - checker runtime 错误：`crates/coflow-checker/tests/check.rs`
+- `CfdErrorCode` 机械覆盖：`crates/coflow-checker/tests/error_coverage.rs`
 - CLI 配置和诊断错误：`tests/cli_check.rs`
 - LSP 协议和语义边界：`crates/coflow-lsp/src/tests/`
 
-后续需要补齐更严格的统一标准：不仅要证明某个错误码能触发，还要证明相邻合法输入不会误报该错误码。该标准应覆盖所有错误码体系，而不是只覆盖部分模块。
+后续需要把更严格的统一标准继续扩展到所有错误码体系：不仅要证明某个错误码能触发，
+还要证明相邻合法输入不会误报该错误码。`CfdErrorCode` 已按该标准建立机械覆盖，
+但 CFT、cell value、CFD text、Excel、pipeline、CLI 和 LSP 等体系仍需逐步补齐同等强度。
 
 ## 工程门禁
 
