@@ -98,3 +98,16 @@ pipeline 现在以大小写不敏感方式识别 `.xlsx`、`.xlsm`、`.xls` 和 
 - `rewards: [Reward]` 中实际元素为 `ItemReward` 时，
   `@DropTable.table_1.rewards[0].item` 可以正确解析到 `ItemReward.item`。
 - 解析结果继续保持目标字段类型校验，确保引用到的 `Item` 能赋给目标字段。
+
+### 修复 Excel `@expand` 静默吞掉后续业务列
+
+`coflow-loader-excel` 现在要求 `@expand` 后续被消费的相邻列表头必须为空，
+或显式写成预期子字段名。如果相邻列写了其他业务表头，会在表头阶段报告
+`EXCEL-COLUMN`，避免普通字段列被静默当作展开子字段读取。
+
+新增回归测试覆盖：
+
+- merged-header 风格的空子列表头继续可用。
+- 显式写出 `temperature`、`diffusion` 等子字段表头时可正常加载。
+- `id, env, level` 这类会吞掉 `level` 的布局会被拒绝，并定位到冲突表头列。
+- `@expand` 相邻列不足仍会报告表头错误。

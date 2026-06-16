@@ -163,6 +163,12 @@ pub enum ExcelLoadError {
         first_column: String,
         duplicate_column: String,
     },
+    UnexpectedExpandHeader {
+        location: Box<ExcelLocation>,
+        parent_field: String,
+        expected_field: String,
+        header: String,
+    },
     EmptyIdCell {
         location: Box<ExcelLocation>,
     },
@@ -591,6 +597,19 @@ fn excel_load_error_diagnostics(err: ExcelLoadError) -> Vec<ExcelDiagnostic> {
             ),
             *location,
         )],
+        ExcelLoadError::UnexpectedExpandHeader {
+            location,
+            parent_field,
+            expected_field,
+            header,
+        } => vec![ExcelDiagnostic::excel(
+            "EXCEL-COLUMN",
+            "EXCEL",
+            format!(
+                "@expand field `{parent_field}` expected adjacent column for inner field `{expected_field}` to have an empty header or `{expected_field}`, got `{header}`"
+            ),
+            *location,
+        )],
         ExcelLoadError::EmptyIdCell { location } => vec![ExcelDiagnostic::excel(
             "EXCEL-ID",
             "EXCEL",
@@ -886,8 +905,9 @@ fn resolve_columns(
             // The @expand field consumes the parent header column itself plus
             // the N-1 following data columns (where N is the inner type's
             // field count). Sub-field assignment is positional, following the
-            // inner type's declared field order — adjacent header text is
-            // ignored (it is typically merged-blank in source files).
+            // inner type's declared field order. Adjacent headers must be
+            // blank merged-header cells or the expected inner field name so a
+            // normal business column cannot be silently swallowed.
             let inner_order = expand_inner_order.get(&field).cloned().unwrap_or_default();
             let mut consumed = Vec::with_capacity(inner_order.len());
             // First child uses the parent column itself.
@@ -917,7 +937,21 @@ fn resolve_columns(
                     }));
                     break;
                 }
-                let (next_index, next_excel_col, _next_text) = &header[cursor];
+                let (next_index, next_excel_col, next_text) = &header[cursor];
+                if !next_text.is_empty() && next_text != inner_field {
+                    diagnostics.extend(excel_load_error_diagnostics(
+                        ExcelLoadError::UnexpectedExpandHeader {
+                            location: Box::new(
+                                ExcelLocation::new(source.file.clone())
+                                    .sheet(sheet.sheet.clone())
+                                    .cell(header_excel_row, *next_excel_col),
+                            ),
+                            parent_field: field.clone(),
+                            expected_field: inner_field.clone(),
+                            header: next_text.clone(),
+                        },
+                    ));
+                }
                 let inner_ty = child_fields.get(inner_field).cloned().unwrap_or_default();
                 consumed.push(ExpandedSubColumn {
                     index: *next_index,
