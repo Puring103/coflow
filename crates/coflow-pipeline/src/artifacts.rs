@@ -184,6 +184,7 @@ fn write_json_tables(
         .map_err(|err| format!("failed to export JSON model: {err}"))?;
     fs::create_dir_all(dir)
         .map_err(|err| format!("failed to create output dir `{}`: {err}", dir.display()))?;
+    clean_generated_data_files(dir)?;
     for (table, value) in tables {
         let path = dir.join(format!("{table}.json"));
         let file = fs::File::create(&path)
@@ -203,10 +204,32 @@ fn write_messagepack_tables(
         .map_err(|err| format!("failed to export MessagePack model: {err}"))?;
     fs::create_dir_all(dir)
         .map_err(|err| format!("failed to create output dir `{}`: {err}", dir.display()))?;
+    clean_generated_data_files(dir)?;
     for (table, bytes) in tables {
         let path = dir.join(format!("{table}.msgpack"));
         fs::write(&path, bytes)
             .map_err(|err| format!("failed to write `{}`: {err}", path.display()))?;
     }
     Ok(())
+}
+
+fn clean_generated_data_files(dir: &Path) -> Result<(), String> {
+    let entries = fs::read_dir(dir)
+        .map_err(|err| format!("failed to read output dir `{}`: {err}", dir.display()))?;
+    for entry in entries {
+        let entry =
+            entry.map_err(|err| format!("failed to read `{}` entry: {err}", dir.display()))?;
+        let path = entry.path();
+        if is_generated_data_file(&path) {
+            fs::remove_file(&path)
+                .map_err(|err| format!("failed to remove stale `{}`: {err}", path.display()))?;
+        }
+    }
+    Ok(())
+}
+
+fn is_generated_data_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| matches!(extension, "json" | "msgpack"))
 }
