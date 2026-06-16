@@ -56,7 +56,7 @@ pub fn build_csharp_type(schema_type: &CftSchemaType, view: &SchemaView) -> Csha
             .collect()
     };
 
-    if !schema_type.is_abstract {
+    if !schema_type.is_abstract && !has_concrete_parent(&schema_type.name, view) {
         let key_ty = view.key_field_type(&schema_type.name);
         properties.push(CsharpProperty {
             visibility: "public".to_string(),
@@ -79,7 +79,11 @@ pub fn build_csharp_type(schema_type: &CftSchemaType, view: &SchemaView) -> Csha
             name: ref_marker_property().to_string(),
             type_name: "bool".to_string(),
             setter: "set".to_string(),
-            initializer: Some("false".to_string()),
+            initializer: if is_struct {
+                None
+            } else {
+                Some("false".to_string())
+            },
             summary: None,
             obsolete: false,
         });
@@ -124,6 +128,23 @@ pub fn build_csharp_type(schema_type: &CftSchemaType, view: &SchemaView) -> Csha
         obsolete: has_annotation(&schema_type.annotations, "deprecated"),
         properties,
     }
+}
+
+fn has_concrete_parent(type_name: &str, view: &SchemaView) -> bool {
+    let mut parent = view
+        .type_meta(type_name)
+        .ok()
+        .and_then(|ty| ty.parent.as_deref());
+    while let Some(parent_name) = parent {
+        let Ok(parent_ty) = view.type_meta(parent_name) else {
+            return false;
+        };
+        if !parent_ty.is_abstract {
+            return true;
+        }
+        parent = parent_ty.parent.as_deref();
+    }
+    false
 }
 
 pub fn build_csharp_database(
@@ -249,6 +270,7 @@ fn build_ref_indexes(
                 Ok(CsharpRefIndexSource {
                     list_var: camel_case(&pluralize(&type_name)),
                     table_name: type_name.clone(),
+                    source_type_name: view.csharp_type_name(&type_name),
                     index_var: index_param_name(&view.csharp_type_name(&type_name)),
                     id_property: "Id".to_string(),
                     id_source_name: "id".to_string(),
@@ -293,11 +315,11 @@ fn ref_index_load_step(ref_index: &CsharpRefIndex) -> String {
         .iter()
         .map(|source| {
             format!(
-                "new RefIndexSource<{}, {}>({}, x => x.{}, \"{}\", \"{}\")",
+                "new RefIndexSource<{}, {}>({}, x => {}, \"{}\", \"{}\")",
                 ref_index.target_id_type,
                 ref_index.target_name,
                 source.list_var,
-                source.id_property,
+                ref_index_source_key_selector(source),
                 source.table_name,
                 source.id_source_name
             )
@@ -308,6 +330,10 @@ fn ref_index_load_step(ref_index: &CsharpRefIndex) -> String {
         "var {} = BuildRefIndex({});",
         ref_index.parameter_name, source_args
     )
+}
+
+fn ref_index_source_key_selector(source: &CsharpRefIndexSource) -> String {
+    format!("(({})x).{}", source.source_type_name, source.id_property)
 }
 
 fn loader_methods(view: &SchemaView) -> Result<Vec<CsharpLoader>, CsharpCodegenError> {
@@ -1212,11 +1238,7 @@ fn default_initializer_for_type(ty: &FieldType, view: &SchemaView) -> Option<Str
 }
 
 fn type_has_nested_resolvable_fields(type_name: &str, view: &SchemaView) -> bool {
-    view.type_meta(type_name).is_ok_and(|ty| {
-        ty.all_fields
-            .iter()
-            .any(|field| value_needs_resolve(&field.ty))
-    })
+    view.range_contains_ref(type_name)
 }
 
 fn default_initializer(field: &FieldMeta, ty: &FieldType, view: &SchemaView) -> Option<String> {

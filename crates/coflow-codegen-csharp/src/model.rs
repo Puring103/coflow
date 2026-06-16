@@ -87,6 +87,7 @@ pub struct CsharpRefIndex {
 pub struct CsharpRefIndexSource {
     pub list_var: String,
     pub table_name: String,
+    pub source_type_name: String,
     pub index_var: String,
     pub id_property: String,
     pub id_source_name: String,
