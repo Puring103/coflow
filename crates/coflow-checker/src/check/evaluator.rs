@@ -510,13 +510,7 @@ impl<'a> CheckEvaluator<'a> {
         args: &[CftSchemaCheckExpr],
     ) -> Result<LocatedCheckValue, ()> {
         if self.schema.enums.contains_key(name) {
-            let Some(arg) = args.first() else {
-                self.diag(
-                    CfdErrorCode::CheckEvalTypeError,
-                    "missing enum constructor arg",
-                );
-                return Err(());
-            };
+            let arg = self.exactly_one_arg(args, "enum constructor expects one argument")?;
             let arg_value = self.eval_expr(arg)?;
             let CheckValue::Int(value) = arg_value.value else {
                 self.diag_at(
@@ -535,10 +529,7 @@ impl<'a> CheckEvaluator<'a> {
 
         match name {
             "len" => {
-                let Some(arg) = args.first() else {
-                    self.diag(CfdErrorCode::CheckEvalTypeError, "len expects one argument");
-                    return Err(());
-                };
+                let arg = self.exactly_one_arg(args, "len expects one argument")?;
                 let arg_value = self.eval_expr(arg)?;
                 match arg_value.value {
                     CheckValue::Array { items, .. } => Ok(LocatedCheckValue::new(
@@ -570,18 +561,12 @@ impl<'a> CheckEvaluator<'a> {
                 let collection = self.eval_expr(collection)?;
                 let value = self.eval_expr(value)?;
                 Ok(LocatedCheckValue::new(
-                    CheckValue::Bool(self.contains_value(&collection.value, &value.value)),
-                    collection.path,
+                    CheckValue::Bool(self.contains_value(&collection, &value.value)?),
+                    collection.path.clone(),
                 ))
             }
             "unique" => {
-                let Some(arg) = args.first() else {
-                    self.diag(
-                        CfdErrorCode::CheckEvalTypeError,
-                        "unique expects one argument",
-                    );
-                    return Err(());
-                };
+                let arg = self.exactly_one_arg(args, "unique expects one argument")?;
                 let arg_value = self.eval_expr(arg)?;
                 let CheckValue::Array { items, .. } = arg_value.value else {
                     self.diag_at(
@@ -616,13 +601,7 @@ impl<'a> CheckEvaluator<'a> {
             "min" | "max" => self.eval_min_max(name, args),
             "sum" => self.eval_sum(args),
             "keys" => {
-                let Some(arg) = args.first() else {
-                    self.diag(
-                        CfdErrorCode::CheckEvalTypeError,
-                        "keys expects one argument",
-                    );
-                    return Err(());
-                };
+                let arg = self.exactly_one_arg(args, "keys expects one argument")?;
                 let arg_value = self.eval_expr(arg)?;
                 let CheckValue::Dict {
                     entries, key_type, ..
@@ -644,13 +623,7 @@ impl<'a> CheckEvaluator<'a> {
                 ))
             }
             "values" => {
-                let Some(arg) = args.first() else {
-                    self.diag(
-                        CfdErrorCode::CheckEvalTypeError,
-                        "values expects one argument",
-                    );
-                    return Err(());
-                };
+                let arg = self.exactly_one_arg(args, "values expects one argument")?;
                 let arg_value = self.eval_expr(arg)?;
                 let CheckValue::Dict {
                     entries,
@@ -718,18 +691,24 @@ impl<'a> CheckEvaluator<'a> {
         }
     }
 
+    fn exactly_one_arg<'b>(
+        &mut self,
+        args: &'b [CftSchemaCheckExpr],
+        message: &str,
+    ) -> Result<&'b CftSchemaCheckExpr, ()> {
+        let [arg] = args else {
+            self.diag(CfdErrorCode::CheckEvalTypeError, message);
+            return Err(());
+        };
+        Ok(arg)
+    }
+
     fn eval_min_max(
         &mut self,
         name: &str,
         args: &[CftSchemaCheckExpr],
     ) -> Result<LocatedCheckValue, ()> {
-        let Some(arg) = args.first() else {
-            self.diag(
-                CfdErrorCode::CheckEvalTypeError,
-                "min/max expects one argument",
-            );
-            return Err(());
-        };
+        let arg = self.exactly_one_arg(args, "min/max expects one argument")?;
         let arg_value = self.eval_expr(arg)?;
         let CheckValue::Array { items, .. } = arg_value.value else {
             self.diag_at(
@@ -768,10 +747,7 @@ impl<'a> CheckEvaluator<'a> {
     }
 
     fn eval_sum(&mut self, args: &[CftSchemaCheckExpr]) -> Result<LocatedCheckValue, ()> {
-        let Some(arg) = args.first() else {
-            self.diag(CfdErrorCode::CheckEvalTypeError, "sum expects one argument");
-            return Err(());
-        };
+        let arg = self.exactly_one_arg(args, "sum expects one argument")?;
         let arg_value = self.eval_expr(arg)?;
         let CheckValue::Array {
             items,
@@ -839,17 +815,36 @@ impl<'a> CheckEvaluator<'a> {
         }
     }
 
-    fn contains_value(&mut self, collection: &CheckValue, value: &CheckValue) -> bool {
-        match collection {
-            CheckValue::Array { items, .. } => items.iter().any(|item| values_equal(item, value)),
-            CheckValue::Dict { entries, .. } => {
-                dict_key_from_check_value(value).is_some_and(|key| {
-                    entries
-                        .iter()
-                        .any(|entry| entry.key_key() == Some(key.clone()))
-                })
+    fn contains_value(
+        &mut self,
+        collection: &LocatedCheckValue,
+        value: &CheckValue,
+    ) -> Result<bool, ()> {
+        match &collection.value {
+            CheckValue::Array { items, .. } => {
+                Ok(items.iter().any(|item| values_equal(item, value)))
             }
-            _ => false,
+            CheckValue::Dict { entries, .. } => {
+                let Some(key) = dict_key_from_check_value(value) else {
+                    self.diag_at(
+                        CfdErrorCode::CheckEvalTypeError,
+                        collection.path.clone(),
+                        "contains dict key is not a valid key",
+                    );
+                    return Err(());
+                };
+                Ok(entries
+                    .iter()
+                    .any(|entry| entry.key_key() == Some(key.clone())))
+            }
+            _ => {
+                self.diag_at(
+                    CfdErrorCode::CheckEvalTypeError,
+                    collection.path.clone(),
+                    "contains expects array or dict",
+                );
+                Err(())
+            }
         }
     }
 
