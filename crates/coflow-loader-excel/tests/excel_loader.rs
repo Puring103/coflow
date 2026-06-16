@@ -1331,6 +1331,63 @@ fn rejects_expand_headers_without_enough_adjacent_columns() -> TestResult {
     Ok(())
 }
 
+#[test]
+fn maps_expand_subfield_diagnostics_to_child_columns() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            @struct sealed type EnvCfg {
+                shc: float;
+                temperature: float;
+            }
+            type Terrain {
+                @expand
+                env: EnvCfg;
+            }
+        "#,
+    )?;
+    let path = temp_xlsx_path("expand-subfield-origin");
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Terrain")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "env")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 2, "temperature")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "Water")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_number(1, 1, 4.0)
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
+
+    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Terrain")]);
+    let Err(err) = load_excel_model(&schema, &[source]) else {
+        return Err("expected missing @expand subfield diagnostic".to_string());
+    };
+    let diagnostic = diagnostic_with_code(&err.diagnostics, CfdErrorCode::MissingRequiredField)?;
+    assert!(
+        diagnostic.message.contains("temperature"),
+        "expected temperature field diagnostic, got {}",
+        diagnostic.message
+    );
+    let location = &diagnostic
+        .primary
+        .as_ref()
+        .ok_or_else(|| "expected primary location".to_string())?
+        .location;
+    assert_eq!(location.row, Some(2));
+    assert_eq!(location.column, Some(3));
+    Ok(())
+}
+
 fn diagnostic_with_string_code<'a>(
     diagnostics: &'a [ExcelDiagnostic],
     code: &str,
