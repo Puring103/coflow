@@ -377,6 +377,14 @@ impl<W: Write> LspServer<W> {
                     }
                 }
             }
+            if let Some(ref_key) = cfd::definition_ref_key(&ast, offset) {
+                let ref_key = ref_key.to_string();
+                if let Some(location) =
+                    cfd_record_definition_location(&self.open_documents, &ref_key)
+                {
+                    return self.write_response(id, &json!(location));
+                }
+            }
             return self.write_response(id, &Value::Null);
         }
         let Some(build) = self.ensure_build()? else {
@@ -477,7 +485,9 @@ impl<W: Write> LspServer<W> {
 
     /// Return the compiled schema from the current build, if available.
     fn schema(&self) -> Option<&coflow_cft::CftContainer> {
-        self.build.as_ref().and_then(|b| b.schema.container.as_ref())
+        self.build
+            .as_ref()
+            .and_then(|b| b.schema.container.as_ref())
     }
 
     fn publish_diagnostics(&mut self, uri: &str, diagnostics: &[Value]) -> Result<(), String> {
@@ -3044,6 +3054,31 @@ fn cfd_type_definition_location(build: &LspBuild, type_name: &str) -> Option<Val
     None
 }
 
+/// Find the LSP location (uri + range) of a CFD record definition by key.
+///
+/// Searches all open CFD documents for a top-level record whose key matches.
+fn cfd_record_definition_location(
+    open_documents: &BTreeMap<PathBuf, OpenDocument>,
+    key: &str,
+) -> Option<Value> {
+    for (path, doc) in open_documents {
+        if !is_cfd_path(path) {
+            continue;
+        }
+        let (ast, _) = parse_cfd(&doc.text);
+        for record in &ast.records {
+            if record.key == key {
+                let range = cfd::byte_range(&doc.text, record.key_span.start, record.key_span.end);
+                return Some(json!({
+                    "uri": doc.uri,
+                    "range": range,
+                }));
+            }
+        }
+    }
+    None
+}
+
 fn path_to_file_uri(path: &Path) -> String {
     let mut path = path.to_string_lossy().replace('\\', "/");
     if cfg!(windows) {
@@ -4110,6 +4145,7 @@ values: [string] = [\n\
     }
 
     #[test]
+    #[allow(clippy::cast_possible_truncation)]
     fn cfd_semantic_tokens_no_overlap_from_comment_and_ast() {
         // A comment token spanning bytes 0..10 and an AST token at 5..8
         // should not produce overlapping output.
@@ -4125,7 +4161,9 @@ values: [string] = [\n\
         let mut prev_end_line = 0usize;
         let mut ok = true;
         for chunk in data.chunks(5) {
-            if chunk.len() < 5 { break; }
+            if chunk.len() < 5 {
+                break;
+            }
             let dl = chunk[0].as_u64().unwrap_or(0) as usize;
             let dc = chunk[1].as_u64().unwrap_or(0) as usize;
             let len = chunk[2].as_u64().unwrap_or(0) as usize;
@@ -4152,7 +4190,9 @@ values: [string] = [\n\
         // Each group of 5: [dline, dchar, len, type, modifiers]
         // SEM_COMMENT index is 10.
         for chunk in data.chunks(5) {
-            if chunk.len() < 5 { break; }
+            if chunk.len() < 5 {
+                break;
+            }
             assert_ne!(
                 chunk[3].as_u64().unwrap_or(0),
                 10,
@@ -4167,8 +4207,10 @@ values: [string] = [\n\
         let (ast, _) = parse_cfd(source);
         // Hover in the middle of whitespace after the record.
         let result = cfd::hover(source, &ast, None, source.len() - 1);
-        assert!(result.is_null() || result == Value::Null || result.get("range").is_some(),
-            "hover at brace position should return null or a range-based result");
+        assert!(
+            result.is_null() || result == Value::Null || result.get("range").is_some(),
+            "hover at brace position should return null or a range-based result"
+        );
     }
 
     #[test]

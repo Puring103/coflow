@@ -1,6 +1,6 @@
-use coflow_loader_cfd::parse_cfd_input_records;
 use coflow_cft::CftContainer;
 use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdInputRecord, CfdLabel};
+use coflow_loader_cfd::parse_cfd_input_records;
 use coflow_loader_excel::{
     collect_input_records, ExcelDiagnostic, ExcelDiagnostics, ExcelInputRecords, ExcelLabel,
     ExcelLocation, ExcelOrigins, ExcelSheet, ExcelSource,
