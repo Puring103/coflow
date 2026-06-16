@@ -32,6 +32,11 @@ examples/rpg/generated/data
 examples/rpg/generated/csharp
 ```
 
+导出和 codegen 会在输出目录维护 `coflow.data.manifest.json` /
+`coflow.csharp.manifest.json`，只清理上一次由 Coflow 生成的产物。旧版本生成
+但没有 manifest 的目录，建议先清理旧 `.json`、`.msgpack`、`.cs` 文件或改用
+新的空输出目录。
+
 单独运行各阶段：
 
 ```powershell
