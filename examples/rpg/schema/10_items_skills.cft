@@ -16,6 +16,7 @@ type Item {
   elemental_bonus: {Element: int} = {};
 
   upgrade_item: Item? = null;
+  featured_stage: Stage? = null;
 
   @deprecated
   @display("Legacy combat score")
@@ -52,6 +53,10 @@ type Item {
     when upgrade_item != null {
       upgrade_item.id != id;
       upgrade_item.rarity >= rarity;
+    }
+
+    when featured_stage != null {
+      featured_stage.unlock_level >= level_requirement;
     }
   }
 }
