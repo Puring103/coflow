@@ -1,0 +1,192 @@
+# 项目整体质量要求
+
+本文档用于统一 Coflow 项目的代码质量、架构、文档、网页和测试要求。项目仍处于开发期，不要求公共 API 稳定性，可以为了更清晰的架构和更高的质量大胆重构。
+
+## 总体目标
+
+Coflow 的代码、文档、网页、测试、CLI、LSP 和生成物必须描述同一个系统，避免实现、说明和示例各说各话。
+
+质量提升的核心目标：
+
+- 架构清晰，模块职责边界明确。
+- 代码可靠、可维护、可重构。
+- 文档和代码同步，关键设计点有文档依据。
+- 测试覆盖正向、负向和边界情况，不能只有 happy path。
+- 错误诊断可定位、可理解、可回归测试。
+- 网页作为项目入口，清楚介绍项目定位、解决方案、架构和简单示例。
+
+## 代码质量要求
+
+生产代码必须满足以下要求：
+
+- 禁止 `unsafe`。
+- 禁止 `unwrap`、裸 `expect`、`panic`、`todo`、`unimplemented`、`dbg`。
+- 错误必须通过显式返回值或诊断模型表达，不能依赖崩溃。
+- 避免无意义的大对象 `clone`、copy 和重复分配，尤其是 schema、data model、diagnostics、导出数据和 LSP 文档状态。
+- 文件职责要单一，文件分割要清晰。
+- 减少重复代码，优先复用已有 crate、模块和 helper。
+- 避免超大文件。超过约 800 到 1000 行的生产源码应考虑拆分；超过约 1500 行默认进入拆分计划，除非有明确理由。
+- 允许调整 crate 边界、模块边界和内部类型，只要测试和文档同步更新。
+
+当前重点治理对象：
+
+- `crates/coflow-lsp/src/lib.rs`
+- `editors/vscode-coflow/src/extension.js`
+- `crates/coflow-codegen-csharp/src/lib.rs`
+- `crates/coflow-data-model/src/compiler.rs`
+
+## 架构要求
+
+各层职责应保持清晰：
+
+- parser 只负责语言解析。
+- project 只负责项目配置、路径处理和 schema 编译入口。
+- loader 只负责数据源到输入记录的转换。
+- data-model 只负责类型化模型构建、默认值、索引和引用解析。
+- checker 只负责执行 CFT `check` 规则。
+- exporter 只负责导出数据格式。
+- codegen 只负责生成运行时代码。
+- pipeline 只负责编排 schema、load、check、export、codegen 流程。
+- CLI 只负责命令参数、退出码和终端输出。
+- LSP 负责编辑器语义能力。
+- VS Code 插件应尽量只做客户端适配。
+
+Rust LSP 应逐步成为编辑器语义能力的主要事实来源。VS Code 插件中的本地解析、补全、hover、definition、semantic tokens 等重复语义逻辑应收敛，避免规则变更后 Rust 和 JS 两套实现行为漂移。
+
+生成物、lockfile、本地配置和示例资产需要明确边界：
+
+- 普通生成物不应提交到仓库。
+- 如果某些 lockfile 需要提交，必须说明原因和维护方式。
+- 本地工具配置不应进入版本库，除非团队明确需要共享。
+
+## 实现问题和潜在 bug 排查要求
+
+质量梳理不能只看格式、lint 和测试是否通过，还必须主动检查实现上的问题和潜在 bug。每轮排查应输出可定位的问题清单，包含问题描述、影响范围、涉及文件、复现方式或触发条件、建议修复方向，以及是否需要新增测试。
+
+重点排查方向：
+
+- 错误处理是否完整，是否存在被吞掉的错误、错误码不准确、错误位置不准确、related location 缺失等问题。
+- 配置校验是否覆盖缺失字段、未知字段、非法组合、重复配置、空路径、错误输出类型等情况。
+- 路径处理是否兼容 Windows、相对路径、绝对路径、符号链接、大小写差异、URI 编码、非 UTF-8 或 Unicode 文件名。
+- 文件读写是否可能误删、覆盖不该覆盖的文件、写入到错误目录，或在部分失败后留下不一致生成物。
+- parser 和 loader 是否存在错误恢复不完整、合法输入误报、非法输入漏报、多错误只报一个等问题。
+- schema、data model、checker、exporter、codegen 之间的语义是否一致，例如默认值、nullable、多态、引用、dict key、enum/flag enum、路径引用等。
+- 数据模型是否维护内部不变量，例如 record id、table index、polymorphic index、duplicate key、引用目标和 record origin 的对应关系。
+- 诊断从底层模块映射到 Excel/CFD/CLI/LSP 时，文件、sheet、cell、行列、UTF-16 column 是否保持正确。
+- LSP 是否正确处理未保存文档、打开/关闭文档、增量变更、保存后重编译、未知请求、shutdown/exit、超大消息和 malformed URI。
+- VS Code 插件与 Rust LSP 是否存在重复逻辑导致的行为漂移。
+- JSON、MessagePack 和 C# codegen 的输出语义是否一致。
+- C# 生成代码是否覆盖命名冲突、保留字、非法标识符、nullable、struct、继承、多态引用、嵌套引用解析等边界。
+- 大数据结构是否存在不必要 clone、重复遍历、重复解析、无界缓存或明显的性能退化风险。
+- 测试是否只覆盖 happy path，是否缺少错误码的负向触发和相邻合法输入不误报测试。
+
+发现潜在 bug 后，优先级按影响排序：
+
+1. 会导致错误数据、错误导出、错误代码生成、误删文件或崩溃的问题。
+2. 会导致诊断错误、LSP 行为错误、CLI 退出码错误的问题。
+3. 会造成维护成本上升、重复逻辑、架构边界混乱的问题。
+4. 单纯风格或局部可读性问题。
+
+## 文档要求
+
+文档必须和代码对应：
+
+- 关键设计点必须在文档中体现。
+- README、规格文档、CLI 行为、配置格式、LSP/插件说明必须一致。
+- 每次关键行为或架构变化，都要同步更新相关文档。
+- 文档需要高可读性，不能只罗列 API。
+- 文档应辅以案例，既能作为开发文档，也能作为简单教程。
+- 文档中的命令、配置字段、路径、示例代码应可以直接对照当前实现。
+
+## 网页要求
+
+需要实现一个介绍项目核心特性的网页。网页不需要复杂，也不做重营销表达，只作为项目入口。
+
+网页包含四个板块：
+
+1. 项目介绍以及想解决的问题。
+2. 项目如何解决这些问题。
+3. 项目的核心架构。
+4. 简单示例。
+
+网页应清楚说明：
+
+- Coflow 面向什么场景。
+- 游戏配置数据通常有哪些痛点。
+- CFT schema、Excel/CFD、check、export、codegen、LSP 如何串成一个流程。
+- 一个最小示例如何从 schema 到数据，再到校验和导出。
+
+## 测试要求
+
+测试不能只有 happy path。每类核心行为都需要覆盖：
+
+- 正向情况。
+- 负向情况。
+- 边界情况。
+- 错误定位和错误消息。
+- 多错误聚合场景。
+- 不应误报的相邻合法输入。
+
+所有错误码都必须经过两种方向的测试：
+
+1. 负向测试：构造输入，确认可以触发该错误码。
+2. 正向或边界相邻测试：构造合法或近似合法输入，确认不会误报该错误码。
+
+需要覆盖的主要模块：
+
+- CFT lexer/parser/schema compiler/type checker。
+- cell value parser。
+- Excel loader。
+- CFD parser/loader。
+- data model。
+- checker。
+- exporter。
+- codegen。
+- pipeline。
+- CLI。
+- LSP。
+- VS Code 插件的客户端适配逻辑。
+
+覆盖率可以作为参考，但不能替代测试质量判断。示例项目暂时不作为自动化测试要求。暂时不需要性能基准测试。
+
+## 当前测试现状
+
+当前项目并不是只有 happy path，已经包含大量负向和边界测试，例如：
+
+- CFT 错误码覆盖：`crates/coflow-cft/tests/error_coverage.rs`
+- cell value 负向和边界测试：`crates/coflow-cell-value/tests/cell_value.rs`
+- Excel loader 错误路径：`crates/coflow-loader-excel/tests/excel_loader.rs`
+- data model 引用、重复、类型错误：`crates/coflow-data-model/tests/`
+- checker runtime 错误：`crates/coflow-checker/tests/check.rs`
+- CLI 配置和诊断错误：`tests/cli_check.rs`
+- LSP 协议和语义边界：`crates/coflow-lsp/src/tests/`
+
+后续需要补齐更严格的统一标准：不仅要证明某个错误码能触发，还要证明相邻合法输入不会误报该错误码。该标准应覆盖所有错误码体系，而不是只覆盖部分模块。
+
+## 工程门禁
+
+提交或合并前必须从仓库根目录通过以下检查：
+
+```powershell
+cargo check --workspace
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+```
+
+CI 应与本地门禁保持一致。
+
+建议补充的工程检查：
+
+- 文档链接和命令示例检查。
+- 错误码覆盖检查。
+- 重复依赖检查。
+- 生成物和本地配置文件检查。
+
+## 暂不要求
+
+当前阶段暂不要求：
+
+- 公共 API 稳定性。
+- 性能基准测试。
+- 示例项目作为自动化测试资产。
