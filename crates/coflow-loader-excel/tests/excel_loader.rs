@@ -1000,6 +1000,134 @@ fn expand_consumes_parent_and_adjacent_columns_for_inner_fields() -> TestResult 
 }
 
 #[test]
+fn expand_accepts_explicit_inner_field_headers() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            @struct sealed type EnvCfg {
+                shc: float;
+                temperature: float;
+                diffusion: float;
+            }
+            type Terrain {
+                @expand
+                env: EnvCfg;
+            }
+        "#,
+    )?;
+
+    let path = temp_xlsx_path("terrain-expand-child-headers");
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Terrain")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "env")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 2, "temperature")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 3, "diffusion")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "Water")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_number(1, 1, 4.0)
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_number(1, 2, 20.0)
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_number(1, 3, 0.5)
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
+
+    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Terrain")]);
+    let model = load_excel_model(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+    let terrain_id = model
+        .table("Terrain")
+        .and_then(|table| table.primary_index.get("Water"))
+        .copied()
+        .ok_or_else(|| "expected Water terrain".to_string())?;
+    let terrain = model
+        .record(terrain_id)
+        .ok_or_else(|| "expected terrain record".to_string())?;
+    let CfdValue::Object(env) = terrain
+        .field("env")
+        .ok_or_else(|| "expected env field".to_string())?
+    else {
+        return Err("expected env object".to_string());
+    };
+    assert_eq!(env.field("temperature"), Some(&CfdValue::Float(20.0)));
+    Ok(())
+}
+
+#[test]
+fn rejects_expand_header_that_would_swallow_normal_column() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            @struct sealed type EnvCfg {
+                shc: float;
+                temperature: float;
+            }
+            type Terrain {
+                @expand
+                env: EnvCfg;
+                level: int;
+            }
+        "#,
+    )?;
+
+    let path = temp_xlsx_path("expand-swallowed-normal-column");
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Terrain")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "env")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 2, "level")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "Water")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_number(1, 1, 4.0)
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_number(1, 2, 7.0)
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
+
+    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Terrain")]);
+    let Err(err) = load_excel_model(&schema, &[source]) else {
+        return Err("expected @expand header collision error".to_string());
+    };
+    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-COLUMN")?;
+    assert!(diagnostic.message.contains("@expand"));
+    assert!(diagnostic.message.contains("temperature"));
+    assert!(diagnostic.message.contains("level"));
+    let location = &diagnostic
+        .primary
+        .as_ref()
+        .ok_or_else(|| "expected primary location".to_string())?
+        .location;
+    assert_eq!(location.row, Some(1));
+    assert_eq!(location.column, Some(3));
+    Ok(())
+}
+
+#[test]
 fn resolves_direct_reference_shorthand_cells_by_field_type() -> TestResult {
     let schema = compile_schema(
         r#"
