@@ -128,3 +128,23 @@ pipeline 现在以大小写不敏感方式识别 `.xlsx`、`.xlsm`、`.xls` 和 
 
 - `CFD-REF-001` 现在对应实际可达的 `RefTargetNotFound`。
 - `CFD-CHECK-*` 列表移除不可达的运行期正则错误码。
+
+### 补齐 `CFD-TEXT-*` 错误码双向覆盖
+
+`coflow-loader-cfd` 新增集中测试，覆盖所有 `.cfd` 文本加载错误码的负向触发和相邻合法输入。
+
+覆盖的错误码包括：
+
+- `Syntax`
+- `UnknownType`
+- `AbstractObjectType`
+- `ObjectTypeMismatch`
+- `UnknownField`
+- `DuplicateField`
+- `ReservedIdField`
+- `TypeMismatch`
+- `InvalidEnumVariant`
+- `ReferenceNeedsMarker`
+
+每个错误码都有对应的合法相邻输入，确认 parser 不会把正常记录、合法多态记录、
+合法字段、合法 enum、合法引用等场景误报为错误。
