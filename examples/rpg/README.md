@@ -7,14 +7,16 @@ It includes:
 
 - CFT schema split across `schema/*.cft`.
 - Excel data in `data/rpg.xlsx`.
+- CFD text data in `data/cfd/*.cfd`.
 - Project configuration in `coflow.yaml`.
 - Declared JSON data and C# code outputs.
 - A workbook builder script in `scripts/build-rpg-workbook.mjs`.
 
-The workbook contains a validation-heavy RPG slice:
+The data set contains a validation-heavy RPG slice:
 
-- `Item`, `Equipment`, `Skill`, `Buff`, `Monster`, `DropTable`, `Stage`, `Quest`,
-  `Shop`, and `Text` tables.
+- `Item`, `Equipment`, `Skill`, `Buff`, `Monster`, and `Text` records in Excel.
+- `DropTable`, `Stage`, `Quest`, and `Shop` records in CFD, where nested rewards,
+  spawns, objectives, dialogue, and shop entries are easier to review as text.
 - Field-level checks for IDs, ranges, names, prices, percentages, coordinates, and stat caps.
 - Collection checks for unique arrays, dictionary key/value rules, drop weight sums, and matched
   reward/weight lengths.
@@ -22,6 +24,8 @@ The workbook contains a validation-heavy RPG slice:
   raid-gated shops.
 - Cross-table checks for equipment text keys, skill buffs, monster skills/items, stage drops,
   quest stages/targets, shop quest gates, and localized text references.
+- Bidirectional Excel/CFD references: Excel item/equipment rows reference CFD stages, while
+  CFD progression records reference Excel items, equipment, monsters, skills, buffs, and text.
 
 The schema demonstrates:
 

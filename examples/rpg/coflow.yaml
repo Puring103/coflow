@@ -1,7 +1,7 @@
 schema: schema/
 
 sources:
-  - file: data/rpg.xlsx
+  - dir: data
     sheets:
       - sheet: Item
         columns:
@@ -17,6 +17,7 @@ sources:
           Attributes: attributes
           Elemental Bonus: elemental_bonus
           Upgrade Item ID: upgrade_item
+          Featured Stage ID: featured_stage
           Legacy Power: legacy_power
       - sheet: Equipment
         columns:
@@ -33,6 +34,7 @@ sources:
           Attributes: attributes
           Elemental Bonus: elemental_bonus
           Upgrade Item ID: upgrade_item
+          Featured Stage ID: featured_stage
           Legacy Power: legacy_power
           Required Class: required_class
           Stat Bonus: stat_bonus
@@ -83,54 +85,6 @@ sources:
           Phases: phases
           Spawn Points: spawn_points
           Flags: flags
-      - sheet: DropTable
-        columns:
-          Drop ID: id
-          Monster ID: monster
-          Conditions: conditions
-          Rewards: rewards
-          Weights: weights
-          Bonus By Rarity: bonus_by_rarity
-          Currency Curve: currency_curve
-          Guaranteed Reward: guaranteed_reward
-          Notes: notes
-      - sheet: Stage
-        columns:
-          Stage ID: id
-          Name Text ID: name_text
-          Kind: kind
-          Unlock Level: unlock_level
-          Recommended Power: recommended_power
-          Positions: positions
-          Spawns: spawns
-          Drop Table ID: drop_table
-          First Clear Reward: first_clear_reward
-          Modifiers: modifiers
-      - sheet: Quest
-        columns:
-          Quest ID: id
-          Kind: kind
-          Title Text ID: title_text
-          Title: title
-          Min Level: min_level
-          Stage ID: stage
-          Target Monster ID: target_monster
-          Reward Item ID: reward_item
-          Prerequisites: prerequisites
-          Objectives: objectives
-          Reward Preview: reward_preview
-          Availability: availability
-          Dialogue: dialogue
-      - sheet: Shop
-        columns:
-          Shop ID: id
-          Name Text ID: name_text
-          Kind: kind
-          Open Day: open_day
-          Close Day: close_day
-          Stage Gate ID: stage_gate
-          Entries: entries
-          Currencies: currencies
       - sheet: Text
         columns:
           Text ID: id
