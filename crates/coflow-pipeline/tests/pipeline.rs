@@ -492,6 +492,236 @@ fn check_project_returns_check_diagnostics_after_successful_load() {
 }
 
 #[test]
+fn check_project_defaults_excel_sheets_when_source_omits_sheet_config() {
+    let root = temp_project_dir("coflow-pipeline-default-excel-sheets");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        r#"
+            type Item {
+                name: string;
+                check { name != ""; }
+            }
+        "#,
+    )
+    .expect("write schema");
+    let workbook_path = root.join("data").join("configs.xlsx");
+    write_item_workbook(&workbook_path, None).expect("write workbook");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - file: data/configs.xlsx
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+
+    let outcome = check_project(&project).expect("check project");
+
+    assert!(matches!(outcome, PipelineOutcome::Success(_)));
+}
+
+#[test]
+fn check_project_loads_directory_sources_and_resolves_excel_cfd_refs_both_ways() {
+    let root = temp_project_dir("coflow-pipeline-mixed-directory-source");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        r#"
+            type Item {
+                name: string;
+                linked_stage: Stage? = null;
+
+                check {
+                    name != "";
+                    when linked_stage != null {
+                        linked_stage.reward_item.id == id;
+                    }
+                }
+            }
+
+            type Stage {
+                name: string;
+                reward_item: Item;
+
+                check {
+                    name != "";
+                    reward_item.id != "";
+                }
+            }
+        "#,
+    )
+    .expect("write schema");
+    write_item_workbook(
+        &root.join("data").join("configs.xlsx"),
+        Some("@Stage.forest"),
+    )
+    .expect("write workbook");
+    std::fs::write(
+        root.join("data").join("stages.cfd"),
+        r#"
+            forest: Stage {
+                name: "Forest",
+                reward_item: @Item.potion,
+            }
+        "#,
+    )
+    .expect("write cfd source");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - dir: data
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+
+    let outcome = check_project(&project).expect("check project");
+
+    assert!(matches!(outcome, PipelineOutcome::Success(_)));
+}
+
+#[test]
+fn check_project_accepts_file_field_that_points_to_a_directory_source() {
+    let root = temp_project_dir("coflow-pipeline-file-directory-source");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        "type Item { name: string; }\n",
+    )
+    .expect("write schema");
+    write_item_workbook(&root.join("data").join("configs.xlsx"), None).expect("write workbook");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - file: data
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+
+    let outcome = check_project(&project).expect("check project");
+
+    assert!(matches!(outcome, PipelineOutcome::Success(_)));
+}
+
+#[test]
+fn check_project_ignores_unsupported_files_inside_directory_sources() {
+    let root = temp_project_dir("coflow-pipeline-directory-ignores-unsupported");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        "type Item { name: string; }\n",
+    )
+    .expect("write schema");
+    write_item_workbook(&root.join("data").join("configs.xlsx"), None).expect("write workbook");
+    std::fs::write(root.join("data").join("notes.txt"), "ignored\n")
+        .expect("write unsupported file");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - dir: data
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+
+    let outcome = check_project(&project).expect("check project");
+
+    assert!(matches!(outcome, PipelineOutcome::Success(_)));
+}
+
+#[test]
+fn check_project_reports_source_with_both_file_and_dir() {
+    let root = temp_project_dir("coflow-pipeline-source-both-file-and-dir");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(root.join("schema").join("main.cft"), "type Item {}\n").expect("write schema");
+    write_item_workbook(&root.join("data").join("configs.xlsx"), None).expect("write workbook");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - file: data/configs.xlsx
+    dir: data
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+
+    let outcome = check_project(&project).expect("check project");
+
+    assert_diagnostic_message_contains(
+        outcome,
+        "sources[0] must set exactly one of `file` or `dir`",
+    );
+}
+
+#[test]
+fn check_project_reports_explicit_file_with_unsupported_extension() {
+    let root = temp_project_dir("coflow-pipeline-unsupported-file-source");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(root.join("schema").join("main.cft"), "type Item {}\n").expect("write schema");
+    std::fs::write(root.join("data").join("notes.txt"), "not a data file\n")
+        .expect("write unsupported source");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - file: data/notes.txt
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+
+    let outcome = check_project(&project).expect("check project");
+
+    assert_diagnostic_message_contains(
+        outcome,
+        "source file `data/notes.txt` has unsupported extension",
+    );
+}
+
+#[test]
 fn export_project_data_requires_excel_sources() {
     let root = temp_project_dir("coflow-pipeline-export-missing-source");
     let _cleanup = TempDirCleanup(root.clone());
@@ -1146,7 +1376,8 @@ fn project_with_unvalidated_outputs(
         config: ProjectConfig {
             schema: SchemaConfig::One(PathBuf::from("schema")),
             sources: vec![SourceConfig {
-                file: PathBuf::from("data/configs.xlsx"),
+                file: Some(PathBuf::from("data/configs.xlsx")),
+                dir: None,
                 sheets: vec![SheetConfig {
                     sheet: "Item".to_string(),
                     type_name: None,
@@ -1332,6 +1563,26 @@ fn write_key_as_enum_workbook(path: &Path) -> Result<(), rust_xlsxwriter::XlsxEr
     remains.write_string(1, 0, "remains_1")?;
     remains.write_string(1, 1, "@GeneConfig.Gene_Spore")?;
 
+    workbook.save(path)
+}
+
+fn write_item_workbook(
+    path: &Path,
+    linked_stage: Option<&str>,
+) -> Result<(), rust_xlsxwriter::XlsxError> {
+    let mut workbook = Workbook::new();
+    let sheet = workbook.add_worksheet();
+    sheet.set_name("Item")?;
+    sheet.write_string(0, 0, "id")?;
+    sheet.write_string(0, 1, "name")?;
+    if linked_stage.is_some() {
+        sheet.write_string(0, 2, "linked_stage")?;
+    }
+    sheet.write_string(1, 0, "potion")?;
+    sheet.write_string(1, 1, "Potion")?;
+    if let Some(value) = linked_stage {
+        sheet.write_string(1, 2, value)?;
+    }
     workbook.save(path)
 }
 

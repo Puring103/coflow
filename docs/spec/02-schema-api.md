@@ -11,7 +11,7 @@ Schema API 只描述已经完成 CFT 解析和编译后的反射结构：
 
 - 不负责项目路径发现或文件读取。
 - 不重新暴露原始 AST。
-- 不执行 Excel 加载、data model 构建或 `check {}` 运行期求值。
+- 不执行数据加载、data model 构建或 `check {}` 运行期求值。
 
 宿主应通过 `CftContainer` 注册模块并完成 `compile()`，再读取 schema 反射信息。
 

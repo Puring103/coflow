@@ -487,7 +487,7 @@ impl CftContainer {
     // 编译所有已注册模块，统一校验全局命名空间、字段类型、继承、注解、默认值和 check 静态类型。
     pub fn compile(&mut self) -> Result<(), CftDiagnostics>;
 
-    // schema 反射，用于代码生成和 Excel 加载器字段映射；返回的引用在
+    // schema 反射，用于代码生成和数据加载器字段映射；返回的引用在
     // 下次成功 add_module 或下次成功调用 compile 之前保持稳定。成功
     // add_module 会使已发布 schema 失效；失败的 add_module 不改变容器，
     // 也不废弃已发布 schema。失败的 compile 不发布新 schema。

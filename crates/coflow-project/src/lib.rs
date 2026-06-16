@@ -42,7 +42,8 @@ pub enum SchemaConfig {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourceConfig {
-    pub file: PathBuf,
+    pub file: Option<PathBuf>,
+    pub dir: Option<PathBuf>,
     #[serde(default)]
     pub sheets: Vec<SheetConfig>,
 }
@@ -136,8 +137,7 @@ impl Project {
     /// # Errors
     ///
     /// Returns an error when the config path cannot be found, read,
-    /// canonicalized, parsed as YAML, or references invalid schema/output
-    /// configuration.
+    /// canonicalized, or parsed as YAML.
     pub fn open_schema_only(config_or_dir: Option<&Path>) -> Result<Self, String> {
         let config_path = resolve_config_path(config_or_dir)?;
         let config_path = fs::canonicalize(&config_path).map_err(|err| {
@@ -165,8 +165,8 @@ impl Project {
     ///
     /// # Errors
     ///
-    /// Returns an error when an Excel source file is missing or a data-stage
-    /// source/sheet setting is invalid.
+    /// Returns an error when a data source file or directory is missing or a
+    /// data-stage source/sheet setting is invalid.
     pub fn validate_for_data(&self) -> Result<(), String> {
         validate_sources(&self.root_dir, &self.config.sources)
     }
@@ -331,14 +331,26 @@ fn validate_sources_collecting(root_dir: &Path, sources: &[SourceConfig]) -> Vec
     let mut diagnostics = validate_source_shapes_collecting(sources);
     for (source_index, source) in sources.iter().enumerate() {
         let source_label = format!("sources[{source_index}]");
-        if !resolve_project_relative(root_dir, &source.file).is_file() {
-            diagnostics.push(format!(
-                "{source_label}.file `{}` does not exist",
-                source.file.display()
-            ));
-        }
-        if source.sheets.is_empty() {
-            diagnostics.push(format!("{source_label}.sheets is empty"));
+        match (&source.file, &source.dir) {
+            (Some(file), None) => {
+                let resolved = resolve_project_relative(root_dir, file);
+                if !resolved.is_file() && !resolved.is_dir() {
+                    diagnostics.push(format!(
+                        "{source_label}.file `{}` does not exist",
+                        file.display()
+                    ));
+                }
+            }
+            (None, Some(dir)) => {
+                let resolved = resolve_project_relative(root_dir, dir);
+                if !resolved.is_dir() {
+                    diagnostics.push(format!(
+                        "{source_label}.dir `{}` does not exist or is not a directory",
+                        dir.display()
+                    ));
+                }
+            }
+            (Some(_), Some(_)) | (None, None) => {}
         }
     }
     diagnostics
@@ -348,8 +360,24 @@ fn validate_source_shapes_collecting(sources: &[SourceConfig]) -> Vec<String> {
     let mut diagnostics = Vec::new();
     for (source_index, source) in sources.iter().enumerate() {
         let source_label = format!("sources[{source_index}]");
-        if source.file.as_os_str().is_empty() {
+        if source.file.is_some() == source.dir.is_some() {
+            diagnostics.push(format!(
+                "{source_label} must set exactly one of `file` or `dir`"
+            ));
+        }
+        if source
+            .file
+            .as_ref()
+            .is_some_and(|file| file.as_os_str().is_empty())
+        {
             diagnostics.push(format!("{source_label}.file is empty"));
+        }
+        if source
+            .dir
+            .as_ref()
+            .is_some_and(|dir| dir.as_os_str().is_empty())
+        {
+            diagnostics.push(format!("{source_label}.dir is empty"));
         }
         for (sheet_index, sheet) in source.sheets.iter().enumerate() {
             let sheet_label = format!("{source_label}.sheets[{sheet_index}]");

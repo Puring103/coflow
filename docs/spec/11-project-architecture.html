@@ -339,7 +339,7 @@
       <p class="eyebrow">Coflow 项目文档</p>
       <h1>项目架构图</h1>
       <p class="subtitle">
-        这个页面把当前 Rust workspace 的项目配置、CFT schema 编译、Excel 数据加载、数据校验、导出和 C# 代码生成放在同一张图里。
+        这个页面把当前 Rust workspace 的项目配置、CFT schema 编译、Excel/CFD 数据加载、数据校验、导出和 C# 代码生成放在同一张图里。
       </p>
     </div>
   </header>
@@ -351,7 +351,7 @@
       <div class="diagram-shell">
         <svg viewBox="0 0 1180 720" role="img" aria-labelledby="svg-title svg-desc">
           <title id="svg-title">Coflow 项目系统总览图</title>
-          <desc id="svg-desc">图中展示 coflow CLI、项目配置、CFT 编译、Excel 加载、数据模型、校验、导出、C# 生成和 VS Code LSP 的关系。</desc>
+          <desc id="svg-desc">图中展示 coflow CLI、项目配置、CFT 编译、Excel/CFD 加载、数据模型、校验、导出、C# 生成和 VS Code LSP 的关系。</desc>
           <defs>
             <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="#657383"></path>
@@ -408,13 +408,13 @@
 
           <g class="node data" transform="translate(56 424)">
             <rect width="150" height="72"></rect>
-            <text x="75" y="31">Excel .xlsx</text>
-            <text class="sub" x="75" y="52">配置表源数据</text>
+            <text x="75" y="31">Excel / CFD</text>
+            <text class="sub" x="75" y="52">表格和文本源数据</text>
           </g>
           <g class="node data" transform="translate(272 424)">
             <rect width="166" height="72"></rect>
-            <text x="83" y="31">coflow-loader-excel</text>
-            <text class="sub" x="83" y="52">读取 sheet / 映射列</text>
+            <text x="83" y="31">data loaders</text>
+            <text class="sub" x="83" y="52">读取 sheet / CFD 文本</text>
           </g>
           <g class="node data" transform="translate(504 424)">
             <rect width="174" height="72"></rect>
@@ -488,7 +488,7 @@
         <article class="step">
           <span class="step-number">1</span>
           <h3 class="step-title">打开项目</h3>
-          <p>读取 `coflow.yaml`，解析 schema、Excel sources 和输出目录。</p>
+          <p>读取 `coflow.yaml`，解析 schema、数据 sources 和输出目录。</p>
         </article>
         <article class="step">
           <span class="step-number">2</span>
@@ -497,8 +497,8 @@
         </article>
         <article class="step">
           <span class="step-number">3</span>
-          <h3 class="step-title">加载 Excel</h3>
-          <p>按 sheet 和列映射读取 `.xlsx`，把单元格解析为输入值。</p>
+          <h3 class="step-title">加载数据</h3>
+          <p>读取 `.xlsx` 和 `.cfd`，转换为来源无关的输入值。</p>
         </article>
         <article class="step">
           <span class="step-number">4</span>
@@ -533,13 +533,14 @@
             <li><strong>coflow-cft</strong>CFT 词法、语法、schema 编译、类型检查和诊断。</li>
             <li><strong>coflow-data-model</strong>来源无关的数据模型、表、记录、值和引用解析。</li>
             <li><strong>coflow-cell-value</strong>把 Excel 单元格文本按 schema 解析成输入值。</li>
+            <li><strong>coflow-cfd</strong>把 `.cfd` 文本按 schema 解析成输入记录。</li>
           </ul>
         </div>
         <div class="module-group">
           <h3>管线与校验层</h3>
           <ul class="module-list">
             <li><strong>coflow-project</strong>解析项目配置、发现 schema 文件、编译项目 schema。</li>
-            <li><strong>coflow-loader-excel</strong>读取 `.xlsx`，映射 sheet/列，构建并校验模型。</li>
+            <li><strong>coflow-loader-excel</strong>读取 `.xlsx`，映射 sheet/列，输出输入记录。</li>
             <li><strong>coflow-checker</strong>执行 CFT `check` 块，返回数据诊断。</li>
           </ul>
         </div>
@@ -572,7 +573,7 @@
         </div>
         <div class="command">
           <code>coflow check</code>
-          <p>完整运行 schema 编译、Excel 加载、模型构建和 check 规则。</p>
+          <p>完整运行 schema 编译、Excel/CFD 加载、模型构建和 check 规则。</p>
         </div>
         <div class="command">
           <code>coflow export / codegen</code>

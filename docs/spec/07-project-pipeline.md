@@ -1,11 +1,11 @@
 # 项目管线规格
 
-项目加载层负责把 `coflow.yaml`、schema、Excel source、数据导出和代码生成串成完整 CLI 工作流。它不重新实现底层 schema 编译、Excel 解析、数据模型构建或 C# 渲染规则。
+项目加载层负责把 `coflow.yaml`、schema、数据 source、数据导出和代码生成串成完整 CLI 工作流。它不重新实现底层 schema 编译、Excel/CFD 解析、数据模型构建或 C# 渲染规则。
 
 实现边界：
 
 - `coflow-project` 负责项目配置、路径解析、schema 文件发现、CFT 编译和 CFT 诊断映射。
-- `coflow-pipeline` 负责项目执行流水线：schema 编译后的控制流、Excel 加载、check 诊断聚合、数据导出和 C# codegen。
+- `coflow-pipeline` 负责项目执行流水线：schema 编译后的控制流、Excel/CFD 数据加载、check 诊断聚合、数据导出和 C# codegen。
 - CLI 根包只负责命令行参数解析、调用 pipeline API、输出成功消息和诊断。
 - `coflow-cft-lsp` 只依赖 `coflow-project`，不依赖 `coflow-pipeline`。
 
@@ -15,7 +15,7 @@
 
 - `coflow.yaml`
 - 项目配置中发现的 CFT schema 文件
-- Excel source 定义
+- 数据 source 定义
 - CLI 命令和命令行覆盖项
 
 ---
@@ -43,8 +43,8 @@ key，避免 YAML map 后写覆盖导致隐式丢配置。
 
 - 解析项目配置并解析项目相对路径。
 - 发现并编译 schema，得到 `CftContainer`。
-- 构建已经解析的 `ExcelSource` 值，并调用 `coflow-loader-excel`。
-- 编排 CLI 命令，包括 Excel 加载、数据模型构建和 check 诊断处理。
+- 发现 source 中支持的数据文件，并分别调用 `coflow-loader-excel` 或 `coflow-cfd`。
+- 编排 CLI 命令，包括数据加载、数据模型构建和 check 诊断处理。
 - 根据 `outputs.data.type` 调用 JSON 或 MessagePack 导出：
   - `json`：调用 `coflow-exporter-json`，输出 `<TypeName>.json`。
   - `messagepack`：调用 `coflow-exporter-messagepack`，输出 `<TypeName>.msgpack`。
@@ -56,14 +56,14 @@ key，避免 YAML map 后写覆盖导致隐式丢配置。
 
 项目打开分为三个阶段：
 
-- `Project::open_schema_only`：只解析并反序列化 `coflow.yaml`；不要求 Excel workbook 存在。
-- `Project::schema_diagnostics`：schema-only 命令在打开项目后调用，聚合 schema path、output 配置和 source 配置形状诊断；仍不要求 Excel workbook 存在。
-- `Project::validate_for_data`：在 schema-only 之上校验数据阶段 source，要求 workbook 文件存在且每个 source 至少有一个 sheet。
-- `Project::validate_for_codegen`：校验 C# codegen 需要的 `outputs.code.type: csharp` 和 `outputs.data.type: json | messagepack`；不要求 Excel workbook 存在。
+- `Project::open_schema_only`：只解析并反序列化 `coflow.yaml`；不要求数据源文件存在。
+- `Project::schema_diagnostics`：schema-only 命令在打开项目后调用，聚合 schema path、output 配置和 source 配置形状诊断；仍不要求数据源文件存在。
+- `Project::validate_for_data`：在 schema-only 之上校验数据阶段 source，要求 `file`/`dir` 指向存在的文件或目录。
+- `Project::validate_for_codegen`：校验 C# codegen 需要的 `outputs.code.type: csharp` 和 `outputs.data.type: json | messagepack`；不要求数据源文件存在。
 
 命令阶段矩阵：
 
-| 命令 | Schema | Excel source 存在性 | Data model | Codegen 目标 |
+| 命令 | Schema | 数据源存在性 | Data model | Codegen 目标 |
 | --- | --- | --- | --- | --- |
 | `cft check` | 是 | 否 | 否 | 否 |
 | `cft lsp` | 是 | 否 | 否 | 否 |
@@ -84,7 +84,7 @@ key，避免 YAML map 后写覆盖导致隐式丢配置。
 - 未匹配到任何已配置 schema 文件时返回 CLI 错误：
   `` `--stdin-path ...` is not part of the configured schema ``。
 
-LSP 只使用 schema-only 加载和 schema 编译，不进入 Excel、data model、导出
+LSP 只使用 schema-only 加载和 schema 编译，不进入数据加载、data model、导出
 或 codegen 阶段。它维护打开文档的内存覆盖层，发布项目 schema 诊断，并提供
 completion、hover、definition、document symbol、formatting 和 semantic tokens。
 
@@ -106,7 +106,7 @@ completion、hover、definition、document symbol、formatting 和 semantic toke
 
 所有会写产物的命令都在写入前执行可聚合诊断和 artifact preflight：
 
-- `build`：先完成项目、schema、Excel、data model、引用和 check；再检查
+- `build`：先完成项目、schema、数据加载、data model、引用和 check；再检查
   data output path；如果配置了 `outputs.code`，还会检查 C# codegen preflight
   和 code output path。任一诊断存在时不写数据，也不写代码。
 - `export json/messagepack`：先完成数据校验，再检查目标输出目录；有诊断时
@@ -130,7 +130,7 @@ C# codegen 成功写入时，项目管线先维护 `coflow.enum.lock.json`，再
 
 ## Check 诊断处理
 
-`coflow-pipeline::check_project` 在 schema、Excel、data model 均成功但 CFT `check` 失败时，返回 `PipelineOutcome::Diagnostics`，不返回 `Err`。`Err` 只表示配置错误、I/O 错误或不可恢复的 artifact 错误。
+`coflow-pipeline::check_project` 在 schema、数据加载、data model 均成功但 CFT `check` 失败时，返回 `PipelineOutcome::Diagnostics`，不返回 `Err`。`Err` 只表示配置错误、I/O 错误或不可恢复的 artifact 错误。
 
 CLI `coflow check` 对 `PipelineOutcome::Diagnostics` 的处理规则：
 
@@ -144,7 +144,7 @@ CLI `coflow check` 对 `PipelineOutcome::Diagnostics` 的处理规则：
 ## 非职责
 
 - 不重新实现 CFT parser、schema compiler 或 schema 反射模型。
-- 不重新实现 Excel 单元格解析或跨表引用解析；这些由 `coflow-loader-excel` 负责。
+- 不重新实现 Excel 单元格解析或 CFD 文本解析；这些由 `coflow-loader-excel` 和 `coflow-cfd` 负责。
 - 不拥有 JSON 或 MessagePack 的 schema-aware 导出遍历规则；这些由 `coflow-exporter-core` 以及具体 exporter 负责。
 - 不拥有 C# 类型映射、模板渲染或加载器生成规则；codegen 接收编译后的 `CftContainer` 和 options。
 - 不充当生成出的 C# trusted artifact loader。

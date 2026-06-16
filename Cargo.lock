@@ -379,7 +379,9 @@ dependencies = [
 name = "coflow-pipeline"
 version = "0.1.0"
 dependencies = [
+ "coflow-cfd",
  "coflow-cft",
+ "coflow-checker",
  "coflow-codegen-csharp-json",
  "coflow-codegen-csharp-messagepack",
  "coflow-data-model",

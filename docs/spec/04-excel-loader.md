@@ -27,6 +27,8 @@ Excel 加载器的输入是：
 
 `ExcelSource` 描述一个或多个 Excel 文件、sheet 到 CFT type 的映射，以及可选的列名到字段名映射。路径解析、配置文件读取、文件发现和命令行选项合并不属于 `coflow-loader-excel` 的职责。
 
+如果 `ExcelSource.sheets` 为空，加载器默认加载 workbook 中全部 sheet：sheet 名作为 CFT 类型名，表头文本作为字段名。需要重命名 sheet、覆盖类型名或映射显示列头时，上层传入显式 `sheets` 配置。
+
 ---
 
 ## 2. 加载流程
