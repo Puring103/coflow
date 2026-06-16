@@ -170,3 +170,14 @@ pipeline 现在以大小写不敏感方式识别 `.xlsx`、`.xlsm`、`.xls` 和 
 覆盖范围包括声明类型解析、未知类型、对象字段、嵌套边界、类型不匹配、多态对象、
 enum、字符串引用歧义和记录引用标记提示。这样新增单元格错误码时，测试会强制补齐
 负向触发和正向不误报两个方向。
+
+### 修复 Excel `@expand` 子字段诊断定位
+
+Excel loader 的 origin 映射现在记录 `@expand` 子字段到实际 Excel 列的关系。
+当 data model 对 `env.temperature` 这类展开子字段报告 `MissingRequiredField`
+或类型错误时，诊断会定位到子字段所在列，而不是只定位到 `env` 父列。
+
+新增回归测试覆盖：
+
+- `@expand env` 的 `temperature` 子列为空时，`CFD-DATA-006` 定位到
+  `temperature` 子列。

@@ -760,7 +760,7 @@ struct ExcelRecordOrigin {
     sheet: String,
     row: usize,
     id_column: usize,
-    fields: BTreeMap<String, usize>,
+    field_columns: BTreeMap<Vec<String>, usize>,
 }
 
 impl ExcelRecordOrigin {
@@ -771,25 +771,30 @@ impl ExcelRecordOrigin {
         columns: &[ResolvedColumn],
         id_column: usize,
     ) -> Self {
+        let mut field_columns = BTreeMap::new();
+        for column in columns {
+            field_columns.insert(vec![column.field.clone()], column.excel_column);
+            if let Some(children) = &column.expand {
+                for child in children {
+                    field_columns.insert(
+                        vec![column.field.clone(), child.field.clone()],
+                        child.excel_column,
+                    );
+                }
+            }
+        }
         Self {
             file,
             sheet,
             row,
             id_column,
-            fields: columns
-                .iter()
-                .map(|column| (column.field.clone(), column.excel_column))
-                .collect(),
+            field_columns,
         }
     }
 
     fn location_for_path(&self, path: &CfdPath) -> ExcelLocation {
-        let column = root_field(path).and_then(|field| {
-            if field == "id" {
-                Some(self.id_column)
-            } else {
-                self.fields.get(field).copied()
-            }
+        let column = path_column(path, &self.field_columns).or_else(|| {
+            root_field(path).and_then(|field| (field == "id").then_some(self.id_column))
         });
         ExcelLocation::new(self.file.clone())
             .sheet(self.sheet.clone())
@@ -1128,6 +1133,21 @@ fn root_field(path: &CfdPath) -> Option<&str> {
         CfdPathSegment::Field(name) => Some(name.as_str()),
         CfdPathSegment::Index(_) | CfdPathSegment::DictKey(_) => None,
     })
+}
+
+fn path_column(path: &CfdPath, field_columns: &BTreeMap<Vec<String>, usize>) -> Option<usize> {
+    let mut prefix = Vec::new();
+    let mut column = None;
+    for segment in &path.segments {
+        let CfdPathSegment::Field(field) = segment else {
+            break;
+        };
+        prefix.push(field.clone());
+        if let Some(candidate) = field_columns.get(&prefix) {
+            column = Some(*candidate);
+        }
+    }
+    column
 }
 
 fn is_empty_mapped_row(row: &[Data], columns: &[ResolvedColumn], id_column: &IdColumn) -> bool {
