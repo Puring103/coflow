@@ -245,6 +245,51 @@ fn nullable_element_builtins_handle_nulls_and_empty_values() {
 }
 
 #[test]
+fn contains_reports_runtime_type_errors_for_null_collections() {
+    let schema = compile_schema(
+        r#"
+            type Holder {
+                items: [int]? = null;
+                check { contains(items, 1); }
+            }
+        "#,
+    );
+
+    let mut valid_builder = CfdDataModel::builder(&schema);
+    valid_builder.add_record(
+        "holder_valid",
+        "Holder",
+        [(
+            "items",
+            CfdInputValue::Array(vec![CfdInputValue::from(1_i64)]),
+        )],
+    );
+    let valid = build_model(&schema, valid_builder);
+    valid
+        .run_checks(&schema)
+        .expect("contains should work for a present nullable array");
+
+    let mut null_builder = CfdDataModel::builder(&schema);
+    null_builder.add_record(
+        "holder_null",
+        "Holder",
+        std::iter::empty::<(&str, CfdInputValue)>(),
+    );
+    let null = build_model(&schema, null_builder);
+    let err = null
+        .run_checks(&schema)
+        .expect_err("contains(null, value) should be a runtime type error");
+
+    assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
+    assert!(
+        !err.diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == CfdErrorCode::CheckFailed),
+        "contains(null, value) must not be downgraded into a false check: {err:?}"
+    );
+}
+
+#[test]
 fn inherited_checks_and_statement_order_are_stable() {
     let schema = compile_schema(
         r#"

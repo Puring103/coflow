@@ -70,3 +70,19 @@ pipeline 现在以大小写不敏感方式识别 `.xlsx`、`.xlsm`、`.xls` 和 
 - 目录源中的 `.XLSX` workbook 会被加载。
 - 目录源中的 `.CFD` 文件会被加载。
 - 显式 `file: data/SINGLE.CFD` 会被加载。
+
+### 修复 `contains(null, value)` 被误判为普通校验失败
+
+`coflow-checker` 现在会把 `contains` 的非集合运行时输入报告为
+`CFD-CHECK-EVAL-TYPE`，不会把 nullable collection 的 `null` 值当作
+`false` 继续执行。这样错误的 check 规则或缺少空值 guard 的规则不会被降级为
+普通 `CFD-CHECK-FAILED`。
+
+同时，checker evaluator 对单参数内建函数和 enum 构造器增加严格 arity 防御，
+避免未来绕过 CFT type checker 的调用静默忽略额外参数。
+
+新增回归测试覆盖：
+
+- nullable array 有值时，`contains(items, 1)` 正常通过。
+- nullable array 为 `null` 时，触发 `CFD-CHECK-EVAL-TYPE`。
+- `contains(null, value)` 不会产生普通 `CFD-CHECK-FAILED`。
