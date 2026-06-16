@@ -50,8 +50,8 @@
 
 ## 错误码覆盖标准尚未统一到所有模块
 
-CFT 已有错误码触发覆盖测试，`CfdErrorCode` 已建立“负向触发 + 相邻合法输入不误报”
-机械覆盖，`CFD-TEXT-*` 已覆盖负向和相邻合法输入。但同一标准还没有统一覆盖到所有错误码体系。
+CFT、`CfdErrorCode` 和 `CFD-TEXT-*` 已建立“负向触发 + 相邻合法输入不误报”
+覆盖。但同一标准还没有统一覆盖到所有错误码体系。
 
 影响：
 
@@ -60,7 +60,7 @@ CFT 已有错误码触发覆盖测试，`CfdErrorCode` 已建立“负向触发 
 
 建议方向：
 
-- 为 CFT、cell value、Excel loader、pipeline/artifact/codegen 逐步建立错误码覆盖清单。
+- 为 cell value、Excel loader、pipeline/artifact/codegen 逐步建立错误码覆盖清单。
 - 对每个错误码记录：触发样例、相邻合法样例、期望位置和消息要点。
 
 ## 生成物和 lockfile 策略需要进一步明确

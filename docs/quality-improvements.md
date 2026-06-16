@@ -148,3 +148,14 @@ pipeline 现在以大小写不敏感方式识别 `.xlsx`、`.xlsm`、`.xls` 和 
 
 每个错误码都有对应的合法相邻输入，确认 parser 不会把正常记录、合法多态记录、
 合法字段、合法 enum、合法引用等场景误报为错误。
+
+### 补齐 CFT 错误码双向覆盖
+
+`coflow-cft` 的错误码覆盖测试从“每个错误码都能触发”升级为双向覆盖：
+
+- 每个 `CftErrorCode` 都保留负向触发样例。
+- 每个样例都增加贴近原错误的合法相邻输入。
+- 测试会确认这些合法输入可以完成对应阶段解析和编译，避免 lexer、parser、
+  schema compiler 或 type checker 把近似合法场景误报为错误。
+
+覆盖范围包括 CFT lexer、syntax parser、schema compiler 和 check 表达式 type checker。
