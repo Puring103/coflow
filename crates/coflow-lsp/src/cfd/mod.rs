@@ -11,12 +11,13 @@ use serde_json::{json, Value};
 
 const SEM_NAMESPACE: u32 = 0; // record key
 const SEM_TYPE: u32 = 1; // type name
+const SEM_ENUM_MEMBER: u32 = 3; // enum variant value
 const SEM_PROPERTY: u32 = 4; // field name
 const SEM_STRING: u32 = 9; // quoted string value
 const SEM_NUMBER: u32 = 8; // numeric scalar
 const SEM_COMMENT: u32 = 10; // // and # comments
 const SEM_KEYWORD: u32 = 7; // null / true / false
-const SEM_OPERATOR: u32 = 11; // @ & ... : { } [ ]
+const SEM_OPERATOR: u32 = 11; // @ & ...
 
 // ── Public helpers used by LspServer ─────────────────────────────────────────
 
@@ -104,6 +105,9 @@ fn collect_value_tokens(value: &coflow_cfd::CfdValue, c: &mut TokenCollector<'_>
                 c.add(*span, SEM_KEYWORD);
             } else if text.bytes().next().is_some_and(|b| b.is_ascii_digit() || b == b'-') {
                 c.add(*span, SEM_NUMBER);
+            } else if text.bytes().next().is_some_and(|b| b.is_ascii_uppercase()) {
+                // PascalCase bare identifier → enum variant
+                c.add(*span, SEM_ENUM_MEMBER);
             }
         }
         CfdValue::QuotedString(_, span) => c.add(*span, SEM_STRING),
