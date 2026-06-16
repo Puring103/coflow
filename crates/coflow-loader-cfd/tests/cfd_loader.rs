@@ -496,6 +496,83 @@ fn cfd_rejects_check_blocks_as_data_syntax() {
 }
 
 #[test]
+fn cfd_text_error_codes_have_negative_and_adjacent_valid_cases() {
+    let cases = [
+        (
+            CfdTextErrorCode::Syntax,
+            "type Item { name: string; }",
+            r#"sword Item { name: "Sword" }"#,
+            r#"sword: Item { name: "Sword" }"#,
+        ),
+        (
+            CfdTextErrorCode::UnknownType,
+            "type Item { name: string; }",
+            r#"sword: Missing { name: "Sword" }"#,
+            r#"sword: Item { name: "Sword" }"#,
+        ),
+        (
+            CfdTextErrorCode::AbstractObjectType,
+            "abstract type Reward {} type CoinReward : Reward { amount: int; }",
+            r#"reward: Reward {}"#,
+            r#"reward: CoinReward { amount: 1 }"#,
+        ),
+        (
+            CfdTextErrorCode::ObjectTypeMismatch,
+            "abstract type Reward {} type CoinReward : Reward { amount: int; } type Item { name: string; }",
+            r#"Reward { bad: Item { name: "Sword" } }"#,
+            r#"Reward { coin: CoinReward { amount: 1 } }"#,
+        ),
+        (
+            CfdTextErrorCode::UnknownField,
+            "type Item { name: string; }",
+            r#"sword: Item { missing: "Sword" }"#,
+            r#"sword: Item { name: "Sword" }"#,
+        ),
+        (
+            CfdTextErrorCode::DuplicateField,
+            "type Item { name: string; }",
+            r#"sword: Item { name: "Sword", name: "Blade" }"#,
+            r#"sword: Item { name: "Sword" }"#,
+        ),
+        (
+            CfdTextErrorCode::ReservedIdField,
+            "type Item { name: string; }",
+            r#"sword: Item { id: "sword", name: "Sword" }"#,
+            r#"sword: Item { name: "Sword" }"#,
+        ),
+        (
+            CfdTextErrorCode::TypeMismatch,
+            "type Item { level: int; }",
+            r#"sword: Item { level: "high" }"#,
+            r#"sword: Item { level: 3 }"#,
+        ),
+        (
+            CfdTextErrorCode::InvalidEnumVariant,
+            "enum Rarity { Common, Rare, } type Item { rarity: Rarity; }",
+            r#"sword: Item { rarity: Missing }"#,
+            r#"sword: Item { rarity: Rarity.Rare }"#,
+        ),
+        (
+            CfdTextErrorCode::ReferenceNeedsMarker,
+            "type Item { name: string; } type Holder { item: Item; }",
+            r#"sword: Item { name: "Sword" } holder: Holder { item: sword }"#,
+            r#"sword: Item { name: "Sword" } holder: Holder { item: &sword }"#,
+        ),
+    ];
+
+    for (code, schema_source, invalid_source, adjacent_valid_source) in cases {
+        let schema = compile_schema(schema_source);
+        let err = match parse_cfd_input_records(&schema, invalid_source) {
+            Ok(records) => panic!("{code:?} case should fail, got {records:?}"),
+            Err(err) => err,
+        };
+        assert_has_text_code(&err, code);
+        parse_cfd_input_records(&schema, adjacent_valid_source)
+            .unwrap_or_else(|err| panic!("{code:?} adjacent-valid case should parse: {err:?}"));
+    }
+}
+
+#[test]
 fn examples_cfd_files_load_together() -> TestResult {
     let examples_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/cfd");
     let schema = compile_schema(&fs::read_to_string(examples_dir.join("schema.cft"))?);
