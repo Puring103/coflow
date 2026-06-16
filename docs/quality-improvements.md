@@ -86,3 +86,15 @@ pipeline 现在以大小写不敏感方式识别 `.xlsx`、`.xlsm`、`.xls` 和 
 - nullable array 有值时，`contains(items, 1)` 正常通过。
 - nullable array 为 `null` 时，触发 `CFD-CHECK-EVAL-TYPE`。
 - `contains(null, value)` 不会产生普通 `CFD-CHECK-FAILED`。
+
+### 修复多态路径引用无法访问子类字段
+
+`coflow-data-model` 的路径引用现在会在字段下钻时读取当前值的实际记录类型，
+再按实际类型查找字段元数据。这样当字段声明为父类或 abstract 类型，但实际值为子类时，
+路径可以继续访问子类字段。
+
+新增回归测试覆盖：
+
+- `rewards: [Reward]` 中实际元素为 `ItemReward` 时，
+  `@DropTable.table_1.rewards[0].item` 可以正确解析到 `ItemReward.item`。
+- 解析结果继续保持目标字段类型校验，确保引用到的 `Item` 能赋给目标字段。
