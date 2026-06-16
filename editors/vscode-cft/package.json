@@ -1,7 +1,7 @@
 {
-  "name": "coflow-cft",
-  "displayName": "CFT Language Support",
-  "description": "Syntax highlighting, snippets, hovers, and completions for Coflow Type File (.cft).",
+  "name": "coflow",
+  "displayName": "Coflow Language Support",
+  "description": "Syntax highlighting, snippets, hovers, and completions for Coflow Type File (.cft) and Coflow Data File (.cfd).",
   "version": "0.1.0",
   "publisher": "coflow",
   "license": "MIT OR Apache-2.0",
@@ -13,40 +13,41 @@
   ],
   "keywords": [
     "cft",
+    "cfd",
     "coflow",
     "schema",
     "game-data"
   ],
   "activationEvents": [
-    "onLanguage:cft"
+    "onLanguage:cft",
+    "onLanguage:cfd"
   ],
   "main": "./src/extension.js",
   "contributes": {
     "configuration": {
-      "title": "CFT",
+      "title": "Coflow",
       "properties": {
-        "coflowCft.diagnostics.enabled": {
+        "coflow.diagnostics.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable diagnostics from the coflow-cft compiler."
+          "description": "Enable diagnostics from the Coflow language server."
         },
-        "coflowCft.diagnostics.command": {
+        "coflow.diagnostics.command": {
           "type": "string",
           "default": "coflow",
-          "description": "Command used to start the CFT language server."
+          "description": "Command used to start the Coflow language server."
         },
-        "coflowCft.diagnostics.args": {
+        "coflow.diagnostics.args": {
           "type": "array",
           "default": [
-            "cft",
             "lsp"
           ],
           "items": {
             "type": "string"
           },
-          "description": "Arguments used to start the project-aware CFT language server."
+          "description": "Arguments used to start the project-aware Coflow language server."
         },
-        "coflowCft.diagnostics.debounceMs": {
+        "coflow.diagnostics.debounceMs": {
           "type": "number",
           "default": 350,
           "minimum": 0,
@@ -65,6 +66,17 @@
           ".cft"
         ],
         "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "cfd",
+        "aliases": [
+          "CFD",
+          "Coflow Data File"
+        ],
+        "extensions": [
+          ".cfd"
+        ],
+        "configuration": "./cfd-language-configuration.json"
       }
     ],
     "grammars": [
@@ -72,12 +84,21 @@
         "language": "cft",
         "scopeName": "source.cft",
         "path": "./syntaxes/cft.tmLanguage.json"
+      },
+      {
+        "language": "cfd",
+        "scopeName": "source.cfd",
+        "path": "./syntaxes/cfd.tmLanguage.json"
       }
     ],
     "snippets": [
       {
         "language": "cft",
         "path": "./snippets/cft.json"
+      },
+      {
+        "language": "cfd",
+        "path": "./snippets/cfd.json"
       }
     ]
   }

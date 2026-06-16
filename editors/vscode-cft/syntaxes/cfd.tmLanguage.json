@@ -1,0 +1,124 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "CFD",
+  "scopeName": "source.cfd",
+  "patterns": [
+    { "include": "#comment-line-slash" },
+    { "include": "#comment-line-hash" },
+    { "include": "#string" },
+    { "include": "#spread" },
+    { "include": "#ref-typed" },
+    { "include": "#ref-direct" },
+    { "include": "#record-key-colon" },
+    { "include": "#group-member-key" },
+    { "include": "#type-name" },
+    { "include": "#enum-dict-key" },
+    { "include": "#field-name" },
+    { "include": "#constant-language" },
+    { "include": "#constant-numeric" },
+    { "include": "#enum-variant-value" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comment-line-slash": {
+      "name": "comment.line.double-slash.cfd",
+      "match": "//.*$"
+    },
+    "comment-line-hash": {
+      "name": "comment.line.number-sign.cfd",
+      "match": "#.*$"
+    },
+    "string": {
+      "name": "string.quoted.double.cfd",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.cfd",
+          "match": "\\\\[\"\\\\nrt]"
+        }
+      ]
+    },
+    "spread": {
+      "name": "keyword.operator.spread.cfd",
+      "match": "\\.\\.\\."
+    },
+    "ref-typed": {
+      "comment": "@TypeName.key or @TypeName.key.path[index]",
+      "match": "(@)([A-Za-z_][A-Za-z0-9_]*)(\\.)((?:[A-Za-z0-9_]|\\.[A-Za-z0-9_]|\\[[^\\]]*\\])*)",
+      "captures": {
+        "1": { "name": "keyword.operator.reference.cfd" },
+        "2": { "name": "entity.name.type.cfd" },
+        "3": { "name": "punctuation.accessor.cfd" },
+        "4": { "name": "variable.other.cfd" }
+      }
+    },
+    "ref-direct": {
+      "comment": "&key — direct reference shorthand",
+      "match": "(&)([A-Za-z0-9_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.operator.reference.cfd" },
+        "2": { "name": "variable.other.cfd" }
+      }
+    },
+    "record-key-colon": {
+      "comment": "key: TypeName { — top-level or group-member record with explicit type",
+      "match": "^(\\s*)([A-Za-z_][A-Za-z0-9_]*)\\s*(:)\\s*([A-Za-z_][A-Za-z0-9_]*)(?=\\s*\\{)",
+      "captures": {
+        "2": { "name": "entity.name.namespace.cfd" },
+        "3": { "name": "punctuation.separator.cfd" },
+        "4": { "name": "entity.name.type.cfd" }
+      }
+    },
+    "group-member-key": {
+      "comment": "key { — record key inside a group (type inherited from group header)",
+      "match": "^\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\{)",
+      "captures": {
+        "1": { "name": "entity.name.namespace.cfd" }
+      }
+    },
+    "type-name": {
+      "comment": "TypeName { — inline type marker in polymorphic values and arrays",
+      "match": "\\b([A-Z][A-Za-z0-9_]*)(?=\\s*\\{)",
+      "captures": {
+        "1": { "name": "entity.name.type.cfd" }
+      }
+    },
+    "enum-dict-key": {
+      "comment": "UpperCase: value — enum variant used as a dictionary key",
+      "match": "\\b([A-Z][A-Za-z0-9_]*)(?=\\s*:)",
+      "captures": {
+        "1": { "name": "variable.other.enummember.cfd" }
+      }
+    },
+    "field-name": {
+      "comment": "fieldName: value",
+      "match": "\\b([a-z_][A-Za-z0-9_]*)(?=\\s*:)",
+      "captures": {
+        "1": { "name": "variable.other.property.cfd" }
+      }
+    },
+    "constant-language": {
+      "name": "constant.language.cfd",
+      "match": "\\b(null|true|false)\\b"
+    },
+    "constant-numeric": {
+      "name": "constant.numeric.cfd",
+      "match": "-?(?:\\d+\\.\\d*|\\d*\\.\\d+|\\d+)(?:[eE][+-]?\\d+)?"
+    },
+    "enum-variant-value": {
+      "comment": "UpperCase identifier used as a plain value (enum variant)",
+      "match": "\\b([A-Z][A-Za-z0-9_]*)\\b(?![\\s]*[{:.])",
+      "captures": {
+        "1": { "name": "variable.other.enummember.cfd" }
+      }
+    },
+    "punctuation": {
+      "patterns": [
+        { "name": "punctuation.definition.block.cfd", "match": "[{}]" },
+        { "name": "punctuation.definition.array.cfd", "match": "[\\[\\]]" },
+        { "name": "punctuation.separator.cfd", "match": "[,;:]" }
+      ]
+    }
+  }
+}
