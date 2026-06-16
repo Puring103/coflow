@@ -36,10 +36,25 @@ CI 增加 `cargo check --workspace`，与本地提交前要求保持一致。
 
 ### 修复数据导出旧表文件残留
 
-`coflow-pipeline` 在写出 JSON 或 MessagePack 数据前会清理输出目录中旧的 `.json` / `.msgpack` 表文件。这样删除或重命名 schema 表后，旧数据文件不会继续留在输出目录并被消费者误用。
+`coflow-pipeline` 在写出 JSON 或 MessagePack 数据前会根据 `coflow.data.manifest.json`
+清理上一轮生成、但本轮不再生成的 `.json` / `.msgpack` 表文件。这样删除或
+重命名 schema 表后，旧数据文件不会继续留在输出目录并被消费者误用。
 
 新增回归测试覆盖：
 
 - stale `.json` 文件会被删除。
 - stale `.msgpack` 文件会被删除。
 - 非 Coflow 数据表扩展的旁路文件会保留。
+
+### 增加产物 manifest，避免误删或覆盖非 Coflow 文件
+
+数据导出和 C# codegen 现在分别维护 `coflow.data.manifest.json` 与
+`coflow.csharp.manifest.json`。写入前只清理上一轮 manifest 中存在、但本轮
+不再生成的产物；如果输出目录中存在未被 manifest 管理的 `.json`、`.msgpack`
+或 `.cs` 文件，命令会拒绝写入，而不是按扩展名直接删除或覆盖。
+
+新增回归测试覆盖：
+
+- 有 manifest 的旧数据表文件会被清理，并刷新 manifest。
+- 未被 manifest 管理的 `.json` 文件会阻止导出，原文件保留。
+- 未被 manifest 管理的 `.cs` 文件会阻止 C# codegen，原文件保留。

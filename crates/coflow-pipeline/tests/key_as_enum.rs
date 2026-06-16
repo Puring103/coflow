@@ -196,6 +196,34 @@ fn build_project_removes_stale_generated_csharp_files_after_key_as_enum_rename()
 }
 
 #[test]
+fn build_project_rejects_unmanaged_generated_csharp_files() {
+    let root = temp_project_dir("coflow-pipeline-rejects-unmanaged-csharp");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_key_as_enum_project(&root, &["Gene_Spore"]).expect("write project");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+    let data_dir = root.join("out-data");
+    let code_dir = root.join("out-code");
+    std::fs::create_dir_all(&code_dir).expect("create code dir");
+    std::fs::write(code_dir.join("Manual.cs"), "// user code").expect("write unmanaged csharp");
+
+    let outcome = build_project(
+        &project,
+        BuildOptions {
+            data_out_dir: Some(data_dir.as_path()),
+            code_out_dir: Some(code_dir.as_path()),
+            namespace: Some("Game.Config"),
+        },
+    )
+    .expect("unmanaged generated-looking C# file should be reported as diagnostics");
+
+    assert_diagnostic_message_contains(outcome, "unmanaged generated artifact");
+    assert!(code_dir.join("Manual.cs").exists());
+    assert!(!code_dir.join("GameConfig.cs").exists());
+    assert!(!data_dir.join("GeneConfig.json").exists());
+    assert!(!code_dir.join("coflow.enum.lock.json").exists());
+}
+
+#[test]
 fn build_project_reports_duplicate_key_as_enum_keys_before_codegen() {
     let root = temp_project_dir("coflow-pipeline-key-as-enum-duplicates");
     let _cleanup = TempDirCleanup(root.clone());

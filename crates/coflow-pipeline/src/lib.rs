@@ -17,8 +17,9 @@ mod data;
 mod schema;
 
 use artifacts::{
-    configured_data_format, configured_data_output, output_dir, preflight_csharp_files,
-    required_code_output, required_data_output, write_csharp_files, write_data_tables,
+    configured_data_format, configured_data_output, output_dir, preflight_csharp_artifacts,
+    preflight_csharp_files, preflight_data_artifacts, required_code_output, required_data_output,
+    write_csharp_files, write_data_tables,
 };
 use coflow_codegen_csharp_json::CsharpCodegenDiagnostic;
 use coflow_codegen_csharp_json::CsharpKeyAsEnumVariant;
@@ -185,6 +186,10 @@ pub fn build_project(
 
     let data_dir = output_dir(project, data_output, options.data_out_dir);
     let mut preflight_diagnostics = artifact_diagnostics_for_dirs([&data_dir]);
+    extend_artifact_preflight_diagnostics(
+        &mut preflight_diagnostics,
+        preflight_data_artifacts(&data_dir),
+    );
     let code_plan = if let Some(code_output) = project.config.outputs.code.as_ref() {
         if code_output.output_type != CodegenTarget::Csharp.as_config_value() {
             return Err(format!(
@@ -202,6 +207,10 @@ pub fn build_project(
             &schema, &namespace,
         )));
         preflight_diagnostics.extend(artifact_diagnostics_for_dirs([&code_dir]));
+        extend_artifact_preflight_diagnostics(
+            &mut preflight_diagnostics,
+            preflight_csharp_artifacts(&code_dir),
+        );
         Some((code_dir, namespace))
     } else {
         None
@@ -269,7 +278,11 @@ pub fn export_project_data(
         Ok(output) => output,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
-    let artifact_diagnostics = artifact_diagnostics_for_dirs([&dir]);
+    let mut artifact_diagnostics = artifact_diagnostics_for_dirs([&dir]);
+    extend_artifact_preflight_diagnostics(
+        &mut artifact_diagnostics,
+        preflight_data_artifacts(&dir),
+    );
     if !artifact_diagnostics.is_empty() {
         return Ok(PipelineOutcome::Diagnostics(artifact_diagnostics));
     }
@@ -310,7 +323,11 @@ pub fn generate_project_code(
     if !codegen_diagnostics.is_empty() {
         return Ok(PipelineOutcome::Diagnostics(codegen_diagnostics));
     }
-    let artifact_diagnostics = artifact_diagnostics_for_dirs([&dir]);
+    let mut artifact_diagnostics = artifact_diagnostics_for_dirs([&dir]);
+    extend_artifact_preflight_diagnostics(
+        &mut artifact_diagnostics,
+        preflight_csharp_artifacts(&dir),
+    );
     if !artifact_diagnostics.is_empty() {
         return Ok(PipelineOutcome::Diagnostics(artifact_diagnostics));
     }
@@ -332,6 +349,15 @@ fn artifact_diagnostics_for_dirs<'a>(
             ))
         })
         .collect()
+}
+
+fn extend_artifact_preflight_diagnostics(
+    diagnostics: &mut Vec<DiagnosticJson>,
+    result: Result<(), String>,
+) {
+    if let Err(message) = result {
+        diagnostics.push(DiagnosticJson::artifact(message));
+    }
 }
 
 fn diagnostics_from_codegen_preflight(
