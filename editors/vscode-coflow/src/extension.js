@@ -378,8 +378,14 @@ class CftDiagnostics {
     this.sessions = new Map();
     this.documentSessions = new Map();
 
+    const configWatcher = vscode.workspace.createFileSystemWatcher("**/coflow.{yaml,yml}");
+    configWatcher.onDidChange((uri) => this.restartSessionsForProject(uri));
+    configWatcher.onDidCreate((uri) => this.restartSessionsForProject(uri));
+    configWatcher.onDidDelete((uri) => this.restartSessionsForProject(uri));
+
     context.subscriptions.push(
       this.collection,
+      configWatcher,
       vscode.workspace.onDidOpenTextDocument((document) => this.openDocument(document)),
       vscode.workspace.onDidChangeTextDocument((event) => this.schedule(event.document)),
       vscode.workspace.onDidSaveTextDocument((document) => this.saveDocument(document)),
@@ -411,6 +417,38 @@ class CftDiagnostics {
     for (const document of vscode.workspace.textDocuments) {
       this.openDocument(document);
     }
+  }
+
+  restartSessionsForProject(configUri) {
+    const projectDir = path.dirname(configUri.fsPath);
+    // Find all session keys whose args include the affected project directory.
+    const affectedKeys = [...this.sessions.keys()].filter((key) => {
+      try {
+        const parsed = JSON.parse(key);
+        return parsed.args && parsed.args.some(
+          (arg) => normalizePath(arg) === normalizePath(projectDir)
+        );
+      } catch {
+        return false;
+      }
+    });
+    if (affectedKeys.length === 0) {
+      return;
+    }
+    for (const key of affectedKeys) {
+      const session = this.sessions.get(key);
+      if (session) {
+        session.dispose();
+      }
+      this.sessions.delete(key);
+    }
+    // Remove document→session mappings for the affected sessions.
+    for (const [docUri, sessionKey] of this.documentSessions.entries()) {
+      if (affectedKeys.includes(sessionKey)) {
+        this.documentSessions.delete(docUri);
+      }
+    }
+    this.validateAllOpenDocuments();
   }
 
   restartAllSessions() {
