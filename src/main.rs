@@ -43,6 +43,7 @@ fn run() -> Result<bool, String> {
     match Cli::parse().command {
         Command::Init(args) => init_project(args),
         Command::Cft(command) => run_cft(&command),
+        Command::Lsp(args) => run_lsp(&args),
         Command::Check(args) => project_check(&args),
         Command::Build(args) => project_build(&args),
         Command::Export(command) => run_export(&command),
@@ -84,6 +85,8 @@ enum Command {
     Init(InitArgs),
     /// CFT schema tools.
     Cft(CftArgs),
+    /// Start the Coflow language server (CFT + CFD).
+    Lsp(LspArgs),
     /// Run the full project validation pipeline.
     Check(ProjectCheckArgs),
     /// Run validation, data export, and configured code generation.
@@ -128,6 +131,12 @@ struct CftCheckArgs {
 
 #[derive(Debug, Args)]
 struct CftLspArgs {
+    #[arg(value_name = "CONFIG_OR_DIR")]
+    config_or_dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+struct LspArgs {
     #[arg(value_name = "CONFIG_OR_DIR")]
     config_or_dir: Option<PathBuf>,
 }
@@ -291,7 +300,13 @@ fn cft_check(args: &CftCheckArgs) -> Result<bool, String> {
 fn cft_lsp(args: &CftLspArgs) -> Result<bool, String> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
     let root_dir = project.root_dir.clone();
-    coflow_cft_lsp::run(project).map_err(|message| relativize_message_paths(&message, &root_dir))
+    coflow_lsp::run(project).map_err(|message| relativize_message_paths(&message, &root_dir))
+}
+
+fn run_lsp(args: &LspArgs) -> Result<bool, String> {
+    let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
+    let root_dir = project.root_dir.clone();
+    coflow_lsp::run(project).map_err(|message| relativize_message_paths(&message, &root_dir))
 }
 
 fn project_check(args: &ProjectCheckArgs) -> Result<bool, String> {

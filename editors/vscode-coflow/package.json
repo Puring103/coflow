@@ -1,0 +1,105 @@
+{
+  "name": "coflow",
+  "displayName": "Coflow Language Support",
+  "description": "Syntax highlighting, snippets, hovers, and completions for Coflow Type File (.cft) and Coflow Data File (.cfd).",
+  "version": "0.1.0",
+  "publisher": "coflow",
+  "license": "MIT OR Apache-2.0",
+  "engines": {
+    "vscode": "^1.84.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "cft",
+    "cfd",
+    "coflow",
+    "schema",
+    "game-data"
+  ],
+  "activationEvents": [
+    "onLanguage:cft",
+    "onLanguage:cfd"
+  ],
+  "main": "./src/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Coflow",
+      "properties": {
+        "coflow.diagnostics.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable diagnostics from the Coflow language server."
+        },
+        "coflow.diagnostics.command": {
+          "type": "string",
+          "default": "coflow",
+          "description": "Command used to start the Coflow language server."
+        },
+        "coflow.diagnostics.args": {
+          "type": "array",
+          "default": [
+            "lsp"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Arguments used to start the project-aware Coflow language server."
+        },
+        "coflow.diagnostics.debounceMs": {
+          "type": "number",
+          "default": 350,
+          "minimum": 0,
+          "description": "Delay before diagnostics run after document edits."
+        }
+      }
+    },
+    "languages": [
+      {
+        "id": "cft",
+        "aliases": [
+          "CFT",
+          "Coflow Type File"
+        ],
+        "extensions": [
+          ".cft"
+        ],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "cfd",
+        "aliases": [
+          "CFD",
+          "Coflow Data File"
+        ],
+        "extensions": [
+          ".cfd"
+        ],
+        "configuration": "./cfd-language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "cft",
+        "scopeName": "source.cft",
+        "path": "./syntaxes/cft.tmLanguage.json"
+      },
+      {
+        "language": "cfd",
+        "scopeName": "source.cfd",
+        "path": "./syntaxes/cfd.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "cft",
+        "path": "./snippets/cft.json"
+      },
+      {
+        "language": "cfd",
+        "path": "./snippets/cfd.json"
+      }
+    ]
+  }
+}

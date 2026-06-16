@@ -249,7 +249,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "coflow-cft",
- "coflow-cft-lsp",
+ "coflow-lsp",
  "coflow-pipeline",
  "coflow-project",
  "rust_xlsxwriter 0.64.2",
@@ -271,7 +271,6 @@ name = "coflow-cfd"
 version = "0.1.0"
 dependencies = [
  "coflow-cft",
- "coflow-data-model",
 ]
 
 [[package]]
@@ -280,15 +279,6 @@ version = "0.1.0"
 dependencies = [
  "regex",
  "unicode-ident",
-]
-
-[[package]]
-name = "coflow-cft-lsp"
-version = "0.1.0"
-dependencies = [
- "coflow-cft",
- "coflow-project",
- "serde_json",
 ]
 
 [[package]]
@@ -363,6 +353,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "coflow-loader-cfd"
+version = "0.1.0"
+dependencies = [
+ "coflow-cft",
+ "coflow-data-model",
+]
+
+[[package]]
 name = "coflow-loader-excel"
 version = "0.1.0"
 dependencies = [
@@ -376,10 +374,19 @@ dependencies = [
 ]
 
 [[package]]
-name = "coflow-pipeline"
+name = "coflow-lsp"
 version = "0.1.0"
 dependencies = [
  "coflow-cfd",
+ "coflow-cft",
+ "coflow-project",
+ "serde_json",
+]
+
+[[package]]
+name = "coflow-pipeline"
+version = "0.1.0"
+dependencies = [
  "coflow-cft",
  "coflow-checker",
  "coflow-codegen-csharp-json",
@@ -387,6 +394,7 @@ dependencies = [
  "coflow-data-model",
  "coflow-exporter-json",
  "coflow-exporter-messagepack",
+ "coflow-loader-cfd",
  "coflow-loader-excel",
  "coflow-project",
  "rust_xlsxwriter 0.64.2",

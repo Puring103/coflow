@@ -1,4 +1,4 @@
-use coflow_cfd::parse_cfd_input_records;
+use coflow_loader_cfd::parse_cfd_input_records;
 use coflow_cft::CftContainer;
 use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdInputRecord, CfdLabel};
 use coflow_loader_excel::{
@@ -125,15 +125,15 @@ fn load_cfd_records(
 fn cfd_text_diagnostics(
     file: &Path,
     source: &str,
-    err: coflow_cfd::CfdTextLoadError,
+    err: coflow_loader_cfd::CfdTextLoadError,
 ) -> Vec<DiagnosticJson> {
     match err {
-        coflow_cfd::CfdTextLoadError::Text(diagnostics) => diagnostics
+        coflow_loader_cfd::CfdTextLoadError::Text(diagnostics) => diagnostics
             .diagnostics
             .iter()
             .map(|diagnostic| cfd_text_diagnostic(file, source, diagnostic))
             .collect(),
-        coflow_cfd::CfdTextLoadError::DataModel(diagnostics) => {
+        coflow_loader_cfd::CfdTextLoadError::DataModel(diagnostics) => {
             plain_cfd_diagnostics(file, diagnostics)
         }
     }
@@ -142,7 +142,7 @@ fn cfd_text_diagnostics(
 fn cfd_text_diagnostic(
     file: &Path,
     source: &str,
-    diagnostic: &coflow_cfd::CfdTextDiagnostic,
+    diagnostic: &coflow_loader_cfd::CfdTextDiagnostic,
 ) -> DiagnosticJson {
     let start = byte_position(source, diagnostic.span.start);
     let end = byte_position(source, diagnostic.span.end.max(diagnostic.span.start + 1));

@@ -1,0 +1,42 @@
+{
+  "Top-level record": {
+    "prefix": "rec",
+    "body": [
+      "${1:key}: ${2:TypeName} {",
+      "\t${3:field}: ${4:value}",
+      "}"
+    ],
+    "description": "Top-level CFD record."
+  },
+  "Group block": {
+    "prefix": "group",
+    "body": [
+      "${1:TypeName} {",
+      "\t${2:key} {",
+      "\t\t${3:field}: ${4:value}",
+      "\t}",
+      "}"
+    ],
+    "description": "Grouped CFD records of the same type."
+  },
+  "Typed reference": {
+    "prefix": "@ref",
+    "body": "@${1:TypeName}.${2:key}",
+    "description": "Typed record reference: @TypeName.key"
+  },
+  "Direct reference": {
+    "prefix": "&ref",
+    "body": "&${1:key}",
+    "description": "Direct record reference shorthand: &key"
+  },
+  "Array": {
+    "prefix": "arr",
+    "body": "[${1:item1}, ${2:item2}]",
+    "description": "CFD array value."
+  },
+  "Spread": {
+    "prefix": "...",
+    "body": "...${1:source}",
+    "description": "CFD spread operator."
+  }
+}
