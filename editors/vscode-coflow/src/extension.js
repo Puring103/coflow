@@ -1707,8 +1707,17 @@ async function collectCftFilesInDir(dir) {
 async function collectWorkspaceSymbols(document) {
   const symbolsByUri = new Map();
   const openDocuments = new Map();
+
+  // Collect CFT paths for this document's project first, so we can filter
+  // open documents to only those belonging to the same coflow.yaml project.
+  const projectCftPaths = new Set(await collectCftPaths(document.uri));
+
   for (const openDocument of vscode.workspace.textDocuments) {
-    if (openDocument.languageId === "cft" && openDocument.uri.scheme === "file") {
+    if (
+      openDocument.languageId === "cft" &&
+      openDocument.uri.scheme === "file" &&
+      projectCftPaths.has(normalizePath(openDocument.uri.fsPath))
+    ) {
       openDocuments.set(openDocument.uri.toString(), openDocument);
     }
   }
@@ -1720,7 +1729,7 @@ async function collectWorkspaceSymbols(document) {
     });
   }
 
-  for (const filePath of await collectCftPaths(document.uri)) {
+  for (const filePath of projectCftPaths) {
     const uri = vscode.Uri.file(filePath);
     if (symbolsByUri.has(uri.toString())) {
       continue;
