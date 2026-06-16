@@ -110,22 +110,20 @@ CFT type checker 和 checker evaluator 两处。
 - 尽量让 CFT type checker 和 checker evaluator 共享同一份函数签名定义。
 - 继续补充负向和相邻合法测试：nullable 集合、nullable 元素、dict key 类型、空集合。
 
-## 多态路径引用下钻语义需要明确
+## 多态路径引用下钻语义（已修复）
 
-data model 的路径引用在穿过数组或字段后使用声明类型继续解析。如果字段声明为
-父类或 abstract 类型，但实际值是子类，后续访问子类字段可能被当作未知字段。
+data model 的路径引用曾在穿过数组或字段后使用声明类型继续解析。如果字段声明为
+父类或 abstract 类型，但实际值是子类，后续访问子类字段会被当作未知字段。
 
 影响：
 
 - 形如 `@DropTable.table.rewards[0].item` 的路径，在 `rewards: [Reward]` 且实际元素为
-`ItemReward` 时，可能无法访问 `ItemReward.item`。
-- 如果决定不支持这类路径，也需要给出明确诊断，而不是表现为普通 unknown field。
+`ItemReward` 时，曾无法访问 `ItemReward.item`。
 
-建议方向：
+处理结果：
 
-- 先补测试确认当前行为。
-- 若支持多态下钻，需要在路径解析阶段携带实际值类型。
-- 若不支持，需要在文档中说明并返回更准确的诊断。
+- 已在路径解析阶段读取当前值的实际 `RecordDraft.actual_type`，并按实际类型查找后续字段。
+- 已补充回归测试覆盖 `[Reward]` 中实际 `ItemReward` 元素继续访问 `item` 字段的场景。
 
 ## Excel `@expand` 表头吞列规则风险
 
