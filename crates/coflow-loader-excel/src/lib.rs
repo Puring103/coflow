@@ -282,6 +282,12 @@ pub fn load_excel(
 }
 
 #[allow(clippy::too_many_lines)]
+/// Loads configured Excel sources into input records without building a data model.
+///
+/// # Errors
+///
+/// Returns diagnostics when workbooks, sheets, headers, or cells cannot be loaded
+/// according to the schema.
 pub fn collect_input_records(
     schema: &CftContainer,
     sources: &[ExcelSource],
@@ -680,10 +686,11 @@ impl ExcelOrigins {
         self.records.len()
     }
 
-    pub fn extend(&mut self, other: ExcelOrigins) {
+    pub fn extend(&mut self, other: Self) {
         self.records.extend(other.records);
     }
 
+    #[must_use]
     pub fn map(&self, diagnostics: CfdDiagnostics) -> ExcelDiagnostics {
         ExcelDiagnostics {
             diagnostics: diagnostics
