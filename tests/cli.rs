@@ -285,7 +285,7 @@ fn config_validation_collects_multiple_project_diagnostics() {
         r#"schema: schema/
 sources:
   - file: data/missing.xlsx
-    sheets: []
+    dir: data
 outputs:
   data:
     type: yaml
@@ -309,8 +309,7 @@ outputs:
     let json: Value = serde_json::from_str(stdout.trim()).expect("diagnostics json");
     let diagnostics = json["diagnostics"].as_array().expect("diagnostics array");
     for expected in [
-        "sources[0].file `data/missing.xlsx` does not exist",
-        "sources[0].sheets is empty",
+        "sources[0] must set exactly one of `file` or `dir`",
         "outputs.data.type is `yaml`; expected `json` or `messagepack`",
         "outputs.data.dir is empty",
         "outputs.data.namespace is only valid for code outputs",

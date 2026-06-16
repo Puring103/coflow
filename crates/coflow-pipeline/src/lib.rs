@@ -13,7 +13,7 @@
 )]
 
 mod artifacts;
-mod excel;
+mod data;
 mod schema;
 
 use artifacts::{
@@ -23,7 +23,7 @@ use artifacts::{
 use coflow_codegen_csharp_json::CsharpCodegenDiagnostic;
 use coflow_codegen_csharp_json::CsharpKeyAsEnumVariant;
 use coflow_project::{DiagnosticJson, Project};
-use excel::load_project_excel;
+use data::load_project_data;
 use schema::compile_project_schema;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -135,7 +135,7 @@ pub struct BuildReport {
 /// # Errors
 ///
 /// Returns an error for project configuration errors or unrecoverable I/O and
-/// artifact errors. Schema, Excel, data-model, and check diagnostics are
+/// artifact errors. Schema, data loading, data-model, and check diagnostics are
 /// returned as `PipelineOutcome::Diagnostics`.
 pub fn check_project(project: &Project) -> Result<PipelineOutcome<CheckReport>, String> {
     let mut diagnostics = project.schema_diagnostics();
@@ -147,7 +147,7 @@ pub fn check_project(project: &Project) -> Result<PipelineOutcome<CheckReport>, 
         Ok(schema) => schema,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
-    match load_project_excel(project, &schema) {
+    match load_project_data(project, &schema) {
         Ok(_) => Ok(PipelineOutcome::Success(CheckReport)),
         Err(diagnostics) => Ok(PipelineOutcome::Diagnostics(diagnostics)),
     }
@@ -158,7 +158,7 @@ pub fn check_project(project: &Project) -> Result<PipelineOutcome<CheckReport>, 
 /// # Errors
 ///
 /// Returns an error for invalid project/output configuration, unsupported
-/// output targets, or artifact write/codegen failures. Schema, Excel,
+/// output targets, or artifact write/codegen failures. Schema, data loading,
 /// data-model, and check diagnostics are returned as
 /// `PipelineOutcome::Diagnostics`.
 pub fn build_project(
@@ -178,7 +178,7 @@ pub fn build_project(
         Ok(schema) => schema,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
-    let load_output = match load_project_excel(project, &schema) {
+    let load_output = match load_project_data(project, &schema) {
         Ok(output) => output,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
@@ -210,7 +210,7 @@ pub fn build_project(
         return Ok(PipelineOutcome::Diagnostics(preflight_diagnostics));
     }
 
-    write_data_tables(&schema, &load_output, data_format, &data_dir)?;
+    write_data_tables(&schema, &load_output.model, data_format, &data_dir)?;
     let data = ExportReport {
         format: data_format,
         dir: data_dir,
@@ -242,7 +242,7 @@ pub fn build_project(
 /// # Errors
 ///
 /// Returns an error for invalid project/output configuration, unsupported data
-/// format configuration, or artifact write failures. Schema, Excel,
+/// format configuration, or artifact write failures. Schema, data loading,
 /// data-model, and check diagnostics are returned as
 /// `PipelineOutcome::Diagnostics`.
 pub fn export_project_data(
@@ -265,7 +265,7 @@ pub fn export_project_data(
         Ok(schema) => schema,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
-    let load_output = match load_project_excel(project, &schema) {
+    let load_output = match load_project_data(project, &schema) {
         Ok(output) => output,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
@@ -273,7 +273,7 @@ pub fn export_project_data(
     if !artifact_diagnostics.is_empty() {
         return Ok(PipelineOutcome::Diagnostics(artifact_diagnostics));
     }
-    write_data_tables(&schema, &load_output, format, &dir)?;
+    write_data_tables(&schema, &load_output.model, format, &dir)?;
     Ok(PipelineOutcome::Success(ExportReport { format, dir }))
 }
 

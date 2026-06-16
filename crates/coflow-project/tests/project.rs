@@ -159,6 +159,24 @@ fn project_validation_reports_schema_source_and_output_edges() -> TestResult {
             true,
         ),
         (
+            "empty-source-dir",
+            "schema: schema/main.cft\nsources:\n  - dir: ''\n",
+            "sources[0].dir is empty",
+            true,
+        ),
+        (
+            "source-file-and-dir",
+            "schema: schema/main.cft\nsources:\n  - file: data.xlsx\n    dir: data\n",
+            "sources[0] must set exactly one of `file` or `dir`",
+            true,
+        ),
+        (
+            "source-missing-file-and-dir",
+            "schema: schema/main.cft\nsources:\n  - sheets:\n      - sheet: Items\n",
+            "sources[0] must set exactly one of `file` or `dir`",
+            true,
+        ),
+        (
             "data-namespace",
             "schema: schema/main.cft\noutputs:\n  data:\n    type: json\n    dir: out\n    namespace: Bad\n",
             "outputs.data.namespace is only valid for code outputs",
@@ -195,9 +213,9 @@ fn project_validation_reports_schema_source_and_output_edges() -> TestResult {
             false,
         ),
         (
-            "source-empty-sheets",
-            "schema: schema/main.cft\nsources:\n  - file: data.xlsx\n    sheets: []\n",
-            "sources[0].sheets is empty",
+            "source-missing-dir",
+            "schema: schema/main.cft\nsources:\n  - dir: missing\n",
+            "sources[0].dir `missing` does not exist or is not a directory",
             false,
         ),
     ];

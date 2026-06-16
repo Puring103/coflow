@@ -5,9 +5,9 @@ use coflow_codegen_csharp_json::{
 };
 use coflow_codegen_csharp_json::{CsharpCodegenDiagnostic, CsharpKeyAsEnumVariant};
 use coflow_codegen_csharp_messagepack::generate_csharp_messagepack_with_key_as_enum_variants;
+use coflow_data_model::CfdDataModel;
 use coflow_exporter_json::export_json_model;
 use coflow_exporter_messagepack::export_messagepack_model;
-use coflow_loader_excel::ExcelLoadOutput;
 use coflow_project::{OutputConfig, Project};
 use std::collections::BTreeMap;
 use std::fs;
@@ -26,13 +26,13 @@ pub fn output_dir(
 
 pub fn write_data_tables(
     schema: &CftContainer,
-    load_output: &ExcelLoadOutput,
+    model: &CfdDataModel,
     format: DataFormat,
     dir: &Path,
 ) -> Result<(), String> {
     match format {
-        DataFormat::Json => write_json_tables(schema, load_output, dir),
-        DataFormat::Messagepack => write_messagepack_tables(schema, load_output, dir),
+        DataFormat::Json => write_json_tables(schema, model, dir),
+        DataFormat::Messagepack => write_messagepack_tables(schema, model, dir),
     }
 }
 
@@ -177,10 +177,10 @@ fn require_output_type(
 
 fn write_json_tables(
     schema: &CftContainer,
-    load_output: &ExcelLoadOutput,
+    model: &CfdDataModel,
     dir: &Path,
 ) -> Result<(), String> {
-    let tables = export_json_model(schema, &load_output.model)
+    let tables = export_json_model(schema, model)
         .map_err(|err| format!("failed to export JSON model: {err}"))?;
     fs::create_dir_all(dir)
         .map_err(|err| format!("failed to create output dir `{}`: {err}", dir.display()))?;
@@ -196,10 +196,10 @@ fn write_json_tables(
 
 fn write_messagepack_tables(
     schema: &CftContainer,
-    load_output: &ExcelLoadOutput,
+    model: &CfdDataModel,
     dir: &Path,
 ) -> Result<(), String> {
-    let tables = export_messagepack_model(schema, &load_output.model)
+    let tables = export_messagepack_model(schema, model)
         .map_err(|err| format!("failed to export MessagePack model: {err}"))?;
     fs::create_dir_all(dir)
         .map_err(|err| format!("failed to create output dir `{}`: {err}", dir.display()))?;

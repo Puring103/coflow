@@ -23,7 +23,7 @@ use coflow_cell_value::{parse_cell, CellValueDiagnostics, ParsedCell};
 use coflow_cft::{record_key_ident_error, CftContainer};
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdInputRecord, CfdInputValue, CfdLabel, CfdPath,
-    CfdPathSegment, CfdRecordId,
+    CfdPathSegment,
 };
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -97,6 +97,12 @@ pub struct ExcelLoadOutput {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExcelDiagnostics {
     pub diagnostics: Vec<ExcelDiagnostic>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExcelInputRecords {
+    pub records: Vec<CfdInputRecord>,
+    pub origins: ExcelOrigins,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -275,17 +281,11 @@ pub fn load_excel(
     })
 }
 
-#[derive(Debug, Clone)]
-struct LoadedInput {
-    records: Vec<CfdInputRecord>,
-    origins: ExcelOrigins,
-}
-
 #[allow(clippy::too_many_lines)]
-fn collect_input_records(
+pub fn collect_input_records(
     schema: &CftContainer,
     sources: &[ExcelSource],
-) -> Result<LoadedInput, ExcelDiagnostics> {
+) -> Result<ExcelInputRecords, ExcelDiagnostics> {
     let mut records = Vec::new();
     let mut origins = ExcelOrigins::default();
     let mut diagnostics = Vec::new();
@@ -302,7 +302,16 @@ fn collect_input_records(
         };
         let sheet_names = workbook.sheet_names();
 
-        for sheet in &source.sheets {
+        let configured_sheets = if source.sheets.is_empty() {
+            sheet_names
+                .iter()
+                .map(|sheet| ExcelSheet::new(sheet.clone()))
+                .collect::<Vec<_>>()
+        } else {
+            source.sheets.clone()
+        };
+
+        for sheet in &configured_sheets {
             let type_name = sheet.type_name();
             let Some(fields) = full_field_types(schema, type_name) else {
                 diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::UnknownType {
@@ -469,7 +478,7 @@ fn collect_input_records(
         }
     }
     if diagnostics.is_empty() {
-        Ok(LoadedInput { records, origins })
+        Ok(ExcelInputRecords { records, origins })
     } else {
         Err(ExcelDiagnostics { diagnostics })
     }
@@ -657,7 +666,7 @@ struct ExpandedSubColumn {
 }
 
 #[derive(Debug, Clone, Default)]
-struct ExcelOrigins {
+pub struct ExcelOrigins {
     records: Vec<ExcelRecordOrigin>,
 }
 
@@ -666,7 +675,16 @@ impl ExcelOrigins {
         self.records.push(origin);
     }
 
-    fn map(&self, diagnostics: CfdDiagnostics) -> ExcelDiagnostics {
+    #[must_use]
+    pub fn record_count(&self) -> usize {
+        self.records.len()
+    }
+
+    pub fn extend(&mut self, other: ExcelOrigins) {
+        self.records.extend(other.records);
+    }
+
+    pub fn map(&self, diagnostics: CfdDiagnostics) -> ExcelDiagnostics {
         ExcelDiagnostics {
             diagnostics: diagnostics
                 .diagnostics
@@ -674,6 +692,21 @@ impl ExcelOrigins {
                 .map(|diagnostic| self.map_diagnostic(diagnostic))
                 .collect(),
         }
+    }
+
+    #[must_use]
+    pub fn map_label_with_record_offset(
+        &self,
+        label: &CfdLabel,
+        record_offset: usize,
+    ) -> Option<ExcelLabel> {
+        let record = label.record?;
+        let local_record = record.index().checked_sub(record_offset)?;
+        let origin = self.records.get(local_record)?;
+        Some(ExcelLabel {
+            location: origin.location_for_path(&label.path),
+            message: label.message.clone(),
+        })
     }
 
     fn map_diagnostic(&self, diagnostic: CfdDiagnostic) -> ExcelDiagnostic {
@@ -684,27 +717,14 @@ impl ExcelOrigins {
             primary: diagnostic
                 .primary
                 .as_ref()
-                .and_then(|label| self.map_label(label)),
+                .and_then(|label| self.map_label_with_record_offset(label, 0)),
             related: diagnostic
                 .related
                 .iter()
-                .filter_map(|label| self.map_label(label))
+                .filter_map(|label| self.map_label_with_record_offset(label, 0))
                 .collect(),
             source: Some(diagnostic),
         }
-    }
-
-    fn map_label(&self, label: &CfdLabel) -> Option<ExcelLabel> {
-        let record = label.record?;
-        let origin = self.record(record)?;
-        Some(ExcelLabel {
-            location: origin.location_for_path(&label.path),
-            message: label.message.clone(),
-        })
-    }
-
-    fn record(&self, record: CfdRecordId) -> Option<&ExcelRecordOrigin> {
-        self.records.get(record.index())
     }
 }
 

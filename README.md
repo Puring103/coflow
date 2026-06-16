@@ -9,7 +9,7 @@ Coflow 是面向游戏配置数据的管线工具，用于把 CFT schema、Excel
 ## 能力概览
 
 - 编译 CFT schema 文件。
-- 按项目配置加载 Excel sheet，构建类型化 data model。
+- 按项目配置加载 Excel sheet 和 CFD 文本数据，构建类型化 data model。
 - 执行 schema 中的 `check {}` 规则。
 - 导出 JSON 或 MessagePack 数据文件。
 - 生成适用于 .NET 和 Unity 风格项目的 C# 运行时加载代码。
@@ -57,7 +57,7 @@ Coflow 项目由 `coflow.yaml` 配置：
 schema: schema/
 
 sources:
-  - file: data/rpg.xlsx
+  - dir: data
     sheets:
       - sheet: Item
         columns:
@@ -74,9 +74,12 @@ outputs:
     namespace: Example.Rpg.Config
 ```
 
-`schema` 指向一个 CFT 文件、schema 目录，或文件/目录列表。`sources` 把
-workbook sheet 和列头映射到 CFT 字段。`outputs.data.type` 支持 `json` 或
-`messagepack`；`outputs.code.type` 目前支持 `csharp`。
+`schema` 指向一个 CFT 文件、schema 目录，或文件/目录列表。`sources` 支持
+`file` 或 `dir`：文件源可以是 `.xlsx` / `.xlsm` / `.xls` / `.cfd`，目录源会递归
+加载支持的 Excel 和 CFD 文件。Excel 源未配置 `sheets` 时默认把 workbook 中每个
+sheet 名当作 CFT 类型名、表头当作字段名；配置 `sheets` 时可显式映射 sheet、类型
+和列头。`outputs.data.type` 支持 `json` 或 `messagepack`；`outputs.code.type`
+目前支持 `csharp`。
 
 ---
 
