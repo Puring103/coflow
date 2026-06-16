@@ -1,5 +1,6 @@
 #![allow(
     clippy::expect_used,
+    clippy::needless_raw_string_hashes,
     clippy::panic,
     clippy::panic_in_result_fn,
     clippy::unwrap_used

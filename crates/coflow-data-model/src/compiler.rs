@@ -220,6 +220,7 @@ impl<'s> Validator<'s> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn validate_record(
         &mut self,
         expected_type: Option<&str>,
@@ -479,7 +480,7 @@ impl<'s> Validator<'s> {
                 Some(CfdValueDraft::Array(out))
             }
             (CfdType::Dict(key_ty, value_ty), CfdInputValue::Dict(entries)) => {
-                let out = self.validate_dict_entries(key_ty, value_ty, entries, record, path);
+                let out = self.validate_dict_entries(key_ty, value_ty, entries, record, &path);
                 Some(CfdValueDraft::Dict(out))
             }
             (CfdType::Dict(key_ty, value_ty), CfdInputValue::DictSpread { spreads, entries }) => {
@@ -491,7 +492,7 @@ impl<'s> Validator<'s> {
                     out_spreads.push(spread);
                 }
                 let out_entries =
-                    self.validate_dict_entries(key_ty, value_ty, entries, record, path);
+                    self.validate_dict_entries(key_ty, value_ty, entries, record, &path);
                 Some(CfdValueDraft::DictSpread {
                     spreads: out_spreads,
                     entries: out_entries,
@@ -548,11 +549,8 @@ impl<'s> Validator<'s> {
                 key,
                 segments,
             } => {
-                let Some(spread_type) =
-                    self.path_ref_result_type(target_type, segments, record, path.clone())
-                else {
-                    return None;
-                };
+                let spread_type =
+                    self.path_ref_result_type(target_type, segments, record, path.clone())?;
                 let CfdType::Type(spread_type_name) = non_nullable_type(&spread_type) else {
                     self.push(
                         CfdDiagnostic::error(
@@ -765,7 +763,7 @@ impl<'s> Validator<'s> {
         value_ty: &CfdType,
         entries: &[(CfdInputDictKey, CfdInputValue)],
         record: Option<CfdRecordId>,
-        path: CfdPath,
+        path: &CfdPath,
     ) -> Vec<(CfdDictKey, CfdValueDraft)> {
         let mut seen = BTreeMap::<CfdDictKey, CfdPath>::new();
         let mut out = Vec::with_capacity(entries.len());
@@ -937,7 +935,7 @@ impl<'s> Validator<'s> {
                     tables,
                     inheritance_index,
                     record,
-                    path,
+                    &path,
                 )?;
                 Some(CfdValue::Ref {
                     key: key.clone(),
@@ -996,7 +994,7 @@ impl<'s> Validator<'s> {
                 let out = self.resolve_dict_entries(
                     entries,
                     record,
-                    path,
+                    &path,
                     drafts,
                     tables,
                     inheritance_index,
@@ -1008,7 +1006,7 @@ impl<'s> Validator<'s> {
                     spreads,
                     entries,
                     record,
-                    path,
+                    &path,
                     drafts,
                     tables,
                     inheritance_index,
@@ -1025,7 +1023,7 @@ impl<'s> Validator<'s> {
         tables: &BTreeMap<String, CfdTable>,
         inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
         record: Option<CfdRecordId>,
-        path: CfdPath,
+        path: &CfdPath,
     ) -> Option<CfdRecordId> {
         let target = if self.schema.range_is_polymorphic(target_type) {
             inheritance_index
@@ -1045,7 +1043,7 @@ impl<'s> Validator<'s> {
                     CfdErrorCode::RefTargetNotFound,
                     format!("ref target `{target_type}` with key `{key}` was not found"),
                 )
-                .with_primary(record, path),
+                .with_primary(record, path.clone()),
             );
         }
         target
@@ -1055,7 +1053,7 @@ impl<'s> Validator<'s> {
         &mut self,
         entries: &[(CfdDictKey, CfdValueDraft)],
         record: Option<CfdRecordId>,
-        path: CfdPath,
+        path: &CfdPath,
         drafts: &[RecordDraft],
         tables: &BTreeMap<String, CfdTable>,
         inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
@@ -1082,12 +1080,13 @@ impl<'s> Validator<'s> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn resolve_dict_spread(
         &mut self,
         spreads: &[CfdValueDraft],
         entries: &[(CfdDictKey, CfdValueDraft)],
         record: Option<CfdRecordId>,
-        path: CfdPath,
+        path: &CfdPath,
         drafts: &[RecordDraft],
         tables: &BTreeMap<String, CfdTable>,
         inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
@@ -1234,14 +1233,8 @@ impl<'s> Validator<'s> {
         tables: &BTreeMap<String, CfdTable>,
         inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
     ) -> Option<CfdValue> {
-        let root_id = self.resolve_ref_target(
-            target_type,
-            key,
-            tables,
-            inheritance_index,
-            record,
-            path.clone(),
-        )?;
+        let root_id =
+            self.resolve_ref_target(target_type, key, tables, inheritance_index, record, &path)?;
         let root_draft = drafts.get(root_id.index())?;
         let mut current_ty = CfdType::Type(root_draft.actual_type.clone());
         let mut current_value = CfdValueDraft::Object(Box::new(root_draft.clone()));
@@ -1351,16 +1344,14 @@ impl<'s> Validator<'s> {
                             record,
                             current_path.clone(),
                         )?;
-                        let Some(entries) = self.flatten_dict_draft_entries(
+                        let entries = self.flatten_dict_draft_entries(
                             &current_value,
                             record,
                             current_path.clone(),
                             drafts,
                             tables,
                             inheritance_index,
-                        ) else {
-                            return None;
-                        };
+                        )?;
                         let Some((_, next)) =
                             entries.iter().find(|(entry_key, _)| entry_key == &key)
                         else {
@@ -1442,7 +1433,7 @@ impl<'s> Validator<'s> {
                     tables,
                     inheritance_index,
                     record,
-                    path,
+                    &path,
                 )?;
                 drafts.get(target.index()).cloned()
             }
