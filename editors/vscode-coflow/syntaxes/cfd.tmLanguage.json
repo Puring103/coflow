@@ -40,21 +40,19 @@
       "match": "\\.\\.\\."
     },
     "ref-typed": {
-      "comment": "@TypeName.key  or  @TypeName.key.field[index]",
-      "match": "(@)([A-Za-z_][A-Za-z0-9_]*)(\\.)([A-Za-z0-9_.\\[\\]]*)",
+      "comment": "@TypeName.key  or  @TypeName.key.field[index] — @ merged into type capture",
+      "match": "(@[A-Za-z_][A-Za-z0-9_]*)(\\.)([A-Za-z0-9_.\\[\\]]*)",
       "captures": {
-        "1": { "name": "keyword.operator.cfd" },
-        "2": { "name": "entity.name.type.cfd" },
-        "3": { "name": "punctuation.accessor.cfd" },
-        "4": { "name": "variable.other.property.cfd" }
+        "1": { "name": "entity.name.type.cfd" },
+        "2": { "name": "punctuation.accessor.cfd" },
+        "3": { "name": "variable.other.property.cfd" }
       }
     },
     "ref-direct": {
-      "comment": "&key — direct reference shorthand",
-      "match": "(&)([A-Za-z_][A-Za-z0-9_]*)",
+      "comment": "&key — direct reference shorthand; & merged into variable capture",
+      "match": "(&[A-Za-z_][A-Za-z0-9_]*)",
       "captures": {
-        "1": { "name": "keyword.operator.cfd" },
-        "2": { "name": "entity.name.tag.cfd" }
+        "1": { "name": "variable.other.readwrite.cfd" }
       }
     },
     "record-colon": {
@@ -102,9 +100,9 @@
     },
     "punctuation": {
       "patterns": [
-        { "name": "punctuation.definition.block.cfd",  "match": "[{}]" },
-        { "name": "punctuation.definition.array.cfd",  "match": "[\\[\\]]" },
-        { "name": "punctuation.separator.cfd",         "match": "[,;]" },
+        { "name": "punctuation.definition.block.cfd", "match": "[{}]" },
+        { "name": "punctuation.definition.array.cfd", "match": "[\\[\\]]" },
+        { "name": "punctuation.separator.cfd", "match": "[,;]" },
         { "name": "punctuation.separator.key-value.cfd", "match": ":" }
       ]
     }

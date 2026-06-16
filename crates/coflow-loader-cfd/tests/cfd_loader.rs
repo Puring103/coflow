@@ -6,9 +6,11 @@
     clippy::unwrap_used
 )]
 
-use coflow_loader_cfd::{load_cfd_model, parse_cfd_input_records, CfdTextErrorCode, CfdTextLoadError};
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdInputRefIndex, CfdInputValue, CfdRefPathSegment, CfdValue};
+use coflow_loader_cfd::{
+    load_cfd_model, parse_cfd_input_records, CfdTextErrorCode, CfdTextLoadError,
+};
 use std::fs;
 use std::path::Path;
 

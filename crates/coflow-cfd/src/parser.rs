@@ -1,7 +1,7 @@
 use crate::ast::{
     CfdAst, CfdBlock, CfdBlockEntry, CfdField, CfdPathSeg, CfdRecord, CfdRef, CfdRefKind, CfdValue,
 };
-use crate::{CfdSyntaxDiagnostic};
+use crate::CfdSyntaxDiagnostic;
 use coflow_cft::Span;
 
 pub fn parse(source: &str) -> (CfdAst, Vec<CfdSyntaxDiagnostic>) {
@@ -363,7 +363,10 @@ impl<'a> Parser<'a> {
         if self.peek_char() == Some('"') {
             let start = self.pos;
             let s = self.parse_quoted_string()?;
-            return Ok(Token { text: s, span: Span::new(start, self.pos) });
+            return Ok(Token {
+                text: s,
+                span: Span::new(start, self.pos),
+            });
         }
         self.parse_name_token(label)
     }
@@ -403,7 +406,10 @@ impl<'a> Parser<'a> {
         let start = self.pos;
         while let Some(ch) = self.peek_char() {
             if ch.is_whitespace()
-                || matches!(ch, '.' | '[' | ']' | ',' | ';' | '}' | ')' | ':' | '@' | '&')
+                || matches!(
+                    ch,
+                    '.' | '[' | ']' | ',' | ';' | '}' | ')' | ':' | '@' | '&'
+                )
             {
                 break;
             }
