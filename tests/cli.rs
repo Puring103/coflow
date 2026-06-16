@@ -1477,11 +1477,40 @@ fn generated_csharp_compiles_and_loads_exported_json() {
         r#"using Game.Config;
 
 var config = GameConfig.Load(args[0]);
-if (config.Items.Count == 0)
-{
-    throw new Exception("expected items");
-}
+Expect(config.Items.Count == 3, "expected 3 items");
+Expect(config.Equipments.Count == 4, "expected 4 equipment rows");
+Expect(config.DropTables.Count == 3, "expected 3 drop tables");
+Expect(config.Stages.Count == 3, "expected 3 stages");
+Expect(config.Quests.Count == 3, "expected 3 quests");
+Expect(config.Shops.Count == 3, "expected 3 shops");
+
+Expect(config.FindItem("healing_potion")?.FeaturedStage?.Id == "stage_forest_road", "item to CFD stage ref failed");
+Expect(config.FindEquipment("flame_staff")?.FeaturedStage?.Id == "stage_arcane_tower", "equipment to CFD stage ref failed");
+
+var arcaneStage = config.FindStage("stage_arcane_tower") ?? throw new Exception("missing stage_arcane_tower");
+Expect(arcaneStage.DropTable.Id == "drop_fire_mage", "stage to CFD drop table ref failed");
+Expect(arcaneStage.Spawns[0].Monster.Id == "fire_mage", "stage spawn to Excel monster ref failed");
+Expect(arcaneStage.FirstClearReward is SkillUnlockReward { Skill.Id: "fireball" }, "inline polymorphic reward ref failed");
+
+var dragonDrop = config.FindDropTable("drop_ancient_dragon") ?? throw new Exception("missing drop_ancient_dragon");
+Expect(dragonDrop.Monster.Id == "ancient_dragon", "drop table to Excel monster ref failed");
+Expect(dragonDrop.Rewards[0] is ItemReward { Item.Id: "phoenix_feather" }, "drop table reward item ref failed");
+Expect(dragonDrop.Rewards[2] is SkillUnlockReward { Skill.Id: "meteor" }, "drop table reward skill ref failed");
+
+var arcaneShop = config.FindShop("shop_arcane") ?? throw new Exception("missing shop_arcane");
+Expect(arcaneShop.StageGate?.Id == "stage_arcane_tower", "shop to CFD stage ref failed");
+Expect(arcaneShop.Entries[0].Item.Id == "flame_staff", "shop entry to Excel equipment ref failed");
+Expect(arcaneShop.Entries[0].RequiredQuest?.Id == "quest_mage_trial", "shop entry to CFD quest ref failed");
+
 Console.WriteLine("loaded");
+
+static void Expect(bool condition, string message)
+{
+    if (!condition)
+    {
+        throw new Exception(message);
+    }
+}
 "#,
     )
     .expect("write Program.cs");

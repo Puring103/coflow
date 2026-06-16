@@ -645,6 +645,7 @@ mod tests {
             .map_err(|err| err.to_string())?;
         let stat_block = generated_file(&files, "StatBlock.cs")?;
         require_contains(stat_block, "public partial struct StatBlock")?;
+        require_not_contains(stat_block, "__CoflowIsRef { get; set; } = false;")?;
         require_not_contains(stat_block, "= 1.0f;")?;
         require_not_contains(stat_block, "= 5;")?;
         let database = generated_file(&files, "GameConfig.cs")?;
@@ -697,12 +698,42 @@ mod tests {
         let database = generated_file(&files, "GameConfig.cs")?;
         require_contains(database, "Dictionary<string, Reward> _rewardRefIndex")?;
         require_contains(database, "var rewardRefIndex = BuildRefIndex(")?;
-        require_contains(database, "new RefIndexSource<string, Reward>(itemRewards")?;
         require_contains(
             database,
-            "new RefIndexSource<string, Reward>(currencyRewards",
+            "new RefIndexSource<string, Reward>(itemRewards, x => ((ItemReward)x).Id",
+        )?;
+        require_contains(
+            database,
+            "new RefIndexSource<string, Reward>(currencyRewards, x => ((CurrencyReward)x).Id",
+        )?;
+        require_not_contains(
+            database,
+            "new RefIndexSource<string, Reward>(itemRewards, x => x.Id",
         )?;
         require_contains(database, "ResolveRef(rewardRefIndex")?;
+        Ok(())
+    }
+
+    #[test]
+    fn codegen_resolves_refs_inside_inline_polymorphic_values() -> Result<(), String> {
+        let schema = compile_schema(
+            r"
+                type Skill {}
+                abstract type Reward {}
+                type SkillReward : Reward { skill: Skill; }
+                type Stage {
+                    first_clear_reward: Reward;
+                }
+            ",
+        )?;
+
+        let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+            .map_err(|err| err.to_string())?;
+        let database = generated_file(&files, "GameConfig.cs")?;
+        require_contains(database, "ResolveRewardRefs(value.FirstClearReward")?;
+        require_contains(database, "case SkillReward skillReward:")?;
+        require_contains(database, "ResolveSkillRewardRefs(skillReward")?;
+        require_contains(database, "ResolveRef(skillRefIndex")?;
         Ok(())
     }
 
@@ -858,6 +889,26 @@ mod tests {
             database,
             "var childValue = ReadRequired(obj, \"child_value\", path",
         )?;
+        Ok(())
+    }
+
+    #[test]
+    fn codegen_derived_class_inherits_base_id_property() -> Result<(), String> {
+        let schema = compile_schema(
+            r"
+                type Item {}
+                type Equipment : Item { power: int; }
+                type ShopEntry { item: Item; }
+            ",
+        )?;
+
+        let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+            .map_err(|err| err.to_string())?;
+        let item = generated_file(&files, "Item.cs")?;
+        let equipment = generated_file(&files, "Equipment.cs")?;
+        require_contains(item, "public string Id { get; internal set; }")?;
+        require_not_contains(equipment, "public string Id { get; internal set; }")?;
+        require_contains(equipment, "public partial class Equipment : Item")?;
         Ok(())
     }
 

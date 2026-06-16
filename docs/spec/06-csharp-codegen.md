@@ -260,7 +260,7 @@ public enum Rarity
 
 ### `@keyAsEnum`
 
-类型级 `@keyAsEnum("EnumName")` 用于把某个 table 的 record key 在 C# 端强类型化。它不改变 CFT 类型系统、数据模型、JSON 或 MessagePack 导出格式：Excel 加载和数据导出仍然把 record key 当作字符串。
+类型级 `@keyAsEnum("EnumName")` 用于把某个 table 的 record key 在 C# 端强类型化。它不改变 CFT 类型系统、数据模型、JSON 或 MessagePack 导出格式：数据加载和数据导出仍然把 record key 当作字符串。
 
 C# codegen 会额外生成名为 `EnumName` 的 enum，并把该类型生成类的 `Id` 属性和相关 key 索引从 `string` 提升为 `EnumName`。
 
@@ -294,7 +294,7 @@ public partial class BioRemainsConfig
 }
 ```
 
-单独运行 `coflow codegen csharp` 不加载 Excel 数据，所以只能生成 schema
+单独运行 `coflow codegen csharp` 不加载数据源，所以只能生成 schema
 中声明的 `EnumName` 文件，并保留 lockfile 中已有的变体；没有 lockfile
 时该 enum 为空。新增 record key 变体只由已加载数据模型的 `build` 路径提供。
 
@@ -304,7 +304,7 @@ public partial class BioRemainsConfig
 - 新出现的 record key 追加分配下一个未使用整数值。
 - 已存在的 record key 保持原有整数值，即使数据顺序变化。
 - 当前 schema 中不再声明的 `@keyAsEnum` enum 会从 lockfile 中移除。
-- `coflow codegen csharp` 不加载 Excel 数据，只会保留当前 schema 声明的 enum 和 lockfile 中已有的变体。
+- `coflow codegen csharp` 不加载数据源，只会保留当前 schema 声明的 enum 和 lockfile 中已有的变体。
 - 如果 codegen preflight 有诊断，lockfile 不会被读取、写入或清理。
 
 ---
