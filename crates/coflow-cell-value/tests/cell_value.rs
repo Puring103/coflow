@@ -12,6 +12,7 @@ use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{
     CfdDataModel, CfdInputDictKey, CfdInputRefIndex, CfdInputValue, CfdRefPathSegment, CfdValue,
 };
+use std::collections::BTreeSet;
 
 type TestResult = Result<(), String>;
 
@@ -73,6 +74,173 @@ fn assert_has_code(diags: &CellValueDiagnostics, code: CellValueErrorCode) {
             .map(|diag| diag.code)
             .collect::<Vec<_>>()
     );
+}
+
+struct ErrorCodeCase {
+    code: CellValueErrorCode,
+    schema_source: &'static str,
+    declared_type: &'static str,
+    invalid_text: &'static str,
+    adjacent_valid_declared_type: &'static str,
+    adjacent_valid_text: &'static str,
+}
+
+fn error_code_cases() -> Vec<ErrorCodeCase> {
+    vec![
+        ErrorCodeCase {
+            code: CellValueErrorCode::Syntax,
+            schema_source: "",
+            declared_type: "[int]",
+            invalid_text: "[1 | 2",
+            adjacent_valid_declared_type: "[int]",
+            adjacent_valid_text: "[1 | 2]",
+        },
+        ErrorCodeCase {
+            code: CellValueErrorCode::InvalidDeclaredType,
+            schema_source: "",
+            declared_type: "[int",
+            invalid_text: "1",
+            adjacent_valid_declared_type: "[int]",
+            adjacent_valid_text: "1 | 2",
+        },
+        ErrorCodeCase {
+            code: CellValueErrorCode::UnknownType,
+            schema_source: "type Item { name: string; }",
+            declared_type: "Missing",
+            invalid_text: "{}",
+            adjacent_valid_declared_type: "Item",
+            adjacent_valid_text: "{}",
+        },
+        ErrorCodeCase {
+            code: CellValueErrorCode::UnknownField,
+            schema_source: "type Item { name: string; }",
+            declared_type: "Item",
+            invalid_text: "missing: Sword",
+            adjacent_valid_declared_type: "Item",
+            adjacent_valid_text: "name: Sword",
+        },
+        ErrorCodeCase {
+            code: CellValueErrorCode::DuplicateField,
+            schema_source: "type Item { name: string; }",
+            declared_type: "Item",
+            invalid_text: "name: Sword, name: Blade",
+            adjacent_valid_declared_type: "Item",
+            adjacent_valid_text: "name: Sword",
+        },
+        ErrorCodeCase {
+            code: CellValueErrorCode::MissingBoundary,
+            schema_source: "type Stats { hp: int; } type Zone { stats: Stats; }",
+            declared_type: "Zone",
+            invalid_text: "stats: hp: 10",
+            adjacent_valid_declared_type: "Zone",
+            adjacent_valid_text: "stats: {hp: 10}",
+        },
+        ErrorCodeCase {
+            code: CellValueErrorCode::TypeMismatch,
+            schema_source: "",
+            declared_type: "int",
+            invalid_text: "abc",
+            adjacent_valid_declared_type: "int",
+            adjacent_valid_text: "1",
+        },
+        ErrorCodeCase {
+            code: CellValueErrorCode::ObjectTypeMismatch,
+            schema_source:
+                "abstract type Reward {} type CoinReward : Reward { amount: int; } type Item { name: string; }",
+            declared_type: "Reward",
+            invalid_text: "Item{name: Sword}",
+            adjacent_valid_declared_type: "Reward",
+            adjacent_valid_text: "CoinReward{amount: 1}",
+        },
+        ErrorCodeCase {
+            code: CellValueErrorCode::AbstractObjectType,
+            schema_source: "abstract type Reward {} type CoinReward : Reward { amount: int; }",
+            declared_type: "Reward",
+            invalid_text: "Reward{}",
+            adjacent_valid_declared_type: "Reward",
+            adjacent_valid_text: "CoinReward{amount: 1}",
+        },
+        ErrorCodeCase {
+            code: CellValueErrorCode::InvalidEnumVariant,
+            schema_source: "enum Rarity { Common, Rare, }",
+            declared_type: "Rarity",
+            invalid_text: "Missing",
+            adjacent_valid_declared_type: "Rarity",
+            adjacent_valid_text: "Rare",
+        },
+        ErrorCodeCase {
+            code: CellValueErrorCode::MixedObjectStyle,
+            schema_source: "type Stats { hp: int; attack: int; }",
+            declared_type: "Stats",
+            invalid_text: "hp: 1, 2",
+            adjacent_valid_declared_type: "Stats",
+            adjacent_valid_text: "hp: 1, attack: 2",
+        },
+        ErrorCodeCase {
+            code: CellValueErrorCode::StringNeedsQuotes,
+            schema_source: "",
+            declared_type: "string",
+            invalid_text: "a,b",
+            adjacent_valid_declared_type: "string",
+            adjacent_valid_text: r#""a,b""#,
+        },
+        ErrorCodeCase {
+            code: CellValueErrorCode::ReferenceNeedsMarker,
+            schema_source: "type Item { name: string; }",
+            declared_type: "Item",
+            invalid_text: "item_1",
+            adjacent_valid_declared_type: "Item",
+            adjacent_valid_text: "&item_1",
+        },
+    ]
+}
+
+#[test]
+fn every_cell_value_error_code_has_negative_and_adjacent_valid_coverage() -> TestResult {
+    let declared = declared_error_code_names();
+    let covered = error_code_cases()
+        .iter()
+        .map(|case| format!("{:?}", case.code))
+        .collect::<BTreeSet<_>>();
+    let missing = declared.difference(&covered).cloned().collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(format!(
+            "missing cell value error code coverage: {missing:?}"
+        ));
+    }
+
+    for case in error_code_cases() {
+        let schema = compile_schema(case.schema_source)?;
+        let err = parse_err(&schema, case.declared_type, case.invalid_text)?;
+        assert_has_code(&err, case.code);
+        parse_ok(
+            &schema,
+            case.adjacent_valid_declared_type,
+            case.adjacent_valid_text,
+        )?;
+    }
+    Ok(())
+}
+
+fn declared_error_code_names() -> BTreeSet<String> {
+    let source = include_str!("../src/lib.rs");
+    let enum_body = source
+        .split("pub enum CellValueErrorCode {")
+        .nth(1)
+        .and_then(|tail| tail.split('}').next())
+        .expect("CellValueErrorCode enum body");
+
+    enum_body
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with("#[") {
+                None
+            } else {
+                Some(line.trim_end_matches(',').to_string())
+            }
+        })
+        .collect()
 }
 
 #[test]

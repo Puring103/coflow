@@ -159,3 +159,14 @@ pipeline 现在以大小写不敏感方式识别 `.xlsx`、`.xlsm`、`.xls` 和 
   schema compiler 或 type checker 把近似合法场景误报为错误。
 
 覆盖范围包括 CFT lexer、syntax parser、schema compiler 和 check 表达式 type checker。
+
+### 补齐 cell value 错误码双向覆盖
+
+`coflow-cell-value` 新增集中错误码覆盖矩阵，解析 `CellValueErrorCode` 枚举并要求每个错误码都有：
+
+- 一个负向触发样例。
+- 一个贴近该错误的合法相邻输入。
+
+覆盖范围包括声明类型解析、未知类型、对象字段、嵌套边界、类型不匹配、多态对象、
+enum、字符串引用歧义和记录引用标记提示。这样新增单元格错误码时，测试会强制补齐
+负向触发和正向不误报两个方向。

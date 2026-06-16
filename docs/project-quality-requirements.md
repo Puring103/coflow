@@ -154,7 +154,7 @@ Rust LSP 应逐步成为编辑器语义能力的主要事实来源。VS Code 插
 当前项目并不是只有 happy path，已经包含大量负向和边界测试，例如：
 
 - CFT 错误码双向覆盖：`crates/coflow-cft/tests/error_coverage.rs`
-- cell value 负向和边界测试：`crates/coflow-cell-value/tests/cell_value.rs`
+- cell value 错误码双向覆盖、负向和边界测试：`crates/coflow-cell-value/tests/cell_value.rs`
 - Excel loader 错误路径：`crates/coflow-loader-excel/tests/excel_loader.rs`
 - `CFD-TEXT-*` 双向覆盖：`crates/coflow-loader-cfd/tests/cfd_loader.rs`
 - data model 引用、重复、类型错误：`crates/coflow-data-model/tests/`
@@ -164,8 +164,8 @@ Rust LSP 应逐步成为编辑器语义能力的主要事实来源。VS Code 插
 - LSP 协议和语义边界：`crates/coflow-lsp/src/tests/`
 
 后续需要把更严格的统一标准继续扩展到所有错误码体系：不仅要证明某个错误码能触发，
-还要证明相邻合法输入不会误报该错误码。CFT、`CfdErrorCode` 和 `CFD-TEXT-*`
-已按该标准建立覆盖，但 cell value、Excel、pipeline、CLI 和 LSP 等体系仍需逐步补齐同等强度。
+还要证明相邻合法输入不会误报该错误码。CFT、cell value、`CfdErrorCode` 和
+`CFD-TEXT-*` 已按该标准建立覆盖，但 Excel、pipeline、CLI 和 LSP 等体系仍需逐步补齐同等强度。
 
 ## 工程门禁
 
