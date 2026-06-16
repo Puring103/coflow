@@ -58,3 +58,15 @@ CI 增加 `cargo check --workspace`，与本地提交前要求保持一致。
 - 有 manifest 的旧数据表文件会被清理，并刷新 manifest。
 - 未被 manifest 管理的 `.json` 文件会阻止导出，原文件保留。
 - 未被 manifest 管理的 `.cs` 文件会阻止 C# codegen，原文件保留。
+
+### 修复数据源扩展名大小写敏感
+
+pipeline 现在以大小写不敏感方式识别 `.xlsx`、`.xlsm`、`.xls` 和 `.cfd` 数据源。
+这样显式文件源和目录源都可以加载 `.XLSX`、`.CFD` 等来自 Windows 或外部工具的
+常见大写扩展名。
+
+新增回归测试覆盖：
+
+- 目录源中的 `.XLSX` workbook 会被加载。
+- 目录源中的 `.CFD` 文件会被加载。
+- 显式 `file: data/SINGLE.CFD` 会被加载。
