@@ -1,8 +1,8 @@
 [package]
-name = "coflow-cfd"
+name = "coflow-loader-cfd"
 version = "0.1.0"
 edition = "2021"
-description = "CFD language syntax parser for Coflow."
+description = "Text CFD loader for Coflow data models."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/wtlll/ScriptForGame"
 publish = false
@@ -12,3 +12,4 @@ workspace = true
 
 [dependencies]
 coflow-cft = { path = "../coflow-cft" }
+coflow-data-model = { path = "../coflow-data-model" }

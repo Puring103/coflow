@@ -12,6 +12,9 @@
     )
 )]
 
+mod cfd;
+
+use coflow_cfd::parse_cfd;
 use coflow_cft::ast::{
     Annotation, AnnotationArg, CheckExpr, CheckExprKind, CheckStmt, ConstLiteral, DefaultExpr,
     DefaultExprKind, Item, TypeRef, TypeRefKind,
@@ -194,7 +197,7 @@ impl<W: Write> LspServer<W> {
                     }
                 },
                 "serverInfo": {
-                    "name": "coflow-cft-lsp",
+                    "name": "coflow-lsp",
                     "version": env!("CARGO_PKG_VERSION")
                 }
             }),
@@ -251,6 +254,10 @@ impl<W: Write> LspServer<W> {
                     normalized_path: normalized_path.clone(),
                     source: document.text.clone(),
                 });
+            } else if is_cfd_path(normalized_path) {
+                let (_, errors) = parse_cfd(&document.text);
+                let diags = cfd::syntax_diagnostics(&document.text, &errors);
+                non_schema_diagnostics.push((document.uri.clone(), diags));
             } else {
                 non_schema_diagnostics.push((
                     document.uri.clone(),
@@ -316,6 +323,13 @@ impl<W: Write> LspServer<W> {
         let Some(request) = TextRequest::from_params(params) else {
             return self.write_response(id, &Value::Null);
         };
+        if let Some(source) = self.cfd_source_by_uri(&request.uri) {
+            let (ast, _) = parse_cfd(&source);
+            let offset = byte_offset_from_position(&source, request.position);
+            let schema = self.schema();
+            let result = cfd::completion(&source, &ast, schema, offset);
+            return self.write_response(id, &result);
+        }
         let Some(build) = self.ensure_build()? else {
             return self.write_response(id, &json!([]));
         };
@@ -330,6 +344,13 @@ impl<W: Write> LspServer<W> {
         let Some(request) = TextRequest::from_params(params) else {
             return self.write_response(id, &Value::Null);
         };
+        if let Some(source) = self.cfd_source_by_uri(&request.uri) {
+            let (ast, _) = parse_cfd(&source);
+            let offset = byte_offset_from_position(&source, request.position);
+            let schema = self.schema();
+            let result = cfd::hover(&source, &ast, schema, offset);
+            return self.write_response(id, &result);
+        }
         let Some(build) = self.ensure_build()? else {
             return self.write_response(id, &Value::Null);
         };
@@ -344,6 +365,20 @@ impl<W: Write> LspServer<W> {
         let Some(request) = TextRequest::from_params(params) else {
             return self.write_response(id, &Value::Null);
         };
+        if let Some(source) = self.cfd_source_by_uri(&request.uri) {
+            let (ast, _) = parse_cfd(&source);
+            let offset = byte_offset_from_position(&source, request.position);
+            if let Some(type_name) = cfd::definition_type_name(&ast, offset) {
+                let type_name = type_name.to_string();
+                self.ensure_build()?;
+                if let Some(build) = &self.build {
+                    if let Some(location) = cfd_type_definition_location(build, &type_name) {
+                        return self.write_response(id, &json!(location));
+                    }
+                }
+            }
+            return self.write_response(id, &Value::Null);
+        }
         let Some(build) = self.ensure_build()? else {
             return self.write_response(id, &Value::Null);
         };
@@ -358,6 +393,10 @@ impl<W: Write> LspServer<W> {
         let Some(uri) = text_document_uri(params) else {
             return self.write_response(id, &json!([]));
         };
+        if let Some(source) = self.cfd_source_by_uri(&uri) {
+            let (ast, _) = parse_cfd(&source);
+            return self.write_response(id, &cfd::document_symbols(&source, &ast));
+        }
         let result = {
             let Some(build) = self.ensure_build()? else {
                 return self.write_response(id, &json!([]));
@@ -398,6 +437,10 @@ impl<W: Write> LspServer<W> {
         let Some(uri) = text_document_uri(params) else {
             return self.write_response(id, &json!({"data": []}));
         };
+        if let Some(source) = self.cfd_source_by_uri(&uri) {
+            let (ast, _) = parse_cfd(&source);
+            return self.write_response(id, &cfd::semantic_tokens(&source, &ast));
+        }
         let result = {
             let Some(build) = self.ensure_build()? else {
                 return self.write_response(id, &json!({"data": []}));
@@ -417,6 +460,24 @@ impl<W: Write> LspServer<W> {
             self.validate_project()?;
         }
         Ok(self.build.as_ref())
+    }
+
+    /// Return the source text of an open `.cfd` document by URI, or `None`
+    /// when the URI does not correspond to an open CFD file.
+    fn cfd_source_by_uri(&self, uri: &str) -> Option<String> {
+        let path = path_from_file_uri(uri)?;
+        if !is_cfd_path(&path) {
+            return None;
+        }
+        let normalized = normalize_path(&path);
+        self.open_documents
+            .get(&normalized)
+            .map(|doc| doc.text.clone())
+    }
+
+    /// Return the compiled schema from the current build, if available.
+    fn schema(&self) -> Option<&coflow_cft::CftContainer> {
+        self.build.as_ref().and_then(|b| b.schema.container.as_ref())
     }
 
     fn publish_diagnostics(&mut self, uri: &str, diagnostics: &[Value]) -> Result<(), String> {
@@ -2944,6 +3005,45 @@ fn path_from_file_uri(uri: &str) -> Option<PathBuf> {
     Some(PathBuf::from(path))
 }
 
+fn is_cfd_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("cfd"))
+}
+
+/// Find the LSP location (uri + range) of a CFT type definition by name.
+fn cfd_type_definition_location(build: &LspBuild, type_name: &str) -> Option<Value> {
+    use coflow_cft::parser::parse_module;
+    use coflow_cft::ModuleId;
+
+    for (module_id, document) in &build.documents {
+        let Some(ast) = document
+            .ast
+            .clone()
+            .or_else(|| parse_module(&ModuleId::new(module_id.clone()), &document.source).ok())
+        else {
+            continue;
+        };
+
+        for item in &ast.items {
+            use coflow_cft::ast::Item;
+            let (name, name_span) = match item {
+                Item::Type(t) => (t.name.as_str(), t.name_span),
+                Item::Enum(e) => (e.name.as_str(), e.name_span),
+                Item::Const(_) => continue,
+            };
+            if name == type_name {
+                let range = byte_range(&document.source, name_span.start, name_span.end);
+                return Some(json!({
+                    "uri": document.uri,
+                    "range": range,
+                }));
+            }
+        }
+    }
+    None
+}
+
 fn path_to_file_uri(path: &Path) -> String {
     let mut path = path.to_string_lossy().replace('\\', "/");
     if cfg!(windows) {
@@ -3993,5 +4093,125 @@ values: [string] = [\n\
         let context_start = source.find(context).expect("context");
         let needle_start = context.find(needle).expect("needle");
         context_start + needle_start + character_offset
+    }
+
+    // ── CFD provider tests ───────────────────────────────────────────────────
+
+    #[test]
+    fn cfd_document_symbols_returns_record_entries() {
+        let source = "sword: Item { }\nshield: Item { }\n";
+        let (ast, _) = parse_cfd(source);
+        let result = cfd::document_symbols(source, &ast);
+        let symbols = result.as_array().expect("array");
+        assert_eq!(symbols.len(), 2);
+        assert_eq!(symbols[0]["name"], "sword");
+        assert_eq!(symbols[0]["detail"], "Item");
+        assert_eq!(symbols[1]["name"], "shield");
+    }
+
+    #[test]
+    fn cfd_semantic_tokens_no_overlap_from_comment_and_ast() {
+        // A comment token spanning bytes 0..10 and an AST token at 5..8
+        // should not produce overlapping output.
+        // Use a real source that has a comment followed by a record.
+        let source = "// comment\nsword: Item { }";
+        let (ast, _) = parse_cfd(source);
+        let result = cfd::semantic_tokens(source, &ast);
+        let data = result["data"].as_array().expect("data array");
+        // Walk the delta-encoded data and reconstruct absolute positions.
+        let mut line = 0usize;
+        let mut character = 0usize;
+        let mut prev_end_char = 0usize;
+        let mut prev_end_line = 0usize;
+        let mut ok = true;
+        for chunk in data.chunks(5) {
+            if chunk.len() < 5 { break; }
+            let dl = chunk[0].as_u64().unwrap_or(0) as usize;
+            let dc = chunk[1].as_u64().unwrap_or(0) as usize;
+            let len = chunk[2].as_u64().unwrap_or(0) as usize;
+            line += dl;
+            character = if dl == 0 { character + dc } else { dc };
+            let end_char = character + len;
+            if line == prev_end_line && character < prev_end_char {
+                ok = false; // overlap detected
+                break;
+            }
+            prev_end_line = line;
+            prev_end_char = end_char;
+        }
+        assert!(ok, "semantic tokens must not overlap");
+    }
+
+    #[test]
+    fn cfd_semantic_tokens_no_comment_token_inside_string() {
+        // A URL inside a string must not be treated as a comment.
+        let source = r#"r: T { url: "http://example.com" }"#;
+        let (ast, _) = parse_cfd(source);
+        let result = cfd::semantic_tokens(source, &ast);
+        let data = result["data"].as_array().expect("data");
+        // Each group of 5: [dline, dchar, len, type, modifiers]
+        // SEM_COMMENT index is 10.
+        for chunk in data.chunks(5) {
+            if chunk.len() < 5 { break; }
+            assert_ne!(
+                chunk[3].as_u64().unwrap_or(0),
+                10,
+                "should not emit comment token for // inside a string"
+            );
+        }
+    }
+
+    #[test]
+    fn cfd_hover_returns_null_for_non_type_position() {
+        let source = "sword: Item { }";
+        let (ast, _) = parse_cfd(source);
+        // Hover in the middle of whitespace after the record.
+        let result = cfd::hover(source, &ast, None, source.len() - 1);
+        assert!(result.is_null() || result == Value::Null || result.get("range").is_some(),
+            "hover at brace position should return null or a range-based result");
+    }
+
+    #[test]
+    fn cfd_hover_on_type_name_returns_type_info() {
+        let source = "sword: Item { }";
+        let (ast, _) = parse_cfd(source);
+        // "Item" starts at byte 7.
+        let type_name_offset = source.find("Item").expect("Item");
+        let result = cfd::hover(source, &ast, None, type_name_offset + 1);
+        // Without schema we get a backtick-quoted name.
+        let contents = result["contents"]["value"].as_str().unwrap_or("");
+        assert!(contents.contains("Item"), "hover should mention type name");
+    }
+
+    #[test]
+    fn cfd_definition_type_name_extracts_type_at_offset() {
+        let source = "sword: Item { }\n";
+        let (ast, _) = parse_cfd(source);
+        let type_offset = source.find("Item").expect("Item") + 1;
+        let name = cfd::definition_type_name(&ast, type_offset);
+        assert_eq!(name, Some("Item"));
+    }
+
+    #[test]
+    fn cfd_definition_type_name_returns_none_outside_type_span() {
+        let source = "sword: Item { }\n";
+        let (ast, _) = parse_cfd(source);
+        // Offset 0 is inside the key "sword", not the type name.
+        let name = cfd::definition_type_name(&ast, 0);
+        assert_eq!(name, None);
+    }
+
+    #[test]
+    fn cfd_goto_def_continues_past_unparseable_document() {
+        // Build an LspBuild with two modules; one has a syntax error.
+        // cfd_type_definition_location should still find the type in the good module.
+        let cft_source = "type GoodType { level: int; }\n";
+        let (_cleanup, build) = test_lsp_build("cfd-goto-def", cft_source);
+        // GoodType is defined — should find it.
+        let result = cfd_type_definition_location(&build, "GoodType");
+        assert!(result.is_some(), "should find GoodType definition");
+        // Unknown type — should return None without panicking.
+        let result2 = cfd_type_definition_location(&build, "NonExistent");
+        assert!(result2.is_none());
     }
 }

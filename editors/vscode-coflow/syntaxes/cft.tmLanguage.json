@@ -1,0 +1,222 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "CFT",
+  "scopeName": "source.cft",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#declarations"
+    },
+    {
+      "include": "#references"
+    },
+    {
+      "include": "#annotations"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#builtin-types"
+    },
+    {
+      "include": "#builtin-functions"
+    },
+    {
+      "include": "#constants"
+    },
+    {
+      "include": "#user-types"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#punctuation"
+    }
+  ],
+  "repository": {
+    "annotations": {
+      "patterns": [
+        {
+          "name": "storage.modifier.annotation.cft",
+          "match": "@(struct|flag|expand|display|deprecated|keyAsEnum)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
+        },
+        {
+          "name": "invalid.illegal.annotation.cft",
+          "match": "@[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*"
+        }
+      ]
+    },
+    "builtin-functions": {
+      "patterns": [
+        {
+          "name": "support.function.builtin.cft",
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(len|contains|unique|min|max|sum|keys|values|matches)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(?=\\s*\\()"
+        }
+      ]
+    },
+    "builtin-types": {
+      "patterns": [
+        {
+          "name": "storage.type.primitive.cft",
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(int|float|bool|string)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
+        }
+      ]
+    },
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.cft",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.cft",
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(true|false|null)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "name": "meta.declaration.const.cft",
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(const)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])\\s+([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.const.cft"
+            },
+            "2": {
+              "name": "entity.name.constant.cft"
+            }
+          }
+        },
+        {
+          "name": "meta.declaration.enum.cft",
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(enum)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])\\s+([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.enum.cft"
+            },
+            "2": {
+              "name": "entity.name.type.enum.cft"
+            }
+          }
+        },
+        {
+          "name": "meta.declaration.type.cft",
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])((?:(?:abstract|sealed)\\s+)*)(type)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])\\s+([_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*)",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.cft"
+            },
+            "2": {
+              "name": "storage.type.cft"
+            },
+            "3": {
+              "name": "entity.name.type.cft"
+            }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.cft",
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(check|when|all|any|none|in|is)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
+        },
+        {
+          "name": "storage.modifier.cft",
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(abstract|sealed)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
+        },
+        {
+          "name": "storage.type.cft",
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(const|enum|type)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.cft",
+          "match": "\\b[0-9]+\\.[0-9]+(?:[eE][+-]?[0-9]+)?\\b|\\b[0-9]+[eE][+-]?[0-9]+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.cft",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.cft",
+          "match": "==|!=|<=|>=|<<|>>|&&|\\|\\||//|\\*\\*|[+\\-*/%<>=!~&|^?:.]"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.separator.cft",
+          "match": "[;,]"
+        },
+        {
+          "name": "punctuation.section.cft",
+          "match": "[{}\\[\\]()]"
+        }
+      ]
+    },
+    "references": {
+      "patterns": [
+        {
+          "name": "constant.other.reference.typed.cft",
+          "match": "@[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*\\.[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*"
+        },
+        {
+          "name": "constant.other.reference.direct.cft",
+          "match": "&[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.cft",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.cft",
+              "match": "\\\\[\"\\\\nrt]"
+            },
+            {
+              "name": "invalid.illegal.escape.cft",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "user-types": {
+      "patterns": [
+        {
+          "name": "support.type.user-defined.cft",
+          "match": "[_\\p{Lu}\\p{Lt}\\p{Lo}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*"
+        }
+      ]
+    }
+  }
+}

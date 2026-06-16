@@ -12,7 +12,7 @@ workspace = true
 
 [dependencies]
 coflow-cft = { path = "../coflow-cft" }
-coflow-cfd = { path = "../coflow-cfd" }
+coflow-loader-cfd = { path = "../coflow-loader-cfd" }
 coflow-checker = { path = "../coflow-checker" }
 coflow-codegen-csharp-json = { path = "../coflow-codegen-csharp-json" }
 coflow-codegen-csharp-messagepack = { path = "../coflow-codegen-csharp-messagepack" }
