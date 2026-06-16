@@ -3,28 +3,27 @@
   "name": "CFD",
   "scopeName": "source.cfd",
   "patterns": [
-    { "include": "#comment-line-slash" },
-    { "include": "#comment-line-hash" },
+    { "include": "#comment-slash" },
+    { "include": "#comment-hash" },
     { "include": "#string" },
     { "include": "#spread" },
     { "include": "#ref-typed" },
     { "include": "#ref-direct" },
-    { "include": "#record-key-colon" },
-    { "include": "#group-member-key" },
-    { "include": "#type-name" },
-    { "include": "#enum-dict-key" },
+    { "include": "#record-colon" },
+    { "include": "#group-key" },
+    { "include": "#type-before-brace" },
     { "include": "#field-name" },
     { "include": "#constant-language" },
     { "include": "#constant-numeric" },
-    { "include": "#enum-variant-value" },
+    { "include": "#user-type" },
     { "include": "#punctuation" }
   ],
   "repository": {
-    "comment-line-slash": {
+    "comment-slash": {
       "name": "comment.line.double-slash.cfd",
       "match": "//.*$"
     },
-    "comment-line-hash": {
+    "comment-hash": {
       "name": "comment.line.number-sign.cfd",
       "match": "#.*$"
     },
@@ -33,10 +32,7 @@
       "begin": "\"",
       "end": "\"",
       "patterns": [
-        {
-          "name": "constant.character.escape.cfd",
-          "match": "\\\\[\"\\\\nrt]"
-        }
+        { "name": "constant.character.escape.cfd", "match": "\\\\[\"\\\\nrt]" }
       ]
     },
     "spread": {
@@ -44,58 +40,51 @@
       "match": "\\.\\.\\."
     },
     "ref-typed": {
-      "comment": "@TypeName.key or @TypeName.key.path[index]",
-      "match": "(@)([A-Za-z_][A-Za-z0-9_]*)(\\.)((?:[A-Za-z0-9_]|\\.[A-Za-z0-9_]|\\[[^\\]]*\\])*)",
+      "comment": "@TypeName.key  or  @TypeName.key.field[index]",
+      "match": "(@)([A-Za-z_][A-Za-z0-9_]*)(\\.)([A-Za-z0-9_.\\[\\]]*)",
       "captures": {
-        "1": { "name": "keyword.operator.reference.cfd" },
+        "1": { "name": "keyword.operator.cfd" },
         "2": { "name": "entity.name.type.cfd" },
         "3": { "name": "punctuation.accessor.cfd" },
-        "4": { "name": "variable.other.cfd" }
+        "4": { "name": "variable.other.property.cfd" }
       }
     },
     "ref-direct": {
       "comment": "&key — direct reference shorthand",
-      "match": "(&)([A-Za-z0-9_][A-Za-z0-9_]*)",
+      "match": "(&)([A-Za-z_][A-Za-z0-9_]*)",
       "captures": {
-        "1": { "name": "keyword.operator.reference.cfd" },
-        "2": { "name": "variable.other.cfd" }
+        "1": { "name": "keyword.operator.cfd" },
+        "2": { "name": "entity.name.tag.cfd" }
       }
     },
-    "record-key-colon": {
-      "comment": "key: TypeName { — top-level or group-member record with explicit type",
+    "record-colon": {
+      "comment": "key: TypeName {  — top-level or group-polymorphic record",
       "match": "^(\\s*)([A-Za-z_][A-Za-z0-9_]*)\\s*(:)\\s*([A-Za-z_][A-Za-z0-9_]*)(?=\\s*\\{)",
       "captures": {
-        "2": { "name": "entity.name.namespace.cfd" },
-        "3": { "name": "punctuation.separator.cfd" },
+        "2": { "name": "entity.name.tag.cfd" },
+        "3": { "name": "punctuation.separator.key-value.cfd" },
         "4": { "name": "entity.name.type.cfd" }
       }
     },
-    "group-member-key": {
-      "comment": "key { — record key inside a group (type inherited from group header)",
-      "match": "^\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\{)",
+    "group-key": {
+      "comment": "snake_case_key {  — group member (lowercase-only) inheriting type from header",
+      "match": "^\\s*([a-z_][A-Za-z0-9_]*)\\s*(?=\\{)",
       "captures": {
-        "1": { "name": "entity.name.namespace.cfd" }
+        "1": { "name": "entity.name.tag.cfd" }
       }
     },
-    "type-name": {
-      "comment": "TypeName { — inline type marker in polymorphic values and arrays",
+    "type-before-brace": {
+      "comment": "TypeName {  — inline polymorphic type marker or group header",
       "match": "\\b([A-Z][A-Za-z0-9_]*)(?=\\s*\\{)",
       "captures": {
         "1": { "name": "entity.name.type.cfd" }
       }
     },
-    "enum-dict-key": {
-      "comment": "UpperCase: value — enum variant used as a dictionary key",
-      "match": "\\b([A-Z][A-Za-z0-9_]*)(?=\\s*:)",
-      "captures": {
-        "1": { "name": "variable.other.enummember.cfd" }
-      }
-    },
     "field-name": {
-      "comment": "fieldName: value",
+      "comment": "fieldName:  — object field or dict key (lowercase)",
       "match": "\\b([a-z_][A-Za-z0-9_]*)(?=\\s*:)",
       "captures": {
-        "1": { "name": "variable.other.property.cfd" }
+        "1": { "name": "entity.other.attribute-name.cfd" }
       }
     },
     "constant-language": {
@@ -106,18 +95,17 @@
       "name": "constant.numeric.cfd",
       "match": "-?(?:\\d+\\.\\d*|\\d*\\.\\d+|\\d+)(?:[eE][+-]?\\d+)?"
     },
-    "enum-variant-value": {
-      "comment": "UpperCase identifier used as a plain value (enum variant)",
-      "match": "\\b([A-Z][A-Za-z0-9_]*)\\b(?![\\s]*[{:.])",
-      "captures": {
-        "1": { "name": "variable.other.enummember.cfd" }
-      }
+    "user-type": {
+      "comment": "Catch-all: enum variant values, bare type names — any remaining PascalCase identifier",
+      "name": "support.type.user-defined.cfd",
+      "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
     },
     "punctuation": {
       "patterns": [
-        { "name": "punctuation.definition.block.cfd", "match": "[{}]" },
-        { "name": "punctuation.definition.array.cfd", "match": "[\\[\\]]" },
-        { "name": "punctuation.separator.cfd", "match": "[,;:]" }
+        { "name": "punctuation.definition.block.cfd",  "match": "[{}]" },
+        { "name": "punctuation.definition.array.cfd",  "match": "[\\[\\]]" },
+        { "name": "punctuation.separator.cfd",         "match": "[,;]" },
+        { "name": "punctuation.separator.key-value.cfd", "match": ":" }
       ]
     }
   }
