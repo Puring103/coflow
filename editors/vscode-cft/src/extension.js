@@ -98,7 +98,7 @@ const ANNOTATIONS = [
 ];
 
 function activate(context) {
-  const selector = { language: "cft" };
+  const selector = [{ language: "cft" }, { language: "cfd" }];
   const diagnostics = new CftDiagnostics(context);
   context.subscriptions.push(
     vscode.languages.registerCompletionItemProvider(
@@ -385,7 +385,7 @@ class CftDiagnostics {
       vscode.workspace.onDidSaveTextDocument((document) => this.saveDocument(document)),
       vscode.workspace.onDidCloseTextDocument((document) => this.closeDocument(document)),
       vscode.workspace.onDidChangeConfiguration((event) => {
-        if (event.affectsConfiguration("coflowCft.diagnostics")) {
+        if (event.affectsConfiguration("coflow.diagnostics")) {
           this.restartAllSessions();
         }
       })
@@ -443,7 +443,7 @@ class CftDiagnostics {
       return;
     }
 
-    const config = vscode.workspace.getConfiguration("coflowCft.diagnostics", document.uri);
+    const config = vscode.workspace.getConfiguration("coflow.diagnostics", document.uri);
     const key = document.uri.toString();
     const oldTimer = this.timers.get(key);
     if (oldTimer) {
@@ -483,7 +483,7 @@ class CftDiagnostics {
   }
 
   closeDocument(document) {
-    if (document.languageId !== "cft" || document.uri.scheme !== "file") {
+    if ((document.languageId !== "cft" && document.languageId !== "cfd") || document.uri.scheme !== "file") {
       return;
     }
 
@@ -504,11 +504,11 @@ class CftDiagnostics {
   }
 
   canValidate(document) {
-    if (document.languageId !== "cft" || document.uri.scheme !== "file") {
+    if ((document.languageId !== "cft" && document.languageId !== "cfd") || document.uri.scheme !== "file") {
       return false;
     }
 
-    const config = vscode.workspace.getConfiguration("coflowCft.diagnostics", document.uri);
+    const config = vscode.workspace.getConfiguration("coflow.diagnostics", document.uri);
     if (!config.get("enabled", true)) {
       const sessionKey = this.documentSessions.get(document.uri.toString());
       const session = sessionKey ? this.sessions.get(sessionKey) : undefined;
@@ -524,15 +524,12 @@ class CftDiagnostics {
   }
 
   ensureSession(document) {
-    const config = vscode.workspace.getConfiguration("coflowCft.diagnostics", document.uri);
+    const config = vscode.workspace.getConfiguration("coflow.diagnostics", document.uri);
     let command = config.get("command", "coflow");
-    let baseArgs = config.get("args", [
-      "cft",
-      "lsp"
-    ]);
+    let baseArgs = config.get("args", ["lsp"]);
     if (shouldUseDevelopmentCargoServer(config, command, baseArgs, this.context.extensionPath)) {
       command = "cargo";
-      baseArgs = ["run", "--quiet", "-p", "coflow", "--", "cft", "lsp"];
+      baseArgs = ["run", "--quiet", "-p", "coflow", "--", "lsp"];
     }
     const projectDir = findNearestCoflowConfigDir(path.dirname(document.uri.fsPath));
     const cwd = findDiagnosticsCwd(
@@ -564,7 +561,7 @@ class CftDiagnostics {
   }
 
   async request(document, method, params) {
-    if (document.languageId !== "cft" || document.uri.scheme !== "file") {
+    if ((document.languageId !== "cft" && document.languageId !== "cfd") || document.uri.scheme !== "file") {
       return undefined;
     }
     const session = this.ensureSession(document);
@@ -2131,7 +2128,7 @@ function isCargoCommand(command, args) {
 }
 
 function shouldUseDevelopmentCargoServer(config, command, args, extensionPath) {
-  if (command !== "coflow" || JSON.stringify(args) !== JSON.stringify(["cft", "lsp"])) {
+  if (command !== "coflow" || JSON.stringify(args) !== JSON.stringify(["lsp"])) {
     return false;
   }
   const packageCommand = config.inspect("command");
