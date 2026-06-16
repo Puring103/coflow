@@ -672,7 +672,7 @@ impl<'a> CheckEvaluator<'a> {
                 };
                 let regex = Regex::new(pattern).map_err(|_| {
                     self.diag(
-                        CfdErrorCode::CheckInvalidRegex,
+                        CfdErrorCode::CheckEvalTypeError,
                         "regex pattern cannot be compiled",
                     );
                 })?;

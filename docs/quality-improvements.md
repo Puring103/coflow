@@ -111,3 +111,20 @@ pipeline 现在以大小写不敏感方式识别 `.xlsx`、`.xlsm`、`.xls` 和 
 - 显式写出 `temperature`、`diffusion` 等子字段表头时可正常加载。
 - `id, env, level` 这类会吞掉 `level` 的布局会被拒绝，并定位到冲突表头列。
 - `@expand` 相邻列不足仍会报告表头错误。
+
+### 建立 `CfdErrorCode` 双向覆盖并清理不可达错误码
+
+新增 `crates/coflow-checker/tests/error_coverage.rs`，对 `CfdErrorCode` 建立机械覆盖：
+每个剩余错误码都必须有一个负向触发样例，以及一个相邻合法输入不误报样例。
+测试还会解析 `coflow-data-model/src/diagnostic.rs` 中的枚举定义，防止新增错误码后漏补覆盖。
+
+同时清理两个当前公共路径不可达的 CFD 运行期错误码：
+
+- 移除 `RefTargetHasNoId`。当前 record key 由数据源提供，引用解析实际只会报告目标找不到。
+- 移除 `CheckInvalidRegex`。非法 `matches` 正则字面量已经由 CFT type checker 在编译期报告；
+  checker 内保留的防御分支降级为通用 `CheckEvalTypeError`。
+
+规格同步更新：
+
+- `CFD-REF-001` 现在对应实际可达的 `RefTargetNotFound`。
+- `CFD-CHECK-*` 列表移除不可达的运行期正则错误码。

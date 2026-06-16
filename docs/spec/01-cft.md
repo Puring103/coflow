@@ -739,7 +739,6 @@ pub enum CftConstValue {
 | `CFD-CHECK-004` | `CheckIndexOutOfBounds` | 数组索引越界 |
 | `CFD-CHECK-005` | `CheckMissingDictKey` | 字典 key 不存在 |
 | `CFD-CHECK-006` | `CheckEmptyMinMax` | `min` / `max` 对空数组或无非 `null` 值的数组调用 |
-| `CFD-CHECK-007` | `CheckInvalidRegex` | `matches` 的正则 pattern 在执行期无法编译 |
 
 ---
 
