@@ -34,3 +34,12 @@ CI 增加 `cargo check --workspace`，与本地提交前要求保持一致。
 
 `.gitignore` 中显式保留 `examples/*/generated/csharp/coflow.enum.lock.json`，避免普通生成物忽略策略与被跟踪 lockfile 策略冲突。
 
+### 修复数据导出旧表文件残留
+
+`coflow-pipeline` 在写出 JSON 或 MessagePack 数据前会清理输出目录中旧的 `.json` / `.msgpack` 表文件。这样删除或重命名 schema 表后，旧数据文件不会继续留在输出目录并被消费者误用。
+
+新增回归测试覆盖：
+
+- stale `.json` 文件会被删除。
+- stale `.msgpack` 文件会被删除。
+- 非 Coflow 数据表扩展的旁路文件会保留。

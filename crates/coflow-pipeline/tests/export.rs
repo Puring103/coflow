@@ -38,6 +38,38 @@ fn export_project_data_writes_json_tables() {
 }
 
 #[test]
+fn export_project_data_removes_stale_generated_data_files() {
+    let root = temp_project_dir("coflow-pipeline-export-removes-stale-data");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_single_item_project(
+        &root,
+        OutputsConfig {
+            data: Some(output_config("json", "generated/data", None)),
+            code: None,
+        },
+    )
+    .expect("write project");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+    let out_dir = root.join("generated").join("data");
+    std::fs::create_dir_all(&out_dir).expect("create output dir");
+    std::fs::write(out_dir.join("RemovedTable.json"), "{}").expect("write stale json");
+    std::fs::write(out_dir.join("RemovedTable.msgpack"), []).expect("write stale msgpack");
+    std::fs::write(out_dir.join("README.txt"), "keep").expect("write sidecar");
+
+    let outcome = export_project_data(&project, DataFormat::Json, ExportOptions::default())
+        .expect("export data");
+
+    let PipelineOutcome::Success(report) = outcome else {
+        panic!("expected export success");
+    };
+    assert_eq!(report.format, DataFormat::Json);
+    assert!(out_dir.join("Item.json").exists());
+    assert!(!out_dir.join("RemovedTable.json").exists());
+    assert!(!out_dir.join("RemovedTable.msgpack").exists());
+    assert!(out_dir.join("README.txt").exists());
+}
+
+#[test]
 fn export_project_data_requires_matching_configured_format() {
     let (project, _cleanup) = schema_only_project_with_outputs(
         "coflow-pipeline-export-wrong-format",
