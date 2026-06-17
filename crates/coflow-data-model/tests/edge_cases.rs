@@ -87,6 +87,63 @@ fn path_refs_resolve_fields_arrays_and_enum_dict_keys() {
 }
 
 #[test]
+fn path_refs_can_follow_polymorphic_values_to_child_fields() {
+    let schema = compile_schema(
+        r#"
+            abstract type Reward {}
+            type Item { name: string; }
+            type ItemReward : Reward { item: Item; }
+            type DropTable { rewards: [Reward]; }
+            type Holder { first_item: Item; }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("sword", "Item", [("name", CfdInputValue::from("Sword"))]);
+    builder.add_record(
+        "table_1",
+        "DropTable",
+        [(
+            "rewards",
+            CfdInputValue::Array(vec![CfdInputValue::object(
+                "ItemReward",
+                [("item", CfdInputValue::record_ref("Item", "sword"))],
+            )]),
+        )],
+    );
+    builder.add_record(
+        "holder_1",
+        "Holder",
+        [(
+            "first_item",
+            CfdInputValue::path_ref(
+                "DropTable",
+                "table_1",
+                [
+                    CfdRefPathSegment::Field("rewards".to_string()),
+                    CfdRefPathSegment::Index(CfdInputRefIndex::Int(0)),
+                    CfdRefPathSegment::Field("item".to_string()),
+                ],
+            ),
+        )],
+    );
+
+    let model = builder
+        .build()
+        .expect("path refs should follow actual child type fields");
+    let item_id = record_id_at(&model, 0);
+    let holder_id = record_id_at(&model, 2);
+    let holder = model.record(holder_id).expect("holder record");
+    assert_eq!(
+        holder.field("first_item"),
+        Some(&CfdValue::Ref {
+            key: "sword".to_string(),
+            target: item_id,
+        })
+    );
+}
+
+#[test]
 fn path_refs_report_array_bounds_and_missing_dict_keys() {
     let schema = compile_schema(
         r#"

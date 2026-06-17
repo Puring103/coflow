@@ -3,23 +3,22 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Coflow 项目架构</title>
+  <title>Coflow 项目介绍</title>
   <style>
     :root {
       color-scheme: light;
-      --bg: #f7f8fb;
-      --surface: #ffffff;
-      --surface-soft: #eef3f7;
-      --ink: #15202b;
-      --muted: #5d6b78;
-      --line: #c8d2dc;
-      --blue: #2563eb;
+      --bg: #f6f8fb;
+      --band: #ffffff;
+      --band-alt: #edf4f6;
+      --ink: #17212b;
+      --muted: #586775;
+      --line: #cbd5df;
       --teal: #0f766e;
-      --green: #3f7f4a;
-      --amber: #b45309;
+      --blue: #2563eb;
+      --amber: #b7791f;
       --rose: #be123c;
-      --violet: #6d28d9;
-      --shadow: 0 16px 38px rgba(21, 32, 43, 0.08);
+      --code-bg: #111827;
+      --code-ink: #e5edf7;
     }
 
     * {
@@ -30,27 +29,46 @@
       margin: 0;
       background: var(--bg);
       color: var(--ink);
-      font-family:
-        Inter, "Segoe UI", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
-      line-height: 1.55;
+      font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+      line-height: 1.62;
     }
 
-    header {
-      background: var(--surface);
+    main {
+      width: 100%;
+    }
+
+    section {
       border-bottom: 1px solid var(--line);
+      background: var(--band);
     }
 
-    .wrap {
-      width: min(1180px, calc(100% - 40px));
+    section:nth-child(even) {
+      background: var(--band-alt);
+    }
+
+    .inner {
+      width: min(1080px, calc(100% - 32px));
       margin: 0 auto;
+      padding: 52px 0;
     }
 
-    .hero {
-      padding: 34px 0 26px;
+    .intro {
+      min-height: 86vh;
+      display: flex;
+      align-items: center;
+    }
+
+    .intro .inner {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+      gap: 36px;
+      align-items: center;
+      padding-top: 48px;
+      padding-bottom: 48px;
     }
 
     .eyebrow {
-      margin: 0 0 8px;
+      margin: 0 0 10px;
       color: var(--teal);
       font-size: 13px;
       font-weight: 700;
@@ -58,533 +76,392 @@
       text-transform: uppercase;
     }
 
-    h1 {
+    h1,
+    h2,
+    h3 {
       margin: 0;
-      font-size: clamp(28px, 4vw, 46px);
-      line-height: 1.12;
       letter-spacing: 0;
+      line-height: 1.24;
     }
 
-    .subtitle {
-      max-width: 850px;
-      margin: 14px 0 0;
-      color: var(--muted);
-      font-size: 17px;
-    }
-
-    main {
-      padding: 28px 0 48px;
-    }
-
-    section {
-      margin-top: 22px;
-      padding: 26px;
-      background: var(--surface);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      box-shadow: var(--shadow);
-    }
-
-    section:first-child {
-      margin-top: 0;
+    h1 {
+      font-size: 42px;
     }
 
     h2 {
-      margin: 0 0 14px;
-      font-size: 22px;
-      line-height: 1.3;
-      letter-spacing: 0;
+      font-size: 28px;
     }
 
-    .section-note {
-      margin: -6px 0 18px;
+    h3 {
+      font-size: 17px;
+    }
+
+    p {
+      margin: 0;
       color: var(--muted);
+    }
+
+    .lead {
+      max-width: 680px;
+      margin-top: 18px;
+      font-size: 18px;
+    }
+
+    .problem-list,
+    .solve-grid,
+    .architecture-grid,
+    .example-grid {
+      display: grid;
+      gap: 16px;
+      margin-top: 28px;
+    }
+
+    .problem-list {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .problem,
+    .solution,
+    .module,
+    .example-note {
+      min-width: 0;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .problem {
+      border-left: 5px solid var(--rose);
+    }
+
+    .solution {
+      border-left: 5px solid var(--teal);
+    }
+
+    .module {
+      border-left: 5px solid var(--blue);
+    }
+
+    .example-note {
+      border-left: 5px solid var(--amber);
+    }
+
+    .problem p,
+    .solution p,
+    .module p,
+    .example-note p {
+      margin-top: 8px;
       font-size: 14px;
     }
 
-    .diagram-shell {
-      overflow-x: auto;
-      padding: 10px;
-      background: var(--surface-soft);
-      border: 1px solid #d9e2ea;
+    .workflow-visual {
+      min-height: 360px;
+      padding: 20px;
+      border: 1px solid var(--line);
       border-radius: 8px;
+      background: #fff;
     }
 
-    svg {
-      display: block;
-      min-width: 1100px;
-      width: 100%;
-      height: auto;
-    }
-
-    .node rect {
-      fill: #fff;
-      stroke: var(--line);
-      stroke-width: 1.5;
-      rx: 8;
-      ry: 8;
-    }
-
-    .node text {
-      fill: var(--ink);
-      font-size: 15px;
+    .visual-title {
+      margin-bottom: 16px;
+      color: var(--muted);
+      font-size: 14px;
       font-weight: 700;
-      text-anchor: middle;
     }
 
-    .node .sub {
-      fill: var(--muted);
-      font-size: 12px;
-      font-weight: 500;
+    .flow {
+      display: grid;
+      gap: 10px;
     }
 
-    .node.external rect {
-      stroke: var(--blue);
+    .flow-row {
+      display: grid;
+      grid-template-columns: 1fr 36px 1fr;
+      gap: 10px;
+      align-items: center;
+      min-height: 58px;
     }
 
-    .node.project rect {
-      stroke: var(--teal);
+    .flow-node {
+      min-height: 58px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f9fbfd;
     }
 
-    .node.schema rect {
-      stroke: var(--violet);
+    .flow-node strong {
+      display: block;
+      color: var(--ink);
+      font-size: 15px;
     }
 
-    .node.data rect {
-      stroke: var(--green);
-    }
-
-    .node.output rect {
-      stroke: var(--amber);
-    }
-
-    .node.editor rect {
-      stroke: var(--rose);
+    .flow-node span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 13px;
     }
 
     .arrow {
-      fill: none;
-      stroke: #657383;
-      stroke-width: 2;
-      marker-end: url(#arrow);
+      color: var(--teal);
+      font-size: 20px;
+      font-weight: 800;
+      text-align: center;
     }
 
-    .arrow.soft {
-      stroke-dasharray: 7 6;
-      stroke: #8a99a8;
+    .solve-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
 
-    .lane-label {
-      fill: #607081;
-      font-size: 13px;
-      font-weight: 700;
+    .architecture-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
     .pipeline {
       display: grid;
-      grid-template-columns: repeat(7, minmax(132px, 1fr));
-      gap: 10px;
-      align-items: stretch;
+      grid-template-columns: repeat(7, minmax(126px, 1fr));
+      gap: 8px;
+      margin-top: 28px;
       overflow-x: auto;
       padding-bottom: 4px;
     }
 
     .step {
-      position: relative;
-      min-width: 132px;
-      min-height: 118px;
-      padding: 14px 14px 12px;
-      background: #fff;
+      min-height: 112px;
+      padding: 14px;
       border: 1px solid var(--line);
       border-radius: 8px;
+      background: #fff;
     }
 
-    .step:not(:last-child)::after {
-      content: "";
-      position: absolute;
-      top: 50%;
-      right: -10px;
-      width: 10px;
-      height: 2px;
-      background: #8795a4;
-      transform: translateY(-50%);
+    .step strong {
+      display: block;
+      color: var(--teal);
+      font-size: 14px;
     }
 
-    .step-number {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 26px;
-      height: 26px;
-      margin-bottom: 10px;
-      color: #fff;
-      background: var(--teal);
-      border-radius: 50%;
-      font-size: 13px;
-      font-weight: 800;
-    }
-
-    .step-title {
-      margin: 0 0 6px;
-      font-size: 15px;
-      font-weight: 800;
-    }
-
-    .step p {
-      margin: 0;
+    .step span {
+      display: block;
+      margin-top: 8px;
       color: var(--muted);
       font-size: 13px;
     }
 
-    .matrix {
+    .example-grid {
+      grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+      align-items: start;
+    }
+
+    pre {
+      margin: 0;
+      overflow-x: auto;
+      padding: 18px;
+      border-radius: 8px;
+      background: var(--code-bg);
+      color: var(--code-ink);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    code {
+      font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
+    }
+
+    .example-stack {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 14px;
     }
 
-    .module-group {
-      padding: 16px;
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-    }
-
-    .module-group h3 {
-      margin: 0 0 10px;
-      font-size: 16px;
-      letter-spacing: 0;
-    }
-
-    .module-list {
-      display: grid;
-      gap: 8px;
-      margin: 0;
-      padding: 0;
-      list-style: none;
-    }
-
-    .module-list li {
-      padding: 9px 10px;
-      background: var(--surface-soft);
-      border-left: 4px solid var(--teal);
-      border-radius: 6px;
-      color: #2f3d4a;
-      font-size: 13px;
-    }
-
-    .module-list strong {
-      display: block;
-      margin-bottom: 2px;
-      color: var(--ink);
-      font-size: 13px;
-    }
-
-    .commands {
-      display: grid;
-      grid-template-columns: repeat(5, minmax(160px, 1fr));
-      gap: 12px;
-    }
-
-    .command {
-      padding: 14px;
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-    }
-
-    .command code {
-      display: block;
-      margin-bottom: 8px;
-      color: var(--blue);
-      font-size: 13px;
-      font-weight: 800;
-      white-space: normal;
-    }
-
-    .command p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    footer {
-      padding: 8px 0 34px;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    @media (max-width: 860px) {
-      .wrap {
-        width: min(100% - 24px, 1180px);
+    @media (max-width: 900px) {
+      .intro {
+        min-height: auto;
       }
 
-      section {
-        padding: 18px;
-      }
-
-      .matrix,
-      .commands {
+      .intro .inner,
+      .example-grid {
         grid-template-columns: 1fr;
       }
 
+      .problem-list,
+      .solve-grid,
+      .architecture-grid {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 34px;
+      }
+
+      h2 {
+        font-size: 24px;
+      }
+
       .pipeline {
-        grid-template-columns: repeat(7, 150px);
+        grid-template-columns: repeat(7, 142px);
       }
     }
   </style>
 </head>
 <body>
-  <header>
-    <div class="wrap hero">
-      <p class="eyebrow">Coflow 项目文档</p>
-      <h1>项目架构图</h1>
-      <p class="subtitle">
-        这个页面把当前 Rust workspace 的项目配置、CFT schema 编译、Excel/CFD 数据加载、数据校验、导出和 C# 代码生成放在同一张图里。
-      </p>
-    </div>
-  </header>
+  <main>
+    <section class="intro" aria-labelledby="intro-title">
+      <div class="inner">
+        <div>
+          <p class="eyebrow">Coflow / Game Config Pipeline</p>
+          <h1 id="intro-title">项目介绍以及想解决的问题</h1>
+          <p class="lead">
+            Coflow 是一个面向游戏配置数据的 Rust 工具链，把 schema、Excel、文本配置、
+            数据校验、导出格式和 C# 运行时代码放进同一条可重复执行的流程。
+          </p>
+          <div class="problem-list">
+            <article class="problem">
+              <h3>配置语义分散</h3>
+              <p>类型定义、表格列、运行时代码和校验规则分散维护时，很容易出现字段漂移。</p>
+            </article>
+            <article class="problem">
+              <h3>错误定位困难</h3>
+              <p>数据错误如果只在运行期暴露，策划和开发都难以快速定位到文件、sheet、行列或字段。</p>
+            </article>
+            <article class="problem">
+              <h3>交付链路脆弱</h3>
+              <p>手写导出脚本和加载器容易遗漏默认值、引用、多态、nullable、枚举和字典边界。</p>
+            </article>
+          </div>
+        </div>
 
-  <main class="wrap">
-    <section aria-labelledby="overview-title">
-      <h2 id="overview-title">系统总览</h2>
-      <p class="section-note">实线表示运行时调用或数据流，虚线表示编辑器辅助链路。</p>
-      <div class="diagram-shell">
-        <svg viewBox="0 0 1180 720" role="img" aria-labelledby="svg-title svg-desc">
-          <title id="svg-title">Coflow 项目系统总览图</title>
-          <desc id="svg-desc">图中展示 coflow CLI、项目配置、CFT 编译、Excel/CFD 加载、数据模型、校验、导出、C# 生成和 VS Code LSP 的关系。</desc>
-          <defs>
-            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="#657383"></path>
-            </marker>
-          </defs>
-
-          <text class="lane-label" x="48" y="32">入口</text>
-          <text class="lane-label" x="48" y="186">项目输入</text>
-          <text class="lane-label" x="48" y="372">数据管线</text>
-          <text class="lane-label" x="48" y="586">输出</text>
-
-          <g class="node external" transform="translate(56 56)">
-            <rect width="150" height="72"></rect>
-            <text x="75" y="31">用户 / CI</text>
-            <text class="sub" x="75" y="52">命令行入口</text>
-          </g>
-          <g class="node external" transform="translate(272 56)">
-            <rect width="166" height="72"></rect>
-            <text x="83" y="31">coflow CLI</text>
-            <text class="sub" x="83" y="52">src/main.rs</text>
-          </g>
-          <g class="node editor" transform="translate(56 240)">
-            <rect width="150" height="72"></rect>
-            <text x="75" y="31">VS Code 扩展</text>
-            <text class="sub" x="75" y="52">editors/vscode-cft</text>
-          </g>
-          <g class="node editor" transform="translate(272 240)">
-            <rect width="166" height="72"></rect>
-            <text x="83" y="31">coflow-cft-lsp</text>
-            <text class="sub" x="83" y="52">诊断 / 补全 / 跳转</text>
-          </g>
-
-          <g class="node project" transform="translate(504 56)">
-            <rect width="174" height="72"></rect>
-            <text x="87" y="31">coflow-project</text>
-            <text class="sub" x="87" y="52">配置解析 / schema 发现</text>
-          </g>
-          <g class="node schema" transform="translate(724 56)">
-            <rect width="174" height="72"></rect>
-            <text x="87" y="31">coflow-cft</text>
-            <text class="sub" x="87" y="52">lexer / parser / compiler</text>
-          </g>
-
-          <g class="node project" transform="translate(504 180)">
-            <rect width="174" height="72"></rect>
-            <text x="87" y="31">coflow.yaml</text>
-            <text class="sub" x="87" y="52">schema / sources / outputs</text>
-          </g>
-          <g class="node schema" transform="translate(724 180)">
-            <rect width="174" height="72"></rect>
-            <text x="87" y="31">schema/*.cft</text>
-            <text class="sub" x="87" y="52">类型 / enum / check</text>
-          </g>
-
-          <g class="node data" transform="translate(56 424)">
-            <rect width="150" height="72"></rect>
-            <text x="75" y="31">Excel / CFD</text>
-            <text class="sub" x="75" y="52">表格和文本源数据</text>
-          </g>
-          <g class="node data" transform="translate(272 424)">
-            <rect width="166" height="72"></rect>
-            <text x="83" y="31">data loaders</text>
-            <text class="sub" x="83" y="52">读取 sheet / CFD 文本</text>
-          </g>
-          <g class="node data" transform="translate(504 424)">
-            <rect width="174" height="72"></rect>
-            <text x="87" y="31">coflow-cell-value</text>
-            <text class="sub" x="87" y="52">单元格文本解析</text>
-          </g>
-          <g class="node data" transform="translate(724 424)">
-            <rect width="174" height="72"></rect>
-            <text x="87" y="31">coflow-data-model</text>
-            <text class="sub" x="87" y="52">模型构建 / 引用解析</text>
-          </g>
-          <g class="node data" transform="translate(954 424)">
-            <rect width="166" height="72"></rect>
-            <text x="83" y="31">coflow-checker</text>
-            <text class="sub" x="83" y="52">执行 CFT check</text>
-          </g>
-
-          <g class="node output" transform="translate(504 580)">
-            <rect width="174" height="72"></rect>
-            <text x="87" y="31">exporter-core</text>
-            <text class="sub" x="87" y="52">schema-aware 遍历</text>
-          </g>
-          <g class="node output" transform="translate(724 540)">
-            <rect width="174" height="72"></rect>
-            <text x="87" y="31">JSON 导出</text>
-            <text class="sub" x="87" y="52">TypeName.json</text>
-          </g>
-          <g class="node output" transform="translate(724 628)">
-            <rect width="174" height="72"></rect>
-            <text x="87" y="31">MessagePack 导出</text>
-            <text class="sub" x="87" y="52">TypeName.msgpack</text>
-          </g>
-          <g class="node output" transform="translate(954 180)">
-            <rect width="166" height="72"></rect>
-            <text x="83" y="31">C# 代码生成</text>
-            <text class="sub" x="83" y="52">Tera templates</text>
-          </g>
-          <g class="node output" transform="translate(954 56)">
-            <rect width="166" height="72"></rect>
-            <text x="83" y="31">generated/csharp</text>
-            <text class="sub" x="83" y="52">运行时类型和加载器</text>
-          </g>
-
-          <path class="arrow" d="M206 92 H272"></path>
-          <path class="arrow" d="M438 92 H504"></path>
-          <path class="arrow" d="M678 92 H724"></path>
-          <path class="arrow" d="M591 180 V128"></path>
-          <path class="arrow" d="M811 180 V128"></path>
-          <path class="arrow soft" d="M206 276 H272"></path>
-          <path class="arrow soft" d="M438 276 C472 276 470 128 504 128"></path>
-          <path class="arrow soft" d="M438 276 C540 276 618 128 724 128"></path>
-          <path class="arrow" d="M206 460 H272"></path>
-          <path class="arrow" d="M438 460 H504"></path>
-          <path class="arrow" d="M678 460 H724"></path>
-          <path class="arrow" d="M898 460 H954"></path>
-          <path class="arrow" d="M811 128 C811 258 356 258 355 424"></path>
-          <path class="arrow" d="M811 496 C792 556 704 594 678 616"></path>
-          <path class="arrow" d="M678 616 C698 586 704 576 724 576"></path>
-          <path class="arrow" d="M678 616 C704 650 704 664 724 664"></path>
-          <path class="arrow" d="M898 92 H954"></path>
-          <path class="arrow" d="M1037 180 V128"></path>
-          <path class="arrow" d="M811 128 C874 142 897 196 954 216"></path>
-        </svg>
+        <figure class="workflow-visual" aria-label="Coflow 工作流">
+          <figcaption class="visual-title">从设计数据到运行时产物</figcaption>
+          <div class="flow">
+            <div class="flow-row">
+              <div class="flow-node"><strong>CFT Schema</strong><span>类型、默认值、引用、check</span></div>
+              <div class="arrow">→</div>
+              <div class="flow-node"><strong>Excel / CFD</strong><span>策划表格和文本配置</span></div>
+            </div>
+            <div class="flow-row">
+              <div class="flow-node"><strong>Data Model</strong><span>统一构建、索引、引用解析</span></div>
+              <div class="arrow">→</div>
+              <div class="flow-node"><strong>Diagnostics</strong><span>稳定错误码和来源定位</span></div>
+            </div>
+            <div class="flow-row">
+              <div class="flow-node"><strong>Export</strong><span>JSON / MessagePack</span></div>
+              <div class="arrow">→</div>
+              <div class="flow-node"><strong>C# Runtime</strong><span>.NET / Unity 加载代码</span></div>
+            </div>
+          </div>
+        </figure>
       </div>
     </section>
 
-    <section aria-labelledby="pipeline-title">
-      <h2 id="pipeline-title">主数据流</h2>
-      <p class="section-note">`coflow check`、`coflow export` 和 `coflow codegen` 都复用前半段 schema 编译流程。</p>
-      <div class="pipeline" aria-label="Coflow 主数据流步骤">
-        <article class="step">
-          <span class="step-number">1</span>
-          <h3 class="step-title">打开项目</h3>
-          <p>读取 `coflow.yaml`，解析 schema、数据 sources 和输出目录。</p>
-        </article>
-        <article class="step">
-          <span class="step-number">2</span>
-          <h3 class="step-title">编译 CFT</h3>
-          <p>发现 `.cft` 文件，生成 `CftContainer`，收集稳定诊断。</p>
-        </article>
-        <article class="step">
-          <span class="step-number">3</span>
-          <h3 class="step-title">加载数据</h3>
-          <p>读取 `.xlsx` 和 `.cfd`，转换为来源无关的输入值。</p>
-        </article>
-        <article class="step">
-          <span class="step-number">4</span>
-          <h3 class="step-title">构建模型</h3>
-          <p>生成 `CfdDataModel`，处理默认值、继承、表和引用。</p>
-        </article>
-        <article class="step">
-          <span class="step-number">5</span>
-          <h3 class="step-title">运行检查</h3>
-          <p>`coflow-checker` 执行 schema 中的 `check` 规则。</p>
-        </article>
-        <article class="step">
-          <span class="step-number">6</span>
-          <h3 class="step-title">导出数据</h3>
-          <p>通过 exporter-core 遍历模型，输出 JSON 或 MessagePack。</p>
-        </article>
-        <article class="step">
-          <span class="step-number">7</span>
-          <h3 class="step-title">生成代码</h3>
-          <p>按编译后的 schema 生成 C# 类型和可信数据加载器。</p>
-        </article>
-      </div>
-    </section>
-
-    <section aria-labelledby="modules-title">
-      <h2 id="modules-title">模块分层</h2>
-      <p class="section-note">底层 crate 提供稳定模型和语义，上层 crate 只做编排、格式适配或编辑器集成。</p>
-      <div class="matrix">
-        <div class="module-group">
-          <h3>语言与模型层</h3>
-          <ul class="module-list">
-            <li><strong>coflow-cft</strong>CFT 词法、语法、schema 编译、类型检查和诊断。</li>
-            <li><strong>coflow-data-model</strong>来源无关的数据模型、表、记录、值和引用解析。</li>
-            <li><strong>coflow-cell-value</strong>把 Excel 单元格文本按 schema 解析成输入值。</li>
-            <li><strong>coflow-cfd</strong>把 `.cfd` 文本按 schema 解析成输入记录。</li>
-          </ul>
-        </div>
-        <div class="module-group">
-          <h3>管线与校验层</h3>
-          <ul class="module-list">
-            <li><strong>coflow-project</strong>解析项目配置、发现 schema 文件、编译项目 schema。</li>
-            <li><strong>coflow-loader-excel</strong>读取 `.xlsx`，映射 sheet/列，输出输入记录。</li>
-            <li><strong>coflow-checker</strong>执行 CFT `check` 块，返回数据诊断。</li>
-          </ul>
-        </div>
-        <div class="module-group">
-          <h3>输出与工具层</h3>
-          <ul class="module-list">
-            <li><strong>coflow-exporter-core</strong>共享的 schema-aware 导出遍历。</li>
-            <li><strong>coflow-exporter-json / messagepack</strong>具体数据格式编码器。</li>
-            <li><strong>coflow-codegen-csharp</strong>C# 运行时模型和加载器生成。</li>
-            <li><strong>coflow-cft-lsp</strong>CFT 语言服务，供 VS Code 扩展调用。</li>
-          </ul>
+    <section aria-labelledby="solve-title">
+      <div class="inner">
+        <h2 id="solve-title">项目如何解决这些问题</h2>
+        <p class="lead">
+          Coflow 用 CFT 作为配置语义的事实来源，所有数据源和产物都围绕编译后的 schema 工作。
+        </p>
+        <div class="solve-grid">
+          <article class="solution">
+            <h3>用 schema 统一语义</h3>
+            <p>CFT 定义类型、继承、多态、enum、默认值、nullable、引用和校验规则。</p>
+          </article>
+          <article class="solution">
+            <h3>用 loader 收敛输入</h3>
+            <p>Excel 和 CFD 都转换成统一输入记录，后续不关心数据来自表格还是文本。</p>
+          </article>
+          <article class="solution">
+            <h3>用模型校验不变量</h3>
+            <p>data model 负责字段类型、必填字段、重复 key、引用目标和路径引用。</p>
+          </article>
+          <article class="solution">
+            <h3>用产物保持一致</h3>
+            <p>JSON、MessagePack 和 C# codegen 都从同一份 schema/model 推导。</p>
+          </article>
         </div>
       </div>
     </section>
 
-    <section aria-labelledby="commands-title">
-      <h2 id="commands-title">CLI 命令入口</h2>
-      <div class="commands">
-        <div class="command">
-          <code>coflow init</code>
-          <p>创建最小项目结构、schema 目录、data 目录和默认 `coflow.yaml`。</p>
+    <section aria-labelledby="architecture-title">
+      <div class="inner">
+        <h2 id="architecture-title">项目的核心架构</h2>
+        <p class="lead">
+          架构按职责分层：底层只表达语言和模型语义，上层只做数据源适配、管线编排和工具集成。
+        </p>
+        <div class="pipeline" aria-label="Coflow 管线步骤">
+          <div class="step"><strong>Project</strong><span>读取 coflow.yaml，发现 schema 和 sources。</span></div>
+          <div class="step"><strong>CFT</strong><span>编译 schema，产生类型系统和诊断。</span></div>
+          <div class="step"><strong>Loader</strong><span>读取 Excel / CFD，输出输入记录。</span></div>
+          <div class="step"><strong>Cell Value</strong><span>按字段类型解析单元格复合值。</span></div>
+          <div class="step"><strong>Data Model</strong><span>构建表、记录、索引、默认值和引用。</span></div>
+          <div class="step"><strong>Checker</strong><span>执行 CFT check，返回数据诊断。</span></div>
+          <div class="step"><strong>Output</strong><span>导出数据并生成 C# 运行时代码。</span></div>
         </div>
-        <div class="command">
-          <code>coflow cft check</code>
-          <p>只编译项目 schema，输出 human-readable 或 JSON 诊断。</p>
+        <div class="architecture-grid">
+          <article class="module">
+            <h3>语言与模型层</h3>
+            <p>`coflow-cft`、`coflow-cell-value`、`coflow-cfd`、`coflow-data-model` 负责核心语义。</p>
+          </article>
+          <article class="module">
+            <h3>管线与诊断层</h3>
+            <p>`coflow-project`、`coflow-loader-excel`、`coflow-checker`、`coflow-pipeline` 负责编排和定位。</p>
+          </article>
+          <article class="module">
+            <h3>产物与工具层</h3>
+            <p>`coflow-exporter-*`、`coflow-codegen-csharp`、CLI 和 LSP 对外提供可用入口。</p>
+          </article>
         </div>
-        <div class="command">
-          <code>coflow cft lsp</code>
-          <p>启动 CFT language server，服务 VS Code 扩展。</p>
-        </div>
-        <div class="command">
-          <code>coflow check</code>
-          <p>完整运行 schema 编译、Excel/CFD 加载、模型构建和 check 规则。</p>
-        </div>
-        <div class="command">
-          <code>coflow export / codegen</code>
-          <p>导出 JSON/MessagePack 数据，或生成 C# runtime 代码。</p>
+      </div>
+    </section>
+
+    <section aria-labelledby="example-title">
+      <div class="inner">
+        <h2 id="example-title">简单的示例</h2>
+        <p class="lead">
+          一个最小项目通常包含 schema、数据源和输出配置。下面的示例展示从字段定义到校验、导出和代码生成的基本路径。
+        </p>
+        <div class="example-grid">
+          <div class="example-stack">
+            <article class="example-note">
+              <h3>1. 定义 schema</h3>
+              <p>用 CFT 描述配置表结构和校验规则。</p>
+            </article>
+            <pre><code>enum Rarity { Common, Rare, }
+
+type Item {
+  name: string;
+  rarity: Rarity = Rarity.Common;
+  price: int;
+
+  check {
+    name != "";
+    price >= 0;
+  }
+}</code></pre>
+          </div>
+          <div class="example-stack">
+            <article class="example-note">
+              <h3>2. 配置项目并运行</h3>
+              <p>Excel sheet 的 `id` 列作为 record key，其余列按字段名或 columns 映射读取。</p>
+            </article>
+            <pre><code>schema: schema/
+sources:
+  - file: data/items.xlsx
+    sheets:
+      - sheet: Item
+outputs:
+  data:
+    type: json
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Game.Config</code></pre>
+            <pre><code>cargo run -- check examples/rpg
+cargo run -- build examples/rpg</code></pre>
+          </div>
         </div>
       </div>
     </section>
   </main>
-
-  <footer class="wrap">
-    基于当前 workspace 结构生成。主要参考：Cargo.toml、src/main.rs、crates/*/Cargo.toml。
-  </footer>
 </body>
 </html>

@@ -32,6 +32,11 @@ examples/rpg/generated/data
 examples/rpg/generated/csharp
 ```
 
+导出和 codegen 会在输出目录维护 `coflow.data.manifest.json` /
+`coflow.csharp.manifest.json`，只清理上一次由 Coflow 生成的产物。旧版本生成
+但没有 manifest 的目录，建议先清理旧 `.json`、`.msgpack`、`.cs` 文件或改用
+新的空输出目录。
+
 单独运行各阶段：
 
 ```powershell
@@ -229,5 +234,5 @@ Unity/IL2CPP 风格环境。
 - [MessagePack 导出格式](docs/spec/08-messagepack-export.md)
 - [CLI 命令规格](docs/spec/09-cli.md)
 - [诊断规格](docs/spec/10-diagnostics.md)
-- [项目架构图](docs/spec/11-project-architecture.html)
+- [项目介绍页](docs/spec/11-project-architecture.html)
 - [CFD 文本配置语法](docs/spec/12-cfd.md)

@@ -211,7 +211,6 @@ pub enum CfdErrorCode {
     InvalidRecordKey,
     DuplicateId,
     DuplicatePolymorphicId,
-    RefTargetHasNoId,
     RefTargetNotFound,
     CheckFailed,
     CheckEvalTypeError,
@@ -219,7 +218,6 @@ pub enum CfdErrorCode {
     CheckIndexOutOfBounds,
     CheckMissingDictKey,
     CheckEmptyMinMax,
-    CheckInvalidRegex,
 }
 
 impl CfdErrorCode {
@@ -239,29 +237,26 @@ impl CfdErrorCode {
             Self::DuplicateId => "CFD-DATA-011",
             Self::DuplicatePolymorphicId => "CFD-DATA-012",
             Self::InvalidRecordKey => "CFD-DATA-013",
-            Self::RefTargetHasNoId => "CFD-REF-001",
-            Self::RefTargetNotFound => "CFD-REF-002",
+            Self::RefTargetNotFound => "CFD-REF-001",
             Self::CheckFailed => "CFD-CHECK-001",
             Self::CheckEvalTypeError => "CFD-CHECK-002",
             Self::CheckNullAccess => "CFD-CHECK-003",
             Self::CheckIndexOutOfBounds => "CFD-CHECK-004",
             Self::CheckMissingDictKey => "CFD-CHECK-005",
             Self::CheckEmptyMinMax => "CFD-CHECK-006",
-            Self::CheckInvalidRegex => "CFD-CHECK-007",
         }
     }
 
     #[must_use]
     pub fn stage(self) -> CfdStage {
         match self {
-            Self::RefTargetHasNoId | Self::RefTargetNotFound => CfdStage::Reference,
+            Self::RefTargetNotFound => CfdStage::Reference,
             Self::CheckFailed
             | Self::CheckEvalTypeError
             | Self::CheckNullAccess
             | Self::CheckIndexOutOfBounds
             | Self::CheckMissingDictKey
-            | Self::CheckEmptyMinMax
-            | Self::CheckInvalidRegex => CfdStage::Check,
+            | Self::CheckEmptyMinMax => CfdStage::Check,
             _ => CfdStage::DataModel,
         }
     }

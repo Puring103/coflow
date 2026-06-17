@@ -1,4 +1,8 @@
 target/
-examples/*/generated/
+examples/*/generated/**
+!examples/*/generated/
+!examples/*/generated/csharp/
+!examples/*/generated/csharp/coflow.enum.lock.json
 node_modules/
+.claude/
 ~$*.xlsx
