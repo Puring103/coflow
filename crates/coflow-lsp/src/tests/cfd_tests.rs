@@ -51,6 +51,52 @@ fn cfd_definition_request_returns_schema_field_location() {
 }
 
 #[test]
+fn cfd_requests_ignore_uppercase_cfd_extension() {
+    let schema_source = "type Item {\n  key: string;\n  damage: int;\n}\n";
+    let (_cleanup, project) = test_project("lsp-uppercase-cfd-extension", schema_source);
+    let cfd_path = project.root_dir.join("data.CFD");
+    let cfd_uri = path_to_file_uri(&cfd_path);
+    let cfd_source = "sword: Item { damage: 10 }\n";
+    let field_offset = cfd_source.find("damage").expect("damage") + 1;
+    let position = position_from_byte(cfd_source, field_offset);
+    let mut server = LspServer::new(project, Vec::new());
+
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": cfd_uri,
+                    "text": cfd_source
+                }
+            }
+        }))
+        .expect("open uppercase CFD document");
+    server.writer.clear();
+
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "textDocument/definition",
+            "params": {
+                "textDocument": { "uri": cfd_uri },
+                "position": {
+                    "line": position.line,
+                    "character": position.character
+                }
+            }
+        }))
+        .expect("definition request");
+
+    let messages = written_messages(&server.writer);
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0]["id"], 7);
+    assert_eq!(messages[0]["result"], Value::Null);
+}
+
+#[test]
 fn cfd_definition_request_resolves_record_keys_across_project_sources() {
     let schema_source = "type Item { key: string; }\n\
 type Holder { key: string; item: Item; }\n";

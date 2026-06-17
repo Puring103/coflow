@@ -119,6 +119,11 @@ fn project_validation_reports_schema_source_and_output_edges() -> TestResult {
     std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
     std::fs::write(root.join("schema/main.cft"), "type Item { value: string; }")
         .map_err(|err| err.to_string())?;
+    std::fs::write(
+        root.join("schema/MAIN.CFT"),
+        "type Upper { value: string; }",
+    )
+    .map_err(|err| err.to_string())?;
     std::fs::write(root.join("data.xlsx"), "").map_err(|err| err.to_string())?;
 
     let cases = [
@@ -138,6 +143,12 @@ fn project_validation_reports_schema_source_and_output_edges() -> TestResult {
             "empty-schema-path",
             "schema: ''\n",
             "schema path is empty",
+            true,
+        ),
+        (
+            "uppercase-schema-file",
+            "schema: schema/MAIN.CFT\n",
+            "schema file `schema/MAIN.CFT` has unsupported extension",
             true,
         ),
         (
@@ -315,6 +326,55 @@ fn schema_files_recurses_only_cft_files_and_sorts_module_ids() -> TestResult {
         .map(|file| file.module_id)
         .collect::<Vec<_>>();
     assert_eq!(module_ids, ["schema/nested/a.cft", "schema/z.cft"]);
+
+    std::fs::remove_dir_all(root).map_err(|err| err.to_string())
+}
+
+#[test]
+fn schema_files_ignores_uppercase_cft_extensions() -> TestResult {
+    let root = temp_project_dir("coflow-project-schema-files-extension-case");
+    std::fs::create_dir_all(root.join("schema/nested")).map_err(|err| err.to_string())?;
+    std::fs::write(
+        root.join("schema").join("MAIN.CFT"),
+        "type Main { value: string; }",
+    )
+    .map_err(|err| err.to_string())?;
+    std::fs::write(
+        root.join("schema").join("nested").join("EXTRA.Cft"),
+        "type Extra { value: string; }",
+    )
+    .map_err(|err| err.to_string())?;
+    std::fs::write(root.join("coflow.yaml"), "schema: schema\n").map_err(|err| err.to_string())?;
+
+    let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
+    let schema_files = project.schema_files().map_err(|err| err.to_string())?;
+
+    assert!(
+        schema_files.is_empty(),
+        "uppercase .CFT files should be ignored"
+    );
+
+    std::fs::remove_dir_all(root).map_err(|err| err.to_string())
+}
+
+#[test]
+fn schema_files_rejects_explicit_schema_file_with_non_lowercase_cft_extension() -> TestResult {
+    let root = temp_project_dir("coflow-project-explicit-schema-extension-case");
+    std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
+    std::fs::write(
+        root.join("schema").join("MAIN.CFT"),
+        "type Main { value: string; }",
+    )
+    .map_err(|err| err.to_string())?;
+    std::fs::write(root.join("coflow.yaml"), "schema: schema/MAIN.CFT\n")
+        .map_err(|err| err.to_string())?;
+    let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
+
+    let err = project
+        .schema_files()
+        .expect_err("uppercase explicit schema extension should fail");
+
+    assert!(err.contains("schema file `schema/MAIN.CFT` has unsupported extension"));
 
     std::fs::remove_dir_all(root).map_err(|err| err.to_string())
 }
