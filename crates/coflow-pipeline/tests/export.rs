@@ -129,3 +129,54 @@ fn export_project_data_requires_excel_sources() {
         "sources[0].file `data/missing.xlsx` does not exist",
     );
 }
+
+#[test]
+fn export_project_data_rejects_project_root_output_dir_override() {
+    let root = temp_project_dir("coflow-pipeline-export-root-output");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_single_item_project(
+        &root,
+        OutputsConfig {
+            data: Some(output_config("json", "generated/data", None)),
+            code: None,
+        },
+    )
+    .expect("write project");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+
+    let outcome = export_project_data(
+        &project,
+        DataFormat::Json,
+        ExportOptions {
+            out_dir: Some(root.as_path()),
+        },
+    )
+    .expect("unsafe root output should be reported as diagnostics");
+
+    assert_diagnostic_message_contains(outcome, "project root");
+    assert!(root.join("coflow.yaml").exists());
+    assert!(root.join("schema").join("main.cft").exists());
+    assert!(root.join("data").join("configs.xlsx").exists());
+}
+
+#[test]
+fn export_project_data_rejects_output_dir_containing_schema() {
+    let root = temp_project_dir("coflow-pipeline-export-schema-output");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_single_item_project(
+        &root,
+        OutputsConfig {
+            data: Some(output_config("json", "schema", None)),
+            code: None,
+        },
+    )
+    .expect("write project");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+
+    let outcome = export_project_data(&project, DataFormat::Json, ExportOptions::default())
+        .expect("unsafe schema output should be reported as diagnostics");
+
+    assert_diagnostic_message_contains(outcome, "schema path");
+    assert!(root.join("schema").join("main.cft").exists());
+    assert!(!root.join("schema").join("Item.json").exists());
+}

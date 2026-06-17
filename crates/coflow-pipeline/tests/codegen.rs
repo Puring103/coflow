@@ -318,3 +318,37 @@ fn codegen_writes_empty_key_as_enum_lockfile_when_only_declared_ids_exist() {
         .join("coflow.enum.lock.json")
         .exists());
 }
+
+#[test]
+fn generate_project_code_rejects_output_dir_containing_data_source() {
+    let root = temp_project_dir("coflow-pipeline-codegen-data-output");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_single_item_project(
+        &root,
+        OutputsConfig {
+            data: Some(output_config("json", "generated/data", None)),
+            code: Some(output_config(
+                "csharp",
+                "generated/csharp",
+                Some("Game.Config"),
+            )),
+        },
+    )
+    .expect("write project");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+    let data_dir = root.join("data");
+
+    let outcome = generate_project_code(
+        &project,
+        CodegenTarget::Csharp,
+        CodegenOptions {
+            out_dir: Some(data_dir.as_path()),
+            namespace: Some("Game.Config"),
+        },
+    )
+    .expect("unsafe data output should be reported as diagnostics");
+
+    assert_diagnostic_message_contains(outcome, "data source");
+    assert!(data_dir.join("configs.xlsx").exists());
+    assert!(!data_dir.join("GameConfig.cs").exists());
+}

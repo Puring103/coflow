@@ -186,7 +186,11 @@ pub fn build_project(
     };
 
     let data_dir = output_dir(project, data_output, options.data_out_dir);
-    let mut preflight_diagnostics = artifact_diagnostics_for_dirs([&data_dir]);
+    let mut artifact_plans = vec![ArtifactOutputPlan::new(
+        "outputs.data.dir",
+        data_dir.clone(),
+    )];
+    let mut preflight_diagnostics = Vec::new();
     let code_plan = if let Some(code_output) = project.config.outputs.code.as_ref() {
         if code_output.output_type != CodegenTarget::Csharp.as_config_value() {
             return Err(format!(
@@ -203,11 +207,15 @@ pub fn build_project(
         preflight_diagnostics.extend(diagnostics_from_codegen_preflight(preflight_csharp_files(
             &schema, &namespace,
         )));
-        preflight_diagnostics.extend(artifact_diagnostics_for_dirs([&code_dir]));
+        artifact_plans.push(ArtifactOutputPlan::new(
+            "outputs.code.dir",
+            code_dir.clone(),
+        ));
         Some((code_dir, namespace))
     } else {
         None
     };
+    preflight_diagnostics.extend(artifact_safety_diagnostics(project, &artifact_plans));
     if !preflight_diagnostics.is_empty() {
         return Ok(PipelineOutcome::Diagnostics(preflight_diagnostics));
     }
@@ -276,7 +284,10 @@ pub fn export_project_data(
         Ok(output) => output,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
-    let artifact_diagnostics = artifact_diagnostics_for_dirs([&dir]);
+    let artifact_diagnostics = artifact_safety_diagnostics(
+        project,
+        &[ArtifactOutputPlan::new("outputs.data.dir", dir.clone())],
+    );
     if !artifact_diagnostics.is_empty() {
         return Ok(PipelineOutcome::Diagnostics(artifact_diagnostics));
     }
@@ -317,7 +328,10 @@ pub fn generate_project_code(
     if !codegen_diagnostics.is_empty() {
         return Ok(PipelineOutcome::Diagnostics(codegen_diagnostics));
     }
-    let artifact_diagnostics = artifact_diagnostics_for_dirs([&dir]);
+    let artifact_diagnostics = artifact_safety_diagnostics(
+        project,
+        &[ArtifactOutputPlan::new("outputs.code.dir", dir.clone())],
+    );
     if !artifact_diagnostics.is_empty() {
         return Ok(PipelineOutcome::Diagnostics(artifact_diagnostics));
     }
@@ -332,18 +346,146 @@ pub fn generate_project_code(
     Ok(PipelineOutcome::Success(CodegenReport { target, dir }))
 }
 
-fn artifact_diagnostics_for_dirs<'a>(
-    dirs: impl IntoIterator<Item = &'a PathBuf>,
+#[derive(Debug)]
+struct ArtifactOutputPlan {
+    label: &'static str,
+    dir: PathBuf,
+}
+
+impl ArtifactOutputPlan {
+    const fn new(label: &'static str, dir: PathBuf) -> Self {
+        Self { label, dir }
+    }
+}
+
+fn artifact_safety_diagnostics(
+    project: &Project,
+    outputs: &[ArtifactOutputPlan],
 ) -> Vec<DiagnosticJson> {
-    dirs.into_iter()
-        .filter(|dir| dir.exists() && !dir.is_dir())
-        .map(|dir| {
-            DiagnosticJson::artifact(format!(
+    let mut diagnostics = Vec::new();
+    for output in outputs {
+        if output.dir.exists() && !output.dir.is_dir() {
+            diagnostics.push(DiagnosticJson::artifact(format!(
                 "output dir `{}` already exists and is not a directory",
-                dir.display()
-            ))
-        })
+                output.dir.display()
+            )));
+        }
+        diagnostics.extend(output_scope_diagnostics(project, output));
+    }
+    diagnostics.extend(overlapping_output_diagnostics(outputs));
+    diagnostics
+}
+
+fn output_scope_diagnostics(project: &Project, output: &ArtifactOutputPlan) -> Vec<DiagnosticJson> {
+    let output_dir = normalized_existing_or_future_path(&output.dir);
+    let project_root = normalized_existing_or_future_path(&project.root_dir);
+    let mut diagnostics = Vec::new();
+
+    if output_dir == project_root {
+        diagnostics.push(DiagnosticJson::artifact(format!(
+            "{} `{}` overlaps the project root; choose a dedicated generated output directory",
+            output.label,
+            output.dir.display()
+        )));
+    }
+
+    let config_path = normalized_existing_or_future_path(&project.config_path);
+    if paths_overlap(&output_dir, &config_path) {
+        diagnostics.push(DiagnosticJson::artifact(format!(
+            "{} `{}` overlaps project config `{}`",
+            output.label,
+            output.dir.display(),
+            project.config_path.display()
+        )));
+    }
+
+    for schema_path in configured_schema_paths(project) {
+        let schema_path = normalized_existing_or_future_path(&schema_path);
+        if paths_overlap(&output_dir, &schema_path) {
+            diagnostics.push(DiagnosticJson::artifact(format!(
+                "{} `{}` overlaps schema path `{}`",
+                output.label,
+                output.dir.display(),
+                schema_path.display()
+            )));
+        }
+    }
+
+    for source_path in configured_source_paths(project) {
+        let source_path = normalized_existing_or_future_path(&source_path);
+        if paths_overlap(&output_dir, &source_path) {
+            diagnostics.push(DiagnosticJson::artifact(format!(
+                "{} `{}` overlaps data source `{}`",
+                output.label,
+                output.dir.display(),
+                source_path.display()
+            )));
+        }
+    }
+
+    diagnostics
+}
+
+fn overlapping_output_diagnostics(outputs: &[ArtifactOutputPlan]) -> Vec<DiagnosticJson> {
+    let mut diagnostics = Vec::new();
+    for (index, left) in outputs.iter().enumerate() {
+        let left_dir = normalized_existing_or_future_path(&left.dir);
+        for right in outputs.iter().skip(index + 1) {
+            let right_dir = normalized_existing_or_future_path(&right.dir);
+            if paths_overlap(&left_dir, &right_dir) {
+                diagnostics.push(DiagnosticJson::artifact(format!(
+                    "{} `{}` and {} `{}` overlap; choose separate generated output directories",
+                    left.label,
+                    left.dir.display(),
+                    right.label,
+                    right.dir.display()
+                )));
+            }
+        }
+    }
+    diagnostics
+}
+
+fn configured_schema_paths(project: &Project) -> Vec<PathBuf> {
+    match &project.config.schema {
+        coflow_project::SchemaConfig::One(path) => vec![project.resolve_path(path)],
+        coflow_project::SchemaConfig::Many(paths) => paths
+            .iter()
+            .map(|path| project.resolve_path(path))
+            .collect(),
+    }
+}
+
+fn configured_source_paths(project: &Project) -> Vec<PathBuf> {
+    project
+        .config
+        .sources
+        .iter()
+        .filter_map(|source| source.file.as_ref().or(source.dir.as_ref()))
+        .map(|path| project.resolve_path(path))
         .collect()
+}
+
+fn normalized_existing_or_future_path(path: &Path) -> PathBuf {
+    fs::canonicalize(path).unwrap_or_else(|_| normalize_path_lexically(path))
+}
+
+fn normalize_path_lexically(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            _ => out.push(component.as_os_str()),
+        }
+    }
+    out
+}
+
+fn paths_overlap(left: &Path, right: &Path) -> bool {
+    left == right || left.starts_with(right) || right.starts_with(left)
 }
 
 fn diagnostics_from_codegen_preflight(

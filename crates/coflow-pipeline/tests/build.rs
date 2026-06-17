@@ -227,3 +227,42 @@ fn build_project_does_not_write_data_when_codegen_preflight_reports_diagnostics(
     assert!(!data_dir.join("Item.json").exists());
     assert!(!code_dir.join("GameConfig.cs").exists());
 }
+
+#[test]
+fn build_project_rejects_overlapping_data_and_code_output_dirs() {
+    let root = temp_project_dir("coflow-pipeline-build-overlapping-outputs");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_single_item_project(
+        &root,
+        OutputsConfig {
+            data: Some(output_config("json", "generated", None)),
+            code: Some(output_config(
+                "csharp",
+                "generated/csharp",
+                Some("Game.Config"),
+            )),
+        },
+    )
+    .expect("write project");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+
+    let outcome = build_project(&project, BuildOptions::default())
+        .expect("overlapping outputs should be reported as diagnostics");
+
+    let PipelineOutcome::Diagnostics(diagnostics) = outcome else {
+        panic!("expected artifact diagnostics");
+    };
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("outputs.data.dir")
+                && diagnostic.message.contains("overlap")),
+        "diagnostics: {diagnostics:?}"
+    );
+    assert!(!root.join("generated").join("Item.json").exists());
+    assert!(!root
+        .join("generated")
+        .join("csharp")
+        .join("GameConfig.cs")
+        .exists());
+}
