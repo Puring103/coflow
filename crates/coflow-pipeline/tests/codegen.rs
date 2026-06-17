@@ -104,8 +104,10 @@ outputs:
 
     assert!(matches!(outcome, PipelineOutcome::Success(_)));
     let lockfile =
-        std::fs::read_to_string(out_dir.join("coflow.enum.lock.json")).expect("enum lockfile");
+        std::fs::read_to_string(root.join("coflow.enum.lock.json")).expect("enum lockfile");
     assert!(lockfile.contains("\"GeneId\": {}"));
+    assert!(!out_dir.join("coflow.enum.lock.json").exists());
+    assert!(!out_dir.join("coflow.csharp.manifest.json").exists());
 }
 
 #[test]
@@ -169,13 +171,8 @@ outputs:
 ",
     )
     .expect("write config");
-    std::fs::write(
-        root.join("generated")
-            .join("csharp")
-            .join("coflow.enum.lock.json"),
-        "{bad json",
-    )
-    .expect("write malformed lockfile");
+    std::fs::write(root.join("coflow.enum.lock.json"), "{bad json")
+        .expect("write malformed lockfile");
     let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
 
     let err = generate_project_code(&project, CodegenTarget::Csharp, CodegenOptions::default())
@@ -217,13 +214,8 @@ outputs:
 ",
     )
     .expect("write config");
-    std::fs::write(
-        root.join("generated")
-            .join("csharp")
-            .join("coflow.enum.lock.json"),
-        "{bad json",
-    )
-    .expect("write malformed lockfile");
+    std::fs::write(root.join("coflow.enum.lock.json"), "{bad json")
+        .expect("write malformed lockfile");
     let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
 
     let outcome = generate_project_code(&project, CodegenTarget::Csharp, CodegenOptions::default())
@@ -260,12 +252,8 @@ outputs:
         .join("GameConfig.cs")
         .exists());
     assert_eq!(
-        std::fs::read_to_string(
-            root.join("generated")
-                .join("csharp")
-                .join("coflow.enum.lock.json")
-        )
-        .expect("lockfile should remain readable"),
+        std::fs::read_to_string(root.join("coflow.enum.lock.json"))
+            .expect("lockfile should remain readable"),
         "{bad json"
     );
 }
@@ -320,13 +308,13 @@ fn codegen_writes_empty_key_as_enum_lockfile_when_only_declared_ids_exist() {
     )
     .expect("declared enum without loaded ids should still write empty lockfile");
     assert!(matches!(outcome, PipelineOutcome::Success(_)));
-    let lockfile = std::fs::read_to_string(
-        declared_only
-            .root_dir
-            .join("generated")
-            .join("csharp")
-            .join("coflow.enum.lock.json"),
-    )
-    .expect("enum lockfile");
+    let lockfile = std::fs::read_to_string(declared_only.root_dir.join("coflow.enum.lock.json"))
+        .expect("enum lockfile");
     assert!(lockfile.contains("\"GeneId\": {}"));
+    assert!(!declared_only
+        .root_dir
+        .join("generated")
+        .join("csharp")
+        .join("coflow.enum.lock.json")
+        .exists());
 }

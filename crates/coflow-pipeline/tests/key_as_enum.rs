@@ -79,6 +79,8 @@ outputs:
     let remains =
         std::fs::read_to_string(out_code.join("BioRemainsConfig.cs")).expect("BioRemainsConfig.cs");
     assert!(remains.contains("public GeneConfig? Gene { get; internal set; }"));
+    assert!(root.join("coflow.enum.lock.json").exists());
+    assert!(!out_code.join("coflow.enum.lock.json").exists());
 }
 
 #[test]
@@ -102,10 +104,11 @@ fn build_project_writes_key_as_enum_lockfile() {
 
     assert!(matches!(outcome, PipelineOutcome::Success(_)));
     let lockfile =
-        std::fs::read_to_string(code_dir.join("coflow.enum.lock.json")).expect("enum lockfile");
+        std::fs::read_to_string(root.join("coflow.enum.lock.json")).expect("enum lockfile");
     assert!(lockfile.contains("\"GeneId\""));
     assert!(lockfile.contains("\"Gene_Spore\": 0"));
     assert!(lockfile.contains("\"Gene_Mating\": 1"));
+    assert!(!code_dir.join("coflow.enum.lock.json").exists());
     let gene_id = std::fs::read_to_string(code_dir.join("GeneId.cs")).expect("GeneId.cs");
     assert!(gene_id.contains("Gene_Spore = 0"));
     assert!(gene_id.contains("Gene_Mating = 1"));
@@ -149,7 +152,7 @@ fn build_project_preserves_key_as_enum_lockfile_values_and_appends_new_ids() {
     assert!(gene_id.contains("Gene_Mating = 1"));
     assert!(gene_id.contains("Gene_New = 2"));
     let lockfile =
-        std::fs::read_to_string(code_dir.join("coflow.enum.lock.json")).expect("enum lockfile");
+        std::fs::read_to_string(root.join("coflow.enum.lock.json")).expect("enum lockfile");
     assert!(lockfile.contains("\"Gene_Spore\": 0"));
     assert!(lockfile.contains("\"Gene_Mating\": 1"));
     assert!(lockfile.contains("\"Gene_New\": 2"));
@@ -190,21 +193,22 @@ fn build_project_removes_stale_generated_csharp_files_after_key_as_enum_rename()
     assert!(code_dir.join("NewGeneId.cs").exists());
     assert!(!code_dir.join("OldGeneId.cs").exists());
     let lockfile =
-        std::fs::read_to_string(code_dir.join("coflow.enum.lock.json")).expect("enum lockfile");
+        std::fs::read_to_string(root.join("coflow.enum.lock.json")).expect("enum lockfile");
     assert!(lockfile.contains("\"NewGeneId\""));
     assert!(!lockfile.contains("\"OldGeneId\""));
 }
 
 #[test]
-fn build_project_rejects_unmanaged_generated_csharp_files() {
-    let root = temp_project_dir("coflow-pipeline-rejects-unmanaged-csharp");
+fn build_project_takes_over_existing_generated_csharp_dir() {
+    let root = temp_project_dir("coflow-pipeline-takes-over-csharp");
     let _cleanup = TempDirCleanup(root.clone());
     write_key_as_enum_project(&root, &["Gene_Spore"]).expect("write project");
     let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
     let data_dir = root.join("out-data");
     let code_dir = root.join("out-code");
     std::fs::create_dir_all(&code_dir).expect("create code dir");
-    std::fs::write(code_dir.join("Manual.cs"), "// user code").expect("write unmanaged csharp");
+    std::fs::write(code_dir.join("Manual.cs"), "// old generated code").expect("write old csharp");
+    std::fs::write(code_dir.join("README.txt"), "remove").expect("write sidecar");
 
     let outcome = build_project(
         &project,
@@ -214,13 +218,16 @@ fn build_project_rejects_unmanaged_generated_csharp_files() {
             namespace: Some("Game.Config"),
         },
     )
-    .expect("unmanaged generated-looking C# file should be reported as diagnostics");
+    .expect("build project");
 
-    assert_diagnostic_message_contains(outcome, "unmanaged generated artifact");
-    assert!(code_dir.join("Manual.cs").exists());
-    assert!(!code_dir.join("GameConfig.cs").exists());
-    assert!(!data_dir.join("GeneConfig.json").exists());
+    assert!(matches!(outcome, PipelineOutcome::Success(_)));
+    assert!(!code_dir.join("Manual.cs").exists());
+    assert!(!code_dir.join("README.txt").exists());
+    assert!(code_dir.join("GameConfig.cs").exists());
+    assert!(data_dir.join("GeneConfig.json").exists());
+    assert!(root.join("coflow.enum.lock.json").exists());
     assert!(!code_dir.join("coflow.enum.lock.json").exists());
+    assert!(!code_dir.join("coflow.csharp.manifest.json").exists());
 }
 
 #[test]

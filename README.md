@@ -32,10 +32,9 @@ examples/rpg/generated/data
 examples/rpg/generated/csharp
 ```
 
-导出和 codegen 会在输出目录维护 `coflow.data.manifest.json` /
-`coflow.csharp.manifest.json`，只清理上一次由 Coflow 生成的产物。旧版本生成
-但没有 manifest 的目录，建议先清理旧 `.json`、`.msgpack`、`.cs` 文件或改用
-新的空输出目录。
+导出和 codegen 会接管对应输出目录。每次写入都会先在临时 staging 目录生成
+完整产物，成功后替换整个输出目录；目录内的旧文件、人工文件和其他工具产物
+不会被保留。不要把手写文件放进 `outputs.*.dir`。
 
 单独运行各阶段：
 
@@ -193,9 +192,10 @@ type Monster {
 - 裸字符串保持字符串语义。导出的 JSON 和 MessagePack 中，引用字段保存为
   `"sword_01"` 这类纯 key 字符串，而不是 `"Item.sword_01"`。
 
-`coflow build` 会在 C# 输出目录维护 `coflow.enum.lock.json`，用于稳定
+`coflow build` 会在 `coflow.yaml` 同级维护 `coflow.enum.lock.json`，用于稳定
 `@keyAsEnum` 的整数值。Excel 行顺序变化时，已有生成 enum 的整数值保持不变；
-新的数据驱动枚举变体会追加到 lockfile。
+新的数据驱动枚举变体会追加到 lockfile。该文件可提交到版本库；它不属于
+生成输出目录。
 
 check 中常用内建函数包括 `len`、`contains`、`unique`、`min`、`max`、`sum`、
 `keys`、`values` 和 `matches`。`unique` 支持可比较标量数组（`int`、`bool`、

@@ -30,34 +30,44 @@ CI 增加 `cargo check --workspace`，与本地提交前要求保持一致。
 
 删除已跟踪的 `.claude/settings.local.json`，并在 `.gitignore` 中忽略 `.claude/`。
 
-### 明确生成目录 lockfile 例外
+### 明确生成物与 enum lockfile 边界
 
-`.gitignore` 中显式保留 `examples/*/generated/csharp/coflow.enum.lock.json`，避免普通生成物忽略策略与被跟踪 lockfile 策略冲突。
+`.gitignore` 继续忽略 `examples/*/generated/**` 普通生成物，并显式保留
+`examples/*/coflow.enum.lock.json`。`@keyAsEnum` 稳定值 lockfile 不再放在
+C# 输出目录中，而是放在 `coflow.yaml` 同级，避免生成目录整体替换时误删
+需要提交的稳定输入文件。
 
-### 修复数据导出旧表文件残留
+### 数据导出改为完整接管输出目录
 
-`coflow-pipeline` 在写出 JSON 或 MessagePack 数据前会根据 `coflow.data.manifest.json`
-清理上一轮生成、但本轮不再生成的 `.json` / `.msgpack` 表文件。这样删除或
-重命名 schema 表后，旧数据文件不会继续留在输出目录并被消费者误用。
+`coflow-pipeline` 在写出 JSON 或 MessagePack 数据时先写入同级 staging 目录，
+全部文件成功写入后再替换目标输出目录。目标目录由 Coflow 完整接管，旧 `.json`、
+`.msgpack`、sidecar 文件、子目录和人工文件都会被移除，不再维护
+`coflow.data.manifest.json`。
 
 新增回归测试覆盖：
 
 - stale `.json` 文件会被删除。
 - stale `.msgpack` 文件会被删除。
-- 非 Coflow 数据表扩展的旁路文件会保留。
+- 非 Coflow 数据表扩展的旁路文件也会随目录替换删除。
+- 不写入 `coflow.data.manifest.json`。
 
-### 增加产物 manifest，避免误删或覆盖非 Coflow 文件
+### C# codegen 改为完整接管输出目录
 
-数据导出和 C# codegen 现在分别维护 `coflow.data.manifest.json` 与
-`coflow.csharp.manifest.json`。写入前只清理上一轮 manifest 中存在、但本轮
-不再生成的产物；如果输出目录中存在未被 manifest 管理的 `.json`、`.msgpack`
-或 `.cs` 文件，命令会拒绝写入，而不是按扩展名直接删除或覆盖。
+C# codegen 同样先写入同级 staging 目录，再替换目标输出目录。输出目录由
+Coflow 完整接管，不再维护 `coflow.csharp.manifest.json`，也不会尝试保留
+目录中的手写 `.cs` 或其他文件。手写扩展代码应放在生成目录之外，依赖生成类的
+`partial` 扩展能力。
+
+`coflow.enum.lock.json` 已移动到 `coflow.yaml` 同级，并作为单独的 staging 文件
+提交。codegen preflight 有诊断时不读写 lockfile；staging 失败时旧输出目录和
+旧 lockfile 保持不变；提交阶段目录替换失败时会尽力回滚已替换的 lockfile。
 
 新增回归测试覆盖：
 
-- 有 manifest 的旧数据表文件会被清理，并刷新 manifest。
-- 未被 manifest 管理的 `.json` 文件会阻止导出，原文件保留。
-- 未被 manifest 管理的 `.cs` 文件会阻止 C# codegen，原文件保留。
+- stale `.cs` 文件和输出目录 sidecar 文件会被删除。
+- C# 输出目录中不写 `coflow.csharp.manifest.json`。
+- lockfile 写在项目配置同级，不在 C# 输出目录中。
+- lockfile 位置同步覆盖 pipeline 与 CLI codegen 测试。
 
 ### 修复数据源扩展名大小写敏感
 
@@ -101,14 +111,15 @@ pipeline 现在以大小写不敏感方式识别 `.xlsx`、`.xlsm`、`.xls` 和 
 
 ### 修复 Excel `@expand` 静默吞掉后续业务列
 
-`coflow-loader-excel` 现在要求 `@expand` 后续被消费的相邻列表头必须为空，
-或显式写成预期子字段名。如果相邻列写了其他业务表头，会在表头阶段报告
-`EXCEL-COLUMN`，避免普通字段列被静默当作展开子字段读取。
+`coflow-loader-excel` 现在要求 `@expand` 后续被消费的相邻列必须连续，且表头
+必须为空。如果相邻列写了任何非空表头，会在表头阶段报告 `EXCEL-COLUMN`，
+避免普通字段列被静默当作展开子字段读取。Excel 合并表头的非左上角单元格
+读取为空，因此是合法的 `@expand` 分组表头形式。
 
 新增回归测试覆盖：
 
 - merged-header 风格的空子列表头继续可用。
-- 显式写出 `temperature`、`diffusion` 等子字段表头时可正常加载。
+- 显式写出 `temperature`、`diffusion` 等子字段表头时会被拒绝。
 - `id, env, level` 这类会吞掉 `level` 的布局会被拒绝，并定位到冲突表头列。
 - `@expand` 相邻列不足仍会报告表头错误。
 

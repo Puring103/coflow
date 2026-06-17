@@ -121,37 +121,8 @@ async function main() {
 
   fs.rmSync(root, { recursive: true, force: true });
 
-  const project = fs.mkdtempSync(path.join(os.tmpdir(), "coflow-vscode-cft-definition-"));
-  const enumPath = path.join(project, "02_enums_and_flags.cft");
-  const sourcePath = path.join(project, "03_types_fields_defaults.cft");
-  fs.writeFileSync(
-    path.join(project, "coflow.yaml"),
-    "schema:\n  - 02_enums_and_flags.cft\n  - 03_types_fields_defaults.cft\n",
-    "utf8"
-  );
-  fs.writeFileSync(enumPath, "enum ExampleRarity {\n  Common = 0,\n}\n", "utf8");
-  const source = "type ExampleItem {\n  rarity: ExampleRarity = ExampleRarity.Common;\n}\n";
-  fs.writeFileSync(sourcePath, source, "utf8");
-
-  const document = textDocument(sourcePath, source);
-  const enumLocations = await extension.__test.localDefinitionLocations(
-    document,
-    document.positionAt(source.indexOf("ExampleRarity") + 4)
-  );
-  assert.strictEqual(path.normalize(enumLocations[0].uri.fsPath), path.normalize(enumPath));
-  assert.strictEqual(enumLocations[0].range.start.line, 0);
-  assert.strictEqual(enumLocations[0].range.start.character, 5);
-
-  const variantLocations = await extension.__test.localDefinitionLocations(
-    document,
-    document.positionAt(source.indexOf("Common") + 2)
-  );
-  assert.strictEqual(path.normalize(variantLocations[0].uri.fsPath), path.normalize(enumPath));
-  assert.strictEqual(variantLocations[0].range.start.line, 1);
-  assert.strictEqual(variantLocations[0].range.start.character, 2);
-
   const singleLocation = extension.__test.lspDefinitionLocations({
-    uri: `file://${sourcePath.replace(/\\/g, "/")}`,
+    uri: "file:///tmp/source.cft",
     range: { start: { line: 2, character: 2 }, end: { line: 2, character: 8 } }
   });
   assert.strictEqual(singleLocation.length, 1);
@@ -182,8 +153,6 @@ async function main() {
     "CFD reference path segments should have a default semantic token color"
   );
 
-  fs.rmSync(project, { recursive: true, force: true });
-
   const session = Object.create(extension.__test.CftLspSession.prototype);
   Object.assign(session, {
     failed: false,
@@ -206,19 +175,36 @@ async function main() {
 
   const completionSource = "type Item {}\ntype Holder {\n  item: Item;\n  @ref(\n}\n";
   const completionDocument = textDocument(path.join(os.tmpdir(), "completion.cft"), completionSource);
-  extension.__test.vscodeWorkspace.textDocuments.push(completionDocument);
   const completionProvider = new extension.__test.CftCompletionProvider({
     request: async () => undefined
   });
-  const refItems = await completionProvider.provideCompletionItems(
+  const noCompletionFallback = await completionProvider.provideCompletionItems(
     completionDocument,
-    completionDocument.positionAt(completionSource.indexOf("@ref(") + "@ref(".length)
+    completionDocument.positionAt(completionSource.indexOf("item: ") + "item: ".length)
   );
-  assert(
-    !refItems.some((item) => item.label === "Item"),
-    "legacy @ref annotation context must not offer type completions"
+  assert.deepStrictEqual(
+    noCompletionFallback,
+    [],
+    "VS Code extension must not synthesize semantic completions when LSP has no result"
   );
-  extension.__test.vscodeWorkspace.textDocuments.pop();
+
+  const hoverProvider = new extension.__test.CftHoverProvider({ request: async () => undefined });
+  const noHoverFallback = await hoverProvider.provideHover(
+    completionDocument,
+    completionDocument.positionAt(completionSource.indexOf("Item"))
+  );
+  assert.strictEqual(noHoverFallback, undefined);
+
+  const symbolProvider = new extension.__test.CftDocumentSymbolProvider({ request: async () => undefined });
+  const noSymbolFallback = await symbolProvider.provideDocumentSymbols(completionDocument);
+  assert.deepStrictEqual(noSymbolFallback, []);
+
+  const definitionProvider = new extension.__test.CftDefinitionProvider({ request: async () => undefined });
+  const noDefinitionFallback = await definitionProvider.provideDefinition(
+    completionDocument,
+    completionDocument.positionAt(completionSource.indexOf("Item"))
+  );
+  assert.strictEqual(noDefinitionFallback, undefined);
 }
 
 function textDocument(filePath, text) {

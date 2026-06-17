@@ -212,10 +212,10 @@ cargo run -- export json examples/rpg --out generated/data
 
 输出文件命名为 `<TypeName>.json`。
 
-导出成功后，输出目录会写入 `coflow.data.manifest.json`，记录本次由 Coflow
-管理的数据文件。再次导出时，只会删除上一次 manifest 中存在但本次不再生成的
-数据文件。若输出目录中已有未被 manifest 管理的 `.json` 或 `.msgpack` 文件，
-命令会拒绝写入，避免覆盖或删除人工文件；请清理旧输出目录或改用新的空目录。
+导出成功后，输出目录由 Coflow 完整接管。本轮数据会先写入同级 staging 目录，
+所有文件写入成功后再替换目标输出目录；目标目录中已有的文件和子目录都会被移除。
+导出不写 manifest，也不会尝试保留输出目录中的人工文件。若不希望文件被删除，
+请把人工文件放到输出目录之外。
 
 ### `coflow export messagepack [CONFIG_OR_DIR] [--out DIR]`
 
@@ -235,8 +235,8 @@ cargo run -- export messagepack examples/rpg --out generated/data
 输出文件命名为 `<TypeName>.msgpack`，内容是裸 MessagePack array，schema
 形状与 JSON 导出一致。
 
-MessagePack 导出使用同一个 `coflow.data.manifest.json` 维护数据产物清单。
-这也会在 JSON 和 MessagePack 格式切换时清理上一轮由 Coflow 生成的旧格式文件。
+MessagePack 导出同样完整替换数据输出目录。JSON 和 MessagePack 格式切换时，
+上一轮旧格式文件会随目录替换自然消失。
 
 ### `coflow codegen csharp [CONFIG_OR_DIR] [--out DIR] [--namespace NAME]`
 
@@ -266,21 +266,22 @@ outputs:
 | `json` | Newtonsoft.Json loader |
 | `messagepack` | MessagePack-CSharp loader |
 
-`codegen csharp` 不要求数据 source 存在。对于 `@keyAsEnum`，它会生成 schema
-声明的 enum 文件并保留 `coflow.enum.lock.json` 中已有的 variant，但无法新增
+`codegen csharp` 不要求数据 source 存在。对于 `@keyAsEnum`，它会读取
+`coflow.yaml` 同级的 `coflow.enum.lock.json` 并保留已有 variant，但无法新增
 data-driven variant，因为它不加载数据。`coflow build` 已经加载 data model，
 因此可以新增这些 variant。新 variant 追加到 lockfile，已有 variant 的整数值
 保持不变。
 
-codegen 会在读取/写入 lockfile、清理旧 `.cs` 文件或写入新文件前执行
-preflight。命名错误会产生诊断，并且不会修改既有生成输出。
+codegen 会在读取/写入 lockfile、替换输出目录或写入新文件前执行 preflight。
+命名错误会产生诊断，并且不会修改既有生成输出。preflight 通过后，如果
+`coflow.enum.lock.json` 格式损坏，命令会作为运行期 `CLI-ERROR` 失败。
 
-成功写入时，codegen 会按需创建输出目录，写入 `coflow.csharp.manifest.json`
-记录本次由 Coflow 管理的 C# 文件。再次生成时，只会删除上一轮 manifest 中
-存在但本次不再生成的 `.cs` 文件。若输出目录中已有未被 manifest 管理的 `.cs`
-文件，命令会拒绝写入，避免覆盖或删除人工代码；请清理旧输出目录或改用新的
-空目录。enum lockfile 作为 `coflow.enum.lock.json` 单独维护，不属于普通清理
-对象。
+成功写入时，codegen 会先把 C# 文件写入同级 staging 目录，并把更新后的
+`coflow.enum.lock.json` 写入 staging 文件；随后提交 lockfile 与输出目录。
+C# 输出目录由 Coflow 完整接管，目标目录中已有的 `.cs`、非 `.cs` 文件和子目录
+都会被移除。`coflow.enum.lock.json` 位于 `coflow.yaml` 同级，不属于 C# 输出目录。
+写入或 staging 失败时，既有输出目录和 lockfile 会保持不变；如果提交阶段中目录
+替换失败，Coflow 会尽力回滚已经替换的 lockfile。
 
 ---
 
