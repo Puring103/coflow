@@ -65,6 +65,7 @@ fn build_exports_messagepack_when_configured() {
     let root_dir = std::env::temp_dir().join(format!("coflow-build-messagepack-test-{suffix}"));
     let project_dir = root_dir.join("rpg");
     let data_dir = root_dir.join("data-out");
+    let code_dir = root_dir.join("code-out");
     if root_dir.exists() {
         std::fs::remove_dir_all(&root_dir).expect("clean old temp dir");
     }
@@ -84,6 +85,8 @@ fn build_exports_messagepack_when_configured() {
             project_dir.to_str().expect("utf8 temp path"),
             "--data-out",
             data_dir.to_str().expect("utf8 temp path"),
+            "--code-out",
+            code_dir.to_str().expect("utf8 temp path"),
         ])
         .output()
         .expect("run coflow build");
@@ -96,6 +99,7 @@ fn build_exports_messagepack_when_configured() {
     );
     assert!(data_dir.join("Item.msgpack").exists());
     assert!(data_dir.join("DropTable.msgpack").exists());
+    assert!(code_dir.join("GameConfig.cs").exists());
 
     std::fs::remove_dir_all(root_dir).expect("clean temp dir");
 }
