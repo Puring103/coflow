@@ -861,6 +861,22 @@ fn top_level_cli_errors_use_readable_human_output() {
 }
 
 #[test]
+fn cft_lsp_legacy_entry_is_not_available() {
+    let output = coflow()
+        .args(["cft", "lsp", "--help"])
+        .output()
+        .expect("run coflow cft lsp");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("unrecognized subcommand"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("lsp"), "stderr: {stderr}");
+}
+
+#[test]
 fn project_scoped_cli_errors_use_relative_paths_in_message() {
     let root = temp_project_dir("project-error-relative-path");
     let _cleanup = TempDirCleanup(root.clone());

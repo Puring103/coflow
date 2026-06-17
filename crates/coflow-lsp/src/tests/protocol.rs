@@ -98,6 +98,15 @@ fn handler_ignores_malformed_notifications_and_reports_unknown_requests() {
     let (_cleanup, project) = test_project("lsp-handler-edges", "type Item { key: string; }\n");
     let mut server = LspServer::new(project, Vec::new());
 
+    for uri in ["file://", "file://localhost", "file://server"] {
+        server
+            .handle_message(&json!({
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": { "textDocument": { "uri": uri, "text": "broken" } }
+            }))
+            .expect("empty file URI path is ignored");
+    }
     server
         .handle_message(&json!({
             "jsonrpc": "2.0",
@@ -115,6 +124,13 @@ fn handler_ignores_malformed_notifications_and_reports_unknown_requests() {
             }
         }))
         .expect("invalid didChange URI is ignored");
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didClose",
+            "params": { "textDocument": { "uri": "not-a-file-uri" } }
+        }))
+        .expect("invalid didClose URI is ignored");
     server
         .handle_message(&json!({
             "jsonrpc": "2.0",
@@ -366,6 +382,13 @@ fn oversized_content_length_is_rejected_before_body_allocation() {
     let err = read_message(&mut reader).expect_err("expected content length cap error");
 
     assert!(err.contains("exceeds"), "expected cap error, got `{err}`");
+}
+
+#[test]
+fn file_uri_parser_rejects_file_uris_without_paths() {
+    assert!(path_from_file_uri("file://").is_none());
+    assert!(path_from_file_uri("file://localhost").is_none());
+    assert!(path_from_file_uri("file://server").is_none());
 }
 
 #[test]

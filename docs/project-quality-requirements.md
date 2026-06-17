@@ -32,7 +32,6 @@ Coflow 的代码、文档、网页、测试、CLI、LSP 和生成物必须描述
 
 - `crates/coflow-lsp/src/lib.rs`
 - `editors/vscode-coflow/src/extension.js`
-- `crates/coflow-codegen-csharp/src/lib.rs`
 - `crates/coflow-data-model/src/compiler.rs`
 
 ## 架构要求

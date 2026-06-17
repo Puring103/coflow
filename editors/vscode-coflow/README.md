@@ -46,7 +46,8 @@ The extension appends the resolved project directory to the configured arguments
 
 You can change this in VS Code settings:
 
-- `coflow.diagnostics.enabled`
+- `coflow.diagnostics.enabled`: controls diagnostic publication only. LSP-backed completion,
+  hover, definition, formatting, and semantic tokens remain available.
 - `coflow.diagnostics.command`
 - `coflow.diagnostics.args`
 - `coflow.diagnostics.debounceMs`

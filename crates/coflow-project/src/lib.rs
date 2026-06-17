@@ -266,6 +266,12 @@ impl Project {
         if path.is_dir() {
             collect_cft_files(&path, files, &self.root_dir)
         } else if path.is_file() {
+            if !is_cft_path(&path) {
+                return Err(format!(
+                    "schema file `{}` has unsupported extension",
+                    path_to_slash(path.strip_prefix(&self.root_dir).unwrap_or(&path))
+                ));
+            }
             files.push(SchemaFile::new(path, &self.root_dir)?);
             Ok(())
         } else {
@@ -315,6 +321,12 @@ fn validate_schema_path(root_dir: &Path, path: &Path, label: &str) -> Result<(),
     let resolved = resolve_project_relative(root_dir, path);
     if !resolved.exists() {
         return Err(format!("{label} path `{}` does not exist", path.display()));
+    }
+    if resolved.is_file() && !is_cft_path(&resolved) {
+        return Err(format!(
+            "schema file `{}` has unsupported extension",
+            path_to_slash(path)
+        ));
     }
     Ok(())
 }
@@ -696,6 +708,10 @@ fn is_yaml_path(path: &Path) -> bool {
         .is_some_and(|ext| matches!(ext, "yaml" | "yml"))
 }
 
+fn is_cft_path(path: &Path) -> bool {
+    path.extension().and_then(|ext| ext.to_str()) == Some("cft")
+}
+
 fn collect_cft_files(
     dir: &Path,
     files: &mut Vec<SchemaFile>,
@@ -710,7 +726,7 @@ fn collect_cft_files(
         let path = entry.path();
         if path.is_dir() {
             collect_cft_files(&path, files, root_dir)?;
-        } else if path.extension().and_then(|ext| ext.to_str()) == Some("cft") {
+        } else if is_cft_path(&path) {
             files.push(SchemaFile::new(path, root_dir)?);
         }
     }
