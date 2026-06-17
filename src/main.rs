@@ -54,7 +54,6 @@ fn run() -> Result<bool, String> {
 fn run_cft(command: &CftArgs) -> Result<bool, String> {
     match &command.command {
         CftCommand::Check(args) => cft_check(args),
-        CftCommand::Lsp(args) => cft_lsp(args),
     }
 }
 
@@ -113,8 +112,6 @@ struct CftArgs {
 enum CftCommand {
     /// Compile all CFT schema files from coflow.yaml.
     Check(CftCheckArgs),
-    /// Start the CFT language server.
-    Lsp(CftLspArgs),
 }
 
 #[derive(Debug, Args)]
@@ -127,12 +124,6 @@ struct CftCheckArgs {
     /// Treat stdin as this schema file's source.
     #[arg(long = "stdin-path", value_name = "PATH")]
     stdin_path: Option<PathBuf>,
-}
-
-#[derive(Debug, Args)]
-struct CftLspArgs {
-    #[arg(value_name = "CONFIG_OR_DIR")]
-    config_or_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -295,12 +286,6 @@ fn cft_check(args: &CftCheckArgs) -> Result<bool, String> {
         )?;
     }
     Ok(diagnostics.is_empty())
-}
-
-fn cft_lsp(args: &CftLspArgs) -> Result<bool, String> {
-    let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    let root_dir = project.root_dir.clone();
-    coflow_lsp::run(project).map_err(|message| relativize_message_paths(&message, &root_dir))
 }
 
 fn run_lsp(args: &LspArgs) -> Result<bool, String> {

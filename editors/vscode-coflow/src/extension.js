@@ -345,7 +345,13 @@ class CftDiagnostics {
 
     let session = this.sessions.get(key);
     if (!session) {
-      session = new CftLspSession(command, args, cwd, this.collection);
+      session = new CftLspSession(
+        command,
+        args,
+        cwd,
+        this.collection,
+        (uri) => this.diagnosticsEnabledForUri(uri)
+      );
       this.sessions.set(key, session);
     }
 
@@ -363,6 +369,12 @@ class CftDiagnostics {
     }
     session.openOrChangeDocument(document);
     return session.request(method, params);
+  }
+
+  diagnosticsEnabledForUri(uri) {
+    return vscode.workspace
+      .getConfiguration("coflow.diagnostics", uri)
+      .get("enabled", true);
   }
 }
 
@@ -416,11 +428,12 @@ class CftSemanticTokensProvider {
 }
 
 class CftLspSession {
-  constructor(command, args, cwd, collection) {
+  constructor(command, args, cwd, collection, diagnosticsEnabledForUri = () => true) {
     this.command = command;
     this.args = args;
     this.cwd = cwd;
     this.collection = collection;
+    this.diagnosticsEnabledForUri = diagnosticsEnabledForUri;
     this.nextId = 1;
     this.buffer = Buffer.alloc(0);
     this.openedUris = new Set();
@@ -572,6 +585,9 @@ class CftLspSession {
       if (!uri) {
         return;
       }
+      if (!this.diagnosticsEnabledForUri(uri)) {
+        return;
+      }
       const diagnostics = Array.isArray(params.diagnostics)
         ? params.diagnostics.map((diagnostic) => lspDiagnosticToVsCode(
           diagnostic,
@@ -664,6 +680,9 @@ class CftLspSession {
   }
 
   publishFailure(uri) {
+    if (!this.diagnosticsEnabledForUri(uri)) {
+      return;
+    }
     const diagnostic = new vscode.Diagnostic(
       new vscode.Range(0, 0, 0, 0),
       `CFT language server failed: ${formatFailureMessage(this.failureMessage)}`,
@@ -716,7 +735,7 @@ async function collectConfiguredSchemaPaths(projectDir) {
       const stat = await fs.promises.stat(resolved);
       if (stat.isDirectory()) {
         paths.push(...await collectCftFilesInDir(resolved));
-      } else if (stat.isFile() && resolved.toLowerCase().endsWith(".cft")) {
+      } else if (stat.isFile() && resolved.endsWith(".cft")) {
         paths.push(resolved);
       }
     } catch {
@@ -816,7 +835,7 @@ async function collectCftFilesInDir(dir) {
       if (![".git", "node_modules", "target"].includes(entry.name)) {
         output.push(...await collectCftFilesInDir(fullPath));
       }
-    } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".cft")) {
+    } else if (entry.isFile() && entry.name.endsWith(".cft")) {
       output.push(normalizePath(fullPath));
     }
   }

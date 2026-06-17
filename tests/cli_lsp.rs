@@ -13,7 +13,7 @@ use common::*;
 use std::process::Stdio;
 
 #[test]
-fn cft_lsp_publishes_project_diagnostics_for_open_document() {
+fn lsp_publishes_project_diagnostics_for_open_document() {
     let suffix = unique_suffix();
     let project_dir = std::env::temp_dir().join(format!("coflow-lsp-project-diagnostics-{suffix}"));
     let _cleanup = TempDirCleanup(project_dir.clone());
@@ -24,7 +24,7 @@ fn cft_lsp_publishes_project_diagnostics_for_open_document() {
     std::fs::write(&schema_path, "type Item { name: string; }\n").expect("write schema");
 
     let mut child = coflow()
-        .args(["cft", "lsp", project_dir.to_str().expect("utf8 temp path")])
+        .args(["lsp", project_dir.to_str().expect("utf8 temp path")])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -99,7 +99,46 @@ fn cft_lsp_publishes_project_diagnostics_for_open_document() {
 }
 
 #[test]
-fn cft_lsp_prefers_open_document_uri_for_project_diagnostics() {
+fn root_lsp_starts_language_server() {
+    let suffix = unique_suffix();
+    let project_dir = std::env::temp_dir().join(format!("coflow-root-lsp-starts-{suffix}"));
+    let _cleanup = TempDirCleanup(project_dir.clone());
+    let schema_dir = project_dir.join("schema");
+    std::fs::create_dir_all(&schema_dir).expect("create schema dir");
+    std::fs::write(project_dir.join("coflow.yaml"), "schema: schema/\n").expect("write config");
+    std::fs::write(schema_dir.join("main.cft"), "type Item { key: string; }\n")
+        .expect("write schema");
+
+    let mut child = coflow()
+        .args(["lsp", project_dir.to_str().expect("utf8 temp path")])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn root coflow lsp");
+
+    let mut stdin = child.stdin.take().expect("lsp stdin");
+    let mut stdout = child.stdout.take().expect("lsp stdout");
+
+    write_lsp(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {}
+        }),
+    );
+    let initialize = read_lsp_response(&mut stdout, 1);
+    let capabilities = &initialize["result"]["capabilities"];
+    assert!(capabilities["completionProvider"].is_object());
+    assert_eq!(capabilities["definitionProvider"], true);
+    assert!(capabilities["semanticTokensProvider"].is_object());
+
+    shutdown_lsp(stdin, &mut stdout, &mut child, 2);
+}
+
+#[test]
+fn lsp_prefers_open_document_uri_for_project_diagnostics() {
     let suffix = format!(
         "{}-{}",
         std::process::id(),
@@ -119,7 +158,7 @@ fn cft_lsp_prefers_open_document_uri_for_project_diagnostics() {
     std::fs::write(&schema_path, "type Item { key: string; }\n").expect("write schema");
 
     let mut child = coflow()
-        .args(["cft", "lsp", project_dir.to_str().expect("utf8 temp path")])
+        .args(["lsp", project_dir.to_str().expect("utf8 temp path")])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -176,7 +215,7 @@ fn cft_lsp_prefers_open_document_uri_for_project_diagnostics() {
 }
 
 #[test]
-fn cft_lsp_definitions_survive_unrelated_schema_diagnostics() {
+fn lsp_definitions_survive_unrelated_schema_diagnostics() {
     let suffix = unique_suffix();
     let project_dir = std::env::temp_dir().join(format!("coflow-lsp-definition-test-{suffix}"));
     let _cleanup = TempDirCleanup(project_dir.clone());
@@ -194,7 +233,7 @@ fn cft_lsp_definitions_survive_unrelated_schema_diagnostics() {
         .expect("write broken schema");
 
     let mut child = coflow()
-        .args(["cft", "lsp", project_dir.to_str().expect("utf8 temp path")])
+        .args(["lsp", project_dir.to_str().expect("utf8 temp path")])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -257,7 +296,7 @@ fn cft_lsp_definitions_survive_unrelated_schema_diagnostics() {
 }
 
 #[test]
-fn cft_lsp_enum_variant_definitions_survive_unrelated_schema_diagnostics() {
+fn lsp_enum_variant_definitions_survive_unrelated_schema_diagnostics() {
     let suffix = unique_suffix();
     let project_dir =
         std::env::temp_dir().join(format!("coflow-lsp-enum-definition-test-{suffix}"));
@@ -284,7 +323,7 @@ type UsesEnum {
         .expect("write broken schema");
 
     let mut child = coflow()
-        .args(["cft", "lsp", project_dir.to_str().expect("utf8 temp path")])
+        .args(["lsp", project_dir.to_str().expect("utf8 temp path")])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -350,7 +389,7 @@ type UsesEnum {
 }
 
 #[test]
-fn cft_lsp_semantic_tokens_classify_check_enum_values() {
+fn lsp_semantic_tokens_classify_check_enum_values() {
     let suffix = unique_suffix();
     let project_dir = std::env::temp_dir().join(format!("coflow-lsp-semantic-test-{suffix}"));
     let _cleanup = TempDirCleanup(project_dir.clone());
@@ -385,7 +424,7 @@ type UsesEnum {
     std::fs::write(&source_path, source).expect("write source schema");
 
     let mut child = coflow()
-        .args(["cft", "lsp", project_dir.to_str().expect("utf8 temp path")])
+        .args(["lsp", project_dir.to_str().expect("utf8 temp path")])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -468,9 +507,9 @@ type UsesEnum {
 }
 
 #[test]
-fn cft_lsp_definitions_resolve_example_cross_file_enum_references() {
+fn lsp_definitions_resolve_example_cross_file_enum_references() {
     let mut child = coflow()
-        .args(["cft", "lsp", "examples/cft"])
+        .args(["lsp", "examples/cft"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -569,9 +608,9 @@ fn cft_lsp_definitions_resolve_example_cross_file_enum_references() {
 }
 
 #[test]
-fn cft_lsp_serves_editor_language_features() {
+fn lsp_serves_editor_language_features() {
     let mut child = coflow()
-        .args(["cft", "lsp", "examples/rpg"])
+        .args(["lsp", "examples/rpg"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()

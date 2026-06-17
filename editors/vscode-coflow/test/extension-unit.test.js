@@ -86,6 +86,13 @@ Module._load = function load(request, parent, isMain) {
     languages: {},
     workspace: {
       textDocuments: [],
+      getConfiguration() {
+        return {
+          get(key, fallback) {
+            return fallback;
+          }
+        };
+      },
       getWorkspaceFolder() {
         return undefined;
       },
@@ -98,6 +105,20 @@ const extension = require("../src/extension.js");
 const extensionPackage = require("../package.json");
 
 async function main() {
+  const extensionRoot = path.resolve(__dirname, "..");
+  for (const file of jsonFilesUnder(extensionRoot)) {
+    assert.doesNotThrow(
+      () => JSON.parse(fs.readFileSync(file, "utf8")),
+      `${path.relative(extensionRoot, file)} should be valid JSON`
+    );
+  }
+  for (const contributionPath of packageContributionPaths(extensionPackage)) {
+    assert(
+      fs.existsSync(path.resolve(extensionRoot, contributionPath)),
+      `package contribution path should exist: ${contributionPath}`
+    );
+  }
+
   assert.deepStrictEqual(
     extension.__test.schemaEntriesFromCoflowConfigText("schema:\n  - 02_enums_and_flags.cft\n  - 03_types_fields_defaults.cft\n"),
     ["02_enums_and_flags.cft", "03_types_fields_defaults.cft"]
@@ -112,6 +133,7 @@ async function main() {
   fs.writeFileSync(path.join(root, "coflow.yaml"), "schema: schema/\n", "utf8");
   fs.writeFileSync(path.join(root, "schema", "a.cft"), "enum A { X, }\n", "utf8");
   fs.writeFileSync(path.join(root, "schema", "b.cft"), "type B {}\n", "utf8");
+  fs.writeFileSync(path.join(root, "schema", "ignored.CFT"), "type Ignored {}\n", "utf8");
 
   const paths = await extension.__test.collectConfiguredSchemaPaths(root);
   assert.deepStrictEqual(
@@ -172,6 +194,82 @@ async function main() {
     new Promise((resolve) => setTimeout(() => resolve("timed-out"), 25))
   ]);
   assert.notStrictEqual(immediate, "timed-out");
+
+  const diagnosticsWrites = [];
+  const disabledDiagnosticsSession = Object.create(extension.__test.CftLspSession.prototype);
+  Object.assign(disabledDiagnosticsSession, {
+    collection: {
+      set(uri, diagnostics) {
+        diagnosticsWrites.push({ uri, diagnostics });
+      }
+    },
+    uriFromLsp: (rawUri) => extension.__test.vscodeUriFile(rawUri.replace(/^file:\/\//, "")),
+    diagnosticsEnabledForUri: () => false
+  });
+  disabledDiagnosticsSession.handleMessage({
+    method: "textDocument/publishDiagnostics",
+    params: {
+      uri: "file:///tmp/disabled.cft",
+      diagnostics: [
+        {
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+          message: "ignored when diagnostics are disabled"
+        }
+      ]
+    }
+  });
+  assert.deepStrictEqual(
+    diagnosticsWrites,
+    [],
+    "diagnostics setting must suppress publishDiagnostics without disabling LSP-backed features"
+  );
+
+  const scopedDiagnosticsWrites = [];
+  const scopedDiagnosticsSession = Object.create(extension.__test.CftLspSession.prototype);
+  Object.assign(scopedDiagnosticsSession, {
+    collection: {
+      set(uri, diagnostics) {
+        scopedDiagnosticsWrites.push({ uri, diagnostics });
+      }
+    },
+    uriFromLsp: (rawUri) => extension.__test.vscodeUriFile(rawUri.replace(/^file:\/\//, "")),
+    diagnosticsEnabledForUri: () => false
+  });
+  scopedDiagnosticsSession.handleMessage({
+    method: "textDocument/publishDiagnostics",
+    params: {
+      uri: "file:///tmp/scoped-disabled.cft",
+      diagnostics: [
+        {
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+          message: "ignored by resource scoped diagnostics setting"
+        }
+      ]
+    }
+  });
+  assert.deepStrictEqual(
+    scopedDiagnosticsWrites,
+    [],
+    "diagnostics filtering must use the diagnostic URI, not only a session-level flag"
+  );
+
+  const failureDiagnosticsWrites = [];
+  const disabledFailureSession = Object.create(extension.__test.CftLspSession.prototype);
+  Object.assign(disabledFailureSession, {
+    collection: {
+      set(uri, diagnostics) {
+        failureDiagnosticsWrites.push({ uri, diagnostics });
+      }
+    },
+    diagnosticsEnabledForUri: () => false,
+    failureMessage: "server failed"
+  });
+  disabledFailureSession.publishFailure(extension.__test.vscodeUriFile("/tmp/failed.cft"));
+  assert.deepStrictEqual(
+    failureDiagnosticsWrites,
+    [],
+    "diagnostics setting must suppress local language-server failure diagnostics"
+  );
 
   const completionSource = "type Item {}\ntype Holder {\n  item: Item;\n  @ref(\n}\n";
   const completionDocument = textDocument(path.join(os.tmpdir(), "completion.cft"), completionSource);
@@ -275,6 +373,39 @@ function textDocument(filePath, text) {
 
 function isIdentContinue(char) {
   return Boolean(char) && /[_\p{ID_Continue}]/u.test(char);
+}
+
+function jsonFilesUnder(root) {
+  const files = [];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const fullPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...jsonFilesUnder(fullPath));
+    } else if (entry.name.endsWith(".json")) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+function packageContributionPaths(packageJson) {
+  const paths = [];
+  for (const language of packageJson.contributes.languages || []) {
+    if (language.configuration) {
+      paths.push(language.configuration);
+    }
+  }
+  for (const grammar of packageJson.contributes.grammars || []) {
+    if (grammar.path) {
+      paths.push(grammar.path);
+    }
+  }
+  for (const snippet of packageJson.contributes.snippets || []) {
+    if (snippet.path) {
+      paths.push(snippet.path);
+    }
+  }
+  return paths;
 }
 
 main().catch((error) => {

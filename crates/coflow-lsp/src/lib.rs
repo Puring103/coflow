@@ -226,9 +226,10 @@ impl<W: Write> LspServer<W> {
     }
 
     fn close_document(&mut self, uri: &str) -> Result<(), String> {
-        if let Some(path) = path_from_file_uri(uri) {
-            self.open_documents.remove(&normalize_path(&path));
-        }
+        let Some(path) = path_from_file_uri(uri) else {
+            return Ok(());
+        };
+        self.open_documents.remove(&normalize_path(&path));
         self.publish_diagnostics(uri, &[])?;
         self.validate_project()
     }
@@ -3146,6 +3147,9 @@ fn path_from_file_uri(uri: &str) -> Option<PathBuf> {
     );
     let authority = percent_decode(authority)?;
     let decoded = percent_decode(&path)?;
+    if decoded.is_empty() {
+        return None;
+    }
     let path = if cfg!(windows) {
         if authority.is_empty() || authority.eq_ignore_ascii_case("localhost") {
             let without_leading_slash = if decoded.len() >= 3
@@ -3171,7 +3175,7 @@ fn path_from_file_uri(uri: &str) -> Option<PathBuf> {
 fn is_cfd_path(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("cfd"))
+        .is_some_and(|e| e == "cfd")
 }
 
 /// Find the LSP location (uri + range) of a CFT type definition by name.

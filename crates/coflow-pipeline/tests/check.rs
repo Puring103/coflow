@@ -256,7 +256,7 @@ outputs:
 }
 
 #[test]
-fn check_project_treats_source_extensions_case_insensitively() {
+fn check_project_treats_source_extensions_case_sensitively() {
     let root = temp_project_dir("coflow-pipeline-source-extension-case");
     let _cleanup = TempDirCleanup(root.clone());
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
@@ -267,39 +267,44 @@ fn check_project_treats_source_extensions_case_insensitively() {
             type Item {
                 name: string;
             }
-
-            type Stage {
-                reward_item: Item;
-            }
         "#,
     )
     .expect("write schema");
     write_item_workbook(&root.join("data").join("dir").join("CONFIGS.XLSX"), None)
         .expect("write uppercase workbook");
     std::fs::write(
-        root.join("data").join("dir").join("STAGES.CFD"),
+        root.join("data").join("dir").join("IGNORED.CFD"),
         r#"
-            forest: Stage {
-                reward_item: @Item.potion,
+            ignored: Item {
+                name: "Ignored",
             }
         "#,
     )
     .expect("write uppercase cfd source");
     std::fs::write(
-        root.join("data").join("SINGLE.CFD"),
+        root.join("data").join("IGNORED.CFD"),
         r#"
-            cave: Stage {
-                reward_item: @Item.potion,
+            ignored_explicit: Item {
+                name: "Ignored explicit",
             }
         "#,
     )
     .expect("write explicit uppercase cfd source");
     std::fs::write(
+        root.join("data").join("items.cfd"),
+        r#"
+            item_1: Item {
+                name: "Item",
+            }
+        "#,
+    )
+    .expect("write lowercase cfd source");
+    std::fs::write(
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
   - dir: data/dir
-  - file: data/SINGLE.CFD
+  - file: data/items.cfd
 outputs:
   data:
     type: json
@@ -312,6 +317,26 @@ outputs:
     let outcome = check_project(&project).expect("check project");
 
     assert!(matches!(outcome, PipelineOutcome::Success(_)));
+
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - file: data/IGNORED.CFD
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config with explicit uppercase source");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+    let outcome = check_project(&project).expect("check project");
+
+    assert_diagnostic_message_contains(
+        outcome,
+        "source file `data/IGNORED.CFD` has unsupported extension",
+    );
 }
 
 #[test]
@@ -438,4 +463,49 @@ outputs:
         outcome,
         "source file `data/notes.txt` has unsupported extension",
     );
+}
+
+#[test]
+fn check_project_allows_mixed_directory_source_with_excel_sheets_config() {
+    let root = temp_project_dir("coflow-pipeline-cfd-sheets-directory-source");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        "type Item { name: string; }\n",
+    )
+    .expect("write schema");
+    write_item_workbook(&root.join("data").join("configs.xlsx"), None).expect("write workbook");
+    std::fs::write(
+        root.join("data").join("extra.cfd"),
+        r#"
+            extra: Item {
+                name: "Extra",
+            }
+        "#,
+    )
+    .expect("write cfd source");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - dir: data
+    sheets:
+      - sheet: Item
+        columns:
+          id: id
+          name: name
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+
+    let outcome = check_project(&project).expect("check project");
+
+    assert!(matches!(outcome, PipelineOutcome::Success(_)));
 }
