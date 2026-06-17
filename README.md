@@ -78,12 +78,13 @@ outputs:
     namespace: Example.Rpg.Config
 ```
 
-`schema` 指向一个 CFT 文件、schema 目录，或文件/目录列表。`sources` 支持
+`schema` 指向一个精确小写 `.cft` 文件、schema 目录，或文件/目录列表。`sources` 支持
 `file` 或 `dir`：文件源可以是 `.xlsx` / `.xlsm` / `.xls` / `.cfd`，目录源会递归
 加载支持的 Excel 和 CFD 文件。Excel 源未配置 `sheets` 时默认把 workbook 中每个
 sheet 名当作 CFT 类型名、表头当作字段名；配置 `sheets` 时可显式映射 sheet、类型
-和列头。`outputs.data.type` 支持 `json` 或 `messagepack`；`outputs.code.type`
-目前支持 `csharp`。
+和列头。目录源可同时包含 Excel 和 CFD 文件，此时 `sheets` 只作用于 Excel，
+CFD 文件仍由文本中的记录类型决定 CFT 类型。`outputs.data.type` 支持 `json`
+或 `messagepack`；`outputs.code.type` 目前支持 `csharp`。
 
 ---
 
@@ -96,7 +97,7 @@ cargo run -- build examples/rpg
 cargo run -- export json examples/rpg --out generated/data
 cargo run -- export messagepack examples/rpg --out generated/data
 cargo run -- codegen csharp examples/rpg --out generated/csharp --namespace Game.Config
-cargo run -- cft lsp examples/rpg
+cargo run -- lsp examples/rpg
 ```
 
 完整命令行为见 [CLI 命令规格](docs/spec/09-cli.md)。
