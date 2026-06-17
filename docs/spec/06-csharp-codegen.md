@@ -152,11 +152,11 @@ generated/csharp/
   CftLoadException.cs
 ```
 
-项目管线负责把 codegen crate 返回的文件落盘。成功写入时，它会创建输出目录
-（如果不存在），清理输出目录顶层已有的 `.cs` 文件，然后写入本次生成的文件。
-清理不递归进入子目录，也不删除 `coflow.enum.lock.json` 或其他非 `.cs` 文件。
-如果 codegen preflight 或 artifact preflight 产生诊断，则不会读取/写入
-lockfile，也不会清理或写出任何 `.cs` 文件。
+项目管线负责把 codegen crate 返回的文件落盘。C# 输出目录由 Coflow 完全接管；
+成功写入时，pipeline 先把完整 `.cs` 产物写入同级临时 staging 目录，再用该目录
+替换配置的输出目录。输出目录内旧 `.cs`、sidecar 文件、子目录和人工文件均不会
+保留。不要把手写代码放进 `outputs.code.dir`。如果 codegen preflight 或 artifact
+preflight 产生诊断，则不会读取/写入 lockfile，也不会替换输出目录。
 
 当前生成器负责生成类型定义、枚举、继承、默认值、每个 table 的 `Id`
 属性、按 key 查询 API，以及 object 字段的引用解析。加载器根据
@@ -298,7 +298,7 @@ public partial class BioRemainsConfig
 中声明的 `EnumName` 文件，并保留 lockfile 中已有的变体；没有 lockfile
 时该 enum 为空。新增 record key 变体只由已加载数据模型的 `build` 路径提供。
 
-项目管线会在代码输出目录维护 `coflow.enum.lock.json`，用于稳定
+项目管线会在 `coflow.yaml` 同级维护 `coflow.enum.lock.json`，用于稳定
 `@keyAsEnum` 变体的整数值：
 
 - 新出现的 record key 追加分配下一个未使用整数值。
@@ -306,6 +306,7 @@ public partial class BioRemainsConfig
 - 当前 schema 中不再声明的 `@keyAsEnum` enum 会从 lockfile 中移除。
 - `coflow codegen csharp` 不加载数据源，只会保留当前 schema 声明的 enum 和 lockfile 中已有的变体。
 - 如果 codegen preflight 有诊断，lockfile 不会被读取、写入或清理。
+- lockfile 不在 C# 输出目录内，不会随生成目录替换而被删除。
 
 ---
 

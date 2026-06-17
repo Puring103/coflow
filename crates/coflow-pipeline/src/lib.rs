@@ -17,9 +17,10 @@ mod data;
 mod schema;
 
 use artifacts::{
-    configured_data_format, configured_data_output, output_dir, preflight_csharp_artifacts,
-    preflight_csharp_files, preflight_data_artifacts, required_code_output, required_data_output,
-    write_csharp_files, write_data_tables,
+    commit_staged_dir_and_file, commit_staged_dirs_and_file, configured_data_format,
+    configured_data_output, output_dir, preflight_csharp_files, required_code_output,
+    required_data_output, stage_csharp_files, stage_data_tables, stage_json_file,
+    write_data_tables,
 };
 use coflow_codegen_csharp_json::CsharpCodegenDiagnostic;
 use coflow_codegen_csharp_json::CsharpKeyAsEnumVariant;
@@ -186,10 +187,6 @@ pub fn build_project(
 
     let data_dir = output_dir(project, data_output, options.data_out_dir);
     let mut preflight_diagnostics = artifact_diagnostics_for_dirs([&data_dir]);
-    extend_artifact_preflight_diagnostics(
-        &mut preflight_diagnostics,
-        preflight_data_artifacts(&data_dir),
-    );
     let code_plan = if let Some(code_output) = project.config.outputs.code.as_ref() {
         if code_output.output_type != CodegenTarget::Csharp.as_config_value() {
             return Err(format!(
@@ -207,10 +204,6 @@ pub fn build_project(
             &schema, &namespace,
         )));
         preflight_diagnostics.extend(artifact_diagnostics_for_dirs([&code_dir]));
-        extend_artifact_preflight_diagnostics(
-            &mut preflight_diagnostics,
-            preflight_csharp_artifacts(&code_dir),
-        );
         Some((code_dir, namespace))
     } else {
         None
@@ -219,28 +212,33 @@ pub fn build_project(
         return Ok(PipelineOutcome::Diagnostics(preflight_diagnostics));
     }
 
-    write_data_tables(&schema, &load_output.model, data_format, &data_dir)?;
-    let data = ExportReport {
-        format: data_format,
-        dir: data_dir,
-    };
-
+    let staged_data = stage_data_tables(&schema, &load_output.model, data_format, &data_dir)?;
     let code = if let Some((code_dir, namespace)) = code_plan {
+        let lockfile = enum_lockfile_path(project);
         let key_as_enum_ids = collect_key_as_enum_ids(&schema, &load_output.model);
-        let key_as_enum_variants = merge_key_as_enum_lockfile(&code_dir, key_as_enum_ids)?;
-        write_csharp_files(
+        let (locked_key_as_enum, key_as_enum_variants) =
+            merge_key_as_enum_lockfile(&lockfile, key_as_enum_ids)?;
+        let staged_code = stage_csharp_files(
             &schema,
             data_format,
             &namespace,
             &code_dir,
             key_as_enum_variants,
         )?;
+        let staged_lockfile = stage_key_as_enum_lockfile_if_needed(&lockfile, &locked_key_as_enum)?;
+        commit_staged_dirs_and_file(vec![staged_data, staged_code], staged_lockfile)?;
         Some(CodegenReport {
             target: CodegenTarget::Csharp,
             dir: code_dir,
         })
     } else {
+        staged_data.commit()?;
         None
+    };
+
+    let data = ExportReport {
+        format: data_format,
+        dir: data_dir,
     };
 
     Ok(PipelineOutcome::Success(BuildReport { data, code }))
@@ -278,11 +276,7 @@ pub fn export_project_data(
         Ok(output) => output,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
-    let mut artifact_diagnostics = artifact_diagnostics_for_dirs([&dir]);
-    extend_artifact_preflight_diagnostics(
-        &mut artifact_diagnostics,
-        preflight_data_artifacts(&dir),
-    );
+    let artifact_diagnostics = artifact_diagnostics_for_dirs([&dir]);
     if !artifact_diagnostics.is_empty() {
         return Ok(PipelineOutcome::Diagnostics(artifact_diagnostics));
     }
@@ -323,17 +317,18 @@ pub fn generate_project_code(
     if !codegen_diagnostics.is_empty() {
         return Ok(PipelineOutcome::Diagnostics(codegen_diagnostics));
     }
-    let mut artifact_diagnostics = artifact_diagnostics_for_dirs([&dir]);
-    extend_artifact_preflight_diagnostics(
-        &mut artifact_diagnostics,
-        preflight_csharp_artifacts(&dir),
-    );
+    let artifact_diagnostics = artifact_diagnostics_for_dirs([&dir]);
     if !artifact_diagnostics.is_empty() {
         return Ok(PipelineOutcome::Diagnostics(artifact_diagnostics));
     }
+    let lockfile = enum_lockfile_path(project);
     let key_as_enum_ids = collect_declared_key_as_enum_ids(&schema);
-    let key_as_enum_variants = merge_key_as_enum_lockfile(&dir, key_as_enum_ids)?;
-    write_csharp_files(&schema, data_format, namespace, &dir, key_as_enum_variants)?;
+    let (locked_key_as_enum, key_as_enum_variants) =
+        merge_key_as_enum_lockfile(&lockfile, key_as_enum_ids)?;
+    let staged_code =
+        stage_csharp_files(&schema, data_format, namespace, &dir, key_as_enum_variants)?;
+    let staged_lockfile = stage_key_as_enum_lockfile_if_needed(&lockfile, &locked_key_as_enum)?;
+    commit_staged_dir_and_file(staged_code, staged_lockfile)?;
     Ok(PipelineOutcome::Success(CodegenReport { target, dir }))
 }
 
@@ -349,15 +344,6 @@ fn artifact_diagnostics_for_dirs<'a>(
             ))
         })
         .collect()
-}
-
-fn extend_artifact_preflight_diagnostics(
-    diagnostics: &mut Vec<DiagnosticJson>,
-    result: Result<(), String>,
-) {
-    if let Err(message) = result {
-        diagnostics.push(DiagnosticJson::artifact(message));
-    }
 }
 
 fn diagnostics_from_codegen_preflight(
@@ -414,16 +400,31 @@ fn collect_key_as_enum_ids(
     out
 }
 
+type KeyAsEnumLockfile = BTreeMap<String, BTreeMap<String, i64>>;
+
+fn enum_lockfile_path(project: &Project) -> PathBuf {
+    project
+        .config_path
+        .parent()
+        .unwrap_or(&project.root_dir)
+        .join(ENUM_LOCKFILE_NAME)
+}
+
 fn merge_key_as_enum_lockfile(
-    code_dir: &Path,
+    lockfile: &Path,
     current_ids: BTreeMap<String, Vec<String>>,
-) -> Result<BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>, String> {
+) -> Result<
+    (
+        KeyAsEnumLockfile,
+        BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
+    ),
+    String,
+> {
     if current_ids.is_empty() {
-        return Ok(BTreeMap::new());
+        return Ok((BTreeMap::new(), BTreeMap::new()));
     }
 
-    let lockfile = code_dir.join(ENUM_LOCKFILE_NAME);
-    let mut locked = read_key_as_enum_lockfile(&lockfile)?;
+    let mut locked = read_key_as_enum_lockfile(lockfile)?;
     locked.retain(|enum_name, _| current_ids.contains_key(enum_name));
 
     for (enum_name, ids) in current_ids {
@@ -445,9 +446,7 @@ fn merge_key_as_enum_lockfile(
         }
     }
 
-    write_key_as_enum_lockfile(&lockfile, &locked)?;
-
-    Ok(locked
+    let variants = locked
         .into_iter()
         .map(|(enum_name, entries)| {
             let mut variants = entries
@@ -461,7 +460,10 @@ fn merge_key_as_enum_lockfile(
             });
             (enum_name, variants)
         })
-        .collect())
+        .collect();
+
+    let locked = variants_to_lockfile(&variants);
+    Ok((locked, variants))
 }
 
 fn next_key_as_enum_value(value: i64) -> Result<i64, String> {
@@ -483,18 +485,31 @@ fn read_key_as_enum_lockfile(
         .map_err(|err| format!("failed to parse `{}`: {err}", path.display()))
 }
 
-fn write_key_as_enum_lockfile(
+fn stage_key_as_enum_lockfile_if_needed(
     path: &Path,
-    locked: &BTreeMap<String, BTreeMap<String, i64>>,
-) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|err| format!("failed to create `{}`: {err}", parent.display()))?;
+    locked: &KeyAsEnumLockfile,
+) -> Result<Option<artifacts::StagedArtifactFile>, String> {
+    if locked.is_empty() {
+        return Ok(None);
     }
-    let file = fs::File::create(path)
-        .map_err(|err| format!("failed to create `{}`: {err}", path.display()))?;
-    serde_json::to_writer_pretty(file, locked)
-        .map_err(|err| format!("failed to write `{}`: {err}", path.display()))
+    stage_json_file(path, locked).map(Some)
+}
+
+fn variants_to_lockfile(
+    variants: &BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
+) -> KeyAsEnumLockfile {
+    variants
+        .iter()
+        .map(|(enum_name, entries)| {
+            (
+                enum_name.clone(),
+                entries
+                    .iter()
+                    .map(|entry| (entry.name.clone(), entry.value))
+                    .collect(),
+            )
+        })
+        .collect()
 }
 
 fn annotation_string_arg(annotations: &[coflow_cft::CftAnnotation], name: &str) -> Option<String> {

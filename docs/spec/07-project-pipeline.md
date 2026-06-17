@@ -113,26 +113,23 @@ completion、hover、definition、document symbol、formatting 和 semantic toke
   不写任何导出文件。
 - `codegen csharp`：先完成 schema-only 校验、codegen 配置校验、schema 编译、
   codegen preflight 和 code output path 检查；有诊断时不读写 enum lockfile，
-  不清理旧 `.cs` 文件，也不生成新 `.cs` 文件。
+  不替换 C# 输出目录，也不生成新 `.cs` 文件。
 
 artifact preflight 当前只检查目标输出路径是否已经存在且不是目录。目录不存在
 时由写入阶段创建；权限错误、写入失败、读写 lockfile 失败等运行时 I/O 问题
 以不可聚合 CLI error 返回。
 
-C# codegen 成功写入时，项目管线先维护 `coflow.enum.lock.json`，再按清单清理
-上一轮生成但本轮不再生成的 `.cs` 文件，最后写入本次生成的 `.cs` 文件。
-`coflow.enum.lock.json` 不是 `.cs` 文件，不会被清理。
+数据导出和 C# codegen 的输出目录由 Coflow 完全接管。写入阶段先创建同级
+staging 目录并写入完整产物；所有文件成功写入后，再用 staging 目录替换目标
+输出目录。目标目录内旧文件、子目录、人工文件和其他工具产物均不会保留。
+因此 `outputs.data.dir` 和 `outputs.code.dir` 必须只用于 Coflow 生成物。
 
-数据导出和 C# codegen 会分别维护生成物清单：
-
-- 数据输出目录：`coflow.data.manifest.json`
-- C# 输出目录：`coflow.csharp.manifest.json`
-
-写入前，pipeline 只会删除上一轮清单中存在、但本轮不再生成的文件。若输出
-目录中存在未被清单管理的 `.json` / `.msgpack` / `.cs` 文件，命令会拒绝写入，
-避免误删或覆盖人工文件、其他工具产物，或旧版本无清单生成物。迁移旧输出目录
-时，应先清理历史生成文件，或使用新的空输出目录。`coflow.enum.lock.json` 是
-C# codegen 的稳定枚举值输入，不属于普通清理对象。
+C# codegen 的 `coflow.enum.lock.json` 写在 `coflow.yaml` 同级，而不是 C# 输出
+目录内。codegen 会先读取并合并 lockfile，生成完整 C# staging 目录和 lockfile
+staging 文件；全部 staging 成功后再提交写入。若 `.cs` staging 或 lockfile
+staging 任一步失败，既有输出目录和既有 lockfile 保持不变。若提交阶段发生
+文件系统错误，pipeline 会尽力回滚 lockfile 和旧输出目录，并以不可聚合 CLI
+error 返回。
 
 `build` 的 codegen 是可选阶段。项目没有配置 `outputs.code` 时，`build` 仍会
 完成数据校验和数据导出，但不会生成代码，也不会要求 code output 配置存在。

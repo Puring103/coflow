@@ -1,3 +1,4 @@
+use super::builtins::Builtin;
 use super::value::{
     comparable_key, dict_key_from_check_value, format_check_key_for_path, values_equal, CheckValue,
     LocatedCheckValue,
@@ -527,9 +528,18 @@ impl<'a> CheckEvaluator<'a> {
             return Ok(LocatedCheckValue::value(CheckValue::Enum(enum_value)));
         }
 
-        match name {
-            "len" => {
-                let arg = self.exactly_one_arg(args, "len expects one argument")?;
+        let Some(builtin) = Builtin::by_name(name) else {
+            self.diag(
+                CfdErrorCode::CheckEvalTypeError,
+                format!("unknown function `{name}`"),
+            );
+            return Err(());
+        };
+        self.require_builtin_arity(builtin, args)?;
+
+        match builtin {
+            Builtin::Len => {
+                let arg = &args[0];
                 let arg_value = self.eval_expr(arg)?;
                 match arg_value.value {
                     CheckValue::Array { items, .. } => Ok(LocatedCheckValue::new(
@@ -550,23 +560,16 @@ impl<'a> CheckEvaluator<'a> {
                     }
                 }
             }
-            "contains" => {
-                let [collection, value] = args else {
-                    self.diag(
-                        CfdErrorCode::CheckEvalTypeError,
-                        "contains expects two arguments",
-                    );
-                    return Err(());
-                };
-                let collection = self.eval_expr(collection)?;
-                let value = self.eval_expr(value)?;
+            Builtin::Contains => {
+                let collection = self.eval_expr(&args[0])?;
+                let value = self.eval_expr(&args[1])?;
                 Ok(LocatedCheckValue::new(
                     CheckValue::Bool(self.contains_value(&collection, &value.value)?),
                     collection.path.clone(),
                 ))
             }
-            "unique" => {
-                let arg = self.exactly_one_arg(args, "unique expects one argument")?;
+            Builtin::Unique => {
+                let arg = &args[0];
                 let arg_value = self.eval_expr(arg)?;
                 let CheckValue::Array { items, .. } = arg_value.value else {
                     self.diag_at(
@@ -598,10 +601,10 @@ impl<'a> CheckEvaluator<'a> {
                     arg_value.path,
                 ))
             }
-            "min" | "max" => self.eval_min_max(name, args),
-            "sum" => self.eval_sum(args),
-            "keys" => {
-                let arg = self.exactly_one_arg(args, "keys expects one argument")?;
+            Builtin::Min | Builtin::Max => self.eval_min_max(builtin, args),
+            Builtin::Sum => self.eval_sum(args),
+            Builtin::Keys => {
+                let arg = &args[0];
                 let arg_value = self.eval_expr(arg)?;
                 let CheckValue::Dict {
                     entries, key_type, ..
@@ -622,8 +625,8 @@ impl<'a> CheckEvaluator<'a> {
                     arg_value.path,
                 ))
             }
-            "values" => {
-                let arg = self.exactly_one_arg(args, "values expects one argument")?;
+            Builtin::Values => {
+                let arg = &args[0];
                 let arg_value = self.eval_expr(arg)?;
                 let CheckValue::Dict {
                     entries,
@@ -646,15 +649,8 @@ impl<'a> CheckEvaluator<'a> {
                     arg_value.path,
                 ))
             }
-            "matches" => {
-                let [value, pattern_expr] = args else {
-                    self.diag(
-                        CfdErrorCode::CheckEvalTypeError,
-                        "matches expects two arguments",
-                    );
-                    return Err(());
-                };
-                let value = self.eval_expr(value)?;
+            Builtin::Matches => {
+                let value = self.eval_expr(&args[0])?;
                 let CheckValue::String(text) = value.value else {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
@@ -663,7 +659,7 @@ impl<'a> CheckEvaluator<'a> {
                     );
                     return Err(());
                 };
-                let CftSchemaCheckExprKind::String(pattern) = &pattern_expr.kind else {
+                let CftSchemaCheckExprKind::String(pattern) = &args[1].kind else {
                     self.diag(
                         CfdErrorCode::CheckEvalTypeError,
                         "matches pattern is not literal",
@@ -681,14 +677,27 @@ impl<'a> CheckEvaluator<'a> {
                     value.path,
                 ))
             }
-            _ => {
-                self.diag(
-                    CfdErrorCode::CheckEvalTypeError,
-                    format!("unknown function `{name}`"),
-                );
-                Err(())
-            }
         }
+    }
+
+    fn require_builtin_arity(
+        &mut self,
+        builtin: Builtin,
+        args: &[CftSchemaCheckExpr],
+    ) -> Result<(), ()> {
+        if args.len() == builtin.arity() {
+            return Ok(());
+        }
+        self.diag(
+            CfdErrorCode::CheckEvalTypeError,
+            format!(
+                "{} expects {} argument{}",
+                builtin.name(),
+                builtin.arity(),
+                if builtin.arity() == 1 { "" } else { "s" }
+            ),
+        );
+        Err(())
     }
 
     fn exactly_one_arg<'b>(
@@ -705,11 +714,10 @@ impl<'a> CheckEvaluator<'a> {
 
     fn eval_min_max(
         &mut self,
-        name: &str,
+        builtin: Builtin,
         args: &[CftSchemaCheckExpr],
     ) -> Result<LocatedCheckValue, ()> {
-        let arg = self.exactly_one_arg(args, "min/max expects one argument")?;
-        let arg_value = self.eval_expr(arg)?;
+        let arg_value = self.eval_expr(&args[0])?;
         let CheckValue::Array { items, .. } = arg_value.value else {
             self.diag_at(
                 CfdErrorCode::CheckEvalTypeError,
@@ -739,7 +747,8 @@ impl<'a> CheckEvaluator<'a> {
         };
         for item in non_null_items {
             let ord = self.compare_order(&out, item, arg_value.path.clone())?;
-            if (name == "min" && ord.is_gt()) || (name == "max" && ord.is_lt()) {
+            if (builtin == Builtin::Min && ord.is_gt()) || (builtin == Builtin::Max && ord.is_lt())
+            {
                 out = item.clone();
             }
         }
@@ -747,8 +756,7 @@ impl<'a> CheckEvaluator<'a> {
     }
 
     fn eval_sum(&mut self, args: &[CftSchemaCheckExpr]) -> Result<LocatedCheckValue, ()> {
-        let arg = self.exactly_one_arg(args, "sum expects one argument")?;
-        let arg_value = self.eval_expr(arg)?;
+        let arg_value = self.eval_expr(&args[0])?;
         let CheckValue::Array {
             items,
             element_type,

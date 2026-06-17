@@ -10,6 +10,7 @@ pub use coflow_project::{
 };
 pub use rust_xlsxwriter::Workbook;
 pub use std::collections::BTreeMap;
+use std::fmt::Write as _;
 pub use std::path::{Path, PathBuf};
 
 pub fn write_project_with_missing_excel_source(root: &Path, include_code_output: bool) {
@@ -79,20 +80,24 @@ outputs:
 ",
     );
     if let Some(data) = outputs.data {
-        config.push_str(&format!(
+        write!(
+            config,
             "  data:\n    type: {}\n    dir: {}\n",
             data.output_type,
             data.dir.display()
-        ));
+        )
+        .expect("append data output config");
     }
     if let Some(code) = outputs.code {
-        config.push_str(&format!(
+        write!(
+            config,
             "  code:\n    type: {}\n    dir: {}\n",
             code.output_type,
             code.dir.display()
-        ));
+        )
+        .expect("append code output config");
         if let Some(namespace) = code.namespace {
-            config.push_str(&format!("    namespace: {namespace}\n"));
+            writeln!(config, "    namespace: {namespace}").expect("append namespace config");
         }
     }
     std::fs::write(root.join("coflow.yaml"), config).expect("write config");
@@ -275,7 +280,8 @@ outputs:
     genes.set_name("GeneConfig")?;
     genes.write_string(0, 0, "id")?;
     for (index, id) in gene_ids.iter().enumerate() {
-        genes.write_string((index + 1) as u32, 0, *id)?;
+        let row = u32::try_from(index + 1).expect("test row index fits in u32");
+        genes.write_string(row, 0, *id)?;
     }
 
     let remains = workbook.add_worksheet();

@@ -606,7 +606,7 @@ fn excel_load_error_diagnostics(err: ExcelLoadError) -> Vec<ExcelDiagnostic> {
             "EXCEL-COLUMN",
             "EXCEL",
             format!(
-                "@expand field `{parent_field}` expected adjacent column for inner field `{expected_field}` to have an empty header or `{expected_field}`, got `{header}`"
+                "@expand field `{parent_field}` expected adjacent column for inner field `{expected_field}` to have an empty header, got `{header}`"
             ),
             *location,
         )],
@@ -911,8 +911,8 @@ fn resolve_columns(
             // the N-1 following data columns (where N is the inner type's
             // field count). Sub-field assignment is positional, following the
             // inner type's declared field order. Adjacent headers must be
-            // blank merged-header cells or the expected inner field name so a
-            // normal business column cannot be silently swallowed.
+            // blank merged-header cells so a normal business column cannot be
+            // silently swallowed.
             let inner_order = expand_inner_order.get(&field).cloned().unwrap_or_default();
             let mut consumed = Vec::with_capacity(inner_order.len());
             // First child uses the parent column itself.
@@ -943,7 +943,7 @@ fn resolve_columns(
                     break;
                 }
                 let (next_index, next_excel_col, next_text) = &header[cursor];
-                if !next_text.is_empty() && next_text != inner_field {
+                if !next_text.is_empty() {
                     diagnostics.extend(excel_load_error_diagnostics(
                         ExcelLoadError::UnexpectedExpandHeader {
                             location: Box::new(

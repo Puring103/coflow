@@ -133,10 +133,7 @@ outputs:
 ",
     )
     .expect("write config");
-    let lockfile = root
-        .join("generated")
-        .join("csharp")
-        .join("coflow.enum.lock.json");
+    let lockfile = root.join("coflow.enum.lock.json");
     std::fs::write(&lockfile, "{bad json").expect("write malformed lockfile");
 
     let output = coflow()

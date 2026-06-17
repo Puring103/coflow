@@ -398,6 +398,7 @@ dependencies = [
  "coflow-loader-excel",
  "coflow-project",
  "rust_xlsxwriter",
+ "serde",
  "serde_json",
 ]
 

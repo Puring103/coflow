@@ -1000,7 +1000,7 @@ fn expand_consumes_parent_and_adjacent_columns_for_inner_fields() -> TestResult 
 }
 
 #[test]
-fn expand_accepts_explicit_inner_field_headers() -> TestResult {
+fn expand_rejects_explicit_inner_field_headers() -> TestResult {
     let schema = compile_schema(
         r#"
             @struct sealed type EnvCfg {
@@ -1048,22 +1048,20 @@ fn expand_accepts_explicit_inner_field_headers() -> TestResult {
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Terrain")]);
-    let model = load_excel_model(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
-    let terrain_id = model
-        .table("Terrain")
-        .and_then(|table| table.primary_index.get("Water"))
-        .copied()
-        .ok_or_else(|| "expected Water terrain".to_string())?;
-    let terrain = model
-        .record(terrain_id)
-        .ok_or_else(|| "expected terrain record".to_string())?;
-    let CfdValue::Object(env) = terrain
-        .field("env")
-        .ok_or_else(|| "expected env field".to_string())?
-    else {
-        return Err("expected env object".to_string());
+    let Err(err) = load_excel_model(&schema, &[source]) else {
+        return Err("expected explicit @expand child header error".to_string());
     };
-    assert_eq!(env.field("temperature"), Some(&CfdValue::Float(20.0)));
+    let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-COLUMN")?;
+    assert!(diagnostic.message.contains("@expand"));
+    assert!(diagnostic.message.contains("temperature"));
+    assert!(diagnostic.message.contains("empty header"));
+    let location = &diagnostic
+        .primary
+        .as_ref()
+        .ok_or_else(|| "expected primary location".to_string())?
+        .location;
+    assert_eq!(location.row, Some(1));
+    assert_eq!(location.column, Some(3));
     Ok(())
 }
 
@@ -1358,7 +1356,7 @@ fn maps_expand_subfield_diagnostics_to_child_columns() -> TestResult {
         .write_string(0, 1, "env")
         .map_err(|err| format!("{err:?}"))?;
     sheet
-        .write_string(0, 2, "temperature")
+        .write_blank(0, 2, &Format::new())
         .map_err(|err| format!("{err:?}"))?;
     sheet
         .write_string(1, 0, "Water")
@@ -1366,13 +1364,28 @@ fn maps_expand_subfield_diagnostics_to_child_columns() -> TestResult {
     sheet
         .write_number(1, 1, 4.0)
         .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 2, "bad-float")
+        .map_err(|err| format!("{err:?}"))?;
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Terrain")]);
     let Err(err) = load_excel_model(&schema, &[source]) else {
-        return Err("expected missing @expand subfield diagnostic".to_string());
+        return Err("expected @expand subfield parse diagnostic".to_string());
     };
-    let diagnostic = diagnostic_with_code(&err.diagnostics, CfdErrorCode::MissingRequiredField)?;
+    let diagnostic = err
+        .diagnostics
+        .iter()
+        .find(|diag| diag.code.starts_with("CELL-"))
+        .ok_or_else(|| {
+            format!(
+                "expected CELL-* diagnostic, got {:?}",
+                err.diagnostics
+                    .iter()
+                    .map(|diag| diag.code.as_str())
+                    .collect::<Vec<_>>()
+            )
+        })?;
     assert!(
         diagnostic.message.contains("temperature"),
         "expected temperature field diagnostic, got {}",
