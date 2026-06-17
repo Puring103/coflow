@@ -62,4 +62,4 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 
 [dev-dependencies]
-rust_xlsxwriter = "0.64"
+rust_xlsxwriter = "0.95"

@@ -212,6 +212,11 @@ cargo run -- export json examples/rpg --out generated/data
 
 输出文件命名为 `<TypeName>.json`。
 
+导出成功后，输出目录会写入 `coflow.data.manifest.json`，记录本次由 Coflow
+管理的数据文件。再次导出时，只会删除上一次 manifest 中存在但本次不再生成的
+数据文件。若输出目录中已有未被 manifest 管理的 `.json` 或 `.msgpack` 文件，
+命令会拒绝写入，避免覆盖或删除人工文件；请清理旧输出目录或改用新的空目录。
+
 ### `coflow export messagepack [CONFIG_OR_DIR] [--out DIR]`
 
 导出 MessagePack 数据。项目配置必须声明：
@@ -229,6 +234,9 @@ cargo run -- export messagepack examples/rpg --out generated/data
 
 输出文件命名为 `<TypeName>.msgpack`，内容是裸 MessagePack array，schema
 形状与 JSON 导出一致。
+
+MessagePack 导出使用同一个 `coflow.data.manifest.json` 维护数据产物清单。
+这也会在 JSON 和 MessagePack 格式切换时清理上一轮由 Coflow 生成的旧格式文件。
 
 ### `coflow codegen csharp [CONFIG_OR_DIR] [--out DIR] [--namespace NAME]`
 
@@ -267,8 +275,12 @@ data-driven variant，因为它不加载数据。`coflow build` 已经加载 dat
 codegen 会在读取/写入 lockfile、清理旧 `.cs` 文件或写入新文件前执行
 preflight。命名错误会产生诊断，并且不会修改既有生成输出。
 
-成功写入时，codegen 会按需创建输出目录，移除该目录顶层旧 `.cs` 文件，然后
-写入本次生成的新文件。enum lockfile 作为 `coflow.enum.lock.json` 单独维护。
+成功写入时，codegen 会按需创建输出目录，写入 `coflow.csharp.manifest.json`
+记录本次由 Coflow 管理的 C# 文件。再次生成时，只会删除上一轮 manifest 中
+存在但本次不再生成的 `.cs` 文件。若输出目录中已有未被 manifest 管理的 `.cs`
+文件，命令会拒绝写入，避免覆盖或删除人工代码；请清理旧输出目录或改用新的
+空目录。enum lockfile 作为 `coflow.enum.lock.json` 单独维护，不属于普通清理
+对象。
 
 ---
 

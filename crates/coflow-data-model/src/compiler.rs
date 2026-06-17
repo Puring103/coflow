@@ -1244,26 +1244,11 @@ impl<'s> Validator<'s> {
             match segment {
                 CfdRefPathSegment::Field(name) => {
                     current_path = current_path.field(name.clone());
-                    let CfdType::Type(type_name) = non_nullable_type(&current_ty) else {
+                    let CfdType::Type(_) = non_nullable_type(&current_ty) else {
                         self.push(
                             CfdDiagnostic::error(
                                 CfdErrorCode::TypeMismatch,
                                 "path field access requires an object",
-                            )
-                            .with_primary(record, current_path),
-                        );
-                        return None;
-                    };
-                    let Some(field) = self
-                        .schema
-                        .full_fields(type_name)
-                        .iter()
-                        .find(|field| field.name == *name)
-                    else {
-                        self.push(
-                            CfdDiagnostic::error(
-                                CfdErrorCode::UnknownField,
-                                format!("path field `{name}` was not found"),
                             )
                             .with_primary(record, current_path),
                         );
@@ -1278,6 +1263,21 @@ impl<'s> Validator<'s> {
                         tables,
                         inheritance_index,
                     )?;
+                    let Some(field) = self
+                        .schema
+                        .full_fields(&record_draft.actual_type)
+                        .iter()
+                        .find(|field| field.name == *name)
+                    else {
+                        self.push(
+                            CfdDiagnostic::error(
+                                CfdErrorCode::UnknownField,
+                                format!("path field `{name}` was not found"),
+                            )
+                            .with_primary(record, current_path),
+                        );
+                        return None;
+                    };
                     let Some(next) = record_draft.fields.get(name).cloned() else {
                         self.push(
                             CfdDiagnostic::error(

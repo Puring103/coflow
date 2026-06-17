@@ -245,7 +245,12 @@ enum SourceKind {
 }
 
 fn source_kind(path: &Path) -> Option<SourceKind> {
-    match path.extension().and_then(|ext| ext.to_str()) {
+    match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
         Some("xlsx" | "xlsm" | "xls") => Some(SourceKind::Excel),
         Some("cfd") => Some(SourceKind::Cfd),
         _ => None,
