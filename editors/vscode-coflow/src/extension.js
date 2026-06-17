@@ -100,6 +100,7 @@ const ANNOTATIONS = [
 function activate(context) {
   const selector = [{ language: "cft" }, { language: "cfd" }];
   const diagnostics = new CftDiagnostics(context);
+  const inspectorController = new CfdInspectorController(diagnostics);
   context.subscriptions.push(
     vscode.languages.registerCompletionItemProvider(
       selector,
@@ -119,6 +120,8 @@ function activate(context) {
       new CftSemanticTokensProvider(diagnostics),
       CFT_SEMANTIC_TOKENS_LEGEND
     ),
+    registerCfdInspectorCommand(inspectorController),
+    inspectorController,
     diagnostics
   );
 }
@@ -368,6 +371,988 @@ async function localDefinitionLocations(document, position) {
 
     const localField = directFieldLocations(workspace, document, position, word);
     return localField.length > 0 ? localField : undefined;
+}
+
+const CFD_INSPECTOR_VIEW_TYPE = "coflow.cfdInspector";
+
+function registerCfdInspectorCommand(controller) {
+  return vscode.commands.registerCommand("coflow.openCfdInspector", async (uri) => {
+    const document = await cfdDocumentForInspector(uri);
+    if (!document) {
+      await vscode.window.showErrorMessage("Open a .cfd file to use the CFD inspector.");
+      return undefined;
+    }
+    return controller.open(document);
+  });
+}
+
+async function cfdDocumentForInspector(uri) {
+  if (uri?.scheme === "file") {
+    const open = vscode.workspace.textDocuments.find((document) =>
+      document.uri.toString() === uri.toString()
+    );
+    if (open) {
+      return isCfdDocument(open) ? open : undefined;
+    }
+    const document = await vscode.workspace.openTextDocument(uri);
+    return isCfdDocument(document) ? document : undefined;
+  }
+
+  const document = vscode.window.activeTextEditor?.document;
+  return isCfdDocument(document) ? document : undefined;
+}
+
+function isCfdDocument(document) {
+  return document?.languageId === "cfd" && document.uri?.scheme === "file";
+}
+
+class CfdInspectorController {
+  constructor(diagnostics, options = {}) {
+    this.diagnostics = diagnostics;
+    this.refreshDebounceMs = options.refreshDebounceMs ?? 120;
+    this.panels = new Map();
+  }
+
+  async open(document) {
+    if (!isCfdDocument(document)) {
+      await vscode.window.showErrorMessage("Open a .cfd file to use the CFD inspector.");
+      return undefined;
+    }
+
+    const key = document.uri.toString();
+    const sourceViewColumn = sourceViewColumnForDocument(document);
+    const existing = this.panels.get(key);
+    if (existing) {
+      existing.panel.reveal(vscode.ViewColumn.Beside);
+      existing.sourceViewColumn = sourceViewColumn;
+      existing.refresh();
+      return existing.panel;
+    }
+
+    const session = new CfdInspectorPanelSession(
+      document,
+      this.diagnostics,
+      this.refreshDebounceMs,
+      sourceViewColumn,
+      () => this.panels.delete(key)
+    );
+    this.panels.set(key, session);
+    await session.refresh();
+    return session.panel;
+  }
+
+  dispose() {
+    for (const session of this.panels.values()) {
+      session.dispose();
+    }
+    this.panels.clear();
+  }
+}
+
+class CfdInspectorPanelSession {
+  constructor(document, diagnostics, refreshDebounceMs, sourceViewColumn, onDispose) {
+    this.document = document;
+    this.diagnostics = diagnostics;
+    this.refreshDebounceMs = refreshDebounceMs;
+    this.sourceViewColumn = sourceViewColumn;
+    this.onDispose = onDispose;
+    this.disposables = [];
+    this.refreshTimer = undefined;
+    this.disposed = false;
+    this.lastModel = undefined;
+    this.panel = vscode.window.createWebviewPanel(
+      CFD_INSPECTOR_VIEW_TYPE,
+      `CFD Inspector: ${path.basename(document.uri.fsPath)}`,
+      vscode.ViewColumn.Beside,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true
+      }
+    );
+    this.panel.webview.html = buildCfdInspectorHtml(undefined);
+    this.disposables.push(
+      this.panel.webview.onDidReceiveMessage((message) => this.onMessage(message)),
+      vscode.workspace.onDidChangeTextDocument((event) => {
+        if (event.document.uri.toString() === this.document.uri.toString()) {
+          return this.scheduleRefresh();
+        }
+        return undefined;
+      }),
+      vscode.workspace.onDidCloseTextDocument((closedDocument) => {
+        if (closedDocument.uri.toString() === this.document.uri.toString()) {
+          this.dispose();
+        }
+      }),
+      this.panel.onDidDispose(() => this.dispose(false))
+    );
+  }
+
+  async refresh() {
+    if (this.disposed) {
+      return;
+    }
+    const model = await buildCfdInspectorModel(this.document, this.diagnostics);
+    if (!model || this.disposed) {
+      return;
+    }
+    this.lastModel = model;
+    this.panel.webview.html = buildCfdInspectorHtml(model);
+    await this.panel.webview.postMessage({ type: "model", model });
+  }
+
+  scheduleRefresh() {
+    if (this.disposed) {
+      return undefined;
+    }
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+    }
+    if (this.refreshDebounceMs <= 0) {
+      return this.refresh();
+    }
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = undefined;
+      this.refresh();
+    }, this.refreshDebounceMs);
+    return undefined;
+  }
+
+  async onMessage(message) {
+    if (message?.type === "jump") {
+      await jumpToCfdInspectorLocation(message, this.sourceViewColumn);
+    }
+  }
+
+  dispose(closePanel = true) {
+    if (this.disposed) {
+      return;
+    }
+    this.disposed = true;
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = undefined;
+    }
+    this.onDispose?.();
+    for (const disposable of this.disposables.splice(0)) {
+      disposable.dispose?.();
+    }
+    if (closePanel) {
+      this.panel.dispose?.();
+    }
+  }
+}
+
+async function openCfdInspector(document, options = {}) {
+  const controller = new CfdInspectorController(options.diagnostics, {
+    refreshDebounceMs: options.refreshDebounceMs
+  });
+  return controller.open(document);
+}
+
+async function buildCfdInspectorModel(document, diagnostics) {
+  return diagnostics.request(document, "coflow/inspectorModel", {
+    textDocument: {
+      uri: document.uri.toString()
+    }
+  });
+}
+
+function sourceViewColumnForDocument(document) {
+  const editor = vscode.window.activeTextEditor;
+  if (editor?.document?.uri?.toString() === document.uri.toString()) {
+    return editor.viewColumn || vscode.ViewColumn.One;
+  }
+  return vscode.ViewColumn.One;
+}
+
+async function jumpToCfdInspectorLocation(message, viewColumn = vscode.ViewColumn.One) {
+  const uri = lspUriToVsCode(message?.uri);
+  if (!uri) {
+    return;
+  }
+  const range = lspRangeToVsCode(message.range, true);
+  await vscode.window.showTextDocument(uri, {
+    viewColumn,
+    selection: range,
+    preview: false
+  });
+}
+
+function buildCfdInspectorHtml(model) {
+  const nonce = randomNonce();
+  const state = JSON.stringify(model || emptyCfdInspectorModel()).replace(/</g, "\\u003c");
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root {
+      color-scheme: light dark;
+      --border:       var(--vscode-panel-border, #3c3c3c);
+      --muted:        var(--vscode-descriptionForeground, #8b949e);
+      --accent:       var(--vscode-textLink-foreground, #3794ff);
+      --surface:      var(--vscode-editor-background, #1e1e1e);
+      --surface-alt:  var(--vscode-sideBar-background, #252526);
+      --surface-hi:   var(--vscode-list-hoverBackground, #2a2d2e);
+      --text:         var(--vscode-editor-foreground, #d4d4d4);
+      --badge-bg:     var(--vscode-badge-background, #4d4d4d);
+      --badge-fg:     var(--vscode-badge-foreground, #cccccc);
+      --r: 5px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    [hidden] { display: none !important; }
+    html, body { height: 100%; }
+    body {
+      color: var(--text);
+      background: var(--surface);
+      font: 13px/1.5 var(--vscode-font-family, sans-serif);
+      overflow: hidden;
+    }
+    button {
+      border: 1px solid var(--border);
+      color: var(--text);
+      background: transparent;
+      border-radius: var(--r);
+      padding: 3px 10px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    button:hover:not(:disabled) { background: var(--surface-hi); }
+    button:disabled { opacity: 0.38; cursor: default; }
+    button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Shell ───────────────────────────────────── */
+    .root { display: flex; flex-direction: column; height: 100vh; }
+
+    .toolbar {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .tb-title { font-weight: 600; font-size: 13px; }
+    .tb-sep   { width: 1px; height: 13px; background: var(--border); margin: 0 4px; }
+    .tb-hint  { margin-left: auto; color: var(--muted); font-size: 11px; }
+
+    .view      { flex: 1 1 0; overflow: auto; padding: 14px; }
+    .view-graph { flex: 1 1 0; overflow: hidden; padding: 14px; display: flex; flex-direction: column; }
+
+    .empty {
+      display: flex; align-items: center; justify-content: center;
+      padding: 40px 16px; color: var(--muted); font-size: 13px;
+    }
+
+    /* ── Shared card ─────────────────────────────── */
+    /* Primary zone: header — key & type are the main identity  */
+    /* Secondary zone: body — field rows are supporting detail   */
+    .card {
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      background: var(--surface-alt);
+      overflow: hidden;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 9px 12px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    /* key: largest, boldest — the primary label */
+    .card-key {
+      flex: 1 1 0;
+      min-width: 0;
+      font-weight: 700;
+      font-size: 13px;
+      color: var(--text);
+      overflow-wrap: anywhere;
+      text-align: left;
+    }
+    /* graph node key is larger */
+    .node .card-key { font-size: 15px; }
+    /* badge: secondary label — type identifier, smaller & dimmer */
+    .card-badge {
+      flex-shrink: 0;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      padding: 1px 6px;
+      border-radius: 3px;
+      background: var(--badge-bg);
+      color: var(--badge-fg);
+    }
+    .node .card-badge { font-size: 11px; padding: 2px 7px; }
+    /* source link: tertiary, fades in on hover */
+    .card-src {
+      flex-shrink: 0;
+      border-color: transparent;
+      font-size: 11px;
+      color: var(--muted);
+      padding: 1px 4px;
+      opacity: 0;
+      transition: opacity 0.12s;
+    }
+    .card:hover .card-src { opacity: 1; }
+    .card-src:hover        { color: var(--accent); opacity: 1; }
+
+    /* body: secondary zone — slightly smaller, value-first */
+    .card-body { padding: 8px 12px; display: grid; gap: 5px; }
+
+    /* expand/collapse toggle at card foot */
+    .card-toggle {
+      display: block; width: 100%;
+      padding: 4px 12px;
+      font-size: 11px; color: var(--muted);
+      border-top: 1px solid var(--border);
+      border-left: 0; border-right: 0; border-bottom: 0; border-radius: 0;
+      text-align: left; background: transparent;
+    }
+    .card-toggle:hover { color: var(--accent); background: var(--surface-hi); }
+    .card-chevron {
+      flex-shrink: 0;
+      border: 0;
+      padding: 0 4px 0 0;
+      background: transparent;
+      font-size: 9px;
+      color: var(--muted);
+      cursor: pointer;
+      line-height: 1;
+      transition: color 0.1s;
+    }
+    .card-chevron:hover { color: var(--accent); background: transparent; }
+
+    /* ── Field rows (inside card-body and nested values) ── */
+    .field {
+      display: grid;
+      grid-template-columns: minmax(52px, 36%) 1fr;
+      gap: 8px;
+      align-items: baseline;
+    }
+    .field-name {
+      font-size: 11px;
+      color: var(--accent);
+      opacity: 0.88;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .field-value { font-size: 12px; color: var(--text); overflow-wrap: anywhere; }
+
+    /* ── Inline jump button ── */
+    .jump {
+      border: 0; padding: 0;
+      background: transparent; text-align: left;
+      font: inherit; color: inherit; cursor: pointer;
+    }
+    .jump:hover { color: var(--accent); }
+
+    /* ── Expandable value blocks ── */
+    .value-card {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 3px 7px;
+      font-size: 12px;
+    }
+    .value-card > summary {
+      cursor: pointer; list-style: none;
+      display: flex; align-items: center; gap: 4px;
+      color: var(--muted);
+    }
+    .value-card > summary::before         { content: "▶"; font-size: 8px; }
+    details[open] > summary::before       { content: "▼"; }
+    .nested-fields { margin-top: 6px; display: grid; gap: 5px; }
+    .array-item {
+      display: grid; grid-template-columns: 34px 1fr;
+      gap: 7px; margin-top: 4px;
+    }
+    .idx-chip  { color: var(--muted); font-size: 11px; }
+    .path-chip { color: var(--accent); font-size: 11px; }
+
+    /* inline reference expansion */
+    .ref-mini {
+      margin-top: 5px;
+      padding: 5px 9px;
+      border-left: 2px solid var(--accent);
+      background: var(--surface);
+      border-radius: 0 4px 4px 0;
+      display: flex; align-items: center; gap: 7px;
+      cursor: pointer; width: 100%;
+      text-align: left;
+    }
+    .ref-mini:hover .ref-key { color: var(--accent); }
+    .ref-key { font-weight: 600; font-size: 12px; }
+
+    /* ── Table view ──────────────────────────────── */
+    .table-wrap {
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      overflow: auto;
+    }
+    .cfd-table {
+      border-collapse: collapse;
+      width: max-content; min-width: 100%;
+      background: var(--surface);
+    }
+    .cfd-table th, .cfd-table td {
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      vertical-align: top;
+      min-width: 120px; max-width: 280px;
+    }
+    .cfd-table thead th {
+      position: sticky; top: 0; z-index: 2;
+      background: var(--surface-alt);
+      font-weight: 600; font-size: 12px; text-align: left;
+    }
+    .cfd-table .col-key {
+      position: sticky; left: 0; z-index: 3;
+      background: var(--surface-alt); min-width: 120px;
+    }
+    .cfd-table tbody td.col-key { background: var(--surface); z-index: 1; }
+    .cell-empty { color: var(--muted); }
+
+    /* ── Records view ────────────────────────────── */
+    .records-list { display: flex; flex-direction: column; gap: 10px; }
+
+    /* ── Graph view ──────────────────────────────── */
+    .graph {
+      flex: 1; position: relative;
+      overflow: hidden;
+      border: 1px solid var(--border); border-radius: var(--r);
+      cursor: grab; user-select: none; touch-action: none;
+      min-height: 160px;
+    }
+    .graph.dragging { cursor: grabbing; }
+    .graph-canvas   { position: relative; transform-origin: 0 0; }
+
+    svg.edges {
+      position: absolute; inset: 0;
+      overflow: visible; pointer-events: none;
+      color: var(--accent);
+    }
+    .edge {
+      stroke: currentColor; stroke-width: 1.5; fill: none;
+      opacity: .6; pointer-events: stroke; cursor: pointer;
+    }
+    .edge:hover { opacity: 1; stroke-width: 2; }
+    .edge-dot {
+      fill: currentColor; opacity: .75;
+      pointer-events: none;
+    }
+
+    /* graph nodes use shared .card, positioned absolutely */
+    .node {
+      position: absolute; width: 240px;
+      user-select: text;
+    }
+    .node .card-src { opacity: 0.7; }
+  </style>
+</head>
+<body>
+  <div class="root" id="cfd-app"></div>
+  <script nonce="${nonce}">
+    const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
+    let model = ${state};
+    let mode = "table";
+    const root = document.getElementById("cfd-app");
+
+    window.addEventListener("message", (event) => {
+      if (event.data?.type === "model") { model = event.data.model; render(); }
+    });
+
+    function postJump(target) {
+      vscode?.postMessage({
+        type: "jump",
+        uri: target.uri || target.sourceUri || target.targetUri,
+        range: target.range
+      });
+    }
+
+    function render() {
+      root.innerHTML = "";
+      root.append(buildToolbar());
+      if (mode === "graph" && model.graph?.canShow) root.append(graphView());
+      else if (mode === "records")                  root.append(recordsView());
+      else                                           root.append(tableView());
+    }
+
+    function buildToolbar() {
+      const bar = el("div", "toolbar");
+      bar.append(
+        el("span", "tb-title", "CFD Inspector"),
+        el("div", "tb-sep"),
+        modeBtn("table",   "Table"),
+        modeBtn("records", "Records"),
+        modeBtn("graph",   "Graph", !model.graph?.canShow),
+        el("span", "tb-hint", hintText())
+      );
+      return bar;
+    }
+
+    function modeBtn(value, label, disabled) {
+      const b = el("button", "", label);
+      b.type = "button";
+      b.disabled = Boolean(disabled);
+      b.setAttribute("aria-pressed", String(mode === value));
+      b.addEventListener("click", () => { mode = value; render(); });
+      return b;
+    }
+
+    function hintText() {
+      const n = model.recordsInFile?.length || 0;
+      const h = model.graph?.hiddenIsolatedAnchors?.length || 0;
+      return h > 0 ? n + " records · " + h + " isolated" : n + " record" + (n === 1 ? "" : "s");
+    }
+
+    // ── Shared card component ─────────────────────────────────────
+    // All cards start collapsed; chevron button toggles the body.
+    // onToggle callback fires after each toggle (used by graph to re-layout).
+
+    function buildCard(record, opts) {
+      const onToggle = opts?.onToggle;
+      let expanded = false;
+
+      const card = el("div", "card");
+
+      // ── Header ──
+      const header = el("div", "card-header");
+
+      // Chevron: sole owner of the toggle action
+      const chevron = el("button", "card-chevron jump", "▶");
+      chevron.type = "button";
+      chevron.title = "Expand";
+      chevron.addEventListener("click", () => {
+        expanded = !expanded;
+        if (body) body.hidden = !expanded;
+        chevron.textContent = expanded ? "▼" : "▶";
+        chevron.title = expanded ? "Collapse" : "Expand";
+        onToggle?.();
+      });
+      header.append(chevron);
+
+      // Key: jump to source only
+      const keyBtn = el("button", "card-key jump", record.key);
+      keyBtn.type = "button";
+      keyBtn.addEventListener("click", () => postJump(record));
+      header.append(keyBtn);
+
+      if (record.type) header.append(el("span", "card-badge", record.type));
+
+      const srcBtn = el("button", "card-src jump", "↗");
+      srcBtn.type = "button"; srcBtn.title = "Open source";
+      srcBtn.addEventListener("click", () => postJump(record));
+      header.append(srcBtn);
+
+      card.append(header);
+
+      // ── Body (collapsed by default) ──
+      const allFields = record.fields || [];
+      let body = null;
+      if (allFields.length) {
+        body = el("div", "card-body");
+        body.hidden = true;
+        for (const f of allFields) body.append(renderField(record, f, [f.name]));
+        card.append(body);
+      }
+
+      return card;
+    }
+
+    // ── Table view ────────────────────────────────────────────────
+    function tableView() {
+      const view = el("div", "view");
+      const records = model.recordsInFile || [];
+      if (!records.length) { view.append(el("div", "empty", "No records in this file.")); return view; }
+      const wrap = el("div", "table-wrap");
+      const table = el("table", "cfd-table");
+      const cols = tableColumns(records);
+      const thead = document.createElement("thead");
+      const hrow = document.createElement("tr");
+      for (const c of cols) {
+        const th = document.createElement("th");
+        th.textContent = c.label;
+        if (c.kind === "key") th.classList.add("col-key");
+        hrow.append(th);
+      }
+      thead.append(hrow);
+      const tbody = document.createElement("tbody");
+      for (const record of records) {
+        const row = document.createElement("tr");
+        for (const c of cols) {
+          const td = document.createElement("td");
+          if (c.kind === "key") {
+            td.classList.add("col-key");
+            const btn = el("button", "jump", record.key);
+            btn.type = "button";
+            btn.addEventListener("click", () => postJump(record));
+            td.append(btn);
+          } else if (c.kind === "type") {
+            td.textContent = record.type || "";
+          } else {
+            const f = (record.fields || []).find((x) => x.name === c.name);
+            td.append(f ? renderValue(record, f.value, [f.name]) : el("span", "cell-empty", "—"));
+          }
+          row.append(td);
+        }
+        tbody.append(row);
+      }
+      table.append(thead, tbody);
+      wrap.append(table);
+      view.append(wrap);
+      return view;
+    }
+
+    // ── Records view ──────────────────────────────────────────────
+    function recordsView() {
+      const view = el("div", "view");
+      const records = model.recordsInFile || [];
+      if (!records.length) { view.append(el("div", "empty", "No records in this file.")); return view; }
+      const list = el("div", "records-list");
+      for (const r of records) list.append(buildCard(r));
+      view.append(list);
+      return view;
+    }
+
+    // ── Graph view ────────────────────────────────────────────────
+    const NODE_W = 240;
+    const COL_GAP = 80;
+    const ROW_GAP = 14;
+    const CANVAS_PAD = 24;
+
+    function graphView() {
+      const view = el("div", "view-graph");
+      const graph = el("div", "graph");
+      const canvas = el("div", "graph-canvas");
+
+      const graphRefs = model.graph?.references || [];
+      const graphRecords = model.graph?.records || [];
+
+      // Depth-based column layout
+      const colMap = computeColumns(graphRecords, graphRefs);
+      const nodeInfos = [];  // { element, record, depth, x, y }
+      const edgeInfos = [];  // { element (path), sourceId, targetId }
+
+      // Build SVG with arrowhead marker
+      const svg = svgEl("svg");
+      svg.classList.add("edges");
+      const defs = svgEl("defs");
+      const marker = svgEl("marker");
+      marker.id = "arw";
+      marker.setAttribute("markerWidth", "9");
+      marker.setAttribute("markerHeight", "7");
+      marker.setAttribute("refX", "8");
+      marker.setAttribute("refY", "3.5");
+      marker.setAttribute("orient", "auto");
+      marker.setAttribute("markerUnits", "strokeWidth");
+      const arrowPoly = svgEl("polygon");
+      arrowPoly.setAttribute("points", "0 0, 9 3.5, 0 7");
+      arrowPoly.setAttribute("fill", "currentColor");
+      arrowPoly.setAttribute("opacity", "0.7");
+      marker.append(arrowPoly);
+      defs.append(marker);
+      svg.append(defs);
+      canvas.append(svg);
+
+      // Place nodes column by column
+      let colX = CANVAS_PAD;
+      for (const [, records] of [...colMap.entries()].sort((a, b) => a[0] - b[0])) {
+        for (const record of records) {
+          const nodeEl = el("div", "node");
+          nodeEl.style.left = colX + "px";
+          nodeEl.style.top = "0px";
+          nodeEl.append(buildCard(record, {
+            compact: true,
+            onToggle: () => requestAnimationFrame(reLayout)
+          }));
+          canvas.append(nodeEl);
+          nodeInfos.push({ element: nodeEl, record, x: colX, y: 0 });
+        }
+        colX += NODE_W + COL_GAP;
+      }
+
+      // Build edge paths + endpoint dots
+      for (const ref of graphRefs) {
+        const pathEl = svgEl("path");
+        pathEl.classList.add("edge");
+        pathEl.setAttribute("marker-end", "url(#arw)");
+        pathEl.addEventListener("click", () => postJump({ uri: ref.sourceUri, range: ref.range }));
+        svg.append(pathEl);
+        // source dot and target dot (drawn on top of paths)
+        const dotSrc = svgEl("circle");
+        dotSrc.classList.add("edge-dot");
+        dotSrc.setAttribute("r", "3.5");
+        const dotTgt = svgEl("circle");
+        dotTgt.classList.add("edge-dot");
+        dotTgt.setAttribute("r", "3");
+        svg.append(dotSrc, dotTgt);
+        edgeInfos.push({ element: pathEl, dotSrc, dotTgt, sourceId: ref.sourceRecordId, targetId: ref.targetRecordId });
+      }
+
+      function reLayout() {
+        // Group nodes by column X
+        const byX = new Map();
+        for (const ni of nodeInfos) {
+          const arr = byX.get(ni.x) || [];
+          arr.push(ni);
+          byX.set(ni.x, arr);
+        }
+        // Stack nodes vertically within each column
+        let maxBottom = 0;
+        for (const col of byX.values()) {
+          let y = CANVAS_PAD;
+          for (const ni of col) {
+            ni.y = y;
+            ni.element.style.top = y + "px";
+            y += ni.element.offsetHeight + ROW_GAP;
+          }
+          maxBottom = Math.max(maxBottom, y - ROW_GAP);
+        }
+        const maxRight = colX - COL_GAP + CANVAS_PAD;
+        // Resize canvas
+        const W = maxRight;
+        const H = maxBottom + CANVAS_PAD;
+        canvas.style.width  = W + "px";
+        canvas.style.height = H + "px";
+        svg.style.width  = W + "px";
+        svg.style.height = H + "px";
+        // Redraw edges + dots
+        const posMap = new Map(nodeInfos.map((ni) => [ni.record.id, ni]));
+        for (const ei of edgeInfos) {
+          const src = posMap.get(ei.sourceId);
+          const tgt = posMap.get(ei.targetId);
+          if (!src || !tgt) {
+            ei.element.setAttribute("d", "");
+            ei.dotSrc.setAttribute("cx", "-999"); ei.dotTgt.setAttribute("cx", "-999");
+            continue;
+          }
+          const sx = src.x + NODE_W;
+          const sy = src.y + src.element.offsetHeight / 2;
+          const tx = tgt.x;
+          const ty = tgt.y + tgt.element.offsetHeight / 2;
+          ei.element.setAttribute("d", cubicEdgePath(sx, sy, tx, ty));
+          ei.dotSrc.setAttribute("cx", String(sx)); ei.dotSrc.setAttribute("cy", String(sy));
+          ei.dotTgt.setAttribute("cx", String(tx)); ei.dotTgt.setAttribute("cy", String(ty));
+        }
+      }
+
+      // React to node size changes (card expand/collapse)
+      const ro = new ResizeObserver(() => requestAnimationFrame(reLayout));
+      for (const ni of nodeInfos) ro.observe(ni.element);
+
+      graph.append(canvas);
+      panZoomGraph(graph, canvas);
+      view.append(graph);
+      requestAnimationFrame(reLayout);
+      return view;
+    }
+
+    function computeColumns(records, refs) {
+      const inbound = new Map(records.map((r) => [r.id, 0]));
+      for (const ref of refs) inbound.set(ref.targetRecordId, (inbound.get(ref.targetRecordId) || 0) + 1);
+      const roots = records.filter((r) => !inbound.get(r.id));
+      const depth = new Map();
+      const queue = roots.length ? roots.map((r) => [r.id, 0]) : records.map((r, i) => [r.id, i]);
+      while (queue.length) {
+        const [id, d] = queue.shift();
+        if (depth.has(id) && depth.get(id) <= d) continue;
+        depth.set(id, d);
+        for (const ref of refs.filter((e) => e.sourceRecordId === id)) queue.push([ref.targetRecordId, d + 1]);
+      }
+      const cols = new Map();
+      for (const r of records) {
+        const d = depth.get(r.id) || 0;
+        const col = cols.get(d) || [];
+        col.push(r);
+        cols.set(d, col);
+      }
+      for (const col of cols.values()) col.sort((a, b) => String(a.key).localeCompare(String(b.key)));
+      return cols;
+    }
+
+    function cubicEdgePath(sx, sy, tx, ty) {
+      const dx = Math.max(50, Math.abs(tx - sx) * 0.45);
+      return "M " + sx + " " + sy +
+             " C " + (sx + dx) + " " + sy +
+             " " + (tx - dx) + " " + ty +
+             " " + tx + " " + ty;
+    }
+
+    function panZoomGraph(graph, canvas) {
+      const s = { scale: 1, x: 0, y: 0, dragging: false, sx: 0, sy: 0 };
+      const apply = () => {
+        canvas.style.transform = "translate(" + s.x + "px," + s.y + "px) scale(" + s.scale + ")";
+      };
+      graph.addEventListener("wheel", (e) => {
+        e.preventDefault();
+        const next = Math.min(2.5, Math.max(0.3, s.scale * (e.deltaY > 0 ? 0.9 : 1.1)));
+        const r = graph.getBoundingClientRect();
+        const mx = e.clientX - r.left, my = e.clientY - r.top;
+        s.x = mx - ((mx - s.x) / s.scale) * next;
+        s.y = my - ((my - s.y) / s.scale) * next;
+        s.scale = next; apply();
+      }, { passive: false });
+      graph.addEventListener("pointerdown", (e) => {
+        if (e.target.closest(".card")) return;
+        s.dragging = true; s.sx = e.clientX - s.x; s.sy = e.clientY - s.y;
+        graph.classList.add("dragging"); graph.setPointerCapture(e.pointerId);
+      });
+      graph.addEventListener("pointermove", (e) => {
+        if (!s.dragging) return;
+        s.x = e.clientX - s.sx; s.y = e.clientY - s.sy; apply();
+      });
+      graph.addEventListener("pointerup", (e) => {
+        s.dragging = false; graph.classList.remove("dragging"); graph.releasePointerCapture(e.pointerId);
+      });
+      apply();
+    }
+
+    // ── Field & value renderers ───────────────────────────────────
+    function renderField(record, field, path) {
+      const row = el("div", "field");
+      const name = el("button", "field-name jump", field.name);
+      name.type = "button";
+      name.addEventListener("click", () => postJump({ uri: record.uri, range: field.range }));
+      const val = el("div", "field-value");
+      val.append(renderValue(record, field.value, path));
+      row.append(name, val);
+      return row;
+    }
+
+    function renderValue(record, value, path) {
+      if (!value) return document.createTextNode("");
+      if (value.kind === "block") {
+        const d = el("details", "value-card");
+        d.append(el("summary", "", value.type ? value.type + " {…}" : "{…}"));
+        const nf = el("div", "nested-fields");
+        for (const f of value.fields || []) nf.append(renderField(record, f, path.concat(f.name)));
+        d.append(nf);
+        return d;
+      }
+      if (value.kind === "array") {
+        const d = el("details", "value-card");
+        d.append(el("summary", "", "[" + (value.items?.length || 0) + "]"));
+        (value.items || []).forEach((item, i) => {
+          const row = el("div", "array-item");
+          row.append(el("div", "idx-chip", "[" + i + "]"), renderValue(record, item, path.concat("[" + i + "]")));
+          d.append(row);
+        });
+        return d;
+      }
+      if (value.kind === "spread") {
+        const d = el("details", "value-card");
+        d.append(el("summary", "", "…spread"));
+        d.append(renderValue(record, value.value, path.concat("...")));
+        return d;
+      }
+      if (value.kind === "ref") return renderRefValue(record, value, path);
+      const btn = el("button", "jump", valueText(value));
+      btn.type = "button";
+      btn.addEventListener("click", () => postJump({ uri: record.uri, range: value.range }));
+      return btn;
+    }
+
+    function renderRefValue(record, value, path) {
+      const d = el("details", "value-card");
+      const summary = el("summary", "", valueText(value));
+      summary.addEventListener("dblclick", () => postJump({ uri: record.uri, range: value.range }));
+      d.append(summary);
+      const edge = referenceForPath(record, path);
+      if (edge) {
+        const target = recordForId(edge.targetRecordId);
+        const mini = el("button", "ref-mini");
+        mini.type = "button";
+        mini.append(
+          el("span", "ref-key",   target ? target.key  : (edge.targetRecordKey || "?")),
+          el("span", "card-badge", target ? target.type : (edge.targetRecordType || ""))
+        );
+        if (edge.targetPath?.length) mini.append(el("span", "path-chip", edge.targetPath.join(".")));
+        mini.addEventListener("click", () => postJump(target || { uri: edge.targetUri, range: edge.range }));
+        d.append(mini);
+      }
+      return d;
+    }
+
+    function referenceForPath(record, path) {
+      return (model.references || []).find(
+        (e) => e.sourceRecordId === record.id && samePath(e.sourcePath || [], path)
+      );
+    }
+
+    function recordForId(id) {
+      return (model.graph?.records || []).find((r) => r.id === id)
+          || (model.recordsInFile  || []).find((r) => r.id === id);
+    }
+
+    function samePath(a, b) {
+      return a.length === b.length && a.every((v, i) => v === b[i]);
+    }
+
+    function valueText(v) {
+      if (!v) return "";
+      if (v.kind === "ref")    return (v.refKind === "typed" && v.type ? "@" + v.type + "." : "&") + v.key + (v.path?.length ? "." + v.path.join(".") : "");
+      if (v.kind === "array")  return "[" + (v.items || []).map(valueText).join(", ") + "]";
+      if (v.kind === "block")  return "{ " + (v.fields || []).map((f) => f.name + ": " + valueText(f.value)).join(", ") + " }";
+      if (v.kind === "spread") return "…" + valueText(v.value);
+      return v.text ?? v.kind;
+    }
+
+    function tableColumns(records) {
+      const names = [], seen = new Set();
+      for (const r of records)
+        for (const f of r.fields || [])
+          if (!seen.has(f.name)) { seen.add(f.name); names.push(f.name); }
+      return [
+        { kind: "key",  label: "key"  },
+        { kind: "type", label: "type" },
+        ...names.map((n) => ({ kind: "field", name: n, label: n }))
+      ];
+    }
+
+    function el(tag, cls, text) {
+      const n = document.createElement(tag);
+      if (cls)             n.className   = cls;
+      if (text !== undefined) n.textContent = text;
+      return n;
+    }
+
+    function svgEl(tag) {
+      return document.createElementNS("http://www.w3.org/2000/svg", tag);
+    }
+
+    render();
+  </script>
+</body>
+</html>`;
+}
+
+function emptyCfdInspectorModel() {
+  return {
+    recordsInFile: [],
+    references: [],
+    graph: {
+      canShow: false,
+      records: [],
+      references: [],
+      hiddenIsolatedAnchors: []
+    }
+  };
+}
+
+function randomNonce() {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let value = "";
+  for (let index = 0; index < 24; index += 1) {
+    value += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return value;
 }
 
 class CftDiagnostics {
@@ -2443,10 +3428,13 @@ module.exports = {
     CftCompletionProvider,
     CftLspSession,
     collectConfiguredSchemaPaths,
+    buildCfdInspectorHtml,
+    openCfdInspector,
     semanticTokensLegend: CFT_SEMANTIC_TOKENS_LEGEND,
     localDefinitionLocations,
     schemaEntriesFromCoflowConfigText,
     lspDefinitionLocations,
+    vscodeApi: vscode,
     vscodePosition: vscode.Position,
     vscodeRange: vscode.Range,
     vscodeUriFile: vscode.Uri.file,
