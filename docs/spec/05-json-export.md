@@ -5,7 +5,7 @@
 JSON 导出是项目数据管线的数据导出产物，供运行时加载器直接消费。格式以
 `CfdDataModel` 为输入，记录 key 以保留字段 `id` 导出，引用字段保留目标 key，由运行时加载器负责解析引用。
 
-JSON exporter 位于 `coflow-exporter-json`，与 MessagePack exporter 共用 `coflow-exporter-core` 的 schema-aware 遍历规则。
+JSON exporter 位于 `coflow-exporter-json`，实现 `coflow-api::DataExporter`，并与 MessagePack exporter 共用 `coflow-api::export` 的 schema-aware 遍历规则。
 
 ---
 

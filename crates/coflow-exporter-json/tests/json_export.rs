@@ -7,7 +7,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_api::{CftContainer, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
 use coflow_exporter_json::export_json_model;
 use serde_json::json;

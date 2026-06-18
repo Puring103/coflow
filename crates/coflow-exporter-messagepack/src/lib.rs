@@ -17,9 +17,11 @@
     )
 )]
 
-use coflow_cft::CftContainer;
-use coflow_data_model::CfdDataModel;
-use coflow_exporter_core::{export_model_with_encoder, ExportEncoder, ExportError};
+use coflow_api::{
+    export_model_with_encoder, ArtifactContentKind, ArtifactFile, ArtifactSet, CfdDataModel,
+    CftContainer, DataExporter, Diagnostic, DiagnosticSet, ExportContext, ExportEncoder,
+    ExportError, ExporterDescriptor, OutputSpec,
+};
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -67,6 +69,41 @@ pub fn export_messagepack_model(
 ) -> Result<BTreeMap<String, Vec<u8>>, MessagePackExportError> {
     export_model_with_encoder(schema, model, &mut MessagePackEncoder)
         .map_err(MessagePackExportError::from)
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct MessagePackExporter;
+
+pub const MESSAGEPACK_EXPORTER_DESCRIPTOR: ExporterDescriptor = ExporterDescriptor {
+    id: "messagepack",
+    display_name: "MessagePack",
+    table_file_extension: "msgpack",
+    content_kind: ArtifactContentKind::Bytes,
+};
+
+impl DataExporter for MessagePackExporter {
+    fn descriptor(&self) -> &'static ExporterDescriptor {
+        &MESSAGEPACK_EXPORTER_DESCRIPTOR
+    }
+
+    fn export(
+        &self,
+        ctx: ExportContext<'_>,
+        _output: &OutputSpec,
+    ) -> Result<ArtifactSet, DiagnosticSet> {
+        let tables = export_messagepack_model(ctx.schema, ctx.model).map_err(|err| {
+            DiagnosticSet::one(Diagnostic::error(
+                "MESSAGEPACK-EXPORT",
+                "EXPORT",
+                format!("failed to export MessagePack model: {err}"),
+            ))
+        })?;
+        let files = tables
+            .into_iter()
+            .map(|(table, bytes)| ArtifactFile::bytes(format!("{table}.msgpack"), bytes))
+            .collect();
+        Ok(ArtifactSet::new(files))
+    }
 }
 
 struct MessagePackEncoder;

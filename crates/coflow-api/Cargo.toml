@@ -1,12 +1,12 @@
 [package]
-name = "coflow-loader-table"
+name = "coflow-api"
 version = "0.1.0"
 edition = "2021"
-description = "Excel-like table loader for Coflow data models."
+description = "Public provider API for Coflow loaders, exporters, and code generators."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/wtlll/ScriptForGame"
 readme = "../../README.md"
-keywords = ["config", "game-data", "table"]
+keywords = ["config", "game-data", "api"]
 categories = ["config", "game-development"]
 publish = false
 
@@ -16,5 +16,6 @@ workspace = true
 [dependencies]
 coflow-cell-value = { path = "../coflow-cell-value" }
 coflow-cft = { path = "../coflow-cft" }
-coflow-checker = { path = "../coflow-checker" }
 coflow-data-model = { path = "../coflow-data-model" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }

@@ -12,21 +12,18 @@ workspace = true
 
 [workspace]
 members = [
+    "crates/coflow-api",
     "crates/coflow-cft",
     "crates/coflow-cfd",
     "crates/coflow-loader-cfd",
     "crates/coflow-data-model",
     "crates/coflow-cell-value",
     "crates/coflow-checker",
-    "crates/coflow-loader-table",
     "crates/coflow-loader-excel",
     "crates/coflow-loader-lark",
-    "crates/coflow-exporter-core",
     "crates/coflow-exporter-json",
     "crates/coflow-exporter-messagepack",
     "crates/coflow-codegen-csharp",
-    "crates/coflow-codegen-csharp-json",
-    "crates/coflow-codegen-csharp-messagepack",
     "crates/coflow-project",
     "crates/coflow-pipeline",
     "crates/coflow-lsp",
@@ -56,7 +53,14 @@ dbg_macro = "warn"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
+coflow-api = { path = "crates/coflow-api" }
 coflow-cft = { path = "crates/coflow-cft" }
+coflow-codegen-csharp = { path = "crates/coflow-codegen-csharp" }
+coflow-exporter-json = { path = "crates/coflow-exporter-json" }
+coflow-exporter-messagepack = { path = "crates/coflow-exporter-messagepack" }
+coflow-loader-cfd = { path = "crates/coflow-loader-cfd" }
+coflow-loader-excel = { path = "crates/coflow-loader-excel" }
+coflow-loader-lark = { path = "crates/coflow-loader-lark" }
 coflow-lsp = { path = "crates/coflow-lsp" }
 coflow-pipeline = { path = "crates/coflow-pipeline" }
 coflow-project = { path = "crates/coflow-project" }

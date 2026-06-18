@@ -21,7 +21,7 @@ fn export_project_data_writes_json_tables() {
 
     let outcome = export_project_data(
         &project,
-        DataFormat::Json,
+        "json",
         ExportOptions {
             out_dir: Some(out_dir.as_path()),
         },
@@ -31,7 +31,8 @@ fn export_project_data_writes_json_tables() {
     let PipelineOutcome::Success(report) = outcome else {
         panic!("expected export success");
     };
-    assert_eq!(report.format, DataFormat::Json);
+    assert_eq!(report.exporter_id, "json");
+    assert_eq!(report.display_name, "JSON");
     assert_eq!(report.dir, out_dir);
     assert!(out_dir.join("Item.json").exists());
     assert!(out_dir.join("DropTable.json").exists());
@@ -56,13 +57,13 @@ fn export_project_data_removes_stale_generated_data_files() {
     std::fs::write(out_dir.join("RemovedTable.msgpack"), []).expect("write stale msgpack");
     std::fs::write(out_dir.join("README.txt"), "remove").expect("write sidecar");
 
-    let outcome = export_project_data(&project, DataFormat::Json, ExportOptions::default())
-        .expect("export data");
+    let outcome =
+        export_project_data(&project, "json", ExportOptions::default()).expect("export data");
 
     let PipelineOutcome::Success(report) = outcome else {
         panic!("expected export success");
     };
-    assert_eq!(report.format, DataFormat::Json);
+    assert_eq!(report.exporter_id, "json");
     assert!(out_dir.join("Item.json").exists());
     assert!(!out_dir.join("RemovedTable.json").exists());
     assert!(!out_dir.join("RemovedTable.msgpack").exists());
@@ -87,8 +88,8 @@ fn export_project_data_takes_over_existing_generated_data_dir() {
     std::fs::create_dir_all(&out_dir).expect("create output dir");
     std::fs::write(out_dir.join("manual.json"), "{}").expect("write existing json");
 
-    let outcome = export_project_data(&project, DataFormat::Json, ExportOptions::default())
-        .expect("export data");
+    let outcome =
+        export_project_data(&project, "json", ExportOptions::default()).expect("export data");
 
     assert!(matches!(outcome, PipelineOutcome::Success(_)));
     assert!(!out_dir.join("manual.json").exists());
@@ -105,7 +106,7 @@ fn export_project_data_requires_matching_configured_format() {
         },
     );
 
-    let outcome = export_project_data(&project, DataFormat::Messagepack, ExportOptions::default())
+    let outcome = export_project_data(&project, "messagepack", ExportOptions::default())
         .expect("messagepack export diagnostics");
 
     assert_diagnostic_message_contains(
@@ -121,7 +122,7 @@ fn export_project_data_requires_excel_sources() {
     write_project_with_missing_excel_source(&root, false);
     let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
 
-    let outcome = export_project_data(&project, DataFormat::Json, ExportOptions { out_dir: None })
+    let outcome = export_project_data(&project, "json", ExportOptions { out_dir: None })
         .expect("missing source diagnostics");
 
     assert_diagnostic_message_contains(
@@ -146,7 +147,7 @@ fn export_project_data_rejects_project_root_output_dir_override() {
 
     let outcome = export_project_data(
         &project,
-        DataFormat::Json,
+        "json",
         ExportOptions {
             out_dir: Some(root.as_path()),
         },
@@ -173,10 +174,26 @@ fn export_project_data_rejects_output_dir_containing_schema() {
     .expect("write project");
     let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
 
-    let outcome = export_project_data(&project, DataFormat::Json, ExportOptions::default())
+    let outcome = export_project_data(&project, "json", ExportOptions::default())
         .expect("unsafe schema output should be reported as diagnostics");
 
     assert_diagnostic_message_contains(outcome, "schema path");
     assert!(root.join("schema").join("main.cft").exists());
     assert!(!root.join("schema").join("Item.json").exists());
+}
+
+#[test]
+fn export_project_data_rejects_unregistered_exporter_id() {
+    let (project, _cleanup) = project_with_unvalidated_outputs(
+        "coflow-pipeline-export-unregistered-provider",
+        OutputsConfig {
+            data: Some(output_config("csv", "generated/data", None)),
+            code: None,
+        },
+    );
+
+    let outcome = export_project_data(&project, "csv", ExportOptions::default())
+        .expect("unknown exporter should be reported as diagnostics");
+
+    assert_diagnostic_message_contains(outcome, "no data exporter registered for `csv`");
 }

@@ -17,7 +17,8 @@ use clap::{Args, Parser, Subcommand};
 use coflow_cft::CftDiagnostic;
 use coflow_pipeline::{
     build_project, check_project, export_project_data, generate_project_code, BuildOptions,
-    CodegenOptions, CodegenTarget, DataFormat, ExportOptions, PipelineOutcome,
+    CodegenOptions, ExportOptions, PipelineOutcome, CSHARP_CODEGEN_ID, JSON_EXPORTER_ID,
+    MESSAGEPACK_EXPORTER_ID,
 };
 use coflow_project::{compile_schema_project, dedupe_cft_diagnostics, DiagnosticJson, Project};
 use serde::Serialize;
@@ -297,7 +298,8 @@ fn run_lsp(args: &LspArgs) -> Result<bool, String> {
 
 fn project_check(args: &ProjectCheckArgs) -> Result<bool, String> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    match check_project(&project)
+    let registry = coflow::builtin_registry().map_err(|err| err.to_string())?;
+    match check_project(&project, &registry)
         .map_err(|message| relativize_message_paths(&message, &project.root_dir))?
     {
         PipelineOutcome::Success(_) => {
@@ -320,8 +322,10 @@ fn project_check(args: &ProjectCheckArgs) -> Result<bool, String> {
 
 fn project_build(args: &BuildArgs) -> Result<bool, String> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
+    let registry = coflow::builtin_registry().map_err(|err| err.to_string())?;
     match build_project(
         &project,
+        &registry,
         BuildOptions {
             data_out_dir: args.data_out_dir.as_deref(),
             code_out_dir: args.code_out_dir.as_deref(),
@@ -333,13 +337,13 @@ fn project_build(args: &BuildArgs) -> Result<bool, String> {
         PipelineOutcome::Success(report) => {
             println!(
                 "{} data exported to {}",
-                report.data.format.display_name(),
+                report.data.display_name,
                 project_path(&project, &report.data.dir)
             );
             if let Some(code) = report.code {
                 println!(
                     "{} code generated to {}",
-                    code.target.display_name(),
+                    code.display_name,
                     project_path(&project, &code.dir)
                 );
             }
@@ -358,9 +362,11 @@ fn project_build(args: &BuildArgs) -> Result<bool, String> {
 
 fn export_json(args: &ExportJsonArgs) -> Result<bool, String> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
+    let registry = coflow::builtin_registry().map_err(|err| err.to_string())?;
     match export_project_data(
         &project,
-        DataFormat::Json,
+        &registry,
+        JSON_EXPORTER_ID,
         ExportOptions {
             out_dir: args.out_dir.as_deref(),
         },
@@ -383,9 +389,11 @@ fn export_json(args: &ExportJsonArgs) -> Result<bool, String> {
 
 fn export_messagepack(args: &ExportMessagePackArgs) -> Result<bool, String> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
+    let registry = coflow::builtin_registry().map_err(|err| err.to_string())?;
     match export_project_data(
         &project,
-        DataFormat::Messagepack,
+        &registry,
+        MESSAGEPACK_EXPORTER_ID,
         ExportOptions {
             out_dir: args.out_dir.as_deref(),
         },
@@ -408,9 +416,11 @@ fn export_messagepack(args: &ExportMessagePackArgs) -> Result<bool, String> {
 
 fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, String> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
+    let registry = coflow::builtin_registry().map_err(|err| err.to_string())?;
     match generate_project_code(
         &project,
-        CodegenTarget::Csharp,
+        &registry,
+        CSHARP_CODEGEN_ID,
         CodegenOptions {
             out_dir: args.out_dir.as_deref(),
             namespace: args.namespace.as_deref(),

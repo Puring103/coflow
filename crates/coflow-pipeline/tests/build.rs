@@ -13,7 +13,7 @@ mod common;
 use common::*;
 
 #[test]
-fn build_project_reports_missing_data_output_and_wrong_code_output_type() {
+fn build_project_reports_missing_data_output_and_unregistered_code_output_type() {
     let (missing_data, _missing_data_cleanup) = schema_only_project_with_outputs(
         "coflow-pipeline-build-missing-data-output",
         OutputsConfig {
@@ -38,7 +38,7 @@ fn build_project_reports_missing_data_output_and_wrong_code_output_type() {
     );
     let outcome =
         build_project(&wrong_code_type, BuildOptions::default()).expect("wrong code diagnostics");
-    assert_diagnostic_message_contains(outcome, "outputs.code.type is `java`; expected `csharp`");
+    assert_diagnostic_message_contains(outcome, "no code generator registered for `java`");
 }
 
 #[test]
@@ -63,7 +63,8 @@ fn build_project_exports_data_and_code() {
     let PipelineOutcome::Success(report) = outcome else {
         panic!("expected build success");
     };
-    assert_eq!(report.data.format, DataFormat::Json);
+    assert_eq!(report.data.exporter_id, "json");
+    assert_eq!(report.data.display_name, "JSON");
     assert_eq!(report.data.dir, data_dir);
     assert!(report.code.is_some());
     assert!(data_dir.join("Item.json").exists());

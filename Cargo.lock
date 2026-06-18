@@ -254,11 +254,29 @@ name = "coflow"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "coflow-api",
  "coflow-cft",
+ "coflow-codegen-csharp",
+ "coflow-exporter-json",
+ "coflow-exporter-messagepack",
+ "coflow-loader-cfd",
+ "coflow-loader-excel",
+ "coflow-loader-lark",
  "coflow-lsp",
  "coflow-pipeline",
  "coflow-project",
  "rust_xlsxwriter",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "coflow-api"
+version = "0.1.0"
+dependencies = [
+ "coflow-cell-value",
+ "coflow-cft",
+ "coflow-data-model",
  "serde",
  "serde_json",
 ]
@@ -300,26 +318,12 @@ dependencies = [
 name = "coflow-codegen-csharp"
 version = "0.1.0"
 dependencies = [
+ "coflow-api",
  "coflow-cft",
  "serde",
+ "serde_json",
  "tera",
  "unicode-ident",
-]
-
-[[package]]
-name = "coflow-codegen-csharp-json"
-version = "0.1.0"
-dependencies = [
- "coflow-cft",
- "coflow-codegen-csharp",
-]
-
-[[package]]
-name = "coflow-codegen-csharp-messagepack"
-version = "0.1.0"
-dependencies = [
- "coflow-cft",
- "coflow-codegen-csharp",
 ]
 
 [[package]]
@@ -330,20 +334,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "coflow-exporter-core"
-version = "0.1.0"
-dependencies = [
- "coflow-cft",
- "coflow-data-model",
-]
-
-[[package]]
 name = "coflow-exporter-json"
 version = "0.1.0"
 dependencies = [
- "coflow-cft",
+ "coflow-api",
  "coflow-data-model",
- "coflow-exporter-core",
  "serde_json",
 ]
 
@@ -351,9 +346,8 @@ dependencies = [
 name = "coflow-exporter-messagepack"
 version = "0.1.0"
 dependencies = [
- "coflow-cft",
+ "coflow-api",
  "coflow-data-model",
- "coflow-exporter-core",
  "rmp",
  "rmpv",
 ]
@@ -362,6 +356,7 @@ dependencies = [
 name = "coflow-loader-cfd"
 version = "0.1.0"
 dependencies = [
+ "coflow-api",
  "coflow-cft",
  "coflow-data-model",
 ]
@@ -371,12 +366,12 @@ name = "coflow-loader-excel"
 version = "0.1.0"
 dependencies = [
  "calamine",
- "coflow-cell-value",
+ "coflow-api",
  "coflow-cft",
  "coflow-checker",
  "coflow-data-model",
- "coflow-loader-table",
  "rust_xlsxwriter",
+ "serde_json",
  "zip",
 ]
 
@@ -384,21 +379,11 @@ dependencies = [
 name = "coflow-loader-lark"
 version = "0.1.0"
 dependencies = [
- "coflow-loader-table",
+ "coflow-api",
  "percent-encoding",
  "serde",
  "serde_json",
  "ureq",
-]
-
-[[package]]
-name = "coflow-loader-table"
-version = "0.1.0"
-dependencies = [
- "coflow-cell-value",
- "coflow-cft",
- "coflow-checker",
- "coflow-data-model",
 ]
 
 [[package]]
@@ -415,17 +400,16 @@ dependencies = [
 name = "coflow-pipeline"
 version = "0.1.0"
 dependencies = [
+ "coflow-api",
  "coflow-cft",
  "coflow-checker",
- "coflow-codegen-csharp-json",
- "coflow-codegen-csharp-messagepack",
+ "coflow-codegen-csharp",
  "coflow-data-model",
  "coflow-exporter-json",
  "coflow-exporter-messagepack",
  "coflow-loader-cfd",
  "coflow-loader-excel",
  "coflow-loader-lark",
- "coflow-loader-table",
  "coflow-project",
  "rust_xlsxwriter",
  "serde",
@@ -438,6 +422,7 @@ version = "0.1.0"
 dependencies = [
  "coflow-cft",
  "serde",
+ "serde_json",
  "serde_yaml",
 ]
 

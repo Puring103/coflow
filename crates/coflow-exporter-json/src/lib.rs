@@ -17,9 +17,11 @@
     )
 )]
 
-use coflow_cft::CftContainer;
-use coflow_data_model::CfdDataModel;
-use coflow_exporter_core::{export_model_with_encoder, ExportEncoder, ExportError};
+use coflow_api::{
+    export_model_with_encoder, ArtifactContentKind, ArtifactFile, ArtifactSet, CfdDataModel,
+    CftContainer, DataExporter, Diagnostic, DiagnosticSet, ExportContext, ExportEncoder,
+    ExportError, ExporterDescriptor, OutputSpec,
+};
 use serde_json::{Map, Number, Value};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -67,6 +69,41 @@ pub fn export_json_model(
     model: &CfdDataModel,
 ) -> Result<BTreeMap<String, Value>, JsonExportError> {
     export_model_with_encoder(schema, model, &mut JsonEncoder).map_err(JsonExportError::from)
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct JsonExporter;
+
+pub const JSON_EXPORTER_DESCRIPTOR: ExporterDescriptor = ExporterDescriptor {
+    id: "json",
+    display_name: "JSON",
+    table_file_extension: "json",
+    content_kind: ArtifactContentKind::Json,
+};
+
+impl DataExporter for JsonExporter {
+    fn descriptor(&self) -> &'static ExporterDescriptor {
+        &JSON_EXPORTER_DESCRIPTOR
+    }
+
+    fn export(
+        &self,
+        ctx: ExportContext<'_>,
+        _output: &OutputSpec,
+    ) -> Result<ArtifactSet, DiagnosticSet> {
+        let tables = export_json_model(ctx.schema, ctx.model).map_err(|err| {
+            DiagnosticSet::one(Diagnostic::error(
+                "JSON-EXPORT",
+                "EXPORT",
+                format!("failed to export JSON model: {err}"),
+            ))
+        })?;
+        let files = tables
+            .into_iter()
+            .map(|(table, value)| ArtifactFile::json(format!("{table}.json"), value))
+            .collect();
+        Ok(ArtifactSet::new(files))
+    }
 }
 
 struct JsonEncoder;

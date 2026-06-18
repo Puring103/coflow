@@ -4,9 +4,9 @@
 
 `coflow-loader-excel` 是低层加载 crate。它接收已经编译完成的 `CftContainer`，以及已经解析出的 `ExcelSource` 值，将 Excel 数据按 CFT schema 加载为结构化数据模型。加载过程完全 schema-guided，所有类型解析、单元格值解析和跨表引用解析均依赖 CFT 类型定义。
 
-Excel 的表格语义由 `coflow-loader-table` 承担。Excel loader 只负责把 `.xlsx` 单元格读取并转换为文本表格，再把表头、key、columns、`@expand`、record 和诊断映射交给共享 table loader。飞书电子表格等远端表格源也使用同一套 table loader。
+Excel 的表格语义由 `coflow-api::table` 承担。Excel loader 只负责把 `.xlsx` 单元格读取并转换为文本表格，再把表头、key、columns、`@expand`、record 和诊断映射交给共享 table loader。飞书电子表格等远端表格源也使用同一套 table loader。
 
-`coflow-loader-excel` 不发现项目文件，不解析 `coflow.yaml`，也不负责 CLI 编排。项目配置、schema 发现、Excel source 定义和导出/codegen 调用由项目加载与 CLI 层负责。
+`coflow-loader-excel` 不发现项目文件，不解析 `coflow.yaml`，也不负责 CLI 编排。它实现 `coflow-api::DataLoader`，由 pipeline 通过 `ProviderRegistry` 调用。项目配置、schema 发现、Excel source 定义和导出/codegen 调用由项目加载与 CLI 层负责。
 
 ---
 
