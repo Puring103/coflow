@@ -120,6 +120,7 @@ function activate(context) {
       new CftSemanticTokensProvider(diagnostics),
       CFT_SEMANTIC_TOKENS_LEGEND
     ),
+    vscode.window.onDidChangeActiveTextEditor((editor) => inspectorController.followEditor(editor)),
     registerCfdInspectorCommand(inspectorController),
     inspectorController,
     diagnostics
@@ -410,7 +411,7 @@ class CfdInspectorController {
   constructor(diagnostics, options = {}) {
     this.diagnostics = diagnostics;
     this.refreshDebounceMs = options.refreshDebounceMs ?? 120;
-    this.panels = new Map();
+    this.session = undefined;
   }
 
   async open(document) {
@@ -419,14 +420,11 @@ class CfdInspectorController {
       return undefined;
     }
 
-    const key = document.uri.toString();
     const sourceViewColumn = sourceViewColumnForDocument(document);
-    const existing = this.panels.get(key);
-    if (existing) {
-      existing.panel.reveal(vscode.ViewColumn.Beside);
-      existing.sourceViewColumn = sourceViewColumn;
-      existing.refresh();
-      return existing.panel;
+    if (this.session) {
+      this.session.panel.reveal(vscode.ViewColumn.Beside, true);
+      await this.session.showDocument(document, sourceViewColumn);
+      return this.session.panel;
     }
 
     const session = new CfdInspectorPanelSession(
@@ -434,18 +432,29 @@ class CfdInspectorController {
       this.diagnostics,
       this.refreshDebounceMs,
       sourceViewColumn,
-      () => this.panels.delete(key)
+      () => {
+        this.session = undefined;
+      }
     );
-    this.panels.set(key, session);
+    this.session = session;
     await session.refresh();
     return session.panel;
   }
 
-  dispose() {
-    for (const session of this.panels.values()) {
-      session.dispose();
+  followEditor(editor) {
+    const document = editor?.document;
+    if (!this.session || !isCfdDocument(document)) {
+      return undefined;
     }
-    this.panels.clear();
+    this.session.panel.reveal(vscode.ViewColumn.Beside, true);
+    return this.session.showDocument(document, editor.viewColumn || vscode.ViewColumn.One);
+  }
+
+  dispose() {
+    if (this.session) {
+      this.session.dispose();
+    }
+    this.session = undefined;
   }
 }
 
@@ -463,7 +472,7 @@ class CfdInspectorPanelSession {
     this.panel = vscode.window.createWebviewPanel(
       CFD_INSPECTOR_VIEW_TYPE,
       `CFD Inspector: ${path.basename(document.uri.fsPath)}`,
-      vscode.ViewColumn.Beside,
+      { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
       {
         enableScripts: true,
         retainContextWhenHidden: true
@@ -478,13 +487,22 @@ class CfdInspectorPanelSession {
         }
         return undefined;
       }),
-      vscode.workspace.onDidCloseTextDocument((closedDocument) => {
-        if (closedDocument.uri.toString() === this.document.uri.toString()) {
-          this.dispose();
-        }
-      }),
       this.panel.onDidDispose(() => this.dispose(false))
     );
+  }
+
+  async showDocument(document, sourceViewColumn = sourceViewColumnForDocument(document)) {
+    if (this.disposed || !isCfdDocument(document)) {
+      return undefined;
+    }
+    const previousUri = this.document.uri.toString();
+    this.document = document;
+    this.sourceViewColumn = sourceViewColumn;
+    this.panel.title = `CFD Inspector: ${path.basename(document.uri.fsPath)}`;
+    if (previousUri === document.uri.toString()) {
+      return this.refresh();
+    }
+    return this.refresh();
   }
 
   async refresh() {
@@ -576,6 +594,153 @@ async function jumpToCfdInspectorLocation(message, viewColumn = vscode.ViewColum
     selection: range,
     preview: false
   });
+}
+
+function computeGraphColumns(records, refs) {
+  const recordById = new Map(records.map((record) => [record.id, record]));
+  const graphRefs = refs.filter((ref) =>
+    recordById.has(ref.sourceRecordId) && recordById.has(ref.targetRecordId)
+  );
+  const inbound = new Map(records.map((record) => [record.id, 0]));
+  for (const ref of graphRefs) {
+    inbound.set(ref.targetRecordId, (inbound.get(ref.targetRecordId) || 0) + 1);
+  }
+
+  const roots = records.filter((record) => !inbound.get(record.id));
+  const depth = new Map();
+  const queue = roots.length
+    ? roots.map((record) => [record.id, 0])
+    : records.map((record, index) => [record.id, index]);
+  while (queue.length) {
+    const [id, currentDepth] = queue.shift();
+    if (!recordById.has(id)) {
+      continue;
+    }
+    if (depth.has(id) && depth.get(id) <= currentDepth) {
+      continue;
+    }
+    depth.set(id, currentDepth);
+    for (const ref of graphRefs) {
+      if (ref.sourceRecordId === id) {
+        queue.push([ref.targetRecordId, currentDepth + 1]);
+      }
+    }
+  }
+
+  const cols = new Map();
+  for (const record of records) {
+    const recordDepth = depth.get(record.id) || 0;
+    const col = cols.get(recordDepth) || [];
+    col.push(record);
+    cols.set(recordDepth, col);
+  }
+
+  for (const col of cols.values()) {
+    col.sort(compareGraphRecords);
+  }
+
+  const sortedDepths = [...cols.keys()].sort((left, right) => left - right);
+  let positions = graphColumnPositions(cols);
+  for (const recordDepth of sortedDepths) {
+    sortGraphColumn(cols.get(recordDepth), graphRefs, positions, recordDepth);
+    positions = graphColumnPositions(cols);
+  }
+
+  return cols;
+}
+
+function sortGraphColumn(records, refs, positions, depth) {
+  if (!records || records.length < 2) {
+    return;
+  }
+  records.sort((left, right) => {
+    const leftScore = graphNeighborAverage(left.id, refs, positions, depth);
+    const rightScore = graphNeighborAverage(right.id, refs, positions, depth);
+    if (leftScore !== undefined && rightScore !== undefined && leftScore !== rightScore) {
+      return leftScore - rightScore;
+    }
+    if (leftScore !== undefined && rightScore === undefined) {
+      return -1;
+    }
+    if (leftScore === undefined && rightScore !== undefined) {
+      return 1;
+    }
+    return compareGraphRecords(left, right);
+  });
+}
+
+function graphNeighborAverage(id, refs, positions, depth) {
+  let total = 0;
+  let count = 0;
+  for (const ref of refs) {
+    const neighborId = ref.targetRecordId === id ? ref.sourceRecordId : undefined;
+    if (!neighborId) {
+      continue;
+    }
+    const neighbor = positions.get(neighborId);
+    if (!neighbor) {
+      continue;
+    }
+    if (neighbor.depth >= depth) {
+      continue;
+    }
+    total += neighbor.index;
+    count += 1;
+  }
+  return count > 0 ? total / count : undefined;
+}
+
+function graphColumnPositions(cols) {
+  const positions = new Map();
+  for (const [depth, records] of cols.entries()) {
+    records.forEach((record, index) => {
+      positions.set(record.id, { depth, index });
+    });
+  }
+  return positions;
+}
+
+function compareGraphRecords(left, right) {
+  return String(left.key || left.id).localeCompare(String(right.key || right.id));
+}
+
+function graphPathKey(path) {
+  return (path || []).join(".");
+}
+
+function bestGraphAnchor(anchors, path, isVisible = () => true) {
+  for (let end = (path || []).length; end > 0; end -= 1) {
+    const candidate = path.slice(0, end);
+    const element = anchors.get(graphPathKey(candidate));
+    if (element && isVisible(element)) {
+      return { element, path: candidate };
+    }
+  }
+  return undefined;
+}
+
+function graphAnchorLocalBox(nodeRect, anchorRect, nodeWidth, nodeHeight) {
+  const scaleX = nodeRect.width ? nodeWidth / nodeRect.width : 1;
+  const scaleY = nodeRect.height ? nodeHeight / nodeRect.height : 1;
+  return {
+    left: (anchorRect.left - nodeRect.left) * scaleX,
+    top: (anchorRect.top - nodeRect.top) * scaleY,
+    width: anchorRect.width * scaleX,
+    height: anchorRect.height * scaleY
+  };
+}
+
+function cfdInspectorGraphLayoutScript() {
+  return [
+    computeGraphColumns,
+    sortGraphColumn,
+    graphNeighborAverage,
+    graphColumnPositions,
+    compareGraphRecords,
+    graphPathKey,
+    bestGraphAnchor,
+    graphAnchorLocalBox
+  ].map((fn) => fn.toString()).join("\n\n");
 }
 
 function buildCfdInspectorHtml(model) {
@@ -731,8 +896,8 @@ function buildCfdInspectorHtml(model) {
     /* ── Field rows (inside card-body and nested values) ── */
     .field {
       display: grid;
-      grid-template-columns: minmax(52px, 36%) 1fr;
-      gap: 8px;
+      grid-template-columns: minmax(44px, 30%) minmax(0, 1fr);
+      gap: 6px;
       align-items: baseline;
     }
     .field-name {
@@ -743,7 +908,20 @@ function buildCfdInspectorHtml(model) {
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .field-value { font-size: 12px; color: var(--text); overflow-wrap: anywhere; }
+    .field-value { min-width: 0; font-size: 12px; color: var(--text); overflow-wrap: anywhere; }
+    .field-fold { display: block; }
+    .field-fold-summary {
+      cursor: pointer;
+      list-style: none;
+      display: grid;
+      grid-template-columns: 10px minmax(44px, 30%) minmax(0, 1fr);
+      gap: 4px;
+      align-items: baseline;
+    }
+    .field-fold-summary::before { content: "▶"; font-size: 8px; color: var(--muted); }
+    .field-fold[open] > .field-fold-summary::before { content: "▼"; }
+    .field-fold-label { color: var(--muted); }
+    .field-fold-body { margin-top: 4px; padding-left: 4px; border-left: 1px solid var(--border); display: grid; gap: 4px; }
 
     /* ── Inline jump button ── */
     .jump {
@@ -757,7 +935,7 @@ function buildCfdInspectorHtml(model) {
     .value-card {
       border: 1px solid var(--border);
       border-radius: 4px;
-      padding: 3px 7px;
+      padding: 3px 4px;
       font-size: 12px;
     }
     .value-card > summary {
@@ -767,11 +945,23 @@ function buildCfdInspectorHtml(model) {
     }
     .value-card > summary::before         { content: "▶"; font-size: 8px; }
     details[open] > summary::before       { content: "▼"; }
-    .nested-fields { margin-top: 6px; display: grid; gap: 5px; }
+    .nested-fields { margin-top: 4px; padding-left: 4px; border-left: 1px solid var(--border); display: grid; gap: 4px; }
     .array-item {
-      display: grid; grid-template-columns: 34px 1fr;
-      gap: 7px; margin-top: 4px;
+      display: grid; grid-template-columns: 22px minmax(0, 1fr);
+      gap: 4px; margin-top: 4px;
     }
+    .array-item-fold { display: block; margin-top: 4px; }
+    .array-item-summary {
+      cursor: pointer;
+      list-style: none;
+      display: grid;
+      grid-template-columns: 10px 22px minmax(0, 1fr);
+      gap: 4px;
+      align-items: baseline;
+    }
+    .array-item-summary::before { content: "▶"; font-size: 8px; color: var(--muted); }
+    .array-item-fold[open] > .array-item-summary::before { content: "▼"; }
+    .array-item-body { margin-top: 4px; padding-left: 4px; border-left: 1px solid var(--border); display: grid; gap: 4px; }
     .idx-chip  { color: var(--muted); font-size: 11px; }
     .path-chip { color: var(--accent); font-size: 11px; }
 
@@ -864,6 +1054,8 @@ function buildCfdInspectorHtml(model) {
     let mode = "table";
     const root = document.getElementById("cfd-app");
 
+    ${cfdInspectorGraphLayoutScript()}
+
     window.addEventListener("message", (event) => {
       if (event.data?.type === "model") { model = event.data.model; render(); }
     });
@@ -918,6 +1110,7 @@ function buildCfdInspectorHtml(model) {
 
     function buildCard(record, opts) {
       const onToggle = opts?.onToggle;
+      const anchors = opts?.anchors;
       let expanded = false;
 
       const card = el("div", "card");
@@ -959,7 +1152,7 @@ function buildCfdInspectorHtml(model) {
       if (allFields.length) {
         body = el("div", "card-body");
         body.hidden = true;
-        for (const f of allFields) body.append(renderField(record, f, [f.name]));
+        for (const f of allFields) body.append(renderField(record, f, [f.name], anchors));
         card.append(body);
       }
 
@@ -1036,7 +1229,7 @@ function buildCfdInspectorHtml(model) {
       const graphRecords = model.graph?.records || [];
 
       // Depth-based column layout
-      const colMap = computeColumns(graphRecords, graphRefs);
+      const colMap = computeGraphColumns(graphRecords, graphRefs);
       const nodeInfos = [];  // { element, record, depth, x, y }
       const edgeInfos = [];  // { element (path), sourceId, targetId }
 
@@ -1066,14 +1259,16 @@ function buildCfdInspectorHtml(model) {
       for (const [, records] of [...colMap.entries()].sort((a, b) => a[0] - b[0])) {
         for (const record of records) {
           const nodeEl = el("div", "node");
+          const fieldAnchors = new Map();
           nodeEl.style.left = colX + "px";
           nodeEl.style.top = "0px";
           nodeEl.append(buildCard(record, {
+            anchors: fieldAnchors,
             compact: true,
             onToggle: () => requestAnimationFrame(reLayout)
           }));
           canvas.append(nodeEl);
-          nodeInfos.push({ element: nodeEl, record, x: colX, y: 0 });
+          nodeInfos.push({ element: nodeEl, fieldAnchors, record, x: colX, y: 0 });
         }
         colX += NODE_W + COL_GAP;
       }
@@ -1093,7 +1288,15 @@ function buildCfdInspectorHtml(model) {
         dotTgt.classList.add("edge-dot");
         dotTgt.setAttribute("r", "3");
         svg.append(dotSrc, dotTgt);
-        edgeInfos.push({ element: pathEl, dotSrc, dotTgt, sourceId: ref.sourceRecordId, targetId: ref.targetRecordId });
+        edgeInfos.push({
+          element: pathEl,
+          dotSrc,
+          dotTgt,
+          sourceId: ref.sourceRecordId,
+          sourcePath: ref.sourcePath || [],
+          targetId: ref.targetRecordId,
+          targetPath: ref.targetPath || []
+        });
       }
 
       function reLayout() {
@@ -1133,13 +1336,11 @@ function buildCfdInspectorHtml(model) {
             ei.dotSrc.setAttribute("cx", "-999"); ei.dotTgt.setAttribute("cx", "-999");
             continue;
           }
-          const sx = src.x + NODE_W;
-          const sy = src.y + src.element.offsetHeight / 2;
-          const tx = tgt.x;
-          const ty = tgt.y + tgt.element.offsetHeight / 2;
-          ei.element.setAttribute("d", cubicEdgePath(sx, sy, tx, ty));
-          ei.dotSrc.setAttribute("cx", String(sx)); ei.dotSrc.setAttribute("cy", String(sy));
-          ei.dotTgt.setAttribute("cx", String(tx)); ei.dotTgt.setAttribute("cy", String(ty));
+          const sourceAnchor = graphAnchorPoint(src, ei.sourcePath, "source");
+          const targetAnchor = graphAnchorPoint(tgt, ei.targetPath, "target");
+          ei.element.setAttribute("d", cubicEdgePath(sourceAnchor.x, sourceAnchor.y, targetAnchor.x, targetAnchor.y));
+          ei.dotSrc.setAttribute("cx", String(sourceAnchor.x)); ei.dotSrc.setAttribute("cy", String(sourceAnchor.y));
+          ei.dotTgt.setAttribute("cx", String(targetAnchor.x)); ei.dotTgt.setAttribute("cy", String(targetAnchor.y));
         }
       }
 
@@ -1152,29 +1353,6 @@ function buildCfdInspectorHtml(model) {
       view.append(graph);
       requestAnimationFrame(reLayout);
       return view;
-    }
-
-    function computeColumns(records, refs) {
-      const inbound = new Map(records.map((r) => [r.id, 0]));
-      for (const ref of refs) inbound.set(ref.targetRecordId, (inbound.get(ref.targetRecordId) || 0) + 1);
-      const roots = records.filter((r) => !inbound.get(r.id));
-      const depth = new Map();
-      const queue = roots.length ? roots.map((r) => [r.id, 0]) : records.map((r, i) => [r.id, i]);
-      while (queue.length) {
-        const [id, d] = queue.shift();
-        if (depth.has(id) && depth.get(id) <= d) continue;
-        depth.set(id, d);
-        for (const ref of refs.filter((e) => e.sourceRecordId === id)) queue.push([ref.targetRecordId, d + 1]);
-      }
-      const cols = new Map();
-      for (const r of records) {
-        const d = depth.get(r.id) || 0;
-        const col = cols.get(d) || [];
-        col.push(r);
-        cols.set(d, col);
-      }
-      for (const col of cols.values()) col.sort((a, b) => String(a.key).localeCompare(String(b.key)));
-      return cols;
     }
 
     function cubicEdgePath(sx, sy, tx, ty) {
@@ -1215,24 +1393,119 @@ function buildCfdInspectorHtml(model) {
     }
 
     // ── Field & value renderers ───────────────────────────────────
-    function renderField(record, field, path) {
+    function graphAnchorPoint(nodeInfo, path, side) {
+      const anchor = bestGraphAnchor(nodeInfo.fieldAnchors, path, isGraphAnchorVisible)?.element;
+      if (!anchor) {
+        return {
+          x: side === "source" ? nodeInfo.x + NODE_W : nodeInfo.x,
+          y: nodeInfo.y + nodeInfo.element.offsetHeight / 2
+        };
+      }
+      const box = graphAnchorLocalBox(
+        nodeInfo.element.getBoundingClientRect(),
+        anchor.getBoundingClientRect(),
+        nodeInfo.element.offsetWidth || NODE_W,
+        nodeInfo.element.offsetHeight
+      );
+      return {
+        x: nodeInfo.x + (side === "source" ? box.left + box.width : box.left),
+        y: nodeInfo.y + box.top + box.height / 2
+      };
+    }
+
+    function isGraphAnchorVisible(anchor) {
+      return anchor.offsetParent !== null;
+    }
+
+    function renderField(record, field, path, anchors) {
+      if (isFoldableFieldValue(field.value)) {
+        return renderFoldableField(record, field, path, anchors);
+      }
       const row = el("div", "field");
+      anchors?.set(graphPathKey(path), row);
       const name = el("button", "field-name jump", field.name);
       name.type = "button";
       name.addEventListener("click", () => postJump({ uri: record.uri, range: field.range }));
       const val = el("div", "field-value");
-      val.append(renderValue(record, field.value, path));
+      val.append(renderValue(record, field.value, path, anchors));
       row.append(name, val);
       return row;
     }
 
-    function renderValue(record, value, path) {
+    function renderFoldableField(record, field, path, anchors) {
+      const details = el("details", "field-fold");
+      const summary = el("summary", "field-fold-summary");
+      anchors?.set(graphPathKey(path), summary);
+      const name = el("button", "field-name jump", field.name);
+      name.type = "button";
+      name.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        postJump({ uri: record.uri, range: field.range });
+      });
+      summary.append(name, el("span", "field-fold-label", foldableValueLabel(field.value)));
+      details.append(summary);
+      details.append(renderFoldableBody(record, field.value, path, anchors, "field-fold-body"));
+      return details;
+    }
+
+    function renderFoldableBody(record, value, path, anchors, className) {
+      const body = el("div", className);
+      if (!value) return body;
+      if (value.kind === "block") {
+        for (const f of value.fields || []) body.append(renderField(record, f, path.concat(f.name), anchors));
+        return body;
+      }
+      if (value.kind === "array") {
+        (value.items || []).forEach((item, i) => {
+          const itemPath = path.concat("[" + i + "]");
+          if (isFoldableFieldValue(item)) {
+            body.append(renderFoldableArrayItem(record, item, itemPath, i, anchors));
+          } else {
+            const row = el("div", "array-item");
+            row.append(el("div", "idx-chip", "[" + i + "]"), renderValue(record, item, itemPath, anchors));
+            body.append(row);
+          }
+        });
+        return body;
+      }
+      if (value.kind === "spread") {
+        body.append(renderValue(record, value.value, path.concat("..."), anchors));
+        return body;
+      }
+      body.append(renderValue(record, value, path, anchors));
+      return body;
+    }
+
+    function renderFoldableArrayItem(record, value, path, index, anchors) {
+      const details = el("details", "array-item-fold");
+      const summary = el("summary", "array-item-summary");
+      anchors?.set(graphPathKey(path), summary);
+      summary.append(el("span", "idx-chip", "[" + index + "]"), el("span", "field-fold-label", foldableValueLabel(value)));
+      details.append(summary);
+      details.append(renderFoldableBody(record, value, path, anchors, "array-item-body"));
+      return details;
+    }
+
+    function isFoldableFieldValue(value) {
+      return Boolean(value && (value.kind === "block" || value.kind === "array" || value.kind === "spread"));
+    }
+
+    function foldableValueLabel(value) {
+      if (!value) return "";
+      if (value.kind === "array") return "[" + (value.items?.length || 0) + "]";
+      if (value.kind === "block") return value.type ? value.type + " {…}" : "{…}";
+      if (value.kind === "spread") return "…spread";
+      return valueText(value);
+    }
+
+    function renderValue(record, value, path, anchors) {
       if (!value) return document.createTextNode("");
       if (value.kind === "block") {
         const d = el("details", "value-card");
         d.append(el("summary", "", value.type ? value.type + " {…}" : "{…}"));
         const nf = el("div", "nested-fields");
-        for (const f of value.fields || []) nf.append(renderField(record, f, path.concat(f.name)));
+        for (const f of value.fields || []) nf.append(renderField(record, f, path.concat(f.name), anchors));
         d.append(nf);
         return d;
       }
@@ -1241,7 +1514,7 @@ function buildCfdInspectorHtml(model) {
         d.append(el("summary", "", "[" + (value.items?.length || 0) + "]"));
         (value.items || []).forEach((item, i) => {
           const row = el("div", "array-item");
-          row.append(el("div", "idx-chip", "[" + i + "]"), renderValue(record, item, path.concat("[" + i + "]")));
+          row.append(el("div", "idx-chip", "[" + i + "]"), renderValue(record, item, path.concat("[" + i + "]"), anchors));
           d.append(row);
         });
         return d;
@@ -1249,7 +1522,7 @@ function buildCfdInspectorHtml(model) {
       if (value.kind === "spread") {
         const d = el("details", "value-card");
         d.append(el("summary", "", "…spread"));
-        d.append(renderValue(record, value.value, path.concat("...")));
+        d.append(renderValue(record, value.value, path.concat("..."), anchors));
         return d;
       }
       if (value.kind === "ref") return renderRefValue(record, value, path);
@@ -3426,9 +3699,13 @@ module.exports = {
   deactivate,
   __test: {
     CftCompletionProvider,
+    CfdInspectorController,
     CftLspSession,
     collectConfiguredSchemaPaths,
     buildCfdInspectorHtml,
+    bestGraphAnchor,
+    graphAnchorLocalBox,
+    computeGraphColumns,
     openCfdInspector,
     semanticTokensLegend: CFT_SEMANTIC_TOKENS_LEGEND,
     localDefinitionLocations,
@@ -3438,6 +3715,7 @@ module.exports = {
     vscodePosition: vscode.Position,
     vscodeRange: vscode.Range,
     vscodeUriFile: vscode.Uri.file,
+    vscodeViewColumn: vscode.ViewColumn,
     vscodeWorkspace: vscode.workspace
   }
 };

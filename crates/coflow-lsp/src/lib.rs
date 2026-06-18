@@ -127,6 +127,7 @@ impl<W: Write> LspServer<W> {
             (Some(id), "textDocument/documentSymbol") => self.document_symbol(&id, params),
             (Some(id), "textDocument/formatting") => self.formatting(&id, params),
             (Some(id), "textDocument/semanticTokens/full") => self.semantic_tokens(&id, params),
+            (Some(id), "coflow/inspectorModel") => self.cfd_inspector_model(&id, params),
             (Some(id), "shutdown") => {
                 self.shutdown_requested = true;
                 self.write_response(&id, &Value::Null)
@@ -485,6 +486,36 @@ impl<W: Write> LspServer<W> {
             })
         };
         self.write_response(id, &result)
+    }
+
+    fn cfd_inspector_model(&mut self, id: &Value, params: &Value) -> Result<(), String> {
+        let Some(uri) = text_document_uri(params) else {
+            return self.write_response(id, &cfd::empty_inspector_model());
+        };
+        let Some(path) = path_from_file_uri(&uri) else {
+            return self.write_response(id, &cfd::empty_inspector_model());
+        };
+        if !is_cfd_path(&path) {
+            return self.write_response(id, &cfd::empty_inspector_model());
+        }
+
+        let parsed_sources = cfd_project_sources(&self.project, &self.open_documents)
+            .into_iter()
+            .map(|source| {
+                let (ast, _) = parse_cfd(&source.text);
+                (source.uri, source.text, ast)
+            })
+            .collect::<Vec<_>>();
+        let documents = parsed_sources
+            .iter()
+            .map(|(source_uri, source_text, ast)| cfd::InspectorDocument {
+                uri: source_uri,
+                source: source_text,
+                ast,
+            })
+            .collect::<Vec<_>>();
+        let model = cfd::inspector_model(&uri, &documents);
+        self.write_response(id, &model)
     }
 
     fn ensure_build(&mut self) -> Result<Option<&LspBuild>, String> {

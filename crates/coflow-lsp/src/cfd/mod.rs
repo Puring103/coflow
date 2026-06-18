@@ -3,9 +3,12 @@
 //! Each function takes the parsed [`CfdAst`] (plus optional compiled schema)
 //! and returns a JSON [`Value`] ready to send as an LSP response.
 
-use coflow_cfd::{CfdAst, CfdBlockEntry, CfdRecord, CfdSyntaxDiagnostic, CfdValue};
+use coflow_cfd::{
+    CfdAst, CfdBlockEntry, CfdPathSeg, CfdRecord, CfdRef, CfdRefKind, CfdSyntaxDiagnostic, CfdValue,
+};
 use coflow_cft::{CftContainer, CftSchemaTypeRef, Span};
 use serde_json::{json, Value};
+use std::collections::{BTreeMap, BTreeSet};
 
 // ── Semantic token type indices (must match SEMANTIC_TOKEN_TYPES in lib.rs) ──
 
@@ -41,6 +44,95 @@ pub fn syntax_diagnostics(source: &str, errors: &[CfdSyntaxDiagnostic]) -> Vec<V
             })
         })
         .collect()
+}
+
+pub struct InspectorDocument<'a> {
+    pub uri: &'a str,
+    pub source: &'a str,
+    pub ast: &'a CfdAst,
+}
+
+pub fn empty_inspector_model() -> Value {
+    json!({
+        "recordsInFile": [],
+        "references": [],
+        "graph": {
+            "canShow": false,
+            "records": [],
+            "references": [],
+            "hiddenIsolatedAnchors": []
+        }
+    })
+}
+
+pub fn inspector_model(current_uri: &str, documents: &[InspectorDocument<'_>]) -> Value {
+    let mut records = Vec::new();
+    let mut record_index = BTreeMap::new();
+
+    for document in documents {
+        for record in &document.ast.records {
+            let id = inspector_record_id(document.uri, record);
+            record_index.insert(record.key.clone(), (id.clone(), record.type_name.clone()));
+            records.push(inspector_record(document.uri, document.source, record, &id));
+        }
+    }
+
+    let references = records
+        .iter()
+        .flat_map(|record| inspector_references_for_record(record, &record_index))
+        .collect::<Vec<_>>();
+    let graph_references = references
+        .iter()
+        .filter(|reference| {
+            reference
+                .get("targetRecordId")
+                .and_then(Value::as_str)
+                .is_some()
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let records_in_file = records
+        .iter()
+        .filter(|record| record.get("uri").and_then(Value::as_str) == Some(current_uri))
+        .cloned()
+        .collect::<Vec<_>>();
+    let graph_record_ids = graph_references
+        .iter()
+        .flat_map(|reference| {
+            [
+                reference
+                    .get("sourceRecordId")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                reference
+                    .get("targetRecordId")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+            ]
+        })
+        .flatten()
+        .collect::<BTreeSet<_>>();
+    let graph_records = records
+        .iter()
+        .filter(|record| {
+            record
+                .get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| graph_record_ids.contains(id))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    json!({
+        "recordsInFile": records_in_file,
+        "references": references,
+        "graph": {
+            "canShow": !graph_records.is_empty(),
+            "records": graph_records,
+            "references": graph_references,
+            "hiddenIsolatedAnchors": []
+        }
+    })
 }
 
 /// Document symbols: one entry per top-level CFD record.
@@ -80,6 +172,230 @@ fn field_symbols(source: &str, record: &CfdRecord) -> Vec<Value> {
             })
         })
         .collect()
+}
+
+fn inspector_record(uri: &str, source: &str, record: &CfdRecord, id: &str) -> Value {
+    json!({
+        "id": id,
+        "uri": uri,
+        "key": record.key,
+        "type": record.type_name,
+        "range": byte_range(source, record.key_span.start, record.key_span.end),
+        "fields": record
+            .fields
+            .iter()
+            .map(|field| inspector_field(source, field))
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn inspector_record_id(uri: &str, record: &CfdRecord) -> String {
+    format!("{}#{}#{}", uri, record.type_name, record.key)
+}
+
+fn inspector_field(source: &str, field: &coflow_cfd::CfdField) -> Value {
+    json!({
+        "name": field.name,
+        "range": byte_range(source, field.name_span.start, field.name_span.end),
+        "value": inspector_value(source, &field.value),
+    })
+}
+
+fn inspector_value(source: &str, value: &CfdValue) -> Value {
+    match value {
+        CfdValue::Scalar(text, span) => json!({
+            "kind": "scalar",
+            "text": text,
+            "range": byte_range(source, span.start, span.end),
+        }),
+        CfdValue::QuotedString(text, span) => json!({
+            "kind": "string",
+            "text": text,
+            "range": byte_range(source, span.start, span.end),
+        }),
+        CfdValue::Null(span) => json!({
+            "kind": "null",
+            "text": "null",
+            "range": byte_range(source, span.start, span.end),
+        }),
+        CfdValue::Block(block) => json!({
+            "kind": "block",
+            "type": block.type_marker.as_ref().map(|(name, _)| name),
+            "range": byte_range(source, block.span.start, block.span.end),
+            "fields": block
+                .entries
+                .iter()
+                .filter_map(|entry| match entry {
+                    CfdBlockEntry::Field(field) => Some(inspector_field(source, field)),
+                    CfdBlockEntry::Spread(_, _) => None,
+                })
+                .collect::<Vec<_>>(),
+        }),
+        CfdValue::Array(items, span) => json!({
+            "kind": "array",
+            "range": byte_range(source, span.start, span.end),
+            "items": items
+                .iter()
+                .map(|item| inspector_value(source, item))
+                .collect::<Vec<_>>(),
+        }),
+        CfdValue::Ref(reference) => inspector_ref_value(source, reference),
+        CfdValue::Spread(inner, span) => json!({
+            "kind": "spread",
+            "range": byte_range(source, span.start, span.end),
+            "value": inspector_value(source, inner),
+        }),
+    }
+}
+
+fn inspector_ref_value(source: &str, reference: &CfdRef) -> Value {
+    json!({
+        "kind": "ref",
+        "refKind": match reference.kind {
+            CfdRefKind::Typed => "typed",
+            CfdRefKind::Direct => "direct",
+        },
+        "type": reference.type_name.as_ref().map(|(name, _)| name),
+        "key": reference.key.0,
+        "path": inspector_path_segments(&reference.path),
+        "range": byte_range(source, reference.span.start, reference.span.end),
+    })
+}
+
+fn inspector_path_segments(path: &[CfdPathSeg]) -> Vec<String> {
+    path.iter()
+        .map(|segment| match segment {
+            CfdPathSeg::Field(name, _) => name.clone(),
+            CfdPathSeg::Index(index, _) => format!("[{index}]"),
+        })
+        .collect()
+}
+
+fn inspector_references_for_record(
+    record: &Value,
+    record_index: &BTreeMap<String, (String, String)>,
+) -> Vec<Value> {
+    let Some(source_record_id) = record.get("id").and_then(Value::as_str) else {
+        return Vec::new();
+    };
+    let source_uri = record
+        .get("uri")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let source_record_type = record
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let source_record_key = record
+        .get("key")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let mut references = Vec::new();
+    for field in record
+        .get("fields")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        if let Some(field_name) = field.get("name").and_then(Value::as_str) {
+            collect_inspector_references(
+                field.get("value").unwrap_or(&Value::Null),
+                &[field_name.to_string()],
+                InspectorReferenceContext {
+                    source_record_id,
+                    source_uri,
+                    source_record_type,
+                    source_record_key,
+                    record_index,
+                },
+                &mut references,
+            );
+        }
+    }
+    references
+}
+
+#[derive(Clone, Copy)]
+struct InspectorReferenceContext<'a> {
+    source_record_id: &'a str,
+    source_uri: &'a str,
+    source_record_type: &'a str,
+    source_record_key: &'a str,
+    record_index: &'a BTreeMap<String, (String, String)>,
+}
+
+fn collect_inspector_references(
+    value: &Value,
+    source_path: &[String],
+    context: InspectorReferenceContext<'_>,
+    references: &mut Vec<Value>,
+) {
+    match value.get("kind").and_then(Value::as_str) {
+        Some("ref") => {
+            let Some(target_key) = value.get("key").and_then(Value::as_str) else {
+                return;
+            };
+            let target = context.record_index.get(target_key);
+            references.push(json!({
+                "sourceRecordId": context.source_record_id,
+                "sourceRecordType": context.source_record_type,
+                "sourceRecordKey": context.source_record_key,
+                "sourceUri": context.source_uri,
+                "sourcePath": source_path,
+                "targetRecordId": target.map(|(id, _)| id),
+                "targetRecordType": value
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .or_else(|| target.map(|(_, ty)| ty.as_str())),
+                "targetRecordKey": target_key,
+                "targetPath": value.get("path").and_then(Value::as_array).cloned().unwrap_or_default(),
+                "range": value.get("range").cloned().unwrap_or(Value::Null),
+            }));
+        }
+        Some("block") => {
+            for field in value
+                .get("fields")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                if let Some(field_name) = field.get("name").and_then(Value::as_str) {
+                    let mut nested_path = source_path.to_vec();
+                    nested_path.push(field_name.to_string());
+                    collect_inspector_references(
+                        field.get("value").unwrap_or(&Value::Null),
+                        &nested_path,
+                        context,
+                        references,
+                    );
+                }
+            }
+        }
+        Some("array") => {
+            for (index, item) in value
+                .get("items")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .enumerate()
+            {
+                let mut nested_path = source_path.to_vec();
+                nested_path.push(format!("[{index}]"));
+                collect_inspector_references(item, &nested_path, context, references);
+            }
+        }
+        Some("spread") => {
+            let mut nested_path = source_path.to_vec();
+            nested_path.push("...".to_string());
+            collect_inspector_references(
+                value.get("value").unwrap_or(&Value::Null),
+                &nested_path,
+                context,
+                references,
+            );
+        }
+        _ => {}
+    }
 }
 
 /// Semantic tokens for a CFD file (delta encoding as per LSP spec).
@@ -269,8 +585,7 @@ pub fn completion(
         let Some(schema_type) = schema.resolve_type(&record.type_name) else {
             continue;
         };
-        let existing: std::collections::BTreeSet<&str> =
-            record.fields.iter().map(|f| f.name.as_str()).collect();
+        let existing: BTreeSet<&str> = record.fields.iter().map(|f| f.name.as_str()).collect();
         let items: Vec<Value> = schema_type
             .all_fields
             .iter()

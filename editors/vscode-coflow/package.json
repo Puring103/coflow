@@ -20,10 +20,28 @@
   ],
   "activationEvents": [
     "onLanguage:cft",
-    "onLanguage:cfd"
+    "onLanguage:cfd",
+    "onCommand:coflow.openCfdInspector"
   ],
   "main": "./src/extension.js",
   "contributes": {
+    "commands": [
+      {
+        "command": "coflow.openCfdInspector",
+        "title": "Open CFD Inspector",
+        "category": "Coflow",
+        "icon": "$(open-preview)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "coflow.openCfdInspector",
+          "when": "resourceLangId == cfd",
+          "group": "navigation@1"
+        }
+      ]
+    },
     "configuration": {
       "title": "Coflow",
       "properties": {

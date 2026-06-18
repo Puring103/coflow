@@ -160,6 +160,126 @@ fn cfd_definition_request_resolves_examples_cfd_basic_monster() {
 }
 
 #[test]
+fn cfd_inspector_model_returns_records_for_open_file() {
+    let schema_source = "type Stats {\n  hp: int;\n}\n\
+type Item {\n  key: string;\n  name: string;\n}\n\
+type Monster {\n  key: string;\n  name: string;\n  stats: Stats;\n  item: Item;\n}\n";
+    let (_cleanup, project) =
+        test_project_with_config("lsp-cfd-inspector-model", schema_source, "data");
+    let data_dir = project.root_dir.join("data");
+    std::fs::create_dir_all(&data_dir).expect("create data dir");
+    let source_path = data_dir.join("monsters.cfd");
+    let source = "sword: Item { name: \"Sword\" }\n\
+dummy: Monster { name: \"Dummy\", stats: { hp: 10 }, item: &sword }\n";
+    std::fs::write(&source_path, source).expect("write source cfd");
+    let source_uri = path_to_file_uri(&source_path);
+    let mut server = LspServer::new(project, Vec::new());
+
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": source_uri,
+                    "text": source
+                }
+            }
+        }))
+        .expect("open cfd document");
+    server.writer.clear();
+
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "id": 10,
+            "method": "coflow/inspectorModel",
+            "params": {
+                "textDocument": { "uri": source_uri }
+            }
+        }))
+        .expect("inspector model request");
+
+    let messages = written_messages(&server.writer);
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0]["id"], 10);
+    let result = &messages[0]["result"];
+    assert_eq!(
+        result["recordsInFile"].as_array().expect("records").len(),
+        2
+    );
+    assert_eq!(result["recordsInFile"][0]["key"], "sword");
+    assert_eq!(result["recordsInFile"][1]["key"], "dummy");
+    assert_eq!(result["recordsInFile"][1]["fields"][1]["name"], "stats");
+    assert_eq!(
+        result["recordsInFile"][1]["fields"][2]["value"]["kind"],
+        "ref"
+    );
+    assert_eq!(
+        result["references"].as_array().expect("references").len(),
+        1
+    );
+    assert_eq!(result["graph"]["canShow"], true);
+}
+
+#[test]
+fn cfd_inspector_model_excludes_unresolved_references_from_graph() {
+    let schema_source = "type Item {\n  key: string;\n}\n\
+type Holder {\n  key: string;\n  item: Item;\n}\n";
+    let (_cleanup, project) =
+        test_project_with_config("lsp-cfd-inspector-model-unresolved", schema_source, "data");
+    let data_dir = project.root_dir.join("data");
+    std::fs::create_dir_all(&data_dir).expect("create data dir");
+    let source_path = data_dir.join("holders.cfd");
+    let source = "holder: Holder { item: &missing }\n";
+    std::fs::write(&source_path, source).expect("write source cfd");
+    let source_uri = path_to_file_uri(&source_path);
+    let mut server = LspServer::new(project, Vec::new());
+
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": source_uri,
+                    "text": source
+                }
+            }
+        }))
+        .expect("open cfd document");
+    server.writer.clear();
+
+    server
+        .handle_message(&json!({
+            "jsonrpc": "2.0",
+            "id": 11,
+            "method": "coflow/inspectorModel",
+            "params": {
+                "textDocument": { "uri": source_uri }
+            }
+        }))
+        .expect("inspector model request");
+
+    let messages = written_messages(&server.writer);
+    assert_eq!(messages.len(), 1);
+    let result = &messages[0]["result"];
+    assert_eq!(
+        result["references"].as_array().expect("references").len(),
+        1
+    );
+    assert_eq!(result["references"][0]["targetRecordId"], Value::Null);
+    assert_eq!(
+        result["graph"]["references"]
+            .as_array()
+            .expect("graph references")
+            .len(),
+        0
+    );
+    assert_eq!(result["graph"]["canShow"], false);
+}
+
+#[test]
 fn cfd_definition_request_resolves_each_path_field_segment() {
     let schema_source = "type Stats {\n  hp: int;\n}\n\
 type Monster {\n  key: string;\n  stats: Stats;\n}\n\

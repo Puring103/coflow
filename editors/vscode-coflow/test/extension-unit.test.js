@@ -4,6 +4,11 @@ const Module = require("module");
 const os = require("os");
 const path = require("path");
 
+const vscodeMock = {
+  panels: [],
+  activeTextEditor: undefined
+};
+
 const originalLoad = Module._load;
 Module._load = function load(request, parent, isMain) {
   if (request !== "vscode") {
@@ -83,13 +88,70 @@ Module._load = function load(request, parent, isMain) {
         };
       }
     },
+    ViewColumn: {
+      One: 1,
+      Beside: -2
+    },
+    commands: {
+      registerCommand() {
+        return disposable();
+      }
+    },
     languages: {},
+    window: {
+      get activeTextEditor() {
+        return vscodeMock.activeTextEditor;
+      },
+      set activeTextEditor(editor) {
+        vscodeMock.activeTextEditor = editor;
+      },
+      createWebviewPanel(viewType, title, column, options) {
+        const panel = {
+          viewType,
+          title,
+          column,
+          options,
+          revealCalls: [],
+          disposed: false,
+          webview: {
+            html: "",
+            postMessages: [],
+            onDidReceiveMessage() {
+              return disposable();
+            },
+            async postMessage(message) {
+              this.postMessages.push(message);
+              return true;
+            }
+          },
+          onDidDispose() {
+            return disposable();
+          },
+          reveal(viewColumn, revealOptions) {
+            this.revealCalls.push({ viewColumn, revealOptions });
+          },
+          dispose() {
+            this.disposed = true;
+          }
+        };
+        vscodeMock.panels.push(panel);
+        return panel;
+      },
+      showErrorMessage: async () => undefined,
+      showTextDocument: async () => undefined
+    },
     workspace: {
       textDocuments: [],
       getWorkspaceFolder() {
         return undefined;
       },
-      findFiles: async () => []
+      findFiles: async () => [],
+      onDidChangeTextDocument() {
+        return disposable();
+      },
+      onDidCloseTextDocument() {
+        return disposable();
+      }
     }
   };
 };
@@ -181,6 +243,180 @@ async function main() {
     ],
     "CFD reference path segments should have a default semantic token color"
   );
+  const cfdInspectorCommand = extensionPackage.contributes.commands?.find(
+    (command) => command.command === "coflow.openCfdInspector"
+  );
+  assert(cfdInspectorCommand, "CFD inspector command should be contributed");
+  assert.strictEqual(cfdInspectorCommand.title, "Open CFD Inspector");
+  assert.strictEqual(cfdInspectorCommand.category, "Coflow");
+  assert.strictEqual(cfdInspectorCommand.icon, "$(open-preview)");
+  const cfdInspectorTitleMenu = extensionPackage.contributes.menus?.["editor/title"]?.find(
+    (menu) => menu.command === "coflow.openCfdInspector"
+  );
+  assert(cfdInspectorTitleMenu, "CFD inspector should be available from the editor title toolbar");
+  assert.strictEqual(cfdInspectorTitleMenu.when, "resourceLangId == cfd");
+  assert.strictEqual(cfdInspectorTitleMenu.group, "navigation@1");
+  assert(
+    extensionPackage.activationEvents.includes("onCommand:coflow.openCfdInspector"),
+    "CFD inspector command should activate the extension when invoked"
+  );
+  const graphColumns = extension.__test.computeGraphColumns(
+    [
+      { id: "A", key: "A" },
+      { id: "B", key: "B" },
+      { id: "X", key: "X" },
+      { id: "Y", key: "Y" }
+    ],
+    [
+      { sourceRecordId: "A", targetRecordId: "Y" },
+      { sourceRecordId: "B", targetRecordId: "X" }
+    ]
+  );
+  assert.deepStrictEqual(
+    [...graphColumns.entries()].map(([depth, records]) => [depth, records.map((record) => record.id)]),
+    [
+      [0, ["A", "B"]],
+      [1, ["Y", "X"]]
+    ],
+    "graph layout should order columns by connected neighbor positions instead of key only"
+  );
+  const inspectorHtml = extension.__test.buildCfdInspectorHtml({
+    recordsInFile: [],
+    references: [],
+    graph: {
+      canShow: true,
+      records: [{ id: "A", key: "A" }],
+      references: [],
+      hiddenIsolatedAnchors: []
+    }
+  });
+  const scriptStart = inspectorHtml.indexOf("<script");
+  const scriptBodyStart = inspectorHtml.indexOf(">", scriptStart) + 1;
+  const scriptEnd = inspectorHtml.indexOf("</script>", scriptBodyStart);
+  const inspectorScript = inspectorHtml.slice(scriptBodyStart, scriptEnd);
+  assert(
+    inspectorScript.includes("function computeGraphColumns"),
+    "webview script should define computeGraphColumns inside its own runtime"
+  );
+  assert(
+    inspectorScript.includes("function graphAnchorLocalBox"),
+    "webview script should define graphAnchorLocalBox for field endpoint placement"
+  );
+  assert(
+    inspectorScript.indexOf("function computeGraphColumns") < inspectorScript.indexOf("function graphView"),
+    "computeGraphColumns should be defined before graphView can call it"
+  );
+  assert(
+    inspectorHtml.includes("grid-template-columns: minmax(44px, 30%) minmax(0, 1fr);"),
+    "field rows should leave more room for nested values in narrow graph nodes"
+  );
+  assert(
+    inspectorHtml.includes(".nested-fields { margin-top: 4px; padding-left: 4px; border-left: 1px solid var(--border); display: grid; gap: 4px; }"),
+    "nested values should use only a slight indentation"
+  );
+  assert(
+    inspectorHtml.includes("grid-template-columns: 22px minmax(0, 1fr);"),
+    "array items should keep index indentation compact"
+  );
+  assert(
+    inspectorHtml.includes(".field-fold { display: block; }"),
+    "foldable fields should not reserve the field-name column below their summary row"
+  );
+  assert(
+    inspectorHtml.includes(".field-fold-body { margin-top: 4px; padding-left: 4px;"),
+    "foldable field bodies should use only a slight full-width indentation"
+  );
+  assert(
+    inspectorScript.includes("function renderFoldableField"),
+    "composite field values should render as one foldable field"
+  );
+  assert(
+    inspectorScript.includes("anchors?.set(graphPathKey(path), summary);"),
+    "foldable field anchors should stay on the summary row instead of the expanded body"
+  );
+  assert(
+    inspectorScript.includes("if (isFoldableFieldValue(field.value))"),
+    "renderField should route composite values to the foldable-field layout"
+  );
+  assert.deepStrictEqual(
+    extension.__test.graphAnchorLocalBox(
+      { left: 100, top: 200, width: 480, height: 300 },
+      { left: 340, top: 500, width: 120, height: 30 },
+      240,
+      150
+    ),
+    { left: 120, top: 150, width: 60, height: 15 },
+    "graph field anchors should be measured from rendered bounds relative to the node"
+  );
+  const visibleAnchors = new Map([
+    ["drop", { id: "drop-anchor" }],
+    ["drop.rewards", { id: "rewards-anchor" }]
+  ]);
+  assert.deepStrictEqual(
+    extension.__test.bestGraphAnchor(visibleAnchors, ["drop", "rewards", "[0]", "item"]),
+    { element: { id: "rewards-anchor" }, path: ["drop", "rewards"] },
+    "graph field anchors should fall back to the nearest visible parent path"
+  );
+  assert.strictEqual(
+    extension.__test.bestGraphAnchor(new Map(), ["drop", "rewards"]),
+    undefined,
+    "missing field anchors should fall back to the record anchor"
+  );
+  const hiddenChildAnchors = new Map([
+    ["drop", { id: "drop-anchor", visible: true }],
+    ["drop.rewards", { id: "rewards-anchor", visible: true }],
+    ["drop.rewards.[0].item", { id: "item-anchor", visible: false }]
+  ]);
+  assert.deepStrictEqual(
+    extension.__test.bestGraphAnchor(
+      hiddenChildAnchors,
+      ["drop", "rewards", "[0]", "item"],
+      (element) => element.visible
+    ),
+    { element: { id: "rewards-anchor", visible: true }, path: ["drop", "rewards"] },
+    "hidden nested anchors should be skipped so edges fall back to the nearest visible parent"
+  );
+  vscodeMock.panels.length = 0;
+  const firstCfd = textDocument(path.join(os.tmpdir(), "first.cfd"), "a: Item {}\n", "cfd");
+  const secondCfd = textDocument(path.join(os.tmpdir(), "second.cfd"), "b: Item {}\n", "cfd");
+  vscodeMock.activeTextEditor = { document: firstCfd, viewColumn: 1 };
+  const requestedUris = [];
+  const inspectorController = new extension.__test.CfdInspectorController(
+    {
+      request: async (document) => {
+        requestedUris.push(document.uri.toString());
+        return {
+          recordsInFile: [{ id: document.uri.toString(), uri: document.uri.toString(), key: path.basename(document.uri.fsPath), fields: [] }],
+          references: [],
+          graph: { canShow: false, records: [], references: [], hiddenIsolatedAnchors: [] }
+        };
+      }
+    },
+    { refreshDebounceMs: 0 }
+  );
+  const panel = await inspectorController.open(firstCfd);
+  assert.strictEqual(vscodeMock.panels.length, 1, "CFD inspector should create one webview panel");
+  assert.deepStrictEqual(
+    panel.column,
+    { viewColumn: extension.__test.vscodeViewColumn.Beside, preserveFocus: true },
+    "CFD inspector should open beside without stealing focus from the current file"
+  );
+  assert.strictEqual(requestedUris.at(-1), firstCfd.uri.toString());
+
+  await inspectorController.followEditor({ document: secondCfd, viewColumn: 1 });
+  assert.strictEqual(vscodeMock.panels.length, 1, "opening another CFD file should not create another inspector panel");
+  assert.strictEqual(requestedUris.at(-1), secondCfd.uri.toString());
+  assert.deepStrictEqual(
+    panel.revealCalls.at(-1),
+    { viewColumn: extension.__test.vscodeViewColumn.Beside, revealOptions: true },
+    "CFD inspector should reveal beside without taking focus when the active CFD file changes"
+  );
+
+  const reusedPanel = await inspectorController.open(firstCfd);
+  assert.strictEqual(reusedPanel, panel, "CFD inspector command should reuse the existing panel");
+  assert.strictEqual(vscodeMock.panels.length, 1, "opening another CFD file should not create another inspector panel");
+  assert.strictEqual(requestedUris.at(-1), firstCfd.uri.toString());
+  inspectorController.dispose();
 
   fs.rmSync(project, { recursive: true, force: true });
 
@@ -221,12 +457,12 @@ async function main() {
   extension.__test.vscodeWorkspace.textDocuments.pop();
 }
 
-function textDocument(filePath, text) {
+function textDocument(filePath, text, languageId = "cft") {
   const uri = extension.__test.vscodeUriFile(filePath);
   const lines = text.split(/\r?\n/);
   return {
     uri,
-    languageId: "cft",
+    languageId,
     getText(range) {
       if (!range) {
         return text;
@@ -285,6 +521,10 @@ function textDocument(filePath, text) {
         : undefined;
     }
   };
+}
+
+function disposable() {
+  return { dispose() {} };
 }
 
 function isIdentContinue(char) {
