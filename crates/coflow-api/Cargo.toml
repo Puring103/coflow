@@ -14,8 +14,8 @@ publish = false
 workspace = true
 
 [dependencies]
-coflow-cell-value = { path = "../coflow-cell-value" }
 coflow-cft = { path = "../coflow-cft" }
 coflow-data-model = { path = "../coflow-data-model" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+unicode-ident = "1"
