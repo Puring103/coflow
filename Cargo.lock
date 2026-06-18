@@ -350,6 +350,7 @@ dependencies = [
  "coflow-api",
  "coflow-cft",
  "coflow-data-model",
+ "serde_json",
 ]
 
 [[package]]
@@ -381,6 +382,7 @@ dependencies = [
 name = "coflow-lsp"
 version = "0.1.0"
 dependencies = [
+ "coflow-api",
  "coflow-cfd",
  "coflow-cft",
  "coflow-project",
@@ -411,6 +413,7 @@ dependencies = [
 name = "coflow-project"
 version = "0.1.0"
 dependencies = [
+ "coflow-api",
  "coflow-cft",
  "serde",
  "serde_json",

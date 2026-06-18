@@ -14,3 +14,6 @@ workspace = true
 coflow-api = { path = "../coflow-api" }
 coflow-cft = { path = "../coflow-cft" }
 coflow-data-model = { path = "../coflow-data-model" }
+
+[dev-dependencies]
+serde_json = { version = "1", features = ["preserve_order"] }

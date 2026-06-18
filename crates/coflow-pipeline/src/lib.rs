@@ -23,8 +23,8 @@ use artifacts::{
     required_data_output, stage_codegen_artifacts, stage_data_tables, stage_json_file,
     write_data_tables, CodegenArtifactRequest,
 };
-use coflow_api::{DiagnosticSet, ProviderRegistry};
-use coflow_project::{DiagnosticJson, Project};
+use coflow_api::{Diagnostic, DiagnosticSet, Label, ProviderRegistry, Severity, SourceLocation};
+use coflow_project::{Project, SourceLocationSpec};
 use data::load_project_data;
 use schema::compile_project_schema;
 use serde::Serialize;
@@ -40,14 +40,13 @@ pub const CSHARP_CODEGEN_ID: &str = "csharp";
 #[derive(Debug)]
 pub enum PipelineOutcome<T> {
     Success(T),
-    Diagnostics(Vec<DiagnosticJson>),
+    Diagnostics(DiagnosticSet),
 }
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BuildOptions<'a> {
     pub data_out_dir: Option<&'a Path>,
     pub code_out_dir: Option<&'a Path>,
-    pub namespace: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -58,7 +57,6 @@ pub struct ExportOptions<'a> {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CodegenOptions<'a> {
     pub out_dir: Option<&'a Path>,
-    pub namespace: Option<&'a str>,
 }
 
 #[derive(Debug)]
@@ -95,8 +93,8 @@ pub fn check_project(
     project: &Project,
     registry: &ProviderRegistry,
 ) -> Result<PipelineOutcome<CheckReport>, String> {
-    let mut diagnostics = project.schema_diagnostics();
-    diagnostics.extend(project.data_diagnostics());
+    let mut diagnostics = project.schema_diagnostic_set();
+    diagnostics.extend(project.data_diagnostic_set());
     if !diagnostics.is_empty() {
         return Ok(PipelineOutcome::Diagnostics(diagnostics));
     }
@@ -147,22 +145,28 @@ pub fn build_project(
         return Ok(PipelineOutcome::Diagnostics(preflight_diagnostics));
     }
 
-    let staged_data = stage_data_tables(
+    let staged_data = match stage_data_tables(
         registry,
         &schema,
         &load_output.model,
         plan.data.exporter_id,
         plan.data.output,
         &plan.data.dir,
-    )?;
-    let code = commit_build_artifacts(
+    ) {
+        Ok(staged_data) => staged_data,
+        Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
+    };
+    let code = match commit_build_artifacts(
         project,
         registry,
         &schema,
         &load_output.model,
         staged_data,
         &plan,
-    )?;
+    ) {
+        Ok(code) => code,
+        Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
+    };
 
     let data = ExportReport {
         exporter_id: plan.data.exporter_id.to_string(),
@@ -187,19 +191,25 @@ pub fn export_project_data(
     exporter_id: &str,
     options: ExportOptions<'_>,
 ) -> Result<PipelineOutcome<ExportReport>, String> {
-    let mut diagnostics = project.schema_diagnostics();
-    diagnostics.extend(project.data_diagnostics());
+    let mut diagnostics = project.schema_diagnostic_set();
+    diagnostics.extend(project.data_diagnostic_set());
     let command = format!("coflow export {exporter_id}");
     if let Err(message) = required_data_output(project, exporter_id, &command) {
-        diagnostics.push(DiagnosticJson::project(message));
+        diagnostics.push(project_diagnostic(
+            &project.config_path,
+            message,
+            ["outputs", "data"],
+        ));
     }
     if !diagnostics.is_empty() {
         return Ok(PipelineOutcome::Diagnostics(diagnostics));
     }
     let Some(exporter) = registry.exporter(exporter_id) else {
-        return Ok(PipelineOutcome::Diagnostics(vec![DiagnosticJson::project(
+        return Ok(PipelineOutcome::Diagnostics(project_diagnostic_set(
+            &project.config_path,
             format!("no data exporter registered for `{exporter_id}`"),
-        )]));
+            ["outputs", "data", "type"],
+        )));
     };
     let exporter_descriptor = exporter.descriptor();
     let output = required_data_output(project, exporter_id, &command)?;
@@ -219,14 +229,16 @@ pub fn export_project_data(
     if !artifact_diagnostics.is_empty() {
         return Ok(PipelineOutcome::Diagnostics(artifact_diagnostics));
     }
-    write_data_tables(
+    if let Err(diagnostics) = write_data_tables(
         registry,
         &schema,
         &load_output.model,
         exporter_id,
         output,
         &dir,
-    )?;
+    ) {
+        return Ok(PipelineOutcome::Diagnostics(diagnostics));
+    }
     Ok(PipelineOutcome::Success(ExportReport {
         exporter_id: exporter_id.to_string(),
         display_name: exporter_descriptor.display_name.to_string(),
@@ -247,8 +259,8 @@ pub fn generate_project_code(
     codegen_id: &str,
     options: CodegenOptions<'_>,
 ) -> Result<PipelineOutcome<CodegenReport>, String> {
-    let mut diagnostics = project.schema_diagnostics();
-    diagnostics.extend(project.codegen_diagnostics());
+    let mut diagnostics = project.schema_diagnostic_set();
+    diagnostics.extend(project.codegen_diagnostic_set());
     if !diagnostics.is_empty() {
         return Ok(PipelineOutcome::Diagnostics(diagnostics));
     }
@@ -256,37 +268,30 @@ pub fn generate_project_code(
     let output = required_code_output(project, codegen_id, &command)?;
     let data_format = configured_data_format(project, &command)?;
     let Some(codegen) = registry.codegen(codegen_id) else {
-        return Ok(PipelineOutcome::Diagnostics(vec![DiagnosticJson::project(
+        return Ok(PipelineOutcome::Diagnostics(project_diagnostic_set(
+            &project.config_path,
             format!("no code generator registered for `{codegen_id}`"),
-        )]));
+            ["outputs", "code", "type"],
+        )));
     };
     let codegen_descriptor = codegen.descriptor();
     if !codegen_descriptor
         .supported_data_formats
         .contains(&data_format)
     {
-        return Ok(PipelineOutcome::Diagnostics(vec![DiagnosticJson::project(
+        return Ok(PipelineOutcome::Diagnostics(project_diagnostic_set(
+            &project.config_path,
             format!("code generator `{codegen_id}` does not support data format `{data_format}`"),
-        )]));
+            ["outputs", "code", "type"],
+        )));
     }
     let dir = output_dir(project, output, options.out_dir);
-    let namespace = options
-        .namespace
-        .or(output.namespace.as_deref())
-        .unwrap_or("Game.Config");
     let schema = match compile_project_schema(project)? {
         Ok(schema) => schema,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
-    let codegen_diagnostics = diagnostics_from_provider(preflight_codegen(
-        registry,
-        &schema,
-        None,
-        codegen_id,
-        data_format,
-        output,
-        namespace,
-    )?);
+    let codegen_diagnostics =
+        preflight_codegen(registry, &schema, None, codegen_id, data_format, output)?;
     if !codegen_diagnostics.is_empty() {
         return Ok(PipelineOutcome::Diagnostics(codegen_diagnostics));
     }
@@ -300,10 +305,20 @@ pub fn generate_project_code(
     let lockfile = enum_lockfile_path(project);
     let key_as_enum_ids = collect_declared_key_as_enum_ids(&schema);
     let (locked_key_as_enum, key_as_enum_variants) =
-        merge_key_as_enum_lockfile(&lockfile, key_as_enum_ids)?;
-    let key_as_enum_variants = serde_json::to_value(key_as_enum_variants)
-        .map_err(|err| format!("failed to serialize @keyAsEnum variants: {err}"))?;
-    let staged_code = stage_codegen_artifacts(
+        match merge_key_as_enum_lockfile(&lockfile, key_as_enum_ids) {
+            Ok(lockfile) => lockfile,
+            Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
+        };
+    let key_as_enum_variants = match serde_json::to_value(key_as_enum_variants) {
+        Ok(value) => value,
+        Err(err) => {
+            return Ok(PipelineOutcome::Diagnostics(artifact_diagnostic_set(
+                &lockfile,
+                format!("failed to serialize @keyAsEnum variants: {err}"),
+            )))
+        }
+    };
+    let staged_code = match stage_codegen_artifacts(
         registry,
         CodegenArtifactRequest {
             schema: &schema,
@@ -311,13 +326,21 @@ pub fn generate_project_code(
             codegen_id,
             data_format,
             output_config: output,
-            namespace,
             dir: &dir,
             key_as_enum_variants: &key_as_enum_variants,
         },
-    )?;
-    let staged_lockfile = stage_key_as_enum_lockfile_if_needed(&lockfile, &locked_key_as_enum)?;
-    commit_staged_dir_and_file(staged_code, staged_lockfile)?;
+    ) {
+        Ok(staged_code) => staged_code,
+        Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
+    };
+    let staged_lockfile = match stage_key_as_enum_lockfile_if_needed(&lockfile, &locked_key_as_enum)
+    {
+        Ok(staged_lockfile) => staged_lockfile,
+        Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
+    };
+    if let Err(diagnostics) = commit_staged_dir_and_file(staged_code, staged_lockfile) {
+        return Ok(PipelineOutcome::Diagnostics(diagnostics));
+    }
     Ok(PipelineOutcome::Success(CodegenReport {
         codegen_id: codegen_id.to_string(),
         display_name: codegen_descriptor.display_name.to_string(),
@@ -346,15 +369,18 @@ struct BuildCodegenPlan<'a> {
     codegen_id: &'a str,
     display_name: &'static str,
     dir: PathBuf,
-    namespace: String,
     needs_model_for_build: bool,
 }
 
-fn build_config_diagnostics(project: &Project) -> Vec<DiagnosticJson> {
-    let mut diagnostics = project.schema_diagnostics();
-    diagnostics.extend(project.data_diagnostics());
+fn build_config_diagnostics(project: &Project) -> DiagnosticSet {
+    let mut diagnostics = project.schema_diagnostic_set();
+    diagnostics.extend(project.data_diagnostic_set());
     if let Err(message) = configured_data_output(project, "coflow build") {
-        diagnostics.push(DiagnosticJson::project(message));
+        diagnostics.push(project_diagnostic(
+            &project.config_path,
+            message,
+            ["outputs", "data"],
+        ));
     }
     diagnostics
 }
@@ -363,11 +389,17 @@ fn build_provider_plan<'a>(
     project: &'a Project,
     registry: &ProviderRegistry,
     options: BuildOptions<'a>,
-) -> Result<BuildProviderPlan<'a>, Vec<DiagnosticJson>> {
+) -> Result<BuildProviderPlan<'a>, DiagnosticSet> {
     let (data_output, data_format) =
-        configured_data_output(project, "coflow build").map_err(project_diagnostic_vec)?;
+        configured_data_output(project, "coflow build").map_err(|message| {
+            project_diagnostic_set(&project.config_path, message, ["outputs", "data"])
+        })?;
     let data_exporter = registry.exporter(data_format).ok_or_else(|| {
-        project_diagnostic_vec(format!("no data exporter registered for `{data_format}`"))
+        project_diagnostic_set(
+            &project.config_path,
+            format!("no data exporter registered for `{data_format}`"),
+            ["outputs", "data", "type"],
+        )
     })?;
     let data_dir = output_dir(project, data_output, options.data_out_dir);
     let mut artifact_outputs = vec![ArtifactOutputPlan::new(
@@ -400,19 +432,25 @@ fn build_codegen_plan<'a>(
     options: BuildOptions<'a>,
     data_format: &str,
     artifact_outputs: &mut Vec<ArtifactOutputPlan>,
-) -> Result<Option<BuildCodegenPlan<'a>>, Vec<DiagnosticJson>> {
+) -> Result<Option<BuildCodegenPlan<'a>>, DiagnosticSet> {
     let Some(output) = project.config.outputs.code.as_ref() else {
         return Ok(None);
     };
     let codegen_id = output.output_type.as_str();
     let codegen = registry.codegen(codegen_id).ok_or_else(|| {
-        project_diagnostic_vec(format!("no code generator registered for `{codegen_id}`"))
+        project_diagnostic_set(
+            &project.config_path,
+            format!("no code generator registered for `{codegen_id}`"),
+            ["outputs", "code", "type"],
+        )
     })?;
     let descriptor = codegen.descriptor();
     if !descriptor.supported_data_formats.contains(&data_format) {
-        return Err(project_diagnostic_vec(format!(
-            "code generator `{codegen_id}` does not support data format `{data_format}`"
-        )));
+        return Err(project_diagnostic_set(
+            &project.config_path,
+            format!("code generator `{codegen_id}` does not support data format `{data_format}`"),
+            ["outputs", "code", "type"],
+        ));
     }
 
     let dir = output_dir(project, output, options.code_out_dir);
@@ -422,11 +460,6 @@ fn build_codegen_plan<'a>(
         codegen_id,
         display_name: descriptor.display_name,
         dir,
-        namespace: options
-            .namespace
-            .or(output.namespace.as_deref())
-            .unwrap_or("Game.Config")
-            .to_string(),
         needs_model_for_build: descriptor.needs_model_for_build,
     }))
 }
@@ -436,19 +469,18 @@ fn build_codegen_preflight_diagnostics(
     schema: &coflow_cft::CftContainer,
     model: &coflow_data_model::CfdDataModel,
     plan: &BuildProviderPlan<'_>,
-) -> Result<Vec<DiagnosticJson>, String> {
+) -> Result<DiagnosticSet, String> {
     let Some(code) = plan.code.as_ref() else {
-        return Ok(Vec::new());
+        return Ok(DiagnosticSet::empty());
     };
-    Ok(diagnostics_from_provider(preflight_codegen(
+    preflight_codegen(
         registry,
         schema,
         code.needs_model_for_build.then_some(model),
         code.codegen_id,
         plan.data.exporter_id,
         code.output,
-        &code.namespace,
-    )?))
+    )
 }
 
 fn commit_build_artifacts(
@@ -458,7 +490,7 @@ fn commit_build_artifacts(
     model: &coflow_data_model::CfdDataModel,
     staged_data: artifacts::StagedArtifactDir,
     plan: &BuildProviderPlan<'_>,
-) -> Result<Option<CodegenReport>, String> {
+) -> Result<Option<CodegenReport>, DiagnosticSet> {
     let Some(code) = plan.code.as_ref() else {
         staged_data.commit()?;
         return Ok(None);
@@ -468,8 +500,12 @@ fn commit_build_artifacts(
     let key_as_enum_ids = collect_key_as_enum_ids(schema, model);
     let (locked_key_as_enum, key_as_enum_variants) =
         merge_key_as_enum_lockfile(&lockfile, key_as_enum_ids)?;
-    let key_as_enum_variants = serde_json::to_value(key_as_enum_variants)
-        .map_err(|err| format!("failed to serialize @keyAsEnum variants: {err}"))?;
+    let key_as_enum_variants = serde_json::to_value(key_as_enum_variants).map_err(|err| {
+        artifact_diagnostic_set(
+            &lockfile,
+            format!("failed to serialize @keyAsEnum variants: {err}"),
+        )
+    })?;
     let staged_code = stage_codegen_artifacts(
         registry,
         CodegenArtifactRequest {
@@ -478,7 +514,6 @@ fn commit_build_artifacts(
             codegen_id: code.codegen_id,
             data_format: plan.data.exporter_id,
             output_config: code.output,
-            namespace: &code.namespace,
             dir: &code.dir,
             key_as_enum_variants: &key_as_enum_variants,
         },
@@ -492,8 +527,33 @@ fn commit_build_artifacts(
     }))
 }
 
-fn project_diagnostic_vec(message: String) -> Vec<DiagnosticJson> {
-    vec![DiagnosticJson::project(message)]
+fn project_diagnostic_set(
+    config_path: &Path,
+    message: impl Into<String>,
+    key_path: impl IntoIterator<Item = impl Into<String>>,
+) -> DiagnosticSet {
+    DiagnosticSet::one(project_diagnostic(config_path, message, key_path))
+}
+
+fn project_diagnostic(
+    config_path: &Path,
+    message: impl Into<String>,
+    key_path: impl IntoIterator<Item = impl Into<String>>,
+) -> Diagnostic {
+    Diagnostic {
+        code: "PROJECT-001".to_string(),
+        stage: "PROJECT".to_string(),
+        severity: Severity::Error,
+        message: message.into(),
+        primary: Some(Label {
+            location: SourceLocation::ProjectConfig {
+                path: config_path.to_path_buf(),
+                key_path: key_path.into_iter().map(Into::into).collect(),
+            },
+            message: None,
+        }),
+        related: Vec::new(),
+    }
 }
 
 #[derive(Debug)]
@@ -508,17 +568,17 @@ impl ArtifactOutputPlan {
     }
 }
 
-fn artifact_safety_diagnostics(
-    project: &Project,
-    outputs: &[ArtifactOutputPlan],
-) -> Vec<DiagnosticJson> {
-    let mut diagnostics = Vec::new();
+fn artifact_safety_diagnostics(project: &Project, outputs: &[ArtifactOutputPlan]) -> DiagnosticSet {
+    let mut diagnostics = DiagnosticSet::empty();
     for output in outputs {
         if output.dir.exists() && !output.dir.is_dir() {
-            diagnostics.push(DiagnosticJson::artifact(format!(
-                "output dir `{}` already exists and is not a directory",
-                output.dir.display()
-            )));
+            diagnostics.push(artifact_diagnostic(
+                &output.dir,
+                format!(
+                    "output dir `{}` already exists and is not a directory",
+                    output.dir.display()
+                ),
+            ));
         }
         diagnostics.extend(output_scope_diagnostics(project, output));
     }
@@ -526,70 +586,85 @@ fn artifact_safety_diagnostics(
     diagnostics
 }
 
-fn output_scope_diagnostics(project: &Project, output: &ArtifactOutputPlan) -> Vec<DiagnosticJson> {
+fn output_scope_diagnostics(project: &Project, output: &ArtifactOutputPlan) -> DiagnosticSet {
     let output_dir = normalized_existing_or_future_path(&output.dir);
     let project_root = normalized_existing_or_future_path(&project.root_dir);
-    let mut diagnostics = Vec::new();
+    let mut diagnostics = DiagnosticSet::empty();
 
     if output_dir == project_root {
-        diagnostics.push(DiagnosticJson::artifact(format!(
-            "{} `{}` overlaps the project root; choose a dedicated generated output directory",
-            output.label,
-            output.dir.display()
-        )));
+        diagnostics.push(artifact_diagnostic(
+            &output.dir,
+            format!(
+                "{} `{}` overlaps the project root; choose a dedicated generated output directory",
+                output.label,
+                output.dir.display()
+            ),
+        ));
     }
 
     let config_path = normalized_existing_or_future_path(&project.config_path);
     if paths_overlap(&output_dir, &config_path) {
-        diagnostics.push(DiagnosticJson::artifact(format!(
-            "{} `{}` overlaps project config `{}`",
-            output.label,
-            output.dir.display(),
-            project.config_path.display()
-        )));
+        diagnostics.push(artifact_diagnostic(
+            &output.dir,
+            format!(
+                "{} `{}` overlaps project config `{}`",
+                output.label,
+                output.dir.display(),
+                project.config_path.display()
+            ),
+        ));
     }
 
     for schema_path in configured_schema_paths(project) {
         let schema_path = normalized_existing_or_future_path(&schema_path);
         if paths_overlap(&output_dir, &schema_path) {
-            diagnostics.push(DiagnosticJson::artifact(format!(
-                "{} `{}` overlaps schema path `{}`",
-                output.label,
-                output.dir.display(),
-                schema_path.display()
-            )));
+            diagnostics.push(artifact_diagnostic(
+                &output.dir,
+                format!(
+                    "{} `{}` overlaps schema path `{}`",
+                    output.label,
+                    output.dir.display(),
+                    schema_path.display()
+                ),
+            ));
         }
     }
 
     for source_path in configured_source_paths(project) {
         let source_path = normalized_existing_or_future_path(&source_path);
         if paths_overlap(&output_dir, &source_path) {
-            diagnostics.push(DiagnosticJson::artifact(format!(
-                "{} `{}` overlaps data source `{}`",
-                output.label,
-                output.dir.display(),
-                source_path.display()
-            )));
+            diagnostics.push(artifact_diagnostic(
+                &output.dir,
+                format!(
+                    "{} `{}` overlaps data source `{}`",
+                    output.label,
+                    output.dir.display(),
+                    source_path.display()
+                ),
+            ));
         }
     }
 
     diagnostics
 }
 
-fn overlapping_output_diagnostics(outputs: &[ArtifactOutputPlan]) -> Vec<DiagnosticJson> {
-    let mut diagnostics = Vec::new();
+fn overlapping_output_diagnostics(outputs: &[ArtifactOutputPlan]) -> DiagnosticSet {
+    let mut diagnostics = DiagnosticSet::empty();
     for (index, left) in outputs.iter().enumerate() {
         let left_dir = normalized_existing_or_future_path(&left.dir);
         for right in outputs.iter().skip(index + 1) {
             let right_dir = normalized_existing_or_future_path(&right.dir);
             if paths_overlap(&left_dir, &right_dir) {
-                diagnostics.push(DiagnosticJson::artifact(format!(
-                    "{} `{}` and {} `{}` overlap; choose separate generated output directories",
-                    left.label,
-                    left.dir.display(),
-                    right.label,
-                    right.dir.display()
-                )));
+                diagnostics.push(artifact_diagnostic(
+                    &left.dir,
+                    format!(
+                        "{} `{}` and {} `{}` overlap; choose separate generated output directories",
+                        left.label,
+                        left.dir.display(),
+                        right.label,
+                        right.dir.display()
+                    ),
+                ));
             }
         }
     }
@@ -611,7 +686,10 @@ fn configured_source_paths(project: &Project) -> Vec<PathBuf> {
         .config
         .sources
         .iter()
-        .filter_map(|source| source.file.as_ref().or(source.dir.as_ref()))
+        .filter_map(|source| match source.location() {
+            SourceLocationSpec::Path(path) => Some(path),
+            SourceLocationSpec::Uri(_) => None,
+        })
         .map(|path| project.resolve_path(path))
         .collect()
 }
@@ -638,14 +716,24 @@ fn paths_overlap(left: &Path, right: &Path) -> bool {
     left == right || left.starts_with(right) || right.starts_with(left)
 }
 
-fn diagnostics_from_provider(diagnostics: DiagnosticSet) -> Vec<DiagnosticJson> {
-    diagnostics
-        .diagnostics
-        .into_iter()
-        .map(|diagnostic| {
-            DiagnosticJson::codegen(diagnostic.code, diagnostic.stage, diagnostic.message)
-        })
-        .collect()
+fn artifact_diagnostic(path: &Path, message: impl Into<String>) -> Diagnostic {
+    Diagnostic {
+        code: "ARTIFACT-001".to_string(),
+        stage: "ARTIFACT".to_string(),
+        severity: Severity::Error,
+        message: message.into(),
+        primary: Some(Label {
+            location: SourceLocation::Artifact {
+                path: path.to_path_buf(),
+            },
+            message: None,
+        }),
+        related: Vec::new(),
+    }
+}
+
+fn artifact_diagnostic_set(path: &Path, message: impl Into<String>) -> DiagnosticSet {
+    DiagnosticSet::one(artifact_diagnostic(path, message))
 }
 
 fn collect_declared_key_as_enum_ids(
@@ -704,7 +792,7 @@ fn enum_lockfile_path(project: &Project) -> PathBuf {
 fn merge_key_as_enum_lockfile(
     lockfile: &Path,
     current_ids: BTreeMap<String, Vec<String>>,
-) -> Result<(KeyAsEnumLockfile, BTreeMap<String, Vec<KeyAsEnumVariant>>), String> {
+) -> Result<(KeyAsEnumLockfile, BTreeMap<String, Vec<KeyAsEnumVariant>>), DiagnosticSet> {
     if current_ids.is_empty() {
         return Ok((BTreeMap::new(), BTreeMap::new()));
     }
@@ -718,16 +806,16 @@ fn merge_key_as_enum_lockfile(
             .values()
             .copied()
             .max()
-            .map_or(Ok(0), next_key_as_enum_value)?;
+            .map_or(Ok(0), |value| next_key_as_enum_value(lockfile, value))?;
         for id in ids {
             if entries.contains_key(&id) {
                 continue;
             }
             while entries.values().any(|value| *value == next_value) {
-                next_value = next_key_as_enum_value(next_value)?;
+                next_value = next_key_as_enum_value(lockfile, next_value)?;
             }
             entries.insert(id, next_value);
-            next_value = next_key_as_enum_value(next_value)?;
+            next_value = next_key_as_enum_value(lockfile, next_value)?;
         }
     }
 
@@ -751,29 +839,31 @@ fn merge_key_as_enum_lockfile(
     Ok((locked, variants))
 }
 
-fn next_key_as_enum_value(value: i64) -> Result<i64, String> {
-    value
-        .checked_add(1)
-        .ok_or_else(|| "@keyAsEnum lockfile exhausted i64 enum values".to_string())
+fn next_key_as_enum_value(lockfile: &Path, value: i64) -> Result<i64, DiagnosticSet> {
+    value.checked_add(1).ok_or_else(|| {
+        artifact_diagnostic_set(lockfile, "@keyAsEnum lockfile exhausted i64 enum values")
+    })
 }
 
 fn read_key_as_enum_lockfile(
     path: &Path,
-) -> Result<BTreeMap<String, BTreeMap<String, i64>>, String> {
+) -> Result<BTreeMap<String, BTreeMap<String, i64>>, DiagnosticSet> {
     if !path.exists() {
         return Ok(BTreeMap::new());
     }
 
-    let contents = fs::read_to_string(path)
-        .map_err(|err| format!("failed to read `{}`: {err}", path.display()))?;
-    serde_json::from_str(&contents)
-        .map_err(|err| format!("failed to parse `{}`: {err}", path.display()))
+    let contents = fs::read_to_string(path).map_err(|err| {
+        artifact_diagnostic_set(path, format!("failed to read `{}`: {err}", path.display()))
+    })?;
+    serde_json::from_str(&contents).map_err(|err| {
+        artifact_diagnostic_set(path, format!("failed to parse `{}`: {err}", path.display()))
+    })
 }
 
 fn stage_key_as_enum_lockfile_if_needed(
     path: &Path,
     locked: &KeyAsEnumLockfile,
-) -> Result<Option<artifacts::StagedArtifactFile>, String> {
+) -> Result<Option<artifacts::StagedArtifactFile>, DiagnosticSet> {
     if locked.is_empty() {
         return Ok(None);
     }

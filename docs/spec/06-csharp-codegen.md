@@ -50,7 +50,7 @@ outputs:
 
 MessagePack loader 不使用 typeless、反射式或动态 resolver 反序列化；生成代码直接调用低层 `MessagePackReader`，以兼容普通 .NET 和 Unity/IL2CPP/AOT。
 
-CLI 项目配置目前只暴露 `outputs.code.namespace`。数据库类名由 codegen options 提供，项目管线默认使用 `GameConfig`；底层 Rust API 可通过 `CsharpCodegenOptions::with_database_class` 改写数据库类名，但 `coflow.yaml` 没有对应字段。
+CLI 项目配置把 `outputs.code` 中除 `type`、`dir` 之外的字段作为 C# provider options 传入，其中 `namespace` 用于生成 C# 命名空间。数据库类名由 codegen options 提供，项目管线默认使用 `GameConfig`；底层 Rust API 可通过 `CsharpCodegenOptions::with_database_class` 改写数据库类名，但 `coflow.yaml` 没有对应字段。
 
 实现使用 Tera 渲染模板文件，但模板只负责文本展开，不承载 CFT 语义判断。codegen crate 内部流程为：
 

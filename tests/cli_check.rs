@@ -184,8 +184,7 @@ fn config_validation_collects_multiple_project_diagnostics() {
         root.join("coflow.yaml"),
         r#"schema: schema/
 sources:
-  - file: data/missing.xlsx
-    dir: data
+  - path: ""
 outputs:
   data:
     type: ""
@@ -209,13 +208,11 @@ outputs:
     let json: Value = serde_json::from_str(stdout.trim()).expect("diagnostics json");
     let diagnostics = json["diagnostics"].as_array().expect("diagnostics array");
     for expected in [
-        "sources[0] must set exactly one of `file`, `dir`, or `lark_sheet`",
+        "sources[0].path is empty",
         "outputs.data.type is empty",
         "outputs.data.dir is empty",
-        "outputs.data.namespace is only valid for code outputs",
         "outputs.code.type is empty",
         "outputs.code.dir is empty",
-        "outputs.code.namespace is empty",
     ] {
         assert!(
             diagnostics
@@ -297,7 +294,7 @@ fn config_validation_rejects_invalid_sources_and_sheets() {
     .expect("write schema");
     std::fs::write(
         project_dir.join("coflow.yaml"),
-        "schema: schema/\nsources:\n  - file: data/missing.xlsx\n    sheets: []\n",
+        "schema: schema/\nsources:\n  - path: data/missing.xlsx\n    sheets: []\n",
     )
     .expect("write config");
 
@@ -309,7 +306,7 @@ fn config_validation_rejects_invalid_sources_and_sheets() {
     assert!(!output.status.success());
     assert!(
         String::from_utf8_lossy(&output.stderr)
-            .contains("sources[0].file `data/missing.xlsx` does not exist"),
+            .contains("sources[0].path `data/missing.xlsx` does not exist"),
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
@@ -318,7 +315,7 @@ fn config_validation_rejects_invalid_sources_and_sheets() {
     std::fs::write(project_dir.join("data").join("missing.xlsx"), "").expect("write placeholder");
     std::fs::write(
         project_dir.join("coflow.yaml"),
-        "schema: schema/\nsources:\n  - file: data/missing.xlsx\n    sheets:\n      - sheet: \"\"\n        columns:\n          A: id\n",
+        "schema: schema/\nsources:\n  - path: data/missing.xlsx\n    sheets:\n      - sheet: \"\"\n        columns:\n          A: id\n",
     )
     .expect("write config");
 
@@ -329,7 +326,7 @@ fn config_validation_rejects_invalid_sources_and_sheets() {
 
     assert!(!output.status.success());
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("sources[0].sheets[0].sheet is empty"),
+        String::from_utf8_lossy(&output.stderr).contains("excel source sheet `sheet` is empty"),
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
@@ -338,8 +335,8 @@ fn config_validation_rejects_invalid_sources_and_sheets() {
 }
 
 #[test]
-fn config_validation_rejects_duplicate_column_keys() {
-    let root = temp_project_dir("duplicate-column-keys");
+fn provider_options_validation_rejects_invalid_column_mapping_shape() {
+    let root = temp_project_dir("invalid-column-mapping-shape");
     let _cleanup = TempDirCleanup(root.clone());
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
@@ -353,12 +350,10 @@ fn config_validation_rejects_duplicate_column_keys() {
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data/items.xlsx
+  - path: data/items.xlsx
     sheets:
       - sheet: Items
-        columns:
-          A: id
-          A: name
+        columns: []
 ",
     )
     .expect("write config");
@@ -371,7 +366,7 @@ sources:
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("duplicate columns key `A`"),
+        stderr.contains("excel source sheet `columns` must be an object"),
         "stderr: {stderr}"
     );
 }
@@ -390,7 +385,7 @@ fn schema_only_commands_do_not_require_excel_sources() {
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data/missing.xlsx
+  - path: data/missing.xlsx
     sheets:
       - sheet: Items
         type: Item
@@ -476,7 +471,7 @@ fn data_commands_require_excel_sources() {
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data/missing.xlsx
+  - path: data/missing.xlsx
     sheets:
       - sheet: Items
         type: Item
@@ -503,7 +498,7 @@ outputs:
         assert!(!output.status.success());
         assert!(
             String::from_utf8_lossy(&output.stderr)
-                .contains("sources[0].file `data/missing.xlsx` does not exist"),
+                .contains("sources[0].path `data/missing.xlsx` does not exist"),
             "stderr: {}",
             String::from_utf8_lossy(&output.stderr)
         );
@@ -525,7 +520,7 @@ fn excel_cell_diagnostics_include_sheet_and_a1_cell_in_human_output() {
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data/items.xlsx
+  - path: data/items.xlsx
     sheets:
       - sheet: Items
         type: Item
@@ -599,7 +594,7 @@ fn excel_cell_diagnostics_collect_multiple_bad_cells() {
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data/items.xlsx
+  - path: data/items.xlsx
     sheets:
       - sheet: Items
         type: Item
@@ -654,7 +649,7 @@ fn excel_missing_sheet_diagnostics_include_sheet_in_human_output() {
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data/items.xlsx
+  - path: data/items.xlsx
     sheets:
       - sheet: Missing
         type: Item
@@ -708,7 +703,7 @@ fn excel_diagnostics_collect_multiple_missing_sheets() {
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data/items.xlsx
+  - path: data/items.xlsx
     sheets:
       - sheet: MissingA
         type: Item
@@ -753,7 +748,7 @@ fn excel_diagnostics_collect_multiple_unknown_columns() {
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data/items.xlsx
+  - path: data/items.xlsx
     sheets:
       - sheet: Items
         type: Item

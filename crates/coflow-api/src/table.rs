@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use crate::cell_value::{parse_cell, CellValueDiagnostics, ParsedCell};
 use crate::{
     CfdDiagnostic, CfdDiagnostics, CfdInputRecord, CfdInputValue, CfdLabel, CfdPath,
-    CfdPathSegment, CftContainer, Diagnostic, DiagnosticSet, Label, SourceLocation,
+    CfdPathSegment, CftContainer, Diagnostic, DiagnosticSet, Label, SourceDocument, SourceLocation,
 };
 
 const IMPORT_CONTROL_COLUMN: &str = "#";
@@ -75,6 +75,7 @@ impl TableSheetConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableSource {
     pub name: PathBuf,
+    pub document: SourceDocument,
     pub sheets: Vec<TableSheet>,
     pub configs: Vec<TableSheetConfig>,
 }
@@ -86,8 +87,25 @@ impl TableSource {
         sheets: Vec<TableSheet>,
         configs: Vec<TableSheetConfig>,
     ) -> Self {
+        let name = name.into();
+        Self {
+            document: SourceDocument::Local(name.clone()),
+            name,
+            sheets,
+            configs,
+        }
+    }
+
+    #[must_use]
+    pub fn remote(
+        name: impl Into<PathBuf>,
+        document: impl Into<String>,
+        sheets: Vec<TableSheet>,
+        configs: Vec<TableSheetConfig>,
+    ) -> Self {
         Self {
             name: name.into(),
+            document: SourceDocument::Remote(document.into()),
             sheets,
             configs,
         }
@@ -479,7 +497,7 @@ pub fn collect_table_input_records(
                     continue;
                 }
                 origins.push(TableRecordOrigin::new(
-                    source.name.clone(),
+                    source.document.clone(),
                     sheet.sheet.clone(),
                     excel_row,
                     &columns,
@@ -691,7 +709,7 @@ impl TableOrigins {
         let mut origins = crate::OriginMap::default();
         for record in &self.records {
             origins.push_table_record(
-                record.file.clone(),
+                record.document.clone(),
                 record.sheet.clone(),
                 record.row,
                 record.id_column,
@@ -722,7 +740,7 @@ impl TableOrigins {
 
 #[derive(Debug, Clone)]
 struct TableRecordOrigin {
-    file: PathBuf,
+    document: SourceDocument,
     sheet: String,
     row: usize,
     id_column: usize,
@@ -731,7 +749,7 @@ struct TableRecordOrigin {
 
 impl TableRecordOrigin {
     fn new(
-        file: PathBuf,
+        document: SourceDocument,
         sheet: String,
         row: usize,
         columns: &[ResolvedColumn],
@@ -750,7 +768,7 @@ impl TableRecordOrigin {
             }
         }
         Self {
-            file,
+            document,
             sheet,
             row,
             id_column,
@@ -762,7 +780,11 @@ impl TableRecordOrigin {
         let column = path_column(path, &self.field_columns).or_else(|| {
             root_field(path).and_then(|field| (field == "id").then_some(self.id_column))
         });
-        TableLocation::new(self.file.clone())
+        let name = match &self.document {
+            SourceDocument::Local(path) => path.clone(),
+            SourceDocument::Remote(document) => PathBuf::from(document),
+        };
+        TableLocation::new(name)
             .sheet(self.sheet.clone())
             .with_row(self.row)
             .with_column(column)
