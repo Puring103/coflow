@@ -430,7 +430,7 @@ outputs:
 
     assert_diagnostic_message_contains(
         outcome,
-        "sources[0] must set exactly one of `file` or `dir`",
+        "sources[0] must set exactly one of `file`, `dir`, or `lark_sheet`",
     );
 }
 

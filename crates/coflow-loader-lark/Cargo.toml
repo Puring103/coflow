@@ -1,0 +1,21 @@
+[package]
+name = "coflow-loader-lark"
+version = "0.1.0"
+edition = "2021"
+description = "Feishu/Lark Sheets loader for Coflow data models."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/wtlll/ScriptForGame"
+readme = "../../README.md"
+keywords = ["config", "game-data", "lark", "feishu"]
+categories = ["config", "game-development"]
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+coflow-loader-table = { path = "../coflow-loader-table" }
+percent-encoding = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+ureq = "2"

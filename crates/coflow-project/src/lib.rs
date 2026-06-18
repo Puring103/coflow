@@ -44,8 +44,18 @@ pub enum SchemaConfig {
 pub struct SourceConfig {
     pub file: Option<PathBuf>,
     pub dir: Option<PathBuf>,
+    pub lark_sheet: Option<LarkSheetConfig>,
     #[serde(default)]
     pub sheets: Vec<SheetConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LarkSheetConfig {
+    pub app_id: String,
+    pub app_secret: String,
+    pub url: Option<String>,
+    pub spreadsheet_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -54,6 +64,7 @@ pub struct SheetConfig {
     pub sheet: String,
     #[serde(rename = "type")]
     pub type_name: Option<String>,
+    pub key: Option<String>,
     #[serde(default, deserialize_with = "deserialize_columns")]
     pub columns: BTreeMap<String, String>,
 }
@@ -343,8 +354,8 @@ fn validate_sources_collecting(root_dir: &Path, sources: &[SourceConfig]) -> Vec
     let mut diagnostics = validate_source_shapes_collecting(sources);
     for (source_index, source) in sources.iter().enumerate() {
         let source_label = format!("sources[{source_index}]");
-        match (&source.file, &source.dir) {
-            (Some(file), None) => {
+        match (&source.file, &source.dir, &source.lark_sheet) {
+            (Some(file), None, None) => {
                 let resolved = resolve_project_relative(root_dir, file);
                 if !resolved.is_file() && !resolved.is_dir() {
                     diagnostics.push(format!(
@@ -353,7 +364,7 @@ fn validate_sources_collecting(root_dir: &Path, sources: &[SourceConfig]) -> Vec
                     ));
                 }
             }
-            (None, Some(dir)) => {
+            (None, Some(dir), None) => {
                 let resolved = resolve_project_relative(root_dir, dir);
                 if !resolved.is_dir() {
                     diagnostics.push(format!(
@@ -362,7 +373,7 @@ fn validate_sources_collecting(root_dir: &Path, sources: &[SourceConfig]) -> Vec
                     ));
                 }
             }
-            (Some(_), Some(_)) | (None, None) => {}
+            _ => {}
         }
     }
     diagnostics
@@ -372,9 +383,12 @@ fn validate_source_shapes_collecting(sources: &[SourceConfig]) -> Vec<String> {
     let mut diagnostics = Vec::new();
     for (source_index, source) in sources.iter().enumerate() {
         let source_label = format!("sources[{source_index}]");
-        if source.file.is_some() == source.dir.is_some() {
+        let source_kind_count = usize::from(source.file.is_some())
+            + usize::from(source.dir.is_some())
+            + usize::from(source.lark_sheet.is_some());
+        if source_kind_count != 1 {
             diagnostics.push(format!(
-                "{source_label} must set exactly one of `file` or `dir`"
+                "{source_label} must set exactly one of `file`, `dir`, or `lark_sheet`"
             ));
         }
         if source
@@ -391,6 +405,9 @@ fn validate_source_shapes_collecting(sources: &[SourceConfig]) -> Vec<String> {
         {
             diagnostics.push(format!("{source_label}.dir is empty"));
         }
+        if let Some(lark_sheet) = &source.lark_sheet {
+            diagnostics.extend(validate_lark_sheet_source(lark_sheet, &source_label));
+        }
         for (sheet_index, sheet) in source.sheets.iter().enumerate() {
             let sheet_label = format!("{source_label}.sheets[{sheet_index}]");
             if sheet.sheet.trim().is_empty() {
@@ -401,7 +418,46 @@ fn validate_source_shapes_collecting(sources: &[SourceConfig]) -> Vec<String> {
                     diagnostics.push(format!("{sheet_label}.type is empty"));
                 }
             }
+            if let Some(key) = &sheet.key {
+                if key.trim().is_empty() {
+                    diagnostics.push(format!("{sheet_label}.key is empty"));
+                }
+            }
         }
+    }
+    diagnostics
+}
+
+fn validate_lark_sheet_source(lark_sheet: &LarkSheetConfig, source_label: &str) -> Vec<String> {
+    let mut diagnostics = Vec::new();
+    if lark_sheet.app_id.trim().is_empty() {
+        diagnostics.push(format!("{source_label}.lark_sheet.app_id is empty"));
+    }
+    if lark_sheet.app_secret.trim().is_empty() {
+        diagnostics.push(format!("{source_label}.lark_sheet.app_secret is empty"));
+    }
+    let locator_count =
+        usize::from(lark_sheet.url.is_some()) + usize::from(lark_sheet.spreadsheet_token.is_some());
+    if locator_count != 1 {
+        diagnostics.push(format!(
+            "{source_label}.lark_sheet must set exactly one of `url` or `spreadsheet_token`"
+        ));
+    }
+    if lark_sheet
+        .url
+        .as_ref()
+        .is_some_and(|url| url.trim().is_empty())
+    {
+        diagnostics.push(format!("{source_label}.lark_sheet.url is empty"));
+    }
+    if lark_sheet
+        .spreadsheet_token
+        .as_ref()
+        .is_some_and(|token| token.trim().is_empty())
+    {
+        diagnostics.push(format!(
+            "{source_label}.lark_sheet.spreadsheet_token is empty"
+        ));
     }
     diagnostics
 }

@@ -5,6 +5,14 @@ use coflow_loader_excel::{
     collect_input_records, ExcelDiagnostic, ExcelDiagnostics, ExcelInputRecords, ExcelLabel,
     ExcelLocation, ExcelOrigins, ExcelSheet, ExcelSource,
 };
+use coflow_loader_lark::{
+    load_lark_table_source_with_client, LarkDiagnostic, LarkDiagnostics, LarkHttpClient,
+    LarkSheetLocator, LarkSheetSource, UreqLarkHttpClient,
+};
+use coflow_loader_table::{
+    collect_table_input_records, TableDiagnostics, TableLabel, TableLocation, TableOrigins,
+    TableSheetConfig, TableSource,
+};
 use coflow_project::{DiagnosticJson, Project, RelatedJson, SourceConfig};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -18,11 +26,27 @@ pub fn load_project_data(
     project: &Project,
     schema: &CftContainer,
 ) -> Result<ProjectLoadOutput, Vec<DiagnosticJson>> {
+    load_project_data_with_lark_client(project, schema, &UreqLarkHttpClient)
+}
+
+fn load_project_data_with_lark_client(
+    project: &Project,
+    schema: &CftContainer,
+    lark_client: &impl LarkHttpClient,
+) -> Result<ProjectLoadOutput, Vec<DiagnosticJson>> {
     let mut records = Vec::new();
     let mut origins = ProjectOrigins::default();
     let mut diagnostics = Vec::new();
 
     for source in &project.config.sources {
+        if source.lark_sheet.is_some() {
+            match load_lark_records(schema, source, lark_client) {
+                Ok(loaded) => push_table_records(&mut records, &mut origins, loaded),
+                Err(err) => diagnostics.extend(err),
+            }
+            continue;
+        }
+
         let source_files = match discover_source_files(project, source) {
             Ok(files) => files,
             Err(message) => {
@@ -98,10 +122,72 @@ fn push_cfd_records(
     origins.push_cfd(start, count, loaded.file);
 }
 
+fn push_table_records(
+    records: &mut Vec<CfdInputRecord>,
+    origins: &mut ProjectOrigins,
+    loaded: TableInputRecords,
+) {
+    let start = records.len();
+    records.extend(loaded.records);
+    origins.push_table(start, loaded.origins);
+}
+
 #[derive(Debug)]
 struct CfdInputRecords {
     file: PathBuf,
     records: Vec<CfdInputRecord>,
+}
+
+#[derive(Debug)]
+struct TableInputRecords {
+    records: Vec<CfdInputRecord>,
+    origins: TableOrigins,
+}
+
+fn load_lark_records(
+    schema: &CftContainer,
+    source: &SourceConfig,
+    lark_client: &impl LarkHttpClient,
+) -> Result<TableInputRecords, Vec<DiagnosticJson>> {
+    let lark_source = lark_sheet_source(source)?;
+    let table_source = load_lark_table_source_with_client(&lark_source, lark_client)
+        .map_err(|err| diagnostics_from_lark(&err))?;
+    load_table_records(schema, &[table_source])
+}
+
+fn load_table_records(
+    schema: &CftContainer,
+    sources: &[TableSource],
+) -> Result<TableInputRecords, Vec<DiagnosticJson>> {
+    collect_table_input_records(schema, sources)
+        .map(|loaded| TableInputRecords {
+            records: loaded.records,
+            origins: loaded.origins,
+        })
+        .map_err(|err| diagnostics_from_table_checks(&err))
+}
+
+fn lark_sheet_source(source: &SourceConfig) -> Result<LarkSheetSource, Vec<DiagnosticJson>> {
+    let Some(lark_sheet) = &source.lark_sheet else {
+        return Err(vec![DiagnosticJson::project(
+            "source must define `lark_sheet`",
+        )]);
+    };
+    let locator = if let Some(url) = &lark_sheet.url {
+        LarkSheetLocator::Url(url.clone())
+    } else if let Some(token) = &lark_sheet.spreadsheet_token {
+        LarkSheetLocator::SpreadsheetToken(token.clone())
+    } else {
+        return Err(vec![DiagnosticJson::project(
+            "lark_sheet must set exactly one of `url` or `spreadsheet_token`",
+        )]);
+    };
+    Ok(LarkSheetSource::new(
+        lark_sheet.app_id.clone(),
+        lark_sheet.app_secret.clone(),
+        locator,
+        table_sheet_configs(source),
+    ))
 }
 
 fn load_cfd_records(
@@ -230,6 +316,29 @@ fn excel_sheets(source: &SourceConfig) -> Vec<ExcelSheet> {
             if let Some(type_name) = &sheet.type_name {
                 out = out.with_type(type_name.clone());
             }
+            if let Some(key) = &sheet.key {
+                out = out.with_key(key.clone());
+            }
+            if !sheet.columns.is_empty() {
+                out = out.with_columns(sheet.columns.clone());
+            }
+            out
+        })
+        .collect()
+}
+
+fn table_sheet_configs(source: &SourceConfig) -> Vec<TableSheetConfig> {
+    source
+        .sheets
+        .iter()
+        .map(|sheet| {
+            let mut out = TableSheetConfig::new(sheet.sheet.clone());
+            if let Some(type_name) = &sheet.type_name {
+                out = out.with_type(type_name.clone());
+            }
+            if let Some(key) = &sheet.key {
+                out = out.with_key(key.clone());
+            }
             if !sheet.columns.is_empty() {
                 out = out.with_columns(sheet.columns.clone());
             }
@@ -272,6 +381,15 @@ impl ProjectOrigins {
             start,
             end: start + count,
             file,
+        });
+    }
+
+    fn push_table(&mut self, start: usize, origins: TableOrigins) {
+        let count = origins.record_count();
+        self.segments.push(ProjectOriginSegment::Table {
+            start,
+            end: start + count,
+            origins,
         });
     }
 
@@ -338,6 +456,14 @@ impl ProjectOrigins {
                 let excel = origins.map_label_with_record_offset(label, *start)?;
                 Some(mapped_excel_label(excel))
             }
+            ProjectOriginSegment::Table {
+                start,
+                end,
+                origins,
+            } if (*start..*end).contains(&index) => {
+                let table = origins.map_label_with_record_offset(label, *start)?;
+                Some(mapped_table_label(table))
+            }
             ProjectOriginSegment::Cfd { start, end, file } if (*start..*end).contains(&index) => {
                 Some(MappedLabel {
                     path: file.display().to_string(),
@@ -359,6 +485,11 @@ enum ProjectOriginSegment {
         start: usize,
         end: usize,
         origins: ExcelOrigins,
+    },
+    Table {
+        start: usize,
+        end: usize,
+        origins: TableOrigins,
     },
     Cfd {
         start: usize,
@@ -396,6 +527,76 @@ fn diagnostics_from_excel_checks(checks: &ExcelDiagnostics) -> Vec<DiagnosticJso
         .iter()
         .map(excel_diagnostic_json)
         .collect()
+}
+
+fn diagnostics_from_table_checks(checks: &TableDiagnostics) -> Vec<DiagnosticJson> {
+    checks
+        .diagnostics
+        .iter()
+        .map(table_diagnostic_json)
+        .collect()
+}
+
+fn table_diagnostic_json(diagnostic: &coflow_loader_table::TableDiagnostic) -> DiagnosticJson {
+    let fallback = TableLocation::new("");
+    let location = diagnostic
+        .primary
+        .as_ref()
+        .map_or(&fallback, |label| &label.location);
+    let (line, character) = table_position(location);
+    DiagnosticJson {
+        code: diagnostic.code.clone(),
+        stage: diagnostic.stage.clone(),
+        severity: "error".to_string(),
+        message: diagnostic.message.clone(),
+        path: location.file.display().to_string(),
+        sheet: location.sheet.clone(),
+        cell: table_cell(location),
+        start_line: line,
+        start_character: character,
+        end_line: line,
+        end_character: character.saturating_add(1),
+        related: diagnostic
+            .related
+            .iter()
+            .map(|label| table_related_json(&label.location, label.message.clone()))
+            .collect(),
+    }
+}
+
+fn table_related_json(location: &TableLocation, label: Option<String>) -> RelatedJson {
+    let (line, character) = table_position(location);
+    RelatedJson {
+        path: location.file.display().to_string(),
+        sheet: location.sheet.clone(),
+        cell: table_cell(location),
+        start_line: line,
+        start_character: character,
+        end_line: line,
+        end_character: character.saturating_add(1),
+        label,
+    }
+}
+
+fn diagnostics_from_lark(err: &LarkDiagnostics) -> Vec<DiagnosticJson> {
+    err.diagnostics.iter().map(lark_diagnostic_json).collect()
+}
+
+fn lark_diagnostic_json(diagnostic: &LarkDiagnostic) -> DiagnosticJson {
+    DiagnosticJson {
+        code: diagnostic.code.clone(),
+        stage: diagnostic.stage.clone(),
+        severity: "error".to_string(),
+        message: diagnostic.message.clone(),
+        path: diagnostic.document.clone().unwrap_or_default(),
+        sheet: diagnostic.sheet.clone(),
+        cell: None,
+        start_line: 0,
+        start_character: 0,
+        end_line: 0,
+        end_character: 1,
+        related: Vec::new(),
+    }
 }
 
 fn excel_diagnostic_json(diagnostic: &ExcelDiagnostic) -> DiagnosticJson {
@@ -446,7 +647,22 @@ fn excel_position(location: &ExcelLocation) -> (usize, usize) {
     )
 }
 
+fn table_position(location: &TableLocation) -> (usize, usize) {
+    (
+        location.row.unwrap_or(1).saturating_sub(1),
+        location.column.unwrap_or(1).saturating_sub(1),
+    )
+}
+
 fn excel_cell(location: &ExcelLocation) -> Option<String> {
+    Some(format!(
+        "{}{}",
+        excel_column_name(location.column?),
+        location.row?
+    ))
+}
+
+fn table_cell(location: &TableLocation) -> Option<String> {
     Some(format!(
         "{}{}",
         excel_column_name(location.column?),
@@ -497,4 +713,183 @@ fn project_relative_display(project: &Project, path: &Path) -> String {
         .display()
         .to_string()
         .replace('\\', "/")
+}
+
+fn mapped_table_label(label: TableLabel) -> MappedLabel {
+    let (line, character) = table_position(&label.location);
+    let cell = table_cell(&label.location);
+    MappedLabel {
+        path: label.location.file.display().to_string(),
+        sheet: label.location.sheet,
+        cell,
+        line,
+        character,
+        message: label.message,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use coflow_cft::ModuleId;
+    use coflow_data_model::CfdValue;
+    use coflow_loader_lark::LarkHttpClient;
+    use coflow_project::{
+        LarkSheetConfig, OutputsConfig, ProjectConfig, SchemaConfig, SheetConfig, SourceConfig,
+    };
+    use serde_json::Value;
+    use std::cell::RefCell;
+    use std::collections::{BTreeMap, VecDeque};
+
+    #[test]
+    fn loads_lark_sheet_source_through_shared_table_pipeline() -> Result<(), String> {
+        let root = std::env::temp_dir().join("coflow-pipeline-lark-unit");
+        let project = Project {
+            config_path: root.join("coflow.yaml"),
+            root_dir: root,
+            config: ProjectConfig {
+                schema: SchemaConfig::One(PathBuf::from("schema")),
+                sources: vec![SourceConfig {
+                    file: None,
+                    dir: None,
+                    lark_sheet: Some(LarkSheetConfig {
+                        app_id: "cli_test".to_string(),
+                        app_secret: "secret_test".to_string(),
+                        url: Some("https://fand3tbr90g.feishu.cn/wiki/wiki_token".to_string()),
+                        spreadsheet_token: None,
+                    }),
+                    sheets: vec![SheetConfig {
+                        sheet: "物品表".to_string(),
+                        type_name: Some("Item".to_string()),
+                        key: Some("物品ID".to_string()),
+                        columns: BTreeMap::from([
+                            ("名称".to_string(), "name".to_string()),
+                            ("稀有度".to_string(), "rarity".to_string()),
+                        ]),
+                    }],
+                }],
+                outputs: OutputsConfig::default(),
+            },
+        };
+        let schema = compile_schema(
+            r"
+                enum Rarity { Common = 0, Rare = 10, }
+                type Item {
+                    name: string;
+                    rarity: Rarity = Rarity.Common;
+                }
+            ",
+        )?;
+        let client = FakeLarkClient::new([
+            Response::post(
+                "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+                r#"{"code":0,"tenant_access_token":"tenant_token"}"#,
+            ),
+            Response::get(
+                "https://open.feishu.cn/open-apis/wiki/v2/spaces/get_node?token=wiki_token",
+                r#"{"code":0,"data":{"node":{"obj_type":"sheet","obj_token":"sht_token"}}}"#,
+            ),
+            Response::get(
+                "https://open.feishu.cn/open-apis/sheets/v3/spreadsheets/sht_token/sheets/query",
+                r#"{"code":0,"data":{"sheets":[{"sheet_id":"sheet_a","title":"物品表","grid_properties":{"row_count":2,"column_count":3}}]}}"#,
+            ),
+            Response::get(
+                "https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/sht_token/values/sheet_a%21A1%3AC2?valueRenderOption=ToString",
+                r#"{"code":0,"data":{"valueRange":{"values":[["物品ID","名称","稀有度"],["sword_01","铁剑","Rare"]]}}}"#,
+            ),
+        ]);
+
+        let output = load_project_data_with_lark_client(&project, &schema, &client)
+            .map_err(|diagnostics| format!("{diagnostics:?}"))?;
+
+        let item = output
+            .model
+            .table("Item")
+            .and_then(|table| table.primary_index.get("sword_01"))
+            .and_then(|record_id| output.model.record(*record_id))
+            .ok_or_else(|| "expected sword_01 item".to_string())?;
+        if item.field("name") != Some(&CfdValue::String("铁剑".to_string())) {
+            return Err(format!("unexpected item name: {:?}", item.field("name")));
+        }
+        Ok(())
+    }
+
+    fn compile_schema(source: &str) -> Result<CftContainer, String> {
+        let mut container = CftContainer::new();
+        container
+            .add_module(ModuleId::from("main"), source)
+            .map_err(|err| format!("schema should parse: {err:?}"))?;
+        container
+            .compile()
+            .map_err(|err| format!("schema should compile: {err:?}"))?;
+        Ok(container)
+    }
+
+    #[derive(Debug, Clone)]
+    struct Response {
+        method: &'static str,
+        url: &'static str,
+        body: &'static str,
+    }
+
+    impl Response {
+        fn get(url: &'static str, body: &'static str) -> Self {
+            Self {
+                method: "GET",
+                url,
+                body,
+            }
+        }
+
+        fn post(url: &'static str, body: &'static str) -> Self {
+            Self {
+                method: "POST",
+                url,
+                body,
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    struct FakeLarkClient {
+        responses: RefCell<VecDeque<Response>>,
+    }
+
+    impl FakeLarkClient {
+        fn new(responses: impl IntoIterator<Item = Response>) -> Self {
+            Self {
+                responses: RefCell::new(responses.into_iter().collect()),
+            }
+        }
+
+        fn next(&self, method: &str, url: &str) -> Result<String, String> {
+            let response = self
+                .responses
+                .borrow_mut()
+                .pop_front()
+                .ok_or_else(|| format!("unexpected {method} {url}"))?;
+            if response.method != method || response.url != url {
+                return Err(format!(
+                    "expected {} {}, got {method} {url}",
+                    response.method, response.url
+                ));
+            }
+            Ok(response.body.to_string())
+        }
+    }
+
+    impl LarkHttpClient for FakeLarkClient {
+        fn get(&self, url: &str, _tenant_access_token: &str) -> Result<String, String> {
+            self.next("GET", url)
+        }
+
+        fn post_json(
+            &self,
+            url: &str,
+            _body: &Value,
+            _tenant_access_token: Option<&str>,
+        ) -> Result<String, String> {
+            self.next("POST", url)
+        }
+    }
 }

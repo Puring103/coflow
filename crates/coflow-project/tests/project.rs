@@ -178,13 +178,13 @@ fn project_validation_reports_schema_source_and_output_edges() -> TestResult {
         (
             "source-file-and-dir",
             "schema: schema/main.cft\nsources:\n  - file: data.xlsx\n    dir: data\n",
-            "sources[0] must set exactly one of `file` or `dir`",
+            "sources[0] must set exactly one of `file`, `dir`, or `lark_sheet`",
             true,
         ),
         (
             "source-missing-file-and-dir",
             "schema: schema/main.cft\nsources:\n  - sheets:\n      - sheet: Items\n",
-            "sources[0] must set exactly one of `file` or `dir`",
+            "sources[0] must set exactly one of `file`, `dir`, or `lark_sheet`",
             true,
         ),
         (
@@ -246,6 +246,130 @@ fn project_validation_reports_schema_source_and_output_edges() -> TestResult {
         } else {
             Project::open(Some(&config)).expect_err("data validation should fail")
         };
+        assert!(
+            message.contains(expected),
+            "case {name} expected `{expected}`, got `{message}`"
+        );
+    }
+
+    std::fs::remove_dir_all(root).map_err(|err| err.to_string())
+}
+
+#[test]
+fn project_config_accepts_lark_sheet_source_with_shared_sheet_settings() -> TestResult {
+    let root = temp_project_dir("coflow-project-lark-sheet-config");
+    std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
+    std::fs::write(
+        root.join("schema/main.cft"),
+        "type Item { name: string; }\n",
+    )
+    .map_err(|err| err.to_string())?;
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+sources:
+  - lark_sheet:
+      app_id: cli_test
+      app_secret: secret_test
+      url: https://fand3tbr90g.feishu.cn/wiki/K7M7wT1esizv6aklRy3cO4o6ntg
+    sheets:
+      - sheet: 物品表
+        type: Item
+        key: 配置ID
+        columns:
+          名称: name
+"#,
+    )
+    .map_err(|err| err.to_string())?;
+
+    let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
+    assert!(project.schema_diagnostics().is_empty());
+    let source = &project.config.sources[0];
+    let lark = source
+        .lark_sheet
+        .as_ref()
+        .ok_or_else(|| "lark_sheet source should parse".to_string())?;
+    assert_eq!(lark.app_id, "cli_test");
+    assert_eq!(lark.app_secret, "secret_test");
+    assert_eq!(
+        lark.url.as_deref(),
+        Some("https://fand3tbr90g.feishu.cn/wiki/K7M7wT1esizv6aklRy3cO4o6ntg")
+    );
+    assert_eq!(source.sheets[0].key.as_deref(), Some("配置ID"));
+
+    std::fs::remove_dir_all(root).map_err(|err| err.to_string())
+}
+
+#[test]
+fn project_validation_reports_lark_sheet_shape_errors() -> TestResult {
+    let root = temp_project_dir("coflow-project-lark-sheet-validation");
+    std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
+    std::fs::write(
+        root.join("schema/main.cft"),
+        "type Item { value: string; }\n",
+    )
+    .map_err(|err| err.to_string())?;
+
+    let cases = [
+        (
+            "mixed-file-and-lark",
+            r#"schema: schema/main.cft
+sources:
+  - file: data.xlsx
+    lark_sheet:
+      app_id: cli_test
+      app_secret: secret_test
+      spreadsheet_token: sht_test
+"#,
+            "sources[0] must set exactly one of `file`, `dir`, or `lark_sheet`",
+        ),
+        (
+            "missing-token-and-url",
+            r#"schema: schema/main.cft
+sources:
+  - lark_sheet:
+      app_id: cli_test
+      app_secret: secret_test
+"#,
+            "sources[0].lark_sheet must set exactly one of `url` or `spreadsheet_token`",
+        ),
+        (
+            "empty-app-id",
+            r#"schema: schema/main.cft
+sources:
+  - lark_sheet:
+      app_id: ''
+      app_secret: secret_test
+      spreadsheet_token: sht_test
+"#,
+            "sources[0].lark_sheet.app_id is empty",
+        ),
+        (
+            "empty-key",
+            r#"schema: schema/main.cft
+sources:
+  - lark_sheet:
+      app_id: cli_test
+      app_secret: secret_test
+      spreadsheet_token: sht_test
+    sheets:
+      - sheet: Item
+        key: ' '
+"#,
+            "sources[0].sheets[0].key is empty",
+        ),
+    ];
+
+    for (name, yaml, expected) in cases {
+        let config = root.join(format!("{name}.yaml"));
+        std::fs::write(&config, yaml).map_err(|err| err.to_string())?;
+        let project = Project::open_schema_only(Some(&config)).map_err(|err| err.to_string())?;
+        let message = project
+            .schema_diagnostics()
+            .into_iter()
+            .map(|diagnostic| diagnostic.message)
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(
             message.contains(expected),
             "case {name} expected `{expected}`, got `{message}`"

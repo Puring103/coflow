@@ -11,6 +11,7 @@
         clippy::unwrap_used
     )
 )]
+#![allow(clippy::multiple_crate_versions)]
 
 mod artifacts;
 mod data;

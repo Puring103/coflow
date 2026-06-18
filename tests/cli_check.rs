@@ -209,7 +209,7 @@ outputs:
     let json: Value = serde_json::from_str(stdout.trim()).expect("diagnostics json");
     let diagnostics = json["diagnostics"].as_array().expect("diagnostics array");
     for expected in [
-        "sources[0] must set exactly one of `file` or `dir`",
+        "sources[0] must set exactly one of `file`, `dir`, or `lark_sheet`",
         "outputs.data.type is `yaml`; expected `json` or `messagepack`",
         "outputs.data.dir is empty",
         "outputs.data.namespace is only valid for code outputs",
@@ -575,7 +575,7 @@ outputs:
     assert!(stderr.contains("sheet   Items"), "stderr: {stderr}");
     assert!(stderr.contains("cell    B2"), "stderr: {stderr}");
     assert!(
-        stderr.contains("message\n  failed to parse `Item.level` cell: expected int"),
+        stderr.contains("message\n  expected int while parsing `Item.level`"),
         "stderr: {stderr}"
     );
     assert!(

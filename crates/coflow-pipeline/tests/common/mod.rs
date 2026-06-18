@@ -195,9 +195,11 @@ pub fn project_with_unvalidated_outputs(
             sources: vec![SourceConfig {
                 file: Some(PathBuf::from("data/configs.xlsx")),
                 dir: None,
+                lark_sheet: None,
                 sheets: vec![SheetConfig {
                     sheet: "Item".to_string(),
                     type_name: None,
+                    key: None,
                     columns: BTreeMap::from([("id".to_string(), "id".to_string())]),
                 }],
             }],
