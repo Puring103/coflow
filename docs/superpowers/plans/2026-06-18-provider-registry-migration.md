@@ -600,9 +600,9 @@ ExporterDescriptor {
 }
 ```
 
-- [ ] **Step 3: 删除 pipeline 中的 data format hardcode**
+- [x] **Step 3: 删除 pipeline 中的 data format hardcode**
 
-`DataFormat` 可以替换为 provider id 字符串，或仅在 CLI 层作为内置命令语法 helper 保留。
+`DataFormat` 已从 `coflow-pipeline` 公共执行 API 移除。pipeline 使用 provider id 字符串调度 exporter，并从 provider descriptor 生成报告。
 
 - [ ] **Step 4: exporter contract tests**
 
@@ -828,7 +828,7 @@ outputs:
 
 从 root `Cargo.toml` 删除已合并 crates。
 
-- [ ] **Step 2: 删除硬编码 enums**
+- [x] **Step 2: 删除硬编码 enums**
 
 删除或局部降级：
 
@@ -836,7 +836,7 @@ outputs:
 - `CodegenTarget`
 - `SourceKind`
 
-Engine 内部使用 provider id。
+Engine 内部使用 provider id。`DataFormat` 与 `CodegenTarget` 不再作为 pipeline 公共执行模型存在；C# codegen crate 内部仍保留自己的 `CsharpDataFormat` 实现枚举。
 
 - [ ] **Step 3: 删除旧 adapter 函数**
 
@@ -950,7 +950,7 @@ Expected: all four commands pass。
 
 ## 迁移落地状态
 
-本分支按“激进重构、不保留旧 crate 边界兼容”的方向落地，但为了确保现有 CLI 功能不受影响，`coflow.yaml` 的用户可见配置结构保持兼容。旧配置进入 pipeline 后会被转换成 provider-neutral 的 `SourceSpec` / `OutputSpec`，再通过 registry dispatch。
+本分支按“激进重构、不保留旧 crate 边界兼容”的方向落地，同时确保现有 CLI 功能不受影响。`coflow.yaml` 保持现有内置配置可用，并新增 provider-neutral 扩展面：source 支持 `type` 和 `options`，outputs 支持任意 provider id 和 `options`。配置进入 pipeline 后会被转换成 provider-neutral 的 `SourceSpec` / `OutputSpec`，再通过 registry dispatch。
 
 已完成的结构性变化：
 
@@ -962,6 +962,8 @@ Expected: all four commands pass。
 - `coflow-cfd` 保持低层语法/AST/parser 职责；`coflow-loader-cfd` 保持单独 loader provider 职责。
 - `coflow-pipeline` 的正式依赖不再包含具体 loader/exporter/codegen provider crate；只依赖 `coflow-api`、project/schema/check/data-model 等核心 crate。
 - `coflow-pipeline` 只在测试 dev-dependencies 中注册内置 providers，生产路径由 CLI 组合根注入 registry。
+- `coflow-pipeline` 的 export/codegen 公共执行 API 使用 provider id 字符串，不再使用封闭的 `DataFormat` / `CodegenTarget` enum。
+- `ProviderRegistry::register_loader` / `register_exporter` / `register_codegen` 对重复 provider id 返回错误，避免静默覆盖。
 
 当前主要依赖图：
 
@@ -1007,6 +1009,6 @@ graph TD
 
 保留的权衡：
 
-- `coflow-project` 仍校验内置输出类型 `json` / `messagepack` 和 codegen 类型 `csharp`，以保持现有 CLI 错误信息稳定。后续若要开放外部 provider 配置，可把这部分校验下放到 registry preflight。
+- `coflow-project` 只校验 source/output 的配置形状，不再校验内置 provider id 白名单。provider 是否存在、codegen 是否支持当前 data exporter 由 `coflow-pipeline` 结合 `ProviderRegistry` 和 descriptor 诊断。
 - `OriginMap` 已支持 table cell 和 file span 的统一映射；远端 cell 目前在 Lark provider 错误中以 remote location 表达，飞书 API 返回的单元格级 origin 后续可继续扩展。
 - C# `@keyAsEnum` lockfile 的稳定值合并仍由 pipeline 持有，provider 通过 `OutputSpec.options.key_as_enum_variants` 接收最终 variants。这保留了 artifact 原子写入和 lockfile 事务语义。

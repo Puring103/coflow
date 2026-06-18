@@ -1,9 +1,7 @@
 #![allow(dead_code, unused_imports)]
 
 pub use coflow_data_model::CfdErrorCode;
-pub use coflow_pipeline::{
-    BuildOptions, CodegenOptions, CodegenTarget, DataFormat, ExportOptions, PipelineOutcome,
-};
+pub use coflow_pipeline::{BuildOptions, CodegenOptions, ExportOptions, PipelineOutcome};
 pub use coflow_project::{
     OutputConfig, OutputsConfig, Project, ProjectConfig, SchemaConfig, SheetConfig, SourceConfig,
 };
@@ -14,12 +12,24 @@ pub use std::path::{Path, PathBuf};
 
 pub fn test_registry() -> coflow_api::ProviderRegistry {
     let mut registry = coflow_api::ProviderRegistry::default();
-    registry.register_loader(coflow_loader_excel::ExcelLoader);
-    registry.register_loader(coflow_loader_lark::LarkSheetLoader::default());
-    registry.register_loader(coflow_loader_cfd::CfdLoader);
-    registry.register_exporter(coflow_exporter_json::JsonExporter);
-    registry.register_exporter(coflow_exporter_messagepack::MessagePackExporter);
-    registry.register_codegen(coflow_codegen_csharp::CsharpCodeGenerator);
+    registry
+        .register_loader(coflow_loader_excel::ExcelLoader)
+        .expect("register excel loader");
+    registry
+        .register_loader(coflow_loader_lark::LarkSheetLoader::default())
+        .expect("register lark loader");
+    registry
+        .register_loader(coflow_loader_cfd::CfdLoader)
+        .expect("register cfd loader");
+    registry
+        .register_exporter(coflow_exporter_json::JsonExporter)
+        .expect("register json exporter");
+    registry
+        .register_exporter(coflow_exporter_messagepack::MessagePackExporter)
+        .expect("register messagepack exporter");
+    registry
+        .register_codegen(coflow_codegen_csharp::CsharpCodeGenerator)
+        .expect("register csharp codegen");
     registry
 }
 
@@ -38,18 +48,18 @@ pub fn build_project(
 
 pub fn export_project_data(
     project: &Project,
-    format: DataFormat,
+    exporter_id: &str,
     options: ExportOptions<'_>,
 ) -> Result<PipelineOutcome<coflow_pipeline::ExportReport>, String> {
-    coflow_pipeline::export_project_data(project, &test_registry(), format, options)
+    coflow_pipeline::export_project_data(project, &test_registry(), exporter_id, options)
 }
 
 pub fn generate_project_code(
     project: &Project,
-    target: CodegenTarget,
+    codegen_id: &str,
     options: CodegenOptions<'_>,
 ) -> Result<PipelineOutcome<coflow_pipeline::CodegenReport>, String> {
-    coflow_pipeline::generate_project_code(project, &test_registry(), target, options)
+    coflow_pipeline::generate_project_code(project, &test_registry(), codegen_id, options)
 }
 
 pub fn write_project_with_missing_excel_source(root: &Path, include_code_output: bool) {
@@ -232,9 +242,11 @@ pub fn project_with_unvalidated_outputs(
         config: ProjectConfig {
             schema: SchemaConfig::One(PathBuf::from("schema")),
             sources: vec![SourceConfig {
+                source_type: None,
                 file: Some(PathBuf::from("data/configs.xlsx")),
                 dir: None,
                 lark_sheet: None,
+                options: BTreeMap::new(),
                 sheets: vec![SheetConfig {
                     sheet: "Item".to_string(),
                     type_name: None,
@@ -253,6 +265,7 @@ pub fn output_config(output_type: &str, dir: &str, namespace: Option<&str>) -> O
         output_type: output_type.to_string(),
         dir: PathBuf::from(dir),
         namespace: namespace.map(str::to_string),
+        options: BTreeMap::new(),
     }
 }
 
