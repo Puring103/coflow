@@ -23,7 +23,8 @@
 use coflow_api::table::{TableSheet, TableSheetConfig, TableSource};
 use coflow_api::{
     table::collect_table_input_records, DataLoader, Diagnostic, DiagnosticSet, Label, LoadContext,
-    LoadedRecords, LoaderDescriptor, ProbeResult, SourceLocation, SourceRef, SourceSpec,
+    LoadedRecords, LoaderDescriptor, ProbeResult, ProjectSourceRef, ResolvedSource, SourceLocation,
+    SourceLocationSpec, SourceResolveContext,
 };
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use serde::de::DeserializeOwned;
@@ -241,8 +242,9 @@ pub fn load_lark_table_source_with_client(
     }
 
     if diagnostics.is_empty() {
-        Ok(TableSource::new(
+        Ok(TableSource::remote(
             format!("lark:{spreadsheet_token}"),
+            lark_document(source),
             table_sheets,
             configs,
         ))
@@ -300,7 +302,7 @@ fn spreadsheet_token_from_url(
         return Err(LarkDiagnostics::one(
             LarkDiagnostic::new(
                 "LARK-URL",
-                "lark_sheet.url must be a `/sheets/<token>` or `/wiki/<token>` URL",
+                "lark source url must be a `/sheets/<token>` or `/wiki/<token>` URL",
             )
             .with_document(url.to_string()),
         ));
@@ -513,8 +515,8 @@ pub const LARK_SHEET_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
     id: "lark-sheet",
     display_name: "Lark Sheet",
     extensions: &[],
-    uri_schemes: &["https"],
-    config_keys: &["lark_sheet", "spreadsheet_token", "url"],
+    uri_schemes: &["https", "lark"],
+    option_keys: &["spreadsheet_token", "url", "app_id", "app_secret"],
 };
 
 impl<C> DataLoader for LarkSheetLoader<C>
@@ -525,27 +527,56 @@ where
         &LARK_SHEET_LOADER_DESCRIPTOR
     }
 
-    fn probe(&self, source: &SourceRef<'_>) -> ProbeResult {
-        if source.source_type == Some(LARK_SHEET_LOADER_DESCRIPTOR.id)
-            || source
-                .config_keys
-                .iter()
-                .any(|key| LARK_SHEET_LOADER_DESCRIPTOR.config_keys.contains(key))
-        {
-            ProbeResult::certain()
-        } else if source.uri.is_some_and(|uri| {
-            uri.starts_with("https://") && (uri.contains("feishu") || uri.contains("larksuite"))
-        }) {
-            ProbeResult::likely()
-        } else {
-            ProbeResult::none()
+    fn probe(&self, source: &ProjectSourceRef<'_>) -> ProbeResult {
+        if source.source_type == Some(LARK_SHEET_LOADER_DESCRIPTOR.id) {
+            return ProbeResult::certain();
         }
+        if let SourceLocationSpec::Uri(uri) = source.location {
+            if source
+                .option_keys
+                .iter()
+                .any(|key| LARK_SHEET_LOADER_DESCRIPTOR.option_keys.contains(key))
+            {
+                return ProbeResult::certain();
+            }
+            if is_lark_uri(uri) {
+                return ProbeResult::likely();
+            }
+        }
+        ProbeResult::none()
+    }
+
+    fn resolve(
+        &self,
+        _ctx: SourceResolveContext<'_>,
+        source: &ResolvedSource,
+    ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
+        let SourceLocationSpec::Uri(uri) = &source.location else {
+            if source.provider_id == LARK_SHEET_LOADER_DESCRIPTOR.id {
+                return Err(DiagnosticSet::one(Diagnostic::error(
+                    "LARK-SOURCE",
+                    "LARK",
+                    "lark source requires `url`",
+                )));
+            }
+            return Ok(Vec::new());
+        };
+        if !is_lark_uri(uri) {
+            return Err(DiagnosticSet::one(Diagnostic::error(
+                "LARK-SOURCE",
+                "LARK",
+                "lark source url must be an `https://` Feishu/Lark URL or `lark:<spreadsheet_token>`",
+            )));
+        }
+        let mut resolved = source.clone();
+        resolved.provider_id = LARK_SHEET_LOADER_DESCRIPTOR.id.to_string();
+        Ok(vec![resolved])
     }
 
     fn load(
         &self,
         ctx: LoadContext<'_>,
-        source: &SourceSpec,
+        source: &ResolvedSource,
     ) -> Result<LoadedRecords, DiagnosticSet> {
         let lark_source = lark_source_from_spec(source)?;
         let table_source = load_lark_table_source_with_client(&lark_source, &self.client)
@@ -559,15 +590,28 @@ where
     }
 }
 
-fn lark_source_from_spec(source: &SourceSpec) -> Result<LarkSheetSource, DiagnosticSet> {
+fn lark_source_from_spec(source: &ResolvedSource) -> Result<LarkSheetSource, DiagnosticSet> {
     let options = &source.options;
-    let lark_options = options.get("lark_sheet").unwrap_or(options);
-    let app_id = required_option_string(lark_options, "app_id")?;
-    let app_secret = required_option_string(lark_options, "app_secret")?;
-    let url = option_string(lark_options, "url").or_else(|| source.uri.clone());
-    let spreadsheet_token = option_string(lark_options, "spreadsheet_token");
+    let app_id = required_option_string(options, "app_id")?;
+    let app_secret = required_option_string(options, "app_secret")?;
+    let source_url = match &source.location {
+        SourceLocationSpec::Uri(uri) => Some(uri.clone()),
+        SourceLocationSpec::Path(_) => None,
+    };
+    let url = option_string(options, "url").or_else(|| source_url.clone());
+    let spreadsheet_token = option_string(options, "spreadsheet_token").or_else(|| {
+        source_url
+            .as_deref()
+            .and_then(lark_token_uri)
+            .map(str::to_string)
+    });
     let locator = match (url, spreadsheet_token) {
         (Some(url), None) => LarkSheetLocator::Url(url),
+        (Some(url), Some(token))
+            if lark_token_uri(&url).is_some_and(|uri_token| uri_token == token) =>
+        {
+            LarkSheetLocator::SpreadsheetToken(token)
+        }
         (None, Some(token)) => LarkSheetLocator::SpreadsheetToken(token),
         (Some(_), Some(_)) => {
             return Err(DiagnosticSet::one(Diagnostic::error(
@@ -590,6 +634,16 @@ fn lark_source_from_spec(source: &SourceSpec) -> Result<LarkSheetSource, Diagnos
         locator,
         table_sheet_configs_from_options(options)?,
     ))
+}
+
+fn is_lark_uri(uri: &str) -> bool {
+    lark_token_uri(uri).is_some()
+        || (uri.starts_with("https://") && (uri.contains("feishu") || uri.contains("larksuite")))
+}
+
+fn lark_token_uri(uri: &str) -> Option<&str> {
+    let token = uri.strip_prefix("lark:")?;
+    (!token.trim().is_empty()).then_some(token)
 }
 
 fn required_option_string(options: &Value, key: &str) -> Result<String, DiagnosticSet> {
@@ -640,11 +694,32 @@ fn table_sheet_config_from_value(value: &Value) -> Result<TableSheetConfig, Diag
             "lark source sheet config requires `sheet`",
         )));
     };
+    if sheet_name.trim().is_empty() {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "LARK-SOURCE",
+            "LARK",
+            "lark source sheet `sheet` is empty",
+        )));
+    }
     let mut sheet = TableSheetConfig::new(sheet_name);
-    if let Some(type_name) = object.get("type").and_then(Value::as_str) {
+    if let Some(type_name) = optional_string_field(object, "type", "lark source sheet `type`")? {
+        if type_name.trim().is_empty() {
+            return Err(DiagnosticSet::one(Diagnostic::error(
+                "LARK-SOURCE",
+                "LARK",
+                "lark source sheet `type` is empty",
+            )));
+        }
         sheet = sheet.with_type(type_name);
     }
-    if let Some(key) = object.get("key").and_then(Value::as_str) {
+    if let Some(key) = optional_string_field(object, "key", "lark source sheet `key`")? {
+        if key.trim().is_empty() {
+            return Err(DiagnosticSet::one(Diagnostic::error(
+                "LARK-SOURCE",
+                "LARK",
+                "lark source sheet `key` is empty",
+            )));
+        }
         sheet = sheet.with_key(key);
     }
     if let Some(columns) = object.get("columns") {
@@ -655,12 +730,58 @@ fn table_sheet_config_from_value(value: &Value) -> Result<TableSheetConfig, Diag
                 "lark source sheet `columns` must be an object",
             )));
         };
-        sheet =
-            sheet.with_columns(columns.iter().filter_map(|(source, field)| {
-                field.as_str().map(|field| (source.as_str(), field))
-            }));
+        let mut parsed_columns = Vec::new();
+        for (source, field) in columns {
+            let Some(field) = field.as_str() else {
+                return Err(DiagnosticSet::one(Diagnostic::error(
+                    "LARK-SOURCE",
+                    "LARK",
+                    format!("lark source sheet column `{source}` must map to a string field"),
+                )));
+            };
+            if source.trim().is_empty() {
+                return Err(DiagnosticSet::one(Diagnostic::error(
+                    "LARK-SOURCE",
+                    "LARK",
+                    "lark source sheet column name is empty",
+                )));
+            }
+            if field.trim().is_empty() {
+                return Err(DiagnosticSet::one(Diagnostic::error(
+                    "LARK-SOURCE",
+                    "LARK",
+                    format!("lark source sheet column `{source}` maps to an empty field"),
+                )));
+            }
+            parsed_columns.push((source.as_str(), field));
+        }
+        sheet = sheet.with_columns(parsed_columns);
     }
     Ok(sheet)
+}
+
+fn lark_document(source: &LarkSheetSource) -> String {
+    match &source.locator {
+        LarkSheetLocator::Url(url) => url.clone(),
+        LarkSheetLocator::SpreadsheetToken(token) => format!("lark:{token}"),
+    }
+}
+
+fn optional_string_field<'a>(
+    object: &'a serde_json::Map<String, Value>,
+    key: &str,
+    label: &str,
+) -> Result<Option<&'a str>, DiagnosticSet> {
+    let Some(value) = object.get(key) else {
+        return Ok(None);
+    };
+    value.as_str().map(Some).ok_or_else(|| {
+        DiagnosticSet::one(Diagnostic::error(
+            "LARK-SOURCE",
+            "LARK",
+            format!("{label} must be a string"),
+        ))
+    })
 }
 
 fn lark_diagnostics_to_api(err: LarkDiagnostics) -> DiagnosticSet {
@@ -770,4 +891,96 @@ struct ValuesData {
 struct ValueRange {
     #[serde(default)]
     values: Vec<Vec<Value>>,
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::panic)]
+
+    use super::*;
+    use coflow_api::{CftContainer, SourceResolveContext};
+    use std::path::Path;
+
+    #[test]
+    fn lark_token_url_source_resolves_to_spreadsheet_token_locator() {
+        let source = ResolvedSource {
+            provider_id: LARK_SHEET_LOADER_DESCRIPTOR.id.to_string(),
+            location: SourceLocationSpec::Uri("lark:sht_direct".to_string()),
+            options: json!({
+                "app_id": "cli_test",
+                "app_secret": "secret_test"
+            }),
+            display_name: "lark:sht_direct".to_string(),
+        };
+
+        let Ok(lark_source) = lark_source_from_spec(&source) else {
+            panic!("parse lark source");
+        };
+
+        assert_eq!(
+            lark_source.locator,
+            LarkSheetLocator::SpreadsheetToken("sht_direct".to_string())
+        );
+    }
+
+    #[test]
+    fn explicit_lark_loader_rejects_path_source() {
+        let loader = LarkSheetLoader::new(NoopClient);
+        let schema = CftContainer::new();
+        let source = ResolvedSource {
+            provider_id: LARK_SHEET_LOADER_DESCRIPTOR.id.to_string(),
+            location: SourceLocationSpec::Path(Path::new("data.xlsx").to_path_buf()),
+            options: json!({
+                "app_id": "cli_test",
+                "app_secret": "secret_test"
+            }),
+            display_name: "data.xlsx".to_string(),
+        };
+
+        let Err(err) = loader.resolve(
+            SourceResolveContext {
+                project_root: Path::new("."),
+                schema: &schema,
+            },
+            &source,
+        ) else {
+            panic!("lark path source should fail");
+        };
+
+        assert!(err
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("lark source requires `url`")));
+    }
+
+    #[test]
+    fn lark_probe_ignores_local_path_even_with_lark_options() {
+        let loader = LarkSheetLoader::new(NoopClient);
+        let option_keys = ["app_id", "app_secret"];
+        let location = SourceLocationSpec::Path(Path::new("configs.xlsx").to_path_buf());
+        let source = ProjectSourceRef {
+            source_type: None,
+            location: &location,
+            option_keys: &option_keys,
+        };
+
+        assert_eq!(loader.probe(&source), ProbeResult::none());
+    }
+
+    struct NoopClient;
+
+    impl LarkHttpClient for NoopClient {
+        fn post_json(
+            &self,
+            _url: &str,
+            _body: &Value,
+            _tenant_access_token: Option<&str>,
+        ) -> Result<String, String> {
+            Err("unexpected HTTP call".to_string())
+        }
+
+        fn get(&self, _url: &str, _tenant_access_token: &str) -> Result<String, String> {
+            Err("unexpected HTTP call".to_string())
+        }
+    }
 }

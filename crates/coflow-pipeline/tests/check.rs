@@ -10,7 +10,15 @@
 )]
 
 mod common;
+use coflow_api::{
+    DataLoader, DiagnosticSet, LoadContext, LoadedRecords, LoaderDescriptor, OriginMap,
+    ProbeResult, ProjectSourceRef, ResolvedSource, SourceLocationSpec, SourceResolveContext,
+};
 use common::*;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 #[test]
 fn check_project_passes_for_rpg_example() {
@@ -50,6 +58,29 @@ fn check_project_returns_schema_diagnostics() {
 }
 
 #[test]
+fn check_project_returns_diagnostic_set_not_json_dto() {
+    let root = temp_project_dir("coflow-pipeline-diagnostic-set");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::write(root.join("schema").join("main.cft"), "type Item {}\n").expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema/\nsources:\n  - path: ''\n",
+    )
+    .expect("write config");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+
+    let outcome = check_project(&project).expect("check project");
+
+    let PipelineOutcome::Diagnostics(diagnostics) = outcome else {
+        panic!("expected diagnostics");
+    };
+    assert!(diagnostics.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "PROJECT-001" && diagnostic.message == "sources[0].path is empty"
+    }));
+}
+
+#[test]
 fn check_project_validates_excel_sources_before_schema_diagnostics() {
     let root = temp_project_dir("coflow-pipeline-check-source-before-schema");
     let _cleanup = TempDirCleanup(root.clone());
@@ -63,7 +94,7 @@ fn check_project_validates_excel_sources_before_schema_diagnostics() {
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data/missing.xlsx
+  - path: data/missing.xlsx
     sheets:
       - sheet: Items
         type: Item
@@ -82,7 +113,7 @@ outputs:
 
     assert_diagnostic_message_contains(
         outcome,
-        "sources[0].file `data/missing.xlsx` does not exist",
+        "sources[0].path `data/missing.xlsx` does not exist",
     );
 }
 
@@ -102,7 +133,7 @@ fn check_project_excel_open_diagnostic_contains_file_path() {
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data/bad.xlsx
+  - path: data/bad.xlsx
     sheets:
       - sheet: Items
         type: Item
@@ -122,7 +153,14 @@ sources:
         diagnostics
             .iter()
             .any(|diagnostic| diagnostic.code == "EXCEL-OPEN"
-                && diagnostic.path.ends_with("bad.xlsx")),
+                && matches!(
+                    diagnostic.primary.as_ref().map(|label| &label.location),
+                    Some(
+                        SourceLocation::FileSpan { path, .. }
+                            | SourceLocation::TableCell { path, .. }
+                    )
+                        if path.ends_with("bad.xlsx")
+                )),
         "diagnostics: {diagnostics:?}"
     );
 }
@@ -144,9 +182,72 @@ fn check_project_returns_check_diagnostics_after_successful_load() {
             .iter()
             .any(|diagnostic| diagnostic.code == "CFD-CHECK-001"
                 && diagnostic.stage == "CHECK"
-                && diagnostic.path.ends_with("configs.xlsx")
-                && diagnostic.sheet.as_deref() == Some("Item")
-                && diagnostic.cell.as_deref() == Some("B2")),
+                && matches!(
+                    diagnostic.primary.as_ref().map(|label| &label.location),
+                    Some(SourceLocation::TableCell {
+                        path,
+                        sheet: Some(sheet),
+                        row: 2,
+                        column: 2,
+                    }) if path.ends_with("configs.xlsx") && sheet == "Item"
+                )),
+        "diagnostics: {diagnostics:?}"
+    );
+}
+
+#[test]
+fn check_project_collects_load_diagnostics_from_multiple_sources() {
+    let root = temp_project_dir("coflow-pipeline-multiple-load-diagnostics");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        "type Item { value: int; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("bad_a.cfd"),
+        "item_a Item { value: 1 }\n",
+    )
+    .expect("write bad cfd a");
+    std::fs::write(
+        root.join("data").join("bad_b.cfd"),
+        "item_b Item { value: 2 }\n",
+    )
+    .expect("write bad cfd b");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - path: data/bad_a.cfd
+  - path: data/bad_b.cfd
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+
+    let outcome = check_project(&project).expect("check project");
+
+    let PipelineOutcome::Diagnostics(diagnostics) = outcome else {
+        panic!("expected load diagnostics");
+    };
+    assert!(
+        diagnostics.iter().any(|diagnostic| matches!(
+            diagnostic.primary.as_ref().map(|label| &label.location),
+            Some(SourceLocation::FileSpan { path, .. }) if path.ends_with("bad_a.cfd")
+        )),
+        "diagnostics: {diagnostics:?}"
+    );
+    assert!(
+        diagnostics.iter().any(|diagnostic| matches!(
+            diagnostic.primary.as_ref().map(|label| &label.location),
+            Some(SourceLocation::FileSpan { path, .. }) if path.ends_with("bad_b.cfd")
+        )),
         "diagnostics: {diagnostics:?}"
     );
 }
@@ -173,7 +274,7 @@ fn check_project_defaults_excel_sheets_when_source_omits_sheet_config() {
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data/configs.xlsx
+  - path: data/configs.xlsx
 outputs:
   data:
     type: json
@@ -240,7 +341,7 @@ fn check_project_loads_directory_sources_and_resolves_excel_cfd_refs_both_ways()
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - dir: data
+  - path: data
 outputs:
   data:
     type: json
@@ -303,8 +404,8 @@ fn check_project_treats_source_extensions_case_sensitively() {
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - dir: data/dir
-  - file: data/items.cfd
+  - path: data/dir
+  - path: data/items.cfd
 outputs:
   data:
     type: json
@@ -322,7 +423,7 @@ outputs:
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data/IGNORED.CFD
+  - path: data/IGNORED.CFD
 outputs:
   data:
     type: json
@@ -333,14 +434,11 @@ outputs:
     let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
     let outcome = check_project(&project).expect("check project");
 
-    assert_diagnostic_message_contains(
-        outcome,
-        "source file `data/IGNORED.CFD` has unsupported extension",
-    );
+    assert_diagnostic_message_contains(outcome, "has no matching loader");
 }
 
 #[test]
-fn check_project_accepts_file_field_that_points_to_a_directory_source() {
+fn check_project_accepts_path_field_that_points_to_a_directory_source() {
     let root = temp_project_dir("coflow-pipeline-file-directory-source");
     let _cleanup = TempDirCleanup(root.clone());
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
@@ -355,7 +453,7 @@ fn check_project_accepts_file_field_that_points_to_a_directory_source() {
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data
+  - path: data
 outputs:
   data:
     type: json
@@ -388,7 +486,7 @@ fn check_project_ignores_unsupported_files_inside_directory_sources() {
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - dir: data
+  - path: data
 outputs:
   data:
     type: json
@@ -404,8 +502,8 @@ outputs:
 }
 
 #[test]
-fn check_project_reports_source_with_both_file_and_dir() {
-    let root = temp_project_dir("coflow-pipeline-source-both-file-and-dir");
+fn check_project_reports_source_with_both_path_and_url() {
+    let root = temp_project_dir("coflow-pipeline-source-both-path-and-url");
     let _cleanup = TempDirCleanup(root.clone());
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
@@ -415,8 +513,8 @@ fn check_project_reports_source_with_both_file_and_dir() {
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data/configs.xlsx
-    dir: data
+  - path: data/configs.xlsx
+    url: https://example.test/configs
 outputs:
   data:
     type: json
@@ -424,13 +522,11 @@ outputs:
 ",
     )
     .expect("write config");
-    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
-
-    let outcome = check_project(&project).expect("check project");
-
-    assert_diagnostic_message_contains(
-        outcome,
-        "sources[0] must set exactly one of `file`, `dir`, or `lark_sheet`",
+    let err = Project::open_schema_only(Some(root.as_path()))
+        .expect_err("path and url should fail to parse");
+    assert!(
+        err.contains("source must set exactly one of `path` or `url`"),
+        "error: {err}"
     );
 }
 
@@ -447,7 +543,7 @@ fn check_project_reports_explicit_file_with_unsupported_extension() {
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data/notes.txt
+  - path: data/notes.txt
 outputs:
   data:
     type: json
@@ -459,10 +555,7 @@ outputs:
 
     let outcome = check_project(&project).expect("check project");
 
-    assert_diagnostic_message_contains(
-        outcome,
-        "source file `data/notes.txt` has unsupported extension",
-    );
+    assert_diagnostic_message_contains(outcome, "has no matching loader");
 }
 
 #[test]
@@ -490,7 +583,7 @@ fn check_project_allows_mixed_directory_source_with_excel_sheets_config() {
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - dir: data
+  - path: data
     sheets:
       - sheet: Item
         columns:
@@ -508,4 +601,146 @@ outputs:
     let outcome = check_project(&project).expect("check project");
 
     assert!(matches!(outcome, PipelineOutcome::Success(_)));
+}
+
+#[test]
+fn check_project_lets_loader_resolve_directory_sources_without_extension_registration() {
+    let root = temp_project_dir("coflow-pipeline-loader-resolve-directory");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(root.join("schema").join("main.cft"), "type Item {}\n").expect("write schema");
+    std::fs::write(root.join("data").join("item.custom"), "ignored").expect("write custom data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - type: custom-dir
+    path: data
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+    let mut registry = test_registry();
+    let loads = Arc::new(AtomicUsize::new(0));
+    registry
+        .register_loader(CustomDirLoader {
+            loads: Arc::clone(&loads),
+            fail_preflight: false,
+        })
+        .expect("register custom loader");
+
+    let outcome = coflow_pipeline::check_project(&project, &registry).expect("check project");
+
+    assert!(matches!(outcome, PipelineOutcome::Success(_)));
+    assert_eq!(loads.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn check_project_runs_loader_preflight_before_load_and_stops_on_diagnostics() {
+    let root = temp_project_dir("coflow-pipeline-loader-preflight-before-load");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(root.join("schema").join("main.cft"), "type Item {}\n").expect("write schema");
+    std::fs::write(root.join("data").join("item.custom"), "ignored").expect("write custom data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - type: custom-dir
+    path: data
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+    let mut registry = test_registry();
+    let loads = Arc::new(AtomicUsize::new(0));
+    registry
+        .register_loader(CustomDirLoader {
+            loads: Arc::clone(&loads),
+            fail_preflight: true,
+        })
+        .expect("register custom loader");
+
+    let outcome = coflow_pipeline::check_project(&project, &registry).expect("check project");
+
+    assert_diagnostic_message_contains(outcome, "custom preflight failed");
+    assert_eq!(loads.load(Ordering::SeqCst), 0);
+}
+
+#[derive(Debug, Clone)]
+struct CustomDirLoader {
+    loads: Arc<AtomicUsize>,
+    fail_preflight: bool,
+}
+
+const CUSTOM_DIR_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
+    id: "custom-dir",
+    display_name: "Custom directory loader",
+    extensions: &[],
+    uri_schemes: &[],
+    option_keys: &[],
+};
+
+impl DataLoader for CustomDirLoader {
+    fn descriptor(&self) -> &'static LoaderDescriptor {
+        &CUSTOM_DIR_DESCRIPTOR
+    }
+
+    fn probe(&self, source: &ProjectSourceRef<'_>) -> ProbeResult {
+        if source.source_type == Some(CUSTOM_DIR_DESCRIPTOR.id) {
+            ProbeResult::certain()
+        } else {
+            ProbeResult::none()
+        }
+    }
+
+    fn resolve(
+        &self,
+        _ctx: SourceResolveContext<'_>,
+        source: &ResolvedSource,
+    ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &source.location else {
+            return Ok(Vec::new());
+        };
+        Ok(vec![ResolvedSource {
+            provider_id: CUSTOM_DIR_DESCRIPTOR.id.to_string(),
+            location: SourceLocationSpec::Path(path.join("item.custom")),
+            options: source.options.clone(),
+            display_name: "item.custom".to_string(),
+        }])
+    }
+
+    fn load(
+        &self,
+        _ctx: LoadContext<'_>,
+        _source: &ResolvedSource,
+    ) -> Result<LoadedRecords, DiagnosticSet> {
+        self.loads.fetch_add(1, Ordering::SeqCst);
+        Ok(LoadedRecords {
+            records: Vec::new(),
+            origins: OriginMap::default(),
+        })
+    }
+
+    fn preflight(&self, _ctx: LoadContext<'_>, _source: &ResolvedSource) -> DiagnosticSet {
+        if self.fail_preflight {
+            DiagnosticSet::one(coflow_api::Diagnostic::error(
+                "CUSTOM-PREFLIGHT",
+                "CUSTOM",
+                "custom preflight failed",
+            ))
+        } else {
+            DiagnosticSet::empty()
+        }
+    }
 }

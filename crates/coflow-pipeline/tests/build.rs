@@ -55,7 +55,6 @@ fn build_project_exports_data_and_code() {
         BuildOptions {
             data_out_dir: Some(data_dir.as_path()),
             code_out_dir: Some(code_dir.as_path()),
-            namespace: Some("Game.Config"),
         },
     )
     .expect("build project");
@@ -85,7 +84,6 @@ fn rpg_example_covers_validation_heavy_game_config_tables() {
         BuildOptions {
             data_out_dir: Some(data_dir.as_path()),
             code_out_dir: Some(code_dir.as_path()),
-            namespace: Some("Game.Config"),
         },
     )
     .expect("build RPG example");
@@ -134,7 +132,6 @@ fn build_project_with_data_only_output_does_not_generate_code() {
         BuildOptions {
             data_out_dir: Some(data_dir.as_path()),
             code_out_dir: None,
-            namespace: None,
         },
     )
     .expect("build project");
@@ -168,7 +165,6 @@ fn build_project_reports_data_output_path_that_is_existing_file() {
         BuildOptions {
             data_out_dir: Some(data_out_file.as_path()),
             code_out_dir: None,
-            namespace: None,
         },
     )
     .expect("file output path should return artifact diagnostics");
@@ -211,7 +207,6 @@ fn build_project_does_not_write_data_when_codegen_preflight_reports_diagnostics(
         BuildOptions {
             data_out_dir: Some(data_dir.as_path()),
             code_out_dir: Some(code_dir.as_path()),
-            namespace: None,
         },
     )
     .expect("build project should return codegen diagnostics");

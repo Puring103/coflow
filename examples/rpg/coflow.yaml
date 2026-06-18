@@ -1,7 +1,7 @@
 schema: schema/
 
 sources:
-  - dir: data
+  - path: data
     sheets:
       - sheet: Item
         columns:

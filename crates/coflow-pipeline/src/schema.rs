@@ -1,12 +1,12 @@
 use coflow_cft::CftContainer;
 use coflow_project::{
-    compile_schema_project, dedupe_cft_diagnostics, DiagnosticJson, Project, SchemaBuild,
+    compile_schema_project, dedupe_cft_diagnostics, diagnostic_set_from_cft, Project, SchemaBuild,
 };
 
 pub fn compile_project_schema(
     project: &Project,
-) -> Result<Result<CftContainer, Vec<DiagnosticJson>>, String> {
-    let project_diagnostics = project.schema_diagnostics();
+) -> Result<Result<CftContainer, coflow_api::DiagnosticSet>, String> {
+    let project_diagnostics = project.schema_diagnostic_set();
     if !project_diagnostics.is_empty() {
         return Ok(Err(project_diagnostics));
     }
@@ -22,9 +22,10 @@ pub fn compile_project_schema(
     }
 }
 
-fn diagnostics_from_schema_build(build: &SchemaBuild) -> Vec<DiagnosticJson> {
-    dedupe_cft_diagnostics(build.diagnostics.clone())
-        .iter()
-        .map(|diagnostic| DiagnosticJson::from_cft(diagnostic, &build.sources, &build.paths))
-        .collect()
+fn diagnostics_from_schema_build(build: &SchemaBuild) -> coflow_api::DiagnosticSet {
+    diagnostic_set_from_cft(
+        dedupe_cft_diagnostics(build.diagnostics.clone()),
+        &build.sources,
+        &build.paths,
+    )
 }

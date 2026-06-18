@@ -26,8 +26,8 @@ use coflow_cft::{
     CftSchemaTypeRef, ModuleId, Span,
 };
 use coflow_project::{
-    compile_schema_project_with_overrides, dedupe_cft_diagnostics, normalize_path, DiagnosticJson,
-    Project, SchemaBuild, SchemaSourceOverride,
+    compile_schema_project_with_overrides, dedupe_cft_diagnostics, diagnostic_set_from_cft,
+    normalize_path, Project, SchemaBuild, SchemaSourceOverride, SourceLocationSpec,
 };
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -276,14 +276,21 @@ impl<W: Write> LspServer<W> {
         let diagnostics = dedupe_cft_diagnostics(build.schema.diagnostics.clone());
         let mut by_uri: BTreeMap<String, Vec<Value>> = BTreeMap::new();
 
-        for diagnostic in diagnostics {
-            let diagnostic =
-                DiagnosticJson::from_cft(&diagnostic, &build.schema.sources, &build.schema.paths);
-            let uri = preferred_diagnostic_uri(&preferred_uris, Path::new(&diagnostic.path));
+        let diagnostic_set =
+            diagnostic_set_from_cft(diagnostics, &build.schema.sources, &build.schema.paths);
+        for diagnostic in &diagnostic_set {
+            let uri = diagnostic
+                .primary
+                .as_ref()
+                .map(|label| label_path(&label.location))
+                .map_or_else(
+                    || preferred_diagnostic_uri(&preferred_uris, Path::new("")),
+                    |path| preferred_diagnostic_uri(&preferred_uris, &path),
+                );
             by_uri
                 .entry(uri)
                 .or_default()
-                .push(lsp_diagnostic(&diagnostic));
+                .push(lsp_diagnostic(diagnostic));
         }
 
         let mut touched_uris = self.published_uris.clone();
@@ -3054,37 +3061,46 @@ fn text_document_uri(params: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-fn lsp_diagnostic(diagnostic: &DiagnosticJson) -> Value {
+fn lsp_diagnostic(diagnostic: &coflow_api::Diagnostic) -> Value {
     let related: Vec<_> = diagnostic
         .related
         .iter()
         .map(|related| {
+            let location = lsp_label_location(&related.location);
             json!({
                 "location": {
-                    "uri": path_to_file_uri(Path::new(&related.path)),
+                    "uri": path_to_file_uri(&location.path),
                     "range": lsp_range(
-                        related.start_line,
-                        related.start_character,
-                        related.end_line,
-                        related.end_character,
+                        location.start_line,
+                        location.start_character,
+                        location.end_line,
+                        location.end_character,
                     )
                 },
-                "message": related.label.as_deref().unwrap_or("")
+                "message": related.message.as_deref().unwrap_or("")
             })
         })
         .collect();
 
+    let primary = diagnostic
+        .primary
+        .as_ref()
+        .map(|label| lsp_label_location(&label.location))
+        .unwrap_or_default();
     let mut out = Map::new();
     out.insert(
         "range".to_string(),
         lsp_range(
-            diagnostic.start_line,
-            diagnostic.start_character,
-            diagnostic.end_line,
-            diagnostic.end_character,
+            primary.start_line,
+            primary.start_character,
+            primary.end_line,
+            primary.end_character,
         ),
     );
-    out.insert("severity".to_string(), json!(1));
+    out.insert(
+        "severity".to_string(),
+        json!(lsp_diagnostic_severity(diagnostic.severity)),
+    );
     out.insert("code".to_string(), json!(&diagnostic.code));
     out.insert(
         "source".to_string(),
@@ -3097,6 +3113,61 @@ fn lsp_diagnostic(diagnostic: &DiagnosticJson) -> Value {
     }
 
     Value::Object(out)
+}
+
+const fn lsp_diagnostic_severity(severity: coflow_api::Severity) -> u8 {
+    match severity {
+        coflow_api::Severity::Error => 1,
+        coflow_api::Severity::Warning => 2,
+        coflow_api::Severity::Info => 3,
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct LspLabelLocation {
+    path: PathBuf,
+    start_line: usize,
+    start_character: usize,
+    end_line: usize,
+    end_character: usize,
+}
+
+fn lsp_label_location(location: &coflow_api::SourceLocation) -> LspLabelLocation {
+    match location {
+        coflow_api::SourceLocation::FileSpan {
+            path,
+            start_line,
+            start_character,
+            end_line,
+            end_character,
+        } => LspLabelLocation {
+            path: path.clone(),
+            start_line: *start_line,
+            start_character: *start_character,
+            end_line: *end_line,
+            end_character: *end_character,
+        },
+        coflow_api::SourceLocation::ProjectConfig { path, .. }
+        | coflow_api::SourceLocation::Artifact { path }
+        | coflow_api::SourceLocation::TableCell { path, .. } => LspLabelLocation {
+            path: path.clone(),
+            start_line: 0,
+            start_character: 0,
+            end_line: 0,
+            end_character: 1,
+        },
+        coflow_api::SourceLocation::RemoteCell { .. } => LspLabelLocation {
+            path: PathBuf::new(),
+            start_line: 0,
+            start_character: 0,
+            end_line: 0,
+            end_character: 1,
+        },
+    }
+}
+
+fn label_path(location: &coflow_api::SourceLocation) -> PathBuf {
+    lsp_label_location(location).path
 }
 
 fn lsp_error_diagnostic(code: &str, message: &str) -> Value {
@@ -3266,7 +3337,7 @@ fn cfd_project_sources(
 ) -> Vec<CfdProjectSource> {
     let mut sources = Vec::new();
     for source in &project.config.sources {
-        let Some(path) = source.file.as_ref().or(source.dir.as_ref()) else {
+        let SourceLocationSpec::Path(path) = source.location() else {
             continue;
         };
         let resolved = project.resolve_path(path);
