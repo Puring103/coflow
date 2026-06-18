@@ -367,7 +367,7 @@
           </article>
           <article class="solution">
             <h3>用 loader 收敛输入</h3>
-            <p>Excel 和 CFD 都转换成统一输入记录，后续不关心数据来自表格还是文本。</p>
+            <p>Excel、Lark 和 CFD 都转换成统一输入记录，后续不关心数据来自表格、远端表格还是文本。</p>
           </article>
           <article class="solution">
             <h3>用模型校验不变量</h3>
@@ -388,9 +388,9 @@
           架构按职责分层：底层只表达语言和模型语义，上层只做数据源适配、管线编排和工具集成。
         </p>
         <div class="pipeline" aria-label="Coflow 管线步骤">
-          <div class="step"><strong>Project</strong><span>读取 coflow.yaml，发现 schema 和 sources。</span></div>
+          <div class="step"><strong>Project</strong><span>读取 coflow.yaml，标准化 schema、sources 和 provider options。</span></div>
           <div class="step"><strong>CFT</strong><span>编译 schema，产生类型系统和诊断。</span></div>
-          <div class="step"><strong>Loader</strong><span>读取 Excel / CFD，输出输入记录。</span></div>
+          <div class="step"><strong>Loader</strong><span>provider resolve 并读取 Excel / Lark / CFD，输出输入记录。</span></div>
           <div class="step"><strong>Cell Value</strong><span>按字段类型解析单元格复合值。</span></div>
           <div class="step"><strong>Data Model</strong><span>构建表、记录、索引、默认值和引用。</span></div>
           <div class="step"><strong>Checker</strong><span>执行 CFT check，返回数据诊断。</span></div>
@@ -403,7 +403,7 @@
           </article>
           <article class="module">
             <h3>管线与诊断层</h3>
-            <p>`coflow-project`、`coflow-loader-excel`、`coflow-checker`、`coflow-pipeline` 负责编排和定位。</p>
+            <p>`coflow-project`、`coflow-api`、`coflow-loader-*`、`coflow-checker`、`coflow-pipeline` 负责编排和定位。</p>
           </article>
           <article class="module">
             <h3>产物与工具层</h3>
@@ -445,7 +445,7 @@ type Item {
             </article>
             <pre><code>schema: schema/
 sources:
-  - file: data/items.xlsx
+  - path: data/items.xlsx
     sheets:
       - sheet: Item
 outputs:

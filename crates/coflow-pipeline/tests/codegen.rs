@@ -24,7 +24,6 @@ fn generate_project_code_writes_csharp_files() {
         "csharp",
         CodegenOptions {
             out_dir: Some(out_dir.as_path()),
-            namespace: Some("Game.Config"),
         },
     )
     .expect("generate csharp");
@@ -38,7 +37,7 @@ fn generate_project_code_writes_csharp_files() {
     let game_config = std::fs::read_to_string(out_dir.join("GameConfig.cs")).expect("GameConfig");
     assert!(game_config
         .replace("\r\n", "\n")
-        .contains("namespace Game.Config\n{"));
+        .contains("namespace Example.Rpg.Config\n{"));
 }
 
 #[test]
@@ -54,7 +53,6 @@ fn generate_project_code_does_not_require_excel_sources() {
         "csharp",
         CodegenOptions {
             out_dir: Some(out_dir.as_path()),
-            namespace: Some("Game.Config"),
         },
     )
     .expect("generate csharp");
@@ -98,7 +96,6 @@ outputs:
         "csharp",
         CodegenOptions {
             out_dir: Some(out_dir.as_path()),
-            namespace: Some("Game.Config"),
         },
     )
     .expect("generate csharp");
@@ -168,11 +165,26 @@ outputs:
         .expect("write malformed lockfile");
     let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
 
-    let err = generate_project_code(&project, "csharp", CodegenOptions::default())
-        .expect_err("malformed enum lockfile should fail");
+    let outcome = generate_project_code(&project, "csharp", CodegenOptions::default())
+        .expect("malformed enum lockfile should return diagnostics");
 
-    assert!(err.contains("failed to parse"));
-    assert!(err.contains("coflow.enum.lock.json"));
+    let PipelineOutcome::Diagnostics(diagnostics) = outcome else {
+        panic!("expected artifact diagnostics");
+    };
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "ARTIFACT-001"
+                && diagnostic.stage == "ARTIFACT"
+                && diagnostic.message.contains("failed to parse")
+                && diagnostic.message.contains("coflow.enum.lock.json")
+                && matches!(
+                    diagnostic.primary.as_ref().map(|label| &label.location),
+                    Some(SourceLocation::Artifact { path })
+                        if path.ends_with("coflow.enum.lock.json")
+                )
+        }),
+        "diagnostics: {diagnostics:?}"
+    );
 }
 
 #[test]
@@ -332,7 +344,6 @@ fn generate_project_code_rejects_output_dir_containing_data_source() {
         "csharp",
         CodegenOptions {
             out_dir: Some(data_dir.as_path()),
-            namespace: Some("Game.Config"),
         },
     )
     .expect("unsafe data output should be reported as diagnostics");
@@ -356,4 +367,38 @@ fn generate_project_code_rejects_unregistered_codegen_id() {
         .expect("unknown codegen should be reported as diagnostics");
 
     assert_diagnostic_message_contains(outcome, "no code generator registered for `typescript`");
+}
+
+#[test]
+fn generate_project_code_preserves_provider_private_options() {
+    let (project, _cleanup) = schema_only_project_with_outputs(
+        "coflow-pipeline-codegen-provider-options",
+        OutputsConfig {
+            data: Some(output_config("json", "generated/data", None)),
+            code: Some(output_config(
+                STRICT_OPTIONS_CODEGEN_ID,
+                "generated/strict",
+                None,
+            )),
+        },
+    );
+    let registry = strict_options_codegen_registry();
+
+    let outcome = coflow_pipeline::generate_project_code(
+        &project,
+        &registry,
+        STRICT_OPTIONS_CODEGEN_ID,
+        CodegenOptions::default(),
+    )
+    .expect("strict codegen should run");
+
+    let PipelineOutcome::Success(report) = outcome else {
+        panic!("expected provider-private options to stay untouched");
+    };
+    assert_eq!(report.codegen_id, STRICT_OPTIONS_CODEGEN_ID);
+    let options = std::fs::read_to_string(report.dir.join("options.txt")).expect("options file");
+    assert!(
+        !options.contains("namespace"),
+        "pipeline should not inject provider-private namespace option: {options}"
+    );
 }

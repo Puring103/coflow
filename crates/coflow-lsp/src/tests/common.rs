@@ -37,7 +37,7 @@ pub(super) fn test_project_with_config(
     std::fs::create_dir_all(&schema).expect("create schema dir");
     std::fs::write(
         root.join("coflow.yaml"),
-        format!("schema: schema/\nsources:\n  - dir: {source_dir}\n"),
+        format!("schema: schema/\nsources:\n  - path: {source_dir}\n"),
     )
     .expect("write config");
     std::fs::write(schema.join("main.cft"), source).expect("write schema");

@@ -1,7 +1,7 @@
 schema: schema/
 
 sources:
-  - file: data/Configs.xlsx
+  - path: data/Configs.xlsx
     sheets:
       - sheet: 地块tag
         type: TileTagConfig

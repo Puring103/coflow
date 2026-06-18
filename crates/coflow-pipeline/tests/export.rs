@@ -127,7 +127,7 @@ fn export_project_data_requires_excel_sources() {
 
     assert_diagnostic_message_contains(
         outcome,
-        "sources[0].file `data/missing.xlsx` does not exist",
+        "sources[0].path `data/missing.xlsx` does not exist",
     );
 }
 
@@ -180,6 +180,49 @@ fn export_project_data_rejects_output_dir_containing_schema() {
     assert_diagnostic_message_contains(outcome, "schema path");
     assert!(root.join("schema").join("main.cft").exists());
     assert!(!root.join("schema").join("Item.json").exists());
+}
+
+#[test]
+fn export_project_data_reports_staging_io_errors_as_artifact_diagnostics() {
+    let root = temp_project_dir("coflow-pipeline-export-staging-io");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_single_item_project(
+        &root,
+        OutputsConfig {
+            data: Some(output_config("json", "generated/data", None)),
+            code: None,
+        },
+    )
+    .expect("write project");
+    let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
+    let blocked_parent = root.join("blocked-parent");
+    std::fs::write(&blocked_parent, "not a directory").expect("write blocking parent");
+    let output_dir = blocked_parent.join("data");
+
+    let outcome = export_project_data(
+        &project,
+        "json",
+        ExportOptions {
+            out_dir: Some(output_dir.as_path()),
+        },
+    )
+    .expect("staging io errors should be diagnostics");
+
+    let PipelineOutcome::Diagnostics(diagnostics) = outcome else {
+        panic!("expected artifact diagnostics");
+    };
+    assert!(
+        diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == "ARTIFACT-001"
+                && diagnostic.stage == "ARTIFACT"
+                && matches!(
+                    diagnostic.primary.as_ref().map(|label| &label.location),
+                    Some(SourceLocation::Artifact { path }) if path == &output_dir
+                )
+        }),
+        "diagnostics: {diagnostics:?}"
+    );
+    assert!(!output_dir.join("Item.json").exists());
 }
 
 #[test]

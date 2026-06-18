@@ -17,7 +17,8 @@
 
 use coflow_api::{
     DataLoader, Diagnostic, DiagnosticSet, Label, LoadContext, LoadedRecords, LoaderDescriptor,
-    OriginMap, ProbeResult, SourceLocation, SourceRef, SourceSpec,
+    OriginMap, ProbeResult, ProjectSourceRef, ResolvedSource, SourceLocation, SourceLocationSpec,
+    SourceResolveContext, TextSpan,
 };
 use coflow_cft::{record_key_ident_error, CftContainer, CftSchemaField, CftSchemaTypeRef};
 use coflow_data_model::{
@@ -28,6 +29,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 use std::fs;
+use std::path::Path;
 
 /// Parses `.cfd` text into source-neutral input records.
 ///
@@ -41,8 +43,20 @@ pub fn parse_cfd_input_records(
     schema: &CftContainer,
     source: &str,
 ) -> Result<Vec<CfdInputRecord>, CfdTextLoadError> {
+    parse_cfd_input_records_with_spans(schema, source).map(|records| {
+        records
+            .into_iter()
+            .map(|record| record.record)
+            .collect::<Vec<_>>()
+    })
+}
+
+fn parse_cfd_input_records_with_spans(
+    schema: &CftContainer,
+    source: &str,
+) -> Result<Vec<ParsedCfdInputRecord>, CfdTextLoadError> {
     Parser::new(schema, source)
-        .parse_records()
+        .parse_records_with_spans()
         .map_err(CfdTextLoadError::Text)
 }
 
@@ -72,7 +86,7 @@ pub const CFD_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
     display_name: "Coflow data text",
     extensions: &["cfd"],
     uri_schemes: &[],
-    config_keys: &[],
+    option_keys: &[],
 };
 
 impl DataLoader for CfdLoader {
@@ -80,32 +94,72 @@ impl DataLoader for CfdLoader {
         &CFD_LOADER_DESCRIPTOR
     }
 
-    fn probe(&self, source: &SourceRef<'_>) -> ProbeResult {
+    fn probe(&self, source: &ProjectSourceRef<'_>) -> ProbeResult {
         if source.source_type == Some(CFD_LOADER_DESCRIPTOR.id) {
             return ProbeResult::certain();
         }
-        if source
-            .path
-            .and_then(|path| path.extension())
-            .and_then(|ext| ext.to_str())
-            == Some("cfd")
-        {
+        if matches!(
+            source.location,
+            SourceLocationSpec::Path(path)
+                if path.extension().and_then(|ext| ext.to_str()) == Some("cfd")
+        ) {
             ProbeResult::likely()
         } else {
             ProbeResult::none()
         }
     }
 
+    fn resolve(
+        &self,
+        _ctx: SourceResolveContext<'_>,
+        source: &ResolvedSource,
+    ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &source.location else {
+            if source.provider_id == CFD_LOADER_DESCRIPTOR.id {
+                return Err(DiagnosticSet::one(Diagnostic::error(
+                    "CFD-SOURCE",
+                    "CFD",
+                    "cfd source requires `path`",
+                )));
+            }
+            return Ok(Vec::new());
+        };
+        if path.is_dir() {
+            return collect_cfd_sources(path, source);
+        }
+        if is_cfd_path(path) {
+            if source.options.get("sheets").is_some() {
+                return Err(DiagnosticSet::one(Diagnostic::error(
+                    "CFD-SOURCE",
+                    "CFD",
+                    format!(
+                        "CFD source `{}` cannot define `sheets`",
+                        source.display_name
+                    ),
+                )));
+            }
+            return Ok(vec![source.clone()]);
+        }
+        Err(DiagnosticSet::one(Diagnostic::error(
+            "CFD-SOURCE",
+            "CFD",
+            format!(
+                "source file `{}` has unsupported extension",
+                source.display_name
+            ),
+        )))
+    }
+
     fn load(
         &self,
         ctx: LoadContext<'_>,
-        source: &SourceSpec,
+        source: &ResolvedSource,
     ) -> Result<LoadedRecords, DiagnosticSet> {
-        let Some(file) = source.file.as_ref() else {
+        let SourceLocationSpec::Path(file) = &source.location else {
             return Err(DiagnosticSet::one(Diagnostic::error(
                 "CFD-SOURCE",
                 "CFD",
-                "cfd source requires `file`",
+                "cfd source requires `path`",
             )));
         };
         let contents = fs::read_to_string(file).map_err(|err| {
@@ -115,21 +169,69 @@ impl DataLoader for CfdLoader {
                 format!("failed to read CFD source `{}`: {err}", file.display()),
             ))
         })?;
-        parse_cfd_input_records(ctx.schema, &contents)
+        parse_cfd_input_records_with_spans(ctx.schema, &contents)
             .map(|records| {
                 let mut origins = OriginMap::default();
-                origins.push_file_records(file.clone(), records.len());
+                let records = records
+                    .into_iter()
+                    .map(|record| {
+                        origins.push_file_record(
+                            file.clone(),
+                            Some(text_span(&contents, record.span)),
+                        );
+                        record.record
+                    })
+                    .collect();
                 LoadedRecords { records, origins }
             })
             .map_err(|err| cfd_error_to_diagnostics(file, &contents, err))
     }
 }
 
-fn cfd_error_to_diagnostics(
-    file: &std::path::Path,
-    source: &str,
-    err: CfdTextLoadError,
-) -> DiagnosticSet {
+fn collect_cfd_sources(
+    dir: &Path,
+    source: &ResolvedSource,
+) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
+    let mut entries = fs::read_dir(dir)
+        .map_err(|err| {
+            DiagnosticSet::one(Diagnostic::error(
+                "CFD-SOURCE",
+                "CFD",
+                format!("failed to read data source dir `{}`: {err}", dir.display()),
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| {
+            DiagnosticSet::one(Diagnostic::error(
+                "CFD-SOURCE",
+                "CFD",
+                format!("failed to read data source dir `{}`: {err}", dir.display()),
+            ))
+        })?;
+    entries.sort_by_key(fs::DirEntry::path);
+
+    let mut sources = Vec::new();
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            sources.extend(collect_cfd_sources(&path, source)?);
+        } else if is_cfd_path(&path) {
+            sources.push(ResolvedSource {
+                provider_id: CFD_LOADER_DESCRIPTOR.id.to_string(),
+                display_name: path.display().to_string(),
+                location: SourceLocationSpec::Path(path),
+                options: source.options.clone(),
+            });
+        }
+    }
+    Ok(sources)
+}
+
+fn is_cfd_path(path: &Path) -> bool {
+    path.extension().and_then(|ext| ext.to_str()) == Some("cfd")
+}
+
+fn cfd_error_to_diagnostics(file: &Path, source: &str, err: CfdTextLoadError) -> DiagnosticSet {
     match err {
         CfdTextLoadError::Text(diagnostics) => DiagnosticSet {
             diagnostics: diagnostics
@@ -195,6 +297,17 @@ fn byte_position(source: &str, byte_offset: usize) -> Position {
         }
     }
     Position { line, character }
+}
+
+fn text_span(source: &str, span: CfdTextSpan) -> TextSpan {
+    let start = byte_position(source, span.start);
+    let end = byte_position(source, span.end.max(span.start + 1));
+    TextSpan {
+        start_line: start.line,
+        start_character: start.character,
+        end_line: end.line,
+        end_character: end.character,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -299,6 +412,12 @@ struct Parser<'a> {
     pos: usize,
 }
 
+#[derive(Debug, Clone)]
+struct ParsedCfdInputRecord {
+    record: CfdInputRecord,
+    span: CfdTextSpan,
+}
+
 impl<'a> Parser<'a> {
     fn new(schema: &'a CftContainer, source: &'a str) -> Self {
         Self {
@@ -308,10 +427,13 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_records(&mut self) -> Result<Vec<CfdInputRecord>, CfdTextDiagnostics> {
+    fn parse_records_with_spans(
+        &mut self,
+    ) -> Result<Vec<ParsedCfdInputRecord>, CfdTextDiagnostics> {
         let mut records = Vec::new();
         self.skip_ws_and_comments();
         while !self.is_eof() {
+            let record_start = self.pos;
             let first = self.parse_key("record key or group type")?;
             self.skip_ws_and_comments();
             if self.eat_char(':') {
@@ -319,12 +441,18 @@ impl<'a> Parser<'a> {
                 let actual_type = self.parse_name("record type")?;
                 self.validate_record_type(&actual_type)?;
                 let parsed = self.parse_record_fields(&actual_type)?;
-                records.push(CfdInputRecord::with_spreads(
-                    first,
-                    actual_type,
-                    parsed.spreads,
-                    parsed.fields,
-                ));
+                records.push(ParsedCfdInputRecord {
+                    record: CfdInputRecord::with_spreads(
+                        first,
+                        actual_type,
+                        parsed.spreads,
+                        parsed.fields,
+                    ),
+                    span: CfdTextSpan {
+                        start: record_start,
+                        end: self.pos,
+                    },
+                });
             } else if self.peek_char() == Some('{') {
                 self.validate_group_type(&first)?;
                 records.extend(self.parse_group_records(&first)?);
@@ -368,7 +496,7 @@ impl<'a> Parser<'a> {
     fn parse_group_records(
         &mut self,
         group_type: &str,
-    ) -> Result<Vec<CfdInputRecord>, CfdTextDiagnostics> {
+    ) -> Result<Vec<ParsedCfdInputRecord>, CfdTextDiagnostics> {
         self.expect_char('{', "group start `{`")?;
         let mut records = Vec::new();
         loop {
@@ -376,6 +504,7 @@ impl<'a> Parser<'a> {
             if self.eat_char('}') {
                 break;
             }
+            let record_start = self.pos;
             let key = self.parse_key("record key")?;
             self.validate_record_key(&key)?;
             self.skip_ws_and_comments();
@@ -388,12 +517,18 @@ impl<'a> Parser<'a> {
                 group_type.to_string()
             };
             let parsed = self.parse_record_fields(&actual_type)?;
-            records.push(CfdInputRecord::with_spreads(
-                key,
-                actual_type,
-                parsed.spreads,
-                parsed.fields,
-            ));
+            records.push(ParsedCfdInputRecord {
+                record: CfdInputRecord::with_spreads(
+                    key,
+                    actual_type,
+                    parsed.spreads,
+                    parsed.fields,
+                ),
+                span: CfdTextSpan {
+                    start: record_start,
+                    end: self.pos,
+                },
+            });
         }
         Ok(records)
     }

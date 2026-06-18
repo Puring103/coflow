@@ -1,9 +1,11 @@
 #![allow(dead_code, unused_imports)]
 
+pub use coflow_api::SourceLocation;
 pub use coflow_data_model::CfdErrorCode;
 pub use coflow_pipeline::{BuildOptions, CodegenOptions, ExportOptions, PipelineOutcome};
 pub use coflow_project::{
-    OutputConfig, OutputsConfig, Project, ProjectConfig, SchemaConfig, SheetConfig, SourceConfig,
+    OutputConfig, OutputsConfig, Project, ProjectConfig, SchemaConfig, SourceConfig,
+    SourceLocationSpec,
 };
 pub use rust_xlsxwriter::Workbook;
 pub use std::collections::BTreeMap;
@@ -31,6 +33,74 @@ pub fn test_registry() -> coflow_api::ProviderRegistry {
         .register_codegen(coflow_codegen_csharp::CsharpCodeGenerator)
         .expect("register csharp codegen");
     registry
+}
+
+pub const STRICT_OPTIONS_CODEGEN_ID: &str = "strict-options-codegen";
+
+pub fn strict_options_codegen_registry() -> coflow_api::ProviderRegistry {
+    let mut registry = coflow_api::ProviderRegistry::default();
+    registry
+        .register_loader(coflow_loader_excel::ExcelLoader)
+        .expect("register excel loader");
+    registry
+        .register_exporter(coflow_exporter_json::JsonExporter)
+        .expect("register json exporter");
+    registry
+        .register_codegen(StrictOptionsCodegen)
+        .expect("register strict options codegen");
+    registry
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct StrictOptionsCodegen;
+
+const STRICT_OPTIONS_CODEGEN_DESCRIPTOR: coflow_api::CodegenDescriptor =
+    coflow_api::CodegenDescriptor {
+        id: STRICT_OPTIONS_CODEGEN_ID,
+        display_name: "Strict Options",
+        language: "strict",
+        file_extensions: &["txt"],
+        supported_data_formats: &["json"],
+        needs_model_for_build: false,
+    };
+
+impl coflow_api::CodeGenerator for StrictOptionsCodegen {
+    fn descriptor(&self) -> &'static coflow_api::CodegenDescriptor {
+        &STRICT_OPTIONS_CODEGEN_DESCRIPTOR
+    }
+
+    fn preflight(
+        &self,
+        _ctx: coflow_api::CodegenContext<'_>,
+        output: &coflow_api::OutputSpec,
+    ) -> coflow_api::DiagnosticSet {
+        reject_injected_namespace(output)
+    }
+
+    fn generate(
+        &self,
+        _ctx: coflow_api::CodegenContext<'_>,
+        output: &coflow_api::OutputSpec,
+    ) -> Result<coflow_api::ArtifactSet, coflow_api::DiagnosticSet> {
+        let diagnostics = reject_injected_namespace(output);
+        if !diagnostics.is_empty() {
+            return Err(diagnostics);
+        }
+        Ok(coflow_api::ArtifactSet::new(vec![
+            coflow_api::ArtifactFile::text("options.txt", output.options.to_string()),
+        ]))
+    }
+}
+
+fn reject_injected_namespace(output: &coflow_api::OutputSpec) -> coflow_api::DiagnosticSet {
+    if output.options.get("namespace").is_none() {
+        return coflow_api::DiagnosticSet::empty();
+    }
+    coflow_api::DiagnosticSet::one(coflow_api::Diagnostic::error(
+        "STRICT-OPTIONS-001",
+        "CODEGEN",
+        "pipeline injected provider-private namespace option",
+    ))
 }
 
 pub fn check_project(
@@ -79,7 +149,7 @@ pub fn write_project_with_missing_excel_source(root: &Path, include_code_output:
         format!(
             r"schema: schema/
 sources:
-  - file: data/missing.xlsx
+  - path: data/missing.xlsx
     sheets:
       - sheet: Items
         type: Item
@@ -119,7 +189,7 @@ pub fn write_single_item_project(
     let mut config = String::from(
         r"schema: schema/
 sources:
-  - file: data/configs.xlsx
+  - path: data/configs.xlsx
     sheets:
       - sheet: Item
         columns:
@@ -145,7 +215,11 @@ outputs:
             code.dir.display()
         )
         .expect("append code output config");
-        if let Some(namespace) = code.namespace {
+        if let Some(namespace) = code
+            .options()
+            .get("namespace")
+            .and_then(serde_json::Value::as_str)
+        {
             writeln!(config, "    namespace: {namespace}").expect("append namespace config");
         }
     }
@@ -179,7 +253,7 @@ pub fn write_invalid_check_project(root: &Path) -> Result<(), rust_xlsxwriter::X
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data/configs.xlsx
+  - path: data/configs.xlsx
     sheets:
       - sheet: Item
         columns:
@@ -243,16 +317,17 @@ pub fn project_with_unvalidated_outputs(
             schema: SchemaConfig::One(PathBuf::from("schema")),
             sources: vec![SourceConfig {
                 source_type: None,
-                file: Some(PathBuf::from("data/configs.xlsx")),
-                dir: None,
-                lark_sheet: None,
-                options: BTreeMap::new(),
-                sheets: vec![SheetConfig {
-                    sheet: "Item".to_string(),
-                    type_name: None,
-                    key: None,
-                    columns: BTreeMap::from([("id".to_string(), "id".to_string())]),
-                }],
+                location: SourceLocationSpec::Path(PathBuf::from("data/configs.xlsx")),
+                options: serde_json::json!({
+                    "sheets": [
+                        {
+                            "sheet": "Item",
+                            "columns": {
+                                "id": "id"
+                            }
+                        }
+                    ]
+                }),
             }],
             outputs,
         },
@@ -261,11 +336,17 @@ pub fn project_with_unvalidated_outputs(
 }
 
 pub fn output_config(output_type: &str, dir: &str, namespace: Option<&str>) -> OutputConfig {
+    let mut options = serde_json::Map::new();
+    if let Some(namespace) = namespace {
+        options.insert(
+            "namespace".to_string(),
+            serde_json::Value::String(namespace.to_string()),
+        );
+    }
     OutputConfig {
         output_type: output_type.to_string(),
         dir: PathBuf::from(dir),
-        namespace: namespace.map(str::to_string),
-        options: BTreeMap::new(),
+        options: serde_json::Value::Object(options),
     }
 }
 
@@ -303,7 +384,7 @@ pub fn write_key_as_enum_project(
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data/configs.xlsx
+  - path: data/configs.xlsx
     sheets:
       - sheet: GeneConfig
         columns:
@@ -368,7 +449,7 @@ pub fn write_renamable_key_as_enum_project(
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data/configs.xlsx
+  - path: data/configs.xlsx
     sheets:
       - sheet: GeneConfig
         columns:

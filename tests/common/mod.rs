@@ -61,7 +61,7 @@ pub fn write_invalid_check_project(
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data/configs.xlsx
+  - path: data/configs.xlsx
     sheets:
       - sheet: Item
         columns:
