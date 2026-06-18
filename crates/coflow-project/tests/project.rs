@@ -200,18 +200,6 @@ fn project_validation_reports_schema_source_and_output_edges() -> TestResult {
             true,
         ),
         (
-            "data-unsupported-type",
-            "schema: schema/main.cft\noutputs:\n  data:\n    type: xml\n    dir: out\n",
-            "outputs.data.type is `xml`; expected `json` or `messagepack`",
-            true,
-        ),
-        (
-            "code-unsupported-type",
-            "schema: schema/main.cft\noutputs:\n  code:\n    type: java\n    dir: out\n",
-            "outputs.code.type is `java`; expected `csharp`",
-            true,
-        ),
-        (
             "code-empty-namespace",
             "schema: schema/main.cft\noutputs:\n  code:\n    type: csharp\n    dir: out\n    namespace: ' '\n",
             "outputs.code.namespace is empty",
@@ -251,6 +239,75 @@ fn project_validation_reports_schema_source_and_output_edges() -> TestResult {
             "case {name} expected `{expected}`, got `{message}`"
         );
     }
+
+    std::fs::remove_dir_all(root).map_err(|err| err.to_string())
+}
+
+#[test]
+fn project_config_accepts_provider_neutral_source_and_output_types() -> TestResult {
+    let root = temp_project_dir("coflow-project-provider-neutral-config");
+    std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
+    std::fs::write(root.join("schema/main.cft"), "type Item { value: string; }")
+        .map_err(|err| err.to_string())?;
+    std::fs::write(root.join("data.custom"), "").map_err(|err| err.to_string())?;
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+sources:
+  - type: custom-loader
+    file: data.custom
+    options:
+      flavor: custom
+outputs:
+  data:
+    type: custom-export
+    dir: generated/custom-data
+    options:
+      compact: true
+  code:
+    type: custom-codegen
+    dir: generated/custom-code
+    namespace: Game.Custom
+    options:
+      runtime: unity
+"#,
+    )
+    .map_err(|err| err.to_string())?;
+
+    let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
+    let diagnostics = project.schema_diagnostics();
+    assert!(
+        diagnostics.is_empty(),
+        "provider-neutral config should pass shape validation: {diagnostics:?}"
+    );
+    assert_eq!(
+        project.config.sources[0].source_type.as_deref(),
+        Some("custom-loader")
+    );
+    assert_eq!(
+        project.config.sources[0].options["flavor"],
+        serde_json::Value::String("custom".to_string())
+    );
+    assert_eq!(
+        project
+            .config
+            .outputs
+            .data
+            .as_ref()
+            .expect("data output")
+            .output_type,
+        "custom-export"
+    );
+    assert_eq!(
+        project
+            .config
+            .outputs
+            .code
+            .as_ref()
+            .expect("code output")
+            .output_type,
+        "custom-codegen"
+    );
 
     std::fs::remove_dir_all(root).map_err(|err| err.to_string())
 }
@@ -395,10 +452,9 @@ fn validate_for_codegen_reports_unvalidated_output_combinations() -> TestResult 
             data: Some(output_config("json", "data", None)),
         },
     );
-    let err = wrong_code
+    wrong_code
         .validate_for_codegen()
-        .expect_err("wrong code output type should fail");
-    assert!(err.contains("outputs.code.type is `java`; expected `csharp`"));
+        .map_err(|err| format!("provider-neutral code output should validate: {err}"))?;
 
     let missing_data = project_with_outputs(
         &root,
@@ -419,10 +475,9 @@ fn validate_for_codegen_reports_unvalidated_output_combinations() -> TestResult 
             data: Some(output_config("csv", "data", None)),
         },
     );
-    let err = wrong_data
+    wrong_data
         .validate_for_codegen()
-        .expect_err("wrong data output type should fail");
-    assert!(err.contains("outputs.data.type is `csv`; expected `json` or `messagepack`"));
+        .map_err(|err| format!("provider-neutral data output should validate: {err}"))?;
 
     std::fs::remove_dir_all(root).map_err(|err| err.to_string())
 }
@@ -733,6 +788,7 @@ fn output_config(output_type: &str, dir: &str, namespace: Option<&str>) -> Outpu
         output_type: output_type.to_string(),
         dir: PathBuf::from(dir),
         namespace: namespace.map(str::to_string),
+        options: BTreeMap::new(),
     }
 }
 

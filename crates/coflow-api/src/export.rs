@@ -3,24 +3,13 @@
 //! This crate walks an already-built [`CfdDataModel`] according to the compiled
 //! CFT schema and delegates concrete value construction to an [`ExportEncoder`].
 
-#![cfg_attr(
-    not(test),
-    deny(
-        clippy::dbg_macro,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::panic_in_result_fn,
-        clippy::todo,
-        clippy::unimplemented,
-        clippy::unreachable,
-        clippy::unwrap_used
-    )
-)]
-
-use coflow_cft::{CftContainer, CftSchemaField, CftSchemaTypeRef};
-use coflow_data_model::{CfdDataModel, CfdDictKey, CfdRecord, CfdTable, CfdValue};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+
+use crate::{
+    CfdDataModel, CfdDictKey, CfdRecord, CfdTable, CfdValue, CftContainer, CftSchemaField,
+    CftSchemaTypeRef,
+};
 
 /// Constructs output values for a concrete export format.
 ///

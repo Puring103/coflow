@@ -1,10 +1,8 @@
 #![allow(clippy::panic_in_result_fn)]
 
+use coflow_api::table::{collect_table_input_records, TableSheet, TableSheetConfig, TableSource};
 use coflow_cft::{CftContainer, ModuleId};
-use coflow_data_model::CfdValue;
-use coflow_loader_table::{
-    collect_table_input_records, load_table_model, TableSheet, TableSheetConfig, TableSource,
-};
+use coflow_data_model::{CfdDataModel, CfdValue};
 
 type TestResult = Result<(), String>;
 
@@ -48,7 +46,7 @@ fn loads_table_source_with_excel_style_sheet_config() -> TestResult {
     assert_eq!(loaded.origins.record_count(), 1);
     assert_eq!(loaded.records[0].key, "sword_01");
 
-    let model = load_table_model(
+    let loaded = collect_table_input_records(
         &schema,
         &[TableSource::new(
             "remote:sht_test",
@@ -74,6 +72,13 @@ fn loads_table_source_with_excel_style_sheet_config() -> TestResult {
         )],
     )
     .map_err(|err| format!("{err:?}"))?;
+    let mut builder = CfdDataModel::builder(&schema);
+    for record in loaded.records {
+        builder.add_input_record(record);
+    }
+    let model = builder
+        .build()
+        .map_err(|err| format!("data model should build: {err:?}"))?;
     let item = model
         .table("Item")
         .and_then(|table| table.primary_index.get("sword_01"))

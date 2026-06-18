@@ -198,9 +198,7 @@ fn codegen_csharp_requires_data_output_config() {
 
     assert!(!output.status.success());
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains(
-            "coflow.yaml missing outputs.data; required `type: json` or `type: messagepack` for `coflow codegen csharp`"
-        ),
+        String::from_utf8_lossy(&output.stderr).contains("coflow.yaml missing outputs.data"),
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
@@ -244,7 +242,7 @@ fn codegen_csharp_rejects_unsupported_data_output_type() {
     assert!(!output.status.success());
     assert!(
         String::from_utf8_lossy(&output.stderr)
-            .contains("outputs.data.type is `yaml`; expected `json` or `messagepack`"),
+            .contains("code generator `csharp` does not support data format `yaml`"),
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );

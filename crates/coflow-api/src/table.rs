@@ -4,29 +4,15 @@
 //! values, then use this crate for schema-guided row, key, column, and cell
 //! parsing.
 
-#![cfg_attr(
-    not(test),
-    deny(
-        clippy::dbg_macro,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::panic_in_result_fn,
-        clippy::todo,
-        clippy::unimplemented,
-        clippy::unreachable,
-        clippy::unwrap_used
-    )
-)]
-#![allow(clippy::missing_const_for_fn)]
-
 use coflow_cell_value::{parse_cell, CellValueDiagnostics, ParsedCell};
-use coflow_cft::{record_key_ident_error, CftContainer};
-use coflow_data_model::{
-    CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdInputRecord, CfdInputValue, CfdLabel, CfdPath,
-    CfdPathSegment,
-};
+use coflow_cft::record_key_ident_error;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+
+use crate::{
+    CfdDiagnostic, CfdDiagnostics, CfdInputRecord, CfdInputValue, CfdLabel, CfdPath,
+    CfdPathSegment, CftContainer, Diagnostic, DiagnosticSet, Label, SourceLocation,
+};
 
 const IMPORT_CONTROL_COLUMN: &str = "#";
 const SKIP_IMPORT_ROW_MARKER: &str = "##";
@@ -135,15 +121,21 @@ impl TableSheet {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct TableLoadOutput {
-    pub model: CfdDataModel,
-    pub check_diagnostics: Option<TableDiagnostics>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableDiagnostics {
     pub diagnostics: Vec<TableDiagnostic>,
+}
+
+impl From<TableDiagnostics> for DiagnosticSet {
+    fn from(diagnostics: TableDiagnostics) -> Self {
+        Self {
+            diagnostics: diagnostics
+                .diagnostics
+                .into_iter()
+                .map(Diagnostic::from)
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -160,6 +152,19 @@ pub struct TableDiagnostic {
     pub source: Option<CfdDiagnostic>,
     pub primary: Option<TableLabel>,
     pub related: Vec<TableLabel>,
+}
+
+impl From<TableDiagnostic> for Diagnostic {
+    fn from(diagnostic: TableDiagnostic) -> Self {
+        Self {
+            code: diagnostic.code,
+            stage: diagnostic.stage,
+            severity: crate::Severity::Error,
+            message: diagnostic.message,
+            primary: diagnostic.primary.map(Label::from),
+            related: diagnostic.related.into_iter().map(Label::from).collect(),
+        }
+    }
 }
 
 impl TableDiagnostic {
@@ -188,6 +193,15 @@ impl TableDiagnostic {
 pub struct TableLabel {
     pub location: TableLocation,
     pub message: Option<String>,
+}
+
+impl From<TableLabel> for Label {
+    fn from(label: TableLabel) -> Self {
+        Self {
+            location: SourceLocation::from(label.location),
+            message: label.message,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -254,6 +268,17 @@ pub struct TableLocation {
     pub column: Option<usize>,
 }
 
+impl From<TableLocation> for SourceLocation {
+    fn from(location: TableLocation) -> Self {
+        Self::TableCell {
+            path: location.file,
+            sheet: location.sheet,
+            row: location.row.unwrap_or(1),
+            column: location.column.unwrap_or(1),
+        }
+    }
+}
+
 impl TableLocation {
     #[must_use]
     pub fn new(file: impl Into<PathBuf>) -> Self {
@@ -289,53 +314,6 @@ impl TableLocation {
         self.column = column;
         self
     }
-}
-
-/// Loads table sources into a validated data model without running CFT checks.
-///
-/// # Errors
-///
-/// Returns table-stage, cell parsing, or data-model diagnostics.
-pub fn load_table_model(
-    schema: &CftContainer,
-    sources: &[TableSource],
-) -> Result<CfdDataModel, TableDiagnostics> {
-    let loaded = collect_table_input_records(schema, sources)?;
-    let mut builder = CfdDataModel::builder(schema);
-    for record in loaded.records {
-        builder.add_input_record(record);
-    }
-    builder
-        .build()
-        .map_err(|diagnostics| loaded.origins.map(diagnostics))
-}
-
-/// Loads table sources and runs CFT checks against the constructed model.
-///
-/// # Errors
-///
-/// Returns table-stage, cell parsing, or data-model diagnostics. Check
-/// diagnostics are returned in [`TableLoadOutput`] because they do not discard
-/// the constructed model.
-pub fn load_table(
-    schema: &CftContainer,
-    sources: &[TableSource],
-) -> Result<TableLoadOutput, TableDiagnostics> {
-    let loaded = collect_table_input_records(schema, sources)?;
-    let mut builder = CfdDataModel::builder(schema);
-    for record in loaded.records {
-        builder.add_input_record(record);
-    }
-    let model = builder
-        .build()
-        .map_err(|diagnostics| loaded.origins.clone().map(diagnostics))?;
-    let check_diagnostics = coflow_checker::run_checks(schema, &model)
-        .err()
-        .map(|diagnostics| loaded.origins.map(diagnostics));
-    Ok(TableLoadOutput {
-        model,
-        check_diagnostics,
-    })
 }
 
 /// Loads table sources into input records without building a data model.
@@ -706,6 +684,21 @@ impl TableOrigins {
             location: origin.location_for_path(&label.path),
             message: label.message.clone(),
         })
+    }
+
+    #[must_use]
+    pub fn to_origin_map(&self) -> crate::OriginMap {
+        let mut origins = crate::OriginMap::default();
+        for record in &self.records {
+            origins.push_table_record(
+                record.file.clone(),
+                record.sheet.clone(),
+                record.row,
+                record.id_column,
+                record.field_columns.clone(),
+            );
+        }
+        origins
     }
 
     fn map_diagnostic(&self, diagnostic: CfdDiagnostic) -> TableDiagnostic {

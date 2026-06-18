@@ -21,7 +21,7 @@ fn generate_project_code_writes_csharp_files() {
 
     let outcome = generate_project_code(
         &project,
-        CodegenTarget::Csharp,
+        "csharp",
         CodegenOptions {
             out_dir: Some(out_dir.as_path()),
             namespace: Some("Game.Config"),
@@ -32,7 +32,8 @@ fn generate_project_code_writes_csharp_files() {
     let PipelineOutcome::Success(report) = outcome else {
         panic!("expected codegen success");
     };
-    assert_eq!(report.target, CodegenTarget::Csharp);
+    assert_eq!(report.codegen_id, "csharp");
+    assert_eq!(report.display_name, "C#");
     assert_eq!(report.dir, out_dir);
     let game_config = std::fs::read_to_string(out_dir.join("GameConfig.cs")).expect("GameConfig");
     assert!(game_config
@@ -50,7 +51,7 @@ fn generate_project_code_does_not_require_excel_sources() {
 
     let outcome = generate_project_code(
         &project,
-        CodegenTarget::Csharp,
+        "csharp",
         CodegenOptions {
             out_dir: Some(out_dir.as_path()),
             namespace: Some("Game.Config"),
@@ -94,7 +95,7 @@ outputs:
 
     let outcome = generate_project_code(
         &project,
-        CodegenTarget::Csharp,
+        "csharp",
         CodegenOptions {
             out_dir: Some(out_dir.as_path()),
             namespace: Some("Game.Config"),
@@ -119,12 +120,8 @@ fn generate_project_code_reports_missing_or_incompatible_outputs() {
             code: None,
         },
     );
-    let outcome = generate_project_code(
-        &missing_code,
-        CodegenTarget::Csharp,
-        CodegenOptions::default(),
-    )
-    .expect("missing code output diagnostics");
+    let outcome = generate_project_code(&missing_code, "csharp", CodegenOptions::default())
+        .expect("missing code output diagnostics");
     assert_diagnostic_message_contains(outcome, "missing outputs.code");
 
     let (missing_data, _missing_data_cleanup) = schema_only_project_with_outputs(
@@ -134,12 +131,8 @@ fn generate_project_code_reports_missing_or_incompatible_outputs() {
             code: Some(output_config("csharp", "generated/csharp", None)),
         },
     );
-    let outcome = generate_project_code(
-        &missing_data,
-        CodegenTarget::Csharp,
-        CodegenOptions::default(),
-    )
-    .expect("missing data output diagnostics");
+    let outcome = generate_project_code(&missing_data, "csharp", CodegenOptions::default())
+        .expect("missing data output diagnostics");
     assert_diagnostic_message_contains(outcome, "missing outputs.data");
 }
 
@@ -175,7 +168,7 @@ outputs:
         .expect("write malformed lockfile");
     let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
 
-    let err = generate_project_code(&project, CodegenTarget::Csharp, CodegenOptions::default())
+    let err = generate_project_code(&project, "csharp", CodegenOptions::default())
         .expect_err("malformed enum lockfile should fail");
 
     assert!(err.contains("failed to parse"));
@@ -218,7 +211,7 @@ outputs:
         .expect("write malformed lockfile");
     let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
 
-    let outcome = generate_project_code(&project, CodegenTarget::Csharp, CodegenOptions::default())
+    let outcome = generate_project_code(&project, "csharp", CodegenOptions::default())
         .expect("codegen preflight diagnostics should not read malformed lockfile");
 
     let PipelineOutcome::Diagnostics(diagnostics) = outcome else {
@@ -276,7 +269,7 @@ fn generate_project_code_uses_messagepack_data_output_config() {
     .expect("write project");
     let project = Project::open_schema_only(Some(root.as_path())).expect("open project");
 
-    let outcome = generate_project_code(&project, CodegenTarget::Csharp, CodegenOptions::default())
+    let outcome = generate_project_code(&project, "csharp", CodegenOptions::default())
         .expect("messagepack codegen");
 
     let PipelineOutcome::Success(report) = outcome else {
@@ -301,12 +294,8 @@ fn codegen_writes_empty_key_as_enum_lockfile_when_only_declared_ids_exist() {
             )),
         },
     );
-    let outcome = generate_project_code(
-        &declared_only,
-        CodegenTarget::Csharp,
-        CodegenOptions::default(),
-    )
-    .expect("declared enum without loaded ids should still write empty lockfile");
+    let outcome = generate_project_code(&declared_only, "csharp", CodegenOptions::default())
+        .expect("declared enum without loaded ids should still write empty lockfile");
     assert!(matches!(outcome, PipelineOutcome::Success(_)));
     let lockfile = std::fs::read_to_string(declared_only.root_dir.join("coflow.enum.lock.json"))
         .expect("enum lockfile");
@@ -340,7 +329,7 @@ fn generate_project_code_rejects_output_dir_containing_data_source() {
 
     let outcome = generate_project_code(
         &project,
-        CodegenTarget::Csharp,
+        "csharp",
         CodegenOptions {
             out_dir: Some(data_dir.as_path()),
             namespace: Some("Game.Config"),
@@ -351,4 +340,20 @@ fn generate_project_code_rejects_output_dir_containing_data_source() {
     assert_diagnostic_message_contains(outcome, "data source");
     assert!(data_dir.join("configs.xlsx").exists());
     assert!(!data_dir.join("GameConfig.cs").exists());
+}
+
+#[test]
+fn generate_project_code_rejects_unregistered_codegen_id() {
+    let (project, _cleanup) = schema_only_project_with_outputs(
+        "coflow-pipeline-codegen-unregistered-provider",
+        OutputsConfig {
+            data: Some(output_config("json", "generated/data", None)),
+            code: Some(output_config("typescript", "generated/typescript", None)),
+        },
+    );
+
+    let outcome = generate_project_code(&project, "typescript", CodegenOptions::default())
+        .expect("unknown codegen should be reported as diagnostics");
+
+    assert_diagnostic_message_contains(outcome, "no code generator registered for `typescript`");
 }

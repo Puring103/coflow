@@ -14,7 +14,7 @@ publish = false
 workspace = true
 
 [dependencies]
-coflow-loader-table = { path = "../coflow-loader-table" }
+coflow-api = { path = "../coflow-api" }
 percent-encoding = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
