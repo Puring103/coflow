@@ -28,29 +28,7 @@ Coflow 的代码、文档、网页、测试、CLI、LSP 和生成物必须描述
 - 避免超大文件。超过约 800 到 1000 行的生产源码应考虑拆分；超过约 1500 行默认进入拆分计划，除非有明确理由。
 - 允许调整 crate 边界、模块边界和内部类型，只要测试和文档同步更新。
 
-当前重点治理对象：
-
-- `crates/coflow-lsp/src/lib.rs`
-- `editors/vscode-coflow/src/extension.js`
-- `crates/coflow-data-model/src/compiler.rs`
-
 ## 架构要求
-
-各层职责应保持清晰：
-
-- parser 只负责语言解析。
-- project 只负责项目配置、路径处理和 schema 编译入口。
-- loader 只负责数据源到输入记录的转换。
-- data-model 只负责类型化模型构建、默认值、索引和引用解析。
-- checker 只负责执行 CFT `check` 规则。
-- exporter 只负责导出数据格式。
-- codegen 只负责生成运行时代码。
-- pipeline 只负责编排 schema、load、check、export、codegen 流程。
-- CLI 只负责命令参数、退出码和终端输出。
-- LSP 负责编辑器语义能力。
-- VS Code 插件应尽量只做客户端适配。
-
-Rust LSP 应逐步成为编辑器语义能力的主要事实来源。VS Code 插件中的本地解析、补全、hover、definition、semantic tokens 等重复语义逻辑应收敛，避免规则变更后 Rust 和 JS 两套实现行为漂移。
 
 生成物、lockfile、本地配置和示例资产需要明确边界：
 
@@ -97,24 +75,6 @@ Rust LSP 应逐步成为编辑器语义能力的主要事实来源。VS Code 插
 - 文档应辅以案例，既能作为开发文档，也能作为简单教程。
 - 文档中的命令、配置字段、路径、示例代码应可以直接对照当前实现。
 
-## 网页要求
-
-需要实现一个介绍项目核心特性的网页。网页不需要复杂，也不做重营销表达，只作为项目入口。
-
-网页包含四个板块：
-
-1. 项目介绍以及想解决的问题。
-2. 项目如何解决这些问题。
-3. 项目的核心架构。
-4. 简单示例。
-
-网页应清楚说明：
-
-- Coflow 面向什么场景。
-- 游戏配置数据通常有哪些痛点。
-- CFT schema、Excel/CFD、check、export、codegen、LSP 如何串成一个流程。
-- 一个最小示例如何从 schema 到数据，再到校验和导出。
-
 ## 测试要求
 
 测试不能只有 happy path。每类核心行为都需要覆盖：
@@ -131,40 +91,7 @@ Rust LSP 应逐步成为编辑器语义能力的主要事实来源。VS Code 插
 1. 负向测试：构造输入，确认可以触发该错误码。
 2. 正向或边界相邻测试：构造合法或近似合法输入，确认不会误报该错误码。
 
-需要覆盖的主要模块：
-
-- CFT lexer/parser/schema compiler/type checker。
-- cell value parser。
-- Excel loader。
-- CFD parser/loader。
-- data model。
-- checker。
-- exporter。
-- codegen。
-- pipeline。
-- CLI。
-- LSP。
-- VS Code 插件的客户端适配逻辑。
-
 覆盖率可以作为参考，但不能替代测试质量判断。示例项目暂时不作为自动化测试要求。暂时不需要性能基准测试。
-
-## 当前测试现状
-
-当前项目并不是只有 happy path，已经包含大量负向和边界测试，例如：
-
-- CFT 错误码双向覆盖：`crates/coflow-cft/tests/error_coverage.rs`
-- cell value 错误码双向覆盖、负向和边界测试：`crates/coflow-cell-value/tests/cell_value.rs`
-- Excel loader 错误路径：`crates/coflow-loader-excel/tests/excel_loader.rs`
-- `CFD-TEXT-*` 双向覆盖：`crates/coflow-loader-cfd/tests/cfd_loader.rs`
-- data model 引用、重复、类型错误：`crates/coflow-data-model/tests/`
-- checker runtime 错误：`crates/coflow-checker/tests/check.rs`
-- `CfdErrorCode` 机械覆盖：`crates/coflow-checker/tests/error_coverage.rs`
-- CLI 配置和诊断错误：`tests/cli_check.rs`
-- LSP 协议和语义边界：`crates/coflow-lsp/src/tests/`
-
-后续需要把更严格的统一标准继续扩展到所有错误码体系：不仅要证明某个错误码能触发，
-还要证明相邻合法输入不会误报该错误码。CFT、cell value、`CfdErrorCode` 和
-`CFD-TEXT-*` 已按该标准建立覆盖，但 Excel、pipeline、CLI 和 LSP 等体系仍需逐步补齐同等强度。
 
 ## 工程门禁
 
@@ -185,11 +112,3 @@ CI 应与本地门禁保持一致。
 - 错误码覆盖检查。
 - 重复依赖检查。
 - 生成物和本地配置文件检查。
-
-## 暂不要求
-
-当前阶段暂不要求：
-
-- 公共 API 稳定性。
-- 性能基准测试。
-- 示例项目作为自动化测试资产。

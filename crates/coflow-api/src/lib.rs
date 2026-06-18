@@ -15,6 +15,7 @@
 )]
 #![allow(clippy::missing_const_for_fn)]
 
+pub mod cell_value;
 pub mod export;
 pub mod table;
 

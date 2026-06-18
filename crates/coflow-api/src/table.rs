@@ -4,11 +4,11 @@
 //! values, then use this crate for schema-guided row, key, column, and cell
 //! parsing.
 
-use coflow_cell_value::{parse_cell, CellValueDiagnostics, ParsedCell};
 use coflow_cft::record_key_ident_error;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use crate::cell_value::{parse_cell, CellValueDiagnostics, ParsedCell};
 use crate::{
     CfdDiagnostic, CfdDiagnostics, CfdInputRecord, CfdInputValue, CfdLabel, CfdPath,
     CfdPathSegment, CftContainer, Diagnostic, DiagnosticSet, Label, SourceLocation,
