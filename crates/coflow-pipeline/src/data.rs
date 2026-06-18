@@ -1,85 +1,59 @@
-use coflow_cft::CftContainer;
-use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdInputRecord, CfdLabel};
-use coflow_loader_cfd::parse_cfd_input_records;
-use coflow_loader_excel::{
-    collect_input_records, ExcelDiagnostic, ExcelDiagnostics, ExcelInputRecords, ExcelLabel,
-    ExcelLocation, ExcelOrigins, ExcelSheet, ExcelSource,
-};
-use coflow_loader_lark::{
-    load_lark_table_source_with_client, LarkDiagnostic, LarkDiagnostics, LarkHttpClient,
-    LarkSheetLocator, LarkSheetSource, UreqLarkHttpClient,
-};
-use coflow_loader_table::{
-    collect_table_input_records, TableDiagnostics, TableLabel, TableLocation, TableOrigins,
-    TableSheetConfig, TableSource,
+use coflow_api::{
+    CfdInputRecord, CftContainer, Diagnostic, DiagnosticSet, Label, LoadContext, LoadedRecords,
+    LoaderSelectionError, OriginMap, ProviderRegistry, SourceLocation, SourceRef, SourceSpec,
 };
 use coflow_project::{DiagnosticJson, Project, RelatedJson, SourceConfig};
+use serde_json::{Map, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProjectLoadOutput {
-    pub model: CfdDataModel,
+    pub model: coflow_api::CfdDataModel,
 }
 
 pub fn load_project_data(
     project: &Project,
     schema: &CftContainer,
-) -> Result<ProjectLoadOutput, Vec<DiagnosticJson>> {
-    load_project_data_with_lark_client(project, schema, &UreqLarkHttpClient)
-}
-
-fn load_project_data_with_lark_client(
-    project: &Project,
-    schema: &CftContainer,
-    lark_client: &impl LarkHttpClient,
+    registry: &ProviderRegistry,
 ) -> Result<ProjectLoadOutput, Vec<DiagnosticJson>> {
     let mut records = Vec::new();
-    let mut origins = ProjectOrigins::default();
+    let mut origins = OriginMap::default();
     let mut diagnostics = Vec::new();
 
     for source in &project.config.sources {
-        if source.lark_sheet.is_some() {
-            match load_lark_records(schema, source, lark_client) {
-                Ok(loaded) => push_table_records(&mut records, &mut origins, loaded),
-                Err(err) => diagnostics.extend(err),
-            }
-            continue;
-        }
-
-        let source_files = match discover_source_files(project, source) {
-            Ok(files) => files,
+        let source_specs = match source_specs(project, registry, source) {
+            Ok(specs) => specs,
             Err(message) => {
                 diagnostics.push(DiagnosticJson::project(message));
                 continue;
             }
         };
 
-        for file in source_files {
-            match source_kind(&file) {
-                Some(SourceKind::Excel) => {
-                    let excel_source = ExcelSource::new(file.clone(), excel_sheets(source));
-                    match collect_input_records(schema, &[excel_source]) {
-                        Ok(loaded) => push_excel_records(&mut records, &mut origins, loaded),
-                        Err(err) => diagnostics.extend(diagnostics_from_excel_checks(&err)),
-                    }
+        for spec in source_specs {
+            let config_keys = source_config_keys(&spec.options);
+            let source_ref = SourceRef {
+                source_type: spec.source_type.as_deref(),
+                path: spec.file.as_deref().or(spec.dir.as_deref()),
+                uri: spec.uri.as_deref(),
+                config_keys: &config_keys,
+            };
+            let loader = match registry.select_loader(&source_ref) {
+                Ok(loader) => loader,
+                Err(err) => {
+                    diagnostics.push(loader_selection_diagnostic(&spec, err));
+                    continue;
                 }
-                Some(SourceKind::Cfd) => {
-                    if source.file.as_ref().is_some_and(|configured| {
-                        project.resolve_path(configured).is_file() && !source.sheets.is_empty()
-                    }) {
-                        diagnostics.push(DiagnosticJson::project(format!(
-                            "CFD source `{}` cannot define `sheets`",
-                            project_relative_display(project, &file)
-                        )));
-                        continue;
-                    }
-                    match load_cfd_records(schema, &file) {
-                        Ok(loaded) => push_cfd_records(&mut records, &mut origins, loaded),
-                        Err(err) => diagnostics.extend(err),
-                    }
-                }
-                None => {}
+            };
+            match loader.load(
+                LoadContext {
+                    project_root: &project.root_dir,
+                    schema,
+                },
+                &spec,
+            ) {
+                Ok(batch) => push_loaded_records(&mut records, &mut origins, batch),
+                Err(err) => diagnostics.extend(diagnostics_from_provider(err)),
             }
         }
     }
@@ -88,188 +62,145 @@ fn load_project_data_with_lark_client(
         return Err(diagnostics);
     }
 
-    let mut builder = CfdDataModel::builder(schema);
+    let mut builder = coflow_api::CfdDataModel::builder(schema);
     for record in records {
         builder.add_input_record(record);
     }
     let model = builder
         .build()
-        .map_err(|err| origins.map_diagnostics(err))?;
+        .map_err(|err| diagnostics_from_provider(origins.map_diagnostics(err)))?;
     if let Err(checks) = coflow_checker::run_checks(schema, &model) {
-        return Err(origins.map_diagnostics(checks));
+        return Err(diagnostics_from_provider(origins.map_diagnostics(checks)));
     }
     Ok(ProjectLoadOutput { model })
 }
 
-fn push_excel_records(
+fn push_loaded_records(
     records: &mut Vec<CfdInputRecord>,
-    origins: &mut ProjectOrigins,
-    loaded: ExcelInputRecords,
+    origins: &mut OriginMap,
+    loaded: LoadedRecords,
 ) {
-    let start = records.len();
     records.extend(loaded.records);
-    origins.push_excel(start, loaded.origins);
+    origins.extend(loaded.origins);
 }
 
-fn push_cfd_records(
-    records: &mut Vec<CfdInputRecord>,
-    origins: &mut ProjectOrigins,
-    loaded: CfdInputRecords,
-) {
-    let start = records.len();
-    let count = loaded.records.len();
-    records.extend(loaded.records);
-    origins.push_cfd(start, count, loaded.file);
-}
-
-fn push_table_records(
-    records: &mut Vec<CfdInputRecord>,
-    origins: &mut ProjectOrigins,
-    loaded: TableInputRecords,
-) {
-    let start = records.len();
-    records.extend(loaded.records);
-    origins.push_table(start, loaded.origins);
-}
-
-#[derive(Debug)]
-struct CfdInputRecords {
-    file: PathBuf,
-    records: Vec<CfdInputRecord>,
-}
-
-#[derive(Debug)]
-struct TableInputRecords {
-    records: Vec<CfdInputRecord>,
-    origins: TableOrigins,
-}
-
-fn load_lark_records(
-    schema: &CftContainer,
+fn source_specs(
+    project: &Project,
+    registry: &ProviderRegistry,
     source: &SourceConfig,
-    lark_client: &impl LarkHttpClient,
-) -> Result<TableInputRecords, Vec<DiagnosticJson>> {
-    let lark_source = lark_sheet_source(source)?;
-    let table_source = load_lark_table_source_with_client(&lark_source, lark_client)
-        .map_err(|err| diagnostics_from_lark(&err))?;
-    load_table_records(schema, &[table_source])
-}
-
-fn load_table_records(
-    schema: &CftContainer,
-    sources: &[TableSource],
-) -> Result<TableInputRecords, Vec<DiagnosticJson>> {
-    collect_table_input_records(schema, sources)
-        .map(|loaded| TableInputRecords {
-            records: loaded.records,
-            origins: loaded.origins,
-        })
-        .map_err(|err| diagnostics_from_table_checks(&err))
-}
-
-fn lark_sheet_source(source: &SourceConfig) -> Result<LarkSheetSource, Vec<DiagnosticJson>> {
-    let Some(lark_sheet) = &source.lark_sheet else {
-        return Err(vec![DiagnosticJson::project(
-            "source must define `lark_sheet`",
-        )]);
-    };
-    let locator = if let Some(url) = &lark_sheet.url {
-        LarkSheetLocator::Url(url.clone())
-    } else if let Some(token) = &lark_sheet.spreadsheet_token {
-        LarkSheetLocator::SpreadsheetToken(token.clone())
-    } else {
-        return Err(vec![DiagnosticJson::project(
-            "lark_sheet must set exactly one of `url` or `spreadsheet_token`",
-        )]);
-    };
-    Ok(LarkSheetSource::new(
-        lark_sheet.app_id.clone(),
-        lark_sheet.app_secret.clone(),
-        locator,
-        table_sheet_configs(source),
-    ))
-}
-
-fn load_cfd_records(
-    schema: &CftContainer,
-    file: &Path,
-) -> Result<CfdInputRecords, Vec<DiagnosticJson>> {
-    let source = fs::read_to_string(file).map_err(|err| {
-        vec![DiagnosticJson::project(format!(
-            "failed to read CFD source `{}`: {err}",
-            file.display()
-        ))]
-    })?;
-    let records = parse_cfd_input_records(schema, &source)
-        .map_err(|err| cfd_text_diagnostics(file, &source, err))?;
-    Ok(CfdInputRecords {
-        file: file.to_path_buf(),
-        records,
-    })
-}
-
-fn cfd_text_diagnostics(
-    file: &Path,
-    source: &str,
-    err: coflow_loader_cfd::CfdTextLoadError,
-) -> Vec<DiagnosticJson> {
-    match err {
-        coflow_loader_cfd::CfdTextLoadError::Text(diagnostics) => diagnostics
-            .diagnostics
-            .iter()
-            .map(|diagnostic| cfd_text_diagnostic(file, source, diagnostic))
-            .collect(),
-        coflow_loader_cfd::CfdTextLoadError::DataModel(diagnostics) => {
-            plain_cfd_diagnostics(file, diagnostics)
-        }
+) -> Result<Vec<SourceSpec>, String> {
+    if source.lark_sheet.is_some() {
+        return Ok(vec![lark_source_spec(source)?]);
     }
-}
 
-fn cfd_text_diagnostic(
-    file: &Path,
-    source: &str,
-    diagnostic: &coflow_loader_cfd::CfdTextDiagnostic,
-) -> DiagnosticJson {
-    let start = byte_position(source, diagnostic.span.start);
-    let end = byte_position(source, diagnostic.span.end.max(diagnostic.span.start + 1));
-    DiagnosticJson {
-        code: format!("CFD-TEXT-{:?}", diagnostic.code),
-        stage: "CFD".to_string(),
-        severity: "error".to_string(),
-        message: diagnostic.message.clone(),
-        path: file.display().to_string(),
-        sheet: None,
-        cell: None,
-        start_line: start.line,
-        start_character: start.character,
-        end_line: end.line,
-        end_character: end.character,
-        related: Vec::new(),
-    }
-}
-
-fn plain_cfd_diagnostics(file: &Path, diagnostics: CfdDiagnostics) -> Vec<DiagnosticJson> {
-    diagnostics
-        .diagnostics
+    let files = discover_source_files(project, registry, source)?;
+    files
         .into_iter()
-        .map(|diagnostic| DiagnosticJson {
-            code: diagnostic.code.as_str().to_string(),
-            stage: diagnostic.stage.to_string(),
-            severity: "error".to_string(),
-            message: diagnostic.message,
-            path: file.display().to_string(),
-            sheet: None,
-            cell: None,
-            start_line: 0,
-            start_character: 0,
-            end_line: 0,
-            end_character: 1,
-            related: Vec::new(),
+        .map(|file| {
+            if file.extension().and_then(|ext| ext.to_str()) == Some("cfd")
+                && source.file.as_ref().is_some_and(|configured| {
+                    project.resolve_path(configured).is_file() && !source.sheets.is_empty()
+                })
+            {
+                return Err(format!(
+                    "CFD source `{}` cannot define `sheets`",
+                    project_relative_display(project, &file)
+                ));
+            }
+            Ok(SourceSpec {
+                source_type: None,
+                file: Some(file),
+                dir: None,
+                uri: None,
+                options: sheet_options(source),
+            })
         })
         .collect()
 }
 
-fn discover_source_files(project: &Project, source: &SourceConfig) -> Result<Vec<PathBuf>, String> {
+fn lark_source_spec(source: &SourceConfig) -> Result<SourceSpec, String> {
+    let Some(lark_sheet) = &source.lark_sheet else {
+        return Err("source must define `lark_sheet`".to_string());
+    };
+    let mut lark = Map::new();
+    lark.insert(
+        "app_id".to_string(),
+        Value::String(lark_sheet.app_id.clone()),
+    );
+    lark.insert(
+        "app_secret".to_string(),
+        Value::String(lark_sheet.app_secret.clone()),
+    );
+    if let Some(url) = &lark_sheet.url {
+        lark.insert("url".to_string(), Value::String(url.clone()));
+    }
+    if let Some(token) = &lark_sheet.spreadsheet_token {
+        lark.insert(
+            "spreadsheet_token".to_string(),
+            Value::String(token.clone()),
+        );
+    }
+
+    let mut options = Map::new();
+    options.insert("lark_sheet".to_string(), Value::Object(lark));
+    options.insert("sheets".to_string(), source_sheets_value(source));
+    Ok(SourceSpec {
+        source_type: Some("lark-sheet".to_string()),
+        file: None,
+        dir: None,
+        uri: lark_sheet.url.clone(),
+        options: Value::Object(options),
+    })
+}
+
+fn sheet_options(source: &SourceConfig) -> Value {
+    let mut options = Map::new();
+    options.insert("sheets".to_string(), source_sheets_value(source));
+    Value::Object(options)
+}
+
+fn source_sheets_value(source: &SourceConfig) -> Value {
+    Value::Array(
+        source
+            .sheets
+            .iter()
+            .map(|sheet| {
+                let mut object = Map::new();
+                object.insert("sheet".to_string(), Value::String(sheet.sheet.clone()));
+                if let Some(type_name) = &sheet.type_name {
+                    object.insert("type".to_string(), Value::String(type_name.clone()));
+                }
+                if let Some(key) = &sheet.key {
+                    object.insert("key".to_string(), Value::String(key.clone()));
+                }
+                object.insert(
+                    "columns".to_string(),
+                    Value::Object(
+                        sheet
+                            .columns
+                            .iter()
+                            .map(|(source, field)| (source.clone(), Value::String(field.clone())))
+                            .collect(),
+                    ),
+                );
+                Value::Object(object)
+            })
+            .collect(),
+    )
+}
+
+fn source_config_keys(options: &Value) -> Vec<&str> {
+    options
+        .as_object()
+        .map(|object| object.keys().map(String::as_str).collect())
+        .unwrap_or_default()
+}
+
+fn discover_source_files(
+    project: &Project,
+    registry: &ProviderRegistry,
+    source: &SourceConfig,
+) -> Result<Vec<PathBuf>, String> {
     let path = source
         .file
         .as_ref()
@@ -277,18 +208,18 @@ fn discover_source_files(project: &Project, source: &SourceConfig) -> Result<Vec
         .ok_or_else(|| "source must set exactly one of `file` or `dir`".to_string())?;
     let resolved = project.resolve_path(path);
     if resolved.is_dir() {
-        collect_data_files(&resolved)
-    } else if source_kind(&resolved).is_none() {
+        collect_data_files(registry, &resolved)
+    } else if has_registered_extension(registry, &resolved) {
+        Ok(vec![resolved])
+    } else {
         Err(format!(
             "source file `{}` has unsupported extension",
             project_relative_display(project, &resolved)
         ))
-    } else {
-        Ok(vec![resolved])
     }
 }
 
-fn collect_data_files(dir: &Path) -> Result<Vec<PathBuf>, String> {
+fn collect_data_files(registry: &ProviderRegistry, dir: &Path) -> Result<Vec<PathBuf>, String> {
     let mut entries = fs::read_dir(dir)
         .map_err(|err| format!("failed to read data source dir `{}`: {err}", dir.display()))?
         .collect::<Result<Vec<_>, _>>()
@@ -299,375 +230,174 @@ fn collect_data_files(dir: &Path) -> Result<Vec<PathBuf>, String> {
     for entry in entries {
         let path = entry.path();
         if path.is_dir() {
-            files.extend(collect_data_files(&path)?);
-        } else if source_kind(&path).is_some() {
+            files.extend(collect_data_files(registry, &path)?);
+        } else if has_registered_extension(registry, &path) {
             files.push(path);
         }
     }
     Ok(files)
 }
 
-fn excel_sheets(source: &SourceConfig) -> Vec<ExcelSheet> {
-    source
-        .sheets
+fn has_registered_extension(registry: &ProviderRegistry, path: &Path) -> bool {
+    let Some(extension) = path.extension().and_then(|ext| ext.to_str()) else {
+        return false;
+    };
+    registry
+        .loader_descriptors()
         .iter()
-        .map(|sheet| {
-            let mut out = ExcelSheet::new(sheet.sheet.clone());
-            if let Some(type_name) = &sheet.type_name {
-                out = out.with_type(type_name.clone());
-            }
-            if let Some(key) = &sheet.key {
-                out = out.with_key(key.clone());
-            }
-            if !sheet.columns.is_empty() {
-                out = out.with_columns(sheet.columns.clone());
-            }
-            out
-        })
-        .collect()
+        .any(|descriptor| descriptor.extensions.contains(&extension))
 }
 
-fn table_sheet_configs(source: &SourceConfig) -> Vec<TableSheetConfig> {
-    source
-        .sheets
-        .iter()
-        .map(|sheet| {
-            let mut out = TableSheetConfig::new(sheet.sheet.clone());
-            if let Some(type_name) = &sheet.type_name {
-                out = out.with_type(type_name.clone());
-            }
-            if let Some(key) = &sheet.key {
-                out = out.with_key(key.clone());
-            }
-            if !sheet.columns.is_empty() {
-                out = out.with_columns(sheet.columns.clone());
-            }
-            out
-        })
-        .collect()
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SourceKind {
-    Excel,
-    Cfd,
-}
-
-fn source_kind(path: &Path) -> Option<SourceKind> {
-    match path.extension().and_then(|ext| ext.to_str()) {
-        Some("xlsx" | "xlsm" | "xls") => Some(SourceKind::Excel),
-        Some("cfd") => Some(SourceKind::Cfd),
-        _ => None,
-    }
-}
-
-#[derive(Debug, Default)]
-struct ProjectOrigins {
-    segments: Vec<ProjectOriginSegment>,
-}
-
-impl ProjectOrigins {
-    fn push_excel(&mut self, start: usize, origins: ExcelOrigins) {
-        let count = origins.record_count();
-        self.segments.push(ProjectOriginSegment::Excel {
-            start,
-            end: start + count,
-            origins,
-        });
-    }
-
-    fn push_cfd(&mut self, start: usize, count: usize, file: PathBuf) {
-        self.segments.push(ProjectOriginSegment::Cfd {
-            start,
-            end: start + count,
-            file,
-        });
-    }
-
-    fn push_table(&mut self, start: usize, origins: TableOrigins) {
-        let count = origins.record_count();
-        self.segments.push(ProjectOriginSegment::Table {
-            start,
-            end: start + count,
-            origins,
-        });
-    }
-
-    fn map_diagnostics(&self, diagnostics: CfdDiagnostics) -> Vec<DiagnosticJson> {
-        diagnostics
-            .diagnostics
-            .into_iter()
-            .map(|diagnostic| self.map_diagnostic(diagnostic))
-            .collect()
-    }
-
-    fn map_diagnostic(&self, diagnostic: CfdDiagnostic) -> DiagnosticJson {
-        let primary = diagnostic
-            .primary
-            .as_ref()
-            .and_then(|label| self.map_label(label));
-        DiagnosticJson {
-            code: diagnostic.code.as_str().to_string(),
-            stage: diagnostic.stage.to_string(),
-            severity: "error".to_string(),
-            message: diagnostic.message,
-            path: primary
-                .as_ref()
-                .map_or_else(String::new, |location| location.path.clone()),
-            sheet: primary.as_ref().and_then(|location| location.sheet.clone()),
-            cell: primary.as_ref().and_then(|location| location.cell.clone()),
-            start_line: primary.as_ref().map_or(0, |location| location.line),
-            start_character: primary.as_ref().map_or(0, |location| location.character),
-            end_line: primary.as_ref().map_or(0, |location| location.line),
-            end_character: primary
-                .as_ref()
-                .map_or(1, |location| location.character.saturating_add(1)),
-            related: diagnostic
-                .related
-                .iter()
-                .filter_map(|label| self.map_related(label))
-                .collect(),
+fn loader_selection_diagnostic(spec: &SourceSpec, err: LoaderSelectionError) -> DiagnosticJson {
+    let source = spec
+        .file
+        .as_ref()
+        .or(spec.dir.as_ref())
+        .map_or_else(String::new, |path| path.display().to_string());
+    match err {
+        LoaderSelectionError::UnknownLoader { id } => {
+            DiagnosticJson::project(format!("source `{source}` uses unknown loader `{id}`"))
         }
+        LoaderSelectionError::NoLoader => {
+            DiagnosticJson::project(format!("source `{source}` has no matching loader"))
+        }
+        LoaderSelectionError::AmbiguousLoaders { ids } => DiagnosticJson::project(format!(
+            "source `{source}` matches multiple loaders {}; set source `type` explicitly",
+            ids.join(", ")
+        )),
     }
+}
 
-    fn map_related(&self, label: &CfdLabel) -> Option<RelatedJson> {
-        let mapped = self.map_label(label)?;
-        Some(RelatedJson {
-            path: mapped.path,
-            sheet: mapped.sheet,
-            cell: mapped.cell,
-            start_line: mapped.line,
-            start_character: mapped.character,
-            end_line: mapped.line,
-            end_character: mapped.character.saturating_add(1),
-            label: mapped.message,
-        })
+fn diagnostics_from_provider(diagnostics: DiagnosticSet) -> Vec<DiagnosticJson> {
+    diagnostics
+        .diagnostics
+        .into_iter()
+        .map(diagnostic_json_from_provider)
+        .collect()
+}
+
+fn diagnostic_json_from_provider(diagnostic: Diagnostic) -> DiagnosticJson {
+    let primary = diagnostic.primary.as_ref().map(label_location);
+    DiagnosticJson {
+        code: diagnostic.code,
+        stage: diagnostic.stage,
+        severity: severity_name(diagnostic.severity).to_string(),
+        message: diagnostic.message,
+        path: primary
+            .as_ref()
+            .map_or_else(String::new, |location| location.path.clone()),
+        sheet: primary.as_ref().and_then(|location| location.sheet.clone()),
+        cell: primary.as_ref().and_then(|location| location.cell.clone()),
+        start_line: primary.as_ref().map_or(0, |location| location.start_line),
+        start_character: primary
+            .as_ref()
+            .map_or(0, |location| location.start_character),
+        end_line: primary.as_ref().map_or(0, |location| location.end_line),
+        end_character: primary
+            .as_ref()
+            .map_or(1, |location| location.end_character),
+        related: diagnostic
+            .related
+            .iter()
+            .map(related_json_from_label)
+            .collect(),
     }
+}
 
-    fn map_label(&self, label: &CfdLabel) -> Option<MappedLabel> {
-        let record = label.record?;
-        let index = record.index();
-        self.segments.iter().find_map(|segment| match segment {
-            ProjectOriginSegment::Excel {
-                start,
-                end,
-                origins,
-            } if (*start..*end).contains(&index) => {
-                let excel = origins.map_label_with_record_offset(label, *start)?;
-                Some(mapped_excel_label(excel))
-            }
-            ProjectOriginSegment::Table {
-                start,
-                end,
-                origins,
-            } if (*start..*end).contains(&index) => {
-                let table = origins.map_label_with_record_offset(label, *start)?;
-                Some(mapped_table_label(table))
-            }
-            ProjectOriginSegment::Cfd { start, end, file } if (*start..*end).contains(&index) => {
-                Some(MappedLabel {
-                    path: file.display().to_string(),
-                    sheet: None,
-                    cell: None,
-                    line: 0,
-                    character: 0,
-                    message: label.message.clone(),
-                })
-            }
-            _ => None,
-        })
+fn related_json_from_label(label: &Label) -> RelatedJson {
+    let location = label_location(label);
+    RelatedJson {
+        path: location.path,
+        sheet: location.sheet,
+        cell: location.cell,
+        start_line: location.start_line,
+        start_character: location.start_character,
+        end_line: location.end_line,
+        end_character: location.end_character,
+        label: label.message.clone(),
     }
 }
 
 #[derive(Debug)]
-enum ProjectOriginSegment {
-    Excel {
-        start: usize,
-        end: usize,
-        origins: ExcelOrigins,
-    },
-    Table {
-        start: usize,
-        end: usize,
-        origins: TableOrigins,
-    },
-    Cfd {
-        start: usize,
-        end: usize,
-        file: PathBuf,
-    },
-}
-
-#[derive(Debug)]
-struct MappedLabel {
+struct JsonLocation {
     path: String,
     sheet: Option<String>,
     cell: Option<String>,
-    line: usize,
-    character: usize,
-    message: Option<String>,
+    start_line: usize,
+    start_character: usize,
+    end_line: usize,
+    end_character: usize,
 }
 
-fn mapped_excel_label(label: ExcelLabel) -> MappedLabel {
-    let (line, character) = excel_position(&label.location);
-    let cell = excel_cell(&label.location);
-    MappedLabel {
-        path: label.location.file.display().to_string(),
-        sheet: label.location.sheet,
-        cell,
-        line,
-        character,
-        message: label.message,
+fn label_location(label: &Label) -> JsonLocation {
+    match &label.location {
+        SourceLocation::FileSpan {
+            path,
+            start_line,
+            start_character,
+            end_line,
+            end_character,
+        } => JsonLocation {
+            path: path.display().to_string(),
+            sheet: None,
+            cell: None,
+            start_line: *start_line,
+            start_character: *start_character,
+            end_line: *end_line,
+            end_character: *end_character,
+        },
+        SourceLocation::TableCell {
+            path,
+            sheet,
+            row,
+            column,
+        } => JsonLocation {
+            path: path.display().to_string(),
+            sheet: sheet.clone(),
+            cell: Some(excel_cell(*row, *column)),
+            start_line: row.saturating_sub(1),
+            start_character: column.saturating_sub(1),
+            end_line: row.saturating_sub(1),
+            end_character: *column,
+        },
+        SourceLocation::RemoteCell {
+            document,
+            sheet,
+            row,
+            column,
+        } => JsonLocation {
+            path: document.clone(),
+            sheet: sheet.clone(),
+            cell: (*row > 0 && *column > 0).then(|| excel_cell(*row, *column)),
+            start_line: row.saturating_sub(1),
+            start_character: column.saturating_sub(1),
+            end_line: row.saturating_sub(1),
+            end_character: (*column).max(1),
+        },
+        SourceLocation::ProjectConfig { path, .. } | SourceLocation::Artifact { path } => {
+            JsonLocation {
+                path: path.display().to_string(),
+                sheet: None,
+                cell: None,
+                start_line: 0,
+                start_character: 0,
+                end_line: 0,
+                end_character: 1,
+            }
+        }
     }
 }
 
-fn diagnostics_from_excel_checks(checks: &ExcelDiagnostics) -> Vec<DiagnosticJson> {
-    checks
-        .diagnostics
-        .iter()
-        .map(excel_diagnostic_json)
-        .collect()
-}
-
-fn diagnostics_from_table_checks(checks: &TableDiagnostics) -> Vec<DiagnosticJson> {
-    checks
-        .diagnostics
-        .iter()
-        .map(table_diagnostic_json)
-        .collect()
-}
-
-fn table_diagnostic_json(diagnostic: &coflow_loader_table::TableDiagnostic) -> DiagnosticJson {
-    let fallback = TableLocation::new("");
-    let location = diagnostic
-        .primary
-        .as_ref()
-        .map_or(&fallback, |label| &label.location);
-    let (line, character) = table_position(location);
-    DiagnosticJson {
-        code: diagnostic.code.clone(),
-        stage: diagnostic.stage.clone(),
-        severity: "error".to_string(),
-        message: diagnostic.message.clone(),
-        path: location.file.display().to_string(),
-        sheet: location.sheet.clone(),
-        cell: table_cell(location),
-        start_line: line,
-        start_character: character,
-        end_line: line,
-        end_character: character.saturating_add(1),
-        related: diagnostic
-            .related
-            .iter()
-            .map(|label| table_related_json(&label.location, label.message.clone()))
-            .collect(),
+const fn severity_name(severity: coflow_api::Severity) -> &'static str {
+    match severity {
+        coflow_api::Severity::Error => "error",
+        coflow_api::Severity::Warning => "warning",
+        coflow_api::Severity::Info => "info",
     }
 }
 
-fn table_related_json(location: &TableLocation, label: Option<String>) -> RelatedJson {
-    let (line, character) = table_position(location);
-    RelatedJson {
-        path: location.file.display().to_string(),
-        sheet: location.sheet.clone(),
-        cell: table_cell(location),
-        start_line: line,
-        start_character: character,
-        end_line: line,
-        end_character: character.saturating_add(1),
-        label,
-    }
-}
-
-fn diagnostics_from_lark(err: &LarkDiagnostics) -> Vec<DiagnosticJson> {
-    err.diagnostics.iter().map(lark_diagnostic_json).collect()
-}
-
-fn lark_diagnostic_json(diagnostic: &LarkDiagnostic) -> DiagnosticJson {
-    DiagnosticJson {
-        code: diagnostic.code.clone(),
-        stage: diagnostic.stage.clone(),
-        severity: "error".to_string(),
-        message: diagnostic.message.clone(),
-        path: diagnostic.document.clone().unwrap_or_default(),
-        sheet: diagnostic.sheet.clone(),
-        cell: None,
-        start_line: 0,
-        start_character: 0,
-        end_line: 0,
-        end_character: 1,
-        related: Vec::new(),
-    }
-}
-
-fn excel_diagnostic_json(diagnostic: &ExcelDiagnostic) -> DiagnosticJson {
-    let fallback = ExcelLocation::new("");
-    let location = diagnostic
-        .primary
-        .as_ref()
-        .map_or(&fallback, |label| &label.location);
-    let (line, character) = excel_position(location);
-    DiagnosticJson {
-        code: diagnostic.code.clone(),
-        stage: diagnostic.stage.clone(),
-        severity: "error".to_string(),
-        message: diagnostic.message.clone(),
-        path: location.file.display().to_string(),
-        sheet: location.sheet.clone(),
-        cell: excel_cell(location),
-        start_line: line,
-        start_character: character,
-        end_line: line,
-        end_character: character.saturating_add(1),
-        related: diagnostic
-            .related
-            .iter()
-            .map(|label| excel_related_json(&label.location, label.message.clone()))
-            .collect(),
-    }
-}
-
-fn excel_related_json(location: &ExcelLocation, label: Option<String>) -> RelatedJson {
-    let (line, character) = excel_position(location);
-    RelatedJson {
-        path: location.file.display().to_string(),
-        sheet: location.sheet.clone(),
-        cell: excel_cell(location),
-        start_line: line,
-        start_character: character,
-        end_line: line,
-        end_character: character.saturating_add(1),
-        label,
-    }
-}
-
-fn excel_position(location: &ExcelLocation) -> (usize, usize) {
-    (
-        location.row.unwrap_or(1).saturating_sub(1),
-        location.column.unwrap_or(1).saturating_sub(1),
-    )
-}
-
-fn table_position(location: &TableLocation) -> (usize, usize) {
-    (
-        location.row.unwrap_or(1).saturating_sub(1),
-        location.column.unwrap_or(1).saturating_sub(1),
-    )
-}
-
-fn excel_cell(location: &ExcelLocation) -> Option<String> {
-    Some(format!(
-        "{}{}",
-        excel_column_name(location.column?),
-        location.row?
-    ))
-}
-
-fn table_cell(location: &TableLocation) -> Option<String> {
-    Some(format!(
-        "{}{}",
-        excel_column_name(location.column?),
-        location.row?
-    ))
+fn excel_cell(row: usize, column: usize) -> String {
+    format!("{}{}", excel_column_name(column), row)
 }
 
 fn excel_column_name(column: usize) -> String {
@@ -683,30 +413,6 @@ fn excel_column_name(column: usize) -> String {
     name.iter().rev().collect()
 }
 
-#[derive(Debug, Clone, Copy)]
-struct Position {
-    line: usize,
-    character: usize,
-}
-
-fn byte_position(source: &str, byte_offset: usize) -> Position {
-    let target = byte_offset.min(source.len());
-    let mut line = 0;
-    let mut character = 0;
-    for (byte_index, ch) in source.char_indices() {
-        if byte_index >= target {
-            break;
-        }
-        if ch == '\n' {
-            line += 1;
-            character = 0;
-        } else {
-            character += ch.len_utf16();
-        }
-    }
-    Position { line, character }
-}
-
 fn project_relative_display(project: &Project, path: &Path) -> String {
     path.strip_prefix(&project.root_dir)
         .unwrap_or(path)
@@ -715,34 +421,22 @@ fn project_relative_display(project: &Project, path: &Path) -> String {
         .replace('\\', "/")
 }
 
-fn mapped_table_label(label: TableLabel) -> MappedLabel {
-    let (line, character) = table_position(&label.location);
-    let cell = table_cell(&label.location);
-    MappedLabel {
-        path: label.location.file.display().to_string(),
-        sheet: label.location.sheet,
-        cell,
-        line,
-        character,
-        message: label.message,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use coflow_api::ProviderRegistry;
     use coflow_cft::ModuleId;
     use coflow_data_model::CfdValue;
-    use coflow_loader_lark::LarkHttpClient;
+    use coflow_loader_lark::{LarkHttpClient, LarkSheetLoader};
     use coflow_project::{
         LarkSheetConfig, OutputsConfig, ProjectConfig, SchemaConfig, SheetConfig, SourceConfig,
     };
     use serde_json::Value;
-    use std::cell::RefCell;
     use std::collections::{BTreeMap, VecDeque};
+    use std::sync::Mutex;
 
     #[test]
-    fn loads_lark_sheet_source_through_shared_table_pipeline() -> Result<(), String> {
+    fn loads_lark_sheet_source_through_registry_pipeline() -> Result<(), String> {
         let root = std::env::temp_dir().join("coflow-pipeline-lark-unit");
         let project = Project {
             config_path: root.join("coflow.yaml"),
@@ -798,8 +492,10 @@ mod tests {
                 r#"{"code":0,"data":{"valueRange":{"values":[["物品ID","名称","稀有度"],["sword_01","铁剑","Rare"]]}}}"#,
             ),
         ]);
+        let mut registry = ProviderRegistry::default();
+        registry.register_loader(LarkSheetLoader::new(client));
 
-        let output = load_project_data_with_lark_client(&project, &schema, &client)
+        let output = load_project_data(&project, &schema, &registry)
             .map_err(|diagnostics| format!("{diagnostics:?}"))?;
 
         let item = output
@@ -852,20 +548,21 @@ mod tests {
 
     #[derive(Debug)]
     struct FakeLarkClient {
-        responses: RefCell<VecDeque<Response>>,
+        responses: Mutex<VecDeque<Response>>,
     }
 
     impl FakeLarkClient {
         fn new(responses: impl IntoIterator<Item = Response>) -> Self {
             Self {
-                responses: RefCell::new(responses.into_iter().collect()),
+                responses: Mutex::new(responses.into_iter().collect()),
             }
         }
 
         fn next(&self, method: &str, url: &str) -> Result<String, String> {
             let response = self
                 .responses
-                .borrow_mut()
+                .lock()
+                .map_err(|err| err.to_string())?
                 .pop_front()
                 .ok_or_else(|| format!("unexpected {method} {url}"))?;
             if response.method != method || response.url != url {

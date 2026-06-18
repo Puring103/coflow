@@ -15,11 +15,11 @@ workspace = true
 
 [dependencies]
 calamine = "0.35"
-coflow-cell-value = { path = "../coflow-cell-value" }
+coflow-api = { path = "../coflow-api" }
 coflow-cft = { path = "../coflow-cft" }
 coflow-checker = { path = "../coflow-checker" }
 coflow-data-model = { path = "../coflow-data-model" }
-coflow-loader-table = { path = "../coflow-loader-table" }
+serde_json = { version = "1", features = ["preserve_order"] }
 
 [dev-dependencies]
 rust_xlsxwriter = "0.95"

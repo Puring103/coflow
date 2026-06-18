@@ -20,7 +20,11 @@
     clippy::struct_field_names
 )]
 
-use coflow_loader_table::{TableSheet, TableSheetConfig, TableSource};
+use coflow_api::table::{TableSheet, TableSheetConfig, TableSource};
+use coflow_api::{
+    table::collect_table_input_records, DataLoader, Diagnostic, DiagnosticSet, Label, LoadContext,
+    LoadedRecords, LoaderDescriptor, ProbeResult, SourceLocation, SourceRef, SourceSpec,
+};
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
@@ -482,6 +486,210 @@ fn ureq_error_message(err: ureq::Error) -> String {
             }
         }
         ureq::Error::Transport(err) => err.to_string(),
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct LarkSheetLoader<C = UreqLarkHttpClient> {
+    client: C,
+}
+
+impl Default for LarkSheetLoader<UreqLarkHttpClient> {
+    fn default() -> Self {
+        Self {
+            client: UreqLarkHttpClient,
+        }
+    }
+}
+
+impl<C> LarkSheetLoader<C> {
+    #[must_use]
+    pub fn new(client: C) -> Self {
+        Self { client }
+    }
+}
+
+pub const LARK_SHEET_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
+    id: "lark-sheet",
+    display_name: "Lark Sheet",
+    extensions: &[],
+    uri_schemes: &["https"],
+    config_keys: &["lark_sheet", "spreadsheet_token", "url"],
+};
+
+impl<C> DataLoader for LarkSheetLoader<C>
+where
+    C: LarkHttpClient + Send + Sync,
+{
+    fn descriptor(&self) -> &'static LoaderDescriptor {
+        &LARK_SHEET_LOADER_DESCRIPTOR
+    }
+
+    fn probe(&self, source: &SourceRef<'_>) -> ProbeResult {
+        if source.source_type == Some(LARK_SHEET_LOADER_DESCRIPTOR.id)
+            || source
+                .config_keys
+                .iter()
+                .any(|key| LARK_SHEET_LOADER_DESCRIPTOR.config_keys.contains(key))
+        {
+            ProbeResult::certain()
+        } else if source.uri.is_some_and(|uri| {
+            uri.starts_with("https://") && (uri.contains("feishu") || uri.contains("larksuite"))
+        }) {
+            ProbeResult::likely()
+        } else {
+            ProbeResult::none()
+        }
+    }
+
+    fn load(
+        &self,
+        ctx: LoadContext<'_>,
+        source: &SourceSpec,
+    ) -> Result<LoadedRecords, DiagnosticSet> {
+        let lark_source = lark_source_from_spec(source)?;
+        let table_source = load_lark_table_source_with_client(&lark_source, &self.client)
+            .map_err(lark_diagnostics_to_api)?;
+        collect_table_input_records(ctx.schema, &[table_source])
+            .map(|loaded| LoadedRecords {
+                records: loaded.records,
+                origins: loaded.origins.to_origin_map(),
+            })
+            .map_err(DiagnosticSet::from)
+    }
+}
+
+fn lark_source_from_spec(source: &SourceSpec) -> Result<LarkSheetSource, DiagnosticSet> {
+    let options = &source.options;
+    let lark_options = options.get("lark_sheet").unwrap_or(options);
+    let app_id = required_option_string(lark_options, "app_id")?;
+    let app_secret = required_option_string(lark_options, "app_secret")?;
+    let url = option_string(lark_options, "url").or_else(|| source.uri.clone());
+    let spreadsheet_token = option_string(lark_options, "spreadsheet_token");
+    let locator = match (url, spreadsheet_token) {
+        (Some(url), None) => LarkSheetLocator::Url(url),
+        (None, Some(token)) => LarkSheetLocator::SpreadsheetToken(token),
+        (Some(_), Some(_)) => {
+            return Err(DiagnosticSet::one(Diagnostic::error(
+                "LARK-SOURCE",
+                "LARK",
+                "lark source must set exactly one of `url` or `spreadsheet_token`",
+            )))
+        }
+        (None, None) => {
+            return Err(DiagnosticSet::one(Diagnostic::error(
+                "LARK-SOURCE",
+                "LARK",
+                "lark source requires `url` or `spreadsheet_token`",
+            )))
+        }
+    };
+    Ok(LarkSheetSource::new(
+        app_id,
+        app_secret,
+        locator,
+        table_sheet_configs_from_options(options)?,
+    ))
+}
+
+fn required_option_string(options: &Value, key: &str) -> Result<String, DiagnosticSet> {
+    option_string(options, key).ok_or_else(|| {
+        DiagnosticSet::one(Diagnostic::error(
+            "LARK-SOURCE",
+            "LARK",
+            format!("lark source requires `{key}`"),
+        ))
+    })
+}
+
+fn option_string(options: &Value, key: &str) -> Option<String> {
+    options.get(key).and_then(Value::as_str).map(str::to_string)
+}
+
+fn table_sheet_configs_from_options(
+    options: &Value,
+) -> Result<Vec<TableSheetConfig>, DiagnosticSet> {
+    let Some(sheets) = options.get("sheets") else {
+        return Ok(Vec::new());
+    };
+    let Some(sheets) = sheets.as_array() else {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "LARK-SOURCE",
+            "LARK",
+            "lark source option `sheets` must be an array",
+        )));
+    };
+    sheets
+        .iter()
+        .map(table_sheet_config_from_value)
+        .collect::<Result<Vec<_>, _>>()
+}
+
+fn table_sheet_config_from_value(value: &Value) -> Result<TableSheetConfig, DiagnosticSet> {
+    let Some(object) = value.as_object() else {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "LARK-SOURCE",
+            "LARK",
+            "lark source sheet config must be an object",
+        )));
+    };
+    let Some(sheet_name) = object.get("sheet").and_then(Value::as_str) else {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "LARK-SOURCE",
+            "LARK",
+            "lark source sheet config requires `sheet`",
+        )));
+    };
+    let mut sheet = TableSheetConfig::new(sheet_name);
+    if let Some(type_name) = object.get("type").and_then(Value::as_str) {
+        sheet = sheet.with_type(type_name);
+    }
+    if let Some(key) = object.get("key").and_then(Value::as_str) {
+        sheet = sheet.with_key(key);
+    }
+    if let Some(columns) = object.get("columns") {
+        let Some(columns) = columns.as_object() else {
+            return Err(DiagnosticSet::one(Diagnostic::error(
+                "LARK-SOURCE",
+                "LARK",
+                "lark source sheet `columns` must be an object",
+            )));
+        };
+        sheet =
+            sheet.with_columns(columns.iter().filter_map(|(source, field)| {
+                field.as_str().map(|field| (source.as_str(), field))
+            }));
+    }
+    Ok(sheet)
+}
+
+fn lark_diagnostics_to_api(err: LarkDiagnostics) -> DiagnosticSet {
+    DiagnosticSet {
+        diagnostics: err
+            .diagnostics
+            .into_iter()
+            .map(lark_diagnostic_to_api)
+            .collect(),
+    }
+}
+
+fn lark_diagnostic_to_api(diagnostic: LarkDiagnostic) -> Diagnostic {
+    let document = diagnostic.document.clone().unwrap_or_default();
+    Diagnostic {
+        code: diagnostic.code,
+        stage: diagnostic.stage,
+        severity: coflow_api::Severity::Error,
+        message: diagnostic.message,
+        primary: Some(Label {
+            location: SourceLocation::RemoteCell {
+                document,
+                sheet: diagnostic.sheet,
+                row: 0,
+                column: 0,
+            },
+            message: None,
+        }),
+        related: Vec::new(),
     }
 }
 
