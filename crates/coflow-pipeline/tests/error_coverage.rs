@@ -55,12 +55,9 @@ fn pipeline_diagnostic_codes_cover_project_artifact_and_codegen_boundaries() {
             )),
         },
     );
-    let codegen_diagnostics = generate_project_code(
-        &codegen_project,
-        CodegenTarget::Csharp,
-        CodegenOptions::default(),
-    )
-    .expect("codegen diagnostics");
+    let codegen_diagnostics =
+        generate_project_code(&codegen_project, "csharp", CodegenOptions::default())
+            .expect("codegen diagnostics");
     assert_single_plain_diagnostic(codegen_diagnostics, "CODEGEN-CSHARP-001", "CODEGEN");
 
     let (valid_project, _valid_cleanup) = schema_only_project_with_outputs(
@@ -74,12 +71,8 @@ fn pipeline_diagnostic_codes_cover_project_artifact_and_codegen_boundaries() {
             )),
         },
     );
-    let valid = generate_project_code(
-        &valid_project,
-        CodegenTarget::Csharp,
-        CodegenOptions::default(),
-    )
-    .expect("valid codegen should not error");
+    let valid = generate_project_code(&valid_project, "csharp", CodegenOptions::default())
+        .expect("valid codegen should not error");
     assert!(matches!(valid, PipelineOutcome::Success(_)));
 }
 

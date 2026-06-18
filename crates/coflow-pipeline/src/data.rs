@@ -108,7 +108,7 @@ fn source_specs(
                 ));
             }
             Ok(SourceSpec {
-                source_type: None,
+                source_type: source.source_type.clone(),
                 file: Some(file),
                 dir: None,
                 uri: None,
@@ -141,11 +141,14 @@ fn lark_source_spec(source: &SourceConfig) -> Result<SourceSpec, String> {
         );
     }
 
-    let mut options = Map::new();
+    let mut options = source_options_map(source);
     options.insert("lark_sheet".to_string(), Value::Object(lark));
     options.insert("sheets".to_string(), source_sheets_value(source));
     Ok(SourceSpec {
-        source_type: Some("lark-sheet".to_string()),
+        source_type: source
+            .source_type
+            .clone()
+            .or_else(|| Some("lark-sheet".to_string())),
         file: None,
         dir: None,
         uri: lark_sheet.url.clone(),
@@ -154,9 +157,17 @@ fn lark_source_spec(source: &SourceConfig) -> Result<SourceSpec, String> {
 }
 
 fn sheet_options(source: &SourceConfig) -> Value {
-    let mut options = Map::new();
+    let mut options = source_options_map(source);
     options.insert("sheets".to_string(), source_sheets_value(source));
     Value::Object(options)
+}
+
+fn source_options_map(source: &SourceConfig) -> Map<String, Value> {
+    source
+        .options
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
 }
 
 fn source_sheets_value(source: &SourceConfig) -> Value {
@@ -444,6 +455,7 @@ mod tests {
             config: ProjectConfig {
                 schema: SchemaConfig::One(PathBuf::from("schema")),
                 sources: vec![SourceConfig {
+                    source_type: None,
                     file: None,
                     dir: None,
                     lark_sheet: Some(LarkSheetConfig {
@@ -452,6 +464,7 @@ mod tests {
                         url: Some("https://fand3tbr90g.feishu.cn/wiki/wiki_token".to_string()),
                         spreadsheet_token: None,
                     }),
+                    options: BTreeMap::new(),
                     sheets: vec![SheetConfig {
                         sheet: "物品表".to_string(),
                         type_name: Some("Item".to_string()),
@@ -493,7 +506,9 @@ mod tests {
             ),
         ]);
         let mut registry = ProviderRegistry::default();
-        registry.register_loader(LarkSheetLoader::new(client));
+        registry
+            .register_loader(LarkSheetLoader::new(client))
+            .map_err(|err| err.to_string())?;
 
         let output = load_project_data(&project, &schema, &registry)
             .map_err(|diagnostics| format!("{diagnostics:?}"))?;

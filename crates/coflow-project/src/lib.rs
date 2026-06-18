@@ -42,9 +42,13 @@ pub enum SchemaConfig {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourceConfig {
+    #[serde(rename = "type")]
+    pub source_type: Option<String>,
     pub file: Option<PathBuf>,
     pub dir: Option<PathBuf>,
     pub lark_sheet: Option<LarkSheetConfig>,
+    #[serde(default)]
+    pub options: BTreeMap<String, serde_json::Value>,
     #[serde(default)]
     pub sheets: Vec<SheetConfig>,
 }
@@ -83,6 +87,8 @@ pub struct OutputConfig {
     pub output_type: String,
     pub dir: PathBuf,
     pub namespace: Option<String>,
+    #[serde(default)]
+    pub options: BTreeMap<String, serde_json::Value>,
 }
 
 fn deserialize_columns<'de, D>(deserializer: D) -> Result<BTreeMap<String, String>, D::Error>
@@ -186,30 +192,15 @@ impl Project {
     ///
     /// # Errors
     ///
-    /// Returns an error when code or data output settings are missing or use
-    /// unsupported output types.
+    /// Returns an error when code or data output settings are missing or have
+    /// invalid shape.
     pub fn validate_for_codegen(&self) -> Result<(), String> {
-        let code = self.config.outputs.code.as_ref().ok_or_else(|| {
-            "coflow.yaml missing outputs.code; required `type: csharp` for `coflow codegen csharp`"
-                .to_string()
-        })?;
-        if code.output_type != "csharp" {
-            return Err(format!(
-                "coflow.yaml outputs.code.type is `{}`; expected `csharp`",
-                code.output_type
-            ));
+        let diagnostics = validate_for_codegen_collecting(&self.config.outputs);
+        if diagnostics.is_empty() {
+            Ok(())
+        } else {
+            Err(diagnostics.join("\n"))
         }
-        let data = self.config.outputs.data.as_ref().ok_or_else(|| {
-            "coflow.yaml missing outputs.data; required `type: json` or `type: messagepack` for `coflow codegen csharp`"
-                .to_string()
-        })?;
-        if !matches!(data.output_type.as_str(), "json" | "messagepack") {
-            return Err(format!(
-                "coflow.yaml outputs.data.type is `{}`; expected `json` or `messagepack`",
-                data.output_type
-            ));
-        }
-        Ok(())
     }
 
     #[must_use]
@@ -408,6 +399,13 @@ fn validate_source_shapes_collecting(sources: &[SourceConfig]) -> Vec<String> {
         if let Some(lark_sheet) = &source.lark_sheet {
             diagnostics.extend(validate_lark_sheet_source(lark_sheet, &source_label));
         }
+        if source
+            .source_type
+            .as_ref()
+            .is_some_and(|source_type| source_type.trim().is_empty())
+        {
+            diagnostics.push(format!("{source_label}.type is empty"));
+        }
         for (sheet_index, sheet) in source.sheets.iter().enumerate() {
             let sheet_label = format!("{source_label}.sheets[{sheet_index}]");
             if sheet.sheet.trim().is_empty() {
@@ -465,11 +463,8 @@ fn validate_lark_sheet_source(lark_sheet: &LarkSheetConfig, source_label: &str) 
 fn validate_outputs_collecting(outputs: &OutputsConfig) -> Vec<String> {
     let mut diagnostics = Vec::new();
     if let Some(data) = &outputs.data {
-        if !matches!(data.output_type.as_str(), "json" | "messagepack") {
-            diagnostics.push(format!(
-                "outputs.data.type is `{}`; expected `json` or `messagepack`",
-                data.output_type
-            ));
+        if data.output_type.trim().is_empty() {
+            diagnostics.push("outputs.data.type is empty".to_string());
         }
         if let Err(err) = validate_output_dir("outputs.data.dir", &data.dir) {
             diagnostics.push(err);
@@ -479,11 +474,8 @@ fn validate_outputs_collecting(outputs: &OutputsConfig) -> Vec<String> {
         }
     }
     if let Some(code) = &outputs.code {
-        if code.output_type != "csharp" {
-            diagnostics.push(format!(
-                "outputs.code.type is `{}`; expected `csharp`",
-                code.output_type
-            ));
+        if code.output_type.trim().is_empty() {
+            diagnostics.push("outputs.code.type is empty".to_string());
         }
         if let Err(err) = validate_output_dir("outputs.code.dir", &code.dir) {
             diagnostics.push(err);
@@ -501,11 +493,8 @@ fn validate_for_codegen_collecting(outputs: &OutputsConfig) -> Vec<String> {
     let mut diagnostics = Vec::new();
     match outputs.code.as_ref() {
         Some(code) => {
-            if code.output_type != "csharp" {
-                diagnostics.push(format!(
-                    "coflow.yaml outputs.code.type is `{}`; expected `csharp`",
-                    code.output_type
-                ));
+            if code.output_type.trim().is_empty() {
+                diagnostics.push("coflow.yaml outputs.code.type is empty".to_string());
             }
             if let Err(err) = validate_output_dir("outputs.code.dir", &code.dir) {
                 diagnostics.push(err);
@@ -516,27 +505,18 @@ fn validate_for_codegen_collecting(outputs: &OutputsConfig) -> Vec<String> {
                 }
             }
         }
-        None => diagnostics.push(
-            "coflow.yaml missing outputs.code; required `type: csharp` for `coflow codegen csharp`"
-                .to_string(),
-        ),
+        None => diagnostics.push("coflow.yaml missing outputs.code".to_string()),
     }
     match outputs.data.as_ref() {
         Some(data) => {
-            if !matches!(data.output_type.as_str(), "json" | "messagepack") {
-                diagnostics.push(format!(
-                    "coflow.yaml outputs.data.type is `{}`; expected `json` or `messagepack`",
-                    data.output_type
-                ));
+            if data.output_type.trim().is_empty() {
+                diagnostics.push("coflow.yaml outputs.data.type is empty".to_string());
             }
             if let Err(err) = validate_output_dir("outputs.data.dir", &data.dir) {
                 diagnostics.push(err);
             }
         }
-        None => diagnostics.push(
-            "coflow.yaml missing outputs.data; required `type: json` or `type: messagepack` for `coflow codegen csharp`"
-                .to_string(),
-        ),
+        None => diagnostics.push("coflow.yaml missing outputs.data".to_string()),
     }
     diagnostics
 }

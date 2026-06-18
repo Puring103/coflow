@@ -556,28 +556,58 @@ impl fmt::Debug for ProviderRegistry {
 }
 
 impl ProviderRegistry {
-    pub fn register_loader<L>(&mut self, loader: L)
+    /// Registers a loader provider.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when another loader with the same provider id has
+    /// already been registered.
+    pub fn register_loader<L>(&mut self, loader: L) -> Result<(), ProviderRegistrationError>
     where
         L: DataLoader + 'static,
     {
-        self.loaders
-            .insert(loader.descriptor().id, Arc::new(loader));
+        let id = loader.descriptor().id;
+        if self.loaders.contains_key(id) {
+            return Err(ProviderRegistrationError::duplicate("loader", id));
+        }
+        self.loaders.insert(id, Arc::new(loader));
+        Ok(())
     }
 
-    pub fn register_exporter<E>(&mut self, exporter: E)
+    /// Registers an exporter provider.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when another exporter with the same provider id has
+    /// already been registered.
+    pub fn register_exporter<E>(&mut self, exporter: E) -> Result<(), ProviderRegistrationError>
     where
         E: DataExporter + 'static,
     {
-        self.exporters
-            .insert(exporter.descriptor().id, Arc::new(exporter));
+        let id = exporter.descriptor().id;
+        if self.exporters.contains_key(id) {
+            return Err(ProviderRegistrationError::duplicate("exporter", id));
+        }
+        self.exporters.insert(id, Arc::new(exporter));
+        Ok(())
     }
 
-    pub fn register_codegen<C>(&mut self, codegen: C)
+    /// Registers a code generator provider.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when another code generator with the same provider id
+    /// has already been registered.
+    pub fn register_codegen<C>(&mut self, codegen: C) -> Result<(), ProviderRegistrationError>
     where
         C: CodeGenerator + 'static,
     {
-        self.codegens
-            .insert(codegen.descriptor().id, Arc::new(codegen));
+        let id = codegen.descriptor().id;
+        if self.codegens.contains_key(id) {
+            return Err(ProviderRegistrationError::duplicate("codegen", id));
+        }
+        self.codegens.insert(id, Arc::new(codegen));
+        Ok(())
     }
 
     #[must_use]
@@ -600,6 +630,22 @@ impl ProviderRegistry {
         self.loaders
             .values()
             .map(|loader| loader.descriptor())
+            .collect()
+    }
+
+    #[must_use]
+    pub fn exporter_descriptors(&self) -> Vec<&'static ExporterDescriptor> {
+        self.exporters
+            .values()
+            .map(|exporter| exporter.descriptor())
+            .collect()
+    }
+
+    #[must_use]
+    pub fn codegen_descriptors(&self) -> Vec<&'static CodegenDescriptor> {
+        self.codegens
+            .values()
+            .map(|codegen| codegen.descriptor())
             .collect()
     }
 
@@ -652,3 +698,41 @@ pub enum LoaderSelectionError {
     NoLoader,
     AmbiguousLoaders { ids: Vec<String> },
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderRegistrationError {
+    provider_kind: &'static str,
+    id: String,
+}
+
+impl ProviderRegistrationError {
+    #[must_use]
+    pub fn duplicate(provider_kind: &'static str, id: impl Into<String>) -> Self {
+        Self {
+            provider_kind,
+            id: id.into(),
+        }
+    }
+
+    #[must_use]
+    pub const fn provider_kind(&self) -> &'static str {
+        self.provider_kind
+    }
+
+    #[must_use]
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+}
+
+impl fmt::Display for ProviderRegistrationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "duplicate {} provider id `{}`",
+            self.provider_kind, self.id
+        )
+    }
+}
+
+impl std::error::Error for ProviderRegistrationError {}

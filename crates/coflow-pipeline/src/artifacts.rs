@@ -1,12 +1,10 @@
-use crate::{CodegenTarget, DataFormat};
 use coflow_api::{
-    ArtifactContent, ArtifactSet, CftContainer, CodegenContext, ExportContext, OutputSpec,
-    ProviderRegistry,
+    ArtifactContent, ArtifactSet, CfdDataModel, CftContainer, CodegenContext, ExportContext,
+    OutputSpec, ProviderRegistry,
 };
-use coflow_data_model::CfdDataModel;
 use coflow_project::{OutputConfig, Project};
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -40,29 +38,28 @@ pub fn write_data_tables(
     registry: &ProviderRegistry,
     schema: &CftContainer,
     model: &CfdDataModel,
-    format: DataFormat,
+    exporter_id: &str,
+    output: &OutputConfig,
     dir: &Path,
 ) -> Result<(), String> {
-    stage_data_tables(registry, schema, model, format, dir)?.commit()
+    stage_data_tables(registry, schema, model, exporter_id, output, dir)?.commit()
 }
 
 pub fn stage_data_tables(
     registry: &ProviderRegistry,
     schema: &CftContainer,
     model: &CfdDataModel,
-    format: DataFormat,
+    exporter_id: &str,
+    output_config: &OutputConfig,
     dir: &Path,
 ) -> Result<StagedArtifactDir, String> {
-    let exporter = registry.exporter(format.as_config_value()).ok_or_else(|| {
-        format!(
-            "no data exporter registered for `{}`",
-            format.as_config_value()
-        )
-    })?;
+    let exporter = registry
+        .exporter(exporter_id)
+        .ok_or_else(|| format!("no data exporter registered for `{exporter_id}`"))?;
     let output = OutputSpec {
-        output_type: format.as_config_value().to_string(),
+        output_type: exporter_id.to_string(),
         dir: dir.to_path_buf(),
-        options: Value::Null,
+        options: output_options(output_config),
     };
     let artifacts = exporter
         .export(ExportContext { schema, model }, &output)
@@ -70,59 +67,69 @@ pub fn stage_data_tables(
     stage_artifact_set(dir, artifacts)
 }
 
-pub fn stage_csharp_files(
+#[derive(Debug, Clone, Copy)]
+pub struct CodegenArtifactRequest<'a> {
+    pub schema: &'a CftContainer,
+    pub model: Option<&'a CfdDataModel>,
+    pub codegen_id: &'a str,
+    pub data_format: &'a str,
+    pub output_config: &'a OutputConfig,
+    pub namespace: &'a str,
+    pub dir: &'a Path,
+    pub key_as_enum_variants: &'a Value,
+}
+
+pub fn stage_codegen_artifacts(
     registry: &ProviderRegistry,
-    schema: &CftContainer,
-    data_format: DataFormat,
-    namespace: &str,
-    dir: &Path,
-    key_as_enum_variants: &Value,
+    request: CodegenArtifactRequest<'_>,
 ) -> Result<StagedArtifactDir, String> {
     let codegen = registry
-        .codegen(CodegenTarget::Csharp.as_config_value())
-        .ok_or_else(|| "no code generator registered for `csharp`".to_string())?;
+        .codegen(request.codegen_id)
+        .ok_or_else(|| format!("no code generator registered for `{}`", request.codegen_id))?;
     let output = OutputSpec {
-        output_type: CodegenTarget::Csharp.as_config_value().to_string(),
-        dir: dir.to_path_buf(),
-        options: serde_json::json!({
-            "namespace": namespace,
-            "key_as_enum_variants": key_as_enum_variants,
-        }),
+        output_type: request.codegen_id.to_string(),
+        dir: request.dir.to_path_buf(),
+        options: codegen_output_options(
+            request.output_config,
+            request.namespace,
+            request.key_as_enum_variants,
+        ),
     };
     let artifacts = codegen
         .generate(
             CodegenContext {
-                schema,
-                model: None,
-                data_format: data_format.as_config_value(),
+                schema: request.schema,
+                model: request.model,
+                data_format: request.data_format,
             },
             &output,
         )
         .map_err(|diagnostics| first_diagnostic_message(&diagnostics))?;
-    stage_artifact_set(dir, artifacts)
+    stage_artifact_set(request.dir, artifacts)
 }
 
 pub fn preflight_codegen(
     registry: &ProviderRegistry,
     schema: &CftContainer,
-    data_format: DataFormat,
+    model: Option<&CfdDataModel>,
+    codegen_id: &str,
+    data_format: &str,
+    output_config: &OutputConfig,
     namespace: &str,
 ) -> Result<coflow_api::DiagnosticSet, String> {
     let codegen = registry
-        .codegen(CodegenTarget::Csharp.as_config_value())
-        .ok_or_else(|| "no code generator registered for `csharp`".to_string())?;
+        .codegen(codegen_id)
+        .ok_or_else(|| format!("no code generator registered for `{codegen_id}`"))?;
     let output = OutputSpec {
-        output_type: CodegenTarget::Csharp.as_config_value().to_string(),
+        output_type: codegen_id.to_string(),
         dir: PathBuf::new(),
-        options: serde_json::json!({
-            "namespace": namespace,
-        }),
+        options: codegen_output_options(output_config, namespace, &Value::Null),
     };
     Ok(codegen.preflight(
         CodegenContext {
             schema,
-            model: None,
-            data_format: data_format.as_config_value(),
+            model,
+            data_format,
         },
         &output,
     ))
@@ -183,64 +190,47 @@ pub fn commit_staged_dirs_and_file(
 
 pub fn required_data_output<'a>(
     project: &'a Project,
-    required_format: DataFormat,
+    exporter_id: &str,
     command: &str,
 ) -> Result<&'a OutputConfig, String> {
     let output = project.config.outputs.data.as_ref().ok_or_else(|| {
         format!(
-            "coflow.yaml missing outputs.data; required `type: {}` and `dir` for `{command}`",
-            required_format.as_config_value()
+            "coflow.yaml missing outputs.data; required `type: {exporter_id}` and `dir` for `{command}`"
         )
     })?;
-    require_output_type(output, "data", required_format.as_config_value(), command)?;
+    require_output_type(output, "data", exporter_id, command)?;
     Ok(output)
 }
 
 pub fn required_code_output<'a>(
     project: &'a Project,
-    required_target: CodegenTarget,
+    codegen_id: &str,
     command: &str,
 ) -> Result<&'a OutputConfig, String> {
     let output = project.config.outputs.code.as_ref().ok_or_else(|| {
         format!(
-            "coflow.yaml missing outputs.code; required `type: {}` and `dir` for `{command}`",
-            required_target.as_config_value()
+            "coflow.yaml missing outputs.code; required `type: {codegen_id}` and `dir` for `{command}`"
         )
     })?;
-    require_output_type(output, "code", required_target.as_config_value(), command)?;
+    require_output_type(output, "code", codegen_id, command)?;
     Ok(output)
 }
 
-pub fn configured_data_format(project: &Project, command: &str) -> Result<DataFormat, String> {
+pub fn configured_data_format<'a>(project: &'a Project, command: &str) -> Result<&'a str, String> {
     let output = project.config.outputs.data.as_ref().ok_or_else(|| {
-        format!(
-            "coflow.yaml missing outputs.data; required `type: json` or `type: messagepack` for `{command}`"
-        )
+        format!("coflow.yaml missing outputs.data; required `type` and `dir` for `{command}`")
     })?;
-    DataFormat::from_config_value(&output.output_type).ok_or_else(|| {
-        format!(
-            "coflow.yaml outputs.data.type is `{}`; expected `json` or `messagepack`",
-            output.output_type
-        )
-    })
+    Ok(output.output_type.as_str())
 }
 
 pub fn configured_data_output<'a>(
     project: &'a Project,
     command: &str,
-) -> Result<(&'a OutputConfig, DataFormat), String> {
+) -> Result<(&'a OutputConfig, &'a str), String> {
     let output = project.config.outputs.data.as_ref().ok_or_else(|| {
-        format!(
-            "coflow.yaml missing outputs.data; required `type: json` or `type: messagepack` for `{command}`"
-        )
+        format!("coflow.yaml missing outputs.data; required `type` and `dir` for `{command}`")
     })?;
-    let format = DataFormat::from_config_value(&output.output_type).ok_or_else(|| {
-        format!(
-            "coflow.yaml outputs.data.type is `{}`; expected `json` or `messagepack`",
-            output.output_type
-        )
-    })?;
-    Ok((output, format))
+    Ok((output, output.output_type.as_str()))
 }
 
 fn require_output_type(
@@ -257,6 +247,36 @@ fn require_output_type(
             output.output_type
         ))
     }
+}
+
+fn output_options(output: &OutputConfig) -> Value {
+    Value::Object(options_map(&output.options))
+}
+
+fn codegen_output_options(
+    output: &OutputConfig,
+    namespace: &str,
+    key_as_enum_variants: &Value,
+) -> Value {
+    let mut options = options_map(&output.options);
+    options.insert(
+        "namespace".to_string(),
+        Value::String(namespace.to_string()),
+    );
+    if !key_as_enum_variants.is_null() {
+        options.insert(
+            "key_as_enum_variants".to_string(),
+            key_as_enum_variants.clone(),
+        );
+    }
+    Value::Object(options)
+}
+
+fn options_map(options: &std::collections::BTreeMap<String, Value>) -> Map<String, Value> {
+    options
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
 }
 
 fn stage_artifact_set(dir: &Path, artifacts: ArtifactSet) -> Result<StagedArtifactDir, String> {

@@ -152,7 +152,7 @@ fn config_validation_rejects_unknown_fields_and_invalid_outputs() {
 
     std::fs::write(
         project_dir.join("coflow.yaml"),
-        "schema: schema/\noutputs:\n  data:\n    type: yaml\n    dir: generated/data\n  code:\n    type: python\n    dir: generated/code\n",
+        "schema: schema/\noutputs:\n  data:\n    type: ''\n    dir: generated/data\n  code:\n    type: ''\n    dir: generated/code\n",
     )
     .expect("write config");
     let output = coflow()
@@ -163,7 +163,7 @@ fn config_validation_rejects_unknown_fields_and_invalid_outputs() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("outputs.data.type is `yaml`; expected `json` or `messagepack`"),
+        stderr.contains("outputs.data.type is empty"),
         "stderr: {stderr}"
     );
 
@@ -188,11 +188,11 @@ sources:
     dir: data
 outputs:
   data:
-    type: yaml
+    type: ""
     dir: ""
     namespace: Bad.Data
   code:
-    type: python
+    type: ""
     dir: ""
     namespace: ""
 "#,
@@ -210,10 +210,10 @@ outputs:
     let diagnostics = json["diagnostics"].as_array().expect("diagnostics array");
     for expected in [
         "sources[0] must set exactly one of `file`, `dir`, or `lark_sheet`",
-        "outputs.data.type is `yaml`; expected `json` or `messagepack`",
+        "outputs.data.type is empty",
         "outputs.data.dir is empty",
         "outputs.data.namespace is only valid for code outputs",
-        "outputs.code.type is `python`; expected `csharp`",
+        "outputs.code.type is empty",
         "outputs.code.dir is empty",
         "outputs.code.namespace is empty",
     ] {
