@@ -601,31 +601,37 @@ function computeGraphColumns(records, refs) {
   const graphRefs = refs.filter((ref) =>
     recordById.has(ref.sourceRecordId) && recordById.has(ref.targetRecordId)
   );
-  const inbound = new Map(records.map((record) => [record.id, 0]));
+
+  // outgoing/incoming adjacency
+  const outgoing = new Map();
+  const incoming = new Map();
+  for (const r of records) { outgoing.set(r.id, []); incoming.set(r.id, []); }
   for (const ref of graphRefs) {
-    inbound.set(ref.targetRecordId, (inbound.get(ref.targetRecordId) || 0) + 1);
+    outgoing.get(ref.sourceRecordId).push(ref.targetRecordId);
+    incoming.get(ref.targetRecordId).push(ref.sourceRecordId);
   }
 
-  const roots = records.filter((record) => !inbound.get(record.id));
+  // Depth = longest path from any root (no inbound) to the node.
+  // a→b, a→c, b→c  ⇒  a=0, b=1, c=2 (since longest a→b→c has length 2).
+  // Computed via memoized DFS on incoming edges; cycles fall back to 0
+  // for nodes still on the recursion stack.
   const depth = new Map();
-  const queue = roots.length
-    ? roots.map((record) => [record.id, 0])
-    : records.map((record, index) => [record.id, index]);
-  while (queue.length) {
-    const [id, currentDepth] = queue.shift();
-    if (!recordById.has(id)) {
-      continue;
+  const visiting = new Set();
+  const longestDepth = (id) => {
+    if (depth.has(id)) return depth.get(id);
+    if (visiting.has(id)) return 0;
+    visiting.add(id);
+    const preds = incoming.get(id) || [];
+    let d = 0;
+    for (const p of preds) {
+      const pd = longestDepth(p);
+      if (pd + 1 > d) d = pd + 1;
     }
-    if (depth.has(id) && depth.get(id) <= currentDepth) {
-      continue;
-    }
-    depth.set(id, currentDepth);
-    for (const ref of graphRefs) {
-      if (ref.sourceRecordId === id) {
-        queue.push([ref.targetRecordId, currentDepth + 1]);
-      }
-    }
-  }
+    visiting.delete(id);
+    depth.set(id, d);
+    return d;
+  };
+  for (const r of records) longestDepth(r.id);
 
   const cols = new Map();
   for (const record of records) {
@@ -635,21 +641,47 @@ function computeGraphColumns(records, refs) {
     cols.set(recordDepth, col);
   }
 
+  // Within each column, sort by:
+  //   1. longest *outgoing* path desc — nodes with longer downstream chains
+  //      sit higher (top of column), shorter (or none) sink to the bottom;
+  //   2. barycenter from already-placed columns;
+  //   3. record key.
+  const tailLen = new Map();
+  const tailVisiting = new Set();
+  const longestTail = (id) => {
+    if (tailLen.has(id)) return tailLen.get(id);
+    if (tailVisiting.has(id)) return 0;
+    tailVisiting.add(id);
+    let best = 0;
+    for (const next of outgoing.get(id) || []) {
+      const t = longestTail(next) + 1;
+      if (t > best) best = t;
+    }
+    tailVisiting.delete(id);
+    tailLen.set(id, best);
+    return best;
+  };
+  for (const r of records) longestTail(r.id);
+
   for (const col of cols.values()) {
-    col.sort(compareGraphRecords);
+    col.sort((a, b) => {
+      const ta = longestTail(a.id), tb = longestTail(b.id);
+      if (ta !== tb) return tb - ta;
+      return compareGraphRecords(a, b);
+    });
   }
 
   const sortedDepths = [...cols.keys()].sort((left, right) => left - right);
   let positions = graphColumnPositions(cols);
   for (const recordDepth of sortedDepths) {
-    sortGraphColumn(cols.get(recordDepth), graphRefs, positions, recordDepth);
+    sortGraphColumn(cols.get(recordDepth), graphRefs, positions, recordDepth, longestTail);
     positions = graphColumnPositions(cols);
   }
 
   return cols;
 }
 
-function sortGraphColumn(records, refs, positions, depth) {
+function sortGraphColumn(records, refs, positions, depth, longestTail) {
   if (!records || records.length < 2) {
     return;
   }
@@ -664,6 +696,10 @@ function sortGraphColumn(records, refs, positions, depth) {
     }
     if (leftScore === undefined && rightScore !== undefined) {
       return 1;
+    }
+    if (longestTail) {
+      const lt = longestTail(left.id), rt = longestTail(right.id);
+      if (lt !== rt) return rt - lt;
     }
     return compareGraphRecords(left, right);
   });
@@ -756,14 +792,20 @@ function buildCfdInspectorHtml(model) {
     :root {
       color-scheme: light dark;
       --border:       var(--vscode-panel-border, #3c3c3c);
+      --border-soft:  var(--vscode-widget-border, rgba(128,128,128,0.18));
       --muted:        var(--vscode-descriptionForeground, #8b949e);
       --accent:       var(--vscode-textLink-foreground, #3794ff);
+      --accent-soft:  var(--vscode-textLink-activeForeground, #4daafc);
       --surface:      var(--vscode-editor-background, #1e1e1e);
       --surface-alt:  var(--vscode-sideBar-background, #252526);
       --surface-hi:   var(--vscode-list-hoverBackground, #2a2d2e);
+      --surface-sel:  var(--vscode-list-activeSelectionBackground, #094771);
       --text:         var(--vscode-editor-foreground, #d4d4d4);
       --badge-bg:     var(--vscode-badge-background, #4d4d4d);
       --badge-fg:     var(--vscode-badge-foreground, #cccccc);
+      --input-bg:     var(--vscode-input-background, #3c3c3c);
+      --input-fg:     var(--vscode-input-foreground, #cccccc);
+      --input-bd:     var(--vscode-input-border, transparent);
       --r: 5px;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -775,6 +817,22 @@ function buildCfdInspectorHtml(model) {
       font: 13px/1.5 var(--vscode-font-family, sans-serif);
       overflow: hidden;
     }
+    .mono { font-family: var(--vscode-editor-font-family, ui-monospace, "SF Mono", Menlo, Consolas, monospace); }
+    .navigable { position: relative; cursor: text; }
+    .navigable.is-jump-hover { cursor: alias; color: var(--accent); }
+    .nav-hint {
+      position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+      font-size: 10px; padding: 0 5px;
+      border-radius: 3px;
+      color: var(--muted);
+      background: var(--surface-alt);
+      border: 1px solid var(--border-soft);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.1s;
+      white-space: nowrap;
+    }
+    .navigable.is-jump-hover .nav-hint { opacity: 1; }
     button {
       border: 1px solid var(--border);
       color: var(--text);
@@ -788,7 +846,8 @@ function buildCfdInspectorHtml(model) {
     }
     button:hover:not(:disabled) { background: var(--surface-hi); }
     button:disabled { opacity: 0.38; cursor: default; }
-    button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+    button:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+    button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 
     /* ── Shell ───────────────────────────────────── */
     .root { display: flex; flex-direction: column; height: 100vh; }
@@ -797,17 +856,78 @@ function buildCfdInspectorHtml(model) {
       flex: 0 0 auto;
       display: flex;
       align-items: center;
-      gap: 5px;
-      padding: 6px 14px;
+      gap: 6px;
+      padding: 7px 14px;
       border-bottom: 1px solid var(--border);
       background: var(--surface);
     }
-    .tb-title { font-weight: 600; font-size: 13px; }
-    .tb-sep   { width: 1px; height: 13px; background: var(--border); margin: 0 4px; }
-    .tb-hint  { margin-left: auto; color: var(--muted); font-size: 11px; }
+    .tb-title {
+      font-weight: 600; font-size: 12px;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      color: var(--muted);
+      padding-right: 4px;
+    }
+    .tb-segment {
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      overflow: hidden;
+    }
+    .tb-segment button {
+      border: 0; border-radius: 0; padding: 4px 11px;
+      border-left: 1px solid var(--border);
+    }
+    .tb-segment button:first-child { border-left: 0; }
+    .tb-sep   { width: 1px; height: 14px; background: var(--border); margin: 0 4px; }
+    .tb-spacer { flex: 1 1 auto; }
+    .tb-hint  { color: var(--muted); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .tb-search {
+      display: flex; align-items: center; gap: 5px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-bd);
+      border-radius: var(--r);
+      padding: 2px 6px 2px 9px;
+      min-width: 180px;
+    }
+    .tb-search:focus-within { border-color: var(--accent); }
+    .tb-search-icon { color: var(--muted); font-size: 11px; }
+    .tb-search input {
+      flex: 1; min-width: 0;
+      background: transparent; border: 0; outline: 0;
+      color: var(--input-fg);
+      font: inherit; font-size: 12px;
+      padding: 2px 0;
+    }
+    .tb-search-clear {
+      border: 0; padding: 0 4px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px; line-height: 1;
+    }
+    .tb-search-clear:hover { color: var(--accent); background: transparent; }
+    .icon-btn {
+      padding: 4px 9px;
+      font-size: 11px;
+    }
+    .kbd-hint {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 10px; color: var(--muted);
+      padding-left: 6px;
+    }
+    .kbd-hint kbd {
+      font: inherit;
+      font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+      font-size: 10px;
+      border: 1px solid var(--border);
+      border-bottom-width: 2px;
+      border-radius: 3px;
+      padding: 0 4px;
+      background: var(--surface-alt);
+      color: var(--text);
+    }
 
-    .view      { flex: 1 1 0; overflow: auto; padding: 14px; }
-    .view-graph { flex: 1 1 0; overflow: hidden; padding: 14px; display: flex; flex-direction: column; }
+    .view      { flex: 1 1 0; overflow: auto; padding: 12px 14px 18px; }
+    .view-graph { flex: 1 1 0; overflow: hidden; padding: 0; display: flex; flex-direction: column; position: relative; }
 
     .empty {
       display: flex; align-items: center; justify-content: center;
@@ -815,34 +935,40 @@ function buildCfdInspectorHtml(model) {
     }
 
     /* ── Shared card ─────────────────────────────── */
-    /* Primary zone: header — key & type are the main identity  */
-    /* Secondary zone: body — field rows are supporting detail   */
     .card {
       border: 1px solid var(--border);
       border-radius: var(--r);
       background: var(--surface-alt);
       overflow: hidden;
+      transition: border-color 0.12s, box-shadow 0.12s, opacity 0.15s;
     }
+    .card.is-focused {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent), 0 4px 14px rgba(0,0,0,0.18);
+    }
+    .card.is-dimmed { opacity: 0.32; }
+    .card.is-expanded > .card-header { border-bottom-color: var(--border-soft); }
     .card-header {
       display: flex;
       align-items: center;
-      gap: 7px;
-      padding: 9px 12px 8px;
-      border-bottom: 1px solid var(--border);
+      gap: 8px;
+      padding: 7px 10px 7px 8px;
+      border-bottom: 1px solid transparent;
+      cursor: pointer;
+      user-select: none;
     }
-    /* key: largest, boldest — the primary label */
+    .card-header:hover { background: var(--surface-hi); }
     .card-key {
       flex: 1 1 0;
       min-width: 0;
-      font-weight: 700;
+      font-weight: 600;
       font-size: 13px;
       color: var(--text);
       overflow-wrap: anywhere;
       text-align: left;
+      letter-spacing: 0.01em;
     }
-    /* graph node key is larger */
-    .node .card-key { font-size: 15px; }
-    /* badge: secondary label — type identifier, smaller & dimmer */
+    .node .card-key { font-size: 14px; }
     .card-badge {
       flex-shrink: 0;
       font-size: 10px;
@@ -854,60 +980,74 @@ function buildCfdInspectorHtml(model) {
       color: var(--badge-fg);
     }
     .node .card-badge { font-size: 11px; padding: 2px 7px; }
-    /* source link: tertiary, fades in on hover */
+    .card-rev {
+      flex-shrink: 0;
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 9px;
+      border: 1px solid var(--border-soft);
+      color: var(--muted);
+      background: transparent;
+      font-variant-numeric: tabular-nums;
+    }
+    .card-rev[data-count="0"] { display: none; }
+    .card-rev:hover { color: var(--accent); border-color: var(--accent); }
     .card-src {
       flex-shrink: 0;
       border-color: transparent;
       font-size: 11px;
       color: var(--muted);
-      padding: 1px 4px;
+      padding: 1px 6px;
       opacity: 0;
       transition: opacity 0.12s;
     }
-    .card:hover .card-src { opacity: 1; }
+    .card:hover .card-src,
+    .card.is-focused .card-src { opacity: 0.7; }
     .card-src:hover        { color: var(--accent); opacity: 1; }
 
-    /* body: secondary zone — slightly smaller, value-first */
-    .card-body { padding: 8px 12px; display: grid; gap: 5px; }
-
-    /* expand/collapse toggle at card foot */
-    .card-toggle {
-      display: block; width: 100%;
-      padding: 4px 12px;
-      font-size: 11px; color: var(--muted);
-      border-top: 1px solid var(--border);
-      border-left: 0; border-right: 0; border-bottom: 0; border-radius: 0;
-      text-align: left; background: transparent;
+    .card-body {
+      padding: 8px 12px 10px;
+      display: grid;
+      gap: 4px;
+      border-top: 1px solid var(--border-soft);
+      background: color-mix(in srgb, var(--surface) 60%, var(--surface-alt));
     }
-    .card-toggle:hover { color: var(--accent); background: var(--surface-hi); }
+
     .card-chevron {
       flex-shrink: 0;
       border: 0;
-      padding: 0 4px 0 0;
+      padding: 0;
+      width: 14px; height: 14px;
+      display: inline-flex; align-items: center; justify-content: center;
       background: transparent;
       font-size: 9px;
       color: var(--muted);
       cursor: pointer;
       line-height: 1;
-      transition: color 0.1s;
+      transition: color 0.1s, transform 0.12s ease;
     }
+    .card-chevron::before { content: "▶"; }
+    .card.is-expanded > .card-header > .card-chevron { transform: rotate(90deg); color: var(--accent); }
     .card-chevron:hover { color: var(--accent); background: transparent; }
 
-    /* ── Field rows (inside card-body and nested values) ── */
+    /* ── Field rows ── */
     .field {
       display: grid;
       grid-template-columns: minmax(44px, 30%) minmax(0, 1fr);
-      gap: 6px;
+      gap: 8px;
       align-items: baseline;
+      padding: 1px 0;
     }
     .field-name {
       font-size: 11px;
-      color: var(--accent);
-      opacity: 0.88;
+      color: var(--muted);
+      font-weight: 500;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      letter-spacing: 0.01em;
     }
+    .field-name.is-jump-hover { color: var(--accent); }
     .field-value { min-width: 0; font-size: 12px; color: var(--text); overflow-wrap: anywhere; }
     .field-fold { display: block; }
     .field-fold-summary {
@@ -915,69 +1055,131 @@ function buildCfdInspectorHtml(model) {
       list-style: none;
       display: grid;
       grid-template-columns: 10px minmax(44px, 30%) minmax(0, 1fr);
-      gap: 4px;
+      gap: 6px;
       align-items: baseline;
+      padding: 1px 0;
+      border-radius: 3px;
     }
-    .field-fold-summary::before { content: "▶"; font-size: 8px; color: var(--muted); }
-    .field-fold[open] > .field-fold-summary::before { content: "▼"; }
-    .field-fold-label { color: var(--muted); }
+    .field-fold-summary:hover { background: var(--surface-hi); }
+    .field-fold-summary::before { content: "▶"; font-size: 8px; color: var(--muted); transition: transform 0.12s; display: inline-block; }
+    .field-fold[open] > .field-fold-summary::before { transform: rotate(90deg); color: var(--accent); }
+    .field-fold-label { color: var(--muted); font-size: 11px; }
     .field-fold-body { margin-top: 4px; padding-left: 4px; border-left: 1px solid var(--border); display: grid; gap: 4px; }
 
     /* ── Inline jump button ── */
     .jump {
       border: 0; padding: 0;
       background: transparent; text-align: left;
-      font: inherit; color: inherit; cursor: pointer;
+      font: inherit; color: inherit; cursor: text;
+      transition: color 0.1s;
     }
-    .jump:hover { color: var(--accent); }
+    .jump.is-jump-hover { color: var(--accent); cursor: alias; }
+    .jump:focus-visible { outline: 1px dashed var(--accent); outline-offset: 1px; }
 
     /* ── Expandable value blocks ── */
     .value-card {
-      border: 1px solid var(--border);
+      border: 1px solid var(--border-soft);
       border-radius: 4px;
-      padding: 3px 4px;
+      padding: 2px 6px;
       font-size: 12px;
+      background: color-mix(in srgb, var(--surface) 70%, transparent);
     }
     .value-card > summary {
       cursor: pointer; list-style: none;
-      display: flex; align-items: center; gap: 4px;
+      display: flex; align-items: center; gap: 5px;
       color: var(--muted);
+      padding: 1px 0;
     }
-    .value-card > summary::before         { content: "▶"; font-size: 8px; }
-    details[open] > summary::before       { content: "▼"; }
+    .value-card > summary:hover { color: var(--text); }
+    .value-card > summary::before         { content: "▶"; font-size: 8px; transition: transform 0.12s; display: inline-block; }
+    details[open] > summary::before       { transform: rotate(90deg); color: var(--accent); }
+    .value-card .summary-label { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); font-size: 11px; }
     .nested-fields { margin-top: 4px; padding-left: 4px; border-left: 1px solid var(--border); display: grid; gap: 4px; }
+    .nested-fields { padding-bottom: 2px; }
     .array-item {
       display: grid; grid-template-columns: 22px minmax(0, 1fr);
-      gap: 4px; margin-top: 4px;
+      gap: 4px; margin-top: 3px;
+      align-items: baseline;
     }
-    .array-item-fold { display: block; margin-top: 4px; }
+    .array-item-fold { display: block; margin-top: 3px; }
     .array-item-summary {
       cursor: pointer;
       list-style: none;
       display: grid;
-      grid-template-columns: 10px 22px minmax(0, 1fr);
+      grid-template-columns: 10px 26px minmax(0, 1fr);
       gap: 4px;
       align-items: baseline;
+      padding: 1px 0;
+      border-radius: 3px;
     }
-    .array-item-summary::before { content: "▶"; font-size: 8px; color: var(--muted); }
-    .array-item-fold[open] > .array-item-summary::before { content: "▼"; }
-    .array-item-body { margin-top: 4px; padding-left: 4px; border-left: 1px solid var(--border); display: grid; gap: 4px; }
-    .idx-chip  { color: var(--muted); font-size: 11px; }
-    .path-chip { color: var(--accent); font-size: 11px; }
+    .array-item-summary:hover { background: var(--surface-hi); }
+    .array-item-summary::before { content: "▶"; font-size: 8px; color: var(--muted); transition: transform 0.12s; display: inline-block; }
+    .array-item-fold[open] > .array-item-summary::before { transform: rotate(90deg); color: var(--accent); }
+    .array-item-body { margin-top: 3px; padding-left: 6px; border-left: 1px solid var(--border-soft); display: grid; gap: 3px; padding-bottom: 2px; }
+    .idx-chip  {
+      color: var(--muted); font-size: 10px;
+      font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+      font-variant-numeric: tabular-nums;
+    }
+    .path-chip {
+      color: var(--accent); font-size: 11px;
+      font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+    }
 
-    /* inline reference expansion */
-    .ref-mini {
-      margin-top: 5px;
-      padding: 5px 9px;
+    /* ── Reference value (inline, unified with field rows) ── */
+    .ref {
+      display: inline-grid;
+      grid-template-columns: minmax(0, auto) auto auto;
+      column-gap: 6px;
+      row-gap: 0;
+      align-items: baseline;
+      padding: 1px 6px;
       border-left: 2px solid var(--accent);
-      background: var(--surface);
-      border-radius: 0 4px 4px 0;
-      display: flex; align-items: center; gap: 7px;
-      cursor: pointer; width: 100%;
-      text-align: left;
+      background: color-mix(in srgb, var(--accent) 7%, transparent);
+      border-radius: 0 3px 3px 0;
+      max-width: 100%;
     }
-    .ref-mini:hover .ref-key { color: var(--accent); }
-    .ref-key { font-weight: 600; font-size: 12px; }
+    .ref-key {
+      font-weight: 600; font-size: 12px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .ref-arrow { color: var(--muted); font-size: 10px; }
+    .ref-target {
+      display: inline-flex; align-items: baseline; gap: 5px;
+      min-width: 0;
+    }
+    .ref-target .ref-key { color: var(--text); }
+    .ref-target.is-broken .ref-key { color: var(--muted); font-style: italic; }
+    .ref-target .card-badge { font-size: 9px; padding: 0 5px; }
+    .ref-path-chip {
+      color: var(--accent); font-size: 11px;
+      font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+    }
+
+    /* ── Type group header (Records view) ───────── */
+    .group { display: block; margin-bottom: 18px; }
+    .group:last-child { margin-bottom: 0; }
+    .group-head {
+      display: flex; align-items: center; gap: 10px;
+      padding: 0 2px 8px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid var(--border-soft);
+      position: sticky; top: 0; z-index: 1;
+      background: var(--surface);
+    }
+    .group-name {
+      font-weight: 600; font-size: 11px;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--text);
+    }
+    .group-count {
+      font-size: 10px;
+      color: var(--muted);
+      padding: 1px 7px;
+      border-radius: 9px;
+      background: var(--surface-alt);
+      font-variant-numeric: tabular-nums;
+    }
 
     /* ── Table view ──────────────────────────────── */
     .table-wrap {
@@ -991,37 +1193,80 @@ function buildCfdInspectorHtml(model) {
       background: var(--surface);
     }
     .cfd-table th, .cfd-table td {
-      padding: 6px 10px;
-      border-bottom: 1px solid var(--border);
-      border-right: 1px solid var(--border);
+      padding: 7px 12px;
+      border-bottom: 1px solid var(--border-soft);
+      border-right: 1px solid var(--border-soft);
       vertical-align: top;
-      min-width: 120px; max-width: 280px;
+      min-width: 130px; max-width: 320px;
+      font-size: 12px;
     }
     .cfd-table thead th {
       position: sticky; top: 0; z-index: 2;
       background: var(--surface-alt);
-      font-weight: 600; font-size: 12px; text-align: left;
+      font-weight: 600; font-size: 11px;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      color: var(--muted);
+      text-align: left;
+      cursor: pointer;
+      user-select: none;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
     }
+    .cfd-table thead th:hover { color: var(--text); }
+    .cfd-table thead th .sort-mark { color: var(--accent); margin-left: 5px; font-size: 9px; }
     .cfd-table .col-key {
       position: sticky; left: 0; z-index: 3;
-      background: var(--surface-alt); min-width: 120px;
+      background: var(--surface-alt); min-width: 130px;
+      font-weight: 600;
     }
     .cfd-table tbody td.col-key { background: var(--surface); z-index: 1; }
-    .cell-empty { color: var(--muted); }
+    .cfd-table tbody tr:hover td { background: var(--surface-hi); }
+    .cfd-table tbody tr:hover td.col-key { background: var(--surface-hi); color: var(--text); }
+    .cell-empty { color: var(--muted); opacity: 0.5; }
 
     /* ── Records view ────────────────────────────── */
-    .records-list { display: flex; flex-direction: column; gap: 10px; }
+    .records-list { display: flex; flex-direction: column; gap: 8px; }
 
     /* ── Graph view ──────────────────────────────── */
     .graph {
       flex: 1; position: relative;
       overflow: hidden;
-      border: 1px solid var(--border); border-radius: var(--r);
       cursor: grab; user-select: none; touch-action: none;
       min-height: 160px;
+      background:
+        radial-gradient(circle at 1px 1px, var(--border-soft) 1px, transparent 1px) 0 0/22px 22px,
+        var(--surface);
     }
     .graph.dragging { cursor: grabbing; }
     .graph-canvas   { position: relative; transform-origin: 0 0; }
+
+    .graph-controls {
+      position: absolute; top: 8px; right: 10px; z-index: 5;
+      display: flex; gap: 4px;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 3px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+    }
+    .graph-controls button {
+      border: 0; padding: 3px 8px;
+      background: transparent;
+      font-size: 11px;
+      min-width: 26px;
+    }
+    .graph-controls .zoom-label {
+      align-self: center;
+      font-size: 10px; color: var(--muted);
+      padding: 0 5px; min-width: 38px; text-align: center;
+    }
+    .graph-legend {
+      position: absolute; bottom: 8px; left: 10px; z-index: 5;
+      font-size: 10px; color: var(--muted);
+      background: var(--surface-alt); border: 1px solid var(--border-soft);
+      border-radius: var(--r); padding: 3px 8px;
+      pointer-events: none;
+    }
 
     svg.edges {
       position: absolute; inset: 0;
@@ -1030,28 +1275,49 @@ function buildCfdInspectorHtml(model) {
     }
     .edge {
       stroke: currentColor; stroke-width: 1.5; fill: none;
-      opacity: .6; pointer-events: stroke; cursor: pointer;
+      opacity: .55; pointer-events: stroke; cursor: pointer;
+      transition: opacity 0.12s, stroke-width 0.12s;
     }
-    .edge:hover { opacity: 1; stroke-width: 2; }
+    .edge:hover, .edge.is-active { opacity: 1; stroke-width: 2.2; }
+    .edge.is-dimmed { opacity: 0.08; }
     .edge-dot {
       fill: currentColor; opacity: .75;
       pointer-events: none;
+      transition: opacity 0.12s;
     }
+    .edge-dot.is-dimmed { opacity: 0.1; }
 
-    /* graph nodes use shared .card, positioned absolutely */
     .node {
       position: absolute; width: 240px;
       user-select: text;
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,0.18));
     }
     .node .card-src { opacity: 0.7; }
+    .node.is-focused { z-index: 3; }
+    .node.is-related { z-index: 2; }
+    /* transient highlight (edge hover) — distinct from persistent focus */
+    .card.is-related {
+      border-color: var(--accent-soft);
+      box-shadow: 0 0 0 1px var(--accent-soft);
+    }
   </style>
+  
 </head>
 <body>
   <div class="root" id="cfd-app"></div>
   <script nonce="${nonce}">
     const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
+    const initialState = vscode?.getState?.() || {};
     let model = ${state};
-    let mode = "table";
+    let mode = initialState.mode || "records";
+    let query = initialState.query || "";
+    const expandedRecords = new Set(initialState.expanded || []);
+    const detailsState = new Map(Object.entries(initialState.details || {}));
+    let focusedRecordId = initialState.focusedRecordId || null;
+    let zoomState = initialState.zoom || null;
+    let tableSort = initialState.tableSort || { col: "key", dir: 1 };
+    let scrollY = initialState.scrollY || 0;
+
     const root = document.getElementById("cfd-app");
 
     ${cfdInspectorGraphLayoutScript()}
@@ -1059,6 +1325,19 @@ function buildCfdInspectorHtml(model) {
     window.addEventListener("message", (event) => {
       if (event.data?.type === "model") { model = event.data.model; render(); }
     });
+
+    function persist() {
+      vscode?.setState?.({
+        mode,
+        query,
+        expanded: [...expandedRecords],
+        details: Object.fromEntries(detailsState),
+        focusedRecordId,
+        zoom: zoomState,
+        tableSort,
+        scrollY
+      });
+    }
 
     function postJump(target) {
       vscode?.postMessage({
@@ -1068,22 +1347,115 @@ function buildCfdInspectorHtml(model) {
       });
     }
 
+    const isMac = typeof navigator !== "undefined" && /mac/i.test(navigator.platform || "");
+    const modifierLabel = isMac ? "⌘" : "Ctrl";
+    function isJumpModifier(event) {
+      return Boolean(event && (isMac ? event.metaKey : event.ctrlKey));
+    }
+    /**
+     * Make an element act as a "navigable text" — Ctrl/Cmd hover shows a link
+     * cursor and click jumps; plain click does nothing (lets the surrounding
+     * card/details own the click). Used by every jump-able label.
+     */
+    function makeNavigable(element, getTarget, opts) {
+      const label = opts?.label || "Open source";
+      element.classList.add("navigable");
+      element.dataset.navTitle = modifierLabel + "+Click " + label;
+      element.title = element.dataset.navTitle;
+      const updateHover = (e) => {
+        element.classList.toggle("is-jump-hover", isJumpModifier(e));
+      };
+      element.addEventListener("mousemove", updateHover);
+      element.addEventListener("mouseenter", updateHover);
+      element.addEventListener("mouseleave", () => element.classList.remove("is-jump-hover"));
+      element.addEventListener("click", (e) => {
+        if (!isJumpModifier(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const target = typeof getTarget === "function" ? getTarget() : getTarget;
+        if (target) postJump(target);
+      });
+    }
+    // Re-evaluate hover state when modifier key state changes globally.
+    window.addEventListener("keydown", refreshJumpHover);
+    window.addEventListener("keyup", refreshJumpHover);
+    window.addEventListener("blur", () => {
+      for (const el of document.querySelectorAll(".is-jump-hover")) el.classList.remove("is-jump-hover");
+    });
+    function refreshJumpHover(e) {
+      if (e.key !== "Control" && e.key !== "Meta") return;
+      const wantOn = isJumpModifier(e);
+      // Only update elements currently under the pointer (matched via :hover).
+      for (const el of document.querySelectorAll(".navigable:hover")) {
+        el.classList.toggle("is-jump-hover", wantOn);
+      }
+      if (!wantOn) {
+        for (const el of document.querySelectorAll(".is-jump-hover")) el.classList.remove("is-jump-hover");
+      }
+    }
+
     function render() {
       root.innerHTML = "";
       root.append(buildToolbar());
-      if (mode === "graph" && model.graph?.canShow) root.append(graphView());
-      else if (mode === "records")                  root.append(recordsView());
-      else                                           root.append(tableView());
+      const records = filteredRecords();
+      let viewEl;
+      if (mode === "graph" && model.graph?.canShow) {
+        viewEl = graphView();
+      } else if (mode === "table") {
+        viewEl = tableView(records);
+      } else {
+        viewEl = recordsView(records);
+      }
+      root.append(viewEl);
+      // restore scroll for scrollable views
+      if (viewEl.classList.contains("view")) {
+        viewEl.scrollTop = scrollY;
+        viewEl.addEventListener("scroll", () => { scrollY = viewEl.scrollTop; persist(); }, { passive: true });
+      }
+      persist();
+    }
+
+    function filteredRecords() {
+      const all = model.recordsInFile || [];
+      const q = query.trim().toLowerCase();
+      if (!q) return all;
+      return all.filter((r) => recordMatches(r, q));
+    }
+
+    function recordMatches(record, q) {
+      if ((record.key || "").toLowerCase().includes(q)) return true;
+      if ((record.type || "").toLowerCase().includes(q)) return true;
+      for (const f of record.fields || []) {
+        if ((f.name || "").toLowerCase().includes(q)) return true;
+        if (valueText(f.value).toLowerCase().includes(q)) return true;
+      }
+      return false;
     }
 
     function buildToolbar() {
       const bar = el("div", "toolbar");
-      bar.append(
-        el("span", "tb-title", "CFD Inspector"),
-        el("div", "tb-sep"),
-        modeBtn("table",   "Table"),
+      const segment = el("div", "tb-segment");
+      segment.append(
         modeBtn("records", "Records"),
-        modeBtn("graph",   "Graph", !model.graph?.canShow),
+        modeBtn("table",   "Table"),
+        modeBtn("graph",   "Graph", !model.graph?.canShow)
+      );
+      bar.append(el("span", "tb-title", "CFD"), segment);
+      if (mode === "records") {
+        bar.append(
+          el("div", "tb-sep"),
+          actionBtn("⤢ Expand all", expandAll),
+          actionBtn("⤡ Collapse all", collapseAll)
+        );
+      }
+      const hint = el("span", "kbd-hint");
+      const kbd = document.createElement("kbd");
+      kbd.textContent = modifierLabel;
+      hint.append(kbd, document.createTextNode(" + click to open"));
+      bar.append(
+        el("div", "tb-spacer"),
+        hint,
+        searchBox(),
         el("span", "tb-hint", hintText())
       );
       return bar;
@@ -1094,64 +1466,135 @@ function buildCfdInspectorHtml(model) {
       b.type = "button";
       b.disabled = Boolean(disabled);
       b.setAttribute("aria-pressed", String(mode === value));
-      b.addEventListener("click", () => { mode = value; render(); });
+      b.addEventListener("click", () => {
+        if (mode === value) return;
+        mode = value;
+        scrollY = 0;
+        render();
+      });
       return b;
     }
 
+    function actionBtn(label, handler) {
+      const b = el("button", "icon-btn", label);
+      b.type = "button";
+      b.addEventListener("click", handler);
+      return b;
+    }
+
+    function searchBox() {
+      const wrap = el("div", "tb-search");
+      wrap.append(el("span", "tb-search-icon", "⌕"));
+      const input = document.createElement("input");
+      input.type = "search";
+      input.placeholder = "Filter key, type, or value";
+      input.value = query;
+      input.spellcheck = false;
+      input.addEventListener("input", () => { query = input.value; render(); requestAnimationFrame(() => {
+        const rerendered = root.querySelector(".tb-search input");
+        if (rerendered) { rerendered.focus(); rerendered.setSelectionRange(rerendered.value.length, rerendered.value.length); }
+      }); });
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && query) { e.preventDefault(); query = ""; render(); }
+      });
+      wrap.append(input);
+      if (query) {
+        const clear = el("button", "tb-search-clear", "✕");
+        clear.type = "button";
+        clear.title = "Clear (Esc)";
+        clear.addEventListener("click", () => { query = ""; render(); });
+        wrap.append(clear);
+      }
+      return wrap;
+    }
+
+    function expandAll() {
+      for (const r of model.recordsInFile || []) expandedRecords.add(r.id);
+      render();
+    }
+
+    function collapseAll() {
+      expandedRecords.clear();
+      detailsState.clear();
+      render();
+    }
+
     function hintText() {
-      const n = model.recordsInFile?.length || 0;
+      const total = model.recordsInFile?.length || 0;
+      const visible = filteredRecords().length;
       const h = model.graph?.hiddenIsolatedAnchors?.length || 0;
-      return h > 0 ? n + " records · " + h + " isolated" : n + " record" + (n === 1 ? "" : "s");
+      const base = query
+        ? visible + "/" + total + " records"
+        : total + " record" + (total === 1 ? "" : "s");
+      return h > 0 ? base + " · " + h + " isolated" : base;
     }
 
     // ── Shared card component ─────────────────────────────────────
-    // All cards start collapsed; chevron button toggles the body.
-    // onToggle callback fires after each toggle (used by graph to re-layout).
 
     function buildCard(record, opts) {
       const onToggle = opts?.onToggle;
       const anchors = opts?.anchors;
-      let expanded = false;
+      const initialExpanded = opts?.expanded ?? expandedRecords.has(record.id);
+      let expanded = initialExpanded;
 
       const card = el("div", "card");
+      card.dataset.recordId = record.id;
+      if (focusedRecordId === record.id) card.classList.add("is-focused");
+      if (expanded) card.classList.add("is-expanded");
 
-      // ── Header ──
       const header = el("div", "card-header");
 
-      // Chevron: sole owner of the toggle action
-      const chevron = el("button", "card-chevron jump", "▶");
+      const chevron = el("button", "card-chevron");
       chevron.type = "button";
-      chevron.title = "Expand";
-      chevron.addEventListener("click", () => {
-        expanded = !expanded;
+      chevron.tabIndex = -1;
+      chevron.title = expanded ? "Collapse" : "Expand";
+      chevron.setAttribute("aria-expanded", String(expanded));
+      const setExpanded = (next) => {
+        expanded = next;
+        if (expanded) { expandedRecords.add(record.id); card.classList.add("is-expanded"); }
+        else { expandedRecords.delete(record.id); card.classList.remove("is-expanded"); }
         if (body) body.hidden = !expanded;
-        chevron.textContent = expanded ? "▼" : "▶";
         chevron.title = expanded ? "Collapse" : "Expand";
+        chevron.setAttribute("aria-expanded", String(expanded));
+        persist();
         onToggle?.();
-      });
+      };
+      chevron.addEventListener("click", (e) => { e.stopPropagation(); setExpanded(!expanded); });
       header.append(chevron);
 
-      // Key: jump to source only
-      const keyBtn = el("button", "card-key jump", record.key);
-      keyBtn.type = "button";
-      keyBtn.addEventListener("click", () => postJump(record));
-      header.append(keyBtn);
+      const keyEl = el("span", "card-key", record.key);
+      makeNavigable(keyEl, record, { label: "open " + record.key });
+      header.append(keyEl);
 
       if (record.type) header.append(el("span", "card-badge", record.type));
 
-      const srcBtn = el("button", "card-src jump", "↗");
+      const inboundCount = countInbound(record.id);
+      const rev = el("button", "card-rev", "↩ " + inboundCount);
+      rev.type = "button";
+      rev.dataset.count = String(inboundCount);
+      rev.title = inboundCount + " incoming reference(s) — click to open the first";
+      rev.addEventListener("click", (e) => { e.stopPropagation(); jumpToFirstInbound(record.id); });
+      header.append(rev);
+
+      const srcBtn = el("button", "card-src", "↗");
       srcBtn.type = "button"; srcBtn.title = "Open source";
-      srcBtn.addEventListener("click", () => postJump(record));
+      srcBtn.addEventListener("click", (e) => { e.stopPropagation(); postJump(record); });
       header.append(srcBtn);
+
+      header.addEventListener("click", (e) => {
+        if (e.target.closest("button") && e.target !== header) return;
+        if (e.target.closest(".navigable")) return;
+        if (opts?.onHeaderClick) { opts.onHeaderClick(record); return; }
+        setExpanded(!expanded);
+      });
 
       card.append(header);
 
-      // ── Body (collapsed by default) ──
       const allFields = record.fields || [];
       let body = null;
       if (allFields.length) {
         body = el("div", "card-body");
-        body.hidden = true;
+        body.hidden = !expanded;
         for (const f of allFields) body.append(renderField(record, f, [f.name], anchors));
         card.append(body);
       }
@@ -1159,36 +1602,62 @@ function buildCfdInspectorHtml(model) {
       return card;
     }
 
+    function countInbound(id) {
+      let n = 0;
+      for (const r of model.references || []) if (r.targetRecordId === id) n += 1;
+      return n;
+    }
+
+    function jumpToFirstInbound(id) {
+      const ref = (model.references || []).find((r) => r.targetRecordId === id);
+      if (ref) postJump({ uri: ref.sourceUri, range: ref.range });
+    }
+
     // ── Table view ────────────────────────────────────────────────
-    function tableView() {
+    function tableView(records) {
       const view = el("div", "view");
-      const records = model.recordsInFile || [];
-      if (!records.length) { view.append(el("div", "empty", "No records in this file.")); return view; }
+      if (!records.length) {
+        view.append(el("div", "empty", query ? "No records match the filter." : "No records in this file."));
+        return view;
+      }
       const wrap = el("div", "table-wrap");
       const table = el("table", "cfd-table");
       const cols = tableColumns(records);
+      const sorted = sortRecords(records, cols);
       const thead = document.createElement("thead");
       const hrow = document.createElement("tr");
       for (const c of cols) {
         const th = document.createElement("th");
         th.textContent = c.label;
+        if (tableSort.col === c.key) {
+          const mark = el("span", "sort-mark", tableSort.dir > 0 ? "▲" : "▼");
+          th.append(mark);
+        }
         if (c.kind === "key") th.classList.add("col-key");
+        th.addEventListener("click", () => {
+          if (tableSort.col === c.key) tableSort = { col: c.key, dir: -tableSort.dir };
+          else tableSort = { col: c.key, dir: 1 };
+          persist();
+          render();
+        });
         hrow.append(th);
       }
       thead.append(hrow);
       const tbody = document.createElement("tbody");
-      for (const record of records) {
+      for (const record of sorted) {
         const row = document.createElement("tr");
         for (const c of cols) {
           const td = document.createElement("td");
           if (c.kind === "key") {
             td.classList.add("col-key");
-            const btn = el("button", "jump", record.key);
-            btn.type = "button";
-            btn.addEventListener("click", () => postJump(record));
-            td.append(btn);
+            const span = el("span", "", record.key);
+            makeNavigable(span, record, { label: "open " + record.key });
+            td.append(span);
           } else if (c.kind === "type") {
-            td.textContent = record.type || "";
+            if (record.type) {
+              const badge = el("span", "card-badge", record.type);
+              td.append(badge);
+            }
           } else {
             const f = (record.fields || []).find((x) => x.name === c.name);
             td.append(f ? renderValue(record, f.value, [f.name]) : el("span", "cell-empty", "—"));
@@ -1203,14 +1672,45 @@ function buildCfdInspectorHtml(model) {
       return view;
     }
 
+    function sortRecords(records, cols) {
+      const col = cols.find((c) => c.key === tableSort.col);
+      if (!col) return records;
+      const dir = tableSort.dir;
+      const keyOf = (r) => {
+        if (col.kind === "key") return r.key || "";
+        if (col.kind === "type") return r.type || "";
+        const f = (r.fields || []).find((x) => x.name === col.name);
+        return f ? valueText(f.value) : "";
+      };
+      return [...records].sort((a, b) => String(keyOf(a)).localeCompare(String(keyOf(b))) * dir);
+    }
+
     // ── Records view ──────────────────────────────────────────────
-    function recordsView() {
+    function recordsView(records) {
       const view = el("div", "view");
-      const records = model.recordsInFile || [];
-      if (!records.length) { view.append(el("div", "empty", "No records in this file.")); return view; }
-      const list = el("div", "records-list");
-      for (const r of records) list.append(buildCard(r));
-      view.append(list);
+      if (!records.length) {
+        view.append(el("div", "empty", query ? "No records match the filter." : "No records in this file."));
+        return view;
+      }
+      // Group by type
+      const groups = new Map();
+      for (const r of records) {
+        const type = r.type || "(untyped)";
+        if (!groups.has(type)) groups.set(type, []);
+        groups.get(type).push(r);
+      }
+      const sortedTypes = [...groups.keys()].sort();
+      for (const type of sortedTypes) {
+        const items = groups.get(type);
+        const group = el("div", "group");
+        const head = el("div", "group-head");
+        head.append(el("span", "group-name", type), el("span", "group-count", items.length + (items.length === 1 ? " record" : " records")));
+        group.append(head);
+        const list = el("div", "records-list");
+        for (const r of items) list.append(buildCard(r));
+        group.append(list);
+        view.append(group);
+      }
       return view;
     }
 
@@ -1228,12 +1728,10 @@ function buildCfdInspectorHtml(model) {
       const graphRefs = model.graph?.references || [];
       const graphRecords = model.graph?.records || [];
 
-      // Depth-based column layout
       const colMap = computeGraphColumns(graphRecords, graphRefs);
-      const nodeInfos = [];  // { element, record, depth, x, y }
-      const edgeInfos = [];  // { element (path), sourceId, targetId }
+      const nodeInfos = [];
+      const edgeInfos = [];
 
-      // Build SVG with arrowhead marker
       const svg = svgEl("svg");
       svg.classList.add("edges");
       const defs = svgEl("defs");
@@ -1254,7 +1752,6 @@ function buildCfdInspectorHtml(model) {
       svg.append(defs);
       canvas.append(svg);
 
-      // Place nodes column by column
       let colX = CANVAS_PAD;
       for (const [, records] of [...colMap.entries()].sort((a, b) => a[0] - b[0])) {
         for (const record of records) {
@@ -1262,25 +1759,34 @@ function buildCfdInspectorHtml(model) {
           const fieldAnchors = new Map();
           nodeEl.style.left = colX + "px";
           nodeEl.style.top = "0px";
-          nodeEl.append(buildCard(record, {
+          // In the graph view the chevron handles expand/collapse; clicking
+          // anywhere else on the card (header included) focuses the node.
+          const card = buildCard(record, {
             anchors: fieldAnchors,
             compact: true,
-            onToggle: () => requestAnimationFrame(reLayout)
-          }));
+            onToggle: () => requestAnimationFrame(reLayout),
+            onHeaderClick: (r) => toggleFocus(r.id)
+          });
+          card.addEventListener("click", (e) => {
+            if (e.target.closest(".navigable")) return;
+            if (e.target.closest("summary")) return;
+            if (e.target.closest("button")) return;
+            if (e.target.closest(".card-header")) return;
+            toggleFocus(record.id);
+          });
+          nodeEl.append(card);
           canvas.append(nodeEl);
-          nodeInfos.push({ element: nodeEl, fieldAnchors, record, x: colX, y: 0 });
+          nodeInfos.push({ element: nodeEl, fieldAnchors, record, card, x: colX, y: 0 });
         }
         colX += NODE_W + COL_GAP;
       }
 
-      // Build edge paths + endpoint dots
       for (const ref of graphRefs) {
         const pathEl = svgEl("path");
         pathEl.classList.add("edge");
         pathEl.setAttribute("marker-end", "url(#arw)");
         pathEl.addEventListener("click", () => postJump({ uri: ref.sourceUri, range: ref.range }));
         svg.append(pathEl);
-        // source dot and target dot (drawn on top of paths)
         const dotSrc = svgEl("circle");
         dotSrc.classList.add("edge-dot");
         dotSrc.setAttribute("r", "3.5");
@@ -1295,38 +1801,54 @@ function buildCfdInspectorHtml(model) {
           sourceId: ref.sourceRecordId,
           sourcePath: ref.sourcePath || [],
           targetId: ref.targetRecordId,
-          targetPath: ref.targetPath || []
+          targetPath: ref.targetPath || [],
+          ref
         });
+        pathEl.addEventListener("mouseenter", () => highlightEdge(edgeInfos[edgeInfos.length - 1], true));
+        pathEl.addEventListener("mouseleave", () => highlightEdge(edgeInfos[edgeInfos.length - 1], false));
       }
 
       function reLayout() {
-        // Group nodes by column X
         const byX = new Map();
         for (const ni of nodeInfos) {
           const arr = byX.get(ni.x) || [];
           arr.push(ni);
           byX.set(ni.x, arr);
         }
-        // Stack nodes vertically within each column
-        let maxBottom = 0;
-        for (const col of byX.values()) {
-          let y = CANVAS_PAD;
+        // First pass: stack each column from the top to know each column's
+        // own height and each node's preliminary y.
+        const colHeights = new Map();
+        for (const [x, col] of byX.entries()) {
+          let y = 0;
           for (const ni of col) {
-            ni.y = y;
-            ni.element.style.top = y + "px";
+            ni.localY = y;
             y += ni.element.offsetHeight + ROW_GAP;
           }
-          maxBottom = Math.max(maxBottom, y - ROW_GAP);
+          colHeights.set(x, Math.max(0, y - ROW_GAP));
+        }
+        // Center each column vertically in the canvas area, so columns of
+        // very different heights don't all hug the top — looks much more
+        // balanced when only a few records connect across many.
+        const tallest = Math.max(0, ...colHeights.values());
+        const totalH = tallest + CANVAS_PAD * 2;
+        let maxBottom = 0;
+        for (const [x, col] of byX.entries()) {
+          const colH = colHeights.get(x) || 0;
+          const offset = CANVAS_PAD + (tallest - colH) / 2;
+          for (const ni of col) {
+            ni.y = offset + ni.localY;
+            ni.element.style.top = ni.y + "px";
+          }
+          const bottom = offset + colH;
+          if (bottom > maxBottom) maxBottom = bottom;
         }
         const maxRight = colX - COL_GAP + CANVAS_PAD;
-        // Resize canvas
         const W = maxRight;
-        const H = maxBottom + CANVAS_PAD;
+        const H = Math.max(maxBottom + CANVAS_PAD, totalH);
         canvas.style.width  = W + "px";
         canvas.style.height = H + "px";
         svg.style.width  = W + "px";
         svg.style.height = H + "px";
-        // Redraw edges + dots
         const posMap = new Map(nodeInfos.map((ni) => [ni.record.id, ni]));
         for (const ei of edgeInfos) {
           const src = posMap.get(ei.sourceId);
@@ -1342,17 +1864,107 @@ function buildCfdInspectorHtml(model) {
           ei.dotSrc.setAttribute("cx", String(sourceAnchor.x)); ei.dotSrc.setAttribute("cy", String(sourceAnchor.y));
           ei.dotTgt.setAttribute("cx", String(targetAnchor.x)); ei.dotTgt.setAttribute("cy", String(targetAnchor.y));
         }
+        applyFocusHighlight();
       }
 
-      // React to node size changes (card expand/collapse)
+      function applyFocusHighlight() {
+        const fid = focusedRecordId;
+        if (!fid) {
+          for (const ni of nodeInfos) {
+            ni.card.classList.remove("is-focused", "is-dimmed");
+            ni.element.classList.remove("is-focused");
+          }
+          for (const ei of edgeInfos) {
+            ei.element.classList.remove("is-active", "is-dimmed");
+            ei.dotSrc.classList.remove("is-dimmed");
+            ei.dotTgt.classList.remove("is-dimmed");
+          }
+          return;
+        }
+        const connected = new Set([fid]);
+        for (const ei of edgeInfos) {
+          if (ei.sourceId === fid) connected.add(ei.targetId);
+          if (ei.targetId === fid) connected.add(ei.sourceId);
+        }
+        for (const ni of nodeInfos) {
+          const isFocus = ni.record.id === fid;
+          ni.card.classList.toggle("is-focused", isFocus);
+          ni.card.classList.toggle("is-dimmed", !connected.has(ni.record.id));
+          ni.element.classList.toggle("is-focused", isFocus);
+        }
+        for (const ei of edgeInfos) {
+          const involved = ei.sourceId === fid || ei.targetId === fid;
+          ei.element.classList.toggle("is-active", involved);
+          ei.element.classList.toggle("is-dimmed", !involved);
+          ei.dotSrc.classList.toggle("is-dimmed", !involved);
+          ei.dotTgt.classList.toggle("is-dimmed", !involved);
+        }
+      }
+
+      function highlightEdge(ei, on) {
+        if (focusedRecordId) return;
+        ei.element.classList.toggle("is-active", on);
+        const src = nodeInfos.find((ni) => ni.record.id === ei.sourceId);
+        const tgt = nodeInfos.find((ni) => ni.record.id === ei.targetId);
+        if (src) {
+          src.card.classList.toggle("is-related", on);
+          src.element.classList.toggle("is-related", on);
+        }
+        if (tgt) {
+          tgt.card.classList.toggle("is-related", on);
+          tgt.element.classList.toggle("is-related", on);
+        }
+      }
+
+      function toggleFocus(id) {
+        focusedRecordId = focusedRecordId === id ? null : id;
+        applyFocusHighlight();
+        persist();
+      }
+
       const ro = new ResizeObserver(() => requestAnimationFrame(reLayout));
       for (const ni of nodeInfos) ro.observe(ni.element);
 
       graph.append(canvas);
-      panZoomGraph(graph, canvas);
+      const pz = panZoomGraph(graph, canvas);
       view.append(graph);
-      requestAnimationFrame(reLayout);
+      view.append(buildGraphControls(pz, () => {
+        focusedRecordId = null;
+        applyFocusHighlight();
+        persist();
+      }));
+      view.append(graphLegend());
+
+      requestAnimationFrame(() => { reLayout(); pz.fitIfNeeded(); });
       return view;
+    }
+
+    function buildGraphControls(pz, clearFocus) {
+      const controls = el("div", "graph-controls");
+      const zoomLabel = el("span", "zoom-label", "100%");
+      pz.onChange((scale) => { zoomLabel.textContent = Math.round(scale * 100) + "%"; });
+      const mk = (label, title, fn) => {
+        const b = el("button", "", label);
+        b.type = "button"; b.title = title;
+        b.addEventListener("click", fn);
+        return b;
+      };
+      controls.append(
+        mk("−", "Zoom out", () => pz.zoomBy(0.85)),
+        zoomLabel,
+        mk("+", "Zoom in", () => pz.zoomBy(1.18)),
+        mk("⊡", "Fit", () => pz.fit()),
+        mk("1:1", "Reset", () => pz.reset()),
+        mk("✕", "Clear focus", clearFocus)
+      );
+      return controls;
+    }
+
+    function graphLegend() {
+      const n = (model.graph?.records || []).length;
+      const e = (model.graph?.references || []).length;
+      return el("div", "graph-legend",
+        n + " nodes · " + e + " edges · drag to pan · scroll to zoom · click node to focus · " + modifierLabel + "+click to open");
     }
 
     function cubicEdgePath(sx, sy, tx, ty) {
@@ -1364,13 +1976,41 @@ function buildCfdInspectorHtml(model) {
     }
 
     function panZoomGraph(graph, canvas) {
-      const s = { scale: 1, x: 0, y: 0, dragging: false, sx: 0, sy: 0 };
+      const s = Object.assign({ scale: 1, x: 0, y: 0 }, zoomState || {});
+      const listeners = [];
+      let dragging = false, sx = 0, sy = 0;
       const apply = () => {
         canvas.style.transform = "translate(" + s.x + "px," + s.y + "px) scale(" + s.scale + ")";
+        zoomState = { scale: s.scale, x: s.x, y: s.y };
+        for (const fn of listeners) fn(s.scale);
+        persist();
       };
+      const zoomBy = (factor) => {
+        const next = clampScale(s.scale * factor);
+        const r = graph.getBoundingClientRect();
+        const mx = r.width / 2, my = r.height / 2;
+        s.x = mx - ((mx - s.x) / s.scale) * next;
+        s.y = my - ((my - s.y) / s.scale) * next;
+        s.scale = next; apply();
+      };
+      const fit = () => {
+        const r = graph.getBoundingClientRect();
+        const W = canvas.offsetWidth || 1, H = canvas.offsetHeight || 1;
+        const margin = 32;
+        const sx2 = (r.width  - margin) / W;
+        const sy2 = (r.height - margin) / H;
+        const next = clampScale(Math.min(sx2, sy2, 1));
+        s.scale = next;
+        s.x = (r.width  - W * next) / 2;
+        s.y = (r.height - H * next) / 2;
+        apply();
+      };
+      const reset = () => { s.scale = 1; s.x = 0; s.y = 0; apply(); };
+      const fitIfNeeded = () => { if (!zoomState || !Number.isFinite(zoomState.scale)) fit(); else apply(); };
+
       graph.addEventListener("wheel", (e) => {
         e.preventDefault();
-        const next = Math.min(2.5, Math.max(0.3, s.scale * (e.deltaY > 0 ? 0.9 : 1.1)));
+        const next = clampScale(s.scale * (e.deltaY > 0 ? 0.9 : 1.1));
         const r = graph.getBoundingClientRect();
         const mx = e.clientX - r.left, my = e.clientY - r.top;
         s.x = mx - ((mx - s.x) / s.scale) * next;
@@ -1378,19 +2018,25 @@ function buildCfdInspectorHtml(model) {
         s.scale = next; apply();
       }, { passive: false });
       graph.addEventListener("pointerdown", (e) => {
-        if (e.target.closest(".card")) return;
-        s.dragging = true; s.sx = e.clientX - s.x; s.sy = e.clientY - s.y;
+        if (e.target.closest(".card") || e.target.closest(".graph-controls")) return;
+        dragging = true; sx = e.clientX - s.x; sy = e.clientY - s.y;
         graph.classList.add("dragging"); graph.setPointerCapture(e.pointerId);
       });
       graph.addEventListener("pointermove", (e) => {
-        if (!s.dragging) return;
-        s.x = e.clientX - s.sx; s.y = e.clientY - s.sy; apply();
+        if (!dragging) return;
+        s.x = e.clientX - sx; s.y = e.clientY - sy; apply();
       });
       graph.addEventListener("pointerup", (e) => {
-        s.dragging = false; graph.classList.remove("dragging"); graph.releasePointerCapture(e.pointerId);
+        dragging = false; graph.classList.remove("dragging"); graph.releasePointerCapture(e.pointerId);
       });
       apply();
+      return {
+        zoomBy, fit, reset, fitIfNeeded,
+        onChange(fn) { listeners.push(fn); fn(s.scale); }
+      };
     }
+
+    function clampScale(v) { return Math.min(2.5, Math.max(0.25, v)); }
 
     // ── Field & value renderers ───────────────────────────────────
     function graphAnchorPoint(nodeInfo, path, side) {
@@ -1423,9 +2069,8 @@ function buildCfdInspectorHtml(model) {
       }
       const row = el("div", "field");
       anchors?.set(graphPathKey(path), row);
-      const name = el("button", "field-name jump", field.name);
-      name.type = "button";
-      name.addEventListener("click", () => postJump({ uri: record.uri, range: field.range }));
+      const name = el("span", "field-name", field.name);
+      makeNavigable(name, () => ({ uri: record.uri, range: field.range }), { label: "open " + field.name });
       const val = el("div", "field-value");
       val.append(renderValue(record, field.value, path, anchors));
       row.append(name, val);
@@ -1434,15 +2079,11 @@ function buildCfdInspectorHtml(model) {
 
     function renderFoldableField(record, field, path, anchors) {
       const details = el("details", "field-fold");
+      bindDetailsPersistence(details, record.id + "::" + graphPathKey(path));
       const summary = el("summary", "field-fold-summary");
       anchors?.set(graphPathKey(path), summary);
-      const name = el("button", "field-name jump", field.name);
-      name.type = "button";
-      name.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        postJump({ uri: record.uri, range: field.range });
-      });
+      const name = el("span", "field-name", field.name);
+      makeNavigable(name, () => ({ uri: record.uri, range: field.range }), { label: "open " + field.name });
       summary.append(name, el("span", "field-fold-label", foldableValueLabel(field.value)));
       details.append(summary);
       details.append(renderFoldableBody(record, field.value, path, anchors, "field-fold-body"));
@@ -1479,12 +2120,18 @@ function buildCfdInspectorHtml(model) {
 
     function renderFoldableArrayItem(record, value, path, index, anchors) {
       const details = el("details", "array-item-fold");
+      bindDetailsPersistence(details, record.id + "::" + graphPathKey(path));
       const summary = el("summary", "array-item-summary");
       anchors?.set(graphPathKey(path), summary);
       summary.append(el("span", "idx-chip", "[" + index + "]"), el("span", "field-fold-label", foldableValueLabel(value)));
       details.append(summary);
       details.append(renderFoldableBody(record, value, path, anchors, "array-item-body"));
       return details;
+    }
+
+    function bindDetailsPersistence(details, stateKey) {
+      details.open = detailsState.get(stateKey) === true;
+      details.addEventListener("toggle", () => { detailsState.set(stateKey, details.open); persist(); });
     }
 
     function isFoldableFieldValue(value) {
@@ -1503,7 +2150,10 @@ function buildCfdInspectorHtml(model) {
       if (!value) return document.createTextNode("");
       if (value.kind === "block") {
         const d = el("details", "value-card");
-        d.append(el("summary", "", value.type ? value.type + " {…}" : "{…}"));
+        bindDetailsPersistence(d, record.id + "::v::" + graphPathKey(path));
+        const summary = el("summary", "");
+        summary.append(el("span", "summary-label", value.type ? value.type + " {…}" : "{…}"));
+        d.append(summary);
         const nf = el("div", "nested-fields");
         for (const f of value.fields || []) nf.append(renderField(record, f, path.concat(f.name), anchors));
         d.append(nf);
@@ -1511,7 +2161,10 @@ function buildCfdInspectorHtml(model) {
       }
       if (value.kind === "array") {
         const d = el("details", "value-card");
-        d.append(el("summary", "", "[" + (value.items?.length || 0) + "]"));
+        bindDetailsPersistence(d, record.id + "::v::" + graphPathKey(path));
+        const summary = el("summary", "");
+        summary.append(el("span", "summary-label", "[" + (value.items?.length || 0) + "]"));
+        d.append(summary);
         (value.items || []).forEach((item, i) => {
           const row = el("div", "array-item");
           row.append(el("div", "idx-chip", "[" + i + "]"), renderValue(record, item, path.concat("[" + i + "]"), anchors));
@@ -1521,36 +2174,53 @@ function buildCfdInspectorHtml(model) {
       }
       if (value.kind === "spread") {
         const d = el("details", "value-card");
-        d.append(el("summary", "", "…spread"));
+        bindDetailsPersistence(d, record.id + "::v::" + graphPathKey(path));
+        const summary = el("summary", "");
+        summary.append(el("span", "summary-label", "…spread"));
+        d.append(summary);
         d.append(renderValue(record, value.value, path.concat("..."), anchors));
         return d;
       }
       if (value.kind === "ref") return renderRefValue(record, value, path);
-      const btn = el("button", "jump", valueText(value));
-      btn.type = "button";
-      btn.addEventListener("click", () => postJump({ uri: record.uri, range: value.range }));
-      return btn;
+      // primitive — render as plain text, Ctrl+Click jumps to the literal location
+      const span = el("span", "mono", valueText(value));
+      makeNavigable(span, () => ({ uri: record.uri, range: value.range }), { label: "open value" });
+      return span;
     }
 
+    /**
+     * Render a reference value as an inline row that mirrors the layout of
+     * a regular field — no extra nested <details>. The ref shows:
+     *   <ref-text>  →  <target-key> [type] (.path)
+     * Hover + Ctrl/Cmd to jump; clicking the target navigates to the target
+     * record. Plain click does nothing, consistent with other rows.
+     */
     function renderRefValue(record, value, path) {
-      const d = el("details", "value-card");
-      const summary = el("summary", "", valueText(value));
-      summary.addEventListener("dblclick", () => postJump({ uri: record.uri, range: value.range }));
-      d.append(summary);
+      const wrap = el("span", "ref");
+      const refLabel = el("span", "ref-key mono", valueText(value));
+      makeNavigable(refLabel, () => ({ uri: record.uri, range: value.range }), { label: "open reference" });
+      wrap.append(refLabel);
+
       const edge = referenceForPath(record, path);
       if (edge) {
+        const arrow = el("span", "ref-arrow", "→");
+        wrap.append(arrow);
         const target = recordForId(edge.targetRecordId);
-        const mini = el("button", "ref-mini");
-        mini.type = "button";
-        mini.append(
-          el("span", "ref-key",   target ? target.key  : (edge.targetRecordKey || "?")),
-          el("span", "card-badge", target ? target.type : (edge.targetRecordType || ""))
+        const targetWrap = el("span", "ref-target");
+        if (!target) targetWrap.classList.add("is-broken");
+        const targetKey = el("span", "ref-key", target ? target.key : (edge.targetRecordKey || "?"));
+        targetWrap.append(targetKey);
+        const targetType = target ? target.type : edge.targetRecordType;
+        if (targetType) targetWrap.append(el("span", "card-badge", targetType));
+        if (edge.targetPath?.length) targetWrap.append(el("span", "ref-path-chip", "." + edge.targetPath.join(".")));
+        makeNavigable(
+          targetWrap,
+          () => target || { uri: edge.targetUri, range: edge.range },
+          { label: target ? "open " + target.key : "open target" }
         );
-        if (edge.targetPath?.length) mini.append(el("span", "path-chip", edge.targetPath.join(".")));
-        mini.addEventListener("click", () => postJump(target || { uri: edge.targetUri, range: edge.range }));
-        d.append(mini);
+        wrap.append(targetWrap);
       }
-      return d;
+      return wrap;
     }
 
     function referenceForPath(record, path) {
@@ -1583,9 +2253,9 @@ function buildCfdInspectorHtml(model) {
         for (const f of r.fields || [])
           if (!seen.has(f.name)) { seen.add(f.name); names.push(f.name); }
       return [
-        { kind: "key",  label: "key"  },
-        { kind: "type", label: "type" },
-        ...names.map((n) => ({ kind: "field", name: n, label: n }))
+        { kind: "key",  key: "key",  label: "key"  },
+        { kind: "type", key: "type", label: "type" },
+        ...names.map((n) => ({ kind: "field", name: n, key: "f:" + n, label: n }))
       ];
     }
 
@@ -1601,7 +2271,7 @@ function buildCfdInspectorHtml(model) {
     }
 
     render();
-  </script>
+    </script>
 </body>
 </html>`;
 }

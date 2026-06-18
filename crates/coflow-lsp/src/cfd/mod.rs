@@ -96,7 +96,8 @@ pub fn inspector_model(current_uri: &str, documents: &[InspectorDocument<'_>]) -
         .filter(|record| record.get("uri").and_then(Value::as_str) == Some(current_uri))
         .cloned()
         .collect::<Vec<_>>();
-    let graph_record_ids = graph_references
+    // Records that participate in any cross-record reference.
+    let connected_record_ids = graph_references
         .iter()
         .flat_map(|reference| {
             [
@@ -112,6 +113,17 @@ pub fn inspector_model(current_uri: &str, documents: &[InspectorDocument<'_>]) -
         })
         .flatten()
         .collect::<BTreeSet<_>>();
+    // Graph is shown only when the file actually has resolvable references.
+    // When it is, include every record in the current file (so isolated ones
+    // still get a node) plus cross-file targets reached via references.
+    let mut graph_record_ids = connected_record_ids.clone();
+    if !graph_references.is_empty() {
+        for record in &records_in_file {
+            if let Some(id) = record.get("id").and_then(Value::as_str) {
+                graph_record_ids.insert(id.to_string());
+            }
+        }
+    }
     let graph_records = records
         .iter()
         .filter(|record| {
