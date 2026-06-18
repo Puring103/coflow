@@ -108,7 +108,7 @@ graph TD
 graph TD
   Api[coflow-api] --> Cft[coflow-cft]
   Api --> DataModel[coflow-data-model]
-  Api --> CellValue[coflow-cell-value]
+  Api --> CellValue["coflow-api::cell_value"]
 
   DataModel --> Cft
 
@@ -317,11 +317,11 @@ pub enum ArtifactContent {
 
 ```toml
 [dependencies]
-coflow-cell-value = { path = "../coflow-cell-value" }
 coflow-cft = { path = "../coflow-cft" }
 coflow-data-model = { path = "../coflow-data-model" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+unicode-ident = "1"
 ```
 
 - [ ] **Step 2: 添加核心 re-export**
@@ -994,7 +994,7 @@ graph TD
   CfdLoader --> Cfd["coflow-cfd"]
   Api --> Cft
   Api --> DataModel
-  Api --> CellValue["coflow-cell-value"]
+  Api --> CellValue["coflow-api::cell_value"]
 ```
 
 `coflow-pipeline` 依赖图经 `cargo tree -p coflow-pipeline --depth 1` 确认，正式依赖只剩：
