@@ -4,10 +4,10 @@
 
 实现边界：
 
-- `coflow-project` 负责项目配置、路径解析、schema 文件发现、CFT 编译和 CFT 诊断映射。
-- `coflow-pipeline` 负责项目执行流水线：schema 编译后的控制流、provider registry dispatch、数据模型构建、check 诊断聚合、artifact 安全写入。
+- `coflow-project` 负责项目配置 shape、路径解析、schema 文件发现、CFT 编译和 CFT 诊断映射；provider 私有字段只作为 options 保留。
+- `coflow-pipeline` 负责项目执行流水线：schema 编译后的控制流、provider registry dispatch、loader resolve/preflight/load、数据模型构建、check 诊断聚合、artifact 安全写入。
 - CLI 根包是内置 provider 的组合根：注册 Excel/Lark/CFD loader、JSON/MessagePack exporter 和 C# codegen，然后调用 pipeline API、输出成功消息和诊断。
-- `coflow-cft-lsp` 只依赖 `coflow-project`，不依赖 `coflow-pipeline`。
+- `coflow-lsp` 依赖 `coflow-project` 和 `coflow-api` 做 schema-only 加载与诊断渲染，不依赖 `coflow-pipeline`。
 
 ---
 
@@ -34,17 +34,19 @@
 文件按 module id 排序后注册到 `CftContainer`，因此同一项目在不同文件系统
 遍历顺序下仍保持稳定。绝对 schema 路径允许指向项目根之外的文件。
 
-`coflow.yaml` 的结构使用严格字段集。顶层、source、sheet 和 output 中的
-未知字段会在 YAML 反序列化阶段失败。`columns` 映射拒绝重复 Excel header
-key，避免 YAML map 后写覆盖导致隐式丢配置。
+`coflow.yaml` 的顶层和 outputs 容器使用严格字段集。source 只能使用通用字段
+`type`、`path`、`url` 加 provider options；output 只能使用通用字段 `type`、`dir`
+加 provider options。source 必须且只能设置 `path` 或 `url` 之一。旧字段 `file`、
+`dir` 和 `lark_sheet` 会在 YAML 反序列化阶段被拒绝。`columns` 映射拒绝重复 Excel
+header key，避免 YAML map 后写覆盖导致隐式丢配置。
 
 ---
 
 ## 职责
 
-- 解析项目配置并解析项目相对路径。
+- 解析项目配置 shape 并解析项目相对路径。
 - 发现并编译 schema，得到 `CftContainer`。
-- 发现 source 中支持的数据文件，并通过 `coflow-api::ProviderRegistry` 选择 `DataLoader`。
+- 通过 `coflow-api::ProviderRegistry` 选择 `DataLoader`，并把 source resolve 下沉给 loader provider。
 - 编排 CLI 命令，包括数据加载、数据模型构建和 check 诊断处理。
 - 根据 `outputs.data.type` 从 registry 查找 `DataExporter`，并写入 provider 返回的 `ArtifactSet`。
 - 根据 `outputs.code.type` 从 registry 查找 `CodeGenerator`，并把项目配置中的 codegen options 传入 provider。
@@ -56,9 +58,9 @@ key，避免 YAML map 后写覆盖导致隐式丢配置。
 项目打开分为三个阶段：
 
 - `Project::open_schema_only`：只解析并反序列化 `coflow.yaml`；不要求数据源文件存在。
-- `Project::schema_diagnostics`：schema-only 命令在打开项目后调用，聚合 schema path、output 配置和 source 配置形状诊断；仍不要求数据源文件存在。
-- `Project::validate_for_data`：在 schema-only 之上校验数据阶段 source，要求 `file`/`dir` 指向存在的文件或目录；`lark_sheet` 不做本地路径存在性校验，只校验认证字段和 URL/token 形状。
-- `Project::validate_for_codegen`：校验 C# codegen 需要的 `outputs.code.type: csharp` 和 `outputs.data.type: json | messagepack`；不要求数据源文件存在。
+- `Project::schema_diagnostic_set`：schema-only 命令在打开项目后调用，聚合 schema path、output 配置和 source 通用 shape 诊断；仍不要求数据源文件存在。
+- `Project::data_diagnostic_set`：在 schema-only 之上校验数据阶段 source，要求本地 `path` 指向存在的文件或目录；`url` 不做本地路径存在性校验，provider 私有字段由 loader 后续校验。
+- `Project::codegen_diagnostic_set`：校验 codegen 命令需要的 output 通用 shape；C# namespace 这类 provider option 不由 project 层解释。
 
 命令阶段矩阵：
 
@@ -70,6 +72,11 @@ key，避免 YAML map 后写覆盖导致隐式丢配置。
 | `build` | 是 | 是 | 是 | 可选 |
 | `export json/messagepack` | 是 | 是 | 是 | 否 |
 | `codegen csharp` | 是 | 否 | 否 | 是 |
+
+本地目录 source 没有显式 `type` 时，pipeline 会把目录交给所有注册 loader 的
+`resolve` 阶段，各 loader 自己发现可处理的文件并返回 `ResolvedSource`。单文件或
+远端 URL source 先通过 registry probe 选择 loader；若多个 loader 同等匹配，则要求
+显式设置 `type`。
 
 ---
 
@@ -91,9 +98,9 @@ completion、hover、definition、document symbol、formatting 和 semantic toke
 
 ## 配置解析错误边界
 
-`coflow.yaml` 的顶层和嵌套配置结构使用严格字段集。未知字段、YAML
-语法错误、重复 `columns` key、无法读取配置文件等问题发生在结构化项目
-诊断之前，CLI 以不可聚合错误返回；这些问题不会进入 `PROJECT-001`
+`coflow.yaml` 的顶层和嵌套通用结构使用严格字段集。未知顶层/output 字段、旧
+source 字段、YAML 语法错误、重复 `columns` key、无法读取配置文件等问题发生在
+结构化项目诊断之前，CLI 以不可聚合错误返回；这些问题不会进入 `PROJECT-001`
 诊断列表。
 
 `PROJECT-001` 只覆盖配置文件已经成功读取和反序列化之后的可聚合
@@ -114,9 +121,10 @@ completion、hover、definition、document symbol、formatting 和 semantic toke
   codegen preflight 和 code output path 检查；有诊断时不读写 enum lockfile，
   不替换 C# 输出目录，也不生成新 `.cs` 文件。
 
-artifact preflight 当前只检查目标输出路径是否已经存在且不是目录。目录不存在
-时由写入阶段创建；权限错误、写入失败、读写 lockfile 失败等运行时 I/O 问题
-以不可聚合 CLI error 返回。
+artifact preflight 会检查输出目标是否能被 Coflow 安全接管，例如目标路径已经存在
+但不是目录、输出目录指向项目根或包含 schema/source、多个输出目录互相重叠。
+目录不存在时由写入阶段创建。staging、commit、lockfile 读写和 artifact path
+安全检查失败会返回 `DiagnosticSet`，使用 `SourceLocation::Artifact` 定位。
 
 数据导出和 C# codegen 的输出目录由 Coflow 完全接管。写入阶段先创建同级
 staging 目录并写入完整产物；所有文件成功写入后，再用 staging 目录替换目标
@@ -127,8 +135,8 @@ C# codegen 的 `coflow.enum.lock.json` 写在 `coflow.yaml` 同级，而不是 C
 目录内。codegen 会先读取并合并 lockfile，生成完整 C# staging 目录和 lockfile
 staging 文件；全部 staging 成功后再提交写入。若 `.cs` staging 或 lockfile
 staging 任一步失败，既有输出目录和既有 lockfile 保持不变。若提交阶段发生
-文件系统错误，pipeline 会尽力回滚 lockfile 和旧输出目录，并以不可聚合 CLI
-error 返回。
+文件系统错误，pipeline 会尽力回滚 lockfile 和旧输出目录，并返回 artifact
+diagnostic。
 
 `build` 的 codegen 是可选阶段。项目没有配置 `outputs.code` 时，`build` 仍会
 完成数据校验和数据导出，但不会生成代码，也不会要求 code output 配置存在。
@@ -137,14 +145,16 @@ error 返回。
 
 ## Check 诊断处理
 
-`coflow-pipeline::check_project` 在 schema、数据加载、data model 均成功但 CFT `check` 失败时，返回 `PipelineOutcome::Diagnostics`，不返回 `Err`。`Err` 只表示配置错误、I/O 错误或不可恢复的 artifact 错误。
+`coflow-pipeline::check_project` 在 schema、数据加载、data model 或 CFT `check`
+产生可定位错误时，返回 `PipelineOutcome::Diagnostics`，不返回 `Err`。`Err` 只表示
+配置文件发现/读取/YAML 解析这类还无法进入结构化诊断模型的命令级错误。
 
-`lark_sheet` source 被视为远端 Excel-like workbook。它用 `app_id`/`app_secret`
-获取 tenant access token；`url` 支持 `/sheets/{token}` 或 `/wiki/{token}`，wiki
-链接会通过 wiki node API 解析到真实电子表格 token；`spreadsheet_token` 可直接
-指定电子表格 token。读取到的飞书单元格会转换为共享 table loader 的
-`TableSource`，因此 `sheets`、`key`、`columns` 的语义与 Excel 相同。暂不支持
-飞书多维表格/Base。
+`type: lark-sheet` 或可 probe 的 Feishu/Lark URL source 由 Lark loader 处理。
+它用 `app_id`/`app_secret` 获取 tenant access token；`url` 支持 `/sheets/{token}`
+或 `/wiki/{token}`，wiki 链接会通过 wiki node API 解析到真实电子表格 token；
+已知电子表格 token 可用 `url: lark:<spreadsheet_token>` 表达。读取到的飞书
+单元格会转换为共享 table loader 的 `TableSource`，因此 `sheets`、`key`、
+`columns` 的语义与 Excel 相同。暂不支持飞书多维表格/Base。
 
 CLI `coflow check` 对 `PipelineOutcome::Diagnostics` 的处理规则：
 

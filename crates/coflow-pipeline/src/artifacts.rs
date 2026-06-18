@@ -1,10 +1,10 @@
 use coflow_api::{
-    ArtifactContent, ArtifactSet, CfdDataModel, CftContainer, CodegenContext, ExportContext,
-    OutputSpec, ProviderRegistry,
+    ArtifactContent, ArtifactSet, CfdDataModel, CftContainer, CodegenContext, Diagnostic,
+    DiagnosticSet, ExportContext, Label, OutputSpec, ProviderRegistry, Severity, SourceLocation,
 };
 use coflow_project::{OutputConfig, Project};
 use serde::Serialize;
-use serde_json::{Map, Value};
+use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -41,7 +41,7 @@ pub fn write_data_tables(
     exporter_id: &str,
     output: &OutputConfig,
     dir: &Path,
-) -> Result<(), String> {
+) -> Result<(), DiagnosticSet> {
     stage_data_tables(registry, schema, model, exporter_id, output, dir)?.commit()
 }
 
@@ -52,18 +52,19 @@ pub fn stage_data_tables(
     exporter_id: &str,
     output_config: &OutputConfig,
     dir: &Path,
-) -> Result<StagedArtifactDir, String> {
-    let exporter = registry
-        .exporter(exporter_id)
-        .ok_or_else(|| format!("no data exporter registered for `{exporter_id}`"))?;
+) -> Result<StagedArtifactDir, DiagnosticSet> {
+    let exporter = registry.exporter(exporter_id).ok_or_else(|| {
+        diagnostic_set(
+            dir,
+            format!("no data exporter registered for `{exporter_id}`"),
+        )
+    })?;
     let output = OutputSpec {
         output_type: exporter_id.to_string(),
         dir: dir.to_path_buf(),
         options: output_options(output_config),
     };
-    let artifacts = exporter
-        .export(ExportContext { schema, model }, &output)
-        .map_err(|diagnostics| first_diagnostic_message(&diagnostics))?;
+    let artifacts = exporter.export(ExportContext { schema, model }, &output)?;
     stage_artifact_set(dir, artifacts)
 }
 
@@ -74,7 +75,6 @@ pub struct CodegenArtifactRequest<'a> {
     pub codegen_id: &'a str,
     pub data_format: &'a str,
     pub output_config: &'a OutputConfig,
-    pub namespace: &'a str,
     pub dir: &'a Path,
     pub key_as_enum_variants: &'a Value,
 }
@@ -82,29 +82,26 @@ pub struct CodegenArtifactRequest<'a> {
 pub fn stage_codegen_artifacts(
     registry: &ProviderRegistry,
     request: CodegenArtifactRequest<'_>,
-) -> Result<StagedArtifactDir, String> {
-    let codegen = registry
-        .codegen(request.codegen_id)
-        .ok_or_else(|| format!("no code generator registered for `{}`", request.codegen_id))?;
+) -> Result<StagedArtifactDir, DiagnosticSet> {
+    let codegen = registry.codegen(request.codegen_id).ok_or_else(|| {
+        diagnostic_set(
+            request.dir,
+            format!("no code generator registered for `{}`", request.codegen_id),
+        )
+    })?;
     let output = OutputSpec {
         output_type: request.codegen_id.to_string(),
         dir: request.dir.to_path_buf(),
-        options: codegen_output_options(
-            request.output_config,
-            request.namespace,
-            request.key_as_enum_variants,
-        ),
+        options: codegen_output_options(request.output_config, request.key_as_enum_variants),
     };
-    let artifacts = codegen
-        .generate(
-            CodegenContext {
-                schema: request.schema,
-                model: request.model,
-                data_format: request.data_format,
-            },
-            &output,
-        )
-        .map_err(|diagnostics| first_diagnostic_message(&diagnostics))?;
+    let artifacts = codegen.generate(
+        CodegenContext {
+            schema: request.schema,
+            model: request.model,
+            data_format: request.data_format,
+        },
+        &output,
+    )?;
     stage_artifact_set(request.dir, artifacts)
 }
 
@@ -115,15 +112,14 @@ pub fn preflight_codegen(
     codegen_id: &str,
     data_format: &str,
     output_config: &OutputConfig,
-    namespace: &str,
-) -> Result<coflow_api::DiagnosticSet, String> {
+) -> Result<DiagnosticSet, String> {
     let codegen = registry
         .codegen(codegen_id)
         .ok_or_else(|| format!("no code generator registered for `{codegen_id}`"))?;
     let output = OutputSpec {
         output_type: codegen_id.to_string(),
         dir: PathBuf::new(),
-        options: codegen_output_options(output_config, namespace, &Value::Null),
+        options: codegen_output_options(output_config, &Value::Null),
     };
     Ok(codegen.preflight(
         CodegenContext {
@@ -135,23 +131,27 @@ pub fn preflight_codegen(
     ))
 }
 
-pub fn stage_json_file<T: Serialize>(path: &Path, value: &T) -> Result<StagedArtifactFile, String> {
+pub fn stage_json_file<T: Serialize>(
+    path: &Path,
+    value: &T,
+) -> Result<StagedArtifactFile, DiagnosticSet> {
     StagedArtifactFile::create_json(path, value)
 }
 
 pub fn commit_staged_dir_and_file(
     dir: StagedArtifactDir,
     file: Option<StagedArtifactFile>,
-) -> Result<(), String> {
+) -> Result<(), DiagnosticSet> {
     commit_staged_dirs_and_file(vec![dir], file)
 }
 
 pub fn commit_staged_dirs_and_file(
     mut dirs: Vec<StagedArtifactDir>,
     mut file: Option<StagedArtifactFile>,
-) -> Result<(), String> {
+) -> Result<(), DiagnosticSet> {
     let committed_file = if let Some(file) = file.as_mut() {
-        let backup = replace_file_with_staging(&file.target, &file.staging)?;
+        let backup = replace_file_with_staging(&file.target, &file.staging)
+            .map_err(|err| diagnostic_set(&file.target, err))?;
         file.committed = true;
         Some(CommittedFile {
             target: file.target.clone(),
@@ -176,14 +176,20 @@ pub fn commit_staged_dirs_and_file(
                 if let Some(committed_file) = committed_file.as_ref() {
                     rollback_file_replace(&committed_file.target, committed_file.backup.as_deref());
                 }
-                return Err(err);
+                return Err(diagnostic_set(&dir.target, err));
             }
         }
     }
 
-    cleanup_committed_dirs(&committed_dirs)?;
+    cleanup_committed_dirs(&committed_dirs).map_err(|err| {
+        let path = committed_dirs
+            .first()
+            .map_or_else(PathBuf::new, |dir| dir.target.clone());
+        diagnostic_set(path, err)
+    })?;
     if let Some(committed_file) = committed_file {
-        cleanup_committed_file(&committed_file)?;
+        cleanup_committed_file(&committed_file)
+            .map_err(|err| diagnostic_set(&committed_file.target, err))?;
     }
     Ok(())
 }
@@ -250,19 +256,11 @@ fn require_output_type(
 }
 
 fn output_options(output: &OutputConfig) -> Value {
-    Value::Object(options_map(&output.options))
+    output.options().clone()
 }
 
-fn codegen_output_options(
-    output: &OutputConfig,
-    namespace: &str,
-    key_as_enum_variants: &Value,
-) -> Value {
-    let mut options = options_map(&output.options);
-    options.insert(
-        "namespace".to_string(),
-        Value::String(namespace.to_string()),
-    );
+fn codegen_output_options(output: &OutputConfig, key_as_enum_variants: &Value) -> Value {
+    let mut options = output.options().as_object().cloned().unwrap_or_default();
     if !key_as_enum_variants.is_null() {
         options.insert(
             "key_as_enum_variants".to_string(),
@@ -272,42 +270,52 @@ fn codegen_output_options(
     Value::Object(options)
 }
 
-fn options_map(options: &std::collections::BTreeMap<String, Value>) -> Map<String, Value> {
-    options
-        .iter()
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect()
-}
-
-fn stage_artifact_set(dir: &Path, artifacts: ArtifactSet) -> Result<StagedArtifactDir, String> {
+fn stage_artifact_set(
+    dir: &Path,
+    artifacts: ArtifactSet,
+) -> Result<StagedArtifactDir, DiagnosticSet> {
     let staged = StagedArtifactDir::create(dir)?;
     for artifact in artifacts.files {
-        let path = safe_artifact_path(staged.path(), &artifact.relative_path)?;
+        let path = safe_artifact_path(staged.path(), &artifact.relative_path)
+            .map_err(|err| diagnostic_set(dir, err))?;
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|err| format!("failed to create `{}`: {err}", parent.display()))?;
+            fs::create_dir_all(parent).map_err(|err| {
+                diagnostic_set(
+                    dir,
+                    format!("failed to create `{}`: {err}", parent.display()),
+                )
+            })?;
         }
         match artifact.content {
-            ArtifactContent::Text(contents) => fs::write(&path, contents)
-                .map_err(|err| format!("failed to write `{}`: {err}", path.display()))?,
-            ArtifactContent::Bytes(bytes) => fs::write(&path, bytes)
-                .map_err(|err| format!("failed to write `{}`: {err}", path.display()))?,
+            ArtifactContent::Text(contents) => fs::write(&path, contents).map_err(|err| {
+                diagnostic_set(
+                    &path,
+                    format!("failed to write `{}`: {err}", path.display()),
+                )
+            })?,
+            ArtifactContent::Bytes(bytes) => fs::write(&path, bytes).map_err(|err| {
+                diagnostic_set(
+                    &path,
+                    format!("failed to write `{}`: {err}", path.display()),
+                )
+            })?,
             ArtifactContent::Json(value) => {
-                let file = fs::File::create(&path)
-                    .map_err(|err| format!("failed to create `{}`: {err}", path.display()))?;
-                serde_json::to_writer_pretty(file, &value)
-                    .map_err(|err| format!("failed to write `{}`: {err}", path.display()))?;
+                let file = fs::File::create(&path).map_err(|err| {
+                    diagnostic_set(
+                        &path,
+                        format!("failed to create `{}`: {err}", path.display()),
+                    )
+                })?;
+                serde_json::to_writer_pretty(file, &value).map_err(|err| {
+                    diagnostic_set(
+                        &path,
+                        format!("failed to write `{}`: {err}", path.display()),
+                    )
+                })?;
             }
         }
     }
     Ok(staged)
-}
-
-fn first_diagnostic_message(diagnostics: &coflow_api::DiagnosticSet) -> String {
-    diagnostics.diagnostics.first().map_or_else(
-        || "provider failed without diagnostics".to_string(),
-        |diagnostic| diagnostic.message.clone(),
-    )
 }
 
 fn safe_artifact_path(dir: &Path, relative_path: &Path) -> Result<PathBuf, String> {
@@ -323,17 +331,29 @@ fn safe_artifact_path(dir: &Path, relative_path: &Path) -> Result<PathBuf, Strin
 }
 
 impl StagedArtifactDir {
-    pub fn create(target: &Path) -> Result<Self, String> {
+    pub fn create(target: &Path) -> Result<Self, DiagnosticSet> {
         let parent = target.parent().unwrap_or_else(|| Path::new("."));
-        fs::create_dir_all(parent)
-            .map_err(|err| format!("failed to create `{}`: {err}", parent.display()))?;
+        fs::create_dir_all(parent).map_err(|err| {
+            diagnostic_set(
+                target,
+                format!("failed to create `{}`: {err}", parent.display()),
+            )
+        })?;
         let staging = unique_sidecar_path(target, "staging");
         if staging.exists() {
-            fs::remove_dir_all(&staging)
-                .map_err(|err| format!("failed to clean `{}`: {err}", staging.display()))?;
+            fs::remove_dir_all(&staging).map_err(|err| {
+                diagnostic_set(
+                    target,
+                    format!("failed to clean `{}`: {err}", staging.display()),
+                )
+            })?;
         }
-        fs::create_dir(&staging)
-            .map_err(|err| format!("failed to create `{}`: {err}", staging.display()))?;
+        fs::create_dir(&staging).map_err(|err| {
+            diagnostic_set(
+                target,
+                format!("failed to create `{}`: {err}", staging.display()),
+            )
+        })?;
         Ok(Self {
             target: target.to_path_buf(),
             staging,
@@ -346,8 +366,9 @@ impl StagedArtifactDir {
         &self.staging
     }
 
-    pub fn commit(mut self) -> Result<(), String> {
-        commit_staged_dir(&self.target, &self.staging)?;
+    pub fn commit(mut self) -> Result<(), DiagnosticSet> {
+        commit_staged_dir(&self.target, &self.staging)
+            .map_err(|err| diagnostic_set(&self.target, err))?;
         self.committed = true;
         Ok(())
     }
@@ -362,19 +383,35 @@ impl Drop for StagedArtifactDir {
 }
 
 impl StagedArtifactFile {
-    fn create_json<T: Serialize>(target: &Path, value: &T) -> Result<Self, String> {
+    fn create_json<T: Serialize>(target: &Path, value: &T) -> Result<Self, DiagnosticSet> {
         let parent = target.parent().unwrap_or_else(|| Path::new("."));
-        fs::create_dir_all(parent)
-            .map_err(|err| format!("failed to create `{}`: {err}", parent.display()))?;
+        fs::create_dir_all(parent).map_err(|err| {
+            diagnostic_set(
+                target,
+                format!("failed to create `{}`: {err}", parent.display()),
+            )
+        })?;
         let staging = unique_sidecar_path(target, "staging");
         if staging.exists() {
-            remove_any_path(&staging)
-                .map_err(|err| format!("failed to clean `{}`: {err}", staging.display()))?;
+            remove_any_path(&staging).map_err(|err| {
+                diagnostic_set(
+                    target,
+                    format!("failed to clean `{}`: {err}", staging.display()),
+                )
+            })?;
         }
-        let file = fs::File::create(&staging)
-            .map_err(|err| format!("failed to create `{}`: {err}", staging.display()))?;
-        serde_json::to_writer_pretty(file, value)
-            .map_err(|err| format!("failed to write `{}`: {err}", staging.display()))?;
+        let file = fs::File::create(&staging).map_err(|err| {
+            diagnostic_set(
+                target,
+                format!("failed to create `{}`: {err}", staging.display()),
+            )
+        })?;
+        serde_json::to_writer_pretty(file, value).map_err(|err| {
+            diagnostic_set(
+                target,
+                format!("failed to write `{}`: {err}", staging.display()),
+            )
+        })?;
         Ok(Self {
             target: target.to_path_buf(),
             staging,
@@ -550,4 +587,18 @@ fn unique_sidecar_path(target: &Path, kind: &str) -> PathBuf {
         ".{name}.coflow-{kind}-{}-{suffix}",
         std::process::id()
     ))
+}
+
+fn diagnostic_set(path: impl Into<PathBuf>, message: impl Into<String>) -> DiagnosticSet {
+    DiagnosticSet::one(Diagnostic {
+        code: "ARTIFACT-001".to_string(),
+        stage: "ARTIFACT".to_string(),
+        severity: Severity::Error,
+        message: message.into(),
+        primary: Some(Label {
+            location: SourceLocation::Artifact { path: path.into() },
+            message: None,
+        }),
+        related: Vec::new(),
+    })
 }

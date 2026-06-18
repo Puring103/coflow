@@ -35,7 +35,7 @@ fn build_project_generates_key_as_enum_from_loaded_ids() {
         root.join("coflow.yaml"),
         r"schema: schema/
 sources:
-  - file: data/configs.xlsx
+  - path: data/configs.xlsx
     sheets:
       - sheet: GeneConfig
         columns:
@@ -62,7 +62,6 @@ outputs:
         BuildOptions {
             data_out_dir: Some(root.join("out-data").as_path()),
             code_out_dir: Some(root.join("out-code").as_path()),
-            namespace: Some("Game.Config"),
         },
     )
     .expect("build project");
@@ -97,7 +96,6 @@ fn build_project_writes_key_as_enum_lockfile() {
         BuildOptions {
             data_out_dir: Some(data_dir.as_path()),
             code_out_dir: Some(code_dir.as_path()),
-            namespace: Some("Game.Config"),
         },
     )
     .expect("build project");
@@ -129,7 +127,6 @@ fn build_project_preserves_key_as_enum_lockfile_values_and_appends_new_ids() {
         BuildOptions {
             data_out_dir: Some(data_dir.as_path()),
             code_out_dir: Some(code_dir.as_path()),
-            namespace: Some("Game.Config"),
         },
     )
     .expect("initial build");
@@ -142,7 +139,6 @@ fn build_project_preserves_key_as_enum_lockfile_values_and_appends_new_ids() {
         BuildOptions {
             data_out_dir: Some(data_dir.as_path()),
             code_out_dir: Some(code_dir.as_path()),
-            namespace: Some("Game.Config"),
         },
     )
     .expect("second build");
@@ -172,7 +168,6 @@ fn build_project_removes_stale_generated_csharp_files_after_key_as_enum_rename()
         BuildOptions {
             data_out_dir: Some(data_dir.as_path()),
             code_out_dir: Some(code_dir.as_path()),
-            namespace: Some("Game.Config"),
         },
     )
     .expect("initial build");
@@ -185,7 +180,6 @@ fn build_project_removes_stale_generated_csharp_files_after_key_as_enum_rename()
         BuildOptions {
             data_out_dir: Some(data_dir.as_path()),
             code_out_dir: Some(code_dir.as_path()),
-            namespace: Some("Game.Config"),
         },
     )
     .expect("second build");
@@ -215,7 +209,6 @@ fn build_project_takes_over_existing_generated_csharp_dir() {
         BuildOptions {
             data_out_dir: Some(data_dir.as_path()),
             code_out_dir: Some(code_dir.as_path()),
-            namespace: Some("Game.Config"),
         },
     )
     .expect("build project");
@@ -245,7 +238,6 @@ fn build_project_reports_duplicate_key_as_enum_keys_before_codegen() {
         BuildOptions {
             data_out_dir: Some(data_dir.as_path()),
             code_out_dir: Some(code_dir.as_path()),
-            namespace: Some("Game.Config"),
         },
     )
     .expect("duplicate keys should be returned as diagnostics");

@@ -20,8 +20,12 @@ use coflow_pipeline::{
     CodegenOptions, ExportOptions, PipelineOutcome, CSHARP_CODEGEN_ID, JSON_EXPORTER_ID,
     MESSAGEPACK_EXPORTER_ID,
 };
-use coflow_project::{compile_schema_project, dedupe_cft_diagnostics, DiagnosticJson, Project};
+use coflow_project::{
+    compile_schema_project, dedupe_cft_diagnostics, diagnostic_json_from_set, DiagnosticJson,
+    Project,
+};
 use serde::Serialize;
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Write};
@@ -257,7 +261,7 @@ outputs:
 
 fn cft_check(args: &CftCheckArgs) -> Result<bool, String> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    let project_diagnostics = project.schema_diagnostics();
+    let project_diagnostics = project.schema_diagnostic_set();
     if !project_diagnostics.is_empty() {
         write_project_diagnostics(project_diagnostics, args.json, &project.root_dir)?;
         return Ok(false);
@@ -321,7 +325,8 @@ fn project_check(args: &ProjectCheckArgs) -> Result<bool, String> {
 }
 
 fn project_build(args: &BuildArgs) -> Result<bool, String> {
-    let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
+    let mut project = Project::open_schema_only(args.config_or_dir.as_deref())?;
+    override_code_namespace(&mut project, args.namespace.as_deref());
     let registry = coflow::builtin_registry().map_err(|err| err.to_string())?;
     match build_project(
         &project,
@@ -329,7 +334,6 @@ fn project_build(args: &BuildArgs) -> Result<bool, String> {
         BuildOptions {
             data_out_dir: args.data_out_dir.as_deref(),
             code_out_dir: args.code_out_dir.as_deref(),
-            namespace: args.namespace.as_deref(),
         },
     )
     .map_err(|message| relativize_message_paths(&message, &project.root_dir))?
@@ -415,7 +419,8 @@ fn export_messagepack(args: &ExportMessagePackArgs) -> Result<bool, String> {
 }
 
 fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, String> {
-    let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
+    let mut project = Project::open_schema_only(args.config_or_dir.as_deref())?;
+    override_code_namespace(&mut project, args.namespace.as_deref());
     let registry = coflow::builtin_registry().map_err(|err| err.to_string())?;
     match generate_project_code(
         &project,
@@ -423,7 +428,6 @@ fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, String> {
         CSHARP_CODEGEN_ID,
         CodegenOptions {
             out_dir: args.out_dir.as_deref(),
-            namespace: args.namespace.as_deref(),
         },
     )
     .map_err(|message| relativize_message_paths(&message, &project.root_dir))?
@@ -454,11 +458,26 @@ fn write_json_diagnostics(diagnostics: Vec<DiagnosticJson>) -> Result<(), String
     Ok(())
 }
 
+fn override_code_namespace(project: &mut Project, namespace: Option<&str>) {
+    let Some(namespace) = namespace else {
+        return;
+    };
+    if let Some(output) = project.config.outputs.code.as_mut() {
+        let mut options = output.options().as_object().cloned().unwrap_or_default();
+        options.insert(
+            "namespace".to_string(),
+            Value::String(namespace.to_string()),
+        );
+        output.options = Value::Object(options);
+    }
+}
+
 fn write_project_diagnostics(
-    diagnostics: Vec<DiagnosticJson>,
+    diagnostics: coflow_api::DiagnosticSet,
     json: bool,
     root_dir: &Path,
 ) -> Result<(), String> {
+    let diagnostics = diagnostic_json_from_set(diagnostics);
     if json {
         write_json_diagnostics(diagnostics)
     } else {

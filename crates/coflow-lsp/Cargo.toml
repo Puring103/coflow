@@ -11,6 +11,7 @@ publish = false
 workspace = true
 
 [dependencies]
+coflow-api = { path = "../coflow-api" }
 coflow-cft = { path = "../coflow-cft" }
 coflow-cfd = { path = "../coflow-cfd" }
 coflow-project = { path = "../coflow-project" }

@@ -385,6 +385,26 @@ fn oversized_content_length_is_rejected_before_body_allocation() {
 }
 
 #[test]
+fn unified_diagnostic_severity_is_preserved_in_lsp_rendering() {
+    for (severity, expected) in [
+        (coflow_api::Severity::Error, 1),
+        (coflow_api::Severity::Warning, 2),
+        (coflow_api::Severity::Info, 3),
+    ] {
+        let diagnostic = coflow_api::Diagnostic {
+            code: "TEST".to_string(),
+            stage: "TEST".to_string(),
+            severity,
+            message: "message".to_string(),
+            primary: None,
+            related: Vec::new(),
+        };
+
+        assert_eq!(lsp_diagnostic(&diagnostic)["severity"], json!(expected));
+    }
+}
+
+#[test]
 fn file_uri_parser_rejects_file_uris_without_paths() {
     assert!(path_from_file_uri("file://").is_none());
     assert!(path_from_file_uri("file://localhost").is_none());

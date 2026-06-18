@@ -122,8 +122,31 @@ impl DiagnosticSet {
         self.diagnostics.is_empty()
     }
 
+    pub fn iter(&self) -> std::slice::Iter<'_, Diagnostic> {
+        self.diagnostics.iter()
+    }
+
     pub fn extend(&mut self, other: Self) {
         self.diagnostics.extend(other.diagnostics);
+    }
+
+    pub fn push(&mut self, diagnostic: Diagnostic) {
+        self.diagnostics.push(diagnostic);
+    }
+}
+
+impl From<Vec<Diagnostic>> for DiagnosticSet {
+    fn from(diagnostics: Vec<Diagnostic>) -> Self {
+        Self { diagnostics }
+    }
+}
+
+impl<'a> IntoIterator for &'a DiagnosticSet {
+    type Item = &'a Diagnostic;
+    type IntoIter = std::slice::Iter<'a, Diagnostic>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
 
@@ -205,25 +228,44 @@ pub enum SourceLocation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SourceSpec {
-    pub source_type: Option<String>,
-    pub file: Option<PathBuf>,
-    pub dir: Option<PathBuf>,
-    pub uri: Option<String>,
-    pub options: serde_json::Value,
+pub enum SourceDocument {
+    Local(PathBuf),
+    Remote(String),
 }
 
-impl SourceSpec {
-    #[must_use]
-    pub fn file(path: impl Into<PathBuf>, options: serde_json::Value) -> Self {
-        Self {
-            source_type: None,
-            file: Some(path.into()),
-            dir: None,
-            uri: None,
-            options,
-        }
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextSpan {
+    pub start_line: usize,
+    pub start_character: usize,
+    pub end_line: usize,
+    pub end_character: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SourceLocationSpec {
+    Path(PathBuf),
+    Uri(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectSourceRef<'a> {
+    pub source_type: Option<&'a str>,
+    pub location: &'a SourceLocationSpec,
+    pub option_keys: &'a [&'a str],
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SourceResolveContext<'a> {
+    pub project_root: &'a Path,
+    pub schema: &'a CftContainer,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedSource {
+    pub provider_id: String,
+    pub location: SourceLocationSpec,
+    pub options: serde_json::Value,
+    pub display_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -239,7 +281,7 @@ pub struct LoaderDescriptor {
     pub display_name: &'static str,
     pub extensions: &'static [&'static str],
     pub uri_schemes: &'static [&'static str],
-    pub config_keys: &'static [&'static str],
+    pub option_keys: &'static [&'static str],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -301,14 +343,6 @@ impl ProbeResult {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct SourceRef<'a> {
-    pub source_type: Option<&'a str>,
-    pub path: Option<&'a Path>,
-    pub uri: Option<&'a str>,
-    pub config_keys: &'a [&'a str],
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct LoadContext<'a> {
     pub project_root: &'a Path,
@@ -349,23 +383,34 @@ impl OriginMap {
         self.records.extend(other.records);
     }
 
+    pub fn push_file_record(&mut self, path: impl Into<PathBuf>, span: Option<TextSpan>) {
+        self.records.push(RecordOrigin::File {
+            path: path.into(),
+            span,
+        });
+    }
+
     pub fn push_file_records(&mut self, path: impl Into<PathBuf>, count: usize) {
         let path = path.into();
         self.records.extend(
-            std::iter::repeat_with(|| RecordOrigin::File { path: path.clone() }).take(count),
+            std::iter::repeat_with(|| RecordOrigin::File {
+                path: path.clone(),
+                span: None,
+            })
+            .take(count),
         );
     }
 
     pub(crate) fn push_table_record(
         &mut self,
-        file: PathBuf,
+        document: SourceDocument,
         sheet: String,
         row: usize,
         id_column: usize,
         field_columns: BTreeMap<Vec<String>, usize>,
     ) {
         self.records.push(RecordOrigin::Table {
-            file,
+            document,
             sheet,
             row,
             id_column,
@@ -415,7 +460,7 @@ impl OriginMap {
 #[derive(Debug, Clone)]
 enum RecordOrigin {
     Table {
-        file: PathBuf,
+        document: SourceDocument,
         sheet: String,
         row: usize,
         id_column: usize,
@@ -423,6 +468,7 @@ enum RecordOrigin {
     },
     File {
         path: PathBuf,
+        span: Option<TextSpan>,
     },
 }
 
@@ -430,28 +476,47 @@ impl RecordOrigin {
     fn location_for_path(&self, path: &CfdPath) -> SourceLocation {
         match self {
             Self::Table {
-                file,
+                document,
                 sheet,
                 row,
                 id_column,
                 field_columns,
-            } => SourceLocation::TableCell {
-                path: file.clone(),
-                sheet: Some(sheet.clone()),
-                row: *row,
-                column: path_column(path, field_columns)
+            } => {
+                let column = path_column(path, field_columns)
                     .or_else(|| {
                         root_field(path).and_then(|field| (field == "id").then_some(*id_column))
                     })
-                    .unwrap_or(*id_column),
-            },
-            Self::File { path } => SourceLocation::FileSpan {
-                path: path.clone(),
-                start_line: 0,
-                start_character: 0,
-                end_line: 0,
-                end_character: 1,
-            },
+                    .unwrap_or(*id_column);
+                match document {
+                    SourceDocument::Local(path) => SourceLocation::TableCell {
+                        path: path.clone(),
+                        sheet: Some(sheet.clone()),
+                        row: *row,
+                        column,
+                    },
+                    SourceDocument::Remote(document) => SourceLocation::RemoteCell {
+                        document: document.clone(),
+                        sheet: Some(sheet.clone()),
+                        row: *row,
+                        column,
+                    },
+                }
+            }
+            Self::File { path, span } => {
+                let span = span.unwrap_or(TextSpan {
+                    start_line: 0,
+                    start_character: 0,
+                    end_line: 0,
+                    end_character: 1,
+                });
+                SourceLocation::FileSpan {
+                    path: path.clone(),
+                    start_line: span.start_line,
+                    start_character: span.start_character,
+                    end_line: span.end_line,
+                    end_character: span.end_character,
+                }
+            }
         }
     }
 }
@@ -481,9 +546,23 @@ fn path_column(path: &CfdPath, field_columns: &BTreeMap<Vec<String>, usize>) -> 
 pub trait DataLoader: Send + Sync {
     fn descriptor(&self) -> &'static LoaderDescriptor;
 
-    fn probe(&self, source: &SourceRef<'_>) -> ProbeResult;
+    fn probe(&self, source: &ProjectSourceRef<'_>) -> ProbeResult;
 
-    fn preflight(&self, _ctx: LoadContext<'_>, _source: &SourceSpec) -> DiagnosticSet {
+    /// Resolves a project source into concrete provider sources to load.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the configured source cannot be expanded into
+    /// concrete sources for this provider.
+    fn resolve(
+        &self,
+        _ctx: SourceResolveContext<'_>,
+        source: &ResolvedSource,
+    ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
+        Ok(vec![source.clone()])
+    }
+
+    fn preflight(&self, _ctx: LoadContext<'_>, _source: &ResolvedSource) -> DiagnosticSet {
         DiagnosticSet::empty()
     }
 
@@ -496,7 +575,7 @@ pub trait DataLoader: Send + Sync {
     fn load(
         &self,
         ctx: LoadContext<'_>,
-        source: &SourceSpec,
+        source: &ResolvedSource,
     ) -> Result<LoadedRecords, DiagnosticSet>;
 }
 
@@ -635,6 +714,11 @@ impl ProviderRegistry {
     }
 
     #[must_use]
+    pub fn loaders(&self) -> Vec<Arc<dyn DataLoader>> {
+        self.loaders.values().cloned().collect()
+    }
+
+    #[must_use]
     pub fn exporter_descriptors(&self) -> Vec<&'static ExporterDescriptor> {
         self.exporters
             .values()
@@ -658,7 +742,7 @@ impl ProviderRegistry {
     /// unknown, or multiple providers report the same highest confidence.
     pub fn select_loader(
         &self,
-        source: &SourceRef<'_>,
+        source: &ProjectSourceRef<'_>,
     ) -> Result<Arc<dyn DataLoader>, LoaderSelectionError> {
         if let Some(source_type) = source.source_type {
             return self

@@ -24,7 +24,7 @@ fn pipeline_diagnostic_codes_cover_project_artifact_and_codegen_boundaries() {
     );
     let project_diagnostics = build_project(&missing_data, BuildOptions::default())
         .expect("missing data output should return diagnostics");
-    assert_single_plain_diagnostic(project_diagnostics, "PROJECT-001", "PROJECT");
+    assert_single_diagnostic(project_diagnostics, "PROJECT-001", "PROJECT");
 
     let root = temp_project_dir("coflow-pipeline-error-coverage-artifact");
     let _artifact_cleanup = TempDirCleanup(root.clone());
@@ -42,7 +42,7 @@ fn pipeline_diagnostic_codes_cover_project_artifact_and_codegen_boundaries() {
     let artifact_project = Project::open_schema_only(Some(root.as_path())).expect("open project");
     let artifact_diagnostics =
         build_project(&artifact_project, BuildOptions::default()).expect("artifact diagnostics");
-    assert_single_plain_diagnostic(artifact_diagnostics, "ARTIFACT-001", "ARTIFACT");
+    assert_single_diagnostic(artifact_diagnostics, "ARTIFACT-001", "ARTIFACT");
 
     let (codegen_project, _codegen_cleanup) = schema_only_project_with_outputs(
         "coflow-pipeline-error-coverage-codegen",
@@ -58,7 +58,7 @@ fn pipeline_diagnostic_codes_cover_project_artifact_and_codegen_boundaries() {
     let codegen_diagnostics =
         generate_project_code(&codegen_project, "csharp", CodegenOptions::default())
             .expect("codegen diagnostics");
-    assert_single_plain_diagnostic(codegen_diagnostics, "CODEGEN-CSHARP-001", "CODEGEN");
+    assert_single_diagnostic(codegen_diagnostics, "CODEGEN-CSHARP-001", "CODEGEN");
 
     let (valid_project, _valid_cleanup) = schema_only_project_with_outputs(
         "coflow-pipeline-error-coverage-valid",
@@ -76,16 +76,14 @@ fn pipeline_diagnostic_codes_cover_project_artifact_and_codegen_boundaries() {
     assert!(matches!(valid, PipelineOutcome::Success(_)));
 }
 
-fn assert_single_plain_diagnostic<T>(outcome: PipelineOutcome<T>, code: &str, stage: &str) {
+fn assert_single_diagnostic<T>(outcome: PipelineOutcome<T>, code: &str, stage: &str) {
     let PipelineOutcome::Diagnostics(diagnostics) = outcome else {
         panic!("expected {code} diagnostics");
     };
     assert!(
-        diagnostics.iter().any(|diagnostic| diagnostic.code == code
-            && diagnostic.stage == stage
-            && diagnostic.path.is_empty()
-            && diagnostic.start_line == 0
-            && diagnostic.end_character == 1),
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == code && diagnostic.stage == stage),
         "diagnostics: {diagnostics:?}"
     );
 }

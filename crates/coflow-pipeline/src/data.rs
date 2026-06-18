@@ -1,11 +1,14 @@
 use coflow_api::{
     CfdInputRecord, CftContainer, Diagnostic, DiagnosticSet, Label, LoadContext, LoadedRecords,
-    LoaderSelectionError, OriginMap, ProviderRegistry, SourceLocation, SourceRef, SourceSpec,
+    LoaderSelectionError, OriginMap, ProjectSourceRef, ProviderRegistry, ResolvedSource,
+    SourceLocation, SourceResolveContext,
 };
-use coflow_project::{DiagnosticJson, Project, RelatedJson, SourceConfig};
-use serde_json::{Map, Value};
-use std::fs;
-use std::path::{Path, PathBuf};
+use coflow_project::{Project, SourceConfig, SourceLocationSpec};
+use serde_json::Value;
+use std::path::Path;
+use std::sync::Arc;
+
+type ResolvedLoaderSource = (Arc<dyn coflow_api::DataLoader>, ResolvedSource);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProjectLoadOutput {
@@ -16,35 +19,37 @@ pub fn load_project_data(
     project: &Project,
     schema: &CftContainer,
     registry: &ProviderRegistry,
-) -> Result<ProjectLoadOutput, Vec<DiagnosticJson>> {
+) -> Result<ProjectLoadOutput, DiagnosticSet> {
     let mut records = Vec::new();
     let mut origins = OriginMap::default();
-    let mut diagnostics = Vec::new();
+    let mut diagnostics = DiagnosticSet::empty();
 
     for source in &project.config.sources {
-        let source_specs = match source_specs(project, registry, source) {
-            Ok(specs) => specs,
-            Err(message) => {
-                diagnostics.push(DiagnosticJson::project(message));
+        let configured = configured_source(project, source);
+        let resolved_sources = match resolve_sources(project, schema, registry, source, &configured)
+        {
+            Ok(resolved_sources) => resolved_sources,
+            Err(err) => {
+                diagnostics.extend(err);
                 continue;
             }
         };
 
-        for spec in source_specs {
-            let config_keys = source_config_keys(&spec.options);
-            let source_ref = SourceRef {
-                source_type: spec.source_type.as_deref(),
-                path: spec.file.as_deref().or(spec.dir.as_deref()),
-                uri: spec.uri.as_deref(),
-                config_keys: &config_keys,
-            };
-            let loader = match registry.select_loader(&source_ref) {
-                Ok(loader) => loader,
-                Err(err) => {
-                    diagnostics.push(loader_selection_diagnostic(&spec, err));
-                    continue;
-                }
-            };
+        let mut source_diagnostics = DiagnosticSet::empty();
+        for (loader, spec) in &resolved_sources {
+            source_diagnostics.extend(loader.preflight(
+                LoadContext {
+                    project_root: &project.root_dir,
+                    schema,
+                },
+                spec,
+            ));
+        }
+        if !source_diagnostics.is_empty() {
+            diagnostics.extend(source_diagnostics);
+            continue;
+        }
+        for (loader, spec) in resolved_sources {
             match loader.load(
                 LoadContext {
                     project_root: &project.root_dir,
@@ -53,7 +58,7 @@ pub fn load_project_data(
                 &spec,
             ) {
                 Ok(batch) => push_loaded_records(&mut records, &mut origins, batch),
-                Err(err) => diagnostics.extend(diagnostics_from_provider(err)),
+                Err(err) => diagnostics.extend(err),
             }
         }
     }
@@ -68,11 +73,67 @@ pub fn load_project_data(
     }
     let model = builder
         .build()
-        .map_err(|err| diagnostics_from_provider(origins.map_diagnostics(err)))?;
+        .map_err(|err| origins.map_diagnostics(err))?;
     if let Err(checks) = coflow_checker::run_checks(schema, &model) {
-        return Err(diagnostics_from_provider(origins.map_diagnostics(checks)));
+        return Err(origins.map_diagnostics(checks));
     }
     Ok(ProjectLoadOutput { model })
+}
+
+fn resolve_sources(
+    project: &Project,
+    schema: &CftContainer,
+    registry: &ProviderRegistry,
+    source: &SourceConfig,
+    configured: &ResolvedSource,
+) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
+    let ctx = SourceResolveContext {
+        project_root: &project.root_dir,
+        schema,
+    };
+    if source.source_type.is_none()
+        && matches!(configured.location, SourceLocationSpec::Path(ref path) if path.is_dir())
+    {
+        let mut resolved = Vec::new();
+        for loader in registry.loaders() {
+            for source in loader.resolve(ctx, configured)? {
+                resolved.push((Arc::clone(&loader), source));
+            }
+        }
+        return Ok(resolved);
+    }
+
+    let option_keys = source_option_keys(&configured.options);
+    let source_ref = source_ref(configured, source.source_type.as_deref(), &option_keys);
+    let loader = match registry.select_loader(&source_ref) {
+        Ok(loader) => loader,
+        Err(err) => {
+            let mut diagnostics = DiagnosticSet::empty();
+            diagnostics.push(loader_selection_diagnostic(
+                &project.config_path,
+                configured,
+                err,
+            ));
+            return Err(diagnostics);
+        }
+    };
+    Ok(loader
+        .resolve(ctx, configured)?
+        .into_iter()
+        .map(|source| (Arc::clone(&loader), source))
+        .collect())
+}
+
+const fn source_ref<'a>(
+    source: &'a ResolvedSource,
+    source_type: Option<&'a str>,
+    option_keys: &'a [&'a str],
+) -> ProjectSourceRef<'a> {
+    ProjectSourceRef {
+        source_type,
+        location: &source.location,
+        option_keys,
+    }
 }
 
 fn push_loaded_records(
@@ -84,352 +145,73 @@ fn push_loaded_records(
     origins.extend(loaded.origins);
 }
 
-fn source_specs(
-    project: &Project,
-    registry: &ProviderRegistry,
-    source: &SourceConfig,
-) -> Result<Vec<SourceSpec>, String> {
-    if source.lark_sheet.is_some() {
-        return Ok(vec![lark_source_spec(source)?]);
-    }
-
-    let files = discover_source_files(project, registry, source)?;
-    files
-        .into_iter()
-        .map(|file| {
-            if file.extension().and_then(|ext| ext.to_str()) == Some("cfd")
-                && source.file.as_ref().is_some_and(|configured| {
-                    project.resolve_path(configured).is_file() && !source.sheets.is_empty()
-                })
-            {
-                return Err(format!(
-                    "CFD source `{}` cannot define `sheets`",
-                    project_relative_display(project, &file)
-                ));
-            }
-            Ok(SourceSpec {
-                source_type: source.source_type.clone(),
-                file: Some(file),
-                dir: None,
-                uri: None,
-                options: sheet_options(source),
-            })
-        })
-        .collect()
-}
-
-fn lark_source_spec(source: &SourceConfig) -> Result<SourceSpec, String> {
-    let Some(lark_sheet) = &source.lark_sheet else {
-        return Err("source must define `lark_sheet`".to_string());
+fn configured_source(project: &Project, source: &SourceConfig) -> ResolvedSource {
+    let location = match source.location() {
+        SourceLocationSpec::Path(path) => SourceLocationSpec::Path(project.resolve_path(path)),
+        SourceLocationSpec::Uri(uri) => SourceLocationSpec::Uri(uri.clone()),
     };
-    let mut lark = Map::new();
-    lark.insert(
-        "app_id".to_string(),
-        Value::String(lark_sheet.app_id.clone()),
-    );
-    lark.insert(
-        "app_secret".to_string(),
-        Value::String(lark_sheet.app_secret.clone()),
-    );
-    if let Some(url) = &lark_sheet.url {
-        lark.insert("url".to_string(), Value::String(url.clone()));
+    let display_name = match source.location() {
+        SourceLocationSpec::Path(path) => path.display().to_string(),
+        SourceLocationSpec::Uri(uri) => uri.clone(),
+    };
+    ResolvedSource {
+        provider_id: source.source_type.clone().unwrap_or_default(),
+        location,
+        options: source.options().clone(),
+        display_name,
     }
-    if let Some(token) = &lark_sheet.spreadsheet_token {
-        lark.insert(
-            "spreadsheet_token".to_string(),
-            Value::String(token.clone()),
-        );
-    }
-
-    let mut options = source_options_map(source);
-    options.insert("lark_sheet".to_string(), Value::Object(lark));
-    options.insert("sheets".to_string(), source_sheets_value(source));
-    Ok(SourceSpec {
-        source_type: source
-            .source_type
-            .clone()
-            .or_else(|| Some("lark-sheet".to_string())),
-        file: None,
-        dir: None,
-        uri: lark_sheet.url.clone(),
-        options: Value::Object(options),
-    })
 }
 
-fn sheet_options(source: &SourceConfig) -> Value {
-    let mut options = source_options_map(source);
-    options.insert("sheets".to_string(), source_sheets_value(source));
-    Value::Object(options)
-}
-
-fn source_options_map(source: &SourceConfig) -> Map<String, Value> {
-    source
-        .options
-        .iter()
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect()
-}
-
-fn source_sheets_value(source: &SourceConfig) -> Value {
-    Value::Array(
-        source
-            .sheets
-            .iter()
-            .map(|sheet| {
-                let mut object = Map::new();
-                object.insert("sheet".to_string(), Value::String(sheet.sheet.clone()));
-                if let Some(type_name) = &sheet.type_name {
-                    object.insert("type".to_string(), Value::String(type_name.clone()));
-                }
-                if let Some(key) = &sheet.key {
-                    object.insert("key".to_string(), Value::String(key.clone()));
-                }
-                object.insert(
-                    "columns".to_string(),
-                    Value::Object(
-                        sheet
-                            .columns
-                            .iter()
-                            .map(|(source, field)| (source.clone(), Value::String(field.clone())))
-                            .collect(),
-                    ),
-                );
-                Value::Object(object)
-            })
-            .collect(),
-    )
-}
-
-fn source_config_keys(options: &Value) -> Vec<&str> {
+fn source_option_keys(options: &Value) -> Vec<&str> {
     options
         .as_object()
         .map(|object| object.keys().map(String::as_str).collect())
         .unwrap_or_default()
 }
 
-fn discover_source_files(
-    project: &Project,
-    registry: &ProviderRegistry,
-    source: &SourceConfig,
-) -> Result<Vec<PathBuf>, String> {
-    let path = source
-        .file
-        .as_ref()
-        .or(source.dir.as_ref())
-        .ok_or_else(|| "source must set exactly one of `file` or `dir`".to_string())?;
-    let resolved = project.resolve_path(path);
-    if resolved.is_dir() {
-        collect_data_files(registry, &resolved)
-    } else if has_registered_extension(registry, &resolved) {
-        Ok(vec![resolved])
-    } else {
-        Err(format!(
-            "source file `{}` has unsupported extension",
-            project_relative_display(project, &resolved)
-        ))
-    }
-}
-
-fn collect_data_files(registry: &ProviderRegistry, dir: &Path) -> Result<Vec<PathBuf>, String> {
-    let mut entries = fs::read_dir(dir)
-        .map_err(|err| format!("failed to read data source dir `{}`: {err}", dir.display()))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| format!("failed to read data source dir `{}`: {err}", dir.display()))?;
-    entries.sort_by_key(fs::DirEntry::path);
-
-    let mut files = Vec::new();
-    for entry in entries {
-        let path = entry.path();
-        if path.is_dir() {
-            files.extend(collect_data_files(registry, &path)?);
-        } else if has_registered_extension(registry, &path) {
-            files.push(path);
-        }
-    }
-    Ok(files)
-}
-
-fn has_registered_extension(registry: &ProviderRegistry, path: &Path) -> bool {
-    let Some(extension) = path.extension().and_then(|ext| ext.to_str()) else {
-        return false;
+fn loader_selection_diagnostic(
+    config_path: &Path,
+    spec: &ResolvedSource,
+    err: LoaderSelectionError,
+) -> Diagnostic {
+    let source = match &spec.location {
+        SourceLocationSpec::Path(path) => path.display().to_string(),
+        SourceLocationSpec::Uri(uri) => uri.clone(),
     };
-    registry
-        .loader_descriptors()
-        .iter()
-        .any(|descriptor| descriptor.extensions.contains(&extension))
-}
-
-fn loader_selection_diagnostic(spec: &SourceSpec, err: LoaderSelectionError) -> DiagnosticJson {
-    let source = spec
-        .file
-        .as_ref()
-        .or(spec.dir.as_ref())
-        .map_or_else(String::new, |path| path.display().to_string());
     match err {
-        LoaderSelectionError::UnknownLoader { id } => {
-            DiagnosticJson::project(format!("source `{source}` uses unknown loader `{id}`"))
-        }
-        LoaderSelectionError::NoLoader => {
-            DiagnosticJson::project(format!("source `{source}` has no matching loader"))
-        }
-        LoaderSelectionError::AmbiguousLoaders { ids } => DiagnosticJson::project(format!(
-            "source `{source}` matches multiple loaders {}; set source `type` explicitly",
-            ids.join(", ")
-        )),
+        LoaderSelectionError::UnknownLoader { id } => project_diagnostic(
+            config_path,
+            format!("source `{source}` uses unknown loader `{id}`"),
+        ),
+        LoaderSelectionError::NoLoader => project_diagnostic(
+            config_path,
+            format!("source `{source}` has no matching loader"),
+        ),
+        LoaderSelectionError::AmbiguousLoaders { ids } => project_diagnostic(
+            config_path,
+            format!(
+                "source `{source}` matches multiple loaders {}; set source `type` explicitly",
+                ids.join(", ")
+            ),
+        ),
     }
 }
 
-fn diagnostics_from_provider(diagnostics: DiagnosticSet) -> Vec<DiagnosticJson> {
-    diagnostics
-        .diagnostics
-        .into_iter()
-        .map(diagnostic_json_from_provider)
-        .collect()
-}
-
-fn diagnostic_json_from_provider(diagnostic: Diagnostic) -> DiagnosticJson {
-    let primary = diagnostic.primary.as_ref().map(label_location);
-    DiagnosticJson {
-        code: diagnostic.code,
-        stage: diagnostic.stage,
-        severity: severity_name(diagnostic.severity).to_string(),
-        message: diagnostic.message,
-        path: primary
-            .as_ref()
-            .map_or_else(String::new, |location| location.path.clone()),
-        sheet: primary.as_ref().and_then(|location| location.sheet.clone()),
-        cell: primary.as_ref().and_then(|location| location.cell.clone()),
-        start_line: primary.as_ref().map_or(0, |location| location.start_line),
-        start_character: primary
-            .as_ref()
-            .map_or(0, |location| location.start_character),
-        end_line: primary.as_ref().map_or(0, |location| location.end_line),
-        end_character: primary
-            .as_ref()
-            .map_or(1, |location| location.end_character),
-        related: diagnostic
-            .related
-            .iter()
-            .map(related_json_from_label)
-            .collect(),
+fn project_diagnostic(config_path: &Path, message: impl Into<String>) -> Diagnostic {
+    Diagnostic {
+        code: "PROJECT-001".to_string(),
+        stage: "PROJECT".to_string(),
+        severity: coflow_api::Severity::Error,
+        message: message.into(),
+        primary: Some(Label {
+            location: SourceLocation::ProjectConfig {
+                path: config_path.to_path_buf(),
+                key_path: Vec::new(),
+            },
+            message: None,
+        }),
+        related: Vec::new(),
     }
-}
-
-fn related_json_from_label(label: &Label) -> RelatedJson {
-    let location = label_location(label);
-    RelatedJson {
-        path: location.path,
-        sheet: location.sheet,
-        cell: location.cell,
-        start_line: location.start_line,
-        start_character: location.start_character,
-        end_line: location.end_line,
-        end_character: location.end_character,
-        label: label.message.clone(),
-    }
-}
-
-#[derive(Debug)]
-struct JsonLocation {
-    path: String,
-    sheet: Option<String>,
-    cell: Option<String>,
-    start_line: usize,
-    start_character: usize,
-    end_line: usize,
-    end_character: usize,
-}
-
-fn label_location(label: &Label) -> JsonLocation {
-    match &label.location {
-        SourceLocation::FileSpan {
-            path,
-            start_line,
-            start_character,
-            end_line,
-            end_character,
-        } => JsonLocation {
-            path: path.display().to_string(),
-            sheet: None,
-            cell: None,
-            start_line: *start_line,
-            start_character: *start_character,
-            end_line: *end_line,
-            end_character: *end_character,
-        },
-        SourceLocation::TableCell {
-            path,
-            sheet,
-            row,
-            column,
-        } => JsonLocation {
-            path: path.display().to_string(),
-            sheet: sheet.clone(),
-            cell: Some(excel_cell(*row, *column)),
-            start_line: row.saturating_sub(1),
-            start_character: column.saturating_sub(1),
-            end_line: row.saturating_sub(1),
-            end_character: *column,
-        },
-        SourceLocation::RemoteCell {
-            document,
-            sheet,
-            row,
-            column,
-        } => JsonLocation {
-            path: document.clone(),
-            sheet: sheet.clone(),
-            cell: (*row > 0 && *column > 0).then(|| excel_cell(*row, *column)),
-            start_line: row.saturating_sub(1),
-            start_character: column.saturating_sub(1),
-            end_line: row.saturating_sub(1),
-            end_character: (*column).max(1),
-        },
-        SourceLocation::ProjectConfig { path, .. } | SourceLocation::Artifact { path } => {
-            JsonLocation {
-                path: path.display().to_string(),
-                sheet: None,
-                cell: None,
-                start_line: 0,
-                start_character: 0,
-                end_line: 0,
-                end_character: 1,
-            }
-        }
-    }
-}
-
-const fn severity_name(severity: coflow_api::Severity) -> &'static str {
-    match severity {
-        coflow_api::Severity::Error => "error",
-        coflow_api::Severity::Warning => "warning",
-        coflow_api::Severity::Info => "info",
-    }
-}
-
-fn excel_cell(row: usize, column: usize) -> String {
-    format!("{}{}", excel_column_name(column), row)
-}
-
-fn excel_column_name(column: usize) -> String {
-    let mut value = column;
-    let mut name = Vec::new();
-    while value > 0 {
-        value -= 1;
-        #[allow(clippy::cast_possible_truncation)]
-        let offset = (value % 26) as u8;
-        name.push((b'A' + offset) as char);
-        value /= 26;
-    }
-    name.iter().rev().collect()
-}
-
-fn project_relative_display(project: &Project, path: &Path) -> String {
-    path.strip_prefix(&project.root_dir)
-        .unwrap_or(path)
-        .display()
-        .to_string()
-        .replace('\\', "/")
 }
 
 #[cfg(test)]
@@ -440,14 +222,15 @@ mod tests {
     use coflow_data_model::CfdValue;
     use coflow_loader_lark::{LarkHttpClient, LarkSheetLoader};
     use coflow_project::{
-        LarkSheetConfig, OutputsConfig, ProjectConfig, SchemaConfig, SheetConfig, SourceConfig,
+        OutputsConfig, ProjectConfig, SchemaConfig, SourceConfig, SourceLocationSpec,
     };
     use serde_json::Value;
-    use std::collections::{BTreeMap, VecDeque};
+    use std::collections::VecDeque;
+    use std::path::PathBuf;
     use std::sync::Mutex;
 
     #[test]
-    fn loads_lark_sheet_source_through_registry_pipeline() -> Result<(), String> {
+    fn loads_remote_sheet_source_through_registry_pipeline() -> Result<(), String> {
         let root = std::env::temp_dir().join("coflow-pipeline-lark-unit");
         let project = Project {
             config_path: root.join("coflow.yaml"),
@@ -455,25 +238,25 @@ mod tests {
             config: ProjectConfig {
                 schema: SchemaConfig::One(PathBuf::from("schema")),
                 sources: vec![SourceConfig {
-                    source_type: None,
-                    file: None,
-                    dir: None,
-                    lark_sheet: Some(LarkSheetConfig {
-                        app_id: "cli_test".to_string(),
-                        app_secret: "secret_test".to_string(),
-                        url: Some("https://fand3tbr90g.feishu.cn/wiki/wiki_token".to_string()),
-                        spreadsheet_token: None,
+                    source_type: Some("lark-sheet".to_string()),
+                    location: SourceLocationSpec::Uri(
+                        "https://fand3tbr90g.feishu.cn/wiki/wiki_token".to_string(),
+                    ),
+                    options: serde_json::json!({
+                        "app_id": "cli_test",
+                        "app_secret": "secret_test",
+                        "sheets": [
+                            {
+                                "sheet": "物品表",
+                                "type": "Item",
+                                "key": "物品ID",
+                                "columns": {
+                                    "名称": "name",
+                                    "稀有度": "rarity"
+                                }
+                            }
+                        ]
                     }),
-                    options: BTreeMap::new(),
-                    sheets: vec![SheetConfig {
-                        sheet: "物品表".to_string(),
-                        type_name: Some("Item".to_string()),
-                        key: Some("物品ID".to_string()),
-                        columns: BTreeMap::from([
-                            ("名称".to_string(), "name".to_string()),
-                            ("稀有度".to_string(), "rarity".to_string()),
-                        ]),
-                    }],
                 }],
                 outputs: OutputsConfig::default(),
             },

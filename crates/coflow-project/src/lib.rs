@@ -12,15 +12,21 @@
     )
 )]
 
+pub use coflow_api::SourceLocationSpec;
+use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use coflow_cft::{CftContainer, CftDiagnostic, CftLabel, ModuleId, Span};
-use serde::de::{self, MapAccess, Visitor};
+use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 
 const PROJECT_DIAGNOSTIC_STAGE: &str = "PROJECT";
+
+#[derive(Debug)]
+struct NoDuplicateValue(Value);
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -39,38 +45,11 @@ pub enum SchemaConfig {
     Many(Vec<PathBuf>),
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug)]
 pub struct SourceConfig {
-    #[serde(rename = "type")]
     pub source_type: Option<String>,
-    pub file: Option<PathBuf>,
-    pub dir: Option<PathBuf>,
-    pub lark_sheet: Option<LarkSheetConfig>,
-    #[serde(default)]
-    pub options: BTreeMap<String, serde_json::Value>,
-    #[serde(default)]
-    pub sheets: Vec<SheetConfig>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LarkSheetConfig {
-    pub app_id: String,
-    pub app_secret: String,
-    pub url: Option<String>,
-    pub spreadsheet_token: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SheetConfig {
-    pub sheet: String,
-    #[serde(rename = "type")]
-    pub type_name: Option<String>,
-    pub key: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_columns")]
-    pub columns: BTreeMap<String, String>,
+    pub location: SourceLocationSpec,
+    pub options: Value,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -80,45 +59,255 @@ pub struct OutputsConfig {
     pub code: Option<OutputConfig>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug)]
 pub struct OutputConfig {
-    #[serde(rename = "type")]
     pub output_type: String,
     pub dir: PathBuf,
-    pub namespace: Option<String>,
-    #[serde(default)]
-    pub options: BTreeMap<String, serde_json::Value>,
+    pub options: Value,
 }
 
-fn deserialize_columns<'de, D>(deserializer: D) -> Result<BTreeMap<String, String>, D::Error>
+impl SourceConfig {
+    #[must_use]
+    pub const fn location(&self) -> &SourceLocationSpec {
+        &self.location
+    }
+
+    #[must_use]
+    pub const fn options(&self) -> &Value {
+        &self.options
+    }
+}
+
+impl OutputConfig {
+    #[must_use]
+    pub const fn options(&self) -> &Value {
+        &self.options
+    }
+}
+
+impl<'de> Deserialize<'de> for SourceConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut fields = no_duplicate_object(deserializer)?;
+        reject_removed_source_fields(&fields).map_err(de::Error::custom)?;
+        let source_type = fields
+            .remove("type")
+            .map(string_field("source `type`"))
+            .transpose()
+            .map_err(de::Error::custom)?;
+        let path = fields.remove("path");
+        let url = fields.remove("url");
+        let location = match (path, url) {
+            (Some(path), None) => {
+                SourceLocationSpec::Path(path_value(path).map_err(de::Error::custom)?)
+            }
+            (None, Some(url)) => {
+                SourceLocationSpec::Uri(url_value(url).map_err(de::Error::custom)?)
+            }
+            (Some(_), Some(_)) | (None, None) => {
+                return Err(de::Error::custom(
+                    "source must set exactly one of `path` or `url`",
+                ))
+            }
+        };
+        expand_env_in_object(&mut fields).map_err(de::Error::custom)?;
+        Ok(Self {
+            source_type,
+            location,
+            options: Value::Object(fields),
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for OutputConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut fields = no_duplicate_object(deserializer)?;
+        let output_type = fields
+            .remove("type")
+            .map(string_field("output `type`"))
+            .transpose()
+            .map_err(de::Error::custom)?
+            .ok_or_else(|| de::Error::custom("output must set `type`"))?;
+        let dir = fields
+            .remove("dir")
+            .map(path_value)
+            .transpose()
+            .map_err(de::Error::custom)?
+            .ok_or_else(|| de::Error::custom("output must set `dir`"))?;
+        expand_env_in_object(&mut fields).map_err(de::Error::custom)?;
+        Ok(Self {
+            output_type,
+            dir,
+            options: Value::Object(fields),
+        })
+    }
+}
+
+fn no_duplicate_object<'de, D>(deserializer: D) -> Result<Map<String, Value>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    struct ColumnsVisitor;
+    let NoDuplicateValue(Value::Object(fields)) = NoDuplicateValue::deserialize(deserializer)?
+    else {
+        return Err(de::Error::custom("expected an object"));
+    };
+    Ok(fields)
+}
 
-    impl<'de> Visitor<'de> for ColumnsVisitor {
-        type Value = BTreeMap<String, String>;
+impl<'de> Deserialize<'de> for NoDuplicateValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(NoDuplicateValueVisitor)
+    }
+}
 
-        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            formatter.write_str("a mapping of Excel column names to CFT field names")
-        }
+struct NoDuplicateValueVisitor;
 
-        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-        where
-            A: MapAccess<'de>,
-        {
-            let mut columns = BTreeMap::new();
-            while let Some((key, value)) = map.next_entry::<String, String>()? {
-                if columns.insert(key.clone(), value).is_some() {
-                    return Err(de::Error::custom(format!("duplicate columns key `{key}`")));
-                }
-            }
-            Ok(columns)
-        }
+impl<'de> Visitor<'de> for NoDuplicateValueVisitor {
+    type Value = NoDuplicateValue;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("a YAML value without duplicate mapping keys")
     }
 
-    deserializer.deserialize_map(ColumnsVisitor)
+    fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E> {
+        Ok(NoDuplicateValue(Value::Bool(value)))
+    }
+
+    fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E> {
+        Ok(NoDuplicateValue(Value::Number(value.into())))
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E> {
+        Ok(NoDuplicateValue(Value::Number(value.into())))
+    }
+
+    fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        let number = serde_json::Number::from_f64(value)
+            .ok_or_else(|| E::custom("non-finite numbers are not supported"))?;
+        Ok(NoDuplicateValue(Value::Number(number)))
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> {
+        Ok(NoDuplicateValue(Value::String(value.to_string())))
+    }
+
+    fn visit_string<E>(self, value: String) -> Result<Self::Value, E> {
+        Ok(NoDuplicateValue(Value::String(value)))
+    }
+
+    fn visit_none<E>(self) -> Result<Self::Value, E> {
+        Ok(NoDuplicateValue(Value::Null))
+    }
+
+    fn visit_unit<E>(self) -> Result<Self::Value, E> {
+        Ok(NoDuplicateValue(Value::Null))
+    }
+
+    fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        NoDuplicateValue::deserialize(deserializer)
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut values = Vec::new();
+        while let Some(NoDuplicateValue(value)) = seq.next_element()? {
+            values.push(value);
+        }
+        Ok(NoDuplicateValue(Value::Array(values)))
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let mut object = Map::new();
+        while let Some(key) = map.next_key::<String>()? {
+            if object.contains_key(&key) {
+                return Err(de::Error::custom(format!("duplicate key `{key}`")));
+            }
+            let NoDuplicateValue(value) = map.next_value()?;
+            object.insert(key, value);
+        }
+        Ok(NoDuplicateValue(Value::Object(object)))
+    }
+}
+
+fn string_field(label: &'static str) -> impl FnOnce(Value) -> Result<String, String> {
+    move |value| {
+        let Value::String(value) = value else {
+            return Err(format!("{label} must be a string"));
+        };
+        Ok(value)
+    }
+}
+
+fn reject_removed_source_fields(fields: &Map<String, Value>) -> Result<(), String> {
+    for key in ["file", "dir", "lark_sheet"] {
+        if fields.contains_key(key) {
+            return Err(format!("unknown field `{key}`"));
+        }
+    }
+    Ok(())
+}
+
+fn path_value(value: Value) -> Result<PathBuf, String> {
+    let Value::String(value) = value else {
+        return Err("source `path` must be a string".to_string());
+    };
+    Ok(PathBuf::from(value))
+}
+
+fn url_value(value: Value) -> Result<String, String> {
+    let Value::String(value) = value else {
+        return Err("source `url` must be a string".to_string());
+    };
+    Ok(value)
+}
+
+fn expand_env_in_object(fields: &mut Map<String, Value>) -> Result<(), String> {
+    for value in fields.values_mut() {
+        expand_env_in_value(value)?;
+    }
+    Ok(())
+}
+
+fn expand_env_in_value(value: &mut Value) -> Result<(), String> {
+    match value {
+        Value::String(text) => {
+            if let Some(env_name) = env_reference_name(text) {
+                *text = std::env::var(env_name)
+                    .map_err(|_| format!("environment variable `{env_name}` is not set"))?;
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                expand_env_in_value(item)?;
+            }
+        }
+        Value::Object(object) => expand_env_in_object(object)?,
+        Value::Null | Value::Bool(_) | Value::Number(_) => {}
+    }
+    Ok(())
+}
+
+fn env_reference_name(value: &str) -> Option<&str> {
+    value.strip_prefix("${")?.strip_suffix('}')
 }
 
 #[derive(Debug)]
@@ -137,9 +326,10 @@ impl Project {
     /// canonicalized, or parsed as YAML.
     pub fn open(config_or_dir: Option<&Path>) -> Result<Self, String> {
         let project = Self::open_schema_only(config_or_dir)?;
-        let schema_diagnostics = project.schema_diagnostics();
+        let schema_diagnostics = project.schema_diagnostic_set();
         if !schema_diagnostics.is_empty() {
             return Err(schema_diagnostics
+                .diagnostics
                 .into_iter()
                 .map(|diagnostic| diagnostic.message)
                 .collect::<Vec<_>>()
@@ -185,7 +375,12 @@ impl Project {
     /// Returns an error when a data source file or directory is missing or a
     /// data-stage source/sheet setting is invalid.
     pub fn validate_for_data(&self) -> Result<(), String> {
-        validate_sources(&self.root_dir, &self.config.sources)
+        let diagnostics = self.data_diagnostic_set();
+        if diagnostics.is_empty() {
+            Ok(())
+        } else {
+            Err(join_diagnostic_messages(diagnostics))
+        }
     }
 
     /// Validates output settings required by C# code generation.
@@ -195,33 +390,51 @@ impl Project {
     /// Returns an error when code or data output settings are missing or have
     /// invalid shape.
     pub fn validate_for_codegen(&self) -> Result<(), String> {
-        let diagnostics = validate_for_codegen_collecting(&self.config.outputs);
+        let diagnostics = self.codegen_diagnostic_set();
         if diagnostics.is_empty() {
             Ok(())
         } else {
-            Err(diagnostics.join("\n"))
+            Err(join_diagnostic_messages(diagnostics))
         }
     }
 
     #[must_use]
     pub fn schema_diagnostics(&self) -> Vec<DiagnosticJson> {
-        diagnostics_from_messages(validate_project_config_schema_only_collecting(
-            &self.root_dir,
-            &self.config,
-        ))
+        diagnostic_json_from_set(self.schema_diagnostic_set())
     }
 
     #[must_use]
     pub fn data_diagnostics(&self) -> Vec<DiagnosticJson> {
-        diagnostics_from_messages(validate_sources_collecting(
-            &self.root_dir,
-            &self.config.sources,
-        ))
+        diagnostic_json_from_set(self.data_diagnostic_set())
     }
 
     #[must_use]
     pub fn codegen_diagnostics(&self) -> Vec<DiagnosticJson> {
-        diagnostics_from_messages(validate_for_codegen_collecting(&self.config.outputs))
+        diagnostic_json_from_set(self.codegen_diagnostic_set())
+    }
+
+    #[must_use]
+    pub fn schema_diagnostic_set(&self) -> DiagnosticSet {
+        project_diagnostics_to_set(
+            &self.config_path,
+            validate_project_config_schema_only_collecting(&self.root_dir, &self.config),
+        )
+    }
+
+    #[must_use]
+    pub fn data_diagnostic_set(&self) -> DiagnosticSet {
+        project_diagnostics_to_set(
+            &self.config_path,
+            validate_sources_collecting(&self.root_dir, &self.config.sources),
+        )
+    }
+
+    #[must_use]
+    pub fn codegen_diagnostic_set(&self) -> DiagnosticSet {
+        project_diagnostics_to_set(
+            &self.config_path,
+            validate_for_codegen_collecting(&self.config.outputs),
+        )
     }
 
     #[must_use]
@@ -282,10 +495,28 @@ impl Project {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProjectDiagnostic {
+    message: String,
+    key_path: Vec<String>,
+}
+
+impl ProjectDiagnostic {
+    fn new(
+        message: impl Into<String>,
+        key_path: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        Self {
+            message: message.into(),
+            key_path: key_path.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
 fn validate_project_config_schema_only_collecting(
     root_dir: &Path,
     config: &ProjectConfig,
-) -> Vec<String> {
+) -> Vec<ProjectDiagnostic> {
     let mut diagnostics = Vec::new();
     diagnostics.extend(validate_schema_config_collecting(root_dir, &config.schema));
     diagnostics.extend(validate_outputs_collecting(&config.outputs));
@@ -293,22 +524,28 @@ fn validate_project_config_schema_only_collecting(
     diagnostics
 }
 
-fn validate_schema_config_collecting(root_dir: &Path, schema: &SchemaConfig) -> Vec<String> {
+fn validate_schema_config_collecting(
+    root_dir: &Path,
+    schema: &SchemaConfig,
+) -> Vec<ProjectDiagnostic> {
     let mut diagnostics = Vec::new();
     match schema {
         SchemaConfig::One(path) => {
             if let Err(err) = validate_schema_path(root_dir, path, "schema") {
-                diagnostics.push(err);
+                diagnostics.push(ProjectDiagnostic::new(err, ["schema"]));
             }
         }
         SchemaConfig::Many(paths) => {
             if paths.is_empty() {
-                diagnostics.push("schema list is empty".to_string());
+                diagnostics.push(ProjectDiagnostic::new("schema list is empty", ["schema"]));
             }
             for (index, path) in paths.iter().enumerate() {
                 if let Err(err) = validate_schema_path(root_dir, path, &format!("schema[{index}]"))
                 {
-                    diagnostics.push(err);
+                    diagnostics.push(ProjectDiagnostic::new(
+                        err,
+                        ["schema".to_string(), index.to_string()],
+                    ));
                 }
             }
         }
@@ -333,190 +570,142 @@ fn validate_schema_path(root_dir: &Path, path: &Path, label: &str) -> Result<(),
     Ok(())
 }
 
-fn validate_sources(root_dir: &Path, sources: &[SourceConfig]) -> Result<(), String> {
-    let diagnostics = validate_sources_collecting(root_dir, sources);
-    if !diagnostics.is_empty() {
-        return Err(diagnostics.join("\n"));
-    }
-    Ok(())
-}
-
-fn validate_sources_collecting(root_dir: &Path, sources: &[SourceConfig]) -> Vec<String> {
+fn validate_sources_collecting(
+    root_dir: &Path,
+    sources: &[SourceConfig],
+) -> Vec<ProjectDiagnostic> {
     let mut diagnostics = validate_source_shapes_collecting(sources);
     for (source_index, source) in sources.iter().enumerate() {
         let source_label = format!("sources[{source_index}]");
-        match (&source.file, &source.dir, &source.lark_sheet) {
-            (Some(file), None, None) => {
-                let resolved = resolve_project_relative(root_dir, file);
+        let source_index_key = source_index.to_string();
+        match &source.location {
+            SourceLocationSpec::Path(path) => {
+                let resolved = resolve_project_relative(root_dir, path);
                 if !resolved.is_file() && !resolved.is_dir() {
-                    diagnostics.push(format!(
-                        "{source_label}.file `{}` does not exist",
-                        file.display()
+                    diagnostics.push(ProjectDiagnostic::new(
+                        format!("{source_label}.path `{}` does not exist", path.display()),
+                        [
+                            "sources".to_string(),
+                            source_index_key.clone(),
+                            "path".to_string(),
+                        ],
                     ));
                 }
             }
-            (None, Some(dir), None) => {
-                let resolved = resolve_project_relative(root_dir, dir);
-                if !resolved.is_dir() {
-                    diagnostics.push(format!(
-                        "{source_label}.dir `{}` does not exist or is not a directory",
-                        dir.display()
-                    ));
-                }
-            }
-            _ => {}
+            SourceLocationSpec::Uri(_) => {}
         }
     }
     diagnostics
 }
 
-fn validate_source_shapes_collecting(sources: &[SourceConfig]) -> Vec<String> {
+fn validate_source_shapes_collecting(sources: &[SourceConfig]) -> Vec<ProjectDiagnostic> {
     let mut diagnostics = Vec::new();
     for (source_index, source) in sources.iter().enumerate() {
         let source_label = format!("sources[{source_index}]");
-        let source_kind_count = usize::from(source.file.is_some())
-            + usize::from(source.dir.is_some())
-            + usize::from(source.lark_sheet.is_some());
-        if source_kind_count != 1 {
-            diagnostics.push(format!(
-                "{source_label} must set exactly one of `file`, `dir`, or `lark_sheet`"
-            ));
-        }
-        if source
-            .file
-            .as_ref()
-            .is_some_and(|file| file.as_os_str().is_empty())
-        {
-            diagnostics.push(format!("{source_label}.file is empty"));
-        }
-        if source
-            .dir
-            .as_ref()
-            .is_some_and(|dir| dir.as_os_str().is_empty())
-        {
-            diagnostics.push(format!("{source_label}.dir is empty"));
-        }
-        if let Some(lark_sheet) = &source.lark_sheet {
-            diagnostics.extend(validate_lark_sheet_source(lark_sheet, &source_label));
-        }
+        let source_index_key = source_index.to_string();
         if source
             .source_type
             .as_ref()
             .is_some_and(|source_type| source_type.trim().is_empty())
         {
-            diagnostics.push(format!("{source_label}.type is empty"));
+            diagnostics.push(ProjectDiagnostic::new(
+                format!("{source_label}.type is empty"),
+                [
+                    "sources".to_string(),
+                    source_index_key.clone(),
+                    "type".to_string(),
+                ],
+            ));
         }
-        for (sheet_index, sheet) in source.sheets.iter().enumerate() {
-            let sheet_label = format!("{source_label}.sheets[{sheet_index}]");
-            if sheet.sheet.trim().is_empty() {
-                diagnostics.push(format!("{sheet_label}.sheet is empty"));
+        match &source.location {
+            SourceLocationSpec::Path(path) if path.as_os_str().is_empty() => {
+                diagnostics.push(ProjectDiagnostic::new(
+                    format!("{source_label}.path is empty"),
+                    [
+                        "sources".to_string(),
+                        source_index_key.clone(),
+                        "path".to_string(),
+                    ],
+                ));
             }
-            if let Some(type_name) = &sheet.type_name {
-                if type_name.trim().is_empty() {
-                    diagnostics.push(format!("{sheet_label}.type is empty"));
-                }
+            SourceLocationSpec::Uri(uri) if uri.trim().is_empty() => {
+                diagnostics.push(ProjectDiagnostic::new(
+                    format!("{source_label}.url is empty"),
+                    [
+                        "sources".to_string(),
+                        source_index_key.clone(),
+                        "url".to_string(),
+                    ],
+                ));
             }
-            if let Some(key) = &sheet.key {
-                if key.trim().is_empty() {
-                    diagnostics.push(format!("{sheet_label}.key is empty"));
-                }
-            }
+            SourceLocationSpec::Path(_) | SourceLocationSpec::Uri(_) => {}
         }
     }
     diagnostics
 }
 
-fn validate_lark_sheet_source(lark_sheet: &LarkSheetConfig, source_label: &str) -> Vec<String> {
-    let mut diagnostics = Vec::new();
-    if lark_sheet.app_id.trim().is_empty() {
-        diagnostics.push(format!("{source_label}.lark_sheet.app_id is empty"));
-    }
-    if lark_sheet.app_secret.trim().is_empty() {
-        diagnostics.push(format!("{source_label}.lark_sheet.app_secret is empty"));
-    }
-    let locator_count =
-        usize::from(lark_sheet.url.is_some()) + usize::from(lark_sheet.spreadsheet_token.is_some());
-    if locator_count != 1 {
-        diagnostics.push(format!(
-            "{source_label}.lark_sheet must set exactly one of `url` or `spreadsheet_token`"
-        ));
-    }
-    if lark_sheet
-        .url
-        .as_ref()
-        .is_some_and(|url| url.trim().is_empty())
-    {
-        diagnostics.push(format!("{source_label}.lark_sheet.url is empty"));
-    }
-    if lark_sheet
-        .spreadsheet_token
-        .as_ref()
-        .is_some_and(|token| token.trim().is_empty())
-    {
-        diagnostics.push(format!(
-            "{source_label}.lark_sheet.spreadsheet_token is empty"
-        ));
-    }
-    diagnostics
-}
-
-fn validate_outputs_collecting(outputs: &OutputsConfig) -> Vec<String> {
+fn validate_outputs_collecting(outputs: &OutputsConfig) -> Vec<ProjectDiagnostic> {
     let mut diagnostics = Vec::new();
     if let Some(data) = &outputs.data {
         if data.output_type.trim().is_empty() {
-            diagnostics.push("outputs.data.type is empty".to_string());
+            diagnostics.push(ProjectDiagnostic::new(
+                "outputs.data.type is empty",
+                ["outputs", "data", "type"],
+            ));
         }
         if let Err(err) = validate_output_dir("outputs.data.dir", &data.dir) {
-            diagnostics.push(err);
-        }
-        if data.namespace.is_some() {
-            diagnostics.push("outputs.data.namespace is only valid for code outputs".to_string());
+            diagnostics.push(ProjectDiagnostic::new(err, ["outputs", "data", "dir"]));
         }
     }
     if let Some(code) = &outputs.code {
         if code.output_type.trim().is_empty() {
-            diagnostics.push("outputs.code.type is empty".to_string());
+            diagnostics.push(ProjectDiagnostic::new(
+                "outputs.code.type is empty",
+                ["outputs", "code", "type"],
+            ));
         }
         if let Err(err) = validate_output_dir("outputs.code.dir", &code.dir) {
-            diagnostics.push(err);
-        }
-        if let Some(namespace) = &code.namespace {
-            if namespace.trim().is_empty() {
-                diagnostics.push("outputs.code.namespace is empty".to_string());
-            }
+            diagnostics.push(ProjectDiagnostic::new(err, ["outputs", "code", "dir"]));
         }
     }
     diagnostics
 }
 
-fn validate_for_codegen_collecting(outputs: &OutputsConfig) -> Vec<String> {
+fn validate_for_codegen_collecting(outputs: &OutputsConfig) -> Vec<ProjectDiagnostic> {
     let mut diagnostics = Vec::new();
     match outputs.code.as_ref() {
         Some(code) => {
             if code.output_type.trim().is_empty() {
-                diagnostics.push("coflow.yaml outputs.code.type is empty".to_string());
+                diagnostics.push(ProjectDiagnostic::new(
+                    "coflow.yaml outputs.code.type is empty",
+                    ["outputs", "code", "type"],
+                ));
             }
             if let Err(err) = validate_output_dir("outputs.code.dir", &code.dir) {
-                diagnostics.push(err);
-            }
-            if let Some(namespace) = &code.namespace {
-                if namespace.trim().is_empty() {
-                    diagnostics.push("outputs.code.namespace is empty".to_string());
-                }
+                diagnostics.push(ProjectDiagnostic::new(err, ["outputs", "code", "dir"]));
             }
         }
-        None => diagnostics.push("coflow.yaml missing outputs.code".to_string()),
+        None => diagnostics.push(ProjectDiagnostic::new(
+            "coflow.yaml missing outputs.code",
+            ["outputs", "code"],
+        )),
     }
     match outputs.data.as_ref() {
         Some(data) => {
             if data.output_type.trim().is_empty() {
-                diagnostics.push("coflow.yaml outputs.data.type is empty".to_string());
+                diagnostics.push(ProjectDiagnostic::new(
+                    "coflow.yaml outputs.data.type is empty",
+                    ["outputs", "data", "type"],
+                ));
             }
             if let Err(err) = validate_output_dir("outputs.data.dir", &data.dir) {
-                diagnostics.push(err);
+                diagnostics.push(ProjectDiagnostic::new(err, ["outputs", "data", "dir"]));
             }
         }
-        None => diagnostics.push("coflow.yaml missing outputs.data".to_string()),
+        None => diagnostics.push(ProjectDiagnostic::new(
+            "coflow.yaml missing outputs.data",
+            ["outputs", "data"],
+        )),
     }
     diagnostics
 }
@@ -909,8 +1098,245 @@ impl DiagnosticJson {
     }
 }
 
-fn diagnostics_from_messages(messages: Vec<String>) -> Vec<DiagnosticJson> {
-    messages.into_iter().map(DiagnosticJson::project).collect()
+#[must_use]
+pub fn diagnostic_set_from_cft(
+    diagnostics: Vec<CftDiagnostic>,
+    sources: &BTreeMap<String, String>,
+    paths: &BTreeMap<String, String>,
+) -> DiagnosticSet {
+    DiagnosticSet {
+        diagnostics: diagnostics
+            .into_iter()
+            .map(|diagnostic| diagnostic_from_cft(diagnostic, sources, paths))
+            .collect(),
+    }
+}
+
+fn diagnostic_from_cft(
+    diagnostic: CftDiagnostic,
+    sources: &BTreeMap<String, String>,
+    paths: &BTreeMap<String, String>,
+) -> Diagnostic {
+    Diagnostic {
+        code: diagnostic.code.as_str().to_string(),
+        stage: diagnostic.stage.to_string(),
+        severity: Severity::Error,
+        message: diagnostic.message,
+        primary: diagnostic
+            .primary
+            .as_ref()
+            .map(|label| label_from_cft(label, sources, paths)),
+        related: diagnostic
+            .related
+            .iter()
+            .map(|label| label_from_cft(label, sources, paths))
+            .collect(),
+    }
+}
+
+fn label_from_cft(
+    label: &CftLabel,
+    sources: &BTreeMap<String, String>,
+    paths: &BTreeMap<String, String>,
+) -> Label {
+    let range = cft_label_range(label, sources);
+    let path = paths
+        .get(label.module.as_str())
+        .map_or_else(|| PathBuf::from(label.module.as_str()), PathBuf::from);
+    Label {
+        location: SourceLocation::FileSpan {
+            path,
+            start_line: range.start.line,
+            start_character: range.start.character,
+            end_line: range.end.line,
+            end_character: range.end.character,
+        },
+        message: label.message.clone(),
+    }
+}
+
+#[must_use]
+pub fn diagnostic_json_from_set(diagnostics: DiagnosticSet) -> Vec<DiagnosticJson> {
+    diagnostics
+        .diagnostics
+        .into_iter()
+        .map(diagnostic_json_from_diagnostic)
+        .collect()
+}
+
+fn diagnostic_json_from_diagnostic(diagnostic: Diagnostic) -> DiagnosticJson {
+    let primary = diagnostic.primary.as_ref().map(label_location);
+    DiagnosticJson {
+        code: diagnostic.code,
+        stage: diagnostic.stage,
+        severity: severity_name(diagnostic.severity).to_string(),
+        message: diagnostic.message,
+        path: primary
+            .as_ref()
+            .map_or_else(String::new, |location| location.path.clone()),
+        sheet: primary.as_ref().and_then(|location| location.sheet.clone()),
+        cell: primary.as_ref().and_then(|location| location.cell.clone()),
+        start_line: primary.as_ref().map_or(0, |location| location.start_line),
+        start_character: primary
+            .as_ref()
+            .map_or(0, |location| location.start_character),
+        end_line: primary.as_ref().map_or(0, |location| location.end_line),
+        end_character: primary
+            .as_ref()
+            .map_or(1, |location| location.end_character),
+        related: diagnostic
+            .related
+            .iter()
+            .map(related_json_from_label)
+            .collect(),
+    }
+}
+
+fn related_json_from_label(label: &Label) -> RelatedJson {
+    let location = label_location(label);
+    RelatedJson {
+        path: location.path,
+        sheet: location.sheet,
+        cell: location.cell,
+        start_line: location.start_line,
+        start_character: location.start_character,
+        end_line: location.end_line,
+        end_character: location.end_character,
+        label: label.message.clone(),
+    }
+}
+
+#[derive(Debug)]
+struct JsonLocation {
+    path: String,
+    sheet: Option<String>,
+    cell: Option<String>,
+    start_line: usize,
+    start_character: usize,
+    end_line: usize,
+    end_character: usize,
+}
+
+fn label_location(label: &Label) -> JsonLocation {
+    match &label.location {
+        SourceLocation::FileSpan {
+            path,
+            start_line,
+            start_character,
+            end_line,
+            end_character,
+        } => JsonLocation {
+            path: path.display().to_string(),
+            sheet: None,
+            cell: None,
+            start_line: *start_line,
+            start_character: *start_character,
+            end_line: *end_line,
+            end_character: *end_character,
+        },
+        SourceLocation::TableCell {
+            path,
+            sheet,
+            row,
+            column,
+        } => JsonLocation {
+            path: path.display().to_string(),
+            sheet: sheet.clone(),
+            cell: Some(excel_cell(*row, *column)),
+            start_line: row.saturating_sub(1),
+            start_character: column.saturating_sub(1),
+            end_line: row.saturating_sub(1),
+            end_character: *column,
+        },
+        SourceLocation::RemoteCell {
+            document,
+            sheet,
+            row,
+            column,
+        } => JsonLocation {
+            path: document.clone(),
+            sheet: sheet.clone(),
+            cell: (*row > 0 && *column > 0).then(|| excel_cell(*row, *column)),
+            start_line: row.saturating_sub(1),
+            start_character: column.saturating_sub(1),
+            end_line: row.saturating_sub(1),
+            end_character: (*column).max(1),
+        },
+        SourceLocation::ProjectConfig { path, .. } | SourceLocation::Artifact { path } => {
+            JsonLocation {
+                path: path.display().to_string(),
+                sheet: None,
+                cell: None,
+                start_line: 0,
+                start_character: 0,
+                end_line: 0,
+                end_character: 1,
+            }
+        }
+    }
+}
+
+const fn severity_name(severity: Severity) -> &'static str {
+    match severity {
+        Severity::Error => "error",
+        Severity::Warning => "warning",
+        Severity::Info => "info",
+    }
+}
+
+fn excel_cell(row: usize, column: usize) -> String {
+    format!("{}{}", excel_column_name(column), row)
+}
+
+fn excel_column_name(column: usize) -> String {
+    let mut value = column;
+    let mut name = Vec::new();
+    while value > 0 {
+        value -= 1;
+        #[allow(clippy::cast_possible_truncation)]
+        let offset = (value % 26) as u8;
+        name.push((b'A' + offset) as char);
+        value /= 26;
+    }
+    name.iter().rev().collect()
+}
+
+fn project_diagnostics_to_set(
+    config_path: &Path,
+    diagnostics: Vec<ProjectDiagnostic>,
+) -> DiagnosticSet {
+    DiagnosticSet {
+        diagnostics: diagnostics
+            .into_iter()
+            .map(|diagnostic| project_diagnostic(config_path, diagnostic))
+            .collect(),
+    }
+}
+
+fn project_diagnostic(config_path: &Path, diagnostic: ProjectDiagnostic) -> Diagnostic {
+    Diagnostic {
+        code: "PROJECT-001".to_string(),
+        stage: PROJECT_DIAGNOSTIC_STAGE.to_string(),
+        severity: Severity::Error,
+        message: diagnostic.message,
+        primary: Some(Label {
+            location: SourceLocation::ProjectConfig {
+                path: config_path.to_path_buf(),
+                key_path: diagnostic.key_path,
+            },
+            message: None,
+        }),
+        related: Vec::new(),
+    }
+}
+
+fn join_diagnostic_messages(diagnostics: DiagnosticSet) -> String {
+    diagnostics
+        .diagnostics
+        .into_iter()
+        .map(|diagnostic| diagnostic.message)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[derive(Debug, Serialize)]

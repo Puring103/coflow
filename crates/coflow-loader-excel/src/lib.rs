@@ -27,13 +27,15 @@ use coflow_api::table::{
 };
 use coflow_api::{
     DataLoader, Diagnostic, DiagnosticSet, Label, LoadContext, LoadedRecords, LoaderDescriptor,
-    ProbeResult, SourceLocation, SourceRef, SourceSpec,
+    ProbeResult, ProjectSourceRef, ResolvedSource, SourceLocation, SourceLocationSpec,
+    SourceResolveContext,
 };
 use coflow_cft::CftContainer;
 use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdInputRecord};
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 const DEFAULT_KEY_COLUMN: &str = "id";
 
@@ -650,7 +652,7 @@ pub const EXCEL_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
     display_name: "Excel workbook",
     extensions: &["xlsx", "xlsm", "xls"],
     uri_schemes: &[],
-    config_keys: &["sheets"],
+    option_keys: &["sheets"],
 };
 
 impl DataLoader for ExcelLoader {
@@ -658,41 +660,69 @@ impl DataLoader for ExcelLoader {
         &EXCEL_LOADER_DESCRIPTOR
     }
 
-    fn probe(&self, source: &SourceRef<'_>) -> ProbeResult {
+    fn probe(&self, source: &ProjectSourceRef<'_>) -> ProbeResult {
         if source.source_type == Some(EXCEL_LOADER_DESCRIPTOR.id) {
             return ProbeResult::certain();
         }
-        if source
-            .path
-            .and_then(|path| path.extension())
-            .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| {
-                EXCEL_LOADER_DESCRIPTOR
-                    .extensions
-                    .iter()
-                    .any(|candidate| candidate == &ext)
-            })
-        {
+        if matches!(
+            source.location,
+            SourceLocationSpec::Path(path)
+                if path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(|ext| EXCEL_LOADER_DESCRIPTOR.extensions.contains(&ext))
+        ) {
             ProbeResult::likely()
         } else {
             ProbeResult::none()
         }
     }
 
+    fn resolve(
+        &self,
+        _ctx: SourceResolveContext<'_>,
+        source: &ResolvedSource,
+    ) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &source.location else {
+            if source.provider_id == EXCEL_LOADER_DESCRIPTOR.id {
+                return Err(DiagnosticSet::one(Diagnostic::error(
+                    "EXCEL-SOURCE",
+                    "EXCEL",
+                    "excel source requires `path`",
+                )));
+            }
+            return Ok(Vec::new());
+        };
+        if path.is_dir() {
+            return collect_excel_sources(path, source);
+        }
+        if is_excel_path(path) {
+            return Ok(vec![source.clone()]);
+        }
+        Err(DiagnosticSet::one(Diagnostic::error(
+            "EXCEL-SOURCE",
+            "EXCEL",
+            format!(
+                "source file `{}` has unsupported extension",
+                source.display_name
+            ),
+        )))
+    }
+
     fn load(
         &self,
         ctx: LoadContext<'_>,
-        source: &SourceSpec,
+        source: &ResolvedSource,
     ) -> Result<LoadedRecords, DiagnosticSet> {
-        let Some(file) = source.file.clone() else {
+        let SourceLocationSpec::Path(file) = &source.location else {
             return Err(DiagnosticSet::one(Diagnostic::error(
                 "EXCEL-SOURCE",
                 "EXCEL",
-                "excel source requires `file`",
+                "excel source requires `path`",
             )));
         };
         let sheets = excel_sheets_from_options(&source.options)?;
-        let excel_source = ExcelSource::new(file, sheets);
+        let excel_source = ExcelSource::new(file.clone(), sheets);
         collect_input_records(ctx.schema, &[excel_source])
             .map(|loaded| LoadedRecords {
                 records: loaded.records,
@@ -734,11 +764,32 @@ fn excel_sheet_from_value(value: &Value) -> Result<ExcelSheet, DiagnosticSet> {
             "excel source sheet config requires `sheet`",
         )));
     };
+    if sheet_name.trim().is_empty() {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "EXCEL-SOURCE",
+            "EXCEL",
+            "excel source sheet `sheet` is empty",
+        )));
+    }
     let mut sheet = ExcelSheet::new(sheet_name);
-    if let Some(type_name) = object.get("type").and_then(Value::as_str) {
+    if let Some(type_name) = optional_string_field(object, "type", "excel source sheet `type`")? {
+        if type_name.trim().is_empty() {
+            return Err(DiagnosticSet::one(Diagnostic::error(
+                "EXCEL-SOURCE",
+                "EXCEL",
+                "excel source sheet `type` is empty",
+            )));
+        }
         sheet = sheet.with_type(type_name);
     }
-    if let Some(key) = object.get("key").and_then(Value::as_str) {
+    if let Some(key) = optional_string_field(object, "key", "excel source sheet `key`")? {
+        if key.trim().is_empty() {
+            return Err(DiagnosticSet::one(Diagnostic::error(
+                "EXCEL-SOURCE",
+                "EXCEL",
+                "excel source sheet `key` is empty",
+            )));
+        }
         sheet = sheet.with_key(key);
     }
     if let Some(columns) = object.get("columns") {
@@ -749,12 +800,96 @@ fn excel_sheet_from_value(value: &Value) -> Result<ExcelSheet, DiagnosticSet> {
                 "excel source sheet `columns` must be an object",
             )));
         };
-        sheet =
-            sheet.with_columns(columns.iter().filter_map(|(source, field)| {
-                field.as_str().map(|field| (source.as_str(), field))
-            }));
+        let mut parsed_columns = Vec::new();
+        for (source, field) in columns {
+            let Some(field) = field.as_str() else {
+                return Err(DiagnosticSet::one(Diagnostic::error(
+                    "EXCEL-SOURCE",
+                    "EXCEL",
+                    format!("excel source sheet column `{source}` must map to a string field"),
+                )));
+            };
+            if source.trim().is_empty() {
+                return Err(DiagnosticSet::one(Diagnostic::error(
+                    "EXCEL-SOURCE",
+                    "EXCEL",
+                    "excel source sheet column name is empty",
+                )));
+            }
+            if field.trim().is_empty() {
+                return Err(DiagnosticSet::one(Diagnostic::error(
+                    "EXCEL-SOURCE",
+                    "EXCEL",
+                    format!("excel source sheet column `{source}` maps to an empty field"),
+                )));
+            }
+            parsed_columns.push((source.as_str(), field));
+        }
+        sheet = sheet.with_columns(parsed_columns);
     }
     Ok(sheet)
+}
+
+fn collect_excel_sources(
+    dir: &Path,
+    source: &ResolvedSource,
+) -> Result<Vec<ResolvedSource>, DiagnosticSet> {
+    let mut entries = fs::read_dir(dir)
+        .map_err(|err| {
+            DiagnosticSet::one(Diagnostic::error(
+                "EXCEL-SOURCE",
+                "EXCEL",
+                format!("failed to read data source dir `{}`: {err}", dir.display()),
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| {
+            DiagnosticSet::one(Diagnostic::error(
+                "EXCEL-SOURCE",
+                "EXCEL",
+                format!("failed to read data source dir `{}`: {err}", dir.display()),
+            ))
+        })?;
+    entries.sort_by_key(fs::DirEntry::path);
+
+    let mut sources = Vec::new();
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            sources.extend(collect_excel_sources(&path, source)?);
+        } else if is_excel_path(&path) {
+            sources.push(ResolvedSource {
+                provider_id: EXCEL_LOADER_DESCRIPTOR.id.to_string(),
+                display_name: path.display().to_string(),
+                location: SourceLocationSpec::Path(path),
+                options: source.options.clone(),
+            });
+        }
+    }
+    Ok(sources)
+}
+
+fn is_excel_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| EXCEL_LOADER_DESCRIPTOR.extensions.contains(&ext))
+}
+
+fn optional_string_field<'a>(
+    object: &'a serde_json::Map<String, Value>,
+    key: &str,
+    label: &str,
+) -> Result<Option<&'a str>, DiagnosticSet> {
+    let Some(value) = object.get(key) else {
+        return Ok(None);
+    };
+    value.as_str().map(Some).ok_or_else(|| {
+        DiagnosticSet::one(Diagnostic::error(
+            "EXCEL-SOURCE",
+            "EXCEL",
+            format!("{label} must be a string"),
+        ))
+    })
 }
 
 fn excel_diagnostics_to_api(err: ExcelDiagnostics) -> DiagnosticSet {
@@ -798,5 +933,61 @@ impl ExcelOrigins {
     #[must_use]
     pub fn to_origin_map(&self) -> coflow_api::OriginMap {
         self.inner.to_origin_map()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::panic)]
+
+    use super::*;
+    use serde_json::json;
+    use std::path::Path;
+
+    #[test]
+    fn rejects_empty_sheet_name_in_options() {
+        let Err(err) = excel_sheets_from_options(&json!({
+            "sheets": [
+                {
+                    "sheet": "",
+                    "columns": {
+                        "A": "id"
+                    }
+                }
+            ]
+        })) else {
+            panic!("empty sheet should fail");
+        };
+
+        assert!(err
+            .iter()
+            .any(|diagnostic| diagnostic.message == "excel source sheet `sheet` is empty"));
+    }
+
+    #[test]
+    fn explicit_excel_loader_rejects_url_source() {
+        let loader = ExcelLoader;
+        let schema = CftContainer::new();
+        let source = ResolvedSource {
+            provider_id: EXCEL_LOADER_DESCRIPTOR.id.to_string(),
+            location: SourceLocationSpec::Uri("https://example.test/configs.xlsx".to_string()),
+            options: json!({}),
+            display_name: "https://example.test/configs.xlsx".to_string(),
+        };
+
+        let Err(err) = loader.resolve(
+            SourceResolveContext {
+                project_root: Path::new("."),
+                schema: &schema,
+            },
+            &source,
+        ) else {
+            panic!("excel url source should fail");
+        };
+
+        assert!(err
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("excel source requires `path`")));
     }
 }

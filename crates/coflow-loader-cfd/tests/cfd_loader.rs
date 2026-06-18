@@ -6,10 +6,16 @@
     clippy::unwrap_used
 )]
 
+use coflow_api::{
+    DataLoader, LoadContext, ResolvedSource, SourceLocation, SourceLocationSpec,
+    SourceResolveContext,
+};
 use coflow_cft::{CftContainer, ModuleId};
+use coflow_data_model::CfdDataModel;
 use coflow_data_model::{CfdInputRefIndex, CfdInputValue, CfdRefPathSegment, CfdValue};
 use coflow_loader_cfd::{
-    load_cfd_model, parse_cfd_input_records, CfdTextErrorCode, CfdTextLoadError,
+    load_cfd_model, parse_cfd_input_records, CfdLoader, CfdTextErrorCode, CfdTextLoadError,
+    CFD_LOADER_DESCRIPTOR,
 };
 use std::fs;
 use std::path::Path;
@@ -493,6 +499,91 @@ fn cfd_rejects_check_blocks_as_data_syntax() {
     .expect_err("check blocks are not CFD data syntax");
 
     assert_has_text_code(&err, CfdTextErrorCode::Syntax);
+}
+
+#[test]
+fn explicit_cfd_loader_rejects_url_source() -> TestResult {
+    let schema = CftContainer::new();
+    let source = ResolvedSource {
+        provider_id: CFD_LOADER_DESCRIPTOR.id.to_string(),
+        location: SourceLocationSpec::Uri("https://example.test/items.cfd".to_string()),
+        options: serde_json::Value::default(),
+        display_name: "https://example.test/items.cfd".to_string(),
+    };
+
+    let err = CfdLoader
+        .resolve(
+            SourceResolveContext {
+                project_root: Path::new("."),
+                schema: &schema,
+            },
+            &source,
+        )
+        .expect_err("cfd url source should fail");
+
+    if err
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.message.contains("cfd source requires `path`"))
+    {
+        Ok(())
+    } else {
+        Err(format!("unexpected diagnostics: {err:?}").into())
+    }
+}
+
+#[test]
+fn loader_file_origins_preserve_record_text_spans() -> TestResult {
+    let schema = compile_schema("type Item { value: int; }");
+    let root = std::env::temp_dir().join("coflow-cfd-loader-origin-spans");
+    if root.exists() {
+        fs::remove_dir_all(&root)?;
+    }
+    fs::create_dir_all(&root)?;
+    let source_path = root.join("items.cfd");
+    fs::write(
+        &source_path,
+        "first: Item { value: 1 }\n\nsecond: Item {\n}\n",
+    )?;
+
+    let cfd_loader = CfdLoader;
+    let loaded = cfd_loader
+        .load(
+            LoadContext {
+                project_root: &root,
+                schema: &schema,
+            },
+            &ResolvedSource {
+                provider_id: "cfd".to_string(),
+                location: SourceLocationSpec::Path(source_path.clone()),
+                options: serde_json::Value::default(),
+                display_name: source_path.display().to_string(),
+            },
+        )
+        .map_err(|diagnostics| format!("{diagnostics:?}"))?;
+    let mut builder = CfdDataModel::builder(&schema);
+    for record in loaded.records {
+        builder.add_input_record(record);
+    }
+    let err = builder.build().expect_err("second record is missing value");
+    let mapped = loaded.origins.map_diagnostics(err);
+    let primary = mapped
+        .diagnostics
+        .first()
+        .and_then(|diagnostic| diagnostic.primary.as_ref())
+        .ok_or("expected mapped primary label")?;
+
+    assert_eq!(
+        primary.location,
+        SourceLocation::FileSpan {
+            path: source_path,
+            start_line: 2,
+            start_character: 0,
+            end_line: 3,
+            end_character: 1,
+        }
+    );
+    Ok(())
 }
 
 #[test]
