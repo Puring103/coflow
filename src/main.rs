@@ -11,6 +11,7 @@
         clippy::unwrap_used
     )
 )]
+#![allow(clippy::multiple_crate_versions)]
 
 use clap::{Args, Parser, Subcommand};
 use coflow_cft::CftDiagnostic;

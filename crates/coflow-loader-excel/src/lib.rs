@@ -19,17 +19,18 @@
 #![allow(clippy::missing_const_for_fn)]
 
 use calamine::{open_workbook_auto, Data, Reader};
-use coflow_cell_value::{parse_cell, CellValueDiagnostics, ParsedCell};
-use coflow_cft::{record_key_ident_error, CftContainer};
-use coflow_data_model::{
-    CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdInputRecord, CfdInputValue, CfdLabel, CfdPath,
-    CfdPathSegment,
+use coflow_cft::CftContainer;
+use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdInputRecord};
+pub use coflow_loader_table::TableSheet;
+use coflow_loader_table::{
+    collect_table_input_records as collect_shared_table_input_records, load_table,
+    load_table_model, TableDiagnostic, TableDiagnostics, TableLabel, TableLoadOutput,
+    TableLocation, TableOrigins, TableSheetConfig, TableSource as SharedTableSource,
 };
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-const IMPORT_CONTROL_COLUMN: &str = "#";
-const SKIP_IMPORT_ROW_MARKER: &str = "##";
+const DEFAULT_KEY_COLUMN: &str = "id";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExcelSource {
@@ -51,6 +52,7 @@ impl ExcelSource {
 pub struct ExcelSheet {
     pub sheet: String,
     pub type_name: Option<String>,
+    pub key: Option<String>,
     pub columns: BTreeMap<String, String>,
 }
 
@@ -60,6 +62,7 @@ impl ExcelSheet {
         Self {
             sheet: sheet.into(),
             type_name: None,
+            key: None,
             columns: BTreeMap::new(),
         }
     }
@@ -67,6 +70,12 @@ impl ExcelSheet {
     #[must_use]
     pub fn with_type(mut self, type_name: impl Into<String>) -> Self {
         self.type_name = Some(type_name.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
         self
     }
 
@@ -86,6 +95,27 @@ impl ExcelSheet {
     pub fn type_name(&self) -> &str {
         self.type_name.as_deref().map_or(&self.sheet, |name| name)
     }
+
+    #[must_use]
+    pub fn key_column(&self) -> &str {
+        self.key.as_deref().map_or(DEFAULT_KEY_COLUMN, |key| key)
+    }
+}
+
+impl From<ExcelSheet> for TableSheetConfig {
+    fn from(sheet: ExcelSheet) -> Self {
+        let mut out = Self::new(sheet.sheet);
+        if let Some(type_name) = sheet.type_name {
+            out = out.with_type(type_name);
+        }
+        if let Some(key) = sheet.key {
+            out = out.with_key(key);
+        }
+        if !sheet.columns.is_empty() {
+            out = out.with_columns(sheet.columns);
+        }
+        out
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -94,15 +124,58 @@ pub struct ExcelLoadOutput {
     pub check_diagnostics: Option<ExcelDiagnostics>,
 }
 
+impl From<TableLoadOutput> for ExcelLoadOutput {
+    fn from(output: TableLoadOutput) -> Self {
+        Self {
+            model: output.model,
+            check_diagnostics: output.check_diagnostics.map(ExcelDiagnostics::from),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExcelDiagnostics {
     pub diagnostics: Vec<ExcelDiagnostic>,
+}
+
+impl From<TableDiagnostics> for ExcelDiagnostics {
+    fn from(diagnostics: TableDiagnostics) -> Self {
+        Self {
+            diagnostics: diagnostics
+                .diagnostics
+                .into_iter()
+                .map(ExcelDiagnostic::from)
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct ExcelInputRecords {
     pub records: Vec<CfdInputRecord>,
     pub origins: ExcelOrigins,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableSource {
+    pub name: PathBuf,
+    pub sheets: Vec<TableSheet>,
+    pub configs: Vec<ExcelSheet>,
+}
+
+impl TableSource {
+    #[must_use]
+    pub fn new(
+        name: impl Into<PathBuf>,
+        sheets: Vec<TableSheet>,
+        configs: Vec<ExcelSheet>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            sheets,
+            configs,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,79 +188,58 @@ pub struct ExcelDiagnostic {
     pub related: Vec<ExcelLabel>,
 }
 
+impl ExcelDiagnostic {
+    #[must_use]
+    pub fn excel(
+        code: impl Into<String>,
+        stage: impl Into<String>,
+        message: impl Into<String>,
+        location: ExcelLocation,
+    ) -> Self {
+        Self {
+            code: code.into(),
+            stage: stage.into(),
+            message: message.into(),
+            source: None,
+            primary: Some(ExcelLabel {
+                location,
+                message: None,
+            }),
+            related: Vec::new(),
+        }
+    }
+}
+
+impl From<TableDiagnostic> for ExcelDiagnostic {
+    fn from(diagnostic: TableDiagnostic) -> Self {
+        Self {
+            code: table_code_to_excel(&diagnostic.code),
+            stage: table_stage_to_excel(&diagnostic.stage),
+            message: table_message_to_excel(&diagnostic.message),
+            source: diagnostic.source,
+            primary: diagnostic.primary.map(ExcelLabel::from),
+            related: diagnostic
+                .related
+                .into_iter()
+                .map(ExcelLabel::from)
+                .collect(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExcelLabel {
     pub location: ExcelLocation,
     pub message: Option<String>,
 }
 
-#[derive(Debug)]
-pub enum ExcelLoadError {
-    OpenWorkbook {
-        file: PathBuf,
-        message: String,
-    },
-    ReadSheet {
-        location: Box<ExcelLocation>,
-        message: String,
-    },
-    MissingSheet {
-        file: PathBuf,
-        sheet: String,
-    },
-    EmptySheet {
-        location: Box<ExcelLocation>,
-    },
-    UnknownType {
-        location: Box<ExcelLocation>,
-        type_name: String,
-    },
-    UnknownColumn {
-        location: Box<ExcelLocation>,
-        type_name: String,
-        column: String,
-        field: String,
-    },
-    DuplicateFieldColumn {
-        location: Box<ExcelLocation>,
-        field: String,
-        first_column: String,
-        duplicate_column: String,
-    },
-    MissingIdColumn {
-        location: Box<ExcelLocation>,
-        type_name: String,
-    },
-    DuplicateIdColumn {
-        location: Box<ExcelLocation>,
-        first_column: String,
-        duplicate_column: String,
-    },
-    UnexpectedExpandHeader {
-        location: Box<ExcelLocation>,
-        parent_field: String,
-        expected_field: String,
-        header: String,
-    },
-    EmptyIdCell {
-        location: Box<ExcelLocation>,
-    },
-    InvalidIdCell {
-        location: Box<ExcelLocation>,
-        key: String,
-        reason: String,
-    },
-    CellParse {
-        location: Box<ExcelLocation>,
-        type_name: String,
-        field: String,
-        diagnostics: CellValueDiagnostics,
-    },
-    UnsupportedCellValue {
-        location: Box<ExcelLocation>,
-        kind: String,
-    },
-    DataModel(ExcelDiagnostics),
+impl From<TableLabel> for ExcelLabel {
+    fn from(label: TableLabel) -> Self {
+        Self {
+            location: ExcelLocation::from(label.location),
+            message: label.message,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -235,6 +287,50 @@ impl ExcelLocation {
     }
 }
 
+impl From<TableLocation> for ExcelLocation {
+    fn from(location: TableLocation) -> Self {
+        Self {
+            file: location.file,
+            sheet: location.sheet,
+            row: location.row,
+            column: location.column,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ExcelOrigins {
+    inner: TableOrigins,
+}
+
+impl ExcelOrigins {
+    #[must_use]
+    pub fn record_count(&self) -> usize {
+        self.inner.record_count()
+    }
+
+    pub fn extend(&mut self, other: Self) {
+        self.inner.extend(other.inner);
+    }
+
+    #[must_use]
+    pub fn map_label_with_record_offset(
+        &self,
+        label: &coflow_data_model::CfdLabel,
+        record_offset: usize,
+    ) -> Option<ExcelLabel> {
+        self.inner
+            .map_label_with_record_offset(label, record_offset)
+            .map(ExcelLabel::from)
+    }
+}
+
+impl From<TableOrigins> for ExcelOrigins {
+    fn from(inner: TableOrigins) -> Self {
+        Self { inner }
+    }
+}
+
 /// Loads configured Excel sheets into a validated data model without running
 /// CFT `check` blocks.
 ///
@@ -248,14 +344,8 @@ pub fn load_excel_model(
     schema: &CftContainer,
     sources: &[ExcelSource],
 ) -> Result<CfdDataModel, ExcelDiagnostics> {
-    let loaded = collect_input_records(schema, sources)?;
-    let mut builder = CfdDataModel::builder(schema);
-    for record in loaded.records {
-        builder.add_input_record(record);
-    }
-    builder
-        .build()
-        .map_err(|diagnostics| loaded.origins.map(diagnostics))
+    let table_sources = table_sources_from_excel(sources)?;
+    load_table_model(schema, &table_sources).map_err(ExcelDiagnostics::from)
 }
 
 /// Loads configured Excel sheets and runs CFT `check` blocks against the model.
@@ -270,24 +360,12 @@ pub fn load_excel(
     schema: &CftContainer,
     sources: &[ExcelSource],
 ) -> Result<ExcelLoadOutput, ExcelDiagnostics> {
-    let loaded = collect_input_records(schema, sources)?;
-    let mut builder = CfdDataModel::builder(schema);
-    for record in loaded.records {
-        builder.add_input_record(record);
-    }
-    let model = builder
-        .build()
-        .map_err(|diagnostics| loaded.origins.clone().map(diagnostics))?;
-    let check_diagnostics = coflow_checker::run_checks(schema, &model)
-        .err()
-        .map(|diagnostics| loaded.origins.map(diagnostics));
-    Ok(ExcelLoadOutput {
-        model,
-        check_diagnostics,
-    })
+    let table_sources = table_sources_from_excel(sources)?;
+    load_table(schema, &table_sources)
+        .map(ExcelLoadOutput::from)
+        .map_err(ExcelDiagnostics::from)
 }
 
-#[allow(clippy::too_many_lines)]
 /// Loads configured Excel sources into input records without building a data model.
 ///
 /// # Errors
@@ -298,894 +376,168 @@ pub fn collect_input_records(
     schema: &CftContainer,
     sources: &[ExcelSource],
 ) -> Result<ExcelInputRecords, ExcelDiagnostics> {
-    let mut records = Vec::new();
-    let mut origins = ExcelOrigins::default();
+    let table_sources = table_sources_from_excel(sources)?;
+    collect_shared_table_input_records(schema, &table_sources)
+        .map(|loaded| ExcelInputRecords {
+            records: loaded.records,
+            origins: ExcelOrigins::from(loaded.origins),
+        })
+        .map_err(ExcelDiagnostics::from)
+}
+
+/// Loads already-read table sources into input records without building a data model.
+///
+/// This is the shared Excel-like path used by local workbooks and remote sheet
+/// providers. Source readers own I/O and convert cells to strings before
+/// calling this function.
+///
+/// # Errors
+///
+/// Returns diagnostics when sheets, headers, or cells cannot be loaded
+/// according to the schema.
+pub fn collect_table_input_records(
+    schema: &CftContainer,
+    sources: &[TableSource],
+) -> Result<ExcelInputRecords, ExcelDiagnostics> {
+    let shared_sources = sources
+        .iter()
+        .cloned()
+        .map(shared_table_source_from_excel_table_source)
+        .collect::<Vec<_>>();
+    collect_shared_table_input_records(schema, &shared_sources)
+        .map(|loaded| ExcelInputRecords {
+            records: loaded.records,
+            origins: ExcelOrigins::from(loaded.origins),
+        })
+        .map_err(ExcelDiagnostics::from)
+}
+
+fn table_sources_from_excel(
+    sources: &[ExcelSource],
+) -> Result<Vec<SharedTableSource>, ExcelDiagnostics> {
+    let mut table_sources = Vec::new();
     let mut diagnostics = Vec::new();
     for source in sources {
-        let mut workbook = match open_workbook_auto(&source.file) {
-            Ok(workbook) => workbook,
-            Err(err) => {
-                diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::OpenWorkbook {
-                    file: source.file.clone(),
-                    message: err.to_string(),
-                }));
-                continue;
-            }
-        };
-        let sheet_names = workbook.sheet_names();
-
-        let configured_sheets = if source.sheets.is_empty() {
-            sheet_names
-                .iter()
-                .map(|sheet| ExcelSheet::new(sheet.clone()))
-                .collect::<Vec<_>>()
-        } else {
-            source.sheets.clone()
-        };
-
-        for sheet in &configured_sheets {
-            let type_name = sheet.type_name();
-            let Some(fields) = full_field_types(schema, type_name) else {
-                diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::UnknownType {
-                    location: Box::new(
-                        ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()),
-                    ),
-                    type_name: type_name.to_string(),
-                }));
-                continue;
-            };
-
-            if !sheet_names.iter().any(|name| name == &sheet.sheet) {
-                diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::MissingSheet {
-                    file: source.file.clone(),
-                    sheet: sheet.sheet.clone(),
-                }));
-                continue;
-            }
-
-            let range = match workbook.worksheet_range(&sheet.sheet) {
-                Ok(range) => range,
-                Err(err) => {
-                    diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::ReadSheet {
-                        location: Box::new(
-                            ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()),
-                        ),
-                        message: err.to_string(),
-                    }));
-                    continue;
-                }
-            };
-
-            if range.is_empty() {
-                diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::EmptySheet {
-                    location: Box::new(
-                        ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()),
-                    ),
-                }));
-                continue;
-            }
-
-            let (range_start_row, range_start_col) = range.start().unwrap_or((0, 0));
-            let header_excel_row = range_start_row as usize + 1;
-            let header_excel_col = range_start_col as usize + 1;
-            let mut rows = range.rows();
-            let Some(header_row) = rows.next() else {
-                diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::MissingSheet {
-                    file: source.file.clone(),
-                    sheet: sheet.sheet.clone(),
-                }));
-                continue;
-            };
-
-            let resolved = match resolve_columns(
-                schema,
-                source,
-                sheet,
-                type_name,
-                &fields,
-                header_row,
-                header_excel_row,
-                header_excel_col,
-            ) {
-                Ok(resolved) => resolved,
-                Err(sheet_diagnostics) => {
-                    diagnostics.extend(sheet_diagnostics.diagnostics);
-                    continue;
-                }
-            };
-            let columns = resolved.columns;
-            let id_column = resolved.id_column;
-            for (zero_based_data_row, row) in rows.enumerate() {
-                if should_skip_import_row(row, resolved.control_column) {
-                    continue;
-                }
-                if is_empty_mapped_row(row, &columns, &id_column) {
-                    continue;
-                }
-                let excel_row = range_start_row as usize + zero_based_data_row + 2;
-                let mut input_fields = BTreeMap::new();
-                let row_diagnostic_start = diagnostics.len();
-                let id_location = ExcelLocation::new(source.file.clone())
-                    .sheet(sheet.sheet.clone())
-                    .cell(excel_row, id_column.excel_column);
-                let record_key = cell_text(
-                    row.get(id_column.index),
-                    id_location.clone(),
-                    &mut diagnostics,
-                )
-                .map(|text| text.trim().to_string());
-                if record_key.as_deref().is_none_or(str::is_empty) {
-                    diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::EmptyIdCell {
-                        location: Box::new(id_location),
-                    }));
-                } else if let Some(key) = record_key.as_deref() {
-                    if let Some(reason) = record_key_ident_error(key) {
-                        diagnostics.extend(excel_load_error_diagnostics(
-                            ExcelLoadError::InvalidIdCell {
-                                location: Box::new(id_location),
-                                key: key.to_string(),
-                                reason,
-                            },
-                        ));
-                    }
-                }
-                for column in &columns {
-                    if let Some(children) = &column.expand {
-                        let Some(nested) = build_expanded_object(
-                            schema,
-                            source,
-                            sheet,
-                            type_name,
-                            column,
-                            children,
-                            row,
-                            excel_row,
-                            &mut diagnostics,
-                        ) else {
-                            continue;
-                        };
-                        input_fields.insert(column.field.clone(), nested);
-                        continue;
-                    }
-                    let location = ExcelLocation::new(source.file.clone())
-                        .sheet(sheet.sheet.clone())
-                        .cell(excel_row, column.excel_column);
-                    let Some(text) =
-                        cell_text(row.get(column.index), location.clone(), &mut diagnostics)
-                    else {
-                        continue;
-                    };
-                    let parsed = match parse_cell(schema, &column.field_type, &text) {
-                        Ok(parsed) => parsed,
-                        Err(err) => {
-                            diagnostics.extend(excel_load_error_diagnostics(
-                                ExcelLoadError::CellParse {
-                                    location: Box::new(location),
-                                    type_name: type_name.to_string(),
-                                    field: column.field.clone(),
-                                    diagnostics: err,
-                                },
-                            ));
-                            continue;
-                        }
-                    };
-                    if let ParsedCell::Value(value) = parsed {
-                        input_fields.insert(column.field.clone(), value);
-                    }
-                }
-                if diagnostics.len() != row_diagnostic_start {
-                    continue;
-                }
-                origins.push(ExcelRecordOrigin::new(
-                    source.file.clone(),
-                    sheet.sheet.clone(),
-                    excel_row,
-                    &columns,
-                    id_column.excel_column,
-                ));
-                if let Some(record_key) = record_key {
-                    records.push(CfdInputRecord::new(record_key, type_name, input_fields));
-                }
-            }
+        match table_source_from_excel(source) {
+            Ok(table_source) => table_sources.push(table_source),
+            Err(err) => diagnostics.extend(err.diagnostics),
         }
     }
     if diagnostics.is_empty() {
-        Ok(ExcelInputRecords { records, origins })
+        Ok(table_sources)
     } else {
         Err(ExcelDiagnostics { diagnostics })
     }
 }
 
-impl ExcelDiagnostic {
-    #[must_use]
-    pub fn excel(
-        code: impl Into<String>,
-        stage: impl Into<String>,
-        message: impl Into<String>,
-        location: ExcelLocation,
-    ) -> Self {
-        Self {
-            code: code.into(),
-            stage: stage.into(),
-            message: message.into(),
-            source: None,
-            primary: Some(ExcelLabel {
-                location,
-                message: None,
-            }),
-            related: Vec::new(),
-        }
-    }
-}
-
-#[allow(clippy::too_many_lines)]
-fn excel_load_error_diagnostics(err: ExcelLoadError) -> Vec<ExcelDiagnostic> {
-    match err {
-        ExcelLoadError::OpenWorkbook { file, message } => vec![ExcelDiagnostic::excel(
-            "EXCEL-OPEN",
-            "EXCEL",
-            format!("failed to open workbook `{}`: {message}", file.display()),
-            ExcelLocation::new(file),
-        )],
-        ExcelLoadError::ReadSheet { location, message } => vec![ExcelDiagnostic::excel(
-            "EXCEL-SHEET",
-            "EXCEL",
-            message,
-            *location,
-        )],
-        ExcelLoadError::MissingSheet { file, sheet } => vec![ExcelDiagnostic::excel(
-            "EXCEL-SHEET",
-            "EXCEL",
-            format!("workbook `{}` is missing sheet `{sheet}`", file.display()),
-            ExcelLocation::new(file).sheet(sheet),
-        )],
-        ExcelLoadError::EmptySheet { location } => vec![ExcelDiagnostic::excel(
-            "EXCEL-SHEET",
-            "EXCEL",
-            "sheet is empty",
-            *location,
-        )],
-        ExcelLoadError::UnknownType {
-            location,
-            type_name,
-        } => vec![ExcelDiagnostic::excel(
-            "EXCEL-TYPE",
-            "EXCEL",
-            format!("unknown CFT type `{type_name}`"),
-            *location,
-        )],
-        ExcelLoadError::UnknownColumn {
-            location,
-            type_name,
-            column,
-            field,
-        } => vec![ExcelDiagnostic::excel(
-            "EXCEL-COLUMN",
-            "EXCEL",
-            format!("column `{column}` maps to unknown field `{field}` on type `{type_name}`"),
-            *location,
-        )],
-        ExcelLoadError::DuplicateFieldColumn {
-            location,
-            field,
-            first_column,
-            duplicate_column,
-        } => vec![ExcelDiagnostic::excel(
-            "EXCEL-COLUMN",
-            "EXCEL",
-            format!("field `{field}` is mapped by both `{first_column}` and `{duplicate_column}`"),
-            *location,
-        )],
-        ExcelLoadError::MissingIdColumn {
-            location,
-            type_name,
-        } => vec![ExcelDiagnostic::excel(
-            "EXCEL-ID",
-            "EXCEL",
-            format!("sheet for type `{type_name}` must contain an `id` column"),
-            *location,
-        )],
-        ExcelLoadError::DuplicateIdColumn {
-            location,
-            first_column,
-            duplicate_column,
-        } => vec![ExcelDiagnostic::excel(
-            "EXCEL-COLUMN",
-            "EXCEL",
-            format!(
-                "special `id` column is mapped by both `{first_column}` and `{duplicate_column}`"
-            ),
-            *location,
-        )],
-        ExcelLoadError::UnexpectedExpandHeader {
-            location,
-            parent_field,
-            expected_field,
-            header,
-        } => vec![ExcelDiagnostic::excel(
-            "EXCEL-COLUMN",
-            "EXCEL",
-            format!(
-                "@expand field `{parent_field}` expected adjacent column for inner field `{expected_field}` to have an empty header, got `{header}`"
-            ),
-            *location,
-        )],
-        ExcelLoadError::EmptyIdCell { location } => vec![ExcelDiagnostic::excel(
-            "EXCEL-ID",
-            "EXCEL",
-            "empty id cell",
-            *location,
-        )],
-        ExcelLoadError::InvalidIdCell {
-            location,
-            key,
-            reason,
-        } => vec![ExcelDiagnostic::excel(
-            "EXCEL-ID",
-            "EXCEL",
-            format!("invalid record key `{key}` in id cell: {reason}"),
-            *location,
-        )],
-        ExcelLoadError::CellParse {
-            location,
-            type_name,
-            field,
-            diagnostics,
-        } => diagnostics
-            .diagnostics
-            .into_iter()
-            .map(|diag| {
-                ExcelDiagnostic::excel(
-                    format!("CELL-{:?}", diag.code),
-                    "CELL",
-                    format!(
-                        "failed to parse `{type_name}.{field}` cell: {}",
-                        diag.message
-                    ),
-                    (*location).clone(),
-                )
-            })
-            .collect(),
-        ExcelLoadError::UnsupportedCellValue { location, kind } => vec![ExcelDiagnostic::excel(
-            "EXCEL-CELL",
-            "EXCEL",
-            format!("unsupported Excel cell value `{kind}`"),
-            *location,
-        )],
-        ExcelLoadError::DataModel(diagnostics) => diagnostics.diagnostics,
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ResolvedColumns {
-    columns: Vec<ResolvedColumn>,
-    id_column: IdColumn,
-    control_column: Option<usize>,
-}
-
-#[derive(Debug, Clone)]
-struct IdColumn {
-    index: usize,
-    excel_column: usize,
-}
-
-#[derive(Debug, Clone)]
-struct ResolvedColumn {
-    index: usize,
-    excel_column: usize,
-    field: String,
-    field_type: String,
-    /// When set, this column represents an `@expand` parent field that
-    /// consumes additional adjacent columns. The vector lists each consumed
-    /// column's source-row index, the inner field name on the expanded type,
-    /// and the inner field's CFT type name.
-    expand: Option<Vec<ExpandedSubColumn>>,
-}
-
-#[derive(Debug, Clone)]
-struct ExpandedSubColumn {
-    index: usize,
-    excel_column: usize,
-    field: String,
-    field_type: String,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ExcelOrigins {
-    records: Vec<ExcelRecordOrigin>,
-}
-
-impl ExcelOrigins {
-    fn push(&mut self, origin: ExcelRecordOrigin) {
-        self.records.push(origin);
-    }
-
-    #[must_use]
-    pub fn record_count(&self) -> usize {
-        self.records.len()
-    }
-
-    pub fn extend(&mut self, other: Self) {
-        self.records.extend(other.records);
-    }
-
-    #[must_use]
-    pub fn map(&self, diagnostics: CfdDiagnostics) -> ExcelDiagnostics {
-        ExcelDiagnostics {
-            diagnostics: diagnostics
-                .diagnostics
-                .into_iter()
-                .map(|diagnostic| self.map_diagnostic(diagnostic))
-                .collect(),
-        }
-    }
-
-    #[must_use]
-    pub fn map_label_with_record_offset(
-        &self,
-        label: &CfdLabel,
-        record_offset: usize,
-    ) -> Option<ExcelLabel> {
-        let record = label.record?;
-        let local_record = record.index().checked_sub(record_offset)?;
-        let origin = self.records.get(local_record)?;
-        Some(ExcelLabel {
-            location: origin.location_for_path(&label.path),
-            message: label.message.clone(),
-        })
-    }
-
-    fn map_diagnostic(&self, diagnostic: CfdDiagnostic) -> ExcelDiagnostic {
-        ExcelDiagnostic {
-            code: diagnostic.code.as_str().to_string(),
-            stage: diagnostic.stage.to_string(),
-            message: diagnostic.message.clone(),
-            primary: diagnostic
-                .primary
-                .as_ref()
-                .and_then(|label| self.map_label_with_record_offset(label, 0)),
-            related: diagnostic
-                .related
-                .iter()
-                .filter_map(|label| self.map_label_with_record_offset(label, 0))
-                .collect(),
-            source: Some(diagnostic),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ExcelRecordOrigin {
-    file: PathBuf,
-    sheet: String,
-    row: usize,
-    id_column: usize,
-    field_columns: BTreeMap<Vec<String>, usize>,
-}
-
-impl ExcelRecordOrigin {
-    fn new(
-        file: PathBuf,
-        sheet: String,
-        row: usize,
-        columns: &[ResolvedColumn],
-        id_column: usize,
-    ) -> Self {
-        let mut field_columns = BTreeMap::new();
-        for column in columns {
-            field_columns.insert(vec![column.field.clone()], column.excel_column);
-            if let Some(children) = &column.expand {
-                for child in children {
-                    field_columns.insert(
-                        vec![column.field.clone(), child.field.clone()],
-                        child.excel_column,
-                    );
-                }
-            }
-        }
-        Self {
-            file,
-            sheet,
-            row,
-            id_column,
-            field_columns,
-        }
-    }
-
-    fn location_for_path(&self, path: &CfdPath) -> ExcelLocation {
-        let column = path_column(path, &self.field_columns).or_else(|| {
-            root_field(path).and_then(|field| (field == "id").then_some(self.id_column))
-        });
-        ExcelLocation::new(self.file.clone())
-            .sheet(self.sheet.clone())
-            .with_row(self.row)
-            .with_column(column)
-    }
-}
-
-#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
-fn resolve_columns(
-    schema: &CftContainer,
-    source: &ExcelSource,
-    sheet: &ExcelSheet,
-    type_name: &str,
-    fields: &BTreeMap<String, String>,
-    header_row: &[Data],
-    header_excel_row: usize,
-    header_excel_col: usize,
-) -> Result<ResolvedColumns, ExcelDiagnostics> {
+fn table_source_from_excel(source: &ExcelSource) -> Result<SharedTableSource, ExcelDiagnostics> {
     let mut diagnostics = Vec::new();
-    // Read the entire header row first so we can scan ahead for @expand
-    // children that occupy adjacent columns.
-    let mut header = Vec::with_capacity(header_row.len());
-    for (index, cell) in header_row.iter().enumerate() {
-        let excel_column = header_excel_col + index;
-        let Some(column) = cell_text(
-            Some(cell),
-            ExcelLocation::new(source.file.clone())
-                .sheet(sheet.sheet.clone())
-                .cell(header_excel_row, excel_column),
-            &mut diagnostics,
-        ) else {
-            continue;
-        };
-        header.push((index, excel_column, column.trim().to_string()));
-    }
-
-    let expand_fields = expand_field_index(schema, type_name);
-    let expand_inner_order = expand_field_order_index(schema, type_name);
-    let mut columns = Vec::new();
-    let mut id_column = None::<(usize, usize, String)>;
-    let mut control_column = None;
-    let mut seen_fields = BTreeMap::<String, String>::new();
-
-    let mut cursor = 0;
-    while cursor < header.len() {
-        let (index, excel_column, column_text) = &header[cursor];
-        let index = *index;
-        let excel_column = *excel_column;
-        let column_text = column_text.clone();
-        cursor += 1;
-        if column_text.is_empty() {
-            continue;
-        }
-        if column_text == IMPORT_CONTROL_COLUMN {
-            control_column = Some(index);
-            continue;
-        }
-        let field = sheet
-            .columns
-            .get(&column_text)
-            .map_or_else(|| column_text.clone(), Clone::clone);
-        if field == "id" {
-            if let Some((_, _, first_column)) =
-                id_column.replace((index, excel_column, column_text.clone()))
-            {
-                diagnostics.extend(excel_load_error_diagnostics(
-                    ExcelLoadError::DuplicateIdColumn {
-                        location: Box::new(
-                            ExcelLocation::new(source.file.clone())
-                                .sheet(sheet.sheet.clone())
-                                .cell(header_excel_row, excel_column),
-                        ),
-                        first_column,
-                        duplicate_column: column_text,
-                    },
-                ));
-            }
-            continue;
-        }
-        let Some(field_type) = fields.get(&field) else {
-            diagnostics.extend(excel_load_error_diagnostics(
-                ExcelLoadError::UnknownColumn {
-                    location: Box::new(
-                        ExcelLocation::new(source.file.clone())
-                            .sheet(sheet.sheet.clone())
-                            .cell(header_excel_row, excel_column),
-                    ),
-                    type_name: type_name.to_string(),
-                    column: column_text,
-                    field,
-                },
+    let mut workbook = match open_workbook_auto(&source.file) {
+        Ok(workbook) => workbook,
+        Err(err) => {
+            diagnostics.push(ExcelDiagnostic::excel(
+                "EXCEL-OPEN",
+                "EXCEL",
+                format!("failed to open workbook `{}`: {err}", source.file.display()),
+                ExcelLocation::new(source.file.clone()),
             ));
-            continue;
-        };
-        if let Some(first_column) = seen_fields.insert(field.clone(), column_text.clone()) {
-            diagnostics.extend(excel_load_error_diagnostics(
-                ExcelLoadError::DuplicateFieldColumn {
-                    location: Box::new(
-                        ExcelLocation::new(source.file.clone())
-                            .sheet(sheet.sheet.clone())
-                            .cell(header_excel_row, excel_column),
-                    ),
-                    field,
-                    first_column,
-                    duplicate_column: column_text,
-                },
-            ));
-            continue;
+            return Err(ExcelDiagnostics { diagnostics });
         }
-
-        let expand = expand_fields.get(&field).map(|child_fields| {
-            // The @expand field consumes the parent header column itself plus
-            // the N-1 following data columns (where N is the inner type's
-            // field count). Sub-field assignment is positional, following the
-            // inner type's declared field order. Adjacent headers must be
-            // blank merged-header cells so a normal business column cannot be
-            // silently swallowed.
-            let inner_order = expand_inner_order.get(&field).cloned().unwrap_or_default();
-            let mut consumed = Vec::with_capacity(inner_order.len());
-            // First child uses the parent column itself.
-            if let Some(first_inner) = inner_order.first() {
-                let inner_ty = child_fields.get(first_inner).cloned().unwrap_or_default();
-                consumed.push(ExpandedSubColumn {
-                    index,
-                    excel_column,
-                    field: first_inner.clone(),
-                    field_type: inner_ty,
-                });
-            }
-            // Remaining children come from the columns immediately after.
-            for inner_field in inner_order.iter().skip(1) {
-                if cursor >= header.len() {
-                    diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::UnknownColumn {
-                        location: Box::new(
-                            ExcelLocation::new(source.file.clone())
-                                .sheet(sheet.sheet.clone())
-                                .cell(header_excel_row, excel_column),
-                        ),
-                        type_name: type_name.to_string(),
-                        column: column_text.clone(),
-                        field: format!(
-                            "{field} (@expand): not enough columns to cover inner field `{inner_field}`"
-                        ),
-                    }));
-                    break;
-                }
-                let (next_index, next_excel_col, next_text) = &header[cursor];
-                if !next_text.is_empty() {
-                    diagnostics.extend(excel_load_error_diagnostics(
-                        ExcelLoadError::UnexpectedExpandHeader {
-                            location: Box::new(
-                                ExcelLocation::new(source.file.clone())
-                                    .sheet(sheet.sheet.clone())
-                                    .cell(header_excel_row, *next_excel_col),
-                            ),
-                            parent_field: field.clone(),
-                            expected_field: inner_field.clone(),
-                            header: next_text.clone(),
-                        },
-                    ));
-                }
-                let inner_ty = child_fields.get(inner_field).cloned().unwrap_or_default();
-                consumed.push(ExpandedSubColumn {
-                    index: *next_index,
-                    excel_column: *next_excel_col,
-                    field: inner_field.clone(),
-                    field_type: inner_ty,
-                });
-                cursor += 1;
-            }
-            consumed
-        });
-
-        columns.push(ResolvedColumn {
-            index,
-            excel_column,
-            field,
-            field_type: field_type.clone(),
-            expand,
-        });
-    }
-
-    let id_column = id_column.map(|(index, excel_column, _)| IdColumn {
-        index,
-        excel_column,
-    });
-    let Some(id_column) = id_column else {
-        diagnostics.extend(excel_load_error_diagnostics(
-            ExcelLoadError::MissingIdColumn {
-                location: Box::new(
-                    ExcelLocation::new(source.file.clone())
-                        .sheet(sheet.sheet.clone())
-                        .with_row(header_excel_row),
-                ),
-                type_name: type_name.to_string(),
-            },
-        ));
-        return Err(ExcelDiagnostics { diagnostics });
     };
 
+    let sheet_names = workbook.sheet_names();
+    let configured_sheets = if source.sheets.is_empty() {
+        sheet_names
+            .iter()
+            .map(|sheet| ExcelSheet::new(sheet.clone()))
+            .collect::<Vec<_>>()
+    } else {
+        source.sheets.clone()
+    };
+
+    let mut table_sheets = Vec::new();
+    for sheet in &configured_sheets {
+        if !sheet_names.iter().any(|name| name == &sheet.sheet) {
+            diagnostics.push(ExcelDiagnostic::excel(
+                "EXCEL-SHEET",
+                "EXCEL",
+                format!(
+                    "workbook `{}` is missing sheet `{}`",
+                    source.file.display(),
+                    sheet.sheet
+                ),
+                ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()),
+            ));
+            continue;
+        }
+
+        let range = match workbook.worksheet_range(&sheet.sheet) {
+            Ok(range) => range,
+            Err(err) => {
+                diagnostics.push(ExcelDiagnostic::excel(
+                    "EXCEL-SHEET",
+                    "EXCEL",
+                    err.to_string(),
+                    ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()),
+                ));
+                continue;
+            }
+        };
+
+        if range.is_empty() {
+            diagnostics.push(ExcelDiagnostic::excel(
+                "EXCEL-SHEET",
+                "EXCEL",
+                "sheet is empty",
+                ExcelLocation::new(source.file.clone()).sheet(sheet.sheet.clone()),
+            ));
+            continue;
+        }
+
+        let (range_start_row, range_start_col) = range.start().unwrap_or((0, 0));
+        let mut rows = Vec::new();
+        for (zero_based_row, row) in range.rows().enumerate() {
+            let excel_row = range_start_row as usize + zero_based_row + 1;
+            let mut values = Vec::with_capacity(row.len());
+            for (zero_based_col, cell) in row.iter().enumerate() {
+                let excel_column = range_start_col as usize + zero_based_col + 1;
+                let location = ExcelLocation::new(source.file.clone())
+                    .sheet(sheet.sheet.clone())
+                    .cell(excel_row, excel_column);
+                values.push(cell_text(Some(cell), location, &mut diagnostics).unwrap_or_default());
+            }
+            rows.push(values);
+        }
+        table_sheets.push(
+            TableSheet::new(sheet.sheet.clone(), rows)
+                .with_start(range_start_row as usize + 1, range_start_col as usize + 1),
+        );
+    }
+
     if diagnostics.is_empty() {
-        Ok(ResolvedColumns {
-            columns,
-            id_column,
-            control_column,
-        })
+        Ok(SharedTableSource::new(
+            source.file.clone(),
+            table_sheets,
+            configured_sheets
+                .into_iter()
+                .map(TableSheetConfig::from)
+                .collect(),
+        ))
     } else {
         Err(ExcelDiagnostics { diagnostics })
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn build_expanded_object(
-    schema: &CftContainer,
-    source: &ExcelSource,
-    sheet: &ExcelSheet,
-    parent_type: &str,
-    column: &ResolvedColumn,
-    children: &[ExpandedSubColumn],
-    row: &[Data],
-    excel_row: usize,
-    diagnostics: &mut Vec<ExcelDiagnostic>,
-) -> Option<CfdInputValue> {
-    let mut fields = BTreeMap::new();
-    let diagnostic_start = diagnostics.len();
-    for child in children {
-        let location = ExcelLocation::new(source.file.clone())
-            .sheet(sheet.sheet.clone())
-            .cell(excel_row, child.excel_column);
-        let Some(text) = cell_text(row.get(child.index), location.clone(), diagnostics) else {
-            continue;
-        };
-        let parsed = match parse_cell(schema, &child.field_type, &text) {
-            Ok(parsed) => parsed,
-            Err(err) => {
-                diagnostics.extend(excel_load_error_diagnostics(ExcelLoadError::CellParse {
-                    location: Box::new(location),
-                    type_name: parent_type.to_string(),
-                    field: format!("{}.{}", column.field, child.field),
-                    diagnostics: err,
-                }));
-                continue;
-            }
-        };
-        if let ParsedCell::Value(value) = parsed {
-            fields.insert(child.field.clone(), value);
-        }
-    }
-    if diagnostics.len() == diagnostic_start {
-        Some(CfdInputValue::Object {
-            actual_type: None,
-            fields,
-        })
-    } else {
-        None
-    }
-}
-
-/// Returns a map from `@expand` field name -> map of inner field name to inner
-/// CFT type. Inner type lookups follow the resolved field type.
-fn expand_field_index(
-    schema: &CftContainer,
-    type_name: &str,
-) -> BTreeMap<String, BTreeMap<String, String>> {
-    let mut out = BTreeMap::new();
-    let Some(schema_type) = schema.resolve_type(type_name) else {
-        return out;
-    };
-    for field in &schema_type.all_fields {
-        if !field
-            .annotations
-            .iter()
-            .any(|annotation| annotation.name == "expand")
-        {
-            continue;
-        }
-        let Some(inner_type) = schema.resolve_type(&field.ty) else {
-            continue;
-        };
-        let inner_fields = inner_type
-            .all_fields
-            .iter()
-            .map(|inner| (inner.name.clone(), inner.ty.clone()))
-            .collect();
-        out.insert(field.name.clone(), inner_fields);
-    }
-    out
-}
-
-/// Returns a map from `@expand` field name -> ordered list of inner field
-/// names (declaration order on the expanded type). Excel data is read
-/// positionally in this order.
-fn expand_field_order_index(
-    schema: &CftContainer,
-    type_name: &str,
-) -> BTreeMap<String, Vec<String>> {
-    let mut out = BTreeMap::new();
-    let Some(schema_type) = schema.resolve_type(type_name) else {
-        return out;
-    };
-    for field in &schema_type.all_fields {
-        if !field
-            .annotations
-            .iter()
-            .any(|annotation| annotation.name == "expand")
-        {
-            continue;
-        }
-        let Some(inner_type) = schema.resolve_type(&field.ty) else {
-            continue;
-        };
-        let order = inner_type
-            .all_fields
-            .iter()
-            .map(|inner| inner.name.clone())
-            .collect();
-        out.insert(field.name.clone(), order);
-    }
-    out
-}
-
-fn full_field_types(schema: &CftContainer, type_name: &str) -> Option<BTreeMap<String, String>> {
-    let schema_type = schema.resolve_type(type_name)?;
-    Some(
-        schema_type
-            .all_fields
-            .iter()
-            .map(|field| (field.name.clone(), field.ty.clone()))
+fn shared_table_source_from_excel_table_source(source: TableSource) -> SharedTableSource {
+    SharedTableSource::new(
+        source.name,
+        source.sheets,
+        source
+            .configs
+            .into_iter()
+            .map(TableSheetConfig::from)
             .collect(),
     )
-}
-
-fn root_field(path: &CfdPath) -> Option<&str> {
-    path.segments.iter().find_map(|segment| match segment {
-        CfdPathSegment::Field(name) => Some(name.as_str()),
-        CfdPathSegment::Index(_) | CfdPathSegment::DictKey(_) => None,
-    })
-}
-
-fn path_column(path: &CfdPath, field_columns: &BTreeMap<Vec<String>, usize>) -> Option<usize> {
-    let mut prefix = Vec::new();
-    let mut column = None;
-    for segment in &path.segments {
-        let CfdPathSegment::Field(field) = segment else {
-            break;
-        };
-        prefix.push(field.clone());
-        if let Some(candidate) = field_columns.get(&prefix) {
-            column = Some(*candidate);
-        }
-    }
-    column
-}
-
-fn is_empty_mapped_row(row: &[Data], columns: &[ResolvedColumn], id_column: &IdColumn) -> bool {
-    row.get(id_column.index).is_none_or(is_empty_cell)
-        && columns.iter().all(|column| {
-            column.expand.as_ref().map_or_else(
-                || row.get(column.index).is_none_or(is_empty_cell),
-                |children| {
-                    children
-                        .iter()
-                        .all(|child| row.get(child.index).is_none_or(is_empty_cell))
-                },
-            )
-        })
-}
-
-fn should_skip_import_row(row: &[Data], control_column: Option<usize>) -> bool {
-    let Some(index) = control_column else {
-        return false;
-    };
-    row.get(index).is_some_and(|cell| match cell {
-        Data::String(value) => value.trim() == SKIP_IMPORT_ROW_MARKER,
-        _ => false,
-    })
-}
-
-fn is_empty_cell(cell: &Data) -> bool {
-    match cell {
-        Data::Empty => true,
-        Data::String(value) => value.trim().is_empty(),
-        Data::Float(_)
-        | Data::Int(_)
-        | Data::Bool(_)
-        | Data::DateTime(_)
-        | Data::DateTimeIso(_)
-        | Data::DurationIso(_)
-        | Data::Error(_) => false,
-    }
 }
 
 fn cell_text(
@@ -1201,41 +553,71 @@ fn cell_text(
         Some(Data::Int(value)) => Some(value.to_string()),
         Some(Data::Bool(value)) => Some(value.to_string()),
         Some(Data::DateTime(value)) => {
-            diagnostics.extend(excel_load_error_diagnostics(
-                ExcelLoadError::UnsupportedCellValue {
-                    location: Box::new(location),
-                    kind: format!("DateTime({value})"),
-                },
+            diagnostics.push(unsupported_cell_diagnostic(
+                location,
+                &format!("DateTime({value})"),
             ));
             None
         }
         Some(Data::DateTimeIso(value)) => {
-            diagnostics.extend(excel_load_error_diagnostics(
-                ExcelLoadError::UnsupportedCellValue {
-                    location: Box::new(location),
-                    kind: format!("DateTimeIso({value})"),
-                },
+            diagnostics.push(unsupported_cell_diagnostic(
+                location,
+                &format!("DateTimeIso({value})"),
             ));
             None
         }
         Some(Data::DurationIso(value)) => {
-            diagnostics.extend(excel_load_error_diagnostics(
-                ExcelLoadError::UnsupportedCellValue {
-                    location: Box::new(location),
-                    kind: format!("DurationIso({value})"),
-                },
+            diagnostics.push(unsupported_cell_diagnostic(
+                location,
+                &format!("DurationIso({value})"),
             ));
             None
         }
         Some(Data::Error(value)) => {
-            diagnostics.extend(excel_load_error_diagnostics(
-                ExcelLoadError::UnsupportedCellValue {
-                    location: Box::new(location),
-                    kind: format!("Error({value})"),
-                },
+            diagnostics.push(unsupported_cell_diagnostic(
+                location,
+                &format!("Error({value})"),
             ));
             None
         }
+    }
+}
+
+fn unsupported_cell_diagnostic(location: ExcelLocation, kind: &str) -> ExcelDiagnostic {
+    ExcelDiagnostic::excel(
+        "EXCEL-CELL",
+        "EXCEL",
+        format!("unsupported Excel cell value `{kind}`; store it as text before loading"),
+        location,
+    )
+}
+
+fn table_code_to_excel(code: &str) -> String {
+    code.strip_prefix("TABLE-").map_or_else(
+        || code.to_string(),
+        |suffix| match suffix {
+            "TYPE" => "EXCEL-TYPE".to_string(),
+            "ID" => "EXCEL-ID".to_string(),
+            "SHEET" => "EXCEL-SHEET".to_string(),
+            "COLUMN" => "EXCEL-COLUMN".to_string(),
+            other => format!("EXCEL-{other}"),
+        },
+    )
+}
+
+fn table_stage_to_excel(stage: &str) -> String {
+    if stage == "TABLE" {
+        "EXCEL".to_string()
+    } else {
+        stage.to_string()
+    }
+}
+
+fn table_message_to_excel(message: &str) -> String {
+    if message == "record key cell is empty" {
+        "empty id cell".to_string()
+    } else {
+        message.to_string()
     }
 }
 

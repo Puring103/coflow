@@ -79,12 +79,34 @@ outputs:
 ```
 
 `schema` 指向一个精确小写 `.cft` 文件、schema 目录，或文件/目录列表。`sources` 支持
-`file` 或 `dir`：文件源可以是 `.xlsx` / `.xlsm` / `.xls` / `.cfd`，目录源会递归
-加载支持的 Excel 和 CFD 文件。Excel 源未配置 `sheets` 时默认把 workbook 中每个
-sheet 名当作 CFT 类型名、表头当作字段名；配置 `sheets` 时可显式映射 sheet、类型
-和列头。目录源可同时包含 Excel 和 CFD 文件，此时 `sheets` 只作用于 Excel，
-CFD 文件仍由文本中的记录类型决定 CFT 类型。`outputs.data.type` 支持 `json`
-或 `messagepack`；`outputs.code.type` 目前支持 `csharp`。
+本地 `file` / `dir`，也支持远端 `lark_sheet`。文件源可以是 `.xlsx` / `.xlsm` /
+`.xls` / `.cfd`，目录源会递归加载支持的 Excel 和 CFD 文件。
+
+Excel 和飞书电子表格共享同一套 sheet 配置习惯：省略 `sheets` 时默认加载所有
+sheet，sheet 名作为 CFT 类型名，表头文本作为字段名；配置 `sheets` 时可显式映射
+sheet、类型、record key 列和列头。`key` 可省略，默认使用 `id` 表头列；`columns`
+是可选的列头重命名映射，不是白名单。
+
+飞书 source 示例：
+
+```yaml
+sources:
+  - lark_sheet:
+      app_id: cli_xxx
+      app_secret: xxx
+      url: https://example.feishu.cn/wiki/xxxxx
+    sheets:
+      - sheet: Item
+        key: id
+        columns:
+          Name: name
+```
+
+`lark_sheet` 需要在 `url` 和 `spreadsheet_token` 中二选一；wiki URL 会先解析到真实
+电子表格 token。暂不支持飞书多维表格/Base。目录源可同时包含 Excel 和 CFD 文件，
+此时 `sheets` 只作用于 Excel，CFD 文件仍由文本中的记录类型决定 CFT 类型。
+`outputs.data.type` 支持 `json` 或 `messagepack`；`outputs.code.type` 目前支持
+`csharp`。
 
 ---
 

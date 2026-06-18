@@ -5,7 +5,7 @@
 实现边界：
 
 - `coflow-project` 负责项目配置、路径解析、schema 文件发现、CFT 编译和 CFT 诊断映射。
-- `coflow-pipeline` 负责项目执行流水线：schema 编译后的控制流、Excel/CFD 数据加载、check 诊断聚合、数据导出和 C# codegen。
+- `coflow-pipeline` 负责项目执行流水线：schema 编译后的控制流、Excel/飞书电子表格/CFD 数据加载、check 诊断聚合、数据导出和 C# codegen。
 - CLI 根包只负责命令行参数解析、调用 pipeline API、输出成功消息和诊断。
 - `coflow-cft-lsp` 只依赖 `coflow-project`，不依赖 `coflow-pipeline`。
 
@@ -44,7 +44,7 @@ key，避免 YAML map 后写覆盖导致隐式丢配置。
 
 - 解析项目配置并解析项目相对路径。
 - 发现并编译 schema，得到 `CftContainer`。
-- 发现 source 中支持的数据文件，并分别调用 `coflow-loader-excel` 或 `coflow-cfd`。
+- 发现 source 中支持的数据文件，并分别调用 `coflow-loader-excel`、`coflow-loader-lark` 或 `coflow-cfd`。
 - 编排 CLI 命令，包括数据加载、数据模型构建和 check 诊断处理。
 - 根据 `outputs.data.type` 调用 JSON 或 MessagePack 导出：
   - `json`：调用 `coflow-exporter-json`，输出 `<TypeName>.json`。
@@ -59,7 +59,7 @@ key，避免 YAML map 后写覆盖导致隐式丢配置。
 
 - `Project::open_schema_only`：只解析并反序列化 `coflow.yaml`；不要求数据源文件存在。
 - `Project::schema_diagnostics`：schema-only 命令在打开项目后调用，聚合 schema path、output 配置和 source 配置形状诊断；仍不要求数据源文件存在。
-- `Project::validate_for_data`：在 schema-only 之上校验数据阶段 source，要求 `file`/`dir` 指向存在的文件或目录。
+- `Project::validate_for_data`：在 schema-only 之上校验数据阶段 source，要求 `file`/`dir` 指向存在的文件或目录；`lark_sheet` 不做本地路径存在性校验，只校验认证字段和 URL/token 形状。
 - `Project::validate_for_codegen`：校验 C# codegen 需要的 `outputs.code.type: csharp` 和 `outputs.data.type: json | messagepack`；不要求数据源文件存在。
 
 命令阶段矩阵：
@@ -141,6 +141,13 @@ error 返回。
 
 `coflow-pipeline::check_project` 在 schema、数据加载、data model 均成功但 CFT `check` 失败时，返回 `PipelineOutcome::Diagnostics`，不返回 `Err`。`Err` 只表示配置错误、I/O 错误或不可恢复的 artifact 错误。
 
+`lark_sheet` source 被视为远端 Excel-like workbook。它用 `app_id`/`app_secret`
+获取 tenant access token；`url` 支持 `/sheets/{token}` 或 `/wiki/{token}`，wiki
+链接会通过 wiki node API 解析到真实电子表格 token；`spreadsheet_token` 可直接
+指定电子表格 token。读取到的飞书单元格会转换为共享 table loader 的
+`TableSource`，因此 `sheets`、`key`、`columns` 的语义与 Excel 相同。暂不支持
+飞书多维表格/Base。
+
 CLI `coflow check` 对 `PipelineOutcome::Diagnostics` 的处理规则：
 
 - 退出码为非 0。
@@ -153,7 +160,7 @@ CLI `coflow check` 对 `PipelineOutcome::Diagnostics` 的处理规则：
 ## 非职责
 
 - 不重新实现 CFT parser、schema compiler 或 schema 反射模型。
-- 不重新实现 Excel 单元格解析或 CFD 文本解析；这些由 `coflow-loader-excel` 和 `coflow-cfd` 负责。
+- 不重新实现 Excel 单元格解析、飞书 API 读取或 CFD 文本解析；这些由 `coflow-loader-excel`、`coflow-loader-lark` 和 `coflow-cfd` 负责。
 - 不拥有 JSON 或 MessagePack 的 schema-aware 导出遍历规则；这些由 `coflow-exporter-core` 以及具体 exporter 负责。
 - 不拥有 C# 类型映射、模板渲染或加载器生成规则；codegen 接收编译后的 `CftContainer` 和 options。
 - 不充当生成出的 C# trusted artifact loader。

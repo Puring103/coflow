@@ -9,7 +9,10 @@
 
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdErrorCode, CfdValue};
-use coflow_loader_excel::{load_excel, load_excel_model, ExcelDiagnostic, ExcelSheet, ExcelSource};
+use coflow_loader_excel::{
+    collect_table_input_records, load_excel, load_excel_model, ExcelDiagnostic, ExcelSheet,
+    ExcelSource, TableSheet, TableSource,
+};
 use rust_xlsxwriter::{ExcelDateTime, Format, Formula, Workbook, XlsxError};
 use std::fs::File;
 use std::io::{Read, Write};
@@ -110,11 +113,10 @@ fn loads_configured_xlsx_sheets_without_yaml_parsing() -> TestResult {
 
     let source = ExcelSource::new(
         &path,
-        vec![ExcelSheet::new("物品表").with_type("Item").with_columns([
-            ("物品ID", "id"),
-            ("名称", "name"),
-            ("稀有度", "rarity"),
-        ])],
+        vec![ExcelSheet::new("物品表")
+            .with_type("Item")
+            .with_key("物品ID")
+            .with_columns([("名称", "name"), ("稀有度", "rarity")])],
     );
 
     let model = load_excel_model(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
@@ -141,6 +143,87 @@ fn loads_configured_xlsx_sheets_without_yaml_parsing() -> TestResult {
             CfdValue::String("melee".to_string()),
         ]))
     );
+    Ok(())
+}
+
+#[test]
+fn uses_id_header_as_default_record_key() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                name: string;
+            }
+        "#,
+    )?;
+    let path = temp_xlsx_path("default-key");
+    let mut workbook = Workbook::new();
+    let sheet = workbook
+        .add_worksheet()
+        .set_name("Item")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 0, "id")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(0, 1, "name")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 0, "potion")
+        .map_err(|err| format!("{err:?}"))?;
+    sheet
+        .write_string(1, 1, "Potion")
+        .map_err(|err| format!("{err:?}"))?;
+    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
+
+    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
+    let model = load_excel_model(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+    let table = model
+        .table("Item")
+        .ok_or_else(|| "expected Item table".to_string())?;
+
+    assert!(table.primary_index.contains_key("potion"));
+    Ok(())
+}
+
+#[test]
+fn collects_input_records_from_table_source_without_xlsx_io() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            enum Rarity { Common = 0, Rare = 10, }
+            type Item {
+                name: string;
+                rarity: Rarity = Rarity.Common;
+            }
+        "#,
+    )?;
+    let source = TableSource::new(
+        "lark:sht_test",
+        vec![TableSheet::new(
+            "物品表",
+            vec![
+                vec![
+                    "物品ID".to_string(),
+                    "名称".to_string(),
+                    "稀有度".to_string(),
+                ],
+                vec![
+                    "sword_01".to_string(),
+                    "铁剑".to_string(),
+                    "Rare".to_string(),
+                ],
+            ],
+        )],
+        vec![ExcelSheet::new("物品表")
+            .with_type("Item")
+            .with_key("物品ID")
+            .with_columns([("名称", "name"), ("稀有度", "rarity")])],
+    );
+
+    let loaded =
+        collect_table_input_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+    assert_eq!(loaded.records.len(), 1);
+    assert_eq!(loaded.records[0].key, "sword_01");
+    assert_eq!(loaded.records[0].actual_type, "Item");
     Ok(())
 }
 
@@ -1265,8 +1348,7 @@ fn rejects_empty_sheets_and_duplicate_mapped_columns() -> TestResult {
         return Err("expected duplicate mapped column error".to_string());
     };
     let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-COLUMN")?;
-    assert!(diagnostic.message.contains("special `id` column"));
-    assert!(diagnostic.message.contains("`alias`"));
+    assert!(diagnostic.message.contains("key column `id`"));
     let location = &diagnostic
         .primary
         .as_ref()

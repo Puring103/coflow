@@ -1,12 +1,12 @@
 [package]
-name = "coflow-loader-excel"
+name = "coflow-loader-table"
 version = "0.1.0"
 edition = "2021"
-description = "Excel .xlsx loader for Coflow data models."
+description = "Excel-like table loader for Coflow data models."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/wtlll/ScriptForGame"
 readme = "../../README.md"
-keywords = ["config", "game-data", "excel"]
+keywords = ["config", "game-data", "table"]
 categories = ["config", "game-development"]
 publish = false
 
@@ -14,13 +14,7 @@ publish = false
 workspace = true
 
 [dependencies]
-calamine = "0.35"
 coflow-cell-value = { path = "../coflow-cell-value" }
 coflow-cft = { path = "../coflow-cft" }
 coflow-checker = { path = "../coflow-checker" }
 coflow-data-model = { path = "../coflow-data-model" }
-coflow-loader-table = { path = "../coflow-loader-table" }
-
-[dev-dependencies]
-rust_xlsxwriter = "0.95"
-zip = { version = "7.2", default-features = false }

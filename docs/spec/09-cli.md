@@ -56,22 +56,25 @@ outputs:
 目录会递归查找精确小写 `.cft` 文件；`.CFT` 或混合大小写扩展名不会被当作
 schema 文件。
 
-`sources` 配置数据输入。每个 source 必须且只能设置 `file` 或 `dir`：
+`sources` 配置数据输入。每个 source 必须且只能设置 `file`、`dir` 或 `lark_sheet`：
 
 - `file` 可指向单个 `.xlsx` / `.xlsm` / `.xls` / `.cfd` 文件，也可指向目录。
 - `dir` 指向目录。
+- `lark_sheet` 指向飞书电子表格，需要 `app_id`、`app_secret`，并在 `url` 和
+  `spreadsheet_token` 中二选一。
 - 目录源会递归扫描支持的 Excel 和 CFD 文件，忽略其他扩展名。
 
-Excel source 可以配置 `sheets`。如果省略 `sheets`，默认加载 workbook 中所有
-sheet，sheet 名作为 CFT 类型名，表头文本作为字段名。目录源可以同时发现
-Excel 和 CFD 文件；此时 `sheets` 只传给目录内的 Excel workbook，CFD 文件
-仍按文本记录类型加载。sheet 可配置：
+Excel 和飞书电子表格 source 都可以配置 `sheets`。如果省略 `sheets`，默认加载
+workbook 或远端电子表格中的所有 sheet，sheet 名作为 CFT 类型名，表头文本作为
+字段名。目录源可以同时发现 Excel 和 CFD 文件；此时 `sheets` 只传给目录内的
+Excel workbook，CFD 文件仍按文本记录类型加载。sheet 可配置：
 
-- `sheet`：Excel worksheet 名称。
+- `sheet`：Excel worksheet 或飞书 sheet 名称。
 - `type`：可选 CFT 类型名；省略时使用 sheet 名称。
-- `columns`：可选 Excel 表头文本到 CFT 字段名的映射。
+- `key`：可选 record key 表头列名；省略时使用 `id`。
+- `columns`：可选表头文本到 CFT 字段名的重命名映射。
 
-导入的 Excel sheet 必须有 `id` 表头列作为 record key。名为 `#` 的表头是
+导入的 sheet 必须有 key 表头列作为 record key，默认列名为 `id`。名为 `#` 的表头是
 可选导入控制列：数据行中该列单元格为 `##` 时，整行在读取 `id` 或字段前跳过。
 
 单个 `.cfd` 文件 source 不配置 `sheets`，由文本中的记录类型决定 CFT 类型。
