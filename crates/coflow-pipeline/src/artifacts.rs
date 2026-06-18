@@ -1,17 +1,12 @@
 use crate::{CodegenTarget, DataFormat};
-use coflow_cft::CftContainer;
-use coflow_codegen_csharp_json::GeneratedFile;
-use coflow_codegen_csharp_json::{
-    generate_csharp_json_with_key_as_enum_variants, preflight_csharp_codegen, CsharpCodegenOptions,
+use coflow_api::{
+    ArtifactContent, ArtifactSet, CftContainer, CodegenContext, ExportContext, OutputSpec,
+    ProviderRegistry,
 };
-use coflow_codegen_csharp_json::{CsharpCodegenDiagnostic, CsharpKeyAsEnumVariant};
-use coflow_codegen_csharp_messagepack::generate_csharp_messagepack_with_key_as_enum_variants;
 use coflow_data_model::CfdDataModel;
-use coflow_exporter_json::export_json_model;
-use coflow_exporter_messagepack::export_messagepack_model;
 use coflow_project::{OutputConfig, Project};
 use serde::Serialize;
-use std::collections::BTreeMap;
+use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -42,56 +37,95 @@ pub fn output_dir(
 }
 
 pub fn write_data_tables(
+    registry: &ProviderRegistry,
     schema: &CftContainer,
     model: &CfdDataModel,
     format: DataFormat,
     dir: &Path,
 ) -> Result<(), String> {
-    stage_data_tables(schema, model, format, dir)?.commit()
+    stage_data_tables(registry, schema, model, format, dir)?.commit()
 }
 
 pub fn stage_data_tables(
+    registry: &ProviderRegistry,
     schema: &CftContainer,
     model: &CfdDataModel,
     format: DataFormat,
     dir: &Path,
 ) -> Result<StagedArtifactDir, String> {
-    match format {
-        DataFormat::Json => stage_json_tables(schema, model, dir),
-        DataFormat::Messagepack => stage_messagepack_tables(schema, model, dir),
-    }
+    let exporter = registry.exporter(format.as_config_value()).ok_or_else(|| {
+        format!(
+            "no data exporter registered for `{}`",
+            format.as_config_value()
+        )
+    })?;
+    let output = OutputSpec {
+        output_type: format.as_config_value().to_string(),
+        dir: dir.to_path_buf(),
+        options: Value::Null,
+    };
+    let artifacts = exporter
+        .export(ExportContext { schema, model }, &output)
+        .map_err(|diagnostics| first_diagnostic_message(&diagnostics))?;
+    stage_artifact_set(dir, artifacts)
 }
 
 pub fn stage_csharp_files(
+    registry: &ProviderRegistry,
     schema: &CftContainer,
     data_format: DataFormat,
     namespace: &str,
     dir: &Path,
-    key_as_enum_variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
+    key_as_enum_variants: &Value,
 ) -> Result<StagedArtifactDir, String> {
-    let options = CsharpCodegenOptions::new(namespace);
-    let files = match data_format {
-        DataFormat::Json => {
-            generate_csharp_json_with_key_as_enum_variants(schema, &options, key_as_enum_variants)
-        }
-        DataFormat::Messagepack => generate_csharp_messagepack_with_key_as_enum_variants(
-            schema,
-            &options,
-            key_as_enum_variants,
-        ),
-    }
-    .map_err(|err| format!("failed to generate C# code: {err}"))?;
-    let staged = StagedArtifactDir::create(dir)?;
-    write_generated_files(staged.path(), files)?;
-    Ok(staged)
+    let codegen = registry
+        .codegen(CodegenTarget::Csharp.as_config_value())
+        .ok_or_else(|| "no code generator registered for `csharp`".to_string())?;
+    let output = OutputSpec {
+        output_type: CodegenTarget::Csharp.as_config_value().to_string(),
+        dir: dir.to_path_buf(),
+        options: serde_json::json!({
+            "namespace": namespace,
+            "key_as_enum_variants": key_as_enum_variants,
+        }),
+    };
+    let artifacts = codegen
+        .generate(
+            CodegenContext {
+                schema,
+                model: None,
+                data_format: data_format.as_config_value(),
+            },
+            &output,
+        )
+        .map_err(|diagnostics| first_diagnostic_message(&diagnostics))?;
+    stage_artifact_set(dir, artifacts)
 }
 
-pub fn preflight_csharp_files(
+pub fn preflight_codegen(
+    registry: &ProviderRegistry,
     schema: &CftContainer,
+    data_format: DataFormat,
     namespace: &str,
-) -> Vec<CsharpCodegenDiagnostic> {
-    let options = CsharpCodegenOptions::new(namespace);
-    preflight_csharp_codegen(schema, &options, &BTreeMap::new())
+) -> Result<coflow_api::DiagnosticSet, String> {
+    let codegen = registry
+        .codegen(CodegenTarget::Csharp.as_config_value())
+        .ok_or_else(|| "no code generator registered for `csharp`".to_string())?;
+    let output = OutputSpec {
+        output_type: CodegenTarget::Csharp.as_config_value().to_string(),
+        dir: PathBuf::new(),
+        options: serde_json::json!({
+            "namespace": namespace,
+        }),
+    };
+    Ok(codegen.preflight(
+        CodegenContext {
+            schema,
+            model: None,
+            data_format: data_format.as_config_value(),
+        },
+        &output,
+    ))
 }
 
 pub fn stage_json_file<T: Serialize>(path: &Path, value: &T) -> Result<StagedArtifactFile, String> {
@@ -225,51 +259,35 @@ fn require_output_type(
     }
 }
 
-fn stage_json_tables(
-    schema: &CftContainer,
-    model: &CfdDataModel,
-    dir: &Path,
-) -> Result<StagedArtifactDir, String> {
-    let tables = export_json_model(schema, model)
-        .map_err(|err| format!("failed to export JSON model: {err}"))?;
+fn stage_artifact_set(dir: &Path, artifacts: ArtifactSet) -> Result<StagedArtifactDir, String> {
     let staged = StagedArtifactDir::create(dir)?;
-    for (table, value) in tables {
-        let path = staged.path().join(format!("{table}.json"));
-        let file = fs::File::create(&path)
-            .map_err(|err| format!("failed to create `{}`: {err}", path.display()))?;
-        serde_json::to_writer_pretty(file, &value)
-            .map_err(|err| format!("failed to write `{}`: {err}", path.display()))?;
-    }
-    Ok(staged)
-}
-
-fn stage_messagepack_tables(
-    schema: &CftContainer,
-    model: &CfdDataModel,
-    dir: &Path,
-) -> Result<StagedArtifactDir, String> {
-    let tables = export_messagepack_model(schema, model)
-        .map_err(|err| format!("failed to export MessagePack model: {err}"))?;
-    let staged = StagedArtifactDir::create(dir)?;
-    for (table, bytes) in tables {
-        let path = staged.path().join(format!("{table}.msgpack"));
-        fs::write(&path, bytes)
-            .map_err(|err| format!("failed to write `{}`: {err}", path.display()))?;
-    }
-    Ok(staged)
-}
-
-fn write_generated_files(dir: &Path, files: Vec<GeneratedFile>) -> Result<(), String> {
-    for file in files {
-        let path = safe_artifact_path(dir, &file.relative_path)?;
+    for artifact in artifacts.files {
+        let path = safe_artifact_path(staged.path(), &artifact.relative_path)?;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
                 .map_err(|err| format!("failed to create `{}`: {err}", parent.display()))?;
         }
-        fs::write(&path, file.contents)
-            .map_err(|err| format!("failed to write `{}`: {err}", path.display()))?;
+        match artifact.content {
+            ArtifactContent::Text(contents) => fs::write(&path, contents)
+                .map_err(|err| format!("failed to write `{}`: {err}", path.display()))?,
+            ArtifactContent::Bytes(bytes) => fs::write(&path, bytes)
+                .map_err(|err| format!("failed to write `{}`: {err}", path.display()))?,
+            ArtifactContent::Json(value) => {
+                let file = fs::File::create(&path)
+                    .map_err(|err| format!("failed to create `{}`: {err}", path.display()))?;
+                serde_json::to_writer_pretty(file, &value)
+                    .map_err(|err| format!("failed to write `{}`: {err}", path.display()))?;
+            }
+        }
     }
-    Ok(())
+    Ok(staged)
+}
+
+fn first_diagnostic_message(diagnostics: &coflow_api::DiagnosticSet) -> String {
+    diagnostics.diagnostics.first().map_or_else(
+        || "provider failed without diagnostics".to_string(),
+        |diagnostic| diagnostic.message.clone(),
+    )
 }
 
 fn safe_artifact_path(dir: &Path, relative_path: &Path) -> Result<PathBuf, String> {

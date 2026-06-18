@@ -52,22 +52,16 @@ fn json_database_templates() -> CsharpDatabaseTemplates {
     CsharpDatabaseTemplates {
         database_template: CsharpTemplate {
             name: "database_json.cs.tera",
-            contents: include_str!(
-                "../../coflow-codegen-csharp-json/templates/database_json.cs.tera"
-            ),
+            contents: include_str!("../templates/json/database_json.cs.tera"),
         },
         partials: &[
             CsharpTemplate {
                 name: "database_json_loaders.cs.tera",
-                contents: include_str!(
-                    "../../coflow-codegen-csharp-json/templates/database_json_loaders.cs.tera"
-                ),
+                contents: include_str!("../templates/json/database_json_loaders.cs.tera"),
             },
             CsharpTemplate {
                 name: "database_json_readers.cs.tera",
-                contents: include_str!(
-                    "../../coflow-codegen-csharp-json/templates/database_json_readers.cs.tera"
-                ),
+                contents: include_str!("../templates/json/database_json_readers.cs.tera"),
             },
         ],
     }
@@ -75,27 +69,25 @@ fn json_database_templates() -> CsharpDatabaseTemplates {
 
 fn messagepack_database_templates() -> CsharpDatabaseTemplates {
     CsharpDatabaseTemplates {
-            database_template: CsharpTemplate {
-                name: "database_messagepack.cs.tera",
+        database_template: CsharpTemplate {
+            name: "database_messagepack.cs.tera",
+            contents: include_str!("../templates/messagepack/database_messagepack.cs.tera"),
+        },
+        partials: &[
+            CsharpTemplate {
+                name: "database_messagepack_loaders.cs.tera",
                 contents: include_str!(
-                    "../../coflow-codegen-csharp-messagepack/templates/database_messagepack.cs.tera"
+                    "../templates/messagepack/database_messagepack_loaders.cs.tera"
                 ),
             },
-            partials: &[
-                CsharpTemplate {
-                    name: "database_messagepack_loaders.cs.tera",
-                    contents: include_str!(
-                        "../../coflow-codegen-csharp-messagepack/templates/database_messagepack_loaders.cs.tera"
-                    ),
-                },
-                CsharpTemplate {
-                    name: "database_messagepack_readers.cs.tera",
-                    contents: include_str!(
-                        "../../coflow-codegen-csharp-messagepack/templates/database_messagepack_readers.cs.tera"
-                    ),
-                },
-            ],
-        }
+            CsharpTemplate {
+                name: "database_messagepack_readers.cs.tera",
+                contents: include_str!(
+                    "../templates/messagepack/database_messagepack_readers.cs.tera"
+                ),
+            },
+        ],
+    }
 }
 
 fn generate_json(

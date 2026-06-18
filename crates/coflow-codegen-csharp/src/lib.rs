@@ -24,6 +24,10 @@ mod names;
 mod render;
 mod schema_view;
 
+use coflow_api::{
+    ArtifactFile, ArtifactSet, CodeGenerator, CodegenContext, CodegenDescriptor, Diagnostic,
+    DiagnosticSet, OutputSpec,
+};
 use coflow_cft::CftContainer;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -129,6 +133,214 @@ pub fn generate_csharp_with_key_as_enum_variants(
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
     let project = ir::build_project(schema, options, data_format, key_as_enum_variants)?;
     render::render_project(&project, database_templates)
+}
+
+const JSON_DATABASE_TEMPLATES: CsharpDatabaseTemplates = CsharpDatabaseTemplates {
+    database_template: CsharpTemplate {
+        name: "database_json.cs.tera",
+        contents: include_str!("../templates/json/database_json.cs.tera"),
+    },
+    partials: &[
+        CsharpTemplate {
+            name: "database_json_loaders.cs.tera",
+            contents: include_str!("../templates/json/database_json_loaders.cs.tera"),
+        },
+        CsharpTemplate {
+            name: "database_json_readers.cs.tera",
+            contents: include_str!("../templates/json/database_json_readers.cs.tera"),
+        },
+    ],
+};
+
+const MESSAGEPACK_DATABASE_TEMPLATES: CsharpDatabaseTemplates = CsharpDatabaseTemplates {
+    database_template: CsharpTemplate {
+        name: "database_messagepack.cs.tera",
+        contents: include_str!("../templates/messagepack/database_messagepack.cs.tera"),
+    },
+    partials: &[
+        CsharpTemplate {
+            name: "database_messagepack_loaders.cs.tera",
+            contents: include_str!("../templates/messagepack/database_messagepack_loaders.cs.tera"),
+        },
+        CsharpTemplate {
+            name: "database_messagepack_readers.cs.tera",
+            contents: include_str!("../templates/messagepack/database_messagepack_readers.cs.tera"),
+        },
+    ],
+};
+
+/// Generates C# type definitions and a Newtonsoft.Json based folder loader.
+///
+/// # Errors
+///
+/// Returns an error when the compiled schema cannot be mapped to C# runtime
+/// code or when a Tera template fails to render.
+pub fn generate_csharp_json(
+    schema: &CftContainer,
+    options: &CsharpCodegenOptions,
+) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+    generate_csharp_with_database_templates(
+        schema,
+        options,
+        CsharpDataFormat::Json,
+        &JSON_DATABASE_TEMPLATES,
+    )
+}
+
+/// Generates C# JSON loader files and includes data-driven `@keyAsEnum`
+/// variants.
+///
+/// # Errors
+///
+/// Returns an error when the compiled schema cannot be mapped to C# runtime
+/// code or when a Tera template fails to render.
+pub fn generate_csharp_json_with_key_as_enum_variants(
+    schema: &CftContainer,
+    options: &CsharpCodegenOptions,
+    key_as_enum_variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
+) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+    generate_csharp_with_key_as_enum_variants(
+        schema,
+        options,
+        CsharpDataFormat::Json,
+        &JSON_DATABASE_TEMPLATES,
+        key_as_enum_variants,
+    )
+}
+
+/// Generates C# type definitions and a `MessagePack` based folder loader.
+///
+/// # Errors
+///
+/// Returns an error when the compiled schema cannot be mapped to C# runtime
+/// code or when a Tera template fails to render.
+pub fn generate_csharp_messagepack(
+    schema: &CftContainer,
+    options: &CsharpCodegenOptions,
+) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+    generate_csharp_with_database_templates(
+        schema,
+        options,
+        CsharpDataFormat::MessagePack,
+        &MESSAGEPACK_DATABASE_TEMPLATES,
+    )
+}
+
+/// Generates C# `MessagePack` loader files and includes data-driven
+/// `@keyAsEnum` variants.
+///
+/// # Errors
+///
+/// Returns an error when the compiled schema cannot be mapped to C# runtime
+/// code or when a Tera template fails to render.
+pub fn generate_csharp_messagepack_with_key_as_enum_variants(
+    schema: &CftContainer,
+    options: &CsharpCodegenOptions,
+    key_as_enum_variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
+) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
+    generate_csharp_with_key_as_enum_variants(
+        schema,
+        options,
+        CsharpDataFormat::MessagePack,
+        &MESSAGEPACK_DATABASE_TEMPLATES,
+        key_as_enum_variants,
+    )
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CsharpCodeGenerator;
+
+pub const CSHARP_CODEGEN_DESCRIPTOR: CodegenDescriptor = CodegenDescriptor {
+    id: "csharp",
+    display_name: "C#",
+    language: "csharp",
+    file_extensions: &["cs"],
+    supported_data_formats: &["json", "messagepack"],
+    needs_model_for_build: true,
+};
+
+impl CodeGenerator for CsharpCodeGenerator {
+    fn descriptor(&self) -> &'static CodegenDescriptor {
+        &CSHARP_CODEGEN_DESCRIPTOR
+    }
+
+    fn preflight(&self, ctx: CodegenContext<'_>, output: &OutputSpec) -> DiagnosticSet {
+        let namespace = output
+            .options
+            .get("namespace")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("Game.Config");
+        let options = CsharpCodegenOptions::new(namespace);
+        DiagnosticSet {
+            diagnostics: preflight_csharp_codegen(ctx.schema, &options, &BTreeMap::new())
+                .into_iter()
+                .map(|diagnostic| {
+                    Diagnostic::error(diagnostic.code, diagnostic.stage, diagnostic.message)
+                })
+                .collect(),
+        }
+    }
+
+    fn generate(
+        &self,
+        ctx: CodegenContext<'_>,
+        output: &OutputSpec,
+    ) -> Result<ArtifactSet, DiagnosticSet> {
+        let namespace = output
+            .options
+            .get("namespace")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("Game.Config");
+        let options = CsharpCodegenOptions::new(namespace);
+        let key_as_enum_variants = key_as_enum_variants_from_options(&output.options)?;
+        let generated = match ctx.data_format {
+            "json" => generate_csharp_json_with_key_as_enum_variants(
+                ctx.schema,
+                &options,
+                key_as_enum_variants,
+            ),
+            "messagepack" => generate_csharp_messagepack_with_key_as_enum_variants(
+                ctx.schema,
+                &options,
+                key_as_enum_variants,
+            ),
+            other => {
+                return Err(DiagnosticSet::one(Diagnostic::error(
+                    "CSHARP-FORMAT",
+                    "CODEGEN",
+                    format!("C# codegen does not support data format `{other}`"),
+                )))
+            }
+        }
+        .map_err(|err| {
+            DiagnosticSet::one(Diagnostic::error(
+                "CSHARP-CODEGEN",
+                "CODEGEN",
+                err.to_string(),
+            ))
+        })?;
+        Ok(ArtifactSet::new(
+            generated
+                .into_iter()
+                .map(|file| ArtifactFile::text(file.relative_path, file.contents))
+                .collect(),
+        ))
+    }
+}
+
+fn key_as_enum_variants_from_options(
+    options: &serde_json::Value,
+) -> Result<BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>, DiagnosticSet> {
+    let Some(value) = options.get("key_as_enum_variants") else {
+        return Ok(BTreeMap::new());
+    };
+    serde_json::from_value(value.clone()).map_err(|err| {
+        DiagnosticSet::one(Diagnostic::error(
+            "CSHARP-OPTIONS",
+            "CODEGEN",
+            format!("invalid key_as_enum_variants option: {err}"),
+        ))
+    })
 }
 
 #[cfg(test)]

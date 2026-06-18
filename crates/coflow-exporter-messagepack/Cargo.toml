@@ -14,10 +14,9 @@ publish = false
 workspace = true
 
 [dependencies]
-coflow-cft = { path = "../coflow-cft" }
-coflow-data-model = { path = "../coflow-data-model" }
-coflow-exporter-core = { path = "../coflow-exporter-core" }
+coflow-api = { path = "../coflow-api" }
 rmp = "0.8"
 
 [dev-dependencies]
+coflow-data-model = { path = "../coflow-data-model" }
 rmpv = "1"

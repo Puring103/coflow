@@ -96,13 +96,12 @@ setter 选择、继承展开、记录 key、引用解析、`@keyAsEnum`、`@disp
 C# codegen 只消费已经通过编译的 schema。golden tests 需要固定复杂 schema
 的输出形状，避免模板输入结构变化时悄悄改变生成代码。
 
-当前实现按共享核心和格式入口拆分：
+当前实现按单一 C# provider 和内置格式模板组织：
 
-- `crates/coflow-codegen-csharp` 负责 C# 类型模型、公共模板和渲染流程。
-- `crates/coflow-codegen-csharp-json` 持有 JSON loader 模板和入口函数。
-- `crates/coflow-codegen-csharp-messagepack` 持有 MessagePack loader 模板和入口函数。
+- `crates/coflow-codegen-csharp` 负责 C# 类型模型、公共模板、JSON loader 模板、MessagePack loader 模板和渲染流程。
+- crate 实现 `coflow-api::CodeGenerator`，provider id 为 `csharp`。
 
-CLI 根据项目 data format 选择调用 JSON 或 MessagePack codegen crate。生成出的 C# 运行时代码只依赖对应的数据文件和运行时包，不依赖 CFT parser/compiler。
+CLI 通过 builtin `ProviderRegistry` 调用 C# codegen provider，并把项目 data format 作为 provider context 传入。生成出的 C# 运行时代码只依赖对应的数据文件和运行时包，不依赖 CFT parser/compiler。
 
 生成的 C# 是 trusted artifact loader。它只承诺加载官方 Coflow exporter 从已经通过 Rust pipeline 的数据生成的 JSON 或 MessagePack 产物，负责反序列化、构建运行时查找表并解析生成对象的引用。它不承诺为任意手写或损坏的数据文件提供稳定诊断，也不执行 CFT check。
 
@@ -124,20 +123,15 @@ crates/coflow-codegen-csharp/
     database_common_resolve.cs.tera
     database_common_indexes.cs.tera
     load_exception.cs.tera
-
-crates/coflow-codegen-csharp-json/
-  src/lib.rs
   templates/
-    database_json.cs.tera
-    database_json_loaders.cs.tera
-    database_json_readers.cs.tera
-
-crates/coflow-codegen-csharp-messagepack/
-  src/lib.rs
-  templates/
-    database_messagepack.cs.tera
-    database_messagepack_loaders.cs.tera
-    database_messagepack_readers.cs.tera
+    json/
+      database_json.cs.tera
+      database_json_loaders.cs.tera
+      database_json_readers.cs.tera
+    messagepack/
+      database_messagepack.cs.tera
+      database_messagepack_loaders.cs.tera
+      database_messagepack_readers.cs.tera
 ```
 
 生成文件按类型拆分：

@@ -19,15 +19,15 @@ mod schema;
 
 use artifacts::{
     commit_staged_dir_and_file, commit_staged_dirs_and_file, configured_data_format,
-    configured_data_output, output_dir, preflight_csharp_files, required_code_output,
+    configured_data_output, output_dir, preflight_codegen, required_code_output,
     required_data_output, stage_csharp_files, stage_data_tables, stage_json_file,
     write_data_tables,
 };
-use coflow_codegen_csharp_json::CsharpCodegenDiagnostic;
-use coflow_codegen_csharp_json::CsharpKeyAsEnumVariant;
+use coflow_api::{DiagnosticSet, ProviderRegistry};
 use coflow_project::{DiagnosticJson, Project};
 use data::load_project_data;
 use schema::compile_project_schema;
+use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -140,7 +140,10 @@ pub struct BuildReport {
 /// Returns an error for project configuration errors or unrecoverable I/O and
 /// artifact errors. Schema, data loading, data-model, and check diagnostics are
 /// returned as `PipelineOutcome::Diagnostics`.
-pub fn check_project(project: &Project) -> Result<PipelineOutcome<CheckReport>, String> {
+pub fn check_project(
+    project: &Project,
+    registry: &ProviderRegistry,
+) -> Result<PipelineOutcome<CheckReport>, String> {
     let mut diagnostics = project.schema_diagnostics();
     diagnostics.extend(project.data_diagnostics());
     if !diagnostics.is_empty() {
@@ -150,7 +153,7 @@ pub fn check_project(project: &Project) -> Result<PipelineOutcome<CheckReport>, 
         Ok(schema) => schema,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
-    match load_project_data(project, &schema) {
+    match load_project_data(project, &schema, registry) {
         Ok(_) => Ok(PipelineOutcome::Success(CheckReport)),
         Err(diagnostics) => Ok(PipelineOutcome::Diagnostics(diagnostics)),
     }
@@ -166,6 +169,7 @@ pub fn check_project(project: &Project) -> Result<PipelineOutcome<CheckReport>, 
 /// `PipelineOutcome::Diagnostics`.
 pub fn build_project(
     project: &Project,
+    registry: &ProviderRegistry,
     options: BuildOptions<'_>,
 ) -> Result<PipelineOutcome<BuildReport>, String> {
     let mut diagnostics = project.schema_diagnostics();
@@ -181,7 +185,7 @@ pub fn build_project(
         Ok(schema) => schema,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
-    let load_output = match load_project_data(project, &schema) {
+    let load_output = match load_project_data(project, &schema, registry) {
         Ok(output) => output,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
@@ -205,9 +209,12 @@ pub fn build_project(
             .or(code_output.namespace.as_deref())
             .unwrap_or("Game.Config")
             .to_string();
-        preflight_diagnostics.extend(diagnostics_from_codegen_preflight(preflight_csharp_files(
-            &schema, &namespace,
-        )));
+        preflight_diagnostics.extend(diagnostics_from_provider(preflight_codegen(
+            registry,
+            &schema,
+            data_format,
+            &namespace,
+        )?));
         artifact_plans.push(ArtifactOutputPlan::new(
             "outputs.code.dir",
             code_dir.clone(),
@@ -221,18 +228,27 @@ pub fn build_project(
         return Ok(PipelineOutcome::Diagnostics(preflight_diagnostics));
     }
 
-    let staged_data = stage_data_tables(&schema, &load_output.model, data_format, &data_dir)?;
+    let staged_data = stage_data_tables(
+        registry,
+        &schema,
+        &load_output.model,
+        data_format,
+        &data_dir,
+    )?;
     let code = if let Some((code_dir, namespace)) = code_plan {
         let lockfile = enum_lockfile_path(project);
         let key_as_enum_ids = collect_key_as_enum_ids(&schema, &load_output.model);
         let (locked_key_as_enum, key_as_enum_variants) =
             merge_key_as_enum_lockfile(&lockfile, key_as_enum_ids)?;
+        let key_as_enum_variants = serde_json::to_value(key_as_enum_variants)
+            .map_err(|err| format!("failed to serialize @keyAsEnum variants: {err}"))?;
         let staged_code = stage_csharp_files(
+            registry,
             &schema,
             data_format,
             &namespace,
             &code_dir,
-            key_as_enum_variants,
+            &key_as_enum_variants,
         )?;
         let staged_lockfile = stage_key_as_enum_lockfile_if_needed(&lockfile, &locked_key_as_enum)?;
         commit_staged_dirs_and_file(vec![staged_data, staged_code], staged_lockfile)?;
@@ -263,6 +279,7 @@ pub fn build_project(
 /// `PipelineOutcome::Diagnostics`.
 pub fn export_project_data(
     project: &Project,
+    registry: &ProviderRegistry,
     format: DataFormat,
     options: ExportOptions<'_>,
 ) -> Result<PipelineOutcome<ExportReport>, String> {
@@ -281,7 +298,7 @@ pub fn export_project_data(
         Ok(schema) => schema,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
-    let load_output = match load_project_data(project, &schema) {
+    let load_output = match load_project_data(project, &schema, registry) {
         Ok(output) => output,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
@@ -292,7 +309,7 @@ pub fn export_project_data(
     if !artifact_diagnostics.is_empty() {
         return Ok(PipelineOutcome::Diagnostics(artifact_diagnostics));
     }
-    write_data_tables(&schema, &load_output.model, format, &dir)?;
+    write_data_tables(registry, &schema, &load_output.model, format, &dir)?;
     Ok(PipelineOutcome::Success(ExportReport { format, dir }))
 }
 
@@ -305,6 +322,7 @@ pub fn export_project_data(
 /// returned as `PipelineOutcome::Diagnostics`.
 pub fn generate_project_code(
     project: &Project,
+    registry: &ProviderRegistry,
     target: CodegenTarget,
     options: CodegenOptions<'_>,
 ) -> Result<PipelineOutcome<CodegenReport>, String> {
@@ -324,8 +342,12 @@ pub fn generate_project_code(
         Ok(schema) => schema,
         Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
     };
-    let codegen_diagnostics =
-        diagnostics_from_codegen_preflight(preflight_csharp_files(&schema, namespace));
+    let codegen_diagnostics = diagnostics_from_provider(preflight_codegen(
+        registry,
+        &schema,
+        data_format,
+        namespace,
+    )?);
     if !codegen_diagnostics.is_empty() {
         return Ok(PipelineOutcome::Diagnostics(codegen_diagnostics));
     }
@@ -340,8 +362,16 @@ pub fn generate_project_code(
     let key_as_enum_ids = collect_declared_key_as_enum_ids(&schema);
     let (locked_key_as_enum, key_as_enum_variants) =
         merge_key_as_enum_lockfile(&lockfile, key_as_enum_ids)?;
-    let staged_code =
-        stage_csharp_files(&schema, data_format, namespace, &dir, key_as_enum_variants)?;
+    let key_as_enum_variants = serde_json::to_value(key_as_enum_variants)
+        .map_err(|err| format!("failed to serialize @keyAsEnum variants: {err}"))?;
+    let staged_code = stage_csharp_files(
+        registry,
+        &schema,
+        data_format,
+        namespace,
+        &dir,
+        &key_as_enum_variants,
+    )?;
     let staged_lockfile = stage_key_as_enum_lockfile_if_needed(&lockfile, &locked_key_as_enum)?;
     commit_staged_dir_and_file(staged_code, staged_lockfile)?;
     Ok(PipelineOutcome::Success(CodegenReport { target, dir }))
@@ -489,10 +519,9 @@ fn paths_overlap(left: &Path, right: &Path) -> bool {
     left == right || left.starts_with(right) || right.starts_with(left)
 }
 
-fn diagnostics_from_codegen_preflight(
-    diagnostics: Vec<CsharpCodegenDiagnostic>,
-) -> Vec<DiagnosticJson> {
+fn diagnostics_from_provider(diagnostics: DiagnosticSet) -> Vec<DiagnosticJson> {
     diagnostics
+        .diagnostics
         .into_iter()
         .map(|diagnostic| {
             DiagnosticJson::codegen(diagnostic.code, diagnostic.stage, diagnostic.message)
@@ -556,13 +585,7 @@ fn enum_lockfile_path(project: &Project) -> PathBuf {
 fn merge_key_as_enum_lockfile(
     lockfile: &Path,
     current_ids: BTreeMap<String, Vec<String>>,
-) -> Result<
-    (
-        KeyAsEnumLockfile,
-        BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
-    ),
-    String,
-> {
+) -> Result<(KeyAsEnumLockfile, BTreeMap<String, Vec<KeyAsEnumVariant>>), String> {
     if current_ids.is_empty() {
         return Ok((BTreeMap::new(), BTreeMap::new()));
     }
@@ -594,7 +617,7 @@ fn merge_key_as_enum_lockfile(
         .map(|(enum_name, entries)| {
             let mut variants = entries
                 .into_iter()
-                .map(|(name, value)| CsharpKeyAsEnumVariant { name, value })
+                .map(|(name, value)| KeyAsEnumVariant { name, value })
                 .collect::<Vec<_>>();
             variants.sort_by(|left, right| {
                 left.value
@@ -638,9 +661,7 @@ fn stage_key_as_enum_lockfile_if_needed(
     stage_json_file(path, locked).map(Some)
 }
 
-fn variants_to_lockfile(
-    variants: &BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
-) -> KeyAsEnumLockfile {
+fn variants_to_lockfile(variants: &BTreeMap<String, Vec<KeyAsEnumVariant>>) -> KeyAsEnumLockfile {
     variants
         .iter()
         .map(|(enum_name, entries)| {
@@ -653,6 +674,12 @@ fn variants_to_lockfile(
             )
         })
         .collect()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct KeyAsEnumVariant {
+    name: String,
+    value: i64,
 }
 
 fn annotation_string_arg(annotations: &[coflow_cft::CftAnnotation], name: &str) -> Option<String> {

@@ -8,7 +8,7 @@ use crate::names::{
 use crate::schema_view::SchemaView;
 use crate::CsharpCodegenError;
 use coflow_cft::CftContainer;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,7 +26,7 @@ pub enum CsharpDataFormat {
     MessagePack,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CsharpKeyAsEnumVariant {
     pub name: String,
     pub value: i64,

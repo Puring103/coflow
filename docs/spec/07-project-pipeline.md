@@ -5,8 +5,8 @@
 实现边界：
 
 - `coflow-project` 负责项目配置、路径解析、schema 文件发现、CFT 编译和 CFT 诊断映射。
-- `coflow-pipeline` 负责项目执行流水线：schema 编译后的控制流、Excel/飞书电子表格/CFD 数据加载、check 诊断聚合、数据导出和 C# codegen。
-- CLI 根包只负责命令行参数解析、调用 pipeline API、输出成功消息和诊断。
+- `coflow-pipeline` 负责项目执行流水线：schema 编译后的控制流、provider registry dispatch、数据模型构建、check 诊断聚合、artifact 安全写入。
+- CLI 根包是内置 provider 的组合根：注册 Excel/Lark/CFD loader、JSON/MessagePack exporter 和 C# codegen，然后调用 pipeline API、输出成功消息和诊断。
 - `coflow-cft-lsp` 只依赖 `coflow-project`，不依赖 `coflow-pipeline`。
 
 ---
@@ -44,12 +44,10 @@ key，避免 YAML map 后写覆盖导致隐式丢配置。
 
 - 解析项目配置并解析项目相对路径。
 - 发现并编译 schema，得到 `CftContainer`。
-- 发现 source 中支持的数据文件，并分别调用 `coflow-loader-excel`、`coflow-loader-lark` 或 `coflow-cfd`。
+- 发现 source 中支持的数据文件，并通过 `coflow-api::ProviderRegistry` 选择 `DataLoader`。
 - 编排 CLI 命令，包括数据加载、数据模型构建和 check 诊断处理。
-- 根据 `outputs.data.type` 调用 JSON 或 MessagePack 导出：
-  - `json`：调用 `coflow-exporter-json`，输出 `<TypeName>.json`。
-  - `messagepack`：调用 `coflow-exporter-messagepack`，输出 `<TypeName>.msgpack`。
-- 调用 C# codegen，并把项目配置中的 codegen options 传给 `coflow-codegen-csharp-json` 或 `coflow-codegen-csharp-messagepack`。
+- 根据 `outputs.data.type` 从 registry 查找 `DataExporter`，并写入 provider 返回的 `ArtifactSet`。
+- 根据 `outputs.code.type` 从 registry 查找 `CodeGenerator`，并把项目配置中的 codegen options 传入 provider。
 
 ---
 
@@ -160,7 +158,7 @@ CLI `coflow check` 对 `PipelineOutcome::Diagnostics` 的处理规则：
 ## 非职责
 
 - 不重新实现 CFT parser、schema compiler 或 schema 反射模型。
-- 不重新实现 Excel 单元格解析、飞书 API 读取或 CFD 文本解析；这些由 `coflow-loader-excel`、`coflow-loader-lark` 和 `coflow-cfd` 负责。
-- 不拥有 JSON 或 MessagePack 的 schema-aware 导出遍历规则；这些由 `coflow-exporter-core` 以及具体 exporter 负责。
-- 不拥有 C# 类型映射、模板渲染或加载器生成规则；codegen 接收编译后的 `CftContainer` 和 options。
+- 不重新实现 Excel 单元格解析、飞书 API 读取或 CFD 文本解析；这些由注册进 registry 的 loader provider 负责。
+- 不拥有 JSON 或 MessagePack 的 schema-aware 导出遍历规则；这些由 `coflow-api::export` 以及具体 exporter provider 负责。
+- 不拥有 C# 类型映射、模板渲染或加载器生成规则；codegen provider 接收编译后的 `CftContainer` 和 options。
 - 不充当生成出的 C# trusted artifact loader。

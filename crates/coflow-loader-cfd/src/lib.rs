@@ -15,6 +15,10 @@
 )]
 #![allow(clippy::missing_const_for_fn, clippy::similar_names, clippy::use_self)]
 
+use coflow_api::{
+    DataLoader, Diagnostic, DiagnosticSet, Label, LoadContext, LoadedRecords, LoaderDescriptor,
+    OriginMap, ProbeResult, SourceLocation, SourceRef, SourceSpec,
+};
 use coflow_cft::{record_key_ident_error, CftContainer, CftSchemaField, CftSchemaTypeRef};
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostics, CfdInputDictKey, CfdInputRecord, CfdInputRefIndex, CfdInputValue,
@@ -23,6 +27,7 @@ use coflow_data_model::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
+use std::fs;
 
 /// Parses `.cfd` text into source-neutral input records.
 ///
@@ -57,6 +62,139 @@ pub fn load_cfd_model(
         builder.add_input_record(record);
     }
     builder.build().map_err(CfdTextLoadError::DataModel)
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CfdLoader;
+
+pub const CFD_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
+    id: "cfd",
+    display_name: "Coflow data text",
+    extensions: &["cfd"],
+    uri_schemes: &[],
+    config_keys: &[],
+};
+
+impl DataLoader for CfdLoader {
+    fn descriptor(&self) -> &'static LoaderDescriptor {
+        &CFD_LOADER_DESCRIPTOR
+    }
+
+    fn probe(&self, source: &SourceRef<'_>) -> ProbeResult {
+        if source.source_type == Some(CFD_LOADER_DESCRIPTOR.id) {
+            return ProbeResult::certain();
+        }
+        if source
+            .path
+            .and_then(|path| path.extension())
+            .and_then(|ext| ext.to_str())
+            == Some("cfd")
+        {
+            ProbeResult::likely()
+        } else {
+            ProbeResult::none()
+        }
+    }
+
+    fn load(
+        &self,
+        ctx: LoadContext<'_>,
+        source: &SourceSpec,
+    ) -> Result<LoadedRecords, DiagnosticSet> {
+        let Some(file) = source.file.as_ref() else {
+            return Err(DiagnosticSet::one(Diagnostic::error(
+                "CFD-SOURCE",
+                "CFD",
+                "cfd source requires `file`",
+            )));
+        };
+        let contents = fs::read_to_string(file).map_err(|err| {
+            DiagnosticSet::one(Diagnostic::error(
+                "CFD-READ",
+                "CFD",
+                format!("failed to read CFD source `{}`: {err}", file.display()),
+            ))
+        })?;
+        parse_cfd_input_records(ctx.schema, &contents)
+            .map(|records| {
+                let mut origins = OriginMap::default();
+                origins.push_file_records(file.clone(), records.len());
+                LoadedRecords { records, origins }
+            })
+            .map_err(|err| cfd_error_to_diagnostics(file, &contents, err))
+    }
+}
+
+fn cfd_error_to_diagnostics(
+    file: &std::path::Path,
+    source: &str,
+    err: CfdTextLoadError,
+) -> DiagnosticSet {
+    match err {
+        CfdTextLoadError::Text(diagnostics) => DiagnosticSet {
+            diagnostics: diagnostics
+                .diagnostics
+                .into_iter()
+                .map(|diagnostic| {
+                    let start = byte_position(source, diagnostic.span.start);
+                    let end =
+                        byte_position(source, diagnostic.span.end.max(diagnostic.span.start + 1));
+                    Diagnostic::error(
+                        format!("CFD-TEXT-{:?}", diagnostic.code),
+                        "CFD",
+                        diagnostic.message,
+                    )
+                    .with_primary(Label {
+                        location: SourceLocation::FileSpan {
+                            path: file.to_path_buf(),
+                            start_line: start.line,
+                            start_character: start.character,
+                            end_line: end.line,
+                            end_character: end.character,
+                        },
+                        message: None,
+                    })
+                })
+                .collect(),
+        },
+        CfdTextLoadError::DataModel(diagnostics) => DiagnosticSet {
+            diagnostics: diagnostics
+                .diagnostics
+                .into_iter()
+                .map(|diagnostic| {
+                    Diagnostic::error(
+                        diagnostic.code.as_str().to_string(),
+                        diagnostic.stage.to_string(),
+                        diagnostic.message,
+                    )
+                })
+                .collect(),
+        },
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Position {
+    line: usize,
+    character: usize,
+}
+
+fn byte_position(source: &str, byte_offset: usize) -> Position {
+    let target = byte_offset.min(source.len());
+    let mut line = 0;
+    let mut character = 0;
+    for (byte_index, ch) in source.char_indices() {
+        if byte_index >= target {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            character = 0;
+        } else {
+            character += ch.len_utf16();
+        }
+    }
+    Position { line, character }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

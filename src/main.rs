@@ -297,7 +297,8 @@ fn run_lsp(args: &LspArgs) -> Result<bool, String> {
 
 fn project_check(args: &ProjectCheckArgs) -> Result<bool, String> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    match check_project(&project)
+    let registry = coflow::builtin_registry();
+    match check_project(&project, &registry)
         .map_err(|message| relativize_message_paths(&message, &project.root_dir))?
     {
         PipelineOutcome::Success(_) => {
@@ -320,8 +321,10 @@ fn project_check(args: &ProjectCheckArgs) -> Result<bool, String> {
 
 fn project_build(args: &BuildArgs) -> Result<bool, String> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
+    let registry = coflow::builtin_registry();
     match build_project(
         &project,
+        &registry,
         BuildOptions {
             data_out_dir: args.data_out_dir.as_deref(),
             code_out_dir: args.code_out_dir.as_deref(),
@@ -358,8 +361,10 @@ fn project_build(args: &BuildArgs) -> Result<bool, String> {
 
 fn export_json(args: &ExportJsonArgs) -> Result<bool, String> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
+    let registry = coflow::builtin_registry();
     match export_project_data(
         &project,
+        &registry,
         DataFormat::Json,
         ExportOptions {
             out_dir: args.out_dir.as_deref(),
@@ -383,8 +388,10 @@ fn export_json(args: &ExportJsonArgs) -> Result<bool, String> {
 
 fn export_messagepack(args: &ExportMessagePackArgs) -> Result<bool, String> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
+    let registry = coflow::builtin_registry();
     match export_project_data(
         &project,
+        &registry,
         DataFormat::Messagepack,
         ExportOptions {
             out_dir: args.out_dir.as_deref(),
@@ -408,8 +415,10 @@ fn export_messagepack(args: &ExportMessagePackArgs) -> Result<bool, String> {
 
 fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, String> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
+    let registry = coflow::builtin_registry();
     match generate_project_code(
         &project,
+        &registry,
         CodegenTarget::Csharp,
         CodegenOptions {
             out_dir: args.out_dir.as_deref(),

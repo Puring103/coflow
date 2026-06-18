@@ -19,14 +19,19 @@
 #![allow(clippy::missing_const_for_fn)]
 
 use calamine::{open_workbook_auto, Data, Reader};
+pub use coflow_api::table::TableSheet;
+use coflow_api::table::{
+    collect_table_input_records as collect_shared_table_input_records, TableDiagnostic,
+    TableDiagnostics, TableLabel, TableLocation, TableOrigins, TableSheetConfig,
+    TableSource as SharedTableSource,
+};
+use coflow_api::{
+    DataLoader, Diagnostic, DiagnosticSet, Label, LoadContext, LoadedRecords, LoaderDescriptor,
+    ProbeResult, SourceLocation, SourceRef, SourceSpec,
+};
 use coflow_cft::CftContainer;
 use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdInputRecord};
-pub use coflow_loader_table::TableSheet;
-use coflow_loader_table::{
-    collect_table_input_records as collect_shared_table_input_records, load_table,
-    load_table_model, TableDiagnostic, TableDiagnostics, TableLabel, TableLoadOutput,
-    TableLocation, TableOrigins, TableSheetConfig, TableSource as SharedTableSource,
-};
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -122,15 +127,6 @@ impl From<ExcelSheet> for TableSheetConfig {
 pub struct ExcelLoadOutput {
     pub model: CfdDataModel,
     pub check_diagnostics: Option<ExcelDiagnostics>,
-}
-
-impl From<TableLoadOutput> for ExcelLoadOutput {
-    fn from(output: TableLoadOutput) -> Self {
-        Self {
-            model: output.model,
-            check_diagnostics: output.check_diagnostics.map(ExcelDiagnostics::from),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -345,7 +341,15 @@ pub fn load_excel_model(
     sources: &[ExcelSource],
 ) -> Result<CfdDataModel, ExcelDiagnostics> {
     let table_sources = table_sources_from_excel(sources)?;
-    load_table_model(schema, &table_sources).map_err(ExcelDiagnostics::from)
+    let loaded = collect_shared_table_input_records(schema, &table_sources)
+        .map_err(ExcelDiagnostics::from)?;
+    let mut builder = CfdDataModel::builder(schema);
+    for record in loaded.records {
+        builder.add_input_record(record);
+    }
+    builder
+        .build()
+        .map_err(|diagnostics| ExcelDiagnostics::from(loaded.origins.map(diagnostics)))
 }
 
 /// Loads configured Excel sheets and runs CFT `check` blocks against the model.
@@ -361,9 +365,22 @@ pub fn load_excel(
     sources: &[ExcelSource],
 ) -> Result<ExcelLoadOutput, ExcelDiagnostics> {
     let table_sources = table_sources_from_excel(sources)?;
-    load_table(schema, &table_sources)
-        .map(ExcelLoadOutput::from)
-        .map_err(ExcelDiagnostics::from)
+    let loaded = collect_shared_table_input_records(schema, &table_sources)
+        .map_err(ExcelDiagnostics::from)?;
+    let mut builder = CfdDataModel::builder(schema);
+    for record in loaded.records {
+        builder.add_input_record(record);
+    }
+    let model = builder
+        .build()
+        .map_err(|diagnostics| ExcelDiagnostics::from(loaded.origins.clone().map(diagnostics)))?;
+    let check_diagnostics = coflow_checker::run_checks(schema, &model)
+        .err()
+        .map(|diagnostics| ExcelDiagnostics::from(loaded.origins.map(diagnostics)));
+    Ok(ExcelLoadOutput {
+        model,
+        check_diagnostics,
+    })
 }
 
 /// Loads configured Excel sources into input records without building a data model.
@@ -623,4 +640,163 @@ fn table_message_to_excel(message: &str) -> String {
 
 fn is_whole_float(value: f64) -> bool {
     value.is_finite() && value.fract().abs() < f64::EPSILON
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ExcelLoader;
+
+pub const EXCEL_LOADER_DESCRIPTOR: LoaderDescriptor = LoaderDescriptor {
+    id: "excel",
+    display_name: "Excel workbook",
+    extensions: &["xlsx", "xlsm", "xls"],
+    uri_schemes: &[],
+    config_keys: &["sheets"],
+};
+
+impl DataLoader for ExcelLoader {
+    fn descriptor(&self) -> &'static LoaderDescriptor {
+        &EXCEL_LOADER_DESCRIPTOR
+    }
+
+    fn probe(&self, source: &SourceRef<'_>) -> ProbeResult {
+        if source.source_type == Some(EXCEL_LOADER_DESCRIPTOR.id) {
+            return ProbeResult::certain();
+        }
+        if source
+            .path
+            .and_then(|path| path.extension())
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| {
+                EXCEL_LOADER_DESCRIPTOR
+                    .extensions
+                    .iter()
+                    .any(|candidate| candidate == &ext)
+            })
+        {
+            ProbeResult::likely()
+        } else {
+            ProbeResult::none()
+        }
+    }
+
+    fn load(
+        &self,
+        ctx: LoadContext<'_>,
+        source: &SourceSpec,
+    ) -> Result<LoadedRecords, DiagnosticSet> {
+        let Some(file) = source.file.clone() else {
+            return Err(DiagnosticSet::one(Diagnostic::error(
+                "EXCEL-SOURCE",
+                "EXCEL",
+                "excel source requires `file`",
+            )));
+        };
+        let sheets = excel_sheets_from_options(&source.options)?;
+        let excel_source = ExcelSource::new(file, sheets);
+        collect_input_records(ctx.schema, &[excel_source])
+            .map(|loaded| LoadedRecords {
+                records: loaded.records,
+                origins: loaded.origins.to_origin_map(),
+            })
+            .map_err(excel_diagnostics_to_api)
+    }
+}
+
+fn excel_sheets_from_options(options: &Value) -> Result<Vec<ExcelSheet>, DiagnosticSet> {
+    let Some(sheets) = options.get("sheets") else {
+        return Ok(Vec::new());
+    };
+    let Some(sheets) = sheets.as_array() else {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "EXCEL-SOURCE",
+            "EXCEL",
+            "excel source option `sheets` must be an array",
+        )));
+    };
+    sheets
+        .iter()
+        .map(excel_sheet_from_value)
+        .collect::<Result<Vec<_>, _>>()
+}
+
+fn excel_sheet_from_value(value: &Value) -> Result<ExcelSheet, DiagnosticSet> {
+    let Some(object) = value.as_object() else {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "EXCEL-SOURCE",
+            "EXCEL",
+            "excel source sheet config must be an object",
+        )));
+    };
+    let Some(sheet_name) = object.get("sheet").and_then(Value::as_str) else {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "EXCEL-SOURCE",
+            "EXCEL",
+            "excel source sheet config requires `sheet`",
+        )));
+    };
+    let mut sheet = ExcelSheet::new(sheet_name);
+    if let Some(type_name) = object.get("type").and_then(Value::as_str) {
+        sheet = sheet.with_type(type_name);
+    }
+    if let Some(key) = object.get("key").and_then(Value::as_str) {
+        sheet = sheet.with_key(key);
+    }
+    if let Some(columns) = object.get("columns") {
+        let Some(columns) = columns.as_object() else {
+            return Err(DiagnosticSet::one(Diagnostic::error(
+                "EXCEL-SOURCE",
+                "EXCEL",
+                "excel source sheet `columns` must be an object",
+            )));
+        };
+        sheet =
+            sheet.with_columns(columns.iter().filter_map(|(source, field)| {
+                field.as_str().map(|field| (source.as_str(), field))
+            }));
+    }
+    Ok(sheet)
+}
+
+fn excel_diagnostics_to_api(err: ExcelDiagnostics) -> DiagnosticSet {
+    DiagnosticSet {
+        diagnostics: err
+            .diagnostics
+            .into_iter()
+            .map(excel_diagnostic_to_api)
+            .collect(),
+    }
+}
+
+fn excel_diagnostic_to_api(diagnostic: ExcelDiagnostic) -> Diagnostic {
+    Diagnostic {
+        code: diagnostic.code,
+        stage: diagnostic.stage,
+        severity: coflow_api::Severity::Error,
+        message: diagnostic.message,
+        primary: diagnostic.primary.map(excel_label_to_api),
+        related: diagnostic
+            .related
+            .into_iter()
+            .map(excel_label_to_api)
+            .collect(),
+    }
+}
+
+fn excel_label_to_api(label: ExcelLabel) -> Label {
+    Label {
+        location: SourceLocation::TableCell {
+            path: label.location.file,
+            sheet: label.location.sheet,
+            row: label.location.row.unwrap_or(1),
+            column: label.location.column.unwrap_or(1),
+        },
+        message: label.message,
+    }
+}
+
+impl ExcelOrigins {
+    #[must_use]
+    pub fn to_origin_map(&self) -> coflow_api::OriginMap {
+        self.inner.to_origin_map()
+    }
 }

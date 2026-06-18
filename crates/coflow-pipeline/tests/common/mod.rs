@@ -2,8 +2,7 @@
 
 pub use coflow_data_model::CfdErrorCode;
 pub use coflow_pipeline::{
-    build_project, check_project, export_project_data, generate_project_code, BuildOptions,
-    CodegenOptions, CodegenTarget, DataFormat, ExportOptions, PipelineOutcome,
+    BuildOptions, CodegenOptions, CodegenTarget, DataFormat, ExportOptions, PipelineOutcome,
 };
 pub use coflow_project::{
     OutputConfig, OutputsConfig, Project, ProjectConfig, SchemaConfig, SheetConfig, SourceConfig,
@@ -12,6 +11,46 @@ pub use rust_xlsxwriter::Workbook;
 pub use std::collections::BTreeMap;
 use std::fmt::Write as _;
 pub use std::path::{Path, PathBuf};
+
+pub fn test_registry() -> coflow_api::ProviderRegistry {
+    let mut registry = coflow_api::ProviderRegistry::default();
+    registry.register_loader(coflow_loader_excel::ExcelLoader);
+    registry.register_loader(coflow_loader_lark::LarkSheetLoader::default());
+    registry.register_loader(coflow_loader_cfd::CfdLoader);
+    registry.register_exporter(coflow_exporter_json::JsonExporter);
+    registry.register_exporter(coflow_exporter_messagepack::MessagePackExporter);
+    registry.register_codegen(coflow_codegen_csharp::CsharpCodeGenerator);
+    registry
+}
+
+pub fn check_project(
+    project: &Project,
+) -> Result<PipelineOutcome<coflow_pipeline::CheckReport>, String> {
+    coflow_pipeline::check_project(project, &test_registry())
+}
+
+pub fn build_project(
+    project: &Project,
+    options: BuildOptions<'_>,
+) -> Result<PipelineOutcome<coflow_pipeline::BuildReport>, String> {
+    coflow_pipeline::build_project(project, &test_registry(), options)
+}
+
+pub fn export_project_data(
+    project: &Project,
+    format: DataFormat,
+    options: ExportOptions<'_>,
+) -> Result<PipelineOutcome<coflow_pipeline::ExportReport>, String> {
+    coflow_pipeline::export_project_data(project, &test_registry(), format, options)
+}
+
+pub fn generate_project_code(
+    project: &Project,
+    target: CodegenTarget,
+    options: CodegenOptions<'_>,
+) -> Result<PipelineOutcome<coflow_pipeline::CodegenReport>, String> {
+    coflow_pipeline::generate_project_code(project, &test_registry(), target, options)
+}
 
 pub fn write_project_with_missing_excel_source(root: &Path, include_code_output: bool) {
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
