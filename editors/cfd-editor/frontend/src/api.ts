@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ProjectSnapshot, FileRecords, RecordRow, GraphData,
-  FileTreeNode, FieldValue, FieldPathSegment, DiagnosticItem
+  FileTreeNode, FieldValue, FieldPathSegment, DiagnosticItem, RecordBrief
 } from "./bindings";
 
 export const api = {
@@ -60,4 +60,7 @@ export const api = {
 
   duplicateRecord: (sessionId: number, filePath: string, srcKey: string, newKey: string) =>
     invoke<RecordRow>("duplicate_record", { sessionId, filePath, srcKey, newKey }),
+
+  getAllRecordsBrief: (sessionId: number) =>
+    invoke<RecordBrief[]>("get_all_records_brief", { sessionId }),
 };

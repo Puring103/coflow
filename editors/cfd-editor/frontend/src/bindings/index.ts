@@ -75,3 +75,9 @@ export type GraphEdge = {
 };
 
 export type GraphData = { nodes: GraphNode[]; edges: GraphEdge[] };
+
+export type RecordBrief = {
+  key: string;
+  actual_type: string;
+  file_path: string;
+};

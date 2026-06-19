@@ -173,6 +173,14 @@ fn duplicate_record(
     duplicate_record_inner(&state, session_id, &file_path, &src_key, &new_key)
 }
 
+#[tauri::command]
+fn get_all_records_brief(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+) -> Result<Vec<RecordBrief>, String> {
+    get_all_records_brief_inner(&state, session_id)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -196,6 +204,7 @@ fn main() {
             get_enum_variants,
             get_ref_targets,
             duplicate_record,
+            get_all_records_brief,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

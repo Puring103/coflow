@@ -122,3 +122,12 @@ pub struct GraphEdge {
     pub target: String,
     pub field_path: String,
 }
+
+/// Lightweight summary of a record for the command palette / jump-to-record.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct RecordBrief {
+    pub key: String,
+    pub actual_type: String,
+    pub file_path: String,
+}

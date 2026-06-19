@@ -4,12 +4,13 @@ import "./App.css";
 import { useRouter, type Route } from "./router";
 import { useProject } from "./hooks/useProject";
 import { api } from "./api";
-import type { FieldPathSegment, FieldValue, FileTreeNode } from "./bindings";
+import type { FieldPathSegment, FieldValue, FileTreeNode, RecordBrief } from "./bindings";
 import { FileTree } from "./components/FileTree";
 import { TableView } from "./components/TableView";
 import { RecordView } from "./components/RecordView";
 import { GraphView, invalidateGraphCache } from "./components/GraphView";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
+import { CommandPalette } from "./components/CommandPalette";
 
 export default function App() {
   const router = useRouter();
@@ -19,6 +20,8 @@ export default function App() {
   const [newFileError, setNewFileError] = useState<string | null>(null);
   const [opError, setOpError] = useState<string | null>(null);
   const [graphRefreshKey, setGraphRefreshKey] = useState(0);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [paletteRecords, setPaletteRecords] = useState<RecordBrief[]>([]);
   const opErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showOpError = useCallback((msg: string) => {
@@ -51,12 +54,22 @@ export default function App() {
 
   // Ctrl+S: flush dirty debounce immediately
   // Alt+Left/Right: navigate history
+  // Ctrl+P: open command palette (jump to record)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         if (project.dirty && project.snapshot && currentFile) {
           project.saveNow(project.snapshot.session_id, currentFile);
+        }
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "p") {
+        e.preventDefault();
+        if (project.snapshot) {
+          api.getAllRecordsBrief(project.snapshot.session_id)
+            .then(records => { setPaletteRecords(records); setShowCommandPalette(true); })
+            .catch(() => {});
         }
         return;
       }
@@ -287,10 +300,22 @@ export default function App() {
         {project.error && (
           <span className="error-msg" title={project.error}>⚠ {project.error}</span>
         )}
+        {project.snapshot && (
+          <button
+            onClick={() => {
+              api.getAllRecordsBrief(project.snapshot!.session_id)
+                .then(records => { setPaletteRecords(records); setShowCommandPalette(true); })
+                .catch(() => {});
+            }}
+            title="Jump to record (Ctrl+P)"
+            style={{ fontSize: 11 }}
+          >⌕ Jump to…</button>
+        )}
         <button
           title={[
             "Keyboard Shortcuts",
             "─────────────────",
+            "Ctrl+P       Jump to record (command palette)",
             "Ctrl+S       Save / flush diagnostics",
             "Alt+← / →   Back / Forward",
             "Ctrl+N       New record (in table view)",
@@ -535,6 +560,17 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Command palette (Ctrl+P) */}
+      {showCommandPalette && (
+        <CommandPalette
+          records={paletteRecords}
+          onNavigate={(filePath, recordKey) => {
+            router.push({ view: "record", file: filePath, recordKey });
+          }}
+          onClose={() => setShowCommandPalette(false)}
+        />
       )}
     </div>
   );
