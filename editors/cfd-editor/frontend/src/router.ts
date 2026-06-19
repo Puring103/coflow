@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 
 export type Route =
   | { view: "table"; file: string; typeFilter?: string }
-  | { view: "record"; file: string; recordKey: string }
+  | { view: "record"; file: string; recordKey: string; fieldSearch?: string }
   | { view: "graph"; file: string };
 
 interface RouterState {

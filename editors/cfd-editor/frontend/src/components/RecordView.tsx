@@ -10,6 +10,8 @@ interface RecordViewProps {
   filePath: string;
   recordKey: string;
   fileRecords: FileRecords | null;
+  /** Pre-populate the field search box (e.g., when navigating from a diagnostic). */
+  initialFieldSearch?: string;
   onWriteField: (
     sessionId: number,
     filePath: string,
@@ -32,6 +34,7 @@ export function RecordView({
   filePath,
   recordKey,
   fileRecords,
+  initialFieldSearch,
   onWriteField,
   onRenameRecord,
   onDeleteRecord,
@@ -91,7 +94,7 @@ export function RecordView({
 
   // Reset type filter and search when file changes; reset field search when record changes
   useEffect(() => { setTypeFilter(null); setSidebarSearch(""); pendingRenameKeyRef.current = null; }, [filePath]);
-  useEffect(() => { setFieldSearch(""); }, [recordKey]);
+  useEffect(() => { setFieldSearch(initialFieldSearch ?? ""); }, [recordKey, initialFieldSearch]);
 
   const filteredRecords = allRecords
     .filter(r => {

@@ -80,7 +80,9 @@ export function DiagnosticsPanel({ diagnostics, onNavigate, currentFile }: Diagn
   const handleItemClick = (item: DiagnosticItem) => {
     if (!isNavigable(item)) return;
     if (item.record_key) {
-      onNavigate!({ view: "record", file: item.file_path!, recordKey: item.record_key });
+      // field_path may be "fieldName" or "fieldName.sub" — use the first segment for the search
+      const topField = item.field_path ? item.field_path.split(".")[0] : undefined;
+      onNavigate!({ view: "record", file: item.file_path!, recordKey: item.record_key, ...(topField ? { fieldSearch: topField } : {}) });
     } else {
       onNavigate!({ view: "table", file: item.file_path! });
     }

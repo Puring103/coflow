@@ -473,6 +473,7 @@ export default function App() {
                     sessionId={project.snapshot?.session_id ?? 0}
                     filePath={router.current.file}
                     recordKey={(router.current as { view: "record"; file: string; recordKey: string }).recordKey}
+                    initialFieldSearch={(router.current as { view: "record"; file: string; recordKey: string; fieldSearch?: string }).fieldSearch}
                     fileRecords={project.fileRecords?.file_path === router.current.file ? project.fileRecords : null}
                     onWriteField={handleWriteField}
                     onRenameRecord={handleRenameRecord}
