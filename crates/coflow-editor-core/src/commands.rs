@@ -4825,6 +4825,33 @@ mod tests {
     }
 
     #[test]
+    fn sort_file_records_grouped() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+        let cfd = data_dir.join("items.cfd");
+        // Grouped syntax: Item { zebra { ... } apple { ... } mango { ... } }
+        std::fs::write(&cfd, "Item {\n  zebra {\n    name: \"Z\",\n  }\n  apple {\n    name: \"A\",\n  }\n  mango {\n    name: \"M\",\n  }\n}\n").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        let count = sort_file_records_inner(&store, sid, "data/items.cfd").unwrap();
+        assert!(count >= 3, "should report at least 3 items processed: {count}");
+
+        let contents = std::fs::read_to_string(&cfd).unwrap();
+        let apple_pos = contents.find("apple").unwrap();
+        let mango_pos = contents.find("mango").unwrap();
+        let zebra_pos = contents.find("zebra").unwrap();
+        assert!(apple_pos < mango_pos && mango_pos < zebra_pos, "grouped records should be sorted alphabetically:\n{contents}");
+    }
+
+    #[test]
     fn create_record_does_not_falsely_use_grouped_syntax() {
         // Regression: standalone records like "key: Item { ... }" contain "Item {"
         // which should NOT be mistaken for a grouped block header.
