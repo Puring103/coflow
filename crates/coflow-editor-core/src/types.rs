@@ -159,6 +159,9 @@ pub struct FieldSchema {
     /// If this field's type is `T?` where T is an Object type, this is T.
     /// Used by the UI to offer a "Create T object" button for null values.
     pub nullable_object_type: Option<String>,
+    /// If this field's type is `[T?]` (Array of nullable Object T), this is T.
+    /// Used by the UI to offer a "＋ T" button when adding items to an empty array.
+    pub array_nullable_element_type: Option<String>,
     /// Whether this field has a default value (implies it's optional in practice).
     pub has_default: bool,
 }

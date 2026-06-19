@@ -90,5 +90,7 @@ export type FieldSchema = {
   type_str: string;
   /** If this field is `T?` where T is an Object type, this is T. */
   nullable_object_type: string | null;
+  /** If this field is `[T?]` (Array of nullable Object T), this is T. */
+  array_nullable_element_type: string | null;
   has_default: boolean;
 };

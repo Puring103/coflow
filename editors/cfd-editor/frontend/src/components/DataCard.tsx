@@ -462,9 +462,10 @@ interface ExpandedProps {
   onRefClick?: (targetFile: string | null, targetKey: string) => void;
   label?: string;
   nullableObjectType?: string;
+  arrayNullableElementType?: string;
 }
 
-function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nullableObjectType }: ExpandedProps) {
+function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nullableObjectType, arrayNullableElementType }: ExpandedProps) {
   const MAX_DEPTH = 5;
   const [editing, setEditing] = useState(false);
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -479,12 +480,14 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
   const objectTypeName = value.kind === "Object" ? value.actual_type : undefined;
   const subFieldSchemas = useFieldSchemas(sessionId, objectTypeName);
 
-  // Infer the element type for Arrays of Objects (to pass nullableObjectType to Null items)
+  // Determine the element Object type for Arrays of nullable Objects.
+  // Prefer inferring from existing Object items; fall back to schema-provided hint.
   const arrayElemObjectType = useMemo(() => {
     if (value.kind !== "Array") return undefined;
     const firstObj = value.items.find(i => i.kind === "Object");
-    return firstObj && firstObj.kind === "Object" ? firstObj.actual_type : undefined;
-  }, [value]);
+    if (firstObj && firstObj.kind === "Object") return firstObj.actual_type;
+    return arrayNullableElementType;
+  }, [value, arrayNullableElementType]);
 
   const marginLeft = depth > 0 ? depth * 10 : 0;
 
@@ -621,6 +624,7 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
               label={field.name}
               onRefClick={onRefClick}
               nullableObjectType={subSchema?.nullable_object_type ?? undefined}
+              arrayNullableElementType={subSchema?.array_nullable_element_type ?? undefined}
               onEdit={onEdit ? (nv) => onEdit({
                 kind: "Object",
                 actual_type: value.actual_type,
@@ -828,12 +832,13 @@ export interface DataCardProps {
   onEdit?: (newValue: FieldValue) => void;
   onRefClick?: (targetFile: string | null, targetKey: string) => void;
   label?: string;
-  /** If this field's schema type is `T?` where T is an Object type, pass T here.
-   *  When value is Null and onEdit is provided, a "＋ Create T" button will be shown. */
+  /** If this field's schema type is `T?` where T is an Object type, pass T here. */
   nullableObjectType?: string;
+  /** If this field's schema type is `[T?]`, pass T here for the array's Null items. */
+  arrayNullableElementType?: string;
 }
 
-export function DataCard({ value, mode, depth = 0, sessionId, onEdit, onRefClick, label, nullableObjectType }: DataCardProps) {
+export function DataCard({ value, mode, depth = 0, sessionId, onEdit, onRefClick, label, nullableObjectType, arrayNullableElementType }: DataCardProps) {
   if (mode === "compact") {
     return <span style={{ fontFamily: "monospace", fontSize: 12 }}>{renderCompact(value)}</span>;
   }
@@ -845,7 +850,7 @@ export function DataCard({ value, mode, depth = 0, sessionId, onEdit, onRefClick
   // expanded
   return (
     <div style={{ fontFamily: "monospace", fontSize: 12 }}>
-      <ExpandedValue value={value} depth={depth} sessionId={sessionId} onEdit={onEdit} onRefClick={onRefClick} label={label} nullableObjectType={nullableObjectType} />
+      <ExpandedValue value={value} depth={depth} sessionId={sessionId} onEdit={onEdit} onRefClick={onRefClick} label={label} nullableObjectType={nullableObjectType} arrayNullableElementType={arrayNullableElementType} />
     </div>
   );
 }

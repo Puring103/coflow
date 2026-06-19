@@ -680,7 +680,8 @@ export function RecordView({
                       onRefClick={(targetFile, targetKey) =>
                         onNavigate({ view: "record", file: targetFile ?? filePath, recordKey: targetKey })
                       }
-                      nullableObjectType={fieldSchemas.find(s => s.name === field.name)?.nullable_object_type ?? undefined}
+                      nullableObjectType={fieldSchema?.nullable_object_type ?? undefined}
+                      arrayNullableElementType={fieldSchema?.array_nullable_element_type ?? undefined}
                     />
                   </div>
                 </div>

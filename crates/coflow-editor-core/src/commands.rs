@@ -896,7 +896,7 @@ pub fn get_field_schemas_inner(
     session_id: u32,
     type_name: &str,
 ) -> Result<Vec<FieldSchema>, String> {
-    fn inner_object_type(ty_ref: &CftSchemaTypeRef, schema: &CftContainer) -> Option<String> {
+    fn nullable_object_type(ty_ref: &CftSchemaTypeRef, schema: &CftContainer) -> Option<String> {
         match ty_ref {
             CftSchemaTypeRef::Nullable(inner) => {
                 if let CftSchemaTypeRef::Named(name) = inner.as_ref() {
@@ -908,6 +908,13 @@ pub fn get_field_schemas_inner(
             }
             _ => None,
         }
+    }
+
+    fn array_nullable_element_type(ty_ref: &CftSchemaTypeRef, schema: &CftContainer) -> Option<String> {
+        if let CftSchemaTypeRef::Array(elem) = ty_ref {
+            return nullable_object_type(elem, schema);
+        }
+        None
     }
 
     let session_arc = get_session(store, session_id)?;
@@ -922,7 +929,8 @@ pub fn get_field_schemas_inner(
         .map(|f| FieldSchema {
             name: f.name.clone(),
             type_str: f.ty.clone(),
-            nullable_object_type: inner_object_type(&f.ty_ref, &session.schema),
+            nullable_object_type: nullable_object_type(&f.ty_ref, &session.schema),
+            array_nullable_element_type: array_nullable_element_type(&f.ty_ref, &session.schema),
             has_default: f.has_default,
         })
         .collect();
