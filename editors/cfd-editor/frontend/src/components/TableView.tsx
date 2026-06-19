@@ -382,9 +382,25 @@ export function TableView({
   const parentRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Keyboard shortcuts: Ctrl+N opens new-record modal; Ctrl+F focuses search; Escape clears/closes
+  const selectedKeysRef = useRef<Set<string>>(new Set<string>());
+  selectedKeysRef.current = selectedKeys;
+  const onDuplicateRecordRef = useRef(onDuplicateRecord);
+  onDuplicateRecordRef.current = onDuplicateRecord;
+
+  // Keyboard shortcuts: Ctrl+N opens new-record modal; Ctrl+D duplicates selected; Ctrl+F focuses search; Escape clears/closes
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "d") {
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") {
+          e.preventDefault();
+          const first = filteredRowsRef.current.find(r => selectedKeysRef.current.has(r.key)) ?? filteredRowsRef.current[0];
+          if (first && onDuplicateRecordRef.current) {
+            setDuplicateModal({ srcKey: first.key, draft: `${first.key}_copy`, error: null });
+          }
+          return;
+        }
+      }
       if ((e.ctrlKey || e.metaKey) && e.key === "n") {
         e.preventDefault();
         setNewRecord(r => ({ ...r, typeName: activeType ?? r.typeName }));
