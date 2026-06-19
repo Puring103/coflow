@@ -3551,4 +3551,44 @@ mod tests {
         let err = get_record_source_inner(&store, snap.session_id, "data/items.cfd", "nonexistent");
         assert!(err.is_err());
     }
+
+    #[test]
+    fn get_field_schemas_includes_default_and_element_type() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+
+        // Schema: Player has required name, optional hp (default 100), nullable Stats, and array of nullable Stats
+        std::fs::write(
+            &schema_path,
+            "type Stats { hp: int; }\ntype Player { name: string; hp: int = 100; avatar: Stats?; rewards: [Stats?]; }",
+        ).unwrap();
+        std::fs::write(&dir.path().join("data/test.cfd"), "").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let schemas = get_field_schemas_inner(&store, snap.session_id, "Player").unwrap();
+
+        let name_s = schemas.iter().find(|s| s.name == "name").expect("name field");
+        assert!(!name_s.has_default, "name has no default");
+        assert!(name_s.default_str.is_none(), "name default_str should be None");
+        assert!(name_s.nullable_object_type.is_none());
+        assert!(name_s.array_nullable_element_type.is_none());
+
+        let hp_s = schemas.iter().find(|s| s.name == "hp").expect("hp field");
+        assert!(hp_s.has_default, "hp has a default");
+        assert_eq!(hp_s.default_str.as_deref(), Some("100"), "hp default_str should be '100'");
+
+        let avatar_s = schemas.iter().find(|s| s.name == "avatar").expect("avatar field");
+        assert_eq!(avatar_s.nullable_object_type.as_deref(), Some("Stats"), "avatar nullable_object_type should be 'Stats'");
+        assert!(avatar_s.array_nullable_element_type.is_none());
+
+        let rewards_s = schemas.iter().find(|s| s.name == "rewards").expect("rewards field");
+        assert!(rewards_s.nullable_object_type.is_none());
+        assert_eq!(rewards_s.array_nullable_element_type.as_deref(), Some("Stats"), "rewards array_nullable_element_type should be 'Stats'");
+    }
 }
