@@ -1259,6 +1259,12 @@ export function RecordView({
                       const newDraft = el.value.slice(0, start) + "  " + el.value.slice(end);
                       setSourceModal(m => m && ({ ...m, draft: newDraft, error: null }));
                       requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = start + 2; });
+                    } else if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && onWriteRecordSource && !sourceModal.saving && sourceModal.draft.trim()) {
+                      e.preventDefault();
+                      setSourceModal(m => m && ({ ...m, saving: true, error: null }));
+                      onWriteRecordSource(filePath, recordKey, sourceModal.draft)
+                        .then(() => setSourceModal(null))
+                        .catch(err => setSourceModal(m => m && ({ ...m, saving: false, error: String(err) })));
                     }
                   }}
                   rows={16}
