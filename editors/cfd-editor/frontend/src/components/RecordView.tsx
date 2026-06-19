@@ -89,7 +89,7 @@ export function RecordView({
   }, [allRecords]);
 
   // Reset type filter and search when file changes; reset field search when record changes
-  useEffect(() => { setTypeFilter(null); setSidebarSearch(""); }, [filePath]);
+  useEffect(() => { setTypeFilter(null); setSidebarSearch(""); pendingRenameKeyRef.current = null; }, [filePath]);
   useEffect(() => { setFieldSearch(""); }, [recordKey]);
 
   const filteredRecords = allRecords
@@ -160,10 +160,12 @@ export function RecordView({
       setFetchError(null);
       return;
     }
+    let cancelled = false;
     setFetchError(null);
     api.getRecord(sessionId, filePath, recordKey)
-      .then(r => { setFetchedRecord(r); setFetchError(null); })
-      .catch(e => { setFetchedRecord(null); setFetchError(String(e)); });
+      .then(r => { if (!cancelled) { setFetchedRecord(r); setFetchError(null); } })
+      .catch(e => { if (!cancelled) { setFetchedRecord(null); setFetchError(String(e)); } });
+    return () => { cancelled = true; };
   }, [sessionId, filePath, recordKey, recordFromFile]);
 
   const handleKeyRename = useCallback(async () => {
