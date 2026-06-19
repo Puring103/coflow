@@ -741,24 +741,21 @@ pub fn duplicate_record_inner(
         .map_err(|e| format!("cannot write {file_path}: {e}"))?;
     reload_file(&mut session, file_path, &new_content)?;
 
-    // Build the RecordRow for the duplicate from the reloaded model
-    let (_, record) = session
-        .model
-        .records()
-        .find(|(_, r)| r.key == new_key)
-        .ok_or_else(|| format!("duplicate record '{new_key}' not found in model"))?;
-
-    let direct = session
-        .file_sources
-        .get(file_path)
-        .and_then(|(_, ast)| {
-            ast.records
-                .iter()
-                .find(|r| r.key == new_key)
+    // Build the RecordRow for the duplicate
+    let in_model = session.model.records().any(|(_, r)| r.key == new_key);
+    if in_model {
+        let (_, record) = session.model.records().find(|(_, r)| r.key == new_key).unwrap();
+        let direct = session.file_sources.get(file_path).and_then(|(_, ast)| {
+            ast.records.iter().find(|r| r.key == new_key)
                 .map(|r| r.fields.iter().map(|f| f.name.clone()).collect::<HashSet<String>>())
         });
-
-    Ok(convert_record_row(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref()))
+        Ok(convert_record_row(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref()))
+    } else {
+        session.file_sources.get(file_path)
+            .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == new_key))
+            .map(ast_record_fallback)
+            .ok_or_else(|| format!("duplicate record '{new_key}' not found after write"))
+    }
 }
 
 pub fn get_enum_variants_inner(
