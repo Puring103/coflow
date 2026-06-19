@@ -687,7 +687,7 @@ pub fn create_record_inner(
     let (ast, _) = parse_cfd(&existing);
     let uses_grouped = ast.records.iter().any(|r| {
         r.type_name == type_name && r.type_span.start < r.key_span.start
-    }) || existing.contains(&format!("{type_name} {{"));
+    }) || source_has_grouped_header(&existing, type_name);
 
     let separator = if existing.ends_with('\n') || existing.is_empty() { "" } else { "\n" };
 
@@ -889,7 +889,7 @@ pub fn move_record_inner(
 
     let dst_uses_grouped = dst_ast.records.iter().any(|r| {
         r.type_name == type_name && r.type_span.start < r.key_span.start
-    }) || dst_source.contains(&format!("{type_name} {{"));
+    }) || source_has_grouped_header(&dst_source, &type_name);
 
     let dst_abs_path = session.project_dir.join(dst_file);
     let new_dst = if dst_uses_grouped {
@@ -1040,7 +1040,7 @@ pub fn copy_record_to_file_inner(
 
     let dst_uses_grouped = dst_ast.records.iter().any(|r| {
         r.type_name == type_name && r.type_span.start < r.key_span.start
-    }) || dst_source.contains(&format!("{type_name} {{"));
+    }) || source_has_grouped_header(&dst_source, &type_name);
 
     let dst_abs_path = session.project_dir.join(dst_file);
 
@@ -2066,6 +2066,23 @@ fn find_group_closer(source: &str, type_name: &str) -> Option<usize> {
         }
     }
     None
+}
+
+/// Returns true if `source` contains a grouped-block header `TypeName {` at the
+/// start of a line (i.e. not `key: TypeName {` which is a standalone record).
+fn source_has_grouped_header(source: &str, type_name: &str) -> bool {
+    let header = format!("{type_name} {{");
+    let mut pos = 0;
+    while let Some(idx) = source[pos..].find(&header) {
+        let abs = pos + idx;
+        // Check that the character before the header is a newline or the header is at pos 0
+        let at_line_start = abs == 0 || source.as_bytes()[abs - 1] == b'\n';
+        if at_line_start {
+            return true;
+        }
+        pos = abs + 1;
+    }
+    false
 }
 
 fn validate_cfd_key(key: &str) -> Result<(), String> {
@@ -4648,5 +4665,71 @@ mod tests {
         let dst_keys = session.file_record_keys.get("data/dst.cfd").unwrap();
         assert!(!src_keys.contains(&"sword".to_string()), "src keys should not contain sword");
         assert!(dst_keys.contains(&"sword".to_string()), "dst keys should contain sword");
+    }
+
+    #[test]
+    fn copy_record_to_file_basic() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        let src_cfd = data_dir.join("src.cfd");
+        let dst_cfd = data_dir.join("dst.cfd");
+        std::fs::write(&src_cfd, "sword: Item {\n  name: \"Sword\"\n}\n").unwrap();
+        std::fs::write(&dst_cfd, "shield: Item {\n  name: \"Shield\"\n}\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        // Copy sword → dst with a new key
+        let row = copy_record_to_file_inner(&store, sid, "data/src.cfd", "data/dst.cfd", "sword", "sword_copy").unwrap();
+        assert_eq!(row.key, "sword_copy");
+        assert_eq!(row.file_path, "data/dst.cfd");
+
+        // src should still contain the original
+        let src_content = std::fs::read_to_string(&src_cfd).unwrap();
+        assert!(src_content.contains("sword"), "src should still contain original after copy");
+
+        // dst should contain the new copy
+        let dst_content = std::fs::read_to_string(&dst_cfd).unwrap();
+        assert!(dst_content.contains("sword_copy"), "dst should contain sword_copy:\n{dst_content}");
+        assert!(dst_content.contains("Sword"), "dst should contain field value 'Sword':\n{dst_content}");
+        // original record in dst should still be there
+        assert!(dst_content.contains("shield"), "dst should still contain shield:\n{dst_content}");
+
+        // session should have sword_copy in dst file keys
+        let session_arc = get_session(&store, sid).unwrap();
+        let session = session_arc.lock().unwrap();
+        let dst_keys = session.file_record_keys.get("data/dst.cfd").unwrap();
+        assert!(dst_keys.contains(&"sword_copy".to_string()), "dst keys should include sword_copy");
+        // src should still have sword
+        let src_keys = session.file_record_keys.get("data/src.cfd").unwrap();
+        assert!(src_keys.contains(&"sword".to_string()), "src keys should still have sword");
+    }
+
+    #[test]
+    fn copy_record_to_file_duplicate_key_rejected() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        let src_cfd = data_dir.join("src.cfd");
+        let dst_cfd = data_dir.join("dst.cfd");
+        std::fs::write(&src_cfd, "sword: Item {\n  name: \"Sword\"\n}\n").unwrap();
+        std::fs::write(&dst_cfd, "shield: Item {\n  name: \"Shield\"\n}\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        // Attempt to copy with a key that already exists in the project
+        let err = copy_record_to_file_inner(&store, snap.session_id, "data/src.cfd", "data/dst.cfd", "sword", "shield").unwrap_err();
+        assert!(err.contains("already exists"), "should reject duplicate key: {err}");
     }
 }
