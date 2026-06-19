@@ -1461,4 +1461,31 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn get_ref_targets_returns_assignable_keys() {
+        let yaml_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/cfd/coflow.yaml");
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml_path.to_str().unwrap()).unwrap();
+
+        // "Item" is a concrete type; get_ref_targets("Item") should include sword_fire and staff_ice
+        let item_keys = get_ref_targets_inner(&store, snap.session_id, "Item").unwrap();
+        assert!(item_keys.contains(&"sword_fire".to_string()), "item_keys should contain sword_fire");
+        assert!(item_keys.contains(&"staff_ice".to_string()), "item_keys should contain staff_ice");
+        // Monster keys should NOT appear when filtering by Item
+        assert!(!item_keys.contains(&"basic_monster".to_string()), "monster key should not appear for Item filter");
+
+        // "Monster" type keys should include basic_monster
+        let monster_keys = get_ref_targets_inner(&store, snap.session_id, "Monster").unwrap();
+        assert!(monster_keys.contains(&"basic_monster".to_string()), "monster_keys should contain basic_monster");
+        assert!(!monster_keys.contains(&"sword_fire".to_string()), "item key should not appear for Monster filter");
+
+        // Keys are sorted
+        assert_eq!(item_keys, {
+            let mut sorted = item_keys.clone();
+            sorted.sort();
+            sorted
+        });
+    }
 }
