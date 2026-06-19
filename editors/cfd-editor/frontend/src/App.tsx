@@ -110,10 +110,12 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.loadedYamlPath]);
 
-  // Auto-select first file after loading project, or after the current file is deleted
+  // Auto-select first file after loading project, or after the current file is deleted.
+  // Also reset router if the currently viewed file is no longer in the snapshot (e.g. after external delete + Reload).
   useEffect(() => {
     const snap = project.snapshot;
-    if (!snap || router.current) return;
+    if (!snap) return;
+
     function findFirstFile(nodes: FileTreeNode[]): string | null {
       for (const node of nodes) {
         if (!node.is_dir) return node.path;
@@ -122,11 +124,23 @@ export default function App() {
       }
       return null;
     }
-    const firstFile = findFirstFile(snap.file_tree);
-    if (firstFile) {
-      router.push({ view: "table", file: firstFile });
+
+    function fileExists(nodes: FileTreeNode[], path: string): boolean {
+      for (const node of nodes) {
+        if (!node.is_dir && node.path === path) return true;
+        if (node.is_dir && fileExists(node.children, path)) return true;
+      }
+      return false;
     }
-  // Re-run both when session changes (new project) and when current route clears (file deleted)
+
+    if (!router.current) {
+      const firstFile = findFirstFile(snap.file_tree);
+      if (firstFile) router.push({ view: "table", file: firstFile });
+    } else if (!fileExists(snap.file_tree, router.current.file)) {
+      // Current file no longer exists in the snapshot — reset and auto-select
+      router.reset();
+    }
+  // Re-run when session changes (new project), current route changes, or snapshot updates
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.snapshot?.session_id, router.current]);
 
