@@ -254,6 +254,8 @@ export function DiagnosticsPanel({ diagnostics, onNavigate, currentFile }: Diagn
                 <div
                   key={`${item.code}:${item.record_key ?? ""}:${item.message}:${idx}`}
                   onClick={() => handleItemClick(item)}
+                  tabIndex={navigable ? 0 : undefined}
+                  onKeyDown={e => { if ((e.key === "Enter" || e.key === " ") && navigable) { e.preventDefault(); handleItemClick(item); } }}
                   style={{
                     display: "flex",
                     alignItems: "flex-start",
@@ -262,9 +264,12 @@ export function DiagnosticsPanel({ diagnostics, onNavigate, currentFile }: Diagn
                     borderBottom: "1px solid var(--bg3)",
                     fontSize: 12,
                     cursor: navigable ? "pointer" : "default",
+                    outline: "none",
                   }}
                   onMouseEnter={e => { if (navigable) e.currentTarget.style.background = "var(--bg3)"; }}
                   onMouseLeave={e => { if (navigable) e.currentTarget.style.background = "transparent"; }}
+                  onFocus={e => { if (navigable) e.currentTarget.style.background = "var(--bg3)"; }}
+                  onBlur={e => { if (navigable) e.currentTarget.style.background = "transparent"; }}
                   title={navigable ? `Click to navigate to ${item.record_key ?? item.file_path}` : undefined}
                 >
                   <span style={{ color: severityColor(item.severity), flexShrink: 0, marginTop: 1 }}>
