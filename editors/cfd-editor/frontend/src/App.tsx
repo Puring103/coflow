@@ -802,6 +802,8 @@ export default function App() {
                       const firstOther = availableFiles.find(f => f !== srcFile) ?? srcFile;
                       setCopyRecordModal({ srcFile, recordKey, dstFile: firstOther, newKey: `${recordKey}_copy`, error: null });
                     }}
+                    diagnostics={project.snapshot.diagnostics}
+                    onError={showOpError}
                   />
                 )}
               </div>

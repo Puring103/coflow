@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { RecordRow, FieldValue, FieldPathSegment } from "../bindings";
+import type { RecordRow, FieldValue, FieldPathSegment, DiagnosticItem } from "../bindings";
 import type { Route } from "../router";
 import { DataCard } from "./DataCard";
 import { ContextMenu, type ContextMenuState } from "./ContextMenu";
@@ -16,6 +16,8 @@ interface GlobalTableViewProps {
   onDeleteRecord?: (sessionId: number, filePath: string, recordKey: string) => Promise<void>;
   onMoveRecord?: (srcFile: string, recordKey: string) => void;
   onCopyRecord?: (srcFile: string, recordKey: string) => void;
+  diagnostics?: DiagnosticItem[];
+  onError?: (msg: string) => void;
 }
 
 function parseFieldValue(raw: string, original: FieldValue): FieldValue {
@@ -44,7 +46,7 @@ function fieldValueToString(v: FieldValue): string {
 
 type SortCol = { col: "key" | "file" | string; dir: "asc" | "desc" };
 
-export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange, onNavigate, onWriteField, onDeleteRecord, onMoveRecord, onCopyRecord }: GlobalTableViewProps) {
+export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange, onNavigate, onWriteField, onDeleteRecord, onMoveRecord, onCopyRecord, diagnostics, onError }: GlobalTableViewProps) {
   const [rows, setRows] = useState<RecordRow[]>([]);
   const [allTypeNames, setAllTypeNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -101,6 +103,20 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
     });
   }, [rows, search, sort]);
 
+  // Per-record diagnostic counts for row badges
+  const rowDiagCounts = useMemo(() => {
+    if (!diagnostics) return new Map<string, { errors: number; warnings: number }>();
+    const map = new Map<string, { errors: number; warnings: number }>();
+    for (const d of diagnostics) {
+      if (!d.record_key) continue;
+      const entry = map.get(d.record_key) ?? { errors: 0, warnings: 0 };
+      if (d.severity === "error") entry.errors++;
+      else if (d.severity === "warning") entry.warnings++;
+      map.set(d.record_key, entry);
+    }
+    return map;
+  }, [diagnostics]);
+
   const handleSortClick = (col: string) => {
     setSort(s => {
       if (s?.col === col) return s.dir === "asc" ? { col, dir: "desc" } : null;
@@ -144,9 +160,9 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       items: [
         { label: "跳转到记录视图", onClick: () => onNavigate({ view: "record", file: row.file_path, recordKey: row.key }) },
         { label: "在文件表视图中打开", onClick: () => onNavigate({ view: "table", file: row.file_path }) },
-        { label: "在资源管理器中显示", onClick: () => api.revealInExplorer(sessionId, row.file_path).catch(() => {}) },
-        { label: "复制 Key", onClick: () => navigator.clipboard.writeText(row.key).catch(() => {}) },
-        { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, row.file_path, row.key).then(src => navigator.clipboard.writeText(src)).catch(() => {}) },
+        { label: "在资源管理器中显示", onClick: () => api.revealInExplorer(sessionId, row.file_path).catch(e => onError?.(`无法打开资源管理器: ${e}`)) },
+        { label: "复制 Key", onClick: () => navigator.clipboard.writeText(row.key).catch(e => onError?.(`复制失败: ${e}`)) },
+        { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, row.file_path, row.key).then(src => navigator.clipboard.writeText(src)).catch(e => onError?.(`复制失败: ${e}`)) },
         ...(onMoveRecord ? [{ label: "移动到文件…", onClick: () => onMoveRecord(row.file_path, row.key) }] : []),
         ...(onCopyRecord ? [{ label: "复制到文件…", onClick: () => onCopyRecord(row.file_path, row.key) }] : []),
         ...(onDeleteRecord ? [{ label: "删除记录", danger: true as const, onClick: () => onDeleteRecord(sessionId, row.file_path, row.key).catch(() => {}) }] : []),
@@ -310,7 +326,14 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
         <div style={{ padding: 12, color: "var(--text-muted)", fontSize: 13 }}>Loading…</div>
       )}
 
-      {!loading && !error && (
+      {!loading && !error && rows.length === 0 && (
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8, color: "var(--text-muted)", fontSize: 13 }}>
+          <span style={{ fontSize: 28 }}>𝌄</span>
+          <span>项目中没有 <strong style={{ color: "var(--text)" }}>{typeName}</strong> 类型的记录</span>
+        </div>
+      )}
+
+      {!loading && !error && rows.length > 0 && (
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {/* Header row */}
           <div style={{ display: "flex", borderBottom: "1px solid var(--border)", background: "var(--bg2)", flexShrink: 0, userSelect: "none" }}>
@@ -414,17 +437,24 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                         />
                       </div>
                     )}
-                    <div style={{ width: COL_KEY, flexShrink: 0, padding: "0 8px", fontSize: 12, fontFamily: "monospace", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid var(--border)" }} title={row.key}>
-                      {row.is_fallback && <span style={{ color: "var(--warning)", marginRight: 4 }}>⚠</span>}
-                      {row.key}
+                    <div style={{ width: COL_KEY, flexShrink: 0, padding: "0 8px", fontSize: 12, fontFamily: "monospace", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 3 }} title={row.key}>
+                      {row.is_fallback && <span style={{ color: "var(--warning)", flexShrink: 0 }} title="Model build failed">⚠</span>}
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>{row.key}</span>
+                      {(() => { const d = rowDiagCounts.get(row.key); if (!d) return null; return (
+                        <>
+                          {d.errors > 0 && <span style={{ fontSize: 9, background: "var(--error)", color: "#fff", borderRadius: 3, padding: "0 3px", flexShrink: 0 }} title={`${d.errors} error(s)`}>{d.errors}</span>}
+                          {d.warnings > 0 && <span style={{ fontSize: 9, background: "var(--warning)", color: "#fff", borderRadius: 3, padding: "0 3px", flexShrink: 0 }} title={`${d.warnings} warning(s)`}>{d.warnings}</span>}
+                        </>
+                      ); })()}
                     </div>
                     <div style={{ width: COL_FILE, flexShrink: 0, padding: "0 8px", fontSize: 11, fontFamily: "monospace", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid var(--border)" }} title={row.file_path}>
                       {filename}
                     </div>
                     {fieldNames.map(f => {
                       const cell = row.fields.find(x => x.name === f);
+                      const isSpread = row.spread_fields.includes(f);
                       return (
-                        <div key={f} style={{ width: COL_FIELD, flexShrink: 0, padding: "0 4px", overflow: "hidden", borderRight: "1px solid var(--border)", height: "100%", display: "flex", alignItems: "center" }}>
+                        <div key={f} style={{ width: COL_FIELD, flexShrink: 0, padding: "0 4px", overflow: "hidden", borderRight: "1px solid var(--border)", height: "100%", display: "flex", alignItems: "center", opacity: isSpread ? 0.55 : 1 }} title={isSpread ? `${f} (inherited via spread — edit in source record)` : undefined}>
                           {cell ? (
                             <DataCard
                               value={cell.value}
