@@ -193,6 +193,16 @@ fn get_field_schemas(
     get_field_schemas_inner(&state, session_id, &type_name)
 }
 
+#[tauri::command]
+fn get_record_source(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    file_path: String,
+    record_key: String,
+) -> Result<String, String> {
+    get_record_source_inner(&state, session_id, &file_path, &record_key)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -218,6 +228,7 @@ fn main() {
             duplicate_record,
             get_all_records_brief,
             get_field_schemas,
+            get_record_source,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

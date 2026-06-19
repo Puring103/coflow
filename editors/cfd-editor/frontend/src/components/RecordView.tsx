@@ -353,6 +353,7 @@ export function RecordView({
                 e.preventDefault();
                 const items: { label: string; danger?: boolean; onClick: () => void }[] = [
                   { label: "复制 Key", onClick: () => navigator.clipboard.writeText(r.key).catch(() => {}) },
+                  { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, filePath, r.key).then(src => navigator.clipboard.writeText(src)).catch(() => {}) },
                 ];
                 if (onRenameRecord) items.push({
                   label: "重命名记录 Key",
@@ -471,6 +472,7 @@ export function RecordView({
                     e.preventDefault();
                     const items: { label: string; danger?: boolean; onClick: () => void }[] = [
                       { label: "复制 Key", onClick: () => navigator.clipboard.writeText(recordKey).catch(() => {}) },
+                      { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, filePath, recordKey).then(src => navigator.clipboard.writeText(src)).catch(() => {}) },
                     ];
                     if (onRenameRecord) items.push({
                       label: "重命名记录 Key",

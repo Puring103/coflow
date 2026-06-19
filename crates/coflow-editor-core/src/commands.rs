@@ -641,6 +641,31 @@ pub fn delete_record_inner(
     reload_file(&mut session, file_path, &new_source)
 }
 
+pub fn get_record_source_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+    file_path: &str,
+    record_key: &str,
+) -> Result<String, String> {
+    let session_arc = get_session(store, session_id)?;
+    let session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+
+    let (source, ast) = session
+        .file_sources
+        .get(file_path)
+        .ok_or_else(|| format!("file '{file_path}' not loaded"))?;
+
+    let record = ast
+        .records
+        .iter()
+        .find(|r| r.key == record_key)
+        .ok_or_else(|| format!("record '{record_key}' not found"))?;
+
+    let start = record.span.start.min(source.len());
+    let end = record.span.end.min(source.len());
+    Ok(source[start..end].to_string())
+}
+
 pub fn rename_record_inner(
     store: &Mutex<SessionStore>,
     session_id: u32,

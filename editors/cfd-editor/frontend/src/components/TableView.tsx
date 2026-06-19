@@ -436,6 +436,10 @@ export function TableView({
           label: "复制 Key",
           onClick: () => navigator.clipboard.writeText(row.key).catch(() => {}),
         },
+        {
+          label: "复制为 CFD 源码",
+          onClick: () => api.getRecordSource(sessionId, filePath, row.key).then(src => navigator.clipboard.writeText(src)).catch(() => {}),
+        },
         ...(onRenameRecord ? [{
           label: "重命名记录 Key",
           onClick: () => {

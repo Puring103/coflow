@@ -66,4 +66,7 @@ export const api = {
 
   getFieldSchemas: (sessionId: number, typeName: string) =>
     invoke<FieldSchema[]>("get_field_schemas", { sessionId, typeName }),
+
+  getRecordSource: (sessionId: number, filePath: string, recordKey: string) =>
+    invoke<string>("get_record_source", { sessionId, filePath, recordKey }),
 };
