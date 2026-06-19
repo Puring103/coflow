@@ -626,6 +626,10 @@ export function TableView({
           onClick: () => onNavigate({ view: "record", file: filePath, recordKey: row.key }),
         },
         {
+          label: "在资源管理器中显示",
+          onClick: () => api.revealInExplorer(sessionId, filePath).catch(() => {}),
+        },
+        {
           label: "复制 Key",
           onClick: () => navigator.clipboard.writeText(row.key).catch(() => {}),
         },

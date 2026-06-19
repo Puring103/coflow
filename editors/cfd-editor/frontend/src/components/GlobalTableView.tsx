@@ -123,6 +123,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       items: [
         { label: "跳转到记录视图", onClick: () => onNavigate({ view: "record", file: row.file_path, recordKey: row.key }) },
         { label: "在文件表视图中打开", onClick: () => onNavigate({ view: "table", file: row.file_path }) },
+        { label: "在资源管理器中显示", onClick: () => api.revealInExplorer(sessionId, row.file_path).catch(() => {}) },
         { label: "复制 Key", onClick: () => navigator.clipboard.writeText(row.key).catch(() => {}) },
         { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, row.file_path, row.key).then(src => navigator.clipboard.writeText(src)).catch(() => {}) },
       ],

@@ -1930,6 +1930,32 @@ pub fn delete_file_inner(
     Ok(())
 }
 
+/// Reload a single .cfd file from disk, rebuilding the model without a full project reload.
+pub fn reload_file_from_disk_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+    rel_path: &str,
+) -> Result<(), String> {
+    let session_arc = get_session(store, session_id)?;
+    let mut session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+
+    let abs_path = session.project_dir.join(rel_path);
+    let canonical_project = session
+        .project_dir
+        .canonicalize()
+        .unwrap_or_else(|_| session.project_dir.clone());
+    let canonical_target = abs_path
+        .canonicalize()
+        .unwrap_or_else(|_| abs_path.clone());
+    if !canonical_target.starts_with(&canonical_project) {
+        return Err(format!("path '{rel_path}' is outside the project directory"));
+    }
+
+    let new_source = std::fs::read_to_string(&abs_path)
+        .map_err(|e| format!("cannot read '{rel_path}': {e}"))?;
+    reload_file(&mut session, rel_path, &new_source)
+}
+
 /// Convert a raw AST CfdValue to FieldValue without schema or model.
 /// Used as a fallback when the model build fails (e.g. record has missing required fields).
 fn ast_value_to_field_value(v: &coflow_cfd::CfdValue, schema: &CftContainer) -> FieldValue {
@@ -3480,6 +3506,44 @@ mod tests {
 
         // Physical file should be deleted
         assert!(!cfd_path.exists(), "physical file should be deleted");
+    }
+
+    #[test]
+    fn reload_file_from_disk_picks_up_external_changes() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        let cfd_path = data_dir.join("items.cfd");
+
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        std::fs::write(&cfd_path, "sword: Item {\n  name: \"Sword\"\n}\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        // Confirm initial state
+        let records = get_file_records_inner(&store, snap.session_id, "data/items.cfd").unwrap();
+        assert_eq!(records.records.len(), 1);
+        assert_eq!(records.records[0].key, "sword");
+
+        // Simulate external edit: overwrite the file with new content
+        std::fs::write(&cfd_path, "axe: Item {\n  name: \"Axe\"\n}\n").unwrap();
+
+        // Before reload, session still has old data
+        let records_before = get_file_records_inner(&store, snap.session_id, "data/items.cfd").unwrap();
+        assert!(records_before.records.iter().any(|r| r.key == "sword"), "old data should still be present before reload");
+
+        // Reload
+        reload_file_from_disk_inner(&store, snap.session_id, "data/items.cfd").unwrap();
+
+        // After reload, session should have new data
+        let records_after = get_file_records_inner(&store, snap.session_id, "data/items.cfd").unwrap();
+        assert_eq!(records_after.records.len(), 1, "should have 1 record after reload");
+        assert_eq!(records_after.records[0].key, "axe", "should see the new 'axe' record after reload");
+        assert!(!records_after.records.iter().any(|r| r.key == "sword"), "old 'sword' record should be gone after reload");
     }
 
     #[test]

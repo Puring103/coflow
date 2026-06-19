@@ -11,6 +11,7 @@ interface FileTreeProps {
   onNewFile: () => void;
   onDeleteFile?: (path: string) => void;
   onRenameFile?: (oldPath: string, newPath: string) => Promise<void>;
+  onReloadFile?: (path: string) => void;
 }
 
 interface RenameFileModal {
@@ -128,7 +129,7 @@ function collectDirPaths(nodes: FileTreeNode[]): string[] {
   return result;
 }
 
-export function FileTree({ nodes, selectedPath, sessionId, onSelect, onNewFile, onDeleteFile, onRenameFile }: FileTreeProps) {
+export function FileTree({ nodes, selectedPath, sessionId, onSelect, onNewFile, onDeleteFile, onRenameFile, onReloadFile }: FileTreeProps) {
   const expandedRef = useRef<Set<string> | null>(null);
   const knownDirsRef = useRef<Set<string>>(new Set());
 
@@ -183,6 +184,12 @@ export function FileTree({ nodes, selectedPath, sessionId, onSelect, onNewFile, 
         onClick: () => api.revealInExplorer(sessionId, node.path).catch(() => {}),
       });
     }
+    if (onReloadFile && !node.is_dir) {
+      items.push({
+        label: "从磁盘重新加载",
+        onClick: () => onReloadFile(node.path),
+      });
+    }
     if (onRenameFile && node.in_sources) {
       items.push({
         label: "重命名文件",
@@ -198,7 +205,7 @@ export function FileTree({ nodes, selectedPath, sessionId, onSelect, onNewFile, 
     }
     if (items.length === 0) return;
     setContextMenu({ x: e.clientX, y: e.clientY, items });
-  }, [onDeleteFile, onRenameFile, sessionId]);
+  }, [onDeleteFile, onRenameFile, onReloadFile, sessionId]);
 
   return (
     <div style={{

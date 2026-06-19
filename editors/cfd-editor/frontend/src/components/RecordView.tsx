@@ -512,6 +512,7 @@ export function RecordView({
                 const items: { label: string; danger?: boolean; onClick: () => void }[] = [
                   { label: "复制 Key", onClick: () => navigator.clipboard.writeText(r.key).catch(() => {}) },
                   { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, filePath, r.key).then(src => navigator.clipboard.writeText(src)).catch(() => {}) },
+                  { label: "在资源管理器中显示", onClick: () => api.revealInExplorer(sessionId, filePath).catch(() => {}) },
                   ...(sidebarRec ? [{ label: "复制为 JSON", onClick: () => navigator.clipboard.writeText(recordToJson(sidebarRec)).catch(() => {}) }] : []),
                 ];
                 if (onRenameRecord) items.push({
@@ -607,11 +608,8 @@ export function RecordView({
         {/* New record button */}
         <div style={{ borderTop: "1px solid var(--border)", padding: 6, flexShrink: 0 }}>
           <button
-            onClick={() => {
-              const currentType = record?.actual_type;
-              onNavigate({ view: "table", file: filePath, ...(currentType ? { typeFilter: currentType } : {}) });
-            }}
-            title="Go to table view to create a record (Ctrl+N)"
+            onClick={() => setCreateModal({ key: "", typeName: record?.actual_type ?? typeNames[0] ?? "", creating: false, error: null })}
+            title="Create a new record in this file (Ctrl+N)"
             style={{ width: "100%", fontSize: 11, justifyContent: "flex-start" }}
           >
             ＋ New record…

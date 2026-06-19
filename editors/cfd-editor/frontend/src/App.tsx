@@ -439,6 +439,16 @@ export default function App() {
     }
   }, [project, router, showOpError]);
 
+  const handleReloadFile = useCallback(async (filePath: string) => {
+    if (!project.snapshot) return;
+    try {
+      await api.reloadFileFromDisk(project.snapshot.session_id, filePath);
+      project.markDirty(project.snapshot.session_id, filePath);
+    } catch (err) {
+      showOpError(`Reload file failed: ${err}`);
+    }
+  }, [project, showOpError]);
+
   const handleNewFile = () => {
     setNewFilePath("");
     setNewFileError(null);
@@ -504,7 +514,7 @@ export default function App() {
             </button>
           );
         })()}
-        {project.dirty && <span className="dirty-indicator" title="Reloading…">●</span>}
+        {project.dirty && <span className="dirty-indicator" title="Unsaved changes — reloading data…">●</span>}
         {project.loading && <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Loading…</span>}
         {project.error && (
           <span className="error-msg" title={project.error}>⚠ {project.error}</span>
@@ -614,6 +624,7 @@ export default function App() {
               onNewFile={handleNewFile}
               onDeleteFile={handleDeleteFile}
               onRenameFile={handleRenameFile}
+              onReloadFile={handleReloadFile}
             />
           </aside>
         )}

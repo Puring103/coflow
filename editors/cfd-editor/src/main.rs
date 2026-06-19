@@ -320,6 +320,15 @@ fn copy_record_to_file(
     copy_record_to_file_inner(&state, session_id, &src_file, &dst_file, &record_key, &new_key)
 }
 
+#[tauri::command]
+fn reload_file_from_disk(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    rel_path: String,
+) -> Result<(), String> {
+    reload_file_from_disk_inner(&state, session_id, &rel_path)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -355,6 +364,7 @@ fn main() {
             reveal_in_explorer,
             copy_record_to_file,
             sort_file_records,
+            reload_file_from_disk,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

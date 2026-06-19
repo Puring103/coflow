@@ -96,4 +96,7 @@ export const api = {
 
   revealInExplorer: (sessionId: number, relPath: string) =>
     invoke<void>("reveal_in_explorer", { sessionId, relPath }),
+
+  reloadFileFromDisk: (sessionId: number, relPath: string) =>
+    invoke<void>("reload_file_from_disk", { sessionId, relPath }),
 };
