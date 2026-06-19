@@ -761,13 +761,29 @@ pub fn get_ref_targets_inner(
 ) -> Result<Vec<String>, String> {
     let session_arc = get_session(store, session_id)?;
     let session = session_arc.lock().map_err(|_| "session lock poisoned")?;
-    let mut keys: Vec<String> = session
+    // Primary: records that built successfully in the model (have type info for filtering)
+    let model_keys: std::collections::HashSet<String> = session
         .model
         .records()
         .filter(|(_, r)| session.schema.is_assignable(&r.actual_type, expected_type))
         .map(|(_, r)| r.key.clone())
         .collect();
+    // Supplement: include AST records not in the model (e.g. those with missing required fields).
+    // For these, we only know the declared type from the AST; include them if they match.
+    let mut ast_extra: Vec<String> = session
+        .file_sources
+        .values()
+        .flat_map(|(_, ast)| &ast.records)
+        .filter(|r| {
+            !model_keys.contains(&r.key)
+                && session.schema.is_assignable(&r.type_name, expected_type)
+        })
+        .map(|r| r.key.clone())
+        .collect();
+    let mut keys: Vec<String> = model_keys.into_iter().collect();
+    keys.append(&mut ast_extra);
     keys.sort();
+    keys.dedup();
     Ok(keys)
 }
 
