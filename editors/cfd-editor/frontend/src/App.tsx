@@ -32,6 +32,14 @@ interface MoveRecordModal {
   error: string | null;
 }
 
+interface CopyRecordModal {
+  srcFile: string;
+  recordKey: string;
+  dstFile: string;
+  newKey: string;
+  error: string | null;
+}
+
 const RECENT_KEY = "cfd-recent-projects";
 const RECENT_MAX = 8;
 
@@ -52,6 +60,7 @@ export default function App() {
   const [newFilePath, setNewFilePath] = useState("");
   const [newFileError, setNewFileError] = useState<string | null>(null);
   const [moveRecordModal, setMoveRecordModal] = useState<MoveRecordModal | null>(null);
+  const [copyRecordModal, setCopyRecordModal] = useState<CopyRecordModal | null>(null);
   const [opError, setOpError] = useState<string | null>(null);
   const [graphRefreshKey, setGraphRefreshKey] = useState(0);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
@@ -379,6 +388,29 @@ export default function App() {
     }
   }, [moveRecordModal, project, router]);
 
+  const handleCopyRecordCommit = useCallback(async () => {
+    if (!copyRecordModal || !project.snapshot) return;
+    const { srcFile, dstFile, recordKey, newKey } = copyRecordModal;
+    if (!dstFile) {
+      setCopyRecordModal(m => m && ({ ...m, error: "选择目标文件" }));
+      return;
+    }
+    if (!newKey.trim()) {
+      setCopyRecordModal(m => m && ({ ...m, error: "新 Key 不能为空" }));
+      return;
+    }
+    try {
+      await api.copyRecordToFile(project.snapshot.session_id, srcFile, dstFile, recordKey, newKey.trim());
+      invalidateGraphCache(project.snapshot.session_id, dstFile);
+      setGraphRefreshKey(k => k + 1);
+      project.markDirty(project.snapshot.session_id, dstFile);
+      setCopyRecordModal(null);
+      router.push({ view: "record", file: dstFile, recordKey: newKey.trim() });
+    } catch (e) {
+      setCopyRecordModal(m => m && ({ ...m, error: String(e) }));
+    }
+  }, [copyRecordModal, project, router]);
+
   const handleDeleteFile = useCallback(async (filePath: string) => {
     if (!project.snapshot) return;
     const wasViewing = router.current && router.current.view !== "global-table" && router.current.file === filePath;
@@ -669,6 +701,11 @@ export default function App() {
                         const firstOther = availableFiles.find(f => f !== srcFile) ?? srcFile;
                         setMoveRecordModal({ srcFile, recordKey, dstFile: firstOther, error: null });
                       }}
+                      onCopyRecord={(srcFile, recordKey) => {
+                        const availableFiles = collectFilePaths(project.snapshot?.file_tree ?? []);
+                        const firstOther = availableFiles.find(f => f !== srcFile) ?? srcFile;
+                        setCopyRecordModal({ srcFile, recordKey, dstFile: firstOther, newKey: `${recordKey}_copy`, error: null });
+                      }}
                       onNavigate={router.push}
                       diagnostics={project.snapshot?.diagnostics}
                     />
@@ -694,6 +731,11 @@ export default function App() {
                       const availableFiles = collectFilePaths(project.snapshot?.file_tree ?? []);
                       const firstOther = availableFiles.find(f => f !== srcFile) ?? srcFile;
                       setMoveRecordModal({ srcFile, recordKey, dstFile: firstOther, error: null });
+                    }}
+                    onCopyRecord={(srcFile, recordKey) => {
+                      const availableFiles = collectFilePaths(project.snapshot?.file_tree ?? []);
+                      const firstOther = availableFiles.find(f => f !== srcFile) ?? srcFile;
+                      setCopyRecordModal({ srcFile, recordKey, dstFile: firstOther, newKey: `${recordKey}_copy`, error: null });
                     }}
                     onWriteRecordSource={handleWriteRecordSource}
                     onError={showOpError}
@@ -957,6 +999,70 @@ export default function App() {
                 disabled={!moveRecordModal.dstFile || moveRecordModal.dstFile === moveRecordModal.srcFile}
               >
                 移动
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Copy record to file modal */}
+      {copyRecordModal && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000 }}
+          onClick={() => setCopyRecordModal(null)}
+        >
+          <div
+            style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8, padding: 24, width: 380, display: "flex", flexDirection: "column", gap: 16 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ fontWeight: 600, fontSize: 14 }}>复制记录到文件</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              记录 <code style={{ color: "var(--text)", fontFamily: "monospace" }}>{copyRecordModal.recordKey}</code> 将被复制到（原记录保留）:
+            </div>
+            <select
+              value={copyRecordModal.dstFile}
+              onChange={e => setCopyRecordModal(m => m && ({ ...m, dstFile: e.target.value, error: null }))}
+              style={{ background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "4px 8px", fontSize: 13, fontFamily: "monospace", outline: "none" }}
+              autoFocus
+            >
+              {collectFilePaths(project.snapshot?.file_tree ?? []).map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+              新 Key（可与原 Key 相同，但目标文件中不能已存在）
+              <input
+                value={copyRecordModal.newKey}
+                onChange={e => setCopyRecordModal(m => m && ({ ...m, newKey: e.target.value, error: null }))}
+                onKeyDown={e => {
+                  if (e.key === "Enter") { e.preventDefault(); handleCopyRecordCommit(); }
+                  if (e.key === "Escape") setCopyRecordModal(null);
+                  e.stopPropagation();
+                }}
+                style={{
+                  background: "var(--bg3)",
+                  border: copyRecordModal.error ? "1px solid #ff5555" : "1px solid var(--border)",
+                  borderRadius: 4,
+                  color: "var(--text)",
+                  padding: "4px 8px",
+                  fontSize: 13,
+                  fontFamily: "monospace",
+                  outline: "none",
+                }}
+                placeholder="new_key"
+              />
+            </label>
+            {copyRecordModal.error && (
+              <div style={{ color: "#ff5555", fontSize: 12 }}>{copyRecordModal.error}</div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setCopyRecordModal(null)}>取消</button>
+              <button
+                className="primary"
+                onClick={handleCopyRecordCommit}
+                disabled={!copyRecordModal.dstFile || !copyRecordModal.newKey.trim()}
+              >
+                复制
               </button>
             </div>
           </div>

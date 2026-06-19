@@ -34,6 +34,7 @@ interface TableViewProps {
   onRenameRecord?: (sessionId: number, filePath: string, oldKey: string, newKey: string) => Promise<void>;
   onDuplicateRecord?: (sessionId: number, filePath: string, srcKey: string, newKey: string) => Promise<void>;
   onMoveRecord?: (srcFile: string, recordKey: string) => void;
+  onCopyRecord?: (srcFile: string, recordKey: string) => void;
   onNavigate: (route: Route) => void;
   diagnostics?: DiagnosticItem[];
 }
@@ -257,6 +258,7 @@ export function TableView({
   onRenameRecord,
   onDuplicateRecord,
   onMoveRecord,
+  onCopyRecord,
   onNavigate,
   diagnostics,
 }: TableViewProps) {
@@ -651,6 +653,10 @@ export function TableView({
           label: "移动到文件…",
           onClick: () => onMoveRecord(filePath, row.key),
         }] : []),
+        ...(onCopyRecord ? [{
+          label: "复制到文件…",
+          onClick: () => onCopyRecord(filePath, row.key),
+        }] : []),
         {
           label: "删除记录",
           danger: true,
@@ -658,7 +664,7 @@ export function TableView({
         },
       ],
     });
-  }, [filePath, sessionId, onNavigate, onDeleteRecord, onRenameRecord, onDuplicateRecord, onMoveRecord]);
+  }, [filePath, sessionId, onNavigate, onDeleteRecord, onRenameRecord, onDuplicateRecord, onMoveRecord, onCopyRecord]);
 
 
   const SCALAR_KINDS = ["Null", "Bool", "Int", "Float", "Str", "Enum", "Ref"];

@@ -299,6 +299,18 @@ fn get_all_records_of_type(
     get_all_records_of_type_inner(&state, session_id, &type_name)
 }
 
+#[tauri::command]
+fn copy_record_to_file(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    src_file: String,
+    dst_file: String,
+    record_key: String,
+    new_key: String,
+) -> Result<RecordRow, String> {
+    copy_record_to_file_inner(&state, session_id, &src_file, &dst_file, &record_key, &new_key)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -332,6 +344,7 @@ fn main() {
             get_incoming_refs,
             get_all_records_of_type,
             reveal_in_explorer,
+            copy_record_to_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

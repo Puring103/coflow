@@ -73,6 +73,9 @@ export const api = {
   moveRecord: (sessionId: number, srcFile: string, dstFile: string, recordKey: string) =>
     invoke<RecordRow>("move_record", { sessionId, srcFile, dstFile, recordKey }),
 
+  copyRecordToFile: (sessionId: number, srcFile: string, dstFile: string, recordKey: string, newKey: string) =>
+    invoke<RecordRow>("copy_record_to_file", { sessionId, srcFile, dstFile, recordKey, newKey }),
+
   searchRecords: (sessionId: number, query: string, limit?: number) =>
     invoke<SearchHit[]>("search_records", { sessionId, query, limit }),
 

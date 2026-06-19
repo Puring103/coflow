@@ -967,6 +967,129 @@ pub fn move_record_inner(
     }
 }
 
+/// Copy a record to a different file, optionally under a new key.
+/// The original record is left untouched.
+pub fn copy_record_to_file_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+    src_file: &str,
+    dst_file: &str,
+    record_key: &str,
+    new_key: &str,
+) -> Result<RecordRow, String> {
+    if new_key != record_key {
+        validate_cfd_key(new_key)?;
+    }
+
+    let session_arc = get_session(store, session_id)?;
+    let mut session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+
+    // Guard: destination file must be loaded
+    if !session.file_sources.contains_key(dst_file) {
+        return Err(format!("destination file '{dst_file}' not loaded"));
+    }
+
+    // Guard duplicate key
+    if session.file_record_keys.values().any(|keys| keys.contains(&new_key.to_string())) {
+        return Err(format!("record key '{new_key}' already exists in the project"));
+    }
+
+    // ── 1. Extract record source text from source file ────────────────────────
+    let (src_source, src_ast) = session
+        .file_sources
+        .get(src_file)
+        .ok_or_else(|| format!("file '{src_file}' not loaded"))?
+        .clone();
+
+    let rec = src_ast
+        .records
+        .iter()
+        .find(|r| r.key == record_key)
+        .ok_or_else(|| format!("record '{record_key}' not found in '{src_file}'"))?;
+
+    let is_grouped = rec.type_span.start < rec.key_span.start;
+    let type_name = rec.type_name.clone();
+
+    // Build a standalone record text using new_key
+    let record_text = if is_grouped {
+        let after_key = src_source
+            .get(rec.key_span.end..rec.span.end)
+            .ok_or("key/span offsets out of range")?;
+        format!("{new_key}: {type_name}{after_key}")
+    } else {
+        let span_text = src_source
+            .get(rec.span.start..rec.span.end)
+            .ok_or("span offsets out of range")?;
+        if new_key == record_key {
+            span_text.to_string()
+        } else {
+            // Replace the leading key token
+            let after_old_key = src_source
+                .get(rec.key_span.end..rec.span.end)
+                .ok_or("key_span offsets out of range")?;
+            format!("{new_key}{after_old_key}")
+        }
+    };
+
+    // ── 2. Append record to destination file ──────────────────────────────────
+    let (dst_source, dst_ast) = session
+        .file_sources
+        .get(dst_file)
+        .ok_or_else(|| format!("file '{dst_file}' not loaded"))?
+        .clone();
+
+    let dst_uses_grouped = dst_ast.records.iter().any(|r| {
+        r.type_name == type_name && r.type_span.start < r.key_span.start
+    }) || dst_source.contains(&format!("{type_name} {{"));
+
+    let dst_abs_path = session.project_dir.join(dst_file);
+
+    let new_dst = if dst_uses_grouped {
+        if let Some(group_closer) = find_group_closer(&dst_source, &type_name) {
+            let before = &dst_source[..group_closer];
+            let after = &dst_source[group_closer..];
+            let body_part = record_text.trim_start_matches(new_key)
+                .trim_start_matches(':')
+                .trim_start_matches(&format!(" {type_name}"))
+                .trim_start();
+            format!("{before}  {new_key} {body_part}\n{after}")
+        } else {
+            let sep = if dst_source.ends_with('\n') || dst_source.is_empty() { "" } else { "\n" };
+            format!("{dst_source}{sep}{record_text}\n")
+        }
+    } else {
+        let sep = if dst_source.ends_with('\n') || dst_source.is_empty() { "" } else { "\n" };
+        format!("{dst_source}{sep}{record_text}\n")
+    };
+
+    std::fs::write(&dst_abs_path, &new_dst)
+        .map_err(|e| format!("cannot write {dst_file}: {e}"))?;
+    reload_file(&mut session, dst_file, &new_dst)?;
+
+    // ── 3. Return the RecordRow for the new record in dst_file ──────────────
+    let in_model = session.model.records().any(|(_, r)| r.key == new_key);
+    if in_model {
+        let (_, record) = session.model.records().find(|(_, r)| r.key == new_key)
+            .expect("exists: checked above");
+        let ast_rec = session.file_sources.get(dst_file)
+            .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == new_key));
+        let direct = ast_rec.map(|r| r.fields.iter().map(|f| f.name.clone()).collect::<HashSet<String>>());
+        let mut row = convert_record_row_with_ast(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref(), ast_rec);
+        row.file_path = dst_file.to_string();
+        Ok(row)
+    } else {
+        let schema = &session.schema;
+        session.file_sources.get(dst_file)
+            .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == new_key))
+            .map(|r| {
+                let mut row = ast_record_fallback(r, schema);
+                row.file_path = dst_file.to_string();
+                row
+            })
+            .ok_or_else(|| format!("record '{new_key}' not found in '{dst_file}' after copy"))
+    }
+}
+
 pub fn get_record_source_inner(
     store: &Mutex<SessionStore>,
     session_id: u32,

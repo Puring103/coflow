@@ -25,6 +25,8 @@ interface RecordViewProps {
   onDuplicateRecord?: (sessionId: number, filePath: string, srcKey: string, newKey: string) => Promise<void>;
   /** Called when the user wants to move a record to a different file. */
   onMoveRecord?: (srcFile: string, recordKey: string) => void;
+  /** Called when the user wants to copy a record to a different file. */
+  onCopyRecord?: (srcFile: string, recordKey: string) => void;
   /** Called when the user edits and saves the raw CFD source for a record. */
   onWriteRecordSource?: (filePath: string, recordKey: string, source: string) => Promise<void>;
   onNavigate: (route: Route) => void;
@@ -79,6 +81,7 @@ export function RecordView({
   onDeleteRecord,
   onDuplicateRecord,
   onMoveRecord,
+  onCopyRecord,
   onWriteRecordSource,
   onNavigate,
   onError,
@@ -499,6 +502,10 @@ export function RecordView({
                   label: "移动到文件…",
                   onClick: () => onMoveRecord(filePath, r.key),
                 });
+                if (onCopyRecord) items.push({
+                  label: "复制到文件…",
+                  onClick: () => onCopyRecord(filePath, r.key),
+                });
                 if (onDeleteRecord) items.push({
                   label: "删除记录",
                   danger: true,
@@ -633,6 +640,10 @@ export function RecordView({
                     if (onMoveRecord) items.push({
                       label: "移动到文件…",
                       onClick: () => onMoveRecord(filePath, recordKey),
+                    });
+                    if (onCopyRecord) items.push({
+                      label: "复制到文件…",
+                      onClick: () => onCopyRecord(filePath, recordKey),
                     });
                     if (onDeleteRecord) items.push({
                       label: "删除记录",
