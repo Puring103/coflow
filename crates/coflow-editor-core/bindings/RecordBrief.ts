@@ -3,4 +3,4 @@
 /**
  * Lightweight summary of a record for the command palette / jump-to-record.
  */
-export type RecordBrief = { key: string, actual_type: string, file_path: string, };
+export type RecordBrief = { key: string, actual_type: string, file_path: string, is_fallback: boolean, };

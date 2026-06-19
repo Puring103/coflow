@@ -10,4 +10,9 @@ spread_fields: Array<string>,
 /**
  * Records spread into this record (e.g. `...&base_item` → [{key:"base_item", file:"..."}]).
  */
-spread_sources: Array<SpreadSource>, };
+spread_sources: Array<SpreadSource>, 
+/**
+ * True when this record was built from the raw AST rather than the model
+ * (model build failed for this record — it may have missing required fields).
+ */
+is_fallback: boolean, };

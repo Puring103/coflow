@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from "react";
-import type { FieldValue, DictKey } from "../bindings";
+import { useState, useRef, useEffect, useMemo } from "react";
+import type { FieldValue, DictKey, FieldSchema } from "../bindings";
 import { api } from "../api";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -439,6 +439,21 @@ function DictEntry({ entry, depth, sessionId, onEditValue, onEditKey, onRemove, 
 
 // ─── Expanded renderer ────────────────────────────────────────────────────────
 
+function useFieldSchemas(sessionId: number | undefined, typeName: string | undefined): FieldSchema[] {
+  const [schemas, setSchemas] = useState<FieldSchema[]>([]);
+
+  useEffect(() => {
+    if (sessionId === undefined || !typeName) { setSchemas([]); return; }
+    let cancelled = false;
+    api.getFieldSchemas(sessionId, typeName)
+      .then(s => { if (!cancelled) setSchemas(s); })
+      .catch(() => { if (!cancelled) setSchemas([]); });
+    return () => { cancelled = true; };
+  }, [sessionId, typeName]);
+
+  return schemas;
+}
+
 interface ExpandedProps {
   value: FieldValue;
   depth: number;
@@ -459,6 +474,17 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
     if (value.kind === "Object") return value.fields.length > 8;
     return false;
   });
+
+  // Fetch sub-field schemas for Object values so nested nullable Objects show a "＋ T" button
+  const objectTypeName = value.kind === "Object" ? value.actual_type : undefined;
+  const subFieldSchemas = useFieldSchemas(sessionId, objectTypeName);
+
+  // Infer the element type for Arrays of Objects (to pass nullableObjectType to Null items)
+  const arrayElemObjectType = useMemo(() => {
+    if (value.kind !== "Array") return undefined;
+    const firstObj = value.items.find(i => i.kind === "Object");
+    return firstObj && firstObj.kind === "Object" ? firstObj.actual_type : undefined;
+  }, [value]);
 
   const marginLeft = depth > 0 ? depth * 10 : 0;
 
@@ -584,21 +610,25 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
             >✕</span>
           )}
         </div>
-        {!collapsed && value.fields.map(field => (
-          <ExpandedValue
-            key={field.name}
-            value={field.value}
-            depth={depth + 1}
-            sessionId={sessionId}
-            label={field.name}
-            onRefClick={onRefClick}
-            onEdit={onEdit ? (nv) => onEdit({
-              kind: "Object",
-              actual_type: value.actual_type,
-              fields: value.fields.map(f => f.name === field.name ? { ...f, value: nv } : f),
-            }) : undefined}
-          />
-        ))}
+        {!collapsed && value.fields.map(field => {
+          const subSchema = subFieldSchemas.find(s => s.name === field.name);
+          return (
+            <ExpandedValue
+              key={field.name}
+              value={field.value}
+              depth={depth + 1}
+              sessionId={sessionId}
+              label={field.name}
+              onRefClick={onRefClick}
+              nullableObjectType={subSchema?.nullable_object_type ?? undefined}
+              onEdit={onEdit ? (nv) => onEdit({
+                kind: "Object",
+                actual_type: value.actual_type,
+                fields: value.fields.map(f => f.name === field.name ? { ...f, value: nv } : f),
+              }) : undefined}
+            />
+          );
+        })}
       </div>
     );
   }
@@ -650,6 +680,7 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
                 sessionId={sessionId}
                 label={String(idx)}
                 onRefClick={onRefClick}
+                nullableObjectType={item.kind === "Null" ? arrayElemObjectType : undefined}
                 onEdit={onEdit ? (nv) => {
                   const newItems = [...value.items];
                   newItems[idx] = nv;

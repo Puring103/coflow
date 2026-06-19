@@ -88,3 +88,4 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**AST fallback 记录（model build 失败）在 UI 中无任何视觉区分**：用户不知道哪些记录是"不完整的"~~ ✅ `RecordRow` 和 `RecordBrief` 新增 `is_fallback: bool` 字段；RecordView 侧边栏、RecordView 头部（"⚠ incomplete" badge）、TableView key 列、CommandPalette 都对 fallback 记录显示 ⚠ 橙色警告
 - **graph view 不显示 AST fallback 记录**：model build 失败的记录不出现在关系图中（这些记录没有解析好的 Ref，图中不会有意义的边）。可接受：图视图专注于已解析的数据关系。
 - **RecordView 中必填字段高亮**：`has_default: false` 且当前值为 `Null` 的字段，字段名显示橙色并加 `*` 标记，提示用户填写。已通过 `fieldSchemas` + `isRequiredNull` 实现。
+- ~~**嵌套 Object/Array 中的可空 Object 无 UI 创建入口**：`nullableObjectType` 仅传递到 RecordView 顶层字段，Object 子字段和 Array 元素中的 Null 项没有"＋ T"按钮~~ ✅ `DataCard.tsx` 新增 `useFieldSchemas` hook，Object 值展开时自动为每个子字段查找 `nullable_object_type`（来自该 Object 类型的 schema），并传入递归的 `ExpandedValue`；Array 中的 Null 项则通过推断（取现有 Object 元素的 `actual_type`）传入 `arrayElemObjectType`，使"＋ T"按钮在嵌套场景中也可用。
