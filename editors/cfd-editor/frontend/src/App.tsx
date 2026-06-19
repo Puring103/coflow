@@ -555,6 +555,7 @@ export default function App() {
             <FileTree
               nodes={project.snapshot.file_tree}
               selectedPath={(router.current && router.current.view !== "global-table") ? router.current.file : null}
+              sessionId={project.snapshot.session_id}
               onSelect={(file) => router.push({ view: "table", file })}
               onNewFile={handleNewFile}
               onDeleteFile={handleDeleteFile}

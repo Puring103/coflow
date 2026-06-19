@@ -363,6 +363,18 @@ pub fn get_all_records_of_type_inner(
     Ok(results)
 }
 
+/// Returns the absolute path for a project-relative file path in the session.
+pub fn resolve_project_path_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+    rel_path: &str,
+) -> Result<String, String> {
+    let session_arc = get_session(store, session_id)?;
+    let session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+    let abs = session.project_dir.join(rel_path);
+    Ok(abs.to_string_lossy().to_string())
+}
+
 pub fn get_record_inner(
     store: &Mutex<SessionStore>,
     session_id: u32,

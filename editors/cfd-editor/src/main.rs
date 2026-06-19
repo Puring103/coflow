@@ -254,6 +254,42 @@ fn get_incoming_refs(
     get_incoming_refs_inner(&state, session_id, &target_key)
 }
 
+/// Open the given project-relative path in the system file manager.
+#[tauri::command]
+fn reveal_in_explorer(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    rel_path: String,
+) -> Result<(), String> {
+    let abs_path = resolve_project_path_inner(&state, session_id, &rel_path)?;
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .args(["/select,", &abs_path])
+            .spawn()
+            .map_err(|e| format!("explorer failed: {e}"))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .args(["-R", &abs_path])
+            .spawn()
+            .map_err(|e| format!("open failed: {e}"))?;
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        let parent = std::path::Path::new(&abs_path)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| abs_path.clone());
+        std::process::Command::new("xdg-open")
+            .arg(&parent)
+            .spawn()
+            .map_err(|e| format!("xdg-open failed: {e}"))?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn get_all_records_of_type(
     state: tauri::State<'_, Mutex<SessionStore>>,
@@ -295,6 +331,7 @@ fn main() {
             write_record_source,
             get_incoming_refs,
             get_all_records_of_type,
+            reveal_in_explorer,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

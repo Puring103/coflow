@@ -1,10 +1,12 @@
 import { useState, useRef, useCallback } from "react";
 import type { FileTreeNode } from "../bindings";
 import { ContextMenu, type ContextMenuState } from "./ContextMenu";
+import { api } from "../api";
 
 interface FileTreeProps {
   nodes: FileTreeNode[];
   selectedPath: string | null;
+  sessionId?: number;
   onSelect: (path: string) => void;
   onNewFile: () => void;
   onDeleteFile?: (path: string) => void;
@@ -126,7 +128,7 @@ function collectDirPaths(nodes: FileTreeNode[]): string[] {
   return result;
 }
 
-export function FileTree({ nodes, selectedPath, onSelect, onNewFile, onDeleteFile, onRenameFile }: FileTreeProps) {
+export function FileTree({ nodes, selectedPath, sessionId, onSelect, onNewFile, onDeleteFile, onRenameFile }: FileTreeProps) {
   const expandedRef = useRef<Set<string> | null>(null);
   const knownDirsRef = useRef<Set<string>>(new Set());
 
@@ -174,7 +176,13 @@ export function FileTree({ nodes, selectedPath, onSelect, onNewFile, onDeleteFil
   }, [renameModal, onRenameFile]);
 
   const handleNodeContextMenu = useCallback((e: React.MouseEvent, node: FileTreeNode) => {
-    const items = [];
+    const items: { label: string; danger?: boolean; onClick: () => void }[] = [];
+    if (sessionId !== undefined) {
+      items.push({
+        label: "在资源管理器中显示",
+        onClick: () => api.revealInExplorer(sessionId, node.path).catch(() => {}),
+      });
+    }
     if (onRenameFile && node.in_sources) {
       items.push({
         label: "重命名文件",
@@ -190,7 +198,7 @@ export function FileTree({ nodes, selectedPath, onSelect, onNewFile, onDeleteFil
     }
     if (items.length === 0) return;
     setContextMenu({ x: e.clientX, y: e.clientY, items });
-  }, [onDeleteFile, onRenameFile]);
+  }, [onDeleteFile, onRenameFile, sessionId]);
 
   return (
     <div style={{

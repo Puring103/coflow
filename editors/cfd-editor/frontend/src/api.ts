@@ -87,4 +87,7 @@ export const api = {
 
   getAllRecordsOfType: (sessionId: number, typeName: string) =>
     invoke<RecordRow[]>("get_all_records_of_type", { sessionId, typeName }),
+
+  revealInExplorer: (sessionId: number, relPath: string) =>
+    invoke<void>("reveal_in_explorer", { sessionId, relPath }),
 };
