@@ -28,7 +28,7 @@ export type FieldCell = { name: string; value: FieldValue };
 
 export type SpreadSource = { key: string; file: string };
 
-export type RecordRow = { key: string; actual_type: string; fields: FieldCell[]; spread_fields: string[]; spread_sources: SpreadSource[] };
+export type RecordRow = { key: string; actual_type: string; fields: FieldCell[]; spread_fields: string[]; spread_sources: SpreadSource[]; is_fallback: boolean };
 
 export type FileRecords = {
   file_path: string;

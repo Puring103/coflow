@@ -350,11 +350,16 @@ export function TableView({
       header: "key",
       size: 160,
       enableSorting: true,
-      cell: info => (
-        <span style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 12 }}>
-          {info.getValue()}
-        </span>
-      ),
+      cell: info => {
+        const row = info.row.original;
+        return (
+          <span style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 12, color: row.is_fallback ? "var(--warning)" : undefined }}
+            title={row.is_fallback ? "Model build failed — record may have missing required fields" : undefined}>
+            {info.getValue()}
+            {row.is_fallback && <span style={{ fontSize: 9, marginLeft: 3, opacity: 0.7 }}>⚠</span>}
+          </span>
+        );
+      },
     }),
     ...fieldNames.map(name =>
       columnHelper.accessor(

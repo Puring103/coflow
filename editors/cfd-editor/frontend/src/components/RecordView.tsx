@@ -385,16 +385,17 @@ export function RecordView({
               }}
               onMouseEnter={e => { if (r.key !== recordKey) e.currentTarget.style.background = "var(--bg3)"; }}
               onMouseLeave={e => { if (r.key !== recordKey) e.currentTarget.style.background = "transparent"; }}
-              title={`${r.key} (${r.actual_type})`}
+              title={r.is_fallback ? `${r.key} (${r.actual_type}) — model build failed, editing in AST fallback mode` : `${r.key} (${r.actual_type})`}
             >
               <div style={{
                 fontFamily: "monospace",
-                color: r.key === recordKey ? "var(--text)" : "var(--text-muted)",
+                color: r.is_fallback ? "var(--warning)" : r.key === recordKey ? "var(--text)" : "var(--text-muted)",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
               }}>
                 {r.key}
+                {r.is_fallback && <span style={{ fontSize: 9, marginLeft: 3, opacity: 0.7 }}>⚠</span>}
               </div>
               {typeNames.length > 1 && typeFilter === null && (
                 <div style={{ fontSize: 10, color: "var(--accent)", marginTop: 1 }}>{r.actual_type}</div>
@@ -507,6 +508,19 @@ export function RecordView({
                 <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
                   {record.actual_type}
                 </span>
+                {record.is_fallback && (
+                  <span style={{
+                    fontSize: 11,
+                    padding: "1px 6px",
+                    background: "var(--warning)",
+                    color: "#000",
+                    borderRadius: 3,
+                    fontWeight: 600,
+                    opacity: 0.85,
+                  }} title="Model build failed for this record — it may have missing required fields. Check the Problems panel.">
+                    ⚠ incomplete
+                  </span>
+                )}
                 {onDeleteRecord && (
                   <button
                     onClick={() => setDeleteModal({ recordKey })}

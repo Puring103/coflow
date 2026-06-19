@@ -600,6 +600,7 @@ pub fn create_record_inner(
         fields: Vec::new(),
         spread_fields: Vec::new(),
         spread_sources: Vec::new(),
+        is_fallback: false,
     })
 }
 
@@ -1142,6 +1143,7 @@ fn ast_record_fallback(ast_rec: &coflow_cfd::CfdRecord, schema: &CftContainer) -
         fields,
         spread_fields: Vec::new(),
         spread_sources,
+        is_fallback: true,
     }
 }
 
@@ -1413,6 +1415,7 @@ fn convert_record_row_with_ast(
         fields,
         spread_fields,
         spread_sources,
+        is_fallback: false,
     }
 }
 

@@ -59,6 +59,9 @@ pub struct RecordRow {
     pub spread_fields: Vec<String>,
     /// Records spread into this record (e.g. `...&base_item` → [{key:"base_item", file:"..."}]).
     pub spread_sources: Vec<SpreadSource>,
+    /// True when this record was built from the raw AST rather than the model
+    /// (model build failed for this record — it may have missing required fields).
+    pub is_fallback: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
