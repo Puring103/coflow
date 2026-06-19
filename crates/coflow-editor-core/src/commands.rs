@@ -4732,4 +4732,95 @@ mod tests {
         let err = copy_record_to_file_inner(&store, snap.session_id, "data/src.cfd", "data/dst.cfd", "sword", "shield").unwrap_err();
         assert!(err.contains("already exists"), "should reject duplicate key: {err}");
     }
+
+    #[test]
+    fn write_record_source_replaces_record_in_file() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        let cfd = data_dir.join("items.cfd");
+        std::fs::write(&cfd, "sword: Item {\n  name: \"Sword\"\n}\nshield: Item {\n  name: \"Shield\"\n}\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        let new_src = "sword: Item {\n  name: \"Excalibur\"\n}";
+        write_record_source_inner(&store, sid, "data/items.cfd", "sword", new_src).unwrap();
+
+        let contents = std::fs::read_to_string(&cfd).unwrap();
+        assert!(contents.contains("Excalibur"), "should contain new name:\n{contents}");
+        assert!(!contents.contains("\"Sword\""), "old name should be gone:\n{contents}");
+        assert!(contents.contains("shield"), "unrelated record should still be present:\n{contents}");
+    }
+
+    #[test]
+    fn write_record_source_rejects_key_mismatch() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        let cfd = data_dir.join("items.cfd");
+        std::fs::write(&cfd, "sword: Item {\n  name: \"Sword\"\n}\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let err = write_record_source_inner(&store, snap.session_id, "data/items.cfd", "sword", "different_key: Item {\n  name: \"X\"\n}").unwrap_err();
+        assert!(err.contains("key mismatch") || err.contains("mismatch"), "should reject key mismatch: {err}");
+    }
+
+    #[test]
+    fn import_record_source_appends_records_to_file() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        let cfd = data_dir.join("items.cfd");
+        std::fs::write(&cfd, "sword: Item {\n  name: \"Sword\"\n}\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        let pasted = "shield: Item {\n  name: \"Shield\"\n}\naxe: Item {\n  name: \"Axe\"\n}";
+        let keys = import_record_source_inner(&store, sid, "data/items.cfd", pasted).unwrap();
+        assert_eq!(keys.len(), 2, "should return 2 imported keys");
+        assert!(keys.contains(&"shield".to_string()));
+        assert!(keys.contains(&"axe".to_string()));
+
+        let contents = std::fs::read_to_string(&cfd).unwrap();
+        assert!(contents.contains("shield"), "file should contain shield:\n{contents}");
+        assert!(contents.contains("axe"), "file should contain axe:\n{contents}");
+        assert!(contents.contains("sword"), "original record should still be present:\n{contents}");
+    }
+
+    #[test]
+    fn import_record_source_rejects_duplicate_key() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        let cfd = data_dir.join("items.cfd");
+        std::fs::write(&cfd, "sword: Item {\n  name: \"Sword\"\n}\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let err = import_record_source_inner(&store, snap.session_id, "data/items.cfd", "sword: Item {\n  name: \"Dupe\"\n}").unwrap_err();
+        assert!(err.contains("already exists") || err.contains("sword"), "should reject duplicate key: {err}");
+    }
 }
