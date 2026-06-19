@@ -161,7 +161,7 @@ export function CommandPalette({ records, onNavigate, onClose }: CommandPaletteP
         >
           {filtered.length === 0 ? (
             <div style={{ padding: "12px 14px", color: "var(--text-muted)", fontSize: 13 }}>
-              No records match "{query}"
+              {query ? `No records match "${query}"` : "No records in project"}
             </div>
           ) : (
             filtered.map((r, idx) => {
