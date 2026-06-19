@@ -92,3 +92,6 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - **graph view 不显示 AST fallback 记录**：model build 失败的记录不出现在关系图中（这些记录没有解析好的 Ref，图中不会有意义的边）。可接受：图视图专注于已解析的数据关系。
 - **RecordView 中必填字段高亮**：`has_default: false` 且当前值为 `Null` 的字段，字段名显示橙色并加 `*` 标记，提示用户填写。已通过 `fieldSchemas` + `isRequiredNull` 实现。
 - ~~**嵌套 Object/Array 中的可空 Object 无 UI 创建入口**：`nullableObjectType` 仅传递到 RecordView 顶层字段，Object 子字段和 Array 元素中的 Null 项没有"＋ T"按钮~~ ✅ `DataCard.tsx` 新增 `useFieldSchemas` hook，Object 值展开时自动为每个子字段查找 `nullable_object_type`（来自该 Object 类型的 schema），并传入递归的 `ExpandedValue`；Array 中的 Null 项则通过推断（取现有 Object 元素的 `actual_type`）传入 `arrayElemObjectType`，使"＋ T"按钮在嵌套场景中也可用。
+- ~~**rename_record 不更新其他文件中的 &ref 引用**：重命名记录后，其他文件中已有的 `&old_key` 引用成为悬空引用，需手动修复~~ ✅ `rename_record_inner` 重写：(1) 收集源文件内所有 `CfdValue::Ref` 中匹配 `old_key` 的 key span + 记录 key span，一次性替换并写回；(2) 遍历所有其他已加载文件，对各文件做同样的跨文件 ref span 替换。新增 `collect_ref_key_spans` 和 `apply_span_replacements` 两个辅助函数，并添加了 `rename_record_updates_cross_file_refs` 集成测试。
+- ~~**GlobalTableView 缺少右键菜单**：其他视图（TableView/RecordView）均有右键菜单，GlobalTableView 行无任何右键操作~~ ✅ 已添加 ContextMenu：跳转到记录视图、在文件表视图中打开、复制 Key、复制为 CFD 源码。
+- ~~**GlobalTableView 缺少键盘导航**：TableView 支持 ↑↓ 键导航，GlobalTableView 没有~~ ✅ 已添加 ↑↓ 键移动焦点行（高亮 accent 左边框），Enter 打开记录，Ctrl+F 聚焦搜索框，filteredRows 改为 useMemo。
