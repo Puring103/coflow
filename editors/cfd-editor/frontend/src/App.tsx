@@ -169,11 +169,12 @@ export default function App() {
       invalidateGraphCache(sessionId, filePath);
       setGraphRefreshKey(k => k + 1);
       project.markDirty(sessionId, filePath);
-      // If the deleted record is the currently viewed one, navigate back to table
+      // If the deleted record is the currently viewed one, navigate back to table (preserve type)
       if (router.current?.view === "record" &&
           "recordKey" in router.current &&
           (router.current as { recordKey: string }).recordKey === recordKey) {
-        router.replace({ view: "table", file: filePath });
+        const deletedType = project.fileRecords?.records.find(r => r.key === recordKey)?.actual_type;
+        router.replace({ view: "table", file: filePath, ...(deletedType ? { typeFilter: deletedType } : {}) });
       }
     } catch (e) {
       showOpError(`Delete failed: ${e}`);
