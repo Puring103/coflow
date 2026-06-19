@@ -111,12 +111,39 @@ function CellEditor({ value, sessionId, onCommit, onCancel }: CellEditorProps) {
     }
   }, [value.kind]);
 
-  if (value.kind === "Enum" && enumVariants) {
+  if (value.kind === "Enum") {
+    if (!enumVariants) {
+      // Still fetching variants — show a loading placeholder that can be escaped
+      return (
+        <div
+          tabIndex={0}
+          onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); onCancel(); } e.stopPropagation(); }}
+          autoFocus
+          style={{
+            width: "100%",
+            height: "100%",
+            padding: "4px 8px",
+            background: "var(--bg3)",
+            border: "1px solid var(--accent)",
+            borderRadius: 0,
+            color: "var(--text-muted)",
+            fontSize: 12,
+            fontFamily: "monospace",
+            outline: "none",
+            boxSizing: "border-box",
+          }}
+        >
+          {text}
+        </div>
+      );
+    }
     return (
       <select
         value={text}
-        onChange={e => { setText(e.target.value); onCommit(e.target.value); }}
+        onChange={e => { setText(e.target.value); }}
+        onBlur={e => onCommit(e.currentTarget.value)}
         onKeyDown={e => {
+          if (e.key === "Enter") { e.preventDefault(); onCommit(e.currentTarget.value); }
           if (e.key === "Escape") { e.preventDefault(); onCancel(); }
           e.stopPropagation();
         }}
@@ -645,7 +672,7 @@ export function TableView({
                           maxWidth: cell.column.getSize(),
                           opacity: isSpreadField ? 0.6 : 1,
                           cursor: isKeyCol || isSpreadField ? "default" :
-                            (cellValue?.kind === "Ref" || cellValue?.kind === "Bool" ? "pointer" :
+                            (cellValue?.kind === "Ref" || cellValue?.kind === "Bool" || cellValue?.kind === "Enum" ? "pointer" :
                              (cellValue && SCALAR_KINDS.includes(cellValue.kind) ? "text" : "default")),
                         }}
                       >

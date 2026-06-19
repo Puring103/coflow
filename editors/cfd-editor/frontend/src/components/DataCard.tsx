@@ -617,8 +617,15 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label }: E
             <span
               onClick={e => {
                 e.stopPropagation();
-                // Always create a new Str key so the user can name it; preserve value type from first entry
-                const defaultKey: DictKey = { kind: "Str", v: "" };
+                // Infer key type from existing entries; default to Str for empty dict
+                const defaultKey: DictKey = value.entries.length > 0 ? (() => {
+                  const fk = value.entries[0].key;
+                  switch (fk.kind) {
+                    case "Int": return { kind: "Int", v: 0 };
+                    case "Enum": return { kind: "Enum", enum_name: fk.enum_name, variant: fk.variant, int_value: fk.int_value };
+                    default: return { kind: "Str", v: "" };
+                  }
+                })() : { kind: "Str", v: "" };
                 const defaultVal: FieldValue = value.entries.length > 0 ? (() => {
                   const fv = value.entries[0].value;
                   switch (fv.kind) {
@@ -650,9 +657,14 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label }: E
               newEntries[idx] = { ...entry, value: nv };
               onEdit({ kind: "Dict", entries: newEntries });
             } : undefined}
-            onEditKey={onEdit && entry.key.kind === "Str" ? (newKey) => {
+            onEditKey={onEdit && (entry.key.kind === "Str" || entry.key.kind === "Int") ? (newKey) => {
               const newEntries = [...value.entries];
-              newEntries[idx] = { ...entry, key: { kind: "Str", v: newKey } };
+              if (entry.key.kind === "Int") {
+                const n = parseInt(newKey, 10);
+                newEntries[idx] = { ...entry, key: { kind: "Int", v: isNaN(n) ? 0 : n } };
+              } else {
+                newEntries[idx] = { ...entry, key: { kind: "Str", v: newKey } };
+              }
               onEdit({ kind: "Dict", entries: newEntries });
             } : undefined}
             onRemove={onEdit ? () => {
