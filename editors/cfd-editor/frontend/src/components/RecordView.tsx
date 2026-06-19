@@ -106,6 +106,13 @@ export function RecordView({
   useEffect(() => { setTypeFilter(null); setSidebarSearch(""); pendingRenameKeyRef.current = null; }, [filePath]);
   useEffect(() => { setFieldSearch(initialFieldSearch ?? ""); setShowRequiredOnly(false); }, [recordKey, initialFieldSearch]);
 
+  // Auto-clear showRequiredOnly when there are no more required-null fields to show
+  useEffect(() => {
+    if (!showRequiredOnly || !record) return;
+    const hasAny = fieldSchemas.some(s => !s.has_default && record.fields.find(f => f.name === s.name)?.value.kind === "Null");
+    if (!hasAny) setShowRequiredOnly(false);
+  }, [showRequiredOnly, record, fieldSchemas]);
+
   const filteredRecords = allRecords
     .filter(r => {
       if (typeFilter && r.actual_type !== typeFilter && r.key !== recordKey) return false;
