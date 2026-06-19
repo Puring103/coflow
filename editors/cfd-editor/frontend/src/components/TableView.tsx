@@ -464,12 +464,16 @@ export function TableView({
   }, [filePath, sessionId, onWriteField]);
 
   const handleCellCommit = useCallback(async (rowKey: string, fieldName: string, raw: string, original: FieldValue) => {
-    setEditingCell(null);
     const newValue = parseFieldValue(raw, original);
     // Only write if changed
     const changed = fieldValueToString(newValue) !== fieldValueToString(original) || newValue.kind !== original.kind;
-    if (!changed) return;
-    await onWriteField(sessionId, filePath, rowKey, [{ kind: "Field", name: fieldName }], newValue);
+    if (!changed) { setEditingCell(null); return; }
+    try {
+      await onWriteField(sessionId, filePath, rowKey, [{ kind: "Field", name: fieldName }], newValue);
+      setEditingCell(null);
+    } catch {
+      // onWriteField already shows error toast; keep cell open so user can retry or cancel
+    }
   }, [sessionId, filePath, onWriteField]);
 
   const handleRenameCommit = useCallback(async () => {
@@ -504,7 +508,7 @@ export function TableView({
       await onDeleteRecord(sessionId, filePath, deleteModal.rowKey);
       setDeleteModal(null);
     } catch {
-      setDeleteModal(null);
+      // onDeleteRecord already shows error toast; modal auto-closes on success only
     }
   }, [deleteModal, onDeleteRecord, sessionId, filePath]);
 

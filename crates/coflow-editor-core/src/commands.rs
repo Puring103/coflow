@@ -2617,4 +2617,99 @@ mod tests {
         assert_eq!(briefs[0].key, "bow");
         assert_eq!(briefs[1].key, "sword");
     }
+
+    #[test]
+    fn get_file_records_returns_typed_rows_with_fields() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        std::fs::write(dir.path().join("schema.cft"),
+            "type Weapon { power: int; name: string; }").unwrap();
+        std::fs::write(
+            data_dir.join("items.cfd"),
+            "sword: Weapon { power: 10, name: \"Sword\", }\nbow: Weapon { power: 7, name: \"Bow\", }\n",
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let file_recs = get_file_records_inner(&store, snap.session_id, "data/items.cfd").unwrap();
+        assert_eq!(file_recs.type_names, vec!["Weapon".to_string()]);
+        assert_eq!(file_recs.records.len(), 2);
+
+        let sword = file_recs.records.iter().find(|r| r.key == "sword").expect("sword missing");
+        assert_eq!(sword.actual_type, "Weapon");
+        let power = sword.fields.iter().find(|f| f.name == "power").expect("power field missing");
+        assert!(matches!(power.value, FieldValue::Int { v } if (v - 10.0).abs() < 1e-9));
+
+        // Invalid session id returns error
+        assert!(get_file_records_inner(&store, 9999, "data/items.cfd").is_err());
+        // Invalid file path returns error
+        assert!(get_file_records_inner(&store, snap.session_id, "data/nonexistent.cfd").is_err());
+    }
+
+    #[test]
+    fn get_record_returns_single_row_with_all_fields() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        std::fs::write(dir.path().join("schema.cft"),
+            "type Stats { hp: int; attack: int; } type Monster { name: string; stats: Stats; }").unwrap();
+        std::fs::write(
+            data_dir.join("monsters.cfd"),
+            "goblin: Monster {\n  name: \"Goblin\",\n  stats: Stats { hp: 20, attack: 3, },\n}\n",
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let row = get_record_inner(&store, snap.session_id, "data/monsters.cfd", "goblin").unwrap();
+        assert_eq!(row.key, "goblin");
+        assert_eq!(row.actual_type, "Monster");
+
+        let name_field = row.fields.iter().find(|f| f.name == "name").expect("name missing");
+        assert!(matches!(&name_field.value, FieldValue::Str { v } if v == "Goblin"));
+
+        let stats_field = row.fields.iter().find(|f| f.name == "stats").expect("stats missing");
+        if let FieldValue::Object { actual_type, fields } = &stats_field.value {
+            assert_eq!(actual_type, "Stats");
+            let hp = fields.iter().find(|f| f.name == "hp").expect("hp missing");
+            assert!(matches!(hp.value, FieldValue::Int { v } if (v - 20.0).abs() < 1e-9));
+        } else {
+            panic!("expected Object for stats, got {:?}", stats_field.value);
+        }
+
+        // Non-existent record returns error
+        assert!(get_record_inner(&store, snap.session_id, "data/monsters.cfd", "dragon").is_err());
+    }
+
+    #[test]
+    fn close_session_removes_session_from_store() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        std::fs::write(dir.path().join("schema.cft"), "type Item { name: string; }").unwrap();
+        std::fs::write(data_dir.join("items.cfd"), "sword: Item { name: \"Sword\", }\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        // Session is accessible before close
+        assert!(get_file_records_inner(&store, sid, "data/items.cfd").is_ok());
+
+        // Close session
+        close_session_inner(&store, sid);
+
+        // Session is no longer accessible after close
+        assert!(get_file_records_inner(&store, sid, "data/items.cfd").is_err());
+        // Closing non-existent session is a no-op (no panic)
+        close_session_inner(&store, 9999);
+    }
 }
