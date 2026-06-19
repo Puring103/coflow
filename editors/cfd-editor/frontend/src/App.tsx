@@ -418,6 +418,19 @@ export default function App() {
       {/* Top bar */}
       <header className="topbar">
         <span className="app-title">CFD Editor</span>
+        {project.loadedYamlPath && (
+          <span style={{
+            fontSize: 11,
+            color: "var(--text-muted)",
+            fontFamily: "monospace",
+            maxWidth: 200,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }} title={project.loadedYamlPath}>
+            {project.loadedYamlPath.split(/[\\/]/).slice(-2).join("/")}
+          </span>
+        )}
         <button onClick={handleOpen}>Open Project…</button>
         {project.snapshot && (
           <button
