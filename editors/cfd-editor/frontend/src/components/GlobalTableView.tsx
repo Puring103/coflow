@@ -196,6 +196,11 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       }
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if ((e.ctrlKey || e.metaKey) && e.key === "a" && onWriteField) {
+        e.preventDefault();
+        setSelectedKeys(new Set(filteredRows.map(r => `${r.file_path}::${r.key}`)));
+        return;
+      }
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setFocusedIdx(i => (i === null ? 0 : Math.min(i + 1, filteredRows.length - 1)));

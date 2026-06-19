@@ -387,6 +387,13 @@ export function TableView({
         setNewRecord(r => ({ ...r, typeName: activeType ?? r.typeName }));
         setShowNewRecord(true);
       }
+      if ((e.ctrlKey || e.metaKey) && e.key === "a") {
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") {
+          e.preventDefault();
+          setSelectedKeys(new Set(filteredRows.map(r => r.key)));
+        }
+      }
       if ((e.ctrlKey || e.metaKey) && e.key === "f") {
         e.preventDefault();
         searchRef.current?.focus();
