@@ -35,6 +35,7 @@ interface TableViewProps {
   onDuplicateRecord?: (sessionId: number, filePath: string, srcKey: string, newKey: string) => Promise<void>;
   onMoveRecord?: (srcFile: string, recordKey: string) => void;
   onCopyRecord?: (srcFile: string, recordKey: string) => void;
+  onSortFile?: () => void;
   onNavigate: (route: Route) => void;
   diagnostics?: DiagnosticItem[];
 }
@@ -259,6 +260,7 @@ export function TableView({
   onDuplicateRecord,
   onMoveRecord,
   onCopyRecord,
+  onSortFile,
   onNavigate,
   diagnostics,
 }: TableViewProps) {
@@ -1420,6 +1422,15 @@ export function TableView({
           >
             ⎘ 粘贴 CFD
           </button>
+          {onSortFile && (
+            <button
+              onClick={onSortFile}
+              title="Sort all records in this file alphabetically by key"
+              style={{ fontSize: 12 }}
+            >
+              ⇅ 排序
+            </button>
+          )}
           <button onClick={() => { setNewRecord(r => ({ ...r, typeName: activeType, error: null })); setShowNewRecord(true); }} style={{ fontSize: 12 }}>
             + 新建记录
           </button>

@@ -706,6 +706,20 @@ export default function App() {
                         const firstOther = availableFiles.find(f => f !== srcFile) ?? srcFile;
                         setCopyRecordModal({ srcFile, recordKey, dstFile: firstOther, newKey: `${recordKey}_copy`, error: null });
                       }}
+                      onSortFile={project.snapshot ? async () => {
+                        if (!project.snapshot) return;
+                        const currentFile = router.current?.view !== "global-table" ? router.current?.file : undefined;
+                        if (!currentFile) return;
+                        try {
+                          const count = await api.sortFileRecords(project.snapshot.session_id, currentFile);
+                          if (count > 0) {
+                            project.markDirty(project.snapshot.session_id, currentFile);
+                            setGraphRefreshKey(k => k + 1);
+                          }
+                        } catch (e) {
+                          showOpError(String(e));
+                        }
+                      } : undefined}
                       onNavigate={router.push}
                       diagnostics={project.snapshot?.diagnostics}
                     />

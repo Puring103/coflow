@@ -2446,6 +2446,138 @@ fn collect_refs_in_value(
     }
 }
 
+/// Sort all records in `file_path` alphabetically by key (case-insensitive).
+///
+/// Handles standalone syntax only. Grouped-syntax files (where the type block
+/// precedes all keys) are sorted within each group block.
+pub fn sort_file_records_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+    file_path: &str,
+) -> Result<usize, String> {
+    let session_arc = get_session(store, session_id)?;
+    let mut session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+
+    let (source, ast) = session
+        .file_sources
+        .get(file_path)
+        .ok_or_else(|| format!("file '{file_path}' not loaded"))?
+        .clone();
+
+    if ast.records.len() < 2 {
+        return Ok(0); // Nothing to sort
+    }
+
+    let any_grouped = ast.records.iter().any(|r| r.type_span.start < r.key_span.start);
+
+    let new_source = if any_grouped {
+        // Grouped syntax: group records by type_name, sort within each group block.
+        // We rebuild the file by replacing each group's inner content with sorted entries.
+        let mut groups: std::collections::BTreeMap<String, Vec<&coflow_cfd::ast::CfdRecord>> =
+            std::collections::BTreeMap::new();
+        for rec in &ast.records {
+            groups.entry(rec.type_name.clone()).or_default().push(rec);
+        }
+        let mut result = source.clone();
+        let mut offset_delta: i64 = 0;
+        for (type_name, mut recs) in groups {
+            if recs.len() < 2 {
+                continue;
+            }
+            recs.sort_by(|a, b| a.key.to_lowercase().cmp(&b.key.to_lowercase()));
+            // Find the group block and rebuild its inner content
+            let group_header = format!("{type_name} {{");
+            let Some(block_start) = source.find(&group_header) else { continue };
+            let inner_start = block_start + group_header.len();
+            let Some(relative_end) = source[inner_start..].find('}') else { continue };
+            let block_end = inner_start + relative_end;
+
+            let sorted_inner: String = recs.iter().map(|r| {
+                // Extract entry text: from key_span.start to rec.span.end
+                source.get(r.key_span.start..r.span.end).unwrap_or("").to_string() + "\n"
+            }).collect();
+            let indented = sorted_inner.lines()
+                .map(|l| if l.is_empty() { String::new() } else { format!("  {l}") })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let new_inner = format!("\n{indented}\n");
+
+            let adj_start = (inner_start as i64 + offset_delta) as usize;
+            let adj_end = (block_end as i64 + offset_delta) as usize;
+            let before = &result[..adj_start];
+            let after = &result[adj_end..];
+            let new_result = format!("{before}{new_inner}{after}");
+            offset_delta += new_inner.len() as i64 - (block_end - inner_start) as i64;
+            result = new_result;
+        }
+        result
+    } else {
+        // Standalone syntax: collect record spans, sort by key, reconstruct file.
+        let mut records: Vec<_> = ast.records.iter().collect();
+        records.sort_by(|a, b| a.key.to_lowercase().cmp(&b.key.to_lowercase()));
+
+        // Check if already sorted
+        let already_sorted = ast.records.windows(2).all(|w| {
+            w[0].key.to_lowercase() <= w[1].key.to_lowercase()
+        });
+        if already_sorted {
+            return Ok(0);
+        }
+
+        // Extract text for each record (including any leading blank line)
+        let record_texts: Vec<String> = ast.records.iter().map(|r| {
+            let start = if r.span.start > 0 && source.as_bytes().get(r.span.start - 1) == Some(&b'\n') {
+                r.span.start - 1
+            } else {
+                r.span.start
+            };
+            source.get(start..r.span.end).unwrap_or("").to_string()
+        }).collect();
+
+        // Build sorted order
+        let sorted_order: Vec<usize> = {
+            let mut indexed: Vec<(usize, &str)> = ast.records.iter().enumerate()
+                .map(|(i, r)| (i, r.key.as_str()))
+                .collect();
+            indexed.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+            indexed.into_iter().map(|(i, _)| i).collect()
+        };
+
+        // Find the part of the source before the first record and after the last
+        let first_span_start = ast.records.iter().map(|r| {
+            if r.span.start > 0 && source.as_bytes().get(r.span.start - 1) == Some(&b'\n') {
+                r.span.start - 1
+            } else {
+                r.span.start
+            }
+        }).min().unwrap_or(0);
+        let last_span_end = ast.records.iter().map(|r| r.span.end).max().unwrap_or(source.len());
+
+        let prefix = &source[..first_span_start];
+        let suffix = &source[last_span_end..];
+
+        let sorted_body: String = sorted_order.iter()
+            .enumerate()
+            .map(|(i, &orig_idx)| {
+                let text = record_texts[orig_idx].trim_start_matches('\n');
+                if i == 0 { text.to_string() } else { format!("\n{text}") }
+            })
+            .collect();
+        format!("{prefix}{sorted_body}{suffix}")
+    };
+
+    if new_source == source {
+        return Ok(0);
+    }
+
+    let abs_path = session.project_dir.join(file_path);
+    std::fs::write(&abs_path, &new_source)
+        .map_err(|e| format!("cannot write {file_path}: {e}"))?;
+
+    reload_file(&mut session, file_path, &new_source)?;
+    Ok(ast.records.len())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

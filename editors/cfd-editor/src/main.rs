@@ -300,6 +300,15 @@ fn get_all_records_of_type(
 }
 
 #[tauri::command]
+fn sort_file_records(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    file_path: String,
+) -> Result<usize, String> {
+    sort_file_records_inner(&state, session_id, &file_path)
+}
+
+#[tauri::command]
 fn copy_record_to_file(
     state: tauri::State<'_, Mutex<SessionStore>>,
     session_id: u32,
@@ -345,6 +354,7 @@ fn main() {
             get_all_records_of_type,
             reveal_in_explorer,
             copy_record_to_file,
+            sort_file_records,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
