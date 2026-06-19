@@ -17,6 +17,10 @@ interface RenameFileModal {
   error: string | null;
 }
 
+interface DeleteFileModal {
+  node: FileTreeNode;
+}
+
 interface TreeNodeProps {
   node: FileTreeNode;
   selectedPath: string | null;
@@ -139,6 +143,7 @@ export function FileTree({ nodes, selectedPath, onSelect, onNewFile, onDeleteFil
   const [, forceRender] = useState(0);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renameModal, setRenameModal] = useState<RenameFileModal | null>(null);
+  const [deleteFileModal, setDeleteFileModal] = useState<DeleteFileModal | null>(null);
 
   const handleToggleDir = useCallback((path: string) => {
     const s = expandedRef.current!;
@@ -176,11 +181,7 @@ export function FileTree({ nodes, selectedPath, onSelect, onNewFile, onDeleteFil
       items.push({
         label: "删除文件",
         danger: true,
-        onClick: () => {
-          if (window.confirm(`Delete file "${node.name}"? This cannot be undone.`)) {
-            onDeleteFile(node.path);
-          }
-        },
+        onClick: () => setDeleteFileModal({ node }),
       });
     }
     if (items.length === 0) return;
@@ -303,6 +304,52 @@ export function FileTree({ nodes, selectedPath, onSelect, onNewFile, onDeleteFil
                 disabled={!renameModal.draft.trim()}
               >
                 重命名
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteFileModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2000,
+          }}
+          onClick={() => setDeleteFileModal(null)}
+        >
+          <div
+            style={{
+              background: "var(--bg2)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              padding: 24,
+              width: 380,
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 style={{ margin: 0, fontSize: 15 }}>删除文件</h3>
+            <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>
+              Delete <strong style={{ color: "var(--text)", fontFamily: "monospace" }}>{deleteFileModal.node.name}</strong>? This cannot be undone.
+            </p>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setDeleteFileModal(null)}>取消</button>
+              <button
+                className="danger"
+                onClick={() => {
+                  onDeleteFile?.(deleteFileModal.node.path);
+                  setDeleteFileModal(null);
+                }}
+              >
+                删除
               </button>
             </div>
           </div>

@@ -434,6 +434,7 @@ export default function App() {
                     onRenameRecord={handleRenameRecord}
                     onDeleteRecord={handleDeleteRecord}
                     onDuplicateRecord={handleDuplicateRecord}
+                    onError={showOpError}
                     onNavigate={router.push}
                   />
                 )}

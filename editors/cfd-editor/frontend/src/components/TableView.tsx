@@ -51,6 +51,16 @@ interface RenameModal {
   error: string | null;
 }
 
+interface DuplicateModal {
+  srcKey: string;
+  draft: string;
+  error: string | null;
+}
+
+interface DeleteModal {
+  rowKey: string;
+}
+
 type RowData = RecordRow & { _filePath: string };
 
 function fieldValueToString(v: FieldValue): string {
@@ -218,6 +228,8 @@ export function TableView({
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renameModal, setRenameModal] = useState<RenameModal | null>(null);
+  const [duplicateModal, setDuplicateModal] = useState<DuplicateModal | null>(null);
+  const [deleteModal, setDeleteModal] = useState<DeleteModal | null>(null);
   const [allTypeNames, setAllTypeNames] = useState<string[]>(fileRecords.type_names);
 
   // Keep activeType valid when the type list changes after reload
@@ -396,21 +408,12 @@ export function TableView({
         }] : []),
         ...(onDuplicateRecord ? [{
           label: "复制记录",
-          onClick: () => {
-            const newKey = window.prompt(`Duplicate "${row.key}" — enter new key:`, `${row.key}_copy`);
-            if (newKey && newKey.trim()) {
-              onDuplicateRecord(sessionId, filePath, row.key, newKey.trim()).catch(() => {});
-            }
-          },
+          onClick: () => setDuplicateModal({ srcKey: row.key, draft: `${row.key}_copy`, error: null }),
         }] : []),
         {
           label: "删除记录",
           danger: true,
-          onClick: async () => {
-            if (window.confirm(`Delete record "${row.key}"?`)) {
-              await onDeleteRecord(sessionId, filePath, row.key);
-            }
-          },
+          onClick: () => setDeleteModal({ rowKey: row.key }),
         },
       ],
     });
@@ -481,8 +484,32 @@ export function TableView({
     }
   }, [renameModal, onRenameRecord, sessionId, filePath]);
 
+  const handleDuplicateCommit = useCallback(async () => {
+    if (!duplicateModal || !onDuplicateRecord) return;
+    const newKey = duplicateModal.draft.trim();
+    if (!newKey) { setDuplicateModal(m => m && ({ ...m, error: "Key cannot be empty" })); return; }
+    if (newKey === duplicateModal.srcKey) { setDuplicateModal(null); return; }
+    try {
+      await onDuplicateRecord(sessionId, filePath, duplicateModal.srcKey, newKey);
+      setDuplicateModal(null);
+    } catch (e) {
+      setDuplicateModal(m => m && ({ ...m, error: String(e) }));
+    }
+  }, [duplicateModal, onDuplicateRecord, sessionId, filePath]);
+
+  const handleDeleteCommit = useCallback(async () => {
+    if (!deleteModal) return;
+    try {
+      await onDeleteRecord(sessionId, filePath, deleteModal.rowKey);
+      setDeleteModal(null);
+    } catch {
+      setDeleteModal(null);
+    }
+  }, [deleteModal, onDeleteRecord, sessionId, filePath]);
+
   const handleCreateRecord = async () => {
-    if (!newRecord.key.trim() || !newRecord.typeName) return;
+    if (!newRecord.key.trim()) { setNewRecord(r => ({ ...r, error: "Key cannot be empty" })); return; }
+    if (!newRecord.typeName) { setNewRecord(r => ({ ...r, error: "Type is required" })); return; }
     const key = newRecord.key.trim();
     setCreating(true);
     setNewRecord(r => ({ ...r, error: null }));
@@ -919,6 +946,72 @@ export function TableView({
               >
                 重命名
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate record modal */}
+      {duplicateModal && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000 }}
+          onClick={() => setDuplicateModal(null)}
+        >
+          <div
+            style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8, padding: 24, width: 360, display: "flex", flexDirection: "column", gap: 12 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 style={{ margin: 0, fontSize: 15 }}>复制记录</h3>
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              源记录: <code style={{ fontFamily: "monospace" }}>{duplicateModal.srcKey}</code>
+            </div>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+              新 Key
+              <input
+                value={duplicateModal.draft}
+                onChange={e => setDuplicateModal(m => m && ({ ...m, draft: e.target.value, error: null }))}
+                onKeyDown={e => {
+                  if (e.key === "Enter") { e.preventDefault(); handleDuplicateCommit(); }
+                  if (e.key === "Escape") setDuplicateModal(null);
+                  e.stopPropagation();
+                }}
+                style={{
+                  background: "var(--bg3)",
+                  border: duplicateModal.error ? "1px solid #ff5555" : "1px solid var(--border)",
+                  borderRadius: 4, color: "var(--text)", padding: "4px 8px", fontSize: 13, fontFamily: "monospace", outline: "none",
+                }}
+                autoFocus
+              />
+              {duplicateModal.error && <span style={{ color: "#ff5555", fontSize: 11 }}>{duplicateModal.error}</span>}
+            </label>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setDuplicateModal(null)}>取消</button>
+              <button className="primary" onClick={handleDuplicateCommit} disabled={!duplicateModal.draft.trim()}>复制</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation modal */}
+      {deleteModal && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000 }}
+          onClick={() => setDeleteModal(null)}
+        >
+          <div
+            style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8, padding: 24, width: 360, display: "flex", flexDirection: "column", gap: 12 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 style={{ margin: 0, fontSize: 15 }}>删除记录</h3>
+            <div style={{ fontSize: 13, color: "var(--text)" }}>
+              确认删除记录 <code style={{ fontFamily: "monospace" }}>{deleteModal.rowKey}</code>？此操作不可撤销。
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setDeleteModal(null)}>取消</button>
+              <button
+                onClick={handleDeleteCommit}
+                style={{ background: "#ff5555", color: "#fff", border: "none", borderRadius: 4, padding: "4px 16px", cursor: "pointer", fontSize: 13 }}
+              >删除</button>
             </div>
           </div>
         </div>
