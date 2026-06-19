@@ -1477,6 +1477,19 @@ pub fn search_records_inner(
         let file_path = key_to_file.get(&record.key).cloned().unwrap_or_default();
 
         match &field_filter {
+            Some(ff) if ff == "file" => {
+                // file:X filters by file_path (filename only, case-insensitive)
+                let filename = file_path.split(['/', '\\']).last().unwrap_or(&file_path).to_string();
+                if filename.to_lowercase().contains(&q) || file_path.to_lowercase().contains(&q) {
+                    hits.push(SearchHit {
+                        key: record.key.clone(),
+                        actual_type: record.actual_type.clone(),
+                        file_path,
+                        match_field: "file".to_string(),
+                        match_value: filename,
+                    });
+                }
+            }
             Some(ff) if ff == "type" => {
                 // type:X filters by actual_type
                 if record.actual_type.to_lowercase().contains(&q) {
