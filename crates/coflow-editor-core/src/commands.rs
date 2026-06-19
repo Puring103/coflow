@@ -3017,4 +3017,40 @@ mod tests {
             "expected element=Fire after write, got {:?}", elem.value
         );
     }
+
+    #[test]
+    fn get_file_records_fallback_for_missing_required_field() {
+        // When a record is missing a required field, the model build fails for it.
+        // get_file_records_inner should fall back to the raw AST and still return the record.
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        // Schema requires both name and power; we'll create one record missing power
+        std::fs::write(dir.path().join("schema.cft"), "type Weapon { name: string; power: int; }").unwrap();
+        std::fs::write(
+            data_dir.join("items.cfd"),
+            "sword: Weapon { name: \"Sword\", power: 10, }\nbroken: Weapon { name: \"Broken\", }\n",
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let file_recs = get_file_records_inner(&store, snap.session_id, "data/items.cfd").unwrap();
+        // Both records should appear — one from model, one from AST fallback
+        assert_eq!(file_recs.records.len(), 2, "both records should be returned");
+
+        let sword = file_recs.records.iter().find(|r| r.key == "sword").expect("sword missing");
+        assert_eq!(sword.actual_type, "Weapon");
+        let power = sword.fields.iter().find(|f| f.name == "power");
+        assert!(power.is_some(), "sword should have power field from model");
+
+        let broken = file_recs.records.iter().find(|r| r.key == "broken").expect("broken missing");
+        // broken comes from AST fallback — actual_type is set from the AST type_name
+        assert_eq!(broken.actual_type, "Weapon");
+        // name field should be present from AST
+        let name_field = broken.fields.iter().find(|f| f.name == "name");
+        assert!(name_field.is_some(), "broken should have name field from AST fallback");
+    }
 }
