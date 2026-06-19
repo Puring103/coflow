@@ -151,6 +151,8 @@ pub struct RecordBrief {
     pub actual_type: String,
     pub file_path: String,
     pub is_fallback: bool,
+    /// First non-null scalar field value, shown as a hint in the command palette.
+    pub display_hint: Option<String>,
 }
 
 /// Schema information for a single field on a type.

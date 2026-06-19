@@ -84,6 +84,7 @@ export type RecordBrief = {
   actual_type: string;
   file_path: string;
   is_fallback: boolean;
+  display_hint: string | null;
 };
 
 export type FieldSchema = {

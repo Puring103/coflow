@@ -1289,11 +1289,32 @@ pub fn get_all_records_brief_inner(
                     .map(|r| r.type_name.clone())
                     .unwrap_or_default()
             };
+            // Build display hint: prefer "name" field, then first non-null scalar field.
+            let display_hint = if in_model {
+                session.model.records()
+                    .find(|(_, r)| &r.key == key)
+                    .and_then(|(_, r)| {
+                        fn scalar_str(v: &CfdValue) -> Option<String> {
+                            match v {
+                                CfdValue::String(s) => Some(s.clone()),
+                                CfdValue::Int(i) => Some(i.to_string()),
+                                CfdValue::Float(f) => Some(f.to_string()),
+                                CfdValue::Bool(b) => Some(b.to_string()),
+                                _ => None,
+                            }
+                        }
+                        let name_val = r.fields.get("name").and_then(|v| scalar_str(v));
+                        name_val.or_else(|| r.fields.values().find_map(|v| scalar_str(v)))
+                    })
+            } else {
+                None
+            };
             results.push(RecordBrief {
                 key: key.clone(),
                 actual_type,
                 file_path: file_path.clone(),
                 is_fallback: !in_model,
+                display_hint,
             });
         }
     }

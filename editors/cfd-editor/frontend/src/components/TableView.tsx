@@ -72,6 +72,7 @@ interface PasteModal {
   source: string;
   error: string | null;
   importing: boolean;
+  importedKeys?: string[];
 }
 
 type RowData = RecordRow & { _filePath: string };
@@ -740,9 +741,15 @@ export function TableView({
     setPasteModal(m => m && ({ ...m, importing: true, error: null }));
     try {
       const importedKeys = await api.importRecordSource(sessionId, filePath, pasteModal.source);
-      setPasteModal(null);
+      if (importedKeys.length === 0) {
+        setPasteModal(m => m && ({ ...m, importing: false, error: "未导入任何记录（key 已存在或源码为空）" }));
+        return;
+      }
       if (importedKeys.length === 1) {
+        setPasteModal(null);
         onNavigate({ view: "record", file: filePath, recordKey: importedKeys[0] });
+      } else {
+        setPasteModal(m => m && ({ ...m, importing: false, importedKeys }));
       }
     } catch (e) {
       setPasteModal(m => m && ({ ...m, importing: false, error: String(e) }));
@@ -1692,48 +1699,72 @@ export function TableView({
             onClick={e => e.stopPropagation()}
           >
             <h3 style={{ margin: 0, fontSize: 15 }}>粘贴 CFD 源码导入</h3>
-            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              粘贴一条或多条 CFD 格式记录，将追加到 <code style={{ fontFamily: "monospace" }}>{filePath}</code>。
-            </div>
-            {pasteModal.error && (
-              <div style={{ color: "#ff5555", fontSize: 12, background: "#ff555522", border: "1px solid #ff555544", borderRadius: 4, padding: "4px 8px" }}>
-                {pasteModal.error}
-              </div>
+            {pasteModal.importedKeys ? (
+              <>
+                <div style={{ color: "var(--success, #50fa7b)", fontSize: 13, background: "rgba(80,250,123,0.08)", border: "1px solid rgba(80,250,123,0.3)", borderRadius: 4, padding: "8px 12px" }}>
+                  ✓ 已导入 {pasteModal.importedKeys.length} 条记录
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 160, overflowY: "auto" }}>
+                  {pasteModal.importedKeys.map(k => (
+                    <button
+                      key={k}
+                      onClick={() => { setPasteModal(null); onNavigate({ view: "record", file: filePath, recordKey: k }); }}
+                      style={{ textAlign: "left", fontFamily: "monospace", fontSize: 12, padding: "2px 8px" }}
+                    >
+                      → {k}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button className="primary" onClick={() => setPasteModal(null)}>关闭</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  粘贴一条或多条 CFD 格式记录，将追加到 <code style={{ fontFamily: "monospace" }}>{filePath}</code>。
+                </div>
+                {pasteModal.error && (
+                  <div style={{ color: "#ff5555", fontSize: 12, background: "#ff555522", border: "1px solid #ff555544", borderRadius: 4, padding: "4px 8px" }}>
+                    {pasteModal.error}
+                  </div>
+                )}
+                <textarea
+                  value={pasteModal.source}
+                  onChange={e => setPasteModal(m => m && ({ ...m, source: e.target.value, error: null }))}
+                  onKeyDown={e => {
+                    if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !pasteModal.importing && pasteModal.source.trim()) {
+                      e.preventDefault();
+                      handlePasteImport();
+                    }
+                  }}
+                  rows={12}
+                  spellCheck={false}
+                  placeholder={"sword: Weapon {\n  name: \"Fire Sword\"\n  power: 100\n}"}
+                  style={{
+                    background: "var(--bg3)",
+                    border: pasteModal.error ? "1px solid #ff5555" : "1px solid var(--border)",
+                    borderRadius: 4,
+                    color: "var(--text)",
+                    padding: "8px",
+                    fontSize: 12,
+                    fontFamily: "monospace",
+                    outline: "none",
+                    resize: "vertical",
+                  }}
+                />
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button onClick={() => setPasteModal(null)} disabled={pasteModal.importing}>取消</button>
+                  <button
+                    className="primary"
+                    onClick={handlePasteImport}
+                    disabled={pasteModal.importing || !pasteModal.source.trim()}
+                  >
+                    {pasteModal.importing ? "导入中…" : "导入"}
+                  </button>
+                </div>
+              </>
             )}
-            <textarea
-              value={pasteModal.source}
-              onChange={e => setPasteModal(m => m && ({ ...m, source: e.target.value, error: null }))}
-              onKeyDown={e => {
-                if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !pasteModal.importing && pasteModal.source.trim()) {
-                  e.preventDefault();
-                  handlePasteImport();
-                }
-              }}
-              rows={12}
-              spellCheck={false}
-              placeholder={"sword: Weapon {\n  name: \"Fire Sword\"\n  power: 100\n}"}
-              style={{
-                background: "var(--bg3)",
-                border: pasteModal.error ? "1px solid #ff5555" : "1px solid var(--border)",
-                borderRadius: 4,
-                color: "var(--text)",
-                padding: "8px",
-                fontSize: 12,
-                fontFamily: "monospace",
-                outline: "none",
-                resize: "vertical",
-              }}
-            />
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => setPasteModal(null)} disabled={pasteModal.importing}>取消</button>
-              <button
-                className="primary"
-                onClick={handlePasteImport}
-                disabled={pasteModal.importing || !pasteModal.source.trim()}
-              >
-                {pasteModal.importing ? "导入中…" : "导入"}
-              </button>
-            </div>
           </div>
         </div>
       )}

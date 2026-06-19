@@ -197,6 +197,20 @@ export function CommandPalette({ records, onNavigate, onClose }: CommandPaletteP
                     {highlight(r.key, query)}
                     {r.is_fallback && <span style={{ fontSize: 9, marginLeft: 3 }}>⚠</span>}
                   </span>
+                  {r.display_hint && (
+                    <span style={{
+                      fontSize: 11,
+                      color: "var(--text-muted)",
+                      flexShrink: 1,
+                      minWidth: 0,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      maxWidth: 160,
+                    }}>
+                      {r.display_hint}
+                    </span>
+                  )}
                   <span style={{
                     fontSize: 11,
                     color: "var(--accent)",
