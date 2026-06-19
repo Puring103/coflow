@@ -446,9 +446,10 @@ interface ExpandedProps {
   onEdit?: (newValue: FieldValue) => void;
   onRefClick?: (targetFile: string | null, targetKey: string) => void;
   label?: string;
+  nullableObjectType?: string;
 }
 
-function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label }: ExpandedProps) {
+function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nullableObjectType }: ExpandedProps) {
   const MAX_DEPTH = 5;
   const [editing, setEditing] = useState(false);
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -466,6 +467,32 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label }: E
       <div style={{ marginLeft, display: "flex", alignItems: "center", gap: 6, padding: "2px 0" }}>
         {label && <span style={{ color: "var(--text-muted)", minWidth: 80, fontSize: 12 }}>{label}:</span>}
         {renderCompact(value)}
+      </div>
+    );
+  }
+
+  // Null value with nullable Object type — offer a "＋ Create T" button
+  if (value.kind === "Null" && nullableObjectType && onEdit) {
+    return (
+      <div style={{ marginLeft, display: "flex", alignItems: "center", gap: 6, padding: "2px 0" }}>
+        {label && <span style={{ color: "var(--text-muted)", minWidth: 80, fontSize: 12 }}>{label}:</span>}
+        <span style={{ color: "var(--text-muted)" }}>—</span>
+        <button
+          onClick={e => {
+            e.stopPropagation();
+            onEdit({ kind: "Object", actual_type: nullableObjectType, fields: [] });
+          }}
+          title={`Create a new ${nullableObjectType} object for this field`}
+          style={{
+            fontSize: 11,
+            padding: "1px 6px",
+            background: "transparent",
+            border: "1px solid var(--accent)",
+            borderRadius: 3,
+            color: "var(--accent)",
+            cursor: "pointer",
+          }}
+        >＋ {nullableObjectType}</button>
       </div>
     );
   }
@@ -763,9 +790,12 @@ export interface DataCardProps {
   onEdit?: (newValue: FieldValue) => void;
   onRefClick?: (targetFile: string | null, targetKey: string) => void;
   label?: string;
+  /** If this field's schema type is `T?` where T is an Object type, pass T here.
+   *  When value is Null and onEdit is provided, a "＋ Create T" button will be shown. */
+  nullableObjectType?: string;
 }
 
-export function DataCard({ value, mode, depth = 0, sessionId, onEdit, onRefClick, label }: DataCardProps) {
+export function DataCard({ value, mode, depth = 0, sessionId, onEdit, onRefClick, label, nullableObjectType }: DataCardProps) {
   if (mode === "compact") {
     return <span style={{ fontFamily: "monospace", fontSize: 12 }}>{renderCompact(value)}</span>;
   }
@@ -777,7 +807,7 @@ export function DataCard({ value, mode, depth = 0, sessionId, onEdit, onRefClick
   // expanded
   return (
     <div style={{ fontFamily: "monospace", fontSize: 12 }}>
-      <ExpandedValue value={value} depth={depth} sessionId={sessionId} onEdit={onEdit} onRefClick={onRefClick} label={label} />
+      <ExpandedValue value={value} depth={depth} sessionId={sessionId} onEdit={onEdit} onRefClick={onRefClick} label={label} nullableObjectType={nullableObjectType} />
     </div>
   );
 }

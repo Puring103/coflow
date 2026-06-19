@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ProjectSnapshot, FileRecords, RecordRow, GraphData,
-  FileTreeNode, FieldValue, FieldPathSegment, DiagnosticItem, RecordBrief
+  FileTreeNode, FieldValue, FieldPathSegment, DiagnosticItem, RecordBrief, FieldSchema
 } from "./bindings";
 
 export const api = {
@@ -63,4 +63,7 @@ export const api = {
 
   getAllRecordsBrief: (sessionId: number) =>
     invoke<RecordBrief[]>("get_all_records_brief", { sessionId }),
+
+  getFieldSchemas: (sessionId: number, typeName: string) =>
+    invoke<FieldSchema[]>("get_field_schemas", { sessionId, typeName }),
 };

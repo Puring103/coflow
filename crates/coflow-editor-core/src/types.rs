@@ -143,3 +143,18 @@ pub struct RecordBrief {
     pub actual_type: String,
     pub file_path: String,
 }
+
+/// Schema information for a single field on a type.
+/// Used to enable schema-aware editing (e.g. creating a nullable Object value).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct FieldSchema {
+    pub name: String,
+    /// Human-readable type string (e.g. "Stats", "Stats?", "int[]")
+    pub type_str: String,
+    /// If this field's type is `T?` where T is an Object type, this is T.
+    /// Used by the UI to offer a "Create T object" button for null values.
+    pub nullable_object_type: Option<String>,
+    /// Whether this field has a default value (implies it's optional in practice).
+    pub has_default: bool,
+}

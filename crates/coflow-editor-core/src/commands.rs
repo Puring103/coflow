@@ -1,12 +1,12 @@
 use crate::patch;
 use crate::types::{
-    DiagnosticItem, DictEntry, DictKey, FieldCell, FieldPathSegment, FieldValue, FileRecords,
-    FileTreeNode, GraphData, GraphEdge, GraphNode, ProjectSnapshot, RecordBrief, RecordRow,
-    SpreadSource,
+    DiagnosticItem, DictEntry, DictKey, FieldCell, FieldPathSegment, FieldSchema, FieldValue,
+    FileRecords, FileTreeNode, GraphData, GraphEdge, GraphNode, ProjectSnapshot, RecordBrief,
+    RecordRow, SpreadSource,
 };
 use coflow_cfd::{parse_cfd, CfdAst, CfdBlockEntry};
 use coflow_checker::CfdCheckExt;
-use coflow_cft::{CftContainer, ModuleId};
+use coflow_cft::{CftContainer, CftSchemaTypeRef, ModuleId};
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostics, CfdDictKey, CfdEnumValue, CfdRecord, CfdValue,
 };
@@ -867,6 +867,46 @@ pub fn get_enum_variants_inner(
         .map(|e| e.variants.iter().map(|v| v.name.clone()).collect::<Vec<_>>())
         .unwrap_or_default();
     Ok(variants)
+}
+
+/// Return schema metadata for all fields on a given type.
+/// Used by the UI to enable schema-aware editing for nullable Object fields.
+pub fn get_field_schemas_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+    type_name: &str,
+) -> Result<Vec<FieldSchema>, String> {
+    fn inner_object_type(ty_ref: &CftSchemaTypeRef, schema: &CftContainer) -> Option<String> {
+        match ty_ref {
+            CftSchemaTypeRef::Nullable(inner) => {
+                if let CftSchemaTypeRef::Named(name) = inner.as_ref() {
+                    if schema.resolve_type(name).is_some() {
+                        return Some(name.clone());
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    let session_arc = get_session(store, session_id)?;
+    let session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+    let schema_type = session
+        .schema
+        .resolve_type(type_name)
+        .ok_or_else(|| format!("type '{type_name}' not found"))?;
+    let schemas = schema_type
+        .all_fields
+        .iter()
+        .map(|f| FieldSchema {
+            name: f.name.clone(),
+            type_str: f.ty.clone(),
+            nullable_object_type: inner_object_type(&f.ty_ref, &session.schema),
+            has_default: f.has_default,
+        })
+        .collect();
+    Ok(schemas)
 }
 
 pub fn create_file_inner(
@@ -3315,5 +3355,35 @@ mod tests {
             bag_diag.is_some(),
             "expected record_key='bag' in diagnostics after writing broken Ref, got: {:?}", diags
         );
+    }
+
+    #[test]
+    fn get_field_schemas_returns_nullable_object_type() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        std::fs::write(
+            dir.path().join("schema.cft"),
+            "type Stats { hp: int; } type Player { name: string; stats: Stats?; power: int; }",
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources: []").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let schemas = get_field_schemas_inner(&store, snap.session_id, "Player").unwrap();
+        assert_eq!(schemas.len(), 3, "Player has 3 fields: name, stats, power");
+
+        let name_schema = schemas.iter().find(|s| s.name == "name").expect("name field");
+        assert_eq!(name_schema.nullable_object_type, None, "name is string, not nullable Object");
+
+        let stats_schema = schemas.iter().find(|s| s.name == "stats").expect("stats field");
+        assert_eq!(
+            stats_schema.nullable_object_type,
+            Some("Stats".to_string()),
+            "stats is Stats? — nullable_object_type should be 'Stats'"
+        );
+
+        let power_schema = schemas.iter().find(|s| s.name == "power").expect("power field");
+        assert_eq!(power_schema.nullable_object_type, None, "power is int, not nullable Object");
     }
 }

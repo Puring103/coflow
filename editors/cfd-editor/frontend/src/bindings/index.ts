@@ -83,3 +83,11 @@ export type RecordBrief = {
   actual_type: string;
   file_path: string;
 };
+
+export type FieldSchema = {
+  name: string;
+  type_str: string;
+  /** If this field is `T?` where T is an Object type, this is T. */
+  nullable_object_type: string | null;
+  has_default: boolean;
+};

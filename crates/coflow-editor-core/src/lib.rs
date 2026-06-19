@@ -13,5 +13,6 @@ mod tests {
         FileRecords::export_all().unwrap();
         RecordRow::export_all().unwrap();
         GraphData::export_all().unwrap();
+        FieldSchema::export_all().unwrap();
     }
 }

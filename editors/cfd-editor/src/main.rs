@@ -1,7 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use coflow_editor_core::commands::*;
-use coflow_editor_core::types::*;
+use coflow_editor_core::types::{
+    DiagnosticItem, FieldPathSegment, FieldSchema, FieldValue, FileRecords, FileTreeNode,
+    GraphData, ProjectSnapshot, RecordBrief, RecordRow,
+};
 use std::sync::Mutex;
 
 #[tauri::command]
@@ -181,6 +184,15 @@ fn get_all_records_brief(
     get_all_records_brief_inner(&state, session_id)
 }
 
+#[tauri::command]
+fn get_field_schemas(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    type_name: String,
+) -> Result<Vec<FieldSchema>, String> {
+    get_field_schemas_inner(&state, session_id, &type_name)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -205,6 +217,7 @@ fn main() {
             get_ref_targets,
             duplicate_record,
             get_all_records_brief,
+            get_field_schemas,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

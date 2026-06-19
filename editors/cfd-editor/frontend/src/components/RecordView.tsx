@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import type { FileRecords, FieldPathSegment, FieldValue, FieldCell, RecordRow } from "../bindings";
+import type { FieldSchema, FileRecords, FieldPathSegment, FieldValue, FieldCell, RecordRow } from "../bindings";
 import type { Route } from "../router";
 import { DataCard } from "./DataCard";
 import { ContextMenu, type ContextMenuState } from "./ContextMenu";
@@ -49,6 +49,7 @@ export function RecordView({
   const [duplicateModal, setDuplicateModal] = useState<DuplicateModal | null>(null);
   const [deleteModal, setDeleteModal] = useState<DeleteModal | null>(null);
   const [fieldSearch, setFieldSearch] = useState("");
+  const [fieldSchemas, setFieldSchemas] = useState<FieldSchema[]>([]);
   const keyInputRef = useRef<HTMLInputElement>(null);
   const sidebarSearchRef = useRef<HTMLInputElement>(null);
   const fieldSearchRef = useRef<HTMLInputElement>(null);
@@ -167,6 +168,17 @@ export function RecordView({
       .catch(e => { if (!cancelled) { setFetchedRecord(null); setFetchError(String(e)); } });
     return () => { cancelled = true; };
   }, [sessionId, filePath, recordKey, recordFromFile]);
+
+  // Fetch field schemas when record type changes (for nullable Object field creation)
+  const recordType = record?.actual_type;
+  useEffect(() => {
+    if (!recordType) { setFieldSchemas([]); return; }
+    let cancelled = false;
+    api.getFieldSchemas(sessionId, recordType)
+      .then(schemas => { if (!cancelled) setFieldSchemas(schemas); })
+      .catch(() => { if (!cancelled) setFieldSchemas([]); });
+    return () => { cancelled = true; };
+  }, [sessionId, recordType]);
 
   const handleKeyRename = useCallback(async () => {
     const trimmed = keyText.trim();
@@ -647,6 +659,7 @@ export function RecordView({
                       onRefClick={(targetFile, targetKey) =>
                         onNavigate({ view: "record", file: targetFile ?? filePath, recordKey: targetKey })
                       }
+                      nullableObjectType={fieldSchemas.find(s => s.name === field.name)?.nullable_object_type ?? undefined}
                     />
                   </div>
                 </div>
