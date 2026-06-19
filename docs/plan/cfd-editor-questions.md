@@ -81,4 +81,5 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**create_record / duplicate_record 写入格式与文件不一致**：当文件使用 grouped 语法（`TypeName { key { } }`）时，新建/复制记录错误地使用 standalone 语法（`key: TypeName { }`）追加，导致同一文件混用两种格式~~ ✅ 已检测 `type_span.start < key_span.start` 判断 grouped 格式，两个函数都将新记录插入到现有 group block 的 `}` 前；空文件回退到 standalone 语法
 - ~~**空文件创建记录产生前导换行**：`create_record_inner` 的 `format!("{existing}\n...")` 在 `existing` 为空时产生开头多余的 `\n`~~ ✅ 已改为检测 `existing.ends_with('\n') || existing.is_empty()` 决定是否添加分隔换行
 - ~~**TableView 列头只使用第一条记录的字段**：当不同记录的字段集合不同时（如 schema 演化后部分记录有新字段），TableView 只显示第一条记录的列集合~~  ✅ 已改为对当前 activeType 所有记录做字段名并集，按第一条记录顺序为主，额外字段追加在后
-- ~~**Spread 字段 ↗ 标记不可点击**：RecordView 中 spread 字段标注 ↗ 但无交互，用户不知道去哪里编辑源记录~~ ✅ 已在 `RecordRow` 中新增 `spread_sources: Vec<String>` 字段（从 AST spread entries 提取源记录 key）；RecordView 头部显示来源列表（可点击跳转），单一来源时字段级 ↗ 也可直接点击跳转
+- ~~**Spread 字段 ↗ 标记不可点击**：RecordView 中 spread 字段标注 ↗ 但无交互，用户不知道去哪里编辑源记录~~ ✅ 已在 `RecordRow` 中新增 `spread_sources: Vec<SpreadSource>` 字段（`{key, file}` 结构，file 通过 `file_record_keys` 解析）；RecordView 头部显示来源列表（可点击跳转，使用正确 file path），单一来源时字段级 ↗ 也可直接点击跳转；跨文件 spread 导航已正确路由
+- ~~**TableView Enum 编辑器加载失败卡死**：`getEnumVariants` 失败时 CellEditor 永远显示 "Loading…"~~ ✅ 改为 catch 时设置 `enumVariants = []`，空列表回退到文本输入框

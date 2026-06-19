@@ -125,8 +125,8 @@ function CellEditor({ value, sessionId, onCommit, onCancel }: CellEditorProps) {
   useEffect(() => {
     if (value.kind === "Enum") {
       api.getEnumVariants(sessionId, value.enum_name).then(vs => {
-        if (vs.length > 0) setEnumVariants(vs);
-      }).catch(() => {});
+        setEnumVariants(vs.length > 0 ? vs : []);
+      }).catch(() => { setEnumVariants([]); });
     } else if (value.kind === "Ref" && value.target_type) {
       api.getRefTargets(sessionId, value.target_type).then(keys => {
         if (keys.length > 0) setRefTargets(keys);
@@ -144,34 +144,36 @@ function CellEditor({ value, sessionId, onCommit, onCancel }: CellEditorProps) {
   }, [value.kind]);
 
   if (value.kind === "Enum") {
-    if (!enumVariants) {
+    if (enumVariants === null) {
       return (
         <div
           tabIndex={0}
           onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); onCancel(); } e.stopPropagation(); }}
-          autoFocus
           style={{ ...CELL_STYLE, color: "var(--text-muted)", fontStyle: "italic" }}
         >
           Loading…
         </div>
       );
     }
-    return (
-      <select
-        value={text}
-        onChange={e => { setText(e.target.value); }}
-        onBlur={e => onCommit(e.currentTarget.value)}
-        onKeyDown={e => {
-          if (e.key === "Enter") { e.preventDefault(); onCommit(e.currentTarget.value); }
-          if (e.key === "Escape") { e.preventDefault(); onCancel(); }
-          e.stopPropagation();
-        }}
-        autoFocus
-        style={CELL_STYLE}
-      >
-        {enumVariants.map(v => <option key={v} value={v}>{v}</option>)}
-      </select>
-    );
+    if (enumVariants.length > 0) {
+      return (
+        <select
+          value={text}
+          onChange={e => { setText(e.target.value); }}
+          onBlur={e => onCommit(e.currentTarget.value)}
+          onKeyDown={e => {
+            if (e.key === "Enter") { e.preventDefault(); onCommit(e.currentTarget.value); }
+            if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+            e.stopPropagation();
+          }}
+          autoFocus
+          style={CELL_STYLE}
+        >
+          {enumVariants.map(v => <option key={v} value={v}>{v}</option>)}
+        </select>
+      );
+    }
+    // Enum variants failed to load — fall through to text input
   }
 
   if (value.kind === "Ref") {
