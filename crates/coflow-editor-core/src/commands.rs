@@ -268,7 +268,8 @@ pub fn get_file_records_inner(
                 type_names.push(record.actual_type.clone());
             }
             let direct = ast_direct.get(key.as_str());
-            records.push(convert_record_row(record, &session.schema, &session.model, &session.file_record_keys, direct));
+            let ast_rec = ast_records.get(key.as_str()).copied();
+            records.push(convert_record_row_with_ast(record, &session.schema, &session.model, &session.file_record_keys, direct, ast_rec));
         } else if let Some(ast_rec) = ast_records.get(key.as_str()) {
             // Model build failed for this record (e.g. missing required fields during editing).
             // Return a best-effort row from the raw AST so the UI stays responsive.
@@ -298,16 +299,12 @@ pub fn get_record_inner(
     let in_model = session.model.records().any(|(_, r)| r.key == record_key);
     if in_model {
         let (_, record) = session.model.records().find(|(_, r)| r.key == record_key).unwrap();
-        let direct = session
+        let ast_rec = session
             .file_sources
             .get(file_path)
-            .and_then(|(_, ast)| {
-                ast.records
-                    .iter()
-                    .find(|r| r.key == record_key)
-                    .map(|r| r.fields.iter().map(|f| f.name.clone()).collect::<HashSet<String>>())
-            });
-        Ok(convert_record_row(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref()))
+            .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == record_key));
+        let direct = ast_rec.map(|r| r.fields.iter().map(|f| f.name.clone()).collect::<HashSet<String>>());
+        Ok(convert_record_row_with_ast(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref(), ast_rec))
     } else {
         let fallback = session
             .file_sources
@@ -592,6 +589,7 @@ pub fn create_record_inner(
         actual_type: type_name.to_string(),
         fields: Vec::new(),
         spread_fields: Vec::new(),
+        spread_sources: Vec::new(),
     })
 }
 
@@ -834,11 +832,10 @@ pub fn duplicate_record_inner(
     let in_model = session.model.records().any(|(_, r)| r.key == new_key);
     if in_model {
         let (_, record) = session.model.records().find(|(_, r)| r.key == new_key).unwrap();
-        let direct = session.file_sources.get(file_path).and_then(|(_, ast)| {
-            ast.records.iter().find(|r| r.key == new_key)
-                .map(|r| r.fields.iter().map(|f| f.name.clone()).collect::<HashSet<String>>())
-        });
-        Ok(convert_record_row(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref()))
+        let ast_rec = session.file_sources.get(file_path)
+            .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == new_key));
+        let direct = ast_rec.map(|r| r.fields.iter().map(|f| f.name.clone()).collect::<HashSet<String>>());
+        Ok(convert_record_row_with_ast(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref(), ast_rec))
     } else {
         session.file_sources.get(file_path)
             .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == new_key))
@@ -1043,11 +1040,16 @@ fn ast_record_fallback(ast_rec: &coflow_cfd::CfdRecord) -> RecordRow {
         name: f.name.clone(),
         value: ast_value_to_field_value(&f.value),
     }).collect();
+    let spread_sources: Vec<String> = ast_rec.entries.iter().filter_map(|e| match e {
+        CfdBlockEntry::Spread(coflow_cfd::CfdValue::Ref(r), _) => Some(r.key.0.clone()),
+        _ => None,
+    }).collect();
     RecordRow {
         key: ast_rec.key.clone(),
         actual_type: ast_rec.type_name.clone(),
         fields,
         spread_fields: Vec::new(),
+        spread_sources,
     }
 }
 
@@ -1217,6 +1219,17 @@ fn convert_record_row(
     file_record_keys: &HashMap<String, Vec<String>>,
     direct_field_names: Option<&HashSet<String>>,
 ) -> RecordRow {
+    convert_record_row_with_ast(record, schema, model, file_record_keys, direct_field_names, None)
+}
+
+fn convert_record_row_with_ast(
+    record: &CfdRecord,
+    schema: &CftContainer,
+    model: &CfdDataModel,
+    file_record_keys: &HashMap<String, Vec<String>>,
+    direct_field_names: Option<&HashSet<String>>,
+    ast_rec: Option<&coflow_cfd::CfdRecord>,
+) -> RecordRow {
     let fields = if let Some(schema_type) = schema.resolve_type(&record.actual_type) {
         schema_type
             .all_fields
@@ -1252,11 +1265,27 @@ fn convert_record_row(
     } else {
         Vec::new()
     };
+    // Spread sources: extract record keys from spread entries in the AST.
+    // `...&key` → entries contain CfdBlockEntry::Spread(CfdValue::Ref { key, .. }, _)
+    let spread_sources: Vec<String> = ast_rec
+        .map(|ar| {
+            ar.entries
+                .iter()
+                .filter_map(|e| match e {
+                    CfdBlockEntry::Spread(coflow_cfd::CfdValue::Ref(r), _) => {
+                        Some(r.key.0.clone())
+                    }
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     RecordRow {
         key: record.key.clone(),
         actual_type: record.actual_type.clone(),
         fields,
         spread_fields,
+        spread_sources,
     }
 }
 
@@ -2011,5 +2040,35 @@ mod tests {
         // Should not start with a blank newline
         assert!(!contents.starts_with('\n'), "file should not start with extra newline:\n{contents:?}");
         assert!(contents.contains("sword: Item"), "should use standalone syntax:\n{contents}");
+    }
+
+    #[test]
+    fn spread_sources_extracted_from_ast() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        let cfd_path = dir.path().join("data/monsters.cfd");
+
+        std::fs::write(&schema_path, "type Monster { name: string; hp: int; }").unwrap();
+        std::fs::write(&cfd_path,
+            "basic_monster: Monster {\n  name: \"Basic\",\n  hp: 10,\n}\nelite_monster: Monster {\n  ...&basic_monster,\n  name: \"Elite\",\n}\n"
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let records = get_file_records_inner(&store, snap.session_id, "data/monsters.cfd").unwrap();
+        let basic = records.records.iter().find(|r| r.key == "basic_monster").expect("basic_monster missing");
+        assert!(basic.spread_sources.is_empty(), "basic_monster has no spreads");
+
+        let elite = records.records.iter().find(|r| r.key == "elite_monster").expect("elite_monster missing");
+        assert_eq!(elite.spread_sources, vec!["basic_monster".to_string()],
+            "elite_monster should have basic_monster as spread source");
+        // hp comes from spread, name is direct
+        assert!(elite.spread_fields.contains(&"hp".to_string()), "hp should be a spread field");
+        assert!(!elite.spread_fields.contains(&"name".to_string()), "name should not be a spread field");
     }
 }

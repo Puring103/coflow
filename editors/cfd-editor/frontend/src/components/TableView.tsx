@@ -328,9 +328,20 @@ export function TableView({
     })
     .map(r => ({ ...r, _filePath: filePath }));
 
-  // Determine columns from first record of the active type (regardless of search filter)
-  const firstRowForColumns = fileRecords.records.find(r => r.actual_type === activeType);
-  const fieldNames: string[] = firstRowForColumns ? firstRowForColumns.fields.map(f => f.name) : [];
+  // Determine columns from union of all field names across all records of the active type.
+  // Use insertion order from the first record as the primary order, then append any
+  // extra names seen in other records (handles schema changes and heterogeneous records).
+  const fieldNames: string[] = (() => {
+    const seen = new Set<string>();
+    const names: string[] = [];
+    for (const r of fileRecords.records) {
+      if (r.actual_type !== activeType) continue;
+      for (const f of r.fields) {
+        if (!seen.has(f.name)) { seen.add(f.name); names.push(f.name); }
+      }
+    }
+    return names;
+  })();
 
   const columns = [
     columnHelper.accessor("key", {

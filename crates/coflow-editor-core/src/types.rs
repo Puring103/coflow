@@ -47,6 +47,9 @@ pub struct RecordRow {
     pub fields: Vec<FieldCell>,
     /// Field names that come from spread entries (not directly editable).
     pub spread_fields: Vec<String>,
+    /// Record keys that are spread into this record (e.g. `...&base_item` → ["base_item"]).
+    /// Used by the UI to navigate to the spread source.
+    pub spread_sources: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

@@ -68,7 +68,7 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - **嵌套 Object/Array 写回是粗粒度的**：编辑子字段时整个父块会被重新序列化，注释丢失
 - **Object 写回缩进**：`serialize_value` 使用固定 2 空格缩进，写回时可能不匹配原始文件缩进格式（CFD 解析不敏感缩进，功能正确但格式有时不美观）
 - **自动保存策略**：写盘是即时的；`markDirty` 立即重新加载 fileRecords（消除 stale 显示），诊断检查（run_checks）防抖 1 秒后执行；`Ctrl+S` 立即刷新诊断
-- **Spread 字段不可编辑**：来自 spread 的字段在 RecordView 和 TableView 中显示为只读（↗ 标记），应去源记录编辑
+- **Spread 字段不可编辑**：来自 spread 的字段在 RecordView 和 TableView 中显示为只读（↗ 标记），应去源记录编辑。↗ 标记已可点击跳转到源记录（单一来源时直接跳转；RecordView 顶部也显示所有 spread 来源的可点击链接）。
 - **外部文件只读**：file_tree 显示 sources 外的文件但不可点击打开（禁用点击，50% opacity 提示）
 - ~~**Enum 字段无下拉**：Table/RecordView 编辑 Enum 时需手动输入 variant 名，无 schema 驱动的下拉选择~~ ✅ 已通过 `get_enum_variants` + `EnumEditor` + `CellEditor` 实现下拉选择
 - ~~**无跨文件记录搜索**：只能在单个文件 TableView 内搜索~~ ✅ 已通过 Ctrl+P 命令面板实现全项目跳转
@@ -80,3 +80,5 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - **React key 稳定性**：Array items 改用 `\`\${idx}:\${item.kind}\`` 作为 key；Dict entries 改用 `\`\${dictKeyStr(entry.key)}:\${idx}\`` 替代纯 idx，减少因删除中间项导致的状态复用问题
 - ~~**create_record / duplicate_record 写入格式与文件不一致**：当文件使用 grouped 语法（`TypeName { key { } }`）时，新建/复制记录错误地使用 standalone 语法（`key: TypeName { }`）追加，导致同一文件混用两种格式~~ ✅ 已检测 `type_span.start < key_span.start` 判断 grouped 格式，两个函数都将新记录插入到现有 group block 的 `}` 前；空文件回退到 standalone 语法
 - ~~**空文件创建记录产生前导换行**：`create_record_inner` 的 `format!("{existing}\n...")` 在 `existing` 为空时产生开头多余的 `\n`~~ ✅ 已改为检测 `existing.ends_with('\n') || existing.is_empty()` 决定是否添加分隔换行
+- ~~**TableView 列头只使用第一条记录的字段**：当不同记录的字段集合不同时（如 schema 演化后部分记录有新字段），TableView 只显示第一条记录的列集合~~  ✅ 已改为对当前 activeType 所有记录做字段名并集，按第一条记录顺序为主，额外字段追加在后
+- ~~**Spread 字段 ↗ 标记不可点击**：RecordView 中 spread 字段标注 ↗ 但无交互，用户不知道去哪里编辑源记录~~ ✅ 已在 `RecordRow` 中新增 `spread_sources: Vec<String>` 字段（从 AST spread entries 提取源记录 key）；RecordView 头部显示来源列表（可点击跳转），单一来源时字段级 ↗ 也可直接点击跳转

@@ -491,12 +491,38 @@ export function RecordView({
                   </button>
                 )}
               </div>
+              {/* Spread sources list */}
+              {record.spread_sources.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                  <span style={{ color: "var(--text-muted)", fontSize: 11 }}>spreads from:</span>
+                  {record.spread_sources.map(srcKey => (
+                    <span
+                      key={srcKey}
+                      onClick={() => onNavigate({ view: "record", file: filePath, recordKey: srcKey })}
+                      title={`跳转到 spread 源记录 ${srcKey}`}
+                      style={{
+                        color: "var(--accent)",
+                        fontSize: 11,
+                        fontFamily: "monospace",
+                        cursor: "pointer",
+                        textDecoration: "underline",
+                        textDecorationStyle: "dotted",
+                      }}
+                    >
+                      {srcKey}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Fields */}
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               {record.fields.map(field => {
                 const isSpread = record.spread_fields.includes(field.name);
+                const spreadNavTarget = isSpread && record.spread_sources.length === 1
+                  ? record.spread_sources[0]
+                  : null;
                 return (
                 <div
                   key={field.name}
@@ -524,7 +550,19 @@ export function RecordView({
                     }}>
                     {field.name}
                     {isSpread && (
-                      <span style={{ marginLeft: 4, fontSize: 10, color: "var(--accent)", opacity: 0.7 }}>↗</span>
+                      <span
+                        onClick={spreadNavTarget
+                          ? () => onNavigate({ view: "record", file: filePath, recordKey: spreadNavTarget })
+                          : undefined}
+                        title={spreadNavTarget ? `跳转到源记录 ${spreadNavTarget}` : "来自 spread — 前往源记录编辑"}
+                        style={{
+                          marginLeft: 4,
+                          fontSize: 10,
+                          color: "var(--accent)",
+                          opacity: 0.7,
+                          cursor: spreadNavTarget ? "pointer" : "default",
+                        }}
+                      >↗</span>
                     )}
                   </span>
                   <div style={{ flex: 1 }}>
