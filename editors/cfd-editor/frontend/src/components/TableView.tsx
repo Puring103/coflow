@@ -38,6 +38,7 @@ interface TableViewProps {
   onSortFile?: () => void;
   onNavigate: (route: Route) => void;
   diagnostics?: DiagnosticItem[];
+  onError?: (msg: string) => void;
 }
 
 interface NewRecordForm {
@@ -264,6 +265,7 @@ export function TableView({
   onSortFile,
   onNavigate,
   diagnostics,
+  onError,
 }: TableViewProps) {
   const [activeType, setActiveType] = useState<string>(
     initialTypeFilter && fileRecords.type_names.includes(initialTypeFilter)
@@ -638,22 +640,22 @@ export function TableView({
         },
         {
           label: "在资源管理器中显示",
-          onClick: () => api.revealInExplorer(sessionId, filePath).catch(() => {}),
+          onClick: () => api.revealInExplorer(sessionId, filePath).catch(e => onError?.(`无法打开资源管理器: ${e}`)),
         },
         {
           label: "复制 Key",
-          onClick: () => navigator.clipboard.writeText(row.key).catch(() => {}),
+          onClick: () => navigator.clipboard.writeText(row.key).catch(e => onError?.(`复制失败: ${e}`)),
         },
         {
           label: "复制为 CFD 源码",
-          onClick: () => api.getRecordSource(sessionId, filePath, row.key).then(src => navigator.clipboard.writeText(src)).catch(() => {}),
+          onClick: () => api.getRecordSource(sessionId, filePath, row.key).then(src => navigator.clipboard.writeText(src)).catch(e => onError?.(`复制失败: ${e}`)),
         },
         {
           label: "复制为 JSON",
           onClick: () => {
             const obj: Record<string, unknown> = { _key: row.key, _type: row.actual_type };
             for (const f of row.fields) obj[f.name] = fieldValueToJson(f.value);
-            navigator.clipboard.writeText(JSON.stringify(obj, null, 2)).catch(() => {});
+            navigator.clipboard.writeText(JSON.stringify(obj, null, 2)).catch(e => onError?.(`复制失败: ${e}`));
           },
         },
         ...(onRenameRecord ? [{
@@ -1207,7 +1209,7 @@ export function TableView({
                           }
                           if (copyText !== null) {
                             const text = copyText;
-                            items.push({ label: "复制值", onClick: () => navigator.clipboard.writeText(text).catch(() => {}) });
+                            items.push({ label: "复制值", onClick: () => navigator.clipboard.writeText(text).catch(e => onError?.(`复制失败: ${e}`)) });
                           }
                           if (cv.kind === "Ref") {
                             const refValue = cv;

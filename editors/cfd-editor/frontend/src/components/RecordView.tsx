@@ -380,7 +380,7 @@ export function RecordView({
     }
     if (copyText !== null) {
       const text = copyText;
-      items.push({ label: "复制值", onClick: () => navigator.clipboard.writeText(text).catch(() => {}) });
+      items.push({ label: "复制值", onClick: () => navigator.clipboard.writeText(text).catch(e => onError?.(`复制失败: ${e}`)) });
     }
     // Navigate to ref target
     if (v.kind === "Ref") {
@@ -517,10 +517,10 @@ export function RecordView({
                 e.preventDefault();
                 const sidebarRec = allRecords.find(x => x.key === r.key);
                 const items: { label: string; danger?: boolean; onClick: () => void }[] = [
-                  { label: "复制 Key", onClick: () => navigator.clipboard.writeText(r.key).catch(() => {}) },
-                  { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, filePath, r.key).then(src => navigator.clipboard.writeText(src)).catch(() => {}) },
-                  { label: "在资源管理器中显示", onClick: () => api.revealInExplorer(sessionId, filePath).catch(() => {}) },
-                  ...(sidebarRec ? [{ label: "复制为 JSON", onClick: () => navigator.clipboard.writeText(recordToJson(sidebarRec)).catch(() => {}) }] : []),
+                  { label: "复制 Key", onClick: () => navigator.clipboard.writeText(r.key).catch(e => onError?.(`复制失败: ${e}`)) },
+                  { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, filePath, r.key).then(src => navigator.clipboard.writeText(src)).catch(e => onError?.(`复制失败: ${e}`)) },
+                  { label: "在资源管理器中显示", onClick: () => api.revealInExplorer(sessionId, filePath).catch(e => onError?.(`无法打开资源管理器: ${e}`)) },
+                  ...(sidebarRec ? [{ label: "复制为 JSON", onClick: () => navigator.clipboard.writeText(recordToJson(sidebarRec)).catch(e => onError?.(`复制失败: ${e}`)) }] : []),
                 ];
                 if (onRenameRecord) items.push({
                   label: "重命名记录 Key",
@@ -661,9 +661,9 @@ export function RecordView({
                   onContextMenu={e => {
                     e.preventDefault();
                     const items: { label: string; danger?: boolean; onClick: () => void }[] = [
-                      { label: "复制 Key", onClick: () => navigator.clipboard.writeText(recordKey).catch(() => {}) },
-                      { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, filePath, recordKey).then(src => navigator.clipboard.writeText(src)).catch(() => {}) },
-                      ...(record ? [{ label: "复制为 JSON", onClick: () => navigator.clipboard.writeText(recordToJson(record)).catch(() => {}) }] : []),
+                      { label: "复制 Key", onClick: () => navigator.clipboard.writeText(recordKey).catch(e => onError?.(`复制失败: ${e}`)) },
+                      { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, filePath, recordKey).then(src => navigator.clipboard.writeText(src)).catch(e => onError?.(`复制失败: ${e}`)) },
+                      ...(record ? [{ label: "复制为 JSON", onClick: () => navigator.clipboard.writeText(recordToJson(record)).catch(e => onError?.(`复制失败: ${e}`)) }] : []),
                     ];
                     if (onRenameRecord) items.push({
                       label: "重命名记录 Key",
@@ -1235,7 +1235,7 @@ export function RecordView({
               <button
                 onClick={() => {
                   const text = sourceModal.draft || sourceModal.source;
-                  if (text) navigator.clipboard.writeText(text).catch(() => {});
+                  if (text) navigator.clipboard.writeText(text).catch(e => onError?.(`复制失败: ${e}`));
                 }}
                 disabled={!sourceModal.source}
                 style={{ fontSize: 11 }}

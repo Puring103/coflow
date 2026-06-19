@@ -733,6 +733,7 @@ export default function App() {
                       } : undefined}
                       onNavigate={router.push}
                       diagnostics={project.snapshot?.diagnostics}
+                      onError={showOpError}
                     />
                   ) : router.current.view === "table" ? (
                     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>
