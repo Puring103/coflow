@@ -641,6 +641,139 @@ pub fn delete_record_inner(
     reload_file(&mut session, file_path, &new_source)
 }
 
+/// Move a record from `src_file` to `dst_file`.
+/// The record is appended to the destination file in standalone format
+/// (or inserted into a grouped block if the destination already uses that format for this type).
+/// Returns the `RecordRow` for the moved record as now seen in `dst_file`.
+pub fn move_record_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+    src_file: &str,
+    dst_file: &str,
+    record_key: &str,
+) -> Result<RecordRow, String> {
+    if src_file == dst_file {
+        return Err("source and destination file are the same".to_string());
+    }
+
+    let session_arc = get_session(store, session_id)?;
+    let mut session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+
+    // Guard: destination file must be loaded
+    if !session.file_sources.contains_key(dst_file) {
+        return Err(format!("destination file '{dst_file}' not loaded"));
+    }
+
+    // ── 1. Extract record source text from source file ────────────────────────
+    let (src_source, src_ast) = session
+        .file_sources
+        .get(src_file)
+        .ok_or_else(|| format!("file '{src_file}' not loaded"))?
+        .clone();
+
+    let rec = src_ast
+        .records
+        .iter()
+        .find(|r| r.key == record_key)
+        .ok_or_else(|| format!("record '{record_key}' not found in '{src_file}'"))?;
+
+    let is_grouped = rec.type_span.start < rec.key_span.start;
+    let type_name = rec.type_name.clone();
+
+    // Build a standalone record text to insert into dst_file
+    let record_text = if is_grouped {
+        let after_key = src_source
+            .get(rec.key_span.end..rec.span.end)
+            .ok_or("key/span offsets out of range")?;
+        format!("{record_key}: {type_name}{after_key}")
+    } else {
+        src_source
+            .get(rec.span.start..rec.span.end)
+            .ok_or("span offsets out of range")?
+            .to_string()
+    };
+
+    // ── 2. Append record to destination file ──────────────────────────────────
+    let (dst_source, dst_ast) = session
+        .file_sources
+        .get(dst_file)
+        .ok_or_else(|| format!("file '{dst_file}' not loaded"))?
+        .clone();
+
+    let dst_uses_grouped = dst_ast.records.iter().any(|r| {
+        r.type_name == type_name && r.type_span.start < r.key_span.start
+    }) || dst_source.contains(&format!("{type_name} {{"));
+
+    let dst_abs_path = session.project_dir.join(dst_file);
+    let new_dst = if dst_uses_grouped {
+        if let Some(group_closer) = find_group_closer(&dst_source, &type_name) {
+            let before = &dst_source[..group_closer];
+            let after = &dst_source[group_closer..];
+            // Extract just the body part (after `key: TypeName`)
+            let body_part = record_text.trim_start_matches(record_key)
+                .trim_start_matches(':')
+                .trim_start_matches(&format!(" {type_name}"))
+                .trim_start();
+            format!("{before}  {record_key} {body_part}\n{after}")
+        } else {
+            let sep = if dst_source.ends_with('\n') || dst_source.is_empty() { "" } else { "\n" };
+            format!("{dst_source}{sep}{record_text}\n")
+        }
+    } else {
+        let sep = if dst_source.ends_with('\n') || dst_source.is_empty() { "" } else { "\n" };
+        format!("{dst_source}{sep}{record_text}\n")
+    };
+
+    std::fs::write(&dst_abs_path, &new_dst)
+        .map_err(|e| format!("cannot write {dst_file}: {e}"))?;
+    reload_file(&mut session, dst_file, &new_dst)?;
+
+    // ── 3. Delete record from source file ─────────────────────────────────────
+    // Re-borrow after reload_file modified session (cannot use src_source/src_ast anymore)
+    let (src2, src_ast2) = session
+        .file_sources
+        .get(src_file)
+        .ok_or_else(|| format!("source file '{src_file}' not found after dst write"))?
+        .clone();
+
+    let rec2 = src_ast2
+        .records
+        .iter()
+        .find(|r| r.key == record_key)
+        .ok_or_else(|| format!("record '{record_key}' not found in source after dst write"))?;
+
+    let span = rec2.span;
+    let span_end = span.end.min(src2.len());
+    let start = if span.start > 0 && span.start <= src2.len() && src2.as_bytes().get(span.start - 1) == Some(&b'\n') {
+        span.start - 1
+    } else {
+        span.start.min(src2.len())
+    };
+    let new_src = format!("{}{}", &src2[..start], &src2[span_end..]);
+
+    let src_abs_path = session.project_dir.join(src_file);
+    std::fs::write(&src_abs_path, &new_src)
+        .map_err(|e| format!("cannot write {src_file}: {e}"))?;
+    reload_file(&mut session, src_file, &new_src)?;
+
+    // ── 4. Return the RecordRow for the moved record in dst_file ──────────────
+    let in_model = session.model.records().any(|(_, r)| r.key == record_key);
+    if in_model {
+        let (_, record) = session.model.records().find(|(_, r)| r.key == record_key)
+            .expect("exists: checked above");
+        let ast_rec = session.file_sources.get(dst_file)
+            .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == record_key));
+        let direct = ast_rec.map(|r| r.fields.iter().map(|f| f.name.clone()).collect::<HashSet<String>>());
+        Ok(convert_record_row_with_ast(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref(), ast_rec))
+    } else {
+        let schema = &session.schema;
+        session.file_sources.get(dst_file)
+            .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == record_key))
+            .map(|r| ast_record_fallback(r, schema))
+            .ok_or_else(|| format!("record '{record_key}' not found in '{dst_file}' after move"))
+    }
+}
+
 pub fn get_record_source_inner(
     store: &Mutex<SessionStore>,
     session_id: u32,
@@ -3590,5 +3723,42 @@ mod tests {
         let rewards_s = schemas.iter().find(|s| s.name == "rewards").expect("rewards field");
         assert!(rewards_s.nullable_object_type.is_none());
         assert_eq!(rewards_s.array_nullable_element_type.as_deref(), Some("Stats"), "rewards array_nullable_element_type should be 'Stats'");
+    }
+
+    #[test]
+    fn move_record_removes_from_src_and_adds_to_dst() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        let src_cfd = data_dir.join("src.cfd");
+        let dst_cfd = data_dir.join("dst.cfd");
+        std::fs::write(&src_cfd, "sword: Item {\n  name: \"Sword\"\n}\n").unwrap();
+        std::fs::write(&dst_cfd, "").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        move_record_inner(&store, snap.session_id, "data/src.cfd", "data/dst.cfd", "sword").unwrap();
+
+        // src.cfd should not contain the record anymore
+        let src_content = std::fs::read_to_string(&src_cfd).unwrap();
+        assert!(!src_content.contains("sword"), "src should not contain sword after move");
+
+        // dst.cfd should contain the record
+        let dst_content = std::fs::read_to_string(&dst_cfd).unwrap();
+        assert!(dst_content.contains("sword"), "dst should contain sword after move");
+        assert!(dst_content.contains("Sword"), "dst should contain field value 'Sword'");
+
+        // File record keys in session should reflect the move
+        let session_arc = get_session(&store, snap.session_id).unwrap();
+        let session = session_arc.lock().unwrap();
+        let src_keys = session.file_record_keys.get("data/src.cfd").unwrap();
+        let dst_keys = session.file_record_keys.get("data/dst.cfd").unwrap();
+        assert!(!src_keys.contains(&"sword".to_string()), "src keys should not contain sword");
+        assert!(dst_keys.contains(&"sword".to_string()), "dst keys should contain sword");
     }
 }

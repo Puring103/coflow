@@ -30,7 +30,10 @@ span patch 会替换整个 `stats { ... }` 块（包括其他子字段）。
 ✅ 已添加路径遍历保护：`create_file_inner` 会 canonicalize 目标路径并检查是否在项目目录内。
 
 ### 7. Dict key 编辑
-✅ 已实现 Str 类型 dict key 的内联编辑：单击 key 标签可进入编辑模式，Enter 提交，Escape 取消。Int/Enum 类型 key 暂不支持编辑（游戏数据中这类 key 通常来自 schema 定义，不应手动修改）。
+✅ 已实现 Str/Int/Enum 类型 dict key 的内联编辑：
+- Str key：单击 key 标签可进入编辑模式，Enter 提交，Escape 取消
+- Int key：同上，非整数输入静默还原
+- Enum key：显示 `<select>` 下拉（使用 `get_enum_variants`），直接选择即可，无需确认
 
 ### 8. Ref 序列化格式（已修复）
 ✅ 之前错误地将所有 Ref 序列化为 `@Type.key`（当 target_file 非 null 时）。
@@ -64,7 +67,7 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 ## 已知限制（可接受）
 
 - **整数精度**：大于 2^53 的 i64 值通过 f64 传输会丢失精度
-- **无离线写回缓冲**：所有写操作立即写盘，无 undo/redo
+- ~~**无离线写回缓冲**：所有写操作立即写盘，无 undo/redo~~ ✅ 已实现客户端 undo 栈（最多 50 步），Ctrl+Z 撤销最近字段写入（write_field）；记录创建/删除/重命名/文件操作不在 undo 范围内
 - **嵌套 Object/Array 写回是粗粒度的**：编辑子字段时整个父块会被重新序列化，注释丢失
 - **Object 写回缩进**：`serialize_value` 使用固定 2 空格缩进，写回时可能不匹配原始文件缩进格式（CFD 解析不敏感缩进，功能正确但格式有时不美观）
 - **自动保存策略**：写盘是即时的；`markDirty` 立即重新加载 fileRecords（消除 stale 显示），诊断检查（run_checks）防抖 1 秒后执行；`Ctrl+S` 立即刷新诊断

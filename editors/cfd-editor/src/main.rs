@@ -203,6 +203,17 @@ fn get_record_source(
     get_record_source_inner(&state, session_id, &file_path, &record_key)
 }
 
+#[tauri::command]
+fn move_record(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    src_file: String,
+    dst_file: String,
+    record_key: String,
+) -> Result<RecordRow, String> {
+    move_record_inner(&state, session_id, &src_file, &dst_file, &record_key)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -229,6 +240,7 @@ fn main() {
             get_all_records_brief,
             get_field_schemas,
             get_record_source,
+            move_record,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

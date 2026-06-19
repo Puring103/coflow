@@ -12,12 +12,31 @@ import { GraphView, invalidateGraphCache } from "./components/GraphView";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { CommandPalette } from "./components/CommandPalette";
 
+function collectFilePaths(nodes: FileTreeNode[]): string[] {
+  const paths: string[] = [];
+  for (const node of nodes) {
+    if (!node.is_dir && node.path.endsWith(".cfd") && node.in_sources) {
+      paths.push(node.path);
+    }
+    if (node.is_dir) paths.push(...collectFilePaths(node.children));
+  }
+  return paths;
+}
+
+interface MoveRecordModal {
+  srcFile: string;
+  recordKey: string;
+  dstFile: string;
+  error: string | null;
+}
+
 export default function App() {
   const router = useRouter();
   const project = useProject();
   const [showNewFileModal, setShowNewFileModal] = useState(false);
   const [newFilePath, setNewFilePath] = useState("");
   const [newFileError, setNewFileError] = useState<string | null>(null);
+  const [moveRecordModal, setMoveRecordModal] = useState<MoveRecordModal | null>(null);
   const [opError, setOpError] = useState<string | null>(null);
   const [graphRefreshKey, setGraphRefreshKey] = useState(0);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
@@ -279,6 +298,28 @@ export default function App() {
     }
   }, [project, router, showOpError]);
 
+  const handleMoveRecordCommit = useCallback(async () => {
+    if (!moveRecordModal || !project.snapshot) return;
+    const { srcFile, dstFile, recordKey } = moveRecordModal;
+    if (!dstFile || dstFile === srcFile) {
+      setMoveRecordModal(m => m && ({ ...m, error: "Choose a different destination file" }));
+      return;
+    }
+    try {
+      await api.moveRecord(project.snapshot.session_id, srcFile, dstFile, recordKey);
+      invalidateGraphCache(project.snapshot.session_id, srcFile);
+      invalidateGraphCache(project.snapshot.session_id, dstFile);
+      setGraphRefreshKey(k => k + 1);
+      project.markDirty(project.snapshot.session_id, srcFile);
+      project.markDirty(project.snapshot.session_id, dstFile);
+      setMoveRecordModal(null);
+      // Navigate to the record in its new file
+      router.replace({ view: "record", file: dstFile, recordKey });
+    } catch (e) {
+      setMoveRecordModal(m => m && ({ ...m, error: String(e) }));
+    }
+  }, [moveRecordModal, project, router]);
+
   const handleDeleteFile = useCallback(async (filePath: string) => {
     if (!project.snapshot) return;
     const wasViewing = router.current?.file === filePath;
@@ -504,6 +545,11 @@ export default function App() {
                       onDeleteRecord={handleDeleteRecord}
                       onRenameRecord={handleRenameRecordFromTable}
                       onDuplicateRecord={handleDuplicateRecord}
+                      onMoveRecord={(srcFile, recordKey) => {
+                        const availableFiles = collectFilePaths(project.snapshot?.file_tree ?? []);
+                        const firstOther = availableFiles.find(f => f !== srcFile) ?? srcFile;
+                        setMoveRecordModal({ srcFile, recordKey, dstFile: firstOther, error: null });
+                      }}
                       onNavigate={router.push}
                     />
                   ) : router.current.view === "table" ? (
@@ -524,6 +570,11 @@ export default function App() {
                     onRenameRecord={handleRenameRecord}
                     onDeleteRecord={handleDeleteRecord}
                     onDuplicateRecord={handleDuplicateRecord}
+                    onMoveRecord={(srcFile, recordKey) => {
+                      const availableFiles = collectFilePaths(project.snapshot?.file_tree ?? []);
+                      const firstOther = availableFiles.find(f => f !== srcFile) ?? srcFile;
+                      setMoveRecordModal({ srcFile, recordKey, dstFile: firstOther, error: null });
+                    }}
                     onError={showOpError}
                     onNavigate={router.push}
                   />
@@ -636,6 +687,47 @@ export default function App() {
           }}
           onClose={() => setShowCommandPalette(false)}
         />
+      )}
+
+      {/* Move record modal */}
+      {moveRecordModal && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000 }}
+          onClick={() => setMoveRecordModal(null)}
+        >
+          <div
+            style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8, padding: 24, width: 380, display: "flex", flexDirection: "column", gap: 16 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ fontWeight: 600, fontSize: 14 }}>移动记录到文件</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              记录 <code style={{ color: "var(--text)", fontFamily: "monospace" }}>{moveRecordModal.recordKey}</code> 将被移动到:
+            </div>
+            <select
+              value={moveRecordModal.dstFile}
+              onChange={e => setMoveRecordModal(m => m && ({ ...m, dstFile: e.target.value, error: null }))}
+              style={{ background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "4px 8px", fontSize: 13, fontFamily: "monospace", outline: "none" }}
+              autoFocus
+            >
+              {collectFilePaths(project.snapshot?.file_tree ?? []).map(p => (
+                <option key={p} value={p} disabled={p === moveRecordModal.srcFile}>{p}</option>
+              ))}
+            </select>
+            {moveRecordModal.error && (
+              <div style={{ color: "#ff5555", fontSize: 12 }}>{moveRecordModal.error}</div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setMoveRecordModal(null)}>Cancel</button>
+              <button
+                className="primary"
+                onClick={handleMoveRecordCommit}
+                disabled={!moveRecordModal.dstFile || moveRecordModal.dstFile === moveRecordModal.srcFile}
+              >
+                移动
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

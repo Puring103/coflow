@@ -23,6 +23,8 @@ interface RecordViewProps {
   onRenameRecord?: (oldKey: string, newKey: string) => Promise<void>;
   onDeleteRecord?: (sessionId: number, filePath: string, recordKey: string) => Promise<void>;
   onDuplicateRecord?: (sessionId: number, filePath: string, srcKey: string, newKey: string) => Promise<void>;
+  /** Called when the user wants to move a record to a different file. */
+  onMoveRecord?: (srcFile: string, recordKey: string) => void;
   onNavigate: (route: Route) => void;
   onError?: (msg: string) => void;
 }
@@ -40,6 +42,7 @@ export function RecordView({
   onRenameRecord,
   onDeleteRecord,
   onDuplicateRecord,
+  onMoveRecord,
   onNavigate,
   onError,
 }: RecordViewProps) {
@@ -374,6 +377,10 @@ export function RecordView({
                   label: "复制记录",
                   onClick: () => setDuplicateModal({ srcKey: r.key, draft: `${r.key}_copy`, error: null }),
                 });
+                if (onMoveRecord) items.push({
+                  label: "移动到文件…",
+                  onClick: () => onMoveRecord(filePath, r.key),
+                });
                 if (onDeleteRecord) items.push({
                   label: "删除记录",
                   danger: true,
@@ -485,6 +492,10 @@ export function RecordView({
                     if (onDuplicateRecord) items.push({
                       label: "复制记录",
                       onClick: () => setDuplicateModal({ srcKey: recordKey, draft: `${recordKey}_copy`, error: null }),
+                    });
+                    if (onMoveRecord) items.push({
+                      label: "移动到文件…",
+                      onClick: () => onMoveRecord(filePath, recordKey),
                     });
                     if (onDeleteRecord) items.push({
                       label: "删除记录",

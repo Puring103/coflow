@@ -69,4 +69,7 @@ export const api = {
 
   getRecordSource: (sessionId: number, filePath: string, recordKey: string) =>
     invoke<string>("get_record_source", { sessionId, filePath, recordKey }),
+
+  moveRecord: (sessionId: number, srcFile: string, dstFile: string, recordKey: string) =>
+    invoke<RecordRow>("move_record", { sessionId, srcFile, dstFile, recordKey }),
 };
