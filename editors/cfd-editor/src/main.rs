@@ -329,6 +329,14 @@ fn reload_file_from_disk(
     reload_file_from_disk_inner(&state, session_id, &rel_path)
 }
 
+#[tauri::command]
+fn sort_all_files(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+) -> Result<usize, String> {
+    sort_all_files_inner(&state, session_id)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -365,6 +373,7 @@ fn main() {
             copy_record_to_file,
             sort_file_records,
             reload_file_from_disk,
+            sort_all_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

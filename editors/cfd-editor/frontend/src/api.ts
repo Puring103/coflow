@@ -99,4 +99,7 @@ export const api = {
 
   reloadFileFromDisk: (sessionId: number, relPath: string) =>
     invoke<void>("reload_file_from_disk", { sessionId, relPath }),
+
+  sortAllFiles: (sessionId: number) =>
+    invoke<number>("sort_all_files", { sessionId }),
 };

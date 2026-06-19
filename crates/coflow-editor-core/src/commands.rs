@@ -1990,6 +1990,24 @@ pub fn reload_file_from_disk_inner(
     reload_file(&mut session, rel_path, &new_source)
 }
 
+/// Sort all .cfd files in the session alphabetically by record key.
+/// Returns the total number of records moved across all files.
+pub fn sort_all_files_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+) -> Result<usize, String> {
+    let session_arc = get_session(store, session_id)?;
+    let file_paths: Vec<String> = {
+        let session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+        session.file_sources.keys().cloned().collect()
+    };
+    let mut total = 0usize;
+    for file_path in file_paths {
+        total += sort_file_records_inner(store, session_id, &file_path)?;
+    }
+    Ok(total)
+}
+
 /// Convert a raw AST CfdValue to FieldValue without schema or model.
 /// Used as a fallback when the model build fails (e.g. record has missing required fields).
 fn ast_value_to_field_value(v: &coflow_cfd::CfdValue, schema: &CftContainer) -> FieldValue {
@@ -5112,5 +5130,38 @@ mod tests {
 
         let hits = search_records_inner(&store, sid, "file:nonexistent.cfd", 10).unwrap();
         assert!(hits.is_empty(), "file:nonexistent should return nothing");
+    }
+
+    #[test]
+    fn sort_all_files_sorts_every_loaded_file() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let cfd_a = data_dir.join("aaa.cfd");
+        let cfd_b = data_dir.join("bbb.cfd");
+        std::fs::write(&cfd_a, "zebra: Item { name: \"Z\", }\napple: Item { name: \"A\", }\n").unwrap();
+        std::fs::write(&cfd_b, "mango: Item { name: \"M\", }\nbanana: Item { name: \"B\", }\n").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        let total = sort_all_files_inner(&store, sid).unwrap();
+        assert_eq!(total, 4, "should report 4 total records sorted across 2 files");
+
+        let a_contents = std::fs::read_to_string(&cfd_a).unwrap();
+        let apple_pos = a_contents.find("apple").unwrap();
+        let zebra_pos = a_contents.find("zebra").unwrap();
+        assert!(apple_pos < zebra_pos, "aaa.cfd: apple should come before zebra:\n{a_contents}");
+
+        let b_contents = std::fs::read_to_string(&cfd_b).unwrap();
+        let banana_pos = b_contents.find("banana").unwrap();
+        let mango_pos = b_contents.find("mango").unwrap();
+        assert!(banana_pos < mango_pos, "bbb.cfd: banana should come before mango:\n{b_contents}");
     }
 }

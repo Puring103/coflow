@@ -499,6 +499,25 @@ export default function App() {
             style={{ fontSize: 11 }}
           >↺ Reload</button>
         )}
+        {project.snapshot && (
+          <button
+            onClick={async () => {
+              if (!project.snapshot) return;
+              try {
+                const count = await api.sortAllFiles(project.snapshot.session_id);
+                if (count > 0) {
+                  const filePaths = project.snapshot.file_tree
+                    ? (() => { const f: string[] = []; const visit = (n: import("./bindings").FileTreeNode[]) => { for (const x of n) { if (!x.is_dir && x.in_sources) f.push(x.path); if (x.is_dir) visit(x.children); } }; visit(project.snapshot!.file_tree); return f; })()
+                    : [];
+                  for (const fp of filePaths) project.markDirty(project.snapshot!.session_id, fp);
+                  setGraphRefreshKey(k => k + 1);
+                }
+              } catch (e) { showOpError(`Sort all files failed: ${e}`); }
+            }}
+            title="Sort all files: sort records alphabetically by key in every .cfd file"
+            style={{ fontSize: 11 }}
+          >⇅ Sort All</button>
+        )}
         {router.canBack && (
           <button onClick={router.back} title="Back (Alt+Left)">←</button>
         )}
@@ -577,7 +596,7 @@ export default function App() {
               if (showStats) { setShowStats(false); return; }
               api.getAllRecordsBrief(project.snapshot!.session_id)
                 .then(records => { setStatsData(records); setShowStats(true); })
-                .catch(() => {});
+                .catch(e => showOpError(`加载统计失败: ${e}`));
             }}
             title="Project statistics"
             style={{ fontSize: 11, opacity: 0.6 }}
