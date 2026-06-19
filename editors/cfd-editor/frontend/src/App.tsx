@@ -315,12 +315,13 @@ export default function App() {
           title={[
             "Keyboard Shortcuts",
             "─────────────────",
-            "Ctrl+P       Jump to record (command palette)",
-            "Ctrl+S       Save / flush diagnostics",
-            "Alt+← / →   Back / Forward",
-            "Ctrl+N       New record (in table view)",
-            "Ctrl+F       Focus search / filter",
-            "Escape       Cancel edit / close modal",
+            "Ctrl+P         Jump to record (command palette)",
+            "Ctrl+S         Save / flush diagnostics",
+            "Alt+← / →     Back / Forward",
+            "Ctrl+N         New record (in table/record view)",
+            "Ctrl+F         Filter fields (record view) / filter records (table view)",
+            "Ctrl+Shift+F   Focus sidebar search (record view)",
+            "Escape         Cancel edit / close modal",
           ].join("\n")}
           style={{ marginLeft: "auto", fontSize: 11, opacity: 0.6 }}
         >?</button>

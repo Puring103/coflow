@@ -48,8 +48,10 @@ export function RecordView({
   const [keyText, setKeyText] = useState(recordKey);
   const [duplicateModal, setDuplicateModal] = useState<DuplicateModal | null>(null);
   const [deleteModal, setDeleteModal] = useState<DeleteModal | null>(null);
+  const [fieldSearch, setFieldSearch] = useState("");
   const keyInputRef = useRef<HTMLInputElement>(null);
   const sidebarSearchRef = useRef<HTMLInputElement>(null);
+  const fieldSearchRef = useRef<HTMLInputElement>(null);
   const selectedItemRef = useRef<HTMLDivElement>(null);
   // Set to a key to trigger rename-edit mode after that key becomes the active record
   const pendingRenameKeyRef = useRef<string | null>(null);
@@ -86,8 +88,9 @@ export function RecordView({
     return Array.from(seen).sort();
   }, [allRecords]);
 
-  // Reset type filter and search when file changes
+  // Reset type filter and search when file changes; reset field search when record changes
   useEffect(() => { setTypeFilter(null); setSidebarSearch(""); }, [filePath]);
+  useEffect(() => { setFieldSearch(""); }, [recordKey]);
 
   const filteredRecords = allRecords
     .filter(r => {
@@ -109,11 +112,16 @@ export function RecordView({
   // Keyboard navigation + sidebar search shortcut
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Ctrl+F focuses sidebar search
+      // Ctrl+F focuses field search (main content); Ctrl+Shift+F focuses sidebar search
       if ((e.ctrlKey || e.metaKey) && e.key === "f") {
         e.preventDefault();
-        sidebarSearchRef.current?.focus();
-        sidebarSearchRef.current?.select();
+        if (e.shiftKey) {
+          sidebarSearchRef.current?.focus();
+          sidebarSearchRef.current?.select();
+        } else {
+          fieldSearchRef.current?.focus();
+          fieldSearchRef.current?.select();
+        }
         return;
       }
       // Ctrl+N navigates to table view (to create a new record of the same type)
@@ -516,9 +524,38 @@ export function RecordView({
               )}
             </div>
 
+            {/* Field search */}
+            {record.fields.length > 6 && (
+              <div style={{ marginBottom: 8 }}>
+                <input
+                  ref={fieldSearchRef}
+                  value={fieldSearch}
+                  onChange={e => setFieldSearch(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Escape") { setFieldSearch(""); e.stopPropagation(); }
+                    e.stopPropagation();
+                  }}
+                  placeholder="Filter fields… (Ctrl+F)"
+                  style={{
+                    width: "100%",
+                    background: "var(--bg3)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 4,
+                    color: "var(--text)",
+                    padding: "3px 8px",
+                    fontSize: 12,
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+            )}
+
             {/* Fields */}
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              {record.fields.map(field => {
+              {record.fields
+                .filter(field => !fieldSearch || field.name.toLowerCase().includes(fieldSearch.toLowerCase()))
+                .map(field => {
                 const isSpread = record.spread_fields.includes(field.name);
                 const spreadNavTarget = isSpread && record.spread_sources.length === 1
                   ? record.spread_sources[0]
@@ -584,6 +621,12 @@ export function RecordView({
               })}
               {record.fields.length === 0 && (
                 <div style={{ color: "var(--text-muted)", fontSize: 12, padding: 8 }}>No fields</div>
+              )}
+              {record.fields.length > 0 && fieldSearch &&
+                record.fields.filter(f => f.name.toLowerCase().includes(fieldSearch.toLowerCase())).length === 0 && (
+                <div style={{ color: "var(--text-muted)", fontSize: 12, padding: 8 }}>
+                  No fields match "{fieldSearch}"
+                </div>
               )}
             </div>
           </>

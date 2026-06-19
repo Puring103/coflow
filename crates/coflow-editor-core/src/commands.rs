@@ -557,10 +557,12 @@ pub fn create_record_inner(
     // Grouped: `TypeName { key { ... } }` — the group token (type_name) appears
     // before the record key in source, so type_span.start < key_span.start.
     // Standalone: `key: TypeName { ... }` — key comes first, type_span.start > key_span.start.
+    // Also detect grouped format by looking for the `TypeName {` block header in the source
+    // even if all records were deleted (leaving an empty group block).
     let (ast, _) = parse_cfd(&existing);
     let uses_grouped = ast.records.iter().any(|r| {
         r.type_name == type_name && r.type_span.start < r.key_span.start
-    });
+    }) || existing.contains(&format!("{type_name} {{"));
 
     let separator = if existing.ends_with('\n') || existing.is_empty() { "" } else { "\n" };
 
@@ -1068,25 +1070,47 @@ fn get_session(
         .ok_or_else(|| format!("unknown session {session_id}"))
 }
 
-/// Validate that a CFD identifier doesn't contain illegal characters.
 /// Find the byte position of the closing `}` that ends a grouped-type block
 /// (e.g. `TypeName { ... }`). Returns the position of that `}` in the source.
-/// Grouped records: type_span.start < key_span.start (group token precedes record key).
-/// The group block's `}` comes after the last such record's span.end.
+///
+/// Strategy 1: if grouped records of this type exist, scan forward from the last
+/// record's span.end to find the block closer.
+/// Strategy 2: if no records exist (e.g. all were deleted), scan the source text
+/// for `TypeName {` and then find the matching `}` by brace counting.
 fn find_group_closer(source: &str, type_name: &str) -> Option<usize> {
     let (ast, _) = parse_cfd(source);
-    // Find all grouped records with this type_name and get the max span.end
-    let max_end = ast.records.iter()
+    // Strategy 1: records still exist — find the closer after the last record.
+    if let Some(max_end) = ast.records.iter()
         .filter(|r| r.type_name == type_name && r.type_span.start < r.key_span.start)
         .map(|r| r.span.end)
-        .max()?;
-    // The group closer `}` must be somewhere after max_end in the source.
-    // Scan forward from max_end to find the next `}` at the group level.
-    let bytes = source.as_bytes();
-    let search_from = max_end.min(source.len());
-    for i in search_from..bytes.len() {
-        if bytes[i] == b'}' {
-            return Some(i);
+        .max()
+    {
+        let bytes = source.as_bytes();
+        let search_from = max_end.min(source.len());
+        for i in search_from..bytes.len() {
+            if bytes[i] == b'}' {
+                return Some(i);
+            }
+        }
+    }
+    // Strategy 2: no grouped records found — scan for `TypeName {` header and
+    // find its matching closing `}` via brace counting.
+    let header = format!("{type_name} {{");
+    if let Some(header_pos) = source.find(&header) {
+        let open_pos = header_pos + header.len() - 1; // position of `{`
+        let bytes = source.as_bytes();
+        let mut depth: i32 = 0;
+        for i in open_pos..bytes.len() {
+            match bytes[i] {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(i);
+                    }
+                }
+                _ => {}
+            }
         }
     }
     None
@@ -2079,5 +2103,66 @@ mod tests {
         // hp comes from spread, name is direct
         assert!(elite.spread_fields.contains(&"hp".to_string()), "hp should be a spread field");
         assert!(!elite.spread_fields.contains(&"name".to_string()), "name should not be a spread field");
+    }
+
+    #[test]
+    fn delete_grouped_record_leaves_group_intact() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        let cfd_path = dir.path().join("data/items.cfd");
+
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        std::fs::write(&cfd_path,
+            "Item {\n  sword {\n    name: \"Sword\",\n  }\n  axe {\n    name: \"Axe\",\n  }\n}\n"
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        delete_record_inner(&store, snap.session_id, "data/items.cfd", "sword").unwrap();
+
+        let contents = std::fs::read_to_string(&cfd_path).unwrap();
+        assert!(!contents.contains("sword"), "sword should be deleted:\n{contents}");
+        assert!(contents.contains("axe"), "axe should remain:\n{contents}");
+        assert!(contents.contains("Item {"), "Item group block header should remain:\n{contents}");
+    }
+
+    #[test]
+    fn create_record_after_all_grouped_records_deleted() {
+        // After deleting all records in a grouped block, the group block remains
+        // (e.g. "Item {\n}\n"). New records should still be inserted inside the block.
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        let cfd_path = dir.path().join("data/items.cfd");
+
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        std::fs::write(&cfd_path,
+            "Item {\n  sword {\n    name: \"Sword\",\n  }\n}\n"
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        // Delete the only record — leaves "Item {\n}\n"
+        delete_record_inner(&store, snap.session_id, "data/items.cfd", "sword").unwrap();
+
+        // Now create a new record — should go inside the existing group block
+        create_record_inner(&store, snap.session_id, "data/items.cfd", "axe", "Item").unwrap();
+
+        let contents = std::fs::read_to_string(&cfd_path).unwrap();
+        assert!(contents.contains("axe"), "axe should be created:\n{contents}");
+        // Must NOT use standalone syntax (mixed format would be ugly)
+        assert!(!contents.contains("axe: Item"), "axe should use grouped syntax, not standalone:\n{contents}");
+        // Group block should still have only one `Item {` header
+        let item_count = contents.matches("Item {").count();
+        assert_eq!(item_count, 1, "should have exactly one Item {{ group header:\n{contents}");
     }
 }
