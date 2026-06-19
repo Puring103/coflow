@@ -62,6 +62,7 @@ export function RecordView({
   const [sourceModal, setSourceModal] = useState<SourceModal | null>(null);
   const [fieldSearch, setFieldSearch] = useState("");
   const [fieldSchemas, setFieldSchemas] = useState<FieldSchema[]>([]);
+  const [showRequiredOnly, setShowRequiredOnly] = useState(false);
   const keyInputRef = useRef<HTMLInputElement>(null);
   const sidebarSearchRef = useRef<HTMLInputElement>(null);
   const fieldSearchRef = useRef<HTMLInputElement>(null);
@@ -103,7 +104,7 @@ export function RecordView({
 
   // Reset type filter and search when file changes; reset field search when record changes
   useEffect(() => { setTypeFilter(null); setSidebarSearch(""); pendingRenameKeyRef.current = null; }, [filePath]);
-  useEffect(() => { setFieldSearch(initialFieldSearch ?? ""); }, [recordKey, initialFieldSearch]);
+  useEffect(() => { setFieldSearch(initialFieldSearch ?? ""); setShowRequiredOnly(false); }, [recordKey, initialFieldSearch]);
 
   const filteredRecords = allRecords
     .filter(r => {
@@ -615,7 +616,7 @@ export function RecordView({
 
             {/* Field search */}
             {record.fields.length > 6 && (
-              <div style={{ marginBottom: 8 }}>
+              <div style={{ marginBottom: 8, display: "flex", gap: 6, alignItems: "center" }}>
                 <input
                   ref={fieldSearchRef}
                   value={fieldSearch}
@@ -626,7 +627,7 @@ export function RecordView({
                   }}
                   placeholder="Filter fields… (Ctrl+F)"
                   style={{
-                    width: "100%",
+                    flex: 1,
                     background: "var(--bg3)",
                     border: "1px solid var(--border)",
                     borderRadius: 4,
@@ -637,13 +638,39 @@ export function RecordView({
                     boxSizing: "border-box",
                   }}
                 />
+                {fieldSchemas.some(s => !s.has_default && record.fields.find(f => f.name === s.name)?.value.kind === "Null") && (
+                  <button
+                    onClick={() => setShowRequiredOnly(v => !v)}
+                    title="Show only required fields that are currently null"
+                    style={{
+                      fontSize: 11,
+                      padding: "2px 8px",
+                      background: showRequiredOnly ? "var(--warning)" : "transparent",
+                      border: `1px solid ${showRequiredOnly ? "var(--warning)" : "var(--border)"}`,
+                      borderRadius: 4,
+                      color: showRequiredOnly ? "#000" : "var(--warning)",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                      fontWeight: showRequiredOnly ? 600 : undefined,
+                    }}
+                  >
+                    ⚠ 必填
+                  </button>
+                )}
               </div>
             )}
 
             {/* Fields */}
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               {record.fields
-                .filter(field => !fieldSearch || field.name.toLowerCase().includes(fieldSearch.toLowerCase()))
+                .filter(field => {
+                  if (fieldSearch && !field.name.toLowerCase().includes(fieldSearch.toLowerCase())) return false;
+                  if (showRequiredOnly) {
+                    const schema = fieldSchemas.find(s => s.name === field.name);
+                    return !!schema && !schema.has_default && field.value.kind === "Null";
+                  }
+                  return true;
+                })
                 .map(field => {
                 const isSpread = record.spread_fields.includes(field.name);
                 const fieldSchema = fieldSchemas.find(s => s.name === field.name);
