@@ -25,13 +25,15 @@ interface RecordViewProps {
   onDuplicateRecord?: (sessionId: number, filePath: string, srcKey: string, newKey: string) => Promise<void>;
   /** Called when the user wants to move a record to a different file. */
   onMoveRecord?: (srcFile: string, recordKey: string) => void;
+  /** Called when the user edits and saves the raw CFD source for a record. */
+  onWriteRecordSource?: (filePath: string, recordKey: string, source: string) => Promise<void>;
   onNavigate: (route: Route) => void;
   onError?: (msg: string) => void;
 }
 
 interface DuplicateModal { srcKey: string; draft: string; error: string | null }
 interface DeleteModal { recordKey: string }
-interface SourceModal { source: string | null }
+interface SourceModal { source: string | null; draft: string; saving: boolean; error: string | null }
 
 export function RecordView({
   sessionId,
@@ -44,6 +46,7 @@ export function RecordView({
   onDeleteRecord,
   onDuplicateRecord,
   onMoveRecord,
+  onWriteRecordSource,
   onNavigate,
   onError,
 }: RecordViewProps) {
@@ -549,10 +552,10 @@ export function RecordView({
                 )}
                 <button
                   onClick={() => {
-                    setSourceModal({ source: null });
+                    setSourceModal({ source: null, draft: "", saving: false, error: null });
                     api.getRecordSource(sessionId, filePath, recordKey)
-                      .then(src => setSourceModal({ source: src }))
-                      .catch(() => setSourceModal({ source: "// Error loading source" }));
+                      .then(src => setSourceModal({ source: src, draft: src, saving: false, error: null }))
+                      .catch(() => setSourceModal({ source: "// Error loading source", draft: "", saving: false, error: null }));
                   }}
                   title="View raw CFD source"
                   style={{
@@ -835,21 +838,22 @@ export function RecordView({
         </div>
       )}
 
-      {/* Source viewer modal */}
+      {/* Source viewer/editor modal */}
       {sourceModal && (
         <div
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000 }}
-          onClick={() => setSourceModal(null)}
+          onClick={() => !sourceModal.saving && setSourceModal(null)}
         >
           <div
-            style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8, padding: 24, width: 560, display: "flex", flexDirection: "column", gap: 12 }}
+            style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8, padding: 24, width: 600, display: "flex", flexDirection: "column", gap: 12 }}
             onClick={e => e.stopPropagation()}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <h3 style={{ margin: 0, fontSize: 15, fontFamily: "monospace" }}>{recordKey}</h3>
               <button
                 onClick={() => {
-                  if (sourceModal.source) navigator.clipboard.writeText(sourceModal.source).catch(() => {});
+                  const text = sourceModal.draft || sourceModal.source;
+                  if (text) navigator.clipboard.writeText(text).catch(() => {});
                 }}
                 disabled={!sourceModal.source}
                 style={{ fontSize: 11 }}
@@ -857,8 +861,32 @@ export function RecordView({
                 ⎘ Copy
               </button>
             </div>
+            {sourceModal.error && (
+              <div style={{ color: "#ff5555", fontSize: 12, background: "#ff555522", border: "1px solid #ff555544", borderRadius: 4, padding: "4px 8px" }}>
+                {sourceModal.error}
+              </div>
+            )}
             {sourceModal.source === null ? (
               <div style={{ color: "var(--text-muted)", fontSize: 12, padding: "16px 0", textAlign: "center" }}>Loading…</div>
+            ) : onWriteRecordSource ? (
+              <textarea
+                value={sourceModal.draft}
+                onChange={e => setSourceModal(m => m && ({ ...m, draft: e.target.value, error: null }))}
+                rows={16}
+                spellCheck={false}
+                disabled={sourceModal.saving}
+                style={{
+                  background: "var(--bg3)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 4,
+                  color: "var(--text)",
+                  padding: "10px 12px",
+                  fontSize: 12,
+                  fontFamily: "monospace",
+                  outline: "none",
+                  resize: "vertical",
+                }}
+              />
             ) : (
               <pre style={{
                 background: "var(--bg3)",
@@ -877,8 +905,25 @@ export function RecordView({
                 {sourceModal.source}
               </pre>
             )}
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button onClick={() => setSourceModal(null)}>关闭</button>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              {onWriteRecordSource && sourceModal.source !== null && (
+                <button
+                  className="primary"
+                  disabled={sourceModal.saving || !sourceModal.draft.trim()}
+                  onClick={async () => {
+                    setSourceModal(m => m && ({ ...m, saving: true, error: null }));
+                    try {
+                      await onWriteRecordSource(filePath, recordKey, sourceModal.draft);
+                      setSourceModal(null);
+                    } catch (e) {
+                      setSourceModal(m => m && ({ ...m, saving: false, error: String(e) }));
+                    }
+                  }}
+                >
+                  {sourceModal.saving ? "保存中…" : "保存"}
+                </button>
+              )}
+              <button onClick={() => setSourceModal(null)} disabled={sourceModal.saving}>关闭</button>
             </div>
           </div>
         </div>

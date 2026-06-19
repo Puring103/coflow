@@ -78,4 +78,7 @@ export const api = {
 
   importRecordSource: (sessionId: number, filePath: string, source: string) =>
     invoke<string[]>("import_record_source", { sessionId, filePath, source }),
+
+  writeRecordSource: (sessionId: number, filePath: string, recordKey: string, newSource: string) =>
+    invoke<void>("write_record_source", { sessionId, filePath, recordKey, newSource }),
 };

@@ -305,6 +305,19 @@ export default function App() {
     }
   }, [project, router, showOpError]);
 
+  const handleWriteRecordSource = useCallback(async (filePath: string, recordKey: string, source: string) => {
+    if (!project.snapshot) return;
+    try {
+      await api.writeRecordSource(project.snapshot.session_id, filePath, recordKey, source);
+      invalidateGraphCache(project.snapshot.session_id, filePath);
+      setGraphRefreshKey(k => k + 1);
+      project.markDirty(project.snapshot.session_id, filePath);
+    } catch (e) {
+      showOpError(`Write source failed: ${e}`);
+      throw e;
+    }
+  }, [project, showOpError]);
+
   const handleMoveRecordCommit = useCallback(async () => {
     if (!moveRecordModal || !project.snapshot) return;
     const { srcFile, dstFile, recordKey } = moveRecordModal;
@@ -591,6 +604,7 @@ export default function App() {
                       const firstOther = availableFiles.find(f => f !== srcFile) ?? srcFile;
                       setMoveRecordModal({ srcFile, recordKey, dstFile: firstOther, error: null });
                     }}
+                    onWriteRecordSource={handleWriteRecordSource}
                     onError={showOpError}
                     onNavigate={router.push}
                   />

@@ -643,6 +643,66 @@ pub fn create_record_inner(
     })
 }
 
+/// Replace the source text of an existing record with new CFD source.
+/// The new source must contain exactly one record with the same key.
+pub fn write_record_source_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+    file_path: &str,
+    record_key: &str,
+    new_source: &str,
+) -> Result<(), String> {
+    let new_source = new_source.trim();
+    if new_source.is_empty() {
+        return Err("new source is empty".to_string());
+    }
+
+    // Validate the new source
+    let (new_ast, _) = parse_cfd(new_source);
+    if new_ast.records.is_empty() {
+        return Err("no records found in the new source".to_string());
+    }
+    if new_ast.records.len() > 1 {
+        return Err(format!(
+            "new source must contain exactly one record, found {}",
+            new_ast.records.len()
+        ));
+    }
+    if new_ast.records[0].key != record_key {
+        return Err(format!(
+            "record key mismatch: expected '{}', got '{}'",
+            record_key, new_ast.records[0].key
+        ));
+    }
+
+    let session_arc = get_session(store, session_id)?;
+    let mut session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+
+    let (source, ast) = session
+        .file_sources
+        .get(file_path)
+        .ok_or_else(|| format!("file '{file_path}' not loaded"))?
+        .clone();
+
+    let record = ast
+        .records
+        .iter()
+        .find(|r| r.key == record_key)
+        .ok_or_else(|| format!("record '{record_key}' not found in {file_path}"))?;
+
+    let span = record.span;
+    let span_end = span.end.min(source.len());
+    let span_start = span.start.min(source.len());
+
+    let file_source = format!("{}{}\n{}", &source[..span_start], new_source, &source[span_end..]);
+
+    let abs_path = session.project_dir.join(file_path);
+    std::fs::write(&abs_path, &file_source)
+        .map_err(|e| format!("cannot write {file_path}: {e}"))?;
+
+    reload_file(&mut session, file_path, &file_source)
+}
+
 pub fn delete_record_inner(
     store: &Mutex<SessionStore>,
     session_id: u32,

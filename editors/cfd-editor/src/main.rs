@@ -234,6 +234,17 @@ fn import_record_source(
     import_record_source_inner(&state, session_id, &file_path, &source)
 }
 
+#[tauri::command]
+fn write_record_source(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    file_path: String,
+    record_key: String,
+    new_source: String,
+) -> Result<(), String> {
+    write_record_source_inner(&state, session_id, &file_path, &record_key, &new_source)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -263,6 +274,7 @@ fn main() {
             move_record,
             search_records,
             import_record_source,
+            write_record_source,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
