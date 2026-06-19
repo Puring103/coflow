@@ -695,6 +695,21 @@ export function RecordView({
                   </span>
                 )}
                 <button
+                  onClick={() => onNavigate({ view: "graph", file: filePath })}
+                  title="在图视图中查看 (以此文件为焦点)"
+                  style={{
+                    fontSize: 11,
+                    padding: "1px 8px",
+                    background: "transparent",
+                    border: "1px solid var(--border)",
+                    borderRadius: 3,
+                    color: "var(--text-muted)",
+                    cursor: "pointer",
+                  }}
+                >
+                  ⬡ Graph
+                </button>
+                <button
                   onClick={() => {
                     setSourceModal({ source: null, draft: "", saving: false, error: null });
                     api.getRecordSource(sessionId, filePath, recordKey)
