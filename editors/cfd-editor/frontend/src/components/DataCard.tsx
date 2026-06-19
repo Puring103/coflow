@@ -200,7 +200,7 @@ function InlineEditor({ value, onCommit, onCancel }: InlineEditorProps) {
       value={text}
       onChange={e => setText(e.target.value)}
       onKeyDown={e => {
-        if (e.key === "Enter") { onCommit(parseEditedValue(text, value)); }
+        if (e.key === "Enter") { commitIfChanged(); }
         if (e.key === "Escape") onCancel();
         e.stopPropagation();
       }}
@@ -264,7 +264,7 @@ function RefEditor({ value, sessionId, onCommit, onCancel }: RefEditorProps) {
         list={suggestions.length > 0 ? listId : undefined}
         onChange={e => setKey(e.target.value)}
         onKeyDown={e => {
-          if (e.key === "Enter") commit();
+          if (e.key === "Enter") commitIfChanged();
           if (e.key === "Escape") onCancel();
           e.stopPropagation();
         }}
