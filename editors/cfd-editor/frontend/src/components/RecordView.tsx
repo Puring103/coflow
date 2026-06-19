@@ -570,6 +570,18 @@ export function RecordView({
                 <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
                   {record.actual_type}
                 </span>
+                <span style={{
+                  color: "var(--text-muted)",
+                  fontSize: 10,
+                  fontFamily: "monospace",
+                  opacity: 0.6,
+                  maxWidth: 200,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }} title={filePath}>
+                  {filePath.split(/[\\/]/).pop()}
+                </span>
                 {record.is_fallback && (
                   <span style={{
                     fontSize: 11,
