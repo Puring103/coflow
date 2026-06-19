@@ -2259,6 +2259,43 @@ mod tests {
     }
 
     #[test]
+    fn write_field_ref_serializes_as_ampersand_key() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        let cfd_path = data_dir.join("items.cfd");
+
+        std::fs::write(&schema_path, "type Item { name: string; related: Item; }").unwrap();
+        std::fs::write(
+            &cfd_path,
+            "sword: Item {\n  name: \"Sword\",\n  related: &sword,\n}\nstaff: Item {\n  name: \"Staff\",\n  related: &sword,\n}\n",
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        // Change sword's related field to point to staff
+        write_field_inner(
+            &store,
+            snap.session_id,
+            "data/items.cfd",
+            "sword",
+            &[FieldPathSegment::Field { name: "related".to_string() }],
+            &FieldValue::Ref {
+                target_type: "Item".to_string(),
+                target_key: "staff".to_string(),
+                target_file: None,
+            },
+        ).unwrap();
+
+        let contents = std::fs::read_to_string(data_dir.join("items.cfd")).unwrap();
+        assert!(contents.contains("related: &staff"), "should serialize Ref as &staff, got:\n{contents}");
+    }
+
+    #[test]
     fn write_field_array_roundtrip() {
         let dir = TempDir::new().unwrap();
         let yaml = dir.path().join("coflow.yaml");
