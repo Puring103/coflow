@@ -70,6 +70,7 @@ export function RecordView({
   const sidebarSearchRef = useRef<HTMLInputElement>(null);
   const fieldSearchRef = useRef<HTMLInputElement>(null);
   const selectedItemRef = useRef<HTMLDivElement>(null);
+  const fieldRowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   // Set to a key to trigger rename-edit mode after that key becomes the active record
   const pendingRenameKeyRef = useRef<string | null>(null);
 
@@ -161,6 +162,25 @@ export function RecordView({
         setDuplicateModal({ srcKey: recordKey, draft: `${recordKey}_copy`, error: null });
         return;
       }
+      // Ctrl+Shift+R: jump to next required (non-default, null) field
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "r") {
+        e.preventDefault();
+        if (!record) return;
+        const requiredNullFields = record.fields.filter(f => {
+          const s = fieldSchemas.find(x => x.name === f.name);
+          return s && !s.has_default && f.value.kind === "Null";
+        });
+        if (requiredNullFields.length === 0) return;
+        // Find current focused field, then go to the next one (or wrap)
+        const focused = document.activeElement;
+        const currentFieldName = focused ? [...fieldRowRefs.current.entries()].find(([, el]) => el.contains(focused))?.[0] : undefined;
+        const currentIdx = currentFieldName ? requiredNullFields.findIndex(f => f.name === currentFieldName) : -1;
+        const nextIdx = (currentIdx + 1) % requiredNullFields.length;
+        const targetField = requiredNullFields[nextIdx];
+        const el = fieldRowRefs.current.get(targetField.name);
+        if (el) { el.scrollIntoView({ block: "nearest" }); el.focus(); }
+        return;
+      }
 
       // Only if focus is not inside an input/textarea
       const tag = (e.target as HTMLElement).tagName;
@@ -182,7 +202,7 @@ export function RecordView({
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredRecords, recordKey, filePath, record?.actual_type, onNavigate, onDeleteRecord, onDuplicateRecord, sessionId]);
+  }, [filteredRecords, recordKey, filePath, record?.actual_type, record?.fields, fieldSchemas, onNavigate, onDeleteRecord, onDuplicateRecord, sessionId]);
 
   // If fileRecords hasn't loaded yet for this key, fetch directly
   useEffect(() => {
@@ -822,6 +842,8 @@ export function RecordView({
                 return (
                 <div
                   key={field.name}
+                  ref={el => { if (el) fieldRowRefs.current.set(field.name, el); else fieldRowRefs.current.delete(field.name); }}
+                  tabIndex={isRequiredNull ? 0 : -1}
                   onContextMenu={e => handleFieldContextMenu(e, field)}
                   style={{
                     display: "flex",
@@ -829,9 +851,12 @@ export function RecordView({
                     gap: 8,
                     padding: "4px 8px",
                     borderRadius: 4,
+                    outline: "none",
                   }}
                   onMouseEnter={e => (e.currentTarget.style.background = "var(--bg3)")}
                   onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                  onFocus={e => (e.currentTarget.style.background = "var(--bg3)")}
+                  onBlur={e => (e.currentTarget.style.background = "transparent")}
                 >
                   <span
                     title={isSpread ? "来自 spread — 请前往源记录编辑" : isRequiredNull ? `Required field — must not be null${fieldSchema ? ` (${fieldSchema.type_str})` : ""}` : fieldSchema && field.value.kind === "Null" && fieldSchema.default_str ? `Default: ${fieldSchema.default_str}${fieldSchema.type_str ? ` (${fieldSchema.type_str})` : ""}` : fieldSchema ? fieldSchema.type_str : undefined}

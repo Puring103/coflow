@@ -24,12 +24,15 @@ function fieldValueToString(v: FieldValue): string {
   }
 }
 
+type SortCol = { col: "key" | "file" | string; dir: "asc" | "desc" };
+
 export function GlobalTableView({ sessionId, typeName, onTypeChange, onNavigate }: GlobalTableViewProps) {
   const [rows, setRows] = useState<RecordRow[]>([]);
   const [allTypeNames, setAllTypeNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<SortCol | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -40,18 +43,42 @@ export function GlobalTableView({ sessionId, typeName, onTypeChange, onNavigate 
     if (!typeName) return;
     setLoading(true);
     setError(null);
+    setSort(null);
     api.getAllRecordsOfType(sessionId, typeName)
       .then(r => { setRows(r); setLoading(false); })
       .catch(e => { setError(String(e)); setLoading(false); });
   }, [sessionId, typeName]);
 
-  const filteredRows = rows.filter(r => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    if (r.key.toLowerCase().includes(q)) return true;
-    if (r.file_path.toLowerCase().includes(q)) return true;
-    return r.fields.some(f => fieldValueToString(f.value).toLowerCase().includes(q));
-  });
+  const filteredRows = (() => {
+    const base = rows.filter(r => {
+      if (!search) return true;
+      const q = search.toLowerCase();
+      if (r.key.toLowerCase().includes(q)) return true;
+      if (r.file_path.toLowerCase().includes(q)) return true;
+      return r.fields.some(f => fieldValueToString(f.value).toLowerCase().includes(q));
+    });
+    if (!sort) return base;
+    return [...base].sort((a, b) => {
+      let av: string, bv: string;
+      if (sort.col === "key") { av = a.key; bv = b.key; }
+      else if (sort.col === "file") {
+        av = a.file_path.split(/[\\/]/).pop() ?? a.file_path;
+        bv = b.file_path.split(/[\\/]/).pop() ?? b.file_path;
+      } else {
+        av = fieldValueToString(a.fields.find(f => f.name === sort.col)?.value ?? { kind: "Null" });
+        bv = fieldValueToString(b.fields.find(f => f.name === sort.col)?.value ?? { kind: "Null" });
+      }
+      const cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: "base" });
+      return sort.dir === "asc" ? cmp : -cmp;
+    });
+  })();
+
+  const handleSortClick = (col: string) => {
+    setSort(s => {
+      if (s?.col === col) return s.dir === "asc" ? { col, dir: "desc" } : null;
+      return { col, dir: "asc" };
+    });
+  };
 
   // Determine field names from union of all records
   const fieldNames: string[] = (() => {
@@ -166,11 +193,43 @@ export function GlobalTableView({ sessionId, typeName, onTypeChange, onNavigate 
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {/* Header row */}
           <div style={{ display: "flex", borderBottom: "1px solid var(--border)", background: "var(--bg2)", flexShrink: 0, userSelect: "none" }}>
-            <div style={{ width: COL_KEY, flexShrink: 0, padding: "4px 8px", fontSize: 11, fontWeight: 600, color: "var(--text-muted)", borderRight: "1px solid var(--border)" }}>key</div>
-            <div style={{ width: COL_FILE, flexShrink: 0, padding: "4px 8px", fontSize: 11, fontWeight: 600, color: "var(--text-muted)", borderRight: "1px solid var(--border)" }}>file</div>
-            {fieldNames.map(f => (
-              <div key={f} style={{ width: COL_FIELD, flexShrink: 0, padding: "4px 8px", fontSize: 11, fontWeight: 600, color: "var(--text-muted)", borderRight: "1px solid var(--border)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f}>{f}</div>
-            ))}
+            {(["key", "file", ...fieldNames] as string[]).map((col, i) => {
+              const isKey = col === "key";
+              const isFile = col === "file";
+              const w = isKey ? COL_KEY : isFile ? COL_FILE : COL_FIELD;
+              const isSorted = sort?.col === col;
+              return (
+                <div
+                  key={col}
+                  onClick={() => handleSortClick(col)}
+                  title={`Sort by ${col}`}
+                  style={{
+                    width: w,
+                    flexShrink: 0,
+                    padding: "4px 8px",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: isSorted ? "var(--accent)" : "var(--text-muted)",
+                    borderRight: "1px solid var(--border)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 3,
+                    borderBottom: isSorted ? "2px solid var(--accent)" : undefined,
+                    boxSizing: "border-box",
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "var(--bg3)"; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                >
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{col}</span>
+                  {isSorted && <span style={{ fontSize: 9, flexShrink: 0 }}>{sort!.dir === "asc" ? "▲" : "▼"}</span>}
+                  {!isSorted && i === 0 && <span style={{ fontSize: 9, opacity: 0.3, flexShrink: 0 }}>⇅</span>}
+                </div>
+              );
+            })}
           </div>
 
           {/* Virtualized rows */}
@@ -181,7 +240,7 @@ export function GlobalTableView({ sessionId, typeName, onTypeChange, onNavigate 
                 const filename = row.file_path.split(/[\\/]/).pop() ?? row.file_path;
                 return (
                   <div
-                    key={row.key}
+                    key={`${row.file_path}::${row.key}`}
                     onClick={() => handleRowClick(row)}
                     style={{
                       position: "absolute",

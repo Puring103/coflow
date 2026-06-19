@@ -510,6 +510,7 @@ export default function App() {
             "Ctrl+D         Duplicate current record (record view)",
             "Ctrl+F         Filter fields (record view) / filter records (table view)",
             "Ctrl+Shift+F   Focus sidebar search (record view)",
+            "Ctrl+Shift+R   Jump to next required empty field (record view)",
             "Ctrl+Shift+E   Expand all nodes (graph view)",
             "Ctrl+Shift+W   Collapse all nodes (graph view)",
             "Escape         Cancel edit / close modal",
