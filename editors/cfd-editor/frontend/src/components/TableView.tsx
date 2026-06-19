@@ -427,6 +427,10 @@ export function TableView({
           label: "跳转到记录视图",
           onClick: () => onNavigate({ view: "record", file: filePath, recordKey: row.key }),
         },
+        {
+          label: "复制 Key",
+          onClick: () => navigator.clipboard.writeText(row.key).catch(() => {}),
+        },
         ...(onRenameRecord ? [{
           label: "重命名记录 Key",
           onClick: () => {

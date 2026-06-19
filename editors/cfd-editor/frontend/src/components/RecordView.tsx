@@ -328,9 +328,10 @@ export function RecordView({
               ref={r.key === recordKey ? selectedItemRef : undefined}
               onClick={() => onNavigate({ view: "record", file: filePath, recordKey: r.key })}
               onContextMenu={e => {
-                if (!onRenameRecord && !onDeleteRecord && !onDuplicateRecord) return;
                 e.preventDefault();
-                const items = [];
+                const items: { label: string; danger?: boolean; onClick: () => void }[] = [
+                  { label: "复制 Key", onClick: () => navigator.clipboard.writeText(r.key).catch(() => {}) },
+                ];
                 if (onRenameRecord) items.push({
                   label: "重命名记录 Key",
                   onClick: () => {
@@ -442,9 +443,10 @@ export function RecordView({
                 <div
                   onClick={onRenameRecord ? () => setEditingKey(true) : undefined}
                   onContextMenu={e => {
-                    if (!onRenameRecord && !onDeleteRecord && !onDuplicateRecord) return;
                     e.preventDefault();
-                    const items = [];
+                    const items: { label: string; danger?: boolean; onClick: () => void }[] = [
+                      { label: "复制 Key", onClick: () => navigator.clipboard.writeText(recordKey).catch(() => {}) },
+                    ];
                     if (onRenameRecord) items.push({
                       label: "重命名记录 Key",
                       onClick: () => setEditingKey(true),
@@ -460,7 +462,7 @@ export function RecordView({
                     });
                     setContextMenu({ x: e.clientX, y: e.clientY, items });
                   }}
-                  title={onRenameRecord ? "Click to rename · Right-click for options" : undefined}
+                  title={onRenameRecord ? "Click to rename · Right-click for options" : "Right-click for options"}
                   style={{
                     fontFamily: "monospace",
                     fontSize: 18,

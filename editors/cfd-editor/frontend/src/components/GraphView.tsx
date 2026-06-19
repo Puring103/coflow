@@ -260,6 +260,28 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey }: Graph
     setExpandedKeys(prev => prev.filter(k => k !== key));
   }, []);
 
+  const handleExpandAll = useCallback(() => {
+    if (!graphData) return;
+    const allKeys = graphData.nodes.map(n => n.key);
+    setExpandedKeys(allKeys);
+  }, [graphData]);
+
+  // Keyboard shortcuts for graph view
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "e") {
+        e.preventDefault();
+        handleExpandAll();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "w") {
+        e.preventDefault();
+        setExpandedKeys([]);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleExpandAll]);
+
   const handleNodeContextMenu = useCallback((e: React.MouseEvent, gnode: GraphNode) => {
     e.preventDefault();
     setContextMenu({
@@ -273,6 +295,10 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey }: Graph
         {
           label: "在表中查看",
           onClick: () => onNavigate({ view: "table", file: gnode.file_path, typeFilter: gnode.actual_type }),
+        },
+        {
+          label: "复制 Key",
+          onClick: () => navigator.clipboard.writeText(gnode.key).catch(() => {}),
         },
         ...(!gnode.is_collapsed ? [{
           label: "折叠节点",
@@ -445,10 +471,19 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey }: Graph
         {search && (
           <button onClick={() => setSearch("")} style={{ fontSize: 11, padding: "2px 6px" }}>✕</button>
         )}
+        {graphData && (
+          <button
+            onClick={handleExpandAll}
+            title="展开所有节点 (Ctrl+Shift+E)"
+            style={{ fontSize: 11, padding: "2px 8px", flexShrink: 0 }}
+          >
+            展开全部
+          </button>
+        )}
         {graphData && expandedKeys.length > 0 && (
           <button
             onClick={() => setExpandedKeys([])}
-            title="Collapse all expanded nodes"
+            title="折叠所有展开的节点 (Ctrl+Shift+W)"
             style={{ fontSize: 11, padding: "2px 8px", flexShrink: 0 }}
           >
             折叠全部

@@ -299,7 +299,8 @@ pub fn get_record_inner(
 
     let in_model = session.model.records().any(|(_, r)| r.key == record_key);
     if in_model {
-        let (_, record) = session.model.records().find(|(_, r)| r.key == record_key).unwrap();
+        let (_, record) = session.model.records().find(|(_, r)| r.key == record_key)
+            .expect("record exists: checked with .any() on same model");
         let ast_rec = session
             .file_sources
             .get(file_path)
@@ -834,7 +835,8 @@ pub fn duplicate_record_inner(
     // Build the RecordRow for the duplicate
     let in_model = session.model.records().any(|(_, r)| r.key == new_key);
     if in_model {
-        let (_, record) = session.model.records().find(|(_, r)| r.key == new_key).unwrap();
+        let (_, record) = session.model.records().find(|(_, r)| r.key == new_key)
+            .expect("record exists: checked with .any() on same model");
         let ast_rec = session.file_sources.get(file_path)
             .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == new_key));
         let direct = ast_rec.map(|r| r.fields.iter().map(|f| f.name.clone()).collect::<HashSet<String>>());
