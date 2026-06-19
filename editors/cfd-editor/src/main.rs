@@ -1,0 +1,109 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+use coflow_editor_core::commands::*;
+use coflow_editor_core::types::*;
+use std::sync::Mutex;
+
+#[tauri::command]
+fn load_project(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    yaml_path: String,
+) -> Result<ProjectSnapshot, String> {
+    load_project_inner(&state, &yaml_path)
+}
+
+#[tauri::command]
+fn get_file_records(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    file_path: String,
+) -> Result<FileRecords, String> {
+    get_file_records_inner(&state, session_id, &file_path)
+}
+
+#[tauri::command]
+fn get_record(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    file_path: String,
+    record_key: String,
+) -> Result<RecordRow, String> {
+    get_record_inner(&state, session_id, &file_path, &record_key)
+}
+
+#[tauri::command]
+fn get_graph(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    file_path: String,
+) -> Result<GraphData, String> {
+    get_graph_inner(&state, session_id, &file_path)
+}
+
+#[tauri::command]
+fn write_field(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    file_path: String,
+    record_key: String,
+    field_path: Vec<FieldPathSegment>,
+    new_value: FieldValue,
+) -> Result<(), String> {
+    write_field_inner(
+        &state,
+        session_id,
+        &file_path,
+        &record_key,
+        &field_path,
+        &new_value,
+    )
+}
+
+#[tauri::command]
+fn create_record(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    file_path: String,
+    key: String,
+    type_name: String,
+) -> Result<RecordRow, String> {
+    create_record_inner(&state, session_id, &file_path, &key, &type_name)
+}
+
+#[tauri::command]
+fn delete_record(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    file_path: String,
+    record_key: String,
+) -> Result<(), String> {
+    delete_record_inner(&state, session_id, &file_path, &record_key)
+}
+
+#[tauri::command]
+fn create_file(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    rel_path: String,
+) -> Result<FileTreeNode, String> {
+    create_file_inner(&state, session_id, &rel_path)
+}
+
+fn main() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
+        .manage(Mutex::new(SessionStore::default()))
+        .invoke_handler(tauri::generate_handler![
+            load_project,
+            get_file_records,
+            get_record,
+            get_graph,
+            write_field,
+            create_record,
+            delete_record,
+            create_file,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}

@@ -26,8 +26,15 @@ members = [
     "crates/coflow-project",
     "crates/coflow-pipeline",
     "crates/coflow-lsp",
+    "crates/coflow-editor-core",
+    "editors/cfd-editor",
 ]
 resolver = "2"
+
+[workspace.dependencies]
+serde_yaml = "0.9"
+tauri = { version = "2", features = [] }
+ts-rs = { version = "10", features = ["serde-compat"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
