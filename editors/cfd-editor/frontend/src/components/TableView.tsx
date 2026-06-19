@@ -283,6 +283,12 @@ export function TableView({
 
   const [fieldSchemas, setFieldSchemas] = useState<FieldSchema[]>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [batchField, setBatchField] = useState("");
+  const [batchValue, setBatchValue] = useState("");
+  const [batchApplying, setBatchApplying] = useState(false);
+  const [batchError, setBatchError] = useState<string | null>(null);
+  const lastSelectedKeyRef = useRef<string | null>(null);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const columnPickerRef = useRef<HTMLDivElement>(null);
 
@@ -296,8 +302,18 @@ export function TableView({
     return () => { cancelled = true; };
   }, [sessionId, activeType]);
 
-  // Reset sorting, search and column visibility when type changes
-  useEffect(() => { setSorting([]); setSearch(""); setColumnVisibility({}); setShowColumnPicker(false); }, [activeType]);
+  // Reset sorting, search, column visibility and selection when type changes
+  useEffect(() => {
+    setSorting([]);
+    setSearch("");
+    setColumnVisibility({});
+    setShowColumnPicker(false);
+    setSelectedKeys(new Set());
+    setBatchField("");
+    setBatchValue("");
+    setBatchError(null);
+    lastSelectedKeyRef.current = null;
+  }, [activeType]);
 
   // Close column picker on outside click
   useEffect(() => {
@@ -378,6 +394,63 @@ export function TableView({
   })();
 
   const columns = [
+    columnHelper.display({
+      id: "__sel__",
+      size: 32,
+      enableResizing: false,
+      enableSorting: false,
+      header: () => (
+        <input
+          type="checkbox"
+          title="全选/全不选"
+          style={{ margin: 0, cursor: "pointer" }}
+          checked={filteredRows.length > 0 && filteredRows.every(r => selectedKeys.has(r.key))}
+          onChange={e => {
+            if (e.target.checked) {
+              setSelectedKeys(new Set(filteredRows.map(r => r.key)));
+            } else {
+              setSelectedKeys(new Set());
+            }
+          }}
+        />
+      ),
+      cell: info => {
+        const rowKey = info.row.original.key;
+        return (
+          <input
+            type="checkbox"
+            style={{ margin: 0, cursor: "pointer" }}
+            checked={selectedKeys.has(rowKey)}
+            onChange={() => {}}
+            onClick={e => {
+              e.stopPropagation();
+              const keys = filteredRows.map(r => r.key);
+              if (e.shiftKey && lastSelectedKeyRef.current) {
+                const lastIdx = keys.indexOf(lastSelectedKeyRef.current);
+                const thisIdx = keys.indexOf(rowKey);
+                if (lastIdx !== -1) {
+                  const lo = Math.min(lastIdx, thisIdx);
+                  const hi = Math.max(lastIdx, thisIdx);
+                  const rangeKeys = keys.slice(lo, hi + 1);
+                  setSelectedKeys(prev => {
+                    const next = new Set(prev);
+                    rangeKeys.forEach(k => next.add(k));
+                    return next;
+                  });
+                  return;
+                }
+              }
+              setSelectedKeys(prev => {
+                const next = new Set(prev);
+                if (next.has(rowKey)) next.delete(rowKey); else next.add(rowKey);
+                return next;
+              });
+              lastSelectedKeyRef.current = rowKey;
+            }}
+          />
+        );
+      },
+    }),
     columnHelper.accessor("key", {
       header: "key",
       size: 160,
@@ -571,6 +644,32 @@ export function TableView({
       // onDeleteRecord already shows error toast; modal auto-closes on success only
     }
   }, [deleteModal, onDeleteRecord, sessionId, filePath]);
+
+  const handleBatchApply = useCallback(async () => {
+    if (!batchField) { setBatchError("请选择字段"); return; }
+    const rowsToEdit = filteredRows.filter(r => selectedKeys.has(r.key));
+    if (rowsToEdit.length === 0) return;
+    setBatchApplying(true);
+    setBatchError(null);
+    let errorCount = 0;
+    for (const row of rowsToEdit) {
+      const existing = row.fields.find(f => f.name === batchField)?.value ?? { kind: "Null" as const };
+      const newValue = parseFieldValue(batchValue, existing);
+      try {
+        await onWriteField(sessionId, filePath, row.key, [{ kind: "Field", name: batchField }], newValue, existing);
+      } catch {
+        errorCount++;
+      }
+    }
+    setBatchApplying(false);
+    if (errorCount > 0) {
+      setBatchError(`${errorCount} 行写入失败`);
+    } else {
+      setSelectedKeys(new Set());
+      setBatchField("");
+      setBatchValue("");
+    }
+  }, [batchField, batchValue, filteredRows, selectedKeys, sessionId, filePath, onWriteField]);
 
   const handleCreateRecord = async () => {
     if (!newRecord.key.trim()) { setNewRecord(r => ({ ...r, error: "Key cannot be empty" })); return; }
@@ -843,9 +942,14 @@ export function TableView({
                   style={{
                     height: vItem.size,
                     cursor: "pointer",
+                    background: selectedKeys.has(row.original.key) ? "color-mix(in srgb, var(--accent) 12%, var(--bg))" : "transparent",
                   }}
-                  onMouseEnter={e => (e.currentTarget.style.background = "var(--bg3)")}
-                  onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                  onMouseEnter={e => {
+                    if (!selectedKeys.has(row.original.key)) e.currentTarget.style.background = "var(--bg3)";
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.background = selectedKeys.has(row.original.key) ? "color-mix(in srgb, var(--accent) 12%, var(--bg))" : "transparent";
+                  }}
                   onDoubleClick={e => {
                     if ((e.target as HTMLElement).tagName === "INPUT") return;
                     onNavigate({ view: "record", file: filePath, recordKey: row.original.key });
@@ -853,16 +957,34 @@ export function TableView({
                 >
                   {row.getVisibleCells().map(cell => {
                     const colId = cell.column.id;
+                    const isSelCol = colId === "__sel__";
                     const isKeyCol = colId === "key";
-                    const cellValue = isKeyCol
+                    const cellValue = (isKeyCol || isSelCol)
                       ? null
                       : (row.original.fields.find(f => f.name === colId)?.value ?? null);
-                    const isSpreadField = !isKeyCol && row.original.spread_fields.includes(colId);
+                    const isSpreadField = !isKeyCol && !isSelCol && row.original.spread_fields.includes(colId);
                     const isEditing =
                       !isKeyCol &&
+                      !isSelCol &&
                       !isSpreadField &&
                       editingCell?.rowKey === row.original.key &&
                       editingCell?.fieldName === colId;
+
+                    if (isSelCol) {
+                      return (
+                        <td
+                          key={cell.id}
+                          style={{
+                            padding: "4px 6px",
+                            borderBottom: "1px solid var(--bg3)",
+                            width: cell.column.getSize(),
+                            textAlign: "center",
+                          }}
+                        >
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </td>
+                      );
+                    }
 
                     return (
                       <td
@@ -969,6 +1091,75 @@ export function TableView({
         )}
       </div>
 
+      {/* Batch edit bar (shown when rows are selected) */}
+      {selectedKeys.size > 0 && (
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "6px 12px",
+          borderTop: "1px solid var(--accent)",
+          background: "var(--bg2)",
+          flexShrink: 0,
+        }}>
+          <span style={{ color: "var(--accent)", fontWeight: 600, fontSize: 12, whiteSpace: "nowrap" }}>
+            {selectedKeys.size} 行已选
+          </span>
+          <select
+            value={batchField}
+            onChange={e => { setBatchField(e.target.value); setBatchError(null); }}
+            style={{
+              background: "var(--bg3)",
+              border: "1px solid var(--border)",
+              borderRadius: 4,
+              color: batchField ? "var(--text)" : "var(--text-muted)",
+              padding: "3px 6px",
+              fontSize: 12,
+              outline: "none",
+            }}
+          >
+            <option value="">选择字段…</option>
+            {fieldNames.map(n => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+          <input
+            value={batchValue}
+            onChange={e => { setBatchValue(e.target.value); setBatchError(null); }}
+            placeholder="新值…"
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleBatchApply(); } e.stopPropagation(); }}
+            style={{
+              flex: 1,
+              background: "var(--bg3)",
+              border: batchError ? "1px solid var(--error)" : "1px solid var(--border)",
+              borderRadius: 4,
+              color: "var(--text)",
+              padding: "3px 8px",
+              fontSize: 12,
+              fontFamily: "monospace",
+              outline: "none",
+            }}
+          />
+          {batchError && (
+            <span style={{ color: "var(--error)", fontSize: 11 }}>{batchError}</span>
+          )}
+          <button
+            className="primary"
+            disabled={batchApplying || !batchField}
+            onClick={handleBatchApply}
+            style={{ fontSize: 12, whiteSpace: "nowrap" }}
+          >
+            {batchApplying ? "应用中…" : "批量应用"}
+          </button>
+          <button
+            onClick={() => { setSelectedKeys(new Set()); setBatchError(null); }}
+            style={{ fontSize: 12, whiteSpace: "nowrap" }}
+          >
+            取消选择
+          </button>
+        </div>
+      )}
+
       {/* Bottom bar */}
       <div style={{
         display: "flex",
@@ -981,6 +1172,9 @@ export function TableView({
       }}>
         <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
           {filteredRows.length} record{filteredRows.length !== 1 ? "s" : ""}
+          {selectedKeys.size > 0 && (
+            <span style={{ color: "var(--accent)", marginLeft: 8 }}>{selectedKeys.size} selected</span>
+          )}
         </span>
         <button onClick={() => { setNewRecord(r => ({ ...r, typeName: activeType, error: null })); setShowNewRecord(true); }} style={{ fontSize: 12 }}>
           + 新建记录
