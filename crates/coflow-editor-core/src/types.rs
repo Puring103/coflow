@@ -145,6 +145,7 @@ pub struct RecordBrief {
     pub key: String,
     pub actual_type: String,
     pub file_path: String,
+    pub is_fallback: bool,
 }
 
 /// Schema information for a single field on a type.

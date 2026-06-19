@@ -185,15 +185,17 @@ export function CommandPalette({ records, onNavigate, onClose }: CommandPaletteP
                     fontFamily: "monospace",
                     fontWeight: 600,
                     fontSize: 13,
-                    color: "var(--text)",
+                    color: r.is_fallback ? "var(--warning)" : "var(--text)",
                     minWidth: 0,
                     flex: "0 0 auto",
                     maxWidth: 220,
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
-                  }}>
+                  }}
+                  title={r.is_fallback ? "Model build failed — incomplete record" : undefined}>
                     {highlight(r.key, query)}
+                    {r.is_fallback && <span style={{ fontSize: 9, marginLeft: 3 }}>⚠</span>}
                   </span>
                   <span style={{
                     fontSize: 11,

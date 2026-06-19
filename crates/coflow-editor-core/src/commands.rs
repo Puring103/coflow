@@ -732,21 +732,22 @@ pub fn get_all_records_brief_inner(
     let mut results: Vec<RecordBrief> = Vec::new();
     for (file_path, keys) in &session.file_record_keys {
         for key in keys {
-            let actual_type = session
-                .model
-                .records()
-                .find(|(_, r)| &r.key == key)
-                .map(|(_, r)| r.actual_type.clone())
-                .unwrap_or_else(|| {
-                    session.file_sources.get(file_path)
-                        .and_then(|(_, ast)| ast.records.iter().find(|r| &r.key == key))
-                        .map(|r| r.type_name.clone())
-                        .unwrap_or_default()
-                });
+            let in_model = session.model.records().any(|(_, r)| &r.key == key);
+            let actual_type = if in_model {
+                session.model.records().find(|(_, r)| &r.key == key)
+                    .map(|(_, r)| r.actual_type.clone())
+                    .unwrap_or_default()
+            } else {
+                session.file_sources.get(file_path)
+                    .and_then(|(_, ast)| ast.records.iter().find(|r| &r.key == key))
+                    .map(|r| r.type_name.clone())
+                    .unwrap_or_default()
+            };
             results.push(RecordBrief {
                 key: key.clone(),
                 actual_type,
                 file_path: file_path.clone(),
+                is_fallback: !in_model,
             });
         }
     }
