@@ -732,14 +732,38 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
               />
             </div>
             {onEdit && (
-              <span
-                onClick={() => {
-                  const newItems = value.items.filter((_, i) => i !== idx);
-                  onEdit({ kind: "Array", items: newItems });
-                }}
-                style={{ color: "var(--text-muted)", fontSize: 11, cursor: "pointer", padding: "4px 4px", flexShrink: 0 }}
-                title="Remove item"
-              >×</span>
+              <div style={{ display: "flex", flexDirection: "column", flexShrink: 0, gap: 1 }}>
+                {idx > 0 && (
+                  <span
+                    onClick={() => {
+                      const newItems = [...value.items];
+                      [newItems[idx - 1], newItems[idx]] = [newItems[idx], newItems[idx - 1]];
+                      onEdit({ kind: "Array", items: newItems });
+                    }}
+                    style={{ color: "var(--text-muted)", fontSize: 9, cursor: "pointer", padding: "2px 4px", lineHeight: 1 }}
+                    title="Move up"
+                  >▲</span>
+                )}
+                {idx < value.items.length - 1 && (
+                  <span
+                    onClick={() => {
+                      const newItems = [...value.items];
+                      [newItems[idx], newItems[idx + 1]] = [newItems[idx + 1], newItems[idx]];
+                      onEdit({ kind: "Array", items: newItems });
+                    }}
+                    style={{ color: "var(--text-muted)", fontSize: 9, cursor: "pointer", padding: "2px 4px", lineHeight: 1 }}
+                    title="Move down"
+                  >▼</span>
+                )}
+                <span
+                  onClick={() => {
+                    const newItems = value.items.filter((_, i) => i !== idx);
+                    onEdit({ kind: "Array", items: newItems });
+                  }}
+                  style={{ color: "var(--text-muted)", fontSize: 11, cursor: "pointer", padding: "2px 4px", lineHeight: 1 }}
+                  title="Remove item"
+                >×</span>
+              </div>
             )}
           </div>
         ))}

@@ -38,6 +38,7 @@ interface RecordViewProps {
 interface DuplicateModal { srcKey: string; draft: string; error: string | null }
 interface DeleteModal { recordKey: string }
 interface SourceModal { source: string | null; draft: string; saving: boolean; error: string | null }
+interface CreateModal { key: string; typeName: string; creating: boolean; error: string | null }
 
 function fieldValueToJson(v: FieldValue): unknown {
   switch (v.kind) {
@@ -97,6 +98,8 @@ export function RecordView({
   const [duplicateModal, setDuplicateModal] = useState<DuplicateModal | null>(null);
   const [deleteModal, setDeleteModal] = useState<DeleteModal | null>(null);
   const [sourceModal, setSourceModal] = useState<SourceModal | null>(null);
+  const [createModal, setCreateModal] = useState<CreateModal | null>(null);
+  const [allTypeNames, setAllTypeNames] = useState<string[]>([]);
   const [fieldSearch, setFieldSearch] = useState("");
   const [fieldSchemas, setFieldSchemas] = useState<FieldSchema[]>([]);
   const [showRequiredOnly, setShowRequiredOnly] = useState(false);
@@ -202,11 +205,10 @@ export function RecordView({
         }
         return;
       }
-      // Ctrl+N navigates to table view (to create a new record of the same type)
+      // Ctrl+N: open create-record modal
       if ((e.ctrlKey || e.metaKey) && e.key === "n") {
         e.preventDefault();
-        const currentType = record?.actual_type;
-        onNavigate({ view: "table", file: filePath, ...(currentType ? { typeFilter: currentType } : {}) });
+        setCreateModal({ key: "", typeName: record?.actual_type ?? typeNames[0] ?? "", creating: false, error: null });
         return;
       }
       // Ctrl+D: duplicate current record
@@ -255,7 +257,7 @@ export function RecordView({
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredRecords, recordKey, filePath, record?.actual_type, record?.fields, fieldSchemas, onNavigate, onDeleteRecord, onDuplicateRecord, sessionId]);
+  }, [filteredRecords, recordKey, filePath, record?.actual_type, record?.fields, fieldSchemas, onNavigate, onDeleteRecord, onDuplicateRecord, sessionId, typeNames]);
 
   // If fileRecords hasn't loaded yet for this key, fetch directly
   useEffect(() => {
@@ -282,6 +284,11 @@ export function RecordView({
       .catch(() => { if (!cancelled) setFieldSchemas([]); });
     return () => { cancelled = true; };
   }, [sessionId, recordType]);
+
+  // Fetch all type names for the create-record modal
+  useEffect(() => {
+    api.getAllTypeNames(sessionId).then(names => setAllTypeNames(names)).catch(() => {});
+  }, [sessionId]);
 
   // Fetch incoming refs when recordKey changes
   useEffect(() => {
@@ -331,6 +338,22 @@ export function RecordView({
     }
   }, [deleteModal, onDeleteRecord, sessionId, filePath]);
 
+  const handleCreateCommit = useCallback(async () => {
+    if (!createModal) return;
+    const key = createModal.key.trim();
+    const typeName = createModal.typeName;
+    if (!key) { setCreateModal(m => m && ({ ...m, error: "Key cannot be empty" })); return; }
+    if (!typeName) { setCreateModal(m => m && ({ ...m, error: "Type is required" })); return; }
+    setCreateModal(m => m && ({ ...m, creating: true, error: null }));
+    try {
+      await onWriteField(sessionId, filePath, key, [], { kind: "Object", actual_type: typeName, fields: [] });
+      setCreateModal(null);
+      onNavigate({ view: "record", file: filePath, recordKey: key });
+    } catch (e) {
+      setCreateModal(m => m && ({ ...m, creating: false, error: String(e) }));
+    }
+  }, [createModal, onWriteField, sessionId, filePath, onNavigate]);
+
   const handleFieldEdit = useCallback(async (field: FieldCell, newValue: FieldValue) => {
     await onWriteField(sessionId, filePath, recordKey, [{ kind: "Field", name: field.name }], newValue, field.value);
   }, [sessionId, filePath, recordKey, onWriteField]);
@@ -376,7 +399,7 @@ export function RecordView({
         overflow: "hidden",
       }}>
         <div style={{
-          padding: "6px 8px",
+          padding: "4px 8px",
           fontSize: 11,
           fontWeight: 600,
           color: "var(--text-muted)",
@@ -384,8 +407,16 @@ export function RecordView({
           letterSpacing: 1,
           borderBottom: "1px solid var(--border)",
           flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
         }}>
-          Records
+          <span>Records</span>
+          <span
+            onClick={() => setCreateModal({ key: "", typeName: record?.actual_type ?? typeNames[0] ?? "", creating: false, error: null })}
+            title="新建记录 (Ctrl+N)"
+            style={{ color: "var(--accent)", fontSize: 14, cursor: "pointer", lineHeight: 1, padding: "0 2px" }}
+          >＋</span>
         </div>
         {/* Sidebar search */}
         <div style={{ padding: "4px 6px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
@@ -1061,6 +1092,61 @@ export function RecordView({
           items={contextMenu.items}
           onClose={() => setContextMenu(null)}
         />
+      )}
+
+      {/* Create record modal */}
+      {createModal && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000 }}
+          onClick={() => setCreateModal(null)}
+        >
+          <div
+            style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8, padding: 24, width: 360, display: "flex", flexDirection: "column", gap: 12 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 style={{ margin: 0, fontSize: 15 }}>新建记录</h3>
+            {createModal.error && (
+              <div style={{ color: "#ff5555", fontSize: 12, background: "#ff555522", border: "1px solid #ff555544", borderRadius: 4, padding: "4px 8px" }}>{createModal.error}</div>
+            )}
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+              Key
+              <input
+                value={createModal.key}
+                onChange={e => setCreateModal(m => m && ({ ...m, key: e.target.value, error: null }))}
+                onKeyDown={e => {
+                  if (e.key === "Enter") { e.preventDefault(); handleCreateCommit(); }
+                  if (e.key === "Escape") setCreateModal(null);
+                  e.stopPropagation();
+                }}
+                style={{ background: "var(--bg3)", border: createModal.error ? "1px solid #ff5555" : "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "4px 8px", fontSize: 13, fontFamily: "monospace", outline: "none" }}
+                placeholder="record_key"
+                autoFocus
+              />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+              Type
+              <select
+                value={createModal.typeName}
+                onChange={e => setCreateModal(m => m && ({ ...m, typeName: e.target.value }))}
+                style={{ background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "4px 8px", fontSize: 13, outline: "none" }}
+              >
+                {(allTypeNames.length > 0 ? allTypeNames : typeNames).map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </label>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setCreateModal(null)}>取消</button>
+              <button
+                className="primary"
+                onClick={handleCreateCommit}
+                disabled={createModal.creating || !createModal.key.trim()}
+              >
+                {createModal.creating ? "创建中…" : "创建并打开"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Duplicate record modal */}
