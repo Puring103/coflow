@@ -4825,6 +4825,35 @@ mod tests {
     }
 
     #[test]
+    fn create_record_does_not_falsely_use_grouped_syntax() {
+        // Regression: standalone records like "key: Item { ... }" contain "Item {"
+        // which should NOT be mistaken for a grouped block header.
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        let cfd_path = data_dir.join("items.cfd");
+        // Standalone syntax: "sword: Item { ... }" — this contains "Item {" but is NOT a group header
+        std::fs::write(&cfd_path, "sword: Item {\n  name: \"Sword\"\n}\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let row = create_record_inner(&store, snap.session_id, "data/items.cfd", "axe", "Item").unwrap();
+        assert_eq!(row.key, "axe");
+
+        let contents = std::fs::read_to_string(&cfd_path).unwrap();
+        // axe must be appended as standalone, NOT inserted into a non-existent group block
+        assert!(contents.contains("axe: Item"), "new record should use standalone syntax:\n{contents}");
+        // file should still parse to 2 records
+        let records = get_file_records_inner(&store, snap.session_id, "data/items.cfd").unwrap();
+        assert_eq!(records.records.len(), 2, "file should have 2 records:\n{contents}");
+    }
+
+    #[test]
     fn get_incoming_refs_finds_records_that_reference_target() {
         let dir = TempDir::new().unwrap();
         let yaml = dir.path().join("coflow.yaml");
