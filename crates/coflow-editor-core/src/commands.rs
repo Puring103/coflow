@@ -2259,6 +2259,52 @@ mod tests {
     }
 
     #[test]
+    fn write_field_array_roundtrip() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        let cfd_path = data_dir.join("items.cfd");
+
+        std::fs::write(&schema_path, "type Item { tags: [string]; }").unwrap();
+        std::fs::write(
+            &cfd_path,
+            "sword: Item {\n  tags: [\"weapon\"],\n}\n",
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let new_tags = FieldValue::Array {
+            items: vec![
+                FieldValue::Str { v: "weapon".to_string() },
+                FieldValue::Str { v: "melee".to_string() },
+                FieldValue::Str { v: "rare".to_string() },
+            ],
+        };
+        write_field_inner(
+            &store,
+            snap.session_id,
+            "data/items.cfd",
+            "sword",
+            &[FieldPathSegment::Field { name: "tags".to_string() }],
+            &new_tags,
+        ).unwrap();
+
+        let row = get_record_inner(&store, snap.session_id, "data/items.cfd", "sword").unwrap();
+        let tags_field = row.fields.iter().find(|f| f.name == "tags").unwrap();
+        if let FieldValue::Array { items } = &tags_field.value {
+            assert_eq!(items.len(), 3, "should have 3 tags after write");
+            assert!(matches!(&items[1], FieldValue::Str { v } if v == "melee"));
+            assert!(matches!(&items[2], FieldValue::Str { v } if v == "rare"));
+        } else {
+            panic!("expected Array, got {:?}", tags_field.value);
+        }
+    }
+
+    #[test]
     fn get_graph_returns_nodes_and_ref_edges() {
         let dir = TempDir::new().unwrap();
         let yaml = dir.path().join("coflow.yaml");
