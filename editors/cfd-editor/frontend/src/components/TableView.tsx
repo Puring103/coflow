@@ -1699,6 +1699,12 @@ export function TableView({
             <textarea
               value={pasteModal.source}
               onChange={e => setPasteModal(m => m && ({ ...m, source: e.target.value, error: null }))}
+              onKeyDown={e => {
+                if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !pasteModal.importing && pasteModal.source.trim()) {
+                  e.preventDefault();
+                  handlePasteImport();
+                }
+              }}
               rows={12}
               spellCheck={false}
               placeholder={"sword: Weapon {\n  name: \"Fire Sword\"\n  power: 100\n}"}
