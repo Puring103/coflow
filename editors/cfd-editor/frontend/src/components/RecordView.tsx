@@ -561,6 +561,23 @@ export function RecordView({
                   ? record.spread_sources[0]
                   : null;
                 const spreadNavFile = spreadNavTarget?.file || filePath;
+                const handleSpreadNavClick = isSpread
+                  ? spreadNavTarget
+                    ? () => onNavigate({ view: "record", file: spreadNavFile, recordKey: spreadNavTarget.key })
+                    : record.spread_sources.length > 1
+                      ? (e: React.MouseEvent) => {
+                          e.stopPropagation();
+                          setContextMenu({
+                            x: e.clientX,
+                            y: e.clientY,
+                            items: record.spread_sources.map(src => ({
+                              label: `跳转到 ${src.key}${src.file && src.file !== filePath ? ` (${src.file})` : ""}`,
+                              onClick: () => onNavigate({ view: "record", file: src.file || filePath, recordKey: src.key }),
+                            })),
+                          });
+                        }
+                      : undefined
+                  : undefined;
                 return (
                 <div
                   key={field.name}
@@ -589,16 +606,18 @@ export function RecordView({
                     {field.name}
                     {isSpread && (
                       <span
-                        onClick={spreadNavTarget
-                          ? () => onNavigate({ view: "record", file: spreadNavFile, recordKey: spreadNavTarget.key })
-                          : undefined}
-                        title={spreadNavTarget ? `跳转到源记录 ${spreadNavTarget.key}` : "来自 spread — 前往源记录编辑"}
+                        onClick={handleSpreadNavClick}
+                        title={spreadNavTarget
+                          ? `跳转到源记录 ${spreadNavTarget.key}`
+                          : record.spread_sources.length > 1
+                            ? "来自多个 spread — 点击选择源记录"
+                            : "来自 spread — 前往源记录编辑"}
                         style={{
                           marginLeft: 4,
                           fontSize: 10,
                           color: "var(--accent)",
                           opacity: 0.7,
-                          cursor: spreadNavTarget ? "pointer" : "default",
+                          cursor: handleSpreadNavClick ? "pointer" : "default",
                         }}
                       >↗</span>
                     )}
