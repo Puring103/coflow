@@ -790,6 +790,7 @@ export default function App() {
                     refreshKey={graphRefreshKey}
                     onTypeChange={typeName => router.replace({ view: "global-table", typeName })}
                     onNavigate={router.push}
+                    onWriteField={handleWriteField}
                   />
                 )}
               </div>

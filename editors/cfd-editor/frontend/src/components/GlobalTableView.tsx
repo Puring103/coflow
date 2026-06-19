@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { RecordRow, FieldValue } from "../bindings";
+import type { RecordRow, FieldValue, FieldPathSegment } from "../bindings";
 import type { Route } from "../router";
 import { DataCard } from "./DataCard";
 import { ContextMenu, type ContextMenuState } from "./ContextMenu";
@@ -12,6 +12,19 @@ interface GlobalTableViewProps {
   refreshKey?: number;
   onTypeChange: (typeName: string) => void;
   onNavigate: (route: Route) => void;
+  onWriteField?: (sessionId: number, filePath: string, recordKey: string, fieldPath: FieldPathSegment[], newValue: FieldValue, oldValue?: FieldValue) => Promise<void>;
+}
+
+function parseFieldValue(raw: string, original: FieldValue): FieldValue {
+  const t = raw.trim();
+  if (original.kind === "Bool") return { kind: "Bool", v: t === "true" };
+  if (original.kind === "Int") { const n = Number(t); return isNaN(n) ? original : { kind: "Int", v: n }; }
+  if (original.kind === "Float") { const n = parseFloat(t); return isNaN(n) ? original : { kind: "Float", v: n }; }
+  if (original.kind === "Enum") return { kind: "Enum", enum_name: original.enum_name, variant: t, int_value: original.int_value };
+  if (original.kind === "Ref") return t ? { kind: "Ref", target_type: original.target_type, target_key: t, target_file: null } : original;
+  if (original.kind === "Null" && (t === "true" || t === "false")) return { kind: "Bool", v: t === "true" };
+  if (original.kind === "Null") { const n = Number(t); if (!isNaN(n) && t !== "") return { kind: "Int", v: n }; }
+  return { kind: "Str", v: raw };
 }
 
 function fieldValueToString(v: FieldValue): string {
@@ -28,7 +41,7 @@ function fieldValueToString(v: FieldValue): string {
 
 type SortCol = { col: "key" | "file" | string; dir: "asc" | "desc" };
 
-export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange, onNavigate }: GlobalTableViewProps) {
+export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange, onNavigate, onWriteField }: GlobalTableViewProps) {
   const [rows, setRows] = useState<RecordRow[]>([]);
   const [allTypeNames, setAllTypeNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -37,6 +50,11 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   const [sort, setSort] = useState<SortCol | null>(null);
   const [focusedIdx, setFocusedIdx] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [batchField, setBatchField] = useState("");
+  const [batchValue, setBatchValue] = useState("");
+  const [batchApplying, setBatchApplying] = useState(false);
+  const [batchError, setBatchError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -129,6 +147,37 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       ],
     });
   }, [sessionId, onNavigate]);
+
+  const handleBatchApply = useCallback(async () => {
+    if (!onWriteField) return;
+    if (!batchField) { setBatchError("请选择字段"); return; }
+    const rowsToEdit = filteredRows.filter(r => selectedKeys.has(`${r.file_path}::${r.key}`));
+    if (rowsToEdit.length === 0) return;
+    setBatchApplying(true);
+    setBatchError(null);
+    const failedKeys: string[] = [];
+    for (const row of rowsToEdit) {
+      const existing = row.fields.find(f => f.name === batchField)?.value ?? { kind: "Null" as const };
+      const newValue = parseFieldValue(batchValue, existing);
+      try {
+        await onWriteField(sessionId, row.file_path, row.key, [{ kind: "Field", name: batchField }], newValue, existing);
+      } catch {
+        failedKeys.push(row.key);
+      }
+    }
+    setBatchApplying(false);
+    if (failedKeys.length > 0) {
+      const preview = failedKeys.length <= 3 ? failedKeys.join(", ") : failedKeys.slice(0, 3).join(", ") + ` 等 ${failedKeys.length} 条`;
+      setBatchError(`写入失败: ${preview}`);
+    } else {
+      setSelectedKeys(new Set());
+      setBatchField("");
+      setBatchValue("");
+    }
+  }, [onWriteField, batchField, batchValue, filteredRows, selectedKeys, sessionId]);
+
+  // Reset selection when type/search changes
+  useEffect(() => { setSelectedKeys(new Set()); }, [typeName]);
 
   // Keyboard navigation for the table + Ctrl+F focus search
   useEffect(() => {
@@ -254,6 +303,19 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {/* Header row */}
           <div style={{ display: "flex", borderBottom: "1px solid var(--border)", background: "var(--bg2)", flexShrink: 0, userSelect: "none" }}>
+            {onWriteField && (
+              <div style={{ width: 32, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", borderRight: "1px solid var(--border)" }}>
+                <input
+                  type="checkbox"
+                  checked={filteredRows.length > 0 && filteredRows.every(r => selectedKeys.has(`${r.file_path}::${r.key}`))}
+                  onChange={e => {
+                    if (e.target.checked) setSelectedKeys(new Set(filteredRows.map(r => `${r.file_path}::${r.key}`)));
+                    else setSelectedKeys(new Set());
+                  }}
+                  title="全选/取消全选"
+                />
+              </div>
+            )}
             {(["key", "file", ...fieldNames] as string[]).map((col, i) => {
               const isKey = col === "key";
               const isFile = col === "file";
@@ -300,9 +362,11 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                 const row = filteredRows[vi.index];
                 const filename = row.file_path.split(/[\\/]/).pop() ?? row.file_path;
                 const isFocused = vi.index === focusedIdx;
+                const rowId = `${row.file_path}::${row.key}`;
+                const isSelected = selectedKeys.has(rowId);
                 return (
                   <div
-                    key={`${row.file_path}::${row.key}`}
+                    key={rowId}
                     onClick={() => { setFocusedIdx(vi.index); handleRowClick(row); }}
                     onContextMenu={e => handleRowContextMenu(e, row)}
                     style={{
@@ -316,12 +380,29 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                       borderBottom: "1px solid var(--bg3)",
                       width: "max-content",
                       minWidth: "100%",
-                      background: isFocused ? "var(--bg3)" : "transparent",
+                      background: isSelected ? "rgba(var(--accent-rgb,98,114,164),0.15)" : isFocused ? "var(--bg3)" : "transparent",
                       borderLeft: isFocused ? "2px solid var(--accent)" : "2px solid transparent",
                     }}
-                    onMouseEnter={e => { if (!isFocused) e.currentTarget.style.background = "var(--bg3)"; }}
-                    onMouseLeave={e => { if (!isFocused) e.currentTarget.style.background = "transparent"; }}
+                    onMouseEnter={e => { if (!isFocused && !isSelected) e.currentTarget.style.background = "var(--bg3)"; }}
+                    onMouseLeave={e => { if (!isFocused && !isSelected) e.currentTarget.style.background = "transparent"; }}
                   >
+                    {onWriteField && (
+                      <div style={{ width: 32, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", borderRight: "1px solid var(--border)" }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={e => {
+                            e.stopPropagation();
+                            setSelectedKeys(prev => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(rowId); else next.delete(rowId);
+                              return next;
+                            });
+                          }}
+                          onClick={e => e.stopPropagation()}
+                        />
+                      </div>
+                    )}
                     <div style={{ width: COL_KEY, flexShrink: 0, padding: "0 8px", fontSize: 12, fontFamily: "monospace", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid var(--border)" }} title={row.key}>
                       {row.is_fallback && <span style={{ color: "var(--warning)", marginRight: 4 }}>⚠</span>}
                       {row.key}
@@ -354,6 +435,43 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
               })}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Batch-edit bar — only visible when onWriteField is provided and rows are selected */}
+      {onWriteField && selectedKeys.size > 0 && (
+        <div style={{ borderTop: "1px solid var(--border)", padding: "6px 8px", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, background: "var(--bg2)" }}>
+          <span style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>
+            已选 {selectedKeys.size} 条
+          </span>
+          <input
+            value={batchField}
+            onChange={e => { setBatchField(e.target.value); setBatchError(null); }}
+            placeholder="字段名"
+            list="global-batch-fields"
+            style={{ width: 120, background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "2px 6px", fontSize: 12, outline: "none" }}
+          />
+          <datalist id="global-batch-fields">
+            {fieldNames.map(f => <option key={f} value={f} />)}
+          </datalist>
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>→</span>
+          <input
+            value={batchValue}
+            onChange={e => setBatchValue(e.target.value)}
+            placeholder="新值"
+            style={{ flex: 1, minWidth: 80, background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "2px 6px", fontSize: 12, outline: "none" }}
+            onKeyDown={e => { if (e.key === "Enter" && !batchApplying && batchField) handleBatchApply(); }}
+          />
+          {batchError && <span style={{ color: "#ff5555", fontSize: 11 }}>{batchError}</span>}
+          <button
+            className="primary"
+            onClick={handleBatchApply}
+            disabled={batchApplying || !batchField}
+            style={{ fontSize: 11, padding: "2px 10px", flexShrink: 0 }}
+          >
+            {batchApplying ? "写入中…" : "批量写入"}
+          </button>
+          <button onClick={() => setSelectedKeys(new Set())} style={{ fontSize: 11, padding: "2px 8px", flexShrink: 0 }}>取消选择</button>
         </div>
       )}
 
