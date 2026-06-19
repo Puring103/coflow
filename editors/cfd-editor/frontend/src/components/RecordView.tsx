@@ -65,6 +65,7 @@ export function RecordView({
   const [showRequiredOnly, setShowRequiredOnly] = useState(false);
   const [incomingRefs, setIncomingRefs] = useState<IncomingRef[]>([]);
   const [showIncomingRefs, setShowIncomingRefs] = useState(false);
+  const [showSchemaInspector, setShowSchemaInspector] = useState(false);
   const keyInputRef = useRef<HTMLInputElement>(null);
   const sidebarSearchRef = useRef<HTMLInputElement>(null);
   const fieldSearchRef = useRef<HTMLInputElement>(null);
@@ -567,8 +568,15 @@ export function RecordView({
                 </div>
               )}
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-                <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
+                <span
+                  style={{ color: "var(--text-muted)", fontSize: 12, cursor: fieldSchemas.length > 0 ? "pointer" : "default" }}
+                  onClick={() => { if (fieldSchemas.length > 0) setShowSchemaInspector(v => !v); }}
+                  title={fieldSchemas.length > 0 ? "点击查看字段定义" : record.actual_type}
+                >
                   {record.actual_type}
+                  {fieldSchemas.length > 0 && (
+                    <span style={{ marginLeft: 3, fontSize: 10, opacity: 0.5 }}>{showSchemaInspector ? "▲" : "▼"}</span>
+                  )}
                 </span>
                 <span style={{
                   color: "var(--text-muted)",
@@ -697,6 +705,35 @@ export function RecordView({
                 </div>
               )}
             </div>
+
+            {/* Schema inspector */}
+            {showSchemaInspector && fieldSchemas.length > 0 && (
+              <div style={{
+                background: "var(--bg3)",
+                border: "1px solid var(--border)",
+                borderRadius: 4,
+                padding: "6px 10px",
+                marginBottom: 8,
+                fontSize: 11,
+                fontFamily: "monospace",
+              }}>
+                <div style={{ color: "var(--text-muted)", marginBottom: 4, fontSize: 10, textTransform: "uppercase", letterSpacing: 1 }}>
+                  {record.actual_type} — 字段定义
+                </div>
+                {fieldSchemas.map(s => (
+                  <div key={s.name} style={{ display: "flex", gap: 8, padding: "1px 0", alignItems: "baseline" }}>
+                    <span style={{ color: s.has_default ? "var(--text)" : "var(--warning)", minWidth: 120, flexShrink: 0 }}>
+                      {s.name}{!s.has_default && <span style={{ color: "var(--warning)" }}>*</span>}
+                    </span>
+                    <span style={{ color: "var(--accent)" }}>{s.type_str}</span>
+                    {s.default_str && (
+                      <span style={{ color: "var(--text-muted)", fontSize: 10 }}>= {s.default_str}</span>
+                    )}
+                  </div>
+                ))}
+                <div style={{ color: "var(--text-muted)", fontSize: 10, marginTop: 4 }}>* 必填字段（无默认值）</div>
+              </div>
+            )}
 
             {/* Field search */}
             {record.fields.length > 6 && (
