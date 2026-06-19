@@ -97,3 +97,13 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**GlobalTableView 缺少键盘导航**：TableView 支持 ↑↓ 键导航，GlobalTableView 没有~~ ✅ 已添加 ↑↓ 键移动焦点行（高亮 accent 左边框），Enter 打开记录，Ctrl+F 聚焦搜索框，filteredRows 改为 useMemo。
 - ~~**grouped 语法检测误判**：`source_has_grouped_header` 使用 `contains("TypeName {")` 误将 standalone 记录（如 `key: TypeName {`）识别为 grouped 块头，导致 `create_record`/`move_record`/`copy_record` 在含 standalone 记录的目标文件中错误插入 grouped 格式~~ ✅ 改为检测 `TypeName {` 前一字符是否为换行符（即 header 必须位于行首），新增 `source_has_grouped_header()` 辅助函数替代三处 `contains` 调用，并添加回归测试。
 - **源码编辑器缺少键盘快捷提交**：RecordView 的源码编辑 textarea 和 TableView 的粘贴导入 textarea 现在支持 Ctrl+Enter 提交（等效于点击"保存"/"导入"按钮）。
+- ~~**GlobalTableView 缺少跨文件批量编辑**：GlobalTableView 只能查看，不能批量写入~~  ✅ 已添加 checkbox 多选列、Ctrl+A 全选、底部批量写入栏（字段名 datalist + 值输入 + Enter 提交）；另增加 删除/移动/复制 右键菜单项。
+- ~~**TableView 缺少 Ctrl+A 全选**~~ ✅ 已添加 Ctrl+A 选中所有可见行（通过 filteredRowsRef 避免 stale closure）。
+- ~~**"在资源管理器中显示"仅在 FileTree 可用**~~ ✅ 已在 TableView、RecordView 侧边栏、GlobalTableView 行右键菜单中都添加了"在资源管理器中显示"。
+- ~~**无单文件重新加载**：只有全量 Reload Project，外部修改单个文件需要全量刷新~~ ✅ 已添加 `reload_file_from_disk` Tauri 命令；FileTree 右键菜单新增"从磁盘重新加载"选项；调用后触发 markDirty 重建视图。
+- ~~**RecordView 侧边栏底部"新建记录"按钮行为不一致**：点击后跳转到 TableView 而非直接打开创建弹窗~~ ✅ 改为直接 `setCreateModal(...)`，与顶部 ＋ 按钮和 Ctrl+N 行为一致。
+- ~~**dirty indicator 标题误导**：tooltip 显示"Reloading…"实际含义是"存在未保存/待刷新变更"~~ ✅ 改为"Unsaved changes — reloading data…"。
+- ~~**命令面板没有记录预览提示**：大量相似 key（如 enemy_001、enemy_002）无法区分~~ ✅ `RecordBrief` 新增 `display_hint: Option<String>`（优先取 name 字段，否则取第一个非空标量值），CommandPalette 在 key 和类型之间渲染灰色预览文本。
+- ~~**粘贴导入多条记录时无反馈**：成功导入 N > 1 条记录时弹窗静默关闭，用户不知道导入了什么~~ ✅ N > 1 时保留弹窗并显示成功摘要 + 可点击的记录链接列表；N = 0 时改为显示错误提示而非静默关闭。
+- ~~**GlobalSearch 不支持 file: 过滤**~~ ✅ `search_records_inner` 新增 `file:filename` 语法，匹配文件名（含子目录路径），GlobalSearch 占位文本更新。
+- ~~**RecordView 无 F2 重命名快捷键**~~ ✅ 在 RecordView keydown 中添加 F2 触发 `setEditingKey(true)`，与资源管理器体验一致。
