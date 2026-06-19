@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ProjectSnapshot, FileRecords, RecordRow, GraphData,
-  FileTreeNode, FieldValue, FieldPathSegment
+  FileTreeNode, FieldValue, FieldPathSegment, DiagnosticItem
 } from "./bindings";
 
 export const api = {
@@ -14,8 +14,11 @@ export const api = {
   getRecord: (sessionId: number, filePath: string, recordKey: string) =>
     invoke<RecordRow>("get_record", { sessionId, filePath, recordKey }),
 
-  getGraph: (sessionId: number, filePath: string) =>
-    invoke<GraphData>("get_graph", { sessionId, filePath }),
+  getGraph: (sessionId: number, filePath: string, expandedKeys?: string[]) =>
+    invoke<GraphData>("get_graph", { sessionId, filePath, expandedKeys: expandedKeys ?? [] }),
+
+  closeSession: (sessionId: number) =>
+    invoke<void>("close_session", { sessionId }),
 
   writeField: (
     sessionId: number,
@@ -33,4 +36,13 @@ export const api = {
 
   createFile: (sessionId: number, relPath: string) =>
     invoke<FileTreeNode>("create_file", { sessionId, relPath }),
+
+  deleteFile: (sessionId: number, relPath: string) =>
+    invoke<void>("delete_file", { sessionId, relPath }),
+
+  getDiagnostics: (sessionId: number) =>
+    invoke<DiagnosticItem[]>("get_diagnostics", { sessionId }),
+
+  renameRecord: (sessionId: number, filePath: string, oldKey: string, newKey: string) =>
+    invoke<void>("rename_record", { sessionId, filePath, oldKey, newKey }),
 };

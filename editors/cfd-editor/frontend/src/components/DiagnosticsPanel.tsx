@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { DiagnosticItem } from "../bindings";
+import type { Route } from "../router";
 
 interface DiagnosticsPanelProps {
   diagnostics: DiagnosticItem[];
+  onNavigate?: (route: Route) => void;
 }
+
+type SeverityFilter = "all" | "error" | "warning" | "info";
 
 function severityColor(severity: string): string {
   switch (severity.toLowerCase()) {
@@ -21,12 +25,56 @@ function severityIcon(severity: string): string {
   }
 }
 
-export function DiagnosticsPanel({ diagnostics }: DiagnosticsPanelProps) {
+function severityRank(severity: string): number {
+  switch (severity.toLowerCase()) {
+    case "error": return 0;
+    case "warning": return 1;
+    default: return 2;
+  }
+}
+
+export function DiagnosticsPanel({ diagnostics, onNavigate }: DiagnosticsPanelProps) {
   const [expanded, setExpanded] = useState(false);
+  const [filter, setFilter] = useState<SeverityFilter>("all");
+  const prevErrorCountRef = useRef(0);
 
   const errors = diagnostics.filter(d => d.severity.toLowerCase() === "error").length;
   const warnings = diagnostics.filter(d => d.severity.toLowerCase() === "warning").length;
   const infos = diagnostics.filter(d => d.severity.toLowerCase() !== "error" && d.severity.toLowerCase() !== "warning").length;
+
+  // Auto-expand when new errors appear (0→N transition or error count increases)
+  useEffect(() => {
+    if (errors > prevErrorCountRef.current && errors > 0) {
+      setExpanded(true);
+    }
+    prevErrorCountRef.current = errors;
+  }, [errors]);
+
+  const filtered = diagnostics
+    .filter(d => {
+      if (filter === "all") return true;
+      if (filter === "info") return d.severity.toLowerCase() !== "error" && d.severity.toLowerCase() !== "warning";
+      return d.severity.toLowerCase() === filter;
+    })
+    .sort((a, b) => severityRank(a.severity) - severityRank(b.severity));
+
+  const handleItemClick = (item: DiagnosticItem) => {
+    if (!onNavigate || !item.file_path) return;
+    if (item.record_key) {
+      onNavigate({ view: "record", file: item.file_path, recordKey: item.record_key });
+    } else {
+      onNavigate({ view: "table", file: item.file_path });
+    }
+  };
+
+  const isNavigable = (item: DiagnosticItem) => !!onNavigate && !!item.file_path;
+
+  const FILTER_BTNS: { key: SeverityFilter; label: string; count: number; active: boolean }[] = [
+    { key: "all", label: "All", count: diagnostics.length, active: filter === "all" },
+    { key: "error", label: "Errors", count: errors, active: filter === "error" },
+    { key: "warning", label: "Warnings", count: warnings, active: filter === "warning" },
+    { key: "info", label: "Info", count: infos, active: filter === "info" },
+  ];
 
   return (
     <div style={{
@@ -35,103 +83,149 @@ export function DiagnosticsPanel({ diagnostics }: DiagnosticsPanelProps) {
       flexShrink: 0,
     }}>
       {/* Header bar */}
-      <div
-        onClick={() => setExpanded(e => !e)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "4px 12px",
-          cursor: "pointer",
-          userSelect: "none",
-          height: 28,
-        }}
-      >
-        <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
-          {expanded ? "▼" : "▶"}
-        </span>
-        <span style={{ fontWeight: 500, fontSize: 12, color: "var(--text-muted)" }}>PROBLEMS</span>
-        {errors > 0 && (
-          <span style={{
-            background: "var(--error)",
-            color: "#fff",
-            borderRadius: 10,
-            padding: "0 6px",
-            fontSize: 11,
-            fontWeight: 600,
-            lineHeight: "18px",
-          }}>{errors}</span>
-        )}
-        {warnings > 0 && (
-          <span style={{
-            background: "var(--warning)",
-            color: "#000",
-            borderRadius: 10,
-            padding: "0 6px",
-            fontSize: 11,
-            fontWeight: 600,
-            lineHeight: "18px",
-          }}>{warnings}</span>
-        )}
-        {infos > 0 && (
-          <span style={{
-            background: "var(--accent)",
-            color: "#fff",
-            borderRadius: 10,
-            padding: "0 6px",
-            fontSize: 11,
-            fontWeight: 600,
-            lineHeight: "18px",
-          }}>{infos}</span>
-        )}
-        {diagnostics.length === 0 && (
-          <span style={{ color: "var(--text-muted)", fontSize: 12 }}>No problems</span>
+      <div style={{ display: "flex", alignItems: "center" }}>
+        <div
+          onClick={() => setExpanded(e => !e)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "4px 12px",
+            cursor: "pointer",
+            userSelect: "none",
+            height: 28,
+            flex: 1,
+          }}
+        >
+          <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
+            {expanded ? "▼" : "▶"}
+          </span>
+          <span style={{ fontWeight: 500, fontSize: 12, color: "var(--text-muted)" }}>PROBLEMS</span>
+          {errors > 0 && (
+            <span style={{
+              background: "var(--error)",
+              color: "#fff",
+              borderRadius: 10,
+              padding: "0 6px",
+              fontSize: 11,
+              fontWeight: 600,
+              lineHeight: "18px",
+            }}>{errors}</span>
+          )}
+          {warnings > 0 && (
+            <span style={{
+              background: "var(--warning)",
+              color: "#000",
+              borderRadius: 10,
+              padding: "0 6px",
+              fontSize: 11,
+              fontWeight: 600,
+              lineHeight: "18px",
+            }}>{warnings}</span>
+          )}
+          {infos > 0 && (
+            <span style={{
+              background: "var(--accent)",
+              color: "#fff",
+              borderRadius: 10,
+              padding: "0 6px",
+              fontSize: 11,
+              fontWeight: 600,
+              lineHeight: "18px",
+            }}>{infos}</span>
+          )}
+          {diagnostics.length === 0 && (
+            <span style={{ color: "var(--text-muted)", fontSize: 12 }}>No problems</span>
+          )}
+        </div>
+
+        {/* Severity filter tabs — only show when expanded */}
+        {expanded && (
+          <div style={{ display: "flex", gap: 2, padding: "0 8px" }}>
+            {FILTER_BTNS.filter(b => b.count > 0 || b.key === "all").map(btn => (
+              <button
+                key={btn.key}
+                onClick={e => { e.stopPropagation(); setFilter(btn.key); }}
+                style={{
+                  fontSize: 11,
+                  padding: "2px 8px",
+                  background: btn.active ? "var(--bg3)" : "transparent",
+                  border: btn.active ? "1px solid var(--border)" : "1px solid transparent",
+                  borderRadius: 4,
+                  color: btn.active ? "var(--text)" : "var(--text-muted)",
+                  cursor: "pointer",
+                }}
+              >
+                {btn.label}
+                {btn.count > 0 && (
+                  <span style={{ marginLeft: 4, color: "var(--text-muted)" }}>({btn.count})</span>
+                )}
+              </button>
+            ))}
+          </div>
         )}
       </div>
 
       {/* Expanded list */}
       {expanded && (
         <div style={{
-          maxHeight: 200,
+          maxHeight: 220,
           overflowY: "auto",
           borderTop: "1px solid var(--border)",
         }}>
-          {diagnostics.length === 0 ? (
+          {filtered.length === 0 ? (
             <div style={{ padding: "8px 16px", color: "var(--text-muted)", fontSize: 12 }}>
-              No problems detected.
+              {diagnostics.length === 0 ? "No problems detected." : "No items match the current filter."}
             </div>
           ) : (
-            diagnostics.map((item, idx) => (
-              <div key={idx} style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 8,
-                padding: "4px 12px",
-                borderBottom: "1px solid var(--bg3)",
-                fontSize: 12,
-              }}>
-                <span style={{ color: severityColor(item.severity), flexShrink: 0, marginTop: 1 }}>
-                  {severityIcon(item.severity)}
-                </span>
-                <span style={{
-                  color: severityColor(item.severity),
-                  fontWeight: 600,
-                  flexShrink: 0,
-                  fontFamily: "monospace",
-                  fontSize: 11,
-                }}>
-                  {item.code}
-                </span>
-                <span style={{ color: "var(--text)", flex: 1 }}>{item.message}</span>
-                {(item.file_path || item.record_key) && (
-                  <span style={{ color: "var(--text-muted)", flexShrink: 0, fontFamily: "monospace", fontSize: 11 }}>
-                    {item.file_path ?? ""}
-                    {item.record_key ? ` [${item.record_key}]` : ""}
-                    {item.field_path ? ` .${item.field_path}` : ""}
+            filtered.map((item, idx) => {
+              const navigable = isNavigable(item);
+              return (
+                <div
+                  key={idx}
+                  onClick={() => handleItemClick(item)}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 8,
+                    padding: "4px 12px",
+                    borderBottom: "1px solid var(--bg3)",
+                    fontSize: 12,
+                    cursor: navigable ? "pointer" : "default",
+                  }}
+                  onMouseEnter={e => { if (navigable) e.currentTarget.style.background = "var(--bg3)"; }}
+                  onMouseLeave={e => { if (navigable) e.currentTarget.style.background = "transparent"; }}
+                  title={navigable ? `Click to navigate to ${item.record_key ?? item.file_path}` : undefined}
+                >
+                  <span style={{ color: severityColor(item.severity), flexShrink: 0, marginTop: 1 }}>
+                    {severityIcon(item.severity)}
                   </span>
-                )}
-              </div>
-            ))
+                  <span style={{
+                    color: severityColor(item.severity),
+                    fontWeight: 600,
+                    flexShrink: 0,
+                    fontFamily: "monospace",
+                    fontSize: 11,
+                  }}>
+                    {item.code}
+                  </span>
+                  <span style={{ color: "var(--text)", flex: 1 }}>{item.message}</span>
+                  {(item.file_path || item.record_key) && (
+                    <span style={{
+                      color: navigable ? "var(--accent)" : "var(--text-muted)",
+                      flexShrink: 0,
+                      fontFamily: "monospace",
+                      fontSize: 11,
+                      textDecoration: navigable ? "underline" : "none",
+                    }}>
+                      {item.file_path && <span>{item.file_path}</span>}
+                      {item.record_key && <span> [{item.record_key}]</span>}
+                      {item.field_path && <span style={{ color: "var(--text-muted)" }}> .{item.field_path}</span>}
+                    </span>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       )}

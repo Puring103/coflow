@@ -17,6 +17,7 @@ import type { GraphData, GraphNode, FieldCell } from "../bindings";
 import type { Route } from "../router";
 import { DataCard } from "./DataCard";
 import { ContextMenu, type ContextMenuState } from "./ContextMenu";
+import { api } from "../api";
 
 // ─── ELK layout ───────────────────────────────────────────────────────────────
 
@@ -87,31 +88,34 @@ interface CfdNodeData extends Record<string, unknown> {
   color: string;
   isFocusFile: boolean;
   onContextMenu: (e: React.MouseEvent, gnode: GraphNode) => void;
+  onExpand: (key: string) => void;
 }
 
 function CfdNode({ data }: NodeProps<Node<CfdNodeData>>) {
-  const { gnode, color, isFocusFile, onContextMenu } = data;
+  const { gnode, color, isFocusFile, onContextMenu, onExpand } = data;
 
   if (gnode.is_collapsed) {
     return (
       <div
         onContextMenu={e => onContextMenu(e, gnode)}
+        onClick={() => onExpand(gnode.key)}
         style={{
-          width: 40,
-          height: 40,
+          width: 44,
+          height: 44,
           borderRadius: "50%",
           background: "var(--bg3)",
           border: `2px solid ${color}`,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontSize: 14,
+          fontSize: 12,
           color: "var(--text-muted)",
-          cursor: "context-menu",
+          cursor: "pointer",
+          userSelect: "none",
         }}
-        title={gnode.key}
+        title={`${gnode.key} — click to expand`}
       >
-        …
+        +
         <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
         <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
       </div>
@@ -153,22 +157,53 @@ function CfdNode({ data }: NodeProps<Node<CfdNodeData>>) {
 
 const nodeTypes = { cfd: CfdNode };
 
+// ─── Layout cache (survives component unmount/remount) ────────────────────────
+
+const layoutCache = new Map<string, Map<string, { x: number; y: number }>>();
+
 // ─── GraphView ────────────────────────────────────────────────────────────────
 
 interface GraphViewProps {
   sessionId: number;
   filePath: string;
-  graphData: GraphData | null;
   onNavigate: (route: Route) => void;
 }
 
-export function GraphView({ sessionId: _sessionId, filePath, graphData, onNavigate }: GraphViewProps) {
+export function GraphView({ sessionId, filePath, onNavigate }: GraphViewProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<CfdNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [search, setSearch] = useState("");
   const [layoutDone, setLayoutDone] = useState(false);
+  const [graphData, setGraphData] = useState<GraphData | null>(null);
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
+  const [graphError, setGraphError] = useState<string | null>(null);
+  const [layoutFallback, setLayoutFallback] = useState(false);
   const contextMenuRef = useRef<(e: React.MouseEvent, gnode: GraphNode) => void>(() => {});
+
+  // Clear layout cache and reset state when session changes (new project loaded)
+  useEffect(() => {
+    for (const key of Array.from(layoutCache.keys())) {
+      if (!key.startsWith(`${sessionId}:`)) layoutCache.delete(key);
+    }
+  }, [sessionId]);
+
+  // Reset expanded keys and graph data when file changes
+  useEffect(() => {
+    setExpandedKeys([]);
+    setGraphData(null);
+  }, [sessionId, filePath]);
+
+  useEffect(() => {
+    setGraphError(null);
+    api.getGraph(sessionId, filePath, expandedKeys)
+      .then(data => setGraphData(data))
+      .catch(err => setGraphError(String(err)));
+  }, [sessionId, filePath, expandedKeys]);
+
+  const handleExpand = useCallback((key: string) => {
+    setExpandedKeys(prev => prev.includes(key) ? prev : [...prev, key]);
+  }, []);
 
   const handleNodeContextMenu = useCallback((e: React.MouseEvent, gnode: GraphNode) => {
     e.preventDefault();
@@ -188,17 +223,38 @@ export function GraphView({ sessionId: _sessionId, filePath, graphData, onNaviga
     });
   }, [onNavigate]);
 
-  // Keep ref up to date so the node closure doesn't go stale
+  const expandRef = useRef<(key: string) => void>(() => {});
+  // Keep refs up to date so node closures don't go stale
   contextMenuRef.current = handleNodeContextMenu;
+  expandRef.current = handleExpand;
+
+  // Persist dragged positions back to cache on every node change
+  const cacheKey = `${sessionId}:${filePath}:${expandedKeys.join(",")}`;
+  useEffect(() => {
+    if (nodes.length === 0) return;
+    const posMap = new Map<string, { x: number; y: number }>();
+    for (const n of nodes) posMap.set(n.id, n.position);
+    layoutCache.set(cacheKey, posMap);
+    // Evict oldest entries if cache grows too large
+    if (layoutCache.size > 50) {
+      const firstKey = layoutCache.keys().next().value;
+      if (firstKey !== undefined) layoutCache.delete(firstKey);
+    }
+  }, [nodes, cacheKey]);
 
   useEffect(() => {
     if (!graphData) return;
     setLayoutDone(false);
+    setLayoutFallback(false);
 
     const stableHandler = (e: React.MouseEvent, gnode: GraphNode) =>
       contextMenuRef.current(e, gnode);
+    const stableExpand = (key: string) => expandRef.current(key);
 
-    layoutGraph(graphData.nodes, graphData.edges).then(positions => {
+    const cached = layoutCache.get(cacheKey);
+    const allCached = cached && graphData.nodes.every(n => cached.has(n.id));
+
+    const applyPositions = (positions: Map<string, { x: number; y: number }>) => {
       const flowNodes: Node<CfdNodeData>[] = graphData.nodes.map(gnode => {
         const pos = positions.get(gnode.id) ?? { x: 0, y: 0 };
         return {
@@ -210,38 +266,43 @@ export function GraphView({ sessionId: _sessionId, filePath, graphData, onNaviga
             color: fileColor(gnode.file_path),
             isFocusFile: gnode.file_path === filePath || gnode.in_focus_file,
             onContextMenu: stableHandler,
+            onExpand: stableExpand,
           },
         };
       });
+      return flowNodes;
+    };
 
-      const flowEdges: Edge[] = graphData.edges.map((e, i) => ({
-        id: `e-${i}`,
-        source: e.source,
-        target: e.target,
-        label: e.field_path,
-        style: { stroke: "var(--text-muted)", strokeWidth: 1.5 },
-        labelStyle: { fontSize: 10, fill: "var(--text-muted)" },
-        labelBgStyle: { fill: "var(--bg2)" },
-      }));
+    const flowEdges: Edge[] = graphData.edges.map((e, i) => ({
+      id: `e-${i}`,
+      source: e.source,
+      target: e.target,
+      label: e.field_path,
+      style: { stroke: "var(--text-muted)", strokeWidth: 1.5 },
+      labelStyle: { fontSize: 10, fill: "var(--text-muted)" },
+      labelBgStyle: { fill: "var(--bg2)" },
+    }));
 
-      setNodes(flowNodes);
+    if (allCached) {
+      setNodes(applyPositions(cached!));
+      setEdges(flowEdges);
+      setLayoutDone(true);
+      return;
+    }
+
+    layoutGraph(graphData.nodes, graphData.edges).then(positions => {
+      setNodes(applyPositions(positions));
       setEdges(flowEdges);
       setLayoutDone(true);
     }).catch(err => {
       console.error("ELK layout error:", err);
-      // Fallback: simple grid layout
-      const flowNodes: Node<CfdNodeData>[] = graphData.nodes.map((gnode, i) => ({
-        id: gnode.id,
-        type: "cfd",
-        position: { x: (i % 4) * 260, y: Math.floor(i / 4) * 160 },
-        data: {
-          gnode,
-          color: fileColor(gnode.file_path),
-          isFocusFile: gnode.file_path === filePath || gnode.in_focus_file,
-          onContextMenu: stableHandler,
-        },
-      }));
-      const flowEdges: Edge[] = graphData.edges.map((e, i) => ({
+      setLayoutFallback(true);
+      const fallbackPositions = new Map<string, { x: number; y: number }>();
+      graphData.nodes.forEach((gnode, i) => {
+        fallbackPositions.set(gnode.id, { x: (i % 4) * 260, y: Math.floor(i / 4) * 160 });
+      });
+      const flowNodes = applyPositions(fallbackPositions);
+      const fallbackEdges: Edge[] = graphData.edges.map((e, i) => ({
         id: `e-${i}`,
         source: e.source,
         target: e.target,
@@ -249,13 +310,13 @@ export function GraphView({ sessionId: _sessionId, filePath, graphData, onNaviga
         style: { stroke: "var(--text-muted)", strokeWidth: 1.5 },
       }));
       setNodes(flowNodes);
-      setEdges(flowEdges);
+      setEdges(fallbackEdges);
       setLayoutDone(true);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graphData, filePath]);
+  }, [graphData, filePath, cacheKey]);
 
-  // Apply search filter: fade non-matching nodes
+  // Apply search filter: highlight matching nodes, fade non-matching
   const displayNodes = nodes.map(node => {
     if (!search) return node;
     const g = node.data.gnode;
@@ -266,10 +327,16 @@ export function GraphView({ sessionId: _sessionId, filePath, graphData, onNaviga
       ...node,
       style: {
         ...node.style,
-        opacity: matches ? 1 : 0.2,
+        opacity: matches ? 1 : 0.15,
+        filter: matches ? "drop-shadow(0 0 6px #4a9eff88)" : undefined,
       },
     };
   });
+
+  const matchCount = search
+    ? displayNodes.filter(n => ((n.style?.opacity as number | undefined) ?? 1) > 0.5).length
+    : nodes.length;
+  const noSearchMatches = search.length > 0 && matchCount === 0;
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -303,15 +370,34 @@ export function GraphView({ sessionId: _sessionId, filePath, graphData, onNaviga
           <button onClick={() => setSearch("")} style={{ fontSize: 11, padding: "2px 6px" }}>✕</button>
         )}
         {graphData && (
-          <span style={{ color: "var(--text-muted)", fontSize: 12, marginLeft: "auto" }}>
-            {graphData.nodes.length} nodes · {graphData.edges.length} edges
+          <span style={{ color: noSearchMatches ? "#ff5555" : "var(--text-muted)", fontSize: 12, marginLeft: "auto" }}>
+            {search
+              ? (noSearchMatches ? "No matches" : `${matchCount} / ${graphData.nodes.length} nodes`)
+              : `${graphData.nodes.length} nodes · ${graphData.edges.length} edges`
+            }
           </span>
         )}
       </div>
 
       {/* Flow canvas */}
       <div style={{ flex: 1, position: "relative" }}>
-        {!graphData && (
+        {graphError && (
+          <div style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#ff5555",
+            fontSize: 13,
+            padding: 24,
+            textAlign: "center",
+            zIndex: 10,
+          }}>
+            Graph error: {graphError}
+          </div>
+        )}
+        {!graphData && !graphError && (
           <div style={{
             position: "absolute",
             inset: 0,
@@ -321,7 +407,7 @@ export function GraphView({ sessionId: _sessionId, filePath, graphData, onNaviga
             color: "var(--text-muted)",
             fontSize: 14,
           }}>
-            No graph data available
+            Loading…
           </div>
         )}
         {graphData && !layoutDone && (
@@ -337,6 +423,24 @@ export function GraphView({ sessionId: _sessionId, filePath, graphData, onNaviga
             background: "rgba(0,0,0,0.3)",
           }}>
             Computing layout…
+          </div>
+        )}
+        {layoutFallback && (
+          <div style={{
+            position: "absolute",
+            top: 8,
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "#ffb86c22",
+            border: "1px solid #ffb86c88",
+            color: "#ffb86c",
+            borderRadius: 6,
+            padding: "4px 12px",
+            fontSize: 12,
+            zIndex: 20,
+            pointerEvents: "none",
+          }}>
+            ELK layout failed — using grid fallback
           </div>
         )}
         <ReactFlow

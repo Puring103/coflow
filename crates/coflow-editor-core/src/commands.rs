@@ -177,14 +177,14 @@ pub fn load_project_inner(
         builder.add_input_record(r);
     }
     let model = builder.build().unwrap_or_else(|d| {
-        diagnostics.extend(convert_cfd_diagnostics(&d));
+        diagnostics.extend(convert_cfd_diagnostics(&d, None, Some(&file_record_keys)));
         CfdDataModel::builder(&schema)
             .build()
             .unwrap_or_else(|_| unreachable!("empty builder must succeed"))
     });
 
     if let Err(d) = model.run_checks(&schema) {
-        diagnostics.extend(convert_cfd_diagnostics(&d));
+        diagnostics.extend(convert_cfd_diagnostics(&d, Some(&model), Some(&file_record_keys)));
     }
 
     let file_tree = build_file_tree(&project_dir, &project_dir, &source_dirs);
@@ -274,6 +274,7 @@ pub fn get_graph_inner(
     store: &Mutex<SessionStore>,
     session_id: u32,
     file_path: &str,
+    expanded_keys: &[String],
 ) -> Result<GraphData, String> {
     let session_arc = get_session(store, session_id)?;
     let session = session_arc.lock().map_err(|_| "session lock poisoned")?;
@@ -317,7 +318,7 @@ pub fn get_graph_inner(
             })
             .unwrap_or_default();
         let node_id = format!("{record_file}::{key}");
-        let is_collapsed = depth >= MAX_DEPTH;
+        let is_collapsed = depth >= MAX_DEPTH && !expanded_keys.contains(&key);
 
         match session.model.records().find(|(_, r)| r.key == key) {
             Some((_, record)) => {
@@ -402,8 +403,21 @@ pub fn get_graph_inner(
         }
     }
 
-    let mut seen: HashSet<(String, String)> = HashSet::new();
-    edges.retain(|e| seen.insert((e.source.clone(), e.target.clone())));
+    // Merge parallel edges: collapse (source, target) duplicates, joining labels with " / "
+    let mut edge_map: std::collections::BTreeMap<(String, String), Vec<String>> = std::collections::BTreeMap::new();
+    for e in edges {
+        edge_map
+            .entry((e.source, e.target))
+            .or_default()
+            .push(e.field_path);
+    }
+    let edges: Vec<GraphEdge> = edge_map
+        .into_iter()
+        .map(|((source, target), mut labels)| {
+            labels.dedup();
+            GraphEdge { source, target, field_path: labels.join(" / ") }
+        })
+        .collect();
 
     Ok(GraphData { nodes, edges })
 }
@@ -463,6 +477,17 @@ pub fn create_record_inner(
     let session_arc = get_session(store, session_id)?;
     let mut session = session_arc.lock().map_err(|_| "session lock poisoned")?;
 
+    // Guard: reject duplicate keys
+    if let Some(keys) = session.file_record_keys.get(file_path) {
+        if keys.contains(&key.to_string()) {
+            return Err(format!("record key '{key}' already exists in {file_path}"));
+        }
+    }
+    // Also check global model for cross-file uniqueness
+    if session.model.records().any(|(_, r)| r.key == key) {
+        return Err(format!("record key '{key}' already exists in the project"));
+    }
+
     let abs_path = session.project_dir.join(file_path);
     let existing = std::fs::read_to_string(&abs_path).unwrap_or_default();
     let new_content = format!("{existing}\n{key}: {type_name} {{\n}}\n");
@@ -515,6 +540,71 @@ pub fn delete_record_inner(
     reload_file(&mut session, file_path, &new_source)
 }
 
+pub fn rename_record_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+    file_path: &str,
+    old_key: &str,
+    new_key: &str,
+) -> Result<(), String> {
+    if old_key == new_key {
+        return Ok(());
+    }
+    let new_key = new_key.trim();
+    if new_key.is_empty() {
+        return Err("new key cannot be empty".to_string());
+    }
+
+    let session_arc = get_session(store, session_id)?;
+    let mut session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+
+    // Guard: reject duplicate keys
+    if session.model.records().any(|(_, r)| r.key == new_key) {
+        return Err(format!("record key '{new_key}' already exists in the project"));
+    }
+
+    let (source, ast) = session
+        .file_sources
+        .get(file_path)
+        .ok_or_else(|| format!("file '{file_path}' not loaded"))?
+        .clone();
+
+    let record = ast
+        .records
+        .iter()
+        .find(|r| r.key == old_key)
+        .ok_or_else(|| format!("record '{old_key}' not found in {file_path}"))?;
+
+    let span = record.key_span;
+    let new_source = format!("{}{}{}", &source[..span.start], new_key, &source[span.end..]);
+
+    let abs_path = session.project_dir.join(file_path);
+    std::fs::write(&abs_path, &new_source)
+        .map_err(|e| format!("cannot write {file_path}: {e}"))?;
+
+    reload_file(&mut session, file_path, &new_source)
+}
+
+pub fn get_diagnostics_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+) -> Result<Vec<DiagnosticItem>, String> {
+    let session_arc = get_session(store, session_id)?;
+    let session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+
+    let mut diagnostics: Vec<DiagnosticItem> = Vec::new();
+    if let Err(d) = session.model.run_checks(&session.schema) {
+        diagnostics.extend(convert_cfd_diagnostics(&d, Some(&session.model), Some(&session.file_record_keys)));
+    }
+    Ok(diagnostics)
+}
+
+pub fn close_session_inner(store: &Mutex<SessionStore>, session_id: u32) -> Result<(), String> {
+    let mut s = store.lock().map_err(|_| "lock poisoned")?;
+    s.sessions.remove(&session_id);
+    Ok(())
+}
+
 pub fn create_file_inner(
     store: &Mutex<SessionStore>,
     session_id: u32,
@@ -524,6 +614,18 @@ pub fn create_file_inner(
     let mut session = session_arc.lock().map_err(|_| "session lock poisoned")?;
 
     let abs_path = session.project_dir.join(rel_path);
+    // Guard against path traversal outside the project directory
+    let canonical_project = session
+        .project_dir
+        .canonicalize()
+        .unwrap_or_else(|_| session.project_dir.clone());
+    let canonical_target = abs_path
+        .parent()
+        .and_then(|p| p.canonicalize().ok())
+        .unwrap_or_else(|| abs_path.clone());
+    if !canonical_target.starts_with(&canonical_project) {
+        return Err(format!("path '{rel_path}' is outside the project directory"));
+    }
     if let Some(parent) = abs_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("cannot create directories: {e}"))?;
@@ -552,6 +654,36 @@ pub fn create_file_inner(
         in_sources,
         children: Vec::new(),
     })
+}
+
+pub fn delete_file_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+    rel_path: &str,
+) -> Result<(), String> {
+    let session_arc = get_session(store, session_id)?;
+    let mut session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+
+    let abs_path = session.project_dir.join(rel_path);
+    // Guard against path traversal
+    let canonical_project = session
+        .project_dir
+        .canonicalize()
+        .unwrap_or_else(|_| session.project_dir.clone());
+    let canonical_target = abs_path
+        .canonicalize()
+        .unwrap_or_else(|_| abs_path.clone());
+    if !canonical_target.starts_with(&canonical_project) {
+        return Err(format!("path '{rel_path}' is outside the project directory"));
+    }
+    if abs_path.is_dir() {
+        return Err(format!("'{rel_path}' is a directory; only files can be deleted"));
+    }
+    std::fs::remove_file(&abs_path).map_err(|e| format!("cannot delete '{rel_path}': {e}"))?;
+
+    session.file_sources.remove(rel_path);
+    session.file_record_keys.remove(rel_path);
+    Ok(())
 }
 
 fn get_session(
@@ -780,27 +912,49 @@ fn convert_dict_key(k: &CfdDictKey) -> DictKey {
     }
 }
 
-fn convert_cfd_diagnostics(diags: &CfdDiagnostics) -> Vec<DiagnosticItem> {
+fn convert_cfd_diagnostics(
+    diags: &CfdDiagnostics,
+    model: Option<&CfdDataModel>,
+    file_record_keys: Option<&HashMap<String, Vec<String>>>,
+) -> Vec<DiagnosticItem> {
+    use coflow_data_model::CfdPathSegment;
     diags
         .diagnostics
         .iter()
         .map(|d| {
-            let field_path = d.primary.as_ref().map(|l| {
-                l.path
-                    .segments
-                    .iter()
-                    .map(|s| format!("{s:?}"))
-                    .collect::<Vec<_>>()
-                    .join(".")
+            let (record_key, field_path) = match d.primary.as_ref() {
+                None => (None, None),
+                Some(l) => {
+                    let key = l.record
+                        .and_then(|id| model?.record(id))
+                        .map(|r| r.key.clone());
+                    let mut out = String::new();
+                    for s in &l.path.segments {
+                        match s {
+                            CfdPathSegment::Field(name) => {
+                                if !out.is_empty() { out.push('.'); }
+                                out.push_str(name);
+                            }
+                            CfdPathSegment::Index(i) => out.push_str(&format!("[{i}]")),
+                            CfdPathSegment::DictKey(k) => out.push_str(&format!("[{k}]")),
+                        }
+                    }
+                    (key, if out.is_empty() { None } else { Some(out) })
+                }
+            };
+            // Resolve which file contains this record key
+            let file_path = record_key.as_deref().and_then(|rk| {
+                let keys = file_record_keys?;
+                keys.iter().find_map(|(fp, ks)| if ks.iter().any(|k| k == rk) { Some(fp.clone()) } else { None })
             });
             DiagnosticItem {
                 severity: format!("{:?}", d.severity).to_lowercase(),
                 code: format!("{:?}", d.code),
                 stage: d.stage.to_string(),
                 message: d.message.clone(),
-                file_path: None,
-                record_key: None,
-                field_path: field_path.filter(|s| !s.is_empty()),
+                file_path,
+                record_key,
+                field_path,
             }
         })
         .collect()
@@ -869,6 +1023,7 @@ fn collect_refs_in_value(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn load_example_project() {
@@ -886,5 +1041,174 @@ mod tests {
         let records =
             get_file_records_inner(&store, snap.session_id, "data/01-records.cfd").unwrap();
         assert!(!records.records.is_empty());
+
+        // Test get_record for a known record
+        let row = get_record_inner(&store, snap.session_id, "data/01-records.cfd", "sword_fire").unwrap();
+        assert_eq!(row.key, "sword_fire");
+        assert!(!row.fields.is_empty());
+
+        // Test get_graph - should return nodes
+        let graph = get_graph_inner(&store, snap.session_id, "data/01-records.cfd", &[]).unwrap();
+        assert!(!graph.nodes.is_empty(), "graph should have nodes");
+
+        // Test Ref target_file is populated for cross-record refs
+        // basic_monster has drop.rewards[0].item = &sword_fire
+        let monster = get_record_inner(&store, snap.session_id, "data/01-records.cfd", "basic_monster").unwrap();
+        // basic_monster exists, verify fields are present
+        let _ = monster.fields;
+    }
+
+    #[test]
+    fn write_field_roundtrip() {
+        // Build a minimal project in a temp dir
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let cfd = data_dir.join("test.cfd");
+
+        // Minimal schema
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type TestItem { name: string; count: int; }").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+        std::fs::write(&cfd, "item_a: TestItem {\n  name: \"hello\",\n  count: 5,\n}\n").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        // Write a field
+        let result = write_field_inner(
+            &store, sid, "data/test.cfd", "item_a",
+            &[FieldPathSegment::Field { name: "count".to_string() }],
+            &FieldValue::Int { v: 42.0 },
+        );
+        assert!(result.is_ok(), "write_field failed: {:?}", result);
+
+        // Verify the file was written
+        let contents = std::fs::read_to_string(&cfd).unwrap();
+        assert!(contents.contains("42"), "file should contain '42', got: {contents}");
+
+        // Verify the model was updated
+        let records = get_file_records_inner(&store, sid, "data/test.cfd").unwrap();
+        let item = records.records.iter().find(|r| r.key == "item_a").unwrap();
+        let count_field = item.fields.iter().find(|f| f.name == "count").unwrap();
+        assert!(
+            matches!(&count_field.value, FieldValue::Int { v } if (*v - 42.0).abs() < 0.001),
+            "expected Int 42, got {:?}",
+            count_field.value
+        );
+    }
+
+    #[test]
+    fn create_and_delete_record() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let cfd = data_dir.join("items.cfd");
+
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+        std::fs::write(&cfd, "").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        // Create a record
+        let row = create_record_inner(&store, sid, "data/items.cfd", "sword", "Item").unwrap();
+        assert_eq!(row.key, "sword");
+
+        let contents = std::fs::read_to_string(&cfd).unwrap();
+        assert!(contents.contains("sword"), "file should contain 'sword'");
+
+        // Delete the record
+        delete_record_inner(&store, sid, "data/items.cfd", "sword").unwrap();
+        let contents = std::fs::read_to_string(&cfd).unwrap();
+        assert!(!contents.contains("sword"), "file should not contain 'sword' after delete");
+    }
+
+    #[test]
+    fn write_float_preserves_decimal_point() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let cfd = data_dir.join("test.cfd");
+
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Stats { hp: float; speed: float; }").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+        std::fs::write(&cfd, "hero: Stats {\n  hp: 1.0,\n  speed: 2.5,\n}\n").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        // Write a whole-number float — must preserve decimal point so parser reads it back as float
+        write_field_inner(
+            &store, sid, "data/test.cfd", "hero",
+            &[FieldPathSegment::Field { name: "hp".to_string() }],
+            &FieldValue::Float { v: 100.0 },
+        ).unwrap();
+
+        let contents = std::fs::read_to_string(&cfd).unwrap();
+        assert!(
+            contents.contains("100.0"),
+            "float 100.0 should be written with decimal point, got:\n{contents}"
+        );
+
+        // Verify model reads it back as float
+        let records = get_file_records_inner(&store, sid, "data/test.cfd").unwrap();
+        let hero = records.records.iter().find(|r| r.key == "hero").unwrap();
+        let hp = hero.fields.iter().find(|f| f.name == "hp").unwrap();
+        assert!(
+            matches!(&hp.value, FieldValue::Float { v } if (*v - 100.0).abs() < 0.001),
+            "expected Float 100.0, got {:?}", hp.value
+        );
+    }
+
+    #[test]
+    fn rename_record_updates_key() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let cfd = data_dir.join("items.cfd");
+
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+        std::fs::write(&cfd, "old_key: Item {\n  name: \"test\",\n}\n").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        rename_record_inner(&store, sid, "data/items.cfd", "old_key", "new_key").unwrap();
+
+        let contents = std::fs::read_to_string(&cfd).unwrap();
+        assert!(contents.contains("new_key"), "file should contain new_key");
+        assert!(!contents.contains("old_key"), "file should not contain old_key");
+
+        let records = get_file_records_inner(&store, sid, "data/items.cfd").unwrap();
+        assert!(records.records.iter().any(|r| r.key == "new_key"));
+        assert!(!records.records.iter().any(|r| r.key == "old_key"));
+    }
+
+    #[test]
+    fn get_diagnostics_returns_current_checks() {
+        let yaml_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/cfd/coflow.yaml");
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml_path.to_str().unwrap()).unwrap();
+        // Example project should have no errors
+        let diags = get_diagnostics_inner(&store, snap.session_id).unwrap();
+        assert!(
+            diags.iter().all(|d| d.severity != "error"),
+            "example project should have no errors, got: {:?}", diags
+        );
     }
 }

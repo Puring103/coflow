@@ -43,5 +43,9 @@ export function useRouter(initial?: Route) {
     setState(s => s.index < s.history.length - 1 ? { ...s, index: s.index + 1 } : s);
   }, []);
 
-  return { current, push, replace, back, forward, canBack, canForward };
+  const reset = useCallback(() => {
+    setState({ history: [], index: -1 });
+  }, []);
+
+  return { current, push, replace, back, forward, canBack, canForward, reset };
 }

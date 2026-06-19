@@ -1,10 +1,10 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import "./App.css";
-import { useRouter } from "./router";
+import { useRouter, type Route } from "./router";
 import { useProject } from "./hooks/useProject";
 import { api } from "./api";
-import type { FieldPathSegment, FieldValue, GraphData, FileTreeNode } from "./bindings";
+import type { FieldPathSegment, FieldValue, FileTreeNode } from "./bindings";
 import { FileTree } from "./components/FileTree";
 import { TableView } from "./components/TableView";
 import { RecordView } from "./components/RecordView";
@@ -14,20 +14,36 @@ import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 export default function App() {
   const router = useRouter();
   const project = useProject();
-  const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [showNewFileModal, setShowNewFileModal] = useState(false);
   const [newFilePath, setNewFilePath] = useState("");
+  const [opError, setOpError] = useState<string | null>(null);
+
+  const showOpError = useCallback((msg: string) => {
+    setOpError(msg);
+    setTimeout(() => setOpError(null), 6000);
+  }, []);
 
   const currentFile = router.current?.file ?? null;
-  const currentView = router.current?.view ?? null;
 
-  // Load file records when file changes
+  // Load file records when file changes; auto-flush dirty for previous file
   useEffect(() => {
     if (!project.snapshot || !currentFile) return;
     project.loadFile(project.snapshot.session_id, currentFile);
   // We only want to re-run when currentFile or session_id changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFile, project.snapshot?.session_id]);
+
+  // When file changes, flush any pending dirty state for a *different* file
+  const prevFileRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (prevFileRef.current && prevFileRef.current !== currentFile) {
+      if (project.dirty && project.snapshot) {
+        project.saveNow(project.snapshot.session_id, prevFileRef.current);
+      }
+    }
+    prevFileRef.current = currentFile;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentFile]);
 
   // Ctrl+S: flush dirty debounce immediately
   useEffect(() => {
@@ -44,15 +60,6 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.dirty, project.snapshot?.session_id, currentFile]);
 
-  // Load graph data when switching to graph view
-  useEffect(() => {
-    if (!project.snapshot || !currentFile || currentView !== "graph") return;
-    api.getGraph(project.snapshot.session_id, currentFile)
-      .then(data => setGraphData(data))
-      .catch(err => console.error("getGraph error:", err));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentView, currentFile, project.snapshot?.session_id]);
-
   const handleOpen = async () => {
     const path = await open({
       filters: [{ name: "Coflow Project", extensions: ["yaml", "yml"] }],
@@ -64,11 +71,10 @@ export default function App() {
     await project.loadProject(pathStr);
   };
 
-  // Auto-select first file after loading project
+  // Auto-select first file after loading project, or after the current file is deleted
   useEffect(() => {
     const snap = project.snapshot;
-    if (!snap) return;
-    // Find the first non-directory node
+    if (!snap || router.current) return;
     function findFirstFile(nodes: FileTreeNode[]): string | null {
       for (const node of nodes) {
         if (!node.is_dir) return node.path;
@@ -78,11 +84,12 @@ export default function App() {
       return null;
     }
     const firstFile = findFirstFile(snap.file_tree);
-    if (firstFile && !router.current) {
+    if (firstFile) {
       router.push({ view: "table", file: firstFile });
     }
+  // Re-run both when session changes (new project) and when current route clears (file deleted)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.snapshot?.session_id]);
+  }, [project.snapshot?.session_id, router.current]);
 
   const handleWriteField = useCallback(async (
     sessionId: number,
@@ -91,32 +98,74 @@ export default function App() {
     fieldPath: FieldPathSegment[],
     newValue: FieldValue
   ) => {
-    // If fieldPath is empty, it's a create record request from TableView
-    if (fieldPath.length === 0 && newValue.kind === "Object") {
-      await api.createRecord(sessionId, filePath, recordKey, newValue.actual_type);
-    } else {
-      await api.writeField(sessionId, filePath, recordKey, fieldPath, newValue);
-    }
-    project.markDirty(sessionId, filePath);
-    // Refresh graph if in graph view
-    if (currentView === "graph") {
-      try {
-        const data = await api.getGraph(sessionId, filePath);
-        setGraphData(data);
-      } catch {
-        // ignore
+    try {
+      // If fieldPath is empty, it's a create record request from TableView
+      if (fieldPath.length === 0 && newValue.kind === "Object") {
+        await api.createRecord(sessionId, filePath, recordKey, newValue.actual_type);
+      } else {
+        await api.writeField(sessionId, filePath, recordKey, fieldPath, newValue);
       }
+      project.markDirty(sessionId, filePath);
+    } catch (e) {
+      showOpError(`Write failed: ${e}`);
+      throw e;
     }
-  }, [project, currentView]);
+  }, [project, showOpError]);
+
+  const handleRenameRecord = useCallback(async (oldKey: string, newKey: string) => {
+    if (!project.snapshot || !router.current) return;
+    const filePath = router.current.file;
+    try {
+      await api.renameRecord(project.snapshot.session_id, filePath, oldKey, newKey);
+      project.markDirty(project.snapshot.session_id, filePath);
+      // Navigate to the new key
+      router.replace({ view: "record", file: filePath, recordKey: newKey });
+    } catch (e) {
+      showOpError(`Rename failed: ${e}`);
+      throw e;
+    }
+  }, [project, router, showOpError]);
+
+  const handleRenameRecordFromTable = useCallback(async (
+    sessionId: number, filePath: string, oldKey: string, newKey: string
+  ) => {
+    try {
+      await api.renameRecord(sessionId, filePath, oldKey, newKey);
+      project.markDirty(sessionId, filePath);
+    } catch (e) {
+      showOpError(`Rename failed: ${e}`);
+      throw e;
+    }
+  }, [project, showOpError]);
 
   const handleDeleteRecord = useCallback(async (
     sessionId: number,
     filePath: string,
     recordKey: string
   ) => {
-    await api.deleteRecord(sessionId, filePath, recordKey);
-    project.markDirty(sessionId, filePath);
-  }, [project]);
+    try {
+      await api.deleteRecord(sessionId, filePath, recordKey);
+      project.markDirty(sessionId, filePath);
+    } catch (e) {
+      showOpError(`Delete failed: ${e}`);
+      throw e;
+    }
+  }, [project, showOpError]);
+
+  const handleDeleteFile = useCallback(async (filePath: string) => {
+    if (!project.snapshot) return;
+    const wasViewing = router.current?.file === filePath;
+    try {
+      await api.deleteFile(project.snapshot.session_id, filePath);
+      await project.refreshSnapshot();
+      // Clear navigation so the auto-select effect can pick the first remaining file
+      if (wasViewing) {
+        router.reset();
+      }
+    } catch (err) {
+      showOpError(`Delete file failed: ${err}`);
+    }
+  }, [project, router, showOpError]);
 
   const handleNewFile = () => {
     setNewFilePath("");
@@ -128,11 +177,10 @@ export default function App() {
     try {
       const node = await api.createFile(project.snapshot.session_id, newFilePath.trim());
       setShowNewFileModal(false);
-      // Refresh snapshot to update file tree, then navigate to the new file
       await project.refreshSnapshot();
       router.push({ view: "table", file: node.path });
     } catch (err) {
-      console.error("createFile error:", err);
+      showOpError(`Create file failed: ${err}`);
     }
   };
 
@@ -160,6 +208,31 @@ export default function App() {
         )}
       </header>
 
+      {/* Operation error toast */}
+      {opError && (
+        <div style={{
+          position: "fixed",
+          bottom: 60,
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: "#ff5555",
+          color: "#fff",
+          padding: "8px 16px",
+          borderRadius: 6,
+          fontSize: 13,
+          zIndex: 9999,
+          maxWidth: 500,
+          wordBreak: "break-all",
+          boxShadow: "0 2px 12px rgba(0,0,0,0.4)",
+        }}>
+          {opError}
+          <button
+            onClick={() => setOpError(null)}
+            style={{ marginLeft: 12, background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: 14 }}
+          >✕</button>
+        </div>
+      )}
+
       <div className="main-layout">
         {/* Left: file tree */}
         {project.snapshot && (
@@ -169,6 +242,7 @@ export default function App() {
               selectedPath={router.current?.file ?? null}
               onSelect={(file) => router.push({ view: "table", file })}
               onNewFile={handleNewFile}
+              onDeleteFile={handleDeleteFile}
               sessionId={project.snapshot.session_id}
             />
           </aside>
@@ -215,8 +289,14 @@ export default function App() {
                     sessionId={project.snapshot?.session_id ?? 0}
                     filePath={router.current.file}
                     initialTypeFilter={router.current.typeFilter}
+                    onTypeChange={typeName => {
+                      if (router.current?.view === "table") {
+                        router.replace({ ...router.current, typeFilter: typeName });
+                      }
+                    }}
                     onWriteField={handleWriteField}
                     onDeleteRecord={handleDeleteRecord}
+                    onRenameRecord={handleRenameRecordFromTable}
                     onNavigate={router.push}
                   />
                 )}
@@ -233,6 +313,7 @@ export default function App() {
                     recordKey={(router.current as { view: "record"; file: string; recordKey: string }).recordKey}
                     fileRecords={project.fileRecords}
                     onWriteField={handleWriteField}
+                    onRenameRecord={handleRenameRecord}
                     onNavigate={router.push}
                   />
                 )}
@@ -246,7 +327,6 @@ export default function App() {
                   <GraphView
                     sessionId={project.snapshot?.session_id ?? 0}
                     filePath={router.current.file}
-                    graphData={graphData}
                     onNavigate={router.push}
                   />
                 )}
@@ -262,30 +342,36 @@ export default function App() {
 
       {/* Diagnostics panel */}
       {project.snapshot && (
-        <DiagnosticsPanel diagnostics={project.snapshot.diagnostics} />
+        <DiagnosticsPanel diagnostics={project.snapshot.diagnostics} onNavigate={router.push} />
       )}
 
       {/* New file modal */}
       {showNewFileModal && (
-        <div style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.6)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 2000,
-        }}>
-          <div style={{
-            background: "var(--bg2)",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            padding: 24,
-            width: 360,
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
             display: "flex",
-            flexDirection: "column",
-            gap: 12,
-          }}>
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2000,
+          }}
+          onClick={() => setShowNewFileModal(false)}
+        >
+          <div
+            style={{
+              background: "var(--bg2)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              padding: 24,
+              width: 360,
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+            }}
+            onClick={e => e.stopPropagation()}
+          >
             <h3 style={{ margin: 0, fontSize: 15 }}>New File</h3>
             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
               Relative path

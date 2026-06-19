@@ -36,8 +36,36 @@ fn get_graph(
     state: tauri::State<'_, Mutex<SessionStore>>,
     session_id: u32,
     file_path: String,
+    expanded_keys: Option<Vec<String>>,
 ) -> Result<GraphData, String> {
-    get_graph_inner(&state, session_id, &file_path)
+    get_graph_inner(&state, session_id, &file_path, expanded_keys.as_deref().unwrap_or(&[]))
+}
+
+#[tauri::command]
+fn rename_record(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    file_path: String,
+    old_key: String,
+    new_key: String,
+) -> Result<(), String> {
+    rename_record_inner(&state, session_id, &file_path, &old_key, &new_key)
+}
+
+#[tauri::command]
+fn get_diagnostics(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+) -> Result<Vec<DiagnosticItem>, String> {
+    get_diagnostics_inner(&state, session_id)
+}
+
+#[tauri::command]
+fn close_session(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+) -> Result<(), String> {
+    close_session_inner(&state, session_id)
 }
 
 #[tauri::command]
@@ -89,6 +117,15 @@ fn create_file(
     create_file_inner(&state, session_id, &rel_path)
 }
 
+#[tauri::command]
+fn delete_file(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    rel_path: String,
+) -> Result<(), String> {
+    delete_file_inner(&state, session_id, &rel_path)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -103,6 +140,10 @@ fn main() {
             create_record,
             delete_record,
             create_file,
+            delete_file,
+            close_session,
+            get_diagnostics,
+            rename_record,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

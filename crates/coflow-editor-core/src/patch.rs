@@ -161,19 +161,18 @@ pub fn serialize_value(v: &FieldValue) -> String {
         FieldValue::Null => "null".to_string(),
         FieldValue::Bool { v } => v.to_string(),
         FieldValue::Int { v } => (*v as i64).to_string(),
-        FieldValue::Float { v } => v.to_string(),
+        FieldValue::Float { v } => {
+            let s = v.to_string();
+            // Rust Display for f64 omits the decimal point for whole numbers (1.0 → "1").
+            // CFD parser distinguishes int from float by the presence of '.', so ensure it.
+            if s.contains('.') || s.contains('e') || s.contains('E') { s } else { format!("{s}.0") }
+        }
         FieldValue::Str { v } => format!("{v:?}"), // Rust debug format = JSON string escaping
         FieldValue::Enum { variant, .. } => variant.clone(),
-        FieldValue::Ref {
-            target_key,
-            target_type,
-            target_file,
-        } => {
-            if target_file.is_none() {
-                format!("&{target_key}")
-            } else {
-                format!("@{target_type}.{target_key}")
-            }
+        FieldValue::Ref { target_key, .. } => {
+            // Always serialize as &key — the CFD loader resolves by key across all files.
+            // @Type.key syntax is a reader convenience; we don't need to reproduce it.
+            format!("&{target_key}")
         }
         FieldValue::Object {
             actual_type,
@@ -203,5 +202,32 @@ pub fn serialize_value(v: &FieldValue) -> String {
                 .collect();
             format!("{{{}}}", pairs.join(", "))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn float_serialization_preserves_decimal() {
+        assert_eq!(serialize_value(&FieldValue::Float { v: 1.0 }), "1.0");
+        assert_eq!(serialize_value(&FieldValue::Float { v: 1.5 }), "1.5");
+        assert_eq!(serialize_value(&FieldValue::Float { v: -2.0 }), "-2.0");
+        assert_eq!(serialize_value(&FieldValue::Float { v: 1e10 }), "10000000000.0");
+        // Values already containing exponent notation pass through
+        let big = 1e20f64;
+        let s = serialize_value(&FieldValue::Float { v: big });
+        assert!(s.contains('.') || s.contains('e') || s.contains('E'), "expected decimal or exponent in {s}");
+    }
+
+    #[test]
+    fn ref_serialization_uses_ampersand() {
+        let v = FieldValue::Ref {
+            target_type: "Item".to_string(),
+            target_key: "sword_fire".to_string(),
+            target_file: Some("data/items.cfd".to_string()),
+        };
+        assert_eq!(serialize_value(&v), "&sword_fire");
     }
 }

@@ -2,8 +2,10 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import {
   useReactTable,
   getCoreRowModel,
+  getSortedRowModel,
   createColumnHelper,
   flexRender,
+  type SortingState,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { FileRecords, RecordRow, FieldValue, FieldPathSegment } from "../bindings";
@@ -16,6 +18,7 @@ interface TableViewProps {
   sessionId: number;
   filePath: string;
   initialTypeFilter?: string;
+  onTypeChange?: (typeName: string) => void;
   onWriteField: (
     sessionId: number,
     filePath: string,
@@ -24,6 +27,7 @@ interface TableViewProps {
     newValue: FieldValue
   ) => Promise<void>;
   onDeleteRecord: (sessionId: number, filePath: string, recordKey: string) => Promise<void>;
+  onRenameRecord?: (sessionId: number, filePath: string, oldKey: string, newKey: string) => Promise<void>;
   onNavigate: (route: Route) => void;
 }
 
@@ -32,17 +36,97 @@ interface NewRecordForm {
   typeName: string;
 }
 
+interface EditingCell {
+  rowKey: string;
+  fieldName: string;
+  value: FieldValue;
+}
+
 type RowData = RecordRow & { _filePath: string };
 
+function fieldValueToString(v: FieldValue): string {
+  switch (v.kind) {
+    case "Null": return "null";
+    case "Bool": return String(v.v);
+    case "Int": return String(v.v);
+    case "Float": return String(v.v);
+    case "Str": return v.v;
+    case "Enum": return v.variant;
+    case "Ref": return v.target_key;
+    default: return "";
+  }
+}
+
+function parseFieldValue(raw: string, original: FieldValue): FieldValue {
+  const t = raw.trim();
+  if (original.kind === "Enum") {
+    return { kind: "Enum", enum_name: original.enum_name, variant: t, int_value: original.int_value };
+  }
+  if (original.kind === "Ref") {
+    return { kind: "Ref", target_type: original.target_type, target_key: t, target_file: original.target_file };
+  }
+  if (t === "null") return { kind: "Null" };
+  if (t === "true") return { kind: "Bool", v: true };
+  if (t === "false") return { kind: "Bool", v: false };
+  if (/^-?\d+$/.test(t)) { const n = Number(t); if (!isNaN(n)) return { kind: "Int", v: n }; }
+  if (/^-?\d*\.\d+([eE][+-]?\d+)?$/.test(t)) { const f = parseFloat(t); if (!isNaN(f)) return { kind: "Float", v: f }; }
+  return { kind: "Str", v: raw };
+}
+
 const columnHelper = createColumnHelper<RowData>();
+
+interface CellEditorProps {
+  value: FieldValue;
+  onCommit: (raw: string) => void;
+  onCancel: () => void;
+}
+
+function CellEditor({ value, onCommit, onCancel }: CellEditorProps) {
+  const [text, setText] = useState(() => fieldValueToString(value));
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  return (
+    <input
+      ref={inputRef}
+      value={text}
+      onChange={e => setText(e.target.value)}
+      onBlur={() => onCommit(text)}
+      onKeyDown={e => {
+        if (e.key === "Enter") { e.preventDefault(); onCommit(text); }
+        if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+        e.stopPropagation();
+      }}
+      style={{
+        width: "100%",
+        height: "100%",
+        padding: "4px 8px",
+        background: "var(--bg3)",
+        border: "1px solid var(--accent)",
+        borderRadius: 0,
+        color: "var(--text)",
+        fontSize: 12,
+        fontFamily: "monospace",
+        outline: "none",
+        boxSizing: "border-box",
+      }}
+    />
+  );
+}
 
 export function TableView({
   fileRecords,
   sessionId,
   filePath,
   initialTypeFilter,
+  onTypeChange,
   onWriteField,
   onDeleteRecord,
+  onRenameRecord,
   onNavigate,
 }: TableViewProps) {
   const [activeType, setActiveType] = useState<string>(
@@ -50,6 +134,9 @@ export function TableView({
       ? initialTypeFilter
       : fileRecords.type_names[0] ?? ""
   );
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [search, setSearch] = useState("");
+  const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
   // Keep activeType valid when the type list changes after reload
@@ -58,13 +145,58 @@ export function TableView({
       setActiveType(fileRecords.type_names[0]);
     }
   }, [fileRecords.type_names, activeType]);
+
+  // Reset sorting and search when type changes (columns are different per type)
+  useEffect(() => { setSorting([]); setSearch(""); }, [activeType]);
   const [showNewRecord, setShowNewRecord] = useState(false);
   const [newRecord, setNewRecord] = useState<NewRecordForm>({ key: "", typeName: fileRecords.type_names[0] ?? "" });
   const [creating, setCreating] = useState(false);
   const parentRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // Keyboard shortcuts: Ctrl+N opens new-record modal; Ctrl+F focuses search; Escape clears/closes
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "n") {
+        e.preventDefault();
+        setShowNewRecord(true);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      }
+      if (e.key === "Escape") {
+        if (document.activeElement === searchRef.current) {
+          setSearch("");
+          searchRef.current?.blur();
+        } else {
+          setShowNewRecord(false);
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   const filteredRows: RowData[] = fileRecords.records
-    .filter(r => r.actual_type === activeType)
+    .filter(r => {
+      if (r.actual_type !== activeType) return false;
+      if (!search) return true;
+      const q = search.toLowerCase();
+      if (r.key.toLowerCase().includes(q)) return true;
+      return r.fields.some(f => {
+        const v = f.value;
+        switch (v.kind) {
+          case "Str": return v.v.toLowerCase().includes(q);
+          case "Enum": return v.variant.toLowerCase().includes(q);
+          case "Ref": return v.target_key.toLowerCase().includes(q);
+          case "Int": case "Float": return String(v.v).includes(q);
+          case "Bool": return String(v.v).includes(q);
+          default: return false;
+        }
+      });
+    })
     .map(r => ({ ...r, _filePath: filePath }));
 
   // Determine columns from first record of active type
@@ -75,6 +207,7 @@ export function TableView({
     columnHelper.accessor("key", {
       header: "key",
       size: 160,
+      enableSorting: true,
       cell: info => (
         <span style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 12 }}>
           {info.getValue()}
@@ -88,6 +221,28 @@ export function TableView({
           id: name,
           header: name,
           size: 160,
+          enableSorting: true,
+          sortingFn: (a, b) => {
+            const va = a.getValue<FieldValue>(name);
+            const vb = b.getValue<FieldValue>(name);
+            // Numeric sort for numeric types, lexicographic for everything else
+            if ((va.kind === "Int" || va.kind === "Float") && (vb.kind === "Int" || vb.kind === "Float")) {
+              return (va.v as number) - (vb.v as number);
+            }
+            const str = (v: FieldValue): string => {
+              switch (v.kind) {
+                case "Null": return "";
+                case "Bool": return String(v.v);
+                case "Int": return String(v.v);
+                case "Float": return String(v.v);
+                case "Str": return v.v;
+                case "Enum": return v.variant;
+                case "Ref": return v.target_key;
+                default: return v.kind;
+              }
+            };
+            return str(va).localeCompare(str(vb));
+          },
           cell: info => (
             <DataCard mode="compact" value={info.getValue()} />
           ),
@@ -99,7 +254,10 @@ export function TableView({
   const table = useReactTable({
     data: filteredRows,
     columns,
+    state: { sorting },
+    onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
   });
 
   const rows = table.getRowModel().rows;
@@ -127,6 +285,15 @@ export function TableView({
           label: "跳转到记录视图",
           onClick: () => onNavigate({ view: "record", file: filePath, recordKey: row.key }),
         },
+        ...(onRenameRecord ? [{
+          label: "重命名记录 Key",
+          onClick: () => {
+            const newKey = window.prompt(`Rename record "${row.key}" to:`, row.key);
+            if (newKey && newKey.trim() && newKey.trim() !== row.key) {
+              onRenameRecord(sessionId, filePath, row.key, newKey.trim()).catch(() => {});
+            }
+          },
+        }] : []),
         {
           label: "删除记录",
           danger: true,
@@ -138,7 +305,7 @@ export function TableView({
         },
       ],
     });
-  }, [filePath, sessionId, onNavigate, onDeleteRecord]);
+  }, [filePath, sessionId, onNavigate, onDeleteRecord, onRenameRecord]);
 
   const handleColHeaderContextMenu = useCallback((
     e: React.MouseEvent,
@@ -165,6 +332,22 @@ export function TableView({
       ],
     });
   }, [filteredRows, filePath, onNavigate]);
+
+  const SCALAR_KINDS = ["Null", "Bool", "Int", "Float", "Str", "Enum", "Ref"];
+
+  const handleCellClick = useCallback((rowKey: string, fieldName: string, value: FieldValue) => {
+    if (!SCALAR_KINDS.includes(value.kind)) return;
+    setEditingCell({ rowKey, fieldName, value });
+  }, []);
+
+  const handleCellCommit = useCallback(async (rowKey: string, fieldName: string, raw: string, original: FieldValue) => {
+    setEditingCell(null);
+    const newValue = parseFieldValue(raw, original);
+    // Only write if changed
+    const changed = fieldValueToString(newValue) !== fieldValueToString(original) || newValue.kind !== original.kind;
+    if (!changed) return;
+    await onWriteField(sessionId, filePath, rowKey, [{ kind: "Field", name: fieldName }], newValue);
+  }, [sessionId, filePath, onWriteField]);
 
   const handleCreateRecord = async () => {
     if (!newRecord.key.trim() || !newRecord.typeName) return;
@@ -200,7 +383,7 @@ export function TableView({
         {fileRecords.type_names.map(typeName => (
           <button
             key={typeName}
-            onClick={() => setActiveType(typeName)}
+            onClick={() => { setActiveType(typeName); onTypeChange?.(typeName); }}
             style={{
               padding: "3px 10px",
               fontSize: 12,
@@ -217,6 +400,42 @@ export function TableView({
             </span>
           </button>
         ))}
+      </div>
+
+      {/* Search bar */}
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "4px 8px",
+        borderBottom: "1px solid var(--border)",
+        background: "var(--bg2)",
+        flexShrink: 0,
+      }}>
+        <input
+          ref={searchRef}
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search key or value… (Ctrl+F)"
+          style={{
+            flex: 1,
+            background: "var(--bg3)",
+            border: "1px solid var(--border)",
+            borderRadius: 4,
+            color: "var(--text)",
+            padding: "3px 8px",
+            fontSize: 12,
+            outline: "none",
+          }}
+        />
+        {search && (
+          <button onClick={() => setSearch("")} style={{ fontSize: 11, padding: "2px 6px" }}>✕</button>
+        )}
+        {search && (
+          <span style={{ color: "var(--text-muted)", fontSize: 11, whiteSpace: "nowrap" }}>
+            {filteredRows.length} / {fileRecords.records.filter(r => r.actual_type === activeType).length}
+          </span>
+        )}
       </div>
 
       {/* Table */}
@@ -236,6 +455,7 @@ export function TableView({
                 {headerGroup.headers.map(header => (
                   <th
                     key={header.id}
+                    onClick={header.column.getCanSort() ? header.column.getToggleSortingHandler() : undefined}
                     style={{
                       width: header.getSize(),
                       padding: "6px 8px",
@@ -247,10 +467,20 @@ export function TableView({
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
+                      cursor: header.column.getCanSort() ? "pointer" : "default",
                     }}
                     onContextMenu={e => handleColHeaderContextMenu(e, header.id)}
                   >
                     {flexRender(header.column.columnDef.header, header.getContext())}
+                    {header.column.getIsSorted() === "asc" && (
+                      <span style={{ marginLeft: 4, fontSize: 10 }}>▲</span>
+                    )}
+                    {header.column.getIsSorted() === "desc" && (
+                      <span style={{ marginLeft: 4, fontSize: 10 }}>▼</span>
+                    )}
+                    {header.column.getCanSort() && !header.column.getIsSorted() && (
+                      <span style={{ marginLeft: 4, fontSize: 10, opacity: 0.3 }}>⇅</span>
+                    )}
                   </th>
                 ))}
               </tr>
@@ -271,29 +501,64 @@ export function TableView({
                   data-index={vItem.index}
                   ref={virtualizer.measureElement}
                   onContextMenu={e => handleRowContextMenu(e, row.original)}
+                  onClick={() => {
+                    // Dismiss editing if clicking outside an active cell input
+                    if (editingCell && editingCell.rowKey !== row.original.key) setEditingCell(null);
+                  }}
                   style={{
                     height: vItem.size,
                     cursor: "pointer",
                   }}
                   onMouseEnter={e => (e.currentTarget.style.background = "var(--bg3)")}
                   onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                  onDoubleClick={() => onNavigate({ view: "record", file: filePath, recordKey: row.original.key })}
+                  onDoubleClick={e => {
+                    if ((e.target as HTMLElement).tagName === "INPUT") return;
+                    onNavigate({ view: "record", file: filePath, recordKey: row.original.key });
+                  }}
                 >
-                  {row.getVisibleCells().map(cell => (
-                    <td
-                      key={cell.id}
-                      style={{
-                        padding: "4px 8px",
-                        borderBottom: "1px solid var(--bg3)",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        maxWidth: cell.column.getSize(),
-                      }}
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
+                  {row.getVisibleCells().map(cell => {
+                    const colId = cell.column.id;
+                    const isKeyCol = colId === "key";
+                    const cellValue = isKeyCol
+                      ? null
+                      : (row.original.fields.find(f => f.name === colId)?.value ?? null);
+                    const isEditing =
+                      !isKeyCol &&
+                      editingCell?.rowKey === row.original.key &&
+                      editingCell?.fieldName === colId;
+
+                    return (
+                      <td
+                        key={cell.id}
+                        onClick={e => {
+                          if (isKeyCol) return;
+                          if (!cellValue) return;
+                          if (!SCALAR_KINDS.includes(cellValue.kind)) return;
+                          e.stopPropagation();
+                          handleCellClick(row.original.key, colId, cellValue);
+                        }}
+                        style={{
+                          padding: isEditing ? 0 : "4px 8px",
+                          borderBottom: "1px solid var(--bg3)",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          maxWidth: cell.column.getSize(),
+                          cursor: isKeyCol ? "default" : (cellValue && SCALAR_KINDS.includes(cellValue.kind) ? "text" : "default"),
+                        }}
+                      >
+                        {isEditing && editingCell ? (
+                          <CellEditor
+                            value={editingCell.value}
+                            onCommit={raw => handleCellCommit(row.original.key, colId, raw, editingCell.value)}
+                            onCancel={() => setEditingCell(null)}
+                          />
+                        ) : (
+                          flexRender(cell.column.columnDef.cell, cell.getContext())
+                        )}
+                      </td>
+                    );
+                  })}
                 </tr>
               );
             })}
@@ -314,8 +579,15 @@ export function TableView({
         </table>
 
         {filteredRows.length === 0 && (
-          <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>
-            No records of type <strong>{activeType}</strong>
+          <div style={{ padding: 32, textAlign: "center", color: "var(--text-muted)", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+            <span>No records of type <strong style={{ color: "var(--text)" }}>{activeType}</strong></span>
+            <button
+              className="primary"
+              onClick={() => { setNewRecord(r => ({ ...r, typeName: activeType })); setShowNewRecord(true); }}
+              style={{ fontSize: 12 }}
+            >
+              + 创建第一条记录
+            </button>
           </div>
         )}
       </div>
@@ -340,25 +612,31 @@ export function TableView({
 
       {/* New record modal */}
       {showNewRecord && (
-        <div style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.6)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 2000,
-        }}>
-          <div style={{
-            background: "var(--bg2)",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            padding: 24,
-            width: 360,
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
             display: "flex",
-            flexDirection: "column",
-            gap: 12,
-          }}>
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2000,
+          }}
+          onClick={() => setShowNewRecord(false)}
+        >
+          <div
+            style={{
+              background: "var(--bg2)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              padding: 24,
+              width: 360,
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+            }}
+            onClick={e => e.stopPropagation()}
+          >
             <h3 style={{ margin: 0, fontSize: 15 }}>新建记录</h3>
             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
               Key

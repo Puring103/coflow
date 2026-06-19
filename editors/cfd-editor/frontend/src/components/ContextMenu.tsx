@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export interface ContextMenuItem {
   label: string;
@@ -15,6 +15,7 @@ interface ContextMenuProps {
 
 export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ x, y });
 
   useEffect(() => {
     const handleClick = () => onClose();
@@ -29,25 +30,36 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
     };
   }, [onClose]);
 
-  // Adjust position to stay within viewport
-  const style: React.CSSProperties = {
-    position: "fixed",
-    top: y,
-    left: x,
-    background: "var(--bg2)",
-    border: "1px solid var(--border)",
-    borderRadius: 6,
-    boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
-    minWidth: 160,
-    zIndex: 1000,
-    padding: "4px 0",
-  };
+  // Clamp to viewport after first render when we know the menu dimensions
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const clampedX = Math.min(x, vw - rect.width - 4);
+    const clampedY = Math.min(y, vh - rect.height - 4);
+    if (clampedX !== x || clampedY !== y) {
+      setPos({ x: Math.max(4, clampedX), y: Math.max(4, clampedY) });
+    }
+  }, [x, y]);
 
   return (
     <div
       ref={ref}
-      style={style}
       onMouseDown={e => e.stopPropagation()}
+      style={{
+        position: "fixed",
+        top: pos.y,
+        left: pos.x,
+        background: "var(--bg2)",
+        border: "1px solid var(--border)",
+        borderRadius: 6,
+        boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
+        minWidth: 160,
+        zIndex: 1000,
+        padding: "4px 0",
+      }}
     >
       {items.map((item, idx) => (
         <div

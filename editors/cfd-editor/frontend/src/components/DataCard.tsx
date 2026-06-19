@@ -34,24 +34,23 @@ function dictKeyStr(k: DictKey): string {
   }
 }
 
-function parseEditedValue(raw: string, originalKind: FieldValue["kind"]): FieldValue {
+function parseEditedValue(raw: string, original: FieldValue): FieldValue {
   const trimmed = raw.trim();
+  // For enum fields, only update the variant name; preserve enum_name and int_value
+  if (original.kind === "Enum") {
+    return { kind: "Enum", enum_name: original.enum_name, variant: trimmed, int_value: original.int_value };
+  }
   if (trimmed === "null") return { kind: "Null" };
   if (trimmed === "true") return { kind: "Bool", v: true };
   if (trimmed === "false") return { kind: "Bool", v: false };
-  // Try int
   if (/^-?\d+$/.test(trimmed)) {
     const n = Number(trimmed);
     if (!isNaN(n)) return { kind: "Int", v: n };
   }
-  // Try float
   if (/^-?\d*\.?\d+([eE][+-]?\d+)?$/.test(trimmed) && trimmed.includes(".")) {
     const f = parseFloat(trimmed);
     if (!isNaN(f)) return { kind: "Float", v: f };
   }
-  // Enum: if original was enum, keep as enum variant (just update variant name)
-  // We can't reconstruct the full enum type here easily, so fall back to Str
-  void originalKind;
   return { kind: "Str", v: raw };
 }
 
@@ -142,26 +141,38 @@ function renderCompact(v: FieldValue): React.ReactNode {
 
 // ─── Inline editor ────────────────────────────────────────────────────────────
 
+const INPUT_STYLE: React.CSSProperties = {
+  background: "var(--bg3)",
+  border: "1px solid var(--accent)",
+  borderRadius: 3,
+  color: "var(--text)",
+  fontSize: 12,
+  fontFamily: "monospace",
+  padding: "1px 4px",
+  outline: "none",
+};
+
 interface InlineEditorProps {
   value: FieldValue;
   onCommit: (v: FieldValue) => void;
   onCancel: () => void;
 }
 
-function InlineEditor({ value, onCommit, onCancel }: InlineEditorProps) {
-  const initialStr = (): string => {
-    switch (value.kind) {
-      case "Null": return "null";
-      case "Bool": return String(value.v);
-      case "Int": return String(value.v);
-      case "Float": return String(value.v);
-      case "Str": return value.v;
-      case "Enum": return value.variant;
-      default: return "";
-    }
-  };
+function valueToString(value: FieldValue): string {
+  switch (value.kind) {
+    case "Null": return "null";
+    case "Bool": return String(value.v);
+    case "Int": return String(value.v);
+    case "Float": return String(value.v);
+    case "Str": return value.v;
+    case "Enum": return value.variant;
+    default: return "";
+  }
+}
 
-  const [text, setText] = useState(initialStr);
+function InlineEditor({ value, onCommit, onCancel }: InlineEditorProps) {
+  const initial = valueToString(value);
+  const [text, setText] = useState(initial);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -169,30 +180,191 @@ function InlineEditor({ value, onCommit, onCancel }: InlineEditorProps) {
     inputRef.current?.select();
   }, []);
 
+  const commitIfChanged = () => {
+    if (text !== initial) {
+      onCommit(parseEditedValue(text, value));
+    } else {
+      onCancel();
+    }
+  };
+
   return (
     <input
       ref={inputRef}
       value={text}
       onChange={e => setText(e.target.value)}
       onKeyDown={e => {
-        if (e.key === "Enter") onCommit(parseEditedValue(text, value.kind));
+        if (e.key === "Enter") { onCommit(parseEditedValue(text, value)); }
         if (e.key === "Escape") onCancel();
         e.stopPropagation();
       }}
-      onBlur={() => onCommit(parseEditedValue(text, value.kind))}
+      onBlur={commitIfChanged}
+      onClick={e => e.stopPropagation()}
+      style={{ ...INPUT_STYLE, width: "100%" }}
+    />
+  );
+}
+
+// ─── Ref editor ───────────────────────────────────────────────────────────────
+
+interface RefEditorProps {
+  value: FieldValue & { kind: "Ref" };
+  onCommit: (v: FieldValue) => void;
+  onCancel: () => void;
+}
+
+function RefEditor({ value, onCommit, onCancel }: RefEditorProps) {
+  const [key, setKey] = useState(value.target_key);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  const commit = () =>
+    onCommit({ kind: "Ref", target_type: value.target_type, target_key: key.trim(), target_file: value.target_file });
+
+  const commitIfChanged = () => {
+    if (key.trim() !== value.target_key) commit(); else onCancel();
+  };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      <span style={{ color: "var(--accent)", fontSize: 12 }}>→</span>
+      <input
+        ref={inputRef}
+        value={key}
+        onChange={e => setKey(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") onCancel();
+          e.stopPropagation();
+        }}
+        onBlur={commitIfChanged}
+        onClick={e => e.stopPropagation()}
+        style={{ ...INPUT_STYLE, flex: 1 }}
+        placeholder="record_key"
+      />
+    </div>
+  );
+}
+
+// ─── Dict entry row (with editable Str key) ──────────────────────────────────
+
+interface DictEntryProps {
+  entry: import("../bindings").DictEntry;
+  depth: number;
+  canEdit: boolean;
+  onEditValue?: (nv: FieldValue) => void;
+  onEditKey?: (newKey: string) => void;
+  onRemove?: () => void;
+}
+
+function DictEntry({ entry, depth, onEditValue, onEditKey, onRemove }: DictEntryProps) {
+  const [editingKey, setEditingKey] = useState(false);
+  const [keyText, setKeyText] = useState(entry.key.kind === "Str" ? entry.key.v : dictKeyStr(entry.key));
+  const keyInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingKey) keyInputRef.current?.select();
+  }, [editingKey]);
+
+  // Sync keyText if entry changes from outside
+  useEffect(() => {
+    if (!editingKey) setKeyText(entry.key.kind === "Str" ? entry.key.v : dictKeyStr(entry.key));
+  }, [entry.key, editingKey]);
+
+  const commitKey = () => {
+    const trimmed = keyText.trim();
+    if (trimmed && trimmed !== (entry.key.kind === "Str" ? entry.key.v : "")) {
+      onEditKey?.(trimmed);
+    }
+    setEditingKey(false);
+  };
+
+  const keyLabel = editingKey && onEditKey ? (
+    <input
+      ref={keyInputRef}
+      value={keyText}
+      onChange={e => setKeyText(e.target.value)}
+      onBlur={commitKey}
+      onKeyDown={e => {
+        if (e.key === "Enter") { commitKey(); e.stopPropagation(); }
+        if (e.key === "Escape") { setEditingKey(false); e.stopPropagation(); }
+        e.stopPropagation();
+      }}
       onClick={e => e.stopPropagation()}
       style={{
         background: "var(--bg3)",
         border: "1px solid var(--accent)",
         borderRadius: 3,
         color: "var(--text)",
-        fontSize: 12,
+        fontSize: 11,
         fontFamily: "monospace",
         padding: "1px 4px",
-        width: "100%",
         outline: "none",
+        width: 80,
       }}
     />
+  ) : (
+    <span
+      onClick={onEditKey ? (e) => { e.stopPropagation(); setEditingKey(true); } : undefined}
+      title={onEditKey ? "Click to edit key" : undefined}
+      style={{
+        color: "var(--text-muted)",
+        cursor: onEditKey ? "pointer" : "default",
+        fontFamily: "monospace",
+        fontSize: 11,
+        borderBottom: onEditKey ? "1px dashed var(--text-muted)" : "none",
+      }}
+    >
+      {dictKeyStr(entry.key)}
+    </span>
+  );
+
+  const marginLeft = depth * 10;
+
+  // For scalar values, render key: value inline on one row
+  const isScalarVal = ["Null", "Bool", "Int", "Float", "Str", "Enum", "Ref"].includes(entry.value.kind);
+
+  if (isScalarVal) {
+    return (
+      <div style={{ display: "flex", alignItems: "center" }}>
+        <div style={{ flex: 1, marginLeft, display: "flex", alignItems: "center", gap: 6, padding: "2px 0" }}>
+          {keyLabel}
+          <span style={{ color: "var(--text-muted)", fontSize: 11 }}>:</span>
+          <div style={{ flex: 1 }}>
+            <ExpandedValue value={entry.value} depth={0} onEdit={onEditValue} />
+          </div>
+        </div>
+        {onRemove && (
+          <span
+            onClick={onRemove}
+            style={{ color: "var(--text-muted)", fontSize: 11, cursor: "pointer", padding: "4px 4px", flexShrink: 0 }}
+            title="Remove entry"
+          >×</span>
+        )}
+      </div>
+    );
+  }
+
+  // For complex values, key label on its own line, value indented below
+  return (
+    <div>
+      <div style={{ marginLeft, display: "flex", alignItems: "center", gap: 6, padding: "2px 0" }}>
+        {keyLabel}
+        <span style={{ color: "var(--text-muted)", fontSize: 11 }}>:</span>
+        {onRemove && (
+          <span
+            onClick={onRemove}
+            style={{ color: "var(--text-muted)", fontSize: 11, cursor: "pointer", marginLeft: "auto" }}
+            title="Remove entry"
+          >×</span>
+        )}
+      </div>
+      <ExpandedValue value={entry.value} depth={depth + 1} onEdit={onEditValue} />
+    </div>
   );
 }
 
@@ -209,14 +381,11 @@ function ExpandedValue({ value, depth, onEdit, label }: ExpandedProps) {
   const MAX_DEPTH = 5;
   const [editing, setEditing] = useState(false);
   const [collapsed, setCollapsed] = useState<boolean>(() => {
-    if (depth > 0) {
-      // Auto-expand small collections
-      if (value.kind === "Array" && value.items.length <= 3) return false;
-      if (value.kind === "Dict" && value.entries.length <= 3) return false;
-      if (value.kind === "Object" && value.fields.length <= 3) return false;
-      return false;
-    }
-    return true; // depth=0 starts collapsed
+    // Auto-expand small collections at any depth
+    if (value.kind === "Array") return value.items.length > 6;
+    if (value.kind === "Dict") return value.entries.length > 6;
+    if (value.kind === "Object") return value.fields.length > 8;
+    return false;
   });
 
   const marginLeft = depth > 0 ? depth * 10 : 0;
@@ -230,20 +399,30 @@ function ExpandedValue({ value, depth, onEdit, label }: ExpandedProps) {
     );
   }
 
-  // Scalar values
+  // Scalar values (including Ref)
   if (isScalar(value)) {
     const isRef = value.kind === "Ref";
-    const canEdit = !!onEdit && !isRef;
+    const canEdit = !!onEdit;
 
     if (canEdit && editing) {
       return (
         <div style={{ marginLeft, display: "flex", alignItems: "center", gap: 6, padding: "2px 0" }}>
           {label && <span style={{ color: "var(--text-muted)", minWidth: 80, fontSize: 12 }}>{label}:</span>}
-          <InlineEditor
-            value={value}
-            onCommit={v => { onEdit(v); setEditing(false); }}
-            onCancel={() => setEditing(false)}
-          />
+          <div style={{ flex: 1 }}>
+            {isRef ? (
+              <RefEditor
+                value={value as FieldValue & { kind: "Ref" }}
+                onCommit={v => { onEdit(v); setEditing(false); }}
+                onCancel={() => setEditing(false)}
+              />
+            ) : (
+              <InlineEditor
+                value={value}
+                onCommit={v => { onEdit(v); setEditing(false); }}
+                onCancel={() => setEditing(false)}
+              />
+            )}
+          </div>
         </div>
       );
     }
@@ -292,6 +471,20 @@ function ExpandedValue({ value, depth, onEdit, label }: ExpandedProps) {
 
   // Array
   if (value.kind === "Array") {
+    const defaultItem = (): FieldValue => {
+      if (value.items.length > 0) {
+        const first = value.items[0];
+        switch (first.kind) {
+          case "Bool": return { kind: "Bool", v: false };
+          case "Int": return { kind: "Int", v: 0 };
+          case "Float": return { kind: "Float", v: 0.0 };
+          case "Str": return { kind: "Str", v: "" };
+          default: return { kind: "Null" };
+        }
+      }
+      return { kind: "Null" };
+    };
+
     return (
       <div style={{ marginLeft }}>
         <div
@@ -301,19 +494,39 @@ function ExpandedValue({ value, depth, onEdit, label }: ExpandedProps) {
           {label && <span style={{ color: "var(--text-muted)", minWidth: 80, fontSize: 12 }}>{label}:</span>}
           <span style={{ color: "var(--text-muted)", fontSize: 10 }}>{collapsed ? "▶" : "▼"}</span>
           <span style={{ color: "var(--text-muted)" }}>[{value.items.length} items]</span>
+          {onEdit && (
+            <span
+              onClick={e => { e.stopPropagation(); onEdit({ kind: "Array", items: [...value.items, defaultItem()] }); }}
+              style={{ color: "var(--accent)", fontSize: 11, cursor: "pointer", marginLeft: 4 }}
+              title="Add item"
+            >＋</span>
+          )}
         </div>
         {!collapsed && value.items.map((item, idx) => (
-          <ExpandedValue
-            key={idx}
-            value={item}
-            depth={depth + 1}
-            label={String(idx)}
-            onEdit={onEdit ? (nv) => {
-              const newItems = [...value.items];
-              newItems[idx] = nv;
-              onEdit({ kind: "Array", items: newItems });
-            } : undefined}
-          />
+          <div key={idx} style={{ display: "flex", alignItems: "flex-start" }}>
+            <div style={{ flex: 1 }}>
+              <ExpandedValue
+                value={item}
+                depth={depth + 1}
+                label={String(idx)}
+                onEdit={onEdit ? (nv) => {
+                  const newItems = [...value.items];
+                  newItems[idx] = nv;
+                  onEdit({ kind: "Array", items: newItems });
+                } : undefined}
+              />
+            </div>
+            {onEdit && (
+              <span
+                onClick={() => {
+                  const newItems = value.items.filter((_, i) => i !== idx);
+                  onEdit({ kind: "Array", items: newItems });
+                }}
+                style={{ color: "var(--text-muted)", fontSize: 11, cursor: "pointer", padding: "4px 4px", flexShrink: 0 }}
+                title="Remove item"
+              >×</span>
+            )}
+          </div>
         ))}
       </div>
     );
@@ -330,16 +543,46 @@ function ExpandedValue({ value, depth, onEdit, label }: ExpandedProps) {
           {label && <span style={{ color: "var(--text-muted)", minWidth: 80, fontSize: 12 }}>{label}:</span>}
           <span style={{ color: "var(--text-muted)", fontSize: 10 }}>{collapsed ? "▶" : "▼"}</span>
           <span style={{ color: "var(--text-muted)" }}>{"{"}  {value.entries.length} entries {"}"}</span>
+          {onEdit && (
+            <span
+              onClick={e => {
+                e.stopPropagation();
+                const defaultKey = value.entries.length > 0 ? value.entries[0].key : { kind: "Str" as const, v: "" };
+                const defaultVal: FieldValue = value.entries.length > 0 ? (() => {
+                  const fv = value.entries[0].value;
+                  switch (fv.kind) {
+                    case "Bool": return { kind: "Bool", v: false };
+                    case "Int": return { kind: "Int", v: 0 };
+                    case "Float": return { kind: "Float", v: 0.0 };
+                    case "Str": return { kind: "Str", v: "" };
+                    default: return { kind: "Null" };
+                  }
+                })() : { kind: "Null" };
+                onEdit({ kind: "Dict", entries: [...value.entries, { key: defaultKey, value: defaultVal }] });
+              }}
+              style={{ color: "var(--accent)", fontSize: 11, cursor: "pointer", marginLeft: 4 }}
+              title="Add entry"
+            >＋</span>
+          )}
         </div>
         {!collapsed && value.entries.map((entry, idx) => (
-          <ExpandedValue
+          <DictEntry
             key={idx}
-            value={entry.value}
+            entry={entry}
             depth={depth + 1}
-            label={dictKeyStr(entry.key)}
-            onEdit={onEdit ? (nv) => {
+            canEdit={!!onEdit}
+            onEditValue={onEdit ? (nv) => {
               const newEntries = [...value.entries];
               newEntries[idx] = { ...entry, value: nv };
+              onEdit({ kind: "Dict", entries: newEntries });
+            } : undefined}
+            onEditKey={onEdit && entry.key.kind === "Str" ? (newKey) => {
+              const newEntries = [...value.entries];
+              newEntries[idx] = { ...entry, key: { kind: "Str", v: newKey } };
+              onEdit({ kind: "Dict", entries: newEntries });
+            } : undefined}
+            onRemove={onEdit ? () => {
+              const newEntries = value.entries.filter((_, i) => i !== idx);
               onEdit({ kind: "Dict", entries: newEntries });
             } : undefined}
           />
