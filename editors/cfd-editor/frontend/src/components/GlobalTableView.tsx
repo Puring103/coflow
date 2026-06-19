@@ -65,8 +65,8 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    api.getAllTypeNames(sessionId).then(names => setAllTypeNames(names)).catch(() => {});
-  }, [sessionId]);
+    api.getAllTypeNames(sessionId).then(names => setAllTypeNames(names)).catch(e => onError?.(`加载类型列表失败: ${e}`));
+  }, [sessionId, onError]);
 
   useEffect(() => {
     if (!typeName) return;

@@ -164,7 +164,7 @@ export default function App() {
             .then(names => {
               if (names.length > 0) router.push({ view: "global-table", typeName: names[0] });
             })
-            .catch(() => {});
+            .catch(e2 => showOpError(`加载类型列表失败: ${e2}`));
         }
         return;
       }
@@ -561,7 +561,7 @@ export default function App() {
             "Ctrl+S         Save / flush diagnostics",
             "Alt+← / →     Back / Forward",
             "Ctrl+N         New record (in table/record view)",
-            "Ctrl+D         Duplicate current record (record view)",
+            "Ctrl+D         Duplicate current record (table / record view)",
             "Ctrl+F         Filter fields (record view) / filter records (table view)",
             "Ctrl+Shift+F   Focus sidebar search (record view)",
             "Ctrl+Shift+R   Jump to next required empty field (record view)",
