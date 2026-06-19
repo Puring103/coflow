@@ -50,6 +50,7 @@ export default function App() {
   }, [currentFile]);
 
   // Ctrl+S: flush dirty debounce immediately
+  // Alt+Left/Right: navigate history
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
@@ -57,12 +58,22 @@ export default function App() {
         if (project.dirty && project.snapshot && currentFile) {
           project.saveNow(project.snapshot.session_id, currentFile);
         }
+        return;
+      }
+      if (e.altKey && e.key === "ArrowLeft" && router.canBack) {
+        e.preventDefault();
+        router.back();
+        return;
+      }
+      if (e.altKey && e.key === "ArrowRight" && router.canForward) {
+        e.preventDefault();
+        router.forward();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.dirty, project.snapshot?.session_id, currentFile]);
+  }, [project.dirty, project.snapshot?.session_id, currentFile, router.canBack, router.canForward]);
 
   const handleOpen = async () => {
     const path = await open({
@@ -248,12 +259,12 @@ export default function App() {
           >↺ Reload</button>
         )}
         {router.canBack && (
-          <button onClick={router.back} title="Back">←</button>
+          <button onClick={router.back} title="Back (Alt+Left)">←</button>
         )}
         {router.canForward && (
-          <button onClick={router.forward} title="Forward">→</button>
+          <button onClick={router.forward} title="Forward (Alt+Right)">→</button>
         )}
-        {project.dirty && <span className="dirty-indicator" title="Unsaved changes">●</span>}
+        {project.dirty && <span className="dirty-indicator" title="Reloading…">●</span>}
         {project.loading && <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Loading…</span>}
         {project.error && (
           <span className="error-msg" title={project.error}>⚠ {project.error}</span>

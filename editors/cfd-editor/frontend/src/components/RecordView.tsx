@@ -56,6 +56,16 @@ export function RecordView({
     }
   }, [recordKey]);
 
+  // Focus the key input when editingKey becomes true
+  useEffect(() => {
+    if (editingKey) {
+      requestAnimationFrame(() => {
+        keyInputRef.current?.focus();
+        keyInputRef.current?.select();
+      });
+    }
+  }, [editingKey]);
+
   const recordFromFile = fileRecords?.records.find(r => r.key === recordKey) ?? null;
   const record = recordFromFile ?? fetchedRecord;
   const allRecords = fileRecords?.records ?? [];

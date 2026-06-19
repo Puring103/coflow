@@ -543,10 +543,9 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label }: E
           case "Int": return { kind: "Int", v: 0 };
           case "Float": return { kind: "Float", v: 0.0 };
           case "Str": return { kind: "Str", v: "" };
-          // Preserve enum_name so the new item is the right type; user edits the variant
           case "Enum": return { kind: "Enum", enum_name: first.enum_name, variant: first.variant, int_value: first.int_value };
-          // Preserve target_type so ref is valid; user fills in the key
           case "Ref": return { kind: "Ref", target_type: first.target_type, target_key: "", target_file: first.target_file };
+          case "Object": return { kind: "Object", actual_type: first.actual_type, fields: [] };
           default: return { kind: "Null" };
         }
       }

@@ -110,36 +110,30 @@ export function useProject() {
   const markDirty = useCallback((sessionId: number, filePath: string) => {
     setDirty(true);
     dirtyFileRef.current = filePath;
+    // Reload file records immediately so the display is never stale after a write.
+    // Diagnostics (run_checks) are more expensive — debounce those.
+    loadFile(sessionId, filePath).catch(() => {});
     if (dirtyTimerRef.current) clearTimeout(dirtyTimerRef.current);
     dirtyTimerRef.current = setTimeout(async () => {
       dirtyTimerRef.current = null;
       setDirty(false);
-      try {
-        // Reload file records and refresh diagnostics in parallel
-        const reloadFile = dirtyFileRef.current === filePath
-          ? loadFile(sessionId, filePath)
-          : Promise.resolve();
-        await Promise.all([reloadFile, refreshDiagnostics(sessionId)]);
-      } catch (e) {
-        // Reload failed — restore dirty flag and surface the error
-        setDirty(true);
-        setError(`Reload failed: ${e}`);
-      }
+      await refreshDiagnostics(sessionId).catch(() => {});
     }, 1000);
   }, [loadFile, refreshDiagnostics]);
 
   const saveNow = useCallback(async (sessionId: number, filePath: string) => {
+    // Cancel pending diagnostics debounce and force immediate refresh
     if (dirtyTimerRef.current) {
       clearTimeout(dirtyTimerRef.current);
       dirtyTimerRef.current = null;
     }
     setDirty(false);
     try {
-      await Promise.all([loadFile(sessionId, filePath), refreshDiagnostics(sessionId)]);
+      await refreshDiagnostics(sessionId);
     } catch (e) {
       setError(String(e));
     }
-  }, [loadFile, refreshDiagnostics]);
+  }, [refreshDiagnostics]);
 
   return { snapshot, fileRecords, loading, error, dirty, loadProject, refreshSnapshot, loadFile, markDirty, saveNow, loadedYamlPath };
 }

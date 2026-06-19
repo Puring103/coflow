@@ -53,7 +53,7 @@ function TreeNode({ node, selectedPath, onSelect, onContextMenu, depth, expanded
           <span style={{ fontSize: 10, color: "var(--text-muted)", width: 12, flexShrink: 0 }}>
             {open ? "▼" : "▶"}
           </span>
-          <span style={{ fontSize: 12 }}>📁 {node.name}</span>
+          <span style={{ fontSize: 12 }}>▸ {node.name}</span>
         </div>
         {open && node.children.map(child => (
           <TreeNode

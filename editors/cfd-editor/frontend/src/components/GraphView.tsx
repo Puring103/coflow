@@ -409,7 +409,7 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey }: Graph
         gap: 8,
         flexShrink: 0,
       }}>
-        <span style={{ color: "var(--text-muted)", fontSize: 12 }}>🔍</span>
+        <span style={{ color: "var(--text-muted)", fontSize: 12 }}>⌕</span>
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
