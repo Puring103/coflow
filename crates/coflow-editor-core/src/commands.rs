@@ -1129,10 +1129,23 @@ pub fn search_records_inner(
     let session_arc = get_session(store, session_id)?;
     let session = session_arc.lock().map_err(|_| "session lock poisoned")?;
 
-    let q = query.to_lowercase();
-    if q.is_empty() {
+    let q_raw = query.trim().to_lowercase();
+    if q_raw.is_empty() {
         return Ok(Vec::new());
     }
+
+    // Support `field:value` or `type:TypeName` syntax for targeted search
+    let (field_filter, q) = if let Some(colon) = q_raw.find(':') {
+        let field = q_raw[..colon].trim().to_string();
+        let value = q_raw[colon + 1..].trim().to_string();
+        if !field.is_empty() && !value.is_empty() {
+            (Some(field), value)
+        } else {
+            (None, q_raw.clone())
+        }
+    } else {
+        (None, q_raw.clone())
+    };
 
     // Check key match first, then field values
     let mut hits: Vec<SearchHit> = Vec::new();
@@ -1152,28 +1165,74 @@ pub fn search_records_inner(
             break;
         }
         let file_path = key_to_file.get(&record.key).cloned().unwrap_or_default();
-        // Key match
-        if record.key.to_lowercase().contains(&q) {
-            hits.push(SearchHit {
-                key: record.key.clone(),
-                actual_type: record.actual_type.clone(),
-                file_path,
-                match_field: "key".to_string(),
-                match_value: record.key.clone(),
-            });
-            continue;
-        }
-        // Field value search
-        for (field_name, field_val) in &record.fields {
-            if let Some((path, val_str)) = search_value(field_val, &q, field_name) {
-                hits.push(SearchHit {
-                    key: record.key.clone(),
-                    actual_type: record.actual_type.clone(),
-                    file_path: file_path.clone(),
-                    match_field: path,
-                    match_value: val_str,
-                });
-                break; // One hit per record
+
+        match &field_filter {
+            Some(ff) if ff == "type" => {
+                // type:X filters by actual_type
+                if record.actual_type.to_lowercase().contains(&q) {
+                    hits.push(SearchHit {
+                        key: record.key.clone(),
+                        actual_type: record.actual_type.clone(),
+                        file_path,
+                        match_field: "type".to_string(),
+                        match_value: record.actual_type.clone(),
+                    });
+                }
+            }
+            Some(ff) if ff == "key" => {
+                // key:X explicitly filters by record key
+                if record.key.to_lowercase().contains(&q) {
+                    hits.push(SearchHit {
+                        key: record.key.clone(),
+                        actual_type: record.actual_type.clone(),
+                        file_path,
+                        match_field: "key".to_string(),
+                        match_value: record.key.clone(),
+                    });
+                }
+            }
+            Some(ff) => {
+                // field_name:value — search only the specified field
+                for (field_name, field_val) in &record.fields {
+                    if field_name.to_lowercase() != *ff {
+                        continue;
+                    }
+                    if let Some((path, val_str)) = search_value(field_val, &q, field_name) {
+                        hits.push(SearchHit {
+                            key: record.key.clone(),
+                            actual_type: record.actual_type.clone(),
+                            file_path: file_path.clone(),
+                            match_field: path,
+                            match_value: val_str,
+                        });
+                        break;
+                    }
+                }
+            }
+            None => {
+                // General search: key match first, then field values
+                if record.key.to_lowercase().contains(&q) {
+                    hits.push(SearchHit {
+                        key: record.key.clone(),
+                        actual_type: record.actual_type.clone(),
+                        file_path,
+                        match_field: "key".to_string(),
+                        match_value: record.key.clone(),
+                    });
+                    continue;
+                }
+                for (field_name, field_val) in &record.fields {
+                    if let Some((path, val_str)) = search_value(field_val, &q, field_name) {
+                        hits.push(SearchHit {
+                            key: record.key.clone(),
+                            actual_type: record.actual_type.clone(),
+                            file_path: file_path.clone(),
+                            match_field: path,
+                            match_value: val_str,
+                        });
+                        break; // One hit per record
+                    }
+                }
             }
         }
     }

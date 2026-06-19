@@ -105,7 +105,7 @@ export function GlobalSearch({ sessionId, onNavigate, onClose }: GlobalSearchPro
             ref={inputRef}
             value={query}
             onChange={e => handleQueryChange(e.target.value)}
-            placeholder="Search records by key or field value…"
+            placeholder="Search records… (use field:value or type:Name to narrow)"
             style={{
               flex: 1,
               background: "transparent",
