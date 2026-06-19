@@ -2688,6 +2688,58 @@ mod tests {
     }
 
     #[test]
+    fn write_field_nullable_object_from_null() {
+        // When a nullable Object field is null (absent from file), writing an Object value
+        // should insert the field using insert_field path without error.
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        let cfd_path = data_dir.join("monsters.cfd");
+
+        std::fs::write(&schema_path, "type Stats { hp: int; } type Monster { name: string; bonus: Stats?; }").unwrap();
+        // bonus field is absent (null) — the record has only name
+        std::fs::write(&cfd_path, "goblin: Monster {\n  name: \"Goblin\",\n}\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        // Write an Object value to the absent nullable field
+        let new_stats = FieldValue::Object {
+            actual_type: "Stats".to_string(),
+            fields: vec![
+                crate::types::FieldCell { name: "hp".to_string(), value: FieldValue::Int { v: 50.0 } },
+            ],
+        };
+        write_field_inner(
+            &store,
+            snap.session_id,
+            "data/monsters.cfd",
+            "goblin",
+            &[FieldPathSegment::Field { name: "bonus".to_string() }],
+            &new_stats,
+        ).unwrap();
+
+        // Verify the file contains the inserted Object
+        let contents = std::fs::read_to_string(&cfd_path).unwrap();
+        assert!(contents.contains("bonus"), "bonus field should be in file:\n{contents}");
+        assert!(contents.contains("Stats"), "Stats type should be in file:\n{contents}");
+
+        // Verify the model reflects the new field
+        let row = get_record_inner(&store, snap.session_id, "data/monsters.cfd", "goblin").unwrap();
+        let bonus = row.fields.iter().find(|f| f.name == "bonus").expect("bonus field missing from model");
+        if let FieldValue::Object { actual_type, fields } = &bonus.value {
+            assert_eq!(actual_type, "Stats");
+            let hp = fields.iter().find(|f| f.name == "hp").expect("hp missing");
+            assert!(matches!(hp.value, FieldValue::Int { v } if (v - 50.0).abs() < 1e-9));
+        } else {
+            panic!("expected Object for bonus, got {:?}", bonus.value);
+        }
+    }
+
+    #[test]
     fn close_session_removes_session_from_store() {
         let dir = TempDir::new().unwrap();
         let yaml = dir.path().join("coflow.yaml");
