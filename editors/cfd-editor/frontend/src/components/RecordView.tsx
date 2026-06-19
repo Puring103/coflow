@@ -637,7 +637,7 @@ export function RecordView({
                   onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                 >
                   <span
-                    title={isSpread ? "来自 spread — 请前往源记录编辑" : isRequiredNull ? "Required field — must not be null" : undefined}
+                    title={isSpread ? "来自 spread — 请前往源记录编辑" : isRequiredNull ? `Required field — must not be null${fieldSchema ? ` (${fieldSchema.type_str})` : ""}` : fieldSchema ? fieldSchema.type_str : undefined}
                     style={{
                       minWidth: 140,
                       color: isRequiredNull ? "var(--warning)" : "var(--text-muted)",
