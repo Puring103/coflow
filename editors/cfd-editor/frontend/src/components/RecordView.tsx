@@ -495,11 +495,11 @@ export function RecordView({
               {record.spread_sources.length > 0 && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
                   <span style={{ color: "var(--text-muted)", fontSize: 11 }}>spreads from:</span>
-                  {record.spread_sources.map(srcKey => (
+                  {record.spread_sources.map(src => (
                     <span
-                      key={srcKey}
-                      onClick={() => onNavigate({ view: "record", file: filePath, recordKey: srcKey })}
-                      title={`跳转到 spread 源记录 ${srcKey}`}
+                      key={src.key}
+                      onClick={() => onNavigate({ view: "record", file: src.file || filePath, recordKey: src.key })}
+                      title={`跳转到 spread 源记录 ${src.key}${src.file && src.file !== filePath ? ` (${src.file})` : ""}`}
                       style={{
                         color: "var(--accent)",
                         fontSize: 11,
@@ -509,7 +509,7 @@ export function RecordView({
                         textDecorationStyle: "dotted",
                       }}
                     >
-                      {srcKey}
+                      {src.key}
                     </span>
                   ))}
                 </div>
@@ -523,6 +523,7 @@ export function RecordView({
                 const spreadNavTarget = isSpread && record.spread_sources.length === 1
                   ? record.spread_sources[0]
                   : null;
+                const spreadNavFile = spreadNavTarget?.file || filePath;
                 return (
                 <div
                   key={field.name}
@@ -552,9 +553,9 @@ export function RecordView({
                     {isSpread && (
                       <span
                         onClick={spreadNavTarget
-                          ? () => onNavigate({ view: "record", file: filePath, recordKey: spreadNavTarget })
+                          ? () => onNavigate({ view: "record", file: spreadNavFile, recordKey: spreadNavTarget.key })
                           : undefined}
-                        title={spreadNavTarget ? `跳转到源记录 ${spreadNavTarget}` : "来自 spread — 前往源记录编辑"}
+                        title={spreadNavTarget ? `跳转到源记录 ${spreadNavTarget.key}` : "来自 spread — 前往源记录编辑"}
                         style={{
                           marginLeft: 4,
                           fontSize: 10,

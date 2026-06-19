@@ -39,6 +39,16 @@ pub struct FileRecords {
     pub records: Vec<RecordRow>,
 }
 
+/// A record key that is spread into this record, with the file path it comes from.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SpreadSource {
+    pub key: String,
+    /// File path (relative to project root) where the spread source record lives.
+    /// Empty string if the file could not be determined.
+    pub file: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct RecordRow {
@@ -47,9 +57,8 @@ pub struct RecordRow {
     pub fields: Vec<FieldCell>,
     /// Field names that come from spread entries (not directly editable).
     pub spread_fields: Vec<String>,
-    /// Record keys that are spread into this record (e.g. `...&base_item` → ["base_item"]).
-    /// Used by the UI to navigate to the spread source.
-    pub spread_sources: Vec<String>,
+    /// Records spread into this record (e.g. `...&base_item` → [{key:"base_item", file:"..."}]).
+    pub spread_sources: Vec<SpreadSource>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

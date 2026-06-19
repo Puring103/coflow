@@ -26,7 +26,9 @@ export type FieldPathSegment =
 
 export type FieldCell = { name: string; value: FieldValue };
 
-export type RecordRow = { key: string; actual_type: string; fields: FieldCell[]; spread_fields: string[]; spread_sources: string[] };
+export type SpreadSource = { key: string; file: string };
+
+export type RecordRow = { key: string; actual_type: string; fields: FieldCell[]; spread_fields: string[]; spread_sources: SpreadSource[] };
 
 export type FileRecords = {
   file_path: string;

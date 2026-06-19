@@ -2,6 +2,7 @@ use crate::patch;
 use crate::types::{
     DiagnosticItem, DictEntry, DictKey, FieldCell, FieldPathSegment, FieldValue, FileRecords,
     FileTreeNode, GraphData, GraphEdge, GraphNode, ProjectSnapshot, RecordBrief, RecordRow,
+    SpreadSource,
 };
 use coflow_cfd::{parse_cfd, CfdAst, CfdBlockEntry};
 use coflow_checker::CfdCheckExt;
@@ -1040,8 +1041,11 @@ fn ast_record_fallback(ast_rec: &coflow_cfd::CfdRecord) -> RecordRow {
         name: f.name.clone(),
         value: ast_value_to_field_value(&f.value),
     }).collect();
-    let spread_sources: Vec<String> = ast_rec.entries.iter().filter_map(|e| match e {
-        CfdBlockEntry::Spread(coflow_cfd::CfdValue::Ref(r), _) => Some(r.key.0.clone()),
+    let spread_sources: Vec<SpreadSource> = ast_rec.entries.iter().filter_map(|e| match e {
+        CfdBlockEntry::Spread(coflow_cfd::CfdValue::Ref(r), _) => Some(SpreadSource {
+            key: r.key.0.clone(),
+            file: String::new(),
+        }),
         _ => None,
     }).collect();
     RecordRow {
@@ -1267,13 +1271,17 @@ fn convert_record_row_with_ast(
     };
     // Spread sources: extract record keys from spread entries in the AST.
     // `...&key` → entries contain CfdBlockEntry::Spread(CfdValue::Ref { key, .. }, _)
-    let spread_sources: Vec<String> = ast_rec
+    let spread_sources: Vec<SpreadSource> = ast_rec
         .map(|ar| {
             ar.entries
                 .iter()
                 .filter_map(|e| match e {
                     CfdBlockEntry::Spread(coflow_cfd::CfdValue::Ref(r), _) => {
-                        Some(r.key.0.clone())
+                        let key = r.key.0.clone();
+                        let file = find_file_for_key(file_record_keys, &key)
+                            .unwrap_or("")
+                            .to_string();
+                        Some(SpreadSource { key, file })
                     }
                     _ => None,
                 })
@@ -2065,8 +2073,9 @@ mod tests {
         assert!(basic.spread_sources.is_empty(), "basic_monster has no spreads");
 
         let elite = records.records.iter().find(|r| r.key == "elite_monster").expect("elite_monster missing");
-        assert_eq!(elite.spread_sources, vec!["basic_monster".to_string()],
-            "elite_monster should have basic_monster as spread source");
+        assert_eq!(elite.spread_sources.len(), 1, "elite_monster should have one spread source");
+        assert_eq!(elite.spread_sources[0].key, "basic_monster", "spread source key should be basic_monster");
+        assert_eq!(elite.spread_sources[0].file, "data/monsters.cfd", "spread source file should be data/monsters.cfd");
         // hp comes from spread, name is direct
         assert!(elite.spread_fields.contains(&"hp".to_string()), "hp should be a spread field");
         assert!(!elite.spread_fields.contains(&"name".to_string()), "name should not be a spread field");
