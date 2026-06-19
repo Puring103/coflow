@@ -323,8 +323,17 @@ export default function App() {
                         const recordKey = (cur as { recordKey: string }).recordKey;
                         const recordType = project.fileRecords?.records.find(r => r.key === recordKey)?.actual_type;
                         router.replace({ view: "table", file: cur.file, ...(recordType ? { typeFilter: recordType } : {}) });
+                      } else if (v === "graph") {
+                        router.replace({ view: "graph", file: cur.file });
+                      } else if (v === "table") {
+                        // table→table (same file, preserve typeFilter) or graph→table
+                        const typeFilter = cur.view === "table" ? cur.typeFilter : undefined;
+                        router.replace({ view: "table", file: cur.file, ...(typeFilter ? { typeFilter } : {}) });
                       } else {
-                        router.replace({ ...cur, view: v as "table" | "record" | "graph" } as Parameters<typeof router.replace>[0]);
+                        // record tab: only reachable when recordKey already in route (disabled otherwise)
+                        if ("recordKey" in cur) {
+                          router.replace({ view: "record", file: cur.file, recordKey: (cur as { recordKey: string }).recordKey });
+                        }
                       }
                     }}
                     disabled={v === "record" && !("recordKey" in (router.current ?? {}))}
