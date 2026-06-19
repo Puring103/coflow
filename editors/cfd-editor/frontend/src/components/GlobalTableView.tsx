@@ -60,6 +60,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   const [batchValue, setBatchValue] = useState("");
   const [batchApplying, setBatchApplying] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
+  const [batchDeletePending, setBatchDeletePending] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -197,6 +198,26 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       setBatchValue("");
     }
   }, [onWriteField, batchField, batchValue, filteredRows, selectedKeys, sessionId]);
+
+  const handleBatchDelete = useCallback(async () => {
+    if (!onDeleteRecord) return;
+    const rowsToDelete = filteredRows.filter(r => selectedKeys.has(`${r.file_path}::${r.key}`));
+    if (rowsToDelete.length === 0) return;
+    setBatchApplying(true);
+    const failedKeys: string[] = [];
+    for (const row of rowsToDelete) {
+      try { await onDeleteRecord(sessionId, row.file_path, row.key); }
+      catch { failedKeys.push(row.key); }
+    }
+    setBatchApplying(false);
+    setBatchDeletePending(false);
+    if (failedKeys.length > 0) {
+      const preview = failedKeys.length <= 3 ? failedKeys.join(", ") : failedKeys.slice(0, 3).join(", ") + ` 等 ${failedKeys.length} 条`;
+      setBatchError(`删除失败: ${preview}`);
+    } else {
+      setSelectedKeys(new Set());
+    }
+  }, [onDeleteRecord, filteredRows, selectedKeys, sessionId]);
 
   // Reset selection when type/search changes
   useEffect(() => { setSelectedKeys(new Set()); }, [typeName]);
@@ -479,39 +500,50 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
         </div>
       )}
 
-      {/* Batch-edit bar — only visible when onWriteField is provided and rows are selected */}
-      {onWriteField && selectedKeys.size > 0 && (
+      {/* Batch-edit bar — visible when rows are selected */}
+      {selectedKeys.size > 0 && (
         <div style={{ borderTop: "1px solid var(--border)", padding: "6px 8px", flexShrink: 0, display: "flex", alignItems: "center", gap: 8, background: "var(--bg2)" }}>
           <span style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>
             已选 {selectedKeys.size} 条
           </span>
-          <input
-            value={batchField}
-            onChange={e => { setBatchField(e.target.value); setBatchError(null); }}
-            placeholder="字段名"
-            list="global-batch-fields"
-            style={{ width: 120, background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "2px 6px", fontSize: 12, outline: "none" }}
-          />
-          <datalist id="global-batch-fields">
-            {fieldNames.map(f => <option key={f} value={f} />)}
-          </datalist>
-          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>→</span>
-          <input
-            value={batchValue}
-            onChange={e => setBatchValue(e.target.value)}
-            placeholder="新值"
-            style={{ flex: 1, minWidth: 80, background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "2px 6px", fontSize: 12, outline: "none" }}
-            onKeyDown={e => { if (e.key === "Enter" && !batchApplying && batchField) handleBatchApply(); }}
-          />
+          {onWriteField && (<>
+            <input
+              value={batchField}
+              onChange={e => { setBatchField(e.target.value); setBatchError(null); }}
+              placeholder="字段名"
+              list="global-batch-fields"
+              style={{ width: 120, background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "2px 6px", fontSize: 12, outline: "none" }}
+            />
+            <datalist id="global-batch-fields">
+              {fieldNames.map(f => <option key={f} value={f} />)}
+            </datalist>
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>→</span>
+            <input
+              value={batchValue}
+              onChange={e => setBatchValue(e.target.value)}
+              placeholder="新值"
+              style={{ flex: 1, minWidth: 80, background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "2px 6px", fontSize: 12, outline: "none" }}
+              onKeyDown={e => { if (e.key === "Enter" && !batchApplying && batchField) handleBatchApply(); }}
+            />
+            <button
+              className="primary"
+              onClick={handleBatchApply}
+              disabled={batchApplying || !batchField}
+              style={{ fontSize: 11, padding: "2px 10px", flexShrink: 0 }}
+            >
+              {batchApplying ? "写入中…" : "批量写入"}
+            </button>
+          </>)}
           {batchError && <span style={{ color: "#ff5555", fontSize: 11 }}>{batchError}</span>}
-          <button
-            className="primary"
-            onClick={handleBatchApply}
-            disabled={batchApplying || !batchField}
-            style={{ fontSize: 11, padding: "2px 10px", flexShrink: 0 }}
-          >
-            {batchApplying ? "写入中…" : "批量写入"}
-          </button>
+          {onDeleteRecord && (
+            <button
+              onClick={() => setBatchDeletePending(true)}
+              disabled={batchApplying}
+              style={{ fontSize: 11, padding: "2px 8px", flexShrink: 0, color: "var(--error)", border: "1px solid var(--error)", borderRadius: 4, background: "transparent", cursor: "pointer" }}
+            >
+              批量删除
+            </button>
+          )}
           <button onClick={() => setSelectedKeys(new Set())} style={{ fontSize: 11, padding: "2px 8px", flexShrink: 0 }}>取消选择</button>
         </div>
       )}
@@ -523,6 +555,34 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
           items={contextMenu.items}
           onClose={() => setContextMenu(null)}
         />
+      )}
+
+      {/* Batch delete confirmation */}
+      {batchDeletePending && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000 }}
+          onClick={() => setBatchDeletePending(false)}
+        >
+          <div
+            style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8, padding: 24, minWidth: 320, boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>确认批量删除</div>
+            <div style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 16 }}>
+              即将删除 <strong style={{ color: "var(--error)" }}>{selectedKeys.size}</strong> 条记录，此操作不可撤销。
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setBatchDeletePending(false)}>取消</button>
+              <button
+                onClick={handleBatchDelete}
+                disabled={batchApplying}
+                style={{ background: "var(--error)", color: "#fff", border: "none", borderRadius: 4, padding: "4px 16px", cursor: "pointer", fontWeight: 600 }}
+              >
+                {batchApplying ? "删除中…" : `删除 ${selectedKeys.size} 条`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
