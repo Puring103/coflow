@@ -3,6 +3,7 @@ import {
   ReactFlow,
   Background,
   Controls,
+  MiniMap,
   Handle,
   Position,
   useNodesState,
@@ -24,7 +25,13 @@ import { api } from "../api";
 const elk = new ELK();
 
 const NODE_WIDTH = 200;
-const NODE_HEIGHT = 110;
+const NODE_HEIGHT_BASE = 80;
+const NODE_HEIGHT_PER_FIELD = 18;
+const NODE_HEIGHT_MAX = 260;
+
+function nodeHeight(fieldCount: number): number {
+  return Math.min(NODE_HEIGHT_BASE + fieldCount * NODE_HEIGHT_PER_FIELD, NODE_HEIGHT_MAX);
+}
 
 async function layoutGraph(
   gnodes: GraphNode[],
@@ -38,7 +45,11 @@ async function layoutGraph(
       "elk.spacing.nodeNode": "40",
       "elk.layered.spacing.nodeNodeBetweenLayers": "60",
     },
-    children: gnodes.map(n => ({ id: n.id, width: NODE_WIDTH, height: NODE_HEIGHT })),
+    children: gnodes.map(n => ({
+      id: n.id,
+      width: n.is_collapsed ? 44 : NODE_WIDTH,
+      height: n.is_collapsed ? 44 : nodeHeight(n.fields.length),
+    })),
     edges: gedges.map((e, i) => ({
       id: `e${i}`,
       sources: [e.source],
@@ -130,7 +141,7 @@ function CfdNode({ data }: NodeProps<Node<CfdNodeData>>) {
       onDoubleClick={() => onNavigate(gnode)}
       style={{
         width: NODE_WIDTH,
-        minHeight: NODE_HEIGHT,
+        minHeight: NODE_HEIGHT_BASE,
         background: "var(--bg2)",
         border: `2px solid ${isFocusFile ? color : color + "88"}`,
         borderRadius: 8,
@@ -354,8 +365,7 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey }: Graph
       setNodes(applyPositions(positions));
       setEdges(flowEdges);
       setLayoutDone(true);
-    }).catch(err => {
-      console.error("ELK layout error:", err);
+    }).catch(_err => {
       setLayoutFallback(true);
       const fallbackPositions = new Map<string, { x: number; y: number }>();
       graphData.nodes.forEach((gnode, i) => {
@@ -527,6 +537,14 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey }: Graph
         >
           <Background color="var(--bg3)" gap={20} />
           <Controls />
+          <MiniMap
+            nodeColor={n => {
+              const data = n.data as CfdNodeData | undefined;
+              return data?.color ?? "#888";
+            }}
+            style={{ background: "var(--bg2)", border: "1px solid var(--border)" }}
+            maskColor="rgba(0,0,0,0.3)"
+          />
         </ReactFlow>
       </div>
 

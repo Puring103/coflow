@@ -708,7 +708,10 @@ function NodeModeValue({ value }: NodeModeProps) {
   }
 
   const fields = value.fields;
-  const shown = fields.slice(0, 4);
+  // Prefer non-null fields first so collapsed nodes show meaningful data
+  const nonNull = fields.filter(f => f.value.kind !== "Null");
+  const base = nonNull.length > 0 ? nonNull : fields;
+  const shown = base.slice(0, 4);
   const remaining = fields.length - shown.length;
 
   return (

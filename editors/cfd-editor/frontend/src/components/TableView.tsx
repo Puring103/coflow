@@ -253,8 +253,8 @@ export function TableView({
     api.getAllTypeNames(sessionId).then(names => {
       const resolved = names.length > 0 ? names : fileRecords.type_names;
       setAllTypeNames(resolved);
-      // If the current newRecord typeName is empty, seed it with the first known type
-      setNewRecord(r => r.typeName ? r : { ...r, typeName: resolved[0] ?? "" });
+      // Seed typeName: prefer activeType, then first resolved type
+      setNewRecord(r => r.typeName ? r : { ...r, typeName: activeType ?? resolved[0] ?? "" });
     }).catch(() => {
       setAllTypeNames(fileRecords.type_names);
     });
@@ -264,7 +264,7 @@ export function TableView({
   // Reset sorting and search when type changes (columns are different per type)
   useEffect(() => { setSorting([]); setSearch(""); }, [activeType]);
   const [showNewRecord, setShowNewRecord] = useState(false);
-  const [newRecord, setNewRecord] = useState<NewRecordForm>({ key: "", typeName: fileRecords.type_names[0] ?? "", error: null });
+  const [newRecord, setNewRecord] = useState<NewRecordForm>({ key: "", typeName: activeType ?? fileRecords.type_names[0] ?? "", error: null });
   const [creating, setCreating] = useState(false);
   const parentRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -274,6 +274,7 @@ export function TableView({
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "n") {
         e.preventDefault();
+        setNewRecord(r => ({ ...r, typeName: activeType ?? r.typeName }));
         setShowNewRecord(true);
       }
       if ((e.ctrlKey || e.metaKey) && e.key === "f") {
