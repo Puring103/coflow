@@ -113,7 +113,7 @@ export function RecordView({
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Ctrl+F focuses field search (main content); Ctrl+Shift+F focuses sidebar search
-      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
         e.preventDefault();
         if (e.shiftKey) {
           sidebarSearchRef.current?.focus();
