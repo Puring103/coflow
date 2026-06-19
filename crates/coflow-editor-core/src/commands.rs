@@ -51,6 +51,9 @@ pub struct Session {
     pub file_record_keys: HashMap<String, Vec<String>>,
     pub file_sources: HashMap<String, (String, CfdAst)>,
     pub source_dirs: Vec<PathBuf>,
+    /// Diagnostics from the most recent model-build attempt that failed.
+    /// Cleared when the model builds successfully.
+    pub pending_model_diags: Vec<DiagnosticItem>,
 }
 
 pub fn load_project_inner(
@@ -213,6 +216,7 @@ pub fn load_project_inner(
                 file_record_keys,
                 file_sources,
                 source_dirs: source_rel_dirs,
+                pending_model_diags: Vec::new(),
             })),
         );
         id
@@ -684,7 +688,7 @@ pub fn get_diagnostics_inner(
     let session_arc = get_session(store, session_id)?;
     let session = session_arc.lock().map_err(|_| "session lock poisoned")?;
 
-    let mut diagnostics: Vec<DiagnosticItem> = Vec::new();
+    let mut diagnostics: Vec<DiagnosticItem> = session.pending_model_diags.clone();
     if let Err(d) = session.model.run_checks(&session.schema) {
         diagnostics.extend(convert_cfd_diagnostics(&d, Some(&session.model), Some(&session.file_record_keys)));
     }
@@ -1149,12 +1153,16 @@ fn reload_file(session: &mut Session, file_path: &str, new_source: &str) -> Resu
                 builder.add_input_record(r);
             }
             match builder.build() {
-                Ok(new_model) => { session.model = new_model; }
-                Err(_) => {
-                    // Build failed (e.g. missing required fields during incremental editing).
-                    // Keep the existing model but don't discard the new source/AST/keys —
-                    // get_file_records_inner falls back to AST-based rows for keys absent
-                    // from the model (see below).
+                Ok(new_model) => {
+                    session.model = new_model;
+                    session.pending_model_diags.clear();
+                }
+                Err(d) => {
+                    // Build failed (e.g. missing required fields, unresolved Refs).
+                    // Keep the existing model but store the build errors so
+                    // get_diagnostics_inner can surface them.
+                    session.pending_model_diags =
+                        convert_cfd_diagnostics(&d, None, Some(&session.file_record_keys));
                 }
             }
             keys
@@ -3190,5 +3198,52 @@ mod tests {
         assert_eq!(row.actual_type, "Item");
         let name_field = row.fields.iter().find(|f| f.name == "name").expect("name field missing");
         assert!(matches!(&name_field.value, FieldValue::Str { v } if v == "Broken"));
+    }
+
+    #[test]
+    fn get_diagnostics_reports_errors_after_write_breaks_ref() {
+        // Writing a Ref to a non-existent key should cause a diagnostic error after the write.
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        std::fs::write(
+            dir.path().join("schema.cft"),
+            "type Item { name: string; } type Bag { item: Item; }",
+        ).unwrap();
+        std::fs::write(
+            data_dir.join("items.cfd"),
+            "sword: Item { name: \"Sword\", }\nbag: Bag { item: &sword, }\n",
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        // Before write: no diagnostics errors
+        let diags_before = get_diagnostics_inner(&store, sid).unwrap();
+        assert!(
+            diags_before.iter().all(|d| d.severity != "error"),
+            "should have no errors before write: {:?}", diags_before
+        );
+
+        // Write a Ref to a non-existent key — bag.item now points to nothing
+        write_field_inner(
+            &store, sid, "data/items.cfd", "bag",
+            &[FieldPathSegment::Field { name: "item".to_string() }],
+            &FieldValue::Ref {
+                target_type: "Item".to_string(),
+                target_key: "nonexistent_key".to_string(),
+                target_file: None,
+            },
+        ).unwrap();
+
+        // After write: diagnostics should report a broken reference error
+        let diags_after = get_diagnostics_inner(&store, sid).unwrap();
+        assert!(
+            diags_after.iter().any(|d| d.severity == "error"),
+            "should have at least one error after writing broken Ref: {:?}", diags_after
+        );
     }
 }
