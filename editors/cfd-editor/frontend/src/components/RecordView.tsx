@@ -31,6 +31,7 @@ interface RecordViewProps {
 
 interface DuplicateModal { srcKey: string; draft: string; error: string | null }
 interface DeleteModal { recordKey: string }
+interface SourceModal { source: string | null }
 
 export function RecordView({
   sessionId,
@@ -55,6 +56,7 @@ export function RecordView({
   const [keyText, setKeyText] = useState(recordKey);
   const [duplicateModal, setDuplicateModal] = useState<DuplicateModal | null>(null);
   const [deleteModal, setDeleteModal] = useState<DeleteModal | null>(null);
+  const [sourceModal, setSourceModal] = useState<SourceModal | null>(null);
   const [fieldSearch, setFieldSearch] = useState("");
   const [fieldSchemas, setFieldSchemas] = useState<FieldSchema[]>([]);
   const keyInputRef = useRef<HTMLInputElement>(null);
@@ -545,6 +547,26 @@ export function RecordView({
                     ⚠ incomplete
                   </span>
                 )}
+                <button
+                  onClick={() => {
+                    setSourceModal({ source: null });
+                    api.getRecordSource(sessionId, filePath, recordKey)
+                      .then(src => setSourceModal({ source: src }))
+                      .catch(() => setSourceModal({ source: "// Error loading source" }));
+                  }}
+                  title="View raw CFD source"
+                  style={{
+                    fontSize: 11,
+                    padding: "1px 8px",
+                    background: "transparent",
+                    border: "1px solid var(--border)",
+                    borderRadius: 3,
+                    color: "var(--text-muted)",
+                    cursor: "pointer",
+                  }}
+                >
+                  &lt;/&gt; Source
+                </button>
                 {onDeleteRecord && (
                   <button
                     onClick={() => setDeleteModal({ recordKey })}
@@ -808,6 +830,55 @@ export function RecordView({
                 onClick={handleDeleteCommit}
                 style={{ background: "#ff5555", color: "#fff", border: "none", borderRadius: 4, padding: "4px 16px", cursor: "pointer", fontSize: 13 }}
               >删除</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Source viewer modal */}
+      {sourceModal && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000 }}
+          onClick={() => setSourceModal(null)}
+        >
+          <div
+            style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8, padding: 24, width: 560, display: "flex", flexDirection: "column", gap: 12 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <h3 style={{ margin: 0, fontSize: 15, fontFamily: "monospace" }}>{recordKey}</h3>
+              <button
+                onClick={() => {
+                  if (sourceModal.source) navigator.clipboard.writeText(sourceModal.source).catch(() => {});
+                }}
+                disabled={!sourceModal.source}
+                style={{ fontSize: 11 }}
+              >
+                ⎘ Copy
+              </button>
+            </div>
+            {sourceModal.source === null ? (
+              <div style={{ color: "var(--text-muted)", fontSize: 12, padding: "16px 0", textAlign: "center" }}>Loading…</div>
+            ) : (
+              <pre style={{
+                background: "var(--bg3)",
+                border: "1px solid var(--border)",
+                borderRadius: 4,
+                padding: "10px 12px",
+                fontSize: 12,
+                fontFamily: "monospace",
+                color: "var(--text)",
+                margin: 0,
+                overflowX: "auto",
+                maxHeight: 400,
+                overflowY: "auto",
+                whiteSpace: "pre",
+              }}>
+                {sourceModal.source}
+              </pre>
+            )}
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button onClick={() => setSourceModal(null)}>关闭</button>
             </div>
           </div>
         </div>
