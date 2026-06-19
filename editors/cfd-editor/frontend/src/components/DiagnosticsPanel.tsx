@@ -78,15 +78,15 @@ export function DiagnosticsPanel({ diagnostics, onNavigate, currentFile }: Diagn
     .sort((a, b) => severityRank(a.severity) - severityRank(b.severity));
 
   const handleItemClick = (item: DiagnosticItem) => {
-    if (!onNavigate || !item.file_path) return;
+    if (!isNavigable(item)) return;
     if (item.record_key) {
-      onNavigate({ view: "record", file: item.file_path, recordKey: item.record_key });
+      onNavigate!({ view: "record", file: item.file_path!, recordKey: item.record_key });
     } else {
-      onNavigate({ view: "table", file: item.file_path });
+      onNavigate!({ view: "table", file: item.file_path! });
     }
   };
 
-  const isNavigable = (item: DiagnosticItem) => !!onNavigate && !!item.file_path;
+  const isNavigable = (item: DiagnosticItem) => !!onNavigate && !!item.file_path && item.file_path.endsWith(".cfd");
 
   const FILTER_BTNS: { key: SeverityFilter; label: string; count: number; active: boolean }[] = [
     { key: "all", label: "All", count: diagnostics.length, active: filter === "all" },
