@@ -139,6 +139,13 @@ export function RecordView({
         onNavigate({ view: "table", file: filePath, ...(currentType ? { typeFilter: currentType } : {}) });
         return;
       }
+      // Ctrl+D: duplicate current record
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === "d" && onDuplicateRecord) {
+        e.preventDefault();
+        setDuplicateModal({ srcKey: recordKey, draft: `${recordKey}_copy`, error: null });
+        return;
+      }
+
       // Only if focus is not inside an input/textarea
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
@@ -159,7 +166,7 @@ export function RecordView({
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredRecords, recordKey, filePath, record?.actual_type, onNavigate, onDeleteRecord, sessionId]);
+  }, [filteredRecords, recordKey, filePath, record?.actual_type, onNavigate, onDeleteRecord, onDuplicateRecord, sessionId]);
 
   // If fileRecords hasn't loaded yet for this key, fetch directly
   useEffect(() => {

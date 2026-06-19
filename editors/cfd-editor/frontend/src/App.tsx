@@ -419,6 +419,7 @@ export default function App() {
             "Ctrl+S         Save / flush diagnostics",
             "Alt+← / →     Back / Forward",
             "Ctrl+N         New record (in table/record view)",
+            "Ctrl+D         Duplicate current record (record view)",
             "Ctrl+F         Filter fields (record view) / filter records (table view)",
             "Ctrl+Shift+F   Focus sidebar search (record view)",
             "Ctrl+Shift+E   Expand all nodes (graph view)",
