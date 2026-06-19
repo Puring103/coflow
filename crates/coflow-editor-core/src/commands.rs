@@ -295,23 +295,27 @@ pub fn get_record_inner(
     let session_arc = get_session(store, session_id)?;
     let session = session_arc.lock().map_err(|_| "session lock poisoned")?;
 
-    let (_, record) = session
-        .model
-        .records()
-        .find(|(_, r)| r.key == record_key)
-        .ok_or_else(|| format!("record '{record_key}' not found"))?;
-
-    let direct = session
-        .file_sources
-        .get(file_path)
-        .and_then(|(_, ast)| {
-            ast.records
-                .iter()
-                .find(|r| r.key == record_key)
-                .map(|r| r.fields.iter().map(|f| f.name.clone()).collect::<HashSet<String>>())
-        });
-
-    Ok(convert_record_row(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref()))
+    let in_model = session.model.records().any(|(_, r)| r.key == record_key);
+    if in_model {
+        let (_, record) = session.model.records().find(|(_, r)| r.key == record_key).unwrap();
+        let direct = session
+            .file_sources
+            .get(file_path)
+            .and_then(|(_, ast)| {
+                ast.records
+                    .iter()
+                    .find(|r| r.key == record_key)
+                    .map(|r| r.fields.iter().map(|f| f.name.clone()).collect::<HashSet<String>>())
+            });
+        Ok(convert_record_row(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref()))
+    } else {
+        let fallback = session
+            .file_sources
+            .get(file_path)
+            .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == record_key))
+            .map(ast_record_fallback);
+        fallback.ok_or_else(|| format!("record '{record_key}' not found"))
+    }
 }
 
 pub fn get_graph_inner(
