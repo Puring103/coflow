@@ -4825,6 +4825,41 @@ mod tests {
     }
 
     #[test]
+    fn move_record_to_file_with_existing_standalone_records() {
+        // Regression: dest file has standalone records containing "Item {" — this
+        // should NOT trigger grouped syntax detection when appending the moved record.
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        let src_cfd = data_dir.join("src.cfd");
+        let dst_cfd = data_dir.join("dst.cfd");
+        std::fs::write(&src_cfd, "sword: Item {\n  name: \"Sword\"\n}\n").unwrap();
+        std::fs::write(&dst_cfd, "shield: Item {\n  name: \"Shield\"\n}\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let row = move_record_inner(&store, snap.session_id, "data/src.cfd", "data/dst.cfd", "sword").unwrap();
+        assert_eq!(row.key, "sword");
+        assert_eq!(row.file_path, "data/dst.cfd");
+
+        let src_content = std::fs::read_to_string(&src_cfd).unwrap();
+        assert!(!src_content.contains("sword"), "src should not have sword after move");
+
+        let dst_content = std::fs::read_to_string(&dst_cfd).unwrap();
+        assert!(dst_content.contains("sword: Item"), "dst should have sword as standalone:\n{dst_content}");
+        assert!(dst_content.contains("shield"), "dst should still have shield:\n{dst_content}");
+
+        // Both records should be parseable
+        let records = get_file_records_inner(&store, snap.session_id, "data/dst.cfd").unwrap();
+        assert_eq!(records.records.len(), 2, "dst should have 2 records:\n{dst_content}");
+    }
+
+    #[test]
     fn sort_file_records_grouped() {
         let dir = TempDir::new().unwrap();
         let yaml = dir.path().join("coflow.yaml");
