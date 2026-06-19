@@ -2169,6 +2169,63 @@ mod tests {
     }
 
     #[test]
+    fn rename_file_updates_session_maps() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        let cfd_path = data_dir.join("items.cfd");
+
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        std::fs::write(&cfd_path, "sword: Item {\n  name: \"Sword\",\n}\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        rename_file_inner(&store, snap.session_id, "data/items.cfd", "data/weapons.cfd").unwrap();
+
+        // Old path should no longer work
+        let old_result = get_file_records_inner(&store, snap.session_id, "data/items.cfd");
+        assert!(old_result.is_err(), "old path should no longer be loaded");
+
+        // New path should work and contain the record
+        let records = get_file_records_inner(&store, snap.session_id, "data/weapons.cfd").unwrap();
+        assert!(records.records.iter().any(|r| r.key == "sword"), "record should be accessible at new path");
+
+        // Physical file should be renamed
+        assert!(data_dir.join("weapons.cfd").exists(), "physical file should exist at new path");
+        assert!(!cfd_path.exists(), "physical file should not exist at old path");
+    }
+
+    #[test]
+    fn delete_file_removes_from_session() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        let cfd_path = data_dir.join("items.cfd");
+
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        std::fs::write(&cfd_path, "sword: Item {\n  name: \"Sword\",\n}\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        delete_file_inner(&store, snap.session_id, "data/items.cfd").unwrap();
+
+        // File should be inaccessible from session
+        let result = get_file_records_inner(&store, snap.session_id, "data/items.cfd");
+        assert!(result.is_err(), "deleted file should not be accessible");
+
+        // Physical file should be deleted
+        assert!(!cfd_path.exists(), "physical file should be deleted");
+    }
+
+    #[test]
     fn validate_cfd_key_rejects_illegal_chars() {
         // Empty key
         assert!(validate_cfd_key("").is_err());
