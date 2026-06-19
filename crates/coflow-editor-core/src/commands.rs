@@ -462,6 +462,7 @@ pub fn get_graph_inner(
     let edges: Vec<GraphEdge> = edge_map
         .into_iter()
         .map(|((source, target), mut labels)| {
+            labels.sort();
             labels.dedup();
             GraphEdge { source, target, field_path: labels.join(" / ") }
         })
@@ -527,15 +528,18 @@ pub fn create_record_inner(
     let session_arc = get_session(store, session_id)?;
     let mut session = session_arc.lock().map_err(|_| "session lock poisoned")?;
 
-    // Guard: reject duplicate keys
-    if let Some(keys) = session.file_record_keys.get(file_path) {
-        if keys.contains(&key.to_string()) {
-            return Err(format!("record key '{key}' already exists in {file_path}"));
-        }
-    }
-    // Also check global model for cross-file uniqueness
-    if session.model.records().any(|(_, r)| r.key == key) {
-        return Err(format!("record key '{key}' already exists in the project"));
+    // Guard: reject duplicate keys — check AST-based index so this works even when model build failed
+    let key_exists_in_project = session
+        .file_record_keys
+        .values()
+        .any(|keys| keys.contains(&key.to_string()));
+    if key_exists_in_project {
+        let conflicting_file = session
+            .file_record_keys
+            .iter()
+            .find_map(|(fp, keys)| if keys.contains(&key.to_string()) { Some(fp.as_str()) } else { None })
+            .unwrap_or("unknown file");
+        return Err(format!("record key '{key}' already exists in {conflicting_file}"));
     }
     // Guard: reject unknown or abstract type names
     match session.schema.resolve_type(type_name) {
@@ -618,8 +622,8 @@ pub fn rename_record_inner(
     let session_arc = get_session(store, session_id)?;
     let mut session = session_arc.lock().map_err(|_| "session lock poisoned")?;
 
-    // Guard: reject duplicate keys
-    if session.model.records().any(|(_, r)| r.key == new_key) {
+    // Guard: reject duplicate keys — use AST index so this works even when model build failed
+    if session.file_record_keys.values().any(|keys| keys.contains(&new_key.to_string())) {
         return Err(format!("record key '{new_key}' already exists in the project"));
     }
 
@@ -712,8 +716,8 @@ pub fn duplicate_record_inner(
     let session_arc = get_session(store, session_id)?;
     let mut session = session_arc.lock().map_err(|_| "session lock poisoned")?;
 
-    // Guard duplicate key
-    if session.model.records().any(|(_, r)| r.key == new_key) {
+    // Guard duplicate key — use AST index so this works even when model build failed
+    if session.file_record_keys.values().any(|keys| keys.contains(&new_key.to_string())) {
         return Err(format!("record key '{new_key}' already exists in the project"));
     }
 
