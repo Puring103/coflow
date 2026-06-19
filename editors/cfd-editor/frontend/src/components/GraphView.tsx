@@ -314,6 +314,8 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey }: Graph
     setLayoutDone(false);
     setLayoutFallback(false);
 
+    let cancelled = false;
+
     const stableHandler = (e: React.MouseEvent, gnode: GraphNode) =>
       contextMenuRef.current(e, gnode);
     const stableExpand = (key: string) => expandRef.current(key);
@@ -362,10 +364,12 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey }: Graph
     }
 
     layoutGraph(graphData.nodes, graphData.edges).then(positions => {
+      if (cancelled) return;
       setNodes(applyPositions(positions));
       setEdges(flowEdges);
       setLayoutDone(true);
     }).catch(_err => {
+      if (cancelled) return;
       setLayoutFallback(true);
       const fallbackPositions = new Map<string, { x: number; y: number }>();
       graphData.nodes.forEach((gnode, i) => {
@@ -383,6 +387,8 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey }: Graph
       setEdges(fallbackEdges);
       setLayoutDone(true);
     });
+
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graphData, filePath, cacheKey]);
 

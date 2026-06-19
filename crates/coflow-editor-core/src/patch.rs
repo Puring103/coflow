@@ -218,6 +218,79 @@ fn serialize_value_indented(v: &FieldValue, depth: usize) -> String {
 mod tests {
     use super::*;
 
+    fn parse(src: &str) -> coflow_cfd::CfdAst {
+        let (ast, diags) = coflow_cfd::parse_cfd(src);
+        assert!(diags.is_empty(), "parse errors: {diags:?}");
+        ast
+    }
+
+    #[test]
+    fn apply_patch_replaces_scalar_field() {
+        // Standalone record: key: TypeName { ... }
+        let src = "sword: Item {\n  count: 1,\n}\n";
+        let ast = parse(src);
+        let result = apply_patch(
+            src,
+            &ast,
+            "sword",
+            &[FieldPathSegment::Field { name: "count".to_string() }],
+            &FieldValue::Int { v: 42.0 },
+        )
+        .unwrap();
+        assert!(result.new_source.contains("count: 42"), "unexpected: {}", result.new_source);
+        assert!(!result.new_source.contains("count: 1,"), "old value still present: {}", result.new_source);
+    }
+
+    #[test]
+    fn apply_patch_replaces_string_field() {
+        let src = "sword: Item {\n  name: \"OldName\",\n}\n";
+        let ast = parse(src);
+        let result = apply_patch(
+            src,
+            &ast,
+            "sword",
+            &[FieldPathSegment::Field { name: "name".to_string() }],
+            &FieldValue::Str { v: "NewName".to_string() },
+        )
+        .unwrap();
+        assert!(result.new_source.contains("\"NewName\""), "expected new string: {}", result.new_source);
+        assert!(!result.new_source.contains("\"OldName\""), "old string still present: {}", result.new_source);
+    }
+
+    #[test]
+    fn apply_patch_record_not_found_errors() {
+        let src = "sword: Item {\n  count: 1,\n}\n";
+        let ast = parse(src);
+        let err = apply_patch(
+            src,
+            &ast,
+            "shield",
+            &[FieldPathSegment::Field { name: "count".to_string() }],
+            &FieldValue::Int { v: 1.0 },
+        )
+        .unwrap_err();
+        assert!(err.contains("shield"), "expected record name in error: {err}");
+    }
+
+    #[test]
+    fn insert_field_adds_to_empty_record() {
+        // Grouped record: TypeName { key { } }
+        let src = "Item {\n  sword {\n  }\n}\n";
+        let ast = parse(src);
+        let result = insert_field(src, &ast, "sword", "count", &FieldValue::Int { v: 5.0 }).unwrap();
+        assert!(result.new_source.contains("count: 5"), "expected inserted field: {}", result.new_source);
+        assert!(result.new_source.contains("sword"), "record key missing: {}", result.new_source);
+    }
+
+    #[test]
+    fn insert_field_adds_to_nonempty_record() {
+        let src = "sword: Item {\n  name: \"Sword\",\n}\n";
+        let ast = parse(src);
+        let result = insert_field(src, &ast, "sword", "count", &FieldValue::Int { v: 3.0 }).unwrap();
+        assert!(result.new_source.contains("count: 3"), "expected inserted field: {}", result.new_source);
+        assert!(result.new_source.contains("name: \"Sword\""), "existing field missing: {}", result.new_source);
+    }
+
     #[test]
     fn float_serialization_preserves_decimal() {
         assert_eq!(serialize_value(&FieldValue::Float { v: 1.0 }), "1.0");
