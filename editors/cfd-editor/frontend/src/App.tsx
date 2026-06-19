@@ -321,6 +321,8 @@ export default function App() {
             "Ctrl+N         New record (in table/record view)",
             "Ctrl+F         Filter fields (record view) / filter records (table view)",
             "Ctrl+Shift+F   Focus sidebar search (record view)",
+            "Ctrl+Shift+E   Expand all nodes (graph view)",
+            "Ctrl+Shift+W   Collapse all nodes (graph view)",
             "Escape         Cancel edit / close modal",
           ].join("\n")}
           style={{ marginLeft: "auto", fontSize: 11, opacity: 0.6 }}

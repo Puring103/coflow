@@ -480,11 +480,12 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey }: Graph
             展开全部
           </button>
         )}
-        {graphData && expandedKeys.length > 0 && (
+        {graphData && (
           <button
             onClick={() => setExpandedKeys([])}
+            disabled={expandedKeys.length === 0}
             title="折叠所有展开的节点 (Ctrl+Shift+W)"
-            style={{ fontSize: 11, padding: "2px 8px", flexShrink: 0 }}
+            style={{ fontSize: 11, padding: "2px 8px", flexShrink: 0, opacity: expandedKeys.length === 0 ? 0.4 : 1 }}
           >
             折叠全部
           </button>
