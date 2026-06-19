@@ -521,6 +521,22 @@ pub fn write_field_inner(
     reload_file(&mut session, file_path, &result.new_source)
 }
 
+fn default_value_cfd(d: &CftSchemaDefaultValue) -> String {
+    match d {
+        CftSchemaDefaultValue::Null => "null".to_string(),
+        CftSchemaDefaultValue::Int(v) => v.to_string(),
+        CftSchemaDefaultValue::Float(v) => {
+            let s = v.to_string();
+            if s.contains('.') || s.contains('e') || s.contains('E') { s } else { format!("{s}.0") }
+        }
+        CftSchemaDefaultValue::Bool(v) => v.to_string(),
+        CftSchemaDefaultValue::String(v) => format!("{v:?}"),
+        CftSchemaDefaultValue::Enum { variant, .. } => variant.clone(),
+        CftSchemaDefaultValue::EmptyArray => "[]".to_string(),
+        CftSchemaDefaultValue::EmptyObject => "{}".to_string(),
+    }
+}
+
 pub fn create_record_inner(
     store: &Mutex<SessionStore>,
     session_id: u32,
@@ -557,6 +573,20 @@ pub fn create_record_inner(
         _ => {}
     }
 
+    // Build initial field lines from schema defaults
+    let default_fields_body: String = {
+        let schema_type = session.schema.resolve_type(type_name);
+        if let Some(t) = schema_type {
+            t.all_fields
+                .iter()
+                .filter_map(|f| f.default.as_ref().map(|d| (f.name.clone(), default_value_cfd(d))))
+                .map(|(name, val)| format!("  {name}: {val}\n"))
+                .collect()
+        } else {
+            String::new()
+        }
+    };
+
     let abs_path = session.project_dir.join(file_path);
     let existing = std::fs::read_to_string(&abs_path).unwrap_or_default();
 
@@ -580,13 +610,21 @@ pub fn create_record_inner(
         if let Some(group_end) = find_group_closer(&existing, type_name) {
             let before = &existing[..group_end];
             let after = &existing[group_end..];
-            format!("{before}  {key} {{\n  }}\n{after}")
+            if default_fields_body.is_empty() {
+                format!("{before}  {key} {{\n  }}\n{after}")
+            } else {
+                // Indent default fields by extra 2 spaces for grouped format
+                let indented: String = default_fields_body.lines()
+                    .map(|l| format!("  {l}\n"))
+                    .collect();
+                format!("{before}  {key} {{\n{indented}  }}\n{after}")
+            }
         } else {
             // Fallback: couldn't locate group block, append standalone
-            format!("{existing}{separator}{key}: {type_name} {{\n}}\n")
+            format!("{existing}{separator}{key}: {type_name} {{\n{default_fields_body}}}\n")
         }
     } else {
-        format!("{existing}{separator}{key}: {type_name} {{\n}}\n")
+        format!("{existing}{separator}{key}: {type_name} {{\n{default_fields_body}}}\n")
     };
 
     std::fs::write(&abs_path, &new_content)
@@ -923,7 +961,7 @@ pub fn get_ref_targets_inner(
     let session_arc = get_session(store, session_id)?;
     let session = session_arc.lock().map_err(|_| "session lock poisoned")?;
     // Primary: records that built successfully in the model (have type info for filtering)
-    let model_keys: std::collections::HashSet<String> = session
+    let model_keys: HashSet<String> = session
         .model
         .records()
         .filter(|(_, r)| session.schema.is_assignable(&r.actual_type, expected_type))
