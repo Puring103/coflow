@@ -6,6 +6,7 @@ import {
   createColumnHelper,
   flexRender,
   type SortingState,
+  type ColumnResizeMode,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { FileRecords, RecordRow, FieldValue, FieldPathSegment, FieldSchema } from "../bindings";
@@ -420,6 +421,8 @@ export function TableView({
     ),
   ];
 
+  const columnResizeMode: ColumnResizeMode = "onChange";
+
   const table = useReactTable({
     data: filteredRows,
     columns,
@@ -427,6 +430,8 @@ export function TableView({
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    columnResizeMode,
+    enableColumnResizing: true,
   });
 
   const rows = table.getRowModel().rows;
@@ -654,6 +659,7 @@ export function TableView({
                     key={header.id}
                     onClick={header.column.getCanSort() ? header.column.getToggleSortingHandler() : undefined}
                     style={{
+                      position: "relative",
                       width: header.getSize(),
                       padding: "6px 8px",
                       textAlign: "left",
@@ -677,6 +683,24 @@ export function TableView({
                     )}
                     {header.column.getCanSort() && !header.column.getIsSorted() && (
                       <span style={{ marginLeft: 4, fontSize: 10, opacity: 0.3 }}>⇅</span>
+                    )}
+                    {header.column.getCanResize() && (
+                      <div
+                        onMouseDown={header.getResizeHandler()}
+                        onTouchStart={header.getResizeHandler()}
+                        onClick={e => e.stopPropagation()}
+                        style={{
+                          position: "absolute",
+                          right: 0,
+                          top: 0,
+                          height: "100%",
+                          width: 4,
+                          cursor: "col-resize",
+                          background: header.column.getIsResizing() ? "var(--accent)" : "transparent",
+                          userSelect: "none",
+                          touchAction: "none",
+                        }}
+                      />
                     )}
                   </th>
                 ))}
@@ -772,6 +796,7 @@ export function TableView({
                           overflow: "hidden",
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap",
+                          width: cell.column.getSize(),
                           maxWidth: cell.column.getSize(),
                           opacity: isSpreadField ? 0.6 : 1,
                           cursor: isKeyCol || isSpreadField ? "default" :
