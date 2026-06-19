@@ -26,7 +26,8 @@ interface TableViewProps {
     filePath: string,
     recordKey: string,
     fieldPath: FieldPathSegment[],
-    newValue: FieldValue
+    newValue: FieldValue,
+    oldValue?: FieldValue
   ) => Promise<void>;
   onDeleteRecord: (sessionId: number, filePath: string, recordKey: string) => Promise<void>;
   onRenameRecord?: (sessionId: number, filePath: string, oldKey: string, newKey: string) => Promise<void>;
@@ -493,7 +494,7 @@ export function TableView({
     if (!SCALAR_KINDS.includes(value.kind)) return;
     // Bool cells toggle directly without opening a text editor
     if (value.kind === "Bool") {
-      onWriteField(sessionId, filePath, rowKey, [{ kind: "Field", name: fieldName }], { kind: "Bool", v: !value.v });
+      onWriteField(sessionId, filePath, rowKey, [{ kind: "Field", name: fieldName }], { kind: "Bool", v: !value.v }, value);
       return;
     }
     setEditingCell({ rowKey, fieldName, value });
@@ -505,7 +506,7 @@ export function TableView({
     const changed = fieldValueToString(newValue) !== fieldValueToString(original) || newValue.kind !== original.kind;
     if (!changed) { setEditingCell(null); return; }
     try {
-      await onWriteField(sessionId, filePath, rowKey, [{ kind: "Field", name: fieldName }], newValue);
+      await onWriteField(sessionId, filePath, rowKey, [{ kind: "Field", name: fieldName }], newValue, original);
       setEditingCell(null);
     } catch {
       // onWriteField already shows error toast; keep cell open so user can retry or cancel

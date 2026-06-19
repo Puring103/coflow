@@ -24,6 +24,17 @@ export default function App() {
   const [paletteRecords, setPaletteRecords] = useState<RecordBrief[]>([]);
   const opErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  interface UndoEntry {
+    sessionId: number;
+    filePath: string;
+    recordKey: string;
+    fieldPath: FieldPathSegment[];
+    oldValue: FieldValue;
+    newValue: FieldValue;
+  }
+  const undoStackRef = useRef<UndoEntry[]>([]);
+  const [canUndo, setCanUndo] = useState(false);
+
   const showOpError = useCallback((msg: string) => {
     if (opErrorTimerRef.current) clearTimeout(opErrorTimerRef.current);
     setOpError(msg);
@@ -52,11 +63,31 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFile]);
 
+  const handleUndo = useCallback(async () => {
+    const entry = undoStackRef.current.pop();
+    if (!entry) return;
+    setCanUndo(undoStackRef.current.length > 0);
+    try {
+      await api.writeField(entry.sessionId, entry.filePath, entry.recordKey, entry.fieldPath, entry.oldValue);
+      invalidateGraphCache(entry.sessionId, entry.filePath);
+      setGraphRefreshKey(k => k + 1);
+      project.markDirty(entry.sessionId, entry.filePath);
+    } catch (e) {
+      showOpError(`Undo failed: ${e}`);
+    }
+  }, [project, showOpError]);
+
   // Ctrl+S: flush dirty debounce immediately
   // Alt+Left/Right: navigate history
   // Ctrl+P: open command palette (jump to record)
+  // Ctrl+Z: undo last field write
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === "z") {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         if (project.dirty && project.snapshot && currentFile) {
@@ -86,7 +117,7 @@ export default function App() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.dirty, project.snapshot?.session_id, currentFile, router.canBack, router.canForward]);
+  }, [project.dirty, project.snapshot?.session_id, currentFile, router.canBack, router.canForward, handleUndo]);
 
   const handleOpen = async () => {
     const path = await open({
@@ -105,6 +136,8 @@ export default function App() {
     const currentYaml = project.loadedYamlPath;
     if (currentYaml && prevYamlPathRef.current && currentYaml !== prevYamlPathRef.current) {
       router.reset();
+      undoStackRef.current = [];
+      setCanUndo(false);
     }
     prevYamlPathRef.current = currentYaml;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -149,7 +182,8 @@ export default function App() {
     filePath: string,
     recordKey: string,
     fieldPath: FieldPathSegment[],
-    newValue: FieldValue
+    newValue: FieldValue,
+    oldValue?: FieldValue
   ) => {
     try {
       // If fieldPath is empty, it's a create record request from TableView
@@ -157,6 +191,13 @@ export default function App() {
         await api.createRecord(sessionId, filePath, recordKey, newValue.actual_type);
       } else {
         await api.writeField(sessionId, filePath, recordKey, fieldPath, newValue);
+        // Record undo entry for field writes (not record creation)
+        if (oldValue !== undefined) {
+          const stack = undoStackRef.current;
+          stack.push({ sessionId, filePath, recordKey, fieldPath, oldValue, newValue });
+          if (stack.length > 50) stack.splice(0, stack.length - 50);
+          setCanUndo(true);
+        }
       }
       invalidateGraphCache(sessionId, filePath);
       setGraphRefreshKey(k => k + 1);
@@ -309,6 +350,9 @@ export default function App() {
         {router.canForward && (
           <button onClick={router.forward} title="Forward (Alt+Right)">→</button>
         )}
+        {canUndo && (
+          <button onClick={handleUndo} title="Undo last field edit (Ctrl+Z)" style={{ fontSize: 11 }}>↩ Undo</button>
+        )}
         {project.dirty && <span className="dirty-indicator" title="Reloading…">●</span>}
         {project.loading && <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Loading…</span>}
         {project.error && (
@@ -329,6 +373,7 @@ export default function App() {
           title={[
             "Keyboard Shortcuts",
             "─────────────────",
+            "Ctrl+Z         Undo last field edit (up to 50 steps)",
             "Ctrl+P         Jump to record (command palette)",
             "Ctrl+S         Save / flush diagnostics",
             "Alt+← / →     Back / Forward",

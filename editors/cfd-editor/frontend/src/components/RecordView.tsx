@@ -17,7 +17,8 @@ interface RecordViewProps {
     filePath: string,
     recordKey: string,
     fieldPath: FieldPathSegment[],
-    newValue: FieldValue
+    newValue: FieldValue,
+    oldValue?: FieldValue
   ) => Promise<void>;
   onRenameRecord?: (oldKey: string, newKey: string) => Promise<void>;
   onDeleteRecord?: (sessionId: number, filePath: string, recordKey: string) => Promise<void>;
@@ -221,7 +222,7 @@ export function RecordView({
   }, [deleteModal, onDeleteRecord, sessionId, filePath]);
 
   const handleFieldEdit = useCallback(async (field: FieldCell, newValue: FieldValue) => {
-    await onWriteField(sessionId, filePath, recordKey, [{ kind: "Field", name: field.name }], newValue);
+    await onWriteField(sessionId, filePath, recordKey, [{ kind: "Field", name: field.name }], newValue, field.value);
   }, [sessionId, filePath, recordKey, onWriteField]);
 
   const handleFieldContextMenu = useCallback((e: React.MouseEvent, field: FieldCell) => {
