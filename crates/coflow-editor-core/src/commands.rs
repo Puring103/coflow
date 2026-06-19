@@ -4823,4 +4823,38 @@ mod tests {
         let err = import_record_source_inner(&store, snap.session_id, "data/items.cfd", "sword: Item {\n  name: \"Dupe\"\n}").unwrap_err();
         assert!(err.contains("already exists") || err.contains("sword"), "should reject duplicate key: {err}");
     }
+
+    #[test]
+    fn search_records_finds_by_key_and_field_value() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        let cfd = data_dir.join("items.cfd");
+        std::fs::write(&cfd, "sword: Item {\n  name: \"Excalibur\"\n}\nshield: Item {\n  name: \"Aegis\"\n}\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        // Search by key substring
+        let hits = search_records_inner(&store, sid, "swo", 10).unwrap();
+        assert!(hits.iter().any(|h| h.key == "sword"), "should find 'sword' by key prefix");
+
+        // Search by field value
+        let hits = search_records_inner(&store, sid, "excalibur", 10).unwrap();
+        assert!(hits.iter().any(|h| h.key == "sword"), "should find sword by field value 'Excalibur'");
+        assert!(!hits.iter().any(|h| h.key == "shield"), "should not return shield when searching excalibur");
+
+        // Empty query returns nothing
+        let hits = search_records_inner(&store, sid, "", 10).unwrap();
+        assert!(hits.is_empty(), "empty query should return no results");
+
+        // type: filter
+        let hits = search_records_inner(&store, sid, "type:Item", 10).unwrap();
+        assert_eq!(hits.len(), 2, "type:Item should return both records");
+    }
 }
