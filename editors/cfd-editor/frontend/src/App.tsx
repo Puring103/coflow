@@ -649,6 +649,7 @@ export default function App() {
                         setMoveRecordModal({ srcFile, recordKey, dstFile: firstOther, error: null });
                       }}
                       onNavigate={router.push}
+                      diagnostics={project.snapshot?.diagnostics}
                     />
                   ) : router.current.view === "table" ? (
                     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>

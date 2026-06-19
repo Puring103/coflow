@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -10,7 +10,7 @@ import {
   type VisibilityState,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { FileRecords, RecordRow, FieldValue, FieldPathSegment, FieldSchema } from "../bindings";
+import type { FileRecords, RecordRow, FieldValue, FieldPathSegment, FieldSchema, DiagnosticItem } from "../bindings";
 import type { Route } from "../router";
 import { DataCard } from "./DataCard";
 import { ContextMenu, type ContextMenuState } from "./ContextMenu";
@@ -35,6 +35,7 @@ interface TableViewProps {
   onDuplicateRecord?: (sessionId: number, filePath: string, srcKey: string, newKey: string) => Promise<void>;
   onMoveRecord?: (srcFile: string, recordKey: string) => void;
   onNavigate: (route: Route) => void;
+  diagnostics?: DiagnosticItem[];
 }
 
 interface NewRecordForm {
@@ -243,6 +244,7 @@ export function TableView({
   onDuplicateRecord,
   onMoveRecord,
   onNavigate,
+  diagnostics,
 }: TableViewProps) {
   const [activeType, setActiveType] = useState<string>(
     initialTypeFilter && fileRecords.type_names.includes(initialTypeFilter)
@@ -404,6 +406,20 @@ export function TableView({
     })
     .map(r => ({ ...r, _filePath: filePath }));
 
+  // Per-record diagnostic counts for row badges
+  const rowDiagCounts = useMemo(() => {
+    if (!diagnostics) return new Map<string, { errors: number; warnings: number }>();
+    const map = new Map<string, { errors: number; warnings: number }>();
+    for (const d of diagnostics) {
+      if (!d.record_key || d.file_path !== filePath) continue;
+      const entry = map.get(d.record_key) ?? { errors: 0, warnings: 0 };
+      if (d.severity.toLowerCase() === "error") entry.errors++;
+      else if (d.severity.toLowerCase() === "warning") entry.warnings++;
+      map.set(d.record_key, entry);
+    }
+    return map;
+  }, [diagnostics, filePath]);
+
   // Determine columns from union of all field names across all records of the active type.
   // Use insertion order from the first record as the primary order, then append any
   // extra names seen in other records (handles schema changes and heterogeneous records).
@@ -483,11 +499,24 @@ export function TableView({
       enableSorting: true,
       cell: info => {
         const row = info.row.original;
+        const diag = rowDiagCounts.get(row.key);
         return (
-          <span style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 12, color: row.is_fallback ? "var(--warning)" : undefined }}
-            title={row.is_fallback ? "Model build failed — record may have missing required fields" : undefined}>
-            {info.getValue()}
-            {row.is_fallback && <span style={{ fontSize: 9, marginLeft: 3, opacity: 0.7 }}>⚠</span>}
+          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 12, color: row.is_fallback ? "var(--warning)" : undefined, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+              title={row.is_fallback ? "Model build failed — record may have missing required fields" : row.key}>
+              {info.getValue()}
+              {row.is_fallback && <span style={{ fontSize: 9, marginLeft: 3, opacity: 0.7 }}>⚠</span>}
+            </span>
+            {diag && (
+              <span style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+                {diag.errors > 0 && (
+                  <span title={`${diag.errors} error${diag.errors > 1 ? "s" : ""}`} style={{ fontSize: 9, background: "var(--error)", color: "#fff", borderRadius: 8, padding: "0 3px", lineHeight: "14px" }}>{diag.errors}</span>
+                )}
+                {diag.warnings > 0 && (
+                  <span title={`${diag.warnings} warning${diag.warnings > 1 ? "s" : ""}`} style={{ fontSize: 9, background: "var(--warning)", color: "#000", borderRadius: 8, padding: "0 3px", lineHeight: "14px" }}>{diag.warnings}</span>
+                )}
+              </span>
+            )}
           </span>
         );
       },
