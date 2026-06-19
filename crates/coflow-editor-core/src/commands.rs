@@ -707,7 +707,16 @@ pub fn duplicate_record_inner(
         .get(rec.key_span.end..rec.span.end)
         .ok_or("key/span offsets out of range")?;
 
-    let new_block = format!("\n{new_key}{after_key}\n");
+    // For grouped records (e.g. `Item { sword { ... } }`), the type name is inherited from
+    // the group header and after_key starts with `{` rather than `: TypeName {`.
+    // We must insert `: TypeName` explicitly so the appended standalone record is valid.
+    let separator = if after_key.trim_start().starts_with('{') {
+        format!(": {} ", rec.type_name)
+    } else {
+        String::new()
+    };
+
+    let new_block = format!("\n{new_key}{separator}{after_key}\n");
     let abs_path = session.project_dir.join(file_path);
     let new_content = format!("{source}{new_block}");
     std::fs::write(&abs_path, &new_content)
@@ -1583,5 +1592,34 @@ mod tests {
         let records = get_file_records_inner(&store, snap.session_id, file_path).unwrap();
         assert!(records.records.iter().any(|r| r.key == "sword"));
         assert!(records.records.iter().any(|r| r.key == "sword2"));
+    }
+
+    #[test]
+    fn duplicate_grouped_record_preserves_type() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        let cfd_path = dir.path().join("data/items.cfd");
+
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        // Grouped record syntax: TypeName { key { ... } }
+        std::fs::write(&cfd_path, "Item {\n  sword {\n    name: \"Sword\",\n  }\n}\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let file_path = "data/items.cfd";
+
+        let row = duplicate_record_inner(&store, snap.session_id, file_path, "sword", "axe").unwrap();
+        assert_eq!(row.key, "axe");
+        assert_eq!(row.actual_type, "Item", "duplicated grouped record must keep its type");
+        assert!(row.fields.iter().any(|f| f.name == "name"), "fields should be copied");
+
+        // Both records exist
+        let records = get_file_records_inner(&store, snap.session_id, file_path).unwrap();
+        let axe = records.records.iter().find(|r| r.key == "axe").expect("axe should exist");
+        assert_eq!(axe.actual_type, "Item");
     }
 }
