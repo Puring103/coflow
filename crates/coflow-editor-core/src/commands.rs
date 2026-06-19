@@ -799,18 +799,33 @@ pub fn duplicate_record_inner(
         .get(rec.key_span.end..rec.span.end)
         .ok_or("key/span offsets out of range")?;
 
-    // For grouped records (e.g. `Item { sword { ... } }`), the type name is inherited from
-    // the group header and after_key starts with `{` rather than `: TypeName {`.
-    // We must insert `: TypeName` explicitly so the appended standalone record is valid.
-    let separator = if after_key.trim_start().starts_with('{') {
-        format!(": {} ", rec.type_name)
-    } else {
-        String::new()
-    };
+    // Detect grouped vs standalone syntax.
+    // Grouped: type_span.start < key_span.start (group token precedes record key).
+    let is_grouped = rec.type_span.start < rec.key_span.start;
 
-    let new_block = format!("\n{new_key}{separator}{after_key}\n");
     let abs_path = session.project_dir.join(file_path);
-    let new_content = format!("{source}{new_block}");
+    let new_content = if is_grouped {
+        // Insert the duplicate inside the existing group block, before its closing `}`.
+        let type_name = rec.type_name.clone();
+        if let Some(group_closer) = find_group_closer(&source, &type_name) {
+            let before = &source[..group_closer];
+            let after = &source[group_closer..];
+            format!("{before}  {new_key}{after_key}\n{after}")
+        } else {
+            // Fallback: append as standalone
+            format!("{source}\n{new_key}: {} {after_key}\n", rec.type_name)
+        }
+    } else {
+        // Standalone: append `new_key: TypeName { ... }` after the file.
+        // after_key starts with `: TypeName {` for standalone records.
+        let separator = if after_key.trim_start().starts_with('{') {
+            // Should not happen for standalone, but guard anyway
+            format!(": {} ", rec.type_name)
+        } else {
+            String::new()
+        };
+        format!("{source}\n{new_key}{separator}{after_key}\n")
+    };
     std::fs::write(&abs_path, &new_content)
         .map_err(|e| format!("cannot write {file_path}: {e}"))?;
     reload_file(&mut session, file_path, &new_content)?;
@@ -1831,6 +1846,12 @@ mod tests {
         let records = get_file_records_inner(&store, snap.session_id, file_path).unwrap();
         let axe = records.records.iter().find(|r| r.key == "axe").expect("axe should exist");
         assert_eq!(axe.actual_type, "Item");
+
+        // Verify grouped syntax: the duplicate must be inside the group block, not standalone
+        let contents = std::fs::read_to_string(&cfd_path).unwrap();
+        assert!(!contents.contains("axe: Item"), "duplicate should not use standalone syntax:\n{contents}");
+        // Group block still present
+        assert!(contents.contains("Item {"), "group block header should still be present:\n{contents}");
     }
 
     #[test]

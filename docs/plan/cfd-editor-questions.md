@@ -78,5 +78,5 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**TableView 中 Ref 字段点击只能跳转，不能编辑**~~ ✅ 已添加 Ref CellEditor（带 datalist 建议），点击打开编辑器；右键菜单保留"跳转到引用记录"
 - ~~**空 target_key Ref 提交**：DataCard RefEditor 和 TableView Ref CellEditor 允许提交空 key，生成无效 `&` 语法~~ ✅ 前端已在 commit 前检查 `trimmed` 非空，否则 onCancel
 - **React key 稳定性**：Array items 改用 `\`\${idx}:\${item.kind}\`` 作为 key；Dict entries 改用 `\`\${dictKeyStr(entry.key)}:\${idx}\`` 替代纯 idx，减少因删除中间项导致的状态复用问题
-- ~~**create_record 写入格式与文件不一致**：当文件使用 grouped 语法（`TypeName { key { } }`）时，新建记录错误地使用 standalone 语法（`key: TypeName { }`）追加，导致同一文件混用两种格式~~ ✅ 已检测 `type_span.start < key_span.start` 判断 grouped 格式，并将新记录插入到现有 group block 的 `}` 前；空文件回退到 standalone 语法
+- ~~**create_record / duplicate_record 写入格式与文件不一致**：当文件使用 grouped 语法（`TypeName { key { } }`）时，新建/复制记录错误地使用 standalone 语法（`key: TypeName { }`）追加，导致同一文件混用两种格式~~ ✅ 已检测 `type_span.start < key_span.start` 判断 grouped 格式，两个函数都将新记录插入到现有 group block 的 `}` 前；空文件回退到 standalone 语法
 - ~~**空文件创建记录产生前导换行**：`create_record_inner` 的 `format!("{existing}\n...")` 在 `existing` 为空时产生开头多余的 `\n`~~ ✅ 已改为检测 `existing.ends_with('\n') || existing.is_empty()` 决定是否添加分隔换行
