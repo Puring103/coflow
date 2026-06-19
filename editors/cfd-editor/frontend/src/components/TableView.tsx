@@ -738,22 +738,27 @@ export function TableView({
     }
   }, [filteredRows, selectedKeys, sessionId, filePath, onDeleteRecord]);
 
-  const handleCreateRecord = async () => {
+  const handleCreateRecord = async (createAnother?: boolean) => {
     if (!newRecord.key.trim()) { setNewRecord(r => ({ ...r, error: "Key cannot be empty" })); return; }
     if (!newRecord.typeName) { setNewRecord(r => ({ ...r, error: "Type is required" })); return; }
     const key = newRecord.key.trim();
+    const typeName = newRecord.typeName;
     setCreating(true);
     setNewRecord(r => ({ ...r, error: null }));
     try {
       await onWriteField(sessionId, filePath, key, [], {
         kind: "Object",
-        actual_type: newRecord.typeName,
+        actual_type: typeName,
         fields: [],
       });
-      setShowNewRecord(false);
-      setNewRecord({ key: "", typeName: activeType, error: null });
-      // Navigate to the new record so the user can fill in fields immediately
-      onNavigate({ view: "record", file: filePath, recordKey: key });
+      if (createAnother) {
+        // Stay in the modal; reset key for another record of the same type
+        setNewRecord({ key: "", typeName, error: null });
+      } else {
+        setShowNewRecord(false);
+        setNewRecord({ key: "", typeName: activeType, error: null });
+        onNavigate({ view: "record", file: filePath, recordKey: key });
+      }
     } catch (e) {
       setNewRecord(r => ({ ...r, error: String(e) }));
     } finally {
@@ -1361,7 +1366,7 @@ export function TableView({
                 value={newRecord.key}
                 onChange={e => setNewRecord(r => ({ ...r, key: e.target.value, error: null }))}
                 onKeyDown={e => {
-                  if (e.key === "Enter") { e.preventDefault(); handleCreateRecord(); }
+                  if (e.key === "Enter") { e.preventDefault(); handleCreateRecord(false); }
                   if (e.key === "Escape") setShowNewRecord(false);
                 }}
                 style={{
@@ -1401,11 +1406,18 @@ export function TableView({
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button onClick={() => { setShowNewRecord(false); setNewRecord(r => ({ ...r, error: null })); }}>取消</button>
               <button
+                onClick={() => handleCreateRecord(true)}
+                disabled={creating || !newRecord.key.trim()}
+                title="创建记录并保持对话框打开以创建更多"
+              >
+                {creating ? "创建中…" : "再创建一条"}
+              </button>
+              <button
                 className="primary"
-                onClick={handleCreateRecord}
+                onClick={() => handleCreateRecord(false)}
                 disabled={creating || !newRecord.key.trim()}
               >
-                {creating ? "创建中…" : "创建"}
+                {creating ? "创建中…" : "创建并打开"}
               </button>
             </div>
           </div>
