@@ -84,3 +84,7 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**TableView 列头只使用第一条记录的字段**：当不同记录的字段集合不同时（如 schema 演化后部分记录有新字段），TableView 只显示第一条记录的列集合~~  ✅ 已改为对当前 activeType 所有记录做字段名并集，按第一条记录顺序为主，额外字段追加在后
 - ~~**Spread 字段 ↗ 标记不可点击**：RecordView 中 spread 字段标注 ↗ 但无交互，用户不知道去哪里编辑源记录~~ ✅ 已在 `RecordRow` 中新增 `spread_sources: Vec<SpreadSource>` 字段（`{key, file}` 结构，file 通过 `file_record_keys` 解析）；RecordView 头部显示来源列表（可点击跳转，使用正确 file path），单一来源时字段级 ↗ 也可直接点击跳转；跨文件 spread 导航已正确路由
 - ~~**TableView Enum 编辑器加载失败卡死**：`getEnumVariants` 失败时 CellEditor 永远显示 "Loading…"~~ ✅ 改为 catch 时设置 `enumVariants = []`，空列表回退到文本输入框
+- ~~**空/部分 inline Object 在 AST fallback 下不显示 schema 字段**：`convert_value` 和 `ast_value_to_field_value` 对 inline Object 使用 `filter_map`，导致 `Stats {}` 空块在 UI 中显示 0 个字段，用户无法编辑子字段~~ ✅ 改为 `map + unwrap_or(Null)` 与 `convert_record_row_with_ast` 一致，所有 schema 定义的字段都会显示（缺失的显示为 Null）；`ast_value_to_field_value` 也接受 `schema` 参数并做同样展开
+- ~~**AST fallback 记录（model build 失败）在 UI 中无任何视觉区分**：用户不知道哪些记录是"不完整的"~~ ✅ `RecordRow` 和 `RecordBrief` 新增 `is_fallback: bool` 字段；RecordView 侧边栏、RecordView 头部（"⚠ incomplete" badge）、TableView key 列、CommandPalette 都对 fallback 记录显示 ⚠ 橙色警告
+- **graph view 不显示 AST fallback 记录**：model build 失败的记录不出现在关系图中（这些记录没有解析好的 Ref，图中不会有意义的边）。可接受：图视图专注于已解析的数据关系。
+- **RecordView 中必填字段高亮**：`has_default: false` 且当前值为 `Null` 的字段，字段名显示橙色并加 `*` 标记，提示用户填写。已通过 `fieldSchemas` + `isRequiredNull` 实现。
