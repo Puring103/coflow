@@ -31,9 +31,22 @@ interface MoveRecordModal {
   error: string | null;
 }
 
+const RECENT_KEY = "cfd-recent-projects";
+const RECENT_MAX = 8;
+
+function loadRecent(): string[] {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]"); } catch { return []; }
+}
+
+function pushRecent(path: string) {
+  const list = [path, ...loadRecent().filter(p => p !== path)].slice(0, RECENT_MAX);
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch { /* ignore */ }
+}
+
 export default function App() {
   const router = useRouter();
   const project = useProject();
+  const [recentProjects, setRecentProjects] = useState<string[]>(() => loadRecent());
   const [showNewFileModal, setShowNewFileModal] = useState(false);
   const [newFilePath, setNewFilePath] = useState("");
   const [newFileError, setNewFileError] = useState<string | null>(null);
@@ -154,6 +167,14 @@ export default function App() {
     if (!path) return;
     const pathStr = typeof path === "string" ? path : path[0];
     await project.loadProject(pathStr);
+    pushRecent(pathStr);
+    setRecentProjects(loadRecent());
+  };
+
+  const handleOpenPath = async (pathStr: string) => {
+    await project.loadProject(pathStr);
+    pushRecent(pathStr);
+    setRecentProjects(loadRecent());
   };
 
   // Reset router when a DIFFERENT project is loaded (yaml path changes means different project)
@@ -628,6 +649,39 @@ export default function App() {
           ) : (
             <div className="welcome">
               <p>Open a <code>coflow.yaml</code> to get started.</p>
+              <button className="primary" onClick={handleOpen} style={{ marginTop: 8 }}>
+                Open Project…
+              </button>
+              {recentProjects.length > 0 && (
+                <div style={{ marginTop: 24, textAlign: "left", maxWidth: 480 }}>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>
+                    Recent Projects
+                  </div>
+                  {recentProjects.map(p => (
+                    <div
+                      key={p}
+                      onClick={() => handleOpenPath(p)}
+                      style={{
+                        padding: "5px 10px",
+                        borderRadius: 4,
+                        cursor: "pointer",
+                        fontFamily: "monospace",
+                        fontSize: 12,
+                        color: "var(--accent)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        maxWidth: 480,
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "var(--bg3)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                      title={p}
+                    >
+                      {p}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </main>
