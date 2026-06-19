@@ -1215,6 +1215,42 @@ export function TableView({
         </span>
         <div style={{ display: "flex", gap: 6 }}>
           <button
+            onClick={() => {
+              // Export visible columns for current type as CSV
+              const visibleCols = table.getAllLeafColumns().filter(c => c.getIsVisible() && c.id !== "__sel__");
+              const header = visibleCols.map(c => c.id).join(",");
+              const rows = filteredRows.map(row => {
+                return visibleCols.map(col => {
+                  const cell = col.id === "key" ? row.key : (row.fields.find(f => f.name === col.id)?.value);
+                  if (!cell || cell === row.key) return `"${row.key}"`;
+                  if (typeof cell === "string") return `"${cell}"`;
+                  const v = cell as FieldValue;
+                  switch (v.kind) {
+                    case "Null": return "";
+                    case "Bool": return String(v.v);
+                    case "Int": case "Float": return String(v.v);
+                    case "Str": return `"${v.v.replace(/"/g, '""')}"`;
+                    case "Enum": return v.variant;
+                    case "Ref": return v.target_key;
+                    default: return "";
+                  }
+                }).join(",");
+              });
+              const csv = [header, ...rows].join("\n");
+              const blob = new Blob([csv], { type: "text/csv" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `${activeType || "records"}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            title="Export visible columns as CSV"
+            style={{ fontSize: 12 }}
+          >
+            ↓ CSV
+          </button>
+          <button
             onClick={() => setPasteModal({ source: "", error: null, importing: false })}
             title="Paste CFD source text to import records"
             style={{ fontSize: 12 }}
