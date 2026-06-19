@@ -211,22 +211,31 @@ export function RecordView({
   }, [sessionId, filePath, recordKey, onWriteField]);
 
   const handleFieldContextMenu = useCallback((e: React.MouseEvent, field: FieldCell) => {
-    if (field.value.kind !== "Ref") return;
+    const items: { label: string; onClick: () => void }[] = [];
+    // Copy value for scalar fields
+    const v = field.value;
+    let copyText: string | null = null;
+    switch (v.kind) {
+      case "Null": copyText = "null"; break;
+      case "Bool": copyText = String(v.v); break;
+      case "Int": case "Float": copyText = String(v.v); break;
+      case "Str": copyText = v.v; break;
+      case "Enum": copyText = v.variant; break;
+      case "Ref": copyText = v.target_key; break;
+    }
+    if (copyText !== null) {
+      const text = copyText;
+      items.push({ label: "复制值", onClick: () => navigator.clipboard.writeText(text).catch(() => {}) });
+    }
+    // Navigate to ref target
+    if (v.kind === "Ref") {
+      const targetFile = v.target_file ?? filePath;
+      const targetKey = v.target_key;
+      items.push({ label: "跳转到引用记录", onClick: () => onNavigate({ view: "record", file: targetFile, recordKey: targetKey }) });
+    }
+    if (items.length === 0) return;
     e.preventDefault();
-    const refValue = field.value;
-    setContextMenu({
-      x: e.clientX,
-      y: e.clientY,
-      items: [
-        {
-          label: "跳转到引用记录",
-          onClick: () => {
-            const targetFile = refValue.target_file ?? filePath;
-            onNavigate({ view: "record", file: targetFile, recordKey: refValue.target_key });
-          },
-        },
-      ],
-    });
+    setContextMenu({ x: e.clientX, y: e.clientY, items });
   }, [filePath, onNavigate]);
 
   return (

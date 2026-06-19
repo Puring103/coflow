@@ -706,18 +706,32 @@ export function TableView({
                           handleCellClick(row.original.key, colId, cellValue);
                         }}
                         onContextMenu={e => {
-                          if (!isKeyCol && cellValue?.kind === "Ref") {
+                          if (isKeyCol) return;
+                          if (!cellValue) return;
+                          const items: { label: string; onClick: () => void }[] = [];
+                          // Copy scalar value
+                          let copyText: string | null = null;
+                          const cv = cellValue;
+                          switch (cv.kind) {
+                            case "Null": copyText = "null"; break;
+                            case "Bool": copyText = String(cv.v); break;
+                            case "Int": case "Float": copyText = String(cv.v); break;
+                            case "Str": copyText = cv.v; break;
+                            case "Enum": copyText = cv.variant; break;
+                            case "Ref": copyText = cv.target_key; break;
+                          }
+                          if (copyText !== null) {
+                            const text = copyText;
+                            items.push({ label: "复制值", onClick: () => navigator.clipboard.writeText(text).catch(() => {}) });
+                          }
+                          if (cv.kind === "Ref") {
+                            const refValue = cv;
+                            items.push({ label: "跳转到引用记录", onClick: () => onNavigate({ view: "record", file: refValue.target_file ?? filePath, recordKey: refValue.target_key }) });
+                          }
+                          if (items.length > 0) {
                             e.preventDefault();
                             e.stopPropagation();
-                            const refValue = cellValue;
-                            setContextMenu({
-                              x: e.clientX,
-                              y: e.clientY,
-                              items: [{
-                                label: "跳转到引用记录",
-                                onClick: () => onNavigate({ view: "record", file: refValue.target_file ?? filePath, recordKey: refValue.target_key }),
-                              }],
-                            });
+                            setContextMenu({ x: e.clientX, y: e.clientY, items });
                           }
                         }}
                         title={isSpreadField ? "来自 spread — 请前往源记录编辑" : undefined}
