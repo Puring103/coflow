@@ -363,7 +363,19 @@ export function RecordView({
             ))}
           </div>
         )}
-        <div style={{ flex: 1, overflowY: "auto" }}>
+        <div
+          style={{ flex: 1, overflowY: "auto" }}
+          tabIndex={-1}
+          onKeyDown={e => {
+            if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+            e.preventDefault();
+            const idx = filteredRecords.findIndex(r => r.key === recordKey);
+            if (idx === -1) return;
+            const nextIdx = e.key === "ArrowUp" ? idx - 1 : idx + 1;
+            if (nextIdx < 0 || nextIdx >= filteredRecords.length) return;
+            onNavigate({ view: "record", file: filePath, recordKey: filteredRecords[nextIdx].key });
+          }}
+        >
           {filteredRecords.map(r => (
             <div
               key={r.key}

@@ -289,7 +289,13 @@ export function TableView({
   }, [sessionId]);
 
   const [fieldSchemas, setFieldSchemas] = useState<FieldSchema[]>([]);
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() => {
+    if (!initialTypeFilter) return {};
+    try {
+      const stored = localStorage.getItem(`cfd-col-vis:${initialTypeFilter}`);
+      return stored ? JSON.parse(stored) : {};
+    } catch { return {}; }
+  });
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [batchField, setBatchField] = useState("");
   const [batchValue, setBatchValue] = useState("");
@@ -313,7 +319,10 @@ export function TableView({
   useEffect(() => {
     setSorting([]);
     setSearch("");
-    setColumnVisibility({});
+    try {
+      const stored = localStorage.getItem(`cfd-col-vis:${activeType}`);
+      setColumnVisibility(stored ? JSON.parse(stored) : {});
+    } catch { setColumnVisibility({}); }
     setShowColumnPicker(false);
     setSelectedKeys(new Set());
     setBatchField("");
@@ -321,6 +330,12 @@ export function TableView({
     setBatchError(null);
     lastSelectedKeyRef.current = null;
   }, [activeType]);
+
+  // Persist column visibility to localStorage when it changes
+  useEffect(() => {
+    if (!activeType) return;
+    try { localStorage.setItem(`cfd-col-vis:${activeType}`, JSON.stringify(columnVisibility)); } catch { /* ignore */ }
+  }, [activeType, columnVisibility]);
 
   // Close column picker on outside click
   useEffect(() => {
