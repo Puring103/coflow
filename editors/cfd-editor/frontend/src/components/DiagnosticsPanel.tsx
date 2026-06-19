@@ -201,6 +201,33 @@ export function DiagnosticsPanel({ diagnostics, onNavigate, currentFile }: Diagn
                 )}
               </button>
             ))}
+            {filtered.length > 0 && (
+              <button
+                onClick={e => {
+                  e.stopPropagation();
+                  const text = filtered.map(d =>
+                    `[${d.severity.toUpperCase()}] ${d.code} [${d.stage}] ${d.message}` +
+                    (d.file_path ? ` @ ${d.file_path}` : "") +
+                    (d.record_key ? ` [${d.record_key}]` : "") +
+                    (d.field_path ? `.${d.field_path}` : "")
+                  ).join("\n");
+                  navigator.clipboard.writeText(text).catch(() => {});
+                }}
+                title="Copy all visible diagnostics to clipboard"
+                style={{
+                  fontSize: 11,
+                  padding: "2px 8px",
+                  background: "transparent",
+                  border: "1px solid transparent",
+                  borderRadius: 4,
+                  color: "var(--text-muted)",
+                  cursor: "pointer",
+                  marginLeft: 4,
+                }}
+              >
+                ⎘ Copy
+              </button>
+            )}
           </div>
         )}
       </div>
