@@ -150,9 +150,9 @@ function CellEditor({ value, sessionId, onCommit, onCancel }: CellEditorProps) {
           tabIndex={0}
           onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); onCancel(); } e.stopPropagation(); }}
           autoFocus
-          style={{ ...CELL_STYLE, color: "var(--text-muted)" }}
+          style={{ ...CELL_STYLE, color: "var(--text-muted)", fontStyle: "italic" }}
         >
-          {text}
+          Loading…
         </div>
       );
     }

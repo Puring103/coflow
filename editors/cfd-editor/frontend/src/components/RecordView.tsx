@@ -306,6 +306,9 @@ export function RecordView({
                 }}
               >
                 {t}
+                <span style={{ marginLeft: 3, opacity: 0.7 }}>
+                  ({allRecords.filter(r => r.actual_type === t).length})
+                </span>
               </button>
             ))}
           </div>

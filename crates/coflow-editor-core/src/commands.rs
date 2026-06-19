@@ -554,7 +554,33 @@ pub fn create_record_inner(
 
     let abs_path = session.project_dir.join(file_path);
     let existing = std::fs::read_to_string(&abs_path).unwrap_or_default();
-    let new_content = format!("{existing}\n{key}: {type_name} {{\n}}\n");
+
+    // Detect whether this file uses grouped syntax for this type_name.
+    // Grouped: `TypeName { key { ... } }` — the group token (type_name) appears
+    // before the record key in source, so type_span.start < key_span.start.
+    // Standalone: `key: TypeName { ... }` — key comes first, type_span.start > key_span.start.
+    let (ast, _) = parse_cfd(&existing);
+    let uses_grouped = ast.records.iter().any(|r| {
+        r.type_name == type_name && r.type_span.start < r.key_span.start
+    });
+
+    let separator = if existing.ends_with('\n') || existing.is_empty() { "" } else { "\n" };
+
+    let new_content = if uses_grouped {
+        // Find the closing `}` of the existing group block and insert before it.
+        // Strategy: scan for the last occurrence of `\n}` at the end of the file
+        // (the group closer), then insert the new record before it.
+        if let Some(group_end) = find_group_closer(&existing, type_name) {
+            let before = &existing[..group_end];
+            let after = &existing[group_end..];
+            format!("{before}  {key} {{\n  }}\n{after}")
+        } else {
+            // Fallback: couldn't locate group block, append standalone
+            format!("{existing}{separator}{key}: {type_name} {{\n}}\n")
+        }
+    } else {
+        format!("{existing}{separator}{key}: {type_name} {{\n}}\n")
+    };
 
     std::fs::write(&abs_path, &new_content)
         .map_err(|e| format!("cannot write {file_path}: {e}"))?;
@@ -1022,6 +1048,29 @@ fn get_session(
 }
 
 /// Validate that a CFD identifier doesn't contain illegal characters.
+/// Find the byte position of the closing `}` that ends a grouped-type block
+/// (e.g. `TypeName { ... }`). Returns the position of that `}` in the source.
+/// Grouped records: type_span.start < key_span.start (group token precedes record key).
+/// The group block's `}` comes after the last such record's span.end.
+fn find_group_closer(source: &str, type_name: &str) -> Option<usize> {
+    let (ast, _) = parse_cfd(source);
+    // Find all grouped records with this type_name and get the max span.end
+    let max_end = ast.records.iter()
+        .filter(|r| r.type_name == type_name && r.type_span.start < r.key_span.start)
+        .map(|r| r.span.end)
+        .max()?;
+    // The group closer `}` must be somewhere after max_end in the source.
+    // Scan forward from max_end to find the next `}` at the group level.
+    let bytes = source.as_bytes();
+    let search_from = max_end.min(source.len());
+    for i in search_from..bytes.len() {
+        if bytes[i] == b'}' {
+            return Some(i);
+        }
+    }
+    None
+}
+
 fn validate_cfd_key(key: &str) -> Result<(), String> {
     if key.is_empty() {
         return Err("key cannot be empty".to_string());
@@ -1884,5 +1933,62 @@ mod tests {
         let err = create_record_inner(&store, snap.session_id, "data/items.cfd", "sword", "Item")
             .unwrap_err();
         assert!(err.contains("sword"), "error should mention conflicting key: {err}");
+    }
+
+    #[test]
+    fn create_record_uses_grouped_syntax_when_file_is_grouped() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        let cfd_path = dir.path().join("data/items.cfd");
+
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        // File already uses grouped syntax
+        std::fs::write(&cfd_path, "Item {\n  sword {\n    name: \"Sword\",\n  }\n}\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let row = create_record_inner(&store, snap.session_id, "data/items.cfd", "axe", "Item").unwrap();
+        assert_eq!(row.key, "axe");
+
+        let contents = std::fs::read_to_string(&cfd_path).unwrap();
+        // The new record must be INSIDE the existing group block, not appended as standalone
+        assert!(contents.contains("axe"), "file should contain axe:\n{contents}");
+        // axe should not appear as `axe: Item {` — that would be standalone syntax
+        assert!(!contents.contains("axe: Item"), "should not use standalone syntax for grouped file:\n{contents}");
+        // File should still parse correctly (one group block, two records)
+        let records = get_file_records_inner(&store, snap.session_id, "data/items.cfd").unwrap();
+        assert_eq!(records.records.len(), 2, "file should have two records:\n{contents}");
+        assert!(records.records.iter().any(|r| r.key == "sword"));
+        assert!(records.records.iter().any(|r| r.key == "axe"));
+    }
+
+    #[test]
+    fn create_record_standalone_syntax_on_empty_file() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        let cfd_path = dir.path().join("data/items.cfd");
+
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        std::fs::write(&cfd_path, "").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let row = create_record_inner(&store, snap.session_id, "data/items.cfd", "sword", "Item").unwrap();
+        assert_eq!(row.key, "sword");
+
+        let contents = std::fs::read_to_string(&cfd_path).unwrap();
+        // Should not start with a blank newline
+        assert!(!contents.starts_with('\n'), "file should not start with extra newline:\n{contents:?}");
+        assert!(contents.contains("sword: Item"), "should use standalone syntax:\n{contents}");
     }
 }
