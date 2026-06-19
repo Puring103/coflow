@@ -269,11 +269,11 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey }: Graph
   // Keyboard shortcuts for graph view
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "e") {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "e") {
         e.preventDefault();
         handleExpandAll();
       }
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "w") {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "w") {
         e.preventDefault();
         setExpandedKeys([]);
       }
