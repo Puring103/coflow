@@ -300,6 +300,8 @@ export function TableView({
   const [batchField, setBatchField] = useState("");
   const [batchValue, setBatchValue] = useState("");
   const [batchApplying, setBatchApplying] = useState(false);
+  const [batchDeleting, setBatchDeleting] = useState(false);
+  const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
   const lastSelectedKeyRef = useRef<string | null>(null);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
@@ -710,6 +712,31 @@ export function TableView({
       setBatchValue("");
     }
   }, [batchField, batchValue, filteredRows, selectedKeys, sessionId, filePath, onWriteField]);
+
+  const handleBatchDelete = useCallback(async () => {
+    const keysToDelete = filteredRows.filter(r => selectedKeys.has(r.key)).map(r => r.key);
+    if (keysToDelete.length === 0) return;
+    setBatchDeleting(true);
+    setBatchError(null);
+    const failedKeys: string[] = [];
+    for (const key of keysToDelete) {
+      try {
+        await onDeleteRecord(sessionId, filePath, key);
+      } catch {
+        failedKeys.push(key);
+      }
+    }
+    setBatchDeleting(false);
+    setBatchDeleteConfirm(false);
+    if (failedKeys.length > 0) {
+      const preview = failedKeys.length <= 3
+        ? failedKeys.join(", ")
+        : failedKeys.slice(0, 3).join(", ") + ` 等 ${failedKeys.length} 条`;
+      setBatchError(`删除失败: ${preview}`);
+    } else {
+      setSelectedKeys(new Set());
+    }
+  }, [filteredRows, selectedKeys, sessionId, filePath, onDeleteRecord]);
 
   const handleCreateRecord = async () => {
     if (!newRecord.key.trim()) { setNewRecord(r => ({ ...r, error: "Key cannot be empty" })); return; }
@@ -1191,8 +1218,37 @@ export function TableView({
           >
             {batchApplying ? "应用中…" : "批量应用"}
           </button>
+          {batchDeleteConfirm ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ color: "var(--error)", fontSize: 12, whiteSpace: "nowrap" }}>
+                确定删除 {selectedKeys.size} 条记录？
+              </span>
+              <button
+                className="danger"
+                disabled={batchDeleting}
+                onClick={handleBatchDelete}
+                style={{ fontSize: 12, whiteSpace: "nowrap" }}
+              >
+                {batchDeleting ? "删除中…" : "确认删除"}
+              </button>
+              <button
+                onClick={() => setBatchDeleteConfirm(false)}
+                style={{ fontSize: 12, whiteSpace: "nowrap" }}
+              >
+                取消
+              </button>
+            </div>
+          ) : (
+            <button
+              disabled={batchApplying}
+              onClick={() => setBatchDeleteConfirm(true)}
+              style={{ fontSize: 12, whiteSpace: "nowrap", color: "var(--error)", border: "1px solid var(--error)", background: "transparent", borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}
+            >
+              🗑 批量删除
+            </button>
+          )}
           <button
-            onClick={() => { setSelectedKeys(new Set()); setBatchError(null); }}
+            onClick={() => { setSelectedKeys(new Set()); setBatchError(null); setBatchDeleteConfirm(false); }}
             style={{ fontSize: 12, whiteSpace: "nowrap" }}
           >
             取消选择
