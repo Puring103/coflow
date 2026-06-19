@@ -18,7 +18,8 @@ function scalarTypeName(v: FieldValue): string {
     case "Float": return "float";
     case "Str": return "str";
     case "Enum": return v.enum_name;
-    case "Ref": return "ref";
+    case "Ref": return v.target_type || "ref";
+    case "Object": return v.actual_type;
     default: return v.kind;
   }
 }
@@ -130,7 +131,10 @@ function renderCompact(v: FieldValue): React.ReactNode {
     case "Dict": {
       const n = v.entries.length;
       if (n === 0) return <span style={{ color: "var(--text-muted)" }}>{"{}"}</span>;
-      const kType = n > 0 ? v.entries[0].key.kind : "?";
+      const firstKey = n > 0 ? v.entries[0].key : null;
+      const kType = firstKey
+        ? (firstKey.kind === "Enum" ? firstKey.enum_name : firstKey.kind)
+        : "?";
       const vType = n > 0 ? scalarTypeName(v.entries[0].value) : "?";
       return (
         <span style={{ color: "var(--text-muted)" }}>
