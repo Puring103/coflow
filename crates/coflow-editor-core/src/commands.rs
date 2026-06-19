@@ -1115,6 +1115,53 @@ pub fn get_record_source_inner(
     Ok(source[start..end].to_string())
 }
 
+/// Collect all byte spans of `&old_key` (or `@Type.old_key`) references in an AST.
+fn collect_ref_key_spans(ast: &CfdAst, old_key: &str) -> Vec<coflow_cft::Span> {
+    fn walk_value(v: &coflow_cfd::ast::CfdValue, key: &str, out: &mut Vec<coflow_cft::Span>) {
+        match v {
+            coflow_cfd::ast::CfdValue::Ref(r) if r.key.0 == key => {
+                out.push(r.key.1);
+            }
+            coflow_cfd::ast::CfdValue::Block(b) => {
+                for entry in &b.entries {
+                    match entry {
+                        CfdBlockEntry::Field(f) => walk_value(&f.value, key, out),
+                        CfdBlockEntry::Spread(sv, _) => walk_value(sv, key, out),
+                    }
+                }
+            }
+            coflow_cfd::ast::CfdValue::Array(items, _) => {
+                for item in items { walk_value(item, key, out); }
+            }
+            coflow_cfd::ast::CfdValue::Spread(inner, _) => walk_value(inner, key, out),
+            _ => {}
+        }
+    }
+    let mut spans = Vec::new();
+    for rec in &ast.records {
+        for entry in &rec.entries {
+            match entry {
+                CfdBlockEntry::Field(f) => walk_value(&f.value, old_key, &mut spans),
+                CfdBlockEntry::Spread(sv, _) => walk_value(sv, old_key, &mut spans),
+            }
+        }
+    }
+    spans
+}
+
+/// Apply a list of byte-span replacements (sorted descending) to a source string.
+fn apply_span_replacements(source: &str, mut spans: Vec<coflow_cft::Span>, replacement: &str) -> String {
+    spans.sort_by(|a, b| b.start.cmp(&a.start));
+    spans.dedup_by_key(|s| s.start);
+    let mut result = source.to_string();
+    for span in &spans {
+        let s = span.start.min(result.len());
+        let e = span.end.min(result.len());
+        result = format!("{}{}{}", &result[..s], replacement, &result[e..]);
+    }
+    result
+}
+
 pub fn rename_record_inner(
     store: &Mutex<SessionStore>,
     session_id: u32,
@@ -1148,14 +1195,39 @@ pub fn rename_record_inner(
         .find(|r| r.key == old_key)
         .ok_or_else(|| format!("record '{old_key}' not found in {file_path}"))?;
 
-    let span = record.key_span;
-    let new_source = format!("{}{}{}", &source[..span.start], new_key, &source[span.end..]);
+    // ── 1. Rename the record's own key span ───────────────────────────────────
+    let key_span = record.key_span;
+    // Also collect any self-refs inside the same file
+    let mut self_spans = collect_ref_key_spans(&ast, old_key);
+    self_spans.push(key_span);
+    let new_source = apply_span_replacements(&source, self_spans, new_key);
 
     let abs_path = session.project_dir.join(file_path);
     std::fs::write(&abs_path, &new_source)
         .map_err(|e| format!("cannot write {file_path}: {e}"))?;
+    reload_file(&mut session, file_path, &new_source)?;
 
-    reload_file(&mut session, file_path, &new_source)
+    // ── 2. Update &old_key references in all other loaded files ───────────────
+    let other_files: Vec<(String, String, CfdAst)> = session
+        .file_sources
+        .iter()
+        .filter(|(fp, _)| *fp != file_path)
+        .map(|(fp, (src, ast))| (fp.clone(), src.clone(), ast.clone()))
+        .collect();
+
+    for (fp, src, ast) in other_files {
+        let spans = collect_ref_key_spans(&ast, old_key);
+        if spans.is_empty() {
+            continue;
+        }
+        let updated = apply_span_replacements(&src, spans, new_key);
+        let abs = session.project_dir.join(&fp);
+        std::fs::write(&abs, &updated)
+            .map_err(|e| format!("cannot write {fp}: {e}"))?;
+        reload_file(&mut session, &fp, &updated)?;
+    }
+
+    Ok(())
 }
 
 pub fn get_diagnostics_inner(
@@ -2847,6 +2919,36 @@ mod tests {
         let contents = std::fs::read_to_string(&cfd).unwrap();
         assert!(contents.contains("new_key"), "file should contain new_key:\n{contents}");
         assert!(!contents.contains("old_key"), "file should not contain old_key:\n{contents}");
+    }
+
+    #[test]
+    fn rename_record_updates_cross_file_refs() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let items_cfd = data_dir.join("items.cfd");
+        let refs_cfd = data_dir.join("refs.cfd");
+
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }\ntype Container { item: &Item; }").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+        std::fs::write(&items_cfd, "old_key: Item {\n  name: \"test\",\n}\n").unwrap();
+        std::fs::write(&refs_cfd, "container: Container {\n  item: &old_key,\n}\n").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        rename_record_inner(&store, sid, "data/items.cfd", "old_key", "new_key").unwrap();
+
+        let items_contents = std::fs::read_to_string(&items_cfd).unwrap();
+        assert!(items_contents.contains("new_key"), "items.cfd should contain new_key:\n{items_contents}");
+        assert!(!items_contents.contains("old_key"), "items.cfd should not contain old_key:\n{items_contents}");
+
+        let refs_contents = std::fs::read_to_string(&refs_cfd).unwrap();
+        assert!(refs_contents.contains("&new_key"), "refs.cfd should contain &new_key:\n{refs_contents}");
+        assert!(!refs_contents.contains("&old_key"), "refs.cfd should not contain &old_key:\n{refs_contents}");
     }
 
     #[test]
