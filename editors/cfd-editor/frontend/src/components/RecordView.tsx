@@ -200,11 +200,10 @@ export function RecordView({
     try {
       await onDeleteRecord(sessionId, filePath, deleteModal.recordKey);
       setDeleteModal(null);
-    } catch (e) {
-      onError?.(`Delete failed: ${e}`);
-      setDeleteModal(null);
+    } catch {
+      // onDeleteRecord shows error toast; keep modal open so user can retry or cancel
     }
-  }, [deleteModal, onDeleteRecord, sessionId, filePath, onError]);
+  }, [deleteModal, onDeleteRecord, sessionId, filePath]);
 
   const handleFieldEdit = useCallback(async (field: FieldCell, newValue: FieldValue) => {
     await onWriteField(sessionId, filePath, recordKey, [{ kind: "Field", name: field.name }], newValue);

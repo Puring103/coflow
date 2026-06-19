@@ -2904,5 +2904,117 @@ mod tests {
             data_diags.is_empty(),
             "expected no errors for valid example project, got: {data_diags:?}"
         );
+
+        // 03-spread.cfd: elite_monster spreads basic_monster's fields
+        let records_03 = get_file_records_inner(&store, snap.session_id, "data/03-spread.cfd")
+            .expect("03-spread.cfd should load");
+        let elite = records_03.records.iter().find(|r| r.key == "elite_monster")
+            .expect("elite_monster missing from 03-spread.cfd");
+        assert_eq!(elite.actual_type, "Monster");
+        // spread_sources: elite_monster spreads from basic_monster
+        assert!(
+            !elite.spread_sources.is_empty(),
+            "elite_monster should have spread_sources"
+        );
+        // elite_monster overrides all 4 Monster fields (name, stats, weaknesses, drop) directly,
+        // so spread_fields is empty — all fields are declared directly.
+        assert!(
+            !elite.spread_fields.contains(&"name".to_string()),
+            "name is overridden directly, should not be a spread field"
+        );
+        assert!(
+            !elite.spread_fields.contains(&"stats".to_string()),
+            "stats is overridden directly, should not be a spread field"
+        );
+        // name should be "Elite Training Dummy" (local override)
+        let name_field = elite.fields.iter().find(|f| f.name == "name").expect("name missing");
+        assert!(
+            matches!(&name_field.value, FieldValue::Str { v } if v == "Elite Training Dummy"),
+            "expected 'Elite Training Dummy', got {:?}", name_field.value
+        );
+    }
+
+    /// Integration test: write a field in a copy of examples/cfd and verify round-trip.
+    #[test]
+    fn integration_write_field_example_cfd() {
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let examples_yaml = manifest_dir.join("../../examples/cfd/coflow.yaml");
+        if !examples_yaml.exists() {
+            eprintln!("integration test skipped: examples/cfd/coflow.yaml not found");
+            return;
+        }
+
+        // Copy example into a temp dir to avoid modifying the real source
+        let tmp = TempDir::new().unwrap();
+        let tmp_root = tmp.path();
+
+        // Copy schema.cft
+        std::fs::copy(
+            manifest_dir.join("../../examples/cfd/schema.cft"),
+            tmp_root.join("schema.cft"),
+        ).unwrap();
+        // Copy coflow.yaml
+        std::fs::copy(&examples_yaml, tmp_root.join("coflow.yaml")).unwrap();
+        // Copy data dir
+        let data_src = manifest_dir.join("../../examples/cfd/data");
+        let data_dst = tmp_root.join("data");
+        std::fs::create_dir(&data_dst).unwrap();
+        for entry in std::fs::read_dir(&data_src).unwrap().filter_map(|e| e.ok()) {
+            std::fs::copy(entry.path(), data_dst.join(entry.file_name())).unwrap();
+        }
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, tmp_root.join("coflow.yaml").to_str().unwrap())
+            .expect("should load copied example");
+
+        // Write sword_fire's price from 100 → 200
+        write_field_inner(
+            &store,
+            snap.session_id,
+            "data/01-records.cfd",
+            "sword_fire",
+            &[FieldPathSegment::Field { name: "price".to_string() }],
+            &FieldValue::Int { v: 200.0 },
+        ).expect("write_field should succeed");
+
+        // Verify the in-memory model reflects the change
+        let records = get_file_records_inner(&store, snap.session_id, "data/01-records.cfd")
+            .expect("should load records after write");
+        let sword = records.records.iter().find(|r| r.key == "sword_fire").expect("sword_fire missing");
+        let price = sword.fields.iter().find(|f| f.name == "price").expect("price missing");
+        assert!(
+            matches!(price.value, FieldValue::Int { v } if (v - 200.0).abs() < 1e-9),
+            "expected price=200 after write, got {:?}", price.value
+        );
+
+        // Verify the file on disk was updated
+        let file_contents = std::fs::read_to_string(data_dst.join("01-records.cfd")).unwrap();
+        assert!(
+            file_contents.contains("price: 200"),
+            "expected 'price: 200' in file after write:\n{file_contents}"
+        );
+        assert!(
+            !file_contents.contains("price: 100"),
+            "old value 'price: 100' still in file after write:\n{file_contents}"
+        );
+
+        // Write staff_ice's element from Ice → Fire (enum)
+        write_field_inner(
+            &store,
+            snap.session_id,
+            "data/01-records.cfd",
+            "staff_ice",
+            &[FieldPathSegment::Field { name: "element".to_string() }],
+            &FieldValue::Enum { enum_name: "Element".to_string(), variant: "Fire".to_string(), int_value: 1.0 },
+        ).expect("write enum field should succeed");
+
+        let records2 = get_file_records_inner(&store, snap.session_id, "data/01-records.cfd")
+            .expect("should load records after enum write");
+        let staff = records2.records.iter().find(|r| r.key == "staff_ice").expect("staff_ice missing");
+        let elem = staff.fields.iter().find(|f| f.name == "element").expect("element missing");
+        assert!(
+            matches!(&elem.value, FieldValue::Enum { variant, .. } if variant == "Fire"),
+            "expected element=Fire after write, got {:?}", elem.value
+        );
     }
 }
