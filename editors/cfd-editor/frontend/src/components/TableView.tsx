@@ -325,6 +325,7 @@ export function TableView({
   const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
   const lastSelectedKeyRef = useRef<string | null>(null);
+  const filteredRowsRef = useRef<RowData[]>([]);
   const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const columnPickerRef = useRef<HTMLDivElement>(null);
@@ -391,7 +392,7 @@ export function TableView({
         const tag = (e.target as HTMLElement).tagName;
         if (tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") {
           e.preventDefault();
-          setSelectedKeys(new Set(filteredRows.map(r => r.key)));
+          setSelectedKeys(new Set(filteredRowsRef.current.map(r => r.key)));
         }
       }
       if ((e.ctrlKey || e.metaKey) && e.key === "f") {
@@ -410,6 +411,7 @@ export function TableView({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filteredRows: RowData[] = fileRecords.records
@@ -431,6 +433,7 @@ export function TableView({
       });
     })
     .map(r => ({ ...r, _filePath: filePath }));
+  filteredRowsRef.current = filteredRows;
 
   // Per-record diagnostic counts for row badges
   const rowDiagCounts = useMemo(() => {
