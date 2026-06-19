@@ -7,6 +7,7 @@ import {
   flexRender,
   type SortingState,
   type ColumnResizeMode,
+  type VisibilityState,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { FileRecords, RecordRow, FieldValue, FieldPathSegment, FieldSchema } from "../bindings";
@@ -281,6 +282,9 @@ export function TableView({
   }, [sessionId]);
 
   const [fieldSchemas, setFieldSchemas] = useState<FieldSchema[]>([]);
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [showColumnPicker, setShowColumnPicker] = useState(false);
+  const columnPickerRef = useRef<HTMLDivElement>(null);
 
   // Fetch field schemas for the active type to enable required-null highlighting
   useEffect(() => {
@@ -292,8 +296,20 @@ export function TableView({
     return () => { cancelled = true; };
   }, [sessionId, activeType]);
 
-  // Reset sorting and search when type changes (columns are different per type)
-  useEffect(() => { setSorting([]); setSearch(""); }, [activeType]);
+  // Reset sorting, search and column visibility when type changes
+  useEffect(() => { setSorting([]); setSearch(""); setColumnVisibility({}); setShowColumnPicker(false); }, [activeType]);
+
+  // Close column picker on outside click
+  useEffect(() => {
+    if (!showColumnPicker) return;
+    const handler = (e: MouseEvent) => {
+      if (columnPickerRef.current && !columnPickerRef.current.contains(e.target as Node)) {
+        setShowColumnPicker(false);
+      }
+    };
+    window.addEventListener("mousedown", handler);
+    return () => window.removeEventListener("mousedown", handler);
+  }, [showColumnPicker]);
   const [showNewRecord, setShowNewRecord] = useState(false);
   const [newRecord, setNewRecord] = useState<NewRecordForm>({ key: "", typeName: activeType ?? fileRecords.type_names[0] ?? "", error: null });
   const [creating, setCreating] = useState(false);
@@ -429,8 +445,9 @@ export function TableView({
   const table = useReactTable({
     data: filteredRows,
     columns,
-    state: { sorting },
+    state: { sorting, columnVisibility },
     onSortingChange: setSorting,
+    onColumnVisibilityChange: setColumnVisibility,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     columnResizeMode,
@@ -620,6 +637,7 @@ export function TableView({
         borderBottom: "1px solid var(--border)",
         background: "var(--bg2)",
         flexShrink: 0,
+        position: "relative",
       }}>
         <input
           ref={searchRef}
@@ -644,6 +662,95 @@ export function TableView({
           <span style={{ color: "var(--text-muted)", fontSize: 11, whiteSpace: "nowrap" }}>
             {filteredRows.length} / {fileRecords.records.filter(r => r.actual_type === activeType).length}
           </span>
+        )}
+        {/* Column visibility toggle */}
+        {fieldNames.length > 0 && (
+          <div ref={columnPickerRef} style={{ position: "relative" }}>
+            <button
+              onClick={() => setShowColumnPicker(v => !v)}
+              title="显示/隐藏列"
+              style={{
+                fontSize: 11,
+                padding: "2px 8px",
+                background: showColumnPicker ? "var(--bg3)" : "transparent",
+                border: "1px solid var(--border)",
+                borderRadius: 4,
+                color: "var(--text-muted)",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              ⊞ 列
+              {Object.values(columnVisibility).some(v => v === false) && (
+                <span style={{ marginLeft: 4, color: "var(--accent)", fontSize: 10 }}>●</span>
+              )}
+            </button>
+            {showColumnPicker && (
+              <div style={{
+                position: "absolute",
+                top: "100%",
+                right: 0,
+                marginTop: 4,
+                background: "var(--bg2)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                padding: "6px 0",
+                zIndex: 1000,
+                minWidth: 160,
+                maxHeight: 320,
+                overflowY: "auto",
+                boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+              }}>
+                <div style={{ padding: "2px 10px 6px", display: "flex", gap: 6 }}>
+                  <button
+                    onClick={() => {
+                      const vis: VisibilityState = {};
+                      fieldNames.forEach(n => { vis[n] = true; });
+                      setColumnVisibility(vis);
+                    }}
+                    style={{ fontSize: 10, padding: "1px 6px", flex: 1 }}
+                  >全显</button>
+                  <button
+                    onClick={() => {
+                      const vis: VisibilityState = {};
+                      fieldNames.forEach(n => { vis[n] = false; });
+                      setColumnVisibility(vis);
+                    }}
+                    style={{ fontSize: 10, padding: "1px 6px", flex: 1 }}
+                  >全隐</button>
+                </div>
+                {table.getAllLeafColumns().filter(col => col.id !== "key").map(col => (
+                  <label
+                    key={col.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "3px 10px",
+                      cursor: "pointer",
+                      fontSize: 12,
+                      color: "var(--text)",
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = "var(--bg3)")}
+                    onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={col.getIsVisible()}
+                      onChange={col.getToggleVisibilityHandler()}
+                      style={{ margin: 0, cursor: "pointer" }}
+                    />
+                    <span style={{ fontFamily: "monospace" }}>{col.id}</span>
+                    {fieldSchemas.find(s => s.name === col.id) && (
+                      <span style={{ color: "var(--text-muted)", fontSize: 10, marginLeft: "auto" }}>
+                        {fieldSchemas.find(s => s.name === col.id)!.type_str}
+                      </span>
+                    )}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
