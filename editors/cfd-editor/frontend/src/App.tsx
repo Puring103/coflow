@@ -720,6 +720,7 @@ export default function App() {
                   <GlobalTableView
                     sessionId={project.snapshot.session_id}
                     typeName={router.current.typeName}
+                    refreshKey={graphRefreshKey}
                     onTypeChange={typeName => router.replace({ view: "global-table", typeName })}
                     onNavigate={router.push}
                   />

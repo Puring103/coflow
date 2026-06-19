@@ -8,6 +8,7 @@ import { api } from "../api";
 interface GlobalTableViewProps {
   sessionId: number;
   typeName: string;
+  refreshKey?: number;
   onTypeChange: (typeName: string) => void;
   onNavigate: (route: Route) => void;
 }
@@ -26,7 +27,7 @@ function fieldValueToString(v: FieldValue): string {
 
 type SortCol = { col: "key" | "file" | string; dir: "asc" | "desc" };
 
-export function GlobalTableView({ sessionId, typeName, onTypeChange, onNavigate }: GlobalTableViewProps) {
+export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange, onNavigate }: GlobalTableViewProps) {
   const [rows, setRows] = useState<RecordRow[]>([]);
   const [allTypeNames, setAllTypeNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -47,7 +48,9 @@ export function GlobalTableView({ sessionId, typeName, onTypeChange, onNavigate 
     api.getAllRecordsOfType(sessionId, typeName)
       .then(r => { setRows(r); setLoading(false); })
       .catch(e => { setError(String(e)); setLoading(false); });
-  }, [sessionId, typeName]);
+  // refreshKey is intentionally included to allow callers to force a re-fetch
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, typeName, refreshKey]);
 
   const filteredRows = (() => {
     const base = rows.filter(r => {
