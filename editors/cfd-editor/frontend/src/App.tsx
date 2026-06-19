@@ -494,7 +494,7 @@ export default function App() {
 
       {/* Diagnostics panel */}
       {project.snapshot && (
-        <DiagnosticsPanel diagnostics={project.snapshot.diagnostics} onNavigate={router.push} />
+        <DiagnosticsPanel diagnostics={project.snapshot.diagnostics} onNavigate={router.push} currentFile={router.current?.file} />
       )}
 
       {/* New file modal */}

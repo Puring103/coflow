@@ -5,6 +5,7 @@ import type { Route } from "../router";
 interface DiagnosticsPanelProps {
   diagnostics: DiagnosticItem[];
   onNavigate?: (route: Route) => void;
+  currentFile?: string | null;
 }
 
 type SeverityFilter = "all" | "error" | "warning" | "info";
@@ -33,9 +34,10 @@ function severityRank(severity: string): number {
   }
 }
 
-export function DiagnosticsPanel({ diagnostics, onNavigate }: DiagnosticsPanelProps) {
+export function DiagnosticsPanel({ diagnostics, onNavigate, currentFile }: DiagnosticsPanelProps) {
   const [expanded, setExpanded] = useState(false);
   const [filter, setFilter] = useState<SeverityFilter>("all");
+  const [fileOnly, setFileOnly] = useState(false);
   const prevErrorCountRef = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -55,7 +57,19 @@ export function DiagnosticsPanel({ diagnostics, onNavigate }: DiagnosticsPanelPr
     prevErrorCountRef.current = errors;
   }, [errors]);
 
-  const filtered = diagnostics
+  // When current file changes and fileOnly is on, reset scroll
+  useEffect(() => {
+    if (fileOnly && expanded) {
+      requestAnimationFrame(() => { listRef.current?.scrollTo({ top: 0 }); });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentFile]);
+
+  const baseFiltered = fileOnly && currentFile
+    ? diagnostics.filter(d => d.file_path === currentFile)
+    : diagnostics;
+
+  const filtered = baseFiltered
     .filter(d => {
       if (filter === "all") return true;
       if (filter === "info") return d.severity.toLowerCase() !== "error" && d.severity.toLowerCase() !== "warning";
@@ -144,9 +158,27 @@ export function DiagnosticsPanel({ diagnostics, onNavigate }: DiagnosticsPanelPr
           )}
         </div>
 
-        {/* Severity filter tabs — only show when expanded */}
+        {/* Severity filter tabs + file filter — only show when expanded */}
         {expanded && (
-          <div style={{ display: "flex", gap: 2, padding: "0 8px" }}>
+          <div style={{ display: "flex", gap: 2, padding: "0 8px", alignItems: "center" }}>
+            {currentFile && (
+              <button
+                onClick={e => { e.stopPropagation(); setFileOnly(f => !f); }}
+                title={fileOnly ? "Show all files" : `Show only: ${currentFile}`}
+                style={{
+                  fontSize: 11,
+                  padding: "2px 8px",
+                  background: fileOnly ? "var(--accent)" : "transparent",
+                  border: fileOnly ? "1px solid var(--accent)" : "1px solid var(--border)",
+                  borderRadius: 4,
+                  color: fileOnly ? "#fff" : "var(--text-muted)",
+                  cursor: "pointer",
+                  marginRight: 4,
+                }}
+              >
+                This file
+              </button>
+            )}
             {FILTER_BTNS.filter(b => b.count > 0 || b.key === "all").map(btn => (
               <button
                 key={btn.key}
@@ -180,7 +212,11 @@ export function DiagnosticsPanel({ diagnostics, onNavigate }: DiagnosticsPanelPr
         }}>
           {filtered.length === 0 ? (
             <div style={{ padding: "8px 16px", color: "var(--text-muted)", fontSize: 12 }}>
-              {diagnostics.length === 0 ? "No problems detected." : "No items match the current filter."}
+              {diagnostics.length === 0
+                ? "No problems detected."
+                : fileOnly && currentFile
+                  ? `No problems in ${currentFile.split("/").pop() ?? currentFile}.`
+                  : "No items match the current filter."}
             </div>
           ) : (
             filtered.map((item, idx) => {
