@@ -89,10 +89,12 @@ interface CfdNodeData extends Record<string, unknown> {
   isFocusFile: boolean;
   onContextMenu: (e: React.MouseEvent, gnode: GraphNode) => void;
   onExpand: (key: string) => void;
+  onCollapse: (key: string) => void;
+  onNavigate: (gnode: GraphNode) => void;
 }
 
 function CfdNode({ data }: NodeProps<Node<CfdNodeData>>) {
-  const { gnode, color, isFocusFile, onContextMenu, onExpand } = data;
+  const { gnode, color, isFocusFile, onContextMenu, onExpand, onCollapse, onNavigate } = data;
 
   if (gnode.is_collapsed) {
     return (
@@ -125,6 +127,7 @@ function CfdNode({ data }: NodeProps<Node<CfdNodeData>>) {
   return (
     <div
       onContextMenu={e => onContextMenu(e, gnode)}
+      onDoubleClick={() => onNavigate(gnode)}
       style={{
         width: NODE_WIDTH,
         minHeight: NODE_HEIGHT,
@@ -133,16 +136,41 @@ function CfdNode({ data }: NodeProps<Node<CfdNodeData>>) {
         borderRadius: 8,
         padding: 10,
         fontSize: 12,
-        cursor: "context-menu",
+        cursor: "pointer",
         boxShadow: isFocusFile ? `0 0 8px ${color}44` : "none",
       }}
+      title="Double-click to open record"
     >
       <Handle type="target" position={Position.Left} style={{ background: color, opacity: 0.7 }} />
-      <div style={{ marginBottom: 6, borderBottom: "1px solid var(--border)", paddingBottom: 4 }}>
-        <div style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 12, color: "var(--text)" }}>
-          {gnode.key}
+      <div style={{ marginBottom: 6, borderBottom: "1px solid var(--border)", paddingBottom: 4, display: "flex", alignItems: "flex-start", gap: 4 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {gnode.key}
+          </div>
+          <div style={{ color: color, fontSize: 10, marginTop: 2 }}>{gnode.actual_type}</div>
         </div>
-        <div style={{ color: color, fontSize: 10, marginTop: 2 }}>{gnode.actual_type}</div>
+        <button
+          onClick={e => { e.stopPropagation(); onCollapse(gnode.key); }}
+          title="Collapse node"
+          style={{
+            flexShrink: 0,
+            width: 16,
+            height: 16,
+            padding: 0,
+            background: "transparent",
+            border: `1px solid ${color}66`,
+            borderRadius: 3,
+            color: "var(--text-muted)",
+            fontSize: 10,
+            lineHeight: "14px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          −
+        </button>
       </div>
       <div>
         <DataCard
@@ -161,15 +189,24 @@ const nodeTypes = { cfd: CfdNode };
 
 const layoutCache = new Map<string, Map<string, { x: number; y: number }>>();
 
+/** Invalidate all cached layouts for a given (sessionId, filePath) pair. */
+export function invalidateGraphCache(sessionId: number, filePath: string): void {
+  const prefix = `${sessionId}:${filePath}:`;
+  for (const key of Array.from(layoutCache.keys())) {
+    if (key.startsWith(prefix)) layoutCache.delete(key);
+  }
+}
+
 // ─── GraphView ────────────────────────────────────────────────────────────────
 
 interface GraphViewProps {
   sessionId: number;
   filePath: string;
   onNavigate: (route: Route) => void;
+  refreshKey?: number;
 }
 
-export function GraphView({ sessionId, filePath, onNavigate }: GraphViewProps) {
+export function GraphView({ sessionId, filePath, onNavigate, refreshKey }: GraphViewProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<CfdNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -199,10 +236,16 @@ export function GraphView({ sessionId, filePath, onNavigate }: GraphViewProps) {
     api.getGraph(sessionId, filePath, expandedKeys)
       .then(data => setGraphData(data))
       .catch(err => setGraphError(String(err)));
-  }, [sessionId, filePath, expandedKeys]);
+  // refreshKey is intentionally included — it lets the parent force a re-fetch after writes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, filePath, expandedKeys, refreshKey]);
 
   const handleExpand = useCallback((key: string) => {
     setExpandedKeys(prev => prev.includes(key) ? prev : [...prev, key]);
+  }, []);
+
+  const handleCollapse = useCallback((key: string) => {
+    setExpandedKeys(prev => prev.filter(k => k !== key));
   }, []);
 
   const handleNodeContextMenu = useCallback((e: React.MouseEvent, gnode: GraphNode) => {
@@ -219,17 +262,29 @@ export function GraphView({ sessionId, filePath, onNavigate }: GraphViewProps) {
           label: "在表中查看",
           onClick: () => onNavigate({ view: "table", file: gnode.file_path, typeFilter: gnode.actual_type }),
         },
+        ...(!gnode.is_collapsed ? [{
+          label: "折叠节点",
+          onClick: () => handleCollapse(gnode.key),
+        }] : [{
+          label: "展开节点",
+          onClick: () => handleExpand(gnode.key),
+        }]),
       ],
     });
-  }, [onNavigate]);
+  }, [onNavigate, handleCollapse, handleExpand]);
 
   const expandRef = useRef<(key: string) => void>(() => {});
+  const collapseRef = useRef<(key: string) => void>(() => {});
+  const navigateRef = useRef<(gnode: GraphNode) => void>(() => {});
   // Keep refs up to date so node closures don't go stale
   contextMenuRef.current = handleNodeContextMenu;
   expandRef.current = handleExpand;
+  collapseRef.current = handleCollapse;
+  navigateRef.current = (gnode: GraphNode) =>
+    onNavigate({ view: "record", file: gnode.file_path, recordKey: gnode.key });
 
   // Persist dragged positions back to cache on every node change
-  const cacheKey = `${sessionId}:${filePath}:${expandedKeys.join(",")}`;
+  const cacheKey = `${sessionId}:${filePath}:${[...expandedKeys].sort().join(",")}`;
   useEffect(() => {
     if (nodes.length === 0) return;
     const posMap = new Map<string, { x: number; y: number }>();
@@ -250,6 +305,8 @@ export function GraphView({ sessionId, filePath, onNavigate }: GraphViewProps) {
     const stableHandler = (e: React.MouseEvent, gnode: GraphNode) =>
       contextMenuRef.current(e, gnode);
     const stableExpand = (key: string) => expandRef.current(key);
+    const stableCollapse = (key: string) => collapseRef.current(key);
+    const stableNavigate = (gnode: GraphNode) => navigateRef.current(gnode);
 
     const cached = layoutCache.get(cacheKey);
     const allCached = cached && graphData.nodes.every(n => cached.has(n.id));
@@ -267,6 +324,8 @@ export function GraphView({ sessionId, filePath, onNavigate }: GraphViewProps) {
             isFocusFile: gnode.file_path === filePath || gnode.in_focus_file,
             onContextMenu: stableHandler,
             onExpand: stableExpand,
+            onCollapse: stableCollapse,
+            onNavigate: stableNavigate,
           },
         };
       });
@@ -368,6 +427,15 @@ export function GraphView({ sessionId, filePath, onNavigate }: GraphViewProps) {
         />
         {search && (
           <button onClick={() => setSearch("")} style={{ fontSize: 11, padding: "2px 6px" }}>✕</button>
+        )}
+        {graphData && expandedKeys.length > 0 && (
+          <button
+            onClick={() => setExpandedKeys([])}
+            title="Collapse all expanded nodes"
+            style={{ fontSize: 11, padding: "2px 8px", flexShrink: 0 }}
+          >
+            折叠全部
+          </button>
         )}
         {graphData && (
           <span style={{ color: noSearchMatches ? "#ff5555" : "var(--text-muted)", fontSize: 12, marginLeft: "auto" }}>

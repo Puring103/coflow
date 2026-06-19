@@ -8,7 +8,7 @@ import type { FieldPathSegment, FieldValue, FileTreeNode } from "./bindings";
 import { FileTree } from "./components/FileTree";
 import { TableView } from "./components/TableView";
 import { RecordView } from "./components/RecordView";
-import { GraphView } from "./components/GraphView";
+import { GraphView, invalidateGraphCache } from "./components/GraphView";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 
 export default function App() {
@@ -16,11 +16,15 @@ export default function App() {
   const project = useProject();
   const [showNewFileModal, setShowNewFileModal] = useState(false);
   const [newFilePath, setNewFilePath] = useState("");
+  const [newFileError, setNewFileError] = useState<string | null>(null);
   const [opError, setOpError] = useState<string | null>(null);
+  const [graphRefreshKey, setGraphRefreshKey] = useState(0);
+  const opErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showOpError = useCallback((msg: string) => {
+    if (opErrorTimerRef.current) clearTimeout(opErrorTimerRef.current);
     setOpError(msg);
-    setTimeout(() => setOpError(null), 6000);
+    opErrorTimerRef.current = setTimeout(() => { setOpError(null); opErrorTimerRef.current = null; }, 6000);
   }, []);
 
   const currentFile = router.current?.file ?? null;
@@ -105,6 +109,8 @@ export default function App() {
       } else {
         await api.writeField(sessionId, filePath, recordKey, fieldPath, newValue);
       }
+      invalidateGraphCache(sessionId, filePath);
+      setGraphRefreshKey(k => k + 1);
       project.markDirty(sessionId, filePath);
     } catch (e) {
       showOpError(`Write failed: ${e}`);
@@ -117,6 +123,8 @@ export default function App() {
     const filePath = router.current.file;
     try {
       await api.renameRecord(project.snapshot.session_id, filePath, oldKey, newKey);
+      invalidateGraphCache(project.snapshot.session_id, filePath);
+      setGraphRefreshKey(k => k + 1);
       project.markDirty(project.snapshot.session_id, filePath);
       // Navigate to the new key
       router.replace({ view: "record", file: filePath, recordKey: newKey });
@@ -131,6 +139,8 @@ export default function App() {
   ) => {
     try {
       await api.renameRecord(sessionId, filePath, oldKey, newKey);
+      invalidateGraphCache(sessionId, filePath);
+      setGraphRefreshKey(k => k + 1);
       project.markDirty(sessionId, filePath);
     } catch (e) {
       showOpError(`Rename failed: ${e}`);
@@ -145,12 +155,20 @@ export default function App() {
   ) => {
     try {
       await api.deleteRecord(sessionId, filePath, recordKey);
+      invalidateGraphCache(sessionId, filePath);
+      setGraphRefreshKey(k => k + 1);
       project.markDirty(sessionId, filePath);
+      // If the deleted record is the currently viewed one, navigate back to table
+      if (router.current?.view === "record" &&
+          "recordKey" in router.current &&
+          (router.current as { recordKey: string }).recordKey === recordKey) {
+        router.replace({ view: "table", file: filePath });
+      }
     } catch (e) {
       showOpError(`Delete failed: ${e}`);
       throw e;
     }
-  }, [project, showOpError]);
+  }, [project, router, showOpError]);
 
   const handleDeleteFile = useCallback(async (filePath: string) => {
     if (!project.snapshot) return;
@@ -158,7 +176,7 @@ export default function App() {
     try {
       await api.deleteFile(project.snapshot.session_id, filePath);
       await project.refreshSnapshot();
-      // Clear navigation so the auto-select effect can pick the first remaining file
+      // Reset after refresh so the auto-select effect fires with the updated snapshot
       if (wasViewing) {
         router.reset();
       }
@@ -167,20 +185,40 @@ export default function App() {
     }
   }, [project, router, showOpError]);
 
+  const handleRenameFile = useCallback(async (oldPath: string, newPath: string) => {
+    if (!project.snapshot) return;
+    try {
+      await api.renameFile(project.snapshot.session_id, oldPath, newPath);
+      // Rewrite entire router history before refreshing snapshot
+      router.rewriteFile(oldPath, newPath);
+      await project.refreshSnapshot();
+    } catch (err) {
+      showOpError(`Rename file failed: ${err}`);
+      throw err;
+    }
+  }, [project, router, showOpError]);
+
   const handleNewFile = () => {
     setNewFilePath("");
+    setNewFileError(null);
     setShowNewFileModal(true);
   };
 
   const handleCreateFile = async () => {
     if (!project.snapshot || !newFilePath.trim()) return;
+    const trimmed = newFilePath.trim();
+    if (!trimmed.endsWith(".cfd")) {
+      setNewFileError("File path must end with .cfd");
+      return;
+    }
+    setNewFileError(null);
     try {
-      const node = await api.createFile(project.snapshot.session_id, newFilePath.trim());
+      const node = await api.createFile(project.snapshot.session_id, trimmed);
       setShowNewFileModal(false);
       await project.refreshSnapshot();
       router.push({ view: "table", file: node.path });
     } catch (err) {
-      showOpError(`Create file failed: ${err}`);
+      setNewFileError(String(err));
     }
   };
 
@@ -190,6 +228,13 @@ export default function App() {
       <header className="topbar">
         <span className="app-title">CFD Editor</span>
         <button onClick={handleOpen}>Open Project…</button>
+        {project.snapshot && (
+          <button
+            onClick={() => project.refreshSnapshot()}
+            title="Reload project from disk (picks up external file changes)"
+            style={{ fontSize: 11 }}
+          >↺ Reload</button>
+        )}
         {router.canBack && (
           <button onClick={router.back} title="Back">←</button>
         )}
@@ -243,6 +288,7 @@ export default function App() {
               onSelect={(file) => router.push({ view: "table", file })}
               onNewFile={handleNewFile}
               onDeleteFile={handleDeleteFile}
+              onRenameFile={handleRenameFile}
               sessionId={project.snapshot.session_id}
             />
           </aside>
@@ -314,6 +360,7 @@ export default function App() {
                     fileRecords={project.fileRecords}
                     onWriteField={handleWriteField}
                     onRenameRecord={handleRenameRecord}
+                    onDeleteRecord={handleDeleteRecord}
                     onNavigate={router.push}
                   />
                 )}
@@ -328,6 +375,7 @@ export default function App() {
                     sessionId={project.snapshot?.session_id ?? 0}
                     filePath={router.current.file}
                     onNavigate={router.push}
+                    refreshKey={graphRefreshKey}
                   />
                 )}
               </div>
@@ -373,18 +421,23 @@ export default function App() {
             onClick={e => e.stopPropagation()}
           >
             <h3 style={{ margin: 0, fontSize: 15 }}>New File</h3>
+            {newFileError && (
+              <div style={{ color: "#ff5555", fontSize: 12, background: "#ff555522", border: "1px solid #ff555544", borderRadius: 4, padding: "4px 8px" }}>
+                {newFileError}
+              </div>
+            )}
             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-              Relative path
+              Relative path (must end with .cfd)
               <input
                 value={newFilePath}
-                onChange={e => setNewFilePath(e.target.value)}
+                onChange={e => { setNewFilePath(e.target.value); setNewFileError(null); }}
                 onKeyDown={e => {
                   if (e.key === "Enter") handleCreateFile();
                   if (e.key === "Escape") setShowNewFileModal(false);
                 }}
                 style={{
                   background: "var(--bg3)",
-                  border: "1px solid var(--border)",
+                  border: newFileError ? "1px solid #ff5555" : "1px solid var(--border)",
                   borderRadius: 4,
                   color: "var(--text)",
                   padding: "4px 8px",
@@ -392,7 +445,7 @@ export default function App() {
                   fontFamily: "monospace",
                   outline: "none",
                 }}
-                placeholder="data/my_file.yaml"
+                placeholder="data/my_file.cfd"
                 autoFocus
               />
             </label>

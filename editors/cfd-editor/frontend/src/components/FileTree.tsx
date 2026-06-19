@@ -8,7 +8,14 @@ interface FileTreeProps {
   onSelect: (path: string) => void;
   onNewFile: () => void;
   onDeleteFile?: (path: string) => void;
+  onRenameFile?: (oldPath: string, newPath: string) => Promise<void>;
   sessionId?: number;
+}
+
+interface RenameFileModal {
+  node: FileTreeNode;
+  draft: string;
+  error: string | null;
 }
 
 interface TreeNodeProps {
@@ -68,22 +75,24 @@ function TreeNode({ node, selectedPath, onSelect, onContextMenu, depth, expanded
 
   return (
     <div
-      onClick={() => onSelect(node.path)}
+      onClick={node.in_sources ? () => onSelect(node.path) : undefined}
       onContextMenu={e => { e.preventDefault(); onContextMenu(e, node); }}
+      title={!node.in_sources ? `${node.path} (not in sources — read-only view not supported)` : node.path}
       style={{
         display: "flex",
         alignItems: "center",
         gap: 4,
         padding: "2px 8px",
         paddingLeft: 8 + indent + 16,
-        cursor: "pointer",
+        cursor: node.in_sources ? "pointer" : "default",
         userSelect: "none",
         background: isSelected ? "var(--bg3)" : "transparent",
         color: node.in_sources ? "var(--text)" : "var(--text-muted)",
         borderLeft: isSelected ? "2px solid var(--accent)" : "2px solid transparent",
+        opacity: node.in_sources ? 1 : 0.5,
       }}
       onMouseEnter={e => {
-        if (!isSelected) e.currentTarget.style.background = "var(--bg3)";
+        if (node.in_sources && !isSelected) e.currentTarget.style.background = "var(--bg3)";
       }}
       onMouseLeave={e => {
         if (!isSelected) e.currentTarget.style.background = "transparent";
@@ -110,7 +119,7 @@ function collectDirPaths(nodes: FileTreeNode[]): string[] {
   return result;
 }
 
-export function FileTree({ nodes, selectedPath, onSelect, onNewFile, onDeleteFile }: FileTreeProps) {
+export function FileTree({ nodes, selectedPath, onSelect, onNewFile, onDeleteFile, onRenameFile }: FileTreeProps) {
   const expandedRef = useRef<Set<string> | null>(null);
   const knownDirsRef = useRef<Set<string>>(new Set());
 
@@ -130,6 +139,7 @@ export function FileTree({ nodes, selectedPath, onSelect, onNewFile, onDeleteFil
 
   const [, forceRender] = useState(0);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [renameModal, setRenameModal] = useState<RenameFileModal | null>(null);
 
   const handleToggleDir = useCallback((path: string) => {
     const s = expandedRef.current!;
@@ -137,8 +147,32 @@ export function FileTree({ nodes, selectedPath, onSelect, onNewFile, onDeleteFil
     forceRender(n => n + 1);
   }, []);
 
+  const handleRenameCommit = useCallback(async () => {
+    if (!renameModal || !onRenameFile) return;
+    const newName = renameModal.draft.trim();
+    if (!newName) { setRenameModal(m => m && ({ ...m, error: "Name cannot be empty" })); return; }
+    if (!newName.endsWith(".cfd")) { setRenameModal(m => m && ({ ...m, error: "File name must end with .cfd" })); return; }
+    if (newName === renameModal.node.name) { setRenameModal(null); return; }
+    // Compute new rel path by replacing the last segment
+    const oldPath = renameModal.node.path;
+    const lastSlash = Math.max(oldPath.lastIndexOf("/"), oldPath.lastIndexOf("\\"));
+    const newPath = lastSlash >= 0 ? oldPath.slice(0, lastSlash + 1) + newName : newName;
+    try {
+      await onRenameFile(oldPath, newPath);
+      setRenameModal(null);
+    } catch (e) {
+      setRenameModal(m => m && ({ ...m, error: String(e) }));
+    }
+  }, [renameModal, onRenameFile]);
+
   const handleNodeContextMenu = useCallback((e: React.MouseEvent, node: FileTreeNode) => {
     const items = [];
+    if (onRenameFile && node.in_sources) {
+      items.push({
+        label: "重命名文件",
+        onClick: () => setRenameModal({ node, draft: node.name, error: null }),
+      });
+    }
     if (onDeleteFile) {
       items.push({
         label: "删除文件",
@@ -152,7 +186,7 @@ export function FileTree({ nodes, selectedPath, onSelect, onNewFile, onDeleteFil
     }
     if (items.length === 0) return;
     setContextMenu({ x: e.clientX, y: e.clientY, items });
-  }, [onDeleteFile]);
+  }, [onDeleteFile, onRenameFile]);
 
   return (
     <div style={{
@@ -207,6 +241,73 @@ export function FileTree({ nodes, selectedPath, onSelect, onNewFile, onDeleteFil
           items={contextMenu.items}
           onClose={() => setContextMenu(null)}
         />
+      )}
+
+      {renameModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2000,
+          }}
+          onClick={() => setRenameModal(null)}
+        >
+          <div
+            style={{
+              background: "var(--bg2)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              padding: 24,
+              width: 380,
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 style={{ margin: 0, fontSize: 15 }}>重命名文件</h3>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+              新文件名
+              <input
+                value={renameModal.draft}
+                onChange={e => setRenameModal(m => m && ({ ...m, draft: e.target.value, error: null }))}
+                onKeyDown={e => {
+                  if (e.key === "Enter") { e.preventDefault(); handleRenameCommit(); }
+                  if (e.key === "Escape") setRenameModal(null);
+                  e.stopPropagation();
+                }}
+                style={{
+                  background: "var(--bg3)",
+                  border: renameModal.error ? "1px solid #ff5555" : "1px solid var(--border)",
+                  borderRadius: 4,
+                  color: "var(--text)",
+                  padding: "4px 8px",
+                  fontSize: 13,
+                  fontFamily: "monospace",
+                  outline: "none",
+                }}
+                autoFocus
+              />
+              {renameModal.error && (
+                <span style={{ color: "#ff5555", fontSize: 11 }}>{renameModal.error}</span>
+              )}
+            </label>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setRenameModal(null)}>取消</button>
+              <button
+                className="primary"
+                onClick={handleRenameCommit}
+                disabled={!renameModal.draft.trim()}
+              >
+                重命名
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

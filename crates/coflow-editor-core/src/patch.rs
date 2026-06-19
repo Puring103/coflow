@@ -33,6 +33,12 @@ pub fn apply_patch(
     }
 
     let span = locate_span(record, field_path)?;
+    if span.start > source.len() || span.end > source.len() || span.start > span.end {
+        return Err(format!(
+            "span [{}, {}) is out of bounds for source of length {}",
+            span.start, span.end, source.len()
+        ));
+    }
     let fragment = serialize_value(new_value);
     let new_source = format!(
         "{}{}{}",
@@ -59,10 +65,10 @@ pub fn insert_field(
         .ok_or_else(|| format!("record '{record_key}' not found"))?;
 
     // The record's block ends at record.span.end — find the last } character
-    let block_end = record.span.end;
+    let block_end = record.span.end.min(source.len());
     // Walk back from block_end to find the closing }
     let insert_pos = find_closing_brace(source, block_end)?;
-    let fragment = format!("  {}: {},\n", field_name, serialize_value(value));
+    let fragment = format!("  {}: {},\n", field_name, serialize_value_indented(value, 2));
     let new_source = format!(
         "{}{}{}",
         &source[..insert_pos],
@@ -157,6 +163,12 @@ fn locate_span_in_value(value: &CfdValue, path: &[FieldPathSegment]) -> Result<S
 }
 
 pub fn serialize_value(v: &FieldValue) -> String {
+    serialize_value_indented(v, 1)
+}
+
+fn serialize_value_indented(v: &FieldValue, depth: usize) -> String {
+    let indent = "  ".repeat(depth);
+    let outer = "  ".repeat(depth.saturating_sub(1));
     match v {
         FieldValue::Null => "null".to_string(),
         FieldValue::Bool { v } => v.to_string(),
@@ -174,18 +186,15 @@ pub fn serialize_value(v: &FieldValue) -> String {
             // @Type.key syntax is a reader convenience; we don't need to reproduce it.
             format!("&{target_key}")
         }
-        FieldValue::Object {
-            actual_type,
-            fields,
-        } => {
+        FieldValue::Object { actual_type, fields } => {
             let body: String = fields
                 .iter()
-                .map(|f| format!("  {}: {},\n", f.name, serialize_value(&f.value)))
+                .map(|f| format!("{indent}{}: {},\n", f.name, serialize_value_indented(&f.value, depth + 1)))
                 .collect();
-            format!("{actual_type} {{\n{body}}}")
+            format!("{actual_type} {{\n{body}{outer}}}")
         }
         FieldValue::Array { items } => {
-            let elems: Vec<String> = items.iter().map(serialize_value).collect();
+            let elems: Vec<String> = items.iter().map(|i| serialize_value_indented(i, depth)).collect();
             format!("[{}]", elems.join(", "))
         }
         FieldValue::Dict { entries } => {
@@ -197,7 +206,7 @@ pub fn serialize_value(v: &FieldValue) -> String {
                         DictKey::Int { v } => v.to_string(),
                         DictKey::Enum { variant, .. } => variant.clone(),
                     };
-                    format!("{k}: {}", serialize_value(&e.value))
+                    format!("{k}: {}", serialize_value_indented(&e.value, depth))
                 })
                 .collect();
             format!("{{{}}}", pairs.join(", "))
@@ -229,5 +238,26 @@ mod tests {
             target_file: Some("data/items.cfd".to_string()),
         };
         assert_eq!(serialize_value(&v), "&sword_fire");
+    }
+
+    #[test]
+    fn nested_object_serialization_indentation() {
+        use crate::types::FieldCell;
+        let v = FieldValue::Object {
+            actual_type: "Outer".to_string(),
+            fields: vec![
+                FieldCell {
+                    name: "inner".to_string(),
+                    value: FieldValue::Object {
+                        actual_type: "Inner".to_string(),
+                        fields: vec![FieldCell { name: "x".to_string(), value: FieldValue::Int { v: 1.0 } }],
+                    },
+                },
+            ],
+        };
+        let s = serialize_value(&v);
+        // Inner object fields should be indented further than outer fields
+        assert!(s.contains("  inner:"), "outer field should be at 2-space indent:\n{s}");
+        assert!(s.contains("    x:"), "inner field should be at 4-space indent:\n{s}");
     }
 }

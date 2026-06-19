@@ -255,13 +255,13 @@ function RefEditor({ value, onCommit, onCancel }: RefEditorProps) {
 interface DictEntryProps {
   entry: import("../bindings").DictEntry;
   depth: number;
-  canEdit: boolean;
   onEditValue?: (nv: FieldValue) => void;
   onEditKey?: (newKey: string) => void;
   onRemove?: () => void;
+  onRefClick?: (targetFile: string | null, targetKey: string) => void;
 }
 
-function DictEntry({ entry, depth, onEditValue, onEditKey, onRemove }: DictEntryProps) {
+function DictEntry({ entry, depth, onEditValue, onEditKey, onRemove, onRefClick }: DictEntryProps) {
   const [editingKey, setEditingKey] = useState(false);
   const [keyText, setKeyText] = useState(entry.key.kind === "Str" ? entry.key.v : dictKeyStr(entry.key));
   const keyInputRef = useRef<HTMLInputElement>(null);
@@ -335,7 +335,7 @@ function DictEntry({ entry, depth, onEditValue, onEditKey, onRemove }: DictEntry
           {keyLabel}
           <span style={{ color: "var(--text-muted)", fontSize: 11 }}>:</span>
           <div style={{ flex: 1 }}>
-            <ExpandedValue value={entry.value} depth={0} onEdit={onEditValue} />
+            <ExpandedValue value={entry.value} depth={0} onEdit={onEditValue} onRefClick={onRefClick} />
           </div>
         </div>
         {onRemove && (
@@ -363,7 +363,7 @@ function DictEntry({ entry, depth, onEditValue, onEditKey, onRemove }: DictEntry
           >×</span>
         )}
       </div>
-      <ExpandedValue value={entry.value} depth={depth + 1} onEdit={onEditValue} />
+      <ExpandedValue value={entry.value} depth={depth + 1} onEdit={onEditValue} onRefClick={onRefClick} />
     </div>
   );
 }
@@ -374,10 +374,11 @@ interface ExpandedProps {
   value: FieldValue;
   depth: number;
   onEdit?: (newValue: FieldValue) => void;
+  onRefClick?: (targetFile: string | null, targetKey: string) => void;
   label?: string;
 }
 
-function ExpandedValue({ value, depth, onEdit, label }: ExpandedProps) {
+function ExpandedValue({ value, depth, onEdit, onRefClick, label }: ExpandedProps) {
   const MAX_DEPTH = 5;
   const [editing, setEditing] = useState(false);
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -427,15 +428,34 @@ function ExpandedValue({ value, depth, onEdit, label }: ExpandedProps) {
       );
     }
 
+    // For Ref values, show a navigate button when onRefClick is provided
+    const refNavigate = isRef && onRefClick && value.kind === "Ref"
+      ? () => onRefClick((value as FieldValue & { kind: "Ref" }).target_file, (value as FieldValue & { kind: "Ref" }).target_key)
+      : undefined;
+
+    // Bool: toggle directly without opening an inline text editor
+    const handleClick = canEdit
+      ? value.kind === "Bool"
+        ? () => onEdit({ kind: "Bool", v: !value.v })
+        : () => setEditing(true)
+      : undefined;
+
     return (
       <div
         style={{ marginLeft, display: "flex", alignItems: "center", gap: 6, padding: "2px 0", cursor: canEdit ? "pointer" : "default" }}
-        onClick={canEdit ? () => setEditing(true) : undefined}
-        title={canEdit ? "Click to edit" : undefined}
+        onClick={handleClick}
+        title={canEdit ? (value.kind === "Bool" ? "Click to toggle" : "Click to edit") : undefined}
       >
         {label && <span style={{ color: "var(--text-muted)", minWidth: 80, fontSize: 12 }}>{label}:</span>}
         {renderCompact(value)}
         {canEdit && <span style={{ color: "var(--text-muted)", fontSize: 10, opacity: 0.5 }}>✎</span>}
+        {refNavigate && (
+          <span
+            onClick={e => { e.stopPropagation(); refNavigate(); }}
+            title="跳转到引用记录"
+            style={{ color: "var(--accent)", fontSize: 11, cursor: "pointer", padding: "0 2px" }}
+          >↗</span>
+        )}
       </div>
     );
   }
@@ -458,6 +478,7 @@ function ExpandedValue({ value, depth, onEdit, label }: ExpandedProps) {
             value={field.value}
             depth={depth + 1}
             label={field.name}
+            onRefClick={onRefClick}
             onEdit={onEdit ? (nv) => onEdit({
               kind: "Object",
               actual_type: value.actual_type,
@@ -479,6 +500,10 @@ function ExpandedValue({ value, depth, onEdit, label }: ExpandedProps) {
           case "Int": return { kind: "Int", v: 0 };
           case "Float": return { kind: "Float", v: 0.0 };
           case "Str": return { kind: "Str", v: "" };
+          // Preserve enum_name so the new item is the right type; user edits the variant
+          case "Enum": return { kind: "Enum", enum_name: first.enum_name, variant: first.variant, int_value: first.int_value };
+          // Preserve target_type so ref is valid; user fills in the key
+          case "Ref": return { kind: "Ref", target_type: first.target_type, target_key: "", target_file: first.target_file };
           default: return { kind: "Null" };
         }
       }
@@ -509,6 +534,7 @@ function ExpandedValue({ value, depth, onEdit, label }: ExpandedProps) {
                 value={item}
                 depth={depth + 1}
                 label={String(idx)}
+                onRefClick={onRefClick}
                 onEdit={onEdit ? (nv) => {
                   const newItems = [...value.items];
                   newItems[idx] = nv;
@@ -547,7 +573,8 @@ function ExpandedValue({ value, depth, onEdit, label }: ExpandedProps) {
             <span
               onClick={e => {
                 e.stopPropagation();
-                const defaultKey = value.entries.length > 0 ? value.entries[0].key : { kind: "Str" as const, v: "" };
+                // Always create a new Str key so the user can name it; preserve value type from first entry
+                const defaultKey: DictKey = { kind: "Str", v: "" };
                 const defaultVal: FieldValue = value.entries.length > 0 ? (() => {
                   const fv = value.entries[0].value;
                   switch (fv.kind) {
@@ -555,6 +582,8 @@ function ExpandedValue({ value, depth, onEdit, label }: ExpandedProps) {
                     case "Int": return { kind: "Int", v: 0 };
                     case "Float": return { kind: "Float", v: 0.0 };
                     case "Str": return { kind: "Str", v: "" };
+                    case "Enum": return { kind: "Enum", enum_name: fv.enum_name, variant: fv.variant, int_value: fv.int_value };
+                    case "Ref": return { kind: "Ref", target_type: fv.target_type, target_key: "", target_file: fv.target_file };
                     default: return { kind: "Null" };
                   }
                 })() : { kind: "Null" };
@@ -570,7 +599,7 @@ function ExpandedValue({ value, depth, onEdit, label }: ExpandedProps) {
             key={idx}
             entry={entry}
             depth={depth + 1}
-            canEdit={!!onEdit}
+            onRefClick={onRefClick}
             onEditValue={onEdit ? (nv) => {
               const newEntries = [...value.entries];
               newEntries[idx] = { ...entry, value: nv };
@@ -631,10 +660,11 @@ export interface DataCardProps {
   mode: "compact" | "expanded" | "node";
   depth?: number;
   onEdit?: (newValue: FieldValue) => void;
+  onRefClick?: (targetFile: string | null, targetKey: string) => void;
   label?: string;
 }
 
-export function DataCard({ value, mode, depth = 0, onEdit, label }: DataCardProps) {
+export function DataCard({ value, mode, depth = 0, onEdit, onRefClick, label }: DataCardProps) {
   if (mode === "compact") {
     return <span style={{ fontFamily: "monospace", fontSize: 12 }}>{renderCompact(value)}</span>;
   }
@@ -646,7 +676,7 @@ export function DataCard({ value, mode, depth = 0, onEdit, label }: DataCardProp
   // expanded
   return (
     <div style={{ fontFamily: "monospace", fontSize: 12 }}>
-      <ExpandedValue value={value} depth={depth} onEdit={onEdit} label={label} />
+      <ExpandedValue value={value} depth={depth} onEdit={onEdit} onRefClick={onRefClick} label={label} />
     </div>
   );
 }

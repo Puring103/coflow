@@ -12,6 +12,7 @@ import type { FileRecords, RecordRow, FieldValue, FieldPathSegment } from "../bi
 import type { Route } from "../router";
 import { DataCard } from "./DataCard";
 import { ContextMenu, type ContextMenuState } from "./ContextMenu";
+import { api } from "../api";
 
 interface TableViewProps {
   fileRecords: FileRecords;
@@ -34,12 +35,19 @@ interface TableViewProps {
 interface NewRecordForm {
   key: string;
   typeName: string;
+  error: string | null;
 }
 
 interface EditingCell {
   rowKey: string;
   fieldName: string;
   value: FieldValue;
+}
+
+interface RenameModal {
+  rowKey: string;
+  draft: string;
+  error: string | null;
 }
 
 type RowData = RecordRow & { _filePath: string };
@@ -138,6 +146,8 @@ export function TableView({
   const [search, setSearch] = useState("");
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [renameModal, setRenameModal] = useState<RenameModal | null>(null);
+  const [allTypeNames, setAllTypeNames] = useState<string[]>(fileRecords.type_names);
 
   // Keep activeType valid when the type list changes after reload
   useEffect(() => {
@@ -146,10 +156,20 @@ export function TableView({
     }
   }, [fileRecords.type_names, activeType]);
 
+  // Load all schema type names for the new-record modal
+  useEffect(() => {
+    api.getAllTypeNames(sessionId).then(names => {
+      setAllTypeNames(names.length > 0 ? names : fileRecords.type_names);
+    }).catch(() => {
+      setAllTypeNames(fileRecords.type_names);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
   // Reset sorting and search when type changes (columns are different per type)
   useEffect(() => { setSorting([]); setSearch(""); }, [activeType]);
   const [showNewRecord, setShowNewRecord] = useState(false);
-  const [newRecord, setNewRecord] = useState<NewRecordForm>({ key: "", typeName: fileRecords.type_names[0] ?? "" });
+  const [newRecord, setNewRecord] = useState<NewRecordForm>({ key: "", typeName: fileRecords.type_names[0] ?? "", error: null });
   const [creating, setCreating] = useState(false);
   const parentRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -199,9 +219,9 @@ export function TableView({
     })
     .map(r => ({ ...r, _filePath: filePath }));
 
-  // Determine columns from first record of active type
-  const firstRow = filteredRows[0];
-  const fieldNames: string[] = firstRow ? firstRow.fields.map(f => f.name) : [];
+  // Determine columns from first record of the active type (regardless of search filter)
+  const firstRowForColumns = fileRecords.records.find(r => r.actual_type === activeType);
+  const fieldNames: string[] = firstRowForColumns ? firstRowForColumns.fields.map(f => f.name) : [];
 
   const columns = [
     columnHelper.accessor("key", {
@@ -288,10 +308,7 @@ export function TableView({
         ...(onRenameRecord ? [{
           label: "重命名记录 Key",
           onClick: () => {
-            const newKey = window.prompt(`Rename record "${row.key}" to:`, row.key);
-            if (newKey && newKey.trim() && newKey.trim() !== row.key) {
-              onRenameRecord(sessionId, filePath, row.key, newKey.trim()).catch(() => {});
-            }
+            setRenameModal({ rowKey: row.key, draft: row.key, error: null });
           },
         }] : []),
         {
@@ -337,8 +354,13 @@ export function TableView({
 
   const handleCellClick = useCallback((rowKey: string, fieldName: string, value: FieldValue) => {
     if (!SCALAR_KINDS.includes(value.kind)) return;
+    // Ref cells navigate instead of opening an editor
+    if (value.kind === "Ref") {
+      onNavigate({ view: "record", file: value.target_file ?? filePath, recordKey: value.target_key });
+      return;
+    }
     setEditingCell({ rowKey, fieldName, value });
-  }, []);
+  }, [filePath, onNavigate]);
 
   const handleCellCommit = useCallback(async (rowKey: string, fieldName: string, raw: string, original: FieldValue) => {
     setEditingCell(null);
@@ -349,23 +371,38 @@ export function TableView({
     await onWriteField(sessionId, filePath, rowKey, [{ kind: "Field", name: fieldName }], newValue);
   }, [sessionId, filePath, onWriteField]);
 
+  const handleRenameCommit = useCallback(async () => {
+    if (!renameModal || !onRenameRecord) return;
+    const newKey = renameModal.draft.trim();
+    if (!newKey) { setRenameModal(m => m && ({ ...m, error: "Key cannot be empty" })); return; }
+    if (newKey === renameModal.rowKey) { setRenameModal(null); return; }
+    try {
+      await onRenameRecord(sessionId, filePath, renameModal.rowKey, newKey);
+      setRenameModal(null);
+    } catch (e) {
+      setRenameModal(m => m && ({ ...m, error: String(e) }));
+    }
+  }, [renameModal, onRenameRecord, sessionId, filePath]);
+
   const handleCreateRecord = async () => {
     if (!newRecord.key.trim() || !newRecord.typeName) return;
+    const key = newRecord.key.trim();
     setCreating(true);
+    setNewRecord(r => ({ ...r, error: null }));
     try {
-      // API call will be handled by parent via onWriteField pattern
-      // For now we call the create api directly through a passed prop
-      // The parent reloads via markDirty — we just close the modal
-      // We pass through a special path to signal creation
-      await onWriteField(sessionId, filePath, newRecord.key, [], {
+      await onWriteField(sessionId, filePath, key, [], {
         kind: "Object",
         actual_type: newRecord.typeName,
         fields: [],
       });
+      setShowNewRecord(false);
+      setNewRecord({ key: "", typeName: activeType, error: null });
+      // Navigate to the new record so the user can fill in fields immediately
+      onNavigate({ view: "record", file: filePath, recordKey: key });
+    } catch (e) {
+      setNewRecord(r => ({ ...r, error: String(e) }));
     } finally {
       setCreating(false);
-      setShowNewRecord(false);
-      setNewRecord({ key: "", typeName: fileRecords.type_names[0] ?? "" });
     }
   };
 
@@ -522,8 +559,10 @@ export function TableView({
                     const cellValue = isKeyCol
                       ? null
                       : (row.original.fields.find(f => f.name === colId)?.value ?? null);
+                    const isSpreadField = !isKeyCol && row.original.spread_fields.includes(colId);
                     const isEditing =
                       !isKeyCol &&
+                      !isSpreadField &&
                       editingCell?.rowKey === row.original.key &&
                       editingCell?.fieldName === colId;
 
@@ -531,12 +570,13 @@ export function TableView({
                       <td
                         key={cell.id}
                         onClick={e => {
-                          if (isKeyCol) return;
+                          if (isKeyCol || isSpreadField) return;
                           if (!cellValue) return;
                           if (!SCALAR_KINDS.includes(cellValue.kind)) return;
                           e.stopPropagation();
                           handleCellClick(row.original.key, colId, cellValue);
                         }}
+                        title={isSpreadField ? "来自 spread — 请前往源记录编辑" : undefined}
                         style={{
                           padding: isEditing ? 0 : "4px 8px",
                           borderBottom: "1px solid var(--bg3)",
@@ -544,7 +584,10 @@ export function TableView({
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap",
                           maxWidth: cell.column.getSize(),
-                          cursor: isKeyCol ? "default" : (cellValue && SCALAR_KINDS.includes(cellValue.kind) ? "text" : "default"),
+                          opacity: isSpreadField ? 0.6 : 1,
+                          cursor: isKeyCol || isSpreadField ? "default" :
+                            (cellValue?.kind === "Ref" ? "pointer" :
+                             (cellValue && SCALAR_KINDS.includes(cellValue.kind) ? "text" : "default")),
                         }}
                       >
                         {isEditing && editingCell ? (
@@ -583,7 +626,7 @@ export function TableView({
             <span>No records of type <strong style={{ color: "var(--text)" }}>{activeType}</strong></span>
             <button
               className="primary"
-              onClick={() => { setNewRecord(r => ({ ...r, typeName: activeType })); setShowNewRecord(true); }}
+              onClick={() => { setNewRecord(r => ({ ...r, typeName: activeType, error: null })); setShowNewRecord(true); }}
               style={{ fontSize: 12 }}
             >
               + 创建第一条记录
@@ -605,7 +648,7 @@ export function TableView({
         <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
           {filteredRows.length} record{filteredRows.length !== 1 ? "s" : ""}
         </span>
-        <button onClick={() => setShowNewRecord(true)} style={{ fontSize: 12 }}>
+        <button onClick={() => { setNewRecord(r => ({ ...r, typeName: activeType, error: null })); setShowNewRecord(true); }} style={{ fontSize: 12 }}>
           + 新建记录
         </button>
       </div>
@@ -638,14 +681,23 @@ export function TableView({
             onClick={e => e.stopPropagation()}
           >
             <h3 style={{ margin: 0, fontSize: 15 }}>新建记录</h3>
+            {newRecord.error && (
+              <div style={{ color: "#ff5555", fontSize: 12, background: "#ff555522", border: "1px solid #ff555544", borderRadius: 4, padding: "4px 8px" }}>
+                {newRecord.error}
+              </div>
+            )}
             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
               Key
               <input
                 value={newRecord.key}
-                onChange={e => setNewRecord(r => ({ ...r, key: e.target.value }))}
+                onChange={e => setNewRecord(r => ({ ...r, key: e.target.value, error: null }))}
+                onKeyDown={e => {
+                  if (e.key === "Enter") { e.preventDefault(); handleCreateRecord(); }
+                  if (e.key === "Escape") setShowNewRecord(false);
+                }}
                 style={{
                   background: "var(--bg3)",
-                  border: "1px solid var(--border)",
+                  border: newRecord.error ? "1px solid #ff5555" : "1px solid var(--border)",
                   borderRadius: 4,
                   color: "var(--text)",
                   padding: "4px 8px",
@@ -672,13 +724,13 @@ export function TableView({
                   outline: "none",
                 }}
               >
-                {fileRecords.type_names.map(t => (
+                {allTypeNames.map(t => (
                   <option key={t} value={t}>{t}</option>
                 ))}
               </select>
             </label>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={() => setShowNewRecord(false)}>取消</button>
+              <button onClick={() => { setShowNewRecord(false); setNewRecord(r => ({ ...r, error: null })); }}>取消</button>
               <button
                 className="primary"
                 onClick={handleCreateRecord}
@@ -698,6 +750,74 @@ export function TableView({
           items={contextMenu.items}
           onClose={() => setContextMenu(null)}
         />
+      )}
+
+      {/* Rename record modal */}
+      {renameModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2000,
+          }}
+          onClick={() => setRenameModal(null)}
+        >
+          <div
+            style={{
+              background: "var(--bg2)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              padding: 24,
+              width: 360,
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 style={{ margin: 0, fontSize: 15 }}>重命名记录 Key</h3>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+              新 Key
+              <input
+                value={renameModal.draft}
+                onChange={e => setRenameModal(m => m && ({ ...m, draft: e.target.value, error: null }))}
+                onKeyDown={e => {
+                  if (e.key === "Enter") { e.preventDefault(); handleRenameCommit(); }
+                  if (e.key === "Escape") setRenameModal(null);
+                  e.stopPropagation();
+                }}
+                style={{
+                  background: "var(--bg3)",
+                  border: renameModal.error ? "1px solid #ff5555" : "1px solid var(--border)",
+                  borderRadius: 4,
+                  color: "var(--text)",
+                  padding: "4px 8px",
+                  fontSize: 13,
+                  fontFamily: "monospace",
+                  outline: "none",
+                }}
+                autoFocus
+              />
+              {renameModal.error && (
+                <span style={{ color: "#ff5555", fontSize: 11 }}>{renameModal.error}</span>
+              )}
+            </label>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setRenameModal(null)}>取消</button>
+              <button
+                className="primary"
+                onClick={handleRenameCommit}
+                disabled={!renameModal.draft.trim()}
+              >
+                重命名
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

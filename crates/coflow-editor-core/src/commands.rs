@@ -159,15 +159,20 @@ pub fn load_project_inner(
                         }
                     }
                 }
-                Err(e) => diagnostics.push(DiagnosticItem {
-                    severity: "error".into(),
-                    code: "CFD-READ".into(),
-                    stage: "LOAD".into(),
-                    message: format!("cannot read {}: {e}", cfd_path.display()),
-                    file_path: Some(rel),
-                    record_key: None,
-                    field_path: None,
-                }),
+                Err(e) => {
+                    // Register the file with empty data so it appears loadable (showing the error diagnostic)
+                    file_sources.insert(rel.clone(), (String::new(), CfdAst { records: Vec::new() }));
+                    file_record_keys.insert(rel.clone(), Vec::new());
+                    diagnostics.push(DiagnosticItem {
+                        severity: "error".into(),
+                        code: "CFD-READ".into(),
+                        stage: "LOAD".into(),
+                        message: format!("cannot read {}: {e}", cfd_path.display()),
+                        file_path: Some(rel),
+                        record_key: None,
+                        field_path: None,
+                    });
+                }
             }
         }
     }
@@ -236,12 +241,27 @@ pub fn get_file_records_inner(
     let mut type_names: Vec<String> = Vec::new();
     let mut records: Vec<RecordRow> = Vec::new();
 
+    let ast_direct: HashMap<String, HashSet<String>> = session
+        .file_sources
+        .get(file_path)
+        .map(|(_, ast)| {
+            let mut m: HashMap<String, HashSet<String>> = HashMap::new();
+            for ast_rec in &ast.records {
+                let direct: HashSet<String> =
+                    ast_rec.fields.iter().map(|f| f.name.clone()).collect();
+                m.insert(ast_rec.key.clone(), direct);
+            }
+            m
+        })
+        .unwrap_or_default();
+
     for key in &keys {
         if let Some((_, record)) = session.model.records().find(|(_, r)| r.key == *key) {
             if !type_names.contains(&record.actual_type) {
                 type_names.push(record.actual_type.clone());
             }
-            records.push(convert_record_row(record, &session.schema, &session.model, &session.file_record_keys));
+            let direct = ast_direct.get(key.as_str());
+            records.push(convert_record_row(record, &session.schema, &session.model, &session.file_record_keys, direct));
         }
     }
 
@@ -255,7 +275,7 @@ pub fn get_file_records_inner(
 pub fn get_record_inner(
     store: &Mutex<SessionStore>,
     session_id: u32,
-    _file_path: &str,
+    file_path: &str,
     record_key: &str,
 ) -> Result<RecordRow, String> {
     let session_arc = get_session(store, session_id)?;
@@ -267,7 +287,17 @@ pub fn get_record_inner(
         .find(|(_, r)| r.key == record_key)
         .ok_or_else(|| format!("record '{record_key}' not found"))?;
 
-    Ok(convert_record_row(record, &session.schema, &session.model, &session.file_record_keys))
+    let direct = session
+        .file_sources
+        .get(file_path)
+        .and_then(|(_, ast)| {
+            ast.records
+                .iter()
+                .find(|r| r.key == record_key)
+                .map(|r| r.fields.iter().map(|f| f.name.clone()).collect::<HashSet<String>>())
+        });
+
+    Ok(convert_record_row(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref()))
 }
 
 pub fn get_graph_inner(
@@ -332,7 +362,7 @@ pub fn get_graph_inner(
                     fields: if is_collapsed {
                         Vec::new()
                     } else {
-                        convert_record_row(record, &session.schema, &session.model, &session.file_record_keys).fields
+                        convert_record_row(record, &session.schema, &session.model, &session.file_record_keys, None).fields
                     },
                 });
 
@@ -474,6 +504,8 @@ pub fn create_record_inner(
     key: &str,
     type_name: &str,
 ) -> Result<RecordRow, String> {
+    validate_cfd_key(key)?;
+
     let session_arc = get_session(store, session_id)?;
     let mut session = session_arc.lock().map_err(|_| "session lock poisoned")?;
 
@@ -501,6 +533,7 @@ pub fn create_record_inner(
         key: key.to_string(),
         actual_type: type_name.to_string(),
         fields: Vec::new(),
+        spread_fields: Vec::new(),
     })
 }
 
@@ -526,12 +559,13 @@ pub fn delete_record_inner(
         .ok_or_else(|| format!("record '{record_key}' not found"))?;
 
     let span = record.span;
-    let start = if span.start > 0 && source.as_bytes().get(span.start - 1) == Some(&b'\n') {
+    let span_end = span.end.min(source.len());
+    let start = if span.start > 0 && span.start <= source.len() && source.as_bytes().get(span.start - 1) == Some(&b'\n') {
         span.start - 1
     } else {
-        span.start
+        span.start.min(source.len())
     };
-    let new_source = format!("{}{}", &source[..start], &source[span.end..]);
+    let new_source = format!("{}{}", &source[..start], &source[span_end..]);
 
     let abs_path = session.project_dir.join(file_path);
     std::fs::write(&abs_path, &new_source)
@@ -551,9 +585,7 @@ pub fn rename_record_inner(
         return Ok(());
     }
     let new_key = new_key.trim();
-    if new_key.is_empty() {
-        return Err("new key cannot be empty".to_string());
-    }
+    validate_cfd_key(new_key)?;
 
     let session_arc = get_session(store, session_id)?;
     let mut session = session_arc.lock().map_err(|_| "session lock poisoned")?;
@@ -605,11 +637,30 @@ pub fn close_session_inner(store: &Mutex<SessionStore>, session_id: u32) -> Resu
     Ok(())
 }
 
+pub fn get_all_type_names_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+) -> Result<Vec<String>, String> {
+    let session_arc = get_session(store, session_id)?;
+    let session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+    let mut names: Vec<String> = session
+        .schema
+        .all_types()
+        .filter(|t| !t.is_abstract)
+        .map(|t| t.name.clone())
+        .collect();
+    names.sort();
+    Ok(names)
+}
+
 pub fn create_file_inner(
     store: &Mutex<SessionStore>,
     session_id: u32,
     rel_path: &str,
 ) -> Result<FileTreeNode, String> {
+    if !rel_path.ends_with(".cfd") {
+        return Err("file path must end with .cfd".to_string());
+    }
     let session_arc = get_session(store, session_id)?;
     let mut session = session_arc.lock().map_err(|_| "session lock poisoned")?;
 
@@ -656,6 +707,61 @@ pub fn create_file_inner(
     })
 }
 
+pub fn rename_file_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+    old_rel_path: &str,
+    new_rel_path: &str,
+) -> Result<(), String> {
+    if old_rel_path == new_rel_path {
+        return Ok(());
+    }
+    if !new_rel_path.ends_with(".cfd") {
+        return Err("new file path must end with .cfd".to_string());
+    }
+    let session_arc = get_session(store, session_id)?;
+    let mut session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+
+    let canonical_project = session
+        .project_dir
+        .canonicalize()
+        .unwrap_or_else(|_| session.project_dir.clone());
+
+    let old_abs = session.project_dir.join(old_rel_path);
+    let new_abs = session.project_dir.join(new_rel_path);
+
+    // Guard both paths against traversal
+    let canonical_old = old_abs.canonicalize().unwrap_or_else(|_| old_abs.clone());
+    if !canonical_old.starts_with(&canonical_project) {
+        return Err(format!("path '{old_rel_path}' is outside the project directory"));
+    }
+    let canonical_new_parent = new_abs
+        .parent()
+        .and_then(|p| p.canonicalize().ok())
+        .unwrap_or_else(|| new_abs.clone());
+    if !canonical_new_parent.starts_with(&canonical_project) {
+        return Err(format!("path '{new_rel_path}' is outside the project directory"));
+    }
+    if new_abs.exists() {
+        return Err(format!("'{new_rel_path}' already exists"));
+    }
+    if let Some(parent) = new_abs.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("cannot create directories: {e}"))?;
+    }
+    std::fs::rename(&old_abs, &new_abs)
+        .map_err(|e| format!("cannot rename '{old_rel_path}' → '{new_rel_path}': {e}"))?;
+
+    // Remap session maps
+    if let Some(v) = session.file_sources.remove(old_rel_path) {
+        session.file_sources.insert(new_rel_path.to_string(), v);
+    }
+    if let Some(v) = session.file_record_keys.remove(old_rel_path) {
+        session.file_record_keys.insert(new_rel_path.to_string(), v);
+    }
+    Ok(())
+}
+
 pub fn delete_file_inner(
     store: &Mutex<SessionStore>,
     session_id: u32,
@@ -695,6 +801,18 @@ fn get_session(
         .get(&session_id)
         .cloned()
         .ok_or_else(|| format!("unknown session {session_id}"))
+}
+
+/// Validate that a CFD identifier doesn't contain illegal characters.
+fn validate_cfd_key(key: &str) -> Result<(), String> {
+    if key.is_empty() {
+        return Err("key cannot be empty".to_string());
+    }
+    let illegal: &[char] = &[':', '=', ';', ',', '{', '}', '[', ']', '(', ')', '@', '&', '"'];
+    if key.chars().any(|c| c.is_whitespace() || illegal.contains(&c)) {
+        return Err(format!("key '{key}' contains illegal characters (whitespace or any of :=;,{{}}[]()@&\")"));
+    }
+    Ok(())
 }
 
 fn reload_file(session: &mut Session, file_path: &str, new_source: &str) -> Result<(), String> {
@@ -809,6 +927,7 @@ fn convert_record_row(
     schema: &CftContainer,
     model: &CfdDataModel,
     file_record_keys: &HashMap<String, Vec<String>>,
+    direct_field_names: Option<&HashSet<String>>,
 ) -> RecordRow {
     let fields = if let Some(schema_type) = schema.resolve_type(&record.actual_type) {
         schema_type
@@ -833,10 +952,23 @@ fn convert_record_row(
             })
             .collect()
     };
+    // Spread fields: those in record.fields but NOT in the AST direct field names.
+    // If we have no AST info, assume nothing is a spread field.
+    let spread_fields: Vec<String> = if let Some(direct) = direct_field_names {
+        record
+            .fields
+            .keys()
+            .filter(|name| !direct.contains(*name))
+            .cloned()
+            .collect()
+    } else {
+        Vec::new()
+    };
     RecordRow {
         key: record.key.clone(),
         actual_type: record.actual_type.clone(),
         fields,
+        spread_fields,
     }
 }
 
@@ -1261,5 +1393,38 @@ mod tests {
             diags.iter().all(|d| d.severity != "error"),
             "example project should have no errors, got: {:?}", diags
         );
+    }
+
+    #[test]
+    fn spread_fields_detected() {
+        let yaml_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/cfd/coflow.yaml");
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml_path.to_str().unwrap()).unwrap();
+
+        // elite_monster uses ...@Monster.basic_monster at top level;
+        // it directly declares: name, stats, weaknesses, drop.
+        // Any other Monster fields (like loot_multiplier) come from the spread and should
+        // be in spread_fields.
+        let records = get_file_records_inner(&store, snap.session_id, "data/03-spread.cfd").unwrap();
+        let elite = records.records.iter().find(|r| r.key == "elite_monster").expect("elite_monster should exist");
+
+        let direct = ["name", "stats", "weaknesses", "drop"];
+        for field_name in &direct {
+            assert!(
+                !elite.spread_fields.contains(&field_name.to_string()),
+                "field '{field_name}' is declared directly so should NOT be in spread_fields"
+            );
+        }
+        // Fields NOT declared directly in elite_monster's block must be in spread_fields
+        for field_cell in &elite.fields {
+            if !direct.contains(&field_cell.name.as_str()) {
+                assert!(
+                    elite.spread_fields.contains(&field_cell.name),
+                    "field '{}' is not declared directly in elite_monster so should be in spread_fields",
+                    field_cell.name
+                );
+            }
+        }
     }
 }

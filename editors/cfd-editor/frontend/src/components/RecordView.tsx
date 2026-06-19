@@ -18,6 +18,7 @@ interface RecordViewProps {
     newValue: FieldValue
   ) => Promise<void>;
   onRenameRecord?: (oldKey: string, newKey: string) => Promise<void>;
+  onDeleteRecord?: (sessionId: number, filePath: string, recordKey: string) => Promise<void>;
   onNavigate: (route: Route) => void;
 }
 
@@ -28,18 +29,32 @@ export function RecordView({
   fileRecords,
   onWriteField,
   onRenameRecord,
+  onDeleteRecord,
   onNavigate,
 }: RecordViewProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [fetchedRecord, setFetchedRecord] = useState<RecordRow | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
+  const [sidebarSearch, setSidebarSearch] = useState("");
   const [editingKey, setEditingKey] = useState(false);
   const [keyText, setKeyText] = useState(recordKey);
   const keyInputRef = useRef<HTMLInputElement>(null);
+  const sidebarSearchRef = useRef<HTMLInputElement>(null);
+  const selectedItemRef = useRef<HTMLDivElement>(null);
+  // Set to a key to trigger rename-edit mode after that key becomes the active record
+  const pendingRenameKeyRef = useRef<string | null>(null);
 
-  // Sync keyText when recordKey prop changes (e.g. navigation)
-  useEffect(() => { setKeyText(recordKey); setEditingKey(false); }, [recordKey]);
+  // Sync keyText when recordKey prop changes; trigger pending rename-edit if requested
+  useEffect(() => {
+    setKeyText(recordKey);
+    if (pendingRenameKeyRef.current === recordKey) {
+      pendingRenameKeyRef.current = null;
+      setEditingKey(true);
+    } else {
+      setEditingKey(false);
+    }
+  }, [recordKey]);
 
   const recordFromFile = fileRecords?.records.find(r => r.key === recordKey) ?? null;
   const record = recordFromFile ?? fetchedRecord;
@@ -52,31 +67,55 @@ export function RecordView({
     return Array.from(seen).sort();
   }, [allRecords]);
 
-  // Reset type filter when file changes
-  useEffect(() => { setTypeFilter(null); }, [filePath]);
+  // Reset type filter and search when file changes
+  useEffect(() => { setTypeFilter(null); setSidebarSearch(""); }, [filePath]);
 
-  const filteredRecords = typeFilter
-    ? allRecords.filter(r => r.actual_type === typeFilter || r.key === recordKey)
-    : allRecords;
+  const filteredRecords = allRecords.filter(r => {
+    if (typeFilter && r.actual_type !== typeFilter && r.key !== recordKey) return false;
+    if (sidebarSearch) {
+      const q = sidebarSearch.toLowerCase();
+      return r.key.toLowerCase().includes(q) || r.actual_type.toLowerCase().includes(q);
+    }
+    return true;
+  });
 
-  // Keyboard navigation: up/down arrows move through filteredRecords
+  // Scroll selected item into view when recordKey changes
+  useEffect(() => {
+    selectedItemRef.current?.scrollIntoView({ block: "nearest" });
+  }, [recordKey]);
+
+  // Keyboard navigation + sidebar search shortcut
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+      // Ctrl+F focuses sidebar search
+      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+        e.preventDefault();
+        sidebarSearchRef.current?.focus();
+        sidebarSearchRef.current?.select();
+        return;
+      }
       // Only if focus is not inside an input/textarea
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      const idx = filteredRecords.findIndex(r => r.key === recordKey);
-      if (idx === -1) return;
-      const next = e.key === "ArrowUp" ? idx - 1 : idx + 1;
-      if (next >= 0 && next < filteredRecords.length) {
+
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        const idx = filteredRecords.findIndex(r => r.key === recordKey);
+        if (idx === -1) return;
+        const next = e.key === "ArrowUp" ? idx - 1 : idx + 1;
+        if (next >= 0 && next < filteredRecords.length) {
+          e.preventDefault();
+          onNavigate({ view: "record", file: filePath, recordKey: filteredRecords[next].key });
+        }
+      } else if ((e.key === "Delete" || e.key === "Backspace") && onDeleteRecord) {
         e.preventDefault();
-        onNavigate({ view: "record", file: filePath, recordKey: filteredRecords[next].key });
+        if (window.confirm(`Delete record "${recordKey}"?`)) {
+          onDeleteRecord(sessionId, filePath, recordKey).catch(() => {});
+        }
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [filteredRecords, recordKey, filePath, onNavigate]);
+  }, [filteredRecords, recordKey, filePath, onNavigate, onDeleteRecord, sessionId]);
 
   // If fileRecords hasn't loaded yet for this key, fetch directly
   useEffect(() => {
@@ -152,6 +191,30 @@ export function RecordView({
         }}>
           Records
         </div>
+        {/* Sidebar search */}
+        <div style={{ padding: "4px 6px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+          <input
+            ref={sidebarSearchRef}
+            value={sidebarSearch}
+            onChange={e => setSidebarSearch(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Escape") { setSidebarSearch(""); e.stopPropagation(); }
+              e.stopPropagation();
+            }}
+            placeholder="Filter records…"
+            style={{
+              width: "100%",
+              background: "var(--bg3)",
+              border: "1px solid var(--border)",
+              borderRadius: 3,
+              color: "var(--text)",
+              padding: "2px 6px",
+              fontSize: 11,
+              outline: "none",
+              boxSizing: "border-box",
+            }}
+          />
+        </div>
         {/* Type filter tabs */}
         {typeNames.length > 1 && (
           <div style={{
@@ -199,7 +262,34 @@ export function RecordView({
           {filteredRecords.map(r => (
             <div
               key={r.key}
+              ref={r.key === recordKey ? selectedItemRef : undefined}
               onClick={() => onNavigate({ view: "record", file: filePath, recordKey: r.key })}
+              onContextMenu={e => {
+                if (!onRenameRecord && !onDeleteRecord) return;
+                e.preventDefault();
+                const items = [];
+                if (onRenameRecord) items.push({
+                  label: "重命名记录 Key",
+                  onClick: () => {
+                    if (r.key === recordKey) {
+                      setEditingKey(true);
+                    } else {
+                      pendingRenameKeyRef.current = r.key;
+                      onNavigate({ view: "record", file: filePath, recordKey: r.key });
+                    }
+                  },
+                });
+                if (onDeleteRecord) items.push({
+                  label: "删除记录",
+                  danger: true,
+                  onClick: () => {
+                    if (window.confirm(`Delete record "${r.key}"?`)) {
+                      onDeleteRecord(sessionId, filePath, r.key).catch(() => {});
+                    }
+                  },
+                });
+                setContextMenu({ x: e.clientX, y: e.clientY, items });
+              }}
               style={{
                 padding: "4px 10px",
                 cursor: "pointer",
@@ -229,8 +319,25 @@ export function RecordView({
             <div style={{ padding: "8px 12px", color: "var(--text-muted)", fontSize: 12 }}>No records</div>
           )}
           {allRecords.length > 0 && filteredRecords.length === 0 && (
-            <div style={{ padding: "8px 12px", color: "var(--text-muted)", fontSize: 12 }}>No records match filter</div>
+            <div style={{ padding: "8px 12px", color: "var(--text-muted)", fontSize: 12 }}>
+              {sidebarSearch ? `No matches for "${sidebarSearch}"` : "No records match filter"}
+            </div>
           )}
+          {sidebarSearch && filteredRecords.length > 0 && (
+            <div style={{ padding: "2px 10px 4px", color: "var(--text-muted)", fontSize: 10 }}>
+              {filteredRecords.length} / {allRecords.length}
+            </div>
+          )}
+        </div>
+        {/* New record button */}
+        <div style={{ borderTop: "1px solid var(--border)", padding: 6, flexShrink: 0 }}>
+          <button
+            onClick={() => onNavigate({ view: "table", file: filePath })}
+            title="Go to table view to create records (Ctrl+N in table view)"
+            style={{ width: "100%", fontSize: 11, justifyContent: "flex-start" }}
+          >
+            ＋ New record…
+          </button>
         </div>
       </div>
 
@@ -268,7 +375,26 @@ export function RecordView({
               ) : (
                 <div
                   onClick={onRenameRecord ? () => setEditingKey(true) : undefined}
-                  title={onRenameRecord ? "Click to rename record key" : undefined}
+                  onContextMenu={e => {
+                    if (!onRenameRecord && !onDeleteRecord) return;
+                    e.preventDefault();
+                    const items = [];
+                    if (onRenameRecord) items.push({
+                      label: "重命名记录 Key",
+                      onClick: () => setEditingKey(true),
+                    });
+                    if (onDeleteRecord) items.push({
+                      label: "删除记录",
+                      danger: true,
+                      onClick: () => {
+                        if (window.confirm(`Delete record "${recordKey}"?`)) {
+                          onDeleteRecord(sessionId, filePath, recordKey).catch(() => {});
+                        }
+                      },
+                    });
+                    setContextMenu({ x: e.clientX, y: e.clientY, items });
+                  }}
+                  title={onRenameRecord ? "Click to rename · Right-click for options" : undefined}
                   style={{
                     fontFamily: "monospace",
                     fontSize: 18,
@@ -285,14 +411,39 @@ export function RecordView({
                   )}
                 </div>
               )}
-              <div style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 4 }}>
-                {record.actual_type}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
+                  {record.actual_type}
+                </span>
+                {onDeleteRecord && (
+                  <button
+                    onClick={() => {
+                      if (window.confirm(`Delete record "${recordKey}"?`)) {
+                        onDeleteRecord(sessionId, filePath, recordKey).catch(() => {});
+                      }
+                    }}
+                    title="Delete this record"
+                    style={{
+                      fontSize: 11,
+                      padding: "1px 8px",
+                      background: "transparent",
+                      border: "1px solid #ff555566",
+                      borderRadius: 3,
+                      color: "#ff5555",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Delete
+                  </button>
+                )}
               </div>
             </div>
 
             {/* Fields */}
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              {record.fields.map(field => (
+              {record.fields.map(field => {
+                const isSpread = record.spread_fields.includes(field.name);
+                return (
                 <div
                   key={field.name}
                   onContextMenu={e => handleFieldContextMenu(e, field)}
@@ -306,15 +457,21 @@ export function RecordView({
                   onMouseEnter={e => (e.currentTarget.style.background = "var(--bg3)")}
                   onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                 >
-                  <span style={{
-                    minWidth: 140,
-                    color: "var(--text-muted)",
-                    fontSize: 12,
-                    fontFamily: "monospace",
-                    paddingTop: 3,
-                    flexShrink: 0,
-                  }}>
+                  <span
+                    title={isSpread ? "来自 spread — 请前往源记录编辑" : undefined}
+                    style={{
+                      minWidth: 140,
+                      color: isSpread ? "var(--text-muted)" : "var(--text-muted)",
+                      fontSize: 12,
+                      fontFamily: "monospace",
+                      paddingTop: 3,
+                      flexShrink: 0,
+                      opacity: isSpread ? 0.6 : 1,
+                    }}>
                     {field.name}
+                    {isSpread && (
+                      <span style={{ marginLeft: 4, fontSize: 10, color: "var(--accent)", opacity: 0.7 }}>↗</span>
+                    )}
                   </span>
                   <div style={{ flex: 1 }}>
                     <DataCard
@@ -322,11 +479,15 @@ export function RecordView({
                       value={field.value}
                       depth={0}
                       label={undefined}
-                      onEdit={(nv) => handleFieldEdit(field, nv)}
+                      onEdit={isSpread ? undefined : (nv) => handleFieldEdit(field, nv)}
+                      onRefClick={(targetFile, targetKey) =>
+                        onNavigate({ view: "record", file: targetFile ?? filePath, recordKey: targetKey })
+                      }
                     />
                   </div>
                 </div>
-              ))}
+                );
+              })}
               {record.fields.length === 0 && (
                 <div style={{ color: "var(--text-muted)", fontSize: 12, padding: 8 }}>No fields</div>
               )}
