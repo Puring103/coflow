@@ -69,6 +69,7 @@ export default function App() {
   }
   const undoStackRef = useRef<UndoEntry[]>([]);
   const [canUndo, setCanUndo] = useState(false);
+  const [undoCount, setUndoCount] = useState(0);
 
   const showOpError = useCallback((msg: string) => {
     if (opErrorTimerRef.current) clearTimeout(opErrorTimerRef.current);
@@ -102,6 +103,7 @@ export default function App() {
     const entry = undoStackRef.current.pop();
     if (!entry) return;
     setCanUndo(undoStackRef.current.length > 0);
+    setUndoCount(undoStackRef.current.length);
     try {
       await api.writeField(entry.sessionId, entry.filePath, entry.recordKey, entry.fieldPath, entry.oldValue);
       invalidateGraphCache(entry.sessionId, entry.filePath);
@@ -197,6 +199,7 @@ export default function App() {
       router.reset();
       undoStackRef.current = [];
       setCanUndo(false);
+      setUndoCount(0);
     }
     prevYamlPathRef.current = currentYaml;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -256,6 +259,7 @@ export default function App() {
           stack.push({ sessionId, filePath, recordKey, fieldPath, oldValue, newValue });
           if (stack.length > 50) stack.splice(0, stack.length - 50);
           setCanUndo(true);
+          setUndoCount(stack.length);
         }
       }
       invalidateGraphCache(sessionId, filePath);
@@ -457,9 +461,15 @@ export default function App() {
         {router.canForward && (
           <button onClick={router.forward} title="Forward (Alt+Right)">→</button>
         )}
-        {canUndo && (
-          <button onClick={handleUndo} title="Undo last field edit (Ctrl+Z)" style={{ fontSize: 11 }}>↩ Undo</button>
-        )}
+        {canUndo && (() => {
+          const top = undoStackRef.current[undoStackRef.current.length - 1];
+          const tipDetail = top ? ` — ${top.recordKey}.${top.fieldPath.map(s => s.kind === "Field" ? s.name : `[${s.i}]`).join(".")}` : "";
+          return (
+            <button onClick={handleUndo} title={`Undo last field edit (Ctrl+Z)${tipDetail}\n${undoCount} step${undoCount !== 1 ? "s" : ""} available`} style={{ fontSize: 11 }}>
+              ↩ Undo {undoCount > 1 ? <span style={{ opacity: 0.6, fontSize: 10 }}>×{undoCount}</span> : null}
+            </button>
+          );
+        })()}
         {project.dirty && <span className="dirty-indicator" title="Reloading…">●</span>}
         {project.loading && <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Loading…</span>}
         {project.error && (
