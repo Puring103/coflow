@@ -65,6 +65,12 @@ interface DeleteModal {
   rowKey: string;
 }
 
+interface PasteModal {
+  source: string;
+  error: string | null;
+  importing: boolean;
+}
+
 type RowData = RecordRow & { _filePath: string };
 
 function fieldValueToString(v: FieldValue): string {
@@ -250,6 +256,7 @@ export function TableView({
   const [renameModal, setRenameModal] = useState<RenameModal | null>(null);
   const [duplicateModal, setDuplicateModal] = useState<DuplicateModal | null>(null);
   const [deleteModal, setDeleteModal] = useState<DeleteModal | null>(null);
+  const [pasteModal, setPasteModal] = useState<PasteModal | null>(null);
   const [allTypeNames, setAllTypeNames] = useState<string[]>(fileRecords.type_names);
 
   // Keep activeType valid when the type list changes after reload
@@ -644,6 +651,21 @@ export function TableView({
       // onDeleteRecord already shows error toast; modal auto-closes on success only
     }
   }, [deleteModal, onDeleteRecord, sessionId, filePath]);
+
+  const handlePasteImport = useCallback(async () => {
+    if (!pasteModal) return;
+    if (!pasteModal.source.trim()) { setPasteModal(m => m && ({ ...m, error: "Paste CFD source first" })); return; }
+    setPasteModal(m => m && ({ ...m, importing: true, error: null }));
+    try {
+      const importedKeys = await api.importRecordSource(sessionId, filePath, pasteModal.source);
+      setPasteModal(null);
+      if (importedKeys.length === 1) {
+        onNavigate({ view: "record", file: filePath, recordKey: importedKeys[0] });
+      }
+    } catch (e) {
+      setPasteModal(m => m && ({ ...m, importing: false, error: String(e) }));
+    }
+  }, [pasteModal, sessionId, filePath, onNavigate]);
 
   const handleBatchApply = useCallback(async () => {
     if (!batchField) { setBatchError("请选择字段"); return; }
@@ -1176,9 +1198,18 @@ export function TableView({
             <span style={{ color: "var(--accent)", marginLeft: 8 }}>{selectedKeys.size} selected</span>
           )}
         </span>
-        <button onClick={() => { setNewRecord(r => ({ ...r, typeName: activeType, error: null })); setShowNewRecord(true); }} style={{ fontSize: 12 }}>
-          + 新建记录
-        </button>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button
+            onClick={() => setPasteModal({ source: "", error: null, importing: false })}
+            title="Paste CFD source text to import records"
+            style={{ fontSize: 12 }}
+          >
+            ⎘ 粘贴 CFD
+          </button>
+          <button onClick={() => { setNewRecord(r => ({ ...r, typeName: activeType, error: null })); setShowNewRecord(true); }} style={{ fontSize: 12 }}>
+            + 新建记录
+          </button>
+        </div>
       </div>
 
       {/* New record modal */}
@@ -1409,6 +1440,57 @@ export function TableView({
                 onClick={handleDeleteCommit}
                 style={{ background: "#ff5555", color: "#fff", border: "none", borderRadius: 4, padding: "4px 16px", cursor: "pointer", fontSize: 13 }}
               >删除</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Paste CFD source modal */}
+      {pasteModal && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000 }}
+          onClick={() => !pasteModal.importing && setPasteModal(null)}
+        >
+          <div
+            style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8, padding: 24, width: 560, display: "flex", flexDirection: "column", gap: 12 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 style={{ margin: 0, fontSize: 15 }}>粘贴 CFD 源码导入</h3>
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              粘贴一条或多条 CFD 格式记录，将追加到 <code style={{ fontFamily: "monospace" }}>{filePath}</code>。
+            </div>
+            {pasteModal.error && (
+              <div style={{ color: "#ff5555", fontSize: 12, background: "#ff555522", border: "1px solid #ff555544", borderRadius: 4, padding: "4px 8px" }}>
+                {pasteModal.error}
+              </div>
+            )}
+            <textarea
+              value={pasteModal.source}
+              onChange={e => setPasteModal(m => m && ({ ...m, source: e.target.value, error: null }))}
+              rows={12}
+              spellCheck={false}
+              placeholder={"sword: Weapon {\n  name: \"Fire Sword\"\n  power: 100\n}"}
+              style={{
+                background: "var(--bg3)",
+                border: pasteModal.error ? "1px solid #ff5555" : "1px solid var(--border)",
+                borderRadius: 4,
+                color: "var(--text)",
+                padding: "8px",
+                fontSize: 12,
+                fontFamily: "monospace",
+                outline: "none",
+                resize: "vertical",
+              }}
+            />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setPasteModal(null)} disabled={pasteModal.importing}>取消</button>
+              <button
+                className="primary"
+                onClick={handlePasteImport}
+                disabled={pasteModal.importing || !pasteModal.source.trim()}
+              >
+                {pasteModal.importing ? "导入中…" : "导入"}
+              </button>
             </div>
           </div>
         </div>

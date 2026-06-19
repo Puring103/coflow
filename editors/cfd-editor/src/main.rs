@@ -224,6 +224,16 @@ fn search_records(
     search_records_inner(&state, session_id, &query, limit.unwrap_or(100))
 }
 
+#[tauri::command]
+fn import_record_source(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    file_path: String,
+    source: String,
+) -> Result<Vec<String>, String> {
+    import_record_source_inner(&state, session_id, &file_path, &source)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -252,6 +262,7 @@ fn main() {
             get_record_source,
             move_record,
             search_records,
+            import_record_source,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -75,4 +75,7 @@ export const api = {
 
   searchRecords: (sessionId: number, query: string, limit?: number) =>
     invoke<SearchHit[]>("search_records", { sessionId, query, limit }),
+
+  importRecordSource: (sessionId: number, filePath: string, source: string) =>
+    invoke<string[]>("import_record_source", { sessionId, filePath, source }),
 };

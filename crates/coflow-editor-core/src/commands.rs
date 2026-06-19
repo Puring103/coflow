@@ -1121,6 +1121,53 @@ pub fn search_records_inner(
     Ok(hits)
 }
 
+/// Import one or more records from raw CFD source text into a file.
+/// Validates key uniqueness and that at least one record is parseable.
+/// Returns the keys of all imported records.
+pub fn import_record_source_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+    file_path: &str,
+    source: &str,
+) -> Result<Vec<String>, String> {
+    let source = source.trim();
+    if source.is_empty() {
+        return Err("source is empty".to_string());
+    }
+
+    let session_arc = get_session(store, session_id)?;
+    let mut session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+
+    // Parse to get the keys from the pasted source
+    let (ast, _) = parse_cfd(source);
+    if ast.records.is_empty() {
+        return Err("no records found in the pasted source".to_string());
+    }
+
+    // Check for key conflicts across the project
+    for rec in &ast.records {
+        let key = &rec.key;
+        let conflict_file = session.file_record_keys
+            .iter()
+            .find_map(|(fp, keys)| if keys.contains(key) { Some(fp.as_str()) } else { None });
+        if let Some(fp) = conflict_file {
+            return Err(format!("record key '{key}' already exists in {fp}"));
+        }
+    }
+
+    let abs_path = session.project_dir.join(file_path);
+    let existing = std::fs::read_to_string(&abs_path).unwrap_or_default();
+    let separator = if existing.ends_with('\n') || existing.is_empty() { "" } else { "\n" };
+    let new_content = format!("{existing}{separator}{source}\n");
+
+    std::fs::write(&abs_path, &new_content)
+        .map_err(|e| format!("cannot write {file_path}: {e}"))?;
+
+    reload_file(&mut session, file_path, &new_content)?;
+
+    Ok(ast.records.iter().map(|r| r.key.clone()).collect())
+}
+
 pub fn duplicate_record_inner(
     store: &Mutex<SessionStore>,
     session_id: u32,
