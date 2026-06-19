@@ -676,6 +676,7 @@ export default function App() {
                     onWriteRecordSource={handleWriteRecordSource}
                     onError={showOpError}
                     onNavigate={router.push}
+                    diagnostics={project.snapshot?.diagnostics}
                   />
                 )}
                 {router.current.view === "record" && !("recordKey" in router.current) && (

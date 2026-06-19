@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import type { FieldSchema, FileRecords, FieldPathSegment, FieldValue, FieldCell, RecordRow, IncomingRef } from "../bindings";
+import type { FieldSchema, FileRecords, FieldPathSegment, FieldValue, FieldCell, RecordRow, IncomingRef, DiagnosticItem } from "../bindings";
 import type { Route } from "../router";
 import { DataCard } from "./DataCard";
 import { ContextMenu, type ContextMenuState } from "./ContextMenu";
@@ -29,6 +29,8 @@ interface RecordViewProps {
   onWriteRecordSource?: (filePath: string, recordKey: string, source: string) => Promise<void>;
   onNavigate: (route: Route) => void;
   onError?: (msg: string) => void;
+  /** Diagnostics from the current session, used to show per-record badges in the sidebar. */
+  diagnostics?: DiagnosticItem[];
 }
 
 interface DuplicateModal { srcKey: string; draft: string; error: string | null }
@@ -49,6 +51,7 @@ export function RecordView({
   onWriteRecordSource,
   onNavigate,
   onError,
+  diagnostics,
 }: RecordViewProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [fetchedRecord, setFetchedRecord] = useState<RecordRow | null>(null);
@@ -71,6 +74,22 @@ export function RecordView({
   const fieldSearchRef = useRef<HTMLInputElement>(null);
   const selectedItemRef = useRef<HTMLDivElement>(null);
   const fieldRowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  // Build per-record diagnostic badge info: { errors, warnings } keyed by record key
+  const recordDiagnosticCounts = useMemo(() => {
+    if (!diagnostics) return new Map<string, { errors: number; warnings: number }>();
+    const map = new Map<string, { errors: number; warnings: number }>();
+    for (const d of diagnostics) {
+      if (!d.record_key || d.file_path !== filePath) continue;
+      const key = d.record_key;
+      const entry = map.get(key) ?? { errors: 0, warnings: 0 };
+      if (d.severity.toLowerCase() === "error") entry.errors++;
+      else if (d.severity.toLowerCase() === "warning") entry.warnings++;
+      map.set(key, entry);
+    }
+    return map;
+  }, [diagnostics, filePath]);
+
   // Set to a key to trigger rename-edit mode after that key becomes the active record
   const pendingRenameKeyRef = useRef<string | null>(null);
 
@@ -465,15 +484,33 @@ export function RecordView({
               onMouseLeave={e => { if (r.key !== recordKey) e.currentTarget.style.background = "transparent"; }}
               title={r.is_fallback ? `${r.key} (${r.actual_type}) — model build failed, editing in AST fallback mode` : `${r.key} (${r.actual_type})`}
             >
-              <div style={{
-                fontFamily: "monospace",
-                color: r.is_fallback ? "var(--warning)" : r.key === recordKey ? "var(--text)" : "var(--text-muted)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}>
-                {r.key}
-                {r.is_fallback && <span style={{ fontSize: 9, marginLeft: 3, opacity: 0.7 }}>⚠</span>}
+              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <div style={{
+                  fontFamily: "monospace",
+                  color: r.is_fallback ? "var(--warning)" : r.key === recordKey ? "var(--text)" : "var(--text-muted)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  flex: 1,
+                  minWidth: 0,
+                }}>
+                  {r.key}
+                  {r.is_fallback && <span style={{ fontSize: 9, marginLeft: 3, opacity: 0.7 }}>⚠</span>}
+                </div>
+                {(() => {
+                  const counts = recordDiagnosticCounts.get(r.key);
+                  if (!counts) return null;
+                  return (
+                    <span style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+                      {counts.errors > 0 && (
+                        <span title={`${counts.errors} error${counts.errors > 1 ? "s" : ""}`} style={{ fontSize: 9, background: "var(--error)", color: "#fff", borderRadius: 8, padding: "0 3px", lineHeight: "14px" }}>{counts.errors}</span>
+                      )}
+                      {counts.warnings > 0 && (
+                        <span title={`${counts.warnings} warning${counts.warnings > 1 ? "s" : ""}`} style={{ fontSize: 9, background: "var(--warning)", color: "#000", borderRadius: 8, padding: "0 3px", lineHeight: "14px" }}>{counts.warnings}</span>
+                      )}
+                    </span>
+                  );
+                })()}
               </div>
               {typeNames.length > 1 && typeFilter === null && (
                 <div style={{ fontSize: 10, color: "var(--accent)", marginTop: 1 }}>{r.actual_type}</div>
