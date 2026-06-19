@@ -937,7 +937,7 @@ fn ast_value_to_field_value(v: &coflow_cfd::CfdValue) -> FieldValue {
         },
         AV::Block(b) => {
             let fields: Vec<FieldCell> = b.entries.iter().filter_map(|e| {
-                if let coflow_cfd::CfdBlockEntry::Field(f) = e {
+                if let CfdBlockEntry::Field(f) = e {
                     Some(FieldCell { name: f.name.clone(), value: ast_value_to_field_value(&f.value) })
                 } else { None }
             }).collect();
