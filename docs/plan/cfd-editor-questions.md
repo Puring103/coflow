@@ -48,6 +48,19 @@ CFD 解析器用小数点区分 int 和 float，所以 "1" 被解析为 int。
 **当前方案**：顶栏 "↺ Reload" 按钮可手动重新加载整个项目（关闭旧 session，重新解析所有文件）。
 **结论**：手动刷新已实现；自动 watcher 暂不计划实现（复杂度高、收益有限）。
 
+### 11. 重复 key 检测仅依赖 model（已修复）
+✅ `create_record_inner`、`rename_record_inner`、`duplicate_record_inner` 的重复 key 检测
+改用 `file_record_keys`（AST 索引），而不是 `model.records()`（仅含 model build 成功的记录）。
+这确保在 model build 失败时（如有记录缺少必填字段），也能正确检测到跨文件重复 key。
+
+### 12. GraphView 布局 race condition（已修复）
+✅ `layoutGraph` 是异步的（ELK layout）；若 graphData 快速变化（如写入后刷新），旧的
+layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cancelled` 标志。
+
+### 13. 图形边去重 sort 缺失（已修复）
+✅ `get_graph_inner` 使用 `labels.dedup()` 去重，但 dedup 只删除**相邻**重复项。
+`labels.sort()` 现在在 `dedup()` 前执行，确保非相邻重复也被删除。
+
 ## 已知限制（可接受）
 
 - **整数精度**：大于 2^53 的 i64 值通过 f64 传输会丢失精度
@@ -58,3 +71,4 @@ CFD 解析器用小数点区分 int 和 float，所以 "1" 被解析为 int。
 - **Spread 字段不可编辑**：来自 spread 的字段在 RecordView 和 TableView 中显示为只读（↗ 标记），应去源记录编辑
 - **外部文件只读**：file_tree 显示 sources 外的文件但不可点击打开（禁用点击，50% opacity 提示）
 - ~~**Enum 字段无下拉**：Table/RecordView 编辑 Enum 时需手动输入 variant 名，无 schema 驱动的下拉选择~~ ✅ 已通过 `get_enum_variants` + `EnumEditor` + `CellEditor` 实现下拉选择
+- ~~**无跨文件记录搜索**：只能在单个文件 TableView 内搜索~~ ✅ 已通过 Ctrl+P 命令面板实现全项目跳转
