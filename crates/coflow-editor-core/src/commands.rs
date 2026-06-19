@@ -1968,11 +1968,11 @@ mod tests {
         // Overwrite the entire weaknesses dict
         let new_val = FieldValue::Dict {
             entries: vec![
-                crate::types::DictEntry {
+                DictEntry {
                     key: DictKey::Str { v: "fire".to_string() },
                     value: FieldValue::Float { v: 2.0 },
                 },
-                crate::types::DictEntry {
+                DictEntry {
                     key: DictKey::Str { v: "ice".to_string() },
                     value: FieldValue::Float { v: 0.5 },
                 },
@@ -2280,8 +2280,8 @@ mod tests {
         let new_stats = FieldValue::Object {
             actual_type: "Stats".to_string(),
             fields: vec![
-                crate::types::FieldCell { name: "hp".to_string(), value: FieldValue::Int { v: 100.0 } },
-                crate::types::FieldCell { name: "attack".to_string(), value: FieldValue::Int { v: 15.0 } },
+                FieldCell { name: "hp".to_string(), value: FieldValue::Int { v: 100.0 } },
+                FieldCell { name: "attack".to_string(), value: FieldValue::Int { v: 15.0 } },
             ],
         };
         write_field_inner(
@@ -2710,7 +2710,7 @@ mod tests {
         let new_stats = FieldValue::Object {
             actual_type: "Stats".to_string(),
             fields: vec![
-                crate::types::FieldCell { name: "hp".to_string(), value: FieldValue::Int { v: 50.0 } },
+                FieldCell { name: "hp".to_string(), value: FieldValue::Int { v: 50.0 } },
             ],
         };
         write_field_inner(
@@ -2757,11 +2757,152 @@ mod tests {
         assert!(get_file_records_inner(&store, sid, "data/items.cfd").is_ok());
 
         // Close session
-        close_session_inner(&store, sid);
+        let _ = close_session_inner(&store, sid);
 
         // Session is no longer accessible after close
         assert!(get_file_records_inner(&store, sid, "data/items.cfd").is_err());
         // Closing non-existent session is a no-op (no panic)
-        close_session_inner(&store, 9999);
+        let _ = close_session_inner(&store, 9999);
+    }
+
+    /// Integration test: load the real examples/cfd project and verify the full chain.
+    /// This test uses the actual schema and data files to catch regressions in parsing,
+    /// model building, and field serialization that synthetic schemas may not exercise.
+    #[test]
+    fn integration_load_example_cfd_project() {
+        // Locate examples/cfd relative to the workspace root (CARGO_MANIFEST_DIR is the crate dir)
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let examples_yaml = manifest_dir
+            .join("../../examples/cfd/coflow.yaml");
+
+        if !examples_yaml.exists() {
+            // Skip gracefully if examples are not present (CI without full repo checkout)
+            eprintln!("integration test skipped: examples/cfd/coflow.yaml not found");
+            return;
+        }
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, examples_yaml.to_str().unwrap())
+            .expect("should load examples/cfd without error");
+
+        // No errors from schema/load stage
+        let load_errors: Vec<_> = snap.diagnostics.iter()
+            .filter(|d| d.severity == "Error" && (d.stage == "SCHEMA" || d.stage == "LOAD"))
+            .collect();
+        assert!(
+            load_errors.is_empty(),
+            "expected no schema/load errors, got: {load_errors:?}"
+        );
+
+        // File tree should list the 3 data files
+        fn count_files(nodes: &[FileTreeNode]) -> usize {
+            nodes.iter().map(|n| if n.is_dir { count_files(&n.children) } else { 1 }).sum()
+        }
+        let file_count = count_files(&snap.file_tree);
+        assert!(file_count >= 3, "expected at least 3 data files, got {file_count}");
+
+        // All type_names present in session should be concrete (no abstract types)
+        let type_names = get_all_type_names_inner(&store, snap.session_id).unwrap();
+        assert!(!type_names.is_empty(), "expected concrete types");
+        // Reward is abstract in the schema — must not appear
+        assert!(
+            !type_names.contains(&"Reward".to_string()),
+            "abstract type 'Reward' should be excluded from type names"
+        );
+        // Concrete subtypes must be present
+        assert!(type_names.contains(&"ItemReward".to_string()), "ItemReward missing from types");
+        assert!(type_names.contains(&"CurrencyReward".to_string()), "CurrencyReward missing");
+        assert!(type_names.contains(&"Monster".to_string()), "Monster missing");
+        assert!(type_names.contains(&"Item".to_string()), "Item missing");
+
+        // Load records from the first data file and verify Item records exist
+        let records_01 = get_file_records_inner(&store, snap.session_id, "data/01-records.cfd")
+            .expect("01-records.cfd should load");
+        let items: Vec<_> = records_01.records.iter().filter(|r| r.actual_type == "Item").collect();
+        assert!(items.len() >= 2, "expected at least 2 Item records, got {}", items.len());
+
+        // sword_fire must have correct field values
+        let sword = records_01.records.iter().find(|r| r.key == "sword_fire")
+            .expect("sword_fire missing");
+        assert_eq!(sword.actual_type, "Item");
+        let name = sword.fields.iter().find(|f| f.name == "name").expect("name field missing");
+        assert!(
+            matches!(&name.value, FieldValue::Str { v } if v == "Fire Sword"),
+            "expected name='Fire Sword', got {:?}", name.value
+        );
+        let price = sword.fields.iter().find(|f| f.name == "price").expect("price missing");
+        assert!(
+            matches!(price.value, FieldValue::Int { v } if (v - 100.0).abs() < 1e-9),
+            "expected price=100, got {:?}", price.value
+        );
+        let element = sword.fields.iter().find(|f| f.name == "element").expect("element missing");
+        assert!(
+            matches!(&element.value, FieldValue::Enum { variant, .. } if variant == "Fire"),
+            "expected element=Fire, got {:?}", element.value
+        );
+        let tags = sword.fields.iter().find(|f| f.name == "tags").expect("tags missing");
+        if let FieldValue::Array { items } = &tags.value {
+            assert_eq!(items.len(), 2, "expected 2 tags");
+        } else {
+            panic!("expected Array for tags, got {:?}", tags.value);
+        }
+
+        // basic_monster must have a nested Stats object
+        let monster = records_01.records.iter().find(|r| r.key == "basic_monster")
+            .expect("basic_monster missing");
+        assert_eq!(monster.actual_type, "Monster");
+        let stats = monster.fields.iter().find(|f| f.name == "stats").expect("stats missing");
+        if let FieldValue::Object { actual_type, fields } = &stats.value {
+            assert_eq!(actual_type, "Stats");
+            let hp = fields.iter().find(|f| f.name == "hp").expect("hp missing");
+            assert!(
+                matches!(hp.value, FieldValue::Int { v } if (v - 100.0).abs() < 1e-9),
+                "expected hp=100"
+            );
+        } else {
+            panic!("expected Object for stats, got {:?}", stats.value);
+        }
+
+        // weaknesses is a {Element: float} dict
+        let weaknesses = monster.fields.iter().find(|f| f.name == "weaknesses").expect("weaknesses missing");
+        if let FieldValue::Dict { entries } = &weaknesses.value {
+            assert_eq!(entries.len(), 2, "expected 2 weakness entries");
+        } else {
+            panic!("expected Dict for weaknesses, got {:?}", weaknesses.value);
+        }
+
+        // Graph for 01-records.cfd should include basic_monster node
+        let graph = get_graph_inner(&store, snap.session_id, "data/01-records.cfd", &[])
+            .expect("graph should build");
+        assert!(
+            graph.nodes.iter().any(|n| n.key == "basic_monster"),
+            "basic_monster not in graph"
+        );
+        // sword_fire is referenced by basic_monster's drop → should appear as an edge target
+        assert!(
+            graph.nodes.iter().any(|n| n.key == "sword_fire"),
+            "sword_fire not in graph (should be reachable via ref)"
+        );
+
+        // Enum variants for Element should include Fire and Ice
+        let element_variants = get_enum_variants_inner(&store, snap.session_id, "Element")
+            .expect("should get Element variants");
+        assert!(element_variants.contains(&"Fire".to_string()), "Fire variant missing");
+        assert!(element_variants.contains(&"Ice".to_string()), "Ice variant missing");
+
+        // Ref targets for Item should include sword_fire and staff_ice
+        let item_refs = get_ref_targets_inner(&store, snap.session_id, "Item")
+            .expect("should get Item ref targets");
+        assert!(item_refs.contains(&"sword_fire".to_string()), "sword_fire not in ref targets");
+        assert!(item_refs.contains(&"staff_ice".to_string()), "staff_ice not in ref targets");
+
+        // Diagnostics after all checks — should be no data errors for valid example
+        let data_diags: Vec<_> = snap.diagnostics.iter()
+            .filter(|d| d.severity == "Error")
+            .collect();
+        assert!(
+            data_diags.is_empty(),
+            "expected no errors for valid example project, got: {data_diags:?}"
+        );
     }
 }
