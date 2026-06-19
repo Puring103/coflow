@@ -57,6 +57,8 @@ export default function App() {
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [paletteRecords, setPaletteRecords] = useState<RecordBrief[]>([]);
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+  const [statsData, setStatsData] = useState<RecordBrief[] | null>(null);
   const opErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   interface UndoEntry {
@@ -528,9 +530,18 @@ export default function App() {
           style={{ marginLeft: "auto", fontSize: 11, opacity: 0.6 }}
         >?</button>
         {project.snapshot && (
-          <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
-            Session #{project.snapshot.session_id}
-          </span>
+          <button
+            onClick={() => {
+              if (showStats) { setShowStats(false); return; }
+              api.getAllRecordsBrief(project.snapshot!.session_id)
+                .then(records => { setStatsData(records); setShowStats(true); })
+                .catch(() => {});
+            }}
+            title="Project statistics"
+            style={{ fontSize: 11, opacity: 0.6 }}
+          >
+            ≡ Stats
+          </button>
         )}
       </header>
 
@@ -849,6 +860,65 @@ export default function App() {
           onNavigate={router.push}
           onClose={() => setShowGlobalSearch(false)}
         />
+      )}
+
+      {/* Stats popover */}
+      {showStats && statsData && (
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 3000 }}
+          onClick={() => setShowStats(false)}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              position: "absolute",
+              top: 38,
+              right: 8,
+              background: "var(--bg2)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              padding: 16,
+              width: 320,
+              maxHeight: 420,
+              overflowY: "auto",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.4)",
+              fontSize: 12,
+            }}
+          >
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              Project Statistics
+              <button onClick={() => setShowStats(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14 }}>✕</button>
+            </div>
+            <div style={{ marginBottom: 8, color: "var(--text-muted)" }}>
+              Total: {statsData.length} records · {statsData.filter(r => r.is_fallback).length > 0 && <span style={{ color: "var(--warning)" }}>{statsData.filter(r => r.is_fallback).length} fallback</span>}
+            </div>
+            <div style={{ fontWeight: 600, fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>By Type</div>
+            {(() => {
+              const byType = new Map<string, number>();
+              for (const r of statsData) byType.set(r.actual_type, (byType.get(r.actual_type) ?? 0) + 1);
+              return [...byType.entries()].sort((a, b) => b[1] - a[1]).map(([type, count]) => (
+                <div key={type} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", borderBottom: "1px solid var(--bg3)" }}>
+                  <span style={{ fontFamily: "monospace", color: "var(--accent)" }}>{type}</span>
+                  <span style={{ color: "var(--text-muted)" }}>{count}</span>
+                </div>
+              ));
+            })()}
+            <div style={{ fontWeight: 600, fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 1, margin: "10px 0 4px" }}>By File</div>
+            {(() => {
+              const byFile = new Map<string, number>();
+              for (const r of statsData) {
+                const name = r.file_path.split(/[\\/]/).pop() ?? r.file_path;
+                byFile.set(name, (byFile.get(name) ?? 0) + 1);
+              }
+              return [...byFile.entries()].sort((a, b) => b[1] - a[1]).map(([file, count]) => (
+                <div key={file} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", borderBottom: "1px solid var(--bg3)" }}>
+                  <span style={{ fontFamily: "monospace", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file}</span>
+                  <span style={{ color: "var(--text-muted)", flexShrink: 0, marginLeft: 8 }}>{count}</span>
+                </div>
+              ));
+            })()}
+          </div>
+        </div>
       )}
 
       {/* Move record modal */}
