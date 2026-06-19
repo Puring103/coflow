@@ -39,7 +39,8 @@ export function GlobalSearch({ sessionId, onNavigate, onClose }: GlobalSearchPro
   };
 
   const handleSelect = useCallback((hit: SearchHit) => {
-    onNavigate({ view: "record", file: hit.file_path, recordKey: hit.key });
+    const topField = hit.match_field !== "key" ? hit.match_field.split(".")[0] : undefined;
+    onNavigate({ view: "record", file: hit.file_path, recordKey: hit.key, ...(topField ? { fieldSearch: topField } : {}) });
     onClose();
   }, [onNavigate, onClose]);
 
