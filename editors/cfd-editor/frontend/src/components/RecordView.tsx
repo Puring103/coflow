@@ -671,7 +671,10 @@ export function RecordView({
                       flexShrink: 0,
                       opacity: isSpread ? 0.6 : 1,
                     }}>
-                    {field.name}
+                    {fieldSearch && field.name.toLowerCase().includes(fieldSearch.toLowerCase()) ? (() => {
+                      const idx = field.name.toLowerCase().indexOf(fieldSearch.toLowerCase());
+                      return <>{field.name.slice(0, idx)}<mark style={{ background: "var(--accent)", color: "#fff", borderRadius: 2, padding: "0 1px" }}>{field.name.slice(idx, idx + fieldSearch.length)}</mark>{field.name.slice(idx + fieldSearch.length)}</>;
+                    })() : field.name}
                     {isRequiredNull && (
                       <span style={{ color: "var(--warning)", fontSize: 10, marginLeft: 2 }} title="Required field">*</span>
                     )}
