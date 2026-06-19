@@ -324,6 +324,7 @@ interface DictEntryProps {
 function DictEntry({ entry, depth, sessionId, onEditValue, onEditKey, onRemove, onRefClick }: DictEntryProps) {
   const [editingKey, setEditingKey] = useState(false);
   const [keyText, setKeyText] = useState(entry.key.kind === "Str" ? entry.key.v : dictKeyStr(entry.key));
+  const [enumVariants, setEnumVariants] = useState<string[] | null>(null);
   const keyInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -334,6 +335,15 @@ function DictEntry({ entry, depth, sessionId, onEditValue, onEditKey, onRemove, 
   useEffect(() => {
     if (!editingKey) setKeyText(entry.key.kind === "Str" ? entry.key.v : dictKeyStr(entry.key));
   }, [entry.key, editingKey]);
+
+  // Fetch enum variants when this is an Enum-keyed dict and editing is available
+  useEffect(() => {
+    if (entry.key.kind !== "Enum" || !onEditKey || sessionId === undefined) return;
+    api.getEnumVariants(sessionId, entry.key.enum_name).then(vs => {
+      if (vs.length > 0) setEnumVariants(vs);
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, entry.key.kind === "Enum" ? (entry.key as { enum_name: string }).enum_name : "", !!onEditKey]);
 
   const commitKey = () => {
     const trimmed = keyText.trim();
@@ -352,45 +362,72 @@ function DictEntry({ entry, depth, sessionId, onEditValue, onEditKey, onRemove, 
     setEditingKey(false);
   };
 
-  const keyLabel = editingKey && onEditKey ? (
-    <input
-      ref={keyInputRef}
-      value={keyText}
-      onChange={e => setKeyText(e.target.value)}
-      onBlur={commitKey}
-      onKeyDown={e => {
-        if (e.key === "Enter") { commitKey(); e.stopPropagation(); }
-        if (e.key === "Escape") { setEditingKey(false); e.stopPropagation(); }
-        e.stopPropagation();
-      }}
-      onClick={e => e.stopPropagation()}
-      style={{
-        background: "var(--bg3)",
-        border: "1px solid var(--accent)",
-        borderRadius: 3,
-        color: "var(--text)",
-        fontSize: 11,
-        fontFamily: "monospace",
-        padding: "1px 4px",
-        outline: "none",
-        width: 80,
-      }}
-    />
-  ) : (
-    <span
-      onClick={onEditKey ? (e) => { e.stopPropagation(); setEditingKey(true); } : undefined}
-      title={onEditKey ? "Click to edit key" : undefined}
-      style={{
-        color: "var(--text-muted)",
-        cursor: onEditKey ? "pointer" : "default",
-        fontFamily: "monospace",
-        fontSize: 11,
-        borderBottom: onEditKey ? "1px dashed var(--text-muted)" : "none",
-      }}
-    >
-      {dictKeyStr(entry.key)}
-    </span>
-  );
+  const keyLabel = (() => {
+    if (onEditKey && entry.key.kind === "Enum" && enumVariants && enumVariants.length > 0) {
+      return (
+        <select
+          value={entry.key.variant}
+          onChange={e => { e.stopPropagation(); onEditKey(e.target.value); }}
+          onKeyDown={e => { if (e.key === "Escape") setEditingKey(false); e.stopPropagation(); }}
+          onClick={e => e.stopPropagation()}
+          style={{
+            background: "var(--bg3)",
+            border: "1px solid var(--border)",
+            borderRadius: 3,
+            color: "var(--text)",
+            fontSize: 11,
+            fontFamily: "monospace",
+            padding: "1px 4px",
+            outline: "none",
+          }}
+        >
+          {enumVariants.map(v => <option key={v} value={v}>{v}</option>)}
+        </select>
+      );
+    }
+    if (editingKey && onEditKey) {
+      return (
+        <input
+          ref={keyInputRef}
+          value={keyText}
+          onChange={e => setKeyText(e.target.value)}
+          onBlur={commitKey}
+          onKeyDown={e => {
+            if (e.key === "Enter") { commitKey(); e.stopPropagation(); }
+            if (e.key === "Escape") { setEditingKey(false); e.stopPropagation(); }
+            e.stopPropagation();
+          }}
+          onClick={e => e.stopPropagation()}
+          style={{
+            background: "var(--bg3)",
+            border: "1px solid var(--accent)",
+            borderRadius: 3,
+            color: "var(--text)",
+            fontSize: 11,
+            fontFamily: "monospace",
+            padding: "1px 4px",
+            outline: "none",
+            width: 80,
+          }}
+        />
+      );
+    }
+    return (
+      <span
+        onClick={onEditKey ? (e) => { e.stopPropagation(); setEditingKey(true); } : undefined}
+        title={onEditKey ? "Click to edit key" : undefined}
+        style={{
+          color: "var(--text-muted)",
+          cursor: onEditKey ? "pointer" : "default",
+          fontFamily: "monospace",
+          fontSize: 11,
+          borderBottom: onEditKey ? "1px dashed var(--text-muted)" : "none",
+        }}
+      >
+        {dictKeyStr(entry.key)}
+      </span>
+    );
+  })();
 
   const marginLeft = depth * 10;
 
@@ -768,11 +805,13 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
               newEntries[idx] = { ...entry, value: nv };
               onEdit({ kind: "Dict", entries: newEntries });
             } : undefined}
-            onEditKey={onEdit && (entry.key.kind === "Str" || entry.key.kind === "Int") ? (newKey) => {
+            onEditKey={onEdit ? (newKey) => {
               const newEntries = [...value.entries];
               if (entry.key.kind === "Int") {
                 const n = parseInt(newKey, 10);
                 newEntries[idx] = { ...entry, key: { kind: "Int", v: isNaN(n) ? 0 : n } };
+              } else if (entry.key.kind === "Enum") {
+                newEntries[idx] = { ...entry, key: { kind: "Enum", enum_name: entry.key.enum_name, variant: newKey, int_value: entry.key.int_value } };
               } else {
                 newEntries[idx] = { ...entry, key: { kind: "Str", v: newKey } };
               }
