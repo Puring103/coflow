@@ -197,7 +197,8 @@ pub fn load_project_inner(
         diagnostics.extend(convert_cfd_diagnostics(&d, Some(&model), Some(&file_record_keys)));
     }
 
-    let file_tree = build_file_tree(&project_dir, &project_dir, &source_dirs);
+    let mut file_tree = build_file_tree(&project_dir, &project_dir, &source_dirs);
+    annotate_tree_record_counts(&mut file_tree, &file_record_keys);
 
     let source_rel_dirs: Vec<PathBuf> = source_dirs
         .iter()
@@ -1329,12 +1330,18 @@ pub fn create_file_inner(
     let rel_pb = PathBuf::from(rel_path);
     let in_sources = session.source_dirs.iter().any(|sd| rel_pb.starts_with(sd));
 
+    let record_count = session.file_record_keys
+        .get(rel_path)
+        .map(|keys| keys.len() as u32)
+        .unwrap_or(0);
+
     Ok(FileTreeNode {
         name,
         path: rel_path.to_string(),
         is_dir: false,
         in_sources,
         children: Vec::new(),
+        record_count,
     })
 }
 
@@ -1646,6 +1653,19 @@ fn relative_path(base: &Path, path: &Path) -> String {
         .replace('\\', "/")
 }
 
+fn annotate_tree_record_counts(nodes: &mut Vec<FileTreeNode>, file_record_keys: &HashMap<String, Vec<String>>) {
+    for node in nodes.iter_mut() {
+        if node.is_dir {
+            annotate_tree_record_counts(&mut node.children, file_record_keys);
+        } else {
+            node.record_count = file_record_keys
+                .get(&node.path)
+                .map(|keys| keys.len() as u32)
+                .unwrap_or(0);
+        }
+    }
+}
+
 fn build_file_tree(base: &Path, dir: &Path, abs_source_dirs: &[PathBuf]) -> Vec<FileTreeNode> {
     let mut nodes: Vec<FileTreeNode> = Vec::new();
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -1677,6 +1697,7 @@ fn build_file_tree(base: &Path, dir: &Path, abs_source_dirs: &[PathBuf]) -> Vec<
                     is_dir: true,
                     in_sources,
                     children,
+                    record_count: 0,
                 });
             }
         } else if path.extension().map_or(false, |e| e == "cfd") {
@@ -1687,6 +1708,7 @@ fn build_file_tree(base: &Path, dir: &Path, abs_source_dirs: &[PathBuf]) -> Vec<
                 is_dir: false,
                 in_sources,
                 children: Vec::new(),
+                record_count: 0,
             });
         }
     }

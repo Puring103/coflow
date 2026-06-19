@@ -102,11 +102,15 @@ function TreeNode({ node, selectedPath, onSelect, onContextMenu, depth, expanded
       }}
     >
       <span style={{ fontSize: 12, fontFamily: "monospace" }}>{node.name}</span>
-      {!node.in_sources && (
+      {!node.in_sources ? (
         <span style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: "auto" }}>
           (external)
         </span>
-      )}
+      ) : node.record_count > 0 ? (
+        <span style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: "auto", opacity: 0.7 }}>
+          {node.record_count}
+        </span>
+      ) : null}
     </div>
   );
 }

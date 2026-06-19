@@ -52,6 +52,7 @@ export type FileTreeNode = {
   is_dir: boolean;
   in_sources: boolean;
   children: FileTreeNode[];
+  record_count: number;
 };
 
 export type ProjectSnapshot = {

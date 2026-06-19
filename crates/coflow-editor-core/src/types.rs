@@ -17,6 +17,8 @@ pub struct FileTreeNode {
     pub is_dir: bool,
     pub in_sources: bool,
     pub children: Vec<FileTreeNode>,
+    /// Number of records in this file (0 for directories).
+    pub record_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
