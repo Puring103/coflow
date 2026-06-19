@@ -4825,6 +4825,61 @@ mod tests {
     }
 
     #[test]
+    fn get_incoming_refs_finds_records_that_reference_target() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }\ntype Container { item: Item; }").unwrap();
+        let items_cfd = data_dir.join("items.cfd");
+        let containers_cfd = data_dir.join("containers.cfd");
+        std::fs::write(&items_cfd, "sword: Item {\n  name: \"Sword\",\n}\n").unwrap();
+        std::fs::write(&containers_cfd, "chest: Container {\n  item: &sword,\n}\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        let refs = get_incoming_refs_inner(&store, sid, "sword").unwrap();
+        assert_eq!(refs.len(), 1, "should find one incoming reference to sword");
+        assert_eq!(refs[0].source_key, "chest");
+        assert_eq!(refs[0].source_type, "Container");
+        assert!(refs[0].field_path.contains("item"), "field_path should mention 'item': {}", refs[0].field_path);
+
+        // Record with no references
+        let refs = get_incoming_refs_inner(&store, sid, "chest").unwrap();
+        assert!(refs.is_empty(), "chest should have no incoming refs");
+    }
+
+    #[test]
+    fn get_all_records_of_type_returns_records_across_files() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }\ntype Weapon { damage: int; }").unwrap();
+        let items1_cfd = data_dir.join("a.cfd");
+        let items2_cfd = data_dir.join("b.cfd");
+        std::fs::write(&items1_cfd, "sword: Item {\n  name: \"Sword\"\n}\nbow: Weapon {\n  damage: 5\n}\n").unwrap();
+        std::fs::write(&items2_cfd, "shield: Item {\n  name: \"Shield\"\n}\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        let rows = get_all_records_of_type_inner(&store, sid, "Item").unwrap();
+        assert_eq!(rows.len(), 2, "should return 2 Item records across files");
+        let keys: Vec<&str> = rows.iter().map(|r| r.key.as_str()).collect();
+        assert!(keys.contains(&"sword"), "should include sword");
+        assert!(keys.contains(&"shield"), "should include shield");
+        assert!(!keys.contains(&"bow"), "should not include bow (Weapon type)");
+    }
+
+    #[test]
     fn search_records_finds_by_key_and_field_value() {
         let dir = TempDir::new().unwrap();
         let yaml = dir.path().join("coflow.yaml");
