@@ -2952,6 +2952,36 @@ mod tests {
     }
 
     #[test]
+    fn sort_file_records_standalone() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let cfd = data_dir.join("items.cfd");
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+        std::fs::write(&cfd, "zebra: Item { name: \"Z\", }\napple: Item { name: \"A\", }\nmango: Item { name: \"M\", }\n").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        let count = sort_file_records_inner(&store, sid, "data/items.cfd").unwrap();
+        assert_eq!(count, 3, "should report 3 records sorted");
+
+        let contents = std::fs::read_to_string(&cfd).unwrap();
+        let apple_pos = contents.find("apple").unwrap();
+        let mango_pos = contents.find("mango").unwrap();
+        let zebra_pos = contents.find("zebra").unwrap();
+        assert!(apple_pos < mango_pos && mango_pos < zebra_pos, "records should be sorted alphabetically:\n{contents}");
+
+        // Already sorted → 0
+        let count2 = sort_file_records_inner(&store, sid, "data/items.cfd").unwrap();
+        assert_eq!(count2, 0, "already-sorted file should return 0");
+    }
+
+    #[test]
     fn get_diagnostics_returns_current_checks() {
         let yaml_path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/cfd/coflow.yaml");
