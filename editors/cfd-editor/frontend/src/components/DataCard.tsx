@@ -655,6 +655,8 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
           default: return { kind: "Null" };
         }
       }
+      // For [T?] arrays with no items yet, directly add an empty Object rather than Null
+      if (arrayElemObjectType) return { kind: "Object", actual_type: arrayElemObjectType, fields: [] };
       return { kind: "Null" };
     };
 
