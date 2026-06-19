@@ -1269,7 +1269,7 @@ fn convert_record_row_with_ast(
                 value: record
                     .fields
                     .get(&sf.name)
-                    .map(|v| convert_value(v, model, file_record_keys))
+                    .map(|v| convert_value(v, schema, model, file_record_keys))
                     .unwrap_or(FieldValue::Null),
             })
             .collect()
@@ -1279,7 +1279,7 @@ fn convert_record_row_with_ast(
             .iter()
             .map(|(name, v)| FieldCell {
                 name: name.clone(),
-                value: convert_value(v, model, file_record_keys),
+                value: convert_value(v, schema, model, file_record_keys),
             })
             .collect()
     };
@@ -1329,7 +1329,7 @@ fn find_file_for_key<'a>(file_record_keys: &'a HashMap<String, Vec<String>>, key
         .find_map(|(fp, keys)| if keys.iter().any(|k| k == key) { Some(fp.as_str()) } else { None })
 }
 
-fn convert_value(v: &CfdValue, model: &CfdDataModel, file_record_keys: &HashMap<String, Vec<String>>) -> FieldValue {
+fn convert_value(v: &CfdValue, schema: &CftContainer, model: &CfdDataModel, file_record_keys: &HashMap<String, Vec<String>>) -> FieldValue {
     match v {
         CfdValue::Null => FieldValue::Null,
         CfdValue::Bool(b) => FieldValue::Bool { v: *b },
@@ -1341,17 +1341,31 @@ fn convert_value(v: &CfdValue, model: &CfdDataModel, file_record_keys: &HashMap<
             variant: e.variant.clone().unwrap_or_default(),
             int_value: e.value as f64,
         },
-        CfdValue::Object(record) => FieldValue::Object {
-            actual_type: record.actual_type.clone(),
-            fields: record
-                .fields
-                .iter()
-                .map(|(name, v)| FieldCell {
-                    name: name.clone(),
-                    value: convert_value(v, model, file_record_keys),
-                })
-                .collect(),
-        },
+        CfdValue::Object(record) => {
+            // Use schema field order if available; fall back to BTreeMap (alphabetical) order.
+            let fields = if let Some(schema_type) = schema.resolve_type(&record.actual_type) {
+                schema_type
+                    .all_fields
+                    .iter()
+                    .filter_map(|sf| {
+                        record.fields.get(&sf.name).map(|fv| FieldCell {
+                            name: sf.name.clone(),
+                            value: convert_value(fv, schema, model, file_record_keys),
+                        })
+                    })
+                    .collect()
+            } else {
+                record
+                    .fields
+                    .iter()
+                    .map(|(name, fv)| FieldCell {
+                        name: name.clone(),
+                        value: convert_value(fv, schema, model, file_record_keys),
+                    })
+                    .collect()
+            };
+            FieldValue::Object { actual_type: record.actual_type.clone(), fields }
+        }
         CfdValue::Ref { key, target } => {
             let target_type = model
                 .record(*target)
@@ -1365,14 +1379,14 @@ fn convert_value(v: &CfdValue, model: &CfdDataModel, file_record_keys: &HashMap<
             }
         }
         CfdValue::Array(items) => FieldValue::Array {
-            items: items.iter().map(|i| convert_value(i, model, file_record_keys)).collect(),
+            items: items.iter().map(|i| convert_value(i, schema, model, file_record_keys)).collect(),
         },
         CfdValue::Dict(entries) => FieldValue::Dict {
             entries: entries
                 .iter()
                 .map(|(k, v)| DictEntry {
                     key: convert_dict_key(k),
-                    value: convert_value(v, model, file_record_keys),
+                    value: convert_value(v, schema, model, file_record_keys),
                 })
                 .collect(),
         },
