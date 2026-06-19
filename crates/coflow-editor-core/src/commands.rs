@@ -2519,4 +2519,102 @@ mod tests {
         assert!(validate_cfd_key("key123").is_ok());
         assert!(validate_cfd_key("CamelCase").is_ok());
     }
+
+    #[test]
+    fn get_all_type_names_returns_concrete_types() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        std::fs::write(dir.path().join("schema.cft"),
+            "abstract type Base {}\ntype Sword : Base {}\ntype Shield : Base {}").unwrap();
+        std::fs::write(data_dir.join("items.cfd"), "").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let names = get_all_type_names_inner(&store, snap.session_id).unwrap();
+        assert!(names.contains(&"Sword".to_string()), "Sword missing: {names:?}");
+        assert!(names.contains(&"Shield".to_string()), "Shield missing: {names:?}");
+        assert!(!names.contains(&"Base".to_string()), "abstract Base should be excluded: {names:?}");
+    }
+
+    #[test]
+    fn get_ref_targets_filters_by_assignable_type() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        std::fs::write(dir.path().join("schema.cft"),
+            "type Weapon { power: int; }\ntype Armor { defense: int; }").unwrap();
+        std::fs::write(
+            data_dir.join("items.cfd"),
+            "sword: Weapon { power: 10, }\nshield: Armor { defense: 5, }\nbow: Weapon { power: 7, }\n",
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let weapon_refs = get_ref_targets_inner(&store, snap.session_id, "Weapon").unwrap();
+        assert!(weapon_refs.contains(&"sword".to_string()), "sword missing: {weapon_refs:?}");
+        assert!(weapon_refs.contains(&"bow".to_string()), "bow missing: {weapon_refs:?}");
+        assert!(!weapon_refs.contains(&"shield".to_string()), "shield (Armor) should not be in Weapon refs: {weapon_refs:?}");
+
+        let armor_refs = get_ref_targets_inner(&store, snap.session_id, "Armor").unwrap();
+        assert_eq!(armor_refs, vec!["shield".to_string()]);
+    }
+
+    #[test]
+    fn get_enum_variants_returns_variant_names() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        std::fs::write(dir.path().join("schema.cft"),
+            "enum Rarity { Common, Uncommon, Rare, Epic }").unwrap();
+        std::fs::write(data_dir.join("items.cfd"), "").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let variants = get_enum_variants_inner(&store, snap.session_id, "Rarity").unwrap();
+        assert_eq!(variants, vec!["Common", "Uncommon", "Rare", "Epic"]);
+
+        let unknown = get_enum_variants_inner(&store, snap.session_id, "NonExistent").unwrap();
+        assert!(unknown.is_empty(), "unknown enum should return empty: {unknown:?}");
+    }
+
+    #[test]
+    fn get_all_records_brief_returns_all_records_with_types() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        std::fs::write(dir.path().join("schema.cft"), "type Item { name: string; }").unwrap();
+        std::fs::write(
+            data_dir.join("items.cfd"),
+            "sword: Item { name: \"Sword\", }\nbow: Item { name: \"Bow\", }\n",
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let briefs = get_all_records_brief_inner(&store, snap.session_id).unwrap();
+        assert_eq!(briefs.len(), 2);
+
+        let sword = briefs.iter().find(|b| b.key == "sword").expect("sword missing");
+        assert_eq!(sword.actual_type, "Item");
+        assert!(sword.file_path.contains("items.cfd"), "file_path should contain items.cfd: {}", sword.file_path);
+
+        let bow = briefs.iter().find(|b| b.key == "bow").expect("bow missing");
+        assert_eq!(bow.actual_type, "Item");
+
+        // Results should be sorted by key
+        assert_eq!(briefs[0].key, "bow");
+        assert_eq!(briefs[1].key, "sword");
+    }
 }
