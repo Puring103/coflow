@@ -2169,6 +2169,39 @@ mod tests {
     }
 
     #[test]
+    fn create_file_adds_to_session() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let node = create_file_inner(&store, snap.session_id, "data/loot.cfd").unwrap();
+        assert_eq!(node.name, "loot.cfd");
+        assert!(node.in_sources, "created file should be inside sources");
+
+        // File on disk
+        assert!(data_dir.join("loot.cfd").exists(), "physical file should be created");
+
+        // Accessible via get_file_records
+        let records = get_file_records_inner(&store, snap.session_id, "data/loot.cfd").unwrap();
+        assert_eq!(records.records.len(), 0, "new file has no records");
+
+        // Rejects paths outside project
+        let err = create_file_inner(&store, snap.session_id, "../outside.cfd");
+        assert!(err.is_err(), "should reject path outside project dir");
+
+        // Rejects non-.cfd path
+        let err = create_file_inner(&store, snap.session_id, "data/notes.txt");
+        assert!(err.is_err(), "should reject non-.cfd extension");
+    }
+
+    #[test]
     fn rename_file_updates_session_maps() {
         let dir = TempDir::new().unwrap();
         let yaml = dir.path().join("coflow.yaml");
