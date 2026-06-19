@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ProjectSnapshot, FileRecords, RecordRow, GraphData,
-  FileTreeNode, FieldValue, FieldPathSegment, DiagnosticItem, RecordBrief, FieldSchema, SearchHit
+  FileTreeNode, FieldValue, FieldPathSegment, DiagnosticItem, RecordBrief, FieldSchema, SearchHit, IncomingRef
 } from "./bindings";
 
 export const api = {
@@ -81,4 +81,7 @@ export const api = {
 
   writeRecordSource: (sessionId: number, filePath: string, recordKey: string, newSource: string) =>
     invoke<void>("write_record_source", { sessionId, filePath, recordKey, newSource }),
+
+  getIncomingRefs: (sessionId: number, targetKey: string) =>
+    invoke<IncomingRef[]>("get_incoming_refs", { sessionId, targetKey }),
 };

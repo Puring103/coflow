@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import type { FieldSchema, FileRecords, FieldPathSegment, FieldValue, FieldCell, RecordRow } from "../bindings";
+import type { FieldSchema, FileRecords, FieldPathSegment, FieldValue, FieldCell, RecordRow, IncomingRef } from "../bindings";
 import type { Route } from "../router";
 import { DataCard } from "./DataCard";
 import { ContextMenu, type ContextMenuState } from "./ContextMenu";
@@ -63,6 +63,8 @@ export function RecordView({
   const [fieldSearch, setFieldSearch] = useState("");
   const [fieldSchemas, setFieldSchemas] = useState<FieldSchema[]>([]);
   const [showRequiredOnly, setShowRequiredOnly] = useState(false);
+  const [incomingRefs, setIncomingRefs] = useState<IncomingRef[]>([]);
+  const [showIncomingRefs, setShowIncomingRefs] = useState(false);
   const keyInputRef = useRef<HTMLInputElement>(null);
   const sidebarSearchRef = useRef<HTMLInputElement>(null);
   const fieldSearchRef = useRef<HTMLInputElement>(null);
@@ -206,6 +208,17 @@ export function RecordView({
       .catch(() => { if (!cancelled) setFieldSchemas([]); });
     return () => { cancelled = true; };
   }, [sessionId, recordType]);
+
+  // Fetch incoming refs when recordKey changes
+  useEffect(() => {
+    let cancelled = false;
+    setIncomingRefs([]);
+    setShowIncomingRefs(false);
+    api.getIncomingRefs(sessionId, recordKey)
+      .then(refs => { if (!cancelled) setIncomingRefs(refs); })
+      .catch(() => { if (!cancelled) setIncomingRefs([]); });
+    return () => { cancelled = true; };
+  }, [sessionId, recordKey]);
 
   const handleKeyRename = useCallback(async () => {
     const trimmed = keyText.trim();
@@ -629,6 +642,46 @@ export function RecordView({
                       {src.key}
                     </span>
                   ))}
+                </div>
+              )}
+              {/* Incoming references */}
+              {incomingRefs.length > 0 && (
+                <div style={{ marginTop: 6 }}>
+                  <span
+                    onClick={() => setShowIncomingRefs(v => !v)}
+                    style={{
+                      color: "var(--text-muted)",
+                      fontSize: 11,
+                      cursor: "pointer",
+                      userSelect: "none",
+                    }}
+                    title="Records that reference this record"
+                  >
+                    {showIncomingRefs ? "▼" : "▶"} referenced by {incomingRefs.length} record{incomingRefs.length !== 1 ? "s" : ""}
+                  </span>
+                  {showIncomingRefs && (
+                    <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 2 }}>
+                      {incomingRefs.map((ref, i) => (
+                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span
+                            onClick={() => onNavigate({ view: "record", file: ref.source_file || filePath, recordKey: ref.source_key })}
+                            style={{
+                              color: "var(--accent)",
+                              fontSize: 11,
+                              fontFamily: "monospace",
+                              cursor: "pointer",
+                              textDecoration: "underline",
+                              textDecorationStyle: "dotted",
+                            }}
+                            title={`${ref.source_type} @ ${ref.source_file}`}
+                          >
+                            {ref.source_key}
+                          </span>
+                          <span style={{ color: "var(--text-muted)", fontSize: 10 }}>.{ref.field_path}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

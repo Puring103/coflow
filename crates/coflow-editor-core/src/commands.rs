@@ -1181,6 +1181,45 @@ pub fn search_records_inner(
     Ok(hits)
 }
 
+/// Return all records that hold a Ref pointing at `target_key`.
+pub fn get_incoming_refs_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+    target_key: &str,
+) -> Result<Vec<crate::types::IncomingRef>, String> {
+    let session_arc = get_session(store, session_id)?;
+    let session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+
+    let key_to_file: HashMap<String, String> = session
+        .file_record_keys
+        .iter()
+        .flat_map(|(fp, keys)| keys.iter().map(move |k| (k.clone(), fp.clone())))
+        .collect();
+
+    let mut result: Vec<crate::types::IncomingRef> = Vec::new();
+
+    let mut sorted: Vec<_> = session.model.records().collect();
+    sorted.sort_by(|(_, a), (_, b)| a.key.cmp(&b.key));
+
+    for (_, record) in sorted {
+        let mut incoming: HashMap<String, Vec<(String, String)>> = HashMap::new();
+        collect_refs_in_record(record, &record.key, "", &mut incoming, &session.model);
+        if let Some(paths) = incoming.get(target_key) {
+            let source_file = key_to_file.get(&record.key).cloned().unwrap_or_default();
+            for (_, field_path) in paths {
+                result.push(crate::types::IncomingRef {
+                    source_key: record.key.clone(),
+                    source_type: record.actual_type.clone(),
+                    source_file: source_file.clone(),
+                    field_path: field_path.clone(),
+                });
+            }
+        }
+    }
+
+    Ok(result)
+}
+
 /// Import one or more records from raw CFD source text into a file.
 /// Validates key uniqueness and that at least one record is parseable.
 /// Returns the keys of all imported records.

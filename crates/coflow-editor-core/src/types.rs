@@ -171,6 +171,20 @@ pub struct FieldSchema {
     pub default_str: Option<String>,
 }
 
+/// A record that holds a reference pointing to another record.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct IncomingRef {
+    /// The record key that holds the reference.
+    pub source_key: String,
+    /// The type of the record that holds the reference.
+    pub source_type: String,
+    /// File where the source record lives.
+    pub source_file: String,
+    /// Field path within the source record where the Ref appears (e.g. "weapon" or "rewards[0]").
+    pub field_path: String,
+}
+
 /// A record that matched a text search query.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]

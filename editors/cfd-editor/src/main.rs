@@ -3,7 +3,7 @@
 use coflow_editor_core::commands::*;
 use coflow_editor_core::types::{
     DiagnosticItem, FieldPathSegment, FieldSchema, FieldValue, FileRecords, FileTreeNode,
-    GraphData, ProjectSnapshot, RecordBrief, RecordRow, SearchHit,
+    GraphData, IncomingRef, ProjectSnapshot, RecordBrief, RecordRow, SearchHit,
 };
 use std::sync::Mutex;
 
@@ -245,6 +245,15 @@ fn write_record_source(
     write_record_source_inner(&state, session_id, &file_path, &record_key, &new_source)
 }
 
+#[tauri::command]
+fn get_incoming_refs(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    target_key: String,
+) -> Result<Vec<IncomingRef>, String> {
+    get_incoming_refs_inner(&state, session_id, &target_key)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -275,6 +284,7 @@ fn main() {
             search_records,
             import_record_source,
             write_record_source,
+            get_incoming_refs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

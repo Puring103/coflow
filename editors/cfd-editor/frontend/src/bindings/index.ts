@@ -107,3 +107,14 @@ export type SearchHit = {
   /** The matched value as a short string for display */
   match_value: string;
 };
+
+export type IncomingRef = {
+  /** The record key that holds the reference. */
+  source_key: string;
+  /** The type of the record that holds the reference. */
+  source_type: string;
+  /** File where the source record lives. */
+  source_file: string;
+  /** Field path within the source record where the Ref appears. */
+  field_path: string;
+};
