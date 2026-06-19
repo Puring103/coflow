@@ -181,12 +181,13 @@ pub fn load_project_inner(
         }
     }
 
+    let id_to_key: Vec<String> = all_input_records.iter().map(|r| r.key.clone()).collect();
     let mut builder = CfdDataModel::builder(&schema);
     for r in all_input_records {
         builder.add_input_record(r);
     }
     let model = builder.build().unwrap_or_else(|d| {
-        diagnostics.extend(convert_cfd_diagnostics(&d, None, Some(&file_record_keys)));
+        diagnostics.extend(convert_cfd_diagnostics_with_index(&d, None, Some(&id_to_key), Some(&file_record_keys)));
         CfdDataModel::builder(&schema)
             .build()
             .unwrap_or_else(|_| unreachable!("empty builder must succeed"))
@@ -1140,16 +1141,20 @@ fn reload_file(session: &mut Session, file_path: &str, new_source: &str) -> Resu
         Ok(records) => {
             let keys: Vec<String> = records.iter().map(|r| r.key.clone()).collect();
             let mut builder = CfdDataModel::builder(&session.schema);
+            // Track insertion order so build-failure diagnostics can resolve record_key
+            let mut id_to_key: Vec<String> = Vec::new();
             for (fp, (src, _)) in &session.file_sources {
                 if fp != file_path {
                     if let Ok(recs) = parse_cfd_input_records(&session.schema, src) {
                         for r in recs {
+                            id_to_key.push(r.key.clone());
                             builder.add_input_record(r);
                         }
                     }
                 }
             }
             for r in records {
+                id_to_key.push(r.key.clone());
                 builder.add_input_record(r);
             }
             match builder.build() {
@@ -1161,8 +1166,9 @@ fn reload_file(session: &mut Session, file_path: &str, new_source: &str) -> Resu
                     // Build failed (e.g. missing required fields, unresolved Refs).
                     // Keep the existing model but store the build errors so
                     // get_diagnostics_inner can surface them.
-                    session.pending_model_diags =
-                        convert_cfd_diagnostics(&d, None, Some(&session.file_record_keys));
+                    session.pending_model_diags = convert_cfd_diagnostics_with_index(
+                        &d, None, Some(&id_to_key), Some(&session.file_record_keys),
+                    );
                 }
             }
             keys
@@ -1422,6 +1428,15 @@ fn convert_cfd_diagnostics(
     model: Option<&CfdDataModel>,
     file_record_keys: Option<&HashMap<String, Vec<String>>>,
 ) -> Vec<DiagnosticItem> {
+    convert_cfd_diagnostics_with_index(diags, model, None, file_record_keys)
+}
+
+fn convert_cfd_diagnostics_with_index(
+    diags: &CfdDiagnostics,
+    model: Option<&CfdDataModel>,
+    id_to_key: Option<&[String]>,
+    file_record_keys: Option<&HashMap<String, Vec<String>>>,
+) -> Vec<DiagnosticItem> {
     use coflow_data_model::CfdPathSegment;
     diags
         .diagnostics
@@ -1430,9 +1445,16 @@ fn convert_cfd_diagnostics(
             let (record_key, field_path) = match d.primary.as_ref() {
                 None => (None, None),
                 Some(l) => {
-                    let key = l.record
-                        .and_then(|id| model?.record(id))
-                        .map(|r| r.key.clone());
+                    let key = l.record.and_then(|id| {
+                        // Try model first (fast path for run_checks diagnostics)
+                        if let Some(m) = model {
+                            if let Some(r) = m.record(id) {
+                                return Some(r.key.clone());
+                            }
+                        }
+                        // Fall back to insertion-order index (build-failure diagnostics)
+                        id_to_key.and_then(|idx| idx.get(id.index()).cloned())
+                    });
                     let mut out = String::new();
                     for s in &l.path.segments {
                         match s {
@@ -3244,6 +3266,54 @@ mod tests {
         assert!(
             diags_after.iter().any(|d| d.severity == "error"),
             "should have at least one error after writing broken Ref: {:?}", diags_after
+        );
+    }
+
+    #[test]
+    fn pending_model_diags_have_record_key() {
+        // When a model build fails (unresolved Ref), the resulting pending_model_diags
+        // should include record_key so the diagnostics panel can navigate to the broken record.
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        std::fs::write(
+            dir.path().join("schema.cft"),
+            "type Item { name: string; } type Bag { item: Item; }",
+        ).unwrap();
+        std::fs::write(
+            data_dir.join("items.cfd"),
+            "sword: Item { name: \"Sword\", }\nbag: Bag { item: &sword, }\n",
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        // No errors before the write
+        let diags_before = get_diagnostics_inner(&store, sid).unwrap();
+        assert!(diags_before.iter().all(|d| d.severity != "error"), "no errors before write");
+
+        // Write bag.item = &nonexistent — model build fails with an unresolved Ref
+        write_field_inner(
+            &store, sid, "data/items.cfd", "bag",
+            &[FieldPathSegment::Field { name: "item".to_string() }],
+            &FieldValue::Ref { target_type: "Item".to_string(), target_key: "nonexistent".to_string(), target_file: None },
+        ).unwrap();
+
+        // Diagnostics should contain at least one error with record_key populated
+        let diags = get_diagnostics_inner(&store, sid).unwrap();
+        let with_key = diags.iter().find(|d| d.severity == "error" && d.record_key.is_some());
+        assert!(
+            with_key.is_some(),
+            "expected a diagnostic with a record_key after writing broken Ref, got: {:?}", diags
+        );
+        // The broken record is 'bag' (it holds the bad Ref)
+        let bag_diag = diags.iter().find(|d| d.severity == "error" && d.record_key.as_deref() == Some("bag"));
+        assert!(
+            bag_diag.is_some(),
+            "expected record_key='bag' in diagnostics after writing broken Ref, got: {:?}", diags
         );
     }
 }
