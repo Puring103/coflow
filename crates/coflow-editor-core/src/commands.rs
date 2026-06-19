@@ -3161,4 +3161,34 @@ mod tests {
         assert_eq!(broken.actual_type, "Item", "broken should have type Item from AST");
         assert!(broken.file_path.contains("items.cfd"));
     }
+
+    #[test]
+    fn get_record_falls_back_to_ast_when_model_build_fails() {
+        // When a record's model build fails (missing required field), get_record_inner
+        // should still return a RecordRow using the AST fallback path.
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        std::fs::write(
+            dir.path().join("schema.cft"),
+            "type Item { name: string; power: int; }",
+        ).unwrap();
+        std::fs::write(
+            data_dir.join("items.cfd"),
+            "sword: Item { name: \"Sword\", power: 10, }\nbroken: Item { name: \"Broken\", }\n",
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        // 'broken' record is missing required 'power' field — model build fails for it
+        // get_record_inner should still return it via AST fallback
+        let row = get_record_inner(&store, snap.session_id, "data/items.cfd", "broken").unwrap();
+        assert_eq!(row.key, "broken");
+        assert_eq!(row.actual_type, "Item");
+        let name_field = row.fields.iter().find(|f| f.name == "name").expect("name field missing");
+        assert!(matches!(&name_field.value, FieldValue::Str { v } if v == "Broken"));
+    }
 }
