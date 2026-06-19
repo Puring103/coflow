@@ -576,6 +576,13 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
           {label && <span style={{ color: "var(--text-muted)", minWidth: 80, fontSize: 12 }}>{label}:</span>}
           <span style={{ color: "var(--text-muted)", fontSize: 10 }}>{collapsed ? "▶" : "▼"}</span>
           <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>{value.actual_type}</span>
+          {nullableObjectType && onEdit && (
+            <span
+              onClick={e => { e.stopPropagation(); onEdit({ kind: "Null" }); }}
+              title="Set to null"
+              style={{ color: "var(--text-muted)", fontSize: 10, cursor: "pointer", marginLeft: 2, opacity: 0.6 }}
+            >✕</span>
+          )}
         </div>
         {!collapsed && value.fields.map(field => (
           <ExpandedValue
