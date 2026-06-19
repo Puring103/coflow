@@ -103,6 +103,20 @@ function parseFieldValue(raw: string, original: FieldValue): FieldValue {
   return { kind: "Str", v: raw };
 }
 
+function fieldValueToJson(v: FieldValue): unknown {
+  switch (v.kind) {
+    case "Null": return null;
+    case "Bool": return v.v;
+    case "Int": case "Float": return v.v;
+    case "Str": return v.v;
+    case "Enum": return v.variant;
+    case "Ref": return v.target_key;
+    case "Object": { const o: Record<string, unknown> = { _type: v.actual_type }; for (const f of v.fields) o[f.name] = fieldValueToJson(f.value); return o; }
+    case "Array": return v.items.map(fieldValueToJson);
+    case "Dict": { const o: Record<string, unknown> = {}; for (const e of v.entries) { const k = e.key.kind === "Str" ? e.key.v : e.key.kind === "Int" ? String(e.key.v) : e.key.variant; o[k] = fieldValueToJson(e.value); } return o; }
+  }
+}
+
 const columnHelper = createColumnHelper<RowData>();
 
 interface CellEditorProps {
@@ -614,6 +628,14 @@ export function TableView({
         {
           label: "复制为 CFD 源码",
           onClick: () => api.getRecordSource(sessionId, filePath, row.key).then(src => navigator.clipboard.writeText(src)).catch(() => {}),
+        },
+        {
+          label: "复制为 JSON",
+          onClick: () => {
+            const obj: Record<string, unknown> = { _key: row.key, _type: row.actual_type };
+            for (const f of row.fields) obj[f.name] = fieldValueToJson(f.value);
+            navigator.clipboard.writeText(JSON.stringify(obj, null, 2)).catch(() => {});
+          },
         },
         ...(onRenameRecord ? [{
           label: "重命名记录 Key",

@@ -37,6 +37,37 @@ interface DuplicateModal { srcKey: string; draft: string; error: string | null }
 interface DeleteModal { recordKey: string }
 interface SourceModal { source: string | null; draft: string; saving: boolean; error: string | null }
 
+function fieldValueToJson(v: FieldValue): unknown {
+  switch (v.kind) {
+    case "Null": return null;
+    case "Bool": return v.v;
+    case "Int": case "Float": return v.v;
+    case "Str": return v.v;
+    case "Enum": return v.variant;
+    case "Ref": return v.target_key;
+    case "Object": {
+      const obj: Record<string, unknown> = { _type: v.actual_type };
+      for (const f of v.fields) obj[f.name] = fieldValueToJson(f.value);
+      return obj;
+    }
+    case "Array": return v.items.map(fieldValueToJson);
+    case "Dict": {
+      const obj: Record<string, unknown> = {};
+      for (const e of v.entries) {
+        const k = e.key.kind === "Str" ? e.key.v : e.key.kind === "Int" ? String(e.key.v) : e.key.variant;
+        obj[k] = fieldValueToJson(e.value);
+      }
+      return obj;
+    }
+  }
+}
+
+function recordToJson(record: { key: string; actual_type: string; fields: { name: string; value: FieldValue }[] }): string {
+  const obj: Record<string, unknown> = { _key: record.key, _type: record.actual_type };
+  for (const f of record.fields) obj[f.name] = fieldValueToJson(f.value);
+  return JSON.stringify(obj, null, 2);
+}
+
 export function RecordView({
   sessionId,
   filePath,
@@ -443,9 +474,11 @@ export function RecordView({
               onClick={() => onNavigate({ view: "record", file: filePath, recordKey: r.key })}
               onContextMenu={e => {
                 e.preventDefault();
+                const sidebarRec = allRecords.find(x => x.key === r.key);
                 const items: { label: string; danger?: boolean; onClick: () => void }[] = [
                   { label: "复制 Key", onClick: () => navigator.clipboard.writeText(r.key).catch(() => {}) },
                   { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, filePath, r.key).then(src => navigator.clipboard.writeText(src)).catch(() => {}) },
+                  ...(sidebarRec ? [{ label: "复制为 JSON", onClick: () => navigator.clipboard.writeText(recordToJson(sidebarRec)).catch(() => {}) }] : []),
                 ];
                 if (onRenameRecord) items.push({
                   label: "重命名记录 Key",
@@ -587,6 +620,7 @@ export function RecordView({
                     const items: { label: string; danger?: boolean; onClick: () => void }[] = [
                       { label: "复制 Key", onClick: () => navigator.clipboard.writeText(recordKey).catch(() => {}) },
                       { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, filePath, recordKey).then(src => navigator.clipboard.writeText(src)).catch(() => {}) },
+                      ...(record ? [{ label: "复制为 JSON", onClick: () => navigator.clipboard.writeText(recordToJson(record)).catch(() => {}) }] : []),
                     ];
                     if (onRenameRecord) items.push({
                       label: "重命名记录 Key",
