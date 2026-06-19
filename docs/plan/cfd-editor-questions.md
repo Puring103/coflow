@@ -95,3 +95,5 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**rename_record 不更新其他文件中的 &ref 引用**：重命名记录后，其他文件中已有的 `&old_key` 引用成为悬空引用，需手动修复~~ ✅ `rename_record_inner` 重写：(1) 收集源文件内所有 `CfdValue::Ref` 中匹配 `old_key` 的 key span + 记录 key span，一次性替换并写回；(2) 遍历所有其他已加载文件，对各文件做同样的跨文件 ref span 替换。新增 `collect_ref_key_spans` 和 `apply_span_replacements` 两个辅助函数，并添加了 `rename_record_updates_cross_file_refs` 集成测试。
 - ~~**GlobalTableView 缺少右键菜单**：其他视图（TableView/RecordView）均有右键菜单，GlobalTableView 行无任何右键操作~~ ✅ 已添加 ContextMenu：跳转到记录视图、在文件表视图中打开、复制 Key、复制为 CFD 源码。
 - ~~**GlobalTableView 缺少键盘导航**：TableView 支持 ↑↓ 键导航，GlobalTableView 没有~~ ✅ 已添加 ↑↓ 键移动焦点行（高亮 accent 左边框），Enter 打开记录，Ctrl+F 聚焦搜索框，filteredRows 改为 useMemo。
+- ~~**grouped 语法检测误判**：`source_has_grouped_header` 使用 `contains("TypeName {")` 误将 standalone 记录（如 `key: TypeName {`）识别为 grouped 块头，导致 `create_record`/`move_record`/`copy_record` 在含 standalone 记录的目标文件中错误插入 grouped 格式~~ ✅ 改为检测 `TypeName {` 前一字符是否为换行符（即 header 必须位于行首），新增 `source_has_grouped_header()` 辅助函数替代三处 `contains` 调用，并添加回归测试。
+- **源码编辑器缺少键盘快捷提交**：RecordView 的源码编辑 textarea 和 TableView 的粘贴导入 textarea 现在支持 Ctrl+Enter 提交（等效于点击"保存"/"导入"按钮）。
