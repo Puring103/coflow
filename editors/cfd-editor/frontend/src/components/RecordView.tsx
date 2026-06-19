@@ -380,7 +380,9 @@ export function RecordView({
             </div>
           ))}
           {allRecords.length === 0 && (
-            <div style={{ padding: "8px 12px", color: "var(--text-muted)", fontSize: 12 }}>No records</div>
+            <div style={{ padding: "8px 12px", color: "var(--text-muted)", fontSize: 12 }}>
+              {fileRecords === null ? "Loading…" : "No records"}
+            </div>
           )}
           {allRecords.length > 0 && filteredRecords.length === 0 && (
             <div style={{ padding: "8px 12px", color: "var(--text-muted)", fontSize: 12 }}>

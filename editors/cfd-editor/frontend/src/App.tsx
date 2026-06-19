@@ -69,7 +69,7 @@ export default function App() {
         if (project.snapshot) {
           api.getAllRecordsBrief(project.snapshot.session_id)
             .then(records => { setPaletteRecords(records); setShowCommandPalette(true); })
-            .catch(() => {});
+            .catch(e => showOpError(`Failed to open command palette: ${e}`));
         }
         return;
       }
@@ -305,7 +305,7 @@ export default function App() {
             onClick={() => {
               api.getAllRecordsBrief(project.snapshot!.session_id)
                 .then(records => { setPaletteRecords(records); setShowCommandPalette(true); })
-                .catch(() => {});
+                .catch(e => showOpError(`Failed to open command palette: ${e}`));
             }}
             title="Jump to record (Ctrl+P)"
             style={{ fontSize: 11 }}
@@ -428,36 +428,38 @@ export default function App() {
 
               {/* View content */}
               <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-                {router.current.view === "table" && project.fileRecords && (
-                  <TableView
-                    fileRecords={project.fileRecords}
-                    sessionId={project.snapshot?.session_id ?? 0}
-                    filePath={router.current.file}
-                    initialTypeFilter={router.current.typeFilter}
-                    onTypeChange={typeName => {
-                      if (router.current?.view === "table") {
-                        router.replace({ ...router.current, typeFilter: typeName });
-                      }
-                    }}
-                    onWriteField={handleWriteField}
-                    onDeleteRecord={handleDeleteRecord}
-                    onRenameRecord={handleRenameRecordFromTable}
-                    onDuplicateRecord={handleDuplicateRecord}
-                    onNavigate={router.push}
-                  />
-                )}
-                {router.current.view === "table" && !project.fileRecords && (
-                  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>
-                    {project.loading ? "Loading…" : "Select a file to view records"}
-                  </div>
-                )}
+                {(() => {
+                  const matchedRecords = project.fileRecords?.file_path === router.current.file ? project.fileRecords : null;
+                  return router.current.view === "table" && matchedRecords ? (
+                    <TableView
+                      fileRecords={matchedRecords}
+                      sessionId={project.snapshot?.session_id ?? 0}
+                      filePath={router.current.file}
+                      initialTypeFilter={router.current.typeFilter}
+                      onTypeChange={typeName => {
+                        if (router.current?.view === "table") {
+                          router.replace({ ...router.current, typeFilter: typeName });
+                        }
+                      }}
+                      onWriteField={handleWriteField}
+                      onDeleteRecord={handleDeleteRecord}
+                      onRenameRecord={handleRenameRecordFromTable}
+                      onDuplicateRecord={handleDuplicateRecord}
+                      onNavigate={router.push}
+                    />
+                  ) : router.current.view === "table" ? (
+                    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>
+                      Loading…
+                    </div>
+                  ) : null;
+                })()}
 
                 {router.current.view === "record" && "recordKey" in router.current && (
                   <RecordView
                     sessionId={project.snapshot?.session_id ?? 0}
                     filePath={router.current.file}
                     recordKey={(router.current as { view: "record"; file: string; recordKey: string }).recordKey}
-                    fileRecords={project.fileRecords}
+                    fileRecords={project.fileRecords?.file_path === router.current.file ? project.fileRecords : null}
                     onWriteField={handleWriteField}
                     onRenameRecord={handleRenameRecord}
                     onDeleteRecord={handleDeleteRecord}
