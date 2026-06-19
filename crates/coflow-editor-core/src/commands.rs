@@ -653,6 +653,21 @@ pub fn get_all_type_names_inner(
     Ok(names)
 }
 
+pub fn get_enum_variants_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+    enum_name: &str,
+) -> Result<Vec<String>, String> {
+    let session_arc = get_session(store, session_id)?;
+    let session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+    let variants = session
+        .schema
+        .resolve_enum(enum_name)
+        .map(|e| e.variants.iter().map(|v| v.name.clone()).collect::<Vec<_>>())
+        .unwrap_or_default();
+    Ok(variants)
+}
+
 pub fn create_file_inner(
     store: &Mutex<SessionStore>,
     session_id: u32,

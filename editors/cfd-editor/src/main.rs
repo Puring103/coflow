@@ -144,6 +144,15 @@ fn get_all_type_names(
     get_all_type_names_inner(&state, session_id)
 }
 
+#[tauri::command]
+fn get_enum_variants(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    enum_name: String,
+) -> Result<Vec<String>, String> {
+    get_enum_variants_inner(&state, session_id, &enum_name)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -164,6 +173,7 @@ fn main() {
             rename_record,
             rename_file,
             get_all_type_names,
+            get_enum_variants,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

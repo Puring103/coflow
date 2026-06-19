@@ -489,6 +489,7 @@ export function RecordView({
                       mode="expanded"
                       value={field.value}
                       depth={0}
+                      sessionId={sessionId}
                       label={undefined}
                       onEdit={isSpread ? undefined : (nv) => handleFieldEdit(field, nv)}
                       onRefClick={(targetFile, targetKey) =>

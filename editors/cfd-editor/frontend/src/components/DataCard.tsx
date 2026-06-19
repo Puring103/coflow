@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import type { FieldValue, DictKey } from "../bindings";
+import { api } from "../api";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -250,18 +251,51 @@ function RefEditor({ value, onCommit, onCancel }: RefEditorProps) {
   );
 }
 
+// ─── Enum editor ─────────────────────────────────────────────────────────────
+
+interface EnumEditorProps {
+  value: FieldValue & { kind: "Enum" };
+  sessionId: number;
+  onCommit: (v: FieldValue) => void;
+  onCancel: () => void;
+}
+
+function EnumEditor({ value, sessionId, onCommit, onCancel }: EnumEditorProps) {
+  const [variants, setVariants] = useState<string[]>([value.variant]);
+
+  useEffect(() => {
+    api.getEnumVariants(sessionId, value.enum_name).then(vs => {
+      if (vs.length > 0) setVariants(vs);
+    }).catch(() => {});
+  }, [sessionId, value.enum_name]);
+
+  return (
+    <select
+      value={value.variant}
+      onChange={e => onCommit({ kind: "Enum", enum_name: value.enum_name, variant: e.target.value, int_value: value.int_value })}
+      onKeyDown={e => { if (e.key === "Escape") onCancel(); e.stopPropagation(); }}
+      // eslint-disable-next-line jsx-a11y/no-autofocus
+      autoFocus
+      style={{ ...INPUT_STYLE, width: "100%" }}
+    >
+      {variants.map(v => <option key={v} value={v}>{v}</option>)}
+    </select>
+  );
+}
+
 // ─── Dict entry row (with editable Str key) ──────────────────────────────────
 
 interface DictEntryProps {
   entry: import("../bindings").DictEntry;
   depth: number;
+  sessionId?: number;
   onEditValue?: (nv: FieldValue) => void;
   onEditKey?: (newKey: string) => void;
   onRemove?: () => void;
   onRefClick?: (targetFile: string | null, targetKey: string) => void;
 }
 
-function DictEntry({ entry, depth, onEditValue, onEditKey, onRemove, onRefClick }: DictEntryProps) {
+function DictEntry({ entry, depth, sessionId, onEditValue, onEditKey, onRemove, onRefClick }: DictEntryProps) {
   const [editingKey, setEditingKey] = useState(false);
   const [keyText, setKeyText] = useState(entry.key.kind === "Str" ? entry.key.v : dictKeyStr(entry.key));
   const keyInputRef = useRef<HTMLInputElement>(null);
@@ -335,7 +369,7 @@ function DictEntry({ entry, depth, onEditValue, onEditKey, onRemove, onRefClick 
           {keyLabel}
           <span style={{ color: "var(--text-muted)", fontSize: 11 }}>:</span>
           <div style={{ flex: 1 }}>
-            <ExpandedValue value={entry.value} depth={0} onEdit={onEditValue} onRefClick={onRefClick} />
+            <ExpandedValue value={entry.value} depth={0} sessionId={sessionId} onEdit={onEditValue} onRefClick={onRefClick} />
           </div>
         </div>
         {onRemove && (
@@ -363,7 +397,7 @@ function DictEntry({ entry, depth, onEditValue, onEditKey, onRemove, onRefClick 
           >×</span>
         )}
       </div>
-      <ExpandedValue value={entry.value} depth={depth + 1} onEdit={onEditValue} onRefClick={onRefClick} />
+      <ExpandedValue value={entry.value} depth={depth + 1} sessionId={sessionId} onEdit={onEditValue} onRefClick={onRefClick} />
     </div>
   );
 }
@@ -373,12 +407,13 @@ function DictEntry({ entry, depth, onEditValue, onEditKey, onRemove, onRefClick 
 interface ExpandedProps {
   value: FieldValue;
   depth: number;
+  sessionId?: number;
   onEdit?: (newValue: FieldValue) => void;
   onRefClick?: (targetFile: string | null, targetKey: string) => void;
   label?: string;
 }
 
-function ExpandedValue({ value, depth, onEdit, onRefClick, label }: ExpandedProps) {
+function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label }: ExpandedProps) {
   const MAX_DEPTH = 5;
   const [editing, setEditing] = useState(false);
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -413,6 +448,13 @@ function ExpandedValue({ value, depth, onEdit, onRefClick, label }: ExpandedProp
             {isRef ? (
               <RefEditor
                 value={value as FieldValue & { kind: "Ref" }}
+                onCommit={v => { onEdit(v); setEditing(false); }}
+                onCancel={() => setEditing(false)}
+              />
+            ) : value.kind === "Enum" && sessionId !== undefined ? (
+              <EnumEditor
+                value={value as FieldValue & { kind: "Enum" }}
+                sessionId={sessionId}
                 onCommit={v => { onEdit(v); setEditing(false); }}
                 onCancel={() => setEditing(false)}
               />
@@ -477,6 +519,7 @@ function ExpandedValue({ value, depth, onEdit, onRefClick, label }: ExpandedProp
             key={field.name}
             value={field.value}
             depth={depth + 1}
+            sessionId={sessionId}
             label={field.name}
             onRefClick={onRefClick}
             onEdit={onEdit ? (nv) => onEdit({
@@ -533,6 +576,7 @@ function ExpandedValue({ value, depth, onEdit, onRefClick, label }: ExpandedProp
               <ExpandedValue
                 value={item}
                 depth={depth + 1}
+                sessionId={sessionId}
                 label={String(idx)}
                 onRefClick={onRefClick}
                 onEdit={onEdit ? (nv) => {
@@ -599,6 +643,7 @@ function ExpandedValue({ value, depth, onEdit, onRefClick, label }: ExpandedProp
             key={idx}
             entry={entry}
             depth={depth + 1}
+            sessionId={sessionId}
             onRefClick={onRefClick}
             onEditValue={onEdit ? (nv) => {
               const newEntries = [...value.entries];
@@ -659,12 +704,13 @@ export interface DataCardProps {
   value: FieldValue;
   mode: "compact" | "expanded" | "node";
   depth?: number;
+  sessionId?: number;
   onEdit?: (newValue: FieldValue) => void;
   onRefClick?: (targetFile: string | null, targetKey: string) => void;
   label?: string;
 }
 
-export function DataCard({ value, mode, depth = 0, onEdit, onRefClick, label }: DataCardProps) {
+export function DataCard({ value, mode, depth = 0, sessionId, onEdit, onRefClick, label }: DataCardProps) {
   if (mode === "compact") {
     return <span style={{ fontFamily: "monospace", fontSize: 12 }}>{renderCompact(value)}</span>;
   }
@@ -676,7 +722,7 @@ export function DataCard({ value, mode, depth = 0, onEdit, onRefClick, label }: 
   // expanded
   return (
     <div style={{ fontFamily: "monospace", fontSize: 12 }}>
-      <ExpandedValue value={value} depth={depth} onEdit={onEdit} onRefClick={onRefClick} label={label} />
+      <ExpandedValue value={value} depth={depth} sessionId={sessionId} onEdit={onEdit} onRefClick={onRefClick} label={label} />
     </div>
   );
 }

@@ -85,18 +85,60 @@ const columnHelper = createColumnHelper<RowData>();
 
 interface CellEditorProps {
   value: FieldValue;
+  sessionId: number;
   onCommit: (raw: string) => void;
   onCancel: () => void;
 }
 
-function CellEditor({ value, onCommit, onCancel }: CellEditorProps) {
+function CellEditor({ value, sessionId, onCommit, onCancel }: CellEditorProps) {
   const [text, setText] = useState(() => fieldValueToString(value));
   const inputRef = useRef<HTMLInputElement>(null);
+  const [enumVariants, setEnumVariants] = useState<string[] | null>(null);
 
   useEffect(() => {
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, []);
+    if (value.kind === "Enum") {
+      api.getEnumVariants(sessionId, value.enum_name).then(vs => {
+        if (vs.length > 0) setEnumVariants(vs);
+      }).catch(() => {});
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, value.kind === "Enum" ? (value as { enum_name: string }).enum_name : ""]);
+
+  useEffect(() => {
+    if (value.kind !== "Enum") {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [value.kind]);
+
+  if (value.kind === "Enum" && enumVariants) {
+    return (
+      <select
+        value={text}
+        onChange={e => { setText(e.target.value); onCommit(e.target.value); }}
+        onKeyDown={e => {
+          if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+          e.stopPropagation();
+        }}
+        autoFocus
+        style={{
+          width: "100%",
+          height: "100%",
+          padding: "4px 8px",
+          background: "var(--bg3)",
+          border: "1px solid var(--accent)",
+          borderRadius: 0,
+          color: "var(--text)",
+          fontSize: 12,
+          fontFamily: "monospace",
+          outline: "none",
+          boxSizing: "border-box",
+        }}
+      >
+        {enumVariants.map(v => <option key={v} value={v}>{v}</option>)}
+      </select>
+    );
+  }
 
   return (
     <input
@@ -610,6 +652,7 @@ export function TableView({
                         {isEditing && editingCell ? (
                           <CellEditor
                             value={editingCell.value}
+                            sessionId={sessionId}
                             onCommit={raw => handleCellCommit(row.original.key, colId, raw, editingCell.value)}
                             onCancel={() => setEditingCell(null)}
                           />

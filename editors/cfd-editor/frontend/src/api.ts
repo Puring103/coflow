@@ -51,4 +51,7 @@ export const api = {
 
   renameFile: (sessionId: number, oldRelPath: string, newRelPath: string) =>
     invoke<void>("rename_file", { sessionId, oldRelPath, newRelPath }),
+
+  getEnumVariants: (sessionId: number, enumName: string) =>
+    invoke<string[]>("get_enum_variants", { sessionId, enumName }),
 };
