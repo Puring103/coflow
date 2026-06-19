@@ -5100,5 +5100,12 @@ mod tests {
         // type: filter
         let hits = search_records_inner(&store, sid, "type:Item", 10).unwrap();
         assert_eq!(hits.len(), 2, "type:Item should return both records");
+
+        // file: filter
+        let hits = search_records_inner(&store, sid, "file:items.cfd", 10).unwrap();
+        assert_eq!(hits.len(), 2, "file:items.cfd should return all records in that file");
+
+        let hits = search_records_inner(&store, sid, "file:nonexistent.cfd", 10).unwrap();
+        assert!(hits.is_empty(), "file:nonexistent should return nothing");
     }
 }
