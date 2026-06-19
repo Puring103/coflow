@@ -45,4 +45,10 @@ export const api = {
 
   renameRecord: (sessionId: number, filePath: string, oldKey: string, newKey: string) =>
     invoke<void>("rename_record", { sessionId, filePath, oldKey, newKey }),
+
+  getAllTypeNames: (sessionId: number) =>
+    invoke<string[]>("get_all_type_names", { sessionId }),
+
+  renameFile: (sessionId: number, oldRelPath: string, newRelPath: string) =>
+    invoke<void>("rename_file", { sessionId, oldRelPath, newRelPath }),
 };

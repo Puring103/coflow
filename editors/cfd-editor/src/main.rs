@@ -126,6 +126,24 @@ fn delete_file(
     delete_file_inner(&state, session_id, &rel_path)
 }
 
+#[tauri::command]
+fn rename_file(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    old_rel_path: String,
+    new_rel_path: String,
+) -> Result<(), String> {
+    rename_file_inner(&state, session_id, &old_rel_path, &new_rel_path)
+}
+
+#[tauri::command]
+fn get_all_type_names(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+) -> Result<Vec<String>, String> {
+    get_all_type_names_inner(&state, session_id)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -144,6 +162,8 @@ fn main() {
             close_session,
             get_diagnostics,
             rename_record,
+            rename_file,
+            get_all_type_names,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

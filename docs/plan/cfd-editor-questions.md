@@ -42,11 +42,19 @@ span patch 会替换整个 `stats { ... }` 块（包括其他子字段）。
 CFD 解析器用小数点区分 int 和 float，所以 "1" 被解析为 int。
 现在对所有 float 强制追加 `.0`（如果没有小数点或指数符号）。
 
+### 10. 外部文件修改检测
+当前没有文件 watcher 机制。如果外部工具（如 git checkout、其他编辑器）修改了 .cfd 文件，
+编辑器不会自动重新加载。
+**当前方案**：顶栏 "↺ Reload" 按钮可手动重新加载整个项目（关闭旧 session，重新解析所有文件）。
+**结论**：手动刷新已实现；自动 watcher 暂不计划实现（复杂度高、收益有限）。
+
 ## 已知限制（可接受）
 
 - **整数精度**：大于 2^53 的 i64 值通过 f64 传输会丢失精度
 - **无离线写回缓冲**：所有写操作立即写盘，无 undo/redo
 - **嵌套 Object/Array 写回是粗粒度的**：编辑子字段时整个父块会被重新序列化，注释丢失
+- **Object 写回缩进**：`serialize_value` 使用固定 2 空格缩进，写回时可能不匹配原始文件缩进格式（CFD 解析不敏感缩进，功能正确但格式有时不美观）
 - **自动保存策略**：写盘是即时的，"dirty" 只是 UI 等待 reload 的状态（1 秒防抖）
-- **Spread 字段不可编辑**：来自 spread 的字段编辑会失败并显示错误 toast（设计如此，应去源记录编辑）
-- **window.prompt 用于重命名**：TableView 行右键菜单的重命名使用 native prompt，不是内联输入（RecordView 已实现内联）
+- **Spread 字段不可编辑**：来自 spread 的字段在 RecordView 和 TableView 中显示为只读（↗ 标记），应去源记录编辑
+- **外部文件只读**：file_tree 显示 sources 外的文件但不可点击打开（禁用点击，50% opacity 提示）
+- **Enum 字段无下拉**：Table/RecordView 编辑 Enum 时需手动输入 variant 名，无 schema 驱动的下拉选择

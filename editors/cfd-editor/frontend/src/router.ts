@@ -47,5 +47,13 @@ export function useRouter(initial?: Route) {
     setState({ history: [], index: -1 });
   }, []);
 
-  return { current, push, replace, back, forward, canBack, canForward, reset };
+  /** Rewrite all history entries that reference oldFile to use newFile instead. */
+  const rewriteFile = useCallback((oldFile: string, newFile: string) => {
+    setState(s => ({
+      ...s,
+      history: s.history.map(r => r.file === oldFile ? { ...r, file: newFile } : r),
+    }));
+  }, []);
+
+  return { current, push, replace, back, forward, canBack, canForward, reset, rewriteFile };
 }

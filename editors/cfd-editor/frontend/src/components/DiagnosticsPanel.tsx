@@ -37,15 +37,20 @@ export function DiagnosticsPanel({ diagnostics, onNavigate }: DiagnosticsPanelPr
   const [expanded, setExpanded] = useState(false);
   const [filter, setFilter] = useState<SeverityFilter>("all");
   const prevErrorCountRef = useRef(0);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const errors = diagnostics.filter(d => d.severity.toLowerCase() === "error").length;
   const warnings = diagnostics.filter(d => d.severity.toLowerCase() === "warning").length;
   const infos = diagnostics.filter(d => d.severity.toLowerCase() !== "error" && d.severity.toLowerCase() !== "warning").length;
 
-  // Auto-expand when new errors appear (0→N transition or error count increases)
+  // Auto-expand when new errors appear, then scroll list to top
   useEffect(() => {
     if (errors > prevErrorCountRef.current && errors > 0) {
       setExpanded(true);
+      // Scroll to top after the panel renders
+      requestAnimationFrame(() => {
+        listRef.current?.scrollTo({ top: 0 });
+      });
     }
     prevErrorCountRef.current = errors;
   }, [errors]);
@@ -168,7 +173,7 @@ export function DiagnosticsPanel({ diagnostics, onNavigate }: DiagnosticsPanelPr
 
       {/* Expanded list */}
       {expanded && (
-        <div style={{
+        <div ref={listRef} style={{
           maxHeight: 220,
           overflowY: "auto",
           borderTop: "1px solid var(--border)",

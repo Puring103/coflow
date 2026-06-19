@@ -45,6 +45,8 @@ pub struct RecordRow {
     pub key: String,
     pub actual_type: String,
     pub fields: Vec<FieldCell>,
+    /// Field names that come from spread entries (not directly editable).
+    pub spread_fields: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
