@@ -282,7 +282,7 @@ pub fn get_file_records_inner(
             if !type_names.contains(&ast_rec.type_name) {
                 type_names.push(ast_rec.type_name.clone());
             }
-            records.push(ast_record_fallback(ast_rec));
+            records.push(ast_record_fallback(ast_rec, &session.schema));
         }
     }
 
@@ -313,11 +313,12 @@ pub fn get_record_inner(
         let direct = ast_rec.map(|r| r.fields.iter().map(|f| f.name.clone()).collect::<HashSet<String>>());
         Ok(convert_record_row_with_ast(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref(), ast_rec))
     } else {
+        let schema = &session.schema;
         let fallback = session
             .file_sources
             .get(file_path)
             .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == record_key))
-            .map(ast_record_fallback);
+            .map(|r| ast_record_fallback(r, schema));
         fallback.ok_or_else(|| format!("record '{record_key}' not found"))
     }
 }
@@ -863,9 +864,10 @@ pub fn duplicate_record_inner(
         let direct = ast_rec.map(|r| r.fields.iter().map(|f| f.name.clone()).collect::<HashSet<String>>());
         Ok(convert_record_row_with_ast(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref(), ast_rec))
     } else {
+        let schema = &session.schema;
         session.file_sources.get(file_path)
             .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == new_key))
-            .map(ast_record_fallback)
+            .map(|r| ast_record_fallback(r, schema))
             .ok_or_else(|| format!("duplicate record '{new_key}' not found after write"))
     }
 }
@@ -1066,7 +1068,7 @@ pub fn delete_file_inner(
 
 /// Convert a raw AST CfdValue to FieldValue without schema or model.
 /// Used as a fallback when the model build fails (e.g. record has missing required fields).
-fn ast_value_to_field_value(v: &coflow_cfd::CfdValue) -> FieldValue {
+fn ast_value_to_field_value(v: &coflow_cfd::CfdValue, schema: &CftContainer) -> FieldValue {
     use coflow_cfd::CfdValue as AV;
     match v {
         AV::Null(_) => FieldValue::Null,
@@ -1085,15 +1087,27 @@ fn ast_value_to_field_value(v: &coflow_cfd::CfdValue) -> FieldValue {
             target_file: None,
         },
         AV::Array(items, _) => FieldValue::Array {
-            items: items.iter().map(ast_value_to_field_value).collect(),
+            items: items.iter().map(|i| ast_value_to_field_value(i, schema)).collect(),
         },
         AV::Block(b) => {
-            let fields: Vec<FieldCell> = b.entries.iter().filter_map(|e| {
+            let actual_type = b.type_marker.as_ref().map(|(t, _)| t.clone()).unwrap_or_default();
+            // Build a map of explicitly written fields from the AST
+            let written: HashMap<String, FieldValue> = b.entries.iter().filter_map(|e| {
                 if let CfdBlockEntry::Field(f) = e {
-                    Some(FieldCell { name: f.name.clone(), value: ast_value_to_field_value(&f.value) })
+                    Some((f.name.clone(), ast_value_to_field_value(&f.value, schema)))
                 } else { None }
             }).collect();
-            FieldValue::Object { actual_type: b.type_marker.as_ref().map(|(t, _)| t.clone()).unwrap_or_default(), fields }
+            // Populate all schema-defined fields (missing ones as Null) so empty Object
+            // blocks still show editable sub-fields in the UI.
+            let fields: Vec<FieldCell> = if let Some(schema_type) = schema.resolve_type(&actual_type) {
+                schema_type.all_fields.iter().map(|sf| FieldCell {
+                    name: sf.name.clone(),
+                    value: written.get(&sf.name).cloned().unwrap_or(FieldValue::Null),
+                }).collect()
+            } else {
+                written.into_iter().map(|(name, value)| FieldCell { name, value }).collect()
+            };
+            FieldValue::Object { actual_type, fields }
         }
         AV::Spread(_, _) => FieldValue::Null,
     }
@@ -1101,11 +1115,20 @@ fn ast_value_to_field_value(v: &coflow_cfd::CfdValue) -> FieldValue {
 
 /// Build a RecordRow from the raw AST record when the model doesn't contain it.
 /// Returns null-typed fields based purely on what is written in the source.
-fn ast_record_fallback(ast_rec: &coflow_cfd::CfdRecord) -> RecordRow {
-    let fields: Vec<FieldCell> = ast_rec.fields.iter().map(|f| FieldCell {
-        name: f.name.clone(),
-        value: ast_value_to_field_value(&f.value),
+fn ast_record_fallback(ast_rec: &coflow_cfd::CfdRecord, schema: &CftContainer) -> RecordRow {
+    // Use schema field order and fill in missing fields as Null so the UI can edit them.
+    let actual_type = &ast_rec.type_name;
+    let written: HashMap<String, FieldValue> = ast_rec.fields.iter().map(|f| {
+        (f.name.clone(), ast_value_to_field_value(&f.value, schema))
     }).collect();
+    let fields: Vec<FieldCell> = if let Some(schema_type) = schema.resolve_type(actual_type) {
+        schema_type.all_fields.iter().map(|sf| FieldCell {
+            name: sf.name.clone(),
+            value: written.get(&sf.name).cloned().unwrap_or(FieldValue::Null),
+        }).collect()
+    } else {
+        written.into_iter().map(|(name, value)| FieldCell { name, value }).collect()
+    };
     let spread_sources: Vec<SpreadSource> = ast_rec.entries.iter().filter_map(|e| match e {
         CfdBlockEntry::Spread(coflow_cfd::CfdValue::Ref(r), _) => Some(SpreadSource {
             key: r.key.0.clone(),
@@ -1413,15 +1436,19 @@ fn convert_value(v: &CfdValue, schema: &CftContainer, model: &CfdDataModel, file
         },
         CfdValue::Object(record) => {
             // Use schema field order if available; fall back to BTreeMap (alphabetical) order.
+            // Show all schema fields (missing ones as Null) — consistent with convert_record_row_with_ast,
+            // and required so that newly-created empty nullable objects have editable sub-fields.
             let fields = if let Some(schema_type) = schema.resolve_type(&record.actual_type) {
                 schema_type
                     .all_fields
                     .iter()
-                    .filter_map(|sf| {
-                        record.fields.get(&sf.name).map(|fv| FieldCell {
-                            name: sf.name.clone(),
-                            value: convert_value(fv, schema, model, file_record_keys),
-                        })
+                    .map(|sf| FieldCell {
+                        name: sf.name.clone(),
+                        value: record
+                            .fields
+                            .get(&sf.name)
+                            .map(|fv| convert_value(fv, schema, model, file_record_keys))
+                            .unwrap_or(FieldValue::Null),
                     })
                     .collect()
             } else {
@@ -3401,5 +3428,39 @@ mod tests {
 
         let power_schema = schemas.iter().find(|s| s.name == "power").expect("power field");
         assert_eq!(power_schema.nullable_object_type, None, "power is int, not nullable Object");
+    }
+
+    #[test]
+    fn empty_inline_object_shows_all_schema_fields() {
+        // When a nullable Object field is written as an empty block (e.g. `stats: Stats {}`),
+        // convert_value must still populate all schema-defined fields as Null so the UI
+        // can display them as editable. Previously, filter_map caused 0 fields to appear.
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let cfd = data_dir.join("test.cfd");
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(
+            &schema_path,
+            "type Stats { hp: int; mp: int; }\ntype Player { name: string; stats: Stats?; }",
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+        // Player with an empty Stats block (no fields written yet)
+        std::fs::write(&cfd, "p1: Player {\n  name: \"Alice\",\n  stats: Stats {},\n}\n").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let row = get_record_inner(&store, snap.session_id, "data/test.cfd", "p1").unwrap();
+
+        let stats_cell = row.fields.iter().find(|f| f.name == "stats").expect("stats field");
+        match &stats_cell.value {
+            FieldValue::Object { actual_type, fields } => {
+                assert_eq!(actual_type, "Stats");
+                assert_eq!(fields.len(), 2, "Stats has 2 fields: hp, mp — empty block must still show both as Null");
+                assert!(fields.iter().all(|f| matches!(f.value, FieldValue::Null)), "both fields should be Null");
+            }
+            other => panic!("expected Object, got {other:?}"),
+        }
     }
 }
