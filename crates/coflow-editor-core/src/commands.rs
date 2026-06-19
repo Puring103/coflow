@@ -3228,6 +3228,11 @@ mod tests {
         // Result is sorted by key
         assert_eq!(briefs[0].key, "shield");
         assert_eq!(briefs[1].key, "sword");
+        // display_hint should be populated from name field (note: trailing comma stripped by CFD parser)
+        let sword_brief = briefs.iter().find(|b| b.key == "sword").unwrap();
+        assert_eq!(sword_brief.display_hint.as_deref(), Some("Sword"), "sword display_hint should be 'Sword'");
+        let shield_brief = briefs.iter().find(|b| b.key == "shield").unwrap();
+        assert_eq!(shield_brief.display_hint.as_deref(), Some("Shield"), "shield display_hint should be 'Shield'");
     }
 
     #[test]
