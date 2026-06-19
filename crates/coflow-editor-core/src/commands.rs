@@ -3521,4 +3521,34 @@ mod tests {
             other => panic!("expected Object, got {other:?}"),
         }
     }
+
+    #[test]
+    fn get_record_source_returns_raw_span() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        let cfd_path = dir.path().join("data/items.cfd");
+
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        std::fs::write(
+            &cfd_path,
+            "sword: Item {\n  name: \"Sword\",\n}\nshield: Item {\n  name: \"Shield\",\n}\n",
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let src = get_record_source_inner(&store, snap.session_id, "data/items.cfd", "sword").unwrap();
+        // Source should contain the sword record but not the shield record
+        assert!(src.contains("sword"), "source should contain 'sword': {src}");
+        assert!(src.contains("Sword"), "source should contain field value 'Sword': {src}");
+        assert!(!src.contains("shield"), "source should not contain 'shield': {src}");
+
+        // Unknown record should return error
+        let err = get_record_source_inner(&store, snap.session_id, "data/items.cfd", "nonexistent");
+        assert!(err.is_err());
+    }
 }
