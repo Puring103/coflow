@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -15,6 +15,7 @@ interface TableViewProps {
   fileRecords: FileRecords;
   sessionId: number;
   filePath: string;
+  initialTypeFilter?: string;
   onWriteField: (
     sessionId: number,
     filePath: string,
@@ -39,12 +40,24 @@ export function TableView({
   fileRecords,
   sessionId,
   filePath,
+  initialTypeFilter,
   onWriteField,
   onDeleteRecord,
   onNavigate,
 }: TableViewProps) {
-  const [activeType, setActiveType] = useState<string>(fileRecords.type_names[0] ?? "");
+  const [activeType, setActiveType] = useState<string>(
+    initialTypeFilter && fileRecords.type_names.includes(initialTypeFilter)
+      ? initialTypeFilter
+      : fileRecords.type_names[0] ?? ""
+  );
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+
+  // Keep activeType valid when the type list changes after reload
+  useEffect(() => {
+    if (fileRecords.type_names.length > 0 && !fileRecords.type_names.includes(activeType)) {
+      setActiveType(fileRecords.type_names[0]);
+    }
+  }, [fileRecords.type_names, activeType]);
   const [showNewRecord, setShowNewRecord] = useState(false);
   const [newRecord, setNewRecord] = useState<NewRecordForm>({ key: "", typeName: fileRecords.type_names[0] ?? "" });
   const [creating, setCreating] = useState(false);

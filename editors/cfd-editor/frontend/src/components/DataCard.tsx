@@ -41,11 +41,8 @@ function parseEditedValue(raw: string, originalKind: FieldValue["kind"]): FieldV
   if (trimmed === "false") return { kind: "Bool", v: false };
   // Try int
   if (/^-?\d+$/.test(trimmed)) {
-    try {
-      return { kind: "Int", v: BigInt(trimmed) };
-    } catch {
-      // fall through
-    }
+    const n = Number(trimmed);
+    if (!isNaN(n)) return { kind: "Int", v: n };
   }
   // Try float
   if (/^-?\d*\.?\d+([eE][+-]?\d+)?$/.test(trimmed) && trimmed.includes(".")) {

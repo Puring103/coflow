@@ -160,7 +160,7 @@ pub fn serialize_value(v: &FieldValue) -> String {
     match v {
         FieldValue::Null => "null".to_string(),
         FieldValue::Bool { v } => v.to_string(),
-        FieldValue::Int { v } => v.to_string(),
+        FieldValue::Int { v } => (*v as i64).to_string(),
         FieldValue::Float { v } => v.to_string(),
         FieldValue::Str { v } => format!("{v:?}"), // Rust debug format = JSON string escaping
         FieldValue::Enum { variant, .. } => variant.clone(),

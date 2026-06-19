@@ -2,4 +2,4 @@
 import type { DictEntry } from "./DictEntry";
 import type { FieldCell } from "./FieldCell";
 
-export type FieldValue = { "kind": "Null" } | { "kind": "Bool", v: boolean, } | { "kind": "Int", v: bigint, } | { "kind": "Float", v: number, } | { "kind": "Str", v: string, } | { "kind": "Enum", enum_name: string, variant: string, int_value: bigint, } | { "kind": "Object", actual_type: string, fields: Array<FieldCell>, } | { "kind": "Ref", target_type: string, target_key: string, target_file: string | null, } | { "kind": "Array", items: Array<FieldValue>, } | { "kind": "Dict", entries: Array<DictEntry>, };
+export type FieldValue = { "kind": "Null" } | { "kind": "Bool", v: boolean, } | { "kind": "Int", v: number, } | { "kind": "Float", v: number, } | { "kind": "Str", v: string, } | { "kind": "Enum", enum_name: string, variant: string, int_value: number, } | { "kind": "Object", actual_type: string, fields: Array<FieldCell>, } | { "kind": "Ref", target_type: string, target_key: string, target_file: string | null, } | { "kind": "Array", items: Array<FieldValue>, } | { "kind": "Dict", entries: Array<DictEntry>, };

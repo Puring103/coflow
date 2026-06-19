@@ -241,7 +241,7 @@ pub fn get_file_records_inner(
             if !type_names.contains(&record.actual_type) {
                 type_names.push(record.actual_type.clone());
             }
-            records.push(convert_record_row(record, &session.schema, &session.model));
+            records.push(convert_record_row(record, &session.schema, &session.model, &session.file_record_keys));
         }
     }
 
@@ -267,7 +267,7 @@ pub fn get_record_inner(
         .find(|(_, r)| r.key == record_key)
         .ok_or_else(|| format!("record '{record_key}' not found"))?;
 
-    Ok(convert_record_row(record, &session.schema, &session.model))
+    Ok(convert_record_row(record, &session.schema, &session.model, &session.file_record_keys))
 }
 
 pub fn get_graph_inner(
@@ -331,7 +331,7 @@ pub fn get_graph_inner(
                     fields: if is_collapsed {
                         Vec::new()
                     } else {
-                        convert_record_row(record, &session.schema, &session.model).fields
+                        convert_record_row(record, &session.schema, &session.model, &session.file_record_keys).fields
                     },
                 });
 
@@ -676,6 +676,7 @@ fn convert_record_row(
     record: &CfdRecord,
     schema: &CftContainer,
     model: &CfdDataModel,
+    file_record_keys: &HashMap<String, Vec<String>>,
 ) -> RecordRow {
     let fields = if let Some(schema_type) = schema.resolve_type(&record.actual_type) {
         schema_type
@@ -686,7 +687,7 @@ fn convert_record_row(
                 value: record
                     .fields
                     .get(&sf.name)
-                    .map(|v| convert_value(v, model))
+                    .map(|v| convert_value(v, model, file_record_keys))
                     .unwrap_or(FieldValue::Null),
             })
             .collect()
@@ -696,7 +697,7 @@ fn convert_record_row(
             .iter()
             .map(|(name, v)| FieldCell {
                 name: name.clone(),
-                value: convert_value(v, model),
+                value: convert_value(v, model, file_record_keys),
             })
             .collect()
     };
@@ -707,17 +708,23 @@ fn convert_record_row(
     }
 }
 
-fn convert_value(v: &CfdValue, model: &CfdDataModel) -> FieldValue {
+fn find_file_for_key<'a>(file_record_keys: &'a HashMap<String, Vec<String>>, key: &str) -> Option<&'a str> {
+    file_record_keys
+        .iter()
+        .find_map(|(fp, keys)| if keys.iter().any(|k| k == key) { Some(fp.as_str()) } else { None })
+}
+
+fn convert_value(v: &CfdValue, model: &CfdDataModel, file_record_keys: &HashMap<String, Vec<String>>) -> FieldValue {
     match v {
         CfdValue::Null => FieldValue::Null,
         CfdValue::Bool(b) => FieldValue::Bool { v: *b },
-        CfdValue::Int(i) => FieldValue::Int { v: *i },
+        CfdValue::Int(i) => FieldValue::Int { v: *i as f64 },
         CfdValue::Float(f) => FieldValue::Float { v: *f },
         CfdValue::String(s) => FieldValue::Str { v: s.clone() },
         CfdValue::Enum(e) => FieldValue::Enum {
             enum_name: e.enum_name.clone(),
             variant: e.variant.clone().unwrap_or_default(),
-            int_value: e.value,
+            int_value: e.value as f64,
         },
         CfdValue::Object(record) => FieldValue::Object {
             actual_type: record.actual_type.clone(),
@@ -726,7 +733,7 @@ fn convert_value(v: &CfdValue, model: &CfdDataModel) -> FieldValue {
                 .iter()
                 .map(|(name, v)| FieldCell {
                     name: name.clone(),
-                    value: convert_value(v, model),
+                    value: convert_value(v, model, file_record_keys),
                 })
                 .collect(),
         },
@@ -735,21 +742,22 @@ fn convert_value(v: &CfdValue, model: &CfdDataModel) -> FieldValue {
                 .record(*target)
                 .map(|r| r.actual_type.clone())
                 .unwrap_or_default();
+            let target_file = find_file_for_key(file_record_keys, key).map(|s| s.to_string());
             FieldValue::Ref {
                 target_type,
                 target_key: key.clone(),
-                target_file: None,
+                target_file,
             }
         }
         CfdValue::Array(items) => FieldValue::Array {
-            items: items.iter().map(|i| convert_value(i, model)).collect(),
+            items: items.iter().map(|i| convert_value(i, model, file_record_keys)).collect(),
         },
         CfdValue::Dict(entries) => FieldValue::Dict {
             entries: entries
                 .iter()
                 .map(|(k, v)| DictEntry {
                     key: convert_dict_key(k),
-                    value: convert_value(v, model),
+                    value: convert_value(v, model, file_record_keys),
                 })
                 .collect(),
         },
@@ -759,7 +767,7 @@ fn convert_value(v: &CfdValue, model: &CfdDataModel) -> FieldValue {
 fn convert_dict_key(k: &CfdDictKey) -> DictKey {
     match k {
         CfdDictKey::String(s) => DictKey::Str { v: s.clone() },
-        CfdDictKey::Int(i) => DictKey::Int { v: *i },
+        CfdDictKey::Int(i) => DictKey::Int { v: *i as f64 },
         CfdDictKey::Enum(CfdEnumValue {
             enum_name,
             variant,
@@ -767,7 +775,7 @@ fn convert_dict_key(k: &CfdDictKey) -> DictKey {
         }) => DictKey::Enum {
             enum_name: enum_name.clone(),
             variant: variant.clone().unwrap_or_default(),
-            int_value: *value,
+            int_value: *value as f64,
         },
     }
 }

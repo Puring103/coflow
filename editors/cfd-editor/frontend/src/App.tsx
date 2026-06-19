@@ -29,6 +29,21 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFile, project.snapshot?.session_id]);
 
+  // Ctrl+S: flush dirty debounce immediately
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        if (project.dirty && project.snapshot && currentFile) {
+          project.saveNow(project.snapshot.session_id, currentFile);
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.dirty, project.snapshot?.session_id, currentFile]);
+
   // Load graph data when switching to graph view
   useEffect(() => {
     if (!project.snapshot || !currentFile || currentView !== "graph") return;
@@ -113,10 +128,9 @@ export default function App() {
     try {
       const node = await api.createFile(project.snapshot.session_id, newFilePath.trim());
       setShowNewFileModal(false);
+      // Refresh snapshot to update file tree, then navigate to the new file
+      await project.refreshSnapshot();
       router.push({ view: "table", file: node.path });
-      // Reload project snapshot to update file tree
-      // For now just reload file records for the new file
-      project.loadFile(project.snapshot.session_id, node.path);
     } catch (err) {
       console.error("createFile error:", err);
     }
@@ -200,6 +214,7 @@ export default function App() {
                     fileRecords={project.fileRecords}
                     sessionId={project.snapshot?.session_id ?? 0}
                     filePath={router.current.file}
+                    initialTypeFilter={router.current.typeFilter}
                     onWriteField={handleWriteField}
                     onDeleteRecord={handleDeleteRecord}
                     onNavigate={router.push}

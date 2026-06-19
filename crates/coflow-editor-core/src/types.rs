@@ -60,10 +60,10 @@ pub struct FieldCell {
 pub enum FieldValue {
     Null,
     Bool { v: bool },
-    Int { v: i64 },
+    Int { v: f64 },
     Float { v: f64 },
     Str { v: String },
-    Enum { enum_name: String, variant: String, int_value: i64 },
+    Enum { enum_name: String, variant: String, int_value: f64 },
     Object { actual_type: String, fields: Vec<FieldCell> },
     Ref { target_type: String, target_key: String, target_file: Option<String> },
     Array { items: Vec<FieldValue> },
@@ -82,8 +82,8 @@ pub struct DictEntry {
 #[ts(export)]
 pub enum DictKey {
     Str { v: String },
-    Int { v: i64 },
-    Enum { enum_name: String, variant: String, int_value: i64 },
+    Int { v: f64 },
+    Enum { enum_name: String, variant: String, int_value: f64 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

@@ -4,10 +4,10 @@
 export type FieldValue =
   | { kind: "Null" }
   | { kind: "Bool"; v: boolean }
-  | { kind: "Int"; v: bigint }
+  | { kind: "Int"; v: number }
   | { kind: "Float"; v: number }
   | { kind: "Str"; v: string }
-  | { kind: "Enum"; enum_name: string; variant: string; int_value: bigint }
+  | { kind: "Enum"; enum_name: string; variant: string; int_value: number }
   | { kind: "Object"; actual_type: string; fields: FieldCell[] }
   | { kind: "Ref"; target_type: string; target_key: string; target_file: string | null }
   | { kind: "Array"; items: FieldValue[] }
@@ -17,8 +17,8 @@ export type DictEntry = { key: DictKey; value: FieldValue };
 
 export type DictKey =
   | { kind: "Str"; v: string }
-  | { kind: "Int"; v: bigint }
-  | { kind: "Enum"; enum_name: string; variant: string; int_value: bigint };
+  | { kind: "Int"; v: number }
+  | { kind: "Enum"; enum_name: string; variant: string; int_value: number };
 
 export type FieldPathSegment =
   | { kind: "Field"; name: string }

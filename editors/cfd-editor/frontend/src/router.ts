@@ -5,30 +5,43 @@ export type Route =
   | { view: "record"; file: string; recordKey: string }
   | { view: "graph"; file: string };
 
-export function useRouter(initial?: Route) {
-  const [history, setHistory] = useState<Route[]>(initial ? [initial] : []);
-  const [index, setIndex] = useState(initial ? 0 : -1);
+interface RouterState {
+  history: Route[];
+  index: number;
+}
 
-  const current: Route | null = index >= 0 ? history[index] : null;
-  const canBack = index > 0;
-  const canForward = index < history.length - 1;
+export function useRouter(initial?: Route) {
+  const [state, setState] = useState<RouterState>(() => ({
+    history: initial ? [initial] : [],
+    index: initial ? 0 : -1,
+  }));
+
+  const current: Route | null = state.index >= 0 ? state.history[state.index] : null;
+  const canBack = state.index > 0;
+  const canForward = state.index < state.history.length - 1;
 
   const push = useCallback((route: Route) => {
-    setHistory(h => [...h.slice(0, index + 1), route]);
-    setIndex(i => i + 1);
-  }, [index]);
+    setState(s => {
+      const newIndex = s.index + 1;
+      return { history: [...s.history.slice(0, newIndex), route], index: newIndex };
+    });
+  }, []);
 
   const replace = useCallback((route: Route) => {
-    setHistory(h => { const n = [...h]; n[index] = route; return n; });
-  }, [index]);
+    setState(s => {
+      const h = [...s.history];
+      h[s.index] = route;
+      return { history: h, index: s.index };
+    });
+  }, []);
 
   const back = useCallback(() => {
-    if (canBack) setIndex(i => i - 1);
-  }, [canBack]);
+    setState(s => s.index > 0 ? { ...s, index: s.index - 1 } : s);
+  }, []);
 
   const forward = useCallback(() => {
-    if (canForward) setIndex(i => i + 1);
-  }, [canForward]);
+    setState(s => s.index < s.history.length - 1 ? { ...s, index: s.index + 1 } : s);
+  }, []);
 
   return { current, push, replace, back, forward, canBack, canForward };
 }
