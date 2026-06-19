@@ -12,6 +12,7 @@ import { GraphView, invalidateGraphCache } from "./components/GraphView";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { CommandPalette } from "./components/CommandPalette";
 import { GlobalSearch } from "./components/GlobalSearch";
+import { GlobalTableView } from "./components/GlobalTableView";
 
 function collectFilePaths(nodes: FileTreeNode[]): string[] {
   const paths: string[] = [];
@@ -75,7 +76,7 @@ export default function App() {
     opErrorTimerRef.current = setTimeout(() => { setOpError(null); opErrorTimerRef.current = null; }, 6000);
   }, []);
 
-  const currentFile = router.current?.file ?? null;
+  const currentFile = (router.current && router.current.view !== "global-table") ? router.current.file : null;
 
   // Load file records when file changes; auto-flush dirty for previous file
   useEffect(() => {
@@ -141,6 +142,17 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "G") {
         e.preventDefault();
         if (project.snapshot) setShowGlobalSearch(true);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "T") {
+        e.preventDefault();
+        if (project.snapshot) {
+          api.getAllTypeNames(project.snapshot.session_id)
+            .then(names => {
+              if (names.length > 0) router.push({ view: "global-table", typeName: names[0] });
+            })
+            .catch(() => {});
+        }
         return;
       }
       if (e.altKey && e.key === "ArrowLeft" && router.canBack) {
@@ -216,7 +228,7 @@ export default function App() {
     if (!router.current) {
       const firstFile = findFirstFile(snap.file_tree);
       if (firstFile) router.push({ view: "table", file: firstFile });
-    } else if (!fileExists(snap.file_tree, router.current.file)) {
+    } else if (router.current.view !== "global-table" && !fileExists(snap.file_tree, router.current.file)) {
       // Current file no longer exists in the snapshot — reset and auto-select
       router.reset();
     }
@@ -256,7 +268,7 @@ export default function App() {
   }, [project, showOpError]);
 
   const handleRenameRecord = useCallback(async (oldKey: string, newKey: string) => {
-    if (!project.snapshot || !router.current) return;
+    if (!project.snapshot || !router.current || router.current.view === "global-table") return;
     const filePath = router.current.file;
     try {
       await api.renameRecord(project.snapshot.session_id, filePath, oldKey, newKey);
@@ -363,7 +375,7 @@ export default function App() {
 
   const handleDeleteFile = useCallback(async (filePath: string) => {
     if (!project.snapshot) return;
-    const wasViewing = router.current?.file === filePath;
+    const wasViewing = router.current && router.current.view !== "global-table" && router.current.file === filePath;
     try {
       await api.deleteFile(project.snapshot.session_id, filePath);
       await project.refreshSnapshot();
@@ -471,6 +483,19 @@ export default function App() {
             style={{ fontSize: 11 }}
           >⌕ 全局搜索</button>
         )}
+        {project.snapshot && (
+          <button
+            onClick={() => {
+              api.getAllTypeNames(project.snapshot!.session_id)
+                .then(names => {
+                  if (names.length > 0) router.push({ view: "global-table", typeName: names[0] });
+                })
+                .catch(e => showOpError(`Failed to open global table: ${e}`));
+            }}
+            title="全局表视图 — 跨文件查看同类型记录 (Ctrl+Shift+T)"
+            style={{ fontSize: 11 }}
+          >☰ 全局表</button>
+        )}
         <button
           title={[
             "Keyboard Shortcuts",
@@ -478,6 +503,7 @@ export default function App() {
             "Ctrl+Z         Undo last field edit (up to 50 steps)",
             "Ctrl+P         Jump to record (command palette)",
             "Ctrl+Shift+G   Global search by key or field value",
+            "Ctrl+Shift+T   Open global table (cross-file by type)",
             "Ctrl+S         Save / flush diagnostics",
             "Alt+← / →     Back / Forward",
             "Ctrl+N         New record (in table/record view)",
@@ -528,7 +554,7 @@ export default function App() {
           <aside className="sidebar">
             <FileTree
               nodes={project.snapshot.file_tree}
-              selectedPath={router.current?.file ?? null}
+              selectedPath={(router.current && router.current.view !== "global-table") ? router.current.file : null}
               onSelect={(file) => router.push({ view: "table", file })}
               onNewFile={handleNewFile}
               onDeleteFile={handleDeleteFile}
@@ -543,36 +569,42 @@ export default function App() {
             <>
               {/* View tabs */}
               <div className="view-tabs">
-                {(["table", "record", "graph"] as const).map(v => (
+                {router.current.view === "global-table" ? (
                   <button
-                    key={v}
-                    className={router.current?.view === v ? "tab active" : "tab"}
-                    onClick={() => {
-                      const cur = router.current!;
-                      if (v === "table" && cur.view === "record" && "recordKey" in cur) {
-                        // Preserve type context when switching from record → table
-                        const recordKey = (cur as { recordKey: string }).recordKey;
-                        const recordType = project.fileRecords?.records.find(r => r.key === recordKey)?.actual_type;
-                        router.replace({ view: "table", file: cur.file, ...(recordType ? { typeFilter: recordType } : {}) });
-                      } else if (v === "graph") {
-                        router.replace({ view: "graph", file: cur.file });
-                      } else if (v === "table") {
-                        // table→table (same file, preserve typeFilter) or graph→table
-                        const typeFilter = cur.view === "table" ? cur.typeFilter : undefined;
-                        router.replace({ view: "table", file: cur.file, ...(typeFilter ? { typeFilter } : {}) });
-                      } else {
-                        // record tab: only reachable when recordKey already in route (disabled otherwise)
-                        if ("recordKey" in cur) {
-                          router.replace({ view: "record", file: cur.file, recordKey: (cur as { recordKey: string }).recordKey });
-                        }
-                      }
-                    }}
-                    disabled={v === "record" && !("recordKey" in (router.current ?? {}))}
+                    className="tab active"
                   >
-                    {v === "table" ? "Table" : v === "record" ? "Record" : "Graph"}
+                    全局表
                   </button>
-                ))}
-                {router.current.file && (
+                ) : (
+                  (["table", "record", "graph"] as const).map(v => (
+                    <button
+                      key={v}
+                      className={router.current?.view === v ? "tab active" : "tab"}
+                      onClick={() => {
+                        const cur = router.current!;
+                        if (cur.view === "global-table") return;
+                        if (v === "table" && cur.view === "record" && "recordKey" in cur) {
+                          const recordKey = (cur as { recordKey: string }).recordKey;
+                          const recordType = project.fileRecords?.records.find(r => r.key === recordKey)?.actual_type;
+                          router.replace({ view: "table", file: cur.file, ...(recordType ? { typeFilter: recordType } : {}) });
+                        } else if (v === "graph") {
+                          router.replace({ view: "graph", file: cur.file });
+                        } else if (v === "table") {
+                          const typeFilter = cur.view === "table" ? cur.typeFilter : undefined;
+                          router.replace({ view: "table", file: cur.file, ...(typeFilter ? { typeFilter } : {}) });
+                        } else {
+                          if ("recordKey" in cur) {
+                            router.replace({ view: "record", file: cur.file, recordKey: (cur as { recordKey: string }).recordKey });
+                          }
+                        }
+                      }}
+                      disabled={v === "record" && !("recordKey" in (router.current ?? {}))}
+                    >
+                      {v === "table" ? "Table" : v === "record" ? "Record" : "Graph"}
+                    </button>
+                  ))
+                )}
+                {"file" in (router.current ?? {}) && (router.current as { file?: string }).file && (
                   <span style={{
                     marginLeft: "auto",
                     color: "var(--text-muted)",
@@ -584,7 +616,7 @@ export default function App() {
                     whiteSpace: "nowrap",
                     maxWidth: 300,
                   }}>
-                    {router.current.file}
+                    {(router.current as { file?: string }).file}
                   </span>
                 )}
               </div>
@@ -592,7 +624,8 @@ export default function App() {
               {/* View content */}
               <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
                 {(() => {
-                  const matchedRecords = project.fileRecords?.file_path === router.current.file ? project.fileRecords : null;
+                  const curFile = router.current.view !== "global-table" ? router.current.file : null;
+                  const matchedRecords = project.fileRecords?.file_path === curFile ? project.fileRecords : null;
                   return router.current.view === "table" && matchedRecords ? (
                     <TableView
                       fileRecords={matchedRecords}
@@ -657,6 +690,15 @@ export default function App() {
                     refreshKey={graphRefreshKey}
                   />
                 )}
+
+                {router.current.view === "global-table" && project.snapshot && (
+                  <GlobalTableView
+                    sessionId={project.snapshot.session_id}
+                    typeName={router.current.typeName}
+                    onTypeChange={typeName => router.replace({ view: "global-table", typeName })}
+                    onNavigate={router.push}
+                  />
+                )}
               </div>
             </>
           ) : (
@@ -702,7 +744,7 @@ export default function App() {
 
       {/* Diagnostics panel */}
       {project.snapshot && (
-        <DiagnosticsPanel diagnostics={project.snapshot.diagnostics} onNavigate={router.push} currentFile={router.current?.file} />
+        <DiagnosticsPanel diagnostics={project.snapshot.diagnostics} onNavigate={router.push} currentFile={(router.current && router.current.view !== "global-table") ? router.current.file : undefined} />
       )}
 
       {/* New file modal */}

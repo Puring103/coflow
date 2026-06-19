@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ProjectSnapshot, FileRecords, RecordRow, GraphData,
-  FileTreeNode, FieldValue, FieldPathSegment, DiagnosticItem, RecordBrief, FieldSchema, SearchHit, IncomingRef
+  FileTreeNode, FieldValue, FieldPathSegment, DiagnosticItem, RecordBrief, FieldSchema, SearchHit, IncomingRef,
 } from "./bindings";
 
 export const api = {
@@ -84,4 +84,7 @@ export const api = {
 
   getIncomingRefs: (sessionId: number, targetKey: string) =>
     invoke<IncomingRef[]>("get_incoming_refs", { sessionId, targetKey }),
+
+  getAllRecordsOfType: (sessionId: number, typeName: string) =>
+    invoke<RecordRow[]>("get_all_records_of_type", { sessionId, typeName }),
 };

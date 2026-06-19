@@ -112,6 +112,7 @@ function CfdNode({ data }: NodeProps<Node<CfdNodeData>>) {
       <div
         onContextMenu={e => onContextMenu(e, gnode)}
         onClick={() => onExpand(gnode.key)}
+        onDoubleClick={e => { e.stopPropagation(); onExpand(gnode.key); onNavigate(gnode); }}
         style={{
           width: 44,
           height: 44,
@@ -126,7 +127,7 @@ function CfdNode({ data }: NodeProps<Node<CfdNodeData>>) {
           cursor: "pointer",
           userSelect: "none",
         }}
-        title={`${gnode.key} — click to expand`}
+        title={`${gnode.key} — 单击展开 / 双击跳转到记录`}
       >
         +
         <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
@@ -316,10 +317,19 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey }: Graph
         ...(!gnode.is_collapsed ? [{
           label: "折叠节点",
           onClick: () => handleCollapse(gnode.key),
-        }] : [{
-          label: "展开节点",
-          onClick: () => handleExpand(gnode.key),
-        }]),
+        }] : [
+          {
+            label: "展开节点",
+            onClick: () => handleExpand(gnode.key),
+          },
+          {
+            label: "展开并跳转到记录",
+            onClick: () => {
+              handleExpand(gnode.key);
+              onNavigate({ view: "record", file: gnode.file_path, recordKey: gnode.key });
+            },
+          },
+        ]),
       ],
     });
   }, [onNavigate, handleCollapse, handleExpand]);

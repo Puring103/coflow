@@ -276,14 +276,18 @@ pub fn get_file_records_inner(
             }
             let direct = ast_direct.get(key.as_str());
             let ast_rec = ast_records.get(key.as_str()).copied();
-            records.push(convert_record_row_with_ast(record, &session.schema, &session.model, &session.file_record_keys, direct, ast_rec));
+            let mut row = convert_record_row_with_ast(record, &session.schema, &session.model, &session.file_record_keys, direct, ast_rec);
+            row.file_path = file_path.to_string();
+            records.push(row);
         } else if let Some(ast_rec) = ast_records.get(key.as_str()) {
             // Model build failed for this record (e.g. missing required fields during editing).
             // Return a best-effort row from the raw AST so the UI stays responsive.
             if !type_names.contains(&ast_rec.type_name) {
                 type_names.push(ast_rec.type_name.clone());
             }
-            records.push(ast_record_fallback(ast_rec, &session.schema));
+            let mut row = ast_record_fallback(ast_rec, &session.schema);
+            row.file_path = file_path.to_string();
+            records.push(row);
         }
     }
 
@@ -292,6 +296,71 @@ pub fn get_file_records_inner(
         type_names,
         records,
     })
+}
+
+/// Returns all records of a given type across every loaded file, with their file paths embedded.
+/// Used by the cross-file global table view.
+pub fn get_all_records_of_type_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+    type_name: &str,
+) -> Result<Vec<RecordRow>, String> {
+    let session_arc = get_session(store, session_id)?;
+    let session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+
+    let mut results: Vec<RecordRow> = Vec::new();
+
+    // Iterate all files in insertion order
+    for (file_path, keys) in &session.file_record_keys {
+        let ast_direct: HashMap<String, HashSet<String>> = session
+            .file_sources
+            .get(file_path.as_str())
+            .map(|(_, ast)| {
+                let mut m: HashMap<String, HashSet<String>> = HashMap::new();
+                for ast_rec in &ast.records {
+                    let direct: HashSet<String> =
+                        ast_rec.fields.iter().map(|f| f.name.clone()).collect();
+                    m.insert(ast_rec.key.clone(), direct);
+                }
+                m
+            })
+            .unwrap_or_default();
+
+        let ast_records: HashMap<String, &coflow_cfd::CfdRecord> = session
+            .file_sources
+            .get(file_path.as_str())
+            .map(|(_, ast)| ast.records.iter().map(|r| (r.key.clone(), r)).collect())
+            .unwrap_or_default();
+
+        for key in keys {
+            if let Some((_, record)) = session.model.records().find(|(_, r)| r.key == *key) {
+                if record.actual_type != type_name {
+                    continue;
+                }
+                let direct = ast_direct.get(key.as_str());
+                let ast_rec = ast_records.get(key.as_str()).copied();
+                let mut row = convert_record_row_with_ast(
+                    record,
+                    &session.schema,
+                    &session.model,
+                    &session.file_record_keys,
+                    direct,
+                    ast_rec,
+                );
+                row.file_path = file_path.clone();
+                results.push(row);
+            } else if let Some(ast_rec) = ast_records.get(key.as_str()) {
+                if ast_rec.type_name != type_name {
+                    continue;
+                }
+                let mut row = ast_record_fallback(ast_rec, &session.schema);
+                row.file_path = file_path.clone();
+                results.push(row);
+            }
+        }
+    }
+
+    Ok(results)
 }
 
 pub fn get_record_inner(
@@ -312,14 +381,20 @@ pub fn get_record_inner(
             .get(file_path)
             .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == record_key));
         let direct = ast_rec.map(|r| r.fields.iter().map(|f| f.name.clone()).collect::<HashSet<String>>());
-        Ok(convert_record_row_with_ast(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref(), ast_rec))
+        let mut row = convert_record_row_with_ast(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref(), ast_rec);
+        row.file_path = file_path.to_string();
+        Ok(row)
     } else {
         let schema = &session.schema;
         let fallback = session
             .file_sources
             .get(file_path)
             .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == record_key))
-            .map(|r| ast_record_fallback(r, schema));
+            .map(|r| {
+                let mut row = ast_record_fallback(r, schema);
+                row.file_path = file_path.to_string();
+                row
+            });
         fallback.ok_or_else(|| format!("record '{record_key}' not found"))
     }
 }
@@ -636,6 +711,7 @@ pub fn create_record_inner(
     Ok(RecordRow {
         key: key.to_string(),
         actual_type: type_name.to_string(),
+        file_path: file_path.to_string(),
         fields: Vec::new(),
         spread_fields: Vec::new(),
         spread_sources: Vec::new(),
@@ -863,12 +939,18 @@ pub fn move_record_inner(
         let ast_rec = session.file_sources.get(dst_file)
             .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == record_key));
         let direct = ast_rec.map(|r| r.fields.iter().map(|f| f.name.clone()).collect::<HashSet<String>>());
-        Ok(convert_record_row_with_ast(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref(), ast_rec))
+        let mut row = convert_record_row_with_ast(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref(), ast_rec);
+        row.file_path = dst_file.to_string();
+        Ok(row)
     } else {
         let schema = &session.schema;
         session.file_sources.get(dst_file)
             .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == record_key))
-            .map(|r| ast_record_fallback(r, schema))
+            .map(|r| {
+                let mut row = ast_record_fallback(r, schema);
+                row.file_path = dst_file.to_string();
+                row
+            })
             .ok_or_else(|| format!("record '{record_key}' not found in '{dst_file}' after move"))
     }
 }
@@ -1400,12 +1482,18 @@ pub fn duplicate_record_inner(
         let ast_rec = session.file_sources.get(file_path)
             .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == new_key));
         let direct = ast_rec.map(|r| r.fields.iter().map(|f| f.name.clone()).collect::<HashSet<String>>());
-        Ok(convert_record_row_with_ast(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref(), ast_rec))
+        let mut row = convert_record_row_with_ast(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref(), ast_rec);
+        row.file_path = file_path.to_string();
+        Ok(row)
     } else {
         let schema = &session.schema;
         session.file_sources.get(file_path)
             .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == new_key))
-            .map(|r| ast_record_fallback(r, schema))
+            .map(|r| {
+                let mut row = ast_record_fallback(r, schema);
+                row.file_path = file_path.to_string();
+                row
+            })
             .ok_or_else(|| format!("duplicate record '{new_key}' not found after write"))
     }
 }
@@ -1708,6 +1796,7 @@ fn ast_record_fallback(ast_rec: &coflow_cfd::CfdRecord, schema: &CftContainer) -
     RecordRow {
         key: ast_rec.key.clone(),
         actual_type: ast_rec.type_name.clone(),
+        file_path: String::new(),
         fields,
         spread_fields: Vec::new(),
         spread_sources,
@@ -1995,6 +2084,7 @@ fn convert_record_row_with_ast(
     RecordRow {
         key: record.key.clone(),
         actual_type: record.actual_type.clone(),
+        file_path: String::new(),
         fields,
         spread_fields,
         spread_sources,

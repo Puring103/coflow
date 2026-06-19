@@ -56,6 +56,9 @@ pub struct SpreadSource {
 pub struct RecordRow {
     pub key: String,
     pub actual_type: String,
+    /// File path (relative to project root) where this record lives.
+    /// Populated for all rows; useful when aggregating across files.
+    pub file_path: String,
     pub fields: Vec<FieldCell>,
     /// Field names that come from spread entries (not directly editable).
     pub spread_fields: Vec<String>,

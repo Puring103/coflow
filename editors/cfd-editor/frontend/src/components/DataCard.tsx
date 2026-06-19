@@ -710,8 +710,8 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
             <span
               onClick={e => { e.stopPropagation(); onEdit({ kind: "Array", items: [...value.items, defaultItem()] }); }}
               style={{ color: "var(--accent)", fontSize: 11, cursor: "pointer", marginLeft: 4 }}
-              title="Add item"
-            >＋</span>
+              title={arrayElemObjectType ? `添加 ${arrayElemObjectType} 项` : "Add item"}
+            >＋ {arrayElemObjectType && value.items.length === 0 ? <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{arrayElemObjectType}</span> : null}</span>
           )}
         </div>
         {!collapsed && value.items.map((item, idx) => (

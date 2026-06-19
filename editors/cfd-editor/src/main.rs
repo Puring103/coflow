@@ -254,6 +254,15 @@ fn get_incoming_refs(
     get_incoming_refs_inner(&state, session_id, &target_key)
 }
 
+#[tauri::command]
+fn get_all_records_of_type(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    type_name: String,
+) -> Result<Vec<RecordRow>, String> {
+    get_all_records_of_type_inner(&state, session_id, &type_name)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -285,6 +294,7 @@ fn main() {
             import_record_source,
             write_record_source,
             get_incoming_refs,
+            get_all_records_of_type,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

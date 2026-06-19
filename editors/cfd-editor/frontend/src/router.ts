@@ -3,7 +3,8 @@ import { useState, useCallback } from "react";
 export type Route =
   | { view: "table"; file: string; typeFilter?: string }
   | { view: "record"; file: string; recordKey: string; fieldSearch?: string }
-  | { view: "graph"; file: string };
+  | { view: "graph"; file: string }
+  | { view: "global-table"; typeName: string };
 
 interface RouterState {
   history: Route[];
@@ -51,7 +52,7 @@ export function useRouter(initial?: Route) {
   const rewriteFile = useCallback((oldFile: string, newFile: string) => {
     setState(s => ({
       ...s,
-      history: s.history.map(r => r.file === oldFile ? { ...r, file: newFile } : r),
+      history: s.history.map(r => r.view !== "global-table" && r.file === oldFile ? { ...r, file: newFile } : r),
     }));
   }, []);
 

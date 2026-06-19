@@ -688,19 +688,22 @@ export function TableView({
     if (rowsToEdit.length === 0) return;
     setBatchApplying(true);
     setBatchError(null);
-    let errorCount = 0;
+    const failedKeys: string[] = [];
     for (const row of rowsToEdit) {
       const existing = row.fields.find(f => f.name === batchField)?.value ?? { kind: "Null" as const };
       const newValue = parseFieldValue(batchValue, existing);
       try {
         await onWriteField(sessionId, filePath, row.key, [{ kind: "Field", name: batchField }], newValue, existing);
       } catch {
-        errorCount++;
+        failedKeys.push(row.key);
       }
     }
     setBatchApplying(false);
-    if (errorCount > 0) {
-      setBatchError(`${errorCount} 行写入失败`);
+    if (failedKeys.length > 0) {
+      const preview = failedKeys.length <= 3
+        ? failedKeys.join(", ")
+        : failedKeys.slice(0, 3).join(", ") + ` 等 ${failedKeys.length} 条`;
+      setBatchError(`写入失败: ${preview}`);
     } else {
       setSelectedKeys(new Set());
       setBatchField("");

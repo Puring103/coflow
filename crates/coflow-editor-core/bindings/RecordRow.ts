@@ -2,7 +2,12 @@
 import type { FieldCell } from "./FieldCell";
 import type { SpreadSource } from "./SpreadSource";
 
-export type RecordRow = { key: string, actual_type: string, fields: Array<FieldCell>, 
+export type RecordRow = { key: string, actual_type: string, 
+/**
+ * File path (relative to project root) where this record lives.
+ * Populated for all rows; useful when aggregating across files.
+ */
+file_path: string, fields: Array<FieldCell>, 
 /**
  * Field names that come from spread entries (not directly editable).
  */
