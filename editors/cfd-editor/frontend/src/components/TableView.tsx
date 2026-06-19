@@ -8,7 +8,7 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { FileRecords, RecordRow, FieldValue, FieldPathSegment } from "../bindings";
+import type { FileRecords, RecordRow, FieldValue, FieldPathSegment, FieldSchema } from "../bindings";
 import type { Route } from "../router";
 import { DataCard } from "./DataCard";
 import { ContextMenu, type ContextMenuState } from "./ContextMenu";
@@ -276,6 +276,18 @@ export function TableView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
+  const [fieldSchemas, setFieldSchemas] = useState<FieldSchema[]>([]);
+
+  // Fetch field schemas for the active type to enable required-null highlighting
+  useEffect(() => {
+    if (!activeType) { setFieldSchemas([]); return; }
+    let cancelled = false;
+    api.getFieldSchemas(sessionId, activeType)
+      .then(s => { if (!cancelled) setFieldSchemas(s); })
+      .catch(() => { if (!cancelled) setFieldSchemas([]); });
+    return () => { cancelled = true; };
+  }, [sessionId, activeType]);
+
   // Reset sorting and search when type changes (columns are different per type)
   useEffect(() => { setSorting([]); setSearch(""); }, [activeType]);
   const [showNewRecord, setShowNewRecord] = useState(false);
@@ -390,9 +402,19 @@ export function TableView({
             };
             return str(va).localeCompare(str(vb));
           },
-          cell: info => (
-            <DataCard mode="compact" value={info.getValue()} />
-          ),
+          cell: info => {
+            const v = info.getValue();
+            const schema = fieldSchemas.find(s => s.name === name);
+            const isRequiredNull = v.kind === "Null" && !!schema && !schema.has_default;
+            return (
+              <span
+                style={{ color: isRequiredNull ? "var(--warning)" : undefined }}
+                title={isRequiredNull ? `Required field — must not be null (${schema!.type_str})` : schema?.type_str}
+              >
+                <DataCard mode="compact" value={v} />
+              </span>
+            );
+          },
         }
       )
     ),
