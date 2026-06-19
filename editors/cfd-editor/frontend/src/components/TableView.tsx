@@ -304,6 +304,7 @@ export function TableView({
   const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
   const lastSelectedKeyRef = useRef<string | null>(null);
+  const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const columnPickerRef = useRef<HTMLDivElement>(null);
 
@@ -327,6 +328,7 @@ export function TableView({
     } catch { setColumnVisibility({}); }
     setShowColumnPicker(false);
     setSelectedKeys(new Set());
+    setFocusedRowIndex(null);
     setBatchField("");
     setBatchValue("");
     setBatchError(null);
@@ -928,7 +930,34 @@ export function TableView({
       {/* Table */}
       <div
         ref={parentRef}
-        style={{ flex: 1, overflow: "auto" }}
+        tabIndex={0}
+        style={{ flex: 1, overflow: "auto", outline: "none" }}
+        onKeyDown={e => {
+          if (editingCell) return;
+          const rowCount = rows.length;
+          if (rowCount === 0) return;
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setFocusedRowIndex(idx => {
+              const next = idx === null ? 0 : Math.min(idx + 1, rowCount - 1);
+              virtualizer.scrollToIndex(next, { align: "auto" });
+              return next;
+            });
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setFocusedRowIndex(idx => {
+              const next = idx === null ? 0 : Math.max(idx - 1, 0);
+              virtualizer.scrollToIndex(next, { align: "auto" });
+              return next;
+            });
+          } else if ((e.key === "Enter" || e.key === " ") && focusedRowIndex !== null) {
+            e.preventDefault();
+            const focusedRow = rows[focusedRowIndex];
+            if (focusedRow) {
+              onNavigate({ view: "record", file: filePath, recordKey: focusedRow.original.key });
+            }
+          }
+        }}
       >
         <table style={{
           width: "100%",
@@ -1010,17 +1039,30 @@ export function TableView({
                   onClick={() => {
                     // Dismiss editing if clicking outside an active cell input
                     if (editingCell && editingCell.rowKey !== row.original.key) setEditingCell(null);
+                    setFocusedRowIndex(vItem.index);
                   }}
                   style={{
                     height: vItem.size,
                     cursor: "pointer",
-                    background: selectedKeys.has(row.original.key) ? "color-mix(in srgb, var(--accent) 12%, var(--bg))" : "transparent",
+                    background: selectedKeys.has(row.original.key)
+                      ? "color-mix(in srgb, var(--accent) 12%, var(--bg))"
+                      : focusedRowIndex === vItem.index
+                        ? "var(--bg3)"
+                        : "transparent",
+                    outline: focusedRowIndex === vItem.index ? "1px solid color-mix(in srgb, var(--accent) 40%, transparent)" : "none",
+                    outlineOffset: -1,
                   }}
                   onMouseEnter={e => {
-                    if (!selectedKeys.has(row.original.key)) e.currentTarget.style.background = "var(--bg3)";
+                    if (!selectedKeys.has(row.original.key) && focusedRowIndex !== vItem.index) e.currentTarget.style.background = "var(--bg3)";
                   }}
                   onMouseLeave={e => {
-                    e.currentTarget.style.background = selectedKeys.has(row.original.key) ? "color-mix(in srgb, var(--accent) 12%, var(--bg))" : "transparent";
+                    if (selectedKeys.has(row.original.key)) {
+                      e.currentTarget.style.background = "color-mix(in srgb, var(--accent) 12%, var(--bg))";
+                    } else if (focusedRowIndex === vItem.index) {
+                      e.currentTarget.style.background = "var(--bg3)";
+                    } else {
+                      e.currentTarget.style.background = "transparent";
+                    }
                   }}
                   onDoubleClick={e => {
                     if ((e.target as HTMLElement).tagName === "INPUT") return;

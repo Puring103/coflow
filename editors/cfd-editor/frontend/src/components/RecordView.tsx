@@ -884,6 +884,27 @@ export function RecordView({
                       arrayNullableElementType={fieldSchema?.array_nullable_element_type ?? undefined}
                     />
                   </div>
+                  {!isSpread && fieldSchema?.has_default && field.value.kind !== "Null" && (
+                    <button
+                      onClick={() => handleFieldEdit(field, { kind: "Null" })}
+                      title={`重置为默认值${fieldSchema.default_str ? `：${fieldSchema.default_str}` : ""}`}
+                      style={{
+                        flexShrink: 0,
+                        fontSize: 11,
+                        padding: "1px 6px",
+                        background: "transparent",
+                        border: "1px solid var(--border)",
+                        borderRadius: 4,
+                        color: "var(--text-muted)",
+                        cursor: "pointer",
+                        alignSelf: "flex-start",
+                        marginTop: 2,
+                        opacity: 0.7,
+                      }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = "1"; (e.currentTarget as HTMLElement).style.borderColor = "var(--accent)"; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = "0.7"; (e.currentTarget as HTMLElement).style.borderColor = "var(--border)"; }}
+                    >↩</button>
+                  )}
                 </div>
                 );
               })}
