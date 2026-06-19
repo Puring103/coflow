@@ -1490,10 +1490,15 @@ fn collect_refs_in_value(
         }
         CfdValue::Dict(entries) => {
             for (k, v) in entries {
+                let k_str = match k {
+                    CfdDictKey::String(s) => s.clone(),
+                    CfdDictKey::Int(n) => n.to_string(),
+                    CfdDictKey::Enum(e) => e.variant.as_deref().unwrap_or(&e.enum_name).to_string(),
+                };
                 collect_refs_in_value(
                     v,
                     source_key,
-                    &format!("{label}[{k:?}]"),
+                    &format!("{label}[{k_str}]"),
                     reverse_refs,
                     model,
                 );
