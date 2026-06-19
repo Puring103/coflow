@@ -791,6 +791,17 @@ export default function App() {
                     onTypeChange={typeName => router.replace({ view: "global-table", typeName })}
                     onNavigate={router.push}
                     onWriteField={handleWriteField}
+                    onDeleteRecord={handleDeleteRecord}
+                    onMoveRecord={(srcFile, recordKey) => {
+                      const availableFiles = collectFilePaths(project.snapshot?.file_tree ?? []);
+                      const firstOther = availableFiles.find(f => f !== srcFile) ?? srcFile;
+                      setMoveRecordModal({ srcFile, recordKey, dstFile: firstOther, error: null });
+                    }}
+                    onCopyRecord={(srcFile, recordKey) => {
+                      const availableFiles = collectFilePaths(project.snapshot?.file_tree ?? []);
+                      const firstOther = availableFiles.find(f => f !== srcFile) ?? srcFile;
+                      setCopyRecordModal({ srcFile, recordKey, dstFile: firstOther, newKey: `${recordKey}_copy`, error: null });
+                    }}
                   />
                 )}
               </div>

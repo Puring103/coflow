@@ -13,6 +13,9 @@ interface GlobalTableViewProps {
   onTypeChange: (typeName: string) => void;
   onNavigate: (route: Route) => void;
   onWriteField?: (sessionId: number, filePath: string, recordKey: string, fieldPath: FieldPathSegment[], newValue: FieldValue, oldValue?: FieldValue) => Promise<void>;
+  onDeleteRecord?: (sessionId: number, filePath: string, recordKey: string) => Promise<void>;
+  onMoveRecord?: (srcFile: string, recordKey: string) => void;
+  onCopyRecord?: (srcFile: string, recordKey: string) => void;
 }
 
 function parseFieldValue(raw: string, original: FieldValue): FieldValue {
@@ -41,7 +44,7 @@ function fieldValueToString(v: FieldValue): string {
 
 type SortCol = { col: "key" | "file" | string; dir: "asc" | "desc" };
 
-export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange, onNavigate, onWriteField }: GlobalTableViewProps) {
+export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange, onNavigate, onWriteField, onDeleteRecord, onMoveRecord, onCopyRecord }: GlobalTableViewProps) {
   const [rows, setRows] = useState<RecordRow[]>([]);
   const [allTypeNames, setAllTypeNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -144,9 +147,12 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
         { label: "在资源管理器中显示", onClick: () => api.revealInExplorer(sessionId, row.file_path).catch(() => {}) },
         { label: "复制 Key", onClick: () => navigator.clipboard.writeText(row.key).catch(() => {}) },
         { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, row.file_path, row.key).then(src => navigator.clipboard.writeText(src)).catch(() => {}) },
+        ...(onMoveRecord ? [{ label: "移动到文件…", onClick: () => onMoveRecord(row.file_path, row.key) }] : []),
+        ...(onCopyRecord ? [{ label: "复制到文件…", onClick: () => onCopyRecord(row.file_path, row.key) }] : []),
+        ...(onDeleteRecord ? [{ label: "删除记录", danger: true as const, onClick: () => onDeleteRecord(sessionId, row.file_path, row.key).catch(() => {}) }] : []),
       ],
     });
-  }, [sessionId, onNavigate]);
+  }, [sessionId, onNavigate, onDeleteRecord, onMoveRecord, onCopyRecord]);
 
   const handleBatchApply = useCallback(async () => {
     if (!onWriteField) return;
