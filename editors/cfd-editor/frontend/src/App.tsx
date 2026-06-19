@@ -312,7 +312,6 @@ export default function App() {
               onNewFile={handleNewFile}
               onDeleteFile={handleDeleteFile}
               onRenameFile={handleRenameFile}
-              sessionId={project.snapshot.session_id}
             />
           </aside>
         )}

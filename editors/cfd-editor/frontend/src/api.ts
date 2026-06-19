@@ -54,4 +54,7 @@ export const api = {
 
   getEnumVariants: (sessionId: number, enumName: string) =>
     invoke<string[]>("get_enum_variants", { sessionId, enumName }),
+
+  getRefTargets: (sessionId: number, expectedType: string) =>
+    invoke<string[]>("get_ref_targets", { sessionId, expectedType }),
 };

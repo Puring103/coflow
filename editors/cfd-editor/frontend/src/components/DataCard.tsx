@@ -210,18 +210,28 @@ function InlineEditor({ value, onCommit, onCancel }: InlineEditorProps) {
 
 interface RefEditorProps {
   value: FieldValue & { kind: "Ref" };
+  sessionId?: number;
   onCommit: (v: FieldValue) => void;
   onCancel: () => void;
 }
 
-function RefEditor({ value, onCommit, onCancel }: RefEditorProps) {
+function RefEditor({ value, sessionId, onCommit, onCancel }: RefEditorProps) {
   const [key, setKey] = useState(value.target_key);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listId = useRef(`ref-list-${Math.random().toString(36).slice(2)}`).current;
 
   useEffect(() => {
     inputRef.current?.focus();
     inputRef.current?.select();
   }, []);
+
+  useEffect(() => {
+    if (sessionId === undefined || !value.target_type) return;
+    api.getRefTargets(sessionId, value.target_type).then(keys => {
+      if (keys.length > 0) setSuggestions(keys);
+    }).catch(() => {});
+  }, [sessionId, value.target_type]);
 
   const commit = () =>
     onCommit({ kind: "Ref", target_type: value.target_type, target_key: key.trim(), target_file: value.target_file });
@@ -233,9 +243,15 @@ function RefEditor({ value, onCommit, onCancel }: RefEditorProps) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
       <span style={{ color: "var(--accent)", fontSize: 12 }}>→</span>
+      {suggestions.length > 0 && (
+        <datalist id={listId}>
+          {suggestions.map(s => <option key={s} value={s} />)}
+        </datalist>
+      )}
       <input
         ref={inputRef}
         value={key}
+        list={suggestions.length > 0 ? listId : undefined}
         onChange={e => setKey(e.target.value)}
         onKeyDown={e => {
           if (e.key === "Enter") commit();
@@ -448,6 +464,7 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label }: E
             {isRef ? (
               <RefEditor
                 value={value as FieldValue & { kind: "Ref" }}
+                sessionId={sessionId}
                 onCommit={v => { onEdit(v); setEditing(false); }}
                 onCancel={() => setEditing(false)}
               />

@@ -653,6 +653,25 @@ pub fn get_all_type_names_inner(
     Ok(names)
 }
 
+/// Return all record keys whose actual_type is assignable to `expected_type`.
+/// Used for Ref field autocomplete in the editor.
+pub fn get_ref_targets_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+    expected_type: &str,
+) -> Result<Vec<String>, String> {
+    let session_arc = get_session(store, session_id)?;
+    let session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+    let mut keys: Vec<String> = session
+        .model
+        .records()
+        .filter(|(_, r)| session.schema.is_assignable(&r.actual_type, expected_type))
+        .map(|(_, r)| r.key.clone())
+        .collect();
+    keys.sort();
+    Ok(keys)
+}
+
 pub fn get_enum_variants_inner(
     store: &Mutex<SessionStore>,
     session_id: u32,

@@ -9,7 +9,6 @@ interface FileTreeProps {
   onNewFile: () => void;
   onDeleteFile?: (path: string) => void;
   onRenameFile?: (oldPath: string, newPath: string) => Promise<void>;
-  sessionId?: number;
 }
 
 interface RenameFileModal {

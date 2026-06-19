@@ -225,10 +225,11 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey }: Graph
     }
   }, [sessionId]);
 
-  // Reset expanded keys and graph data when file changes
+  // Reset expanded keys, graph data, and search when file changes
   useEffect(() => {
     setExpandedKeys([]);
     setGraphData(null);
+    setSearch("");
   }, [sessionId, filePath]);
 
   useEffect(() => {

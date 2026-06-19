@@ -145,6 +145,15 @@ fn get_all_type_names(
 }
 
 #[tauri::command]
+fn get_ref_targets(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    expected_type: String,
+) -> Result<Vec<String>, String> {
+    get_ref_targets_inner(&state, session_id, &expected_type)
+}
+
+#[tauri::command]
 fn get_enum_variants(
     state: tauri::State<'_, Mutex<SessionStore>>,
     session_id: u32,
@@ -174,6 +183,7 @@ fn main() {
             rename_file,
             get_all_type_names,
             get_enum_variants,
+            get_ref_targets,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
