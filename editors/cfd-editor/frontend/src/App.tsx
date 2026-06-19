@@ -11,6 +11,7 @@ import { RecordView } from "./components/RecordView";
 import { GraphView, invalidateGraphCache } from "./components/GraphView";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { CommandPalette } from "./components/CommandPalette";
+import { GlobalSearch } from "./components/GlobalSearch";
 
 function collectFilePaths(nodes: FileTreeNode[]): string[] {
   const paths: string[] = [];
@@ -41,6 +42,7 @@ export default function App() {
   const [graphRefreshKey, setGraphRefreshKey] = useState(0);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [paletteRecords, setPaletteRecords] = useState<RecordBrief[]>([]);
+  const [showGlobalSearch, setShowGlobalSearch] = useState(false);
   const opErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   interface UndoEntry {
@@ -121,6 +123,11 @@ export default function App() {
             .then(records => { setPaletteRecords(records); setShowCommandPalette(true); })
             .catch(e => showOpError(`Failed to open command palette: ${e}`));
         }
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "G") {
+        e.preventDefault();
+        if (project.snapshot) setShowGlobalSearch(true);
         return;
       }
       if (e.altKey && e.key === "ArrowLeft" && router.canBack) {
@@ -410,12 +417,20 @@ export default function App() {
             style={{ fontSize: 11 }}
           >⌕ Jump to…</button>
         )}
+        {project.snapshot && (
+          <button
+            onClick={() => setShowGlobalSearch(true)}
+            title="Global search — search all records by value (Ctrl+Shift+G)"
+            style={{ fontSize: 11 }}
+          >⌕ 全局搜索</button>
+        )}
         <button
           title={[
             "Keyboard Shortcuts",
             "─────────────────",
             "Ctrl+Z         Undo last field edit (up to 50 steps)",
             "Ctrl+P         Jump to record (command palette)",
+            "Ctrl+Shift+G   Global search by key or field value",
             "Ctrl+S         Save / flush diagnostics",
             "Alt+← / →     Back / Forward",
             "Ctrl+N         New record (in table/record view)",
@@ -687,6 +702,15 @@ export default function App() {
             router.push({ view: "record", file: filePath, recordKey });
           }}
           onClose={() => setShowCommandPalette(false)}
+        />
+      )}
+
+      {/* Global search (Ctrl+Shift+G) */}
+      {showGlobalSearch && project.snapshot && (
+        <GlobalSearch
+          sessionId={project.snapshot.session_id}
+          onNavigate={router.push}
+          onClose={() => setShowGlobalSearch(false)}
         />
       )}
 

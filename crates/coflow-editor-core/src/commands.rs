@@ -2,7 +2,7 @@ use crate::patch;
 use crate::types::{
     DiagnosticItem, DictEntry, DictKey, FieldCell, FieldPathSegment, FieldSchema, FieldValue,
     FileRecords, FileTreeNode, GraphData, GraphEdge, GraphNode, ProjectSnapshot, RecordBrief,
-    RecordRow, SpreadSource,
+    RecordRow, SearchHit, SpreadSource,
 };
 use coflow_cfd::{parse_cfd, CfdAst, CfdBlockEntry};
 use coflow_checker::CfdCheckExt;
@@ -946,6 +946,140 @@ pub fn get_ref_targets_inner(
     keys.sort();
     keys.dedup();
     Ok(keys)
+}
+
+/// Search all records for scalar fields containing `query` (case-insensitive).
+/// Returns up to `limit` hits, ordered by record key.
+pub fn search_records_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<SearchHit>, String> {
+    fn scalar_as_string(v: &CfdValue) -> Option<String> {
+        match v {
+            CfdValue::Null => None,
+            CfdValue::Bool(b) => Some(b.to_string()),
+            CfdValue::Int(i) => Some(i.to_string()),
+            CfdValue::Float(f) => Some(f.to_string()),
+            CfdValue::String(s) => Some(s.clone()),
+            CfdValue::Enum(e) => Some(e.variant.clone().unwrap_or_else(|| e.value.to_string())),
+            CfdValue::Ref { key, .. } => Some(key.clone()),
+            CfdValue::Object(rec) => Some(rec.key.clone()),
+            _ => None,
+        }
+    }
+
+    fn search_value(
+        v: &CfdValue,
+        q: &str,
+        path_prefix: &str,
+    ) -> Option<(String, String)> {
+        match v {
+            CfdValue::Array(items) => {
+                for (i, item) in items.iter().enumerate() {
+                    let sub_path = format!("{}[{}]", path_prefix, i);
+                    if let Some(hit) = search_value(item, q, &sub_path) {
+                        return Some(hit);
+                    }
+                }
+                None
+            }
+            CfdValue::Dict(entries) => {
+                for (k, val) in entries {
+                    let key_str = match k {
+                        CfdDictKey::String(s) => s.clone(),
+                        CfdDictKey::Int(i) => i.to_string(),
+                        CfdDictKey::Enum(e) => e.variant.clone().unwrap_or_else(|| e.value.to_string()),
+                    };
+                    let sub_path = if path_prefix.is_empty() {
+                        key_str.clone()
+                    } else {
+                        format!("{}.{}", path_prefix, key_str)
+                    };
+                    if let Some(hit) = search_value(val, q, &sub_path) {
+                        return Some(hit);
+                    }
+                }
+                None
+            }
+            CfdValue::Object(rec) => {
+                for (field_name, field_val) in &rec.fields {
+                    let sub_path = if path_prefix.is_empty() {
+                        field_name.clone()
+                    } else {
+                        format!("{}.{}", path_prefix, field_name)
+                    };
+                    if let Some(hit) = search_value(field_val, q, &sub_path) {
+                        return Some(hit);
+                    }
+                }
+                None
+            }
+            _ => {
+                if let Some(s) = scalar_as_string(v) {
+                    if s.to_lowercase().contains(q) {
+                        return Some((path_prefix.to_string(), s));
+                    }
+                }
+                None
+            }
+        }
+    }
+
+    let session_arc = get_session(store, session_id)?;
+    let session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+
+    let q = query.to_lowercase();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Check key match first, then field values
+    let mut hits: Vec<SearchHit> = Vec::new();
+
+    // Collect file_path for each record key from the AST index
+    let key_to_file: HashMap<String, String> = session
+        .file_record_keys
+        .iter()
+        .flat_map(|(fp, keys)| keys.iter().map(move |k| (k.clone(), fp.clone())))
+        .collect();
+
+    let mut sorted_records: Vec<_> = session.model.records().collect();
+    sorted_records.sort_by(|(_, a), (_, b)| a.key.cmp(&b.key));
+
+    for (_, record) in sorted_records {
+        if hits.len() >= limit {
+            break;
+        }
+        let file_path = key_to_file.get(&record.key).cloned().unwrap_or_default();
+        // Key match
+        if record.key.to_lowercase().contains(&q) {
+            hits.push(SearchHit {
+                key: record.key.clone(),
+                actual_type: record.actual_type.clone(),
+                file_path,
+                match_field: "key".to_string(),
+                match_value: record.key.clone(),
+            });
+            continue;
+        }
+        // Field value search
+        for (field_name, field_val) in &record.fields {
+            if let Some((path, val_str)) = search_value(field_val, &q, field_name) {
+                hits.push(SearchHit {
+                    key: record.key.clone(),
+                    actual_type: record.actual_type.clone(),
+                    file_path: file_path.clone(),
+                    match_field: path,
+                    match_value: val_str,
+                });
+                break; // One hit per record
+            }
+        }
+    }
+
+    Ok(hits)
 }
 
 pub fn duplicate_record_inner(

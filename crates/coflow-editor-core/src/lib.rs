@@ -14,5 +14,6 @@ mod tests {
         RecordRow::export_all().unwrap();
         GraphData::export_all().unwrap();
         FieldSchema::export_all().unwrap();
+        SearchHit::export_all().unwrap();
     }
 }

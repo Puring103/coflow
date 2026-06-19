@@ -96,3 +96,13 @@ export type FieldSchema = {
   /** Human-readable default value string, or null if no default. */
   default_str: string | null;
 };
+
+export type SearchHit = {
+  key: string;
+  actual_type: string;
+  file_path: string;
+  /** The first field path that matched (e.g. "name" or "stats.hp") */
+  match_field: string;
+  /** The matched value as a short string for display */
+  match_value: string;
+};

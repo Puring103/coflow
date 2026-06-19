@@ -168,3 +168,16 @@ pub struct FieldSchema {
     /// None if the field has no default.
     pub default_str: Option<String>,
 }
+
+/// A record that matched a text search query.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SearchHit {
+    pub key: String,
+    pub actual_type: String,
+    pub file_path: String,
+    /// The first field path that matched (e.g. "name" or "stats.hp")
+    pub match_field: String,
+    /// The matched value as a short string for display
+    pub match_value: String,
+}

@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ProjectSnapshot, FileRecords, RecordRow, GraphData,
-  FileTreeNode, FieldValue, FieldPathSegment, DiagnosticItem, RecordBrief, FieldSchema
+  FileTreeNode, FieldValue, FieldPathSegment, DiagnosticItem, RecordBrief, FieldSchema, SearchHit
 } from "./bindings";
 
 export const api = {
@@ -72,4 +72,7 @@ export const api = {
 
   moveRecord: (sessionId: number, srcFile: string, dstFile: string, recordKey: string) =>
     invoke<RecordRow>("move_record", { sessionId, srcFile, dstFile, recordKey }),
+
+  searchRecords: (sessionId: number, query: string, limit?: number) =>
+    invoke<SearchHit[]>("search_records", { sessionId, query, limit }),
 };
