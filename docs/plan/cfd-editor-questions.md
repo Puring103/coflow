@@ -15,7 +15,7 @@
 当用户编辑 `stats.hp`，`RecordView` 收到的是整个 `stats` 对象的新值，
 span patch 会替换整个 `stats { ... }` 块（包括其他子字段）。
 这意味着编辑子字段时，同一块的其他子字段也会被重新序列化（注释会丢失）。
-**可以接受？还是需要更精细的路径传递（把嵌套路径传到 write_field）？**
+**可以接受（已决定）：写回路径是顶层字段，整个 Object 值被序列化为 CFD 语法，注释会丢失。**
 
 ### 4. 记录视图侧边栏只显示当前文件的记录
 ✅ 已实现按类型过滤侧边栏：当文件有多种类型时，显示类型过滤 tabs；当前查看的记录始终保持可见（即使类型被过滤）。
@@ -24,7 +24,7 @@ span patch 会替换整个 `stats { ... }` 块（包括其他子字段）。
 `CfdBlockEntry::Spread` 目前 patch 无法处理 spread 展开后的字段。
 `locate_span_in_value` 只处理 `CfdValue::Block` 和 `CfdValue::Array`。
 如果某个字段来自 spread，编辑会失败（会显示错误 toast）。
-**spread 字段需要支持编辑吗？**
+**可以接受：spread 字段是从其他记录继承的，编辑应该发生在源记录上。错误 toast 提示用户导航到源。**
 
 ### 6. create_file 路径限制（已修复）
 ✅ 已添加路径遍历保护：`create_file_inner` 会 canonicalize 目标路径并检查是否在项目目录内。
@@ -32,10 +32,21 @@ span patch 会替换整个 `stats { ... }` 块（包括其他子字段）。
 ### 7. Dict key 编辑
 ✅ 已实现 Str 类型 dict key 的内联编辑：单击 key 标签可进入编辑模式，Enter 提交，Escape 取消。Int/Enum 类型 key 暂不支持编辑（游戏数据中这类 key 通常来自 schema 定义，不应手动修改）。
 
+### 8. Ref 序列化格式（已修复）
+✅ 之前错误地将所有 Ref 序列化为 `@Type.key`（当 target_file 非 null 时）。
+实际上，CFD 中所有记录 key 在全项目内唯一，`&key` 语法可以跨文件引用。
+现在始终序列化为 `&key`，与 CFD 解析器兼容。
+
+### 9. Float 序列化精度（已修复）
+✅ Rust `f64::to_string()` 对整数值不包含小数点（1.0 → "1"）。
+CFD 解析器用小数点区分 int 和 float，所以 "1" 被解析为 int。
+现在对所有 float 强制追加 `.0`（如果没有小数点或指数符号）。
+
 ## 已知限制（可接受）
 
 - **整数精度**：大于 2^53 的 i64 值通过 f64 传输会丢失精度
 - **无离线写回缓冲**：所有写操作立即写盘，无 undo/redo
 - **嵌套 Object/Array 写回是粗粒度的**：编辑子字段时整个父块会被重新序列化，注释丢失
-- **自动保存策略**：写盘是即时的，"dirty" 只是 UI 等待 reload 的状态，不是真正未保存
-- **Spread 字段不可编辑**：来自 spread 的字段编辑会失败并显示错误 toast
+- **自动保存策略**：写盘是即时的，"dirty" 只是 UI 等待 reload 的状态（1 秒防抖）
+- **Spread 字段不可编辑**：来自 spread 的字段编辑会失败并显示错误 toast（设计如此，应去源记录编辑）
+- **window.prompt 用于重命名**：TableView 行右键菜单的重命名使用 native prompt，不是内联输入（RecordView 已实现内联）

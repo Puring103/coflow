@@ -1199,6 +1199,57 @@ mod tests {
     }
 
     #[test]
+    fn write_field_in_grouped_record() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let cfd = data_dir.join("items.cfd");
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; count: int; }").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+        std::fs::write(&cfd, "Item {\n  sword {\n    name: \"Sword\",\n    count: 1,\n  }\n}\n").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        write_field_inner(
+            &store, sid, "data/items.cfd", "sword",
+            &[FieldPathSegment::Field { name: "count".to_string() }],
+            &FieldValue::Int { v: 99.0 },
+        ).unwrap();
+
+        let contents = std::fs::read_to_string(&cfd).unwrap();
+        assert!(contents.contains("99"), "grouped record field should be updated:\n{contents}");
+    }
+
+    #[test]
+    fn rename_grouped_record() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let cfd = data_dir.join("items.cfd");
+
+        let schema_path = dir.path().join("schema.cft");
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+        // Grouped record syntax
+        std::fs::write(&cfd, "Item {\n  old_key {\n    name: \"test\",\n  }\n}\n").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        rename_record_inner(&store, sid, "data/items.cfd", "old_key", "new_key").unwrap();
+
+        let contents = std::fs::read_to_string(&cfd).unwrap();
+        assert!(contents.contains("new_key"), "file should contain new_key:\n{contents}");
+        assert!(!contents.contains("old_key"), "file should not contain old_key:\n{contents}");
+    }
+
+    #[test]
     fn get_diagnostics_returns_current_checks() {
         let yaml_path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/cfd/coflow.yaml");
