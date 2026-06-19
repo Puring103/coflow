@@ -255,6 +255,13 @@ pub fn get_file_records_inner(
         })
         .unwrap_or_default();
 
+    // Build a lookup from key → ast record for the fallback path
+    let ast_records: HashMap<String, &coflow_cfd::CfdRecord> = session
+        .file_sources
+        .get(file_path)
+        .map(|(_, ast)| ast.records.iter().map(|r| (r.key.clone(), r)).collect())
+        .unwrap_or_default();
+
     for key in &keys {
         if let Some((_, record)) = session.model.records().find(|(_, r)| r.key == *key) {
             if !type_names.contains(&record.actual_type) {
@@ -262,6 +269,13 @@ pub fn get_file_records_inner(
             }
             let direct = ast_direct.get(key.as_str());
             records.push(convert_record_row(record, &session.schema, &session.model, &session.file_record_keys, direct));
+        } else if let Some(ast_rec) = ast_records.get(key.as_str()) {
+            // Model build failed for this record (e.g. missing required fields during editing).
+            // Return a best-effort row from the raw AST so the UI stays responsive.
+            if !type_names.contains(&ast_rec.type_name) {
+                type_names.push(ast_rec.type_name.clone());
+            }
+            records.push(ast_record_fallback(ast_rec));
         }
     }
 
@@ -897,6 +911,56 @@ pub fn delete_file_inner(
     Ok(())
 }
 
+/// Convert a raw AST CfdValue to FieldValue without schema or model.
+/// Used as a fallback when the model build fails (e.g. record has missing required fields).
+fn ast_value_to_field_value(v: &coflow_cfd::CfdValue) -> FieldValue {
+    use coflow_cfd::CfdValue as AV;
+    match v {
+        AV::Null(_) => FieldValue::Null,
+        AV::QuotedString(s, _) => FieldValue::Str { v: s.clone() },
+        AV::Scalar(s, _) => {
+            let trimmed = s.trim();
+            if trimmed == "true" { return FieldValue::Bool { v: true }; }
+            if trimmed == "false" { return FieldValue::Bool { v: false }; }
+            if let Ok(i) = trimmed.parse::<i64>() { return FieldValue::Int { v: i as f64 }; }
+            if let Ok(f) = trimmed.parse::<f64>() { return FieldValue::Float { v: f }; }
+            FieldValue::Str { v: s.clone() }
+        }
+        AV::Ref(r) => FieldValue::Ref {
+            target_type: r.type_name.as_ref().map(|(t, _)| t.clone()).unwrap_or_default(),
+            target_key: r.key.0.clone(),
+            target_file: None,
+        },
+        AV::Array(items, _) => FieldValue::Array {
+            items: items.iter().map(ast_value_to_field_value).collect(),
+        },
+        AV::Block(b) => {
+            let fields: Vec<FieldCell> = b.entries.iter().filter_map(|e| {
+                if let coflow_cfd::CfdBlockEntry::Field(f) = e {
+                    Some(FieldCell { name: f.name.clone(), value: ast_value_to_field_value(&f.value) })
+                } else { None }
+            }).collect();
+            FieldValue::Object { actual_type: b.type_marker.as_ref().map(|(t, _)| t.clone()).unwrap_or_default(), fields }
+        }
+        AV::Spread(_, _) => FieldValue::Null,
+    }
+}
+
+/// Build a RecordRow from the raw AST record when the model doesn't contain it.
+/// Returns null-typed fields based purely on what is written in the source.
+fn ast_record_fallback(ast_rec: &coflow_cfd::CfdRecord) -> RecordRow {
+    let fields: Vec<FieldCell> = ast_rec.fields.iter().map(|f| FieldCell {
+        name: f.name.clone(),
+        value: ast_value_to_field_value(&f.value),
+    }).collect();
+    RecordRow {
+        key: ast_rec.key.clone(),
+        actual_type: ast_rec.type_name.clone(),
+        fields,
+        spread_fields: Vec::new(),
+    }
+}
+
 fn get_session(
     store: &Mutex<SessionStore>,
     session_id: u32,
@@ -939,8 +1003,14 @@ fn reload_file(session: &mut Session, file_path: &str, new_source: &str) -> Resu
             for r in records {
                 builder.add_input_record(r);
             }
-            if let Ok(new_model) = builder.build() {
-                session.model = new_model;
+            match builder.build() {
+                Ok(new_model) => { session.model = new_model; }
+                Err(_) => {
+                    // Build failed (e.g. missing required fields during incremental editing).
+                    // Keep the existing model but don't discard the new source/AST/keys —
+                    // get_file_records_inner falls back to AST-based rows for keys absent
+                    // from the model (see below).
+                }
             }
             keys
         }
@@ -1365,6 +1435,48 @@ mod tests {
         delete_record_inner(&store, sid, "data/items.cfd", "sword").unwrap();
         let contents = std::fs::read_to_string(&cfd).unwrap();
         assert!(!contents.contains("sword"), "file should not contain 'sword' after delete");
+    }
+
+    #[test]
+    fn write_field_inserts_when_missing() {
+        // Tests the insert_field path: write_field on a newly created (empty) record
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let cfd = data_dir.join("items.cfd");
+        let schema_path = dir.path().join("schema.cft");
+
+        std::fs::write(&schema_path, "type Item { name: string; count: int; }").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+        // Empty file — no records yet
+        std::fs::write(&cfd, "").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        // Create record (fields are empty/null)
+        create_record_inner(&store, sid, "data/items.cfd", "sword", "Item").unwrap();
+
+        // Write a field that does NOT exist yet → insert_field path
+        write_field_inner(
+            &store, sid, "data/items.cfd", "sword",
+            &[FieldPathSegment::Field { name: "name".to_string() }],
+            &FieldValue::Str { v: "Sword of Fire".to_string() },
+        ).unwrap();
+
+        let contents = std::fs::read_to_string(&cfd).unwrap();
+        assert!(contents.contains("Sword of Fire"), "inserted field not found in file: {contents}");
+
+        // Model must also reflect the new value
+        let records = get_file_records_inner(&store, sid, "data/items.cfd").unwrap();
+        let sword = records.records.iter().find(|r| r.key == "sword").unwrap();
+        let name_field = sword.fields.iter().find(|f| f.name == "name");
+        assert!(
+            matches!(name_field.map(|f| &f.value), Some(FieldValue::Str { v }) if v == "Sword of Fire"),
+            "model should show inserted field value, got: {name_field:?}"
+        );
     }
 
     #[test]
