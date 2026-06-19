@@ -1149,24 +1149,41 @@ export function RecordView({
             {sourceModal.source === null ? (
               <div style={{ color: "var(--text-muted)", fontSize: 12, padding: "16px 0", textAlign: "center" }}>Loading…</div>
             ) : onWriteRecordSource ? (
-              <textarea
-                value={sourceModal.draft}
-                onChange={e => setSourceModal(m => m && ({ ...m, draft: e.target.value, error: null }))}
-                rows={16}
-                spellCheck={false}
-                disabled={sourceModal.saving}
-                style={{
-                  background: "var(--bg3)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 4,
-                  color: "var(--text)",
-                  padding: "10px 12px",
-                  fontSize: 12,
-                  fontFamily: "monospace",
-                  outline: "none",
-                  resize: "vertical",
-                }}
-              />
+              <>
+                <textarea
+                  value={sourceModal.draft}
+                  onChange={e => setSourceModal(m => m && ({ ...m, draft: e.target.value, error: null }))}
+                  onKeyDown={e => {
+                    if (e.key === "Tab") {
+                      e.preventDefault();
+                      const el = e.currentTarget;
+                      const start = el.selectionStart;
+                      const end = el.selectionEnd;
+                      const newDraft = el.value.slice(0, start) + "  " + el.value.slice(end);
+                      setSourceModal(m => m && ({ ...m, draft: newDraft, error: null }));
+                      requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = start + 2; });
+                    }
+                  }}
+                  rows={16}
+                  spellCheck={false}
+                  disabled={sourceModal.saving}
+                  style={{
+                    background: "var(--bg3)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 4,
+                    color: "var(--text)",
+                    padding: "10px 12px",
+                    fontSize: 12,
+                    fontFamily: "monospace",
+                    outline: "none",
+                    resize: "vertical",
+                  }}
+                />
+                <div style={{ fontSize: 10, color: "var(--text-muted)", textAlign: "right" }}>
+                  {sourceModal.draft.split("\n").length} lines · {sourceModal.draft.length} chars
+                  {sourceModal.draft !== sourceModal.source && <span style={{ marginLeft: 6, color: "var(--warning)" }}>● modified</span>}
+                </div>
+              </>
             ) : (
               <pre style={{
                 background: "var(--bg3)",
