@@ -246,7 +246,17 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey }: Graph
   useEffect(() => {
     setGraphError(null);
     api.getGraph(sessionId, filePath, expandedKeys)
-      .then(data => setGraphData(data))
+      .then(data => {
+        // Prune stale expanded keys (e.g. from deleted records) to avoid ghost nodes.
+        // Skip setting graph data in this render — pruning triggers a fresh API call.
+        const validKeys = new Set(data.nodes.filter(n => n.actual_type).map(n => n.key));
+        const needsPrune = expandedKeys.some(k => !validKeys.has(k));
+        if (needsPrune) {
+          setExpandedKeys(prev => prev.filter(k => validKeys.has(k)));
+          return; // fresh fetch will follow from the expandedKeys state change
+        }
+        setGraphData(data);
+      })
       .catch(err => setGraphError(String(err)));
   // refreshKey is intentionally included — it lets the parent force a re-fetch after writes
   // eslint-disable-next-line react-hooks/exhaustive-deps
