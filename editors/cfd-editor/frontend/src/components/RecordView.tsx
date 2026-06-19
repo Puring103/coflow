@@ -583,6 +583,10 @@ export function RecordView({
                 .filter(field => !fieldSearch || field.name.toLowerCase().includes(fieldSearch.toLowerCase()))
                 .map(field => {
                 const isSpread = record.spread_fields.includes(field.name);
+                const fieldSchema = fieldSchemas.find(s => s.name === field.name);
+                // A field is "required and empty" when it has no default value and its
+                // current value is Null — highlight the label to prompt the user.
+                const isRequiredNull = !!fieldSchema && !fieldSchema.has_default && field.value.kind === "Null";
                 const spreadNavTarget = isSpread && record.spread_sources.length === 1
                   ? record.spread_sources[0]
                   : null;
@@ -619,10 +623,10 @@ export function RecordView({
                   onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                 >
                   <span
-                    title={isSpread ? "来自 spread — 请前往源记录编辑" : undefined}
+                    title={isSpread ? "来自 spread — 请前往源记录编辑" : isRequiredNull ? "Required field — must not be null" : undefined}
                     style={{
                       minWidth: 140,
-                      color: isSpread ? "var(--text-muted)" : "var(--text-muted)",
+                      color: isRequiredNull ? "var(--warning)" : "var(--text-muted)",
                       fontSize: 12,
                       fontFamily: "monospace",
                       paddingTop: 3,
@@ -630,6 +634,9 @@ export function RecordView({
                       opacity: isSpread ? 0.6 : 1,
                     }}>
                     {field.name}
+                    {isRequiredNull && (
+                      <span style={{ color: "var(--warning)", fontSize: 10, marginLeft: 2 }} title="Required field">*</span>
+                    )}
                     {isSpread && (
                       <span
                         onClick={handleSpreadNavClick}
