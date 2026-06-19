@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { RecordRow, FieldValue } from "../bindings";
 import type { Route } from "../router";
@@ -35,8 +35,10 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortCol | null>(null);
+  const [focusedIdx, setFocusedIdx] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.getAllTypeNames(sessionId).then(names => setAllTypeNames(names)).catch(() => {});
@@ -54,7 +56,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, typeName, refreshKey]);
 
-  const filteredRows = (() => {
+  const filteredRows = useMemo(() => {
     const base = rows.filter(r => {
       if (!search) return true;
       const q = search.toLowerCase();
@@ -76,7 +78,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       const cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: "base" });
       return sort.dir === "asc" ? cmp : -cmp;
     });
-  })();
+  }, [rows, search, sort]);
 
   const handleSortClick = (col: string) => {
     setSort(s => {
@@ -126,6 +128,43 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       ],
     });
   }, [sessionId, onNavigate]);
+
+  // Keyboard navigation for the table + Ctrl+F focus search
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+        return;
+      }
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setFocusedIdx(i => (i === null ? 0 : Math.min(i + 1, filteredRows.length - 1)));
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setFocusedIdx(i => (i === null ? 0 : Math.max(i - 1, 0)));
+      } else if (e.key === "Enter" && focusedIdx !== null && filteredRows[focusedIdx]) {
+        e.preventDefault();
+        handleRowClick(filteredRows[focusedIdx]);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [filteredRows, focusedIdx, handleRowClick]);
+
+  // Scroll focused row into view
+  useEffect(() => {
+    if (focusedIdx !== null) {
+      virtualizer.scrollToIndex(focusedIdx, { align: "auto" });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusedIdx]);
+
+  // Reset focus on type/search change
+  useEffect(() => { setFocusedIdx(null); }, [typeName, search]);
 
   const exportCsv = () => {
     const cols = ["key", "file", ...fieldNames];
@@ -178,9 +217,11 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       {/* Toolbar */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 8px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
         <input
+          ref={searchRef}
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Filter rows…"
+          onKeyDown={e => { if (e.key === "Escape") { setSearch(""); e.stopPropagation(); } }}
+          placeholder="Filter rows… (Ctrl+F)"
           style={{
             flex: 1,
             background: "var(--bg3)",
@@ -257,10 +298,11 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
               {virtualizer.getVirtualItems().map(vi => {
                 const row = filteredRows[vi.index];
                 const filename = row.file_path.split(/[\\/]/).pop() ?? row.file_path;
+                const isFocused = vi.index === focusedIdx;
                 return (
                   <div
                     key={`${row.file_path}::${row.key}`}
-                    onClick={() => handleRowClick(row)}
+                    onClick={() => { setFocusedIdx(vi.index); handleRowClick(row); }}
                     onContextMenu={e => handleRowContextMenu(e, row)}
                     style={{
                       position: "absolute",
@@ -273,9 +315,11 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                       borderBottom: "1px solid var(--bg3)",
                       width: "max-content",
                       minWidth: "100%",
+                      background: isFocused ? "var(--bg3)" : "transparent",
+                      borderLeft: isFocused ? "2px solid var(--accent)" : "2px solid transparent",
                     }}
-                    onMouseEnter={e => (e.currentTarget.style.background = "var(--bg3)")}
-                    onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                    onMouseEnter={e => { if (!isFocused) e.currentTarget.style.background = "var(--bg3)"; }}
+                    onMouseLeave={e => { if (!isFocused) e.currentTarget.style.background = "transparent"; }}
                   >
                     <div style={{ width: COL_KEY, flexShrink: 0, padding: "0 8px", fontSize: 12, fontFamily: "monospace", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid var(--border)" }} title={row.key}>
                       {row.is_fallback && <span style={{ color: "var(--warning)", marginRight: 4 }}>⚠</span>}
