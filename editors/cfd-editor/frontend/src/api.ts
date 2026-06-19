@@ -57,4 +57,7 @@ export const api = {
 
   getRefTargets: (sessionId: number, expectedType: string) =>
     invoke<string[]>("get_ref_targets", { sessionId, expectedType }),
+
+  duplicateRecord: (sessionId: number, filePath: string, srcKey: string, newKey: string) =>
+    invoke<RecordRow>("duplicate_record", { sessionId, filePath, srcKey, newKey }),
 };

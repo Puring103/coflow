@@ -162,6 +162,17 @@ fn get_enum_variants(
     get_enum_variants_inner(&state, session_id, &enum_name)
 }
 
+#[tauri::command]
+fn duplicate_record(
+    state: tauri::State<'_, Mutex<SessionStore>>,
+    session_id: u32,
+    file_path: String,
+    src_key: String,
+    new_key: String,
+) -> Result<RecordRow, String> {
+    duplicate_record_inner(&state, session_id, &file_path, &src_key, &new_key)
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -184,6 +195,7 @@ fn main() {
             get_all_type_names,
             get_enum_variants,
             get_ref_targets,
+            duplicate_record,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

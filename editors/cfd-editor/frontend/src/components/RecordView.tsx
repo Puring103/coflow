@@ -19,6 +19,7 @@ interface RecordViewProps {
   ) => Promise<void>;
   onRenameRecord?: (oldKey: string, newKey: string) => Promise<void>;
   onDeleteRecord?: (sessionId: number, filePath: string, recordKey: string) => Promise<void>;
+  onDuplicateRecord?: (sessionId: number, filePath: string, srcKey: string, newKey: string) => Promise<void>;
   onNavigate: (route: Route) => void;
 }
 
@@ -30,6 +31,7 @@ export function RecordView({
   onWriteField,
   onRenameRecord,
   onDeleteRecord,
+  onDuplicateRecord,
   onNavigate,
 }: RecordViewProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -80,14 +82,17 @@ export function RecordView({
   // Reset type filter and search when file changes
   useEffect(() => { setTypeFilter(null); setSidebarSearch(""); }, [filePath]);
 
-  const filteredRecords = allRecords.filter(r => {
-    if (typeFilter && r.actual_type !== typeFilter && r.key !== recordKey) return false;
-    if (sidebarSearch) {
-      const q = sidebarSearch.toLowerCase();
-      return r.key.toLowerCase().includes(q) || r.actual_type.toLowerCase().includes(q);
-    }
-    return true;
-  });
+  const filteredRecords = allRecords
+    .filter(r => {
+      if (typeFilter && r.actual_type !== typeFilter && r.key !== recordKey) return false;
+      if (sidebarSearch) {
+        const q = sidebarSearch.toLowerCase();
+        return r.key.toLowerCase().includes(q) || r.actual_type.toLowerCase().includes(q);
+      }
+      return true;
+    })
+    .slice()
+    .sort((a, b) => a.key.localeCompare(b.key));
 
   // Scroll selected item into view when recordKey changes
   useEffect(() => {
@@ -283,7 +288,7 @@ export function RecordView({
               ref={r.key === recordKey ? selectedItemRef : undefined}
               onClick={() => onNavigate({ view: "record", file: filePath, recordKey: r.key })}
               onContextMenu={e => {
-                if (!onRenameRecord && !onDeleteRecord) return;
+                if (!onRenameRecord && !onDeleteRecord && !onDuplicateRecord) return;
                 e.preventDefault();
                 const items = [];
                 if (onRenameRecord) items.push({
@@ -294,6 +299,15 @@ export function RecordView({
                     } else {
                       pendingRenameKeyRef.current = r.key;
                       onNavigate({ view: "record", file: filePath, recordKey: r.key });
+                    }
+                  },
+                });
+                if (onDuplicateRecord) items.push({
+                  label: "复制记录",
+                  onClick: () => {
+                    const newKey = window.prompt(`Duplicate "${r.key}" — enter new key:`, `${r.key}_copy`);
+                    if (newKey && newKey.trim()) {
+                      onDuplicateRecord(sessionId, filePath, r.key, newKey.trim()).catch(() => {});
                     }
                   },
                 });
@@ -397,12 +411,21 @@ export function RecordView({
                 <div
                   onClick={onRenameRecord ? () => setEditingKey(true) : undefined}
                   onContextMenu={e => {
-                    if (!onRenameRecord && !onDeleteRecord) return;
+                    if (!onRenameRecord && !onDeleteRecord && !onDuplicateRecord) return;
                     e.preventDefault();
                     const items = [];
                     if (onRenameRecord) items.push({
                       label: "重命名记录 Key",
                       onClick: () => setEditingKey(true),
+                    });
+                    if (onDuplicateRecord) items.push({
+                      label: "复制记录",
+                      onClick: () => {
+                        const newKey = window.prompt(`Duplicate "${recordKey}" — enter new key:`, `${recordKey}_copy`);
+                        if (newKey && newKey.trim()) {
+                          onDuplicateRecord(sessionId, filePath, recordKey, newKey.trim()).catch(() => {});
+                        }
+                      },
                     });
                     if (onDeleteRecord) items.push({
                       label: "删除记录",

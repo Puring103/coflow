@@ -29,6 +29,7 @@ interface TableViewProps {
   ) => Promise<void>;
   onDeleteRecord: (sessionId: number, filePath: string, recordKey: string) => Promise<void>;
   onRenameRecord?: (sessionId: number, filePath: string, oldKey: string, newKey: string) => Promise<void>;
+  onDuplicateRecord?: (sessionId: number, filePath: string, srcKey: string, newKey: string) => Promise<void>;
   onNavigate: (route: Route) => void;
 }
 
@@ -204,6 +205,7 @@ export function TableView({
   onWriteField,
   onDeleteRecord,
   onRenameRecord,
+  onDuplicateRecord,
   onNavigate,
 }: TableViewProps) {
   const [activeType, setActiveType] = useState<string>(
@@ -392,6 +394,15 @@ export function TableView({
             setRenameModal({ rowKey: row.key, draft: row.key, error: null });
           },
         }] : []),
+        ...(onDuplicateRecord ? [{
+          label: "复制记录",
+          onClick: () => {
+            const newKey = window.prompt(`Duplicate "${row.key}" — enter new key:`, `${row.key}_copy`);
+            if (newKey && newKey.trim()) {
+              onDuplicateRecord(sessionId, filePath, row.key, newKey.trim()).catch(() => {});
+            }
+          },
+        }] : []),
         {
           label: "删除记录",
           danger: true,
@@ -403,7 +414,7 @@ export function TableView({
         },
       ],
     });
-  }, [filePath, sessionId, onNavigate, onDeleteRecord, onRenameRecord]);
+  }, [filePath, sessionId, onNavigate, onDeleteRecord, onRenameRecord, onDuplicateRecord]);
 
   const handleColHeaderContextMenu = useCallback((
     e: React.MouseEvent,
@@ -593,6 +604,7 @@ export function TableView({
                       cursor: header.column.getCanSort() ? "pointer" : "default",
                     }}
                     onContextMenu={e => handleColHeaderContextMenu(e, header.id)}
+                    title={header.id}
                   >
                     {flexRender(header.column.columnDef.header, header.getContext())}
                     {header.column.getIsSorted() === "asc" && (

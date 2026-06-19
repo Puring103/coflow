@@ -144,7 +144,7 @@ function CfdNode({ data }: NodeProps<Node<CfdNodeData>>) {
       <Handle type="target" position={Position.Left} style={{ background: color, opacity: 0.7 }} />
       <div style={{ marginBottom: 6, borderBottom: "1px solid var(--border)", paddingBottom: 4, display: "flex", alignItems: "flex-start", gap: 4 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div title={gnode.key} style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {gnode.key}
           </div>
           <div style={{ color: color, fontSize: 10, marginTop: 2 }}>{gnode.actual_type}</div>

@@ -672,6 +672,68 @@ pub fn get_ref_targets_inner(
     Ok(keys)
 }
 
+pub fn duplicate_record_inner(
+    store: &Mutex<SessionStore>,
+    session_id: u32,
+    file_path: &str,
+    src_key: &str,
+    new_key: &str,
+) -> Result<RecordRow, String> {
+    validate_cfd_key(new_key)?;
+
+    let session_arc = get_session(store, session_id)?;
+    let mut session = session_arc.lock().map_err(|_| "session lock poisoned")?;
+
+    // Guard duplicate key
+    if session.model.records().any(|(_, r)| r.key == new_key) {
+        return Err(format!("record key '{new_key}' already exists in the project"));
+    }
+
+    let (source, ast) = session
+        .file_sources
+        .get(file_path)
+        .ok_or_else(|| format!("file '{file_path}' not loaded"))?
+        .clone();
+
+    let rec = ast
+        .records
+        .iter()
+        .find(|r| r.key == src_key)
+        .ok_or_else(|| format!("record '{src_key}' not found in '{file_path}'"))?;
+
+    // Extract the text from end-of-key to end-of-record-span (everything after the key).
+    // rec.key_span.end points to the byte just past the last byte of the key token.
+    let after_key = source
+        .get(rec.key_span.end..rec.span.end)
+        .ok_or("key/span offsets out of range")?;
+
+    let new_block = format!("\n{new_key}{after_key}\n");
+    let abs_path = session.project_dir.join(file_path);
+    let new_content = format!("{source}{new_block}");
+    std::fs::write(&abs_path, &new_content)
+        .map_err(|e| format!("cannot write {file_path}: {e}"))?;
+    reload_file(&mut session, file_path, &new_content)?;
+
+    // Build the RecordRow for the duplicate from the reloaded model
+    let (_, record) = session
+        .model
+        .records()
+        .find(|(_, r)| r.key == new_key)
+        .ok_or_else(|| format!("duplicate record '{new_key}' not found in model"))?;
+
+    let direct = session
+        .file_sources
+        .get(file_path)
+        .and_then(|(_, ast)| {
+            ast.records
+                .iter()
+                .find(|r| r.key == new_key)
+                .map(|r| r.fields.iter().map(|f| f.name.clone()).collect::<HashSet<String>>())
+        });
+
+    Ok(convert_record_row(record, &session.schema, &session.model, &session.file_record_keys, direct.as_ref()))
+}
+
 pub fn get_enum_variants_inner(
     store: &Mutex<SessionStore>,
     session_id: u32,
@@ -1487,5 +1549,39 @@ mod tests {
             sorted.sort();
             sorted
         });
+    }
+
+    #[test]
+    fn duplicate_record_copies_fields() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        let cfd_path = dir.path().join("data/items.cfd");
+
+        std::fs::write(&schema_path, "type Item { name: string; price: int; }").unwrap();
+        std::fs::write(&cfd_path, "sword: Item {\n  name: \"Sword\",\n  price: 100,\n}\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let file_path = "data/items.cfd";
+
+        // Duplicate sword → sword2
+        let row = duplicate_record_inner(&store, snap.session_id, file_path, "sword", "sword2").unwrap();
+        assert_eq!(row.key, "sword2");
+        assert_eq!(row.actual_type, "Item");
+        let name_field = row.fields.iter().find(|f| f.name == "name");
+        assert!(name_field.is_some(), "duplicated record should have name field");
+
+        // Duplicate key must not already exist
+        let err = duplicate_record_inner(&store, snap.session_id, file_path, "sword", "sword2");
+        assert!(err.is_err(), "should fail when new_key already exists");
+
+        // Original record still exists
+        let records = get_file_records_inner(&store, snap.session_id, file_path).unwrap();
+        assert!(records.records.iter().any(|r| r.key == "sword"));
+        assert!(records.records.iter().any(|r| r.key == "sword2"));
     }
 }

@@ -193,6 +193,24 @@ export default function App() {
     }
   }, [project, router, showOpError]);
 
+  const handleDuplicateRecord = useCallback(async (
+    sessionId: number,
+    filePath: string,
+    srcKey: string,
+    newKey: string
+  ) => {
+    try {
+      await api.duplicateRecord(sessionId, filePath, srcKey, newKey);
+      invalidateGraphCache(sessionId, filePath);
+      setGraphRefreshKey(k => k + 1);
+      project.markDirty(sessionId, filePath);
+      router.push({ view: "record", file: filePath, recordKey: newKey });
+    } catch (e) {
+      showOpError(`Duplicate failed: ${e}`);
+      throw e;
+    }
+  }, [project, router, showOpError]);
+
   const handleDeleteFile = useCallback(async (filePath: string) => {
     if (!project.snapshot) return;
     const wasViewing = router.current?.file === filePath;
@@ -269,8 +287,20 @@ export default function App() {
         {project.error && (
           <span className="error-msg" title={project.error}>⚠ {project.error}</span>
         )}
+        <button
+          title={[
+            "Keyboard Shortcuts",
+            "─────────────────",
+            "Ctrl+S       Save / flush diagnostics",
+            "Alt+← / →   Back / Forward",
+            "Ctrl+N       New record (in table view)",
+            "Ctrl+F       Focus search / filter",
+            "Escape       Cancel edit / close modal",
+          ].join("\n")}
+          style={{ marginLeft: "auto", fontSize: 11, opacity: 0.6 }}
+        >?</button>
         {project.snapshot && (
-          <span style={{ color: "var(--text-muted)", fontSize: 11, marginLeft: "auto" }}>
+          <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
             Session #{project.snapshot.session_id}
           </span>
         )}
@@ -384,6 +414,7 @@ export default function App() {
                     onWriteField={handleWriteField}
                     onDeleteRecord={handleDeleteRecord}
                     onRenameRecord={handleRenameRecordFromTable}
+                    onDuplicateRecord={handleDuplicateRecord}
                     onNavigate={router.push}
                   />
                 )}
@@ -402,6 +433,7 @@ export default function App() {
                     onWriteField={handleWriteField}
                     onRenameRecord={handleRenameRecord}
                     onDeleteRecord={handleDeleteRecord}
+                    onDuplicateRecord={handleDuplicateRecord}
                     onNavigate={router.push}
                   />
                 )}

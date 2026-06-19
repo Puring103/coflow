@@ -187,7 +187,7 @@ export function DiagnosticsPanel({ diagnostics, onNavigate }: DiagnosticsPanelPr
               const navigable = isNavigable(item);
               return (
                 <div
-                  key={idx}
+                  key={`${item.code}:${item.record_key ?? ""}:${item.message}:${idx}`}
                   onClick={() => handleItemClick(item)}
                   style={{
                     display: "flex",
