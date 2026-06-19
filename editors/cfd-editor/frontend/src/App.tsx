@@ -75,6 +75,17 @@ export default function App() {
     await project.loadProject(pathStr);
   };
 
+  // Reset router when a DIFFERENT project is loaded (yaml path changes means different project)
+  const prevYamlPathRef = useRef<string | null>(null);
+  useEffect(() => {
+    const currentYaml = project.loadedYamlPath;
+    if (currentYaml && prevYamlPathRef.current && currentYaml !== prevYamlPathRef.current) {
+      router.reset();
+    }
+    prevYamlPathRef.current = currentYaml;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.loadedYamlPath]);
+
   // Auto-select first file after loading project, or after the current file is deleted
   useEffect(() => {
     const snap = project.snapshot;
@@ -304,7 +315,17 @@ export default function App() {
                   <button
                     key={v}
                     className={router.current?.view === v ? "tab active" : "tab"}
-                    onClick={() => router.replace({ ...router.current!, view: v as "table" | "record" | "graph" } as Parameters<typeof router.replace>[0])}
+                    onClick={() => {
+                      const cur = router.current!;
+                      if (v === "table" && cur.view === "record" && "recordKey" in cur) {
+                        // Preserve type context when switching from record → table
+                        const recordKey = (cur as { recordKey: string }).recordKey;
+                        const recordType = project.fileRecords?.records.find(r => r.key === recordKey)?.actual_type;
+                        router.replace({ view: "table", file: cur.file, ...(recordType ? { typeFilter: recordType } : {}) });
+                      } else {
+                        router.replace({ ...cur, view: v as "table" | "record" | "graph" } as Parameters<typeof router.replace>[0]);
+                      }
+                    }}
                     disabled={v === "record" && !("recordKey" in (router.current ?? {}))}
                   >
                     {v === "table" ? "Table" : v === "record" ? "Record" : "Graph"}

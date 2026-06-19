@@ -94,6 +94,13 @@ export function RecordView({
         sidebarSearchRef.current?.select();
         return;
       }
+      // Ctrl+N navigates to table view (to create a new record of the same type)
+      if ((e.ctrlKey || e.metaKey) && e.key === "n") {
+        e.preventDefault();
+        const currentType = record?.actual_type;
+        onNavigate({ view: "table", file: filePath, ...(currentType ? { typeFilter: currentType } : {}) });
+        return;
+      }
       // Only if focus is not inside an input/textarea
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
@@ -115,7 +122,8 @@ export function RecordView({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [filteredRecords, recordKey, filePath, onNavigate, onDeleteRecord, sessionId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredRecords, recordKey, filePath, record?.actual_type, onNavigate, onDeleteRecord, sessionId]);
 
   // If fileRecords hasn't loaded yet for this key, fetch directly
   useEffect(() => {
@@ -332,8 +340,11 @@ export function RecordView({
         {/* New record button */}
         <div style={{ borderTop: "1px solid var(--border)", padding: 6, flexShrink: 0 }}>
           <button
-            onClick={() => onNavigate({ view: "table", file: filePath })}
-            title="Go to table view to create records (Ctrl+N in table view)"
+            onClick={() => {
+              const currentType = record?.actual_type;
+              onNavigate({ view: "table", file: filePath, ...(currentType ? { typeFilter: currentType } : {}) });
+            }}
+            title="Go to table view to create a record (Ctrl+N)"
             style={{ width: "100%", fontSize: 11, justifyContent: "flex-start" }}
           >
             ＋ New record…

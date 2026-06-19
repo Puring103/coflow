@@ -8,6 +8,7 @@ export function useProject() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [loadedYamlPath, setLoadedYamlPath] = useState<string | null>(null);
   // Use ref for timer to avoid stale-closure race in markDirty
   const dirtyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyFileRef = useRef<string | null>(null);
@@ -22,6 +23,7 @@ export function useProject() {
     setLoading(true);
     setError(null);
     yamlPathRef.current = yamlPath;
+    setLoadedYamlPath(yamlPath);
     // Close old session and cancel any pending dirty timer before creating a new one
     if (sessionIdRef.current != null) {
       api.closeSession(sessionIdRef.current).catch(() => {});
@@ -139,5 +141,5 @@ export function useProject() {
     }
   }, [loadFile, refreshDiagnostics]);
 
-  return { snapshot, fileRecords, loading, error, dirty, loadProject, refreshSnapshot, loadFile, markDirty, saveNow };
+  return { snapshot, fileRecords, loading, error, dirty, loadProject, refreshSnapshot, loadFile, markDirty, saveNow, loadedYamlPath };
 }

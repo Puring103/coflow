@@ -156,10 +156,22 @@ export function TableView({
     }
   }, [fileRecords.type_names, activeType]);
 
+  // Sync activeType when the external typeFilter prop changes (e.g., navigated from RecordView)
+  useEffect(() => {
+    if (initialTypeFilter && fileRecords.type_names.includes(initialTypeFilter)) {
+      setActiveType(initialTypeFilter);
+    }
+  // Only sync when initialTypeFilter changes, not on every render
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTypeFilter]);
+
   // Load all schema type names for the new-record modal
   useEffect(() => {
     api.getAllTypeNames(sessionId).then(names => {
-      setAllTypeNames(names.length > 0 ? names : fileRecords.type_names);
+      const resolved = names.length > 0 ? names : fileRecords.type_names;
+      setAllTypeNames(resolved);
+      // If the current newRecord typeName is empty, seed it with the first known type
+      setNewRecord(r => r.typeName ? r : { ...r, typeName: resolved[0] ?? "" });
     }).catch(() => {
       setAllTypeNames(fileRecords.type_names);
     });
@@ -359,8 +371,13 @@ export function TableView({
       onNavigate({ view: "record", file: value.target_file ?? filePath, recordKey: value.target_key });
       return;
     }
+    // Bool cells toggle directly without opening a text editor
+    if (value.kind === "Bool") {
+      onWriteField(sessionId, filePath, rowKey, [{ kind: "Field", name: fieldName }], { kind: "Bool", v: !value.v });
+      return;
+    }
     setEditingCell({ rowKey, fieldName, value });
-  }, [filePath, onNavigate]);
+  }, [filePath, sessionId, onNavigate, onWriteField]);
 
   const handleCellCommit = useCallback(async (rowKey: string, fieldName: string, raw: string, original: FieldValue) => {
     setEditingCell(null);
@@ -586,7 +603,7 @@ export function TableView({
                           maxWidth: cell.column.getSize(),
                           opacity: isSpreadField ? 0.6 : 1,
                           cursor: isKeyCol || isSpreadField ? "default" :
-                            (cellValue?.kind === "Ref" ? "pointer" :
+                            (cellValue?.kind === "Ref" || cellValue?.kind === "Bool" ? "pointer" :
                              (cellValue && SCALAR_KINDS.includes(cellValue.kind) ? "text" : "default")),
                         }}
                       >
@@ -623,10 +640,15 @@ export function TableView({
 
         {filteredRows.length === 0 && (
           <div style={{ padding: 32, textAlign: "center", color: "var(--text-muted)", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-            <span>No records of type <strong style={{ color: "var(--text)" }}>{activeType}</strong></span>
+            <span>
+              {activeType
+                ? <>No records of type <strong style={{ color: "var(--text)" }}>{activeType}</strong></>
+                : <>This file has no records yet</>
+              }
+            </span>
             <button
               className="primary"
-              onClick={() => { setNewRecord(r => ({ ...r, typeName: activeType, error: null })); setShowNewRecord(true); }}
+              onClick={() => { setNewRecord(r => ({ ...r, typeName: activeType || (allTypeNames[0] ?? ""), error: null })); setShowNewRecord(true); }}
               style={{ fontSize: 12 }}
             >
               + 创建第一条记录

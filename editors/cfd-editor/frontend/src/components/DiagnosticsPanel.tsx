@@ -214,6 +214,16 @@ export function DiagnosticsPanel({ diagnostics, onNavigate }: DiagnosticsPanelPr
                   }}>
                     {item.code}
                   </span>
+                  <span style={{
+                    color: "var(--text-muted)",
+                    flexShrink: 0,
+                    fontFamily: "monospace",
+                    fontSize: 10,
+                    opacity: 0.7,
+                    alignSelf: "center",
+                  }}>
+                    [{item.stage}]
+                  </span>
                   <span style={{ color: "var(--text)", flex: 1 }}>{item.message}</span>
                   {(item.file_path || item.record_key) && (
                     <span style={{
