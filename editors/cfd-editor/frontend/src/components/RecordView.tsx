@@ -237,6 +237,13 @@ export function RecordView({
         return;
       }
 
+      // F2: start renaming current record key
+      if (e.key === "F2" && onRenameRecord) {
+        e.preventDefault();
+        setEditingKey(true);
+        return;
+      }
+
       // Only if focus is not inside an input/textarea
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
