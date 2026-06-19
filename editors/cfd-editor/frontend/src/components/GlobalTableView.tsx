@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { RecordRow, FieldValue } from "../bindings";
 import type { Route } from "../router";
 import { DataCard } from "./DataCard";
+import { ContextMenu, type ContextMenuState } from "./ContextMenu";
 import { api } from "../api";
 
 interface GlobalTableViewProps {
@@ -34,6 +35,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortCol | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -110,6 +112,20 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   const handleRowClick = useCallback((row: RecordRow) => {
     onNavigate({ view: "record", file: row.file_path, recordKey: row.key });
   }, [onNavigate]);
+
+  const handleRowContextMenu = useCallback((e: React.MouseEvent, row: RecordRow) => {
+    e.preventDefault();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      items: [
+        { label: "跳转到记录视图", onClick: () => onNavigate({ view: "record", file: row.file_path, recordKey: row.key }) },
+        { label: "在文件表视图中打开", onClick: () => onNavigate({ view: "table", file: row.file_path }) },
+        { label: "复制 Key", onClick: () => navigator.clipboard.writeText(row.key).catch(() => {}) },
+        { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, row.file_path, row.key).then(src => navigator.clipboard.writeText(src)).catch(() => {}) },
+      ],
+    });
+  }, [sessionId, onNavigate]);
 
   const exportCsv = () => {
     const cols = ["key", "file", ...fieldNames];
@@ -245,6 +261,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                   <div
                     key={`${row.file_path}::${row.key}`}
                     onClick={() => handleRowClick(row)}
+                    onContextMenu={e => handleRowContextMenu(e, row)}
                     style={{
                       position: "absolute",
                       top: vi.start,
@@ -293,6 +310,15 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
             </div>
           </div>
         </div>
+      )}
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenu.items}
+          onClose={() => setContextMenu(null)}
+        />
       )}
     </div>
   );
