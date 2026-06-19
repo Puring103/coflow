@@ -448,6 +448,20 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey }: Graph
             折叠全部
           </button>
         )}
+        {graphData && (() => {
+          const filePaths = Array.from(new Set(graphData.nodes.map(n => n.file_path))).filter(Boolean).sort();
+          if (filePaths.length <= 1) return null;
+          return (
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              {filePaths.map(fp => (
+                <span key={fp} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "var(--text-muted)" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: fileColor(fp), flexShrink: 0 }} />
+                  {fp.split("/").pop() ?? fp}
+                </span>
+              ))}
+            </div>
+          );
+        })()}
         {graphData && (
           <span style={{ color: noSearchMatches ? "#ff5555" : "var(--text-muted)", fontSize: 12, marginLeft: "auto" }}>
             {search
