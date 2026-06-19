@@ -2458,6 +2458,50 @@ mod tests {
     }
 
     #[test]
+    fn get_graph_collapses_cross_file_nodes_at_max_depth() {
+        // Set up two files: focus.cfd has a single record `root` that chains
+        // through b→c→d (all in other.cfd).  d is reached at depth 3 (MAX_DEPTH)
+        // and must be collapsed (is_collapsed = true, fields = []).
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        let focus_path = data_dir.join("focus.cfd");
+        let other_path = data_dir.join("other.cfd");
+
+        std::fs::write(&schema_path, "type Item { next: Item?; }").unwrap();
+        // focus.cfd: root → b
+        std::fs::write(&focus_path, "root: Item { next: &b, }\n").unwrap();
+        // other.cfd: b → c → d (d has no next)
+        std::fs::write(
+            &other_path,
+            "b: Item { next: &c, }\nc: Item { next: &d, }\nd: Item { next: null, }\n",
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        // Focus on focus.cfd; no expanded_keys
+        let graph = get_graph_inner(&store, snap.session_id, "data/focus.cfd", &[]).unwrap();
+
+        // root is at depth 0 (focus), b at depth 1, c at depth 2, d at depth 3
+        assert!(graph.nodes.iter().any(|n| n.key == "root"), "root missing");
+        assert!(graph.nodes.iter().any(|n| n.key == "b"), "b missing");
+        assert!(graph.nodes.iter().any(|n| n.key == "c"), "c missing");
+
+        let d_node = graph.nodes.iter().find(|n| n.key == "d").expect("d should be in graph");
+        assert!(d_node.is_collapsed, "d at depth 3 should be collapsed");
+        assert!(d_node.fields.is_empty(), "collapsed node should have no fields");
+
+        // Now provide d as an expanded key — it should no longer be collapsed
+        let graph2 = get_graph_inner(&store, snap.session_id, "data/focus.cfd", &["d".to_string()]).unwrap();
+        let d_node2 = graph2.nodes.iter().find(|n| n.key == "d").expect("d missing in expanded graph");
+        assert!(!d_node2.is_collapsed, "d should not be collapsed when explicitly expanded");
+    }
+
+    #[test]
     fn validate_cfd_key_rejects_illegal_chars() {
         // Empty key
         assert!(validate_cfd_key("").is_err());
