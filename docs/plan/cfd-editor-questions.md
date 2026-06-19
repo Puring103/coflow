@@ -107,3 +107,10 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**粘贴导入多条记录时无反馈**：成功导入 N > 1 条记录时弹窗静默关闭，用户不知道导入了什么~~ ✅ N > 1 时保留弹窗并显示成功摘要 + 可点击的记录链接列表；N = 0 时改为显示错误提示而非静默关闭。
 - ~~**GlobalSearch 不支持 file: 过滤**~~ ✅ `search_records_inner` 新增 `file:filename` 语法，匹配文件名（含子目录路径），GlobalSearch 占位文本更新。
 - ~~**RecordView 无 F2 重命名快捷键**~~ ✅ 在 RecordView keydown 中添加 F2 触发 `setEditingKey(true)`，与资源管理器体验一致。
+- ~~**GlobalTableView 无诊断 badge**：TableView/RecordView 显示 error/warning 数字 badge，GlobalTableView 行无诊断提示~~ ✅ 已添加 `diagnostics?` prop + `rowDiagCounts` useMemo，key 列右侧渲染红色 error 数和黄色 warning 数 badge。
+- ~~**GlobalTableView 无 spread 字段标识**：用户不知道哪些字段是继承来的（只读）~~ ✅ 对 `row.spread_fields` 中的字段列应用 `opacity: 0.55`，tooltip 说明该字段来自 spread。
+- ~~**GlobalTableView 空状态无提示**：类型无记录时显示空表格，无帮助信息~~ ✅ 当 `rows.length === 0` 时显示"项目中没有 X 类型的记录"提示。
+- ~~**Clipboard/RevealInExplorer 失败静默**：所有视图中 clipboard.writeText 和 revealInExplorer 失败后 `.catch(() => {})` 静默忽略~~ ✅ 所有视图（GlobalTableView/TableView/RecordView）的 clipboard 和 revealInExplorer 失败均通过 `onError?.()` 显示 toast。
+- ~~**TableView 无 Ctrl+D 快捷键**：RecordView 有 Ctrl+D 复制记录，TableView 只有右键菜单~~ ✅ TableView 添加 Ctrl+D 快捷键，优先复制第一个已选中行（否则复制第一行），打开 duplicate modal。
+- ~~**GlobalTableView 无批量删除**：可以多选行但无批量删除功能（只有单行右键删除）~~ ✅ 批量操作栏新增"批量删除"按钮，点击弹出确认对话框，确认后顺序删除并汇报失败条目。
+- ~~**无一键全部文件排序**：sort_file_records 只能对单个文件操作，多文件项目需逐个排序~~ ✅ 新增 `sort_all_files_inner` Rust 命令 + Tauri handler + API；顶栏新增"⇅ Sort All"按钮，一键对所有已加载文件排序；新增集成测试。
