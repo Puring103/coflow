@@ -90,6 +90,19 @@ fn find_closing_brace(source: &str, near: usize) -> Result<usize, String> {
     Err("closing brace not found".to_string())
 }
 
+/// Returns the full span of a value including any type marker.
+/// For a Block with type marker (e.g. `Stats { ... }`), `CfdBlock.span` starts at `{`,
+/// but the type marker `Stats` precedes it. We must replace the entire `Stats { ... }` range.
+fn full_value_span(value: &CfdValue) -> Span {
+    if let CfdValue::Block(b) = value {
+        if let Some((_, tm_span)) = &b.type_marker {
+            // Extend span to start at the type marker
+            return Span::new(tm_span.start, b.span.end);
+        }
+    }
+    value.span()
+}
+
 fn locate_span(record: &CfdRecord, path: &[FieldPathSegment]) -> Result<Span, String> {
     // Navigate through CfdRecord fields/blocks following field_path
     let first = &path[0];
@@ -97,7 +110,7 @@ fn locate_span(record: &CfdRecord, path: &[FieldPathSegment]) -> Result<Span, St
         FieldPathSegment::Field { name } => {
             let field = find_field_in_record(record, name)?;
             if path.len() == 1 {
-                Ok(field.value.span())
+                Ok(full_value_span(&field.value))
             } else {
                 locate_span_in_value(&field.value, &path[1..])
             }
@@ -127,7 +140,7 @@ fn find_field_in_record<'a>(
 
 fn locate_span_in_value(value: &CfdValue, path: &[FieldPathSegment]) -> Result<Span, String> {
     if path.is_empty() {
-        return Ok(value.span());
+        return Ok(full_value_span(value));
     }
     match (&path[0], value) {
         (FieldPathSegment::Field { name }, CfdValue::Block(block)) => {
@@ -140,7 +153,7 @@ fn locate_span_in_value(value: &CfdValue, path: &[FieldPathSegment]) -> Result<S
                 })
                 .ok_or_else(|| format!("field '{name}' not found in block"))?;
             if path.len() == 1 {
-                Ok(field.value.span())
+                Ok(full_value_span(&field.value))
             } else {
                 locate_span_in_value(&field.value, &path[1..])
             }
@@ -150,7 +163,7 @@ fn locate_span_in_value(value: &CfdValue, path: &[FieldPathSegment]) -> Result<S
                 .get(*i)
                 .ok_or_else(|| format!("index {i} out of bounds"))?;
             if path.len() == 1 {
-                Ok(item.span())
+                Ok(full_value_span(item))
             } else {
                 locate_span_in_value(item, &path[1..])
             }

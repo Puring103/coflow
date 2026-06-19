@@ -2259,6 +2259,53 @@ mod tests {
     }
 
     #[test]
+    fn write_field_nested_object_roundtrip() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        let cfd_path = data_dir.join("items.cfd");
+
+        std::fs::write(&schema_path, "type Stats { hp: int; attack: int; } type Monster { stats: Stats; }").unwrap();
+        std::fs::write(
+            &cfd_path,
+            "goblin: Monster {\n  stats: Stats {\n    hp: 10,\n    attack: 2,\n  },\n}\n",
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let new_stats = FieldValue::Object {
+            actual_type: "Stats".to_string(),
+            fields: vec![
+                crate::types::FieldCell { name: "hp".to_string(), value: FieldValue::Int { v: 100.0 } },
+                crate::types::FieldCell { name: "attack".to_string(), value: FieldValue::Int { v: 15.0 } },
+            ],
+        };
+        write_field_inner(
+            &store,
+            snap.session_id,
+            "data/items.cfd",
+            "goblin",
+            &[FieldPathSegment::Field { name: "stats".to_string() }],
+            &new_stats,
+        ).unwrap();
+
+        let row = get_record_inner(&store, snap.session_id, "data/items.cfd", "goblin").unwrap();
+        let stats = row.fields.iter().find(|f| f.name == "stats").unwrap();
+        if let FieldValue::Object { fields, .. } = &stats.value {
+            let hp = fields.iter().find(|f| f.name == "hp").unwrap();
+            assert!(matches!(hp.value, FieldValue::Int { v } if (v - 100.0).abs() < 1e-9));
+            let atk = fields.iter().find(|f| f.name == "attack").unwrap();
+            assert!(matches!(atk.value, FieldValue::Int { v } if (v - 15.0).abs() < 1e-9));
+        } else {
+            panic!("expected Object, got {:?}", stats.value);
+        }
+    }
+
+    #[test]
     fn write_field_ref_serializes_as_ampersand_key() {
         let dir = TempDir::new().unwrap();
         let yaml = dir.path().join("coflow.yaml");
