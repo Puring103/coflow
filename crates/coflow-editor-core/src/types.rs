@@ -164,4 +164,7 @@ pub struct FieldSchema {
     pub array_nullable_element_type: Option<String>,
     /// Whether this field has a default value (implies it's optional in practice).
     pub has_default: bool,
+    /// Human-readable default value string (e.g. "0", "false", "null", "[]").
+    /// None if the field has no default.
+    pub default_str: Option<String>,
 }

@@ -6,7 +6,7 @@ use crate::types::{
 };
 use coflow_cfd::{parse_cfd, CfdAst, CfdBlockEntry};
 use coflow_checker::CfdCheckExt;
-use coflow_cft::{CftContainer, CftSchemaTypeRef, ModuleId};
+use coflow_cft::{CftContainer, CftSchemaDefaultValue, CftSchemaTypeRef, ModuleId};
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostics, CfdDictKey, CfdEnumValue, CfdRecord, CfdValue,
 };
@@ -917,6 +917,22 @@ pub fn get_field_schemas_inner(
         None
     }
 
+    fn format_default(d: &CftSchemaDefaultValue) -> String {
+        match d {
+            CftSchemaDefaultValue::Null => "null".to_string(),
+            CftSchemaDefaultValue::Int(v) => v.to_string(),
+            CftSchemaDefaultValue::Float(v) => {
+                let s = v.to_string();
+                if s.contains('.') || s.contains('e') || s.contains('E') { s } else { format!("{s}.0") }
+            }
+            CftSchemaDefaultValue::Bool(v) => v.to_string(),
+            CftSchemaDefaultValue::String(v) => format!("{v:?}"),
+            CftSchemaDefaultValue::Enum { variant, .. } => variant.clone(),
+            CftSchemaDefaultValue::EmptyArray => "[]".to_string(),
+            CftSchemaDefaultValue::EmptyObject => "{}".to_string(),
+        }
+    }
+
     let session_arc = get_session(store, session_id)?;
     let session = session_arc.lock().map_err(|_| "session lock poisoned")?;
     let schema_type = session
@@ -932,6 +948,7 @@ pub fn get_field_schemas_inner(
             nullable_object_type: nullable_object_type(&f.ty_ref, &session.schema),
             array_nullable_element_type: array_nullable_element_type(&f.ty_ref, &session.schema),
             has_default: f.has_default,
+            default_str: f.default.as_ref().map(format_default),
         })
         .collect();
     Ok(schemas)

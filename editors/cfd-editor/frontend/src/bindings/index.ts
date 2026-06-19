@@ -93,4 +93,6 @@ export type FieldSchema = {
   /** If this field is `[T?]` (Array of nullable Object T), this is T. */
   array_nullable_element_type: string | null;
   has_default: boolean;
+  /** Human-readable default value string, or null if no default. */
+  default_str: string | null;
 };
