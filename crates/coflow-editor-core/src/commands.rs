@@ -3072,4 +3072,93 @@ mod tests {
         let name_field = broken.fields.iter().find(|f| f.name == "name");
         assert!(name_field.is_some(), "broken should have name field from AST fallback");
     }
+
+    #[test]
+    fn reload_file_preserves_cross_file_refs() {
+        // Two files: elements.cfd has Element records; items.cfd has Item records that
+        // reference elements. After writing to items.cfd (triggering reload_file), the
+        // cross-file Ref should still resolve correctly in the rebuilt model.
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+
+        std::fs::write(
+            dir.path().join("schema.cft"),
+            "type Element { name: string; }\ntype Item { name: string; element: Element; }",
+        ).unwrap();
+        std::fs::write(
+            data_dir.join("elements.cfd"),
+            "fire: Element { name: \"Fire\", }\nice: Element { name: \"Ice\", }\n",
+        ).unwrap();
+        std::fs::write(
+            data_dir.join("items.cfd"),
+            "sword: Item { name: \"Sword\", element: &fire, }\n",
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+        let sid = snap.session_id;
+
+        // Verify initial cross-file Ref resolves
+        let sword_before = get_record_inner(&store, sid, "data/items.cfd", "sword").unwrap();
+        let elem_field_before = sword_before.fields.iter().find(|f| f.name == "element").expect("element field missing");
+        assert!(
+            matches!(&elem_field_before.value, FieldValue::Ref { target_key, .. } if target_key == "fire"),
+            "expected Ref to fire before write, got {:?}", elem_field_before.value
+        );
+
+        // Write items.cfd (change sword's name) — this triggers reload_file which rebuilds the model
+        write_field_inner(
+            &store, sid, "data/items.cfd", "sword",
+            &[FieldPathSegment::Field { name: "name".to_string() }],
+            &FieldValue::Str { v: "Fire Sword".to_string() },
+        ).unwrap();
+
+        // After the write, the cross-file Ref should still resolve correctly
+        let sword_after = get_record_inner(&store, sid, "data/items.cfd", "sword").unwrap();
+        let elem_field_after = sword_after.fields.iter().find(|f| f.name == "element").expect("element field missing after write");
+        assert!(
+            matches!(&elem_field_after.value, FieldValue::Ref { target_key, .. } if target_key == "fire"),
+            "expected Ref to fire after write, got {:?}", elem_field_after.value
+        );
+
+        // The name change should also be visible
+        let name_field = sword_after.fields.iter().find(|f| f.name == "name").unwrap();
+        assert!(
+            matches!(&name_field.value, FieldValue::Str { v } if v == "Fire Sword"),
+            "expected name 'Fire Sword', got {:?}", name_field.value
+        );
+    }
+
+    #[test]
+    fn get_all_records_brief_includes_ast_fallback_records() {
+        // Records that fail model build (missing required field) should still appear in
+        // get_all_records_brief, using the type name from the AST.
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        std::fs::write(
+            dir.path().join("schema.cft"),
+            "type Item { name: string; power: int; }",
+        ).unwrap();
+        std::fs::write(
+            data_dir.join("items.cfd"),
+            "sword: Item { name: \"Sword\", power: 10, }\nbroken: Item { name: \"Broken\", }\n",
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let briefs = get_all_records_brief_inner(&store, snap.session_id).unwrap();
+        assert_eq!(briefs.len(), 2, "both records should appear in brief");
+
+        let broken = briefs.iter().find(|b| b.key == "broken").expect("broken missing from briefs");
+        // Even though model build failed for 'broken' (missing power), it should have type from AST
+        assert_eq!(broken.actual_type, "Item", "broken should have type Item from AST");
+        assert!(broken.file_path.contains("items.cfd"));
+    }
 }
