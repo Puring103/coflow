@@ -420,31 +420,6 @@ export function TableView({
     });
   }, [filePath, sessionId, onNavigate, onDeleteRecord, onRenameRecord, onDuplicateRecord]);
 
-  const handleColHeaderContextMenu = useCallback((
-    e: React.MouseEvent,
-    fieldName: string
-  ) => {
-    // Check if this is a ref field in the first row
-    const firstWithField = filteredRows.find(r => r.fields.some(f => f.name === fieldName && f.value.kind === "Ref"));
-    if (!firstWithField) return;
-    e.preventDefault();
-    const refField = firstWithField.fields.find(f => f.name === fieldName);
-    if (!refField || refField.value.kind !== "Ref") return;
-    const refValue = refField.value;
-    setContextMenu({
-      x: e.clientX,
-      y: e.clientY,
-      items: [
-        {
-          label: "跳转到引用记录",
-          onClick: () => {
-            const targetFile = refValue.target_file ?? filePath;
-            onNavigate({ view: "record", file: targetFile, recordKey: refValue.target_key });
-          },
-        },
-      ],
-    });
-  }, [filteredRows, filePath, onNavigate]);
 
   const SCALAR_KINDS = ["Null", "Bool", "Int", "Float", "Str", "Enum", "Ref"];
 
@@ -631,7 +606,6 @@ export function TableView({
                       whiteSpace: "nowrap",
                       cursor: header.column.getCanSort() ? "pointer" : "default",
                     }}
-                    onContextMenu={e => handleColHeaderContextMenu(e, header.id)}
                     title={header.id}
                   >
                     {flexRender(header.column.columnDef.header, header.getContext())}
@@ -701,6 +675,21 @@ export function TableView({
                           if (!SCALAR_KINDS.includes(cellValue.kind)) return;
                           e.stopPropagation();
                           handleCellClick(row.original.key, colId, cellValue);
+                        }}
+                        onContextMenu={e => {
+                          if (!isKeyCol && cellValue?.kind === "Ref") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const refValue = cellValue;
+                            setContextMenu({
+                              x: e.clientX,
+                              y: e.clientY,
+                              items: [{
+                                label: "跳转到引用记录",
+                                onClick: () => onNavigate({ view: "record", file: refValue.target_file ?? filePath, recordKey: refValue.target_key }),
+                              }],
+                            });
+                          }
                         }}
                         title={isSpreadField ? "来自 spread — 请前往源记录编辑" : undefined}
                         style={{
