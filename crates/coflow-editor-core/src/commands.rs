@@ -3184,6 +3184,10 @@ mod tests {
         // name field should be present from AST
         let name_field = broken.fields.iter().find(|f| f.name == "name");
         assert!(name_field.is_some(), "broken should have name field from AST fallback");
+        // power was NOT written but the schema has it — should appear as Null (schema expansion)
+        let power_field = broken.fields.iter().find(|f| f.name == "power");
+        assert!(power_field.is_some(), "broken should have power field (as Null) via schema expansion in AST fallback");
+        assert!(matches!(power_field.unwrap().value, FieldValue::Null), "power should be Null");
     }
 
     #[test]
