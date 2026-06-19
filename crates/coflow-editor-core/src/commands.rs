@@ -537,6 +537,16 @@ pub fn create_record_inner(
     if session.model.records().any(|(_, r)| r.key == key) {
         return Err(format!("record key '{key}' already exists in the project"));
     }
+    // Guard: reject unknown or abstract type names
+    match session.schema.resolve_type(type_name) {
+        Some(t) if t.is_abstract => {
+            return Err(format!("type '{type_name}' is abstract and cannot be instantiated"));
+        }
+        None => {
+            return Err(format!("unknown type '{type_name}'"));
+        }
+        _ => {}
+    }
 
     let abs_path = session.project_dir.join(file_path);
     let existing = std::fs::read_to_string(&abs_path).unwrap_or_default();
