@@ -2167,4 +2167,23 @@ mod tests {
         let item_count = contents.matches("Item {").count();
         assert_eq!(item_count, 1, "should have exactly one Item {{ group header:\n{contents}");
     }
+
+    #[test]
+    fn validate_cfd_key_rejects_illegal_chars() {
+        // Empty key
+        assert!(validate_cfd_key("").is_err());
+        // Whitespace
+        assert!(validate_cfd_key("my key").is_err());
+        assert!(validate_cfd_key("key\t").is_err());
+        // Illegal chars
+        for c in &[':', '=', ';', ',', '{', '}', '[', ']', '(', ')', '@', '&', '"'] {
+            let key = format!("key{c}");
+            assert!(validate_cfd_key(&key).is_err(), "should reject key containing '{c}'");
+        }
+        // Valid keys
+        assert!(validate_cfd_key("simple_key").is_ok());
+        assert!(validate_cfd_key("key-with-dashes").is_ok());
+        assert!(validate_cfd_key("key123").is_ok());
+        assert!(validate_cfd_key("CamelCase").is_ok());
+    }
 }
