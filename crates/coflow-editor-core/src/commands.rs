@@ -1783,4 +1783,106 @@ mod tests {
         let axe = records.records.iter().find(|r| r.key == "axe").expect("axe should exist");
         assert_eq!(axe.actual_type, "Item");
     }
+
+    #[test]
+    fn get_all_records_brief_includes_all_keys() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        let cfd1 = dir.path().join("data/a.cfd");
+        let cfd2 = dir.path().join("data/b.cfd");
+
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        std::fs::write(&cfd1, "sword: Item { name: \"Sword\", }\n").unwrap();
+        std::fs::write(&cfd2, "shield: Item { name: \"Shield\", }\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let briefs = get_all_records_brief_inner(&store, snap.session_id).unwrap();
+        assert_eq!(briefs.len(), 2, "should have one brief per record");
+        let keys: Vec<&str> = briefs.iter().map(|b| b.key.as_str()).collect();
+        assert!(keys.contains(&"sword"), "sword should be present");
+        assert!(keys.contains(&"shield"), "shield should be present");
+        assert!(briefs.iter().all(|b| b.actual_type == "Item"), "all should be Item type");
+        // Result is sorted by key
+        assert_eq!(briefs[0].key, "shield");
+        assert_eq!(briefs[1].key, "sword");
+    }
+
+    #[test]
+    fn write_field_dict_roundtrip() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        let cfd_path = dir.path().join("data/items.cfd");
+
+        std::fs::write(&schema_path, "type Monster { weaknesses: {string: float}; }").unwrap();
+        std::fs::write(
+            &cfd_path,
+            "goblin: Monster {\n  weaknesses: {\"fire\": 1.5},\n}\n",
+        ).unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        // Overwrite the entire weaknesses dict
+        let new_val = FieldValue::Dict {
+            entries: vec![
+                crate::types::DictEntry {
+                    key: DictKey::Str { v: "fire".to_string() },
+                    value: FieldValue::Float { v: 2.0 },
+                },
+                crate::types::DictEntry {
+                    key: DictKey::Str { v: "ice".to_string() },
+                    value: FieldValue::Float { v: 0.5 },
+                },
+            ],
+        };
+        write_field_inner(
+            &store,
+            snap.session_id,
+            "data/items.cfd",
+            "goblin",
+            &[FieldPathSegment::Field { name: "weaknesses".to_string() }],
+            &new_val,
+        ).unwrap();
+
+        let row = get_record_inner(&store, snap.session_id, "data/items.cfd", "goblin").unwrap();
+        let wk = row.fields.iter().find(|f| f.name == "weaknesses").unwrap();
+        if let FieldValue::Dict { entries } = &wk.value {
+            assert_eq!(entries.len(), 2, "should have 2 entries after write");
+            let fire = entries.iter().find(|e| matches!(&e.key, DictKey::Str { v } if v == "fire")).unwrap();
+            assert!(matches!(&fire.value, FieldValue::Float { v } if (*v - 2.0).abs() < 1e-9));
+        } else {
+            panic!("expected Dict, got {:?}", wk.value);
+        }
+    }
+
+    #[test]
+    fn create_record_rejects_duplicate_key() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("coflow.yaml");
+        let data_dir = dir.path().join("data");
+        std::fs::create_dir(&data_dir).unwrap();
+        let schema_path = dir.path().join("schema.cft");
+        let cfd_path = dir.path().join("data/items.cfd");
+
+        std::fs::write(&schema_path, "type Item { name: string; }").unwrap();
+        std::fs::write(&cfd_path, "sword: Item { name: \"Sword\", }\n").unwrap();
+        std::fs::write(&yaml, "schema: schema.cft\nsources:\n  - path: data").unwrap();
+
+        let store = Mutex::new(SessionStore::default());
+        let snap = load_project_inner(&store, yaml.to_str().unwrap()).unwrap();
+
+        let err = create_record_inner(&store, snap.session_id, "data/items.cfd", "sword", "Item")
+            .unwrap_err();
+        assert!(err.contains("sword"), "error should mention conflicting key: {err}");
+    }
 }

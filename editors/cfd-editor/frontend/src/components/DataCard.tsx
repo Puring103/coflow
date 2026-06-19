@@ -110,6 +110,7 @@ function renderCompact(v: FieldValue): React.ReactNode {
             case "Float": return String(item.v);
             case "Str": return item.v;
             case "Enum": return item.variant;
+            case "Ref": return `→${item.target_key}`;
             default: return "…";
           }
         });
@@ -233,11 +234,16 @@ function RefEditor({ value, sessionId, onCommit, onCancel }: RefEditorProps) {
     }).catch(() => {});
   }, [sessionId, value.target_type]);
 
-  const commit = () =>
-    onCommit({ kind: "Ref", target_type: value.target_type, target_key: key.trim(), target_file: value.target_file });
+  const commit = () => {
+    const trimmed = key.trim();
+    if (!trimmed) { onCancel(); return; }
+    onCommit({ kind: "Ref", target_type: value.target_type, target_key: trimmed, target_file: value.target_file });
+  };
 
   const commitIfChanged = () => {
-    if (key.trim() !== value.target_key) commit(); else onCancel();
+    const trimmed = key.trim();
+    if (!trimmed || trimmed === value.target_key) { onCancel(); return; }
+    commit();
   };
 
   return (
@@ -327,7 +333,16 @@ function DictEntry({ entry, depth, sessionId, onEditValue, onEditKey, onRemove, 
 
   const commitKey = () => {
     const trimmed = keyText.trim();
-    if (trimmed && trimmed !== (entry.key.kind === "Str" ? entry.key.v : "")) {
+    if (trimmed && trimmed !== (entry.key.kind === "Str" ? entry.key.v : String(entry.key.kind === "Int" ? entry.key.v : ""))) {
+      if (entry.key.kind === "Int") {
+        const n = parseInt(trimmed, 10);
+        if (isNaN(n) || String(n) !== trimmed) {
+          // Reject non-integer input silently — revert to original
+          setKeyText(String(entry.key.v));
+          setEditingKey(false);
+          return;
+        }
+      }
       onEditKey?.(trimmed);
     }
     setEditingKey(false);
@@ -563,6 +578,8 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label }: E
           case "Enum": return { kind: "Enum", enum_name: first.enum_name, variant: first.variant, int_value: first.int_value };
           case "Ref": return { kind: "Ref", target_type: first.target_type, target_key: "", target_file: first.target_file };
           case "Object": return { kind: "Object", actual_type: first.actual_type, fields: [] };
+          case "Array": return { kind: "Array", items: [] };
+          case "Dict": return { kind: "Dict", entries: [] };
           default: return { kind: "Null" };
         }
       }
@@ -587,7 +604,7 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label }: E
           )}
         </div>
         {!collapsed && value.items.map((item, idx) => (
-          <div key={idx} style={{ display: "flex", alignItems: "flex-start" }}>
+          <div key={`${idx}:${item.kind}`} style={{ display: "flex", alignItems: "flex-start" }}>
             <div style={{ flex: 1 }}>
               <ExpandedValue
                 value={item}
@@ -651,6 +668,9 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label }: E
                     case "Str": return { kind: "Str", v: "" };
                     case "Enum": return { kind: "Enum", enum_name: fv.enum_name, variant: fv.variant, int_value: fv.int_value };
                     case "Ref": return { kind: "Ref", target_type: fv.target_type, target_key: "", target_file: fv.target_file };
+                    case "Object": return { kind: "Object", actual_type: fv.actual_type, fields: [] };
+                    case "Array": return { kind: "Array", items: [] };
+                    case "Dict": return { kind: "Dict", entries: [] };
                     default: return { kind: "Null" };
                   }
                 })() : { kind: "Null" };
@@ -663,7 +683,7 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label }: E
         </div>
         {!collapsed && value.entries.map((entry, idx) => (
           <DictEntry
-            key={idx}
+            key={`${dictKeyStr(entry.key)}:${idx}`}
             entry={entry}
             depth={depth + 1}
             sessionId={sessionId}

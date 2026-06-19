@@ -72,3 +72,9 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - **外部文件只读**：file_tree 显示 sources 外的文件但不可点击打开（禁用点击，50% opacity 提示）
 - ~~**Enum 字段无下拉**：Table/RecordView 编辑 Enum 时需手动输入 variant 名，无 schema 驱动的下拉选择~~ ✅ 已通过 `get_enum_variants` + `EnumEditor` + `CellEditor` 实现下拉选择
 - ~~**无跨文件记录搜索**：只能在单个文件 TableView 内搜索~~ ✅ 已通过 Ctrl+P 命令面板实现全项目跳转
+- ~~**Int dict key 无效输入无提示**：输入非整数字符串时 `parseInt` 返回 NaN，静默回退到 0~~ ✅ 已在 `DictEntry.commitKey` 中增加整数验证，非法输入静默还原（revert to original key）
+- ~~**Array/Dict 新增条目默认值缺失**：`Array.defaultItem()` 和 `Dict.defaultVal` 对 `Array`/`Dict`/`Object` 嵌套类型返回 `Null` 而非正确的空容器~~ ✅ 已补充 `case "Array"`, `case "Dict"`, `case "Object"` 分支
+- ~~**compact 模式 Array 内联渲染不显示 Ref**：Ref 数组项显示为 `…` 而非 `→key`~~ ✅ 已在 renderCompact 内联 parts 映射中补充 `case "Ref": return \`→\${item.target_key}\``
+- ~~**TableView 中 Ref 字段点击只能跳转，不能编辑**~~ ✅ 已添加 Ref CellEditor（带 datalist 建议），点击打开编辑器；右键菜单保留"跳转到引用记录"
+- ~~**空 target_key Ref 提交**：DataCard RefEditor 和 TableView Ref CellEditor 允许提交空 key，生成无效 `&` 语法~~ ✅ 前端已在 commit 前检查 `trimmed` 非空，否则 onCancel
+- **React key 稳定性**：Array items 改用 `\`\${idx}:\${item.kind}\`` 作为 key；Dict entries 改用 `\`\${dictKeyStr(entry.key)}:\${idx}\`` 替代纯 idx，减少因删除中间项导致的状态复用问题

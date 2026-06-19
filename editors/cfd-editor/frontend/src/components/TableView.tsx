@@ -101,19 +101,40 @@ interface CellEditorProps {
   onCancel: () => void;
 }
 
+const CELL_STYLE: React.CSSProperties = {
+  width: "100%",
+  height: "100%",
+  padding: "4px 8px",
+  background: "var(--bg3)",
+  border: "1px solid var(--accent)",
+  borderRadius: 0,
+  color: "var(--text)",
+  fontSize: 12,
+  fontFamily: "monospace",
+  outline: "none",
+  boxSizing: "border-box",
+};
+
 function CellEditor({ value, sessionId, onCommit, onCancel }: CellEditorProps) {
   const [text, setText] = useState(() => fieldValueToString(value));
   const inputRef = useRef<HTMLInputElement>(null);
   const [enumVariants, setEnumVariants] = useState<string[] | null>(null);
+  const [refTargets, setRefTargets] = useState<string[]>([]);
+  const listId = useRef(`cl-${Math.random().toString(36).slice(2)}`).current;
 
   useEffect(() => {
     if (value.kind === "Enum") {
       api.getEnumVariants(sessionId, value.enum_name).then(vs => {
         if (vs.length > 0) setEnumVariants(vs);
       }).catch(() => {});
+    } else if (value.kind === "Ref" && value.target_type) {
+      api.getRefTargets(sessionId, value.target_type).then(keys => {
+        if (keys.length > 0) setRefTargets(keys);
+      }).catch(() => {});
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, value.kind === "Enum" ? (value as { enum_name: string }).enum_name : ""]);
+  }, [sessionId, value.kind === "Enum" ? (value as { enum_name: string }).enum_name : "",
+      value.kind === "Ref" ? (value as { target_type: string }).target_type : ""]);
 
   useEffect(() => {
     if (value.kind !== "Enum") {
@@ -124,25 +145,12 @@ function CellEditor({ value, sessionId, onCommit, onCancel }: CellEditorProps) {
 
   if (value.kind === "Enum") {
     if (!enumVariants) {
-      // Still fetching variants — show a loading placeholder that can be escaped
       return (
         <div
           tabIndex={0}
           onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); onCancel(); } e.stopPropagation(); }}
           autoFocus
-          style={{
-            width: "100%",
-            height: "100%",
-            padding: "4px 8px",
-            background: "var(--bg3)",
-            border: "1px solid var(--accent)",
-            borderRadius: 0,
-            color: "var(--text-muted)",
-            fontSize: 12,
-            fontFamily: "monospace",
-            outline: "none",
-            boxSizing: "border-box",
-          }}
+          style={{ ...CELL_STYLE, color: "var(--text-muted)" }}
         >
           {text}
         </div>
@@ -159,22 +167,39 @@ function CellEditor({ value, sessionId, onCommit, onCancel }: CellEditorProps) {
           e.stopPropagation();
         }}
         autoFocus
-        style={{
-          width: "100%",
-          height: "100%",
-          padding: "4px 8px",
-          background: "var(--bg3)",
-          border: "1px solid var(--accent)",
-          borderRadius: 0,
-          color: "var(--text)",
-          fontSize: 12,
-          fontFamily: "monospace",
-          outline: "none",
-          boxSizing: "border-box",
-        }}
+        style={CELL_STYLE}
       >
         {enumVariants.map(v => <option key={v} value={v}>{v}</option>)}
       </select>
+    );
+  }
+
+  if (value.kind === "Ref") {
+    return (
+      <>
+        {refTargets.length > 0 && (
+          <datalist id={listId}>
+            {refTargets.map(k => <option key={k} value={k} />)}
+          </datalist>
+        )}
+        <input
+          ref={inputRef}
+          value={text}
+          list={refTargets.length > 0 ? listId : undefined}
+          onChange={e => setText(e.target.value)}
+          onBlur={() => {
+            const t = text.trim();
+            if (t && t !== value.target_key) onCommit(text); else onCancel();
+          }}
+          onKeyDown={e => {
+            if (e.key === "Enter") { e.preventDefault(); if (text.trim()) onCommit(text); else onCancel(); }
+            if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+            e.stopPropagation();
+          }}
+          style={CELL_STYLE}
+          placeholder="record_key"
+        />
+      </>
     );
   }
 
@@ -189,19 +214,7 @@ function CellEditor({ value, sessionId, onCommit, onCancel }: CellEditorProps) {
         if (e.key === "Escape") { e.preventDefault(); onCancel(); }
         e.stopPropagation();
       }}
-      style={{
-        width: "100%",
-        height: "100%",
-        padding: "4px 8px",
-        background: "var(--bg3)",
-        border: "1px solid var(--accent)",
-        borderRadius: 0,
-        color: "var(--text)",
-        fontSize: 12,
-        fontFamily: "monospace",
-        outline: "none",
-        boxSizing: "border-box",
-      }}
+      style={CELL_STYLE}
     />
   );
 }
@@ -425,18 +438,13 @@ export function TableView({
 
   const handleCellClick = useCallback((rowKey: string, fieldName: string, value: FieldValue) => {
     if (!SCALAR_KINDS.includes(value.kind)) return;
-    // Ref cells navigate instead of opening an editor
-    if (value.kind === "Ref") {
-      onNavigate({ view: "record", file: value.target_file ?? filePath, recordKey: value.target_key });
-      return;
-    }
     // Bool cells toggle directly without opening a text editor
     if (value.kind === "Bool") {
       onWriteField(sessionId, filePath, rowKey, [{ kind: "Field", name: fieldName }], { kind: "Bool", v: !value.v });
       return;
     }
     setEditingCell({ rowKey, fieldName, value });
-  }, [filePath, sessionId, onNavigate, onWriteField]);
+  }, [filePath, sessionId, onWriteField]);
 
   const handleCellCommit = useCallback(async (rowKey: string, fieldName: string, raw: string, original: FieldValue) => {
     setEditingCell(null);
