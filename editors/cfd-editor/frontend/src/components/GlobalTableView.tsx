@@ -166,10 +166,10 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
         { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, row.file_path, row.key).then(src => navigator.clipboard.writeText(src)).catch(e => onError?.(`复制失败: ${e}`)) },
         ...(onMoveRecord ? [{ label: "移动到文件…", onClick: () => onMoveRecord(row.file_path, row.key) }] : []),
         ...(onCopyRecord ? [{ label: "复制到文件…", onClick: () => onCopyRecord(row.file_path, row.key) }] : []),
-        ...(onDeleteRecord ? [{ label: "删除记录", danger: true as const, onClick: () => onDeleteRecord(sessionId, row.file_path, row.key).catch(() => {}) }] : []),
+        ...(onDeleteRecord ? [{ label: "删除记录", danger: true as const, onClick: () => onDeleteRecord(sessionId, row.file_path, row.key).catch(e => onError?.(`删除失败: ${e}`)) }] : []),
       ],
     });
-  }, [sessionId, onNavigate, onDeleteRecord, onMoveRecord, onCopyRecord]);
+  }, [sessionId, onNavigate, onDeleteRecord, onMoveRecord, onCopyRecord, onError]);
 
   const handleBatchApply = useCallback(async () => {
     if (!onWriteField) return;

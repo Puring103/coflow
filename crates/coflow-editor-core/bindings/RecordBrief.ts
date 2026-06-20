@@ -3,4 +3,8 @@
 /**
  * Lightweight summary of a record for the command palette / jump-to-record.
  */
-export type RecordBrief = { key: string, actual_type: string, file_path: string, is_fallback: boolean, };
+export type RecordBrief = { key: string, actual_type: string, file_path: string, is_fallback: boolean, 
+/**
+ * First non-null scalar field value, shown as a hint in the command palette.
+ */
+display_hint: string | null, };
