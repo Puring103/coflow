@@ -315,6 +315,12 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError
           label: "复制 Key",
           onClick: () => navigator.clipboard.writeText(gnode.key).catch(e => onError?.(`复制失败: ${e}`)),
         },
+        {
+          label: "复制为 CFD 源码",
+          onClick: () => api.getRecordSource(sessionId, gnode.file_path, gnode.key)
+            .then(src => navigator.clipboard.writeText(src))
+            .catch(e => onError?.(`复制失败: ${e}`)),
+        },
         ...(!gnode.is_collapsed ? [{
           label: "折叠节点",
           onClick: () => handleCollapse(gnode.key),

@@ -335,6 +335,7 @@ export function TableView({
   const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
   const [showColumnPicker, setShowColumnPicker] = useState(false);
   const columnPickerRef = useRef<HTMLDivElement>(null);
+  const [showRequiredOnly, setShowRequiredOnly] = useState(false);
 
   // Fetch field schemas for the active type to enable required-null highlighting
   useEffect(() => {
@@ -355,6 +356,7 @@ export function TableView({
       setColumnVisibility(stored ? JSON.parse(stored) : {});
     } catch { setColumnVisibility({}); }
     setShowColumnPicker(false);
+    setShowRequiredOnly(false);
     setSelectedKeys(new Set());
     setFocusedRowIndex(null);
     setBatchField("");
@@ -436,9 +438,17 @@ export function TableView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const requiredFieldNames = useMemo(
+    () => new Set(fieldSchemas.filter(s => !s.has_default).map(s => s.name)),
+    [fieldSchemas],
+  );
   const filteredRows: RowData[] = fileRecords.records
     .filter(r => {
       if (r.actual_type !== activeType) return false;
+      if (showRequiredOnly) {
+        const hasRequiredNull = r.fields.some(f => requiredFieldNames.has(f.name) && f.value.kind === "Null");
+        if (!hasRequiredNull) return false;
+      }
       if (!search) return true;
       const q = search.toLowerCase();
       if (r.key.toLowerCase().includes(q)) return true;
@@ -963,6 +973,26 @@ export function TableView({
           <span style={{ color: "var(--text-muted)", fontSize: 11, whiteSpace: "nowrap" }}>
             {filteredRows.length} / {fileRecords.records.filter(r => r.actual_type === activeType).length}
           </span>
+        )}
+        {/* Required-null filter */}
+        {requiredFieldNames.size > 0 && (
+          <button
+            onClick={() => setShowRequiredOnly(v => !v)}
+            title={showRequiredOnly ? "显示全部记录" : "只显示含空必填字段的记录"}
+            style={{
+              fontSize: 11,
+              padding: "2px 8px",
+              background: showRequiredOnly ? "var(--warning)" : "transparent",
+              border: `1px solid ${showRequiredOnly ? "var(--warning)" : "var(--border)"}`,
+              borderRadius: 4,
+              color: showRequiredOnly ? "#000" : "var(--warning)",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+              fontWeight: showRequiredOnly ? 600 : undefined,
+            }}
+          >
+            ⚠ 必填
+          </button>
         )}
         {/* Column visibility toggle */}
         {fieldNames.length > 0 && (

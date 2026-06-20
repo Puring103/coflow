@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { RecordRow, FieldValue, FieldPathSegment, DiagnosticItem } from "../bindings";
+import type { RecordRow, FieldValue, FieldPathSegment, DiagnosticItem, FieldSchema } from "../bindings";
 import type { Route } from "../router";
 import { DataCard } from "./DataCard";
 import { ContextMenu, type ContextMenuState } from "./ContextMenu";
@@ -209,6 +209,8 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   });
   const [showColPicker, setShowColPicker] = useState(false);
   const colPickerRef = useRef<HTMLDivElement>(null);
+  const [fieldSchemas, setFieldSchemas] = useState<FieldSchema[]>([]);
+  const [showRequiredOnly, setShowRequiredOnly] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -228,6 +230,13 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   }, [sessionId, refreshKey]);
 
   useEffect(() => {
+    if (!typeName) { setFieldSchemas([]); return; }
+    api.getFieldSchemas(sessionId, typeName)
+      .then(s => setFieldSchemas(s))
+      .catch(() => setFieldSchemas([]));
+  }, [sessionId, typeName]);
+
+  useEffect(() => {
     if (!typeName) return;
     setLoading(true);
     setError(null);
@@ -239,8 +248,17 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, typeName, refreshKey]);
 
+  const requiredFieldNames = useMemo(
+    () => new Set(fieldSchemas.filter(s => !s.has_default).map(s => s.name)),
+    [fieldSchemas],
+  );
+
   const filteredRows = useMemo(() => {
     const base = rows.filter(r => {
+      if (showRequiredOnly) {
+        const hasRequiredNull = r.fields.some(f => requiredFieldNames.has(f.name) && f.value.kind === "Null");
+        if (!hasRequiredNull) return false;
+      }
       if (!search) return true;
       const q = search.toLowerCase();
       if (r.key.toLowerCase().includes(q)) return true;
@@ -261,7 +279,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       const cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: "base" });
       return sort.dir === "asc" ? cmp : -cmp;
     });
-  }, [rows, search, sort]);
+  }, [rows, search, sort, showRequiredOnly, requiredFieldNames]);
 
   // Per-record diagnostic counts for row badges
   const rowDiagCounts = useMemo(() => {
@@ -487,6 +505,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
     setSelectedKeys(new Set());
     setEditingCell(null);
     setShowColPicker(false);
+    setShowRequiredOnly(false);
     try {
       const stored = localStorage.getItem(`cfd-global-col-vis:${typeName}`);
       setHiddenCols(stored ? new Set<string>(JSON.parse(stored)) : new Set<string>());
@@ -637,6 +656,26 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
         <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
           {filteredRows.length} / {rows.length} records · {new Set(rows.map(r => r.file_path)).size} files
         </span>
+        {requiredFieldNames.size > 0 && (
+          <button
+            onClick={() => setShowRequiredOnly(v => !v)}
+            title={showRequiredOnly ? "显示全部记录" : "只显示含空必填字段的记录"}
+            style={{
+              fontSize: 11,
+              padding: "2px 8px",
+              background: showRequiredOnly ? "var(--warning)" : "transparent",
+              border: `1px solid ${showRequiredOnly ? "var(--warning)" : "var(--border)"}`,
+              borderRadius: 4,
+              color: showRequiredOnly ? "#000" : "var(--warning)",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+              fontWeight: showRequiredOnly ? 600 : undefined,
+              flexShrink: 0,
+            }}
+          >
+            ⚠ 必填
+          </button>
+        )}
         {fieldNames.length > 0 && (
           <div ref={colPickerRef} style={{ position: "relative", flexShrink: 0 }}>
             <button
@@ -833,6 +872,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                       const isEditing = editingCell?.rowKey === row.key && editingCell?.filePath === row.file_path && editingCell?.fieldName === f;
                       const isScalar = cell && SCALAR_KINDS.includes(cell.value.kind);
                       const canEdit = !!onWriteField && isScalar && !isSpread;
+                      const isRequiredNull = requiredFieldNames.has(f) && (!cell || cell.value.kind === "Null") && !isSpread;
                       return (
                         <div
                           key={f}
@@ -874,8 +914,9 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                             alignItems: "center",
                             opacity: isSpread ? 0.55 : 1,
                             cursor: canEdit ? "text" : "default",
+                            color: isRequiredNull ? "var(--warning)" : undefined,
                           }}
-                          title={isSpread ? `${f} (inherited via spread — edit in source record)` : canEdit ? `Click to edit ${f}` : undefined}
+                          title={isSpread ? `${f} (inherited via spread — edit in source record)` : isRequiredNull ? `${f} — required field (no default)` : canEdit ? `Click to edit ${f}` : undefined}
                         >
                           {isEditing ? (
                             <CellEditor
