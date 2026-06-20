@@ -1,6 +1,11 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, createContext, useContext } from "react";
 import type { FieldValue, DictKey, FieldSchema } from "../bindings";
 import { api } from "../api";
+
+// Context to imperatively force all ExpandedValue nodes to collapse or expand.
+// Consumers read { gen, forceCollapsed } — a new gen means "re-evaluate your collapsed state".
+interface CollapseForceCtx { gen: number; forceCollapsed: boolean }
+export const CollapseForceContext = createContext<CollapseForceCtx>({ gen: 0, forceCollapsed: false });
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -512,6 +517,16 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
     if (value.kind === "Object") return value.fields.length > 8;
     return false;
   });
+  const { gen, forceCollapsed } = useContext(CollapseForceContext);
+  const lastGenRef = useRef(0);
+  useEffect(() => {
+    if (gen !== 0 && gen !== lastGenRef.current) {
+      lastGenRef.current = gen;
+      if (value.kind === "Object" || value.kind === "Array" || value.kind === "Dict") {
+        setCollapsed(forceCollapsed);
+      }
+    }
+  }, [gen, forceCollapsed, value.kind]);
 
   // Fetch sub-field schemas for Object values so nested nullable Objects show a "＋ T" button
   const objectTypeName = value.kind === "Object" ? value.actual_type : undefined;

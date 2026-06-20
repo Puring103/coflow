@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import type { FieldSchema, FileRecords, FieldPathSegment, FieldValue, FieldCell, RecordRow, IncomingRef, DiagnosticItem } from "../bindings";
 import type { Route } from "../router";
-import { DataCard } from "./DataCard";
+import { DataCard, CollapseForceContext } from "./DataCard";
 import { ContextMenu, type ContextMenuState } from "./ContextMenu";
 import { api } from "../api";
 
@@ -112,6 +112,7 @@ export function RecordView({
   const selectedItemRef = useRef<HTMLDivElement>(null);
   const fieldRowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const autoExpandRefsRef = useRef(false);
+  const [collapseForce, setCollapseForce] = useState<{ gen: number; forceCollapsed: boolean }>({ gen: 0, forceCollapsed: false });
 
   // Build per-record diagnostic badge info: { errors, warnings } keyed by record key
   const recordDiagnosticCounts = useMemo(() => {
@@ -951,7 +952,24 @@ export function RecordView({
               </div>
             )}
 
+            {/* Collapse / expand all Objects and Arrays */}
+            {record.fields.some(f => f.value.kind === "Object" || f.value.kind === "Array" || f.value.kind === "Dict") && (
+              <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+                <button
+                  onClick={() => setCollapseForce(c => ({ gen: c.gen + 1, forceCollapsed: false }))}
+                  title="展开所有 Object / Array / Dict"
+                  style={{ fontSize: 11, padding: "1px 8px", background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-muted)", cursor: "pointer" }}
+                >▼ 全部展开</button>
+                <button
+                  onClick={() => setCollapseForce(c => ({ gen: c.gen + 1, forceCollapsed: true }))}
+                  title="折叠所有 Object / Array / Dict"
+                  style={{ fontSize: 11, padding: "1px 8px", background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-muted)", cursor: "pointer" }}
+                >▶ 全部折叠</button>
+              </div>
+            )}
+
             {/* Fields */}
+            <CollapseForceContext.Provider value={collapseForce}>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               {record.fields
                 .filter(field => {
@@ -1101,6 +1119,7 @@ export function RecordView({
                 </div>
               )}
             </div>
+            </CollapseForceContext.Provider>
           </>
         ) : fetchError ? (
           <div style={{ color: "var(--error)", padding: 16, fontSize: 13 }}>
