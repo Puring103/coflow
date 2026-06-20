@@ -462,6 +462,14 @@ export default function App() {
     setGraphRefreshKey(k => k + 1);
   }, [project]);
 
+  const handleGlobalImportRecord = useCallback(async (filePath: string, source: string): Promise<string[]> => {
+    if (!project.snapshot) throw new Error("No project loaded");
+    const keys = await api.importRecordSource(project.snapshot.session_id, filePath, source);
+    project.markDirty(project.snapshot.session_id, filePath);
+    setGraphRefreshKey(k => k + 1);
+    return keys;
+  }, [project]);
+
   const handleNewFile = () => {
     setNewFilePath("");
     setNewFileError(null);
@@ -843,6 +851,7 @@ export default function App() {
                     diagnostics={project.snapshot.diagnostics}
                     onError={showOpError}
                     onCreateRecord={handleGlobalCreateRecord}
+                    onImportRecord={handleGlobalImportRecord}
                     availableFiles={collectFilePaths(project.snapshot.file_tree)}
                   />
                 )}

@@ -145,6 +145,7 @@ interface GlobalTableViewProps {
   onMoveRecord?: (srcFile: string, recordKey: string) => void;
   onCopyRecord?: (srcFile: string, recordKey: string) => void;
   onCreateRecord?: (typeName: string, filePath: string, key: string) => Promise<void>;
+  onImportRecord?: (filePath: string, source: string) => Promise<string[]>;
   availableFiles?: string[];
   diagnostics?: DiagnosticItem[];
   onError?: (msg: string) => void;
@@ -176,7 +177,7 @@ function fieldValueToString(v: FieldValue): string {
 
 type SortCol = { col: "key" | "file" | string; dir: "asc" | "desc" };
 
-export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange, onNavigate, onWriteField, onDeleteRecord, onDuplicateRecord, onMoveRecord, onCopyRecord, onCreateRecord, availableFiles, diagnostics, onError }: GlobalTableViewProps) {
+export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange, onNavigate, onWriteField, onDeleteRecord, onDuplicateRecord, onMoveRecord, onCopyRecord, onCreateRecord, onImportRecord, availableFiles, diagnostics, onError }: GlobalTableViewProps) {
   const [rows, setRows] = useState<RecordRow[]>([]);
   const [allTypeNames, setAllTypeNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -194,6 +195,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   const [duplicateModal, setDuplicateModal] = useState<{ srcKey: string; filePath: string; draft: string; error: string | null } | null>(null);
   const [typeCounts, setTypeCounts] = useState<Map<string, number>>(new Map());
   const [createModal, setCreateModal] = useState<{ key: string; filePath: string; creating: boolean; error: string | null } | null>(null);
+  const [pasteModal, setPasteModal] = useState<{ source: string; filePath: string; importing: boolean; error: string | null; importedKeys?: string[] } | null>(null);
   const [editingCell, setEditingCell] = useState<{ rowKey: string; filePath: string; fieldName: string; value: FieldValue } | null>(null);
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(() => {
     try {
@@ -414,6 +416,28 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
     }
   }, [editingCell, onWriteField, sessionId]);
 
+  const handlePasteImport = useCallback(async () => {
+    if (!pasteModal || !onImportRecord) return;
+    if (!pasteModal.source.trim()) { setPasteModal(m => m && ({ ...m, error: "先粘贴 CFD 源码" })); return; }
+    const fp = pasteModal.filePath;
+    setPasteModal(m => m && ({ ...m, importing: true, error: null }));
+    try {
+      const importedKeys = await onImportRecord(fp, pasteModal.source);
+      if (importedKeys.length === 0) {
+        setPasteModal(m => m && ({ ...m, importing: false, error: "未导入任何记录（key 已存在或源码为空）" }));
+        return;
+      }
+      if (importedKeys.length === 1) {
+        setPasteModal(null);
+        onNavigate({ view: "record", file: fp, recordKey: importedKeys[0] });
+      } else {
+        setPasteModal(m => m && ({ ...m, importing: false, importedKeys }));
+      }
+    } catch (e) {
+      setPasteModal(m => m && ({ ...m, importing: false, error: String(e) }));
+    }
+  }, [pasteModal, onImportRecord, onNavigate]);
+
   const handleCreateCommit = useCallback(async () => {
     if (!createModal || !onCreateRecord) return;
     const key = createModal.key.trim();
@@ -626,6 +650,13 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
         <button onClick={exportCsv} title="Export as CSV" style={{ fontSize: 11, padding: "2px 8px", background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-muted)", cursor: "pointer" }}>
           ↓ CSV
         </button>
+        {onImportRecord && availableFiles && availableFiles.length > 0 && (
+          <button
+            onClick={() => setPasteModal({ source: "", filePath: availableFiles[0], importing: false, error: null })}
+            title="粘贴 CFD 源码导入记录"
+            style={{ fontSize: 11, padding: "2px 8px", background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}
+          >⎘ 粘贴 CFD</button>
+        )}
         {onCreateRecord && availableFiles && availableFiles.length > 0 && (
           <button
             onClick={() => setCreateModal({ key: "", filePath: availableFiles[0], creating: false, error: null })}
@@ -991,6 +1022,83 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                 {batchApplying ? "删除中…" : `删除 ${selectedKeys.size} 条`}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Paste CFD import modal */}
+      {pasteModal && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000 }}
+          onClick={() => !pasteModal.importing && setPasteModal(null)}
+        >
+          <div
+            style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8, padding: 24, minWidth: 400, maxWidth: 560, boxShadow: "0 8px 32px rgba(0,0,0,0.5)", display: "flex", flexDirection: "column", gap: 12 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 style={{ margin: 0, fontSize: 15 }}>粘贴 CFD 源码导入</h3>
+            {pasteModal.importedKeys ? (
+              <>
+                <div style={{ color: "var(--success, #50fa7b)", fontSize: 13, background: "rgba(80,250,123,0.08)", border: "1px solid rgba(80,250,123,0.3)", borderRadius: 4, padding: "8px 12px" }}>
+                  ✓ 已导入 {pasteModal.importedKeys.length} 条记录
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 160, overflowY: "auto" }}>
+                  {pasteModal.importedKeys.map(k => (
+                    <button
+                      key={k}
+                      onClick={() => { setPasteModal(null); onNavigate({ view: "record", file: pasteModal.filePath, recordKey: k }); }}
+                      style={{ textAlign: "left", fontFamily: "monospace", fontSize: 12, padding: "2px 8px", background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--accent)", cursor: "pointer" }}
+                    >{k}</button>
+                  ))}
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button onClick={() => setPasteModal(null)}>关闭</button>
+                </div>
+              </>
+            ) : (
+              <>
+                {availableFiles && availableFiles.length > 1 && (
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--text-muted)" }}>
+                    目标文件
+                    <select
+                      value={pasteModal.filePath}
+                      onChange={e => setPasteModal(m => m && ({ ...m, filePath: e.target.value }))}
+                      style={{ background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "4px 8px", fontSize: 13, outline: "none", fontFamily: "monospace" }}
+                    >
+                      {availableFiles.map(f => <option key={f} value={f}>{f.split(/[\\/]/).pop() ?? f}</option>)}
+                    </select>
+                  </label>
+                )}
+                <textarea
+                  value={pasteModal.source}
+                  onChange={e => setPasteModal(m => m && ({ ...m, source: e.target.value, error: null }))}
+                  onKeyDown={e => {
+                    if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !pasteModal.importing && pasteModal.source.trim()) {
+                      e.preventDefault();
+                      handlePasteImport();
+                    }
+                    if (e.key === "Escape") { e.preventDefault(); setPasteModal(null); }
+                    e.stopPropagation();
+                  }}
+                  placeholder="粘贴 CFD 源码…"
+                  // eslint-disable-next-line jsx-a11y/no-autofocus
+                  autoFocus
+                  rows={8}
+                  style={{ fontFamily: "monospace", fontSize: 12, background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "6px 8px", resize: "vertical", outline: "none" }}
+                />
+                {pasteModal.error && <div style={{ color: "var(--error)", fontSize: 12 }}>{pasteModal.error}</div>}
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button onClick={() => setPasteModal(null)} disabled={pasteModal.importing}>取消</button>
+                  <button
+                    className="primary"
+                    onClick={handlePasteImport}
+                    disabled={pasteModal.importing || !pasteModal.source.trim()}
+                  >
+                    {pasteModal.importing ? "导入中…" : "导入"}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
