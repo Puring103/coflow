@@ -109,6 +109,7 @@ export function RecordView({
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [sidebarSearch, setSidebarSearch] = useState("");
+  const [sidebarDiagFilter, setSidebarDiagFilter] = useState(false);
   const [editingKey, setEditingKey] = useState(false);
   const [keyText, setKeyText] = useState(recordKey);
   const [duplicateModal, setDuplicateModal] = useState<DuplicateModal | null>(null);
@@ -207,6 +208,10 @@ export function RecordView({
   const filteredRecords = allRecords
     .filter(r => {
       if (typeFilter && r.actual_type !== typeFilter && r.key !== recordKey) return false;
+      if (sidebarDiagFilter) {
+        const counts = recordDiagnosticCounts.get(r.key);
+        if (!counts || (counts.errors === 0 && counts.warnings === 0)) return r.key === recordKey;
+      }
       if (sidebarSearch) {
         const q = sidebarSearch.toLowerCase();
         return r.key.toLowerCase().includes(q) || r.actual_type.toLowerCase().includes(q);
@@ -474,7 +479,7 @@ export function RecordView({
           >＋</span>
         </div>
         {/* Sidebar search */}
-        <div style={{ padding: "4px 6px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+        <div style={{ padding: "4px 6px", borderBottom: "1px solid var(--border)", flexShrink: 0, display: "flex", gap: 4, alignItems: "center" }}>
           <input
             ref={sidebarSearchRef}
             value={sidebarSearch}
@@ -490,7 +495,8 @@ export function RecordView({
             }}
             placeholder="Filter records…"
             style={{
-              width: "100%",
+              flex: 1,
+              minWidth: 0,
               background: "var(--bg3)",
               border: "1px solid var(--border)",
               borderRadius: 3,
@@ -501,6 +507,23 @@ export function RecordView({
               boxSizing: "border-box",
             }}
           />
+          {recordDiagnosticCounts.size > 0 && (
+            <button
+              onClick={() => setSidebarDiagFilter(v => !v)}
+              title={sidebarDiagFilter ? "显示全部记录" : "只显示有问题的记录"}
+              style={{
+                fontSize: 10,
+                padding: "1px 5px",
+                background: sidebarDiagFilter ? "var(--warning)" : "transparent",
+                border: `1px solid ${sidebarDiagFilter ? "var(--warning)" : "var(--border)"}`,
+                borderRadius: 3,
+                color: sidebarDiagFilter ? "#000" : "var(--warning)",
+                cursor: "pointer",
+                flexShrink: 0,
+                fontWeight: sidebarDiagFilter ? 600 : undefined,
+              }}
+            >⚠</button>
+          )}
         </div>
         {/* Type filter tabs */}
         {typeNames.length > 1 && (
