@@ -185,3 +185,11 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**incoming refs 点击不跳转到引用字段**：只能跳到记录，不知道是哪个字段引用了当前记录~~ ✅ onClick 提取 `ref.field_path.split(/[.[]/)[0]` 作为 `fieldSearch`，跳转时高亮对应字段；tooltip 更新为"跳转并高亮 .field_path 字段"。
 - ~~**Sort All 未刷新当前视图**：调用后其他文件排序了，但当前表视图没有更新顺序~~ ✅ 改为只对 `currentFile` 调用 `markDirty`（立即刷新当前视图），其他文件在导航时按需重新加载。
 - ~~**无侧边栏显示/隐藏快捷键**：文件树始终显示，无法临时隐藏以扩展编辑区域~~ ✅ 新增 `showSidebar` 状态，Ctrl+B 切换文件树显示/隐藏；shortcuts tooltip 更新。
+- ~~**TableView 批量操作无成功 toast**：⎘ CSV / ⎘ JSON 按钮静默复制~~ ✅ 两个表视图所有 clipboard 操作（复制 Key/源码/JSON/CSV/单元格值/字段 Ctrl+C）现在均通过 `onSuccess` 显示成功 toast；TableView 和 GlobalTableView 均新增 `onSuccess?` prop。
+- ~~**GlobalTableView 批量操作无 ⎘ JSON 按钮**：只有 ⎘ CSV，TableView 两者都有~~ ✅ GlobalTableView 批量操作栏新增 ⎘ JSON 按钮，格式与 TableView 一致。
+- ~~**FileTree Enter 键无法打开文件**：ArrowUp/Down 可导航但无法用 Enter 打开~~ ✅ FileTree 容器 onKeyDown 添加 Enter/Space 支持，打开当前选中文件。
+- ~~**CommandPalette 无翻页键**：大型项目中大量结果需逐行 ArrowDown~~ ✅ 新增 PageUp/Down（步进 10 条）和 Ctrl+Home/End（跳到首/尾）；无查询时若结果被截断为前 100 条，页脚显示橙色"showing first 100 — type to search all"提示。
+- ~~**DataCard Array/Dict 操作按钮无键盘支持**：＋/▲/▼/× 仅 onClick，无法用键盘操作~~ ✅ 所有操作 span 添加 role=button tabIndex=0 onKeyDown（Enter/Space 激活；× 额外支持 Delete 键删除）。
+- ~~**RecordView 多处交互 span 无键盘支持**：incoming refs 切换/条目、spread 来源芯片、文件路径链接、类型名（切换 schema 检视器）均无 tabIndex~~ ✅ 全部添加 role=button tabIndex=0 onKeyDown。
+- ~~**GlobalTableView 缺少 F2 快捷键**：TableView/RecordView 有 F2 进入编辑，GlobalTableView 没有~~ ✅ F2 键进入焦点行第一个可编辑标量字段的编辑状态（需要 onWriteField 存在）。
+- ~~**GlobalTableView 缺少重命名记录 Key 功能**：TableView 和 RecordView 均支持重命名，GlobalTableView 右键菜单没有~~ ✅ 新增 `onRenameRecord?` prop；右键菜单添加"重命名记录 Key"选项；弹窗与复制记录弹窗风格一致，支持 Enter/Escape。
