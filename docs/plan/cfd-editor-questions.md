@@ -146,3 +146,5 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**GraphView 无邻居焦点模式**：无法临时只看某节点的直接连接关系~~ ✅ 右键菜单新增"仅显示相邻节点"，激活后只有该节点及其直接邻居（入边+出边）保持不透明；工具栏显示"⊙ key × 焦点"芯片，点击取消；切换文件时重置。
 - ~~**RecordView 侧边栏无记录预览摘要**：大量相似 key 无法区分~~ ✅ 每个侧边栏记录项下方显示小灰色字段摘要（优先 name 字段，否则首个非空标量值），与 CommandPalette display_hint 逻辑一致。
 - ~~**GlobalSearch 无历史记录**：每次打开都从空白开始，需要重新输入上次的搜索词~~ ✅ 空查询时显示最近 10 条搜索记录（localStorage 持久化），点击历史项自动填充并重新搜索；每次导航到记录时保存搜索词。
+- ~~**TableView 列宽不持久**：列宽调整后刷新/切换类型会重置~~ ✅ 新增 `ColumnSizingState` + `onColumnSizingChange` 连接到 TanStack Table；列宽保存到 `cfd-col-size:{type}` localStorage，切换类型时读取。
+- ~~**新建记录 key 需要手动输入**：需要自己想一个唯一 key，不知道已有哪些~~ ✅ "新建记录"弹窗新增"✦ 建议"按钮，自动生成 `type_001`、`type_002` 风格的 key（CamelCase→snake_case，跳过已存在的 key）；TableView 和 GlobalTableView 均支持。
