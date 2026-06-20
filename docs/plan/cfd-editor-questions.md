@@ -169,3 +169,9 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**incoming refs 面板无 display_hint**：无法区分相似 key 的记录~~ ✅ 每条 incoming ref 旁显示灰色 display_hint（来自 `recordDisplayHint` 计算）。
 - ~~**GlobalTableView 无 Delete 键删除**：需右键菜单才能删除~~ ✅ Delete/Backspace 触发单条记录删除确认弹窗（`singleDeleteModal`）。
 - ~~**TableView 无 Delete 键删除**：需右键菜单才能删除~~ ✅ Delete/Backspace 键打开已有的删除确认弹窗（`setDeleteModal`）。
+- ~~**TableView Tab 不跨行**：编辑单元格时 Tab 到最后一列后绕回同行第一列，而非移到下一行~~ ✅ `handleCellTabCommit` 改为先尝试同行后续列，无时移到下一行第一个可编辑单元格；`handleCellShiftTabCommit` 逆向操作；GlobalTableView 同步改进。
+- ~~**TableView 无 Shift+Tab 反向导航**：Tab 只能向前移动~~ ✅ CellEditor 新增 `onShiftTabCommit` prop；TableView/GlobalTableView 均支持 Shift+Tab 向前移动到上一个可编辑单元格（跨行）。
+- ~~**GlobalTableView 无列宽调整**：TableView 支持拖拽调整列宽，GlobalTableView 固定列宽~~ ✅ 新增 `colWidths` 状态 + `handleColResizeMouseDown`；列头右边缘拖拽调整宽度；持久化到 `cfd-global-col-width:TypeName` localStorage；切换类型时从 localStorage 恢复。
+- ~~**DataCard Ref ↗ 按钮无键盘支持**：只能点击，不能用键盘激活~~ ✅ ↗ span 添加 `role="button" tabIndex=0 onKeyDown`，Enter/Space 触发导航。
+- **RecordView 中 Ref 字段无引用记录 display_hint tooltip**：hover Ref 值时不显示目标记录的名称摘要。已决定不实现：target 可能在其他文件，RecordView 只持有当前文件的 allRecords，获取跨文件提示需要额外 API 调用开销。
+- ~~**窗口标题不显示当前记录 key**：在 RecordView 时仍显示项目名，无法从 OS 任务栏区分正在编辑哪条记录~~ ✅ `document.title` 更新为 `recordKey● — projectName — CFD Editor` 格式，切换记录时实时更新。
