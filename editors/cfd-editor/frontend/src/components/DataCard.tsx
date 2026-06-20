@@ -638,9 +638,12 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
         {canEdit && <span style={{ color: "var(--text-muted)", fontSize: 10, opacity: 0.5 }}>✎</span>}
         {refNavigate && (
           <span
+            role="button"
+            tabIndex={0}
             onClick={e => { e.stopPropagation(); refNavigate(); }}
+            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); refNavigate(); } }}
             title="跳转到引用记录"
-            style={{ color: "var(--accent)", fontSize: 11, cursor: "pointer", padding: "0 2px" }}
+            style={{ color: "var(--accent)", fontSize: 11, cursor: "pointer", padding: "0 2px", outline: "none" }}
           >↗</span>
         )}
       </div>

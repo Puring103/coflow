@@ -803,7 +803,8 @@ export function TableView({
   }, [sessionId, filePath, onWriteField]);
 
   const handleCellTabCommit = useCallback(async (rowKey: string, fieldName: string, raw: string, original: FieldValue) => {
-    // Commit current cell, then move editing to the next editable column in the same row
+    // Commit current cell, then move editing to the next editable column in the same row;
+    // if no more editable columns, move to the first editable cell of the next row.
     const newValue = parseFieldValue(raw, original);
     const changed = fieldValueToString(newValue) !== fieldValueToString(original) || newValue.kind !== original.kind;
     if (changed) {
@@ -811,17 +812,37 @@ export function TableView({
         await onWriteField(sessionId, filePath, rowKey, [{ kind: "Field", name: fieldName }], newValue, original);
       } catch { /* keep going */ }
     }
-    // Find next scalar editable field for this row
-    const row = filteredRows.find(r => r.key === rowKey);
-    if (!row) { setEditingCell(null); return; }
     const SCALAR_KINDS_SET = new Set(["Null", "Bool", "Int", "Float", "Str", "Enum", "Ref"]);
-    const curIdx = fieldNames.indexOf(fieldName);
-    for (let i = 1; i < fieldNames.length; i++) {
-      const nextName = fieldNames[(curIdx + i) % fieldNames.length];
-      if (row.spread_fields.includes(nextName)) continue;
-      const nextVal = row.fields.find(f => f.name === nextName)?.value;
-      if (nextVal && SCALAR_KINDS_SET.has(nextVal.kind) && nextVal.kind !== "Bool") {
-        setEditingCell({ rowKey, fieldName: nextName, value: nextVal });
+    const findFirstEditable = (r: typeof filteredRows[number]) => {
+      for (const name of fieldNames) {
+        if (r.spread_fields.includes(name)) continue;
+        const v = r.fields.find(f => f.name === name)?.value;
+        if (v && SCALAR_KINDS_SET.has(v.kind) && v.kind !== "Bool") return { name, value: v };
+      }
+      return null;
+    };
+    // First try remaining columns in the same row
+    const row = filteredRows.find(r => r.key === rowKey);
+    if (row) {
+      const curIdx = fieldNames.indexOf(fieldName);
+      for (let i = curIdx + 1; i < fieldNames.length; i++) {
+        const nextName = fieldNames[i];
+        if (row.spread_fields.includes(nextName)) continue;
+        const nextVal = row.fields.find(f => f.name === nextName)?.value;
+        if (nextVal && SCALAR_KINDS_SET.has(nextVal.kind) && nextVal.kind !== "Bool") {
+          setEditingCell({ rowKey, fieldName: nextName, value: nextVal });
+          return;
+        }
+      }
+    }
+    // No more editable columns — move to first editable cell of next row
+    const rowIdx = filteredRows.findIndex(r => r.key === rowKey);
+    for (let i = rowIdx + 1; i < filteredRows.length; i++) {
+      const nextRow = filteredRows[i];
+      const cell = findFirstEditable(nextRow);
+      if (cell) {
+        setEditingCell({ rowKey: nextRow.key, fieldName: cell.name, value: cell.value });
+        setFocusedRowIndex(i);
         return;
       }
     }
