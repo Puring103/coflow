@@ -130,6 +130,18 @@ function collectDirPaths(nodes: FileTreeNode[]): string[] {
   return result;
 }
 
+function collectVisibleFilePaths(nodes: FileTreeNode[], expandedDirs: Set<string>): string[] {
+  const result: string[] = [];
+  for (const n of nodes) {
+    if (n.is_dir) {
+      if (expandedDirs.has(n.path)) result.push(...collectVisibleFilePaths(n.children, expandedDirs));
+    } else if (n.in_sources) {
+      result.push(n.path);
+    }
+  }
+  return result;
+}
+
 export function FileTree({ nodes, selectedPath, sessionId, onSelect, onNewFile, onDeleteFile, onRenameFile, onReloadFile, onError }: FileTreeProps) {
   const expandedRef = useRef<Set<string> | null>(null);
   const knownDirsRef = useRef<Set<string>>(new Set());
@@ -226,7 +238,19 @@ export function FileTree({ nodes, selectedPath, sessionId, onSelect, onNewFile, 
       }}>
         Files
       </div>
-      <div style={{ flex: 1, overflowY: "auto", paddingTop: 4 }}>
+      <div
+        style={{ flex: 1, overflowY: "auto", paddingTop: 4, outline: "none" }}
+        tabIndex={0}
+        onKeyDown={e => {
+          if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+          const filePaths = collectVisibleFilePaths(nodes, expandedRef.current!);
+          if (filePaths.length === 0) return;
+          e.preventDefault();
+          const idx = selectedPath ? filePaths.indexOf(selectedPath) : -1;
+          const next = e.key === "ArrowUp" ? Math.max(0, idx - 1) : Math.min(filePaths.length - 1, idx + 1);
+          if (next !== idx) onSelect(filePaths[next]);
+        }}
+      >
         {nodes.map(node => (
           <TreeNode
             key={node.path}
