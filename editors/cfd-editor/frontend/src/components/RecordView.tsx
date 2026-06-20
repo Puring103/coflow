@@ -71,6 +71,19 @@ function recordToJson(record: { key: string; actual_type: string; fields: { name
   return JSON.stringify(obj, null, 2);
 }
 
+function recordDisplayHint(fields: FieldCell[]): string | null {
+  // Prefer "name" field, then first non-null scalar
+  const nameField = fields.find(f => f.name === "name" && f.value.kind === "Str");
+  if (nameField && nameField.value.kind === "Str") return nameField.value.v;
+  for (const f of fields) {
+    const v = f.value;
+    if (v.kind === "Str" && v.v) return v.v;
+    if (v.kind === "Int" || v.kind === "Float") return String(v.v);
+    if (v.kind === "Enum") return v.variant;
+  }
+  return null;
+}
+
 export function RecordView({
   sessionId,
   filePath,
@@ -601,17 +614,26 @@ export function RecordView({
               title={r.is_fallback ? `${r.key} (${r.actual_type}) — model build failed, editing in AST fallback mode` : `${r.key} (${r.actual_type})`}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                <div style={{
-                  fontFamily: "monospace",
-                  color: r.is_fallback ? "var(--warning)" : r.key === recordKey ? "var(--text)" : "var(--text-muted)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  flex: 1,
-                  minWidth: 0,
-                }}>
-                  {r.key}
-                  {r.is_fallback && <span style={{ fontSize: 9, marginLeft: 3, opacity: 0.7 }}>⚠</span>}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontFamily: "monospace",
+                    color: r.is_fallback ? "var(--warning)" : r.key === recordKey ? "var(--text)" : "var(--text-muted)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}>
+                    {r.key}
+                    {r.is_fallback && <span style={{ fontSize: 9, marginLeft: 3, opacity: 0.7 }}>⚠</span>}
+                  </div>
+                  {(() => {
+                    const hint = recordDisplayHint(r.fields);
+                    if (!hint) return null;
+                    return (
+                      <div style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {hint}
+                      </div>
+                    );
+                  })()}
                 </div>
                 {(() => {
                   const counts = recordDiagnosticCounts.get(r.key);
