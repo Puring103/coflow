@@ -1526,6 +1526,40 @@ export function TableView({
             </button>
           )}
           <button
+            onClick={() => {
+              const selectedRows = filteredRows.filter(r => selectedKeys.has(r.key));
+              if (selectedRows.length === 0) return;
+              const visibleFields = fieldNames.filter(f => columnVisibility[f] !== false);
+              const header = ["key", ...visibleFields].join(",");
+              function csvEscape(s: string): string {
+                if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replace(/"/g, '""')}"`;
+                return s;
+              }
+              function cellText(v: FieldValue | undefined): string {
+                if (!v) return "";
+                switch (v.kind) {
+                  case "Null": return "";
+                  case "Bool": return String(v.v);
+                  case "Int": case "Float": return String(v.v);
+                  case "Str": return v.v;
+                  case "Enum": return v.variant;
+                  case "Ref": return v.target_key;
+                  default: return "";
+                }
+              }
+              const lines = selectedRows.map(r =>
+                [r.key, ...visibleFields.map(f => r.fields.find(x => x.name === f)?.value)].map((v, i) =>
+                  csvEscape(typeof v === "string" ? v : cellText(v as FieldValue | undefined))
+                ).join(",")
+              );
+              navigator.clipboard.writeText([header, ...lines].join("\n")).catch(e => onError?.(`复制失败: ${e}`));
+            }}
+            title="复制选中行为 CSV"
+            style={{ fontSize: 12, whiteSpace: "nowrap" }}
+          >
+            ⎘ CSV
+          </button>
+          <button
             onClick={() => { setSelectedKeys(new Set()); setBatchError(null); setBatchDeleteConfirm(false); }}
             style={{ fontSize: 12, whiteSpace: "nowrap" }}
           >
