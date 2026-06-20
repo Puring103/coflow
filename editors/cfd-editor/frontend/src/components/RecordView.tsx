@@ -920,7 +920,7 @@ export function RecordView({
             )}
 
             {/* Field search */}
-            {record.fields.length > 6 && (
+            {(record.fields.length > 6 || fieldSearch || fieldSchemas.some(s => !s.has_default && record.fields.find(f => f.name === s.name)?.value.kind === "Null")) && (
               <div style={{ marginBottom: 8, display: "flex", gap: 6, alignItems: "center" }}>
                 <input
                   ref={fieldSearchRef}
