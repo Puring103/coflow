@@ -313,7 +313,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   };
 
   // Determine field names from union of all records
-  const fieldNames: string[] = (() => {
+  const fieldNames = useMemo(() => {
     const seen = new Set<string>();
     const names: string[] = [];
     for (const r of rows) {
@@ -322,9 +322,12 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       }
     }
     return names;
-  })();
+  }, [rows]);
 
-  const visibleFieldNames = fieldNames.filter(f => !hiddenCols.has(f));
+  const visibleFieldNames = useMemo(
+    () => fieldNames.filter(f => !hiddenCols.has(f)),
+    [fieldNames, hiddenCols],
+  );
 
   const COL_KEY = 120;
   const COL_FILE = 140;
