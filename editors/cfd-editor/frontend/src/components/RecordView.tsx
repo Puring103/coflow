@@ -875,6 +875,7 @@ export function RecordView({
                           >
                             {ref.source_key}
                           </span>
+                          <span style={{ color: "var(--text-muted)", fontSize: 10, fontFamily: "monospace" }}>{ref.source_type}</span>
                           <span style={{ color: "var(--text-muted)", fontSize: 10 }}>.{ref.field_path}</span>
                         </div>
                       ))}
