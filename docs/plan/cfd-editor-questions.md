@@ -182,3 +182,6 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**GlobalTableView 隐藏列时 editingCell 未自动取消**：如果当前正在编辑某列，用户通过列选择器隐藏该列后，编辑状态不清除，Tab 导航出错~~ ✅ 新增 useEffect 监听 `hiddenCols`，当 `editingCell.fieldName` 在 hiddenCols 中时自动 setEditingCell(null)。
 - ~~**TableView/GlobalTableView 无 Ctrl+Home/End 跳转**：只能逐行移动，无法快速跳到首/末行~~ ✅ 两个表视图均新增 Ctrl+Home（跳到第一行）和 Ctrl+End（跳到最后一行）快捷键。
 - ~~**Escape 无法关闭错误/成功 toast**：只能点击 ✕ 按钮或等待超时~~ ✅ 全局键盘处理器在 Escape 时优先关闭 opError，其次 opSuccess，再无其他 modal 时执行。
+- ~~**incoming refs 点击不跳转到引用字段**：只能跳到记录，不知道是哪个字段引用了当前记录~~ ✅ onClick 提取 `ref.field_path.split(/[.[]/)[0]` 作为 `fieldSearch`，跳转时高亮对应字段；tooltip 更新为"跳转并高亮 .field_path 字段"。
+- ~~**Sort All 未刷新当前视图**：调用后其他文件排序了，但当前表视图没有更新顺序~~ ✅ 改为只对 `currentFile` 调用 `markDirty`（立即刷新当前视图），其他文件在导航时按需重新加载。
+- ~~**无侧边栏显示/隐藏快捷键**：文件树始终显示，无法临时隐藏以扩展编辑区域~~ ✅ 新增 `showSidebar` 状态，Ctrl+B 切换文件树显示/隐藏；shortcuts tooltip 更新。
