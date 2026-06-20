@@ -934,7 +934,10 @@ export function RecordView({
                   </span>
                   {showIncomingRefs && (
                     <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 2 }}>
-                      {incomingRefs.slice(0, 50).map((ref, i) => (
+                      {incomingRefs.slice(0, 50).map((ref, i) => {
+                        const srcRow = allRecords.find(r => r.key === ref.source_key);
+                        const hint = srcRow ? recordDisplayHint(srcRow.fields) : null;
+                        return (
                         <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <span
                             onClick={() => onNavigate({ view: "record", file: ref.source_file || filePath, recordKey: ref.source_key })}
@@ -950,10 +953,12 @@ export function RecordView({
                           >
                             {ref.source_key}
                           </span>
+                          {hint && <span style={{ color: "var(--text-muted)", fontSize: 10, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hint}</span>}
                           <span style={{ color: "var(--text-muted)", fontSize: 10, fontFamily: "monospace" }}>{ref.source_type}</span>
                           <span style={{ color: "var(--text-muted)", fontSize: 10 }}>.{ref.field_path}</span>
                         </div>
-                      ))}
+                        );
+                      })}
                       {incomingRefs.length > 50 && (
                         <span style={{ color: "var(--text-muted)", fontSize: 10, fontStyle: "italic" }}>
                           … and {incomingRefs.length - 50} more
