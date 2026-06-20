@@ -1614,7 +1614,23 @@ export function TableView({
               </div>
             )}
             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-              Key
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                Key
+                <button
+                  type="button"
+                  onClick={() => {
+                    const typeName = newRecord.typeName || activeType || "";
+                    const prefix = typeName.replace(/([A-Z])/g, m => `_${m.toLowerCase()}`).replace(/^_/, "").toLowerCase();
+                    const existingKeys = new Set(filteredRows.map(r => r.key));
+                    let n = 1;
+                    while (existingKeys.has(`${prefix}_${String(n).padStart(3, "0")}`)) n++;
+                    setNewRecord(r => ({ ...r, key: `${prefix}_${String(n).padStart(3, "0")}`, error: null }));
+                  }}
+                  style={{ fontSize: 11, padding: "1px 6px", background: "transparent", border: "1px solid var(--border)", borderRadius: 3, color: "var(--text-muted)", cursor: "pointer" }}
+                >
+                  ✦ 建议
+                </button>
+              </div>
               <input
                 value={newRecord.key}
                 onChange={e => setNewRecord(r => ({ ...r, key: e.target.value, error: null }))}

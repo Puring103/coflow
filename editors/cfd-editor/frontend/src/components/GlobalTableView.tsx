@@ -1089,7 +1089,22 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
             <div style={{ fontWeight: 600, marginBottom: 4 }}>新建 {typeName} 记录</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
               <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--text-muted)" }}>
-                Key
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  Key
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const prefix = typeName.replace(/([A-Z])/g, m => `_${m.toLowerCase()}`).replace(/^_/, "").toLowerCase();
+                      const existingKeys = new Set(rows.map(r => r.key));
+                      let n = 1;
+                      while (existingKeys.has(`${prefix}_${String(n).padStart(3, "0")}`)) n++;
+                      setCreateModal(m => m && ({ ...m, key: `${prefix}_${String(n).padStart(3, "0")}`, error: null }));
+                    }}
+                    style={{ fontSize: 10, padding: "1px 6px", background: "transparent", border: "1px solid var(--border)", borderRadius: 3, color: "var(--text-muted)", cursor: "pointer" }}
+                  >
+                    ✦ 建议
+                  </button>
+                </div>
                 <input
                   value={createModal.key}
                   onChange={e => setCreateModal(m => m && ({ ...m, key: e.target.value, error: null }))}
