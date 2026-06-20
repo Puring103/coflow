@@ -178,3 +178,7 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**Ctrl+Shift+T 每次打开全局表到第一个类型**：不记忆上次浏览的类型~~ ✅ 读写 `cfd-last-global-type` localStorage；onTypeChange 时持久化，Ctrl+Shift+T 和工具栏按钮均优先恢复上次类型。
 - ~~**Ctrl+Shift+C 复制 Key 无成功反馈**：静默成功，只有失败时显示 toast~~ ✅ 添加 `onSuccess` prop 到 RecordView；复制成功后显示"已复制 Key: xxx" toast。
 - ~~**RecordView 头部无快捷复制 JSON 按钮**：复制为 JSON 仅在右键菜单中可用~~ ✅ 在 Source 按钮旁添加 ⎘ JSON 按钮，点击复制整条记录为 JSON 并显示成功 toast。
+- ~~**项目重启后不恢复上次视图**：每次打开项目都跳转到第一个文件的 TableView~~ ✅ router.current 变化时持久化到 `cfd-last-route:{yamlPath}` localStorage；项目加载时优先恢复上次路由（含文件校验），文件不存在时回退到第一个文件。
+- ~~**GlobalTableView 隐藏列时 editingCell 未自动取消**：如果当前正在编辑某列，用户通过列选择器隐藏该列后，编辑状态不清除，Tab 导航出错~~ ✅ 新增 useEffect 监听 `hiddenCols`，当 `editingCell.fieldName` 在 hiddenCols 中时自动 setEditingCell(null)。
+- ~~**TableView/GlobalTableView 无 Ctrl+Home/End 跳转**：只能逐行移动，无法快速跳到首/末行~~ ✅ 两个表视图均新增 Ctrl+Home（跳到第一行）和 Ctrl+End（跳到最后一行）快捷键。
+- ~~**Escape 无法关闭错误/成功 toast**：只能点击 ✕ 按钮或等待超时~~ ✅ 全局键盘处理器在 Escape 时优先关闭 opError，其次 opSuccess，再无其他 modal 时执行。
