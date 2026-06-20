@@ -94,6 +94,16 @@ export default function App() {
 
   const currentFile = (router.current && router.current.view !== "global-table") ? router.current.file : null;
 
+  // Keep window title in sync with loaded project
+  useEffect(() => {
+    if (project.loadedYamlPath) {
+      const name = project.loadedYamlPath.split(/[\\/]/).pop() ?? project.loadedYamlPath;
+      document.title = `${name}${project.dirty ? " ●" : ""} — CFD Editor`;
+    } else {
+      document.title = "CFD Editor";
+    }
+  }, [project.loadedYamlPath, project.dirty]);
+
   // Load file records when file changes; auto-flush dirty for previous file
   useEffect(() => {
     if (!project.snapshot || !currentFile) return;
