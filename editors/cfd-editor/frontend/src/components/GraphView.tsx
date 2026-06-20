@@ -230,6 +230,7 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError
   const [graphError, setGraphError] = useState<string | null>(null);
   const [layoutFallback, setLayoutFallback] = useState(false);
   const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
+  const [focusKey, setFocusKey] = useState<string | null>(null);
   const contextMenuRef = useRef<(e: React.MouseEvent, gnode: GraphNode) => void>(() => {});
 
   // Clear layout cache and reset state when session changes (new project loaded)
@@ -245,6 +246,7 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError
     setGraphData(null);
     setSearch("");
     setHiddenTypes(new Set());
+    setFocusKey(null);
   }, [sessionId, filePath]);
 
   useEffect(() => {
@@ -339,9 +341,13 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError
             },
           },
         ]),
+        {
+          label: focusKey === gnode.key ? "取消焦点" : "仅显示相邻节点",
+          onClick: () => setFocusKey(prev => prev === gnode.key ? null : gnode.key),
+        },
       ],
     });
-  }, [onNavigate, handleCollapse, handleExpand]);
+  }, [onNavigate, handleCollapse, handleExpand, focusKey]);
 
   const expandRef = useRef<(key: string) => void>(() => {});
   const collapseRef = useRef<(key: string) => void>(() => {});
@@ -450,14 +456,24 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graphData, filePath, cacheKey]);
 
-  // Apply search + type filter: highlight matching nodes, fade non-matching
+  // Compute neighbour set when focusKey is active
+  const focusNeighbours = focusKey && graphData
+    ? new Set([
+        focusKey,
+        ...graphData.edges.filter(e => e.source === focusKey).map(e => e.target),
+        ...graphData.edges.filter(e => e.target === focusKey).map(e => e.source),
+      ])
+    : null;
+
+  // Apply search + type filter + focus filter: highlight matching nodes, fade non-matching
   const displayNodes = nodes.map(node => {
     const g = node.data.gnode;
     const typeHidden = hiddenTypes.has(g.actual_type);
+    const focusHidden = focusNeighbours !== null && !focusNeighbours.has(g.key);
     const searchMatches = !search ||
       g.key.toLowerCase().includes(search.toLowerCase()) ||
       g.actual_type.toLowerCase().includes(search.toLowerCase());
-    const visible = !typeHidden && searchMatches;
+    const visible = !typeHidden && !focusHidden && searchMatches;
     return {
       ...node,
       style: {
@@ -468,7 +484,7 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError
     };
   });
 
-  const matchCount = (search || hiddenTypes.size > 0)
+  const matchCount = (search || hiddenTypes.size > 0 || focusKey)
     ? displayNodes.filter(n => ((n.style?.opacity as number | undefined) ?? 1) > 0.5).length
     : nodes.length;
   const noSearchMatches = search.length > 0 && matchCount === 0;
@@ -572,6 +588,24 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError
             </div>
           );
         })()}
+        {focusKey && (
+          <button
+            onClick={() => setFocusKey(null)}
+            title="取消焦点模式"
+            style={{
+              fontSize: 11,
+              padding: "1px 8px",
+              borderRadius: 10,
+              border: "1px solid var(--accent)",
+              background: `var(--accent)22`,
+              color: "var(--accent)",
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            ⊙ {focusKey} × 焦点
+          </button>
+        )}
         {graphData && (
           <span style={{ color: noSearchMatches ? "#ff5555" : "var(--text-muted)", fontSize: 12, marginLeft: "auto" }}>
             {search
