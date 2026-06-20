@@ -1015,6 +1015,7 @@ export default function App() {
                     onWriteField={handleWriteField}
                     onDeleteRecord={handleDeleteRecord}
                     onDuplicateRecord={handleDuplicateRecord}
+                    onRenameRecord={handleRenameRecordFromTable}
                     onMoveRecord={(srcFile, recordKey) => {
                       const availableFiles = collectFilePaths(project.snapshot?.file_tree ?? []);
                       const firstOther = availableFiles.find(f => f !== srcFile) ?? srcFile;

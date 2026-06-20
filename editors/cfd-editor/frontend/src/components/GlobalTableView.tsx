@@ -147,6 +147,7 @@ interface GlobalTableViewProps {
   onWriteField?: (sessionId: number, filePath: string, recordKey: string, fieldPath: FieldPathSegment[], newValue: FieldValue, oldValue?: FieldValue) => Promise<void>;
   onDeleteRecord?: (sessionId: number, filePath: string, recordKey: string) => Promise<void>;
   onDuplicateRecord?: (sessionId: number, filePath: string, srcKey: string, newKey: string) => Promise<void>;
+  onRenameRecord?: (sessionId: number, filePath: string, oldKey: string, newKey: string) => Promise<void>;
   onMoveRecord?: (srcFile: string, recordKey: string) => void;
   onCopyRecord?: (srcFile: string, recordKey: string) => void;
   onCreateRecord?: (typeName: string, filePath: string, key: string) => Promise<void>;
@@ -198,7 +199,7 @@ function fieldValueToString(v: FieldValue): string {
 
 type SortCol = { col: "key" | "file" | string; dir: "asc" | "desc" };
 
-export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange, onNavigate, onWriteField, onDeleteRecord, onDuplicateRecord, onMoveRecord, onCopyRecord, onCreateRecord, onImportRecord, availableFiles, diagnostics, onError, onSuccess }: GlobalTableViewProps) {
+export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange, onNavigate, onWriteField, onDeleteRecord, onDuplicateRecord, onRenameRecord, onMoveRecord, onCopyRecord, onCreateRecord, onImportRecord, availableFiles, diagnostics, onError, onSuccess }: GlobalTableViewProps) {
   const [rows, setRows] = useState<RecordRow[]>([]);
   const [allTypeNames, setAllTypeNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -221,6 +222,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   const batchSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [batchDeletePending, setBatchDeletePending] = useState(false);
   const [singleDeleteModal, setSingleDeleteModal] = useState<{ key: string; filePath: string } | null>(null);
+  const [renameModal, setRenameModal] = useState<{ key: string; filePath: string; draft: string; error: string | null } | null>(null);
   const [duplicateModal, setDuplicateModal] = useState<{ srcKey: string; filePath: string; draft: string; error: string | null } | null>(null);
   const [typeCounts, setTypeCounts] = useState<Map<string, number>>(new Map());
   const [createModal, setCreateModal] = useState<{ key: string; filePath: string; creating: boolean; error: string | null } | null>(null);
@@ -417,13 +419,14 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
         { label: "复制 Key", onClick: () => navigator.clipboard.writeText(row.key).then(() => onSuccess?.(`已复制 Key: ${row.key}`)).catch(e => onError?.(`复制失败: ${e}`)) },
         { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, row.file_path, row.key).then(src => navigator.clipboard.writeText(src)).then(() => onSuccess?.("已复制为 CFD 源码")).catch(e => onError?.(`复制失败: ${e}`)) },
         { label: "复制为 JSON", onClick: () => { const obj: Record<string, unknown> = { _key: row.key, _type: row.actual_type }; for (const f of row.fields) obj[f.name] = fieldValueToJson(f.value); navigator.clipboard.writeText(JSON.stringify(obj, null, 2)).then(() => onSuccess?.("已复制为 JSON")).catch(e => onError?.(`复制失败: ${e}`)); } },
+        ...(onRenameRecord ? [{ label: "重命名记录 Key", onClick: () => setRenameModal({ key: row.key, filePath: row.file_path, draft: row.key, error: null }) }] : []),
         ...(onDuplicateRecord ? [{ label: "复制记录 (Ctrl+D)", onClick: () => setDuplicateModal({ srcKey: row.key, filePath: row.file_path, draft: `${row.key}_copy`, error: null }) }] : []),
         ...(onMoveRecord ? [{ label: "移动到文件…", onClick: () => onMoveRecord(row.file_path, row.key) }] : []),
         ...(onCopyRecord ? [{ label: "复制到文件…", onClick: () => onCopyRecord(row.file_path, row.key) }] : []),
         ...(onDeleteRecord ? [{ label: "删除记录", danger: true as const, onClick: () => onDeleteRecord(sessionId, row.file_path, row.key).catch(e => onError?.(`删除失败: ${e}`)) }] : []),
       ],
     });
-  }, [sessionId, onNavigate, onDeleteRecord, onMoveRecord, onCopyRecord, onError]);
+  }, [sessionId, onNavigate, onDeleteRecord, onRenameRecord, onMoveRecord, onCopyRecord, onDuplicateRecord, onError, onSuccess]);
 
   const showBatchSuccess = useCallback((msg: string) => {
     setBatchSuccess(msg);
@@ -495,6 +498,17 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       onNavigate({ view: "record", file: duplicateModal.filePath, recordKey: newKey });
     } catch (e) { setDuplicateModal(m => m && ({ ...m, error: String(e) })); }
   }, [duplicateModal, onDuplicateRecord, sessionId, onNavigate]);
+
+  const handleRenameCommit = useCallback(async () => {
+    if (!renameModal || !onRenameRecord) return;
+    const newKey = renameModal.draft.trim();
+    if (!newKey) { setRenameModal(m => m && ({ ...m, error: "Key 不能为空" })); return; }
+    if (newKey === renameModal.key) { setRenameModal(null); return; }
+    try {
+      await onRenameRecord(sessionId, renameModal.filePath, renameModal.key, newKey);
+      setRenameModal(null);
+    } catch (e) { setRenameModal(m => m && ({ ...m, error: String(e) })); }
+  }, [renameModal, onRenameRecord, sessionId]);
 
   const SCALAR_KINDS = ["Null", "Bool", "Int", "Float", "Str", "Enum", "Ref"];
 
@@ -1303,6 +1317,41 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
               <button onClick={() => setDuplicateModal(null)}>取消</button>
               <button className="primary" onClick={handleDuplicateCommit} disabled={!duplicateModal.draft.trim()}>复制</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rename record modal */}
+      {renameModal && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000 }}
+          onClick={() => setRenameModal(null)}
+        >
+          <div
+            style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8, padding: 24, minWidth: 340, boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>重命名记录 Key</div>
+            <div style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 12 }}>
+              当前 Key: <code style={{ fontFamily: "monospace" }}>{renameModal.key}</code>
+            </div>
+            <input
+              value={renameModal.draft}
+              onChange={e => setRenameModal(m => m && ({ ...m, draft: e.target.value, error: null }))}
+              onKeyDown={e => {
+                if (e.key === "Enter") { e.preventDefault(); handleRenameCommit(); }
+                if (e.key === "Escape") setRenameModal(null);
+                e.stopPropagation();
+              }}
+              // eslint-disable-next-line jsx-a11y/no-autofocus
+              autoFocus
+              style={{ width: "100%", background: "var(--bg3)", border: `1px solid ${renameModal.error ? "var(--error)" : "var(--border)"}`, borderRadius: 4, color: "var(--text)", padding: "4px 8px", fontSize: 13, outline: "none", fontFamily: "monospace", boxSizing: "border-box" }}
+            />
+            {renameModal.error && <div style={{ color: "var(--error)", fontSize: 12, marginTop: 4 }}>{renameModal.error}</div>}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+              <button onClick={() => setRenameModal(null)}>取消</button>
+              <button className="primary" onClick={handleRenameCommit} disabled={!renameModal.draft.trim()}>重命名</button>
             </div>
           </div>
         </div>
