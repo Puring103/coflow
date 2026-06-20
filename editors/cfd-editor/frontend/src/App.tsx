@@ -83,7 +83,9 @@ export default function App() {
     newValue: FieldValue;
   }
   const undoStackRef = useRef<UndoEntry[]>([]);
+  const redoStackRef = useRef<UndoEntry[]>([]);
   const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
   const [undoCount, setUndoCount] = useState(0);
 
   const showOpError = useCallback((msg: string) => {
@@ -129,6 +131,9 @@ export default function App() {
     if (!entry) return;
     setCanUndo(undoStackRef.current.length > 0);
     setUndoCount(undoStackRef.current.length);
+    redoStackRef.current.push(entry);
+    if (redoStackRef.current.length > 50) redoStackRef.current.splice(0, redoStackRef.current.length - 50);
+    setCanRedo(true);
     try {
       await api.writeField(entry.sessionId, entry.filePath, entry.recordKey, entry.fieldPath, entry.oldValue);
       invalidateGraphCache(entry.sessionId, entry.filePath);
@@ -136,6 +141,24 @@ export default function App() {
       project.markDirty(entry.sessionId, entry.filePath);
     } catch (e) {
       showOpError(`Undo failed: ${e}`);
+    }
+  }, [project, showOpError]);
+
+  const handleRedo = useCallback(async () => {
+    const entry = redoStackRef.current.pop();
+    if (!entry) return;
+    setCanRedo(redoStackRef.current.length > 0);
+    undoStackRef.current.push(entry);
+    if (undoStackRef.current.length > 50) undoStackRef.current.splice(0, undoStackRef.current.length - 50);
+    setCanUndo(true);
+    setUndoCount(undoStackRef.current.length);
+    try {
+      await api.writeField(entry.sessionId, entry.filePath, entry.recordKey, entry.fieldPath, entry.newValue);
+      invalidateGraphCache(entry.sessionId, entry.filePath);
+      setGraphRefreshKey(k => k + 1);
+      project.markDirty(entry.sessionId, entry.filePath);
+    } catch (e) {
+      showOpError(`Redo failed: ${e}`);
     }
   }, [project, showOpError]);
 
@@ -148,6 +171,11 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === "z") {
         e.preventDefault();
         handleUndo();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.shiftKey && e.key === "z"))) {
+        e.preventDefault();
+        handleRedo();
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
@@ -237,7 +265,7 @@ export default function App() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.dirty, project.snapshot?.session_id, currentFile, router.canBack, router.canForward, handleUndo]);
+  }, [project.dirty, project.snapshot?.session_id, currentFile, router.canBack, router.canForward, handleUndo, handleRedo]);
 
   const handleOpen = async () => {
     const path = await open({
@@ -265,7 +293,9 @@ export default function App() {
     if (currentYaml && prevYamlPathRef.current && currentYaml !== prevYamlPathRef.current) {
       router.reset();
       undoStackRef.current = [];
+      redoStackRef.current = [];
       setCanUndo(false);
+      setCanRedo(false);
       setUndoCount(0);
     }
     prevYamlPathRef.current = currentYaml;
@@ -327,6 +357,9 @@ export default function App() {
           if (stack.length > 50) stack.splice(0, stack.length - 50);
           setCanUndo(true);
           setUndoCount(stack.length);
+          // New write invalidates redo history
+          redoStackRef.current = [];
+          setCanRedo(false);
         }
       }
       invalidateGraphCache(sessionId, filePath);
@@ -604,6 +637,15 @@ export default function App() {
             </button>
           );
         })()}
+        {canRedo && (() => {
+          const top = redoStackRef.current[redoStackRef.current.length - 1];
+          const tipDetail = top ? ` — ${top.recordKey}.${top.fieldPath.map(s => s.kind === "Field" ? s.name : `[${s.i}]`).join(".")}` : "";
+          return (
+            <button onClick={handleRedo} title={`Redo (Ctrl+Y)${tipDetail}`} style={{ fontSize: 11 }}>
+              ↪ Redo
+            </button>
+          );
+        })()}
         {project.dirty && <span className="dirty-indicator" title="Unsaved changes — reloading data…">●</span>}
         {project.loading && <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Loading…</span>}
         {project.error && (
@@ -645,6 +687,7 @@ export default function App() {
             "Keyboard Shortcuts",
             "─────────────────",
             "Ctrl+Z         Undo last field edit (up to 50 steps)",
+            "Ctrl+Y         Redo (Ctrl+Shift+Z also works)",
             "Ctrl+P         Jump to record (command palette)",
             "Ctrl+Shift+G   Global search by key or field value",
             "Ctrl+Shift+M   Toggle Problems panel",
