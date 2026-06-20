@@ -111,6 +111,7 @@ export function RecordView({
   const fieldSearchRef = useRef<HTMLInputElement>(null);
   const selectedItemRef = useRef<HTMLDivElement>(null);
   const fieldRowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const mainContentRef = useRef<HTMLDivElement>(null);
   const autoExpandRefsRef = useRef(false);
   const [collapseForce, setCollapseForce] = useState<{ gen: number; forceCollapsed: boolean }>({ gen: 0, forceCollapsed: false });
 
@@ -199,9 +200,10 @@ export function RecordView({
     .slice()
     .sort((a, b) => a.key.localeCompare(b.key));
 
-  // Scroll selected item into view when recordKey changes
+  // Scroll selected item into view and reset main content scroll when recordKey changes
   useEffect(() => {
     selectedItemRef.current?.scrollIntoView({ block: "nearest" });
+    mainContentRef.current?.scrollTo({ top: 0 });
   }, [recordKey]);
 
   // Keyboard navigation + sidebar search shortcut
@@ -660,7 +662,7 @@ export function RecordView({
       </div>
 
       {/* Main content */}
-      <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
+      <div ref={mainContentRef} style={{ flex: 1, overflow: "auto", padding: 16 }}>
         {record ? (
           <>
             {/* Header */}
