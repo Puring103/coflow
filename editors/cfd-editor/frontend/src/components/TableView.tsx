@@ -330,6 +330,8 @@ export function TableView({
   const [batchDeleting, setBatchDeleting] = useState(false);
   const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
+  const [batchSuccess, setBatchSuccess] = useState<string | null>(null);
+  const batchSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSelectedKeyRef = useRef<string | null>(null);
   const filteredRowsRef = useRef<RowData[]>([]);
   const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
@@ -843,6 +845,13 @@ export function TableView({
     }
   }, [pasteModal, sessionId, filePath, onNavigate]);
 
+  const showBatchSuccess = useCallback((msg: string) => {
+    setBatchSuccess(msg);
+    setBatchError(null);
+    if (batchSuccessTimerRef.current) clearTimeout(batchSuccessTimerRef.current);
+    batchSuccessTimerRef.current = setTimeout(() => setBatchSuccess(null), 3000);
+  }, []);
+
   const handleBatchApply = useCallback(async () => {
     if (!batchField) { setBatchError("请选择字段"); return; }
     const rowsToEdit = filteredRows.filter(r => selectedKeys.has(r.key));
@@ -866,11 +875,13 @@ export function TableView({
         : failedKeys.slice(0, 3).join(", ") + ` 等 ${failedKeys.length} 条`;
       setBatchError(`写入失败: ${preview}`);
     } else {
+      const edited = rowsToEdit.length;
       setSelectedKeys(new Set());
       setBatchField("");
       setBatchValue("");
+      showBatchSuccess(`已写入 ${edited} 条记录的 ${batchField} 字段`);
     }
-  }, [batchField, batchValue, filteredRows, selectedKeys, sessionId, filePath, onWriteField]);
+  }, [batchField, batchValue, filteredRows, selectedKeys, sessionId, filePath, onWriteField, showBatchSuccess]);
 
   const handleBatchDelete = useCallback(async () => {
     const keysToDelete = filteredRows.filter(r => selectedKeys.has(r.key)).map(r => r.key);
@@ -893,9 +904,11 @@ export function TableView({
         : failedKeys.slice(0, 3).join(", ") + ` 等 ${failedKeys.length} 条`;
       setBatchError(`删除失败: ${preview}`);
     } else {
+      const deleted = keysToDelete.length;
       setSelectedKeys(new Set());
+      showBatchSuccess(`已删除 ${deleted} 条记录`);
     }
-  }, [filteredRows, selectedKeys, sessionId, filePath, onDeleteRecord]);
+  }, [filteredRows, selectedKeys, sessionId, filePath, onDeleteRecord, showBatchSuccess]);
 
   const handleCreateRecord = async (createAnother?: boolean) => {
     if (!newRecord.key.trim()) { setNewRecord(r => ({ ...r, error: "Key cannot be empty" })); return; }
@@ -1442,6 +1455,9 @@ export function TableView({
           />
           {batchError && (
             <span style={{ color: "var(--error)", fontSize: 11 }}>{batchError}</span>
+          )}
+          {batchSuccess && !batchError && (
+            <span style={{ color: "var(--accent)", fontSize: 11 }}>✓ {batchSuccess}</span>
           )}
           <button
             className="primary"

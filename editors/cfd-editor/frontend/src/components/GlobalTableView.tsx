@@ -195,6 +195,8 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   const [batchValue, setBatchValue] = useState("");
   const [batchApplying, setBatchApplying] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
+  const [batchSuccess, setBatchSuccess] = useState<string | null>(null);
+  const batchSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [batchDeletePending, setBatchDeletePending] = useState(false);
   const [duplicateModal, setDuplicateModal] = useState<{ srcKey: string; filePath: string; draft: string; error: string | null } | null>(null);
   const [typeCounts, setTypeCounts] = useState<Map<string, number>>(new Map());
@@ -364,6 +366,13 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
     });
   }, [sessionId, onNavigate, onDeleteRecord, onMoveRecord, onCopyRecord, onError]);
 
+  const showBatchSuccess = useCallback((msg: string) => {
+    setBatchSuccess(msg);
+    setBatchError(null);
+    if (batchSuccessTimerRef.current) clearTimeout(batchSuccessTimerRef.current);
+    batchSuccessTimerRef.current = setTimeout(() => setBatchSuccess(null), 3000);
+  }, []);
+
   const handleBatchApply = useCallback(async () => {
     if (!onWriteField) return;
     if (!batchField) { setBatchError("请选择字段"); return; }
@@ -386,11 +395,13 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       const preview = failedKeys.length <= 3 ? failedKeys.join(", ") : failedKeys.slice(0, 3).join(", ") + ` 等 ${failedKeys.length} 条`;
       setBatchError(`写入失败: ${preview}`);
     } else {
+      const edited = rowsToEdit.length;
       setSelectedKeys(new Set());
       setBatchField("");
       setBatchValue("");
+      showBatchSuccess(`已写入 ${edited} 条记录的 ${batchField} 字段`);
     }
-  }, [onWriteField, batchField, batchValue, filteredRows, selectedKeys, sessionId]);
+  }, [onWriteField, batchField, batchValue, filteredRows, selectedKeys, sessionId, showBatchSuccess]);
 
   const handleBatchDelete = useCallback(async () => {
     if (!onDeleteRecord) return;
@@ -398,8 +409,9 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
     if (rowsToDelete.length === 0) return;
     setBatchApplying(true);
     const failedKeys: string[] = [];
+    let deleted = 0;
     for (const row of rowsToDelete) {
-      try { await onDeleteRecord(sessionId, row.file_path, row.key); }
+      try { await onDeleteRecord(sessionId, row.file_path, row.key); deleted++; }
       catch { failedKeys.push(row.key); }
     }
     setBatchApplying(false);
@@ -409,8 +421,9 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       setBatchError(`删除失败: ${preview}`);
     } else {
       setSelectedKeys(new Set());
+      showBatchSuccess(`已删除 ${deleted} 条记录`);
     }
-  }, [onDeleteRecord, filteredRows, selectedKeys, sessionId]);
+  }, [onDeleteRecord, filteredRows, selectedKeys, sessionId, showBatchSuccess]);
 
   const handleDuplicateCommit = useCallback(async () => {
     if (!duplicateModal || !onDuplicateRecord) return;
@@ -1005,6 +1018,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
             </button>
           </>)}
           {batchError && <span style={{ color: "#ff5555", fontSize: 11 }}>{batchError}</span>}
+          {batchSuccess && !batchError && <span style={{ color: "var(--accent)", fontSize: 11 }}>✓ {batchSuccess}</span>}
           {onDeleteRecord && (
             <button
               onClick={() => setBatchDeletePending(true)}
