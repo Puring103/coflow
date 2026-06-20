@@ -580,6 +580,11 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
         setCreateModal({ key: "", filePath: availableFiles[0], creating: false, error: null });
         return;
       }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "r") {
+        e.preventDefault();
+        setShowRequiredOnly(v => !v);
+        return;
+      }
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setFocusedIdx(i => (i === null ? 0 : Math.min(i + 1, filteredRows.length - 1)));
@@ -1054,6 +1059,22 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
             <div style={{ fontWeight: 600, marginBottom: 4 }}>复制记录</div>
             <div style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 12 }}>
               从 <code style={{ fontFamily: "monospace" }}>{duplicateModal.srcKey}</code> 复制，输入新 Key：
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>新 Key</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const base = duplicateModal.srcKey;
+                  const existingKeys = new Set(rows.map(r => r.key));
+                  let n = 1;
+                  while (existingKeys.has(`${base}_copy_${String(n).padStart(3, "0")}`)) n++;
+                  setDuplicateModal(m => m && ({ ...m, draft: `${base}_copy_${String(n).padStart(3, "0")}`, error: null }));
+                }}
+                style={{ fontSize: 11, padding: "1px 6px", background: "transparent", border: "1px solid var(--border)", borderRadius: 3, color: "var(--text-muted)", cursor: "pointer" }}
+              >
+                ✦ 建议
+              </button>
             </div>
             <input
               value={duplicateModal.draft}

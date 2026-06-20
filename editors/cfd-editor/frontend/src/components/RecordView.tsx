@@ -1278,7 +1278,22 @@ export function RecordView({
               源记录: <code style={{ fontFamily: "monospace" }}>{duplicateModal.srcKey}</code>
             </div>
             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
-              新 Key
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                新 Key
+                <button
+                  type="button"
+                  onClick={() => {
+                    const base = duplicateModal.srcKey;
+                    const existingKeys = new Set(allRecords.map(r => r.key));
+                    let n = 1;
+                    while (existingKeys.has(`${base}_copy_${String(n).padStart(3, "0")}`)) n++;
+                    setDuplicateModal(m => m && ({ ...m, draft: `${base}_copy_${String(n).padStart(3, "0")}`, error: null }));
+                  }}
+                  style={{ fontSize: 11, padding: "1px 6px", background: "transparent", border: "1px solid var(--border)", borderRadius: 3, color: "var(--text-muted)", cursor: "pointer" }}
+                >
+                  ✦ 建议
+                </button>
+              </div>
               <input
                 value={duplicateModal.draft}
                 onChange={e => setDuplicateModal(m => m && ({ ...m, draft: e.target.value, error: null }))}

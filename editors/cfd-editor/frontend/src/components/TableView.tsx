@@ -444,6 +444,13 @@ export function TableView({
         searchRef.current?.focus();
         searchRef.current?.select();
       }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "r") {
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") {
+          e.preventDefault();
+          setShowRequiredOnly(v => !v);
+        }
+      }
       if (e.key === "Escape") {
         if (document.activeElement === searchRef.current) {
           setSearch("");
