@@ -11,6 +11,7 @@ interface CellEditorProps {
   sessionId: number;
   onCommit: (raw: string) => void;
   onCancel: () => void;
+  onTabCommit?: (raw: string) => void;
 }
 
 const CELL_EDITOR_STYLE: React.CSSProperties = {
@@ -39,7 +40,7 @@ function fieldValueToStringEditor(v: FieldValue): string {
   }
 }
 
-function CellEditor({ value, sessionId, onCommit, onCancel }: CellEditorProps) {
+function CellEditor({ value, sessionId, onCommit, onCancel, onTabCommit }: CellEditorProps) {
   const [text, setText] = useState(() => fieldValueToStringEditor(value));
   const inputRef = useRef<HTMLInputElement>(null);
   const [enumVariants, setEnumVariants] = useState<string[] | null>(null);
@@ -80,6 +81,7 @@ function CellEditor({ value, sessionId, onCommit, onCancel }: CellEditorProps) {
           onKeyDown={e => {
             if (e.key === "Enter") { e.preventDefault(); onCommit(e.currentTarget.value); }
             if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+            if (e.key === "Tab") { e.preventDefault(); (onTabCommit ?? onCommit)(e.currentTarget.value); }
             e.stopPropagation();
           }}
           autoFocus
@@ -108,6 +110,7 @@ function CellEditor({ value, sessionId, onCommit, onCancel }: CellEditorProps) {
           onKeyDown={e => {
             if (e.key === "Enter") { e.preventDefault(); if (text.trim()) onCommit(text); else onCancel(); }
             if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+            if (e.key === "Tab") { e.preventDefault(); if (text.trim()) (onTabCommit ?? onCommit)(text); else onCancel(); }
             e.stopPropagation();
           }}
           style={CELL_EDITOR_STYLE}
@@ -126,6 +129,7 @@ function CellEditor({ value, sessionId, onCommit, onCancel }: CellEditorProps) {
       onKeyDown={e => {
         if (e.key === "Enter") { e.preventDefault(); onCommit(text); }
         if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+        if (e.key === "Tab") { e.preventDefault(); (onTabCommit ?? onCommit)(text); }
         e.stopPropagation();
       }}
       style={CELL_EDITOR_STYLE}
@@ -415,6 +419,32 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       // onWriteField shows error toast; keep editor open for retry
     }
   }, [editingCell, onWriteField, sessionId]);
+
+  const handleCellTabCommit = useCallback(async (raw: string) => {
+    if (!editingCell || !onWriteField) return;
+    const newValue = parseFieldValue(raw, editingCell.value);
+    const changed = fieldValueToString(newValue) !== fieldValueToString(editingCell.value) || newValue.kind !== editingCell.value.kind;
+    if (changed) {
+      try { await onWriteField(sessionId, editingCell.filePath, editingCell.rowKey, [{ kind: "Field", name: editingCell.fieldName }], newValue, editingCell.value); }
+      catch { /* keep going */ }
+    }
+    // Find next scalar editable field in same row
+    const row = filteredRows.find(r => r.key === editingCell.rowKey && r.file_path === editingCell.filePath);
+    if (!row) { setEditingCell(null); return; }
+    const SCALAR_SET = new Set(["Null", "Bool", "Int", "Float", "Str", "Enum", "Ref"]);
+    const curIdx = visibleFieldNames.indexOf(editingCell.fieldName);
+    for (let i = 1; i < visibleFieldNames.length; i++) {
+      const nextName = visibleFieldNames[(curIdx + i) % visibleFieldNames.length];
+      if (row.spread_fields.includes(nextName)) continue;
+      const nextVal = row.fields.find(f => f.name === nextName)?.value;
+      if (nextVal && SCALAR_SET.has(nextVal.kind) && nextVal.kind !== "Bool") {
+        setEditingCell({ rowKey: row.key, filePath: row.file_path, fieldName: nextName, value: nextVal });
+        return;
+      }
+    }
+    setEditingCell(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingCell, onWriteField, sessionId, filteredRows, visibleFieldNames]);
 
   const handlePasteImport = useCallback(async () => {
     if (!pasteModal || !onImportRecord) return;
@@ -853,6 +883,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                               sessionId={sessionId}
                               onCommit={handleCellCommit}
                               onCancel={() => setEditingCell(null)}
+                              onTabCommit={handleCellTabCommit}
                             />
                           ) : cell ? (
                             <DataCard
