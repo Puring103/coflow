@@ -122,3 +122,5 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**GlobalTableView 无新建记录入口**：查看全局类型表时无法创建新记录，必须先切换到具体文件的 TableView~~ ✅ 新增"＋ New"按钮和 Ctrl+N 快捷键；弹窗让用户输入 key 并（多文件项目时）选择目标文件；创建后跳转到新记录的 RecordView。
 - Ctrl+Shift+C 快捷键（复制当前记录 key）已添加到 RecordView 键盘处理器。
 - ~~**GlobalTableView 无行内单元格编辑**：TableView 支持点击标量字段直接编辑，GlobalTableView 只读~~ ✅ GlobalTableView 现在支持点击标量字段（非 spread、非 Bool）进入内联编辑；Bool 字段单击直接切换；Enum 字段弹出下拉选择；Ref 字段支持带 datalist 建议的文本输入。
+- ~~**GlobalTableView 无列显示/隐藏控制**：所有字段列始终显示，字段多时横向滚动体验差~~ ✅ 新增 ⊞ 列 按钮，点击弹出列选择面板，支持全显/全隐一键操作；勾选状态持久化到 `localStorage`（按 typeName 分 key）；隐藏列时显示 ● 标记；CSV 导出也遵循当前可见列。
+- ~~**GlobalTableView 无粘贴 CFD 导入入口**：只有 TableView 有"粘贴 CFD 源码"功能~~ ✅ 工具栏新增 ⎘ 粘贴 CFD 按钮；弹窗支持多文件时选择目标文件；导入多条时显示结果列表可点击跳转；调用 `handleGlobalImportRecord` 触发 markDirty + graphRefreshKey。
