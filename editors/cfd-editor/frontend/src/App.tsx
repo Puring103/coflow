@@ -814,6 +814,7 @@ export default function App() {
                     onNavigate={router.push}
                     onWriteField={handleWriteField}
                     onDeleteRecord={handleDeleteRecord}
+                    onDuplicateRecord={handleDuplicateRecord}
                     onMoveRecord={(srcFile, recordKey) => {
                       const availableFiles = collectFilePaths(project.snapshot?.file_tree ?? []);
                       const firstOther = availableFiles.find(f => f !== srcFile) ?? srcFile;

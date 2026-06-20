@@ -14,6 +14,7 @@ interface GlobalTableViewProps {
   onNavigate: (route: Route) => void;
   onWriteField?: (sessionId: number, filePath: string, recordKey: string, fieldPath: FieldPathSegment[], newValue: FieldValue, oldValue?: FieldValue) => Promise<void>;
   onDeleteRecord?: (sessionId: number, filePath: string, recordKey: string) => Promise<void>;
+  onDuplicateRecord?: (sessionId: number, filePath: string, srcKey: string, newKey: string) => Promise<void>;
   onMoveRecord?: (srcFile: string, recordKey: string) => void;
   onCopyRecord?: (srcFile: string, recordKey: string) => void;
   diagnostics?: DiagnosticItem[];
@@ -46,7 +47,7 @@ function fieldValueToString(v: FieldValue): string {
 
 type SortCol = { col: "key" | "file" | string; dir: "asc" | "desc" };
 
-export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange, onNavigate, onWriteField, onDeleteRecord, onMoveRecord, onCopyRecord, diagnostics, onError }: GlobalTableViewProps) {
+export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange, onNavigate, onWriteField, onDeleteRecord, onDuplicateRecord, onMoveRecord, onCopyRecord, diagnostics, onError }: GlobalTableViewProps) {
   const [rows, setRows] = useState<RecordRow[]>([]);
   const [allTypeNames, setAllTypeNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -61,6 +62,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   const [batchApplying, setBatchApplying] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
   const [batchDeletePending, setBatchDeletePending] = useState(false);
+  const [duplicateModal, setDuplicateModal] = useState<{ srcKey: string; filePath: string; draft: string; error: string | null } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -164,6 +166,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
         { label: "在资源管理器中显示", onClick: () => api.revealInExplorer(sessionId, row.file_path).catch(e => onError?.(`无法打开资源管理器: ${e}`)) },
         { label: "复制 Key", onClick: () => navigator.clipboard.writeText(row.key).catch(e => onError?.(`复制失败: ${e}`)) },
         { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, row.file_path, row.key).then(src => navigator.clipboard.writeText(src)).catch(e => onError?.(`复制失败: ${e}`)) },
+        ...(onDuplicateRecord ? [{ label: "复制记录 (Ctrl+D)", onClick: () => setDuplicateModal({ srcKey: row.key, filePath: row.file_path, draft: `${row.key}_copy`, error: null }) }] : []),
         ...(onMoveRecord ? [{ label: "移动到文件…", onClick: () => onMoveRecord(row.file_path, row.key) }] : []),
         ...(onCopyRecord ? [{ label: "复制到文件…", onClick: () => onCopyRecord(row.file_path, row.key) }] : []),
         ...(onDeleteRecord ? [{ label: "删除记录", danger: true as const, onClick: () => onDeleteRecord(sessionId, row.file_path, row.key).catch(e => onError?.(`删除失败: ${e}`)) }] : []),
@@ -219,6 +222,18 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
     }
   }, [onDeleteRecord, filteredRows, selectedKeys, sessionId]);
 
+  const handleDuplicateCommit = useCallback(async () => {
+    if (!duplicateModal || !onDuplicateRecord) return;
+    const newKey = duplicateModal.draft.trim();
+    if (!newKey) { setDuplicateModal(m => m && ({ ...m, error: "Key 不能为空" })); return; }
+    if (newKey === duplicateModal.srcKey) { setDuplicateModal(null); return; }
+    try {
+      await onDuplicateRecord(sessionId, duplicateModal.filePath, duplicateModal.srcKey, newKey);
+      setDuplicateModal(null);
+      onNavigate({ view: "record", file: duplicateModal.filePath, recordKey: newKey });
+    } catch (e) { setDuplicateModal(m => m && ({ ...m, error: String(e) })); }
+  }, [duplicateModal, onDuplicateRecord, sessionId, onNavigate]);
+
   // Reset selection when type/search changes
   useEffect(() => { setSelectedKeys(new Set()); }, [typeName]);
 
@@ -236,6 +251,12 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       if ((e.ctrlKey || e.metaKey) && e.key === "a" && onWriteField) {
         e.preventDefault();
         setSelectedKeys(new Set(filteredRows.map(r => `${r.file_path}::${r.key}`)));
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "d" && onDuplicateRecord) {
+        e.preventDefault();
+        const focusedRow = focusedIdx !== null ? filteredRows[focusedIdx] : filteredRows[0];
+        if (focusedRow) setDuplicateModal({ srcKey: focusedRow.key, filePath: focusedRow.file_path, draft: `${focusedRow.key}_copy`, error: null });
         return;
       }
       if (e.key === "ArrowDown") {
@@ -555,6 +576,41 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
           items={contextMenu.items}
           onClose={() => setContextMenu(null)}
         />
+      )}
+
+      {/* Duplicate record modal */}
+      {duplicateModal && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000 }}
+          onClick={() => setDuplicateModal(null)}
+        >
+          <div
+            style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8, padding: 24, minWidth: 340, boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>复制记录</div>
+            <div style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 12 }}>
+              从 <code style={{ fontFamily: "monospace" }}>{duplicateModal.srcKey}</code> 复制，输入新 Key：
+            </div>
+            <input
+              value={duplicateModal.draft}
+              onChange={e => setDuplicateModal(m => m && ({ ...m, draft: e.target.value, error: null }))}
+              onKeyDown={e => {
+                if (e.key === "Enter") { e.preventDefault(); handleDuplicateCommit(); }
+                if (e.key === "Escape") setDuplicateModal(null);
+                e.stopPropagation();
+              }}
+              // eslint-disable-next-line jsx-a11y/no-autofocus
+              autoFocus
+              style={{ width: "100%", background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "4px 8px", fontSize: 13, outline: "none", fontFamily: "monospace", boxSizing: "border-box" }}
+            />
+            {duplicateModal.error && <div style={{ color: "var(--error)", fontSize: 12, marginTop: 4 }}>{duplicateModal.error}</div>}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+              <button onClick={() => setDuplicateModal(null)}>取消</button>
+              <button className="primary" onClick={handleDuplicateCommit} disabled={!duplicateModal.draft.trim()}>复制</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Batch delete confirmation */}
