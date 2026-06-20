@@ -1041,11 +1041,27 @@ export function RecordView({
                   tabIndex={isSpread ? -1 : 0}
                   onContextMenu={e => handleFieldContextMenu(e, field)}
                   onKeyDown={e => {
-                    if (isSpread) return;
                     if (e.key === "Enter" || (e.key === " " && e.target === e.currentTarget)) {
-                      e.preventDefault();
-                      const trigger = e.currentTarget.querySelector<HTMLElement>("[data-edit-trigger]");
-                      trigger?.click();
+                      if (!isSpread) {
+                        e.preventDefault();
+                        const trigger = e.currentTarget.querySelector<HTMLElement>("[data-edit-trigger]");
+                        trigger?.click();
+                      }
+                    } else if ((e.ctrlKey || e.metaKey) && e.key === "c" && e.target === e.currentTarget) {
+                      const v = field.value;
+                      let copyText: string | null = null;
+                      switch (v.kind) {
+                        case "Null": copyText = "null"; break;
+                        case "Bool": copyText = String(v.v); break;
+                        case "Int": case "Float": copyText = String(v.v); break;
+                        case "Str": copyText = v.v; break;
+                        case "Enum": copyText = v.variant; break;
+                        case "Ref": copyText = v.target_key; break;
+                      }
+                      if (copyText !== null) {
+                        e.preventDefault();
+                        navigator.clipboard.writeText(copyText).catch(() => {});
+                      }
                     }
                   }}
                   style={{
