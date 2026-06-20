@@ -831,15 +831,29 @@ export function RecordView({
                   {filePath.split(/[\\/]/).pop()}
                 </span>
                 {record.is_fallback && (
-                  <span style={{
-                    fontSize: 11,
-                    padding: "1px 6px",
-                    background: "var(--warning)",
-                    color: "#000",
-                    borderRadius: 3,
-                    fontWeight: 600,
-                    opacity: 0.85,
-                  }} title="Model build failed for this record — it may have missing required fields. Check the Problems panel.">
+                  <span
+                    onClick={() => {
+                      const requiredNullFields = record.fields.filter(f => {
+                        const s = fieldSchemas.find(x => x.name === f.name);
+                        return s && !s.has_default && f.value.kind === "Null";
+                      });
+                      if (requiredNullFields.length > 0) {
+                        const el = fieldRowRefs.current.get(requiredNullFields[0].name);
+                        if (el) { el.scrollIntoView({ block: "nearest" }); el.focus(); }
+                      }
+                    }}
+                    style={{
+                      fontSize: 11,
+                      padding: "1px 6px",
+                      background: "var(--warning)",
+                      color: "#000",
+                      borderRadius: 3,
+                      fontWeight: 600,
+                      opacity: 0.85,
+                      cursor: "pointer",
+                    }}
+                    title="Model build failed — click to jump to first missing required field (Ctrl+Shift+R to cycle)"
+                  >
                     ⚠ incomplete
                   </span>
                 )}
