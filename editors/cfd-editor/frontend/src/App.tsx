@@ -69,6 +69,7 @@ export default function App() {
   const [showStats, setShowStats] = useState(false);
   const [statsData, setStatsData] = useState<RecordBrief[] | null>(null);
   const opErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const diagToggleRef = useRef<(() => void) | null>(null);
 
   interface UndoEntry {
     sessionId: number;
@@ -155,6 +156,11 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "G") {
         e.preventDefault();
         if (project.snapshot) setShowGlobalSearch(true);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "M") {
+        e.preventDefault();
+        diagToggleRef.current?.();
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "T") {
@@ -576,6 +582,7 @@ export default function App() {
             "Ctrl+Z         Undo last field edit (up to 50 steps)",
             "Ctrl+P         Jump to record (command palette)",
             "Ctrl+Shift+G   Global search by key or field value",
+            "Ctrl+Shift+M   Toggle Problems panel",
             "Ctrl+Shift+T   Open global table (cross-file by type)",
             "Ctrl+S         Save / flush diagnostics",
             "Alt+← / →     Back / Forward",
@@ -880,7 +887,7 @@ export default function App() {
 
       {/* Diagnostics panel */}
       {project.snapshot && (
-        <DiagnosticsPanel diagnostics={project.snapshot.diagnostics} onNavigate={router.push} currentFile={(router.current && router.current.view !== "global-table") ? router.current.file : undefined} onError={showOpError} />
+        <DiagnosticsPanel diagnostics={project.snapshot.diagnostics} onNavigate={router.push} currentFile={(router.current && router.current.view !== "global-table") ? router.current.file : undefined} onError={showOpError} toggleRef={diagToggleRef} />
       )}
 
       {/* New file modal */}

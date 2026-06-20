@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import type { DiagnosticItem } from "../bindings";
 import type { Route } from "../router";
 
@@ -7,6 +7,7 @@ interface DiagnosticsPanelProps {
   onNavigate?: (route: Route) => void;
   currentFile?: string | null;
   onError?: (msg: string) => void;
+  toggleRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 type SeverityFilter = "all" | "error" | "warning" | "info";
@@ -35,8 +36,13 @@ function severityRank(severity: string): number {
   }
 }
 
-export function DiagnosticsPanel({ diagnostics, onNavigate, currentFile, onError }: DiagnosticsPanelProps) {
+export function DiagnosticsPanel({ diagnostics, onNavigate, currentFile, onError, toggleRef }: DiagnosticsPanelProps) {
   const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    if (toggleRef) toggleRef.current = () => setExpanded(e => !e);
+    return () => { if (toggleRef) toggleRef.current = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [filter, setFilter] = useState<SeverityFilter>("all");
   const [fileOnly, setFileOnly] = useState(false);
   const prevErrorCountRef = useRef(0);
