@@ -1667,6 +1667,21 @@ export function TableView({
             ⎘ CSV
           </button>
           <button
+            onClick={() => {
+              const rows = filteredRows.filter(r => selectedKeys.has(r.key));
+              const arr = rows.map(r => {
+                const obj: Record<string, unknown> = { _key: r.key };
+                for (const f of r.fields) obj[f.name] = fieldValueToJson(f.value);
+                return obj;
+              });
+              navigator.clipboard.writeText(JSON.stringify(arr, null, 2)).catch(e => onError?.(`复制失败: ${e}`));
+            }}
+            title="复制选中行为 JSON 数组"
+            style={{ fontSize: 12, whiteSpace: "nowrap" }}
+          >
+            ⎘ JSON
+          </button>
+          <button
             onClick={() => { setSelectedKeys(new Set()); setBatchError(null); setBatchDeleteConfirm(false); }}
             style={{ fontSize: 12, whiteSpace: "nowrap" }}
           >
