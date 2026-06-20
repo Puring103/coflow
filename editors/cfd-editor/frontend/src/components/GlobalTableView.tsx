@@ -649,7 +649,14 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
           ref={searchRef}
           value={search}
           onChange={e => setSearch(e.target.value)}
-          onKeyDown={e => { if (e.key === "Escape") { setSearch(""); e.stopPropagation(); } }}
+          onKeyDown={e => {
+            if (e.key === "Escape") { setSearch(""); e.stopPropagation(); }
+            else if (e.key === "Enter" && filteredRows.length > 0) {
+              e.preventDefault();
+              const row = filteredRows[focusedIdx ?? 0];
+              if (row) onNavigate({ view: "record", file: row.file_path, recordKey: row.key });
+            }
+          }}
           placeholder="Filter rows… (field:value, file:name, Ctrl+F)"
           style={{
             flex: 1,

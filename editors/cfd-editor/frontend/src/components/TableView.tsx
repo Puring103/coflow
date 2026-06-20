@@ -973,6 +973,14 @@ export function TableView({
           ref={searchRef}
           value={search}
           onChange={e => setSearch(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === "Escape") { setSearch(""); e.stopPropagation(); }
+            else if (e.key === "Enter" && filteredRows.length > 0) {
+              e.preventDefault();
+              const row = filteredRows[focusedRowIndex ?? 0];
+              if (row) onNavigate({ view: "record", file: filePath, recordKey: row.key });
+            }
+          }}
           placeholder="Search key or value… (field:value, Ctrl+F)"
           style={{
             flex: 1,
