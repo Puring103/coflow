@@ -210,6 +210,28 @@ export default function App() {
       if (e.altKey && e.key === "ArrowRight" && router.canForward) {
         e.preventDefault();
         router.forward();
+        return;
+      }
+      // Ctrl+Tab / Ctrl+Shift+Tab: cycle between Table / Record / Graph views for current file
+      if ((e.ctrlKey || e.metaKey) && e.key === "Tab") {
+        const cur = router.current;
+        if (!cur || cur.view === "global-table") return;
+        e.preventDefault();
+        const VIEWS = ["table", "record", "graph"] as const;
+        const idx = VIEWS.indexOf(cur.view as typeof VIEWS[number]);
+        if (idx === -1) return;
+        const next = e.shiftKey
+          ? (idx - 1 + VIEWS.length) % VIEWS.length
+          : (idx + 1) % VIEWS.length;
+        const nextView = VIEWS[next];
+        if (nextView === "record" && !("recordKey" in cur)) return;
+        if (nextView === "record" && "recordKey" in cur) {
+          router.replace({ view: "record", file: cur.file, recordKey: (cur as { recordKey: string }).recordKey });
+        } else if (nextView === "graph") {
+          router.replace({ view: "graph", file: cur.file });
+        } else {
+          router.replace({ view: "table", file: cur.file });
+        }
       }
     };
     window.addEventListener("keydown", handler);
@@ -630,6 +652,7 @@ export default function App() {
             "Ctrl+Shift+T   Open global table (cross-file by type)",
             "Ctrl+S         Save / flush diagnostics",
             "Alt+← / →     Back / Forward",
+            "Ctrl+Tab       Cycle Table → Record → Graph (Ctrl+Shift+Tab reverses)",
             "Ctrl+N         New record (in table/record view)",
             "Ctrl+D         Duplicate current record (table / record view)",
             "Ctrl+F         Filter fields (record view) / filter records (table view)",
