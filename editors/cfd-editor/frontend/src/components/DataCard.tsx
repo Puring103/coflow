@@ -451,8 +451,11 @@ function DictEntry({ entry, depth, sessionId, onEditValue, onEditKey, onRemove, 
         </div>
         {onRemove && (
           <span
+            role="button"
+            tabIndex={0}
             onClick={onRemove}
-            style={{ color: "var(--text-muted)", fontSize: 11, cursor: "pointer", padding: "4px 4px", flexShrink: 0 }}
+            onKeyDown={e => { if (e.key === "Enter" || e.key === " " || e.key === "Delete") { e.preventDefault(); onRemove(); } }}
+            style={{ color: "var(--text-muted)", fontSize: 11, cursor: "pointer", padding: "4px 4px", flexShrink: 0, outline: "none" }}
             title="Remove entry"
           >×</span>
         )}
@@ -468,8 +471,11 @@ function DictEntry({ entry, depth, sessionId, onEditValue, onEditKey, onRemove, 
         <span style={{ color: "var(--text-muted)", fontSize: 11 }}>:</span>
         {onRemove && (
           <span
+            role="button"
+            tabIndex={0}
             onClick={onRemove}
-            style={{ color: "var(--text-muted)", fontSize: 11, cursor: "pointer", marginLeft: "auto" }}
+            onKeyDown={e => { if (e.key === "Enter" || e.key === " " || e.key === "Delete") { e.preventDefault(); onRemove(); } }}
+            style={{ color: "var(--text-muted)", fontSize: 11, cursor: "pointer", marginLeft: "auto", outline: "none" }}
             title="Remove entry"
           >×</span>
         )}
@@ -733,8 +739,11 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
           <span style={{ color: "var(--text-muted)" }}>[{value.items.length} items]</span>
           {onEdit && (
             <span
+              role="button"
+              tabIndex={0}
               onClick={e => { e.stopPropagation(); onEdit({ kind: "Array", items: [...value.items, defaultItem()] }); }}
-              style={{ color: "var(--accent)", fontSize: 11, cursor: "pointer", marginLeft: 4 }}
+              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onEdit({ kind: "Array", items: [...value.items, defaultItem()] }); } }}
+              style={{ color: "var(--accent)", fontSize: 11, cursor: "pointer", marginLeft: 4, outline: "none" }}
               title={arrayElemObjectType ? `添加 ${arrayElemObjectType} 项` : "Add item"}
             >＋ {arrayElemObjectType && value.items.length === 0 ? <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{arrayElemObjectType}</span> : null}</span>
           )}
@@ -760,32 +769,41 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
               <div style={{ display: "flex", flexDirection: "column", flexShrink: 0, gap: 1 }}>
                 {idx > 0 && (
                   <span
+                    role="button"
+                    tabIndex={0}
                     onClick={() => {
                       const newItems = [...value.items];
                       [newItems[idx - 1], newItems[idx]] = [newItems[idx], newItems[idx - 1]];
                       onEdit({ kind: "Array", items: newItems });
                     }}
-                    style={{ color: "var(--text-muted)", fontSize: 9, cursor: "pointer", padding: "2px 4px", lineHeight: 1 }}
+                    onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); const newItems = [...value.items]; [newItems[idx - 1], newItems[idx]] = [newItems[idx], newItems[idx - 1]]; onEdit({ kind: "Array", items: newItems }); } }}
+                    style={{ color: "var(--text-muted)", fontSize: 9, cursor: "pointer", padding: "2px 4px", lineHeight: 1, outline: "none" }}
                     title="Move up"
                   >▲</span>
                 )}
                 {idx < value.items.length - 1 && (
                   <span
+                    role="button"
+                    tabIndex={0}
                     onClick={() => {
                       const newItems = [...value.items];
                       [newItems[idx], newItems[idx + 1]] = [newItems[idx + 1], newItems[idx]];
                       onEdit({ kind: "Array", items: newItems });
                     }}
-                    style={{ color: "var(--text-muted)", fontSize: 9, cursor: "pointer", padding: "2px 4px", lineHeight: 1 }}
+                    onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); const newItems = [...value.items]; [newItems[idx], newItems[idx + 1]] = [newItems[idx + 1], newItems[idx]]; onEdit({ kind: "Array", items: newItems }); } }}
+                    style={{ color: "var(--text-muted)", fontSize: 9, cursor: "pointer", padding: "2px 4px", lineHeight: 1, outline: "none" }}
                     title="Move down"
                   >▼</span>
                 )}
                 <span
+                  role="button"
+                  tabIndex={0}
                   onClick={() => {
                     const newItems = value.items.filter((_, i) => i !== idx);
                     onEdit({ kind: "Array", items: newItems });
                   }}
-                  style={{ color: "var(--text-muted)", fontSize: 11, cursor: "pointer", padding: "2px 4px", lineHeight: 1 }}
+                  onKeyDown={e => { if (e.key === "Enter" || e.key === " " || e.key === "Delete") { e.preventDefault(); const newItems = value.items.filter((_, i) => i !== idx); onEdit({ kind: "Array", items: newItems }); } }}
+                  style={{ color: "var(--text-muted)", fontSize: 11, cursor: "pointer", padding: "2px 4px", lineHeight: 1, outline: "none" }}
                   title="Remove item"
                 >×</span>
               </div>
@@ -812,6 +830,8 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
           <span style={{ color: "var(--text-muted)" }}>{"{"}  {value.entries.length} entries {"}"}</span>
           {onEdit && (
             <span
+              role="button"
+              tabIndex={0}
               onClick={e => {
                 e.stopPropagation();
                 // Infer key type from existing entries; default to Str for empty dict
@@ -840,7 +860,8 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
                 })() : { kind: "Null" };
                 onEdit({ kind: "Dict", entries: [...value.entries, { key: defaultKey, value: defaultVal }] });
               }}
-              style={{ color: "var(--accent)", fontSize: 11, cursor: "pointer", marginLeft: 4 }}
+              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); e.currentTarget.click(); } }}
+              style={{ color: "var(--accent)", fontSize: 11, cursor: "pointer", marginLeft: 4, outline: "none" }}
               title="Add entry"
             >＋</span>
           )}
