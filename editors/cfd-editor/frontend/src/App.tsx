@@ -845,24 +845,29 @@ export default function App() {
                   {recentProjects.map(p => (
                     <div
                       key={p}
-                      onClick={() => handleOpenPath(p)}
                       style={{
-                        padding: "5px 10px",
+                        display: "flex",
+                        alignItems: "center",
                         borderRadius: 4,
-                        cursor: "pointer",
                         fontFamily: "monospace",
                         fontSize: 12,
-                        color: "var(--accent)",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
                         maxWidth: 480,
                       }}
                       onMouseEnter={e => (e.currentTarget.style.background = "var(--bg3)")}
                       onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                      title={p}
                     >
-                      {p}
+                      <div
+                        onClick={() => handleOpenPath(p)}
+                        style={{ flex: 1, padding: "5px 10px", cursor: "pointer", color: "var(--accent)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        title={p}
+                      >
+                        {p}
+                      </div>
+                      <button
+                        onClick={e => { e.stopPropagation(); const next = recentProjects.filter(x => x !== p); try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch { /* ignore */ } setRecentProjects(next); }}
+                        title="Remove from recent"
+                        style={{ flexShrink: 0, background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "0 8px", fontSize: 13, opacity: 0.6 }}
+                      >×</button>
                     </div>
                   ))}
                 </div>

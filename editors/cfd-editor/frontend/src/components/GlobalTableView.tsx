@@ -63,12 +63,24 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   const [batchError, setBatchError] = useState<string | null>(null);
   const [batchDeletePending, setBatchDeletePending] = useState(false);
   const [duplicateModal, setDuplicateModal] = useState<{ srcKey: string; filePath: string; draft: string; error: string | null } | null>(null);
+  const [typeCounts, setTypeCounts] = useState<Map<string, number>>(new Map());
   const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     api.getAllTypeNames(sessionId).then(names => setAllTypeNames(names)).catch(e => onError?.(`加载类型列表失败: ${e}`));
   }, [sessionId, onError]);
+
+  // Load record counts per type for tab badges
+  useEffect(() => {
+    api.getAllRecordsBrief(sessionId).then(briefs => {
+      const counts = new Map<string, number>();
+      for (const b of briefs) counts.set(b.actual_type, (counts.get(b.actual_type) ?? 0) + 1);
+      setTypeCounts(counts);
+    }).catch(() => {});
+  // refreshKey triggers re-count when records change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, refreshKey]);
 
   useEffect(() => {
     if (!typeName) return;
@@ -329,6 +341,11 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
             }}
           >
             {t}
+            {typeCounts.has(t) && (
+              <span style={{ marginLeft: 4, fontSize: 10, opacity: t === typeName ? 0.8 : 0.6, fontWeight: "normal" }}>
+                {typeCounts.get(t)}
+              </span>
+            )}
           </button>
         ))}
       </div>
