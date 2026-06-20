@@ -158,3 +158,14 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - **全局操作成功反馈**：新增 `showOpSuccess` 绿色 toast（3 秒自动消失）；Sort All 操作现在显示成功摘要（"已对 N 个文件排序"或"已是字母顺序"）。
 - ~~**GlobalTableView 选中行无 CSV 复制**：只有全量导出 CSV，无法只复制选中行~~ ✅ 批量操作栏新增"⎘ CSV"按钮，将选中行（可见列）复制为 CSV 格式到剪贴板。
 - **incoming refs 最多显示 50 条**：对被大量引用的记录，incoming refs 面板现在最多显示 50 条并注明"… and N more"，避免性能问题。
+- ~~**GlobalTableView 排序状态不持久**：切换类型后排序重置~~ ✅ 排序状态保存到 `cfd-global-sort:TypeName` localStorage，切换类型时恢复。
+- ~~**TableView 排序状态不持久**：切换类型后排序重置~~ ✅ 排序状态保存到 `cfd-sort:TypeName` localStorage，切换类型时恢复。
+- ~~**RecordView 侧边栏搜索无清除按钮**：需手动选择清空~~ ✅ 当搜索框非空时显示 ✕ 清除按钮。
+- **RecordView 字段搜索匹配计数**：搜索字段时显示 `N / total` 匹配数量提示。
+- ~~**TableView 无 F2 快速进入单元格编辑**：需鼠标点击~~ ✅ 表格容器 F2 键进入焦点行的第一个可编辑标量字段的编辑状态。
+- ~~**GraphView 无 Ctrl+F 快捷键**：需鼠标点击搜索框~~ ✅ Ctrl+F 聚焦搜索框；Escape 清空并失焦；placeholder 更新提示。
+- ~~**GlobalTableView 行右键菜单缺少"复制为 JSON"**~~ ✅ 新增 `fieldValueToJson` 辅助函数；行右键菜单添加"复制为 JSON"选项。
+- ~~**ContextMenu 无键盘导航**：无法用 ↑↓/Enter 选择菜单项~~ ✅ ContextMenu 新增 `activeIdx` 状态，ArrowUp/Down 移动高亮，Enter 触发选项，鼠标移入也更新高亮。
+- ~~**incoming refs 面板无 display_hint**：无法区分相似 key 的记录~~ ✅ 每条 incoming ref 旁显示灰色 display_hint（来自 `recordDisplayHint` 计算）。
+- ~~**GlobalTableView 无 Delete 键删除**：需右键菜单才能删除~~ ✅ Delete/Backspace 触发单条记录删除确认弹窗（`singleDeleteModal`）。
+- ~~**TableView 无 Delete 键删除**：需右键菜单才能删除~~ ✅ Delete/Backspace 键打开已有的删除确认弹窗（`setDeleteModal`）。
