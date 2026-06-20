@@ -130,6 +130,7 @@ interface CellEditorProps {
   onCommit: (raw: string) => void;
   onCancel: () => void;
   onTabCommit?: (raw: string) => void;
+  onShiftTabCommit?: (raw: string) => void;
 }
 
 const CELL_STYLE: React.CSSProperties = {
@@ -146,7 +147,7 @@ const CELL_STYLE: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
-function CellEditor({ value, sessionId, onCommit, onCancel, onTabCommit }: CellEditorProps) {
+function CellEditor({ value, sessionId, onCommit, onCancel, onTabCommit, onShiftTabCommit }: CellEditorProps) {
   const [text, setText] = useState(() => fieldValueToString(value));
   const inputRef = useRef<HTMLInputElement>(null);
   const [enumVariants, setEnumVariants] = useState<string[] | null>(null);
@@ -195,7 +196,7 @@ function CellEditor({ value, sessionId, onCommit, onCancel, onTabCommit }: CellE
           onKeyDown={e => {
             if (e.key === "Enter") { e.preventDefault(); onCommit(e.currentTarget.value); }
             if (e.key === "Escape") { e.preventDefault(); onCancel(); }
-            if (e.key === "Tab") { e.preventDefault(); (onTabCommit ?? onCommit)(e.currentTarget.value); }
+            if (e.key === "Tab") { e.preventDefault(); if (e.shiftKey) (onShiftTabCommit ?? onCommit)(e.currentTarget.value); else (onTabCommit ?? onCommit)(e.currentTarget.value); }
             e.stopPropagation();
           }}
           autoFocus
@@ -228,7 +229,7 @@ function CellEditor({ value, sessionId, onCommit, onCancel, onTabCommit }: CellE
           onKeyDown={e => {
             if (e.key === "Enter") { e.preventDefault(); if (text.trim()) onCommit(text); else onCancel(); }
             if (e.key === "Escape") { e.preventDefault(); onCancel(); }
-            if (e.key === "Tab") { e.preventDefault(); if (text.trim()) (onTabCommit ?? onCommit)(text); else onCancel(); }
+            if (e.key === "Tab") { e.preventDefault(); if (e.shiftKey) { if (text.trim()) (onShiftTabCommit ?? onCommit)(text); else onCancel(); } else { if (text.trim()) (onTabCommit ?? onCommit)(text); else onCancel(); } }
             e.stopPropagation();
           }}
           style={CELL_STYLE}
@@ -247,7 +248,7 @@ function CellEditor({ value, sessionId, onCommit, onCancel, onTabCommit }: CellE
       onKeyDown={e => {
         if (e.key === "Enter") { e.preventDefault(); onCommit(text); }
         if (e.key === "Escape") { e.preventDefault(); onCancel(); }
-        if (e.key === "Tab") { e.preventDefault(); (onTabCommit ?? onCommit)(text); }
+        if (e.key === "Tab") { e.preventDefault(); if (e.shiftKey) (onShiftTabCommit ?? onCommit)(text); else (onTabCommit ?? onCommit)(text); }
         e.stopPropagation();
       }}
       style={CELL_STYLE}
@@ -849,6 +850,54 @@ export function TableView({
     setEditingCell(null);
   }, [sessionId, filePath, onWriteField, fieldNames, filteredRows]);
 
+  const handleCellShiftTabCommit = useCallback(async (rowKey: string, fieldName: string, raw: string, original: FieldValue) => {
+    // Commit current cell, then move editing to the previous editable column in the same row;
+    // if no prior editable columns, move to the last editable cell of the previous row.
+    const newValue = parseFieldValue(raw, original);
+    const changed = fieldValueToString(newValue) !== fieldValueToString(original) || newValue.kind !== original.kind;
+    if (changed) {
+      try {
+        await onWriteField(sessionId, filePath, rowKey, [{ kind: "Field", name: fieldName }], newValue, original);
+      } catch { /* keep going */ }
+    }
+    const SCALAR_KINDS_SET = new Set(["Null", "Bool", "Int", "Float", "Str", "Enum", "Ref"]);
+    const findLastEditable = (r: typeof filteredRows[number]) => {
+      for (let i = fieldNames.length - 1; i >= 0; i--) {
+        const name = fieldNames[i];
+        if (r.spread_fields.includes(name)) continue;
+        const v = r.fields.find(f => f.name === name)?.value;
+        if (v && SCALAR_KINDS_SET.has(v.kind) && v.kind !== "Bool") return { name, value: v };
+      }
+      return null;
+    };
+    // First try earlier columns in the same row
+    const row = filteredRows.find(r => r.key === rowKey);
+    if (row) {
+      const curIdx = fieldNames.indexOf(fieldName);
+      for (let i = curIdx - 1; i >= 0; i--) {
+        const prevName = fieldNames[i];
+        if (row.spread_fields.includes(prevName)) continue;
+        const prevVal = row.fields.find(f => f.name === prevName)?.value;
+        if (prevVal && SCALAR_KINDS_SET.has(prevVal.kind) && prevVal.kind !== "Bool") {
+          setEditingCell({ rowKey, fieldName: prevName, value: prevVal });
+          return;
+        }
+      }
+    }
+    // No prior editable columns — move to last editable cell of previous row
+    const rowIdx = filteredRows.findIndex(r => r.key === rowKey);
+    for (let i = rowIdx - 1; i >= 0; i--) {
+      const prevRow = filteredRows[i];
+      const cell = findLastEditable(prevRow);
+      if (cell) {
+        setEditingCell({ rowKey: prevRow.key, fieldName: cell.name, value: cell.value });
+        setFocusedRowIndex(i);
+        return;
+      }
+    }
+    setEditingCell(null);
+  }, [sessionId, filePath, onWriteField, fieldNames, filteredRows]);
+
   const handleRenameCommit = useCallback(async () => {
     if (!renameModal || !onRenameRecord) return;
     const newKey = renameModal.draft.trim();
@@ -1439,6 +1488,7 @@ export function TableView({
                             onCommit={raw => handleCellCommit(row.original.key, colId, raw, editingCell.value)}
                             onCancel={() => setEditingCell(null)}
                             onTabCommit={raw => handleCellTabCommit(row.original.key, colId, raw, editingCell.value)}
+                            onShiftTabCommit={raw => handleCellShiftTabCommit(row.original.key, colId, raw, editingCell.value)}
                           />
                         ) : (
                           flexRender(cell.column.columnDef.cell, cell.getContext())
