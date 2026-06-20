@@ -450,6 +450,11 @@ export function RecordView({
             onChange={e => setSidebarSearch(e.target.value)}
             onKeyDown={e => {
               if (e.key === "Escape") { setSidebarSearch(""); e.stopPropagation(); }
+              else if (e.key === "Enter" && filteredRecords.length > 0) {
+                e.preventDefault();
+                const target = filteredRecords.find(r => r.key !== recordKey) ?? filteredRecords[0];
+                if (target) onNavigate({ view: "record", file: filePath, recordKey: target.key });
+              }
               e.stopPropagation();
             }}
             placeholder="Filter records…"
