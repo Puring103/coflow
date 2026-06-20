@@ -710,6 +710,7 @@ export default function App() {
             "Ctrl+N         New record (in table/record view)",
             "Ctrl+D         Duplicate current record (table / record view)",
             "F2             Rename record key (record view) / Start editing focused cell (table view)",
+            "Delete/Bksp    Delete focused record with confirmation (table views / record view)",
             "Ctrl+F         Filter fields (record view) / filter records (table/graph view)",
             "Ctrl+Shift+F   Focus sidebar search (record view)",
             "Ctrl+Shift+C   Copy current record key to clipboard (record view)",
