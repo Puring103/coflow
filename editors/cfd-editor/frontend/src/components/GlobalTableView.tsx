@@ -261,6 +261,16 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       }
       if (!search) return true;
       const q = search.toLowerCase();
+      // Support field:value syntax (and file:name, key:name)
+      const colonIdx = search.indexOf(":");
+      if (colonIdx > 0) {
+        const fname = search.slice(0, colonIdx).trim().toLowerCase();
+        const fval = search.slice(colonIdx + 1).trim().toLowerCase();
+        if (fname === "key") return r.key.toLowerCase().includes(fval);
+        if (fname === "file") return r.file_path.toLowerCase().includes(fval);
+        const cell = r.fields.find(f => f.name.toLowerCase() === fname);
+        if (cell) return fieldValueToString(cell.value).toLowerCase().includes(fval);
+      }
       if (r.key.toLowerCase().includes(q)) return true;
       if (r.file_path.toLowerCase().includes(q)) return true;
       return r.fields.some(f => fieldValueToString(f.value).toLowerCase().includes(q));
@@ -640,7 +650,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
           value={search}
           onChange={e => setSearch(e.target.value)}
           onKeyDown={e => { if (e.key === "Escape") { setSearch(""); e.stopPropagation(); } }}
-          placeholder="Filter rows… (Ctrl+F)"
+          placeholder="Filter rows… (field:value, file:name, Ctrl+F)"
           style={{
             flex: 1,
             background: "var(--bg3)",

@@ -451,6 +451,25 @@ export function TableView({
       }
       if (!search) return true;
       const q = search.toLowerCase();
+      // Support field:value syntax to filter by specific field
+      const colonIdx = search.indexOf(":");
+      if (colonIdx > 0) {
+        const fieldName = search.slice(0, colonIdx).trim().toLowerCase();
+        const fieldVal = search.slice(colonIdx + 1).trim().toLowerCase();
+        if (fieldName === "key") return r.key.toLowerCase().includes(fieldVal);
+        const cell = r.fields.find(f => f.name.toLowerCase() === fieldName);
+        if (cell) {
+          const v = cell.value;
+          switch (v.kind) {
+            case "Str": return v.v.toLowerCase().includes(fieldVal);
+            case "Enum": return v.variant.toLowerCase().includes(fieldVal);
+            case "Ref": return v.target_key.toLowerCase().includes(fieldVal);
+            case "Int": case "Float": return String(v.v).includes(fieldVal);
+            case "Bool": return String(v.v).includes(fieldVal);
+            default: return false;
+          }
+        }
+      }
       if (r.key.toLowerCase().includes(q)) return true;
       return r.fields.some(f => {
         const v = f.value;
@@ -954,7 +973,7 @@ export function TableView({
           ref={searchRef}
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Search key or value… (Ctrl+F)"
+          placeholder="Search key or value… (field:value, Ctrl+F)"
           style={{
             flex: 1,
             background: "var(--bg3)",
