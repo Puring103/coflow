@@ -46,13 +46,15 @@ export function CommandPalette({ records, onNavigate, onClose }: CommandPaletteP
     inputRef.current?.focus();
   }, []);
 
+  const UNQUERIED_LIMIT = 100;
   const filtered = query
     ? records
         .map(r => ({ r, score: scoreRecord(r, query) }))
         .filter(({ score }) => score >= 0)
         .sort((a, b) => b.score - a.score || a.r.key.localeCompare(b.r.key))
         .map(({ r }) => r)
-    : records.slice(0, 100);
+    : records.slice(0, UNQUERIED_LIMIT);
+  const truncated = !query && records.length > UNQUERIED_LIMIT;
 
   const clampedIdx = Math.min(selectedIdx, filtered.length - 1);
 
@@ -81,6 +83,18 @@ export function CommandPalette({ records, onNavigate, onClose }: CommandPaletteP
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setSelectedIdx(i => Math.max(i - 1, 0));
+    } else if (e.key === "PageDown") {
+      e.preventDefault();
+      setSelectedIdx(i => Math.min(i + 10, filtered.length - 1));
+    } else if (e.key === "PageUp") {
+      e.preventDefault();
+      setSelectedIdx(i => Math.max(i - 10, 0));
+    } else if (e.key === "Home" && e.ctrlKey) {
+      e.preventDefault();
+      setSelectedIdx(0);
+    } else if (e.key === "End" && e.ctrlKey) {
+      e.preventDefault();
+      setSelectedIdx(filtered.length - 1);
     } else if (e.key === "Enter") {
       e.preventDefault();
       commit();
@@ -249,6 +263,7 @@ export function CommandPalette({ records, onNavigate, onClose }: CommandPaletteP
         }}>
           <span>↑↓ navigate</span>
           <span>↵ open</span>
+          {truncated && <span style={{ color: "var(--warning)" }}>showing first {UNQUERIED_LIMIT} — type to search all</span>}
           <span style={{ marginLeft: "auto" }}>{filtered.length} / {records.length} records</span>
         </div>
       </div>

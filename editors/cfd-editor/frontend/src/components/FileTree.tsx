@@ -269,6 +269,10 @@ export function FileTree({ nodes, selectedPath, sessionId, onSelect, onNewFile, 
         style={{ flex: 1, overflowY: "auto", paddingTop: 4, outline: "none" }}
         tabIndex={0}
         onKeyDown={e => {
+          if (e.key === "Enter" || e.key === " ") {
+            if (selectedPath) { e.preventDefault(); onSelect(selectedPath); }
+            return;
+          }
           if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
           const filePaths = collectVisibleFilePaths(nodes, expandedRef.current!);
           if (filePaths.length === 0) return;
