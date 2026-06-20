@@ -734,16 +734,23 @@ export function RecordView({
                     <span style={{ marginLeft: 3, fontSize: 10, opacity: 0.5 }}>{showSchemaInspector ? "▲" : "▼"}</span>
                   )}
                 </span>
-                <span style={{
-                  color: "var(--text-muted)",
-                  fontSize: 10,
-                  fontFamily: "monospace",
-                  opacity: 0.6,
-                  maxWidth: 200,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }} title={filePath}>
+                <span
+                  onClick={() => onNavigate({ view: "table", file: filePath })}
+                  style={{
+                    color: "var(--text-muted)",
+                    fontSize: 10,
+                    fontFamily: "monospace",
+                    opacity: 0.6,
+                    maxWidth: 200,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    cursor: "pointer",
+                    textDecoration: "underline",
+                    textDecorationStyle: "dotted",
+                  }}
+                  title={`${filePath} — 点击在文件表视图中打开`}
+                >
                   {filePath.split(/[\\/]/).pop()}
                 </span>
                 {record.is_fallback && (
