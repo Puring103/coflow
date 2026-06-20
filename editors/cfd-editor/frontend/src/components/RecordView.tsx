@@ -238,6 +238,13 @@ export function RecordView({
         return;
       }
 
+      // Ctrl+Shift+C: copy current record key to clipboard
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        navigator.clipboard.writeText(recordKey).catch(err => onError?.(`复制失败: ${err}`));
+        return;
+      }
+
       // F2: start renaming current record key
       if (e.key === "F2" && onRenameRecord) {
         e.preventDefault();
