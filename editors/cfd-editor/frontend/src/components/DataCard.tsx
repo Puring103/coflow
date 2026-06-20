@@ -613,6 +613,7 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
 
     return (
       <div
+        data-edit-trigger={canEdit ? "" : undefined}
         style={{ marginLeft, display: "flex", alignItems: "center", gap: 6, padding: "2px 0", cursor: canEdit ? "pointer" : "default" }}
         onClick={handleClick}
         title={canEdit ? (value.kind === "Bool" ? "Click to toggle" : "Click to edit") : undefined}

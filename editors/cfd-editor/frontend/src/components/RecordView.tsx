@@ -976,8 +976,16 @@ export function RecordView({
                 <div
                   key={field.name}
                   ref={el => { if (el) fieldRowRefs.current.set(field.name, el); else fieldRowRefs.current.delete(field.name); }}
-                  tabIndex={isRequiredNull ? 0 : -1}
+                  tabIndex={isSpread ? -1 : 0}
                   onContextMenu={e => handleFieldContextMenu(e, field)}
+                  onKeyDown={e => {
+                    if (isSpread) return;
+                    if (e.key === "Enter" || (e.key === " " && e.target === e.currentTarget)) {
+                      e.preventDefault();
+                      const trigger = e.currentTarget.querySelector<HTMLElement>("[data-edit-trigger]");
+                      trigger?.click();
+                    }
+                  }}
                   style={{
                     display: "flex",
                     alignItems: "flex-start",
