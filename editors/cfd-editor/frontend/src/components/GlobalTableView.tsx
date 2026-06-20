@@ -12,6 +12,7 @@ interface CellEditorProps {
   onCommit: (raw: string) => void;
   onCancel: () => void;
   onTabCommit?: (raw: string) => void;
+  onShiftTabCommit?: (raw: string) => void;
 }
 
 const CELL_EDITOR_STYLE: React.CSSProperties = {
@@ -40,7 +41,7 @@ function fieldValueToStringEditor(v: FieldValue): string {
   }
 }
 
-function CellEditor({ value, sessionId, onCommit, onCancel, onTabCommit }: CellEditorProps) {
+function CellEditor({ value, sessionId, onCommit, onCancel, onTabCommit, onShiftTabCommit }: CellEditorProps) {
   const [text, setText] = useState(() => fieldValueToStringEditor(value));
   const inputRef = useRef<HTMLInputElement>(null);
   const [enumVariants, setEnumVariants] = useState<string[] | null>(null);
@@ -81,7 +82,7 @@ function CellEditor({ value, sessionId, onCommit, onCancel, onTabCommit }: CellE
           onKeyDown={e => {
             if (e.key === "Enter") { e.preventDefault(); onCommit(e.currentTarget.value); }
             if (e.key === "Escape") { e.preventDefault(); onCancel(); }
-            if (e.key === "Tab") { e.preventDefault(); (onTabCommit ?? onCommit)(e.currentTarget.value); }
+            if (e.key === "Tab") { e.preventDefault(); if (e.shiftKey) (onShiftTabCommit ?? onCommit)(e.currentTarget.value); else (onTabCommit ?? onCommit)(e.currentTarget.value); }
             e.stopPropagation();
           }}
           autoFocus
@@ -110,7 +111,7 @@ function CellEditor({ value, sessionId, onCommit, onCancel, onTabCommit }: CellE
           onKeyDown={e => {
             if (e.key === "Enter") { e.preventDefault(); if (text.trim()) onCommit(text); else onCancel(); }
             if (e.key === "Escape") { e.preventDefault(); onCancel(); }
-            if (e.key === "Tab") { e.preventDefault(); if (text.trim()) (onTabCommit ?? onCommit)(text); else onCancel(); }
+            if (e.key === "Tab") { e.preventDefault(); if (e.shiftKey) { if (text.trim()) (onShiftTabCommit ?? onCommit)(text); else onCancel(); } else { if (text.trim()) (onTabCommit ?? onCommit)(text); else onCancel(); } }
             e.stopPropagation();
           }}
           style={CELL_EDITOR_STYLE}
@@ -129,7 +130,7 @@ function CellEditor({ value, sessionId, onCommit, onCancel, onTabCommit }: CellE
       onKeyDown={e => {
         if (e.key === "Enter") { e.preventDefault(); onCommit(text); }
         if (e.key === "Escape") { e.preventDefault(); onCancel(); }
-        if (e.key === "Tab") { e.preventDefault(); (onTabCommit ?? onCommit)(text); }
+        if (e.key === "Tab") { e.preventDefault(); if (e.shiftKey) (onShiftTabCommit ?? onCommit)(text); else (onTabCommit ?? onCommit)(text); }
         e.stopPropagation();
       }}
       style={CELL_EDITOR_STYLE}
@@ -529,17 +530,84 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       try { await onWriteField(sessionId, editingCell.filePath, editingCell.rowKey, [{ kind: "Field", name: editingCell.fieldName }], newValue, editingCell.value); }
       catch { /* keep going */ }
     }
-    // Find next scalar editable field in same row
-    const row = filteredRows.find(r => r.key === editingCell.rowKey && r.file_path === editingCell.filePath);
-    if (!row) { setEditingCell(null); return; }
     const SCALAR_SET = new Set(["Null", "Bool", "Int", "Float", "Str", "Enum", "Ref"]);
-    const curIdx = visibleFieldNames.indexOf(editingCell.fieldName);
-    for (let i = 1; i < visibleFieldNames.length; i++) {
-      const nextName = visibleFieldNames[(curIdx + i) % visibleFieldNames.length];
-      if (row.spread_fields.includes(nextName)) continue;
-      const nextVal = row.fields.find(f => f.name === nextName)?.value;
-      if (nextVal && SCALAR_SET.has(nextVal.kind) && nextVal.kind !== "Bool") {
-        setEditingCell({ rowKey: row.key, filePath: row.file_path, fieldName: nextName, value: nextVal });
+    const findFirstEditable = (r: RecordRow) => {
+      for (const name of visibleFieldNames) {
+        if (r.spread_fields.includes(name)) continue;
+        const v = r.fields.find(f => f.name === name)?.value;
+        if (v && SCALAR_SET.has(v.kind) && v.kind !== "Bool") return { name, value: v };
+      }
+      return null;
+    };
+    // Find next editable field in same row
+    const row = filteredRows.find(r => r.key === editingCell.rowKey && r.file_path === editingCell.filePath);
+    if (row) {
+      const curIdx = visibleFieldNames.indexOf(editingCell.fieldName);
+      for (let i = curIdx + 1; i < visibleFieldNames.length; i++) {
+        const nextName = visibleFieldNames[i];
+        if (row.spread_fields.includes(nextName)) continue;
+        const nextVal = row.fields.find(f => f.name === nextName)?.value;
+        if (nextVal && SCALAR_SET.has(nextVal.kind) && nextVal.kind !== "Bool") {
+          setEditingCell({ rowKey: row.key, filePath: row.file_path, fieldName: nextName, value: nextVal });
+          return;
+        }
+      }
+    }
+    // Move to first editable cell of next row
+    const rowIdx = filteredRows.findIndex(r => r.key === editingCell.rowKey && r.file_path === editingCell.filePath);
+    for (let i = rowIdx + 1; i < filteredRows.length; i++) {
+      const nextRow = filteredRows[i];
+      const cell = findFirstEditable(nextRow);
+      if (cell) {
+        setEditingCell({ rowKey: nextRow.key, filePath: nextRow.file_path, fieldName: cell.name, value: cell.value });
+        setFocusedIdx(i);
+        return;
+      }
+    }
+    setEditingCell(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingCell, onWriteField, sessionId, filteredRows, visibleFieldNames]);
+
+  const handleCellShiftTabCommit = useCallback(async (raw: string) => {
+    if (!editingCell || !onWriteField) return;
+    const newValue = parseFieldValue(raw, editingCell.value);
+    const changed = fieldValueToString(newValue) !== fieldValueToString(editingCell.value) || newValue.kind !== editingCell.value.kind;
+    if (changed) {
+      try { await onWriteField(sessionId, editingCell.filePath, editingCell.rowKey, [{ kind: "Field", name: editingCell.fieldName }], newValue, editingCell.value); }
+      catch { /* keep going */ }
+    }
+    const SCALAR_SET = new Set(["Null", "Bool", "Int", "Float", "Str", "Enum", "Ref"]);
+    const findLastEditable = (r: RecordRow) => {
+      for (let i = visibleFieldNames.length - 1; i >= 0; i--) {
+        const name = visibleFieldNames[i];
+        if (r.spread_fields.includes(name)) continue;
+        const v = r.fields.find(f => f.name === name)?.value;
+        if (v && SCALAR_SET.has(v.kind) && v.kind !== "Bool") return { name, value: v };
+      }
+      return null;
+    };
+    // Find previous editable field in same row
+    const row = filteredRows.find(r => r.key === editingCell.rowKey && r.file_path === editingCell.filePath);
+    if (row) {
+      const curIdx = visibleFieldNames.indexOf(editingCell.fieldName);
+      for (let i = curIdx - 1; i >= 0; i--) {
+        const prevName = visibleFieldNames[i];
+        if (row.spread_fields.includes(prevName)) continue;
+        const prevVal = row.fields.find(f => f.name === prevName)?.value;
+        if (prevVal && SCALAR_SET.has(prevVal.kind) && prevVal.kind !== "Bool") {
+          setEditingCell({ rowKey: row.key, filePath: row.file_path, fieldName: prevName, value: prevVal });
+          return;
+        }
+      }
+    }
+    // Move to last editable cell of previous row
+    const rowIdx = filteredRows.findIndex(r => r.key === editingCell.rowKey && r.file_path === editingCell.filePath);
+    for (let i = rowIdx - 1; i >= 0; i--) {
+      const prevRow = filteredRows[i];
+      const cell = findLastEditable(prevRow);
+      if (cell) {
+        setEditingCell({ rowKey: prevRow.key, filePath: prevRow.file_path, fieldName: cell.name, value: cell.value });
+        setFocusedIdx(i);
         return;
       }
     }
@@ -1037,6 +1105,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                               onCommit={handleCellCommit}
                               onCancel={() => setEditingCell(null)}
                               onTabCommit={handleCellTabCommit}
+                              onShiftTabCommit={handleCellShiftTabCommit}
                             />
                           ) : cell ? (
                             <DataCard
