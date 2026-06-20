@@ -218,6 +218,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   const [batchSuccess, setBatchSuccess] = useState<string | null>(null);
   const batchSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [batchDeletePending, setBatchDeletePending] = useState(false);
+  const [singleDeleteModal, setSingleDeleteModal] = useState<{ key: string; filePath: string } | null>(null);
   const [duplicateModal, setDuplicateModal] = useState<{ srcKey: string; filePath: string; draft: string; error: string | null } | null>(null);
   const [typeCounts, setTypeCounts] = useState<Map<string, number>>(new Map());
   const [createModal, setCreateModal] = useState<{ key: string; filePath: string; creating: boolean; error: string | null } | null>(null);
@@ -623,11 +624,14 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       } else if (e.key === "Enter" && focusedIdx !== null && filteredRows[focusedIdx]) {
         e.preventDefault();
         handleRowClick(filteredRows[focusedIdx]);
+      } else if ((e.key === "Delete" || e.key === "Backspace") && focusedIdx !== null && onDeleteRecord) {
+        const row = filteredRows[focusedIdx];
+        if (row) { e.preventDefault(); setSingleDeleteModal({ key: row.key, filePath: row.file_path }); }
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [filteredRows, focusedIdx, handleRowClick]);
+  }, [filteredRows, focusedIdx, handleRowClick, onDeleteRecord]);
 
   // Scroll focused row into view
   useEffect(() => {
@@ -1252,6 +1256,40 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                 style={{ background: "var(--error)", color: "#fff", border: "none", borderRadius: 4, padding: "4px 16px", cursor: "pointer", fontWeight: 600 }}
               >
                 {batchApplying ? "删除中…" : `删除 ${selectedKeys.size} 条`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Single record delete confirmation (triggered by Delete key) */}
+      {singleDeleteModal && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000 }}
+          onClick={() => setSingleDeleteModal(null)}
+        >
+          <div
+            style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8, padding: 24, minWidth: 320, boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }}
+            onClick={e => e.stopPropagation()}
+            onKeyDown={e => { if (e.key === "Escape") setSingleDeleteModal(null); e.stopPropagation(); }}
+          >
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>确认删除记录</div>
+            <div style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 16 }}>
+              即将删除 <strong style={{ color: "var(--error)", fontFamily: "monospace" }}>{singleDeleteModal.key}</strong>，此操作不可撤销。
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setSingleDeleteModal(null)}>取消</button>
+              <button
+                autoFocus
+                onClick={() => {
+                  if (!onDeleteRecord) return;
+                  onDeleteRecord(sessionId, singleDeleteModal.filePath, singleDeleteModal.key)
+                    .catch(err => onError?.(`删除失败: ${err}`));
+                  setSingleDeleteModal(null);
+                }}
+                style={{ background: "var(--error)", color: "#fff", border: "none", borderRadius: 4, padding: "4px 16px", cursor: "pointer", fontWeight: 600 }}
+              >
+                删除
               </button>
             </div>
           </div>
