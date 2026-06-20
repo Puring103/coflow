@@ -593,6 +593,10 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       const stored = localStorage.getItem(`cfd-global-col-vis:${typeName}`);
       setHiddenCols(stored ? new Set<string>(JSON.parse(stored)) : new Set<string>());
     } catch { setHiddenCols(new Set<string>()); }
+    try {
+      const stored = localStorage.getItem(`cfd-global-col-width:${typeName}`);
+      setColWidths(stored ? JSON.parse(stored) : {});
+    } catch { setColWidths({}); }
   }, [typeName]);
 
   // Persist hidden columns
