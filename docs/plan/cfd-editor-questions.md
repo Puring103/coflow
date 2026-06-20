@@ -126,3 +126,9 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**GlobalTableView 单元格无右键菜单**：无法快速复制字段值或跳转到 Ref 引用~~ ✅ 字段列右键点击显示上下文菜单：标量字段显示"复制值"，Ref 字段额外显示"跳转到引用记录"。
 - ~~**GlobalTableView 无列显示/隐藏控制**：所有字段列始终显示，字段多时横向滚动体验差~~ ✅ 新增 ⊞ 列 按钮，点击弹出列选择面板，支持全显/全隐一键操作；勾选状态持久化到 `localStorage`（按 typeName 分 key）；隐藏列时显示 ● 标记；CSV 导出也遵循当前可见列。
 - ~~**GlobalTableView 无粘贴 CFD 导入入口**：只有 TableView 有"粘贴 CFD 源码"功能~~ ✅ 工具栏新增 ⎘ 粘贴 CFD 按钮；弹窗支持多文件时选择目标文件；导入多条时显示结果列表可点击跳转；调用 `handleGlobalImportRecord` 触发 markDirty + graphRefreshKey。
+- ~~**GraphView 节点右键菜单无"复制为 CFD 源码"**~~ ✅ 已添加"复制为 CFD 源码"菜单项，调用 `api.getRecordSource`。
+- ~~**TableView/GlobalTableView 无必填字段行过滤**：RecordView 有 ⚠ 必填 toggle，表视图没有~~ ✅ 两个表视图均新增 ⚠ 必填 按钮，过滤出含空必填字段的行；GlobalTableView 还对必填空单元格高亮橙色边框/文字。
+- ~~**无 F8 跳转到下一个问题**~~ ✅ 新增 F8 / Shift+F8 快捷键，在诊断列表中循环跳转到下一个/上一个可导航诊断（仅 .cfd 文件相关诊断）。
+- **窗口标题不显示项目名** ✅ `document.title` 现在同步为 `project.yaml● — CFD Editor`（`●` 表示有未保存变更）。
+- ~~**TableView/GlobalTableView 搜索不支持 field:value 语法**~~ ✅ 两个表视图的搜索框现在支持 `fieldname:value` 语法，GlobalTableView 还支持 `key:x` 和 `file:x`；placeholder 已更新提示用户。
+- ~~**incoming refs 面板不显示来源类型**~~ ✅ 每条 incoming ref 现在显示 `key [type] .field_path`，便于区分不同类型的引用记录。
