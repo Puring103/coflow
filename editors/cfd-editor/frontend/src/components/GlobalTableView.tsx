@@ -195,6 +195,14 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   const [typeCounts, setTypeCounts] = useState<Map<string, number>>(new Map());
   const [createModal, setCreateModal] = useState<{ key: string; filePath: string; creating: boolean; error: string | null } | null>(null);
   const [editingCell, setEditingCell] = useState<{ rowKey: string; filePath: string; fieldName: string; value: FieldValue } | null>(null);
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem(`cfd-global-col-vis:${typeName}`);
+      return stored ? new Set<string>(JSON.parse(stored)) : new Set<string>();
+    } catch { return new Set<string>(); }
+  });
+  const [showColPicker, setShowColPicker] = useState(false);
+  const colPickerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -281,6 +289,8 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
     }
     return names;
   })();
+
+  const visibleFieldNames = fieldNames.filter(f => !hiddenCols.has(f));
 
   const COL_KEY = 120;
   const COL_FILE = 140;
@@ -418,8 +428,31 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
     } catch (e) { setCreateModal(m => m && ({ ...m, creating: false, error: String(e) })); }
   }, [createModal, onCreateRecord, typeName, onNavigate]);
 
-  // Reset selection and editing when type changes
-  useEffect(() => { setSelectedKeys(new Set()); setEditingCell(null); }, [typeName]);
+  // Reset selection and editing when type changes; reload column visibility from storage
+  useEffect(() => {
+    setSelectedKeys(new Set());
+    setEditingCell(null);
+    setShowColPicker(false);
+    try {
+      const stored = localStorage.getItem(`cfd-global-col-vis:${typeName}`);
+      setHiddenCols(stored ? new Set<string>(JSON.parse(stored)) : new Set<string>());
+    } catch { setHiddenCols(new Set<string>()); }
+  }, [typeName]);
+
+  // Persist hidden columns
+  useEffect(() => {
+    try { localStorage.setItem(`cfd-global-col-vis:${typeName}`, JSON.stringify([...hiddenCols])); } catch { /* ignore */ }
+  }, [typeName, hiddenCols]);
+
+  // Close column picker on outside click
+  useEffect(() => {
+    if (!showColPicker) return;
+    const handler = (e: MouseEvent) => {
+      if (colPickerRef.current && !colPickerRef.current.contains(e.target as Node)) setShowColPicker(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showColPicker]);
 
   // Keyboard navigation for the table + Ctrl+F focus search
   useEffect(() => {
@@ -475,13 +508,13 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   useEffect(() => { setFocusedIdx(null); }, [typeName, search]);
 
   const exportCsv = () => {
-    const cols = ["key", "file", ...fieldNames];
+    const cols = ["key", "file", ...visibleFieldNames];
     const lines = [cols.join(",")];
     for (const row of filteredRows) {
       const cells = [
         JSON.stringify(row.key),
         JSON.stringify(row.file_path.split(/[\\/]/).pop() ?? row.file_path),
-        ...fieldNames.map(f => {
+        ...visibleFieldNames.map(f => {
           const v = row.fields.find(x => x.name === f)?.value ?? { kind: "Null" as const };
           const s = fieldValueToString(v);
           return s ? JSON.stringify(s) : "";
@@ -550,6 +583,46 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
         <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
           {filteredRows.length} / {rows.length} records · {new Set(rows.map(r => r.file_path)).size} files
         </span>
+        {fieldNames.length > 0 && (
+          <div ref={colPickerRef} style={{ position: "relative", flexShrink: 0 }}>
+            <button
+              onClick={() => setShowColPicker(v => !v)}
+              title="显示/隐藏列"
+              style={{ fontSize: 11, padding: "2px 8px", background: showColPicker ? "var(--bg3)" : "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-muted)", cursor: "pointer", whiteSpace: "nowrap" }}
+            >
+              ⊞ 列
+              {hiddenCols.size > 0 && <span style={{ marginLeft: 4, color: "var(--accent)", fontSize: 10 }}>●</span>}
+            </button>
+            {showColPicker && (
+              <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 6, padding: "6px 0", zIndex: 1000, minWidth: 160, maxHeight: 320, overflowY: "auto", boxShadow: "0 4px 16px rgba(0,0,0,0.4)" }}>
+                <div style={{ padding: "2px 10px 6px", display: "flex", gap: 6 }}>
+                  <button onClick={() => setHiddenCols(new Set())} style={{ fontSize: 10, padding: "1px 6px", flex: 1 }}>全显</button>
+                  <button onClick={() => setHiddenCols(new Set(fieldNames))} style={{ fontSize: 10, padding: "1px 6px", flex: 1 }}>全隐</button>
+                </div>
+                {fieldNames.map(f => (
+                  <label
+                    key={f}
+                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 10px", cursor: "pointer", fontSize: 12, color: "var(--text)" }}
+                    onMouseEnter={e => (e.currentTarget.style.background = "var(--bg3)")}
+                    onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!hiddenCols.has(f)}
+                      onChange={e => setHiddenCols(prev => {
+                        const next = new Set(prev);
+                        if (e.target.checked) next.delete(f); else next.add(f);
+                        return next;
+                      })}
+                      style={{ margin: 0, cursor: "pointer" }}
+                    />
+                    <span style={{ fontFamily: "monospace" }}>{f}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <button onClick={exportCsv} title="Export as CSV" style={{ fontSize: 11, padding: "2px 8px", background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-muted)", cursor: "pointer" }}>
           ↓ CSV
         </button>
@@ -593,7 +666,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                 />
               </div>
             )}
-            {(["key", "file", ...fieldNames] as string[]).map((col, i) => {
+            {(["key", "file", ...visibleFieldNames] as string[]).map((col, i) => {
               const isKey = col === "key";
               const isFile = col === "file";
               const w = isKey ? COL_KEY : isFile ? COL_FILE : COL_FIELD;
@@ -693,7 +766,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                     <div style={{ width: COL_FILE, flexShrink: 0, padding: "0 8px", fontSize: 11, fontFamily: "monospace", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid var(--border)" }} title={row.file_path}>
                       {filename}
                     </div>
-                    {fieldNames.map(f => {
+                    {visibleFieldNames.map(f => {
                       const cell = row.fields.find(x => x.name === f);
                       const isSpread = row.spread_fields.includes(f);
                       const isEditing = editingCell?.rowKey === row.key && editingCell?.filePath === row.file_path && editingCell?.fieldName === f;
