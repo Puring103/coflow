@@ -233,6 +233,7 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError
   const [hiddenFiles, setHiddenFiles] = useState<Set<string>>(new Set());
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const contextMenuRef = useRef<(e: React.MouseEvent, gnode: GraphNode) => void>(() => {});
+  const searchRef = useRef<HTMLInputElement>(null);
 
   // Clear layout cache and reset state when session changes (new project loaded)
   useEffect(() => {
@@ -297,6 +298,14 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "w") {
         e.preventDefault();
         setExpandedKeys([]);
+      }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === "f") {
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") {
+          e.preventDefault();
+          searchRef.current?.focus();
+          searchRef.current?.select();
+        }
       }
     };
     window.addEventListener("keydown", handler);
@@ -506,9 +515,11 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError
       }}>
         <span style={{ color: "var(--text-muted)", fontSize: 12 }}>⌕</span>
         <input
+          ref={searchRef}
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Filter by key or type…"
+          onKeyDown={e => { if (e.key === "Escape") { setSearch(""); searchRef.current?.blur(); } e.stopPropagation(); }}
+          placeholder="Filter by key or type… (Ctrl+F)"
           style={{
             background: "var(--bg3)",
             border: "1px solid var(--border)",
