@@ -320,6 +320,13 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.loadedYamlPath]);
 
+  // Persist current route to localStorage so it can be restored on next launch
+  useEffect(() => {
+    if (project.loadedYamlPath && router.current) {
+      try { localStorage.setItem(`cfd-last-route:${project.loadedYamlPath}`, JSON.stringify(router.current)); } catch { /* ignore */ }
+    }
+  }, [project.loadedYamlPath, router.current]);
+
   // Auto-select first file after loading project, or after the current file is deleted.
   // Also reset router if the currently viewed file is no longer in the snapshot (e.g. after external delete + Reload).
   useEffect(() => {
@@ -344,8 +351,22 @@ export default function App() {
     }
 
     if (!router.current) {
-      const firstFile = findFirstFile(snap.file_tree);
-      if (firstFile) router.push({ view: "table", file: firstFile });
+      // Try to restore last route for this project
+      let restored = false;
+      if (project.loadedYamlPath) {
+        try {
+          const stored = localStorage.getItem(`cfd-last-route:${project.loadedYamlPath}`);
+          if (stored) {
+            const route: Route = JSON.parse(stored);
+            const routeFileOk = route.view === "global-table" || fileExists(snap.file_tree, route.file);
+            if (routeFileOk) { router.push(route); restored = true; }
+          }
+        } catch { /* ignore */ }
+      }
+      if (!restored) {
+        const firstFile = findFirstFile(snap.file_tree);
+        if (firstFile) router.push({ view: "table", file: firstFile });
+      }
     } else if (router.current.view !== "global-table" && !fileExists(snap.file_tree, router.current.file)) {
       // Current file no longer exists in the snapshot — reset and auto-select
       router.reset();

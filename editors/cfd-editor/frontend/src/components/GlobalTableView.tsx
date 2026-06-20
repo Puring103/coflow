@@ -672,6 +672,11 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
     try { localStorage.setItem(`cfd-global-col-vis:${typeName}`, JSON.stringify([...hiddenCols])); } catch { /* ignore */ }
   }, [typeName, hiddenCols]);
 
+  // If the column being edited becomes hidden, cancel the edit
+  useEffect(() => {
+    if (editingCell && hiddenCols.has(editingCell.fieldName)) setEditingCell(null);
+  }, [hiddenCols, editingCell]);
+
   // Close column picker on outside click
   useEffect(() => {
     if (!showColPicker) return;
