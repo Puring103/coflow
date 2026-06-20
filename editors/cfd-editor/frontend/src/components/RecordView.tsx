@@ -111,6 +111,7 @@ export function RecordView({
   const fieldSearchRef = useRef<HTMLInputElement>(null);
   const selectedItemRef = useRef<HTMLDivElement>(null);
   const fieldRowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const autoExpandRefsRef = useRef(false);
 
   // Build per-record diagnostic badge info: { errors, warnings } keyed by record key
   const recordDiagnosticCounts = useMemo(() => {
@@ -303,7 +304,15 @@ export function RecordView({
     setIncomingRefs([]);
     setShowIncomingRefs(false);
     api.getIncomingRefs(sessionId, recordKey)
-      .then(refs => { if (!cancelled) setIncomingRefs(refs); })
+      .then(refs => {
+        if (!cancelled) {
+          setIncomingRefs(refs);
+          if (autoExpandRefsRef.current && refs.length > 0) {
+            setShowIncomingRefs(true);
+            autoExpandRefsRef.current = false;
+          }
+        }
+      })
       .catch(e => { if (!cancelled) { console.error("getIncomingRefs failed:", e); setIncomingRefs([]); } });
     return () => { cancelled = true; };
   }, [sessionId, recordKey]);
@@ -521,6 +530,7 @@ export function RecordView({
                   { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, filePath, r.key).then(src => navigator.clipboard.writeText(src)).catch(e => onError?.(`复制失败: ${e}`)) },
                   { label: "在资源管理器中显示", onClick: () => api.revealInExplorer(sessionId, filePath).catch(e => onError?.(`无法打开资源管理器: ${e}`)) },
                   ...(sidebarRec ? [{ label: "复制为 JSON", onClick: () => navigator.clipboard.writeText(recordToJson(sidebarRec)).catch(e => onError?.(`复制失败: ${e}`)) }] : []),
+                  { label: "查找引用此记录的记录", onClick: () => { autoExpandRefsRef.current = true; onNavigate({ view: "record", file: filePath, recordKey: r.key }); } },
                 ];
                 if (onRenameRecord) items.push({
                   label: "重命名记录 Key",
