@@ -735,6 +735,16 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       } else if (e.key === "Enter" && focusedIdx !== null && filteredRows[focusedIdx]) {
         e.preventDefault();
         handleRowClick(filteredRows[focusedIdx]);
+      } else if (e.key === "F2" && focusedIdx !== null && onWriteField) {
+        const row = filteredRows[focusedIdx];
+        if (row) {
+          e.preventDefault();
+          const SCALAR_KINDS = new Set(["Null", "Int", "Float", "Str", "Enum", "Ref"]);
+          const firstEditable = row.fields.find(
+            f => !row.spread_fields.includes(f.name) && SCALAR_KINDS.has(f.value.kind)
+          );
+          if (firstEditable) setEditingCell({ rowKey: row.key, filePath: row.file_path, fieldName: firstEditable.name, value: firstEditable.value });
+        }
       } else if ((e.key === "Delete" || e.key === "Backspace") && focusedIdx !== null && onDeleteRecord) {
         const row = filteredRows[focusedIdx];
         if (row) { e.preventDefault(); setSingleDeleteModal({ key: row.key, filePath: row.file_path }); }
