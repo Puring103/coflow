@@ -70,6 +70,9 @@ export default function App() {
   const [statsData, setStatsData] = useState<RecordBrief[] | null>(null);
   const opErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const diagToggleRef = useRef<(() => void) | null>(null);
+  const diagNavIndexRef = useRef<number>(-1);
+  const diagnosticsRef = useRef(project.snapshot?.diagnostics ?? []);
+  diagnosticsRef.current = project.snapshot?.diagnostics ?? [];
 
   interface UndoEntry {
     sessionId: number;
@@ -171,6 +174,21 @@ export default function App() {
               if (names.length > 0) router.push({ view: "global-table", typeName: names[0] });
             })
             .catch(e2 => showOpError(`加载类型列表失败: ${e2}`));
+        }
+        return;
+      }
+      if (e.key === "F8") {
+        e.preventDefault();
+        const diags = diagnosticsRef.current.filter(d => d.file_path && d.file_path.endsWith(".cfd"));
+        if (diags.length === 0) return;
+        const step = e.shiftKey ? -1 : 1;
+        diagNavIndexRef.current = (diagNavIndexRef.current + step + diags.length) % diags.length;
+        const d = diags[diagNavIndexRef.current];
+        if (d.record_key) {
+          const topField = d.field_path ? d.field_path.split(".")[0] : undefined;
+          router.push({ view: "record", file: d.file_path!, recordKey: d.record_key, ...(topField ? { fieldSearch: topField } : {}) });
+        } else {
+          router.push({ view: "table", file: d.file_path! });
         }
         return;
       }
@@ -598,6 +616,7 @@ export default function App() {
             "Ctrl+P         Jump to record (command palette)",
             "Ctrl+Shift+G   Global search by key or field value",
             "Ctrl+Shift+M   Toggle Problems panel",
+            "F8 / Shift+F8  Jump to next/previous problem",
             "Ctrl+Shift+T   Open global table (cross-file by type)",
             "Ctrl+S         Save / flush diagnostics",
             "Alt+← / →     Back / Forward",
