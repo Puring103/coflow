@@ -1085,7 +1085,14 @@ export default function App() {
               const byType = new Map<string, number>();
               for (const r of statsData) byType.set(r.actual_type, (byType.get(r.actual_type) ?? 0) + 1);
               return [...byType.entries()].sort((a, b) => b[1] - a[1]).map(([type, count]) => (
-                <div key={type} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", borderBottom: "1px solid var(--bg3)" }}>
+                <div
+                  key={type}
+                  onClick={() => { setShowStats(false); router.push({ view: "global-table", typeName: type }); }}
+                  style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", borderBottom: "1px solid var(--bg3)", cursor: "pointer" }}
+                  onMouseEnter={e => (e.currentTarget.style.background = "var(--bg3)")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                  title={`Open global table for ${type}`}
+                >
                   <span style={{ fontFamily: "monospace", color: "var(--accent)" }}>{type}</span>
                   <span style={{ color: "var(--text-muted)" }}>{count}</span>
                 </div>
@@ -1094,16 +1101,23 @@ export default function App() {
             <div style={{ fontWeight: 600, fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 1, margin: "10px 0 4px" }}>By File</div>
             {(() => {
               const byFile = new Map<string, number>();
-              for (const r of statsData) {
-                const name = r.file_path.split(/[\\/]/).pop() ?? r.file_path;
-                byFile.set(name, (byFile.get(name) ?? 0) + 1);
-              }
-              return [...byFile.entries()].sort((a, b) => b[1] - a[1]).map(([file, count]) => (
-                <div key={file} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", borderBottom: "1px solid var(--bg3)" }}>
-                  <span style={{ fontFamily: "monospace", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file}</span>
-                  <span style={{ color: "var(--text-muted)", flexShrink: 0, marginLeft: 8 }}>{count}</span>
-                </div>
-              ));
+              for (const r of statsData) byFile.set(r.file_path, (byFile.get(r.file_path) ?? 0) + 1);
+              return [...byFile.entries()].sort((a, b) => b[1] - a[1]).map(([filePath, count]) => {
+                const name = filePath.split(/[\\/]/).pop() ?? filePath;
+                return (
+                  <div
+                    key={filePath}
+                    onClick={() => { setShowStats(false); router.push({ view: "table", file: filePath }); }}
+                    style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", borderBottom: "1px solid var(--bg3)", cursor: "pointer" }}
+                    onMouseEnter={e => (e.currentTarget.style.background = "var(--bg3)")}
+                    onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                    title={filePath}
+                  >
+                    <span style={{ fontFamily: "monospace", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+                    <span style={{ color: "var(--text-muted)", flexShrink: 0, marginLeft: 8 }}>{count}</span>
+                  </div>
+                );
+              });
             })()}
           </div>
         </div>
