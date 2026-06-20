@@ -132,3 +132,9 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - **窗口标题不显示项目名** ✅ `document.title` 现在同步为 `project.yaml● — CFD Editor`（`●` 表示有未保存变更）。
 - ~~**TableView/GlobalTableView 搜索不支持 field:value 语法**~~ ✅ 两个表视图的搜索框现在支持 `fieldname:value` 语法，GlobalTableView 还支持 `key:x` 和 `file:x`；placeholder 已更新提示用户。
 - ~~**incoming refs 面板不显示来源类型**~~ ✅ 每条 incoming ref 现在显示 `key [type] .field_path`，便于区分不同类型的引用记录。
+- ~~**FileTree 无键盘导航**：只能点击文件，无法用 ↑↓ 键在文件间移动~~ ✅ FileTree 容器添加 tabIndex=0 + keyDown 处理器；ArrowUp/Down 按可见文件顺序（考虑目录展开状态）移动选中文件。
+- ~~**RecordView 字段搜索栏仅在字段 > 6 时显示**：字段少时即使有 fieldSearch（如 F8 导航）也不显示搜索框，⚠ 必填 按钮也不可见~~ ✅ 条件改为 `字段>6 || fieldSearch非空 || 有必填空字段`，确保所有场景下搜索栏和必填按钮都可访问。
+- ~~**F8 导航后不自动滚动到目标字段**：navigating 到含 fieldSearch 的记录时，字段列表不滚动到匹配字段~~ ✅ `useEffect([recordKey, initialFieldSearch])` 中增加 `requestAnimationFrame(() => firstMatchRef.scrollIntoView(...))` 调用。
+- ~~**Ctrl+Tab 无法在视图间切换**：用户需要点击 Table/Record/Graph tab 按钮，无键盘快捷方式~~ ✅ 新增 Ctrl+Tab / Ctrl+Shift+Tab 循环切换 Table → Record → Graph（当 Record 视图不可用时跳过）。
+- ~~**Stats 面板类型/文件行不可点击**：显示统计数字但无导航功能~~ ✅ 类型行点击打开对应 GlobalTableView，文件行点击打开对应 TableView。
+- ~~**RecordView 切换记录不回到顶部**：导航到新记录时主内容区保持原来的滚动位置~~ ✅ 添加 mainContentRef + recordKey change 时调用 `scrollTo({ top: 0 })`。
