@@ -128,6 +128,7 @@ interface CellEditorProps {
   sessionId: number;
   onCommit: (raw: string) => void;
   onCancel: () => void;
+  onTabCommit?: (raw: string) => void;
 }
 
 const CELL_STYLE: React.CSSProperties = {
@@ -144,7 +145,7 @@ const CELL_STYLE: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
-function CellEditor({ value, sessionId, onCommit, onCancel }: CellEditorProps) {
+function CellEditor({ value, sessionId, onCommit, onCancel, onTabCommit }: CellEditorProps) {
   const [text, setText] = useState(() => fieldValueToString(value));
   const inputRef = useRef<HTMLInputElement>(null);
   const [enumVariants, setEnumVariants] = useState<string[] | null>(null);
@@ -193,6 +194,7 @@ function CellEditor({ value, sessionId, onCommit, onCancel }: CellEditorProps) {
           onKeyDown={e => {
             if (e.key === "Enter") { e.preventDefault(); onCommit(e.currentTarget.value); }
             if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+            if (e.key === "Tab") { e.preventDefault(); (onTabCommit ?? onCommit)(e.currentTarget.value); }
             e.stopPropagation();
           }}
           autoFocus
@@ -225,6 +227,7 @@ function CellEditor({ value, sessionId, onCommit, onCancel }: CellEditorProps) {
           onKeyDown={e => {
             if (e.key === "Enter") { e.preventDefault(); if (text.trim()) onCommit(text); else onCancel(); }
             if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+            if (e.key === "Tab") { e.preventDefault(); if (text.trim()) (onTabCommit ?? onCommit)(text); else onCancel(); }
             e.stopPropagation();
           }}
           style={CELL_STYLE}
@@ -243,6 +246,7 @@ function CellEditor({ value, sessionId, onCommit, onCancel }: CellEditorProps) {
       onKeyDown={e => {
         if (e.key === "Enter") { e.preventDefault(); onCommit(text); }
         if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+        if (e.key === "Tab") { e.preventDefault(); (onTabCommit ?? onCommit)(text); }
         e.stopPropagation();
       }}
       style={CELL_STYLE}
@@ -726,6 +730,32 @@ export function TableView({
       // onWriteField already shows error toast; keep cell open so user can retry or cancel
     }
   }, [sessionId, filePath, onWriteField]);
+
+  const handleCellTabCommit = useCallback(async (rowKey: string, fieldName: string, raw: string, original: FieldValue) => {
+    // Commit current cell, then move editing to the next editable column in the same row
+    const newValue = parseFieldValue(raw, original);
+    const changed = fieldValueToString(newValue) !== fieldValueToString(original) || newValue.kind !== original.kind;
+    if (changed) {
+      try {
+        await onWriteField(sessionId, filePath, rowKey, [{ kind: "Field", name: fieldName }], newValue, original);
+      } catch { /* keep going */ }
+    }
+    // Find next scalar editable field for this row
+    const row = filteredRows.find(r => r.key === rowKey);
+    if (!row) { setEditingCell(null); return; }
+    const SCALAR_KINDS_SET = new Set(["Null", "Bool", "Int", "Float", "Str", "Enum", "Ref"]);
+    const curIdx = fieldNames.indexOf(fieldName);
+    for (let i = 1; i < fieldNames.length; i++) {
+      const nextName = fieldNames[(curIdx + i) % fieldNames.length];
+      if (row.spread_fields.includes(nextName)) continue;
+      const nextVal = row.fields.find(f => f.name === nextName)?.value;
+      if (nextVal && SCALAR_KINDS_SET.has(nextVal.kind) && nextVal.kind !== "Bool") {
+        setEditingCell({ rowKey, fieldName: nextName, value: nextVal });
+        return;
+      }
+    }
+    setEditingCell(null);
+  }, [sessionId, filePath, onWriteField, fieldNames, filteredRows]);
 
   const handleRenameCommit = useCallback(async () => {
     if (!renameModal || !onRenameRecord) return;
@@ -1258,6 +1288,7 @@ export function TableView({
                             sessionId={sessionId}
                             onCommit={raw => handleCellCommit(row.original.key, colId, raw, editingCell.value)}
                             onCancel={() => setEditingCell(null)}
+                            onTabCommit={raw => handleCellTabCommit(row.original.key, colId, raw, editingCell.value)}
                           />
                         ) : (
                           flexRender(cell.column.columnDef.cell, cell.getContext())
