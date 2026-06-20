@@ -143,3 +143,6 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**无 Ctrl+Y redo**：Ctrl+Z 撤销但无法重做~~ ✅ 新增 redo 栈（undo 时 push，redo 时 pop 回 undo）；任何新写入清空 redo；Ctrl+Y 和 Ctrl+Shift+Z 均触发 redo；顶栏新增 ↪ Redo 按钮；shortcuts tooltip 更新。
 - ~~**批量操作无成功反馈**：TableView/GlobalTableView 批量写入/删除成功后静默清空，用户不确认操作是否完成~~ ✅ 批量写入/删除成功后显示绿色"✓ 已写入 N 条记录的 field 字段"/"✓ 已删除 N 条记录"，3 秒后自动消失；有错误时错误优先显示。
 - ~~**RecordView 字段行无 Ctrl+C 快捷键**：复制字段值只能右键上下文菜单~~ ✅ 字段行键盘焦点时 Ctrl+C 直接复制标量值（Null→"null"，Bool/Int/Float→字面量，Str→字符串，Enum→variant，Ref→target_key）到剪贴板；非标量类型忽略。
+- ~~**GraphView 无邻居焦点模式**：无法临时只看某节点的直接连接关系~~ ✅ 右键菜单新增"仅显示相邻节点"，激活后只有该节点及其直接邻居（入边+出边）保持不透明；工具栏显示"⊙ key × 焦点"芯片，点击取消；切换文件时重置。
+- ~~**RecordView 侧边栏无记录预览摘要**：大量相似 key 无法区分~~ ✅ 每个侧边栏记录项下方显示小灰色字段摘要（优先 name 字段，否则首个非空标量值），与 CommandPalette display_hint 逻辑一致。
+- ~~**GlobalSearch 无历史记录**：每次打开都从空白开始，需要重新输入上次的搜索词~~ ✅ 空查询时显示最近 10 条搜索记录（localStorage 持久化），点击历史项自动填充并重新搜索；每次导航到记录时保存搜索词。
