@@ -905,6 +905,7 @@ export default function App() {
                     onError={showOpError}
                     onNavigate={router.push}
                     diagnostics={project.snapshot?.diagnostics}
+                    availableFiles={collectFilePaths(project.snapshot?.file_tree ?? [])}
                   />
                 )}
                 {router.current.view === "record" && !("recordKey" in router.current) && (

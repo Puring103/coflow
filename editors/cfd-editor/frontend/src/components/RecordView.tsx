@@ -33,12 +33,14 @@ interface RecordViewProps {
   onError?: (msg: string) => void;
   /** Diagnostics from the current session, used to show per-record badges in the sidebar. */
   diagnostics?: DiagnosticItem[];
+  /** All file paths in the project; if more than one, the create modal shows a file picker. */
+  availableFiles?: string[];
 }
 
 interface DuplicateModal { srcKey: string; draft: string; error: string | null }
 interface DeleteModal { recordKey: string }
 interface SourceModal { source: string | null; draft: string; saving: boolean; error: string | null }
-interface CreateModal { key: string; typeName: string; creating: boolean; error: string | null }
+interface CreateModal { key: string; typeName: string; targetFilePath: string; creating: boolean; error: string | null }
 
 function fieldValueToJson(v: FieldValue): unknown {
   switch (v.kind) {
@@ -100,6 +102,7 @@ export function RecordView({
   onNavigate,
   onError,
   diagnostics,
+  availableFiles,
 }: RecordViewProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [fetchedRecord, setFetchedRecord] = useState<RecordRow | null>(null);
@@ -237,7 +240,7 @@ export function RecordView({
       // Ctrl+N: open create-record modal
       if ((e.ctrlKey || e.metaKey) && e.key === "n") {
         e.preventDefault();
-        setCreateModal({ key: "", typeName: record?.actual_type ?? typeNames[0] ?? "", creating: false, error: null });
+        setCreateModal({ key: "", typeName: record?.actual_type ?? typeNames[0] ?? "", targetFilePath: filePath, creating: false, error: null });
         return;
       }
       // Ctrl+D: duplicate current record
@@ -393,13 +396,14 @@ export function RecordView({
     if (!createModal) return;
     const key = createModal.key.trim();
     const typeName = createModal.typeName;
+    const targetFile = createModal.targetFilePath || filePath;
     if (!key) { setCreateModal(m => m && ({ ...m, error: "Key cannot be empty" })); return; }
     if (!typeName) { setCreateModal(m => m && ({ ...m, error: "Type is required" })); return; }
     setCreateModal(m => m && ({ ...m, creating: true, error: null }));
     try {
-      await onWriteField(sessionId, filePath, key, [], { kind: "Object", actual_type: typeName, fields: [] });
+      await onWriteField(sessionId, targetFile, key, [], { kind: "Object", actual_type: typeName, fields: [] });
       setCreateModal(null);
-      onNavigate({ view: "record", file: filePath, recordKey: key });
+      onNavigate({ view: "record", file: targetFile, recordKey: key });
     } catch (e) {
       setCreateModal(m => m && ({ ...m, creating: false, error: String(e) }));
     }
@@ -464,7 +468,7 @@ export function RecordView({
         }}>
           <span>Records</span>
           <span
-            onClick={() => setCreateModal({ key: "", typeName: record?.actual_type ?? typeNames[0] ?? "", creating: false, error: null })}
+            onClick={() => setCreateModal({ key: "", typeName: record?.actual_type ?? typeNames[0] ?? "", targetFilePath: filePath, creating: false, error: null })}
             title="新建记录 (Ctrl+N)"
             style={{ color: "var(--accent)", fontSize: 14, cursor: "pointer", lineHeight: 1, padding: "0 2px" }}
           >＋</span>
@@ -674,7 +678,7 @@ export function RecordView({
         {/* New record button */}
         <div style={{ borderTop: "1px solid var(--border)", padding: 6, flexShrink: 0 }}>
           <button
-            onClick={() => setCreateModal({ key: "", typeName: record?.actual_type ?? typeNames[0] ?? "", creating: false, error: null })}
+            onClick={() => setCreateModal({ key: "", typeName: record?.actual_type ?? typeNames[0] ?? "", targetFilePath: filePath, creating: false, error: null })}
             title="Create a new record in this file (Ctrl+N)"
             style={{ width: "100%", fontSize: 11, justifyContent: "flex-start" }}
           >
@@ -1249,6 +1253,20 @@ export function RecordView({
                 ))}
               </select>
             </label>
+            {availableFiles && availableFiles.length > 1 && (
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
+                目标文件
+                <select
+                  value={createModal.targetFilePath}
+                  onChange={e => setCreateModal(m => m && ({ ...m, targetFilePath: e.target.value }))}
+                  style={{ background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "4px 8px", fontSize: 13, outline: "none" }}
+                >
+                  {availableFiles.map(f => (
+                    <option key={f} value={f}>{f.split(/[\\/]/).pop() ?? f}</option>
+                  ))}
+                </select>
+              </label>
+            )}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button onClick={() => setCreateModal(null)}>取消</button>
               <button
