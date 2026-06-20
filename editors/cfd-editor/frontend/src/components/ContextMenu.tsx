@@ -16,11 +16,28 @@ interface ContextMenuProps {
 export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x, y });
+  const [activeIdx, setActiveIdx] = useState<number | null>(null);
 
   useEffect(() => {
     const handleClick = () => onClose();
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") { onClose(); return; }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setActiveIdx(i => (i === null ? 0 : Math.min(i + 1, items.length - 1)));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setActiveIdx(i => (i === null ? items.length - 1 : Math.max(i - 1, 0)));
+        return;
+      }
+      if (e.key === "Enter" && activeIdx !== null) {
+        e.preventDefault();
+        items[activeIdx]?.onClick();
+        onClose();
+        return;
+      }
     };
     document.addEventListener("mousedown", handleClick);
     document.addEventListener("keydown", handleKeyDown);
@@ -28,7 +45,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
       document.removeEventListener("mousedown", handleClick);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [onClose]);
+  }, [onClose, activeIdx, items]);
 
   // Clamp to viewport after first render when we know the menu dimensions
   useEffect(() => {
@@ -65,15 +82,16 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
         <div
           key={idx}
           onClick={() => { item.onClick(); onClose(); }}
+          onMouseEnter={() => setActiveIdx(idx)}
+          onMouseLeave={() => setActiveIdx(null)}
           style={{
             padding: "6px 14px",
             cursor: "pointer",
             fontSize: 13,
             color: item.danger ? "var(--error)" : "var(--text)",
             userSelect: "none",
+            background: activeIdx === idx ? "var(--bg3)" : "transparent",
           }}
-          onMouseEnter={e => (e.currentTarget.style.background = "var(--bg3)")}
-          onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
         >
           {item.label}
         </div>
