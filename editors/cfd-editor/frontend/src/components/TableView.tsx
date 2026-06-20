@@ -359,7 +359,10 @@ export function TableView({
 
   // Reset sorting, search, column visibility and selection when type changes
   useEffect(() => {
-    setSorting([]);
+    try {
+      const stored = localStorage.getItem(`cfd-sort:${activeType}`);
+      setSorting(stored ? JSON.parse(stored) : []);
+    } catch { setSorting([]); }
     setSearch("");
     try {
       const stored = localStorage.getItem(`cfd-col-vis:${activeType}`);
@@ -677,11 +680,22 @@ export function TableView({
 
   const columnResizeMode: ColumnResizeMode = "onChange";
 
+  const handleSortingChange: React.Dispatch<React.SetStateAction<SortingState>> = (updater) => {
+    setSorting(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      try {
+        if (next.length > 0) localStorage.setItem(`cfd-sort:${activeType}`, JSON.stringify(next));
+        else localStorage.removeItem(`cfd-sort:${activeType}`);
+      } catch { /* ignore */ }
+      return next;
+    });
+  };
+
   const table = useReactTable({
     data: filteredRows,
     columns,
     state: { sorting, columnVisibility, columnSizing },
-    onSortingChange: setSorting,
+    onSortingChange: handleSortingChange,
     onColumnVisibilityChange: setColumnVisibility,
     onColumnSizingChange: setColumnSizing,
     getCoreRowModel: getCoreRowModel(),
