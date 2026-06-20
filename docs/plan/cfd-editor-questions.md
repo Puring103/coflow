@@ -148,3 +148,8 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**GlobalSearch 无历史记录**：每次打开都从空白开始，需要重新输入上次的搜索词~~ ✅ 空查询时显示最近 10 条搜索记录（localStorage 持久化），点击历史项自动填充并重新搜索；每次导航到记录时保存搜索词。
 - ~~**TableView 列宽不持久**：列宽调整后刷新/切换类型会重置~~ ✅ 新增 `ColumnSizingState` + `onColumnSizingChange` 连接到 TanStack Table；列宽保存到 `cfd-col-size:{type}` localStorage，切换类型时读取。
 - ~~**新建记录 key 需要手动输入**：需要自己想一个唯一 key，不知道已有哪些~~ ✅ "新建记录"弹窗新增"✦ 建议"按钮，自动生成 `type_001`、`type_002` 风格的 key（CamelCase→snake_case，跳过已存在的 key）；TableView 和 GlobalTableView 均支持。
+- ~~**复制记录弹窗无智能 key 建议**：RecordView/GlobalTableView 复制弹窗默认 `{key}_copy` 但不检查冲突~~ ✅ 两个视图的复制弹窗新增"✦ 建议"按钮，生成 `{srcKey}_copy_001` 风格的 key，跳过已存在的 key。
+- ~~**TableView/GlobalTableView 无 Ctrl+Shift+R 快捷键**：切换必填字段过滤只能点击按钮~~ ✅ 两个表视图添加 Ctrl+Shift+R 键盘快捷键，与 RecordView 的 Ctrl+Shift+R（跳转到下一个必填空字段）保持语义一致；shortcuts tooltip 更新。
+- ~~**RecordView 新建记录弹窗无文件选择**：多文件项目中只能在当前文件创建新记录~~ ✅ 当项目有多个文件时，新建记录弹窗显示"目标文件"下拉选择器（与 GlobalTableView 一致）；`availableFiles` prop 从 App.tsx 传入。
+- ~~**GraphView 文件图例不可点击**：多文件项目中无法按文件过滤节点~~ ✅ 文件图例 chip 改为可点击按钮，点击切换隐藏/显示该文件的所有节点（与类型 chip 行为一致）；切换文件/session 时重置。
+- ~~**FileTree 目录无批量展开/折叠**：需逐个点击才能展开或折叠子目录树~~ ✅ 目录右键菜单新增"展开所有子目录"和"折叠所有子目录"选项，递归操作整个子树。
