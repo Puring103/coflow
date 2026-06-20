@@ -114,3 +114,6 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**TableView 无 Ctrl+D 快捷键**：RecordView 有 Ctrl+D 复制记录，TableView 只有右键菜单~~ ✅ TableView 添加 Ctrl+D 快捷键，优先复制第一个已选中行（否则复制第一行），打开 duplicate modal。
 - ~~**GlobalTableView 无批量删除**：可以多选行但无批量删除功能（只有单行右键删除）~~ ✅ 批量操作栏新增"批量删除"按钮，点击弹出确认对话框，确认后顺序删除并汇报失败条目。
 - ~~**无一键全部文件排序**：sort_file_records 只能对单个文件操作，多文件项目需逐个排序~~ ✅ 新增 `sort_all_files_inner` Rust 命令 + Tauri handler + API；顶栏新增"⇅ Sort All"按钮，一键对所有已加载文件排序；新增集成测试。
+- ~~**RecordView 字段列表无法用键盘导航**：所有字段 tabIndex=-1，用户只能点击字段，Tab 键无法在字段间移动~~ ✅ 所有非 spread 字段行改为 tabIndex=0，Tab 在字段间顺序移动，Enter/Space 触发编辑（通过 `[data-edit-trigger]` 查找），DataCard 所有 Object/Array/Dict 折叠头也添加了 tabIndex=0 + Enter/Space 支持。
+- ~~**TableView 单元格编辑不支持 Tab 跳列**：编辑单元格后需要点击下一列才能继续编辑~~ ✅ CellEditor 新增 `onTabCommit` 回调，Tab 键提交当前值并移动编辑焦点到同行下一个可编辑的非 spread 标量字段（Bool 列跳过），`handleCellTabCommit` 实现跳转逻辑。
+- ~~**RecordView 侧边栏无"查找引用"入口**：需要手动查看记录详情页才能看到 incoming refs~~ ✅ 侧边栏右键菜单新增"查找引用此记录的记录"，点击后跳转到该记录并自动展开 incoming refs 面板（若有引用）。
