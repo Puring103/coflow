@@ -153,3 +153,8 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**RecordView 新建记录弹窗无文件选择**：多文件项目中只能在当前文件创建新记录~~ ✅ 当项目有多个文件时，新建记录弹窗显示"目标文件"下拉选择器（与 GlobalTableView 一致）；`availableFiles` prop 从 App.tsx 传入。
 - ~~**GraphView 文件图例不可点击**：多文件项目中无法按文件过滤节点~~ ✅ 文件图例 chip 改为可点击按钮，点击切换隐藏/显示该文件的所有节点（与类型 chip 行为一致）；切换文件/session 时重置。
 - ~~**FileTree 目录无批量展开/折叠**：需逐个点击才能展开或折叠子目录树~~ ✅ 目录右键菜单新增"展开所有子目录"和"折叠所有子目录"选项，递归操作整个子树。
+- **列头 tooltip 显示字段类型**：TableView 和 GlobalTableView 列头 hover 时现在显示 `fieldName: type`，方便用户了解字段类型而无需打开列选择器。
+- ~~**RecordView 侧边栏无诊断过滤**：侧边栏无法快速定位有问题的记录~~ ✅ 侧边栏搜索框旁新增 ⚠ 按钮（仅在有诊断时显示），点击后只显示有 error/warning 的记录（当前记录始终显示）。
+- **全局操作成功反馈**：新增 `showOpSuccess` 绿色 toast（3 秒自动消失）；Sort All 操作现在显示成功摘要（"已对 N 个文件排序"或"已是字母顺序"）。
+- ~~**GlobalTableView 选中行无 CSV 复制**：只有全量导出 CSV，无法只复制选中行~~ ✅ 批量操作栏新增"⎘ CSV"按钮，将选中行（可见列）复制为 CSV 格式到剪贴板。
+- **incoming refs 最多显示 50 条**：对被大量引用的记录，incoming refs 面板现在最多显示 50 条并注明"… and N more"，避免性能问题。
