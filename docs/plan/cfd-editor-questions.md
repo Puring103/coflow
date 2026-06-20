@@ -138,3 +138,8 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**Ctrl+Tab 无法在视图间切换**：用户需要点击 Table/Record/Graph tab 按钮，无键盘快捷方式~~ ✅ 新增 Ctrl+Tab / Ctrl+Shift+Tab 循环切换 Table → Record → Graph（当 Record 视图不可用时跳过）。
 - ~~**Stats 面板类型/文件行不可点击**：显示统计数字但无导航功能~~ ✅ 类型行点击打开对应 GlobalTableView，文件行点击打开对应 TableView。
 - ~~**RecordView 切换记录不回到顶部**：导航到新记录时主内容区保持原来的滚动位置~~ ✅ 添加 mainContentRef + recordKey change 时调用 `scrollTo({ top: 0 })`。
+- ~~**GraphView 无类型过滤**：文件含多种类型时无法按类型筛选节点显示~~ ✅ 工具栏新增类型 chip 按钮，点击切换隐藏/显示；隐藏类型节点淡出到 10% 透明度，chip 显示删除线；切换文件时重置。
+- ~~**DiagnosticsPanel 无文本搜索**：只能按严重度过滤，无法搜索特定消息或代码~~ ✅ 展开时显示搜索输入框，实时过滤 message/code/record_key/field_path；Escape 清空；关闭面板时重置。
+- ~~**无 Ctrl+Y redo**：Ctrl+Z 撤销但无法重做~~ ✅ 新增 redo 栈（undo 时 push，redo 时 pop 回 undo）；任何新写入清空 redo；Ctrl+Y 和 Ctrl+Shift+Z 均触发 redo；顶栏新增 ↪ Redo 按钮；shortcuts tooltip 更新。
+- ~~**批量操作无成功反馈**：TableView/GlobalTableView 批量写入/删除成功后静默清空，用户不确认操作是否完成~~ ✅ 批量写入/删除成功后显示绿色"✓ 已写入 N 条记录的 field 字段"/"✓ 已删除 N 条记录"，3 秒后自动消失；有错误时错误优先显示。
+- ~~**RecordView 字段行无 Ctrl+C 快捷键**：复制字段值只能右键上下文菜单~~ ✅ 字段行键盘焦点时 Ctrl+C 直接复制标量值（Null→"null"，Bool/Int/Float→字面量，Str→字符串，Enum→variant，Ref→target_key）到剪贴板；非标量类型忽略。
