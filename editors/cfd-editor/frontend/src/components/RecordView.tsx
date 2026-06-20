@@ -166,7 +166,19 @@ export function RecordView({
 
   // Reset type filter and search when file changes; reset field search when record changes
   useEffect(() => { setTypeFilter(null); setSidebarSearch(""); pendingRenameKeyRef.current = null; }, [filePath]);
-  useEffect(() => { setFieldSearch(initialFieldSearch ?? ""); setShowRequiredOnly(false); }, [recordKey, initialFieldSearch]);
+  useEffect(() => {
+    setFieldSearch(initialFieldSearch ?? "");
+    setShowRequiredOnly(false);
+    // Scroll the first matching field into view when navigating with a fieldSearch pre-set
+    if (initialFieldSearch) {
+      const q = initialFieldSearch.toLowerCase();
+      requestAnimationFrame(() => {
+        const entry = [...fieldRowRefs.current.entries()].find(([name]) => name.toLowerCase().includes(q));
+        entry?.[1]?.scrollIntoView({ block: "nearest" });
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordKey, initialFieldSearch]);
 
   // Auto-clear showRequiredOnly when there are no more required-null fields to show
   useEffect(() => {
