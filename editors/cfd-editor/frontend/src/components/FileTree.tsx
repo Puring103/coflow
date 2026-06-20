@@ -130,6 +130,15 @@ function collectDirPaths(nodes: FileTreeNode[]): string[] {
   return result;
 }
 
+function collectChildDirPaths(node: FileTreeNode): string[] {
+  if (!node.is_dir) return [];
+  const result: string[] = [node.path];
+  for (const child of node.children) {
+    result.push(...collectChildDirPaths(child));
+  }
+  return result;
+}
+
 function collectVisibleFilePaths(nodes: FileTreeNode[], expandedDirs: Set<string>): string[] {
   const result: string[] = [];
   for (const n of nodes) {
@@ -191,6 +200,24 @@ export function FileTree({ nodes, selectedPath, sessionId, onSelect, onNewFile, 
 
   const handleNodeContextMenu = useCallback((e: React.MouseEvent, node: FileTreeNode) => {
     const items: { label: string; danger?: boolean; onClick: () => void }[] = [];
+    if (node.is_dir) {
+      items.push({
+        label: "展开所有子目录",
+        onClick: () => {
+          const dirs = collectChildDirPaths(node);
+          for (const d of dirs) expandedRef.current!.add(d);
+          forceRender(n => n + 1);
+        },
+      });
+      items.push({
+        label: "折叠所有子目录",
+        onClick: () => {
+          const dirs = collectChildDirPaths(node);
+          for (const d of dirs) expandedRef.current!.delete(d);
+          forceRender(n => n + 1);
+        },
+      });
+    }
     if (sessionId !== undefined) {
       items.push({
         label: "在资源管理器中显示",
