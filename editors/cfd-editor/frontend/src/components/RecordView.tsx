@@ -812,7 +812,10 @@ export function RecordView({
                   )}
                 </span>
                 <span
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onNavigate({ view: "table", file: filePath })}
+                  onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onNavigate({ view: "table", file: filePath }); } }}
                   style={{
                     color: "var(--text-muted)",
                     fontSize: 10,
@@ -825,6 +828,7 @@ export function RecordView({
                     cursor: "pointer",
                     textDecoration: "underline",
                     textDecorationStyle: "dotted",
+                    outline: "none",
                   }}
                   title={`${filePath} — 点击在文件表视图中打开`}
                 >
@@ -934,7 +938,10 @@ export function RecordView({
                   {record.spread_sources.map(src => (
                     <span
                       key={src.key}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => onNavigate({ view: "record", file: src.file || filePath, recordKey: src.key })}
+                      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onNavigate({ view: "record", file: src.file || filePath, recordKey: src.key }); } }}
                       title={`跳转到 spread 源记录 ${src.key}${src.file && src.file !== filePath ? ` (${src.file})` : ""}`}
                       style={{
                         color: "var(--accent)",
@@ -943,6 +950,7 @@ export function RecordView({
                         cursor: "pointer",
                         textDecoration: "underline",
                         textDecorationStyle: "dotted",
+                        outline: "none",
                       }}
                     >
                       {src.key}
@@ -954,12 +962,16 @@ export function RecordView({
               {incomingRefs.length > 0 && (
                 <div style={{ marginTop: 6 }}>
                   <span
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setShowIncomingRefs(v => !v)}
+                    onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setShowIncomingRefs(v => !v); } }}
                     style={{
                       color: "var(--text-muted)",
                       fontSize: 11,
                       cursor: "pointer",
                       userSelect: "none",
+                      outline: "none",
                     }}
                     title="Records that reference this record"
                   >
@@ -973,10 +985,13 @@ export function RecordView({
                         return (
                         <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <span
+                            role="button"
+                            tabIndex={0}
                             onClick={() => {
                               const topField = ref.field_path.split(/[.[]/)[0];
                               onNavigate({ view: "record", file: ref.source_file || filePath, recordKey: ref.source_key, ...(topField ? { fieldSearch: topField } : {}) });
                             }}
+                            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); const topField = ref.field_path.split(/[.[]/)[0]; onNavigate({ view: "record", file: ref.source_file || filePath, recordKey: ref.source_key, ...(topField ? { fieldSearch: topField } : {}) }); } }}
                             style={{
                               color: "var(--accent)",
                               fontSize: 11,
@@ -984,6 +999,7 @@ export function RecordView({
                               cursor: "pointer",
                               textDecoration: "underline",
                               textDecorationStyle: "dotted",
+                              outline: "none",
                             }}
                             title={`跳转并高亮 .${ref.field_path} 字段 (${ref.source_type} @ ${ref.source_file})`}
                           >
