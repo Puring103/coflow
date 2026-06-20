@@ -175,3 +175,6 @@ layout promise 回来会覆盖新的。已在 useEffect cleanup 中添加 `cance
 - ~~**DataCard Ref ↗ 按钮无键盘支持**：只能点击，不能用键盘激活~~ ✅ ↗ span 添加 `role="button" tabIndex=0 onKeyDown`，Enter/Space 触发导航。
 - **RecordView 中 Ref 字段无引用记录 display_hint tooltip**：hover Ref 值时不显示目标记录的名称摘要。已决定不实现：target 可能在其他文件，RecordView 只持有当前文件的 allRecords，获取跨文件提示需要额外 API 调用开销。
 - ~~**窗口标题不显示当前记录 key**：在 RecordView 时仍显示项目名，无法从 OS 任务栏区分正在编辑哪条记录~~ ✅ `document.title` 更新为 `recordKey● — projectName — CFD Editor` 格式，切换记录时实时更新。
+- ~~**Ctrl+Shift+T 每次打开全局表到第一个类型**：不记忆上次浏览的类型~~ ✅ 读写 `cfd-last-global-type` localStorage；onTypeChange 时持久化，Ctrl+Shift+T 和工具栏按钮均优先恢复上次类型。
+- ~~**Ctrl+Shift+C 复制 Key 无成功反馈**：静默成功，只有失败时显示 toast~~ ✅ 添加 `onSuccess` prop 到 RecordView；复制成功后显示"已复制 Key: xxx" toast。
+- ~~**RecordView 头部无快捷复制 JSON 按钮**：复制为 JSON 仅在右键菜单中可用~~ ✅ 在 Source 按钮旁添加 ⎘ JSON 按钮，点击复制整条记录为 JSON 并显示成功 toast。
