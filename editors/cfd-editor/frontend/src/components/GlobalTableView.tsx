@@ -813,7 +813,10 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                 <div
                   key={col}
                   onClick={() => handleSortClick(col)}
-                  title={`Sort by ${col}`}
+                  title={(() => {
+                    const schema = fieldSchemas.find(s => s.name === col);
+                    return schema ? `${col}: ${schema.type_str} — click to sort` : `Sort by ${col}`;
+                  })()}
                   style={{
                     width: w,
                     flexShrink: 0,

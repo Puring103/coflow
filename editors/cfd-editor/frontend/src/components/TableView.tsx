@@ -1210,7 +1210,10 @@ export function TableView({
                       whiteSpace: "nowrap",
                       cursor: header.column.getCanSort() ? "pointer" : "default",
                     }}
-                    title={header.id}
+                    title={(() => {
+                      const schema = fieldSchemas.find(s => s.name === header.id);
+                      return schema ? `${header.id}: ${schema.type_str}` : header.id;
+                    })()}
                   >
                     {flexRender(header.column.columnDef.header, header.getContext())}
                     {header.column.getIsSorted() === "asc" && (
