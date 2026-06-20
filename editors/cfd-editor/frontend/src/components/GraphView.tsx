@@ -229,6 +229,7 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [layoutFallback, setLayoutFallback] = useState(false);
+  const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
   const contextMenuRef = useRef<(e: React.MouseEvent, gnode: GraphNode) => void>(() => {});
 
   // Clear layout cache and reset state when session changes (new project loaded)
@@ -243,6 +244,7 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError
     setExpandedKeys([]);
     setGraphData(null);
     setSearch("");
+    setHiddenTypes(new Set());
   }, [sessionId, filePath]);
 
   useEffect(() => {
@@ -448,24 +450,25 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graphData, filePath, cacheKey]);
 
-  // Apply search filter: highlight matching nodes, fade non-matching
+  // Apply search + type filter: highlight matching nodes, fade non-matching
   const displayNodes = nodes.map(node => {
-    if (!search) return node;
     const g = node.data.gnode;
-    const matches =
+    const typeHidden = hiddenTypes.has(g.actual_type);
+    const searchMatches = !search ||
       g.key.toLowerCase().includes(search.toLowerCase()) ||
       g.actual_type.toLowerCase().includes(search.toLowerCase());
+    const visible = !typeHidden && searchMatches;
     return {
       ...node,
       style: {
         ...node.style,
-        opacity: matches ? 1 : 0.15,
-        filter: matches ? "drop-shadow(0 0 6px #4a9eff88)" : undefined,
+        opacity: visible ? 1 : 0.10,
+        filter: visible && search ? "drop-shadow(0 0 6px #4a9eff88)" : undefined,
       },
     };
   });
 
-  const matchCount = search
+  const matchCount = (search || hiddenTypes.size > 0)
     ? displayNodes.filter(n => ((n.style?.opacity as number | undefined) ?? 1) > 0.5).length
     : nodes.length;
   const noSearchMatches = search.length > 0 && matchCount === 0;
@@ -520,6 +523,41 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError
             折叠全部
           </button>
         )}
+        {graphData && (() => {
+          const allTypes = Array.from(new Set(graphData.nodes.map(n => n.actual_type))).filter(Boolean).sort();
+          if (allTypes.length <= 1) return null;
+          return (
+            <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+              {allTypes.map(t => {
+                const hidden = hiddenTypes.has(t);
+                return (
+                  <button
+                    key={t}
+                    onClick={() => setHiddenTypes(prev => {
+                      const next = new Set(prev);
+                      if (next.has(t)) next.delete(t); else next.add(t);
+                      return next;
+                    })}
+                    title={hidden ? `Show ${t}` : `Hide ${t}`}
+                    style={{
+                      fontSize: 10,
+                      padding: "1px 7px",
+                      borderRadius: 10,
+                      border: `1px solid ${fileColor(t)}88`,
+                      background: hidden ? "transparent" : `${fileColor(t)}22`,
+                      color: hidden ? "var(--text-muted)" : fileColor(t),
+                      cursor: "pointer",
+                      opacity: hidden ? 0.5 : 1,
+                      textDecoration: hidden ? "line-through" : "none",
+                    }}
+                  >
+                    {t}
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })()}
         {graphData && (() => {
           const filePaths = Array.from(new Set(graphData.nodes.map(n => n.file_path))).filter(Boolean).sort();
           if (filePaths.length <= 1) return null;

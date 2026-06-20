@@ -39,12 +39,13 @@ function severityRank(severity: string): number {
 export function DiagnosticsPanel({ diagnostics, onNavigate, currentFile, onError, toggleRef }: DiagnosticsPanelProps) {
   const [expanded, setExpanded] = useState(false);
   useEffect(() => {
-    if (toggleRef) toggleRef.current = () => setExpanded(e => !e);
+    if (toggleRef) toggleRef.current = () => setExpanded(e => { if (e) setSearch(""); return !e; });
     return () => { if (toggleRef) toggleRef.current = null; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [filter, setFilter] = useState<SeverityFilter>("all");
   const [fileOnly, setFileOnly] = useState(false);
+  const [search, setSearch] = useState("");
   const prevErrorCountRef = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -78,9 +79,18 @@ export function DiagnosticsPanel({ diagnostics, onNavigate, currentFile, onError
 
   const filtered = baseFiltered
     .filter(d => {
-      if (filter === "all") return true;
-      if (filter === "info") return d.severity.toLowerCase() !== "error" && d.severity.toLowerCase() !== "warning";
-      return d.severity.toLowerCase() === filter;
+      if (filter !== "all") {
+        if (filter === "info" && (d.severity.toLowerCase() === "error" || d.severity.toLowerCase() === "warning")) return false;
+        if (filter !== "info" && d.severity.toLowerCase() !== filter) return false;
+      }
+      if (search) {
+        const q = search.toLowerCase();
+        return d.message.toLowerCase().includes(q) ||
+          d.code.toLowerCase().includes(q) ||
+          (d.record_key ?? "").toLowerCase().includes(q) ||
+          (d.field_path ?? "").toLowerCase().includes(q);
+      }
+      return true;
     })
     .sort((a, b) => severityRank(a.severity) - severityRank(b.severity));
 
@@ -167,9 +177,27 @@ export function DiagnosticsPanel({ diagnostics, onNavigate, currentFile, onError
           )}
         </div>
 
-        {/* Severity filter tabs + file filter — only show when expanded */}
+        {/* Severity filter tabs + file filter + search — only show when expanded */}
         {expanded && (
           <div style={{ display: "flex", gap: 2, padding: "0 8px", alignItems: "center" }}>
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              onClick={e => e.stopPropagation()}
+              onKeyDown={e => { if (e.key === "Escape") setSearch(""); e.stopPropagation(); }}
+              placeholder="Search…"
+              style={{
+                background: "var(--bg3)",
+                border: search ? "1px solid var(--accent)" : "1px solid var(--border)",
+                borderRadius: 4,
+                color: "var(--text)",
+                padding: "2px 7px",
+                fontSize: 11,
+                outline: "none",
+                width: 120,
+                marginRight: 4,
+              }}
+            />
             {currentFile && (
               <button
                 onClick={e => { e.stopPropagation(); setFileOnly(f => !f); }}
