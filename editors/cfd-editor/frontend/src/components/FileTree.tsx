@@ -12,6 +12,7 @@ interface FileTreeProps {
   onDeleteFile?: (path: string) => void;
   onRenameFile?: (oldPath: string, newPath: string) => Promise<void>;
   onReloadFile?: (path: string) => void;
+  onError?: (msg: string) => void;
 }
 
 interface RenameFileModal {
@@ -129,7 +130,7 @@ function collectDirPaths(nodes: FileTreeNode[]): string[] {
   return result;
 }
 
-export function FileTree({ nodes, selectedPath, sessionId, onSelect, onNewFile, onDeleteFile, onRenameFile, onReloadFile }: FileTreeProps) {
+export function FileTree({ nodes, selectedPath, sessionId, onSelect, onNewFile, onDeleteFile, onRenameFile, onReloadFile, onError }: FileTreeProps) {
   const expandedRef = useRef<Set<string> | null>(null);
   const knownDirsRef = useRef<Set<string>>(new Set());
 
@@ -181,7 +182,7 @@ export function FileTree({ nodes, selectedPath, sessionId, onSelect, onNewFile, 
     if (sessionId !== undefined) {
       items.push({
         label: "在资源管理器中显示",
-        onClick: () => api.revealInExplorer(sessionId, node.path).catch(() => {}),
+        onClick: () => api.revealInExplorer(sessionId, node.path).catch(e => onError?.(`无法打开资源管理器: ${e}`)),
       });
     }
     if (onReloadFile && !node.is_dir) {

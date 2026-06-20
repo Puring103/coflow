@@ -235,7 +235,7 @@ function RefEditor({ value, sessionId, onCommit, onCancel }: RefEditorProps) {
     if (sessionId === undefined || !value.target_type) return;
     api.getRefTargets(sessionId, value.target_type).then(keys => {
       if (keys.length > 0) setSuggestions(keys);
-    }).catch(() => {});
+    }).catch(e => console.error("getRefTargets failed:", e));
   }, [sessionId, value.target_type]);
 
   const commit = () => {
@@ -292,7 +292,7 @@ function EnumEditor({ value, sessionId, onCommit, onCancel }: EnumEditorProps) {
   useEffect(() => {
     api.getEnumVariants(sessionId, value.enum_name).then(vs => {
       if (vs.length > 0) setVariants(vs);
-    }).catch(() => {});
+    }).catch(e => console.error("getEnumVariants failed:", e));
   }, [sessionId, value.enum_name]);
 
   return (
@@ -341,7 +341,7 @@ function DictEntry({ entry, depth, sessionId, onEditValue, onEditKey, onRemove, 
     if (entry.key.kind !== "Enum" || !onEditKey || sessionId === undefined) return;
     api.getEnumVariants(sessionId, entry.key.enum_name).then(vs => {
       if (vs.length > 0) setEnumVariants(vs);
-    }).catch(() => {});
+    }).catch(e => console.error("getEnumVariants (dict key) failed:", e));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, entry.key.kind === "Enum" ? (entry.key as { enum_name: string }).enum_name : "", !!onEditKey]);
 

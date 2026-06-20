@@ -294,7 +294,7 @@ export function RecordView({
 
   // Fetch all type names for the create-record modal
   useEffect(() => {
-    api.getAllTypeNames(sessionId).then(names => setAllTypeNames(names)).catch(() => {});
+    api.getAllTypeNames(sessionId).then(names => setAllTypeNames(names)).catch(e => console.error("getAllTypeNames failed:", e));
   }, [sessionId]);
 
   // Fetch incoming refs when recordKey changes
@@ -304,7 +304,7 @@ export function RecordView({
     setShowIncomingRefs(false);
     api.getIncomingRefs(sessionId, recordKey)
       .then(refs => { if (!cancelled) setIncomingRefs(refs); })
-      .catch(() => { if (!cancelled) setIncomingRefs([]); });
+      .catch(e => { if (!cancelled) { console.error("getIncomingRefs failed:", e); setIncomingRefs([]); } });
     return () => { cancelled = true; };
   }, [sessionId, recordKey]);
 

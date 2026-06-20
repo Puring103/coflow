@@ -155,11 +155,11 @@ function CellEditor({ value, sessionId, onCommit, onCancel }: CellEditorProps) {
     if (value.kind === "Enum") {
       api.getEnumVariants(sessionId, value.enum_name).then(vs => {
         setEnumVariants(vs.length > 0 ? vs : []);
-      }).catch(() => { setEnumVariants([]); });
+      }).catch(e => { console.error("getEnumVariants failed:", e); setEnumVariants([]); });
     } else if (value.kind === "Ref" && value.target_type) {
       api.getRefTargets(sessionId, value.target_type).then(keys => {
         if (keys.length > 0) setRefTargets(keys);
-      }).catch(() => {});
+      }).catch(e => console.error("getRefTargets failed:", e));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, value.kind === "Enum" ? (value as { enum_name: string }).enum_name : "",

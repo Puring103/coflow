@@ -644,6 +644,7 @@ export default function App() {
               onDeleteFile={handleDeleteFile}
               onRenameFile={handleRenameFile}
               onReloadFile={handleReloadFile}
+              onError={showOpError}
             />
           </aside>
         )}
@@ -800,6 +801,7 @@ export default function App() {
                     filePath={router.current.file}
                     onNavigate={router.push}
                     refreshKey={graphRefreshKey}
+                    onError={showOpError}
                   />
                 )}
 
@@ -871,7 +873,7 @@ export default function App() {
 
       {/* Diagnostics panel */}
       {project.snapshot && (
-        <DiagnosticsPanel diagnostics={project.snapshot.diagnostics} onNavigate={router.push} currentFile={(router.current && router.current.view !== "global-table") ? router.current.file : undefined} />
+        <DiagnosticsPanel diagnostics={project.snapshot.diagnostics} onNavigate={router.push} currentFile={(router.current && router.current.view !== "global-table") ? router.current.file : undefined} onError={showOpError} />
       )}
 
       {/* New file modal */}

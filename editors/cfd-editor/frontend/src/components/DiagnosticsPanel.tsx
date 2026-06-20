@@ -6,6 +6,7 @@ interface DiagnosticsPanelProps {
   diagnostics: DiagnosticItem[];
   onNavigate?: (route: Route) => void;
   currentFile?: string | null;
+  onError?: (msg: string) => void;
 }
 
 type SeverityFilter = "all" | "error" | "warning" | "info";
@@ -34,7 +35,7 @@ function severityRank(severity: string): number {
   }
 }
 
-export function DiagnosticsPanel({ diagnostics, onNavigate, currentFile }: DiagnosticsPanelProps) {
+export function DiagnosticsPanel({ diagnostics, onNavigate, currentFile, onError }: DiagnosticsPanelProps) {
   const [expanded, setExpanded] = useState(false);
   const [filter, setFilter] = useState<SeverityFilter>("all");
   const [fileOnly, setFileOnly] = useState(false);
@@ -211,7 +212,7 @@ export function DiagnosticsPanel({ diagnostics, onNavigate, currentFile }: Diagn
                     (d.record_key ? ` [${d.record_key}]` : "") +
                     (d.field_path ? `.${d.field_path}` : "")
                   ).join("\n");
-                  navigator.clipboard.writeText(text).catch(() => {});
+                  navigator.clipboard.writeText(text).catch(e => onError?.(`复制失败: ${e}`));
                 }}
                 title="Copy all visible diagnostics to clipboard"
                 style={{

@@ -216,9 +216,10 @@ interface GraphViewProps {
   filePath: string;
   onNavigate: (route: Route) => void;
   refreshKey?: number;
+  onError?: (msg: string) => void;
 }
 
-export function GraphView({ sessionId, filePath, onNavigate, refreshKey }: GraphViewProps) {
+export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError }: GraphViewProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<CfdNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -312,7 +313,7 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey }: Graph
         },
         {
           label: "复制 Key",
-          onClick: () => navigator.clipboard.writeText(gnode.key).catch(() => {}),
+          onClick: () => navigator.clipboard.writeText(gnode.key).catch(e => onError?.(`复制失败: ${e}`)),
         },
         ...(!gnode.is_collapsed ? [{
           label: "折叠节点",
