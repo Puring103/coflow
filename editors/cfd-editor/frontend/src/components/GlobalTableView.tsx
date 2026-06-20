@@ -1036,6 +1036,38 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
               批量删除
             </button>
           )}
+          <button
+            onClick={() => {
+              const selected = filteredRows.filter(r => selectedKeys.has(`${r.file_path}::${r.key}`));
+              if (selected.length === 0) return;
+              const header = ["key", "file", ...visibleFieldNames].join(",");
+              function csvEscape(s: string): string {
+                if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replace(/"/g, '""')}"`;
+                return s;
+              }
+              function cellText(v: FieldValue | undefined): string {
+                if (!v) return "";
+                switch (v.kind) {
+                  case "Null": return "";
+                  case "Bool": return String(v.v);
+                  case "Int": case "Float": return String(v.v);
+                  case "Str": return v.v;
+                  case "Enum": return v.variant;
+                  case "Ref": return v.target_key;
+                  default: return "";
+                }
+              }
+              const lines = selected.map(r => {
+                const cells = [r.key, r.file_path.split(/[\\/]/).pop() ?? r.file_path, ...visibleFieldNames.map(f => r.fields.find(x => x.name === f)?.value)].map((v, i) => {
+                  return csvEscape(typeof v === "string" ? v : cellText(v as FieldValue | undefined));
+                });
+                return cells.join(",");
+              });
+              navigator.clipboard.writeText([header, ...lines].join("\n")).catch(e => onError?.(`复制失败: ${e}`));
+            }}
+            title="复制选中行为 CSV"
+            style={{ fontSize: 11, padding: "2px 8px", flexShrink: 0 }}
+          >⎘ CSV</button>
           <button onClick={() => setSelectedKeys(new Set())} style={{ fontSize: 11, padding: "2px 8px", flexShrink: 0 }}>取消选择</button>
         </div>
       )}
