@@ -31,6 +31,7 @@ interface RecordViewProps {
   onWriteRecordSource?: (filePath: string, recordKey: string, source: string) => Promise<void>;
   onNavigate: (route: Route) => void;
   onError?: (msg: string) => void;
+  onSuccess?: (msg: string) => void;
   /** Diagnostics from the current session, used to show per-record badges in the sidebar. */
   diagnostics?: DiagnosticItem[];
   /** All file paths in the project; if more than one, the create modal shows a file picker. */
@@ -101,6 +102,7 @@ export function RecordView({
   onWriteRecordSource,
   onNavigate,
   onError,
+  onSuccess,
   diagnostics,
   availableFiles,
 }: RecordViewProps) {
@@ -277,7 +279,7 @@ export function RecordView({
       // Ctrl+Shift+C: copy current record key to clipboard
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "c") {
         e.preventDefault();
-        navigator.clipboard.writeText(recordKey).catch(err => onError?.(`复制失败: ${err}`));
+        navigator.clipboard.writeText(recordKey).then(() => onSuccess?.(`已复制 Key: ${recordKey}`)).catch(err => onError?.(`复制失败: ${err}`));
         return;
       }
 
@@ -876,6 +878,23 @@ export function RecordView({
                 >
                   &lt;/&gt; Source
                 </button>
+                {record && (
+                  <button
+                    onClick={() => navigator.clipboard.writeText(recordToJson(record)).then(() => onSuccess?.("已复制为 JSON")).catch(e => onError?.(`复制失败: ${e}`))}
+                    title="复制整条记录为 JSON (Ctrl+右键也有此选项)"
+                    style={{
+                      fontSize: 11,
+                      padding: "1px 8px",
+                      background: "transparent",
+                      border: "1px solid var(--border)",
+                      borderRadius: 3,
+                      color: "var(--text-muted)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    ⎘ JSON
+                  </button>
+                )}
                 {onDeleteRecord && (
                   <button
                     onClick={() => setDeleteModal({ recordKey })}

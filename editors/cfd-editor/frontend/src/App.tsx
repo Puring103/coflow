@@ -223,7 +223,11 @@ export default function App() {
         if (project.snapshot) {
           api.getAllTypeNames(project.snapshot.session_id)
             .then(names => {
-              if (names.length > 0) router.push({ view: "global-table", typeName: names[0] });
+              if (names.length > 0) {
+                const lastType = localStorage.getItem("cfd-last-global-type");
+                const typeName = (lastType && names.includes(lastType)) ? lastType : names[0];
+                router.push({ view: "global-table", typeName });
+              }
             })
             .catch(e2 => showOpError(`加载类型列表失败: ${e2}`));
         }
@@ -691,7 +695,11 @@ export default function App() {
             onClick={() => {
               api.getAllTypeNames(project.snapshot!.session_id)
                 .then(names => {
-                  if (names.length > 0) router.push({ view: "global-table", typeName: names[0] });
+                  if (names.length > 0) {
+                    const lastType = localStorage.getItem("cfd-last-global-type");
+                    const typeName = (lastType && names.includes(lastType)) ? lastType : names[0];
+                    router.push({ view: "global-table", typeName });
+                  }
                 })
                 .catch(e => showOpError(`Failed to open global table: ${e}`));
             }}
@@ -944,6 +952,7 @@ export default function App() {
                     }}
                     onWriteRecordSource={handleWriteRecordSource}
                     onError={showOpError}
+                    onSuccess={showOpSuccess}
                     onNavigate={router.push}
                     diagnostics={project.snapshot?.diagnostics}
                     availableFiles={collectFilePaths(project.snapshot?.file_tree ?? [])}
@@ -970,7 +979,7 @@ export default function App() {
                     sessionId={project.snapshot.session_id}
                     typeName={router.current.typeName}
                     refreshKey={graphRefreshKey}
-                    onTypeChange={typeName => router.replace({ view: "global-table", typeName })}
+                    onTypeChange={typeName => { router.replace({ view: "global-table", typeName }); try { localStorage.setItem("cfd-last-global-type", typeName); } catch { /* ignore */ } }}
                     onNavigate={router.push}
                     onWriteField={handleWriteField}
                     onDeleteRecord={handleDeleteRecord}
