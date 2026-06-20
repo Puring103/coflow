@@ -154,6 +154,7 @@ interface GlobalTableViewProps {
   availableFiles?: string[];
   diagnostics?: DiagnosticItem[];
   onError?: (msg: string) => void;
+  onSuccess?: (msg: string) => void;
 }
 
 function fieldValueToJson(v: FieldValue): unknown {
@@ -197,7 +198,7 @@ function fieldValueToString(v: FieldValue): string {
 
 type SortCol = { col: "key" | "file" | string; dir: "asc" | "desc" };
 
-export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange, onNavigate, onWriteField, onDeleteRecord, onDuplicateRecord, onMoveRecord, onCopyRecord, onCreateRecord, onImportRecord, availableFiles, diagnostics, onError }: GlobalTableViewProps) {
+export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange, onNavigate, onWriteField, onDeleteRecord, onDuplicateRecord, onMoveRecord, onCopyRecord, onCreateRecord, onImportRecord, availableFiles, diagnostics, onError, onSuccess }: GlobalTableViewProps) {
   const [rows, setRows] = useState<RecordRow[]>([]);
   const [allTypeNames, setAllTypeNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -413,9 +414,9 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
         { label: "跳转到记录视图", onClick: () => onNavigate({ view: "record", file: row.file_path, recordKey: row.key }) },
         { label: "在文件表视图中打开", onClick: () => onNavigate({ view: "table", file: row.file_path }) },
         { label: "在资源管理器中显示", onClick: () => api.revealInExplorer(sessionId, row.file_path).catch(e => onError?.(`无法打开资源管理器: ${e}`)) },
-        { label: "复制 Key", onClick: () => navigator.clipboard.writeText(row.key).catch(e => onError?.(`复制失败: ${e}`)) },
-        { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, row.file_path, row.key).then(src => navigator.clipboard.writeText(src)).catch(e => onError?.(`复制失败: ${e}`)) },
-        { label: "复制为 JSON", onClick: () => { const obj: Record<string, unknown> = { _key: row.key, _type: row.actual_type }; for (const f of row.fields) obj[f.name] = fieldValueToJson(f.value); navigator.clipboard.writeText(JSON.stringify(obj, null, 2)).catch(e => onError?.(`复制失败: ${e}`)); } },
+        { label: "复制 Key", onClick: () => navigator.clipboard.writeText(row.key).then(() => onSuccess?.(`已复制 Key: ${row.key}`)).catch(e => onError?.(`复制失败: ${e}`)) },
+        { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, row.file_path, row.key).then(src => navigator.clipboard.writeText(src)).then(() => onSuccess?.("已复制为 CFD 源码")).catch(e => onError?.(`复制失败: ${e}`)) },
+        { label: "复制为 JSON", onClick: () => { const obj: Record<string, unknown> = { _key: row.key, _type: row.actual_type }; for (const f of row.fields) obj[f.name] = fieldValueToJson(f.value); navigator.clipboard.writeText(JSON.stringify(obj, null, 2)).then(() => onSuccess?.("已复制为 JSON")).catch(e => onError?.(`复制失败: ${e}`)); } },
         ...(onDuplicateRecord ? [{ label: "复制记录 (Ctrl+D)", onClick: () => setDuplicateModal({ srcKey: row.key, filePath: row.file_path, draft: `${row.key}_copy`, error: null }) }] : []),
         ...(onMoveRecord ? [{ label: "移动到文件…", onClick: () => onMoveRecord(row.file_path, row.key) }] : []),
         ...(onCopyRecord ? [{ label: "复制到文件…", onClick: () => onCopyRecord(row.file_path, row.key) }] : []),
@@ -1082,7 +1083,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                             }
                             if (copyText !== null) {
                               const text = copyText;
-                              items.push({ label: "复制值", onClick: () => navigator.clipboard.writeText(text).catch(err => onError?.(`复制失败: ${err}`)) });
+                              items.push({ label: "复制值", onClick: () => navigator.clipboard.writeText(text).then(() => onSuccess?.(`已复制: ${text}`)).catch(err => onError?.(`复制失败: ${err}`)) });
                             }
                             if (cv.kind === "Ref") {
                               const refValue = cv;
@@ -1214,11 +1215,25 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                 });
                 return cells.join(",");
               });
-              navigator.clipboard.writeText([header, ...lines].join("\n")).catch(e => onError?.(`复制失败: ${e}`));
+              navigator.clipboard.writeText([header, ...lines].join("\n")).then(() => onSuccess?.(`已复制 ${selected.length} 行为 CSV`)).catch(e => onError?.(`复制失败: ${e}`));
             }}
             title="复制选中行为 CSV"
             style={{ fontSize: 11, padding: "2px 8px", flexShrink: 0 }}
           >⎘ CSV</button>
+          <button
+            onClick={() => {
+              const selected = filteredRows.filter(r => selectedKeys.has(`${r.file_path}::${r.key}`));
+              if (selected.length === 0) return;
+              const arr = selected.map(r => {
+                const obj: Record<string, unknown> = { _key: r.key, _file: r.file_path.split(/[\\/]/).pop() ?? r.file_path };
+                for (const f of r.fields) obj[f.name] = fieldValueToJson(f.value);
+                return obj;
+              });
+              navigator.clipboard.writeText(JSON.stringify(arr, null, 2)).then(() => onSuccess?.(`已复制 ${arr.length} 行为 JSON`)).catch(e => onError?.(`复制失败: ${e}`));
+            }}
+            title="复制选中行为 JSON 数组"
+            style={{ fontSize: 11, padding: "2px 8px", flexShrink: 0 }}
+          >⎘ JSON</button>
           <button onClick={() => setSelectedKeys(new Set())} style={{ fontSize: 11, padding: "2px 8px", flexShrink: 0 }}>取消选择</button>
         </div>
       )}

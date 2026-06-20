@@ -602,10 +602,10 @@ export function RecordView({
                 e.preventDefault();
                 const sidebarRec = allRecords.find(x => x.key === r.key);
                 const items: { label: string; danger?: boolean; onClick: () => void }[] = [
-                  { label: "复制 Key", onClick: () => navigator.clipboard.writeText(r.key).catch(e => onError?.(`复制失败: ${e}`)) },
-                  { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, filePath, r.key).then(src => navigator.clipboard.writeText(src)).catch(e => onError?.(`复制失败: ${e}`)) },
+                  { label: "复制 Key", onClick: () => navigator.clipboard.writeText(r.key).then(() => onSuccess?.(`已复制 Key: ${r.key}`)).catch(e => onError?.(`复制失败: ${e}`)) },
+                  { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, filePath, r.key).then(src => navigator.clipboard.writeText(src)).then(() => onSuccess?.("已复制为 CFD 源码")).catch(e => onError?.(`复制失败: ${e}`)) },
                   { label: "在资源管理器中显示", onClick: () => api.revealInExplorer(sessionId, filePath).catch(e => onError?.(`无法打开资源管理器: ${e}`)) },
-                  ...(sidebarRec ? [{ label: "复制为 JSON", onClick: () => navigator.clipboard.writeText(recordToJson(sidebarRec)).catch(e => onError?.(`复制失败: ${e}`)) }] : []),
+                  ...(sidebarRec ? [{ label: "复制为 JSON", onClick: () => navigator.clipboard.writeText(recordToJson(sidebarRec)).then(() => onSuccess?.("已复制为 JSON")).catch(e => onError?.(`复制失败: ${e}`)) }] : []),
                   { label: "查找引用此记录的记录", onClick: () => { autoExpandRefsRef.current = true; onNavigate({ view: "record", file: filePath, recordKey: r.key }); } },
                 ];
                 if (onRenameRecord) items.push({
@@ -1167,7 +1167,7 @@ export function RecordView({
                       }
                       if (copyText !== null) {
                         e.preventDefault();
-                        navigator.clipboard.writeText(copyText).catch(() => {});
+                        navigator.clipboard.writeText(copyText).then(() => onSuccess?.(`已复制: ${copyText}`)).catch(() => {});
                       }
                     }
                   }}

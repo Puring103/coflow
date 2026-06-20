@@ -951,6 +951,7 @@ export default function App() {
                       onNavigate={router.push}
                       diagnostics={project.snapshot?.diagnostics}
                       onError={showOpError}
+                      onSuccess={showOpSuccess}
                     />
                   ) : router.current.view === "table" ? (
                     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>
@@ -1026,6 +1027,7 @@ export default function App() {
                     }}
                     diagnostics={project.snapshot.diagnostics}
                     onError={showOpError}
+                    onSuccess={showOpSuccess}
                     onCreateRecord={handleGlobalCreateRecord}
                     onImportRecord={handleGlobalImportRecord}
                     availableFiles={collectFilePaths(project.snapshot.file_tree)}

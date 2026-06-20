@@ -40,6 +40,7 @@ interface TableViewProps {
   onNavigate: (route: Route) => void;
   diagnostics?: DiagnosticItem[];
   onError?: (msg: string) => void;
+  onSuccess?: (msg: string) => void;
 }
 
 interface NewRecordForm {
@@ -272,6 +273,7 @@ export function TableView({
   onNavigate,
   diagnostics,
   onError,
+  onSuccess,
 }: TableViewProps) {
   const [activeType, setActiveType] = useState<string>(
     initialTypeFilter && fileRecords.type_names.includes(initialTypeFilter)
@@ -736,18 +738,18 @@ export function TableView({
         },
         {
           label: "复制 Key",
-          onClick: () => navigator.clipboard.writeText(row.key).catch(e => onError?.(`复制失败: ${e}`)),
+          onClick: () => navigator.clipboard.writeText(row.key).then(() => onSuccess?.(`已复制 Key: ${row.key}`)).catch(e => onError?.(`复制失败: ${e}`)),
         },
         {
           label: "复制为 CFD 源码",
-          onClick: () => api.getRecordSource(sessionId, filePath, row.key).then(src => navigator.clipboard.writeText(src)).catch(e => onError?.(`复制失败: ${e}`)),
+          onClick: () => api.getRecordSource(sessionId, filePath, row.key).then(src => navigator.clipboard.writeText(src)).then(() => onSuccess?.("已复制为 CFD 源码")).catch(e => onError?.(`复制失败: ${e}`)),
         },
         {
           label: "复制为 JSON",
           onClick: () => {
             const obj: Record<string, unknown> = { _key: row.key, _type: row.actual_type };
             for (const f of row.fields) obj[f.name] = fieldValueToJson(f.value);
-            navigator.clipboard.writeText(JSON.stringify(obj, null, 2)).catch(e => onError?.(`复制失败: ${e}`));
+            navigator.clipboard.writeText(JSON.stringify(obj, null, 2)).then(() => onSuccess?.("已复制为 JSON")).catch(e => onError?.(`复制失败: ${e}`));
           },
         },
         ...(onRenameRecord ? [{
@@ -1460,7 +1462,7 @@ export function TableView({
                           }
                           if (copyText !== null) {
                             const text = copyText;
-                            items.push({ label: "复制值", onClick: () => navigator.clipboard.writeText(text).catch(e => onError?.(`复制失败: ${e}`)) });
+                            items.push({ label: "复制值", onClick: () => navigator.clipboard.writeText(text).then(() => onSuccess?.(`已复制: ${text}`)).catch(e => onError?.(`复制失败: ${e}`)) });
                           }
                           if (cv.kind === "Ref") {
                             const refValue = cv;
@@ -1659,7 +1661,7 @@ export function TableView({
                   csvEscape(typeof v === "string" ? v : cellText(v as FieldValue | undefined))
                 ).join(",")
               );
-              navigator.clipboard.writeText([header, ...lines].join("\n")).catch(e => onError?.(`复制失败: ${e}`));
+              navigator.clipboard.writeText([header, ...lines].join("\n")).then(() => onSuccess?.(`已复制 ${selectedRows.length} 行为 CSV`)).catch(e => onError?.(`复制失败: ${e}`));
             }}
             title="复制选中行为 CSV"
             style={{ fontSize: 12, whiteSpace: "nowrap" }}
@@ -1674,7 +1676,7 @@ export function TableView({
                 for (const f of r.fields) obj[f.name] = fieldValueToJson(f.value);
                 return obj;
               });
-              navigator.clipboard.writeText(JSON.stringify(arr, null, 2)).catch(e => onError?.(`复制失败: ${e}`));
+              navigator.clipboard.writeText(JSON.stringify(arr, null, 2)).then(() => onSuccess?.(`已复制 ${rows.length} 行为 JSON`)).catch(e => onError?.(`复制失败: ${e}`));
             }}
             title="复制选中行为 JSON 数组"
             style={{ fontSize: 12, whiteSpace: "nowrap" }}
