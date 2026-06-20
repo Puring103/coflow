@@ -104,15 +104,21 @@ export default function App() {
 
   const currentFile = (router.current && router.current.view !== "global-table") ? router.current.file : null;
 
-  // Keep window title in sync with loaded project
+  // Keep window title in sync with loaded project and current view
   useEffect(() => {
     if (project.loadedYamlPath) {
-      const name = project.loadedYamlPath.split(/[\\/]/).pop() ?? project.loadedYamlPath;
-      document.title = `${name}${project.dirty ? " ●" : ""} — CFD Editor`;
+      const projectName = project.loadedYamlPath.split(/[\\/]/).pop() ?? project.loadedYamlPath;
+      const dirty = project.dirty ? " ●" : "";
+      const cur = router.current;
+      if (cur && cur.view === "record" && "recordKey" in cur) {
+        document.title = `${(cur as { recordKey: string }).recordKey}${dirty} — ${projectName} — CFD Editor`;
+      } else {
+        document.title = `${projectName}${dirty} — CFD Editor`;
+      }
     } else {
       document.title = "CFD Editor";
     }
-  }, [project.loadedYamlPath, project.dirty]);
+  }, [project.loadedYamlPath, project.dirty, router.current]);
 
   // Load file records when file changes; auto-flush dirty for previous file
   useEffect(() => {
