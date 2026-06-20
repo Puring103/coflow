@@ -155,6 +155,21 @@ interface GlobalTableViewProps {
   onError?: (msg: string) => void;
 }
 
+function fieldValueToJson(v: FieldValue): unknown {
+  switch (v.kind) {
+    case "Null": return null;
+    case "Bool": return v.v;
+    case "Int": case "Float": return v.v;
+    case "Str": return v.v;
+    case "Enum": return v.variant;
+    case "Ref": return `&${v.target_key}`;
+    case "Object": { const o: Record<string, unknown> = { _type: v.actual_type }; for (const f of v.fields) o[f.name] = fieldValueToJson(f.value); return o; }
+    case "Array": return v.items.map(fieldValueToJson);
+    case "Dict": { const o: Record<string, unknown> = {}; for (const e of v.entries) { const k = e.key.kind === "Str" ? e.key.v : e.key.kind === "Int" ? String(e.key.v) : e.key.variant; o[k] = fieldValueToJson(e.value); } return o; }
+    default: return null;
+  }
+}
+
 function parseFieldValue(raw: string, original: FieldValue): FieldValue {
   const t = raw.trim();
   if (original.kind === "Bool") return { kind: "Bool", v: t === "true" };
@@ -371,6 +386,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
         { label: "在资源管理器中显示", onClick: () => api.revealInExplorer(sessionId, row.file_path).catch(e => onError?.(`无法打开资源管理器: ${e}`)) },
         { label: "复制 Key", onClick: () => navigator.clipboard.writeText(row.key).catch(e => onError?.(`复制失败: ${e}`)) },
         { label: "复制为 CFD 源码", onClick: () => api.getRecordSource(sessionId, row.file_path, row.key).then(src => navigator.clipboard.writeText(src)).catch(e => onError?.(`复制失败: ${e}`)) },
+        { label: "复制为 JSON", onClick: () => { const obj: Record<string, unknown> = { _key: row.key, _type: row.actual_type }; for (const f of row.fields) obj[f.name] = fieldValueToJson(f.value); navigator.clipboard.writeText(JSON.stringify(obj, null, 2)).catch(e => onError?.(`复制失败: ${e}`)); } },
         ...(onDuplicateRecord ? [{ label: "复制记录 (Ctrl+D)", onClick: () => setDuplicateModal({ srcKey: row.key, filePath: row.file_path, draft: `${row.key}_copy`, error: null }) }] : []),
         ...(onMoveRecord ? [{ label: "移动到文件…", onClick: () => onMoveRecord(row.file_path, row.key) }] : []),
         ...(onCopyRecord ? [{ label: "复制到文件…", onClick: () => onCopyRecord(row.file_path, row.key) }] : []),
