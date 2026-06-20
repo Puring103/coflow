@@ -17,6 +17,8 @@ interface GlobalTableViewProps {
   onDuplicateRecord?: (sessionId: number, filePath: string, srcKey: string, newKey: string) => Promise<void>;
   onMoveRecord?: (srcFile: string, recordKey: string) => void;
   onCopyRecord?: (srcFile: string, recordKey: string) => void;
+  onCreateRecord?: (typeName: string, filePath: string, key: string) => Promise<void>;
+  availableFiles?: string[];
   diagnostics?: DiagnosticItem[];
   onError?: (msg: string) => void;
 }
@@ -47,7 +49,7 @@ function fieldValueToString(v: FieldValue): string {
 
 type SortCol = { col: "key" | "file" | string; dir: "asc" | "desc" };
 
-export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange, onNavigate, onWriteField, onDeleteRecord, onDuplicateRecord, onMoveRecord, onCopyRecord, diagnostics, onError }: GlobalTableViewProps) {
+export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange, onNavigate, onWriteField, onDeleteRecord, onDuplicateRecord, onMoveRecord, onCopyRecord, onCreateRecord, availableFiles, diagnostics, onError }: GlobalTableViewProps) {
   const [rows, setRows] = useState<RecordRow[]>([]);
   const [allTypeNames, setAllTypeNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -64,6 +66,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   const [batchDeletePending, setBatchDeletePending] = useState(false);
   const [duplicateModal, setDuplicateModal] = useState<{ srcKey: string; filePath: string; draft: string; error: string | null } | null>(null);
   const [typeCounts, setTypeCounts] = useState<Map<string, number>>(new Map());
+  const [createModal, setCreateModal] = useState<{ key: string; filePath: string; creating: boolean; error: string | null } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -246,6 +249,20 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
     } catch (e) { setDuplicateModal(m => m && ({ ...m, error: String(e) })); }
   }, [duplicateModal, onDuplicateRecord, sessionId, onNavigate]);
 
+  const handleCreateCommit = useCallback(async () => {
+    if (!createModal || !onCreateRecord) return;
+    const key = createModal.key.trim();
+    if (!key) { setCreateModal(m => m && ({ ...m, error: "Key 不能为空" })); return; }
+    const fp = createModal.filePath;
+    if (!fp) { setCreateModal(m => m && ({ ...m, error: "请选择目标文件" })); return; }
+    setCreateModal(m => m && ({ ...m, creating: true, error: null }));
+    try {
+      await onCreateRecord(typeName, fp, key);
+      setCreateModal(null);
+      onNavigate({ view: "record", file: fp, recordKey: key });
+    } catch (e) { setCreateModal(m => m && ({ ...m, creating: false, error: String(e) })); }
+  }, [createModal, onCreateRecord, typeName, onNavigate]);
+
   // Reset selection when type/search changes
   useEffect(() => { setSelectedKeys(new Set()); }, [typeName]);
 
@@ -269,6 +286,11 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
         e.preventDefault();
         const focusedRow = focusedIdx !== null ? filteredRows[focusedIdx] : filteredRows[0];
         if (focusedRow) setDuplicateModal({ srcKey: focusedRow.key, filePath: focusedRow.file_path, draft: `${focusedRow.key}_copy`, error: null });
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "n" && onCreateRecord && availableFiles && availableFiles.length > 0) {
+        e.preventDefault();
+        setCreateModal({ key: "", filePath: availableFiles[0], creating: false, error: null });
         return;
       }
       if (e.key === "ArrowDown") {
@@ -376,6 +398,13 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
         <button onClick={exportCsv} title="Export as CSV" style={{ fontSize: 11, padding: "2px 8px", background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-muted)", cursor: "pointer" }}>
           ↓ CSV
         </button>
+        {onCreateRecord && availableFiles && availableFiles.length > 0 && (
+          <button
+            onClick={() => setCreateModal({ key: "", filePath: availableFiles[0], creating: false, error: null })}
+            title={`新建 ${typeName} 记录 (Ctrl+N)`}
+            style={{ fontSize: 11, padding: "2px 8px", background: "transparent", border: "1px solid var(--accent)", borderRadius: 4, color: "var(--accent)", cursor: "pointer", flexShrink: 0 }}
+          >＋ New</button>
+        )}
       </div>
 
       {error && (
@@ -625,6 +654,60 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
               <button onClick={() => setDuplicateModal(null)}>取消</button>
               <button className="primary" onClick={handleDuplicateCommit} disabled={!duplicateModal.draft.trim()}>复制</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create record modal */}
+      {createModal && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3000 }}
+          onClick={() => !createModal.creating && setCreateModal(null)}
+        >
+          <div
+            style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 8, padding: 24, minWidth: 360, boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>新建 {typeName} 记录</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--text-muted)" }}>
+                Key
+                <input
+                  value={createModal.key}
+                  onChange={e => setCreateModal(m => m && ({ ...m, key: e.target.value, error: null }))}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") { e.preventDefault(); handleCreateCommit(); }
+                    if (e.key === "Escape") setCreateModal(null);
+                    e.stopPropagation();
+                  }}
+                  placeholder="record_key"
+                  // eslint-disable-next-line jsx-a11y/no-autofocus
+                  autoFocus
+                  style={{ background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "4px 8px", fontSize: 13, outline: "none", fontFamily: "monospace" }}
+                />
+              </label>
+              {availableFiles && availableFiles.length > 1 && (
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--text-muted)" }}>
+                  目标文件
+                  <select
+                    value={createModal.filePath}
+                    onChange={e => setCreateModal(m => m && ({ ...m, filePath: e.target.value, error: null }))}
+                    style={{ background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "4px 8px", fontSize: 13, outline: "none", fontFamily: "monospace" }}
+                  >
+                    {availableFiles.map(f => (
+                      <option key={f} value={f}>{f.split(/[\\/]/).pop() ?? f}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {createModal.error && <div style={{ color: "var(--error)", fontSize: 12 }}>{createModal.error}</div>}
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+              <button onClick={() => setCreateModal(null)} disabled={createModal.creating}>取消</button>
+              <button className="primary" onClick={handleCreateCommit} disabled={createModal.creating || !createModal.key.trim()}>
+                {createModal.creating ? "创建中…" : "创建"}
+              </button>
             </div>
           </div>
         </div>

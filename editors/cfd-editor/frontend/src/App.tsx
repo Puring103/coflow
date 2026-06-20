@@ -455,6 +455,13 @@ export default function App() {
     }
   }, [project, showOpError]);
 
+  const handleGlobalCreateRecord = useCallback(async (typeName: string, filePath: string, key: string) => {
+    if (!project.snapshot) throw new Error("No project loaded");
+    await api.createRecord(project.snapshot.session_id, filePath, key, typeName);
+    project.markDirty(project.snapshot.session_id, filePath);
+    setGraphRefreshKey(k => k + 1);
+  }, [project]);
+
   const handleNewFile = () => {
     setNewFilePath("");
     setNewFileError(null);
@@ -835,6 +842,8 @@ export default function App() {
                     }}
                     diagnostics={project.snapshot.diagnostics}
                     onError={showOpError}
+                    onCreateRecord={handleGlobalCreateRecord}
+                    availableFiles={collectFilePaths(project.snapshot.file_tree)}
                   />
                 )}
               </div>
