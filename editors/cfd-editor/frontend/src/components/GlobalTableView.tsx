@@ -807,6 +807,32 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                         <div
                           key={f}
                           onClick={cell && canEdit ? (e => handleCellClick(e, row, f, cell.value)) : undefined}
+                          onContextMenu={cell ? (e => {
+                            const cv = cell.value;
+                            const items: { label: string; onClick: () => void }[] = [];
+                            let copyText: string | null = null;
+                            switch (cv.kind) {
+                              case "Null": copyText = "null"; break;
+                              case "Bool": copyText = String(cv.v); break;
+                              case "Int": case "Float": copyText = String(cv.v); break;
+                              case "Str": copyText = cv.v; break;
+                              case "Enum": copyText = cv.variant; break;
+                              case "Ref": copyText = cv.target_key; break;
+                            }
+                            if (copyText !== null) {
+                              const text = copyText;
+                              items.push({ label: "复制值", onClick: () => navigator.clipboard.writeText(text).catch(err => onError?.(`复制失败: ${err}`)) });
+                            }
+                            if (cv.kind === "Ref") {
+                              const refValue = cv;
+                              items.push({ label: "跳转到引用记录", onClick: () => onNavigate({ view: "record", file: refValue.target_file ?? row.file_path, recordKey: refValue.target_key }) });
+                            }
+                            if (items.length > 0) {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setContextMenu({ x: e.clientX, y: e.clientY, items });
+                            }
+                          }) : undefined}
                           style={{
                             width: COL_FIELD,
                             flexShrink: 0,
