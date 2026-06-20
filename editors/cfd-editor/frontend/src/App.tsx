@@ -68,6 +68,7 @@ export default function App() {
   const [paletteRecords, setPaletteRecords] = useState<RecordBrief[]>([]);
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(true);
   const [statsData, setStatsData] = useState<RecordBrief[] | null>(null);
   const opErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const opSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -220,6 +221,11 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "M") {
         e.preventDefault();
         diagToggleRef.current?.();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === "b") {
+        e.preventDefault();
+        setShowSidebar(v => !v);
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "T") {
@@ -653,10 +659,8 @@ export default function App() {
               try {
                 const count = await api.sortAllFiles(project.snapshot.session_id);
                 if (count > 0) {
-                  const filePaths = project.snapshot.file_tree
-                    ? (() => { const f: string[] = []; const visit = (n: import("./bindings").FileTreeNode[]) => { for (const x of n) { if (!x.is_dir && x.in_sources) f.push(x.path); if (x.is_dir) visit(x.children); } }; visit(project.snapshot!.file_tree); return f; })()
-                    : [];
-                  for (const fp of filePaths) project.markDirty(project.snapshot!.session_id, fp);
+                  // Reload only the currently viewed file immediately; others reload on demand
+                  if (currentFile) project.markDirty(project.snapshot!.session_id, currentFile);
                   setGraphRefreshKey(k => k + 1);
                   showOpSuccess(`已对 ${count} 个文件的记录排序`);
                 } else {
@@ -741,6 +745,7 @@ export default function App() {
             "Ctrl+P         Jump to record (command palette)",
             "Ctrl+Shift+G   Global search by key or field value",
             "Ctrl+Shift+M   Toggle Problems panel",
+            "Ctrl+B         Toggle file sidebar",
             "F8 / Shift+F8  Jump to next/previous problem",
             "Ctrl+Shift+T   Open global table (cross-file by type)",
             "Ctrl+S         Save / flush diagnostics",
@@ -825,7 +830,7 @@ export default function App() {
 
       <div className="main-layout">
         {/* Left: file tree */}
-        {project.snapshot && (
+        {project.snapshot && showSidebar && (
           <aside className="sidebar">
             <FileTree
               nodes={project.snapshot.file_tree}

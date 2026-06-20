@@ -959,7 +959,10 @@ export function RecordView({
                         return (
                         <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <span
-                            onClick={() => onNavigate({ view: "record", file: ref.source_file || filePath, recordKey: ref.source_key })}
+                            onClick={() => {
+                              const topField = ref.field_path.split(/[.[]/)[0];
+                              onNavigate({ view: "record", file: ref.source_file || filePath, recordKey: ref.source_key, ...(topField ? { fieldSearch: topField } : {}) });
+                            }}
                             style={{
                               color: "var(--accent)",
                               fontSize: 11,
@@ -968,7 +971,7 @@ export function RecordView({
                               textDecoration: "underline",
                               textDecorationStyle: "dotted",
                             }}
-                            title={`${ref.source_type} @ ${ref.source_file}`}
+                            title={`跳转并高亮 .${ref.field_path} 字段 (${ref.source_type} @ ${ref.source_file})`}
                           >
                             {ref.source_key}
                           </span>
