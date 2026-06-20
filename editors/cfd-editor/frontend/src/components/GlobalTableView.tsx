@@ -236,6 +236,12 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   const [showRequiredOnly, setShowRequiredOnly] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
+    try {
+      const stored = localStorage.getItem(`cfd-global-col-width:${typeName}`);
+      return stored ? JSON.parse(stored) : {};
+    } catch { return {}; }
+  });
 
   useEffect(() => {
     api.getAllTypeNames(sessionId).then(names => setAllTypeNames(names)).catch(e => onError?.(`加载类型列表失败: ${e}`));
@@ -360,10 +366,31 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
     [fieldNames, hiddenCols],
   );
 
-  const COL_KEY = 120;
-  const COL_FILE = 140;
-  const COL_FIELD = 120;
+  const COL_KEY = colWidths["__key__"] ?? 120;
+  const COL_FILE = colWidths["__file__"] ?? 140;
+  const COL_FIELD_DEFAULT = 120;
+  const getColWidth = (name: string) => colWidths[name] ?? COL_FIELD_DEFAULT;
   const ROW_H = 36;
+
+  const handleColResizeMouseDown = useCallback((colId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = colId === "__key__" ? COL_KEY : colId === "__file__" ? COL_FILE : getColWidth(colId);
+    const onMouseMove = (ev: MouseEvent) => {
+      const newW = Math.max(48, startWidth + ev.clientX - startX);
+      setColWidths(prev => {
+        const next = { ...prev, [colId]: newW };
+        try { localStorage.setItem(`cfd-global-col-width:${typeName}`, JSON.stringify(next)); } catch { /* ignore */ }
+        return next;
+      });
+    };
+    const onMouseUp = () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, [COL_KEY, COL_FILE, colWidths, typeName, getColWidth]);
 
   const virtualizer = useVirtualizer({
     count: filteredRows.length,
@@ -840,7 +867,8 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
             {(["key", "file", ...visibleFieldNames] as string[]).map((col, i) => {
               const isKey = col === "key";
               const isFile = col === "file";
-              const w = isKey ? COL_KEY : isFile ? COL_FILE : COL_FIELD;
+              const colId = isKey ? "__key__" : isFile ? "__file__" : col;
+              const w = isKey ? COL_KEY : isFile ? COL_FILE : getColWidth(col);
               const isSorted = sort?.col === col;
               return (
                 <div
@@ -867,13 +895,19 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                     gap: 3,
                     borderBottom: isSorted ? "2px solid var(--accent)" : undefined,
                     boxSizing: "border-box",
+                    position: "relative",
                   }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "var(--bg3)"; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
                 >
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{col}</span>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>{col}</span>
                   {isSorted && <span style={{ fontSize: 9, flexShrink: 0 }}>{sort!.dir === "asc" ? "▲" : "▼"}</span>}
                   {!isSorted && i === 0 && <span style={{ fontSize: 9, opacity: 0.3, flexShrink: 0 }}>⇅</span>}
+                  <span
+                    onMouseDown={e => { e.stopPropagation(); handleColResizeMouseDown(colId, e); }}
+                    onClick={e => e.stopPropagation()}
+                    style={{ position: "absolute", right: 0, top: 0, width: 6, height: "100%", cursor: "col-resize", zIndex: 1 }}
+                  />
                 </div>
               );
             })}
@@ -978,7 +1012,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                             }
                           }) : undefined}
                           style={{
-                            width: COL_FIELD,
+                            width: getColWidth(f),
                             flexShrink: 0,
                             padding: isEditing ? 0 : "0 4px",
                             overflow: "hidden",
