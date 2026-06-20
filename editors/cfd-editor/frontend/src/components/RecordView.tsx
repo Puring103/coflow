@@ -802,8 +802,11 @@ export function RecordView({
               )}
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
                 <span
-                  style={{ color: "var(--text-muted)", fontSize: 12, cursor: fieldSchemas.length > 0 ? "pointer" : "default" }}
+                  role={fieldSchemas.length > 0 ? "button" : undefined}
+                  tabIndex={fieldSchemas.length > 0 ? 0 : undefined}
+                  style={{ color: "var(--text-muted)", fontSize: 12, cursor: fieldSchemas.length > 0 ? "pointer" : "default", outline: "none" }}
                   onClick={() => { if (fieldSchemas.length > 0) setShowSchemaInspector(v => !v); }}
+                  onKeyDown={e => { if (fieldSchemas.length > 0 && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setShowSchemaInspector(v => !v); } }}
                   title={fieldSchemas.length > 0 ? "点击查看字段定义" : record.actual_type}
                 >
                   {record.actual_type}
