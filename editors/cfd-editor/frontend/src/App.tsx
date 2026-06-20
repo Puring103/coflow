@@ -62,6 +62,7 @@ export default function App() {
   const [moveRecordModal, setMoveRecordModal] = useState<MoveRecordModal | null>(null);
   const [copyRecordModal, setCopyRecordModal] = useState<CopyRecordModal | null>(null);
   const [opError, setOpError] = useState<string | null>(null);
+  const [opSuccess, setOpSuccess] = useState<string | null>(null);
   const [graphRefreshKey, setGraphRefreshKey] = useState(0);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [paletteRecords, setPaletteRecords] = useState<RecordBrief[]>([]);
@@ -69,6 +70,7 @@ export default function App() {
   const [showStats, setShowStats] = useState(false);
   const [statsData, setStatsData] = useState<RecordBrief[] | null>(null);
   const opErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const opSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const diagToggleRef = useRef<(() => void) | null>(null);
   const diagNavIndexRef = useRef<number>(-1);
   const diagnosticsRef = useRef(project.snapshot?.diagnostics ?? []);
@@ -92,6 +94,12 @@ export default function App() {
     if (opErrorTimerRef.current) clearTimeout(opErrorTimerRef.current);
     setOpError(msg);
     opErrorTimerRef.current = setTimeout(() => { setOpError(null); opErrorTimerRef.current = null; }, 6000);
+  }, []);
+
+  const showOpSuccess = useCallback((msg: string) => {
+    if (opSuccessTimerRef.current) clearTimeout(opSuccessTimerRef.current);
+    setOpSuccess(msg);
+    opSuccessTimerRef.current = setTimeout(() => { setOpSuccess(null); opSuccessTimerRef.current = null; }, 3000);
   }, []);
 
   const currentFile = (router.current && router.current.view !== "global-table") ? router.current.file : null;
@@ -615,6 +623,9 @@ export default function App() {
                     : [];
                   for (const fp of filePaths) project.markDirty(project.snapshot!.session_id, fp);
                   setGraphRefreshKey(k => k + 1);
+                  showOpSuccess(`已对 ${count} 个文件的记录排序`);
+                } else {
+                  showOpSuccess("所有文件已按字母顺序排列");
                 }
               } catch (e) { showOpError(`Sort all files failed: ${e}`); }
             }}
@@ -746,6 +757,26 @@ export default function App() {
             onClick={() => setOpError(null)}
             style={{ marginLeft: 12, background: "none", border: "none", color: "#fff", cursor: "pointer", fontSize: 14 }}
           >✕</button>
+        </div>
+      )}
+
+      {/* Operation success toast */}
+      {opSuccess && (
+        <div style={{
+          position: "fixed",
+          bottom: 60,
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: "var(--accent)",
+          color: "#000",
+          padding: "8px 16px",
+          borderRadius: 6,
+          fontSize: 13,
+          zIndex: 9999,
+          maxWidth: 400,
+          boxShadow: "0 2px 12px rgba(0,0,0,0.4)",
+        }}>
+          ✓ {opSuccess}
         </div>
       )}
 
