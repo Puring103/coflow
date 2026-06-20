@@ -637,8 +637,11 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
     return (
       <div style={{ marginLeft }}>
         <div
-          style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0", cursor: "pointer", userSelect: "none" }}
+          role="button"
+          tabIndex={0}
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0", cursor: "pointer", userSelect: "none", outline: "none" }}
           onClick={() => setCollapsed(c => !c)}
+          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCollapsed(c => !c); } }}
         >
           {label && <span style={{ color: "var(--text-muted)", minWidth: 80, fontSize: 12 }}>{label}:</span>}
           <span style={{ color: "var(--text-muted)", fontSize: 10 }}>{collapsed ? "▶" : "▼"}</span>
@@ -701,8 +704,11 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
     return (
       <div style={{ marginLeft }}>
         <div
-          style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0", cursor: "pointer", userSelect: "none" }}
+          role="button"
+          tabIndex={0}
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0", cursor: "pointer", userSelect: "none", outline: "none" }}
           onClick={() => setCollapsed(c => !c)}
+          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCollapsed(c => !c); } }}
         >
           {label && <span style={{ color: "var(--text-muted)", minWidth: 80, fontSize: 12 }}>{label}:</span>}
           <span style={{ color: "var(--text-muted)", fontSize: 10 }}>{collapsed ? "▶" : "▼"}</span>
@@ -777,8 +783,11 @@ function ExpandedValue({ value, depth, sessionId, onEdit, onRefClick, label, nul
     return (
       <div style={{ marginLeft }}>
         <div
-          style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0", cursor: "pointer", userSelect: "none" }}
+          role="button"
+          tabIndex={0}
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0", cursor: "pointer", userSelect: "none", outline: "none" }}
           onClick={() => setCollapsed(c => !c)}
+          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCollapsed(c => !c); } }}
         >
           {label && <span style={{ color: "var(--text-muted)", minWidth: 80, fontSize: 12 }}>{label}:</span>}
           <span style={{ color: "var(--text-muted)", fontSize: 10 }}>{collapsed ? "▶" : "▼"}</span>
