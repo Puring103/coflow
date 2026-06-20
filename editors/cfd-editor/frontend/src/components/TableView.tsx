@@ -8,6 +8,7 @@ import {
   type SortingState,
   type ColumnResizeMode,
   type VisibilityState,
+  type ColumnSizingState,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { FileRecords, RecordRow, FieldValue, FieldPathSegment, FieldSchema, DiagnosticItem } from "../bindings";
@@ -323,6 +324,13 @@ export function TableView({
       return stored ? JSON.parse(stored) : {};
     } catch { return {}; }
   });
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
+    if (!initialTypeFilter) return {};
+    try {
+      const stored = localStorage.getItem(`cfd-col-size:${initialTypeFilter}`);
+      return stored ? JSON.parse(stored) : {};
+    } catch { return {}; }
+  });
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [batchField, setBatchField] = useState("");
   const [batchValue, setBatchValue] = useState("");
@@ -357,6 +365,10 @@ export function TableView({
       const stored = localStorage.getItem(`cfd-col-vis:${activeType}`);
       setColumnVisibility(stored ? JSON.parse(stored) : {});
     } catch { setColumnVisibility({}); }
+    try {
+      const stored = localStorage.getItem(`cfd-col-size:${activeType}`);
+      setColumnSizing(stored ? JSON.parse(stored) : {});
+    } catch { setColumnSizing({}); }
     setShowColumnPicker(false);
     setShowRequiredOnly(false);
     setSelectedKeys(new Set());
@@ -372,6 +384,12 @@ export function TableView({
     if (!activeType) return;
     try { localStorage.setItem(`cfd-col-vis:${activeType}`, JSON.stringify(columnVisibility)); } catch { /* ignore */ }
   }, [activeType, columnVisibility]);
+
+  // Persist column sizing to localStorage when it changes
+  useEffect(() => {
+    if (!activeType || Object.keys(columnSizing).length === 0) return;
+    try { localStorage.setItem(`cfd-col-size:${activeType}`, JSON.stringify(columnSizing)); } catch { /* ignore */ }
+  }, [activeType, columnSizing]);
 
   // Close column picker on outside click
   useEffect(() => {
@@ -655,9 +673,10 @@ export function TableView({
   const table = useReactTable({
     data: filteredRows,
     columns,
-    state: { sorting, columnVisibility },
+    state: { sorting, columnVisibility, columnSizing },
     onSortingChange: setSorting,
     onColumnVisibilityChange: setColumnVisibility,
+    onColumnSizingChange: setColumnSizing,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     columnResizeMode,
