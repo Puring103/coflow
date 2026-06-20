@@ -1204,6 +1204,12 @@ export function TableView({
               );
               if (firstEditable) setEditingCell({ rowKey: focusedRow.original.key, fieldName: firstEditable.name, value: firstEditable.value });
             }
+          } else if ((e.key === "Delete" || e.key === "Backspace") && focusedRowIndex !== null) {
+            const focusedRow = rows[focusedRowIndex];
+            if (focusedRow) {
+              e.preventDefault();
+              setDeleteModal({ rowKey: focusedRow.original.key });
+            }
           }
         }}
       >
