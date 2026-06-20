@@ -230,6 +230,7 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError
   const [graphError, setGraphError] = useState<string | null>(null);
   const [layoutFallback, setLayoutFallback] = useState(false);
   const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
+  const [hiddenFiles, setHiddenFiles] = useState<Set<string>>(new Set());
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const contextMenuRef = useRef<(e: React.MouseEvent, gnode: GraphNode) => void>(() => {});
 
@@ -246,6 +247,7 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError
     setGraphData(null);
     setSearch("");
     setHiddenTypes(new Set());
+    setHiddenFiles(new Set());
     setFocusKey(null);
   }, [sessionId, filePath]);
 
@@ -465,15 +467,16 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError
       ])
     : null;
 
-  // Apply search + type filter + focus filter: highlight matching nodes, fade non-matching
+  // Apply search + type filter + file filter + focus filter: highlight matching nodes, fade non-matching
   const displayNodes = nodes.map(node => {
     const g = node.data.gnode;
     const typeHidden = hiddenTypes.has(g.actual_type);
+    const fileHidden = hiddenFiles.has(g.file_path);
     const focusHidden = focusNeighbours !== null && !focusNeighbours.has(g.key);
     const searchMatches = !search ||
       g.key.toLowerCase().includes(search.toLowerCase()) ||
       g.actual_type.toLowerCase().includes(search.toLowerCase());
-    const visible = !typeHidden && !focusHidden && searchMatches;
+    const visible = !typeHidden && !fileHidden && !focusHidden && searchMatches;
     return {
       ...node,
       style: {
@@ -484,7 +487,7 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError
     };
   });
 
-  const matchCount = (search || hiddenTypes.size > 0 || focusKey)
+  const matchCount = (search || hiddenTypes.size > 0 || hiddenFiles.size > 0 || focusKey)
     ? displayNodes.filter(n => ((n.style?.opacity as number | undefined) ?? 1) > 0.5).length
     : nodes.length;
   const noSearchMatches = search.length > 0 && matchCount === 0;
@@ -578,13 +581,39 @@ export function GraphView({ sessionId, filePath, onNavigate, refreshKey, onError
           const filePaths = Array.from(new Set(graphData.nodes.map(n => n.file_path))).filter(Boolean).sort();
           if (filePaths.length <= 1) return null;
           return (
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              {filePaths.map(fp => (
-                <span key={fp} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "var(--text-muted)" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 2, background: fileColor(fp), flexShrink: 0 }} />
-                  {fp.split("/").pop() ?? fp}
-                </span>
-              ))}
+            <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+              {filePaths.map(fp => {
+                const hidden = hiddenFiles.has(fp);
+                const shortName = fp.split(/[\\/]/).pop() ?? fp;
+                return (
+                  <button
+                    key={fp}
+                    onClick={() => setHiddenFiles(prev => {
+                      const next = new Set(prev);
+                      if (next.has(fp)) next.delete(fp); else next.add(fp);
+                      return next;
+                    })}
+                    title={hidden ? `Show ${shortName}` : `Hide ${shortName}`}
+                    style={{
+                      fontSize: 10,
+                      padding: "1px 7px",
+                      borderRadius: 10,
+                      border: `1px solid ${fileColor(fp)}88`,
+                      background: hidden ? "transparent" : `${fileColor(fp)}22`,
+                      color: hidden ? "var(--text-muted)" : fileColor(fp),
+                      cursor: "pointer",
+                      opacity: hidden ? 0.5 : 1,
+                      textDecoration: hidden ? "line-through" : "none",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 3,
+                    }}
+                  >
+                    <span style={{ width: 6, height: 6, borderRadius: 2, background: hidden ? "var(--text-muted)" : fileColor(fp), flexShrink: 0 }} />
+                    {shortName}
+                  </button>
+                );
+              })}
             </div>
           );
         })()}
