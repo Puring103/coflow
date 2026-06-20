@@ -9,11 +9,25 @@ interface GlobalSearchProps {
   onClose: () => void;
 }
 
+const HISTORY_KEY = "cfd-search-history";
+const MAX_HISTORY = 10;
+
+function loadHistory(): string[] {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]"); } catch { return []; }
+}
+function saveHistory(q: string): void {
+  try {
+    const prev = loadHistory().filter(h => h !== q);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify([q, ...prev].slice(0, MAX_HISTORY)));
+  } catch { /* ignore */ }
+}
+
 export function GlobalSearch({ sessionId, onNavigate, onClose }: GlobalSearchProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState(0);
+  const [history] = useState<string[]>(() => loadHistory());
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -39,10 +53,11 @@ export function GlobalSearch({ sessionId, onNavigate, onClose }: GlobalSearchPro
   };
 
   const handleSelect = useCallback((hit: SearchHit) => {
+    if (query.trim()) saveHistory(query.trim());
     const topField = hit.match_field !== "key" ? hit.match_field.split(".")[0] : undefined;
     onNavigate({ view: "record", file: hit.file_path, recordKey: hit.key, ...(topField ? { fieldSearch: topField } : {}) });
     onClose();
-  }, [onNavigate, onClose]);
+  }, [onNavigate, onClose, query]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -140,10 +155,40 @@ export function GlobalSearch({ sessionId, onNavigate, onClose }: GlobalSearchPro
             </div>
           )}
           {results.length === 0 && !query && (
-            <div style={{ padding: "16px 16px", color: "var(--text-muted)", fontSize: 12 }}>
-              Search across all record keys and field values in the project.
-              <br />
-              <span style={{ opacity: 0.7 }}>↑↓ to navigate, Enter to open, Esc to close</span>
+            <div style={{ padding: "12px 14px" }}>
+              {history.length > 0 ? (
+                <>
+                  <div style={{ color: "var(--text-muted)", fontSize: 11, marginBottom: 6 }}>Recent searches</div>
+                  {history.map((h, i) => (
+                    <div
+                      key={i}
+                      onClick={() => { setQuery(h); handleQueryChange(h); }}
+                      style={{
+                        padding: "4px 8px",
+                        borderRadius: 4,
+                        cursor: "pointer",
+                        color: "var(--text-muted)",
+                        fontSize: 13,
+                        fontFamily: "monospace",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "var(--bg3)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                    >
+                      <span style={{ opacity: 0.4 }}>↺</span>
+                      {h}
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <div style={{ color: "var(--text-muted)", fontSize: 12 }}>
+                  Search across all record keys and field values in the project.
+                  <br />
+                  <span style={{ opacity: 0.7 }}>↑↓ to navigate, Enter to open, Esc to close</span>
+                </div>
+              )}
             </div>
           )}
           {results.map((hit, idx) => {
