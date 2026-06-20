@@ -507,6 +507,13 @@ export function RecordView({
               boxSizing: "border-box",
             }}
           />
+          {sidebarSearch && (
+            <button
+              onClick={() => setSidebarSearch("")}
+              title="清空搜索"
+              style={{ fontSize: 10, padding: "1px 5px", background: "transparent", border: "1px solid var(--border)", borderRadius: 3, color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}
+            >✕</button>
+          )}
           {recordDiagnosticCounts.size > 0 && (
             <button
               onClick={() => setSidebarDiagFilter(v => !v)}
@@ -1011,6 +1018,11 @@ export function RecordView({
                     boxSizing: "border-box",
                   }}
                 />
+                {fieldSearch && (
+                  <span style={{ color: "var(--text-muted)", fontSize: 11, whiteSpace: "nowrap" }}>
+                    {record.fields.filter(f => f.name.toLowerCase().includes(fieldSearch.toLowerCase())).length} / {record.fields.length}
+                  </span>
+                )}
                 {fieldSchemas.some(s => !s.has_default && record.fields.find(f => f.name === s.name)?.value.kind === "Null") && (
                   <button
                     onClick={() => setShowRequiredOnly(v => !v)}

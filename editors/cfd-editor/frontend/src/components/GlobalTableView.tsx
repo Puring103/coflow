@@ -187,7 +187,12 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<SortCol | null>(null);
+  const [sort, setSort] = useState<SortCol | null>(() => {
+    try {
+      const stored = localStorage.getItem(`cfd-global-sort:${typeName}`);
+      return stored ? JSON.parse(stored) : null;
+    } catch { return null; }
+  });
   const [focusedIdx, setFocusedIdx] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
@@ -242,7 +247,11 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
     if (!typeName) return;
     setLoading(true);
     setError(null);
-    setSort(null);
+    // Restore persisted sort for the newly selected type
+    try {
+      const stored = localStorage.getItem(`cfd-global-sort:${typeName}`);
+      setSort(stored ? JSON.parse(stored) : null);
+    } catch { setSort(null); }
     api.getAllRecordsOfType(sessionId, typeName)
       .then(r => { setRows(r); setLoading(false); })
       .catch(e => { setError(String(e)); setLoading(false); });
@@ -309,8 +318,12 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
 
   const handleSortClick = (col: string) => {
     setSort(s => {
-      if (s?.col === col) return s.dir === "asc" ? { col, dir: "desc" } : null;
-      return { col, dir: "asc" };
+      const next = s?.col === col ? (s.dir === "asc" ? { col, dir: "desc" as const } : null) : { col, dir: "asc" as const };
+      try {
+        if (next) localStorage.setItem(`cfd-global-sort:${typeName}`, JSON.stringify(next));
+        else localStorage.removeItem(`cfd-global-sort:${typeName}`);
+      } catch { /* ignore */ }
+      return next;
     });
   };
 

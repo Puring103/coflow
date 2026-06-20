@@ -1180,6 +1180,16 @@ export function TableView({
             if (focusedRow) {
               onNavigate({ view: "record", file: filePath, recordKey: focusedRow.original.key });
             }
+          } else if (e.key === "F2" && focusedRowIndex !== null) {
+            e.preventDefault();
+            const focusedRow = rows[focusedRowIndex];
+            if (focusedRow) {
+              const SCALAR_KINDS_SET = new Set(["Null", "Int", "Float", "Str", "Enum", "Ref"]);
+              const firstEditable = focusedRow.original.fields.find(
+                f => !focusedRow.original.spread_fields.includes(f.name) && SCALAR_KINDS_SET.has(f.value.kind)
+              );
+              if (firstEditable) setEditingCell({ rowKey: focusedRow.original.key, fieldName: firstEditable.name, value: firstEditable.value });
+            }
           }
         }}
       >
