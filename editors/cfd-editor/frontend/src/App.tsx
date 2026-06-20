@@ -182,6 +182,10 @@ export default function App() {
   // Ctrl+Z: undo last field write
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        if (opError) { setOpError(null); return; }
+        if (opSuccess) { setOpSuccess(null); return; }
+      }
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === "z") {
         e.preventDefault();
         handleUndo();
@@ -283,7 +287,7 @@ export default function App() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.dirty, project.snapshot?.session_id, currentFile, router.canBack, router.canForward, handleUndo, handleRedo]);
+  }, [project.dirty, project.snapshot?.session_id, currentFile, router.canBack, router.canForward, handleUndo, handleRedo, opError, opSuccess]);
 
   const handleOpen = async () => {
     const path = await open({

@@ -1258,6 +1258,12 @@ export function TableView({
               virtualizer.scrollToIndex(next, { align: "auto" });
               return next;
             });
+          } else if (e.key === "Home" && e.ctrlKey) {
+            e.preventDefault();
+            if (rowCount > 0) { setFocusedRowIndex(0); virtualizer.scrollToIndex(0, { align: "auto" }); }
+          } else if (e.key === "End" && e.ctrlKey) {
+            e.preventDefault();
+            if (rowCount > 0) { setFocusedRowIndex(rowCount - 1); virtualizer.scrollToIndex(rowCount - 1, { align: "auto" }); }
           } else if ((e.key === "Enter" || e.key === " ") && focusedRowIndex !== null) {
             e.preventDefault();
             const focusedRow = rows[focusedRowIndex];

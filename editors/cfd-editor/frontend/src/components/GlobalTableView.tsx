@@ -725,6 +725,12 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
         setFocusedIdx(i => (i === null ? 0 : Math.max(i - 1, 0)));
+      } else if (e.key === "Home" && e.ctrlKey) {
+        e.preventDefault();
+        setFocusedIdx(filteredRows.length > 0 ? 0 : null);
+      } else if (e.key === "End" && e.ctrlKey) {
+        e.preventDefault();
+        setFocusedIdx(filteredRows.length > 0 ? filteredRows.length - 1 : null);
       } else if (e.key === "Enter" && focusedIdx !== null && filteredRows[focusedIdx]) {
         e.preventDefault();
         handleRowClick(filteredRows[focusedIdx]);
