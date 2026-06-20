@@ -1,10 +1,137 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { RecordRow, FieldValue, FieldPathSegment, DiagnosticItem } from "../bindings";
 import type { Route } from "../router";
 import { DataCard } from "./DataCard";
 import { ContextMenu, type ContextMenuState } from "./ContextMenu";
 import { api } from "../api";
+
+interface CellEditorProps {
+  value: FieldValue;
+  sessionId: number;
+  onCommit: (raw: string) => void;
+  onCancel: () => void;
+}
+
+const CELL_EDITOR_STYLE: React.CSSProperties = {
+  width: "100%",
+  height: "100%",
+  padding: "4px 8px",
+  background: "var(--bg3)",
+  border: "1px solid var(--accent)",
+  borderRadius: 0,
+  color: "var(--text)",
+  fontSize: 12,
+  fontFamily: "monospace",
+  outline: "none",
+  boxSizing: "border-box",
+};
+
+function fieldValueToStringEditor(v: FieldValue): string {
+  switch (v.kind) {
+    case "Null": return "";
+    case "Bool": return String(v.v);
+    case "Int": case "Float": return String(v.v);
+    case "Str": return v.v;
+    case "Enum": return v.variant;
+    case "Ref": return v.target_key;
+    default: return "";
+  }
+}
+
+function CellEditor({ value, sessionId, onCommit, onCancel }: CellEditorProps) {
+  const [text, setText] = useState(() => fieldValueToStringEditor(value));
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [enumVariants, setEnumVariants] = useState<string[] | null>(null);
+  const [refTargets, setRefTargets] = useState<string[]>([]);
+  const listId = useRef(`gcl-${Math.random().toString(36).slice(2)}`).current;
+
+  useEffect(() => {
+    if (value.kind === "Enum") {
+      api.getEnumVariants(sessionId, value.enum_name).then(vs => {
+        setEnumVariants(vs.length > 0 ? vs : []);
+      }).catch(() => setEnumVariants([]));
+    } else if (value.kind === "Ref" && value.target_type) {
+      api.getRefTargets(sessionId, value.target_type).then(keys => {
+        if (keys.length > 0) setRefTargets(keys);
+      }).catch(() => {});
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, value.kind === "Enum" ? (value as { enum_name: string }).enum_name : "",
+      value.kind === "Ref" ? (value as { target_type: string }).target_type : ""]);
+
+  useEffect(() => {
+    if (value.kind !== "Enum") {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [value.kind]);
+
+  if (value.kind === "Enum") {
+    if (enumVariants === null) {
+      return <div style={{ ...CELL_EDITOR_STYLE, color: "var(--text-muted)", fontStyle: "italic" }}>Loading…</div>;
+    }
+    if (enumVariants.length > 0) {
+      return (
+        <select
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onBlur={e => onCommit(e.currentTarget.value)}
+          onKeyDown={e => {
+            if (e.key === "Enter") { e.preventDefault(); onCommit(e.currentTarget.value); }
+            if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+            e.stopPropagation();
+          }}
+          autoFocus
+          style={CELL_EDITOR_STYLE}
+        >
+          {enumVariants.map(v => <option key={v} value={v}>{v}</option>)}
+        </select>
+      );
+    }
+  }
+
+  if (value.kind === "Ref") {
+    return (
+      <>
+        {refTargets.length > 0 && (
+          <datalist id={listId}>
+            {refTargets.map(k => <option key={k} value={k} />)}
+          </datalist>
+        )}
+        <input
+          ref={inputRef}
+          value={text}
+          list={refTargets.length > 0 ? listId : undefined}
+          onChange={e => setText(e.target.value)}
+          onBlur={() => { const t = text.trim(); if (t && t !== value.target_key) onCommit(text); else onCancel(); }}
+          onKeyDown={e => {
+            if (e.key === "Enter") { e.preventDefault(); if (text.trim()) onCommit(text); else onCancel(); }
+            if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+            e.stopPropagation();
+          }}
+          style={CELL_EDITOR_STYLE}
+          placeholder="record_key"
+        />
+      </>
+    );
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      value={text}
+      onChange={e => setText(e.target.value)}
+      onBlur={() => onCommit(text)}
+      onKeyDown={e => {
+        if (e.key === "Enter") { e.preventDefault(); onCommit(text); }
+        if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+        e.stopPropagation();
+      }}
+      style={CELL_EDITOR_STYLE}
+    />
+  );
+}
 
 interface GlobalTableViewProps {
   sessionId: number;
@@ -67,6 +194,7 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
   const [duplicateModal, setDuplicateModal] = useState<{ srcKey: string; filePath: string; draft: string; error: string | null } | null>(null);
   const [typeCounts, setTypeCounts] = useState<Map<string, number>>(new Map());
   const [createModal, setCreateModal] = useState<{ key: string; filePath: string; creating: boolean; error: string | null } | null>(null);
+  const [editingCell, setEditingCell] = useState<{ rowKey: string; filePath: string; fieldName: string; value: FieldValue } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -249,6 +377,33 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
     } catch (e) { setDuplicateModal(m => m && ({ ...m, error: String(e) })); }
   }, [duplicateModal, onDuplicateRecord, sessionId, onNavigate]);
 
+  const SCALAR_KINDS = ["Null", "Bool", "Int", "Float", "Str", "Enum", "Ref"];
+
+  const handleCellClick = useCallback((e: React.MouseEvent, row: RecordRow, fieldName: string, value: FieldValue) => {
+    if (!onWriteField) return;
+    if (!SCALAR_KINDS.includes(value.kind)) return;
+    if (row.spread_fields.includes(fieldName)) return;
+    e.stopPropagation();
+    if (value.kind === "Bool") {
+      onWriteField(sessionId, row.file_path, row.key, [{ kind: "Field", name: fieldName }], { kind: "Bool", v: !value.v }, value);
+      return;
+    }
+    setEditingCell({ rowKey: row.key, filePath: row.file_path, fieldName, value });
+  }, [onWriteField, sessionId]);
+
+  const handleCellCommit = useCallback(async (raw: string) => {
+    if (!editingCell || !onWriteField) return;
+    const newValue = parseFieldValue(raw, editingCell.value);
+    const changed = fieldValueToString(newValue) !== fieldValueToString(editingCell.value) || newValue.kind !== editingCell.value.kind;
+    if (!changed) { setEditingCell(null); return; }
+    try {
+      await onWriteField(sessionId, editingCell.filePath, editingCell.rowKey, [{ kind: "Field", name: editingCell.fieldName }], newValue, editingCell.value);
+      setEditingCell(null);
+    } catch {
+      // onWriteField shows error toast; keep editor open for retry
+    }
+  }, [editingCell, onWriteField, sessionId]);
+
   const handleCreateCommit = useCallback(async () => {
     if (!createModal || !onCreateRecord) return;
     const key = createModal.key.trim();
@@ -263,8 +418,8 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
     } catch (e) { setCreateModal(m => m && ({ ...m, creating: false, error: String(e) })); }
   }, [createModal, onCreateRecord, typeName, onNavigate]);
 
-  // Reset selection when type/search changes
-  useEffect(() => { setSelectedKeys(new Set()); }, [typeName]);
+  // Reset selection and editing when type changes
+  useEffect(() => { setSelectedKeys(new Set()); setEditingCell(null); }, [typeName]);
 
   // Keyboard navigation for the table + Ctrl+F focus search
   useEffect(() => {
@@ -541,9 +696,35 @@ export function GlobalTableView({ sessionId, typeName, refreshKey, onTypeChange,
                     {fieldNames.map(f => {
                       const cell = row.fields.find(x => x.name === f);
                       const isSpread = row.spread_fields.includes(f);
+                      const isEditing = editingCell?.rowKey === row.key && editingCell?.filePath === row.file_path && editingCell?.fieldName === f;
+                      const isScalar = cell && SCALAR_KINDS.includes(cell.value.kind);
+                      const canEdit = !!onWriteField && isScalar && !isSpread;
                       return (
-                        <div key={f} style={{ width: COL_FIELD, flexShrink: 0, padding: "0 4px", overflow: "hidden", borderRight: "1px solid var(--border)", height: "100%", display: "flex", alignItems: "center", opacity: isSpread ? 0.55 : 1 }} title={isSpread ? `${f} (inherited via spread — edit in source record)` : undefined}>
-                          {cell ? (
+                        <div
+                          key={f}
+                          onClick={cell && canEdit ? (e => handleCellClick(e, row, f, cell.value)) : undefined}
+                          style={{
+                            width: COL_FIELD,
+                            flexShrink: 0,
+                            padding: isEditing ? 0 : "0 4px",
+                            overflow: "hidden",
+                            borderRight: "1px solid var(--border)",
+                            height: "100%",
+                            display: "flex",
+                            alignItems: "center",
+                            opacity: isSpread ? 0.55 : 1,
+                            cursor: canEdit ? "text" : "default",
+                          }}
+                          title={isSpread ? `${f} (inherited via spread — edit in source record)` : canEdit ? `Click to edit ${f}` : undefined}
+                        >
+                          {isEditing ? (
+                            <CellEditor
+                              value={editingCell!.value}
+                              sessionId={sessionId}
+                              onCommit={handleCellCommit}
+                              onCancel={() => setEditingCell(null)}
+                            />
+                          ) : cell ? (
                             <DataCard
                               value={cell.value}
                               mode="compact"
