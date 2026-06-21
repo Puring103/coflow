@@ -1,4 +1,4 @@
-import { useState, useEffect, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, type DragEvent as ReactDragEvent } from 'react'
+import { useState, useEffect, useRef, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, type DragEvent as ReactDragEvent } from 'react'
 import type { FieldValue, FieldCell, DictKey, FieldPathSegment } from '../bindings/index'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
@@ -405,46 +405,62 @@ function EnumDirectSelect({
 }
 
 function RefDirectSelect({
-  value, onCommit,
+  value, onCommit, autoFocus = false,
 }: {
   value: FieldValue & { kind: 'Ref' }
   onCommit: (next: FieldValue) => void
+  autoFocus?: boolean
 }) {
   const [targets, setTargets] = useState<string[] | null>(null)
-  const [text, setText] = useState(value.target_key)
-  useEffect(() => { setText(value.target_key) }, [value.target_key])
   useEffect(() => {
     let alive = true
     loadRefTargets(value.target_type).then(v => { if (alive) setTargets(v ?? []) })
     return () => { alive = false }
   }, [value.target_type])
 
-  const listId = `ref-targets-${value.target_type}`
+  function commit(key: string) {
+    if (key !== value.target_key) {
+      onCommit({ kind: 'Ref', target_type: value.target_type, target_key: key, target_file: null })
+    }
+  }
+
+  // No targets yet or empty list — fall back to free-text input.
+  if (targets === null || targets.length === 0) {
+    return (
+      <span className="dc-input-ref">
+        <span className="dc-input-ref-dot" />
+        <input
+          className="dc-input dc-input-flat"
+          defaultValue={value.target_key}
+          autoFocus={autoFocus}
+          placeholder={targets === null ? '加载中…' : `${value.target_type} key`}
+          onBlur={e => commit(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+            if (e.key === 'Escape') (e.target as HTMLInputElement).blur()
+          }}
+        />
+        <span className="dc-input-ref-type">{value.target_type}</span>
+      </span>
+    )
+  }
+
+  // Real select listing all targets, with the current value preserved if not present.
+  const inList = targets.includes(value.target_key)
   return (
     <span className="dc-input-ref">
       <span className="dc-input-ref-dot" />
-      <input
-        className="dc-input dc-input-flat"
-        list={listId}
-        value={text}
-        placeholder={targets === null ? '加载中…' : `${value.target_type} key`}
-        onChange={e => setText(e.target.value)}
-        onBlur={() => {
-          if (text !== value.target_key) {
-            onCommit({ kind: 'Ref', target_type: value.target_type, target_key: text, target_file: null })
-          }
-        }}
-        onKeyDown={e => {
-          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-          if (e.key === 'Escape') { setText(value.target_key); (e.target as HTMLInputElement).blur() }
-        }}
-      />
+      <select
+        className="dc-input dc-input-flat dc-input-ref-select"
+        value={value.target_key}
+        autoFocus={autoFocus}
+        onChange={e => commit(e.target.value)}
+      >
+        {!inList && <option value={value.target_key}>{value.target_key || '(未选择)'}</option>}
+        {!value.target_key && inList && <option value="" disabled>选择…</option>}
+        {targets.map(t => <option key={t} value={t}>{t}</option>)}
+      </select>
       <span className="dc-input-ref-type">{value.target_type}</span>
-      {targets && targets.length > 0 && (
-        <datalist id={listId}>
-          {targets.map(t => <option key={t} value={t} />)}
-        </datalist>
-      )}
     </span>
   )
 }
@@ -629,18 +645,16 @@ function ExpandableRow({ label, value, depth, onEdit, isSpread, fieldPath, pathK
         <div className="dc-row-value">
           {pickingRef && value.kind === 'Object' ? (
             <span className="dc-row-value-inner" onClick={e => e.stopPropagation()}>
-              <RefSelect
-                targetType={value.actual_type}
-                current=""
-                onCommit={key => {
+              <RefDirectSelect
+                value={{ kind: 'Ref', target_type: value.actual_type, target_key: '', target_file: null }}
+                autoFocus
+                onCommit={next => {
                   setPickingRef(false)
-                  if (!key) return
-                  onEdit?.(fieldPath, {
-                    kind: 'Ref', target_type: value.actual_type, target_key: key, target_file: null,
-                  })
+                  if (next.kind !== 'Ref' || !next.target_key) return
+                  onEdit?.(fieldPath, next)
                 }}
-                onCancel={() => setPickingRef(false)}
               />
+              <button className="btn-tiny" onClick={e => { e.stopPropagation(); setPickingRef(false) }}>✕</button>
             </span>
           ) : (
             <div className="dc-row-value-inner">
@@ -846,6 +860,7 @@ function ArrayItems({ container, depth, fieldPath, pathKey, onEdit, onRowToggle 
 }) {
   const [dragIdx, setDragIdx] = useState<number | null>(null)
   const [overIdx, setOverIdx] = useState<number | null>(null)
+  const dragArmedRef = useRef<number | null>(null)
 
   function dropAt(target: number) {
     if (dragIdx === null || dragIdx === target) return
@@ -857,17 +872,11 @@ function ArrayItems({ container, depth, fieldPath, pathKey, onEdit, onRowToggle 
   return (
     <>
       {container.items.map((item, i) => {
-        // Native HTML5 dnd: rows are draggable=true only on the row currently
-        // being dragged (set when the user presses the handle). Setting it
-        // unconditionally would let users start a drag from the value text.
-        const dragHandle = onEdit ? (
-          <DragHandle
-            onPointerDown={e => {
-              const row = (e.currentTarget as HTMLElement).closest('.dc-row') as HTMLElement | null
-              if (row) row.draggable = true
-            }}
-          />
-        ) : undefined
+        // Native HTML5 dnd: row is always draggable=true so the browser will
+        // emit dragstart, but we cancel the drag in dragstart unless the user
+        // initiated it from the drag handle. The handle records on mousedown
+        // whether the press originated from it, via a ref.
+        const dragHandle = onEdit ? <DragHandle rowIndex={i} dragArmedRef={dragArmedRef} /> : undefined
         const trailing = onEdit ? (
           <DeleteButton title="删除" onClick={() => onEdit(fieldPath, arrayRemove(container, i))} />
         ) : undefined
@@ -885,19 +894,26 @@ function ArrayItems({ container, depth, fieldPath, pathKey, onEdit, onRowToggle 
             trailing={trailing}
             dragProps={onEdit ? {
               extraClass: `dc-row-draggable${overIdx === i && dragIdx !== null && dragIdx !== i ? ' drop-target' : ''}${dragIdx === i ? ' dragging' : ''}`,
+              draggable: true,
               onDragStart: (e: ReactDragEvent) => {
+                if (dragArmedRef.current !== i) {
+                  e.preventDefault()
+                  return
+                }
                 e.dataTransfer.effectAllowed = 'move'
+                e.dataTransfer.setData('text/plain', String(i))
                 setDragIdx(i)
               },
               onDragOver: (e: ReactDragEvent) => {
                 if (dragIdx === null) return
                 e.preventDefault()
+                e.dataTransfer.dropEffect = 'move'
                 if (overIdx !== i) setOverIdx(i)
               },
               onDragLeave: () => { if (overIdx === i) setOverIdx(null) },
               onDrop: (e: ReactDragEvent) => { e.preventDefault(); dropAt(i) },
-              onDragEnd: (e: ReactDragEvent) => {
-                ;(e.currentTarget as HTMLElement).draggable = false
+              onDragEnd: () => {
+                dragArmedRef.current = null
                 setDragIdx(null); setOverIdx(null)
               },
             } : undefined}
@@ -908,12 +924,16 @@ function ArrayItems({ container, depth, fieldPath, pathKey, onEdit, onRowToggle 
   )
 }
 
-function DragHandle(props: { onPointerDown?: (e: React.PointerEvent<HTMLSpanElement>) => void }) {
+function DragHandle({ rowIndex, dragArmedRef }: {
+  rowIndex: number
+  dragArmedRef: React.MutableRefObject<number | null>
+}) {
   return (
     <span
       className="dc-drag-handle"
       title="拖动重排"
-      onPointerDown={props.onPointerDown}
+      onMouseDown={() => { dragArmedRef.current = rowIndex }}
+      onMouseUp={() => { dragArmedRef.current = null }}
       onClick={e => e.stopPropagation()}
     >
       <svg width="8" height="14" viewBox="0 0 8 14" fill="currentColor" aria-hidden>
