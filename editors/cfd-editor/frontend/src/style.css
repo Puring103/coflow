@@ -1055,30 +1055,49 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 }
 .dc-row-spread .dc-row-value-inner > .vc { opacity: 0.7; }
 
-/* Collection items: controls slide in from the right on hover and use a
- * subtle gradient backdrop so they read as a separate strip from the value. */
-.dc-collection-row {
-  position: relative;
+/* Drag handle in the row's leading slot. Reserves an 8px gutter on the left
+ * of the label so the handle has its own column and doesn't push the label. */
+.dc-row-label-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
-.dc-collection-row .dc-row-controls {
-  position: absolute;
-  top: 1px;
-  right: 4px;
-  bottom: 1px;
-  display: flex;
+.dc-drag-handle {
+  display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding-left: 18px;
-  background: linear-gradient(to right, transparent, var(--bg-3) 30%);
+  justify-content: center;
+  width: 12px;
+  height: 16px;
+  margin-right: 2px;
+  margin-left: -4px;
+  color: var(--text-mute);
   opacity: 0;
-  pointer-events: none;
+  cursor: grab;
+  flex-shrink: 0;
   transition: opacity 0.1s;
-  z-index: 1;
 }
-.dc-collection-row:hover .dc-row-controls,
-.dc-collection-row:focus-within .dc-row-controls {
-  opacity: 1;
-  pointer-events: auto;
+.dc-drag-handle:hover { color: var(--text); }
+.dc-drag-handle:active { cursor: grabbing; }
+.dc-row-draggable:hover .dc-drag-handle { opacity: 0.7; }
+
+/* Trailing delete button on collection rows — lives in the value column,
+ * doesn't overlap content. */
+.dc-row-delete {
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.dc-row-draggable:hover .dc-row-delete { opacity: 0.85; }
+.dc-row-delete:hover { opacity: 1 !important; }
+
+/* Drag-and-drop visual feedback */
+.dc-row-draggable.dragging {
+  opacity: 0.4;
+  background: var(--bg-3);
+}
+.dc-row-draggable.drop-target {
+  box-shadow: inset 0 2px 0 0 var(--accent);
 }
 .btn-tiny {
   background: var(--bg-3);
@@ -1167,6 +1186,66 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   width: 100%;
   min-width: 0;
   flex: 1 1 auto;
+}
+
+/* Always-on inline editor: no border at rest so it reads like the other rows;
+ * only show borders on hover/focus. The accent only appears while focused. */
+.dc-input-flat {
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 2px 6px;
+  margin: -2px -6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+}
+.dc-row-value-inner:hover .dc-input-flat,
+.dc-input-flat:hover {
+  background: var(--bg-1);
+  border-color: var(--border);
+}
+.dc-input-flat:focus {
+  background: var(--bg-1);
+  border-color: var(--accent);
+}
+.dc-input-flat::-webkit-outer-spin-button,
+.dc-input-flat::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.dc-input-flat[type=number] { -moz-appearance: textfield; }
+
+/* Enum/Bool select chevron is muted */
+select.dc-input-flat {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 4l3 3 3-3' stroke='%23969ba6' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+  padding-right: 18px;
+  cursor: pointer;
+}
+
+.dc-input-enum::before { content: '◆'; color: var(--purple); margin-right: 4px; }
+
+/* Ref direct editor wrapper: leading dot + input + trailing type label */
+.dc-input-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.dc-input-ref-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.dc-input-ref-type {
+  color: var(--text-mute);
+  font-size: 10px;
+  flex-shrink: 0;
 }
 
 /* ─── Node mode (graph card) — inspector inside a node ─── */

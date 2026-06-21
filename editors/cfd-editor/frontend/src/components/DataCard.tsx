@@ -1,4 +1,4 @@
-import { useState, useEffect, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
+import { useState, useEffect, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, type DragEvent as ReactDragEvent } from 'react'
 import type { FieldValue, FieldCell, DictKey, FieldPathSegment } from '../bindings/index'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
@@ -207,7 +207,7 @@ export function DataCardExpanded({ fields, depth = 0, onEdit, pathPrefix, onRowT
   )
 }
 
-function FieldRow({ label, value, depth, onEdit, isSpread, fieldPath, pathKey, onRowToggle }: {
+function FieldRow({ label, value, depth, onEdit, isSpread, fieldPath, pathKey, onRowToggle, leading, trailing, dragProps }: {
   label: string
   value: FieldValue
   depth: number
@@ -216,6 +216,9 @@ function FieldRow({ label, value, depth, onEdit, isSpread, fieldPath, pathKey, o
   fieldPath: FieldPathSegment[]
   pathKey?: string
   onRowToggle?: (path: string, expanded: boolean) => void
+  leading?: ReactNode
+  trailing?: ReactNode
+  dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
 }) {
   const isComplex = value.kind === 'Object' || value.kind === 'Array' || value.kind === 'Dict'
   const canExpand = isComplex && depth < MAX_DEPTH
@@ -231,6 +234,9 @@ function FieldRow({ label, value, depth, onEdit, isSpread, fieldPath, pathKey, o
         fieldPath={fieldPath}
         pathKey={pathKey}
         onRowToggle={onRowToggle}
+        leading={leading}
+        trailing={trailing}
+        dragProps={dragProps}
       />
     )
   }
@@ -242,57 +248,204 @@ function FieldRow({ label, value, depth, onEdit, isSpread, fieldPath, pathKey, o
       onCommit={onEdit ? next => onEdit(fieldPath, next) : undefined}
       isSpread={isSpread}
       pathKey={pathKey}
+      leading={leading}
+      trailing={trailing}
+      dragProps={dragProps}
     />
   )
 }
 
-function ScalarFieldRow({ label, value, depth, onCommit, isSpread, pathKey }: {
+function ScalarFieldRow({ label, value, depth, onCommit, isSpread, pathKey, leading, trailing, dragProps }: {
   label: string
   value: FieldValue
   depth: number
   onCommit?: (newValue: FieldValue) => void
   isSpread?: boolean
   pathKey?: string
+  leading?: ReactNode
+  trailing?: ReactNode
+  dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
 }) {
-  const [editing, setEditing] = useState(false)
   const isScalar = value.kind === 'Bool' || value.kind === 'Int' || value.kind === 'Float'
                 || value.kind === 'Str' || value.kind === 'Enum' || value.kind === 'Ref'
   const canEdit = isScalar && !!onCommit
 
   return (
-    <div className={`dc-row${isSpread ? ' dc-row-spread' : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} title={isSpread ? '此字段来自 ...spread 展开，需到源记录编辑' : undefined}>
+    <div className={`dc-row${isSpread ? ' dc-row-spread' : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} title={isSpread ? '此字段来自 ...spread 展开，需到源记录编辑' : undefined} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
       <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 8 }}>
-        {label}
+        {leading}
+        <span className="dc-row-label-text">{label}</span>
       </div>
       <div className="dc-row-value">
-        {editing && canEdit ? (
-          <InlineEditor
-            value={value}
-            onCommit={next => { onCommit!(next); setEditing(false) }}
-            onCancel={() => setEditing(false)}
-          />
-        ) : (
-          <div
-            className={`dc-row-value-inner${canEdit ? ' editable' : ''}`}
-            onDoubleClick={canEdit ? () => setEditing(true) : undefined}
-            title={canEdit ? '双击编辑' : undefined}
-          >
+        <div className="dc-row-value-inner">
+          {canEdit ? (
+            <DirectEditor value={value} onCommit={onCommit!} />
+          ) : (
             <ValueChip value={value} />
-            {onCommit && value.kind === 'Ref' && (
-              <button
-                className="btn-tiny dc-row-mode-btn"
-                title="切换为内联对象（用 schema 默认值新建）"
-                onClick={async e => {
-                  e.stopPropagation()
-                  const obj = await buildDefaultObject(value.target_type)
-                  if (obj) onCommit(obj)
-                }}
-              >→Inline</button>
-            )}
-          </div>
+          )}
+        </div>
+        {onCommit && value.kind === 'Ref' && (
+          <button
+            className="btn-tiny dc-row-mode-btn"
+            title="切换为内联对象（用 schema 默认值新建）"
+            onClick={async e => {
+              e.stopPropagation()
+              const obj = await buildDefaultObject(value.target_type)
+              if (obj) onCommit(obj)
+            }}
+          >→Inline</button>
         )}
+        {trailing}
       </div>
     </div>
+  )
+}
+
+/** Always-editable widget. Scalars render as inputs/selects directly — no
+ * double-click step. Commits on blur/change/Enter. */
+function DirectEditor({
+  value, onCommit,
+}: {
+  value: FieldValue
+  onCommit: (next: FieldValue) => void
+}) {
+  if (value.kind === 'Bool') {
+    return (
+      <select
+        className="dc-input dc-input-flat"
+        value={value.v ? 'true' : 'false'}
+        onChange={e => onCommit({ kind: 'Bool', v: e.target.value === 'true' })}
+      >
+        <option value="true">true</option>
+        <option value="false">false</option>
+      </select>
+    )
+  }
+  if (value.kind === 'Enum') {
+    return <EnumDirectSelect value={value} onCommit={onCommit} />
+  }
+  if (value.kind === 'Ref') {
+    return <RefDirectSelect value={value} onCommit={onCommit} />
+  }
+  if (value.kind === 'Int' || value.kind === 'Float' || value.kind === 'Str') {
+    return <TextDirectInput value={value} onCommit={onCommit} />
+  }
+  return <ValueChip value={value} />
+}
+
+function TextDirectInput({
+  value, onCommit,
+}: {
+  value: FieldValue & { kind: 'Int' | 'Float' | 'Str' }
+  onCommit: (next: FieldValue) => void
+}) {
+  const initial = plainText(value)
+  const [text, setText] = useState(initial)
+  // Keep local state in sync with prop changes (e.g. after parent reload)
+  useEffect(() => { setText(initial) }, [initial])
+
+  function commit() {
+    if (text === initial) return
+    const next = buildFieldValue(value, text)
+    if (next) onCommit(next)
+    else setText(initial)
+  }
+
+  return (
+    <input
+      className="dc-input dc-input-flat"
+      type={value.kind === 'Int' || value.kind === 'Float' ? 'number' : 'text'}
+      value={text}
+      onChange={e => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+        if (e.key === 'Escape') { setText(initial); (e.target as HTMLInputElement).blur() }
+      }}
+    />
+  )
+}
+
+function EnumDirectSelect({
+  value, onCommit,
+}: {
+  value: FieldValue & { kind: 'Enum' }
+  onCommit: (next: FieldValue) => void
+}) {
+  const [variants, setVariants] = useState<string[] | null>(null)
+  useEffect(() => {
+    let alive = true
+    loadEnumVariants(value.enum_name).then(v => { if (alive) setVariants(v ?? []) })
+    return () => { alive = false }
+  }, [value.enum_name])
+
+  if (variants === null || variants.length === 0) {
+    return (
+      <input
+        className="dc-input dc-input-flat"
+        defaultValue={value.variant}
+        onBlur={e => {
+          if (e.target.value !== value.variant) {
+            onCommit({ kind: 'Enum', enum_name: value.enum_name, variant: e.target.value, int_value: value.int_value })
+          }
+        }}
+      />
+    )
+  }
+  return (
+    <select
+      className="dc-input dc-input-flat dc-input-enum"
+      value={value.variant}
+      onChange={e => onCommit({ kind: 'Enum', enum_name: value.enum_name, variant: e.target.value, int_value: value.int_value })}
+    >
+      {!variants.includes(value.variant) && <option value={value.variant}>{value.variant}</option>}
+      {variants.map(v => <option key={v} value={v}>{v}</option>)}
+    </select>
+  )
+}
+
+function RefDirectSelect({
+  value, onCommit,
+}: {
+  value: FieldValue & { kind: 'Ref' }
+  onCommit: (next: FieldValue) => void
+}) {
+  const [targets, setTargets] = useState<string[] | null>(null)
+  const [text, setText] = useState(value.target_key)
+  useEffect(() => { setText(value.target_key) }, [value.target_key])
+  useEffect(() => {
+    let alive = true
+    loadRefTargets(value.target_type).then(v => { if (alive) setTargets(v ?? []) })
+    return () => { alive = false }
+  }, [value.target_type])
+
+  const listId = `ref-targets-${value.target_type}`
+  return (
+    <span className="dc-input-ref">
+      <span className="dc-input-ref-dot" />
+      <input
+        className="dc-input dc-input-flat"
+        list={listId}
+        value={text}
+        placeholder={targets === null ? '加载中…' : `${value.target_type} key`}
+        onChange={e => setText(e.target.value)}
+        onBlur={() => {
+          if (text !== value.target_key) {
+            onCommit({ kind: 'Ref', target_type: value.target_type, target_key: text, target_file: null })
+          }
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+          if (e.key === 'Escape') { setText(value.target_key); (e.target as HTMLInputElement).blur() }
+        }}
+      />
+      <span className="dc-input-ref-type">{value.target_type}</span>
+      {targets && targets.length > 0 && (
+        <datalist id={listId}>
+          {targets.map(t => <option key={t} value={t} />)}
+        </datalist>
+      )}
+    </span>
   )
 }
 
@@ -439,7 +592,7 @@ function RefSelect({
   )
 }
 
-function ExpandableRow({ label, value, depth, onEdit, isSpread, fieldPath, pathKey, onRowToggle }: {
+function ExpandableRow({ label, value, depth, onEdit, isSpread, fieldPath, pathKey, onRowToggle, leading, trailing, dragProps }: {
   label: string
   value: FieldValue
   depth: number
@@ -448,6 +601,9 @@ function ExpandableRow({ label, value, depth, onEdit, isSpread, fieldPath, pathK
   fieldPath: FieldPathSegment[]
   pathKey?: string
   onRowToggle?: (path: string, expanded: boolean) => void
+  leading?: ReactNode
+  trailing?: ReactNode
+  dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
 }) {
   const [expanded, setExpanded] = useState(false)
   const [pickingRef, setPickingRef] = useState(false)
@@ -462,16 +618,17 @@ function ExpandableRow({ label, value, depth, onEdit, isSpread, fieldPath, pathK
 
   return (
     <>
-      <div className={`dc-row dc-row-foldout${isSpread ? ' dc-row-spread' : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} title={isSpread ? '此字段来自 ...spread 展开，需到源记录编辑' : undefined} onClick={toggle}>
+      <div className={`dc-row dc-row-foldout${isSpread ? ' dc-row-spread' : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} title={isSpread ? '此字段来自 ...spread 展开，需到源记录编辑' : undefined} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
         <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX }}>
+          {leading}
           <span className="dc-fold-arrow">
             <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
           </span>
-          {label}
+          <span className="dc-row-label-text">{label}</span>
         </div>
         <div className="dc-row-value">
           {pickingRef && value.kind === 'Object' ? (
-            <span onClick={e => e.stopPropagation()}>
+            <span className="dc-row-value-inner" onClick={e => e.stopPropagation()}>
               <RefSelect
                 targetType={value.actual_type}
                 current=""
@@ -489,15 +646,16 @@ function ExpandableRow({ label, value, depth, onEdit, isSpread, fieldPath, pathK
             <div className="dc-row-value-inner">
               <span className="vc vc-type">{summary}</span>
               {count !== null && <span className="vc-count">{count}</span>}
-              {onEdit && value.kind === 'Object' && (
-                <button
-                  className="btn-tiny dc-row-mode-btn"
-                  title="切换为引用（指向已有同类型记录）"
-                  onClick={e => { e.stopPropagation(); setPickingRef(true) }}
-                >→Ref</button>
-              )}
             </div>
           )}
+          {onEdit && value.kind === 'Object' && !pickingRef && (
+            <button
+              className="btn-tiny dc-row-mode-btn"
+              title="切换为引用（指向已有同类型记录）"
+              onClick={e => { e.stopPropagation(); setPickingRef(true) }}
+            >→Ref</button>
+          )}
+          {trailing}
         </div>
       </div>
       {expanded && (
@@ -515,46 +673,34 @@ function ExpandableRow({ label, value, depth, onEdit, isSpread, fieldPath, pathK
                 onRowToggle={onRowToggle}
               />
             ))}
-          {value.kind === 'Array' &&
-            value.items.map((item, i) => (
-              <div key={i} className="dc-collection-row">
-                <FieldRow
-                  label={`[${i}]`}
-                  value={item}
-                  depth={depth + 1}
-                  onEdit={onEdit}
-                  fieldPath={[...fieldPath, { kind: 'index', i }]}
-                  pathKey={pathKey ? `${pathKey}[${i}]` : `[${i}]`}
-                  onRowToggle={onRowToggle}
-                />
-                {onEdit && (
-                  <ArrayItemControls
-                    index={i}
-                    total={value.items.length}
-                    onMove={(from, to) => onEdit(fieldPath, arrayMove(value, from, to))}
-                    onRemove={i => onEdit(fieldPath, arrayRemove(value, i))}
-                  />
-                )}
-              </div>
-            ))}
+          {value.kind === 'Array' && (
+            <ArrayItems
+              container={value}
+              depth={depth + 1}
+              fieldPath={fieldPath}
+              pathKey={pathKey}
+              onEdit={onEdit}
+              onRowToggle={onRowToggle}
+            />
+          )}
           {value.kind === 'Dict' &&
             value.entries.map((e, i) => (
-              <div key={i} className="dc-collection-row">
-                <FieldRow
-                  label={dictKeyText(e.key)}
-                  value={e.value}
-                  depth={depth + 1}
-                  onEdit={onEdit}
-                  fieldPath={[...fieldPath, { kind: 'field', name: dictKeyAstName(e.key) }]}
-                  pathKey={pathKey ? `${pathKey}[${dictKeyText(e.key)}]` : `[${dictKeyText(e.key)}]`}
-                  onRowToggle={onRowToggle}
-                />
-                {onEdit && (
-                  <DictItemControls
-                    onRemove={() => onEdit(fieldPath, dictRemove(value, e.key))}
+              <FieldRow
+                key={i}
+                label={dictKeyText(e.key)}
+                value={e.value}
+                depth={depth + 1}
+                onEdit={onEdit}
+                fieldPath={[...fieldPath, { kind: 'field', name: dictKeyAstName(e.key) }]}
+                pathKey={pathKey ? `${pathKey}[${dictKeyText(e.key)}]` : `[${dictKeyText(e.key)}]`}
+                onRowToggle={onRowToggle}
+                trailing={onEdit ? (
+                  <DeleteButton
+                    title="删除"
+                    onClick={() => onEdit(fieldPath, dictRemove(value, e.key))}
                   />
-                )}
-              </div>
+                ) : undefined}
+              />
             ))}
           {onEdit && (value.kind === 'Array' || value.kind === 'Dict') && (
             <CollectionAddRow
@@ -687,31 +833,105 @@ function defaultLikeShape(sample: FieldValue): FieldValue {
   }
 }
 
-function ArrayItemControls({ index, total, onMove, onRemove }: {
-  index: number
-  total: number
-  onMove: (from: number, to: number) => void
-  onRemove: (i: number) => void
+/** Array items list with HTML5 drag-and-drop reorder. The drag handle lives
+ * in the row's leading slot (left of the label) and the delete button in the
+ * trailing slot (right of the value), so neither covers content. */
+function ArrayItems({ container, depth, fieldPath, pathKey, onEdit, onRowToggle }: {
+  container: FieldValue & { kind: 'Array' }
+  depth: number
+  fieldPath: FieldPathSegment[]
+  pathKey?: string
+  onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
+  onRowToggle?: (path: string, expanded: boolean) => void
 }) {
-  const stop = (fn: () => void) => (e: ReactMouseEvent) => { e.stopPropagation(); fn() }
+  const [dragIdx, setDragIdx] = useState<number | null>(null)
+  const [overIdx, setOverIdx] = useState<number | null>(null)
+
+  function dropAt(target: number) {
+    if (dragIdx === null || dragIdx === target) return
+    onEdit?.(fieldPath, arrayMove(container, dragIdx, target))
+    setDragIdx(null)
+    setOverIdx(null)
+  }
+
   return (
-    <div className="dc-row-controls">
-      <button className="btn-tiny" disabled={index === 0} title="上移" onClick={stop(() => onMove(index, index - 1))}>↑</button>
-      <button className="btn-tiny" disabled={index === total - 1} title="下移" onClick={stop(() => onMove(index, index + 1))}>↓</button>
-      <button className="btn-tiny btn-tiny-danger" title="删除" onClick={stop(() => onRemove(index))}>✕</button>
-    </div>
+    <>
+      {container.items.map((item, i) => {
+        // Native HTML5 dnd: rows are draggable=true only on the row currently
+        // being dragged (set when the user presses the handle). Setting it
+        // unconditionally would let users start a drag from the value text.
+        const dragHandle = onEdit ? (
+          <DragHandle
+            onPointerDown={e => {
+              const row = (e.currentTarget as HTMLElement).closest('.dc-row') as HTMLElement | null
+              if (row) row.draggable = true
+            }}
+          />
+        ) : undefined
+        const trailing = onEdit ? (
+          <DeleteButton title="删除" onClick={() => onEdit(fieldPath, arrayRemove(container, i))} />
+        ) : undefined
+        return (
+          <FieldRow
+            key={i}
+            label={`[${i}]`}
+            value={item}
+            depth={depth}
+            onEdit={onEdit}
+            fieldPath={[...fieldPath, { kind: 'index', i }]}
+            pathKey={pathKey ? `${pathKey}[${i}]` : `[${i}]`}
+            onRowToggle={onRowToggle}
+            leading={dragHandle}
+            trailing={trailing}
+            dragProps={onEdit ? {
+              extraClass: `dc-row-draggable${overIdx === i && dragIdx !== null && dragIdx !== i ? ' drop-target' : ''}${dragIdx === i ? ' dragging' : ''}`,
+              onDragStart: (e: ReactDragEvent) => {
+                e.dataTransfer.effectAllowed = 'move'
+                setDragIdx(i)
+              },
+              onDragOver: (e: ReactDragEvent) => {
+                if (dragIdx === null) return
+                e.preventDefault()
+                if (overIdx !== i) setOverIdx(i)
+              },
+              onDragLeave: () => { if (overIdx === i) setOverIdx(null) },
+              onDrop: (e: ReactDragEvent) => { e.preventDefault(); dropAt(i) },
+              onDragEnd: (e: ReactDragEvent) => {
+                ;(e.currentTarget as HTMLElement).draggable = false
+                setDragIdx(null); setOverIdx(null)
+              },
+            } : undefined}
+          />
+        )
+      })}
+    </>
   )
 }
 
-function DictItemControls({ onRemove }: { onRemove: () => void }) {
+function DragHandle(props: { onPointerDown?: (e: React.PointerEvent<HTMLSpanElement>) => void }) {
   return (
-    <div className="dc-row-controls">
-      <button
-        className="btn-tiny btn-tiny-danger"
-        title="删除"
-        onClick={e => { e.stopPropagation(); onRemove() }}
-      >✕</button>
-    </div>
+    <span
+      className="dc-drag-handle"
+      title="拖动重排"
+      onPointerDown={props.onPointerDown}
+      onClick={e => e.stopPropagation()}
+    >
+      <svg width="8" height="14" viewBox="0 0 8 14" fill="currentColor" aria-hidden>
+        <circle cx="2" cy="3"  r="1" /><circle cx="6" cy="3"  r="1" />
+        <circle cx="2" cy="7"  r="1" /><circle cx="6" cy="7"  r="1" />
+        <circle cx="2" cy="11" r="1" /><circle cx="6" cy="11" r="1" />
+      </svg>
+    </span>
+  )
+}
+
+function DeleteButton({ onClick, title }: { onClick: () => void; title: string }) {
+  return (
+    <button
+      className="btn-tiny btn-tiny-danger dc-row-delete"
+      title={title}
+      onClick={(e: ReactMouseEvent) => { e.stopPropagation(); onClick() }}
+    >✕</button>
   )
 }
 
