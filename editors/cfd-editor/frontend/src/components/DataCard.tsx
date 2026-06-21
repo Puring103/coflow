@@ -212,14 +212,15 @@ function FieldRow({ label, value, depth, onEdit, pathKey, onRowToggle }: {
       />
     )
   }
-  return <ScalarFieldRow label={label} value={value} depth={depth} onEdit={onEdit} />
+  return <ScalarFieldRow label={label} value={value} depth={depth} onEdit={onEdit} pathKey={pathKey} />
 }
 
-function ScalarFieldRow({ label, value, depth, onEdit }: {
+function ScalarFieldRow({ label, value, depth, onEdit, pathKey }: {
   label: string
   value: FieldValue
   depth: number
   onEdit?: (newValue: string) => void
+  pathKey?: string
 }) {
   const [editing, setEditing] = useState(false)
   const [editVal, setEditVal] = useState('')
@@ -238,7 +239,7 @@ function ScalarFieldRow({ label, value, depth, onEdit }: {
   }
 
   return (
-    <div className="dc-row" data-depth={depth} data-field-name={depth === 0 ? label : undefined}>
+    <div className="dc-row" data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey}>
       <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 8 }}>
         {label}
       </div>
@@ -288,7 +289,7 @@ function ExpandableRow({ label, value, depth, pathKey, onRowToggle }: {
 
   return (
     <>
-      <div className="dc-row dc-row-foldout" data-depth={depth} onClick={toggle}>
+      <div className="dc-row dc-row-foldout" data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} onClick={toggle}>
         <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX }}>
           <span className="dc-fold-arrow">
             <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
@@ -322,7 +323,7 @@ function ExpandableRow({ label, value, depth, pathKey, onRowToggle }: {
                 label={`Element ${i}`}
                 value={item}
                 depth={depth + 1}
-                pathKey={pathKey ? `${pathKey}.${i}` : String(i)}
+                pathKey={pathKey ? `${pathKey}[${i}]` : `[${i}]`}
                 onRowToggle={onRowToggle}
               />
             ))}
@@ -333,7 +334,7 @@ function ExpandableRow({ label, value, depth, pathKey, onRowToggle }: {
                 label={dictKeyText(e.key)}
                 value={e.value}
                 depth={depth + 1}
-                pathKey={pathKey ? `${pathKey}.${dictKeyText(e.key)}` : dictKeyText(e.key)}
+                pathKey={pathKey ? `${pathKey}[${dictKeyText(e.key)}]` : `[${dictKeyText(e.key)}]`}
                 onRowToggle={onRowToggle}
               />
             ))}

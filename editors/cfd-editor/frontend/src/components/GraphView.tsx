@@ -26,6 +26,8 @@ const PAD_V      = 12
 interface NodeData extends Record<string, unknown> {
   graphNode: GraphNode
   expanded: boolean
+  /** Distinct edge field_paths whose source is this node (e.g. ["unlockGeneList[0]", "unlockGeneList[1]"]) */
+  outgoingPaths: string[]
   onToggleExpand: () => void
   onRowToggle: (path: string, exp: boolean) => void
 }
@@ -36,41 +38,45 @@ interface NodeData extends Record<string, unknown> {
 // header height variation, or sub-row expansion.
 
 function CfdNode({ id, data }: NodeProps) {
-  const { graphNode: gn, expanded, onToggleExpand, onRowToggle } = data as NodeData
+  const { graphNode: gn, expanded, outgoingPaths, onToggleExpand, onRowToggle } = data as NodeData
   const rootRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLDivElement>(null)
   const updateNodeInternals = useUpdateNodeInternals()
 
-  // Map of fieldName → measured Y offset (center of that row, relative to node)
-  const [refRowOffsets, setRefRowOffsets] = useState<Map<string, number>>(new Map())
+  // Map of edge field_path → measured Y offset (center of the matching row).
+  // We try the exact path first (e.g. "unlockGeneList[1]"), and fall back to
+  // the top-level field row when the array/dict is collapsed.
+  const [pathOffsets, setPathOffsets] = useState<Map<string, number>>(new Map())
   const [headerCenterY, setHeaderCenterY] = useState(21)
-
-  // Visible Ref fields whose row should get a per-field handle
-  const refFieldNames = useMemo(() => {
-    const visible = expanded ? gn.fields : gn.fields.slice(0, NODE_PEEK_FIELDS)
-    return visible.filter(f => f.value.kind === 'Ref').map(f => f.name)
-  }, [gn.fields, expanded])
 
   useLayoutEffect(() => {
     const root = rootRef.current
     if (!root) return
     const rootRect = root.getBoundingClientRect()
     const next = new Map<string, number>()
-    for (const name of refFieldNames) {
-      const row = root.querySelector<HTMLElement>(`.dc-row[data-field-name="${CSS.escape(name)}"]`)
+    for (const path of outgoingPaths) {
+      // Prefer exact path match (visible specific Ref row, e.g. Element 1)
+      let row = root.querySelector<HTMLElement>(
+        `.dc-row[data-field-path="${CSS.escape(path)}"]`,
+      )
+      if (!row) {
+        // Fall back to the top-level field row (array/dict collapsed)
+        const top = path.match(/^[^.[]+/)?.[0]
+        if (top) {
+          row = root.querySelector<HTMLElement>(`.dc-row[data-field-name="${CSS.escape(top)}"]`)
+        }
+      }
       if (!row) continue
       const r = row.getBoundingClientRect()
-      next.set(name, r.top - rootRect.top + r.height / 2)
+      next.set(path, r.top - rootRect.top + r.height / 2)
     }
-    setRefRowOffsets(next)
+    setPathOffsets(next)
     if (headerRef.current) {
       const h = headerRef.current.getBoundingClientRect()
       setHeaderCenterY(h.top - rootRect.top + h.height / 2)
     }
-    // Notify React Flow that this node's handle positions changed so edge
-    // paths recompute to match the new handle Y coordinates.
     updateNodeInternals(id)
-  }, [refFieldNames, expanded, gn.fields, id, updateNodeInternals])
+  }, [outgoingPaths, expanded, gn.fields, id, updateNodeInternals])
 
   return (
     <div
@@ -79,19 +85,18 @@ function CfdNode({ id, data }: NodeProps) {
       data-nodeid={gn.id}
       style={{'--node-color': typeColor(gn.actual_type)} as React.CSSProperties}
     >
-      {/* Target handle at header center so incoming edges arrive at the key row */}
       <Handle type="target" position={Position.Left} id="__in" style={{ top: headerCenterY }} />
-      {/* Per-field source handles, measured from DOM */}
-      {Array.from(refRowOffsets.entries()).map(([name, y]) => (
+      {/* One source handle per outgoing edge path, positioned at the matching row */}
+      {Array.from(pathOffsets.entries()).map(([path, y]) => (
         <Handle
-          key={`src-${name}`}
+          key={`src-${path}`}
           type="source"
           position={Position.Right}
-          id={`field-${name}`}
+          id={`path-${path}`}
           style={{ top: y, bottom: 'auto' }}
         />
       ))}
-      {/* Default source handle for non-Ref refs / fallback */}
+      {/* Fallback source handle (used when no row could be matched) */}
       <Handle
         type="source"
         position={Position.Right}
@@ -583,22 +588,25 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
     [graphData, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap]
   )
 
-  // Use the per-field handle whenever the field row is visible (peek or full).
-  // Only fall back to __out (header center) when the field is hidden under
-  // the "+N more" button in collapsed view.
+  // Group outgoing edge paths by source node id (used to render per-path handles).
+  const outgoingPathsByNode = useMemo(() => {
+    const m = new Map<string, string[]>()
+    for (const e of [...forwardEdges, ...backEdges]) {
+      const list = m.get(e.source) ?? []
+      if (!list.includes(e.field_path)) list.push(e.field_path)
+      m.set(e.source, list)
+    }
+    return m
+  }, [forwardEdges, backEdges])
+
+  // Edge → handle id. Each edge gets its own per-path source handle on the
+  // source node (path-{field_path}). The matching <Handle> is rendered by the
+  // node's CfdNode after measuring the corresponding row.
   function edgeHandleId(
-    sourceId: string,
+    _sourceId: string,
     fieldPath: string,
   ): { sourceHandle: string; targetHandle: string } {
-    const expanded = nodeExpandedMap.get(sourceId) ?? false
-    const srcNode = visibleNodes.find(n => n.id === sourceId)
-    if (!srcNode) return { sourceHandle: '__out', targetHandle: '__in' }
-    const visible = expanded ? srcNode.fields : srcNode.fields.slice(0, NODE_PEEK_FIELDS)
-    const top = topLevelField(fieldPath)
-    const match = visible.find(f => f.name === top && f.value.kind === 'Ref')
-    return match
-      ? { sourceHandle: `field-${top}`, targetHandle: '__in' }
-      : { sourceHandle: '__out', targetHandle: '__in' }
+    return { sourceHandle: `path-${fieldPath}`, targetHandle: '__in' }
   }
 
   const rfNodes: Node[] = useMemo(
@@ -609,11 +617,12 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
       data: {
         graphNode: n,
         expanded: nodeExpandedMap.get(n.id) ?? false,
+        outgoingPaths: outgoingPathsByNode.get(n.id) ?? [],
         onToggleExpand: () => toggleNodeExpanded(n.id),
         onRowToggle: (path: string, exp: boolean) => handleRowToggle(n.id, path, exp),
       } satisfies NodeData,
     })),
-    [visibleNodes, positions, nodeExpandedMap, toggleNodeExpanded, handleRowToggle]
+    [visibleNodes, positions, nodeExpandedMap, outgoingPathsByNode, toggleNodeExpanded, handleRowToggle]
   )
 
   const rfEdges: Edge[] = useMemo(() => {
@@ -645,7 +654,7 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
         id: `b${i}`,
         source: e.source,
         target: e.target,
-        sourceHandle: '__out',
+        sourceHandle: `path-${e.field_path}`,
         targetHandle: '__in',
         label: e.field_path,
         type: 'bezier',
