@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import {
   ReactFlow, Background, Controls, MiniMap,
   Handle, Position, type NodeProps,
@@ -26,7 +26,6 @@ const PAD_V      = 12
 interface NodeData extends Record<string, unknown> {
   graphNode: GraphNode
   expanded: boolean
-  dimmed: boolean
   onToggleExpand: () => void
   onRowToggle: (path: string, exp: boolean) => void
 }
@@ -57,11 +56,12 @@ function refFieldHandles(fields: FieldCell[], expanded: boolean, showAll: boolea
 // ─── CfdNode ─────────────────────────────────────────────────────────────────
 
 function CfdNode({ data }: NodeProps) {
-  const { graphNode: gn, expanded, dimmed, onToggleExpand, onRowToggle } = data as NodeData
+  const { graphNode: gn, expanded, onToggleExpand, onRowToggle } = data as NodeData
 
   return (
     <div
-      className={`graph-node${gn.in_focus_file ? ' focused' : ' dim'}${dimmed ? ' node-dim' : ''}`}
+      className={`graph-node${gn.in_focus_file ? ' focused' : ' dim'}`}
+      data-nodeid={gn.id}
       style={{'--node-color': typeColor(gn.actual_type)} as React.CSSProperties}
     >
       <Handle type="target" position={Position.Left} id="__in" />
@@ -506,7 +506,6 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
   const [nodeExpandedMap, setNodeExpandedMap] = useState<Map<string, boolean>>(new Map())
   // Per-node set of expanded sub-row paths
   const [nodeRowExpandedMap, setNodeRowExpandedMap] = useState<Map<string, Set<string>>>(new Map())
-  const [hoveredId, setHoveredId] = useState<string | null>(null)
 
   const toggleNodeExpanded = useCallback((id: string) => {
     setNodeExpandedMap(prev => {
@@ -541,7 +540,6 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
     const expanded = nodeExpandedMap.get(sourceId) ?? false
     if (!expanded) return { sourceHandle: '__out', targetHandle: '__in' }
     const top = topLevelField(fieldPath)
-    // Check if the source node has a ref field with this name in visible rows
     const srcNode = visibleNodes.find(n => n.id === sourceId)
     if (!srcNode) return { sourceHandle: '__out', targetHandle: '__in' }
     const visible = srcNode.fields.slice(0, nodeExpandedMap.get(sourceId) ? undefined : NODE_PEEK_FIELDS)
@@ -551,34 +549,19 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
       : { sourceHandle: '__out', targetHandle: '__in' }
   }
 
-  const hoveredNeighbors: Set<string> = useMemo(() => {
-    if (!hoveredId) return new Set()
-    const neighbors = new Set<string>()
-    const allActiveEdges = [...forwardEdges, ...backEdges]
-    for (const e of allActiveEdges) {
-      if (e.source === hoveredId) neighbors.add(e.target)
-      if (e.target === hoveredId) neighbors.add(e.source)
-    }
-    return neighbors
-  }, [hoveredId, forwardEdges, backEdges])
-
   const rfNodes: Node[] = useMemo(
-    () => visibleNodes.map(n => {
-      const dimmed = hoveredId !== null && n.id !== hoveredId && !hoveredNeighbors.has(n.id)
-      return {
-        id: n.id,
-        type: 'cfd',
-        position: positions.get(n.id) ?? { x: 0, y: 0 },
-        data: {
-          graphNode: n,
-          expanded: nodeExpandedMap.get(n.id) ?? false,
-          dimmed,
-          onToggleExpand: () => toggleNodeExpanded(n.id),
-          onRowToggle: (path: string, exp: boolean) => handleRowToggle(n.id, path, exp),
-        } satisfies NodeData,
-      }
-    }),
-    [visibleNodes, positions, nodeExpandedMap, hoveredId, hoveredNeighbors, toggleNodeExpanded, handleRowToggle]
+    () => visibleNodes.map(n => ({
+      id: n.id,
+      type: 'cfd',
+      position: positions.get(n.id) ?? { x: 0, y: 0 },
+      data: {
+        graphNode: n,
+        expanded: nodeExpandedMap.get(n.id) ?? false,
+        onToggleExpand: () => toggleNodeExpanded(n.id),
+        onRowToggle: (path: string, exp: boolean) => handleRowToggle(n.id, path, exp),
+      } satisfies NodeData,
+    })),
+    [visibleNodes, positions, nodeExpandedMap, toggleNodeExpanded, handleRowToggle]
   )
 
   const rfEdges: Edge[] = useMemo(() => {
@@ -586,7 +569,6 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
       .filter(e => positions.has(e.source) && positions.has(e.target))
       .map((e, i) => {
         const { sourceHandle, targetHandle } = edgeHandleId(e.source, e.field_path)
-        const connected = hoveredId !== null && (e.source === hoveredId || e.target === hoveredId)
         return {
           id: `f${i}`,
           source: e.source,
@@ -596,12 +578,8 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
           label: e.field_path,
           type: 'bezier',
           animated: false,
-          style: connected
-            ? { stroke: '#8aa8d4', strokeWidth: 2 }
-            : hoveredId !== null
-              ? { stroke: '#4a525e', strokeWidth: 1.2, opacity: 0.15 }
-              : { stroke: '#4a525e', strokeWidth: 1.2 },
-          zIndex: connected ? 1000 : 0,
+          className: `rf-edge rf-edge-fwd rf-src-${e.source} rf-tgt-${e.target}`,
+          style: { stroke: '#4a525e', strokeWidth: 1.2 },
           labelStyle: { fill: '#7a828f', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' },
           labelBgStyle: { fill: '#1a1e25', fillOpacity: 0.92 },
           labelBgPadding: [4, 2] as [number, number],
@@ -609,46 +587,92 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
         }
       })
 
-    // Back-edges: route above/below to avoid overlapping forward edges.
-    // Use type='bezier' with elevated zIndex and dashed stroke.
     const bkEdges: Edge[] = backEdges
       .filter(e => positions.has(e.source) && positions.has(e.target))
-      .map((e, i) => {
-        const connected = hoveredId !== null && (e.source === hoveredId || e.target === hoveredId)
-        return {
-          id: `b${i}`,
-          source: e.source,
-          target: e.target,
-          sourceHandle: '__out',
-          targetHandle: '__in',
-          label: e.field_path,
-          type: 'bezier',
-          animated: false,
-          style: connected
-            ? { stroke: '#d97a7a', strokeWidth: 2, strokeDasharray: '6 3' }
-            : hoveredId !== null
-              ? { stroke: '#d97a7a', strokeWidth: 1.2, opacity: 0.2, strokeDasharray: '6 3' }
-              : { stroke: '#d97a7a', strokeWidth: 1.2, opacity: 0.6, strokeDasharray: '6 3' },
-          zIndex: connected ? 1100 : 1,
-          labelStyle: { fill: '#d97a7a', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' },
-          labelBgStyle: { fill: '#1a1e25', fillOpacity: 0.92 },
-          labelBgPadding: [4, 2] as [number, number],
-          labelBgBorderRadius: 3,
-          markerEnd: undefined,
-        }
-      })
+      .map((e, i) => ({
+        id: `b${i}`,
+        source: e.source,
+        target: e.target,
+        sourceHandle: '__out',
+        targetHandle: '__in',
+        label: e.field_path,
+        type: 'bezier',
+        animated: false,
+        className: `rf-edge rf-edge-bk rf-src-${e.source} rf-tgt-${e.target}`,
+        style: { stroke: '#d97a7a', strokeWidth: 1.2, opacity: 0.6, strokeDasharray: '6 3' },
+        zIndex: 1,
+        labelStyle: { fill: '#d97a7a', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' },
+        labelBgStyle: { fill: '#1a1e25', fillOpacity: 0.92 },
+        labelBgPadding: [4, 2] as [number, number],
+        labelBgBorderRadius: 3,
+      }))
 
     return [...fwdEdges, ...bkEdges]
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [forwardEdges, backEdges, positions, hoveredId, hoveredNeighbors, nodeExpandedMap, visibleNodes])
+  }, [forwardEdges, backEdges, positions, nodeExpandedMap, visibleNodes])
+
+  // ── Imperative hover highlight (zero re-renders) ────────────────────────
+  // We manipulate DOM classes directly to avoid the state→rerender→mouseleave
+  // flicker cycle. The adjacency map is rebuilt whenever edges change.
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  // nodeId → set of nodeIds it is directly connected to
+  const adjacencyRef = useRef<Map<string, Set<string>>>(new Map())
+  useMemo(() => {
+    const adj = new Map<string, Set<string>>()
+    for (const e of [...forwardEdges, ...backEdges]) {
+      if (!adj.has(e.source)) adj.set(e.source, new Set())
+      if (!adj.has(e.target)) adj.set(e.target, new Set())
+      adj.get(e.source)!.add(e.target)
+      adj.get(e.target)!.add(e.source)
+    }
+    adjacencyRef.current = adj
+  }, [forwardEdges, backEdges])
 
   const onNodeDoubleClick = useCallback((_: unknown, node: Node) => {
     const { graphNode } = node.data as NodeData
     onOpenRecord(graphNode.file_path, graphNode.key)
   }, [onOpenRecord])
 
-  const onNodeMouseEnter = useCallback((_: unknown, node: Node) => setHoveredId(node.id), [])
-  const onNodeMouseLeave = useCallback(() => setHoveredId(null), [])
+  const onNodeMouseEnter = useCallback((_: unknown, node: Node) => {
+    const wrap = wrapRef.current
+    if (!wrap) return
+    const hovId = node.id
+    const neighbors = adjacencyRef.current.get(hovId) ?? new Set<string>()
+
+    wrap.classList.add('is-hovering')
+
+    // Highlight hovered node + neighbors
+    wrap.querySelectorAll<HTMLElement>('.graph-node').forEach(el => {
+      const nid = el.dataset.nodeid
+      if (nid === hovId || neighbors.has(nid ?? '')) {
+        el.classList.add('hover-highlight')
+      } else {
+        el.classList.add('hover-dim')
+      }
+    })
+
+    // Highlight connected edges, dim others
+    wrap.querySelectorAll<SVGGElement>('.react-flow__edge').forEach(el => {
+      const cls = el.classList
+      const isSrc = cls.contains(`rf-src-${hovId}`)
+      const isTgt = cls.contains(`rf-tgt-${hovId}`)
+      if (isSrc || isTgt) {
+        el.classList.add('hover-highlight')
+      } else {
+        el.classList.add('hover-dim')
+      }
+    })
+  }, [])
+
+  const onNodeMouseLeave = useCallback(() => {
+    const wrap = wrapRef.current
+    if (!wrap) return
+    wrap.classList.remove('is-hovering')
+    wrap.querySelectorAll('.hover-highlight, .hover-dim').forEach(el => {
+      el.classList.remove('hover-highlight', 'hover-dim')
+    })
+  }, [])
 
   function toggleField(name: string) {
     setEnabledFields(prev => {
@@ -662,7 +686,7 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
   const noneOn = enabledFields.size === 0
 
   return (
-    <div className="graph-view-wrap">
+    <div className="graph-view-wrap" ref={wrapRef}>
       {allFields.length > 0 && (
         <div className="graph-toolbar">
           <span className="graph-toolbar-label">字段过滤</span>

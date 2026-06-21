@@ -1105,9 +1105,23 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 .graph-node.dim {
   opacity: 0.85;
 }
-.graph-node.node-dim {
-  opacity: 0.2;
-  filter: saturate(0.3);
+/* Imperative hover highlight — classes added/removed without React re-render */
+.graph-view-wrap.is-hovering .graph-node.hover-dim {
+  opacity: 0.12;
+  filter: saturate(0.2);
+  transition: opacity 0.1s, filter 0.1s;
+}
+.graph-view-wrap.is-hovering .graph-node.hover-highlight {
+  opacity: 1;
+  filter: none;
+}
+.graph-view-wrap.is-hovering .react-flow__edge.hover-dim {
+  opacity: 0.08;
+  transition: opacity 0.1s;
+}
+.graph-view-wrap.is-hovering .react-flow__edge.hover-highlight .react-flow__edge-path {
+  stroke: #8aa8d4 !important;
+  stroke-width: 2 !important;
 }
 
 .gn-header {
