@@ -44,7 +44,7 @@ export function RecordView({ data, recordKey, typeFilter, onOpenRecord }: Props)
       </div>
 
       <div className="rv-main">
-        <CardHeader recordKey={record.key} actualType={record.actual_type} />
+        <CardHeader recordKey={record.key} actualType={record.actual_type} filePath={data.file_path} />
         {showSearch && (
           <div className="rv-search-bar">
             <Icon name="search" size={13} className="rv-search-icon" />

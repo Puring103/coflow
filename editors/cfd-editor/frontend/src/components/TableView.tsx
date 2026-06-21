@@ -136,7 +136,7 @@ export function TableView({ data, activeType, onOpenRecord }: Props) {
       {selectedRecord && (
         <aside className="table-detail">
           <div className="table-detail-header">
-            <CardHeader recordKey={selectedRecord.key} actualType={selectedRecord.actual_type} />
+            <CardHeader recordKey={selectedRecord.key} actualType={selectedRecord.actual_type} filePath={data.file_path} />
             <button className="btn btn-icon table-detail-close" onClick={() => setSelectedKey(null)} title="关闭面板">
               <Icon name="close" size={13} />
             </button>
