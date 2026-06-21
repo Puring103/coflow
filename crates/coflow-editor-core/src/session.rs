@@ -695,45 +695,40 @@ fn build_graph(session: &EditorSession, file_path: &str) -> GraphData {
     }
 }
 
+// Only top-level field refs and direct members of top-level Array/Dict are
+// edges in the graph. Nested Object fields are not traversed — those refs
+// belong to the record's internal structure, not its outgoing relationships.
 fn collect_refs_in_record(record: &CfdRecord) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for (name, value) in &record.fields {
-        collect_refs_in_value(value, name.clone(), &mut out);
+        match value {
+            CfdValue::Ref { key, .. } => out.push((name.clone(), key.clone())),
+            CfdValue::Array(items) => {
+                for (i, item) in items.iter().enumerate() {
+                    if let CfdValue::Ref { key, .. } = item {
+                        out.push((format!("{name}[{i}]"), key.clone()));
+                    }
+                }
+            }
+            CfdValue::Dict(entries) => {
+                for (k, v) in entries {
+                    if let CfdValue::Ref { key, .. } = v {
+                        let key_str = match k {
+                            CfdDictKey::String(s) => format!("\"{s}\""),
+                            CfdDictKey::Int(i) => i.to_string(),
+                            CfdDictKey::Enum(e) => e
+                                .variant
+                                .clone()
+                                .unwrap_or_else(|| format!("{}({})", e.enum_name, e.value)),
+                        };
+                        out.push((format!("{name}[{key_str}]"), key.clone()));
+                    }
+                }
+            }
+            _ => {}
+        }
     }
     out
-}
-
-fn collect_refs_in_value(value: &CfdValue, path: String, out: &mut Vec<(String, String)>) {
-    match value {
-        CfdValue::Ref { key, .. } => out.push((path, key.clone())),
-        CfdValue::Object(boxed) => {
-            for (name, value) in &boxed.fields {
-                let p = format!("{path}.{name}");
-                collect_refs_in_value(value, p, out);
-            }
-        }
-        CfdValue::Array(items) => {
-            for (i, item) in items.iter().enumerate() {
-                let p = format!("{path}[{i}]");
-                collect_refs_in_value(item, p, out);
-            }
-        }
-        CfdValue::Dict(entries) => {
-            for (k, v) in entries {
-                let key_str = match k {
-                    CfdDictKey::String(s) => format!("\"{s}\""),
-                    CfdDictKey::Int(i) => i.to_string(),
-                    CfdDictKey::Enum(e) => e
-                        .variant
-                        .clone()
-                        .unwrap_or_else(|| format!("{}({})", e.enum_name, e.value)),
-                };
-                let p = format!("{path}[{key_str}]");
-                collect_refs_in_value(v, p, out);
-            }
-        }
-        _ => {}
-    }
 }
 
 fn diagnostic_from_project(
