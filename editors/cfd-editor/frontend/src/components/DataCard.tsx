@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, type DragEvent as ReactDragEvent } from 'react'
+import { useState, useEffect, useRef, useContext, createContext, useMemo, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, type DragEvent as ReactDragEvent } from 'react'
 import type { FieldValue, FieldCell, DictKey, FieldPathSegment } from '../bindings/index'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
@@ -176,6 +176,58 @@ function ValueChip({ value }: { value: FieldValue }) {
 
 // ─── Expanded inspector (RecordView / TableView detail) ───────────────────────
 
+/** A diagnostic anchored to a specific row inside this record's field tree. */
+export interface FieldDiagnostic {
+  severity: 'error' | 'warning' | 'info'
+  fieldPath: string  // dotted path matching DataCard's pathKey, e.g. "rewards[0].count"
+  message: string
+}
+
+interface DiagCtxValue {
+  /** Map from pathKey → strongest severity at that exact path */
+  byPath: Map<string, FieldDiagnostic[]>
+  /** Set of every prefix path that has at least one descendant error/warning,
+   *  used to flag foldout rows whose collapsed children contain a problem. */
+  prefixes: Map<string, 'error' | 'warning'>
+}
+const DiagCtx = createContext<DiagCtxValue | null>(null)
+
+function severityRank(s: 'error' | 'warning' | 'info'): number {
+  return s === 'error' ? 3 : s === 'warning' ? 2 : 1
+}
+
+function strongest(a: FieldDiagnostic[]): 'error' | 'warning' | 'info' {
+  let best: 'error' | 'warning' | 'info' = 'info'
+  for (const d of a) if (severityRank(d.severity) > severityRank(best)) best = d.severity
+  return best
+}
+
+function buildDiagCtx(diags: FieldDiagnostic[] | undefined): DiagCtxValue | null {
+  if (!diags || diags.length === 0) return null
+  const byPath = new Map<string, FieldDiagnostic[]>()
+  const prefixes = new Map<string, 'error' | 'warning'>()
+  for (const d of diags) {
+    const list = byPath.get(d.fieldPath) ?? []
+    list.push(d)
+    byPath.set(d.fieldPath, list)
+    if (d.severity === 'info') continue
+    // Walk every parent prefix — collapsed parents should glow if a child errs.
+    let p = d.fieldPath
+    while (true) {
+      // Strip trailing "[i]" or ".name"
+      const lastDot = p.lastIndexOf('.')
+      const lastBracket = p.lastIndexOf('[')
+      const cut = Math.max(lastDot, lastBracket)
+      if (cut <= 0) break
+      p = p.slice(0, cut)
+      const cur = prefixes.get(p)
+      if (cur === 'error') break
+      if (d.severity === 'error' || cur !== 'warning') prefixes.set(p, d.severity)
+    }
+  }
+  return { byPath, prefixes }
+}
+
 export interface ExpandedProps {
   fields: FieldCell[]
   depth?: number
@@ -183,10 +235,14 @@ export interface ExpandedProps {
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   pathPrefix?: string
   onRowToggle?: (path: string, expanded: boolean) => void
+  /** Diagnostics anchored to fields inside this record (already filtered to
+   *  this record by the caller). Renders red/yellow ink + tooltip per row. */
+  diagnostics?: FieldDiagnostic[]
 }
 
-export function DataCardExpanded({ fields, depth = 0, onEdit, pathPrefix, onRowToggle }: ExpandedProps) {
-  return (
+export function DataCardExpanded({ fields, depth = 0, onEdit, pathPrefix, onRowToggle, diagnostics }: ExpandedProps) {
+  const ctx = useMemo(() => buildDiagCtx(diagnostics), [diagnostics])
+  const body = (
     <div className="dc-inspector" style={{ '--depth': depth } as CSSProperties}>
       {fields.map((fc, i) => (
         <FieldRow
@@ -205,6 +261,23 @@ export function DataCardExpanded({ fields, depth = 0, onEdit, pathPrefix, onRowT
       ))}
     </div>
   )
+  return ctx ? <DiagCtx.Provider value={ctx}>{body}</DiagCtx.Provider> : body
+}
+
+/** Returns the strongest severity for a row at the given pathKey, considering
+ *  exact matches and (for foldouts) prefix descendants. */
+function rowDiagSeverity(pathKey: string | undefined): { sev: 'error' | 'warning' | 'info' | null; messages: string[] } {
+  const ctx = useContext(DiagCtx)
+  if (!ctx || !pathKey) return { sev: null, messages: [] }
+  const exact = ctx.byPath.get(pathKey)
+  const prefix = ctx.prefixes.get(pathKey)
+  if (!exact && !prefix) return { sev: null, messages: [] }
+  const sevs: ('error' | 'warning' | 'info')[] = []
+  if (exact) sevs.push(strongest(exact))
+  if (prefix) sevs.push(prefix)
+  let sev: 'error' | 'warning' | 'info' = 'info'
+  for (const s of sevs) if (severityRank(s) > severityRank(sev)) sev = s
+  return { sev, messages: exact ? exact.map(d => d.message) : [] }
 }
 
 function FieldRow({ label, value, depth, onEdit, isSpread, fieldPath, pathKey, onRowToggle, leading, trailing, dragProps }: {
@@ -269,9 +342,10 @@ function ScalarFieldRow({ label, value, depth, onCommit, isSpread, pathKey, lead
   const isScalar = value.kind === 'Bool' || value.kind === 'Int' || value.kind === 'Float'
                 || value.kind === 'Str' || value.kind === 'Enum' || value.kind === 'Ref'
   const canEdit = isScalar && !!onCommit
+  const diag = rowDiagSeverity(pathKey)
 
   return (
-    <div className={`dc-row${isSpread ? ' dc-row-spread' : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} title={isSpread ? '此字段来自 ...spread 展开，需到源记录编辑' : undefined} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+    <div className={`dc-row${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} title={isSpread ? '此字段来自 ...spread 展开，需到源记录编辑' : (diag.messages.join('\n') || undefined)} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
       <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 8 }}>
         {leading}
         <span className="dc-row-label-text">{label}</span>
@@ -625,6 +699,7 @@ function ExpandableRow({ label, value, depth, onEdit, isSpread, fieldPath, pathK
   const [pickingRef, setPickingRef] = useState(false)
   const summary = headerSummary(value)
   const count = childCount(value)
+  const diag = rowDiagSeverity(pathKey)
 
   function toggle() {
     const next = !expanded
@@ -634,7 +709,7 @@ function ExpandableRow({ label, value, depth, onEdit, isSpread, fieldPath, pathK
 
   return (
     <>
-      <div className={`dc-row dc-row-foldout${isSpread ? ' dc-row-spread' : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} title={isSpread ? '此字段来自 ...spread 展开，需到源记录编辑' : undefined} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+      <div className={`dc-row dc-row-foldout${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} title={isSpread ? '此字段来自 ...spread 展开，需到源记录编辑' : (diag.messages.join('\n') || undefined)} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
         <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX }}>
           {leading}
           <span className="dc-fold-arrow">

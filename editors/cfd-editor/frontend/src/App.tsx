@@ -9,7 +9,8 @@ import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
 import { MOCK_PROJECT, MOCK_FILE_RECORDS, MOCK_GRAPH } from './mock'
 import * as api from './api'
-import type { ProjectSnapshot, FileRecords, GraphData, FieldValue, FieldPathSegment } from './bindings/index'
+import type { ProjectSnapshot, FileRecords, GraphData, FieldValue, FieldPathSegment, DiagnosticItem } from './bindings/index'
+import type { FieldDiagnostic } from './components/DataCard'
 import { typeColor } from './utils/typeColor'
 import { isEditableFile } from './utils/editable'
 import { setActiveSession } from './utils/editContext'
@@ -145,6 +146,9 @@ export default function App() {
   const activeFileData = activeFile ? fileDataCache[activeFile] : null
   const activeGraph = activeFile ? graphCache[activeFile] : null
   const readOnly = !isEditableFile(activeFile)
+  const fileDiagnostics = activeFile && project
+    ? project.diagnostics.filter(d => d.file_path === activeFile)
+    : []
 
   useEffect(() => {
     setActiveSession(project?.session_id ?? null)
@@ -301,6 +305,7 @@ export default function App() {
                     data={activeFileData}
                     activeType={activeType}
                     readOnly={readOnly}
+                    diagnostics={fileDiagnostics}
                     onOpenRecord={key => openRecord(currentRoute.file, key)}
                     onWriteField={(rk, path, val) => writeField(currentRoute.file, rk, path, val)}
                   />
@@ -311,6 +316,7 @@ export default function App() {
                     recordKey={currentRoute.recordKey}
                     typeFilter={activeType}
                     readOnly={readOnly}
+                    diagnostics={fileDiagnostics}
                     onOpenRecord={key => openRecord(currentRoute.file, key)}
                     onWriteField={(rk, path, val) => writeField(currentRoute.file, rk, path, val)}
                   />
@@ -380,6 +386,24 @@ export default function App() {
       )}
     </div>
   )
+}
+
+/** Distill the project's flat diagnostic list down to per-record FieldDiagnostics
+ *  for one file. Diagnostics with no field_path are skipped (they apply to the
+ *  whole record and surface in the diagnostics panel instead). */
+export function diagnosticsForRecord(
+  diags: DiagnosticItem[],
+  filePath: string,
+  recordKey: string,
+): FieldDiagnostic[] {
+  const out: FieldDiagnostic[] = []
+  for (const d of diags) {
+    if (d.file_path !== filePath) continue
+    if (d.record_key !== recordKey) continue
+    if (!d.field_path) continue
+    out.push({ severity: d.severity, fieldPath: d.field_path, message: d.message })
+  }
+  return out
 }
 
 function collectSourceFiles(snapshot: ProjectSnapshot): string[] {
