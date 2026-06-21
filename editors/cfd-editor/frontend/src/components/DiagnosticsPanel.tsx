@@ -52,6 +52,7 @@ export function DiagnosticsPanel({ diagnostics, onJumpToRecord }: Props) {
                 />
               </span>
               <span className="diag-msg">{d.message}</span>
+              {d.code && <span className="diag-code">{d.code}</span>}
               {d.file_path && d.record_key && onJumpToRecord && (
                 <button
                   className="diag-jump"

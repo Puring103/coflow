@@ -1687,6 +1687,23 @@ select.dc-input-flat {
   flex: 1;
   color: var(--text);
   line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.diag-code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-mute);
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 0 5px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 1px;
 }
 
 .diag-jump {
