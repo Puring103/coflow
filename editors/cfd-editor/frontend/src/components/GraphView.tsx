@@ -52,15 +52,13 @@ function CfdNode({ id, data }: NodeProps) {
   useLayoutEffect(() => {
     const root = rootRef.current
     if (!root) return
-    // Handles are positioned relative to React Flow's .react-flow__node wrapper,
-    // NOT our custom .graph-node child. Measure from the wrapper so handle Y
-    // values land on the actual rows.
-    const wrapper = (root.closest('.react-flow__node') as HTMLElement | null) ?? root
-    const wrapRect = wrapper.getBoundingClientRect()
+    // .graph-node is position:relative, so Handle's absolute top is measured
+    // from the .graph-node top edge.
+    const rootRect = root.getBoundingClientRect()
     const headerY = headerRef.current
       ? (() => {
           const h = headerRef.current!.getBoundingClientRect()
-          return h.top - wrapRect.top + h.height / 2
+          return h.top - rootRect.top + h.height / 2
         })()
       : 21
     setHeaderCenterY(headerY)
@@ -78,7 +76,7 @@ function CfdNode({ id, data }: NodeProps) {
       next.set(path, row
         ? (() => {
             const r = row.getBoundingClientRect()
-            return r.top - wrapRect.top + r.height / 2
+            return r.top - rootRect.top + r.height / 2
           })()
         : headerY)
     }

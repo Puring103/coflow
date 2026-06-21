@@ -1176,12 +1176,12 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 }
 
 .graph-node {
+  position: relative;
   background: var(--bg-2);
   border: 1px solid var(--border-strong);
   border-top: 2px solid var(--node-color, var(--border-strong));
   border-radius: var(--radius);
   width: 280px;
-  overflow: hidden;
   font-size: 11.5px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
