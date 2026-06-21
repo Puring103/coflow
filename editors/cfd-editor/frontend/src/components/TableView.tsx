@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, type CSSProperties } from 'react'
 import { useReactTable, getCoreRowModel, flexRender, createColumnHelper } from '@tanstack/react-table'
 import type { FileRecords, RecordRow } from '../bindings/index'
 import { DataCardCompact, DataCardExpanded } from './DataCard'
 import { Icon } from './Icon'
+import { typeColor } from '../utils/typeColor'
 
 interface Props {
   data: FileRecords
@@ -136,7 +137,7 @@ export function TableView({ data, activeType, onOpenRecord }: Props) {
       {selectedRecord && (
         <aside className="table-detail">
           <div className="table-detail-header">
-            <span className="rv-type-badge">{selectedRecord.actual_type}</span>
+            <span className="rv-type-badge" style={{ '--type-color': typeColor(selectedRecord.actual_type) } as CSSProperties}>{selectedRecord.actual_type}</span>
             <span className="rv-key">{selectedRecord.key}</span>
             <span className="topbar-spacer" />
             <button className="btn btn-icon" onClick={() => setSelectedKey(null)} title="关闭面板">

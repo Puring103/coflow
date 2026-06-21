@@ -64,7 +64,8 @@ function CfdNode({ data }: NodeProps) {
       data-nodeid={gn.id}
       style={{'--node-color': typeColor(gn.actual_type)} as React.CSSProperties}
     >
-      <Handle type="target" position={Position.Left} id="__in" />
+      {/* Target handle sits at the header/key row so edges arrive at the record identity */}
+      <Handle type="target" position={Position.Left} id="__in" style={{ top: HEADER_H / 2 }} />
       {/* Per-field source handles when expanded */}
       {refFieldHandles(gn.fields, expanded, expanded)}
       {/* Default source handle (collapsed or no-ref nodes) */}
