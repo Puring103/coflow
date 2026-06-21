@@ -664,7 +664,6 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 .rv-item-type {
   font-size: 10px;
   color: var(--text-mute);
-  text-transform: uppercase;
   letter-spacing: 0.5px;
   font-weight: 500;
 }
@@ -690,15 +689,13 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 }
 
 .rv-type-badge {
-  background: var(--bg-3);
-  color: var(--text-dim);
-  border: 1px solid var(--border-strong);
-  border-radius: 2px;
+  background: color-mix(in srgb, var(--type-color, var(--accent)) 12%, var(--bg-3));
+  color: var(--type-color, var(--text-dim));
+  border: 1px solid color-mix(in srgb, var(--type-color, var(--accent)) 35%, transparent);
+  border-radius: 3px;
   padding: 2px 8px;
   font-size: 10.5px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
 }
 
 .rv-key {

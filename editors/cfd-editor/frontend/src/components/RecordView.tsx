@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import type { FileRecords } from '../bindings/index'
 import { DataCardExpanded } from './DataCard'
 import { Icon } from './Icon'
+import { typeColor } from '../utils/typeColor'
 
 interface Props {
   data: FileRecords
@@ -36,7 +37,7 @@ export function RecordView({ data, recordKey, typeFilter, onOpenRecord }: Props)
             className={`rv-sidebar-item${r.key === recordKey ? ' selected' : ''}`}
             onClick={() => onOpenRecord(r.key)}
           >
-            <span className="rv-item-type">{r.actual_type}</span>
+            <span className="rv-item-type" style={{ color: typeColor(r.actual_type) }}>{r.actual_type}</span>
             <span className="rv-item-key">{r.key}</span>
           </div>
         ))}
@@ -44,7 +45,7 @@ export function RecordView({ data, recordKey, typeFilter, onOpenRecord }: Props)
 
       <div className="rv-main">
         <div className="rv-header">
-          <span className="rv-type-badge">{record.actual_type}</span>
+          <span className="rv-type-badge" style={{ '--type-color': typeColor(record.actual_type) } as CSSProperties}>{record.actual_type}</span>
           <span className="rv-key">{record.key}</span>
         </div>
         {showSearch && (
