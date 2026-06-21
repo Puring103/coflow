@@ -40,6 +40,8 @@ export interface RecordRow {
 export interface FieldCell {
   name: string
   value: FieldValue
+  /** Top-level field came from a `...spread` expansion; not editable here. */
+  is_spread?: boolean
 }
 
 export type FieldValue =

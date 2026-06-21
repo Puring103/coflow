@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { FileRecords } from '../bindings/index'
+import type { FileRecords, FieldValue, RecordRow, FieldPathSegment } from '../bindings/index'
 import { DataCardExpanded, CardHeader } from './DataCard'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
@@ -8,10 +8,12 @@ interface Props {
   data: FileRecords
   recordKey: string
   typeFilter?: string
+  readOnly?: boolean
   onOpenRecord: (key: string) => void
+  onWriteField?: (recordKey: string, fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<RecordRow | void>
 }
 
-export function RecordView({ data, recordKey, typeFilter, onOpenRecord }: Props) {
+export function RecordView({ data, recordKey, typeFilter, readOnly, onOpenRecord, onWriteField }: Props) {
   const record = data.records.find(r => r.key === recordKey)
   const [search, setSearch] = useState('')
 
@@ -62,7 +64,7 @@ export function RecordView({ data, recordKey, typeFilter, onOpenRecord }: Props)
         )}
         <DataCardExpanded
           fields={fields}
-          onEdit={(name, val) => alert(`写入 ${record.key}.${name} = ${val} — 原型演示`)}
+          onEdit={readOnly || !onWriteField ? undefined : (path, val) => { onWriteField(record.key, path, val) }}
         />
       </div>
     </div>

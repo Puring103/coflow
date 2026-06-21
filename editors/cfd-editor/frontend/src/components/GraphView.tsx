@@ -5,7 +5,8 @@ import {
   type Node, type Edge,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { GraphData, GraphNode } from '../bindings/index'
+import type { GraphData, GraphNode, FieldValue, FieldPathSegment, RecordRow } from '../bindings/index'
+import { isEditableFile } from '../utils/editable'
 import { DataCardNode, CardHeader, NODE_PEEK_FIELDS, countVisibleRows } from './DataCard'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
@@ -30,6 +31,7 @@ interface NodeData extends Record<string, unknown> {
   outgoingPaths: string[]
   onToggleExpand: () => void
   onRowToggle: (path: string, exp: boolean) => void
+  onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
 }
 
 // ─── CfdNode ─────────────────────────────────────────────────────────────────
@@ -38,7 +40,7 @@ interface NodeData extends Record<string, unknown> {
 // header height variation, or sub-row expansion.
 
 function CfdNode({ id, data }: NodeProps) {
-  const { graphNode: gn, expanded, outgoingPaths, onToggleExpand, onRowToggle } = data as NodeData
+  const { graphNode: gn, expanded, outgoingPaths, onToggleExpand, onRowToggle, onEdit } = data as NodeData
   const rootRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLDivElement>(null)
   const updateNodeInternals = useUpdateNodeInternals()
@@ -132,6 +134,7 @@ function CfdNode({ id, data }: NodeProps) {
           showAll={expanded}
           onToggle={onToggleExpand}
           onRowToggle={onRowToggle}
+          onEdit={onEdit}
         />
       )}
     </div>
@@ -577,9 +580,12 @@ interface Props {
   graphData: GraphData
   activeType?: string
   onOpenRecord: (file: string, key: string) => void
+  onWriteField?: (
+    filePath: string, recordKey: string, fieldPath: FieldPathSegment[], newValue: FieldValue
+  ) => Promise<RecordRow | void>
 }
 
-export function GraphView({ graphData, activeType }: Props) {
+export function GraphView({ graphData, activeType, onWriteField }: Props) {
   // Fields that actually appear in the subgraph for the current activeType.
   // Mirrors layoutAll's visibility logic but ignores field filtering itself,
   // so toggling all chips off doesn't hide the chip list.
@@ -680,19 +686,27 @@ export function GraphView({ graphData, activeType }: Props) {
   }
 
   const rfNodes: Node[] = useMemo(
-    () => visibleNodes.map(n => ({
-      id: n.id,
-      type: 'cfd',
-      position: positions.get(n.id) ?? { x: 0, y: 0 },
-      data: {
-        graphNode: n,
-        expanded: nodeExpandedMap.get(n.id) ?? false,
-        outgoingPaths: outgoingPathsByNode.get(n.id) ?? [],
-        onToggleExpand: () => toggleNodeExpanded(n.id),
-        onRowToggle: (path: string, exp: boolean) => handleRowToggle(n.id, path, exp),
-      } satisfies NodeData,
-    })),
-    [visibleNodes, positions, nodeExpandedMap, outgoingPathsByNode, toggleNodeExpanded, handleRowToggle]
+    () => visibleNodes.map(n => {
+      // Each node's host file determines whether it's editable. Non-cfd hosts
+      // (e.g. Excel) and the absent onWriteField (read-only mode) both opt out.
+      const editable = !!onWriteField && isEditableFile(n.file_path)
+      return {
+        id: n.id,
+        type: 'cfd',
+        position: positions.get(n.id) ?? { x: 0, y: 0 },
+        data: {
+          graphNode: n,
+          expanded: nodeExpandedMap.get(n.id) ?? false,
+          outgoingPaths: outgoingPathsByNode.get(n.id) ?? [],
+          onToggleExpand: () => toggleNodeExpanded(n.id),
+          onRowToggle: (path: string, exp: boolean) => handleRowToggle(n.id, path, exp),
+          onEdit: editable
+            ? (path: FieldPathSegment[], val: FieldValue) => { onWriteField!(n.file_path, n.key, path, val) }
+            : undefined,
+        } satisfies NodeData,
+      }
+    }),
+    [visibleNodes, positions, nodeExpandedMap, outgoingPathsByNode, toggleNodeExpanded, handleRowToggle, onWriteField]
   )
 
   const rfEdges: Edge[] = useMemo(() => {

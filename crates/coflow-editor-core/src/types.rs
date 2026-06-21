@@ -2,7 +2,7 @@
 //!
 //! These mirror `editors/cfd-editor/frontend/src/bindings/index.ts`.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
 pub struct ProjectSnapshot {
@@ -46,13 +46,21 @@ pub struct RecordRow {
     pub fields: Vec<FieldCell>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FieldCell {
     pub name: String,
     pub value: FieldValue,
+    /// True when this field comes from a `...spread` expansion at the top level
+    /// of the record. Such fields do not exist in the record's own .cfd source
+    /// — editing them would have to happen at the spread's source record.
+    /// Defaulted to false on deserialize so writes don't have to set it.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub is_spread: bool,
 }
 
-#[derive(Debug, Serialize)]
+fn is_false(b: &bool) -> bool { !*b }
+
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum FieldValue {
     Null,
@@ -90,13 +98,13 @@ pub enum FieldValue {
     },
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DictEntry {
     pub key: DictKey,
     pub value: FieldValue,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum DictKey {
     Str {
@@ -110,6 +118,18 @@ pub enum DictKey {
         variant: String,
         int_value: i64,
     },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind")]
+pub enum FieldPathSegment {
+    /// Field-name segment. Also used for dict keys: the parser stores dict
+    /// entries as Block fields whose `name` is the AST-form key (string keys
+    /// without quotes, ints as their digit form, enum variants as identifier).
+    #[serde(rename = "field")]
+    Field { name: String },
+    #[serde(rename = "index")]
+    Index { i: usize },
 }
 
 #[derive(Debug, Serialize)]

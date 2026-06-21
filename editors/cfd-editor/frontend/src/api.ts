@@ -1,6 +1,8 @@
 import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
-import type { ProjectSnapshot, FileRecords, RecordRow, GraphData } from './bindings/index'
+import type {
+  ProjectSnapshot, FileRecords, RecordRow, GraphData, FieldPathSegment, FieldValue,
+} from './bindings/index'
 
 export const isTauri = '__TAURI_INTERNALS__' in window
 
@@ -34,4 +36,28 @@ export async function getGraph(sessionId: number, filePath: string): Promise<Gra
 
 export async function closeSession(sessionId: number): Promise<void> {
   return invoke('close_session', { sessionId })
+}
+
+export async function getEnumVariants(sessionId: number, enumName: string): Promise<string[]> {
+  return invoke<string[]>('get_enum_variants', { sessionId, enumName })
+}
+
+export async function getRefTargets(sessionId: number, targetType: string): Promise<string[]> {
+  return invoke<string[]>('get_ref_targets', { sessionId, targetType })
+}
+
+export async function makeDefaultObject(sessionId: number, typeName: string): Promise<FieldValue> {
+  return invoke<FieldValue>('make_default_object', { sessionId, typeName })
+}
+
+export async function writeField(
+  sessionId: number,
+  filePath: string,
+  recordKey: string,
+  fieldPath: FieldPathSegment[],
+  newValue: FieldValue,
+): Promise<RecordRow> {
+  return invoke<RecordRow>('write_field', {
+    sessionId, filePath, recordKey, fieldPath, newValue,
+  })
 }

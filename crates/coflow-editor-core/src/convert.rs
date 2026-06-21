@@ -1,5 +1,6 @@
 //! Convert internal data-model values into wire types for the editor.
 
+use coflow_cfd::{CfdBlockEntry, CfdRecord as AstCfdRecord};
 use coflow_data_model::{CfdDataModel, CfdDictKey, CfdRecord, CfdValue};
 
 use crate::types::{DictEntry, DictKey, FieldCell, FieldValue};
@@ -11,6 +12,44 @@ pub fn record_to_field_cells(record: &CfdRecord, model: &CfdDataModel) -> Vec<Fi
         .map(|(name, value)| FieldCell {
             name: name.clone(),
             value: cfd_value_to_wire(value, model),
+            is_spread: false,
+        })
+        .collect()
+}
+
+/// Same as [`record_to_field_cells`], but uses the AST record to mark fields
+/// that came from a `...spread` expansion (i.e. don't physically exist in this
+/// record's source text and thus aren't editable here).
+pub fn record_to_field_cells_with_ast(
+    record: &CfdRecord,
+    model: &CfdDataModel,
+    ast_record: Option<&AstCfdRecord>,
+) -> Vec<FieldCell> {
+    let direct_names: Option<std::collections::HashSet<String>> = ast_record.map(|ast| {
+        let mut names = std::collections::HashSet::new();
+        for f in &ast.fields {
+            names.insert(f.name.clone());
+        }
+        for e in &ast.entries {
+            if let CfdBlockEntry::Field(f) = e {
+                names.insert(f.name.clone());
+            }
+        }
+        names
+    });
+    record
+        .fields
+        .iter()
+        .map(|(name, value)| {
+            let is_spread = match &direct_names {
+                Some(set) => !set.contains(name),
+                None => false,
+            };
+            FieldCell {
+                name: name.clone(),
+                value: cfd_value_to_wire(value, model),
+                is_spread,
+            }
         })
         .collect()
 }

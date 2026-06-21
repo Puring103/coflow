@@ -1,16 +1,18 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useReactTable, getCoreRowModel, flexRender, createColumnHelper } from '@tanstack/react-table'
-import type { FileRecords, RecordRow } from '../bindings/index'
-import { DataCardCompact, DataCardExpanded, CardHeader } from './DataCard'
+import type { FileRecords, RecordRow, FieldValue, FieldPathSegment } from '../bindings/index'
+import { DataCardCompact, DataCardExpanded, CardHeader, InlineEditor } from './DataCard'
 import { Icon } from './Icon'
 
 interface Props {
   data: FileRecords
   activeType: string
+  readOnly?: boolean
   onOpenRecord: (key: string) => void
+  onWriteField?: (recordKey: string, fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<RecordRow | void>
 }
 
-export function TableView({ data, activeType, onOpenRecord }: Props) {
+export function TableView({ data, activeType, readOnly, onOpenRecord, onWriteField }: Props) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; key: string } | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [newKey, setNewKey] = useState('')
@@ -36,6 +38,7 @@ export function TableView({ data, activeType, onOpenRecord }: Props) {
     [filtered]
   )
 
+  const canEdit = !readOnly && !!onWriteField
   const columns = useMemo(() => {
     const helper = createColumnHelper<RecordRow>()
     return [
@@ -49,12 +52,19 @@ export function TableView({ data, activeType, onOpenRecord }: Props) {
           header: name,
           cell: ({ row }) => {
             const f = row.original.fields.find(f => f.name === name)
-            return f ? <DataCardCompact value={f.value} /> : <span className="dc-null">—</span>
+            if (!f) return <span className="dc-null">—</span>
+            return (
+              <EditableCell
+                value={f.value}
+                editable={canEdit}
+                onCommit={canEdit ? next => onWriteField!(row.original.key, [{ kind: 'field', name }], next) : undefined}
+              />
+            )
           },
         })
       ),
     ]
-  }, [allFieldNames])
+  }, [allFieldNames, canEdit, onWriteField])
 
   const table = useReactTable({
     data: filtered,
@@ -104,7 +114,9 @@ export function TableView({ data, activeType, onOpenRecord }: Props) {
         </div>
 
         <div className="table-footer">
-          {!showNewRecord ? (
+          {readOnly ? (
+            <span className="table-footer-readonly">该文件为只读</span>
+          ) : !showNewRecord ? (
             <button className="btn btn-outlined" onClick={() => setShowNewRecord(true)}>
               <Icon name="plus" size={13} />
               新建记录
@@ -144,7 +156,7 @@ export function TableView({ data, activeType, onOpenRecord }: Props) {
           <div className="table-detail-body">
             <DataCardExpanded
               fields={selectedRecord.fields}
-              onEdit={(name, val) => alert(`写入 ${selectedRecord.key}.${name} = ${val} — 原型演示`)}
+              onEdit={readOnly || !onWriteField ? undefined : (path, val) => { onWriteField(selectedRecord.key, path, val) }}
             />
           </div>
         </aside>
@@ -160,15 +172,49 @@ export function TableView({ data, activeType, onOpenRecord }: Props) {
             <Icon name="record" size={13} />
             跳转到记录视图
           </div>
-          <div className="ctx-item ctx-danger" onClick={() => {
-            alert(`删除 ${contextMenu.key} — 原型演示`)
-            setContextMenu(null)
-          }}>
-            <Icon name="close" size={13} />
-            删除记录
-          </div>
+          {!readOnly && (
+            <div className="ctx-item ctx-danger" onClick={() => {
+              alert(`删除 ${contextMenu.key} — 原型演示`)
+              setContextMenu(null)
+            }}>
+              <Icon name="close" size={13} />
+              删除记录
+            </div>
+          )}
         </div>
       )}
+    </div>
+  )
+}
+
+function EditableCell({
+  value, editable, onCommit,
+}: {
+  value: FieldValue
+  editable: boolean
+  onCommit?: (next: FieldValue) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const isScalar = value.kind === 'Bool' || value.kind === 'Int' || value.kind === 'Float'
+                || value.kind === 'Str' || value.kind === 'Enum' || value.kind === 'Ref'
+  const canEdit = editable && isScalar && !!onCommit
+
+  if (editing && canEdit) {
+    return (
+      <InlineEditor
+        value={value}
+        onCommit={next => { onCommit!(next); setEditing(false) }}
+        onCancel={() => setEditing(false)}
+      />
+    )
+  }
+  return (
+    <div
+      className={`cell-edit-wrap${canEdit ? ' editable' : ''}`}
+      onDoubleClick={canEdit ? () => setEditing(true) : undefined}
+      title={canEdit ? '双击编辑' : undefined}
+    >
+      <DataCardCompact value={value} />
     </div>
   )
 }
