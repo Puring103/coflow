@@ -901,7 +901,6 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   display: flex;
   flex-direction: column;
   background: var(--bg-2);
-  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
   font-size: 12px;
@@ -912,9 +911,7 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   grid-template-columns: minmax(140px, 32%) 1fr;
   align-items: stretch;
   min-height: 26px;
-  border-bottom: 1px solid var(--border);
 }
-.dc-row:last-child { border-bottom: none; }
 .dc-row:hover { background: var(--bg-3); }
 
 .dc-row-label {
@@ -929,7 +926,6 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   overflow: hidden;
   text-overflow: ellipsis;
   background: transparent;
-  border-right: 1px solid var(--border);
 }
 .dc-row-value {
   padding: 4px 8px 4px 10px;
@@ -982,21 +978,19 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 }
 .dc-row-foldout:hover .dc-fold-arrow { color: var(--text); }
 
-/* Tree guide line for nested rows: shows a faint vertical at each indent level */
-.dc-row[data-depth="1"] .dc-row-label,
-.dc-row[data-depth="2"] .dc-row-label,
-.dc-row[data-depth="3"] .dc-row-label,
-.dc-row[data-depth="4"] .dc-row-label,
-.dc-row[data-depth="5"] .dc-row-label {
-  background-image: linear-gradient(to right, var(--border) 1px, transparent 1px);
-  background-repeat: no-repeat;
-  background-size: 1px 100%;
-}
-.dc-row[data-depth="1"] .dc-row-label { background-position: 8px 0; }
-.dc-row[data-depth="2"] .dc-row-label { background-position: 22px 0; }
-.dc-row[data-depth="3"] .dc-row-label { background-position: 36px 0; }
-.dc-row[data-depth="4"] .dc-row-label { background-position: 50px 0; }
-.dc-row[data-depth="5"] .dc-row-label { background-position: 64px 0; }
+/* Striped rows for nested levels — gives depth without per-row borders.
+ * Top-level rows (depth=0) keep the panel bg; nested rows tint slightly
+ * darker so collections read as a block. */
+.dc-row[data-depth="1"] { background: rgba(0, 0, 0, 0.10); }
+.dc-row[data-depth="2"] { background: rgba(0, 0, 0, 0.16); }
+.dc-row[data-depth="3"] { background: rgba(0, 0, 0, 0.22); }
+.dc-row[data-depth="4"] { background: rgba(0, 0, 0, 0.26); }
+.dc-row[data-depth="5"] { background: rgba(0, 0, 0, 0.30); }
+.dc-row[data-depth="1"]:hover,
+.dc-row[data-depth="2"]:hover,
+.dc-row[data-depth="3"]:hover,
+.dc-row[data-depth="4"]:hover,
+.dc-row[data-depth="5"]:hover { background: var(--bg-3); }
 
 .dc-row-empty .dc-row-label {
   color: var(--text-mute);
@@ -1263,7 +1257,6 @@ select.dc-input-flat {
 .dc-node-card .dc-row {
   grid-template-columns: minmax(70px, 38%) 1fr;
   min-height: 22px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 .dc-node-card .dc-row:hover { background: rgba(255, 255, 255, 0.04); }
 .dc-node-card .dc-row-label {
@@ -1271,7 +1264,6 @@ select.dc-input-flat {
   font-size: 10.5px;
   color: var(--text-mute);
   background: transparent;
-  border-right: 1px solid rgba(255, 255, 255, 0.04);
 }
 .dc-node-card .dc-row-value {
   padding: 3px 8px;
