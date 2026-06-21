@@ -9,6 +9,7 @@ import { useRouter } from './hooks/useRouter'
 import { MOCK_PROJECT, MOCK_FILE_RECORDS, MOCK_GRAPH } from './mock'
 import * as api from './api'
 import type { ProjectSnapshot, FileRecords, GraphData } from './bindings/index'
+import { typeColor } from './utils/typeColor'
 import './style.css'
 
 export default function App() {
@@ -222,6 +223,7 @@ export default function App() {
                         key={t}
                         className={`tab-btn${activeType === t ? ' active' : ''}`}
                         onClick={() => setActiveType(t)}
+                        style={activeType === t ? {'--tab-color': typeColor(t)} as React.CSSProperties : undefined}
                       >
                         {t}
                         <span className="tab-count">

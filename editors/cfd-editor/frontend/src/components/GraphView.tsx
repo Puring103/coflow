@@ -8,6 +8,7 @@ import '@xyflow/react/dist/style.css'
 import type { GraphData, GraphNode, FieldCell } from '../bindings/index'
 import { DataCardNode, NODE_PEEK_FIELDS, countVisibleRows } from './DataCard'
 import { Icon } from './Icon'
+import { typeColor } from '../utils/typeColor'
 
 // ─── Constants (must match CSS / DataCard) ──────────────────────────────────
 
@@ -25,6 +26,7 @@ const PAD_V      = 12
 interface NodeData extends Record<string, unknown> {
   graphNode: GraphNode
   expanded: boolean
+  dimmed: boolean
   onToggleExpand: () => void
   onRowToggle: (path: string, exp: boolean) => void
 }
@@ -55,10 +57,13 @@ function refFieldHandles(fields: FieldCell[], expanded: boolean, showAll: boolea
 // ─── CfdNode ─────────────────────────────────────────────────────────────────
 
 function CfdNode({ data }: NodeProps) {
-  const { graphNode: gn, expanded, onToggleExpand, onRowToggle } = data as NodeData
+  const { graphNode: gn, expanded, dimmed, onToggleExpand, onRowToggle } = data as NodeData
 
   return (
-    <div className={`graph-node${gn.in_focus_file ? ' focused' : ' dim'}`}>
+    <div
+      className={`graph-node${gn.in_focus_file ? ' focused' : ' dim'}${dimmed ? ' node-dim' : ''}`}
+      style={{'--node-color': typeColor(gn.actual_type)} as React.CSSProperties}
+    >
       <Handle type="target" position={Position.Left} id="__in" />
       {/* Per-field source handles when expanded */}
       {refFieldHandles(gn.fields, expanded, expanded)}
@@ -69,10 +74,13 @@ function CfdNode({ data }: NodeProps) {
         id="__out"
         style={expanded ? { opacity: 0, pointerEvents: 'none' } : {}}
       />
-      <div className="gn-header">
-        <span className="gn-type">{gn.actual_type}</span>
+      <div className="gn-header" style={{'--node-color': typeColor(gn.actual_type)} as React.CSSProperties}>
+        <div className="gn-color-bar" />
         <span className="gn-key">{gn.key}</span>
-        <span className="gn-file">{gn.file_path.split('/').pop()}</span>
+        <div className="gn-meta">
+          <span className="gn-type">{gn.actual_type}</span>
+          <span className="gn-file">{gn.file_path.split('/').pop()}</span>
+        </div>
       </div>
       {gn.is_collapsed ? (
         <div className="gn-collapsed">折叠（超出深度）</div>
@@ -543,19 +551,34 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
       : { sourceHandle: '__out', targetHandle: '__in' }
   }
 
+  const hoveredNeighbors: Set<string> = useMemo(() => {
+    if (!hoveredId) return new Set()
+    const neighbors = new Set<string>()
+    const allActiveEdges = [...forwardEdges, ...backEdges]
+    for (const e of allActiveEdges) {
+      if (e.source === hoveredId) neighbors.add(e.target)
+      if (e.target === hoveredId) neighbors.add(e.source)
+    }
+    return neighbors
+  }, [hoveredId, forwardEdges, backEdges])
+
   const rfNodes: Node[] = useMemo(
-    () => visibleNodes.map(n => ({
-      id: n.id,
-      type: 'cfd',
-      position: positions.get(n.id) ?? { x: 0, y: 0 },
-      data: {
-        graphNode: n,
-        expanded: nodeExpandedMap.get(n.id) ?? false,
-        onToggleExpand: () => toggleNodeExpanded(n.id),
-        onRowToggle: (path: string, exp: boolean) => handleRowToggle(n.id, path, exp),
-      } satisfies NodeData,
-    })),
-    [visibleNodes, positions, nodeExpandedMap, toggleNodeExpanded, handleRowToggle]
+    () => visibleNodes.map(n => {
+      const dimmed = hoveredId !== null && n.id !== hoveredId && !hoveredNeighbors.has(n.id)
+      return {
+        id: n.id,
+        type: 'cfd',
+        position: positions.get(n.id) ?? { x: 0, y: 0 },
+        data: {
+          graphNode: n,
+          expanded: nodeExpandedMap.get(n.id) ?? false,
+          dimmed,
+          onToggleExpand: () => toggleNodeExpanded(n.id),
+          onRowToggle: (path: string, exp: boolean) => handleRowToggle(n.id, path, exp),
+        } satisfies NodeData,
+      }
+    }),
+    [visibleNodes, positions, nodeExpandedMap, hoveredId, hoveredNeighbors, toggleNodeExpanded, handleRowToggle]
   )
 
   const rfEdges: Edge[] = useMemo(() => {
@@ -563,7 +586,7 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
       .filter(e => positions.has(e.source) && positions.has(e.target))
       .map((e, i) => {
         const { sourceHandle, targetHandle } = edgeHandleId(e.source, e.field_path)
-        const connected = hoveredId && (e.source === hoveredId || e.target === hoveredId)
+        const connected = hoveredId !== null && (e.source === hoveredId || e.target === hoveredId)
         return {
           id: `f${i}`,
           source: e.source,
@@ -575,7 +598,7 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
           animated: false,
           style: connected
             ? { stroke: '#8aa8d4', strokeWidth: 2 }
-            : hoveredId
+            : hoveredId !== null
               ? { stroke: '#4a525e', strokeWidth: 1.2, opacity: 0.15 }
               : { stroke: '#4a525e', strokeWidth: 1.2 },
           zIndex: connected ? 1000 : 0,
@@ -591,7 +614,7 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
     const bkEdges: Edge[] = backEdges
       .filter(e => positions.has(e.source) && positions.has(e.target))
       .map((e, i) => {
-        const connected = hoveredId && (e.source === hoveredId || e.target === hoveredId)
+        const connected = hoveredId !== null && (e.source === hoveredId || e.target === hoveredId)
         return {
           id: `b${i}`,
           source: e.source,
@@ -603,7 +626,7 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
           animated: false,
           style: connected
             ? { stroke: '#d97a7a', strokeWidth: 2, strokeDasharray: '6 3' }
-            : hoveredId
+            : hoveredId !== null
               ? { stroke: '#d97a7a', strokeWidth: 1.2, opacity: 0.2, strokeDasharray: '6 3' }
               : { stroke: '#d97a7a', strokeWidth: 1.2, opacity: 0.6, strokeDasharray: '6 3' },
           zIndex: connected ? 1100 : 1,
@@ -617,7 +640,7 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
 
     return [...fwdEdges, ...bkEdges]
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [forwardEdges, backEdges, positions, hoveredId, nodeExpandedMap, visibleNodes])
+  }, [forwardEdges, backEdges, positions, hoveredId, hoveredNeighbors, nodeExpandedMap, visibleNodes])
 
   const onNodeDoubleClick = useCallback((_: unknown, node: Node) => {
     const { graphNode } = node.data as NodeData
