@@ -26,6 +26,8 @@ members = [
     "crates/coflow-project",
     "crates/coflow-pipeline",
     "crates/coflow-lsp",
+    "crates/coflow-editor-core",
+    "editors/cfd-editor/src-tauri",
 ]
 resolver = "2"
 
