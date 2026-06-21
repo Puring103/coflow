@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   ReactFlow, Background, Controls, MiniMap,
   Handle, Position, useUpdateNodeInternals, type NodeProps,
@@ -43,17 +43,14 @@ function CfdNode({ id, data }: NodeProps) {
   const headerRef = useRef<HTMLDivElement>(null)
   const updateNodeInternals = useUpdateNodeInternals()
 
-  // Map of edge field_path → measured Y offset (center of the matching row).
-  // We try the exact path first (e.g. "unlockGeneList[1]"), and fall back to
-  // the top-level field row when the array/dict is collapsed.
+  // Per-path Y offsets; default to 0 so handles exist on first render
+  // (React Flow needs the handle DOM to compute edge endpoints).
   const [pathOffsets, setPathOffsets] = useState<Map<string, number>>(new Map())
   const [headerCenterY, setHeaderCenterY] = useState(21)
 
   useLayoutEffect(() => {
     const root = rootRef.current
     if (!root) return
-    // .graph-node is position:relative, so Handle's absolute top is measured
-    // from the .graph-node top edge.
     const rootRect = root.getBoundingClientRect()
     const headerY = headerRef.current
       ? (() => {
@@ -61,7 +58,6 @@ function CfdNode({ id, data }: NodeProps) {
           return h.top - rootRect.top + h.height / 2
         })()
       : 21
-    setHeaderCenterY(headerY)
     const next = new Map<string, number>()
     for (const path of outgoingPaths) {
       let row = root.querySelector<HTMLElement>(
@@ -80,9 +76,20 @@ function CfdNode({ id, data }: NodeProps) {
           })()
         : headerY)
     }
-    setPathOffsets(next)
+    // Only update state if values actually changed (avoid re-render loops)
+    setHeaderCenterY(prev => prev === headerY ? prev : headerY)
+    setPathOffsets(prev => {
+      if (prev.size !== next.size) return next
+      for (const [k, v] of next) if (prev.get(k) !== v) return next
+      return prev
+    })
+  })
+
+  // Tell React Flow to recompute edge paths AFTER our handle Y values land
+  // in the DOM (i.e. after the render that uses pathOffsets/headerCenterY).
+  useEffect(() => {
     updateNodeInternals(id)
-  }, [outgoingPaths, expanded, gn.fields, id, updateNodeInternals])
+  }, [pathOffsets, headerCenterY, id, updateNodeInternals])
 
   return (
     <div
@@ -92,17 +99,18 @@ function CfdNode({ id, data }: NodeProps) {
       style={{'--node-color': typeColor(gn.actual_type)} as React.CSSProperties}
     >
       <Handle type="target" position={Position.Left} id="__in" style={{ top: headerCenterY }} />
-      {/* One source handle per outgoing edge path, positioned at the matching row */}
-      {Array.from(pathOffsets.entries()).map(([path, y]) => (
+      {/* Render a handle for EVERY outgoing path on first render (default Y=0)
+          so React Flow can resolve the edge sourceHandle on initial mount;
+          useLayoutEffect then updates Y values to row centres. */}
+      {outgoingPaths.map(path => (
         <Handle
           key={`src-${path}`}
           type="source"
           position={Position.Right}
           id={`path-${path}`}
-          style={{ top: y, bottom: 'auto' }}
+          style={{ top: pathOffsets.get(path) ?? headerCenterY, bottom: 'auto' }}
         />
       ))}
-      {/* Fallback source handle (used when no row could be matched) */}
       <Handle
         type="source"
         position={Position.Right}
@@ -349,7 +357,59 @@ function layoutComponent(
   }
 
   const layers = Array.from(layerToNodes.keys()).sort((a, b) => a - b)
-  barycenterOrder(layerToNodes, forwardEdges, layer, layers)
+
+  // Ordering pass: for each non-root layer, order nodes by walking parents
+  // (in their already-decided layer order) and emitting children in the order
+  // their source field appears on the parent card. This makes the visual
+  // arrangement match the field order users see, instead of relying on
+  // barycenter which optimizes for crossing reduction but ignores semantics.
+  //
+  // For each target node, record its "address" = (parentIndexInPrevLayer,
+  // fieldRowIndexInParent). Sort each layer by this address.
+  for (let li = 1; li < layers.length; li++) {
+    const cur = layers[li]
+    const prev = layers[li - 1]
+    const prevList = layerToNodes.get(prev)!
+    const prevIndex = new Map<string, number>()
+    prevList.forEach((n, i) => prevIndex.set(n.id, i))
+
+    // Field-row index inside parent: position of edge.field_path's top-level
+    // segment in parent.fields, then sub-position by full path string.
+    function rowIndex(parentId: string, fieldPath: string): [number, string] {
+      const parent = compNodes.find(n => n.id === parentId)
+      if (!parent) return [Number.MAX_SAFE_INTEGER, fieldPath]
+      const top = fieldPath.match(/^[^.[]+/)?.[0] ?? fieldPath
+      const idx = parent.fields.findIndex(f => f.name === top)
+      return [idx === -1 ? Number.MAX_SAFE_INTEGER : idx, fieldPath]
+    }
+
+    // Best (smallest) address among incoming edges from the previous layer
+    const addr = new Map<string, [number, number, string]>()
+    for (const n of layerToNodes.get(cur)!) {
+      let best: [number, number, string] | null = null
+      for (const e of forwardEdges) {
+        if (e.target !== n.id) continue
+        const pIdx = prevIndex.get(e.source)
+        if (pIdx === undefined) continue
+        const [rIdx, rPath] = rowIndex(e.source, e.field_path)
+        const cand: [number, number, string] = [pIdx, rIdx, rPath]
+        if (!best ||
+            cand[0] < best[0] ||
+            (cand[0] === best[0] && cand[1] < best[1]) ||
+            (cand[0] === best[0] && cand[1] === best[1] && cand[2] < best[2])) {
+          best = cand
+        }
+      }
+      addr.set(n.id, best ?? [Number.MAX_SAFE_INTEGER, 0, n.id])
+    }
+
+    layerToNodes.get(cur)!.sort((a, b) => {
+      const aa = addr.get(a.id)!; const bb = addr.get(b.id)!
+      if (aa[0] !== bb[0]) return aa[0] - bb[0]
+      if (aa[1] !== bb[1]) return aa[1] - bb[1]
+      return aa[2].localeCompare(bb[2])
+    })
+  }
 
   const adjOut = new Map<string, string[]>()
   const adjIn  = new Map<string, string[]>()
@@ -515,7 +575,7 @@ interface Props {
   onOpenRecord: (file: string, key: string) => void
 }
 
-export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
+export function GraphView({ graphData, activeType }: Props) {
   // Fields that actually appear in the subgraph for the current activeType.
   // Mirrors layoutAll's visibility logic but ignores field filtering itself,
   // so toggling all chips off doesn't hide the chip list.
@@ -696,11 +756,6 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
     adjacencyRef.current = adj
   }, [forwardEdges, backEdges])
 
-  const onNodeDoubleClick = useCallback((_: unknown, node: Node) => {
-    const { graphNode } = node.data as NodeData
-    onOpenRecord(graphNode.file_path, graphNode.key)
-  }, [onOpenRecord])
-
   const onNodeMouseEnter = useCallback((_: unknown, node: Node) => {
     const wrap = wrapRef.current
     if (!wrap) return
@@ -763,7 +818,6 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
             nodes={rfNodes}
             edges={rfEdges}
             nodeTypes={nodeTypes}
-            onNodeDoubleClick={onNodeDoubleClick}
             onNodeMouseEnter={onNodeMouseEnter}
             onNodeMouseLeave={onNodeMouseLeave}
             fitView
