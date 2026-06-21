@@ -2,10 +2,11 @@ import { useState, type CSSProperties } from 'react'
 import type { FieldValue, FieldCell, DictKey } from '../bindings/index'
 import { Icon } from './Icon'
 
+export const NODE_PEEK_FIELDS = 4
 const MAX_DEPTH = 5
 const INDENT_PX = 14
 
-// ─── Type / kind labels ──────────────────────────────────────────────────
+// ─── Type / kind labels ──────────────────────────────────────────────────────
 
 function valueKindLabel(v: FieldValue): string {
   switch (v.kind) {
@@ -40,7 +41,7 @@ function dictKeyText(k: DictKey): string {
   }
 }
 
-// ─── Compact summary text ────────────────────────────────────────────────
+// ─── Compact summary text ────────────────────────────────────────────────────
 
 export function summaryOf(v: FieldValue): string {
   switch (v.kind) {
@@ -71,13 +72,36 @@ export function summaryOf(v: FieldValue): string {
   }
 }
 
-// ─── Compact cell (used inside TableView) ────────────────────────────────
+// ─── Count visible rows (for height estimation in GraphView) ─────────────────
+// Recursively counts how many rows would be rendered given the expanded paths.
+
+export function countVisibleRows(
+  fields: FieldCell[],
+  expandedPaths: Set<string>,
+  prefix = '',
+): number {
+  let count = 0
+  for (const f of fields) {
+    count++
+    const path = prefix ? `${prefix}.${f.name}` : f.name
+    if (!expandedPaths.has(path)) continue
+    if (f.value.kind === 'Object') {
+      count += countVisibleRows(f.value.fields, expandedPaths, path)
+    } else if (f.value.kind === 'Array') {
+      count += f.value.items.length
+    } else if (f.value.kind === 'Dict') {
+      count += f.value.entries.length
+    }
+  }
+  return count
+}
+
+// ─── Compact cell (used inside TableView) ────────────────────────────────────
 
 export function DataCardCompact({ value }: { value: FieldValue }) {
   return <ValueChip value={value} />
 }
 
-// Inline value renderer — styled like a property field, no navigation.
 function ValueChip({ value }: { value: FieldValue }) {
   switch (value.kind) {
     case 'Null':
@@ -113,15 +137,17 @@ function ValueChip({ value }: { value: FieldValue }) {
   }
 }
 
-// ─── Expanded inspector (RecordView) ─────────────────────────────────────
+// ─── Expanded inspector (RecordView / TableView detail) ───────────────────────
 
 export interface ExpandedProps {
   fields: FieldCell[]
   depth?: number
   onEdit?: (fieldName: string, newValue: string) => void
+  pathPrefix?: string
+  onRowToggle?: (path: string, expanded: boolean) => void
 }
 
-export function DataCardExpanded({ fields, depth = 0, onEdit }: ExpandedProps) {
+export function DataCardExpanded({ fields, depth = 0, onEdit, pathPrefix, onRowToggle }: ExpandedProps) {
   return (
     <div className="dc-inspector" style={{ '--depth': depth } as CSSProperties}>
       {fields.map((fc, i) => (
@@ -131,23 +157,35 @@ export function DataCardExpanded({ fields, depth = 0, onEdit }: ExpandedProps) {
           value={fc.value}
           depth={depth}
           onEdit={onEdit ? val => onEdit(fc.name, val) : undefined}
+          pathKey={pathPrefix ? `${pathPrefix}.${fc.name}` : fc.name}
+          onRowToggle={onRowToggle}
         />
       ))}
     </div>
   )
 }
 
-function FieldRow({ label, value, depth, onEdit }: {
+function FieldRow({ label, value, depth, onEdit, pathKey, onRowToggle }: {
   label: string
   value: FieldValue
   depth: number
   onEdit?: (newValue: string) => void
+  pathKey?: string
+  onRowToggle?: (path: string, expanded: boolean) => void
 }) {
   const isComplex = value.kind === 'Object' || value.kind === 'Array' || value.kind === 'Dict'
   const canExpand = isComplex && depth < MAX_DEPTH
 
   if (canExpand) {
-    return <ExpandableRow label={label} value={value} depth={depth} />
+    return (
+      <ExpandableRow
+        label={label}
+        value={value}
+        depth={depth}
+        pathKey={pathKey}
+        onRowToggle={onRowToggle}
+      />
+    )
   }
   return <ScalarFieldRow label={label} value={value} depth={depth} onEdit={onEdit} />
 }
@@ -206,18 +244,26 @@ function ScalarFieldRow({ label, value, depth, onEdit }: {
   )
 }
 
-function ExpandableRow({ label, value, depth }: {
+function ExpandableRow({ label, value, depth, pathKey, onRowToggle }: {
   label: string
   value: FieldValue
   depth: number
+  pathKey?: string
+  onRowToggle?: (path: string, expanded: boolean) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const summary = headerSummary(value)
   const count = childCount(value)
 
+  function toggle() {
+    const next = !expanded
+    setExpanded(next)
+    if (pathKey) onRowToggle?.(pathKey, next)
+  }
+
   return (
     <>
-      <div className="dc-row dc-row-foldout" data-depth={depth} onClick={() => setExpanded(e => !e)}>
+      <div className="dc-row dc-row-foldout" data-depth={depth} onClick={toggle}>
         <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX }}>
           <span className="dc-fold-arrow">
             <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
@@ -235,15 +281,36 @@ function ExpandableRow({ label, value, depth }: {
         <>
           {value.kind === 'Object' &&
             value.fields.map((fc, i) => (
-              <FieldRow key={fc.name + i} label={fc.name} value={fc.value} depth={depth + 1} />
+              <FieldRow
+                key={fc.name + i}
+                label={fc.name}
+                value={fc.value}
+                depth={depth + 1}
+                pathKey={pathKey ? `${pathKey}.${fc.name}` : fc.name}
+                onRowToggle={onRowToggle}
+              />
             ))}
           {value.kind === 'Array' &&
             value.items.map((item, i) => (
-              <FieldRow key={i} label={`Element ${i}`} value={item} depth={depth + 1} />
+              <FieldRow
+                key={i}
+                label={`Element ${i}`}
+                value={item}
+                depth={depth + 1}
+                pathKey={pathKey ? `${pathKey}.${i}` : String(i)}
+                onRowToggle={onRowToggle}
+              />
             ))}
           {value.kind === 'Dict' &&
             value.entries.map((e, i) => (
-              <FieldRow key={i} label={dictKeyText(e.key)} value={e.value} depth={depth + 1} />
+              <FieldRow
+                key={i}
+                label={dictKeyText(e.key)}
+                value={e.value}
+                depth={depth + 1}
+                pathKey={pathKey ? `${pathKey}.${dictKeyText(e.key)}` : dictKeyText(e.key)}
+                onRowToggle={onRowToggle}
+              />
             ))}
           {value.kind === 'Array' && value.items.length === 0 && (
             <EmptyHint depth={depth + 1} text="空数组" />
@@ -298,25 +365,23 @@ function plainText(v: FieldValue): string {
   }
 }
 
-// ─── Node mode (GraphView) ───────────────────────────────────────────────
-// Reuses the expanded inspector so users can drill into nested data.
-// Collapses by default when there are too many fields to keep nodes compact.
-
-const NODE_PEEK_FIELDS = 4
+// ─── Node mode (GraphView) ────────────────────────────────────────────────────
 
 export function DataCardNode({
   fields,
   showAll,
   onToggle,
+  onRowToggle,
 }: {
   fields: FieldCell[]
   showAll: boolean
   onToggle: () => void
+  onRowToggle?: (path: string, expanded: boolean) => void
 }) {
   const visible = showAll ? fields : fields.slice(0, NODE_PEEK_FIELDS)
   return (
     <div className="dc-node-card">
-      <DataCardExpanded fields={visible} />
+      <DataCardExpanded fields={visible} onRowToggle={onRowToggle} />
       {fields.length > NODE_PEEK_FIELDS && (
         <button className="dc-node-more" onClick={onToggle}>
           {showAll ? '收起' : `显示全部 (+${fields.length - NODE_PEEK_FIELDS})`}

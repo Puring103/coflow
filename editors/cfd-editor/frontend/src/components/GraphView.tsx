@@ -5,26 +5,70 @@ import {
   type Node, type Edge,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { GraphData, GraphNode } from '../bindings/index'
-import { DataCardNode } from './DataCard'
+import type { GraphData, GraphNode, FieldCell } from '../bindings/index'
+import { DataCardNode, NODE_PEEK_FIELDS, countVisibleRows } from './DataCard'
 import { Icon } from './Icon'
 
-// ─── Node data ──────────────────────────────────────────────────────────────
+// ─── Constants (must match CSS / DataCard) ──────────────────────────────────
+
+const NODE_W     = 280
+const COL_GAP    = 200
+const ROW_GAP    = 60      // gap between nodes in same column
+const COMP_GAP   = 80      // vertical gap between connected components
+const HEADER_H   = 42
+const ROW_H      = 22
+const MORE_BTN_H = 28
+const PAD_V      = 12
+
+// ─── Node data ───────────────────────────────────────────────────────────────
 
 interface NodeData extends Record<string, unknown> {
   graphNode: GraphNode
   expanded: boolean
   onToggleExpand: () => void
+  onRowToggle: (path: string, exp: boolean) => void
+}
+
+// ─── Per-field handles ───────────────────────────────────────────────────────
+// When expanded, we render one source handle per visible Ref field so edges
+// attach to the right row. When collapsed the single default handle is used.
+
+function refFieldHandles(fields: FieldCell[], expanded: boolean, showAll: boolean) {
+  if (!expanded) return null
+  const visible = showAll ? fields : fields.slice(0, NODE_PEEK_FIELDS)
+  return visible.map((f, i) => {
+    if (f.value.kind !== 'Ref') return null
+    // Approximate y: header + rows before this one, centered on row
+    const offsetY = HEADER_H + i * ROW_H + ROW_H / 2
+    return (
+      <Handle
+        key={`src-${f.name}`}
+        type="source"
+        position={Position.Right}
+        id={`field-${f.name}`}
+        style={{ top: offsetY, bottom: 'auto' }}
+      />
+    )
+  })
 }
 
 // ─── CfdNode ─────────────────────────────────────────────────────────────────
 
 function CfdNode({ data }: NodeProps) {
-  const { graphNode: gn, expanded, onToggleExpand } = data as NodeData
+  const { graphNode: gn, expanded, onToggleExpand, onRowToggle } = data as NodeData
 
   return (
     <div className={`graph-node${gn.in_focus_file ? ' focused' : ' dim'}`}>
-      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={Position.Left} id="__in" />
+      {/* Per-field source handles when expanded */}
+      {refFieldHandles(gn.fields, expanded, expanded)}
+      {/* Default source handle (collapsed or no-ref nodes) */}
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="__out"
+        style={expanded ? { opacity: 0, pointerEvents: 'none' } : {}}
+      />
       <div className="gn-header">
         <span className="gn-type">{gn.actual_type}</span>
         <span className="gn-key">{gn.key}</span>
@@ -33,98 +77,317 @@ function CfdNode({ data }: NodeProps) {
       {gn.is_collapsed ? (
         <div className="gn-collapsed">折叠（超出深度）</div>
       ) : (
-        <DataCardNode fields={gn.fields} showAll={expanded} onToggle={onToggleExpand} />
+        <DataCardNode
+          fields={gn.fields}
+          showAll={expanded}
+          onToggle={onToggleExpand}
+          onRowToggle={onRowToggle}
+        />
       )}
-      <Handle type="source" position={Position.Right} />
     </div>
   )
 }
 
 const nodeTypes = { cfd: CfdNode }
 
-// ─── Field path → top-level field name ──────────────────────────────────────
+// ─── Height estimation ────────────────────────────────────────────────────────
+
+function estimateNodeHeight(
+  gn: GraphNode,
+  expanded: boolean,
+  expandedRows: Set<string>,
+): number {
+  if (gn.is_collapsed) return HEADER_H + 28 + PAD_V
+  if (!expanded) {
+    const visible = Math.min(NODE_PEEK_FIELDS, gn.fields.length)
+    const hasMore = gn.fields.length > NODE_PEEK_FIELDS
+    return HEADER_H + visible * ROW_H + (hasMore ? MORE_BTN_H : 0) + PAD_V
+  }
+  const rows = countVisibleRows(gn.fields, expandedRows)
+  const hasMore = gn.fields.length > NODE_PEEK_FIELDS
+  return HEADER_H + rows * ROW_H + (hasMore ? MORE_BTN_H : 0) + PAD_V
+}
+
+// ─── Field path → top-level field name ───────────────────────────────────────
 
 function topLevelField(path: string): string {
   const m = path.match(/^[^.[]+/)
   return m ? m[0] : path
 }
 
-// ─── Longest-path layering ───────────────────────────────────────────────────
-// forcedRoots are pinned to layer 0; all other nodes get longest-path from preds.
+// ─── Connected components ─────────────────────────────────────────────────────
+
+function connectedComponents(
+  nodeIds: string[],
+  edges: { source: string; target: string }[],
+): string[][] {
+  const adj = new Map<string, Set<string>>()
+  for (const id of nodeIds) adj.set(id, new Set())
+  for (const e of edges) {
+    adj.get(e.source)?.add(e.target)
+    adj.get(e.target)?.add(e.source)
+  }
+  const visited = new Set<string>()
+  const comps: string[][] = []
+  for (const id of nodeIds) {
+    if (visited.has(id)) continue
+    const comp: string[] = []
+    const q = [id]
+    while (q.length) {
+      const cur = q.shift()!
+      if (visited.has(cur)) continue
+      visited.add(cur)
+      comp.push(cur)
+      for (const nb of adj.get(cur) ?? []) if (!visited.has(nb)) q.push(nb)
+    }
+    comps.push(comp)
+  }
+  return comps
+}
+
+// ─── Back-edge detection (DFS, breaks cycles) ────────────────────────────────
+
+function detectBackEdges(
+  nodes: { id: string }[],
+  edges: { source: string; target: string }[],
+): Set<string> {
+  const adj = new Map<string, string[]>()
+  for (const n of nodes) adj.set(n.id, [])
+  for (const e of edges) adj.get(e.source)?.push(e.target)
+
+  const state = new Map<string, 'white' | 'gray' | 'black'>()
+  for (const n of nodes) state.set(n.id, 'white')
+  const backEdgeKeys = new Set<string>()
+
+  function dfs(id: string) {
+    state.set(id, 'gray')
+    for (const nb of adj.get(id) ?? []) {
+      if (state.get(nb) === 'gray') {
+        backEdgeKeys.add(`${id}→${nb}`)
+      } else if (state.get(nb) === 'white') {
+        dfs(nb)
+      }
+    }
+    state.set(id, 'black')
+  }
+  for (const n of nodes) if (state.get(n.id) === 'white') dfs(n.id)
+  return backEdgeKeys
+}
+
+// ─── Longest-path layering ────────────────────────────────────────────────────
 
 function layerByLongestPath(
-  nodes: GraphNode[],
+  nodes: { id: string }[],
   edges: { source: string; target: string }[],
   forcedRoots: Set<string>,
 ): Map<string, number> {
   const incoming = new Map<string, string[]>()
   for (const n of nodes) incoming.set(n.id, [])
-  for (const e of edges) {
-    if (incoming.has(e.target)) incoming.get(e.target)!.push(e.source)
-  }
+  for (const e of edges) incoming.get(e.target)?.push(e.source)
 
   const layer = new Map<string, number>()
-  const inProgress = new Set<string>()
+  const inProg = new Set<string>()
 
   function visit(id: string): number {
     if (layer.has(id)) return layer.get(id)!
     if (forcedRoots.has(id)) { layer.set(id, 0); return 0 }
-    if (inProgress.has(id)) return 0 // cycle break
-    inProgress.add(id)
+    if (inProg.has(id)) return 0
+    inProg.add(id)
     let max = 0
     for (const pred of incoming.get(id) ?? []) {
       const l = visit(pred) + 1
       if (l > max) max = l
     }
-    inProgress.delete(id)
+    inProg.delete(id)
     layer.set(id, max)
     return max
   }
-
   for (const n of nodes) visit(n.id)
   return layer
 }
 
-// ─── Node height estimation ──────────────────────────────────────────────────
-// Mirrors the CSS: gn-header ~42px + dc-row 22px each + more-btn 28px + padding.
+// ─── Barycenter with dummy nodes ──────────────────────────────────────────────
 
-const PEEK = 4
-const HEADER_H = 42
-const ROW_H = 22
-const MORE_BTN_H = 28
-const PAD_V = 12
+function barycenterOrder(
+  layerToNodes: Map<number, { id: string }[]>,
+  forwardEdges: { source: string; target: string }[],
+  layerMap: Map<string, number>,
+  layers: number[],
+) {
+  interface BcItem { id: string }
+  const bcLayers = new Map<number, BcItem[]>()
+  for (const [l, ns] of layerToNodes) bcLayers.set(l, ns.map(n => ({ id: n.id })))
 
-function estimateNodeHeight(gn: GraphNode, expanded: boolean): number {
-  if (gn.is_collapsed) return HEADER_H + 28 + PAD_V
-  const visible = expanded ? gn.fields.length : Math.min(PEEK, gn.fields.length)
-  const hasMore = gn.fields.length > PEEK
-  return HEADER_H + visible * ROW_H + (hasMore ? MORE_BTN_H : 0) + PAD_V
+  const bcOut = new Map<string, string[]>()
+  const bcIn  = new Map<string, string[]>()
+
+  for (const e of forwardEdges) {
+    const sl = layerMap.get(e.source) ?? 0
+    const tl = layerMap.get(e.target) ?? 0
+
+    if (tl - sl <= 1) {
+      ;(bcOut.get(e.source) ?? (bcOut.set(e.source, []), bcOut.get(e.source)!)).push(e.target)
+      ;(bcIn.get(e.target)  ?? (bcIn.set(e.target, []),  bcIn.get(e.target)!)).push(e.source)
+    } else {
+      let prev = e.source
+      for (let dl = sl + 1; dl < tl; dl++) {
+        const dId = `__d_${e.source}_${e.target}_${dl}`
+        if (!bcLayers.has(dl)) bcLayers.set(dl, [])
+        bcLayers.get(dl)!.push({ id: dId })
+        ;(bcOut.get(prev)  ?? (bcOut.set(prev,  []), bcOut.get(prev)!)).push(dId)
+        ;(bcIn.get(dId)    ?? (bcIn.set(dId,    []), bcIn.get(dId)!)).push(prev)
+        prev = dId
+      }
+      ;(bcOut.get(prev)      ?? (bcOut.set(prev,      []), bcOut.get(prev)!)).push(e.target)
+      ;(bcIn.get(e.target)   ?? (bcIn.set(e.target,   []), bcIn.get(e.target)!)).push(prev)
+    }
+  }
+
+  const bcLayerList = Array.from(bcLayers.keys()).sort((a, b) => a - b)
+
+  function idx(id: string, list: BcItem[]) { return list.findIndex(x => x.id === id) }
+  function meanIdx(id: string, nbs: string[] | undefined, nl: number) {
+    if (!nbs?.length) return Infinity
+    const list = bcLayers.get(nl); if (!list) return Infinity
+    let s = 0, n = 0
+    for (const nb of nbs) { const i = idx(nb, list); if (i >= 0) { s += i; n++ } }
+    return n === 0 ? Infinity : s / n
+  }
+
+  for (let it = 0; it < 24; it++) {
+    for (let i = 1; i < bcLayerList.length; i++) {
+      const cur = bcLayerList[i], prev = bcLayerList[i - 1]
+      const list = bcLayers.get(cur)!
+      list.sort((a, b) => {
+        const d = meanIdx(a.id, bcIn.get(a.id), prev) - meanIdx(b.id, bcIn.get(b.id), prev)
+        return d !== 0 ? d : a.id.localeCompare(b.id)
+      })
+    }
+    for (let i = bcLayerList.length - 2; i >= 0; i--) {
+      const cur = bcLayerList[i], next = bcLayerList[i + 1]
+      const list = bcLayers.get(cur)!
+      list.sort((a, b) => {
+        const d = meanIdx(a.id, bcOut.get(a.id), next) - meanIdx(b.id, bcOut.get(b.id), next)
+        return d !== 0 ? d : a.id.localeCompare(b.id)
+      })
+    }
+  }
+
+  // Write ordering back to real layers (drop dummy nodes)
+  for (const l of layers) {
+    const real = layerToNodes.get(l)
+    if (!real) continue
+    const ordered = (bcLayers.get(l) ?? [])
+      .filter(x => !x.id.startsWith('__d_'))
+      .map(x => x.id)
+    const order = new Map(ordered.map((id, i) => [id, i]))
+    real.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+  }
 }
 
-// ─── Layout ──────────────────────────────────────────────────────────────────
+// ─── Layout one connected component ──────────────────────────────────────────
+
+function layoutComponent(
+  compNodes: GraphNode[],
+  forwardEdges: { source: string; target: string; field_path: string }[],
+  forcedRoots: Set<string>,
+  nodeExpandedMap: Map<string, boolean>,
+  nodeRowExpandedMap: Map<string, Set<string>>,
+): Map<string, { x: number; y: number }> {
+  const layer = layerByLongestPath(compNodes, forwardEdges, forcedRoots)
+
+  const layerToNodes = new Map<number, GraphNode[]>()
+  for (const n of compNodes) {
+    const l = layer.get(n.id) ?? 0
+    if (!layerToNodes.has(l)) layerToNodes.set(l, [])
+    layerToNodes.get(l)!.push(n)
+  }
+  for (const [, list] of layerToNodes) {
+    list.sort((a, b) => {
+      if (a.in_focus_file !== b.in_focus_file) return a.in_focus_file ? -1 : 1
+      if (a.file_path !== b.file_path) return a.file_path.localeCompare(b.file_path)
+      return a.key.localeCompare(b.key)
+    })
+  }
+
+  const layers = Array.from(layerToNodes.keys()).sort((a, b) => a - b)
+  barycenterOrder(layerToNodes, forwardEdges, layer, layers)
+
+  const adjOut = new Map<string, string[]>()
+  const adjIn  = new Map<string, string[]>()
+  for (const e of forwardEdges) {
+    ;(adjOut.get(e.source) ?? (adjOut.set(e.source, []), adjOut.get(e.source)!)).push(e.target)
+    ;(adjIn.get(e.target)  ?? (adjIn.set(e.target,  []), adjIn.get(e.target)!)).push(e.source)
+  }
+
+  const positions = new Map<string, { x: number; y: number }>()
+
+  function nodeH(n: GraphNode) {
+    const exp = nodeExpandedMap.get(n.id) ?? false
+    const rows = nodeRowExpandedMap.get(n.id) ?? new Set<string>()
+    return estimateNodeHeight(n, exp, rows)
+  }
+
+  // Initial slot-based y
+  for (const l of layers) {
+    const list = layerToNodes.get(l)!
+    const colX = l * (NODE_W + COL_GAP)
+    const heights = list.map(n => nodeH(n))
+    const totalH = heights.reduce((s, h) => s + h, 0) + (list.length - 1) * ROW_GAP
+    let curY = -totalH / 2
+    list.forEach((n, i) => {
+      positions.set(n.id, { x: colX, y: curY })
+      curY += heights[i] + ROW_GAP
+    })
+  }
+
+  // Y-refinement: snap toward neighbour average
+  function refine() {
+    for (const l of layers) {
+      const list = layerToNodes.get(l)!
+      const heights = list.map(n => nodeH(n))
+      const desired = list.map(n => {
+        const ins  = (adjIn.get(n.id)  ?? []).map(id => positions.get(id)?.y).filter((y): y is number => y !== undefined)
+        const outs = (adjOut.get(n.id) ?? []).map(id => positions.get(id)?.y).filter((y): y is number => y !== undefined)
+        const all = [...ins, ...outs]
+        if (!all.length) return positions.get(n.id)!.y
+        return all.reduce((a, b) => a + b, 0) / all.length
+      })
+      const sorted = list.map((n, i) => ({ n, want: desired[i], h: heights[i] }))
+        .sort((a, b) => a.want - b.want)
+      let prevBottom = -Infinity
+      for (const item of sorted) {
+        const y = Math.max(item.want, prevBottom + ROW_GAP)
+        positions.set(item.n.id, { x: positions.get(item.n.id)!.x, y })
+        prevBottom = y + item.h
+      }
+    }
+  }
+  for (let i = 0; i < 3; i++) refine()
+
+  return positions
+}
+
+// ─── Full layout (all components, stacked vertically) ────────────────────────
 
 interface LayoutResult {
   positions: Map<string, { x: number; y: number }>
   visibleNodes: GraphNode[]
-  activeEdges: { source: string; target: string; field_path: string }[]
+  forwardEdges: { source: string; target: string; field_path: string }[]
+  backEdges:    { source: string; target: string; field_path: string }[]
 }
 
-function layoutNodes(
+function layoutAll(
   graph: GraphData,
   enabledFields: Set<string>,
   activeType: string | undefined,
   nodeExpandedMap: Map<string, boolean>,
+  nodeRowExpandedMap: Map<string, Set<string>>,
 ): LayoutResult {
-  const NODE_W = 280
-  const COL_GAP = 180
-  const ROW_GAP = 40
+  // Filter edges by toolbar
+  let activeEdges = graph.edges.filter(e => enabledFields.has(topLevelField(e.field_path)))
 
-  // Filter edges by toolbar selection
-  let activeEdges = graph.edges.filter(e =>
-    enabledFields.has(topLevelField(e.field_path))
-  )
-
-  // ── Compute visible node set ────────────────────────────────────────────
+  // Compute visible set
   const touched = new Set<string>()
   for (const e of activeEdges) { touched.add(e.source); touched.add(e.target) }
 
@@ -134,17 +397,15 @@ function layoutNodes(
       .filter(n => n.in_focus_file && n.actual_type === activeType && touched.has(n.id))
       .map(n => n.id)
     visibleSet = new Set(roots)
-
-    const outgoing = new Map<string, string[]>()
+    const out = new Map<string, string[]>()
     for (const e of activeEdges) {
-      if (!outgoing.has(e.source)) outgoing.set(e.source, [])
-      outgoing.get(e.source)!.push(e.target)
+      ;(out.get(e.source) ?? (out.set(e.source, []), out.get(e.source)!)).push(e.target)
     }
-    const queue = [...roots]
-    while (queue.length > 0) {
-      const cur = queue.shift()!
-      for (const nb of outgoing.get(cur) ?? []) {
-        if (!visibleSet.has(nb)) { visibleSet.add(nb); queue.push(nb) }
+    const q = [...roots]
+    while (q.length) {
+      const cur = q.shift()!
+      for (const nb of out.get(cur) ?? []) {
+        if (!visibleSet.has(nb)) { visibleSet.add(nb); q.push(nb) }
       }
     }
     activeEdges = activeEdges.filter(e => visibleSet.has(e.source) && visibleSet.has(e.target))
@@ -162,179 +423,50 @@ function layoutNodes(
       : []
   )
 
-  const layer = layerByLongestPath(visibleNodes, activeEdges, forcedRoots)
+  // Detect back-edges (cycles)
+  const backEdgeKeys = detectBackEdges(visibleNodes, activeEdges)
+  const forwardEdges = activeEdges.filter(e => !backEdgeKeys.has(`${e.source}→${e.target}`))
+  const backEdges    = activeEdges.filter(e =>  backEdgeKeys.has(`${e.source}→${e.target}`))
 
-  // ── Group real nodes by layer ───────────────────────────────────────────
-  const layerToNodes = new Map<number, GraphNode[]>()
-  for (const n of visibleNodes) {
-    const l = layer.get(n.id) ?? 0
-    if (!layerToNodes.has(l)) layerToNodes.set(l, [])
-    layerToNodes.get(l)!.push(n)
-  }
-  // Stable initial order: focus file first, then file group, then key
-  for (const [, list] of layerToNodes) {
-    list.sort((a, b) => {
-      if (a.in_focus_file !== b.in_focus_file) return a.in_focus_file ? -1 : 1
-      if (a.file_path !== b.file_path) return a.file_path.localeCompare(b.file_path)
-      return a.key.localeCompare(b.key)
-    })
-  }
+  // Split into connected components using ALL edges (forward + back)
+  const comps = connectedComponents(visibleNodes.map(n => n.id), activeEdges)
+  const nodeToComp = new Map<string, number>()
+  comps.forEach((comp, ci) => comp.forEach(id => nodeToComp.set(id, ci)))
+  const nodeById = new Map(visibleNodes.map(n => [n.id, n]))
 
-  const layers = Array.from(layerToNodes.keys()).sort((a, b) => a - b)
+  // Sort components: largest first, then by first node key
+  comps.sort((a, b) => {
+    if (b.length !== a.length) return b.length - a.length
+    return a[0].localeCompare(b[0])
+  })
 
-  // ── Barycenter ordering with dummy nodes ────────────────────────────────
-  // For edges that span > 1 layer, insert invisible dummy nodes at each
-  // intermediate layer so the barycenter heuristic accounts for long edges.
-  // Dummies only exist in bcLayers/bcAdjIn/bcAdjOut; they are never rendered.
+  const allPositions = new Map<string, { x: number; y: number }>()
+  let yOffset = 0
 
-  interface BcItem { id: string }
-  const bcLayers = new Map<number, BcItem[]>()
-  for (const [l, nodes] of layerToNodes) {
-    bcLayers.set(l, nodes.map(n => ({ id: n.id })))
-  }
+  for (const comp of comps) {
+    const compNodes = comp.map(id => nodeById.get(id)!).filter(Boolean)
+    const compForward = forwardEdges.filter(e =>
+      visibleSet.has(e.source) && visibleSet.has(e.target) &&
+      nodeToComp.get(e.source) === nodeToComp.get(compNodes[0]?.id)
+    )
+    const compForcedRoots = new Set(comp.filter(id => forcedRoots.has(id)))
+    const localPos = layoutComponent(compNodes, compForward, compForcedRoots, nodeExpandedMap, nodeRowExpandedMap)
 
-  const bcAdjOut = new Map<string, string[]>()
-  const bcAdjIn = new Map<string, string[]>()
-
-  for (const e of activeEdges) {
-    const sl = layer.get(e.source) ?? 0
-    const tl = layer.get(e.target) ?? 0
-
-    if (tl - sl <= 1) {
-      if (!bcAdjOut.has(e.source)) bcAdjOut.set(e.source, [])
-      bcAdjOut.get(e.source)!.push(e.target)
-      if (!bcAdjIn.has(e.target)) bcAdjIn.set(e.target, [])
-      bcAdjIn.get(e.target)!.push(e.source)
-    } else {
-      // Chain: source → d_{sl+1} → … → d_{tl-1} → target
-      let prev = e.source
-      for (let dl = sl + 1; dl < tl; dl++) {
-        const dId = `__d_${e.source}_${e.target}_${dl}`
-        if (!bcLayers.has(dl)) bcLayers.set(dl, [])
-        bcLayers.get(dl)!.push({ id: dId })
-        if (!bcAdjOut.has(prev)) bcAdjOut.set(prev, [])
-        bcAdjOut.get(prev)!.push(dId)
-        if (!bcAdjIn.has(dId)) bcAdjIn.set(dId, [])
-        bcAdjIn.get(dId)!.push(prev)
-        prev = dId
-      }
-      if (!bcAdjOut.has(prev)) bcAdjOut.set(prev, [])
-      bcAdjOut.get(prev)!.push(e.target)
-      if (!bcAdjIn.has(e.target)) bcAdjIn.set(e.target, [])
-      bcAdjIn.get(e.target)!.push(prev)
+    // Find y-extent of this component's layout
+    let minY = Infinity, maxY = -Infinity
+    for (const { y } of localPos.values()) { if (y < minY) minY = y; if (y > maxY) maxY = y }
+    // Shift so component starts at yOffset (minY maps to yOffset)
+    const shift = yOffset - minY
+    for (const [id, pos] of localPos) {
+      allPositions.set(id, { x: pos.x, y: pos.y + shift })
     }
+    // Advance yOffset past this component + gap
+    // maxY + shift = old maxY mapped to new coords; add max node height estimate + gap
+    const compHeight = maxY - minY + 300 // 300 is generous max node height
+    yOffset += compHeight + COMP_GAP
   }
 
-  const bcLayerList = Array.from(bcLayers.keys()).sort((a, b) => a - b)
-
-  function bcIndexOf(id: string, list: BcItem[]): number {
-    for (let i = 0; i < list.length; i++) if (list[i].id === id) return i
-    return -1
-  }
-
-  function bcMeanIndex(id: string, neighbors: string[] | undefined, nl: number): number {
-    if (!neighbors || neighbors.length === 0) return Number.POSITIVE_INFINITY
-    const list = bcLayers.get(nl)
-    if (!list) return Number.POSITIVE_INFINITY
-    let sum = 0, n = 0
-    for (const nb of neighbors) {
-      const idx = bcIndexOf(nb, list)
-      if (idx >= 0) { sum += idx; n++ }
-    }
-    return n === 0 ? Number.POSITIVE_INFINITY : sum / n
-  }
-
-  const ITER = 24
-  for (let it = 0; it < ITER; it++) {
-    // Forward pass: order by mean index of predecessors
-    for (let i = 1; i < bcLayerList.length; i++) {
-      const cur = bcLayerList[i]
-      const prev = bcLayerList[i - 1]
-      const list = bcLayers.get(cur)!
-      const ranks = new Map<string, number>()
-      for (const item of list) ranks.set(item.id, bcMeanIndex(item.id, bcAdjIn.get(item.id), prev))
-      list.sort((a, b) => {
-        const ra = ranks.get(a.id)!; const rb = ranks.get(b.id)!
-        return ra !== rb ? ra - rb : a.id.localeCompare(b.id)
-      })
-    }
-    // Backward pass: order by mean index of successors
-    for (let i = bcLayerList.length - 2; i >= 0; i--) {
-      const cur = bcLayerList[i]
-      const next = bcLayerList[i + 1]
-      const list = bcLayers.get(cur)!
-      const ranks = new Map<string, number>()
-      for (const item of list) ranks.set(item.id, bcMeanIndex(item.id, bcAdjOut.get(item.id), next))
-      list.sort((a, b) => {
-        const ra = ranks.get(a.id)!; const rb = ranks.get(b.id)!
-        return ra !== rb ? ra - rb : a.id.localeCompare(b.id)
-      })
-    }
-  }
-
-  // Extract real-node ordering from bcLayers back to layerToNodes
-  for (const [l, bcList] of bcLayers) {
-    const realNodes = layerToNodes.get(l)
-    if (!realNodes) continue
-    const orderedIds = bcList.filter(x => !x.id.startsWith('__d_')).map(x => x.id)
-    const order = new Map<string, number>()
-    orderedIds.forEach((id, i) => order.set(id, i))
-    realNodes.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
-  }
-
-  // ── Position assignment ─────────────────────────────────────────────────
-  // Adjacency for y-refinement uses real edges only (no dummies).
-  const adjOut = new Map<string, string[]>()
-  const adjIn = new Map<string, string[]>()
-  for (const e of activeEdges) {
-    if (!adjOut.has(e.source)) adjOut.set(e.source, [])
-    adjOut.get(e.source)!.push(e.target)
-    if (!adjIn.has(e.target)) adjIn.set(e.target, [])
-    adjIn.get(e.target)!.push(e.source)
-  }
-
-  const positions = new Map<string, { x: number; y: number }>()
-
-  // Pass 1: slot-based y using per-node height estimates
-  for (const l of layers) {
-    const list = layerToNodes.get(l)!
-    const colX = l * (NODE_W + COL_GAP)
-    const heights = list.map(n => estimateNodeHeight(n, nodeExpandedMap.get(n.id) ?? false))
-    const totalH = heights.reduce((s, h) => s + h, 0) + (list.length - 1) * ROW_GAP
-    let curY = -totalH / 2
-    list.forEach((n, i) => {
-      positions.set(n.id, { x: colX, y: curY })
-      curY += heights[i] + ROW_GAP
-    })
-  }
-
-  // Pass 2+: snap each node toward average y of its neighbours,
-  // preserving barycenter order and maintaining minimum spacing.
-  function refineYByNeighbours() {
-    for (const l of layers) {
-      const list = layerToNodes.get(l)!
-      const heights = list.map(n => estimateNodeHeight(n, nodeExpandedMap.get(n.id) ?? false))
-      const desired = list.map(n => {
-        const ins = (adjIn.get(n.id) ?? []).map(id => positions.get(id)?.y).filter((y): y is number => y !== undefined)
-        const outs = (adjOut.get(n.id) ?? []).map(id => positions.get(id)?.y).filter((y): y is number => y !== undefined)
-        const all = [...ins, ...outs]
-        if (all.length === 0) return positions.get(n.id)!.y
-        return all.reduce((a, b) => a + b, 0) / all.length
-      })
-      // Sort by desired y, then clamp to non-overlapping using actual heights
-      const sorted = list.map((n, i) => ({ n, want: desired[i], h: heights[i] }))
-        .sort((a, b) => a.want - b.want)
-      let prevBottom = -Infinity
-      for (const item of sorted) {
-        const y = Math.max(item.want, prevBottom + ROW_GAP)
-        positions.set(item.n.id, { x: positions.get(item.n.id)!.x, y })
-        prevBottom = y + item.h
-      }
-    }
-  }
-  for (let i = 0; i < 3; i++) refineYByNeighbours()
-
-  return { positions, visibleNodes, activeEdges }
+  return { positions: allPositions, visibleNodes, forwardEdges, backEdges }
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -353,8 +485,6 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
   }, [graphData])
 
   const [enabledFields, setEnabledFields] = useState<Set<string>>(() => new Set(allFields))
-
-  // Re-sync enabled set when graph changes (keep previously enabled fields)
   useMemo(() => {
     setEnabledFields(prev => {
       const next = new Set<string>()
@@ -364,9 +494,10 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allFields.join('|')])
 
-  // Per-node showAll state — lifted here so layout recalculates on expand/collapse
+  // Expand states lifted here so layout recalcs on any change
   const [nodeExpandedMap, setNodeExpandedMap] = useState<Map<string, boolean>>(new Map())
-  // Hovered node id — used for edge highlighting only, does not re-trigger layout
+  // Per-node set of expanded sub-row paths
+  const [nodeRowExpandedMap, setNodeRowExpandedMap] = useState<Map<string, Set<string>>>(new Map())
   const [hoveredId, setHoveredId] = useState<string | null>(null)
 
   const toggleNodeExpanded = useCallback((id: string) => {
@@ -377,10 +508,40 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
     })
   }, [])
 
-  const { positions, visibleNodes, activeEdges } = useMemo(
-    () => layoutNodes(graphData, enabledFields, activeType, nodeExpandedMap),
-    [graphData, enabledFields, activeType, nodeExpandedMap]
+  const handleRowToggle = useCallback((nodeId: string, path: string, expanded: boolean) => {
+    setNodeRowExpandedMap(prev => {
+      const next = new Map(prev)
+      const set = new Set(prev.get(nodeId) ?? [])
+      if (expanded) set.add(path)
+      else set.delete(path)
+      next.set(nodeId, set)
+      return next
+    })
+  }, [])
+
+  const { positions, visibleNodes, forwardEdges, backEdges } = useMemo(
+    () => layoutAll(graphData, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap),
+    [graphData, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap]
   )
+
+  // Build edge sourceHandle: if source node is expanded and edge field matches a visible ref field,
+  // use the per-field handle; otherwise use the default __out handle.
+  function edgeHandleId(
+    sourceId: string,
+    fieldPath: string,
+  ): { sourceHandle: string; targetHandle: string } {
+    const expanded = nodeExpandedMap.get(sourceId) ?? false
+    if (!expanded) return { sourceHandle: '__out', targetHandle: '__in' }
+    const top = topLevelField(fieldPath)
+    // Check if the source node has a ref field with this name in visible rows
+    const srcNode = visibleNodes.find(n => n.id === sourceId)
+    if (!srcNode) return { sourceHandle: '__out', targetHandle: '__in' }
+    const visible = srcNode.fields.slice(0, nodeExpandedMap.get(sourceId) ? undefined : NODE_PEEK_FIELDS)
+    const match = visible.find(f => f.name === top && f.value.kind === 'Ref')
+    return match
+      ? { sourceHandle: `field-${top}`, targetHandle: '__in' }
+      : { sourceHandle: '__out', targetHandle: '__in' }
+  }
 
   const rfNodes: Node[] = useMemo(
     () => visibleNodes.map(n => ({
@@ -391,60 +552,85 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
         graphNode: n,
         expanded: nodeExpandedMap.get(n.id) ?? false,
         onToggleExpand: () => toggleNodeExpanded(n.id),
+        onRowToggle: (path: string, exp: boolean) => handleRowToggle(n.id, path, exp),
       } satisfies NodeData,
     })),
-    [visibleNodes, positions, nodeExpandedMap, toggleNodeExpanded]
+    [visibleNodes, positions, nodeExpandedMap, toggleNodeExpanded, handleRowToggle]
   )
 
   const rfEdges: Edge[] = useMemo(() => {
-    const base = activeEdges
+    const fwdEdges: Edge[] = forwardEdges
       .filter(e => positions.has(e.source) && positions.has(e.target))
-      .map((e, i) => ({
-        id: `e${i}`,
-        source: e.source,
-        target: e.target,
-        label: e.field_path,
-        type: 'bezier',
-        animated: false,
-        labelStyle: { fill: '#7a828f', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' },
-        labelBgStyle: { fill: '#1a1e25', fillOpacity: 0.92 },
-        labelBgPadding: [4, 2] as [number, number],
-        labelBgBorderRadius: 3,
-      }))
+      .map((e, i) => {
+        const { sourceHandle, targetHandle } = edgeHandleId(e.source, e.field_path)
+        const connected = hoveredId && (e.source === hoveredId || e.target === hoveredId)
+        return {
+          id: `f${i}`,
+          source: e.source,
+          target: e.target,
+          sourceHandle,
+          targetHandle,
+          label: e.field_path,
+          type: 'bezier',
+          animated: false,
+          style: connected
+            ? { stroke: '#8aa8d4', strokeWidth: 2 }
+            : hoveredId
+              ? { stroke: '#4a525e', strokeWidth: 1.2, opacity: 0.15 }
+              : { stroke: '#4a525e', strokeWidth: 1.2 },
+          zIndex: connected ? 1000 : 0,
+          labelStyle: { fill: '#7a828f', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' },
+          labelBgStyle: { fill: '#1a1e25', fillOpacity: 0.92 },
+          labelBgPadding: [4, 2] as [number, number],
+          labelBgBorderRadius: 3,
+        }
+      })
 
-    if (!hoveredId) {
-      return base.map(e => ({ ...e, style: { stroke: '#4a525e', strokeWidth: 1.2 } }))
-    }
-    return base.map(e => {
-      const connected = e.source === hoveredId || e.target === hoveredId
-      return {
-        ...e,
-        style: connected
-          ? { stroke: '#8aa8d4', strokeWidth: 2 }
-          : { stroke: '#4a525e', strokeWidth: 1.2, opacity: 0.15 },
-        zIndex: connected ? 1000 : 0,
-      }
-    })
-  }, [activeEdges, positions, hoveredId])
+    // Back-edges: route above/below to avoid overlapping forward edges.
+    // Use type='bezier' with elevated zIndex and dashed stroke.
+    const bkEdges: Edge[] = backEdges
+      .filter(e => positions.has(e.source) && positions.has(e.target))
+      .map((e, i) => {
+        const connected = hoveredId && (e.source === hoveredId || e.target === hoveredId)
+        return {
+          id: `b${i}`,
+          source: e.source,
+          target: e.target,
+          sourceHandle: '__out',
+          targetHandle: '__in',
+          label: e.field_path,
+          type: 'bezier',
+          animated: false,
+          style: connected
+            ? { stroke: '#d97a7a', strokeWidth: 2, strokeDasharray: '6 3' }
+            : hoveredId
+              ? { stroke: '#d97a7a', strokeWidth: 1.2, opacity: 0.2, strokeDasharray: '6 3' }
+              : { stroke: '#d97a7a', strokeWidth: 1.2, opacity: 0.6, strokeDasharray: '6 3' },
+          zIndex: connected ? 1100 : 1,
+          labelStyle: { fill: '#d97a7a', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' },
+          labelBgStyle: { fill: '#1a1e25', fillOpacity: 0.92 },
+          labelBgPadding: [4, 2] as [number, number],
+          labelBgBorderRadius: 3,
+          markerEnd: undefined,
+        }
+      })
+
+    return [...fwdEdges, ...bkEdges]
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forwardEdges, backEdges, positions, hoveredId, nodeExpandedMap, visibleNodes])
 
   const onNodeDoubleClick = useCallback((_: unknown, node: Node) => {
     const { graphNode } = node.data as NodeData
     onOpenRecord(graphNode.file_path, graphNode.key)
   }, [onOpenRecord])
 
-  const onNodeMouseEnter = useCallback((_: unknown, node: Node) => {
-    setHoveredId(node.id)
-  }, [])
-
-  const onNodeMouseLeave = useCallback(() => {
-    setHoveredId(null)
-  }, [])
+  const onNodeMouseEnter = useCallback((_: unknown, node: Node) => setHoveredId(node.id), [])
+  const onNodeMouseLeave = useCallback(() => setHoveredId(null), [])
 
   function toggleField(name: string) {
     setEnabledFields(prev => {
       const next = new Set(prev)
-      if (next.has(name)) next.delete(name)
-      else next.add(name)
+      if (next.has(name)) next.delete(name); else next.add(name)
       return next
     })
   }
@@ -494,9 +680,9 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
             onNodeMouseEnter={onNodeMouseEnter}
             onNodeMouseLeave={onNodeMouseLeave}
             fitView
-            fitViewOptions={{ padding: 0.2, minZoom: 0.3, maxZoom: 1.2 }}
+            fitViewOptions={{ padding: 0.15, minZoom: 0.2, maxZoom: 1.2 }}
             proOptions={{ hideAttribution: true }}
-            minZoom={0.2}
+            minZoom={0.1}
             maxZoom={2}
           >
             <Background color="#262b34" gap={24} size={1} />
