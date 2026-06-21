@@ -505,21 +505,54 @@ interface Props {
 }
 
 export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
-  const allFields = useMemo(() => {
+  // Fields that actually appear in the subgraph for the current activeType.
+  // Mirrors layoutAll's visibility logic but ignores field filtering itself,
+  // so toggling all chips off doesn't hide the chip list.
+  const availableFields = useMemo(() => {
+    const allEdges = graphData.edges
+    let visibleSet: Set<string>
+    if (activeType) {
+      const touched = new Set<string>()
+      for (const e of allEdges) { touched.add(e.source); touched.add(e.target) }
+      const roots = graphData.nodes
+        .filter(n => n.in_focus_file && n.actual_type === activeType && touched.has(n.id))
+        .map(n => n.id)
+      visibleSet = new Set(roots)
+      const out = new Map<string, string[]>()
+      for (const e of allEdges) {
+        ;(out.get(e.source) ?? (out.set(e.source, []), out.get(e.source)!)).push(e.target)
+      }
+      const q = [...roots]
+      while (q.length) {
+        const cur = q.shift()!
+        for (const nb of out.get(cur) ?? []) {
+          if (!visibleSet.has(nb)) { visibleSet.add(nb); q.push(nb) }
+        }
+      }
+    } else {
+      visibleSet = new Set<string>()
+      for (const e of allEdges) { visibleSet.add(e.source); visibleSet.add(e.target) }
+    }
     const set = new Set<string>()
-    for (const e of graphData.edges) set.add(topLevelField(e.field_path))
+    for (const e of allEdges) {
+      if (visibleSet.has(e.source) && visibleSet.has(e.target)) {
+        set.add(topLevelField(e.field_path))
+      }
+    }
     return Array.from(set).sort()
-  }, [graphData])
+  }, [graphData, activeType])
 
-  const [enabledFields, setEnabledFields] = useState<Set<string>>(() => new Set(allFields))
+  const [enabledFields, setEnabledFields] = useState<Set<string>>(() => new Set(availableFields))
   useMemo(() => {
     setEnabledFields(prev => {
       const next = new Set<string>()
-      for (const f of allFields) if (prev.has(f) || prev.size === 0) next.add(f)
+      for (const f of availableFields) if (prev.has(f) || prev.size === 0) next.add(f)
       return next
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allFields.join('|')])
+  }, [availableFields.join('|')])
+
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false)
 
   // Expand states lifted here so layout recalcs on any change
   const [nodeExpandedMap, setNodeExpandedMap] = useState<Map<string, boolean>>(new Map())
@@ -701,39 +734,12 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
     })
   }
 
-  const allOn = enabledFields.size === allFields.length
+  const allOn = enabledFields.size === availableFields.length
   const noneOn = enabledFields.size === 0
+  const hiddenCount = availableFields.length - enabledFields.size
 
   return (
     <div className="graph-view-wrap" ref={wrapRef}>
-      {allFields.length > 0 && (
-        <div className="graph-toolbar">
-          <span className="graph-toolbar-label">字段过滤</span>
-          <div className="graph-field-chips">
-            {allFields.map(f => {
-              const on = enabledFields.has(f)
-              return (
-                <button
-                  key={f}
-                  className={`field-chip${on ? ' on' : ''}`}
-                  onClick={() => toggleField(f)}
-                  title={on ? '点击隐藏此字段的连线' : '点击显示此字段的连线'}
-                >
-                  {on ? <Icon name="check" size={10} /> : <Icon name="dot" size={10} />}
-                  {f}
-                </button>
-              )
-            })}
-          </div>
-          <span className="graph-toolbar-spacer" />
-          <button
-            className="btn"
-            onClick={() => setEnabledFields(allOn ? new Set() : new Set(allFields))}
-          >
-            {allOn ? '全部隐藏' : noneOn ? '全部显示' : '反选'}
-          </button>
-        </div>
-      )}
       <div className="graph-view">
         {rfNodes.length === 0 ? (
           <div className="empty-hint">无可显示的引用关系</div>
@@ -763,6 +769,48 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
               zoomable
             />
           </ReactFlow>
+        )}
+        {availableFields.length > 0 && (
+          <div className={`graph-filter-float${filterPanelOpen ? ' open' : ''}`}>
+            <button
+              className="graph-filter-trigger"
+              onClick={() => setFilterPanelOpen(o => !o)}
+              title="字段过滤"
+            >
+              <Icon name="filter" size={13} />
+              <span>字段</span>
+              {hiddenCount > 0 && <span className="graph-filter-badge">{hiddenCount}</span>}
+            </button>
+            {filterPanelOpen && (
+              <div className="graph-filter-panel">
+                <div className="graph-filter-head">
+                  <span>字段过滤</span>
+                  <button
+                    className="btn btn-link"
+                    onClick={() => setEnabledFields(allOn ? new Set() : new Set(availableFields))}
+                  >
+                    {allOn ? '全部隐藏' : noneOn ? '全部显示' : '反选'}
+                  </button>
+                </div>
+                <div className="graph-field-chips">
+                  {availableFields.map(f => {
+                    const on = enabledFields.has(f)
+                    return (
+                      <button
+                        key={f}
+                        className={`field-chip${on ? ' on' : ''}`}
+                        onClick={() => toggleField(f)}
+                        title={on ? '点击隐藏此字段的连线' : '点击显示此字段的连线'}
+                      >
+                        {on ? <Icon name="check" size={10} /> : <Icon name="dot" size={10} />}
+                        {f}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

@@ -1025,33 +1025,85 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   position: relative;
 }
 
-.graph-toolbar {
+/* Floating field-filter panel inside the graph view (top-right corner) */
+.graph-filter-float {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: none;
+}
+.graph-filter-float > * { pointer-events: auto; }
+.graph-filter-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--bg-2);
+  color: var(--text-dim);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  height: 28px;
+}
+.graph-filter-trigger:hover { background: var(--bg-3); color: var(--text); }
+.graph-filter-float.open .graph-filter-trigger {
+  background: var(--bg-3);
+  color: var(--text);
+  border-color: var(--accent);
+}
+.graph-filter-badge {
+  background: var(--accent);
+  color: var(--bg-0);
+  border-radius: 8px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 600;
+  min-width: 14px;
+  text-align: center;
+}
+.graph-filter-panel {
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 10px;
+  width: 240px;
+  max-height: 360px;
+  overflow-y: auto;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.graph-filter-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  background: var(--bg-2);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  flex-wrap: wrap;
-  min-height: 40px;
-}
-.graph-toolbar-label {
+  justify-content: space-between;
   font-size: 11px;
   font-weight: 600;
   color: var(--text-mute);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  white-space: nowrap;
+  letter-spacing: 0.4px;
 }
+.btn-link {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+}
+.btn-link:hover { color: var(--text); }
 .graph-field-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  flex: 1;
-  min-width: 0;
 }
-.graph-toolbar-spacer { flex: 1; }
 .field-chip {
   display: inline-flex;
   align-items: center;
