@@ -6,11 +6,11 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { GraphData, GraphNode, FieldCell } from '../bindings/index'
-import { DataCardNode, NODE_PEEK_FIELDS, countVisibleRows } from './DataCard'
+import { DataCardNode, CardHeader, NODE_PEEK_FIELDS, countVisibleRows } from './DataCard'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
 
-// ─── Constants (must match CSS / DataCard) ──────────────────────────────────
+// ─── Constants (must match CSS / DataCard) ────────────────────────────────── (must match CSS / DataCard) ──────────────────────────────────
 
 const NODE_W     = 280
 const COL_GAP    = 200
@@ -75,14 +75,7 @@ function CfdNode({ data }: NodeProps) {
         id="__out"
         style={expanded ? { opacity: 0, pointerEvents: 'none' } : {}}
       />
-      <div className="gn-header" style={{'--node-color': typeColor(gn.actual_type)} as React.CSSProperties}>
-        <div className="gn-color-bar" />
-        <span className="gn-key">{gn.key}</span>
-        <div className="gn-meta">
-          <span className="gn-type">{gn.actual_type}</span>
-          <span className="gn-file">{gn.file_path.split('/').pop()}</span>
-        </div>
-      </div>
+      <CardHeader recordKey={gn.key} actualType={gn.actual_type} filePath={gn.file_path} />
       {gn.is_collapsed ? (
         <div className="gn-collapsed">折叠（超出深度）</div>
       ) : (

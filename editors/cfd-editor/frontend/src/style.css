@@ -490,12 +490,17 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   overflow: hidden;
 }
 .table-detail-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
+  position: relative;
   flex-shrink: 0;
+}
+.table-detail-header .gn-header {
+  padding-right: 36px; /* space for close button */
+}
+.table-detail-close {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
 }
 .table-detail-body {
   flex: 1;
@@ -533,8 +538,6 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   color: var(--text-dim);
   font-weight: 600;
   font-size: 10.5px;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
 }
 
 .data-table td {
@@ -679,13 +682,9 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   background: var(--bg-1);
 }
 
-.rv-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.rv-main > .gn-header {
   margin-bottom: 18px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border);
+  border-radius: 0;
 }
 
 .rv-type-badge {
@@ -760,8 +759,6 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   color: var(--text-mute);
   border: 1px solid var(--border-strong);
   font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
   font-weight: 600;
   height: 18px;
   display: inline-flex;
