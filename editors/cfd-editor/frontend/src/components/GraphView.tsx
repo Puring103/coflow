@@ -52,32 +52,33 @@ function CfdNode({ id, data }: NodeProps) {
   useLayoutEffect(() => {
     const root = rootRef.current
     if (!root) return
-    const rootRect = root.getBoundingClientRect()
+    // Handles are positioned relative to React Flow's .react-flow__node wrapper,
+    // NOT our custom .graph-node child. Measure from the wrapper so handle Y
+    // values land on the actual rows.
+    const wrapper = (root.closest('.react-flow__node') as HTMLElement | null) ?? root
+    const wrapRect = wrapper.getBoundingClientRect()
     const headerY = headerRef.current
       ? (() => {
           const h = headerRef.current!.getBoundingClientRect()
-          return h.top - rootRect.top + h.height / 2
+          return h.top - wrapRect.top + h.height / 2
         })()
       : 21
     setHeaderCenterY(headerY)
     const next = new Map<string, number>()
     for (const path of outgoingPaths) {
-      // Prefer exact path match (e.g. expanded array element)
       let row = root.querySelector<HTMLElement>(
         `.dc-row[data-field-path="${CSS.escape(path)}"]`,
       )
       if (!row) {
-        // Fall back to top-level field row (array/dict collapsed but field visible)
         const top = path.match(/^[^.[]+/)?.[0]
         if (top) {
           row = root.querySelector<HTMLElement>(`.dc-row[data-field-name="${CSS.escape(top)}"]`)
         }
       }
-      // Final fallback: header center (field hidden under "+N more")
       next.set(path, row
         ? (() => {
             const r = row.getBoundingClientRect()
-            return r.top - rootRect.top + r.height / 2
+            return r.top - wrapRect.top + r.height / 2
           })()
         : headerY)
     }
