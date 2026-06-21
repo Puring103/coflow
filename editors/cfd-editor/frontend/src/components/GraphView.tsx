@@ -51,12 +51,20 @@ function CfdNode({ id, data }: NodeProps) {
   useLayoutEffect(() => {
     const root = rootRef.current
     if (!root) return
-    const rootRect = root.getBoundingClientRect()
+    // Use offsetTop/offsetHeight (CSS pixels relative to offsetParent =
+    // .graph-node) instead of getBoundingClientRect, which gives screen
+    // pixels distorted by React Flow's viewport zoom transform.
+    function offsetWithin(el: HTMLElement, ancestor: HTMLElement): number {
+      let y = 0
+      let cur: HTMLElement | null = el
+      while (cur && cur !== ancestor) {
+        y += cur.offsetTop
+        cur = cur.offsetParent as HTMLElement | null
+      }
+      return y
+    }
     const headerY = headerRef.current
-      ? (() => {
-          const h = headerRef.current!.getBoundingClientRect()
-          return h.top - rootRect.top + h.height / 2
-        })()
+      ? offsetWithin(headerRef.current, root) + headerRef.current.offsetHeight / 2
       : 21
     const next = new Map<string, number>()
     for (const path of outgoingPaths) {
@@ -70,13 +78,9 @@ function CfdNode({ id, data }: NodeProps) {
         }
       }
       next.set(path, row
-        ? (() => {
-            const r = row.getBoundingClientRect()
-            return r.top - rootRect.top + r.height / 2
-          })()
+        ? offsetWithin(row, root) + row.offsetHeight / 2
         : headerY)
     }
-    // Only update state if values actually changed (avoid re-render loops)
     setHeaderCenterY(prev => prev === headerY ? prev : headerY)
     setPathOffsets(prev => {
       if (prev.size !== next.size) return next
