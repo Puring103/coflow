@@ -1,7 +1,7 @@
 /* ─── Reset & base ─── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-:root {
+:root, [data-theme="dark"] {
   /* Surface levels — narrow contrast range, IDE-style */
   --bg-0: #16181d;            /* chrome / topbar / diag-panel */
   --bg-1: #1c1f25;            /* app background / content */
@@ -16,16 +16,58 @@
   --text:      #d6d9e0;
   --text-dim:  #969ba6;
   --text-mute: #6b707b;
-  --text-key:  #87b3d9;       /* muted blue, less saturated */
+  --text-key:  #87b3d9;
 
-  /* Semantic — muted, IDE-friendly */
-  --accent:  #6b8fc4;         /* steel blue */
+  /* Semantic */
+  --accent:  #6b8fc4;
   --accent-2:#4f73a8;
   --red:     #d97a7a;
   --yellow:  #d9b97a;
   --green:   #7ec2a0;
   --purple:  #a890c4;
 
+  /* Graph view */
+  --graph-bg-grid: #262b34;
+  --graph-edge: #4a525e;
+  --graph-edge-label: #7a828f;
+  --graph-edge-label-bg: #1a1e25;
+  --graph-back-edge: #d97a7a;
+  --graph-edge-highlight: #8aa8d4;
+  --minimap-mask: rgba(14, 16, 20, 0.75);
+}
+
+[data-theme="light"] {
+  --bg-0: #ffffff;
+  --bg-1: #fafbfc;
+  --bg-2: #f1f3f5;
+  --bg-3: #e7eaee;
+  --bg-4: #dadee4;
+
+  --border:        #dde1e6;
+  --border-strong: #c5cad1;
+
+  --text:      #1f2329;
+  --text-dim:  #4a5260;
+  --text-mute: #7a8290;
+  --text-key:  #2f6cb5;
+
+  --accent:  #3d6cb0;
+  --accent-2:#5285c8;
+  --red:     #c64545;
+  --yellow:  #b88200;
+  --green:   #2e8a5e;
+  --purple:  #8866b8;
+
+  --graph-bg-grid: #d8dde4;
+  --graph-edge: #9ba4b0;
+  --graph-edge-label: #6a727f;
+  --graph-edge-label-bg: #ffffff;
+  --graph-back-edge: #c64545;
+  --graph-edge-highlight: #2f6cb5;
+  --minimap-mask: rgba(255, 255, 255, 0.75);
+}
+
+:root {
   /* Sizing */
   --radius-sm: 4px;
   --radius:    6px;
@@ -1170,7 +1212,7 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   transition: opacity 0.1s;
 }
 .graph-view-wrap.is-hovering .react-flow__edge.hover-highlight .react-flow__edge-path {
-  stroke: #8aa8d4 !important;
+  stroke: var(--graph-edge-highlight) !important;
   stroke-width: 2 !important;
 }
 
