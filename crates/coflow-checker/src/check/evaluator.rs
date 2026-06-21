@@ -65,17 +65,20 @@ impl<'a> CheckEvaluator<'a> {
 
     fn eval_stmt(&mut self, stmt: &CftSchemaCheckStmt) -> EvalFlow {
         match stmt {
-            CftSchemaCheckStmt::Expr(expr) => match self.eval_expr(expr) {
-                Ok(value) if matches!(value.value, CheckValue::Bool(true)) => EvalFlow::Continue,
-                Ok(value) if matches!(value.value, CheckValue::Bool(false)) => {
-                    self.diag_at(
-                        CfdErrorCode::CheckFailed,
-                        value.path,
-                        "check condition evaluated to false",
-                    );
+            CftSchemaCheckStmt::Expr(expr) => match self.eval_expr_explained(expr) {
+                Ok((value, _)) if matches!(value.value, CheckValue::Bool(true)) => {
                     EvalFlow::Continue
                 }
-                Ok(value) => {
+                Ok((value, explanation)) if matches!(value.value, CheckValue::Bool(false)) => {
+                    let mut msg = String::from("check condition evaluated to false");
+                    if let Some(detail) = explanation {
+                        msg.push_str(": ");
+                        msg.push_str(&detail);
+                    }
+                    self.diag_at(CfdErrorCode::CheckFailed, value.path, msg);
+                    EvalFlow::Continue
+                }
+                Ok((value, _)) => {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         value.path,
@@ -227,6 +230,78 @@ impl<'a> CheckEvaluator<'a> {
                 );
                 None
             }
+        }
+    }
+
+    /// Evaluates a top-level check expression and, if it produced `false`,
+    /// returns a human-readable detail describing *why* it failed (which side
+    /// of a comparison was what value, etc). Returns `None` when the
+    /// expression isn't one of the shapes we know how to explain.
+    fn eval_expr_explained(
+        &mut self,
+        expr: &CftSchemaCheckExpr,
+    ) -> Result<(LocatedCheckValue, Option<String>), ()> {
+        match &expr.kind {
+            CftSchemaCheckExprKind::CmpChain { first, rest } => {
+                // Re-implement CmpChain so we can capture the failing pair.
+                let mut lhs = self.eval_expr(first)?;
+                for (op, rhs_expr) in rest {
+                    let rhs = self.eval_expr(rhs_expr)?;
+                    let path = lhs.path.clone().or_else(|| rhs.path.clone());
+                    if !self.compare(*op, &lhs.value, &rhs.value, rhs.path.clone())? {
+                        let detail = format!(
+                            "{} {} {}",
+                            format_value_for_message(&lhs.value),
+                            cmp_op_str(*op),
+                            format_value_for_message(&rhs.value),
+                        );
+                        return Ok((LocatedCheckValue::new(CheckValue::Bool(false), path), Some(detail)));
+                    }
+                    lhs = rhs;
+                }
+                Ok((LocatedCheckValue::value(CheckValue::Bool(true)), None))
+            }
+            CftSchemaCheckExprKind::Unary {
+                op: CftSchemaUnaryOp::Not,
+                expr: inner,
+            } => {
+                let inner_val = self.eval_expr(inner)?;
+                if matches!(inner_val.value, CheckValue::Bool(true)) {
+                    let detail = format!(
+                        "expected !{}, but inner expression was true",
+                        format_value_for_message(&inner_val.value),
+                    );
+                    return Ok((
+                        LocatedCheckValue::new(CheckValue::Bool(false), inner_val.path),
+                        Some(detail),
+                    ));
+                }
+                self.eval_unary(CftSchemaUnaryOp::Not, inner_val).map(|v| (v, None))
+            }
+            CftSchemaCheckExprKind::BinOp {
+                op: CftSchemaBinOp::And,
+                lhs,
+                rhs,
+            } => {
+                // Short-circuit AND: report which conjunct failed.
+                let lv = self.eval_expr(lhs)?;
+                if matches!(lv.value, CheckValue::Bool(false)) {
+                    return Ok((
+                        LocatedCheckValue::new(CheckValue::Bool(false), lv.path),
+                        Some("left conjunct was false".to_string()),
+                    ));
+                }
+                let rv = self.eval_expr(rhs)?;
+                if matches!(rv.value, CheckValue::Bool(false)) {
+                    return Ok((
+                        LocatedCheckValue::new(CheckValue::Bool(false), rv.path),
+                        Some("right conjunct was false".to_string()),
+                    ));
+                }
+                let path = lv.path.or(rv.path);
+                Ok((LocatedCheckValue::new(CheckValue::Bool(true), path), None))
+            }
+            _ => self.eval_expr(expr).map(|v| (v, None)),
         }
     }
 
@@ -1195,6 +1270,41 @@ impl<'a> CheckEvaluator<'a> {
         };
         self.diagnostics
             .push(CfdDiagnostic::error(code, message).with_primary(self.root_record, path));
+    }
+}
+
+fn cmp_op_str(op: CftSchemaCmpOp) -> &'static str {
+    match op {
+        CftSchemaCmpOp::Eq => "==",
+        CftSchemaCmpOp::Ne => "!=",
+        CftSchemaCmpOp::Lt => "<",
+        CftSchemaCmpOp::Le => "<=",
+        CftSchemaCmpOp::Gt => ">",
+        CftSchemaCmpOp::Ge => ">=",
+    }
+}
+
+/// Render a CheckValue as a short token for inclusion in a diagnostic
+/// message — strings are quoted, collections summarize, records show their key.
+fn format_value_for_message(value: &CheckValue) -> String {
+    match value {
+        CheckValue::Null => "null".to_string(),
+        CheckValue::Bool(v) => v.to_string(),
+        CheckValue::Int(v) => v.to_string(),
+        CheckValue::Float(v) => v.to_string(),
+        CheckValue::String(s) => format!("\"{s}\""),
+        CheckValue::Enum(e) => match &e.variant {
+            Some(variant) => format!("{}.{}", e.enum_name, variant),
+            None => format!("{}({})", e.enum_name, e.value),
+        },
+        CheckValue::EnumNamespace(name) => name.clone(),
+        CheckValue::Record(_) => "<record>".to_string(),
+        CheckValue::Entry(entry) => format!(
+            "<entry key={}>",
+            format_value_for_message(&entry.key),
+        ),
+        CheckValue::Array { items, .. } => format!("<array len={}>", items.len()),
+        CheckValue::Dict { entries, .. } => format!("<dict len={}>", entries.len()),
     }
 }
 
