@@ -510,15 +510,7 @@ fn build_session(yaml_path_in: &Path) -> Result<(EditorSession, SessionSnapshotP
     let schema = match compile_schema_project(&project, None) {
         Ok(build) => {
             for diag in build.diagnostics {
-                diagnostics.push(DiagnosticItem {
-                    severity: severity_str(&diag),
-                    code: format!("{:?}", diag.code),
-                    stage: "SCHEMA".to_string(),
-                    message: diag.message,
-                    file_path: None,
-                    record_key: None,
-                    field_path: None,
-                });
+                diagnostics.push(diagnostic_from_cft_schema(&diag));
             }
             build.container.unwrap_or_else(CftContainer::new)
         }
@@ -1133,6 +1125,33 @@ fn format_cfd_path(path: &coflow_data_model::CfdPath) -> String {
 fn severity_str(diag: &coflow_cft::CftDiagnostic) -> String {
     let _ = diag;
     "error".to_string()
+}
+
+fn diagnostic_from_cft_schema(diag: &coflow_cft::CftDiagnostic) -> DiagnosticItem {
+    let mut message = diag.message.clone();
+    if let Some(primary) = &diag.primary {
+        message.push_str(&format!("\n  at {}", primary.module.as_str()));
+        if let Some(extra) = &primary.message {
+            message.push_str(&format!("\n  → {extra}"));
+        }
+    }
+    for related in &diag.related {
+        let detail = related.message.as_deref().unwrap_or("");
+        if detail.is_empty() {
+            message.push_str(&format!("\n  · {}", related.module.as_str()));
+        } else {
+            message.push_str(&format!("\n  · {}: {}", related.module.as_str(), detail));
+        }
+    }
+    DiagnosticItem {
+        severity: severity_str(diag),
+        code: diag.code.as_str().to_string(),
+        stage: diag.stage.to_string(),
+        message,
+        file_path: None,
+        record_key: None,
+        field_path: None,
+    }
 }
 
 fn path_to_slash(path: &Path) -> String {
