@@ -1,18 +1,20 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useReactTable, getCoreRowModel, flexRender, createColumnHelper } from '@tanstack/react-table'
-import type { FileRecords, RecordRow, FieldValue, FieldPathSegment } from '../bindings/index'
+import type { FileRecords, RecordRow, FieldValue, FieldPathSegment, DiagnosticItem } from '../bindings/index'
 import { DataCardCompact, DataCardExpanded, CardHeader, InlineEditor } from './DataCard'
 import { Icon } from './Icon'
+import { diagnosticsForRecord } from '../App'
 
 interface Props {
   data: FileRecords
   activeType: string
   readOnly?: boolean
+  diagnostics?: DiagnosticItem[]
   onOpenRecord: (key: string) => void
   onWriteField?: (recordKey: string, fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<RecordRow | void>
 }
 
-export function TableView({ data, activeType, readOnly, onOpenRecord, onWriteField }: Props) {
+export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecord, onWriteField }: Props) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; key: string } | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [newKey, setNewKey] = useState('')
@@ -33,6 +35,34 @@ export function TableView({ data, activeType, readOnly, onOpenRecord, onWriteFie
     [data.records, activeType]
   )
 
+  // Build a (recordKey, topLevelFieldName) → severity index for this file so
+  // table cells can light up red/yellow without recomputing on every render.
+  const cellDiagIndex = useMemo(() => {
+    const m = new Map<string, 'error' | 'warning' | 'info'>()
+    if (!diagnostics) return m
+    for (const d of diagnostics) {
+      if (d.file_path !== data.file_path || !d.record_key) continue
+      // Take the first path segment as the column we'll mark.
+      const top = d.field_path
+        ? d.field_path.split(/[.[]/, 1)[0]
+        : null
+      const key = top ? `${d.record_key}::${top}` : `${d.record_key}::*`
+      const cur = m.get(key)
+      const rank = (s: 'error' | 'warning' | 'info') => s === 'error' ? 3 : s === 'warning' ? 2 : 1
+      if (!cur || rank(d.severity) > rank(cur)) m.set(key, d.severity)
+    }
+    return m
+  }, [diagnostics, data.file_path])
+  const recordSeverity = (key: string): 'error' | 'warning' | null => {
+    let sev: 'error' | 'warning' | null = null
+    for (const d of diagnostics ?? []) {
+      if (d.file_path !== data.file_path || d.record_key !== key) continue
+      if (d.severity === 'error') return 'error'
+      if (d.severity === 'warning') sev = 'warning'
+    }
+    return sev
+  }
+
   const allFieldNames = useMemo(
     () => Array.from(new Set(filtered.flatMap(r => r.fields.map(f => f.name)))),
     [filtered]
@@ -52,19 +82,22 @@ export function TableView({ data, activeType, readOnly, onOpenRecord, onWriteFie
           header: name,
           cell: ({ row }) => {
             const f = row.original.fields.find(f => f.name === name)
-            if (!f) return <span className="dc-null">—</span>
+            const sev = cellDiagIndex.get(`${row.original.key}::${name}`)
+            if (!f) return <span className={`dc-null${sev ? ' dc-cell-diag dc-cell-diag-' + sev : ''}`}>—</span>
             return (
-              <EditableCell
-                value={f.value}
-                editable={canEdit}
-                onCommit={canEdit ? next => onWriteField!(row.original.key, [{ kind: 'field', name }], next) : undefined}
-              />
+              <span className={sev ? `dc-cell-diag dc-cell-diag-${sev}` : undefined} title={sev ? findDiagMessage(diagnostics, data.file_path, row.original.key, name) : undefined}>
+                <EditableCell
+                  value={f.value}
+                  editable={canEdit}
+                  onCommit={canEdit ? next => onWriteField!(row.original.key, [{ kind: 'field', name }], next) : undefined}
+                />
+              </span>
             )
           },
         })
       ),
     ]
-  }, [allFieldNames, canEdit, onWriteField])
+  }, [allFieldNames, canEdit, onWriteField, cellDiagIndex, diagnostics, data.file_path])
 
   const table = useReactTable({
     data: filtered,
@@ -89,10 +122,12 @@ export function TableView({ data, activeType, readOnly, onOpenRecord, onWriteFie
               ))}
             </thead>
             <tbody>
-              {table.getRowModel().rows.map(row => (
+              {table.getRowModel().rows.map(row => {
+                const rowSev = recordSeverity(row.original.key)
+                return (
                 <tr
                   key={row.id}
-                  className={`table-row${selectedKey === row.original.key ? ' selected' : ''}`}
+                  className={`table-row${selectedKey === row.original.key ? ' selected' : ''}${rowSev ? ' table-row-' + rowSev : ''}`}
                   onClick={() => setSelectedKey(row.original.key)}
                   onContextMenu={e => {
                     e.preventDefault()
@@ -105,7 +140,8 @@ export function TableView({ data, activeType, readOnly, onOpenRecord, onWriteFie
                     </td>
                   ))}
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
           {filtered.length === 0 && (
@@ -157,6 +193,7 @@ export function TableView({ data, activeType, readOnly, onOpenRecord, onWriteFie
             <DataCardExpanded
               fields={selectedRecord.fields}
               onEdit={readOnly || !onWriteField ? undefined : (path, val) => { onWriteField(selectedRecord.key, path, val) }}
+              diagnostics={diagnostics ? diagnosticsForRecord(diagnostics, data.file_path, selectedRecord.key) : []}
             />
           </div>
         </aside>
@@ -185,6 +222,23 @@ export function TableView({ data, activeType, readOnly, onOpenRecord, onWriteFie
       )}
     </div>
   )
+}
+
+function findDiagMessage(
+  diags: DiagnosticItem[] | undefined,
+  filePath: string,
+  recordKey: string,
+  topField: string,
+): string | undefined {
+  if (!diags) return undefined
+  const msgs: string[] = []
+  for (const d of diags) {
+    if (d.file_path !== filePath || d.record_key !== recordKey) continue
+    const top = d.field_path ? d.field_path.split(/[.[]/, 1)[0] : null
+    if (top !== topField) continue
+    msgs.push(d.message)
+  }
+  return msgs.length ? msgs.join('\n') : undefined
 }
 
 function EditableCell({
