@@ -550,18 +550,18 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
     [graphData, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap]
   )
 
-  // Build edge sourceHandle: if source node is expanded and edge field matches a visible ref field,
-  // use the per-field handle; otherwise use the default __out handle.
+  // Use the per-field handle whenever the field row is visible (peek or full).
+  // Only fall back to __out (header center) when the field is hidden under
+  // the "+N more" button in collapsed view.
   function edgeHandleId(
     sourceId: string,
     fieldPath: string,
   ): { sourceHandle: string; targetHandle: string } {
     const expanded = nodeExpandedMap.get(sourceId) ?? false
-    if (!expanded) return { sourceHandle: '__out', targetHandle: '__in' }
-    const top = topLevelField(fieldPath)
     const srcNode = visibleNodes.find(n => n.id === sourceId)
     if (!srcNode) return { sourceHandle: '__out', targetHandle: '__in' }
-    const visible = srcNode.fields.slice(0, nodeExpandedMap.get(sourceId) ? undefined : NODE_PEEK_FIELDS)
+    const visible = expanded ? srcNode.fields : srcNode.fields.slice(0, NODE_PEEK_FIELDS)
+    const top = topLevelField(fieldPath)
     const match = visible.find(f => f.name === top && f.value.kind === 'Ref')
     return match
       ? { sourceHandle: `field-${top}`, targetHandle: '__in' }

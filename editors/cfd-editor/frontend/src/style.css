@@ -1108,6 +1108,10 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 .graph-view-wrap.is-hovering .graph-node.hover-highlight {
   opacity: 1;
   filter: none;
+  border-color: var(--node-color, var(--accent));
+  box-shadow: 0 0 0 1px var(--node-color, var(--accent)),
+              0 4px 18px rgba(0, 0, 0, 0.5);
+  transition: border-color 0.1s, box-shadow 0.1s;
 }
 .graph-view-wrap.is-hovering .react-flow__edge.hover-dim {
   opacity: 0.08;
