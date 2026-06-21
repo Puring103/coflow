@@ -1,6 +1,6 @@
-import { useState, type CSSProperties } from 'react'
+import { useState } from 'react'
 import type { FileRecords } from '../bindings/index'
-import { DataCardExpanded } from './DataCard'
+import { DataCardExpanded, CardHeader } from './DataCard'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
 
@@ -44,10 +44,7 @@ export function RecordView({ data, recordKey, typeFilter, onOpenRecord }: Props)
       </div>
 
       <div className="rv-main">
-        <div className="rv-header">
-          <span className="rv-type-badge" style={{ '--type-color': typeColor(record.actual_type) } as CSSProperties}>{record.actual_type}</span>
-          <span className="rv-key">{record.key}</span>
-        </div>
+        <CardHeader recordKey={record.key} actualType={record.actual_type} />
         {showSearch && (
           <div className="rv-search-bar">
             <Icon name="search" size={13} className="rv-search-icon" />

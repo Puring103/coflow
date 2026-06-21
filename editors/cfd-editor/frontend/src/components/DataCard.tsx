@@ -1,6 +1,31 @@
 import { useState, type CSSProperties } from 'react'
 import type { FieldValue, FieldCell, DictKey } from '../bindings/index'
 import { Icon } from './Icon'
+import { typeColor } from '../utils/typeColor'
+
+// ─── Shared card header (used in graph nodes, record view, table detail) ─────
+
+export function CardHeader({
+  recordKey,
+  actualType,
+  filePath,
+}: {
+  recordKey: string
+  actualType: string
+  filePath?: string
+}) {
+  const color = typeColor(actualType)
+  return (
+    <div className="gn-header" style={{ '--node-color': color } as CSSProperties}>
+      <div className="gn-color-bar" />
+      <span className="gn-key">{recordKey}</span>
+      <div className="gn-meta">
+        <span className="gn-type">{actualType}</span>
+        {filePath && <span className="gn-file">{filePath.split('/').pop()}</span>}
+      </div>
+    </div>
+  )
+}
 
 export const NODE_PEEK_FIELDS = 4
 const MAX_DEPTH = 5
