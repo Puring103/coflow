@@ -8,15 +8,17 @@ use coflow_api::{
     LoadContext, ProjectSourceRef, ProviderRegistry, ResolvedSource,
     SourceLocationSpec, SourceResolveContext,
 };
-use coflow_cft::CftContainer;
+use coflow_cfd::{parse_cfd, CfdAst};
+use coflow_cft::{CftContainer, CftSchemaDefaultValue, CftSchemaTypeRef};
 use coflow_checker::CfdCheckExt;
 use coflow_data_model::{CfdDataModel, CfdDictKey, CfdRecord, CfdRecordId, CfdValue};
 use coflow_project::{compile_schema_project, Project, SourceConfig};
 
-use crate::convert::{cfd_value_to_wire, record_to_field_cells};
+use crate::convert::{cfd_value_to_wire, record_to_field_cells_with_ast};
+use crate::patch;
 use crate::types::{
-    DiagnosticItem, FieldCell, FieldValue, FileRecords, FileTreeNode, GraphData, GraphEdge,
-    GraphNode, ProjectSnapshot, RecordRow,
+    DiagnosticItem, FieldCell, FieldPathSegment, FieldValue, FileRecords, FileTreeNode, GraphData,
+    GraphEdge, GraphNode, ProjectSnapshot, RecordRow,
 };
 
 const GRAPH_DEPTH: usize = 3;
@@ -24,6 +26,9 @@ const GRAPH_DEPTH: usize = 3;
 /// One loaded project.
 pub struct EditorSession {
     pub project_root: PathBuf,
+    /// Original `coflow.yaml` path — needed to fully reload the project after
+    /// a write so all data sources (cfd / excel / lark) are re-resolved.
+    pub yaml_path: PathBuf,
     pub schema: CftContainer,
     pub model: CfdDataModel,
     pub diagnostics: Vec<DiagnosticItem>,
@@ -33,6 +38,10 @@ pub struct EditorSession {
     pub key_to_file: HashMap<String, String>,
     /// `file path → ordered record keys`.
     pub file_to_keys: BTreeMap<String, Vec<String>>,
+    /// Original `.cfd` source text + parsed AST, keyed by relative path.
+    /// Only populated for files loaded via the cfd loader (`.cfd` text files).
+    /// Used by write commands for span-patch updates.
+    pub cfd_sources: HashMap<String, (String, CfdAst)>,
 }
 
 impl std::fmt::Debug for EditorSession {
@@ -100,15 +109,18 @@ impl SessionStore {
         let mut records = Vec::with_capacity(keys.len());
         let mut type_seen = Vec::new();
         let mut type_set = HashSet::new();
+        let ast_records = session.cfd_sources.get(file_path).map(|(_, ast)| ast);
         for key in &keys {
             if let Some((_id, record)) = lookup_record_by_key(&session.model, key) {
                 if type_set.insert(record.actual_type.clone()) {
                     type_seen.push(record.actual_type.clone());
                 }
+                let ast_rec = ast_records
+                    .and_then(|ast| ast.records.iter().find(|r| r.key == *key));
                 let mut row = RecordRow {
                     key: record.key.clone(),
                     actual_type: record.actual_type.clone(),
-                    fields: record_to_field_cells(record, &session.model),
+                    fields: record_to_field_cells_with_ast(record, &session.model, ast_rec),
                 };
                 annotate_ref_files(&mut row.fields, session);
                 records.push(row);
@@ -137,10 +149,142 @@ impl SessionStore {
         }
         let (_id, record) = lookup_record_by_key(&session.model, record_key)
             .ok_or_else(|| format!("record `{record_key}` not found"))?;
+        let ast_rec = session
+            .cfd_sources
+            .get(file_path)
+            .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == record_key));
         let mut row = RecordRow {
             key: record.key.clone(),
             actual_type: record.actual_type.clone(),
-            fields: record_to_field_cells(record, &session.model),
+            fields: record_to_field_cells_with_ast(record, &session.model, ast_rec),
+        };
+        annotate_ref_files(&mut row.fields, session);
+        Ok(row)
+    }
+
+    /// Build a default `FieldValue::Object` for the given schema type, filling
+    /// each field with either its declared default or a kind-appropriate zero.
+    /// Used by the UI to switch a Ref field to an inline Object without
+    /// producing schema-invalid empty `{}`.
+    pub fn make_default_object(&self, id: u32, type_name: &str) -> Result<FieldValue, String> {
+        let inner = self.inner.lock().map_err(|_| "session store poisoned")?;
+        let session = inner
+            .sessions
+            .get(&id)
+            .ok_or_else(|| format!("unknown session id {id}"))?;
+        let ty = session
+            .schema
+            .resolve_type(type_name)
+            .ok_or_else(|| format!("type `{type_name}` not found in schema"))?;
+        let mut fields = Vec::new();
+        for f in &ty.all_fields {
+            let value = default_value_for_ty(&f.ty_ref, f.default.as_ref(), &session.schema);
+            fields.push(FieldCell { name: f.name.clone(), value, is_spread: false });
+        }
+        Ok(FieldValue::Object {
+            actual_type: type_name.to_string(),
+            fields,
+        })
+    }
+
+    pub fn get_enum_variants(&self, id: u32, enum_name: &str) -> Result<Vec<String>, String> {
+        let inner = self.inner.lock().map_err(|_| "session store poisoned")?;
+        let session = inner
+            .sessions
+            .get(&id)
+            .ok_or_else(|| format!("unknown session id {id}"))?;
+        Ok(session
+            .schema
+            .resolve_enum(enum_name)
+            .map(|e| e.variants.iter().map(|v| v.name.clone()).collect())
+            .unwrap_or_default())
+    }
+
+    pub fn get_ref_targets(
+        &self,
+        id: u32,
+        expected_type: &str,
+    ) -> Result<Vec<String>, String> {
+        let inner = self.inner.lock().map_err(|_| "session store poisoned")?;
+        let session = inner
+            .sessions
+            .get(&id)
+            .ok_or_else(|| format!("unknown session id {id}"))?;
+        let mut keys: Vec<String> = session
+            .model
+            .records()
+            .filter(|(_, r)| session.schema.is_assignable(&r.actual_type, expected_type))
+            .map(|(_, r)| r.key.clone())
+            .collect();
+        keys.sort();
+        keys.dedup();
+        Ok(keys)
+    }
+
+    pub fn write_field(
+        &self,
+        id: u32,
+        file_path: &str,
+        record_key: &str,
+        field_path: &[FieldPathSegment],
+        new_value: &FieldValue,
+    ) -> Result<RecordRow, String> {
+        let mut inner = self.inner.lock().map_err(|_| "session store poisoned")?;
+        let session = inner
+            .sessions
+            .get_mut(&id)
+            .ok_or_else(|| format!("unknown session id {id}"))?;
+
+        let (source, ast) = session
+            .cfd_sources
+            .get(file_path)
+            .ok_or_else(|| format!("file '{file_path}' is not an editable .cfd source"))?
+            .clone();
+
+        let field_exists = ast.records.iter().any(|r| {
+            r.key == record_key
+                && match field_path.first() {
+                    Some(FieldPathSegment::Field { name }) => {
+                        r.fields.iter().any(|f| &f.name == name)
+                            || r.entries.iter().any(|e| matches!(
+                                e,
+                                coflow_cfd::CfdBlockEntry::Field(f) if &f.name == name
+                            ))
+                    }
+                    _ => false,
+                }
+        });
+
+        let result = if field_exists {
+            patch::apply_patch(&source, &ast, record_key, field_path, new_value)?
+        } else if let Some(FieldPathSegment::Field { name }) = field_path.first() {
+            patch::insert_field(&source, &ast, record_key, name, new_value)?
+        } else {
+            return Err("cannot insert: field_path must start with a Field segment".to_string());
+        };
+
+        let abs_path = session.project_root.join(file_path);
+        std::fs::write(&abs_path, &result.new_source)
+            .map_err(|e| format!("cannot write {file_path}: {e}"))?;
+
+        // Full project reload — re-resolve every source (cfd / excel / lark) so
+        // the data model fully reflects the new on-disk state, including
+        // cross-file Refs to records in other files.
+        let yaml_path = session.yaml_path.clone();
+        let (new_session, _) = build_session(&yaml_path)?;
+        *session = new_session;
+
+        // Re-fetch the updated record to return.
+        let (_id, record) = lookup_record_by_key(&session.model, record_key)
+            .ok_or_else(|| format!("record `{record_key}` not found after write"))?;
+        let ast_rec = session
+            .cfd_sources
+            .get(file_path)
+            .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == record_key));
+        let mut row = RecordRow {
+            key: record.key.clone(),
+            actual_type: record.actual_type.clone(),
+            fields: record_to_field_cells_with_ast(record, &session.model, ast_rec),
         };
         annotate_ref_files(&mut row.fields, session);
         Ok(row)
@@ -346,10 +490,11 @@ fn diagnostic_from_api(d: &coflow_api::Diagnostic) -> DiagnosticItem {
     }
 }
 
-fn build_session(yaml_path: &Path) -> Result<(EditorSession, SessionSnapshotParts), String> {
+fn build_session(yaml_path_in: &Path) -> Result<(EditorSession, SessionSnapshotParts), String> {
+    let yaml_path = yaml_path_in.to_path_buf();
     let mut diagnostics: Vec<DiagnosticItem> = Vec::new();
 
-    let project = Project::open_schema_only(Some(yaml_path))
+    let project = Project::open_schema_only(Some(yaml_path.as_path()))
         .map_err(|err| format!("failed to open project: {err}"))?;
     let project_root = project.root_dir.clone();
 
@@ -465,15 +610,32 @@ fn build_session(yaml_path: &Path) -> Result<(EditorSession, SessionSnapshotPart
 
     let file_tree = build_file_tree(&project_root, &source_files, &ext_whitelist);
 
+    // Capture original .cfd source + AST for files we loaded, so write commands
+    // can do span-patches and reload. Files we can't read are skipped silently —
+    // they simply won't be editable; the read path already issued a diagnostic.
+    let mut cfd_sources: HashMap<String, (String, CfdAst)> = HashMap::new();
+    for file_path in file_to_keys.keys() {
+        if !file_path.to_lowercase().ends_with(".cfd") {
+            continue;
+        }
+        let abs = project_root.join(file_path);
+        if let Ok(src) = std::fs::read_to_string(&abs) {
+            let (ast, _) = parse_cfd(&src);
+            cfd_sources.insert(file_path.clone(), (src, ast));
+        }
+    }
+
     Ok((
         EditorSession {
             project_root,
+            yaml_path,
             schema,
             model,
             diagnostics: diagnostics.clone(),
             source_files,
             key_to_file,
             file_to_keys,
+            cfd_sources,
         },
         SessionSnapshotParts { file_tree },
     ))
@@ -580,6 +742,72 @@ fn sort_tree(nodes: &mut Vec<FileTreeNode>) {
     }
 }
 
+fn default_value_for_ty(
+    ty: &CftSchemaTypeRef,
+    declared_default: Option<&CftSchemaDefaultValue>,
+    schema: &CftContainer,
+) -> FieldValue {
+    if let Some(d) = declared_default {
+        return default_from_schema_default(d, schema);
+    }
+    default_zero_for_ty(ty, schema)
+}
+
+fn default_from_schema_default(
+    d: &CftSchemaDefaultValue,
+    schema: &CftContainer,
+) -> FieldValue {
+    let _ = schema;
+    match d {
+        CftSchemaDefaultValue::Null => FieldValue::Null,
+        CftSchemaDefaultValue::Int(v) => FieldValue::Int { v: *v },
+        CftSchemaDefaultValue::Float(v) => FieldValue::Float { v: *v },
+        CftSchemaDefaultValue::Bool(v) => FieldValue::Bool { v: *v },
+        CftSchemaDefaultValue::String(v) => FieldValue::Str { v: v.clone() },
+        CftSchemaDefaultValue::Enum {
+            enum_name,
+            variant,
+            value,
+        } => FieldValue::Enum {
+            enum_name: enum_name.clone(),
+            variant: variant.clone(),
+            int_value: *value,
+        },
+        CftSchemaDefaultValue::EmptyArray => FieldValue::Array { items: Vec::new() },
+        CftSchemaDefaultValue::EmptyObject => FieldValue::Dict { entries: Vec::new() },
+    }
+}
+
+fn default_zero_for_ty(ty: &CftSchemaTypeRef, schema: &CftContainer) -> FieldValue {
+    match ty {
+        CftSchemaTypeRef::Int => FieldValue::Int { v: 0 },
+        CftSchemaTypeRef::Float => FieldValue::Float { v: 0.0 },
+        CftSchemaTypeRef::Bool => FieldValue::Bool { v: false },
+        CftSchemaTypeRef::String => FieldValue::Str { v: String::new() },
+        CftSchemaTypeRef::Array(_) => FieldValue::Array { items: Vec::new() },
+        CftSchemaTypeRef::Dict(_, _) => FieldValue::Dict { entries: Vec::new() },
+        CftSchemaTypeRef::Nullable(_) => FieldValue::Null,
+        CftSchemaTypeRef::Named(name) => {
+            if let Some(en) = schema.resolve_enum(name) {
+                if let Some(first) = en.variants.first() {
+                    return FieldValue::Enum {
+                        enum_name: name.clone(),
+                        variant: first.name.clone(),
+                        int_value: first.value,
+                    };
+                }
+            }
+            // Otherwise it's an Object type — best-effort empty object;
+            // caller should usually pass through `make_default_object` to
+            // fully populate fields.
+            FieldValue::Object {
+                actual_type: name.clone(),
+                fields: Vec::new(),
+            }
+        }
+    }
+}
+
 fn lookup_record_by_key<'a>(
     model: &'a CfdDataModel,
     key: &str,
@@ -651,7 +879,11 @@ fn build_graph(session: &EditorSession, file_path: &str) -> GraphData {
         let fields = if is_collapsed {
             Vec::new()
         } else {
-            let mut f = record_to_field_cells(record, &session.model);
+            let ast_rec = session
+                .cfd_sources
+                .get(&host_file)
+                .and_then(|(_, ast)| ast.records.iter().find(|r| r.key == key));
+            let mut f = record_to_field_cells_with_ast(record, &session.model, ast_rec);
             annotate_ref_files(&mut f, session);
             f
         };

@@ -9,8 +9,10 @@ import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
 import { MOCK_PROJECT, MOCK_FILE_RECORDS, MOCK_GRAPH } from './mock'
 import * as api from './api'
-import type { ProjectSnapshot, FileRecords, GraphData } from './bindings/index'
+import type { ProjectSnapshot, FileRecords, GraphData, FieldValue, FieldPathSegment } from './bindings/index'
 import { typeColor } from './utils/typeColor'
+import { isEditableFile } from './utils/editable'
+import { setActiveSession } from './utils/editContext'
 import './style.css'
 
 export default function App() {
@@ -114,10 +116,39 @@ export default function App() {
     [router]
   )
 
+  const writeField = useCallback(
+    async (filePath: string, recordKey: string, fieldPath: FieldPathSegment[], newValue: FieldValue) => {
+      if (!project || !api.isTauri) return
+      try {
+        const updated = await api.writeField(
+          project.session_id,
+          filePath,
+          recordKey,
+          fieldPath,
+          newValue,
+        )
+        // Backend does a full project reload — every cached view is stale.
+        // Refresh the edited file eagerly; drop other caches so they re-load on next nav.
+        const refreshed = await api.getFileRecords(project.session_id, filePath)
+        setFileDataCache({ [filePath]: refreshed })
+        setGraphCache({})
+        return updated
+      } catch (err) {
+        setErrorMsg(`写入失败: ${String(err)}`)
+      }
+    },
+    [project]
+  )
+
   const currentRoute = router.current
   const activeFile = currentRoute?.file ?? null
   const activeFileData = activeFile ? fileDataCache[activeFile] : null
   const activeGraph = activeFile ? graphCache[activeFile] : null
+  const readOnly = !isEditableFile(activeFile)
+
+  useEffect(() => {
+    setActiveSession(project?.session_id ?? null)
+  }, [project?.session_id])
 
   // Sync activeType when file or its type set changes
   useEffect(() => {
@@ -221,6 +252,12 @@ export default function App() {
                     <span className={i === arr.length - 1 ? 'breadcrumb-leaf' : ''}>{part}</span>
                   </span>
                 ))}
+                {readOnly && (
+                  <span className="breadcrumb-readonly" title="非 .cfd 源文件，仅可查看">
+                    <Icon name="lock" size={11} />
+                    只读
+                  </span>
+                )}
               </div>
 
               {/* Type tabs row */}
@@ -263,7 +300,9 @@ export default function App() {
                   <TableView
                     data={activeFileData}
                     activeType={activeType}
+                    readOnly={readOnly}
                     onOpenRecord={key => openRecord(currentRoute.file, key)}
+                    onWriteField={(rk, path, val) => writeField(currentRoute.file, rk, path, val)}
                   />
                 )}
                 {currentRoute.view === 'record' && (
@@ -271,7 +310,9 @@ export default function App() {
                     data={activeFileData}
                     recordKey={currentRoute.recordKey}
                     typeFilter={activeType}
+                    readOnly={readOnly}
                     onOpenRecord={key => openRecord(currentRoute.file, key)}
+                    onWriteField={(rk, path, val) => writeField(currentRoute.file, rk, path, val)}
                   />
                 )}
                 {currentRoute.view === 'graph' && (
@@ -280,6 +321,7 @@ export default function App() {
                       graphData={activeGraph}
                       activeType={activeType}
                       onOpenRecord={(file, key) => openRecord(file, key)}
+                      onWriteField={writeField}
                     />
                   ) : (
                     <div className="empty-hint">加载图谱中…</div>

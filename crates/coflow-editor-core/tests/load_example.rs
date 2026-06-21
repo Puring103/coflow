@@ -92,6 +92,24 @@ fn load_example_project() {
     let xlsx_graph = store.get_graph(rpg_snap.session_id, "data/rpg.xlsx").unwrap();
     println!("rpg.xlsx graph nodes={} edges={}", xlsx_graph.nodes.len(), xlsx_graph.edges.len());
 
+    // progression.cfd lives under sources/data; verify it loads with Stage records.
+    let prog = store
+        .get_file_records(rpg_snap.session_id, "data/cfd/progression.cfd")
+        .unwrap();
+    let stage_count = prog.records.iter().filter(|r| r.actual_type == "Stage").count();
+    assert_eq!(stage_count, 3, "expected 3 Stage records in progression.cfd, got {stage_count}");
+
+    // Inspect the first Item record to confirm featured_stage resolved
+    let xlsx_recs2 = store.get_file_records(rpg_snap.session_id, "data/rpg.xlsx").unwrap();
+    let healing = xlsx_recs2.records.iter().find(|r| r.key == "healing_potion").unwrap();
+    let fs = healing.fields.iter().find(|f| f.name == "featured_stage").unwrap();
+    println!("healing_potion.featured_stage = {:?}", fs.value);
+
+    println!("rpg diagnostics dump ({}):", rpg_snap.diagnostics.len());
+    for d in &rpg_snap.diagnostics {
+        println!("  [{}] {} ({}/{})", d.severity, d.message, d.code, d.stage);
+    }
+
     // Try every source file
     for path in &paths {
         println!("--- {path} ---");
