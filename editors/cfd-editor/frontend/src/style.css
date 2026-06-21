@@ -831,83 +831,70 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   text-overflow: ellipsis;
 }
 .vc-null { color: var(--text-mute); font-style: italic; }
+/* Chips are flat inside the inspector — no border/bg by default. The row's
+ * column already provides separation, and stacking decorations reads as noise
+ * once you have refs+enums+dropdowns visible at the same depth. */
 .vc-bool {
-  padding: 0 7px;
-  border-radius: 2px;
-  background: var(--bg-3);
   color: var(--text-mute);
-  border: 1px solid var(--border-strong);
-  font-size: 10.5px;
   font-weight: 600;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
 }
-.vc-bool.on {
-  color: var(--text);
-  background: var(--bg-4);
-}
+.vc-bool.on { color: var(--green); }
 .vc-num { color: var(--text); font-variant-numeric: tabular-nums; }
 .vc-str { color: var(--text); }
 .vc-enum {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 0 7px 0 5px;
-  border-radius: 2px;
-  background: var(--bg-3);
   color: var(--text);
-  border: 1px solid var(--border-strong);
-  font-size: 11px;
-  height: 18px;
+  font-size: 11.5px;
 }
-.vc-enum-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 1px;
-  background: var(--text-dim);
+.vc-enum::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--purple);
   flex-shrink: 0;
 }
+.vc-enum-dot { display: none; }
 .vc-ref {
   display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 7px 0 5px;
-  border-radius: 2px;
-  background: var(--bg-3);
+  align-items: baseline;
+  gap: 5px;
   color: var(--text);
-  border: 1px solid var(--border-strong);
-  font-size: 11px;
-  height: 18px;
+  font-size: 11.5px;
+  position: relative;
+  padding-left: 10px;
 }
-.vc-ref-key { font-weight: 500; }
+.vc-ref::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.vc-ref > svg { display: none; }
+.vc-ref-key { font-weight: 500; color: var(--text-key); }
 .vc-ref-type { color: var(--text-mute); font-size: 10px; }
 .vc-obj, .vc-type {
   color: var(--text-dim);
-  background: var(--bg-3);
-  padding: 0 7px;
-  border-radius: 2px;
   font-size: 10.5px;
-  font-weight: 500;
-  border: 1px solid var(--border-strong);
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
+  font-weight: 600;
+  letter-spacing: 0.3px;
 }
 .vc-arr, .vc-dict { color: var(--text-dim); }
 .vc-count {
-  background: var(--bg-3);
-  color: var(--text-dim);
-  border-radius: 2px;
-  padding: 0 6px;
+  color: var(--text-mute);
   font-size: 10px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  height: 17px;
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid var(--border);
 }
+.vc-count::before { content: '·'; margin-right: 4px; opacity: 0.6; }
 
 /* ─── Inspector grid ─── */
 .dc-inspector {
@@ -922,7 +909,7 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 
 .dc-row {
   display: grid;
-  grid-template-columns: minmax(120px, 30%) 1fr;
+  grid-template-columns: minmax(140px, 32%) 1fr;
   align-items: stretch;
   min-height: 26px;
   border-bottom: 1px solid var(--border);
@@ -934,28 +921,34 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 10px 4px 10px;
+  padding: 4px 10px;
   color: var(--text-dim);
   font-size: 11.5px;
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  background: rgba(0, 0, 0, 0.18);
+  background: transparent;
   border-right: 1px solid var(--border);
 }
 .dc-row-value {
-  padding: 5px 10px;
+  padding: 4px 8px 4px 10px;
   overflow: hidden;
   display: flex;
   align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 .dc-row-value-inner {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 18px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
+}
+.dc-row-value-inner > .vc {
+  flex: 0 1 auto;
   min-width: 0;
 }
 .dc-row-value-inner.editable {
@@ -969,7 +962,7 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   outline: 1px solid var(--border-strong);
 }
 
-/* Foldout (Object/Array/Dict) header row */
+/* Foldout (Object/Array/Dict) header row — slightly stronger label, no fill */
 .dc-row-foldout {
   cursor: pointer;
   user-select: none;
@@ -977,10 +970,8 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 .dc-row-foldout .dc-row-label {
   color: var(--text);
   font-weight: 600;
-  background: var(--bg-3);
 }
-.dc-row-foldout:hover .dc-row-label { background: var(--bg-4); }
-.dc-row-foldout:hover .dc-row-value { background: var(--bg-3); }
+.dc-row-foldout:hover { background: var(--bg-3); }
 .dc-fold-arrow {
   display: inline-flex;
   width: 12px;
@@ -991,10 +982,25 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 }
 .dc-row-foldout:hover .dc-fold-arrow { color: var(--text); }
 
+/* Tree guide line for nested rows: shows a faint vertical at each indent level */
+.dc-row[data-depth="1"] .dc-row-label,
+.dc-row[data-depth="2"] .dc-row-label,
+.dc-row[data-depth="3"] .dc-row-label,
+.dc-row[data-depth="4"] .dc-row-label,
+.dc-row[data-depth="5"] .dc-row-label {
+  background-image: linear-gradient(to right, var(--border) 1px, transparent 1px);
+  background-repeat: no-repeat;
+  background-size: 1px 100%;
+}
+.dc-row[data-depth="1"] .dc-row-label { background-position: 8px 0; }
+.dc-row[data-depth="2"] .dc-row-label { background-position: 22px 0; }
+.dc-row[data-depth="3"] .dc-row-label { background-position: 36px 0; }
+.dc-row[data-depth="4"] .dc-row-label { background-position: 50px 0; }
+.dc-row[data-depth="5"] .dc-row-label { background-position: 64px 0; }
+
 .dc-row-empty .dc-row-label {
   color: var(--text-mute);
   font-style: italic;
-  background: var(--bg-2);
 }
 
 /* ─── Expandable cell (TableView) ─── */
@@ -1030,32 +1036,49 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   min-height: 24px;
 }
 
-.dc-row-spread {
-  opacity: 0.65;
-}
-.dc-row-spread .dc-row-label::after {
-  content: ' (spread)';
-  color: var(--text-mute);
+.dc-row-spread .dc-row-label {
   font-style: italic;
-  font-size: 10px;
-  margin-left: 4px;
+  color: var(--text-mute);
 }
+.dc-row-spread .dc-row-value-inner::after {
+  content: 'spread';
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 0 5px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.dc-row-spread .dc-row-value-inner > .vc { opacity: 0.7; }
 
+/* Collection items: controls slide in from the right on hover and use a
+ * subtle gradient backdrop so they read as a separate strip from the value. */
 .dc-collection-row {
   position: relative;
 }
 .dc-collection-row .dc-row-controls {
   position: absolute;
-  top: 0;
-  right: 6px;
-  bottom: 0;
-  display: none;
+  top: 1px;
+  right: 4px;
+  bottom: 1px;
+  display: flex;
   align-items: center;
   gap: 2px;
+  padding-left: 18px;
+  background: linear-gradient(to right, transparent, var(--bg-3) 30%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s;
   z-index: 1;
 }
-.dc-collection-row:hover .dc-row-controls {
-  display: flex;
+.dc-collection-row:hover .dc-row-controls,
+.dc-collection-row:focus-within .dc-row-controls {
+  opacity: 1;
+  pointer-events: auto;
 }
 .btn-tiny {
   background: var(--bg-3);
@@ -1082,14 +1105,20 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   border-color: var(--red);
 }
 .dc-row-mode-btn {
-  margin-left: 8px;
+  margin-left: auto;
   opacity: 0;
   transition: opacity 0.1s;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  font-size: 9.5px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
 }
 .dc-row:hover .dc-row-mode-btn,
 .dc-row-foldout:hover .dc-row-mode-btn {
-  opacity: 1;
+  opacity: 0.85;
 }
+.dc-row-mode-btn:hover { opacity: 1 !important; }
 .dc-row-add {
   display: flex;
   align-items: center;
@@ -1128,7 +1157,7 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 
 .dc-input {
   background: var(--bg-1);
-  border: 1px solid var(--text-dim);
+  border: 1px solid var(--accent);
   color: var(--text);
   padding: 3px 8px;
   border-radius: var(--radius-sm);
@@ -1136,7 +1165,8 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   font-family: 'JetBrains Mono', monospace;
   outline: none;
   width: 100%;
-  max-width: 320px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 /* ─── Node mode (graph card) — inspector inside a node ─── */
@@ -1168,10 +1198,10 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   padding: 3px 8px;
 }
 .dc-node-card .dc-row-foldout .dc-row-label {
-  background: rgba(255, 255, 255, 0.04);
   color: var(--text-dim);
-  font-weight: 500;
+  font-weight: 600;
 }
+.dc-node-card .dc-row-foldout:hover { background: rgba(255, 255, 255, 0.04); }
 .dc-node-card .vc { font-size: 10.5px; }
 .dc-node-card .dc-fold-arrow { width: 11px; height: 11px; }
 .dc-node-more {
