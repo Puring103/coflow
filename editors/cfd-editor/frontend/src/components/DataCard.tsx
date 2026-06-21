@@ -304,14 +304,21 @@ function plainText(v: FieldValue): string {
 
 const NODE_PEEK_FIELDS = 4
 
-export function DataCardNode({ fields }: { fields: FieldCell[] }) {
-  const [showAll, setShowAll] = useState(fields.length <= NODE_PEEK_FIELDS)
+export function DataCardNode({
+  fields,
+  showAll,
+  onToggle,
+}: {
+  fields: FieldCell[]
+  showAll: boolean
+  onToggle: () => void
+}) {
   const visible = showAll ? fields : fields.slice(0, NODE_PEEK_FIELDS)
   return (
     <div className="dc-node-card">
       <DataCardExpanded fields={visible} />
       {fields.length > NODE_PEEK_FIELDS && (
-        <button className="dc-node-more" onClick={() => setShowAll(s => !s)}>
+        <button className="dc-node-more" onClick={onToggle}>
           {showAll ? '收起' : `显示全部 (+${fields.length - NODE_PEEK_FIELDS})`}
         </button>
       )}
