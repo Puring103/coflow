@@ -973,11 +973,56 @@ fn diagnostic_from_project(
     } else {
         Some(path_to_slash(Path::new(&diag.path)))
     };
+    // Include sheet/cell location and related labels in the rendered message
+    // so users see *where* in the source the error came from, not just *what*.
+    let mut message = diag.message.clone();
+    let mut loc_parts: Vec<String> = Vec::new();
+    if let Some(sheet) = &diag.sheet {
+        loc_parts.push(format!("sheet '{sheet}'"));
+    }
+    if let Some(cell) = &diag.cell {
+        loc_parts.push(format!("cell {cell}"));
+    }
+    if diag.start_line > 0 || diag.start_character > 0 {
+        loc_parts.push(format!(
+            "line {}:{}",
+            diag.start_line + 1,
+            diag.start_character + 1
+        ));
+    }
+    if !loc_parts.is_empty() {
+        message.push_str(&format!("\n  at {}", loc_parts.join(", ")));
+    }
+    for related in &diag.related {
+        let lbl = related.label.as_deref().unwrap_or("");
+        let mut loc = String::new();
+        if !related.path.is_empty() {
+            loc.push_str(&path_to_slash(Path::new(&related.path)));
+        }
+        if let Some(sheet) = &related.sheet {
+            if !loc.is_empty() {
+                loc.push(' ');
+            }
+            loc.push_str(&format!("sheet '{sheet}'"));
+        }
+        if let Some(cell) = &related.cell {
+            if !loc.is_empty() {
+                loc.push(' ');
+            }
+            loc.push_str(&format!("cell {cell}"));
+        }
+        match (loc.is_empty(), lbl.is_empty()) {
+            (true, true) => {}
+            (false, true) => message.push_str(&format!("\n  · {loc}")),
+            (true, false) => message.push_str(&format!("\n  · {lbl}")),
+            (false, false) => message.push_str(&format!("\n  · {loc}: {lbl}")),
+        }
+    }
     DiagnosticItem {
         severity: diag.severity.clone(),
         code: diag.code.clone(),
         stage: diag.stage.clone(),
-        message: diag.message.clone(),
+        message,
         file_path,
         record_key: None,
         field_path: None,
@@ -1008,11 +1053,56 @@ fn diagnostic_from_cfd(
             field_path = Some(format_cfd_path(&label.path));
         }
     }
+    // The bare diag.message is often a one-line summary like
+    // "type mismatch". The detailed context lives on primary.message and the
+    // related labels — surface them all so users see *why* and *where*.
+    let mut message = diag.message.clone();
+    if let Some(primary) = &diag.primary {
+        let mut loc = String::new();
+        if let Some(rec_id) = primary.record {
+            if let Some(record) = model.record(rec_id) {
+                loc.push_str(&record.key);
+            }
+        }
+        if !primary.path.segments.is_empty() {
+            if !loc.is_empty() {
+                loc.push('.');
+            }
+            loc.push_str(&format_cfd_path(&primary.path));
+        }
+        if !loc.is_empty() {
+            message.push_str(&format!("\n  at {loc}"));
+        }
+        if let Some(extra) = &primary.message {
+            message.push_str(&format!("\n  → {extra}"));
+        }
+    }
+    for related in &diag.related {
+        let mut loc = String::new();
+        if let Some(rec_id) = related.record {
+            if let Some(record) = model.record(rec_id) {
+                loc.push_str(&record.key);
+            }
+        }
+        if !related.path.segments.is_empty() {
+            if !loc.is_empty() {
+                loc.push('.');
+            }
+            loc.push_str(&format_cfd_path(&related.path));
+        }
+        let detail = related.message.as_deref().unwrap_or("");
+        match (loc.is_empty(), detail.is_empty()) {
+            (true, true) => {}
+            (false, true) => message.push_str(&format!("\n  · {loc}")),
+            (true, false) => message.push_str(&format!("\n  · {detail}")),
+            (false, false) => message.push_str(&format!("\n  · {loc}: {detail}")),
+        }
+    }
     DiagnosticItem {
         severity,
         code: diag.code.as_str().to_string(),
         stage,
-        message: diag.message.clone(),
+        message,
         file_path,
         record_key,
         field_path,
