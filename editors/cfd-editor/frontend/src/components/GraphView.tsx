@@ -53,28 +53,35 @@ function CfdNode({ id, data }: NodeProps) {
     const root = rootRef.current
     if (!root) return
     const rootRect = root.getBoundingClientRect()
+    const headerY = headerRef.current
+      ? (() => {
+          const h = headerRef.current!.getBoundingClientRect()
+          return h.top - rootRect.top + h.height / 2
+        })()
+      : 21
+    setHeaderCenterY(headerY)
     const next = new Map<string, number>()
     for (const path of outgoingPaths) {
-      // Prefer exact path match (visible specific Ref row, e.g. Element 1)
+      // Prefer exact path match (e.g. expanded array element)
       let row = root.querySelector<HTMLElement>(
         `.dc-row[data-field-path="${CSS.escape(path)}"]`,
       )
       if (!row) {
-        // Fall back to the top-level field row (array/dict collapsed)
+        // Fall back to top-level field row (array/dict collapsed but field visible)
         const top = path.match(/^[^.[]+/)?.[0]
         if (top) {
           row = root.querySelector<HTMLElement>(`.dc-row[data-field-name="${CSS.escape(top)}"]`)
         }
       }
-      if (!row) continue
-      const r = row.getBoundingClientRect()
-      next.set(path, r.top - rootRect.top + r.height / 2)
+      // Final fallback: header center (field hidden under "+N more")
+      next.set(path, row
+        ? (() => {
+            const r = row.getBoundingClientRect()
+            return r.top - rootRect.top + r.height / 2
+          })()
+        : headerY)
     }
     setPathOffsets(next)
-    if (headerRef.current) {
-      const h = headerRef.current.getBoundingClientRect()
-      setHeaderCenterY(h.top - rootRect.top + h.height / 2)
-    }
     updateNodeInternals(id)
   }, [outgoingPaths, expanded, gn.fields, id, updateNodeInternals])
 
