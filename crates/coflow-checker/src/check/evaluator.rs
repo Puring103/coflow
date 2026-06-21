@@ -223,10 +223,13 @@ impl<'a> CheckEvaluator<'a> {
                     })
                     .collect(),
             ),
-            _ => {
+            other => {
                 self.diag(
                     CfdErrorCode::CheckEvalTypeError,
-                    "quantifier target is not a collection",
+                    format!(
+                        "quantifier target is not a collection: got {}",
+                        format_value_for_message(&other)
+                    ),
                 );
                 None
             }
@@ -425,7 +428,7 @@ impl<'a> CheckEvaluator<'a> {
             self.diag_at(
                 CfdErrorCode::CheckNullAccess,
                 target.path,
-                "field access on null value",
+                format!("field access on null value: tried to read `.{name}` on null"),
             );
             return Err(());
         }
@@ -456,16 +459,19 @@ impl<'a> CheckEvaluator<'a> {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         target.path,
-                        format!("dict entry has no field `{name}`"),
+                        format!("dict entry has no field `{name}` (only `key` and `value`)"),
                     );
                     Err(())
                 }
             },
-            _ => {
+            other => {
                 self.diag_at(
                     CfdErrorCode::CheckEvalTypeError,
                     target.path,
-                    "field access target is not an object",
+                    format!(
+                        "field access target is not an object: got {} when reading `.{name}`",
+                        format_value_for_message(&other)
+                    ),
                 );
                 Err(())
             }
@@ -500,42 +506,49 @@ impl<'a> CheckEvaluator<'a> {
             self.diag_at(
                 CfdErrorCode::CheckNullAccess,
                 target.path,
-                "index access on null value",
+                format!(
+                    "index access on null value: tried to read [{}] on null",
+                    format_value_for_message(&index.value)
+                ),
             );
             return Err(());
         }
         match target.value {
             CheckValue::Array { items, .. } => {
-                let CheckValue::Int(index) = index.value else {
+                let CheckValue::Int(idx) = index.value else {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         index.path,
-                        "array index is not int",
+                        format!(
+                            "array index is not int: got {}",
+                            format_value_for_message(&index.value)
+                        ),
                     );
                     return Err(());
                 };
-                let Ok(index) = usize::try_from(index) else {
+                let len = items.len();
+                let Ok(idx_us) = usize::try_from(idx) else {
                     self.diag_at(
                         CfdErrorCode::CheckIndexOutOfBounds,
                         target.path,
-                        "array index is negative",
+                        format!("array index is negative: got {idx} (length is {len})"),
                     );
                     return Err(());
                 };
                 items
-                    .get(index)
+                    .get(idx_us)
                     .cloned()
                     .map(|value| {
                         LocatedCheckValue::new(
                             value,
-                            target.path.clone().map(|path| path.index(index)),
+                            target.path.clone().map(|path| path.index(idx_us)),
                         )
                     })
                     .ok_or_else(|| {
                         self.diag_at(
                             CfdErrorCode::CheckIndexOutOfBounds,
                             target.path,
-                            "array index is out of bounds",
+                            format!("array index is out of bounds: index {idx_us}, length {len}"),
                         );
                     })
             }
@@ -544,10 +557,14 @@ impl<'a> CheckEvaluator<'a> {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         index.path,
-                        "dict index is not a valid key",
+                        format!(
+                            "dict index is not a valid key: got {}",
+                            format_value_for_message(&index.value)
+                        ),
                     );
                     return Err(());
                 };
+                let key_label = format_value_for_message(&index.value);
                 entries
                     .into_iter()
                     .find(|entry| entry.key_key().is_some_and(|entry_key| entry_key == key))
@@ -556,15 +573,19 @@ impl<'a> CheckEvaluator<'a> {
                         self.diag_at(
                             CfdErrorCode::CheckMissingDictKey,
                             target.path,
-                            "dict key is missing",
+                            format!("dict key {key_label} is not present"),
                         );
                     })
             }
-            _ => {
+            other => {
                 self.diag_at(
                     CfdErrorCode::CheckEvalTypeError,
                     target.path,
-                    "index target is not a collection",
+                    format!(
+                        "index target is not a collection: got {} when reading [{}]",
+                        format_value_for_message(&other),
+                        format_value_for_message(&index.value)
+                    ),
                 );
                 Err(())
             }
@@ -588,11 +609,15 @@ impl<'a> CheckEvaluator<'a> {
         if self.schema.enums.contains_key(name) {
             let arg = self.exactly_one_arg(args, "enum constructor expects one argument")?;
             let arg_value = self.eval_expr(arg)?;
+            let arg_kind = arg_value.value.clone();
             let CheckValue::Int(value) = arg_value.value else {
                 self.diag_at(
                     CfdErrorCode::CheckEvalTypeError,
                     arg_value.path,
-                    "enum constructor arg is not int",
+                    format!(
+                        "enum constructor arg is not int: got {}",
+                        format_value_for_message(&arg_kind)
+                    ),
                 );
                 return Err(());
             };
@@ -625,11 +650,14 @@ impl<'a> CheckEvaluator<'a> {
                         CheckValue::Int(entries.len() as i64),
                         arg_value.path,
                     )),
-                    _ => {
+                    other => {
                         self.diag_at(
                             CfdErrorCode::CheckEvalTypeError,
                             arg_value.path,
-                            "len expects array or dict",
+                            format!(
+                                "len expects array or dict, got {}",
+                                format_value_for_message(&other)
+                            ),
                         );
                         Err(())
                     }
@@ -646,11 +674,15 @@ impl<'a> CheckEvaluator<'a> {
             Builtin::Unique => {
                 let arg = &args[0];
                 let arg_value = self.eval_expr(arg)?;
+                let arg_kind = arg_value.value.clone();
                 let CheckValue::Array { items, .. } = arg_value.value else {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         arg_value.path,
-                        "unique expects array",
+                        format!(
+                            "unique expects array, got {}",
+                            format_value_for_message(&arg_kind)
+                        ),
                     );
                     return Err(());
                 };
@@ -660,7 +692,10 @@ impl<'a> CheckEvaluator<'a> {
                         self.diag_at(
                             CfdErrorCode::CheckEvalTypeError,
                             arg_value.path.clone(),
-                            "unique element is not comparable",
+                            format!(
+                                "unique element is not comparable: got {}",
+                                format_value_for_message(&item)
+                            ),
                         );
                         return Err(());
                     };
@@ -681,6 +716,7 @@ impl<'a> CheckEvaluator<'a> {
             Builtin::Keys => {
                 let arg = &args[0];
                 let arg_value = self.eval_expr(arg)?;
+                let arg_kind = arg_value.value.clone();
                 let CheckValue::Dict {
                     entries, key_type, ..
                 } = arg_value.value
@@ -688,7 +724,10 @@ impl<'a> CheckEvaluator<'a> {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         arg_value.path,
-                        "keys expects dict",
+                        format!(
+                            "keys expects dict, got {}",
+                            format_value_for_message(&arg_kind)
+                        ),
                     );
                     return Err(());
                 };
@@ -703,6 +742,7 @@ impl<'a> CheckEvaluator<'a> {
             Builtin::Values => {
                 let arg = &args[0];
                 let arg_value = self.eval_expr(arg)?;
+                let arg_kind = arg_value.value.clone();
                 let CheckValue::Dict {
                     entries,
                     value_type,
@@ -712,7 +752,10 @@ impl<'a> CheckEvaluator<'a> {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         arg_value.path,
-                        "values expects dict",
+                        format!(
+                            "values expects dict, got {}",
+                            format_value_for_message(&arg_kind)
+                        ),
                     );
                     return Err(());
                 };
@@ -726,25 +769,29 @@ impl<'a> CheckEvaluator<'a> {
             }
             Builtin::Matches => {
                 let value = self.eval_expr(&args[0])?;
+                let value_kind = value.value.clone();
                 let CheckValue::String(text) = value.value else {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         value.path,
-                        "matches value is not string",
+                        format!(
+                            "matches value is not string: got {}",
+                            format_value_for_message(&value_kind)
+                        ),
                     );
                     return Err(());
                 };
                 let CftSchemaCheckExprKind::String(pattern) = &args[1].kind else {
                     self.diag(
                         CfdErrorCode::CheckEvalTypeError,
-                        "matches pattern is not literal",
+                        "matches pattern must be a string literal",
                     );
                     return Err(());
                 };
-                let regex = Regex::new(pattern).map_err(|_| {
+                let regex = Regex::new(pattern).map_err(|err| {
                     self.diag(
                         CfdErrorCode::CheckEvalTypeError,
-                        "regex pattern cannot be compiled",
+                        format!("regex pattern `{pattern}` cannot be compiled: {err}"),
                     );
                 })?;
                 Ok(LocatedCheckValue::new(
@@ -793,11 +840,16 @@ impl<'a> CheckEvaluator<'a> {
         args: &[CftSchemaCheckExpr],
     ) -> Result<LocatedCheckValue, ()> {
         let arg_value = self.eval_expr(&args[0])?;
+        let arg_kind = arg_value.value.clone();
         let CheckValue::Array { items, .. } = arg_value.value else {
             self.diag_at(
                 CfdErrorCode::CheckEvalTypeError,
                 arg_value.path,
-                "min/max expects array",
+                format!(
+                    "{} expects array, got {}",
+                    builtin.name(),
+                    format_value_for_message(&arg_kind)
+                ),
             );
             return Err(());
         };
@@ -805,7 +857,7 @@ impl<'a> CheckEvaluator<'a> {
             self.diag_at(
                 CfdErrorCode::CheckEmptyMinMax,
                 arg_value.path,
-                "min/max called on empty array",
+                format!("{} called on empty array", builtin.name()),
             );
             return Err(());
         }
@@ -816,7 +868,11 @@ impl<'a> CheckEvaluator<'a> {
             self.diag_at(
                 CfdErrorCode::CheckEmptyMinMax,
                 arg_value.path,
-                "min/max called with no non-null values",
+                format!(
+                    "{} called with all-null array (length {})",
+                    builtin.name(),
+                    items.len()
+                ),
             );
             return Err(());
         };
@@ -832,6 +888,7 @@ impl<'a> CheckEvaluator<'a> {
 
     fn eval_sum(&mut self, args: &[CftSchemaCheckExpr]) -> Result<LocatedCheckValue, ()> {
         let arg_value = self.eval_expr(&args[0])?;
+        let arg_kind = arg_value.value.clone();
         let CheckValue::Array {
             items,
             element_type,
@@ -840,7 +897,10 @@ impl<'a> CheckEvaluator<'a> {
             self.diag_at(
                 CfdErrorCode::CheckEvalTypeError,
                 arg_value.path,
-                "sum expects array",
+                format!(
+                    "sum expects array, got {}",
+                    format_value_for_message(&arg_kind)
+                ),
             );
             return Err(());
         };
@@ -856,7 +916,7 @@ impl<'a> CheckEvaluator<'a> {
                         self.diag_at(
                             CfdErrorCode::CheckEvalTypeError,
                             arg_value.path.clone(),
-                            "integer sum overflowed",
+                            format!("integer sum overflowed: {int_sum} + {value}"),
                         );
                         return Err(());
                     };
@@ -875,11 +935,14 @@ impl<'a> CheckEvaluator<'a> {
                     float_sum += value;
                 }
                 CheckValue::Null => {}
-                _ => {
+                other => {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         arg_value.path.clone(),
-                        "sum item is not numeric",
+                        format!(
+                            "sum item is not numeric: got {}",
+                            format_value_for_message(&other)
+                        ),
                     );
                     return Err(());
                 }
@@ -912,7 +975,10 @@ impl<'a> CheckEvaluator<'a> {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         collection.path.clone(),
-                        "contains dict key is not a valid key",
+                        format!(
+                            "contains dict key is not a valid key: got {}",
+                            format_value_for_message(value)
+                        ),
                     );
                     return Err(());
                 };
@@ -920,11 +986,14 @@ impl<'a> CheckEvaluator<'a> {
                     .iter()
                     .any(|entry| entry.key_key() == Some(key.clone())))
             }
-            _ => {
+            other => {
                 self.diag_at(
                     CfdErrorCode::CheckEvalTypeError,
                     collection.path.clone(),
-                    "contains expects array or dict",
+                    format!(
+                        "contains expects array or dict, got {}",
+                        format_value_for_message(other)
+                    ),
                 );
                 Err(())
             }
@@ -941,9 +1010,11 @@ impl<'a> CheckEvaluator<'a> {
             (CftSchemaUnaryOp::Not, CheckValue::Bool(value)) => {
                 Ok(LocatedCheckValue::new(CheckValue::Bool(!value), path))
             }
-            (CftSchemaUnaryOp::Neg, CheckValue::Int(value)) => {
-                self.checked_int(value.checked_neg(), path, "integer negation overflowed")
-            }
+            (CftSchemaUnaryOp::Neg, CheckValue::Int(value)) => self.checked_int(
+                value.checked_neg(),
+                path,
+                format!("integer negation overflowed: -({value})"),
+            ),
             (CftSchemaUnaryOp::Neg, CheckValue::Float(value)) => {
                 Ok(LocatedCheckValue::new(CheckValue::Float(-value), path))
             }
@@ -954,11 +1025,15 @@ impl<'a> CheckEvaluator<'a> {
                 CheckValue::Enum(self.enum_with_value(&value.enum_name, !value.value)),
                 path,
             )),
-            _ => {
+            (op, value) => {
                 self.diag_at(
                     CfdErrorCode::CheckEvalTypeError,
                     path,
-                    "unsupported unary operation",
+                    format!(
+                        "unsupported unary operation: {} on {}",
+                        unary_op_str(op),
+                        format_value_for_message(&value)
+                    ),
                 );
                 Err(())
             }
@@ -975,11 +1050,15 @@ impl<'a> CheckEvaluator<'a> {
             CftSchemaBinOp::Or => {
                 let lhs = self.eval_expr(lhs)?;
                 let lhs_path = lhs.path.clone();
+                let bad_lhs_value = lhs.value.clone();
                 let CheckValue::Bool(lhs) = lhs.value else {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         lhs_path,
-                        "lhs is not bool",
+                        format!(
+                            "lhs is not bool: got {}",
+                            format_value_for_message(&bad_lhs_value)
+                        ),
                     );
                     return Err(());
                 };
@@ -988,11 +1067,15 @@ impl<'a> CheckEvaluator<'a> {
                 }
                 let rhs = self.eval_expr(rhs)?;
                 let rhs_path = rhs.path.clone();
+                let bad_rhs_value = rhs.value.clone();
                 let CheckValue::Bool(rhs) = rhs.value else {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         rhs_path,
-                        "rhs is not bool",
+                        format!(
+                            "rhs is not bool: got {}",
+                            format_value_for_message(&bad_rhs_value)
+                        ),
                     );
                     return Err(());
                 };
@@ -1001,11 +1084,15 @@ impl<'a> CheckEvaluator<'a> {
             CftSchemaBinOp::And => {
                 let lhs = self.eval_expr(lhs)?;
                 let lhs_path = lhs.path.clone();
+                let bad_lhs_value = lhs.value.clone();
                 let CheckValue::Bool(lhs) = lhs.value else {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         lhs_path,
-                        "lhs is not bool",
+                        format!(
+                            "lhs is not bool: got {}",
+                            format_value_for_message(&bad_lhs_value)
+                        ),
                     );
                     return Err(());
                 };
@@ -1014,11 +1101,15 @@ impl<'a> CheckEvaluator<'a> {
                 }
                 let rhs = self.eval_expr(rhs)?;
                 let rhs_path = rhs.path.clone();
+                let bad_rhs_value = rhs.value.clone();
                 let CheckValue::Bool(rhs) = rhs.value else {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         rhs_path,
-                        "rhs is not bool",
+                        format!(
+                            "rhs is not bool: got {}",
+                            format_value_for_message(&bad_rhs_value)
+                        ),
                     );
                     return Err(());
                 };
@@ -1044,31 +1135,47 @@ impl<'a> CheckEvaluator<'a> {
             self.diag_at(
                 CfdErrorCode::CheckNullAccess,
                 path,
-                "binary operation on null value",
+                format!(
+                    "binary operation on null value: {} {} {}",
+                    format_value_for_message(&lhs),
+                    bin_op_str(op),
+                    format_value_for_message(&rhs)
+                ),
             );
             return Err(());
         }
         match (op, lhs, rhs) {
-            (CftSchemaBinOp::Add, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
-                self.checked_int(lhs.checked_add(rhs), path, "integer addition overflow")
-            }
-            (CftSchemaBinOp::Sub, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
-                self.checked_int(lhs.checked_sub(rhs), path, "integer subtraction overflow")
-            }
+            (CftSchemaBinOp::Add, CheckValue::Int(lhs), CheckValue::Int(rhs)) => self.checked_int(
+                lhs.checked_add(rhs),
+                path,
+                format!("integer addition overflow: {lhs} + {rhs}"),
+            ),
+            (CftSchemaBinOp::Sub, CheckValue::Int(lhs), CheckValue::Int(rhs)) => self.checked_int(
+                lhs.checked_sub(rhs),
+                path,
+                format!("integer subtraction overflow: {lhs} - {rhs}"),
+            ),
             (CftSchemaBinOp::Mul, CheckValue::Int(lhs), CheckValue::Int(rhs)) => self.checked_int(
                 lhs.checked_mul(rhs),
                 path,
-                "integer multiplication overflow",
+                format!("integer multiplication overflow: {lhs} * {rhs}"),
             ),
-            (CftSchemaBinOp::Div, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
-                self.checked_int(lhs.checked_div(rhs), path, "integer division failed")
-            }
-            (CftSchemaBinOp::IntDiv, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
-                self.checked_int(lhs.checked_div(rhs), path, "integer division failed")
-            }
-            (CftSchemaBinOp::Mod, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
-                self.checked_int(lhs.checked_rem(rhs), path, "integer modulo failed")
-            }
+            (CftSchemaBinOp::Div, CheckValue::Int(lhs), CheckValue::Int(rhs)) => self.checked_int(
+                lhs.checked_div(rhs),
+                path,
+                format!("integer division failed: {lhs} / {rhs}"),
+            ),
+            (CftSchemaBinOp::IntDiv, CheckValue::Int(lhs), CheckValue::Int(rhs)) => self
+                .checked_int(
+                    lhs.checked_div(rhs),
+                    path,
+                    format!("integer division failed: {lhs} // {rhs}"),
+                ),
+            (CftSchemaBinOp::Mod, CheckValue::Int(lhs), CheckValue::Int(rhs)) => self.checked_int(
+                lhs.checked_rem(rhs),
+                path,
+                format!("integer modulo failed: {lhs} % {rhs}"),
+            ),
             (CftSchemaBinOp::Pow, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
                 match rhs.try_into().ok().and_then(|rhs| lhs.checked_pow(rhs)) {
                     Some(value) => Ok(LocatedCheckValue::new(CheckValue::Int(value), path)),
@@ -1076,7 +1183,7 @@ impl<'a> CheckEvaluator<'a> {
                         self.diag_at(
                             CfdErrorCode::CheckEvalTypeError,
                             path,
-                            "integer power failed",
+                            format!("integer power failed: {lhs} ** {rhs}"),
                         );
                         Err(())
                     }
@@ -1088,7 +1195,7 @@ impl<'a> CheckEvaluator<'a> {
                     lhs,
                     rhs,
                     path,
-                    "integer shift left failed",
+                    format!("integer shift left failed: {lhs} << {rhs}"),
                 ),
             (CftSchemaBinOp::Shr, CheckValue::Int(lhs), CheckValue::Int(rhs)) => self
                 .checked_shift(
@@ -1096,7 +1203,7 @@ impl<'a> CheckEvaluator<'a> {
                     lhs,
                     rhs,
                     path,
-                    "integer shift right failed",
+                    format!("integer shift right failed: {lhs} >> {rhs}"),
                 ),
             (CftSchemaBinOp::Add, CheckValue::Float(lhs), CheckValue::Float(rhs)) => {
                 Ok(LocatedCheckValue::new(CheckValue::Float(lhs + rhs), path))
@@ -1149,11 +1256,16 @@ impl<'a> CheckEvaluator<'a> {
                     path,
                 ))
             }
-            _ => {
+            (op, lhs, rhs) => {
                 self.diag_at(
                     CfdErrorCode::CheckEvalTypeError,
                     path,
-                    "unsupported binary operation",
+                    format!(
+                        "unsupported binary operation: {} {} {}",
+                        format_value_for_message(&lhs),
+                        bin_op_str(op),
+                        format_value_for_message(&rhs)
+                    ),
                 );
                 Err(())
             }
@@ -1215,7 +1327,11 @@ impl<'a> CheckEvaluator<'a> {
             self.diag_at(
                 CfdErrorCode::CheckNullAccess,
                 path,
-                "ordered comparison on null value",
+                format!(
+                    "ordered comparison on null value: {} cmp {}",
+                    format_value_for_message(lhs),
+                    format_value_for_message(rhs)
+                ),
             );
             return Err(());
         }
@@ -1226,7 +1342,7 @@ impl<'a> CheckEvaluator<'a> {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         path,
-                        "float comparison failed",
+                        format!("float comparison failed: {lhs} cmp {rhs}"),
                     );
                 })
             }
@@ -1237,7 +1353,11 @@ impl<'a> CheckEvaluator<'a> {
                 self.diag_at(
                     CfdErrorCode::CheckEvalTypeError,
                     path,
-                    "values are not ordered comparable",
+                    format!(
+                        "values are not ordered comparable: {} cmp {}",
+                        format_value_for_message(lhs),
+                        format_value_for_message(rhs)
+                    ),
                 );
                 Err(())
             }
@@ -1270,6 +1390,33 @@ impl<'a> CheckEvaluator<'a> {
         };
         self.diagnostics
             .push(CfdDiagnostic::error(code, message).with_primary(self.root_record, path));
+    }
+}
+
+fn unary_op_str(op: CftSchemaUnaryOp) -> &'static str {
+    match op {
+        CftSchemaUnaryOp::Not => "!",
+        CftSchemaUnaryOp::BitNot => "~",
+        CftSchemaUnaryOp::Neg => "-",
+    }
+}
+
+fn bin_op_str(op: CftSchemaBinOp) -> &'static str {
+    match op {
+        CftSchemaBinOp::Or => "||",
+        CftSchemaBinOp::And => "&&",
+        CftSchemaBinOp::BitOr => "|",
+        CftSchemaBinOp::BitXor => "^",
+        CftSchemaBinOp::BitAnd => "&",
+        CftSchemaBinOp::Add => "+",
+        CftSchemaBinOp::Sub => "-",
+        CftSchemaBinOp::Shl => "<<",
+        CftSchemaBinOp::Shr => ">>",
+        CftSchemaBinOp::Mul => "*",
+        CftSchemaBinOp::Div => "/",
+        CftSchemaBinOp::IntDiv => "//",
+        CftSchemaBinOp::Mod => "%",
+        CftSchemaBinOp::Pow => "**",
     }
 }
 
