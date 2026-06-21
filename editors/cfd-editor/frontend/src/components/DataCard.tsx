@@ -238,7 +238,7 @@ function ScalarFieldRow({ label, value, depth, onEdit }: {
   }
 
   return (
-    <div className="dc-row" data-depth={depth}>
+    <div className="dc-row" data-depth={depth} data-field-name={depth === 0 ? label : undefined}>
       <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 8 }}>
         {label}
       </div>

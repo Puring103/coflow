@@ -1,11 +1,11 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   ReactFlow, Background, Controls, MiniMap,
-  Handle, Position, type NodeProps,
+  Handle, Position, useUpdateNodeInternals, type NodeProps,
   type Node, type Edge,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { GraphData, GraphNode, FieldCell } from '../bindings/index'
+import type { GraphData, GraphNode } from '../bindings/index'
 import { DataCardNode, CardHeader, NODE_PEEK_FIELDS, countVisibleRows } from './DataCard'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
@@ -30,52 +30,77 @@ interface NodeData extends Record<string, unknown> {
   onRowToggle: (path: string, exp: boolean) => void
 }
 
-// ─── Per-field handles ───────────────────────────────────────────────────────
-// When expanded, we render one source handle per visible Ref field so edges
-// attach to the right row. When collapsed the single default handle is used.
-
-function refFieldHandles(fields: FieldCell[], expanded: boolean, showAll: boolean) {
-  if (!expanded) return null
-  const visible = showAll ? fields : fields.slice(0, NODE_PEEK_FIELDS)
-  return visible.map((f, i) => {
-    if (f.value.kind !== 'Ref') return null
-    // Approximate y: header + rows before this one, centered on row
-    const offsetY = HEADER_H + i * ROW_H + ROW_H / 2
-    return (
-      <Handle
-        key={`src-${f.name}`}
-        type="source"
-        position={Position.Right}
-        id={`field-${f.name}`}
-        style={{ top: offsetY, bottom: 'auto' }}
-      />
-    )
-  })
-}
-
 // ─── CfdNode ─────────────────────────────────────────────────────────────────
+// Per-field source handles use useLayoutEffect to measure each row's actual
+// DOM offset, so handle Y positions are exact regardless of CSS padding,
+// header height variation, or sub-row expansion.
 
-function CfdNode({ data }: NodeProps) {
+function CfdNode({ id, data }: NodeProps) {
   const { graphNode: gn, expanded, onToggleExpand, onRowToggle } = data as NodeData
+  const rootRef = useRef<HTMLDivElement>(null)
+  const headerRef = useRef<HTMLDivElement>(null)
+  const updateNodeInternals = useUpdateNodeInternals()
+
+  // Map of fieldName → measured Y offset (center of that row, relative to node)
+  const [refRowOffsets, setRefRowOffsets] = useState<Map<string, number>>(new Map())
+  const [headerCenterY, setHeaderCenterY] = useState(21)
+
+  // Visible Ref fields whose row should get a per-field handle
+  const refFieldNames = useMemo(() => {
+    const visible = expanded ? gn.fields : gn.fields.slice(0, NODE_PEEK_FIELDS)
+    return visible.filter(f => f.value.kind === 'Ref').map(f => f.name)
+  }, [gn.fields, expanded])
+
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    const rootRect = root.getBoundingClientRect()
+    const next = new Map<string, number>()
+    for (const name of refFieldNames) {
+      const row = root.querySelector<HTMLElement>(`.dc-row[data-field-name="${CSS.escape(name)}"]`)
+      if (!row) continue
+      const r = row.getBoundingClientRect()
+      next.set(name, r.top - rootRect.top + r.height / 2)
+    }
+    setRefRowOffsets(next)
+    if (headerRef.current) {
+      const h = headerRef.current.getBoundingClientRect()
+      setHeaderCenterY(h.top - rootRect.top + h.height / 2)
+    }
+    // Notify React Flow that this node's handle positions changed so edge
+    // paths recompute to match the new handle Y coordinates.
+    updateNodeInternals(id)
+  }, [refFieldNames, expanded, gn.fields, id, updateNodeInternals])
 
   return (
     <div
+      ref={rootRef}
       className={`graph-node${gn.in_focus_file ? ' focused' : ' dim'}`}
       data-nodeid={gn.id}
       style={{'--node-color': typeColor(gn.actual_type)} as React.CSSProperties}
     >
-      {/* Target handle sits at the header/key row so edges arrive at the record identity */}
-      <Handle type="target" position={Position.Left} id="__in" style={{ top: HEADER_H / 2 }} />
-      {/* Per-field source handles when expanded */}
-      {refFieldHandles(gn.fields, expanded, expanded)}
-      {/* Default source handle (collapsed or no-ref nodes) */}
+      {/* Target handle at header center so incoming edges arrive at the key row */}
+      <Handle type="target" position={Position.Left} id="__in" style={{ top: headerCenterY }} />
+      {/* Per-field source handles, measured from DOM */}
+      {Array.from(refRowOffsets.entries()).map(([name, y]) => (
+        <Handle
+          key={`src-${name}`}
+          type="source"
+          position={Position.Right}
+          id={`field-${name}`}
+          style={{ top: y, bottom: 'auto' }}
+        />
+      ))}
+      {/* Default source handle for non-Ref refs / fallback */}
       <Handle
         type="source"
         position={Position.Right}
         id="__out"
-        style={expanded ? { opacity: 0, pointerEvents: 'none' } : {}}
+        style={{ top: headerCenterY }}
       />
-      <CardHeader recordKey={gn.key} actualType={gn.actual_type} filePath={gn.file_path} />
+      <div ref={headerRef}>
+        <CardHeader recordKey={gn.key} actualType={gn.actual_type} filePath={gn.file_path} />
+      </div>
       {gn.is_collapsed ? (
         <div className="gn-collapsed">折叠（超出深度）</div>
       ) : (
