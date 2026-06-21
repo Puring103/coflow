@@ -6,6 +6,7 @@ import { GraphView } from './components/GraphView'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
 import { Icon } from './components/Icon'
 import { useRouter } from './hooks/useRouter'
+import { useTheme } from './hooks/useTheme'
 import { MOCK_PROJECT, MOCK_FILE_RECORDS, MOCK_GRAPH } from './mock'
 import * as api from './api'
 import type { ProjectSnapshot, FileRecords, GraphData } from './bindings/index'
@@ -21,6 +22,7 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   const router = useRouter()
+  const { theme, toggle: toggleTheme } = useTheme()
   const [activeType, setActiveType] = useState<string>('')
 
   // Auto-load mock data only when not running in Tauri (browser preview).
@@ -167,6 +169,13 @@ export default function App() {
           </span>
         )}
         <span className="topbar-spacer" />
+        <button
+          className="btn btn-icon"
+          onClick={toggleTheme}
+          title={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
+        >
+          <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={14} />
+        </button>
         <button className="btn btn-icon" onClick={() => setShowHelp(v => !v)} title="帮助 (?)">
           <Icon name="help" size={14} />
         </button>

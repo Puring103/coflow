@@ -6,7 +6,7 @@ interface IconProps {
     | 'chevron-right' | 'chevron-down'
     | 'error' | 'warning' | 'info' | 'check'
     | 'jump' | 'open' | 'dot'
-    | 'table' | 'record' | 'graph' | 'filter'
+    | 'table' | 'record' | 'graph' | 'filter' | 'sun' | 'moon'
   size?: number
   className?: string
 }
@@ -34,6 +34,8 @@ const PATHS: Record<IconProps['name'], string> = {
   'record':        'M4 6h16M4 12h16M4 18h16',
   'graph':         'M5 19V8m0 0a2 2 0 100-4 2 2 0 000 4zm14 11V12m0 0a2 2 0 100-4 2 2 0 000 4zM7 19l5-7 5 4',
   'filter':        'M4 5h16l-6 8v6l-4-2v-4z',
+  'sun':           'M12 4V2M12 22v-2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41M16 12a4 4 0 11-8 0 4 4 0 018 0z',
+  'moon':          'M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z',
 }
 
 export function Icon({ name, size = 14, className }: IconProps) {

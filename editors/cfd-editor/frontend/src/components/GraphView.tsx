@@ -631,9 +631,9 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
           type: 'bezier',
           animated: false,
           className: `rf-edge rf-edge-fwd rf-src-${e.source} rf-tgt-${e.target}`,
-          style: { stroke: '#4a525e', strokeWidth: 1.2 },
-          labelStyle: { fill: '#7a828f', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' },
-          labelBgStyle: { fill: '#1a1e25', fillOpacity: 0.92 },
+          style: { stroke: 'var(--graph-edge)', strokeWidth: 1.2 },
+          labelStyle: { fill: 'var(--graph-edge-label)', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' },
+          labelBgStyle: { fill: 'var(--graph-edge-label-bg)', fillOpacity: 0.92 },
           labelBgPadding: [4, 2] as [number, number],
           labelBgBorderRadius: 3,
         }
@@ -651,10 +651,10 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
         type: 'bezier',
         animated: false,
         className: `rf-edge rf-edge-bk rf-src-${e.source} rf-tgt-${e.target}`,
-        style: { stroke: '#d97a7a', strokeWidth: 1.2, opacity: 0.6, strokeDasharray: '6 3' },
+        style: { stroke: 'var(--graph-back-edge)', strokeWidth: 1.2, opacity: 0.6, strokeDasharray: '6 3' },
         zIndex: 1,
-        labelStyle: { fill: '#d97a7a', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' },
-        labelBgStyle: { fill: '#1a1e25', fillOpacity: 0.92 },
+        labelStyle: { fill: 'var(--graph-back-edge)', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' },
+        labelBgStyle: { fill: 'var(--graph-edge-label-bg)', fillOpacity: 0.92 },
         labelBgPadding: [4, 2] as [number, number],
         labelBgBorderRadius: 3,
       }))
@@ -757,14 +757,14 @@ export function GraphView({ graphData, activeType, onOpenRecord }: Props) {
             minZoom={0.1}
             maxZoom={2}
           >
-            <Background color="#262b34" gap={24} size={1} />
+            <Background color="var(--graph-bg-grid)" gap={24} size={1} />
             <Controls showInteractive={false} />
             <MiniMap
               nodeColor={n => {
                 const { graphNode } = n.data as NodeData
                 return graphNode.in_focus_file ? '#8a93a3' : '#3a3f48'
               }}
-              maskColor="rgba(14, 16, 20, 0.75)"
+              maskColor="var(--minimap-mask, rgba(14, 16, 20, 0.75))"
               pannable
               zoomable
             />
