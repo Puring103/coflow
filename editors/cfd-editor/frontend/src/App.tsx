@@ -59,12 +59,23 @@ export default function App() {
 
   // Reset all per-session UI state to a clean slate before swapping in a
   // new project snapshot. Used by both "open" and "new" flows so behavior
-  // is identical.
+  // is identical. Also closes the previous backend session so the
+  // SessionStore doesn't accumulate stale sessions across project switches.
   const adoptSnapshot = useCallback(
     (snapshot: ProjectSnapshot) => {
-      setProject(snapshot)
+      setProject(prev => {
+        // Fire-and-forget close of the outgoing session. We read prev here
+        // (not `project` from the closure) so we always close exactly the
+        // session we're replacing, even if state was stale at call time.
+        if (prev && api.isTauri && prev.session_id !== snapshot.session_id) {
+          api.closeSession(prev.session_id).catch(() => { /* best-effort */ })
+        }
+        return snapshot
+      })
       setFileDataCache({})
       setGraphCache({})
+      setUndoStack([])
+      setRedoStack([])
       const firstFile = collectSourceFiles(snapshot)[0]
       if (firstFile) router.push({ view: 'table', file: firstFile })
     },

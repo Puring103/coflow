@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use coflow_editor_core::{
-    EditorError, FieldPathSegment, FieldValue, FileRecords, GraphData, ProjectSnapshot, RecordRow,
+    EditorError, FieldPathSegment, FieldValue, FileRecords, GraphData, ProjectSnapshot,
     SessionStore, WriteFieldOutcome,
 };
 use tauri::{Manager, State};
@@ -34,16 +34,6 @@ fn get_file_records(
     store: State<'_, SessionStore>,
 ) -> Result<FileRecords, EditorError> {
     store.get_file_records(session_id, &file_path)
-}
-
-#[tauri::command]
-fn get_record(
-    session_id: u32,
-    file_path: String,
-    record_key: String,
-    store: State<'_, SessionStore>,
-) -> Result<RecordRow, EditorError> {
-    store.get_record(session_id, &file_path, &record_key)
 }
 
 #[tauri::command]
@@ -107,7 +97,6 @@ pub fn run() {
             init_project,
             close_session,
             get_file_records,
-            get_record,
             get_graph,
             get_enum_variants,
             get_ref_targets,
