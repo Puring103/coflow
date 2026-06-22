@@ -902,7 +902,11 @@ fn completion_items(
     }
 
     if let Some(chain) = receiver_chain_before_dot(line_prefix) {
-        return dot_completion_items(build, document, offset, &chain);
+        let mut items = dot_completion_items(build, document, offset, &chain);
+        if scope == CompletionScope::CheckBlock {
+            items.extend(function_completion_items());
+        }
+        return items;
     }
 
     if top_level_needs_type_keyword(line_prefix) {

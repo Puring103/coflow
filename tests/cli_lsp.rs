@@ -697,14 +697,25 @@ fn lsp_serves_editor_language_features() {
         &source,
         position_after(&source, "    id != \"\";\n    "),
     );
-    assert_has_completion(&check_completion, "len");
+    assert_missing_completion(&check_completion, "len");
     assert_has_completion(&check_completion, "id");
     assert_missing_completion(&check_completion, "Monster");
+
+    let method_completion = request_completion_at(
+        &mut stdin,
+        &mut stdout,
+        13,
+        &uri,
+        &source,
+        position_after(&source, "resistances."),
+    );
+    assert_has_completion(&method_completion, "len");
+    assert_has_completion(&method_completion, "contains");
 
     let string_completion = request_completion_at(
         &mut stdin,
         &mut stdout,
-        6,
+        14,
         &uri,
         &source,
         position_after(&source, "@display(\"Monster"),
@@ -714,7 +725,7 @@ fn lsp_serves_editor_language_features() {
     let enum_dot_completion = request_completion_at(
         &mut stdin,
         &mut stdout,
-        7,
+        15,
         &uri,
         &source,
         position_after(&source, "flags: SkillTag = SkillTag."),
@@ -725,7 +736,7 @@ fn lsp_serves_editor_language_features() {
     let field_dot_completion = request_completion_at(
         &mut stdin,
         &mut stdout,
-        8,
+        16,
         &uri,
         &source,
         position_after(&source, "stats."),
@@ -736,7 +747,7 @@ fn lsp_serves_editor_language_features() {
     let type_predicate_completion = request_completion_at(
         &mut stdin,
         &mut stdout,
-        9,
+        17,
         &uri,
         &source,
         position_after(&source, "reward is "),
@@ -748,7 +759,7 @@ fn lsp_serves_editor_language_features() {
     let modifier_keyword_completion = request_completion_at(
         &mut stdin,
         &mut stdout,
-        10,
+        18,
         &uri,
         &source,
         position_after(&source, "sealed "),
@@ -759,7 +770,7 @@ fn lsp_serves_editor_language_features() {
     let comment_completion = request_completion_at(
         &mut stdin,
         &mut stdout,
-        11,
+        19,
         &uri,
         &source,
         position_after(&source, "# comment"),
@@ -770,7 +781,7 @@ fn lsp_serves_editor_language_features() {
         &mut stdin,
         &serde_json::json!({
             "jsonrpc": "2.0",
-            "id": 14,
+            "id": 20,
             "method": "textDocument/formatting",
             "params": {
                 "textDocument": { "uri": uri },
@@ -778,7 +789,7 @@ fn lsp_serves_editor_language_features() {
             }
         }),
     );
-    let formatting = read_lsp_response(&mut stdout, 14);
+    let formatting = read_lsp_response(&mut stdout, 20);
     assert!(
         formatting["result"].is_array(),
         "formatting: {formatting:?}"
@@ -788,14 +799,14 @@ fn lsp_serves_editor_language_features() {
         &mut stdin,
         &serde_json::json!({
             "jsonrpc": "2.0",
-            "id": 15,
+            "id": 21,
             "method": "textDocument/semanticTokens/full",
             "params": {
                 "textDocument": { "uri": uri }
             }
         }),
     );
-    let semantic = read_lsp_response(&mut stdout, 15);
+    let semantic = read_lsp_response(&mut stdout, 21);
     assert!(
         semantic["result"]["data"]
             .as_array()
@@ -803,5 +814,5 @@ fn lsp_serves_editor_language_features() {
         "semantic: {semantic:?}"
     );
 
-    shutdown_lsp(stdin, &mut stdout, &mut child, 16);
+    shutdown_lsp(stdin, &mut stdout, &mut child, 22);
 }
