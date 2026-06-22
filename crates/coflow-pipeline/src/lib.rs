@@ -856,7 +856,7 @@ fn next_key_as_enum_value_start(
     is_flags: bool,
 ) -> Result<i64, DiagnosticSet> {
     let Some(value) = entries.values().copied().max() else {
-        return Ok(if is_flags { 1 } else { 0 });
+        return Ok(i64::from(is_flags));
     };
     next_key_as_enum_value(lockfile, value, is_flags)
 }
