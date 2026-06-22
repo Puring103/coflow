@@ -395,8 +395,15 @@ function EditableCell({
   return (
     <div
       className={`cell-edit-wrap${canEdit ? ' editable' : ''}`}
+      onClick={canEdit ? (e: React.MouseEvent) => {
+        // Single-click enters edit mode (matches RecordView's DirectEditor).
+        // stopPropagation so the row's selection handler doesn't also fire
+        // and steal focus away from the freshly-mounted input.
+        e.stopPropagation()
+        setEditing(true)
+      } : undefined}
       onDoubleClick={canEdit ? () => setEditing(true) : undefined}
-      title={canEdit ? '双击编辑' : undefined}
+      title={canEdit ? '点击编辑' : undefined}
     >
       <DataCardCompact value={value} />
     </div>
