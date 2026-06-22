@@ -401,6 +401,16 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   color: var(--text);
   font-weight: 500;
 }
+.breadcrumb-link {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  color: var(--text-dim);
+  font: inherit;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.breadcrumb-link:hover { color: var(--accent); background: var(--bg-3); }
 .breadcrumb-readonly {
   display: inline-flex;
   align-items: center;
@@ -1646,11 +1656,19 @@ select.dc-input-flat {
   background: var(--bg-0);
   user-select: none;
   height: 30px;
+  width: 100%;
+  border: none;
+  border-top: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
 }
+.diag-header:disabled { cursor: default; }
 .diag-panel:not(.collapsed) .diag-header {
   border-bottom: 1px solid var(--border);
 }
 .diag-header:hover { background: var(--bg-2); }
+.diag-header:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
 
 .diag-title {
   font-size: 11px;
