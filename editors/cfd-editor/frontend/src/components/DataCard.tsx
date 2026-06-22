@@ -251,13 +251,43 @@ export interface ExpandedProps {
   /** Diagnostics anchored to fields inside this record (already filtered to
    *  this record by the caller). Renders red/yellow ink + tooltip per row. */
   diagnostics?: FieldDiagnostic[]
+  /** A field path (e.g. "attributes[0].name") to briefly highlight + scroll
+   *  into view. Set by a diagnostic jump; cleared via onHighlightConsumed. */
+  highlightField?: string | null
+  onHighlightConsumed?: () => void
 }
 
-export function DataCardExpanded({ fields, depth = 0, onEdit, pathPrefix, onRowToggle, diagnostics }: ExpandedProps) {
+export function DataCardExpanded({ fields, depth = 0, onEdit, pathPrefix, onRowToggle, diagnostics, highlightField, onHighlightConsumed }: ExpandedProps) {
   const ctx = useMemo(() => buildDiagCtx(diagnostics), [diagnostics])
+  const inspectorRef = useRef<HTMLDivElement>(null)
+
+  // Apply the highlight: scroll the matching row into view + flash a class.
+  useEffect(() => {
+    if (!highlightField) return
+    const root = inspectorRef.current
+    if (!root) return
+    // Try exact path match first, then the top-level field name.
+    const exact = root.querySelector<HTMLElement>(
+      `.dc-row[data-field-path="${CSS.escape(highlightField)}"]`,
+    )
+    const top = highlightField.match(/^[^.[]+/)?.[0]
+    const fallback = top
+      ? root.querySelector<HTMLElement>(`.dc-row[data-field-name="${CSS.escape(top)}"]`)
+      : null
+    const target = exact ?? fallback
+    if (target) {
+      target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      target.classList.add('dc-row-flash')
+      const t = setTimeout(() => target.classList.remove('dc-row-flash'), 1600)
+      onHighlightConsumed?.()
+      return () => clearTimeout(t)
+    }
+    onHighlightConsumed?.()
+  }, [highlightField, onHighlightConsumed])
+
   const body = (
-    <div className="dc-inspector" style={{ '--depth': depth } as CSSProperties}>
-      {fields.map((fc, i) => (
+    <div className="dc-inspector" ref={inspectorRef} style={{ '--depth': depth } as CSSProperties}>
+      {fields.map((fc) => (
         <FieldRow
           key={fc.name}
           label={fc.name}

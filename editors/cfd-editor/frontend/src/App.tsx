@@ -10,7 +10,7 @@ import { useTheme } from './hooks/useTheme'
 import { MOCK_PROJECT, MOCK_FILE_RECORDS, MOCK_GRAPH } from './mock'
 import * as api from './api'
 import type { ProjectSnapshot, FileRecords, GraphData, FieldValue, FieldPathSegment, DiagnosticItem, RecordRow } from './bindings/index'
-import { errorMessage } from './bindings/index'
+import { errorMessage, errorDiagnostics } from './bindings/index'
 import type { FieldDiagnostic } from './components/DataCard'
 import { typeColor } from './utils/typeColor'
 import { isEditableFile } from './utils/editable'
@@ -39,6 +39,10 @@ export default function App() {
   const router = useRouter()
   const { theme, toggle: toggleTheme } = useTheme()
   const [activeType, setActiveType] = useState<string>('')
+  // Field path to briefly highlight after a diagnostic jump. Cleared after
+  // the RecordView applies the highlight so subsequent navigations don't
+  // re-flash it.
+  const [highlightField, setHighlightField] = useState<string | null>(null)
 
   // Auto-load mock data only when not running in Tauri (browser preview).
   useEffect(() => {
@@ -81,6 +85,10 @@ export default function App() {
       adoptSnapshot(snapshot)
     } catch (err) {
       setErrorMsg(`打开项目失败: ${errorMessage(err)}`)
+      const diags = errorDiagnostics(err)
+      if (diags.length > 0) {
+        setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
+      }
     }
   }, [adoptSnapshot])
 
@@ -101,6 +109,10 @@ export default function App() {
       adoptSnapshot(snapshot)
     } catch (err) {
       setErrorMsg(`新建工程失败: ${errorMessage(err)}`)
+      const diags = errorDiagnostics(err)
+      if (diags.length > 0) {
+        setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
+      }
     }
   }, [adoptSnapshot])
 
@@ -188,6 +200,13 @@ export default function App() {
         return outcome.row
       } catch (err) {
         setErrorMsg(`写入失败: ${errorMessage(err)}`)
+        // Surface structured diagnostics embedded in a failed write (e.g.
+        // type-mismatch detail from the backend) so they land in the
+        // diagnostics panel instead of being silently dropped.
+        const diags = errorDiagnostics(err)
+        if (diags.length > 0) {
+          setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
+        }
       }
     },
     [project, fileDataCache],
@@ -514,6 +533,8 @@ export default function App() {
                     typeFilter={activeType}
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
+                    highlightField={highlightField}
+                    onHighlightConsumed={() => setHighlightField(null)}
                     onOpenRecord={key => openRecord(currentRoute.file, key)}
                     onWriteField={(rk, path, val) => writeField(currentRoute.file, rk, path, val)}
                   />
@@ -563,6 +584,10 @@ export default function App() {
         <DiagnosticsPanel
           diagnostics={project.diagnostics}
           onJumpToRecord={(file, key) => openRecord(file, key)}
+          onJumpToField={(file, key, fieldPath) => {
+            setHighlightField(fieldPath)
+            openRecord(file, key)
+          }}
         />
       )}
 
