@@ -6,16 +6,16 @@ type ExampleBuiltinFunctions {
   scores: {string: int} = {};
 
   check {
-    matches(id, "^[a-z][a-z0-9_]*$");
-    len(numbers) >= 0;
-    sum(numbers) >= 0;
-    unique(names);
-    contains(names, "default");
-    contains(scores, "default");
-    len(keys(scores)) == len(values(scores));
+    id.matches("^[a-z][a-z0-9_]*$");
+    numbers.len() >= 0;
+    numbers.sum() >= 0;
+    names.unique();
+    names.contains("default");
+    scores.contains("default");
+    scores.keys().len() == scores.values().len();
 
-    when len(numbers) > 0 {
-      min(numbers) <= max(numbers);
+    when numbers.len() > 0 {
+      numbers.min() <= numbers.max();
     }
   }
 }

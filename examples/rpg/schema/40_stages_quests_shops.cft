@@ -31,14 +31,14 @@ type Stage {
   check {
     id != "";
     name_text.id != "";
-    matches(id, "^stage_[a-z][a-z0-9_]*$");
+    id.matches("^stage_[a-z][a-z0-9_]*$");
     1 <= unlock_level <= MAX_LEVEL;
     recommended_power > 0;
-    len(spawns) > 0;
-    len(positions) == len(spawns);
+    spawns.len() > 0;
+    positions.len() == spawns.len();
     drop_table.monster.level >= unlock_level;
     first_clear_reward is Reward;
-    contains(modifiers, "stamina");
+    modifiers.contains("stamina");
     modifiers["stamina"] > 0;
 
     when kind == StageKind.Raid {
@@ -72,8 +72,8 @@ type QuestObjective {
   check {
     key != "";
     target_count > 0;
-    contains(counters, "kill") || contains(counters, "collect");
-    sum(values(counters)) >= 0;
+    counters.contains("kill") || counters.contains("collect");
+    counters.values().sum() >= 0;
 
     all entry in counters {
       entry.key != "";
@@ -90,7 +90,7 @@ type DialogueNode {
   check {
     key != "";
     text != "";
-    len(next) <= 3;
+    next.len() <= 3;
 
     all child in next {
       child.key != key;
@@ -123,15 +123,15 @@ type Quest {
     id != "";
     title != "";
     title_text.id != "";
-    matches(id, "^quest_[a-z][a-z0-9_]*$");
+    id.matches("^quest_[a-z][a-z0-9_]*$");
     1 <= min_level <= MAX_LEVEL;
     stage.unlock_level <= min_level;
     reward_item.name != "";
     reward_preview is Reward;
-    len(objectives) > 0;
-    unique(prerequisites);
-    contains(availability, "start_day");
-    contains(availability, "end_day");
+    objectives.len() > 0;
+    prerequisites.unique();
+    availability.contains("start_day");
+    availability.contains("end_day");
     availability["start_day"] >= 1;
     availability["end_day"] >= availability["start_day"];
     dialogue.key != "";
@@ -155,7 +155,7 @@ type Quest {
     }
 
     any objective in objectives {
-      contains(objective.counters, "kill");
+      objective.counters.contains("kill");
     }
 
     none prerequisite in prerequisites {
@@ -180,9 +180,9 @@ sealed type ShopEntry {
     price >= item.price;
     stock > 0;
     1 <= unlock_level <= MAX_LEVEL;
-    contains(discount_by_day, 1);
-    min(values(discount_by_day)) >= 0;
-    max(values(discount_by_day)) <= 100;
+    discount_by_day.contains(1);
+    discount_by_day.values().min() >= 0;
+    discount_by_day.values().max() <= 100;
 
     when item.slot == ItemSlot.Material {
       stock > 1;
@@ -215,11 +215,11 @@ type Shop {
   check {
     id != "";
     name_text.id != "";
-    matches(id, "^shop_[a-z][a-z0-9_]*$");
+    id.matches("^shop_[a-z][a-z0-9_]*$");
     1 <= open_day <= close_day;
-    len(entries) > 0;
-    len(currencies) > 0;
-    unique(currencies);
+    entries.len() > 0;
+    currencies.len() > 0;
+    currencies.unique();
     any entry in entries { entry.stock > 0; }
 
     when kind == ShopKind.Raid {

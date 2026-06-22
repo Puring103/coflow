@@ -42,7 +42,7 @@ sealed type MonsterPhase {
 
   check {
     0.0 < threshold_hp_pct <= 1.0;
-    unique(buffs);
+    buffs.unique();
 
     when added_skill != null {
       added_skill.power >= 0;
@@ -90,18 +90,18 @@ type Monster {
   check {
     id != "";
     name != "";
-    matches(id, "^[a-z][a-z0-9_]*$");
+    id.matches("^[a-z][a-z0-9_]*$");
     1 <= level <= MAX_LEVEL;
     stats.hp > 0;
     stats.speed >= MIN_SPEED;
     skill.power > 0;
-    contains(resistances, Element.Physical);
-    contains(keys(resistances), Element.Fire);
-    len(abilities) > 0;
+    resistances.contains(Element.Physical);
+    resistances.keys().contains(Element.Fire);
+    abilities.len() > 0;
     any ability in abilities { ability.skill.id == skill.id; }
-    contains(spawn_points, 1);
+    spawn_points.contains(1);
     spawn_points[1].radius > 0.0;
-    max(keys(spawn_points)) >= min(keys(spawn_points));
+    spawn_points.keys().max() >= spawn_points.keys().min();
     (flags | SkillTag.Control) != SkillTag(0);
     (flags & SkillTag.Damage) != SkillTag(0)
       || (flags & SkillTag.Control) != SkillTag(0)
@@ -149,19 +149,19 @@ type DropTable {
 
   check {
     id != "";
-    matches(id, "^drop_[a-z][a-z0-9_]*$");
+    id.matches("^drop_[a-z][a-z0-9_]*$");
     monster.level >= conditions.min_level;
-    len(rewards) == len(weights);
-    len(rewards) > 0;
-    sum(weights) == 100;
-    min(weights) > 0;
-    max(weights) <= 100;
-    unique(weights);
+    rewards.len() == weights.len();
+    rewards.len() > 0;
+    weights.sum() == 100;
+    weights.min() > 0;
+    weights.max() <= 100;
+    weights.unique();
     any reward in rewards { reward is ItemReward; }
     any reward in rewards { reward is CurrencyReward; }
     none reward in rewards { reward is LegacyReward; }
-    contains(bonus_by_rarity, Rarity.Rare);
-    contains(currency_curve, 1);
+    bonus_by_rarity.contains(Rarity.Rare);
+    currency_curve.contains(1);
     currency_curve[1] >= 0;
     guaranteed_reward is null || guaranteed_reward is Reward;
 

@@ -25,7 +25,7 @@ type ExampleQuest {
   check {
     id != "";
     name != "";
-    len(steps) > 0;
+    steps.len() > 0;
     reward is ExampleReward;
   }
 }

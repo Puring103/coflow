@@ -286,7 +286,7 @@ const sheets = [
         "0 | 10 | 20",
         "Weapon | Armor",
         1,
-        "shape: cone, params: {range: 2.0, angle: 90.0}",
+        "shape: cone, parameters: {range: 2.0, angle: 90.0}",
       ],
       [
         "fireball",
@@ -301,7 +301,7 @@ const sheets = [
         "0 | 25 | 50",
         "Weapon | Accessory",
         1.4,
-        "shape: circle, params: {range: 8.0, radius: 2.5}",
+        "shape: circle, parameters: {range: 8.0, radius: 2.5}",
       ],
       [
         "meteor",
@@ -316,7 +316,7 @@ const sheets = [
         "0 | 50 | 100",
         "Weapon",
         2.2,
-        "shape: circle, params: {range: 12.0, radius: 5.0}",
+        "shape: circle, parameters: {range: 12.0, radius: 5.0}",
       ],
       [
         "battle_trance",
@@ -331,7 +331,7 @@ const sheets = [
         "0 | 5 | 10",
         "Weapon | Armor",
         1.1,
-        "shape: self, params: {range: 0.0, duration: 12.0}",
+        "shape: self, parameters: {range: 0.0, duration: 12.0}",
       ],
     ],
   },

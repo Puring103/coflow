@@ -25,20 +25,20 @@ type Item {
   check {
     id != "";
     name != "";
-    matches(id, "^[a-z][a-z0-9_]*$");
+    id.matches("^[a-z][a-z0-9_]*$");
     rarity >= Rarity.Common;
     slot != ItemSlot.None;
     1 <= level_requirement <= MAX_LEVEL;
     stack_limit > 0;
     price >= 0;
-    len(tags) > 0;
-    unique(tags);
+    tags.len() > 0;
+    tags.unique();
     none tag in tags { tag == ""; }
-    len(attributes) > 0;
-    min(values(attributes)) >= 0;
-    max(values(attributes)) <= MAX_POWER;
-    contains(keys(attributes), "power") || slot != ItemSlot.Weapon;
-    contains(tags, "weapon") || slot != ItemSlot.Weapon;
+    attributes.len() > 0;
+    attributes.values().min() >= 0;
+    attributes.values().max() <= MAX_POWER;
+    attributes.keys().contains("power") || slot != ItemSlot.Weapon;
+    tags.contains("weapon") || slot != ItemSlot.Weapon;
 
     all entry in attributes {
       entry.key != "";
@@ -75,14 +75,14 @@ type Equipment : Item {
   check {
     name_text.id != "";
     required_class != "";
-    contains(allowed_classes, required_class);
-    unique(allowed_classes);
+    allowed_classes.contains(required_class);
+    allowed_classes.unique();
     slot == ItemSlot.Weapon || slot == ItemSlot.Armor || slot == ItemSlot.Accessory;
     stat_bonus.hp > 0;
     stat_bonus.attack + stat_bonus.defense > 0;
-    contains(upgrade_costs, 1);
-    min(keys(upgrade_costs)) >= 1;
-    max(values(upgrade_costs)) <= MAX_POWER * 10;
+    upgrade_costs.contains(1);
+    upgrade_costs.keys().min() >= 1;
+    upgrade_costs.values().max() <= MAX_POWER * 10;
 
     all class in allowed_classes {
       class != "";
@@ -123,17 +123,17 @@ type Skill {
   check {
     id != "";
     name != "";
-    matches(id, "^[a-z][a-z0-9_]*$");
+    id.matches("^[a-z][a-z0-9_]*$");
     0 <= power <= MAX_POWER;
     cooldown >= 0.0;
     coefficient > 0.0;
-    unique(costs);
-    unique(allowed_slots);
+    costs.unique();
+    allowed_slots.unique();
     any cost in costs { cost == 0; }
     none cost in costs { cost < 0; }
     any slot in allowed_slots { slot != ItemSlot.None; }
     targeting.shape != "";
-    targeting.params["range"] >= 0.0;
+    targeting.parameters["range"] >= 0.0;
 
     when !is_passive {
       power > 0;
@@ -180,11 +180,11 @@ type Buff {
     id != "";
     name != "";
     name_text.id != "";
-    matches(id, "^[a-z][a-z0-9_]*$");
+    id.matches("^[a-z][a-z0-9_]*$");
     duration >= 0.0;
     1 <= max_stacks <= 10;
-    len(stat_modifiers) > 0;
-    contains(trigger_chances, "apply");
+    stat_modifiers.len() > 0;
+    trigger_chances.contains("apply");
     0.0 <= trigger_chances["apply"] <= 1.0;
 
     when duration > 0.0 {

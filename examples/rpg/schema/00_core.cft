@@ -100,14 +100,14 @@ sealed type StatBlock {
 
 sealed type Targeting {
   shape: string;
-  params: {string: float} = {};
+  parameters: {string: float} = {};
 
   check {
     shape != "";
-    contains(params, "range");
-    params["range"] >= 0.0;
+    parameters.contains("range");
+    parameters["range"] >= 0.0;
 
-    all entry in params {
+    all entry in parameters {
       entry.key != "";
       entry.value >= 0.0;
     }
