@@ -1924,6 +1924,7 @@ fn add_check_stmt_semantic(
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn add_check_expr_semantic(
     build: &LspBuild,
     document: &LspDocument,
