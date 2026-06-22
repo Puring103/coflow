@@ -241,13 +241,28 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 
 /* ─── Sidebar ─── */
 .sidebar {
-  width: 220px;
-  min-width: 180px;
+  width: var(--sidebar-w, 220px);
+  min-width: 160px;
+  max-width: 480px;
   background: var(--bg-1);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  flex-shrink: 0;
+}
+.sidebar-splitter {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  border-right: 1px solid var(--border);
+  position: relative;
+  z-index: 2;
+}
+.sidebar-splitter:hover,
+.sidebar-splitter.dragging {
+  background: var(--accent);
 }
 
 .sidebar-header {
@@ -1085,13 +1100,14 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 .dc-row-foldout:hover .dc-fold-arrow { color: var(--text); }
 
 /* Striped rows for nested levels — gives depth without per-row borders.
- * Top-level rows (depth=0) keep the panel bg; nested rows tint slightly
- * darker so collections read as a block. */
-.dc-row[data-depth="1"] { background: rgba(0, 0, 0, 0.10); }
-.dc-row[data-depth="2"] { background: rgba(0, 0, 0, 0.16); }
-.dc-row[data-depth="3"] { background: rgba(0, 0, 0, 0.22); }
-.dc-row[data-depth="4"] { background: rgba(0, 0, 0, 0.26); }
-.dc-row[data-depth="5"] { background: rgba(0, 0, 0, 0.30); }
+ * Top-level rows (depth=0) keep the panel bg; nested rows tint via
+ * color-mix on --text so the stripe direction follows the theme (darker
+ * on light, lighter on dark) instead of always darkening. */
+.dc-row[data-depth="1"] { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.dc-row[data-depth="2"] { background: color-mix(in srgb, var(--text) 10%, transparent); }
+.dc-row[data-depth="3"] { background: color-mix(in srgb, var(--text) 14%, transparent); }
+.dc-row[data-depth="4"] { background: color-mix(in srgb, var(--text) 17%, transparent); }
+.dc-row[data-depth="5"] { background: color-mix(in srgb, var(--text) 20%, transparent); }
 .dc-row[data-depth="1"]:hover,
 .dc-row[data-depth="2"]:hover,
 .dc-row[data-depth="3"]:hover,
