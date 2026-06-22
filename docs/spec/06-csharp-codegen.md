@@ -161,7 +161,7 @@ preflight 产生诊断，则不会读取/写入 lockfile，也不会替换输出
 C# target 在生成前必须校验生成物契约：
 
 - CFT `float` 固定映射为 C# `double`；JSON 和 MessagePack loader 均读取 64 位浮点值，不降为 `float` / `Single`。
-- CFT 类型名、字段名和生成的 ref 属性名经过 C# casing 转换后必须唯一。比如 `foo_bar` 与 `fooBar` 同时生成 `FooBar` 时必须报错，而不是自动加后缀。
+- CFT 类型名、enum 名、enum variant 名和字段名作为公开 C# API 原样输出；任何不合法 C# 标识符必须在 preflight 阶段报错，而不是自动改名。
 - 生成文件名必须唯一，且 `GameConfig.cs`、配置的数据库类文件和 `CftLoadException.cs` 为保留文件名。CFT 不能声明会生成这些文件名的类型或 enum。
 - `@struct` 内含或嵌套对象引用是合法语义。resolver 对 struct 返回更新后的 struct value，并在父字段、数组元素和字典值位置写回。
 - 生成代码兼容普通 .NET 和 Unity/IL2CPP 常见 C# 版本，不使用 `init` accessor 或 file-scoped namespace。
@@ -172,9 +172,9 @@ C# target 在生成前必须校验生成物契约：
 
 | CFT | C# |
 |-----|----|
-| 类型名 | 保持原名（PascalCase） |
-| 字段名 | PascalCase（`snake_case` → `SnakeCase`） |
-| 枚举变体名 | 保持原名（PascalCase） |
+| 类型名 | 原样输出 |
+| 字段名 | 原样输出 |
+| enum 名 / enum variant 名 | 原样输出 |
 | 数据库类 | 项目管线默认 `GameConfig`；底层 codegen options 可覆盖 |
 | `@display("text")` | 生成 `/// <summary>text</summary>` XML 注释，应用于 type、enum、field、enum variant |
 | `@deprecated` | 生成 `[Obsolete]`，应用于 type、enum、field、enum variant；子类不自动继承父类的 `[Obsolete]` |
@@ -254,14 +254,16 @@ public enum Rarity
 
 ### `@keyAsEnum`
 
-类型级 `@keyAsEnum("EnumName")` 用于把某个 table 的 record key 在 C# 端强类型化。它不改变 CFT 类型系统、数据模型、JSON 或 MessagePack 导出格式：数据加载和数据导出仍然把 record key 当作字符串。
+类型级 `@keyAsEnum(EnumName)` 用于把某个 table 的 record key 填充进手动声明的空 enum，并在 C# 端强类型化。`EnumName` 必须是 schema 中已声明且没有手写 variant 的 enum；该 enum 可以被其他字段正常引用。它不改变 JSON 或 MessagePack 导出格式：数据加载和数据导出仍然把 record key 当作字符串。
 
-C# codegen 会额外生成名为 `EnumName` 的 enum，并把该类型生成类的 `Id` 属性和相关 key 索引从 `string` 提升为 `EnumName`。
+C# codegen 会用数据记录 key 替换 `EnumName` 占位 enum 的空 variant 集合，并把该类型生成类的 `Id` 属性和相关 key 索引从 `string` 提升为 `EnumName`。
 
 ```cft
-@keyAsEnum("GeneId")
+@keyAsEnum(GeneId)
 type GeneConfig {
 }
+
+enum GeneId {}
 
 type BioRemainsConfig {
   gene: GeneConfig?;
@@ -296,7 +298,9 @@ public partial class BioRemainsConfig
 `@keyAsEnum` 变体的整数值：
 
 - 新出现的 record key 追加分配下一个未使用整数值。
+- 若占位 enum 带 `@flag`，新出现的 record key 追加分配下一个未使用 bit 值（`1, 2, 4, ...`），不会自动生成 `None = 0`。
 - 已存在的 record key 保持原有整数值，即使数据顺序变化。
+- 若占位 enum 带 `@flag`，lockfile 中已有值必须为正的 2 的幂；否则 codegen/build 报 artifact diagnostic，要求用户清理或重建对应 lockfile 条目。
 - 当前 schema 中不再声明的 `@keyAsEnum` enum 会从 lockfile 中移除。
 - `coflow codegen csharp` 不加载数据源，只会保留当前 schema 声明的 enum 和 lockfile 中已有的变体。
 - 如果 codegen preflight 有诊断，lockfile 不会被读取、写入或清理。
@@ -731,13 +735,15 @@ sealed type ItemReward : Reward {
 }
 
 @display("物品")
-@keyAsEnum("ItemId")
+@keyAsEnum(ItemId)
 type Item {
   @display("名称")
   name: string;
 
   rarity: Rarity = Rarity.Common;
 }
+
+enum ItemId {}
 
 type Monster {
   rarity: Rarity;

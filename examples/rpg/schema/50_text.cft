@@ -10,9 +10,9 @@ type Text {
     zh_cn != "";
     en_us != "";
     context != "";
-    matches(id, "^[a-z][a-z0-9_.]*$");
-    len(tags) > 0;
-    unique(tags);
+    id.matches("^[a-z][a-z0-9_.]*$");
+    tags.len() > 0;
+    tags.unique();
     max_length > 0;
 
     none tag in tags {

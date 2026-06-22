@@ -6,7 +6,7 @@ abstract type Reward {
   check {
     key != "";
     source_note != "";
-    matches(key, "^[a-z][a-z0-9_]*$");
+    key.matches("^[a-z][a-z0-9_]*$");
   }
 }
 

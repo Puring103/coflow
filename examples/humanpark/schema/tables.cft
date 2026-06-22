@@ -20,7 +20,7 @@ sealed type TerrainConfig {
 }
 
 @display("物质配置")
-@keyAsEnum("MatterType")
+@keyAsEnum(MatterType)
 type SubstanceConfig {
   name: string;
   desc: string;
@@ -28,7 +28,7 @@ type SubstanceConfig {
 }
 
 @display("属性配置")
-@keyAsEnum("CreatureAttribute")
+@keyAsEnum(CreatureAttribute)
 type AttributeConfig {
   name: string;
   is_base: bool = false;
@@ -37,7 +37,7 @@ type AttributeConfig {
 }
 
 @display("能力配置")
-@keyAsEnum("Ability")
+@keyAsEnum(Ability)
 type AbilityConfig {
   name: localizedString;
   desc: string? = null;
@@ -45,7 +45,7 @@ type AbilityConfig {
 }
 
 @display("基因配置")
-@keyAsEnum("GeneId")
+@keyAsEnum(GeneId)
 type GeneConfig {
   name: string;
   desc: string? = null;
@@ -59,14 +59,14 @@ type GeneConfig {
 }
 
 @display("表皮配置")
-@keyAsEnum("SkinId")
+@keyAsEnum(SkinId)
 type SkinConfig {
   name: string;
   desc: string? = null;
 }
 
 @display("阶段配置")
-@keyAsEnum("PhaseId")
+@keyAsEnum(PhaseId)
 type PhaseConfig {
   desc: string;
   unlockAreaCount: int;

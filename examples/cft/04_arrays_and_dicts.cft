@@ -8,10 +8,10 @@ type ExampleLootTable {
   resistances: {ExampleDamageType: float} = {};
 
   check {
-    len(item_ids) == len(weights);
-    sum(weights) >= 0;
-    unique(item_ids);
-    contains(resistances, ExampleDamageType.Fire);
+    item_ids.len() == weights.len();
+    weights.sum() >= 0;
+    item_ids.unique();
+    resistances.contains(ExampleDamageType.Fire);
 
     all entry in named_weights {
       entry.key != "";

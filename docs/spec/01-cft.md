@@ -315,7 +315,7 @@ all entry in scores {
 如果需要表达"可以为空或至少满足一个"，惯用法为：
 
 ```cft
-when len(rewards) > 0 {
+when rewards.len() > 0 {
   any reward in rewards { reward is CurrencyReward; }
 }
 ```
@@ -389,23 +389,23 @@ item is null              # null 判断
 
 | 函数 | 参数 | 返回值 | 说明 |
 |------|------|--------|------|
-| `len(col)` | array 或 dict | int | 元素数量；数组中 `null` 元素照常计数 |
-| `contains(col, val)` | array + 元素，或 dict + key | bool | 存在性判断 |
-| `unique(array)` | array | bool | 元素是否唯一（支持 int、bool、string、enum 及其 nullable 形式） |
-| `min(array)` | 非空 int / float / enum array | 同元素类型 | 最小值 |
-| `max(array)` | 非空 int / float / enum array | 同元素类型 | 最大值 |
-| `sum(array)` | int 或 float array | 同元素类型 | 求和 |
-| `keys(dict)` | dict | array | key 数组 |
-| `values(dict)` | dict | array | value 数组 |
-| `matches(str, pat)` | string + 正则字符串字面量 | bool | 正则匹配，pattern 使用标准双引号字符串，Unicode 感知 |
+| `col.len()` | array 或 dict | int | 元素数量；数组中 `null` 元素照常计数 |
+| `col.contains(val)` | array + 元素，或 dict + key | bool | 存在性判断 |
+| `array.unique()` | array | bool | 元素是否唯一（支持 int、bool、string、enum 及其 nullable 形式） |
+| `array.min()` | 非空 int / float / enum array | 同元素类型 | 最小值 |
+| `array.max()` | 非空 int / float / enum array | 同元素类型 | 最大值 |
+| `array.sum()` | int 或 float array | 同元素类型 | 求和 |
+| `dict.keys()` | dict | array | key 数组 |
+| `dict.values()` | dict | array | value 数组 |
+| `str.matches(pat)` | string + 正则字符串字面量 | bool | 正则匹配，pattern 使用标准双引号字符串，Unicode 感知 |
 
 注意：
 - `unique` 将 `null` 当作可比较值处理；除 nullable 元素外，不支持 float、object、array、dict
 - `min` / `max` 跳过 `null`，没有任何非 `null` 值时报 check eval error
 - `sum` 跳过 `null`，没有任何非 `null` 值时返回 `0`
-- `contains([T?], null)` 检查数组中是否存在 `null` 元素
-- `contains(dict, val)` 只检查 key，不检查 value
-- `keys(dict)` / `values(dict)` 保留数据模型中 dict entries 的顺序，不按 key 排序
+- `[T?].contains(null)` 检查数组中是否存在 `null` 元素
+- `dict.contains(val)` 只检查 key，不检查 value
+- `dict.keys()` / `dict.values()` 保留数据模型中 dict entries 的顺序，不按 key 排序
 - `matches` 使用 Rust `regex` 语义，默认 Unicode-aware；匹配是子串匹配，需要全量匹配时显式写 `^...$`
 - `matches` 的 pattern 必须是字符串字面量；`const` 或字段提供的动态 pattern 不允许
 - `<<` `>>` 两个操作数均必须是 `int`
@@ -433,7 +433,7 @@ item is null              # null 判断
 | `@struct` | `type` | — | 必须是 `sealed type` | codegen 生成值类型（C# struct） |
 | `@flag` | `enum` | — | 变体值必须为 2 的幂（0 除外） | 位标志枚举（C# [Flags]） |
 | `@expand` | `field` | 具体 `type` | 字段不能是 primitive、enum、array、dict 或 nullable | Excel loader 将父字段及相邻列展开为嵌套对象 |
-| `@keyAsEnum("EnumName")` | `type` | — | EnumName 必须是有效 C# 标识符，且不能与 schema 名称冲突 | codegen 按记录 key 生成 enum，并把记录 `Id` 提升为该 enum |
+| `@keyAsEnum(EnumName)` | `type` | — | EnumName 必须是已声明且没有手写变体的 enum；同一 enum 只能绑定一个 type | build/codegen 按记录 key 填充该 enum，并把记录 `Id` 提升为该 enum |
 | `@display("text")` | `type`、`enum`、`field`、`enum variant` | 任意 | — | 可读名称，codegen 生成 XML 注释，用于编辑器显示 |
 | `@deprecated` | `type`、`enum`、`field`、`enum variant` | 任意 | — | 标记废弃，codegen 输出对应语言的废弃标记；子类不自动继承父类的 `@deprecated` |
 
@@ -443,7 +443,7 @@ item is null              # null 判断
 
 ```cft
 @display("物品")
-@keyAsEnum("ItemId")
+@keyAsEnum(ItemId)
 type Item {
   @display("稀有度")
   rarity: Rarity;
@@ -455,6 +455,8 @@ type Item {
   @display("旧价格")
   old_price: int = 0;
 }
+
+enum ItemId {}
 ```
 
 ---
@@ -672,7 +674,7 @@ pub enum CftConstValue {
 | `CFT-SCHEMA-024` | `InvalidAnnotationArgument` | 注解参数数量或类型错误 |
 | `CFT-SCHEMA-025` | `InvalidAnnotatedFieldType` | `@expand` 字段类型不合法 |
 | `CFT-SCHEMA-026` | `StructRequiresSealedType` | `@struct` 标注的 `type` 不是 `sealed type` |
-| `CFT-SCHEMA-027` | `RefTargetMustBeType` | 保留的历史错误码；当前旧 `@ref` 注解会作为未知注解报错 |
+| `CFT-SCHEMA-027` | `KeyAsEnumRequiresEmptyEnum` | `@keyAsEnum` 参数不是已声明的空 enum |
 | `CFT-SCHEMA-028` | `EnumVariantOnNonEnum` | 默认值使用 `Name.Variant`，但 `Name` 不是 `enum` |
 | `CFT-SCHEMA-029` | `UnknownEnumVariant` | 默认值引用未知枚举变体 |
 | `CFT-SCHEMA-030` | `InvalidConstValue` | `const` 值不是允许的字面量类型 |
@@ -707,7 +709,7 @@ pub enum CftConstValue {
 | `CFT-TYPE-019` | `RegexPatternMustBeLiteral` | `matches` 的 pattern 不是字符串字面量 |
 | `CFT-TYPE-020` | `InvalidRegexPattern` | `matches` 的正则 pattern 无法编译 |
 
-编译诊断应包含错误码、阶段、消息、主位置和相关位置。重复定义、继承冲突、`@keyAsEnum` 名称冲突等错误必须用相关位置指向首次定义或冲突来源。
+编译诊断应包含错误码、阶段、消息、主位置和相关位置。重复定义、继承冲突、`@keyAsEnum` 绑定冲突等错误必须用相关位置指向首次定义或冲突来源。
 
 **`add_module` 阶段（注册时立即报错）：**
 
@@ -726,7 +728,7 @@ pub enum CftConstValue {
 | `abstract` + `sealed` 同时使用 | 修饰符互斥 |
 | `@struct` 标注在非 `sealed type` 上 | 注解范围违反 |
 | `@flag` 变体值不是 2 的幂 | 注解约束违反 |
-| `@keyAsEnum` 参数不是字符串或目标不是 type | 注解参数/目标非法 |
+| `@keyAsEnum` 参数不是 enum 名、目标不是 type、或绑定的 enum 不是空占位 enum | 注解参数/目标非法或 key enum 占位非法 |
 | 字段声明名为 `id` | 保留名违反 |
 | 注解使用范围或字段类型不匹配 | 注解范围违反 |
 
@@ -788,7 +790,7 @@ type Stats {
 }
 
 @display("物品")
-@keyAsEnum("ItemId")
+@keyAsEnum(ItemId)
 type Item {
   @display("名称")
   name: string;
@@ -799,10 +801,12 @@ type Item {
   check {
     id != "";
     name != "";
-    matches(id, "^[a-z][a-z0-9_]*$");
+    id.matches("^[a-z][a-z0-9_]*$");
     none tag in tags { tag == ""; }
   }
 }
+
+enum ItemId {}
 
 abstract type Reward {
   key: string;
@@ -828,10 +832,10 @@ type DropTable {
   weights: [int];
 
   check {
-    len(rewards) == len(weights);
-    len(rewards) > 0;
-    sum(weights) == 100;
-    min(weights) >= 0;
+    rewards.len() == weights.len();
+    rewards.len() > 0;
+    weights.sum() == 100;
+    weights.min() >= 0;
     any reward in rewards { reward is CurrencyReward; }
   }
 }
@@ -855,7 +859,7 @@ type Monster {
     1 <= level <= MAX_LEVEL;
     stats.hp > 0;
     rarity >= Rarity.Common;
-    contains(resistances, DamageType.Fire);
+    resistances.contains(DamageType.Fire);
 
     when boss_drop != null {
       boss_drop.rarity >= Rarity.Rare;
