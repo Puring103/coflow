@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { FileTree } from './components/FileTree'
 import { TableView } from './components/TableView'
 import { RecordView } from './components/RecordView'
@@ -22,6 +22,8 @@ export default function App() {
   const [fileDataCache, setFileDataCache] = useState<Record<string, FileRecords>>({})
   const [graphCache, setGraphCache] = useState<Record<string, GraphData>>({})
   const [showHelp, setShowHelp] = useState(false)
+  const helpBoxRef = useRef<HTMLDivElement>(null)
+  const helpReturnRef = useRef<HTMLElement | null>(null)
   const [loadingFile, setLoadingFile] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
@@ -49,7 +51,9 @@ export default function App() {
       }
       if (e.altKey && e.key === 'ArrowLeft') router.back()
       if (e.altKey && e.key === 'ArrowRight') router.forward()
-      if (e.key === '?') setShowHelp(v => !v)
+      // `?` only toggles help when not focused inside a text-editing control,
+      // otherwise typing `?` into inputs/search boxes would steal focus.
+      if (e.key === '?' && !isTextTarget(e.target)) setShowHelp(v => !v)
       if (e.key === 'Escape') setShowHelp(false)
     }
     window.addEventListener('keydown', handler)
@@ -187,6 +191,50 @@ export default function App() {
     setActiveSession(project?.session_id ?? null)
   }, [project?.session_id])
 
+  // Help overlay: focus trap + autofocus + restore focus on close.
+  useEffect(() => {
+    if (!showHelp) return
+    helpReturnRef.current = document.activeElement as HTMLElement | null
+    const box = helpBoxRef.current
+    if (box) {
+      const focusable = box.querySelector<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      )
+      focusable?.focus()
+    }
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+      if (!box) return
+      const nodes = Array.from(
+        box.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter(el => !el.hasAttribute('disabled'))
+      if (nodes.length === 0) return
+      const first = nodes[0]
+      const last = nodes[nodes.length - 1]
+      const active = document.activeElement as HTMLElement | null
+      if (e.shiftKey) {
+        if (active === first || !box.contains(active)) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else {
+        if (active === last || !box.contains(active)) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => {
+      window.removeEventListener('keydown', handler)
+      const ret = helpReturnRef.current
+      if (ret && typeof ret.focus === 'function') ret.focus()
+      helpReturnRef.current = null
+    }
+  }, [showHelp])
+
   // Sync activeType when file or its type set changes
   useEffect(() => {
     if (!activeFileData) return
@@ -228,6 +276,7 @@ export default function App() {
           onClick={router.back}
           disabled={!router.canBack}
           title="后退 (Alt+←)"
+          aria-label="后退"
         >
           <Icon name="arrow-left" size={14} />
         </button>
@@ -236,6 +285,7 @@ export default function App() {
           onClick={router.forward}
           disabled={!router.canForward}
           title="前进 (Alt+→)"
+          aria-label="前进"
         >
           <Icon name="arrow-right" size={14} />
         </button>
@@ -249,19 +299,25 @@ export default function App() {
           className="btn btn-icon"
           onClick={toggleTheme}
           title={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
+          aria-label={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
         >
           <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={14} />
         </button>
-        <button className="btn btn-icon" onClick={() => setShowHelp(v => !v)} title="帮助 (?)">
+        <button
+          className="btn btn-icon"
+          onClick={() => setShowHelp(v => !v)}
+          title="帮助 (?)"
+          aria-label="帮助"
+        >
           <Icon name="help" size={14} />
         </button>
       </div>
 
       {errorMsg && (
-        <div className="error-banner">
+        <div className="error-banner" role="alert">
           <Icon name="error" size={13} />
           {errorMsg}
-          <button className="btn btn-icon" onClick={() => setErrorMsg(null)}>
+          <button className="btn btn-icon" onClick={() => setErrorMsg(null)} aria-label="关闭错误提示">
             <Icon name="close" size={12} />
           </button>
         </div>
@@ -412,7 +468,14 @@ export default function App() {
 
       {showHelp && (
         <div className="help-overlay" onClick={() => setShowHelp(false)}>
-          <div className="help-box" onClick={e => e.stopPropagation()}>
+          <div
+            className="help-box"
+            ref={helpBoxRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="键盘快捷键"
+            onClick={e => e.stopPropagation()}
+          >
             <h3>
               <Icon name="help" size={16} />
               键盘快捷键
@@ -461,4 +524,12 @@ function collectSourceFiles(snapshot: ProjectSnapshot): string[] {
   }
   for (const n of snapshot.file_tree) walk(n)
   return out
+}
+
+/** True when the user is currently focused inside a text-editing control.
+ *  Used to gate global shortcuts (`?`, etc.) so they don't fire while typing. */
+function isTextTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const tag = target.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable
 }
