@@ -6,7 +6,6 @@
 #![allow(clippy::missing_errors_doc, clippy::module_name_repetitions)]
 
 mod convert;
-mod patch;
 mod session;
 pub mod types;
 

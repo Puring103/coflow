@@ -1,5 +1,46 @@
 // Hand-maintained bindings matching Rust types in coflow-editor-core/src/types.rs
 
+/**
+ * Structured error returned by every Tauri command. The editor surfaces
+ * `message` in the banner and pushes `diagnostics` (when present) into the
+ * diagnostics panel without any string parsing.
+ */
+export interface EditorError {
+  kind: 'session' | 'project' | 'load' | 'write' | 'not_found' | 'other'
+  message: string
+  diagnostics?: DiagnosticItem[]
+}
+
+/**
+ * Render any error returned from Tauri (whether a structured EditorError or
+ * a stringified one from older code paths) to a single human-readable
+ * message. Robust to legacy strings so the call sites don't have to branch.
+ */
+export function errorMessage(err: unknown): string {
+  if (typeof err === 'string') return err
+  if (err && typeof err === 'object' && 'message' in err) {
+    const msg = (err as { message: unknown }).message
+    if (typeof msg === 'string') return msg
+  }
+  try {
+    return JSON.stringify(err)
+  } catch {
+    return String(err)
+  }
+}
+
+/**
+ * Extract the structured diagnostics array from an EditorError if present;
+ * returns an empty array otherwise.
+ */
+export function errorDiagnostics(err: unknown): DiagnosticItem[] {
+  if (err && typeof err === 'object' && 'diagnostics' in err) {
+    const diags = (err as { diagnostics: unknown }).diagnostics
+    if (Array.isArray(diags)) return diags as DiagnosticItem[]
+  }
+  return []
+}
+
 export interface ProjectSnapshot {
   session_id: number
   project_root: string
@@ -29,6 +70,15 @@ export interface FileRecords {
   file_path: string
   type_names: string[]
   records: RecordRow[]
+  capabilities: SourceCapabilities
+}
+
+export interface SourceCapabilities {
+  provider_id: string
+  can_edit_field: boolean
+  can_insert_record: boolean
+  can_delete_record: boolean
+  is_remote: boolean
 }
 
 export interface RecordRow {
@@ -37,11 +87,36 @@ export interface RecordRow {
   fields: FieldCell[]
 }
 
+/**
+ * Result returned by the `write_field` Tauri command. Bundles the
+ * refreshed row with the project's full diagnostic set after the
+ * post-write rebuild — every successful edit reruns the checker, so any
+ * check failures introduced or resolved by the edit show up in
+ * `diagnostics` without a follow-up query.
+ */
+export interface WriteFieldOutcome {
+  row: RecordRow
+  diagnostics: DiagnosticItem[]
+}
+
 export interface FieldCell {
   name: string
   value: FieldValue
-  /** Top-level field came from a `...spread` expansion; not editable here. */
+  /** True when this cell's value was inherited via a `...spread`. Mirrors
+   *  `spread_info != null` for legacy callers; new code should consult
+   *  `spread_info` for the source coordinates. */
   is_spread?: boolean
+  /** Where this cell's value originally came from when it was inherited
+   *  via a spread. Front-end uses it to render the cell as inherited and
+   *  show a "jump to source" affordance. */
+  spread_info?: SpreadInfo
+}
+
+export interface SpreadInfo {
+  source_record_key: string
+  source_record_type: string
+  source_record_file?: string | null
+  source_field_path: string[]
 }
 
 export type FieldValue =

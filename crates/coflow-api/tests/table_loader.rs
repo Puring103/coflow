@@ -1,7 +1,9 @@
 #![allow(clippy::panic_in_result_fn)]
 
 use coflow_api::table::{collect_table_input_records, TableSheet, TableSheetConfig, TableSource};
-use coflow_api::{OriginMap, SourceLocation, TextSpan};
+use coflow_api::{
+    map_diagnostics_with_origins, origins_of, RecordOrigin, SourceLocation, TextSpan,
+};
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputValue, CfdValue};
 use std::path::PathBuf;
@@ -45,7 +47,7 @@ fn loads_table_source_with_excel_style_sheet_config() -> TestResult {
     let loaded =
         collect_table_input_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
     assert_eq!(loaded.records.len(), 1);
-    assert_eq!(loaded.origins.record_count(), 1);
+    assert!(matches!(loaded.records[0].origin, RecordOrigin::Table { .. }));
     assert_eq!(loaded.records[0].key, "sword_01");
 
     let loaded = collect_table_input_records(
@@ -115,6 +117,7 @@ fn maps_remote_table_data_model_diagnostics_to_remote_cells() -> TestResult {
 
     let loaded =
         collect_table_input_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+    let origins = origins_of(&loaded.records);
     let mut builder = CfdDataModel::builder(&schema);
     for record in loaded.records {
         builder.add_input_record(record);
@@ -122,7 +125,7 @@ fn maps_remote_table_data_model_diagnostics_to_remote_cells() -> TestResult {
     let Err(err) = builder.build() else {
         return Err("duplicate table keys should fail".to_string());
     };
-    let mapped = loaded.origins.to_origin_map().map_diagnostics(err);
+    let mapped = map_diagnostics_with_origins(err, &origins);
     let primary = mapped
         .diagnostics
         .first()
@@ -155,17 +158,16 @@ fn maps_file_record_diagnostics_to_record_text_span() -> TestResult {
     };
 
     let source_path = PathBuf::from("data/items.cfd");
-    let mut origins = OriginMap::default();
-    origins.push_file_record(
-        source_path.clone(),
-        Some(TextSpan {
+    let origins = vec![RecordOrigin::File {
+        path: source_path.clone(),
+        span: Some(TextSpan {
             start_line: 4,
             start_character: 2,
             end_line: 6,
             end_character: 1,
         }),
-    );
-    let mapped = origins.map_diagnostics(err);
+    }];
+    let mapped = map_diagnostics_with_origins(err, &origins);
     let primary = mapped
         .diagnostics
         .first()

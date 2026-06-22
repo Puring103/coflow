@@ -10,6 +10,7 @@ import { useTheme } from './hooks/useTheme'
 import { MOCK_PROJECT, MOCK_FILE_RECORDS, MOCK_GRAPH } from './mock'
 import * as api from './api'
 import type { ProjectSnapshot, FileRecords, GraphData, FieldValue, FieldPathSegment, DiagnosticItem } from './bindings/index'
+import { errorMessage } from './bindings/index'
 import type { FieldDiagnostic } from './components/DataCard'
 import { typeColor } from './utils/typeColor'
 import { isEditableFile } from './utils/editable'
@@ -55,6 +56,20 @@ export default function App() {
     return () => window.removeEventListener('keydown', handler)
   }, [router])
 
+  // Reset all per-session UI state to a clean slate before swapping in a
+  // new project snapshot. Used by both "open" and "new" flows so behavior
+  // is identical.
+  const adoptSnapshot = useCallback(
+    (snapshot: ProjectSnapshot) => {
+      setProject(snapshot)
+      setFileDataCache({})
+      setGraphCache({})
+      const firstFile = collectSourceFiles(snapshot)[0]
+      if (firstFile) router.push({ view: 'table', file: firstFile })
+    },
+    [router]
+  )
+
   const openProject = useCallback(async () => {
     if (!api.isTauri) {
       setProject(MOCK_PROJECT)
@@ -64,18 +79,33 @@ export default function App() {
     const yamlPath = await api.pickProjectYaml()
     if (!yamlPath) return
     setErrorMsg(null)
-    setFileDataCache({})
-    setGraphCache({})
     try {
       const snapshot = await api.loadProject(yamlPath)
-      setProject(snapshot)
-      // Auto-open first source file
-      const firstFile = collectSourceFiles(snapshot)[0]
-      if (firstFile) router.push({ view: 'table', file: firstFile })
+      adoptSnapshot(snapshot)
     } catch (err) {
-      setErrorMsg(`打开项目失败: ${String(err)}`)
+      setErrorMsg(`打开项目失败: ${errorMessage(err)}`)
     }
-  }, [router])
+  }, [adoptSnapshot])
+
+  // "新建工程": pick an empty directory, scaffold a minimal Coflow
+  // project (mirrors `coflow init`), and open it. The same back-end call
+  // refuses to clobber an existing `coflow.yaml` and that diagnostic
+  // surfaces here as a clear error banner.
+  const newProject = useCallback(async () => {
+    if (!api.isTauri) {
+      setErrorMsg('新建工程仅在桌面环境可用')
+      return
+    }
+    const dir = await api.pickProjectDirectory()
+    if (!dir) return
+    setErrorMsg(null)
+    try {
+      const snapshot = await api.initProject(dir)
+      adoptSnapshot(snapshot)
+    } catch (err) {
+      setErrorMsg(`新建工程失败: ${errorMessage(err)}`)
+    }
+  }, [adoptSnapshot])
 
   // Lazy-load file records when navigated to
   useEffect(() => {
@@ -87,7 +117,7 @@ export default function App() {
     api
       .getFileRecords(project.session_id, file)
       .then(records => setFileDataCache(c => ({ ...c, [file]: records })))
-      .catch(err => setErrorMsg(`读取文件失败: ${String(err)}`))
+      .catch(err => setErrorMsg(`读取文件失败: ${errorMessage(err)}`))
       .finally(() => setLoadingFile(null))
   }, [project, router.current, fileDataCache])
 
@@ -100,7 +130,7 @@ export default function App() {
     api
       .getGraph(project.session_id, file)
       .then(g => setGraphCache(c => ({ ...c, [file]: g })))
-      .catch(err => setErrorMsg(`读取图谱失败: ${String(err)}`))
+      .catch(err => setErrorMsg(`读取图谱失败: ${errorMessage(err)}`))
   }, [project, router.current, graphCache])
 
   const openFile = useCallback(
@@ -121,21 +151,24 @@ export default function App() {
     async (filePath: string, recordKey: string, fieldPath: FieldPathSegment[], newValue: FieldValue) => {
       if (!project || !api.isTauri) return
       try {
-        const updated = await api.writeField(
+        const outcome = await api.writeField(
           project.session_id,
           filePath,
           recordKey,
           fieldPath,
           newValue,
         )
-        // Backend does a full project reload — every cached view is stale.
+        // The post-write rebuild reruns the checker; surface the new
+        // diagnostic set immediately so the panel reflects whatever the
+        // edit introduced or resolved.
+        setProject(p => (p ? { ...p, diagnostics: outcome.diagnostics } : p))
         // Refresh the edited file eagerly; drop other caches so they re-load on next nav.
         const refreshed = await api.getFileRecords(project.session_id, filePath)
         setFileDataCache({ [filePath]: refreshed })
         setGraphCache({})
-        return updated
+        return outcome.row
       } catch (err) {
-        setErrorMsg(`写入失败: ${String(err)}`)
+        setErrorMsg(`写入失败: ${errorMessage(err)}`)
       }
     },
     [project]
@@ -145,7 +178,7 @@ export default function App() {
   const activeFile = currentRoute?.file ?? null
   const activeFileData = activeFile ? fileDataCache[activeFile] : null
   const activeGraph = activeFile ? graphCache[activeFile] : null
-  const readOnly = !isEditableFile(activeFile)
+  const readOnly = !isEditableFile(activeFileData)
   const fileDiagnostics = activeFile && project
     ? project.diagnostics.filter(d => d.file_path === activeFile)
     : []
@@ -180,6 +213,14 @@ export default function App() {
         <button className="btn btn-outlined" onClick={openProject}>
           <Icon name="open" size={13} />
           打开项目
+        </button>
+        <button
+          className="btn btn-outlined"
+          onClick={newProject}
+          title="选一个空目录创建新的 Coflow 工程（等价于 coflow init）"
+        >
+          <Icon name="plus" size={13} />
+          新建工程
         </button>
         <span className="topbar-divider" />
         <button
@@ -346,10 +387,16 @@ export default function App() {
                 {project ? '请选择文件' : '请打开项目'}
               </div>
               {!project && (
-                <button className="btn btn-primary" onClick={openProject}>
-                  <Icon name="open" size={13} />
-                  打开项目
-                </button>
+                <div className="content-empty-actions">
+                  <button className="btn btn-primary" onClick={openProject}>
+                    <Icon name="open" size={13} />
+                    打开项目
+                  </button>
+                  <button className="btn btn-outlined" onClick={newProject}>
+                    <Icon name="plus" size={13} />
+                    新建工程
+                  </button>
+                </div>
               )}
             </div>
           )}

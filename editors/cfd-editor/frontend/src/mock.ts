@@ -1,7 +1,15 @@
 // Mock data for UI prototype — no Tauri backend required
 import type {
-  ProjectSnapshot, FileRecords, RecordRow, GraphData, FieldValue
+  ProjectSnapshot, FileRecords, RecordRow, GraphData, FieldValue, SourceCapabilities,
 } from './bindings/index'
+
+const MOCK_CFD_CAPS: SourceCapabilities = {
+  provider_id: 'cfd',
+  can_edit_field: true,
+  can_insert_record: true,
+  can_delete_record: true,
+  is_remote: false,
+}
 
 export const MOCK_PROJECT: ProjectSnapshot = {
   session_id: 1,
@@ -36,6 +44,7 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
   'data/item.cfd': {
     file_path: 'data/item.cfd',
     type_names: ['Item', 'Weapon'],
+    capabilities: MOCK_CFD_CAPS,
     records: [
       {
         key: 'Item_001', actual_type: 'Item',
@@ -73,6 +82,7 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
   'data/npc.cfd': {
     file_path: 'data/npc.cfd',
     type_names: ['Npc'],
+    capabilities: MOCK_CFD_CAPS,
     records: [
       {
         key: 'Npc_001', actual_type: 'Npc',

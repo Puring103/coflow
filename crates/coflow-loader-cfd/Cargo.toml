@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 coflow-api = { path = "../coflow-api" }
+coflow-cfd = { path = "../coflow-cfd" }
 coflow-cft = { path = "../coflow-cft" }
 coflow-data-model = { path = "../coflow-data-model" }
 

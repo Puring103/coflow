@@ -17,9 +17,12 @@
 
 use coflow_api::{
     DataLoader, Diagnostic, DiagnosticSet, Label, LoadContext, LoadedRecords, LoaderDescriptor,
-    OriginMap, ProbeResult, ProjectSourceRef, ResolvedSource, SourceLocation, SourceLocationSpec,
-    SourceResolveContext, TextSpan,
+    ProbeResult, ProjectSourceRef, RecordOrigin, ResolvedSource, SourceLocation,
+    SourceLocationSpec, SourceResolveContext, TextSpan,
 };
+
+pub mod writer;
+pub use writer::{CfdWriter, CFD_WRITER_DESCRIPTOR};
 use coflow_cft::{record_key_ident_error, CftContainer, CftSchemaField, CftSchemaTypeRef};
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostics, CfdInputDictKey, CfdInputRecord, CfdInputRefIndex, CfdInputValue,
@@ -171,18 +174,17 @@ impl DataLoader for CfdLoader {
         })?;
         parse_cfd_input_records_with_spans(ctx.schema, &contents)
             .map(|records| {
-                let mut origins = OriginMap::default();
                 let records = records
                     .into_iter()
                     .map(|record| {
-                        origins.push_file_record(
-                            file.clone(),
-                            Some(text_span(&contents, record.span)),
-                        );
-                        record.record
+                        let span = text_span(&contents, record.span);
+                        record.record.with_origin(RecordOrigin::File {
+                            path: file.clone(),
+                            span: Some(span),
+                        })
                     })
                     .collect();
-                LoadedRecords { records, origins }
+                LoadedRecords { records }
             })
             .map_err(|err| cfd_error_to_diagnostics(file, &contents, err))
     }

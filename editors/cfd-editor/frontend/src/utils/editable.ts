@@ -1,3 +1,29 @@
-export function isEditableFile(path: string | null | undefined): boolean {
-  return !!path && path.toLowerCase().endsWith('.cfd')
+import type { FileRecords } from '../bindings/index'
+
+/**
+ * Decide whether the front-end is allowed to edit fields in a file.
+ *
+ * Two call shapes:
+ * - With a loaded `FileRecords`: consult its `capabilities.can_edit_field`,
+ *   the back-end's authoritative answer.
+ * - With a path string (e.g. from a graph node where the records aren't
+ *   loaded): fall back to extension-based heuristics so the UI can still
+ *   render the right affordances. The extension list mirrors the
+ *   provider ids in `coflow-editor-core::session::build`'s
+ *   `default_provider_registry`.
+ */
+export function isEditableFile(input: FileRecords | string | null | undefined): boolean {
+  if (!input) return false
+  if (typeof input === 'string') {
+    const lower = input.toLowerCase()
+    return lower.endsWith('.cfd') || lower.endsWith('.xlsx')
+  }
+  return input.capabilities.can_edit_field
+}
+
+/**
+ * Boolean inverse, useful for read-only badges.
+ */
+export function isReadOnlyFile(input: FileRecords | string | null | undefined): boolean {
+  return !isEditableFile(input)
 }

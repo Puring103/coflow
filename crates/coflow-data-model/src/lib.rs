@@ -30,6 +30,7 @@
 mod compiler;
 mod diagnostic;
 mod model;
+mod origin;
 mod schema_view;
 
 pub use diagnostic::{
@@ -40,4 +41,8 @@ pub use model::{
     CfdDataModel, CfdDictKey, CfdEnumValue, CfdInputDictKey, CfdInputRecord, CfdInputRefIndex,
     CfdInputValue, CfdModelBuilder, CfdPolymorphicIndex, CfdRecord, CfdRecordId, CfdRefPathSegment,
     CfdTable, CfdValue,
+};
+pub use origin::{
+    label_to_location, map_diagnostics, MappedDiagnostic, MappedLabel, RecordOrigin,
+    SourceDocument, SourceLocation, TextSpan,
 };

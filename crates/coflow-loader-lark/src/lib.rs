@@ -22,9 +22,11 @@
 
 use coflow_api::table::{TableSheet, TableSheetConfig, TableSource};
 use coflow_api::{
-    table::collect_table_input_records, DataLoader, Diagnostic, DiagnosticSet, Label, LoadContext,
-    LoadedRecords, LoaderDescriptor, ProbeResult, ProjectSourceRef, ResolvedSource, SourceLocation,
-    SourceLocationSpec, SourceResolveContext,
+    table::collect_table_input_records, CfdValue, DataLoader, DataWriter, Diagnostic,
+    DiagnosticSet, Label, LoadContext, LoadedRecords, LoaderDescriptor, ProbeResult,
+    ProjectSourceRef, RecordOrigin, ResolvedSource, SourceDocument, SourceLocation,
+    SourceLocationSpec, SourceResolveContext, WriteCellRequest, WriteContext,
+    WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use serde::de::DeserializeOwned;
@@ -153,6 +155,23 @@ pub trait LarkHttpClient {
         body: &Value,
         tenant_access_token: Option<&str>,
     ) -> Result<String, String>;
+
+    /// Performs an authenticated PUT request with a JSON body. Writers use
+    /// this for batch update endpoints; the default implementation routes
+    /// through `post_json` so existing fakes only need to implement two
+    /// methods, but real clients should override for correct semantics.
+    ///
+    /// # Errors
+    ///
+    /// Returns a transport or HTTP response error message.
+    fn put_json(
+        &self,
+        url: &str,
+        body: &Value,
+        tenant_access_token: &str,
+    ) -> Result<String, String> {
+        self.post_json(url, body, Some(tenant_access_token))
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -181,6 +200,21 @@ impl LarkHttpClient for UreqLarkHttpClient {
             request = request.set("Authorization", &bearer);
         }
         request
+            .send_string(&body.to_string())
+            .map_err(ureq_error_message)?
+            .into_string()
+            .map_err(|err| err.to_string())
+    }
+
+    fn put_json(
+        &self,
+        url: &str,
+        body: &Value,
+        tenant_access_token: &str,
+    ) -> Result<String, String> {
+        ureq::put(url)
+            .set("Content-Type", "application/json")
+            .set("Authorization", &format!("Bearer {tenant_access_token}"))
             .send_string(&body.to_string())
             .map_err(ureq_error_message)?
             .into_string()
@@ -584,7 +618,6 @@ where
         collect_table_input_records(ctx.schema, &[table_source])
             .map(|loaded| LoadedRecords {
                 records: loaded.records,
-                origins: loaded.origins.to_origin_map(),
             })
             .map_err(DiagnosticSet::from)
     }
@@ -814,11 +847,480 @@ fn lark_diagnostic_to_api(diagnostic: LarkDiagnostic) -> Diagnostic {
     }
 }
 
+/// Writer descriptor for Lark sheets. Capabilities expose this as a remote,
+/// field-edit-only writer (no record insertion via this writer yet).
+pub const LARK_SHEET_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
+    id: "lark-sheet",
+    display_name: "Lark Sheet",
+    capabilities: WriterCapabilities::remote_field_edit(),
+};
+
+/// `DataWriter` for [`RecordOrigin::Table`] origins whose document is a
+/// `Remote("lark:<spreadsheet_token>")`. Routes the edit through Lark's
+/// `values_batch_update` endpoint.
+///
+/// Holds an in-memory cache of (a) per-app `tenant_access_token`s with their
+/// expiry timestamp and (b) per-spreadsheet sheet-title → sheet-id maps so a
+/// hot-path write reuses both and only spends one round-trip on the
+/// `values_batch_update` itself. Cached tokens are refreshed eagerly with a
+/// 60-second safety margin before their declared `expire` time.
+#[derive(Debug)]
+pub struct LarkSheetWriter<C = UreqLarkHttpClient> {
+    client: C,
+    cache: std::sync::Mutex<LarkWriterCache>,
+}
+
+#[derive(Debug, Default)]
+struct LarkWriterCache {
+    /// Keyed by `app_id` — values represent a tenant access token + the
+    /// instant after which it is considered stale.
+    tokens: std::collections::HashMap<String, CachedToken>,
+    /// Keyed by `spreadsheet_token` — values are the sheet-title → sheet-id
+    /// map captured the first time we hit the spreadsheet.
+    sheet_ids: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+}
+
+#[derive(Debug, Clone)]
+struct CachedToken {
+    token: String,
+    /// `Instant` after which the cached token must be refreshed.
+    expires_at: std::time::Instant,
+}
+
+impl Default for LarkSheetWriter<UreqLarkHttpClient> {
+    fn default() -> Self {
+        Self {
+            client: UreqLarkHttpClient,
+            cache: std::sync::Mutex::new(LarkWriterCache::default()),
+        }
+    }
+}
+
+impl<C> LarkSheetWriter<C> {
+    #[must_use]
+    pub fn new(client: C) -> Self {
+        Self {
+            client,
+            cache: std::sync::Mutex::new(LarkWriterCache::default()),
+        }
+    }
+}
+
+impl<C> LarkSheetWriter<C>
+where
+    C: LarkHttpClient + Send + Sync,
+{
+    /// Get a cached tenant access token, refreshing it via the auth endpoint
+    /// when the cache misses or the cached value is within 60s of expiry.
+    fn cached_tenant_token(
+        &self,
+        app_id: &str,
+        app_secret: &str,
+    ) -> Result<String, DiagnosticSet> {
+        let now = std::time::Instant::now();
+        if let Ok(cache) = self.cache.lock() {
+            if let Some(entry) = cache.tokens.get(app_id) {
+                if entry.expires_at > now {
+                    return Ok(entry.token.clone());
+                }
+            }
+        }
+        let (token, ttl_secs) = lark_tenant_token_with_ttl(&self.client, app_id, app_secret)?;
+        // Refresh 60 s before declared expiry so a token doesn't expire
+        // mid-call. Default to a 30-minute TTL when the response omits one.
+        let safety_margin = std::time::Duration::from_secs(60);
+        let lifetime = ttl_secs
+            .map(std::time::Duration::from_secs)
+            .unwrap_or_else(|| std::time::Duration::from_secs(30 * 60));
+        let expires_at = now + lifetime.saturating_sub(safety_margin);
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.tokens.insert(
+                app_id.to_string(),
+                CachedToken {
+                    token: token.clone(),
+                    expires_at,
+                },
+            );
+        }
+        Ok(token)
+    }
+
+    /// Look up the sheet id for a sheet title in a given spreadsheet,
+    /// fetching the spreadsheet's metadata once and caching the full
+    /// title→id map for subsequent lookups.
+    fn cached_sheet_id(
+        &self,
+        spreadsheet_token: &str,
+        sheet_title: &str,
+        tenant_token: &str,
+    ) -> Result<String, DiagnosticSet> {
+        if let Ok(cache) = self.cache.lock() {
+            if let Some(map) = cache.sheet_ids.get(spreadsheet_token) {
+                if let Some(id) = map.get(sheet_title) {
+                    return Ok(id.clone());
+                }
+                // The same spreadsheet might already be cached, but the
+                // particular title has not been resolved yet. Fall through
+                // to fetch + insert without invalidating siblings.
+            }
+        }
+        let map = fetch_sheet_id_map(&self.client, spreadsheet_token, tenant_token)?;
+        let resolved = map
+            .get(sheet_title)
+            .cloned()
+            .ok_or_else(|| {
+                DiagnosticSet::one(diag(
+                    "LARK-WRITE",
+                    format!("sheet `{sheet_title}` not found in spreadsheet"),
+                ))
+            })?;
+        if let Ok(mut cache) = self.cache.lock() {
+            cache
+                .sheet_ids
+                .insert(spreadsheet_token.to_string(), map);
+        }
+        Ok(resolved)
+    }
+
+    /// Drop cached entries for an `app_id` / spreadsheet pair after a write
+    /// fails with auth or sheet-not-found errors. Called by the writer's
+    /// retry path.
+    fn invalidate_caches(&self, app_id: Option<&str>, spreadsheet_token: Option<&str>) {
+        if let Ok(mut cache) = self.cache.lock() {
+            if let Some(app) = app_id {
+                cache.tokens.remove(app);
+            }
+            if let Some(token) = spreadsheet_token {
+                cache.sheet_ids.remove(token);
+            }
+        }
+    }
+}
+
+impl<C> DataWriter for LarkSheetWriter<C>
+where
+    C: LarkHttpClient + Send + Sync,
+{
+    fn descriptor(&self) -> &'static WriterDescriptor {
+        &LARK_SHEET_WRITER_DESCRIPTOR
+    }
+
+    fn write_field(
+        &self,
+        _ctx: WriteContext<'_>,
+        request: &WriteCellRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        let RecordOrigin::Table {
+            document,
+            sheet,
+            row,
+            id_column,
+            field_columns,
+        } = request.origin
+        else {
+            return Err(DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                "lark writer requires a Table origin",
+            )));
+        };
+        let SourceDocument::Remote(doc) = document else {
+            return Err(DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                "lark writer requires a remote table document",
+            )));
+        };
+        let spreadsheet_token = doc
+            .strip_prefix("lark:")
+            .ok_or_else(|| {
+                DiagnosticSet::one(diag(
+                    "LARK-WRITE",
+                    format!("unsupported lark document: `{doc}`"),
+                ))
+            })?
+            .to_string();
+
+        let column = resolve_lark_column(request.field_path, field_columns, *id_column)
+            .ok_or_else(|| {
+                DiagnosticSet::one(diag(
+                    "LARK-WRITE",
+                    format!(
+                        "field path {:?} does not map to any column in the source row",
+                        request.field_path
+                    ),
+                ))
+            })?;
+        let cell_value = render_lark_cell_value(request.new_value)?;
+
+        // Authenticate using the source's options so writes are scoped to
+        // the same tenant as the read path. Tokens are cached per `app_id`
+        // and refreshed eagerly before expiry; subsequent writes against
+        // the same tenant skip the auth round-trip entirely.
+        let app_id = required_option_string(&request.source.options, "app_id")?;
+        let app_secret = required_option_string(&request.source.options, "app_secret")?;
+        let token = self.cached_tenant_token(&app_id, &app_secret)?;
+
+        // Resolve sheet title → sheet_id. The map is cached per
+        // `spreadsheet_token` so writes after the first only pay for the
+        // metadata query once.
+        let sheet_id = self.cached_sheet_id(&spreadsheet_token, sheet, &token)?;
+        let column_letters = column_name(column);
+        let range = format!("{sheet_id}!{column_letters}{row}:{column_letters}{row}");
+        let endpoint = format!(
+            "{API_BASE}/sheets/v2/spreadsheets/{}/values_batch_update",
+            url_component(&spreadsheet_token)
+        );
+        let body = json!({
+            "valueRanges": [
+                { "range": range, "values": [[cell_value]] }
+            ]
+        });
+        // Send the write. If the cached token was rejected as stale,
+        // invalidate the cache and retry once with a fresh token.
+        let outcome = match self.send_values_batch_update(&endpoint, &body, &token) {
+            Ok(()) => Ok(()),
+            Err(LarkWriteFailure::TokenExpired(diag_set)) => {
+                self.invalidate_caches(Some(&app_id), None);
+                let fresh = self.cached_tenant_token(&app_id, &app_secret)?;
+                self.send_values_batch_update(&endpoint, &body, &fresh)
+                    .map_err(|err| match err {
+                        LarkWriteFailure::TokenExpired(d) | LarkWriteFailure::Other(d) => d,
+                    })
+                    .map_err(|d| {
+                        let mut combined = diag_set.clone();
+                        combined.extend(d);
+                        combined
+                    })
+            }
+            Err(LarkWriteFailure::Other(diag_set)) => Err(diag_set),
+        };
+        outcome?;
+
+        Ok(WriteOutcome {
+            touched_record_origins: vec![request.origin.clone()],
+            diagnostics: DiagnosticSet::empty(),
+        })
+    }
+}
+
+/// Outcome of a single `values_batch_update` HTTP call. Distinguishing
+/// "token-expired" from generic failures lets the writer retry exactly once
+/// with a fresh token rather than asking the user to retry the whole edit.
+enum LarkWriteFailure {
+    /// Server reported a stale-credential class error.
+    TokenExpired(DiagnosticSet),
+    /// Anything else (transport, malformed response, business error).
+    Other(DiagnosticSet),
+}
+
+impl<C> LarkSheetWriter<C>
+where
+    C: LarkHttpClient + Send + Sync,
+{
+    fn send_values_batch_update(
+        &self,
+        endpoint: &str,
+        body: &Value,
+        token: &str,
+    ) -> Result<(), LarkWriteFailure> {
+        let response = self
+            .client
+            .post_json(endpoint, body, Some(token))
+            .map_err(|message| {
+                LarkWriteFailure::Other(DiagnosticSet::one(diag(
+                    "LARK-WRITE",
+                    format!("values_batch_update failed: {message}"),
+                )))
+            })?;
+        let envelope: ApiEnvelope<Value> = serde_json::from_str(&response).map_err(|err| {
+            LarkWriteFailure::Other(DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                format!("failed to parse values_batch_update response: {err}"),
+            )))
+        })?;
+        if envelope.code == 0 {
+            return Ok(());
+        }
+        let diag_set = DiagnosticSet::one(diag(
+            "LARK-WRITE",
+            api_error_message(
+                "values_batch_update",
+                envelope.code,
+                envelope.msg.as_deref(),
+            ),
+        ));
+        // Lark's "tenant access token invalid / expired" family hovers
+        // around 99991663 / 99991668. Treat any 9999xxxx code as a hint
+        // that the token has gone stale and let the writer retry once.
+        if (99_991_000..100_000_000).contains(&envelope.code) {
+            Err(LarkWriteFailure::TokenExpired(diag_set))
+        } else {
+            Err(LarkWriteFailure::Other(diag_set))
+        }
+    }
+}
+
+fn resolve_lark_column(
+    field_path: &[WriteFieldPathSegment],
+    field_columns: &std::collections::BTreeMap<Vec<String>, usize>,
+    id_column: usize,
+) -> Option<usize> {
+    if field_path.is_empty() {
+        return Some(id_column);
+    }
+    let mut prefix: Vec<String> = Vec::new();
+    let mut found = None;
+    for segment in field_path {
+        let WriteFieldPathSegment::Field(name) = segment else {
+            break;
+        };
+        prefix.push(name.clone());
+        if let Some(column) = field_columns.get(&prefix) {
+            found = Some(*column);
+        }
+    }
+    if found.is_some() {
+        return found;
+    }
+    if let Some(WriteFieldPathSegment::Field(name)) = field_path.first() {
+        if name == "id" {
+            return Some(id_column);
+        }
+    }
+    None
+}
+
+fn render_lark_cell_value(value: &CfdValue) -> Result<String, DiagnosticSet> {
+    match value {
+        CfdValue::Null => Ok(String::new()),
+        CfdValue::Bool(v) => Ok(v.to_string()),
+        CfdValue::Int(v) => Ok(v.to_string()),
+        CfdValue::Float(v) => Ok(v.to_string()),
+        CfdValue::String(v) => Ok(v.clone()),
+        CfdValue::Enum(e) => Ok(e
+            .variant
+            .clone()
+            .unwrap_or_else(|| e.value.to_string())),
+        CfdValue::Ref { key, .. } => Ok(format!("@{key}")),
+        CfdValue::Array(items) => {
+            let mut out = String::from("[");
+            for (idx, item) in items.iter().enumerate() {
+                if idx > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str(&render_lark_cell_value(item)?);
+            }
+            out.push(']');
+            Ok(out)
+        }
+        CfdValue::Dict(entries) => {
+            let mut out = String::from("{");
+            for (idx, (key, value)) in entries.iter().enumerate() {
+                if idx > 0 {
+                    out.push_str(", ");
+                }
+                let key_text = match key {
+                    coflow_api::CfdDictKey::String(s) => format!("{s:?}"),
+                    coflow_api::CfdDictKey::Int(n) => n.to_string(),
+                    coflow_api::CfdDictKey::Enum(e) => e
+                        .variant
+                        .clone()
+                        .unwrap_or_else(|| e.value.to_string()),
+                };
+                out.push_str(&format!("{key_text}: {}", render_lark_cell_value(value)?));
+            }
+            out.push('}');
+            Ok(out)
+        }
+        CfdValue::Object(_) => Err(DiagnosticSet::one(diag(
+            "LARK-WRITE",
+            "writing nested object values into lark cells is not supported",
+        ))),
+    }
+}
+
+/// Fetch a tenant access token + the server-declared TTL (in seconds), which
+/// the writer cache uses to schedule refreshes.
+fn lark_tenant_token_with_ttl(
+    client: &impl LarkHttpClient,
+    app_id: &str,
+    app_secret: &str,
+) -> Result<(String, Option<u64>), DiagnosticSet> {
+    let body = json!({ "app_id": app_id, "app_secret": app_secret });
+    let response = client
+        .post_json(AUTH_URL, &body, None)
+        .map_err(|message| DiagnosticSet::one(diag("LARK-WRITE", message)))?;
+    let envelope: AuthResponse = serde_json::from_str(&response)
+        .map_err(|err| DiagnosticSet::one(diag("LARK-WRITE", err.to_string())))?;
+    if envelope.code != 0 {
+        return Err(DiagnosticSet::one(diag(
+            "LARK-WRITE",
+            api_error_message("tenant access token", envelope.code, envelope.msg.as_deref()),
+        )));
+    }
+    let token = envelope.tenant_access_token.ok_or_else(|| {
+        DiagnosticSet::one(diag(
+            "LARK-WRITE",
+            "tenant access token response did not include `tenant_access_token`",
+        ))
+    })?;
+    Ok((token, envelope.expire))
+}
+
+/// Fetch the sheet metadata for a spreadsheet and return a `title → sheet_id`
+/// map keyed by sheet title (and also containing `sheet_id → sheet_id`
+/// self-entries so callers passing a sheet id directly still get a hit).
+fn fetch_sheet_id_map(
+    client: &impl LarkHttpClient,
+    spreadsheet_token: &str,
+    tenant_token: &str,
+) -> Result<std::collections::HashMap<String, String>, DiagnosticSet> {
+    let endpoint = format!(
+        "{API_BASE}/sheets/v3/spreadsheets/{}/sheets/query",
+        url_component(spreadsheet_token)
+    );
+    let response = client
+        .get(&endpoint, tenant_token)
+        .map_err(|message| DiagnosticSet::one(diag("LARK-WRITE", message)))?;
+    let envelope: ApiEnvelope<SheetsQueryData> = serde_json::from_str(&response)
+        .map_err(|err| DiagnosticSet::one(diag("LARK-WRITE", err.to_string())))?;
+    if envelope.code != 0 {
+        return Err(DiagnosticSet::one(diag(
+            "LARK-WRITE",
+            api_error_message(
+                "spreadsheet sheets",
+                envelope.code,
+                envelope.msg.as_deref(),
+            ),
+        )));
+    }
+    let data = envelope.data.ok_or_else(|| {
+        DiagnosticSet::one(diag(
+            "LARK-WRITE",
+            "spreadsheet sheets response did not include `data`",
+        ))
+    })?;
+    let mut map = std::collections::HashMap::new();
+    for sheet in data.sheets {
+        map.insert(sheet.title.clone(), sheet.sheet_id.clone());
+        map.insert(sheet.sheet_id.clone(), sheet.sheet_id);
+    }
+    Ok(map)
+}
+
+fn diag(code: &'static str, message: impl Into<String>) -> Diagnostic {
+    Diagnostic::error(code, "LARK", message)
+}
+
 #[derive(Debug, Deserialize)]
 struct AuthResponse {
     code: i64,
     msg: Option<String>,
     tenant_access_token: Option<String>,
+    /// Server-declared TTL in seconds. Lark documents 7200 today; callers
+    /// nonetheless treat this as advisory and apply a safety margin before
+    /// reuse.
+    #[serde(default)]
+    expire: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -4,11 +4,116 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Structured error returned by `SessionStore` methods.
+///
+/// Wire-shape: a discriminator (`kind`), a human-readable `message`, and an
+/// optional list of structured `diagnostics` mirroring the same payload the
+/// front-end already renders for build/load/check errors. The front-end can
+/// route by `kind`, show `message` in a banner, and inject `diagnostics`
+/// into the diagnostics panel without doing any string parsing.
+#[derive(Debug, Clone, Serialize)]
+pub struct EditorError {
+    pub kind: EditorErrorKind,
+    pub message: String,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub diagnostics: Vec<DiagnosticItem>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EditorErrorKind {
+    /// Session lookup / poisoning / lifecycle failures.
+    Session,
+    /// Project parsing or schema compilation failed before any data could be
+    /// loaded.
+    Project,
+    /// One or more loaders failed to produce records.
+    Load,
+    /// A writer rejected an edit (origin mismatch, schema-invalid value,
+    /// transport error, ...).
+    Write,
+    /// A precondition for the requested operation was not met (record not
+    /// found, file not in this project, ...).
+    NotFound,
+    /// Anything else.
+    Other,
+}
+
+impl EditorError {
+    #[must_use]
+    pub fn new(kind: EditorErrorKind, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+            diagnostics: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn session(message: impl Into<String>) -> Self {
+        Self::new(EditorErrorKind::Session, message)
+    }
+
+    #[must_use]
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self::new(EditorErrorKind::NotFound, message)
+    }
+
+    #[must_use]
+    pub fn project(message: impl Into<String>) -> Self {
+        Self::new(EditorErrorKind::Project, message)
+    }
+
+    #[must_use]
+    pub fn load(message: impl Into<String>) -> Self {
+        Self::new(EditorErrorKind::Load, message)
+    }
+
+    #[must_use]
+    pub fn write(message: impl Into<String>) -> Self {
+        Self::new(EditorErrorKind::Write, message)
+    }
+
+    #[must_use]
+    pub fn other(message: impl Into<String>) -> Self {
+        Self::new(EditorErrorKind::Other, message)
+    }
+
+    #[must_use]
+    pub fn with_diagnostics(mut self, diagnostics: Vec<DiagnosticItem>) -> Self {
+        self.diagnostics = diagnostics;
+        self
+    }
+}
+
+impl std::fmt::Display for EditorError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for EditorError {}
+
+impl From<&str> for EditorError {
+    fn from(message: &str) -> Self {
+        Self::other(message)
+    }
+}
+
+impl From<String> for EditorError {
+    fn from(message: String) -> Self {
+        Self::other(message)
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct ProjectSnapshot {
     pub session_id: u32,
     pub project_root: String,
     pub file_tree: Vec<FileTreeNode>,
+    /// Flattened diagnostics for the initial wire snapshot. Each item
+    /// already carries its `stage` (`SCHEMA`, `LOAD`, `CHECK`, ...) so the
+    /// front-end can group/filter without keeping a separate index.
     pub diagnostics: Vec<DiagnosticItem>,
 }
 
@@ -37,6 +142,47 @@ pub struct FileRecords {
     pub file_path: String,
     pub type_names: Vec<String>,
     pub records: Vec<RecordRow>,
+    /// What the front-end is allowed to do with this file. Driven by the
+    /// `WriterCapabilities` of the registered writer for this source.
+    pub capabilities: SourceCapabilities,
+}
+
+/// Per-source capabilities surfaced to the editor UI. The front-end greys
+/// out actions whose flag is `false`.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SourceCapabilities {
+    pub provider_id: &'static str,
+    pub can_edit_field: bool,
+    pub can_insert_record: bool,
+    pub can_delete_record: bool,
+    pub is_remote: bool,
+}
+
+impl SourceCapabilities {
+    #[must_use]
+    pub const fn read_only(provider_id: &'static str) -> Self {
+        Self {
+            provider_id,
+            can_edit_field: false,
+            can_insert_record: false,
+            can_delete_record: false,
+            is_remote: false,
+        }
+    }
+
+    #[must_use]
+    pub const fn from_writer(
+        provider_id: &'static str,
+        capabilities: coflow_api::WriterCapabilities,
+    ) -> Self {
+        Self {
+            provider_id,
+            can_edit_field: capabilities.can_edit_field,
+            can_insert_record: capabilities.can_insert_record,
+            can_delete_record: capabilities.can_delete_record,
+            is_remote: capabilities.is_remote,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -46,19 +192,61 @@ pub struct RecordRow {
     pub fields: Vec<FieldCell>,
 }
 
+/// Result of a successful `write_field` Tauri command. Bundles the
+/// refreshed row with the project's diagnostics post-rebuild so the
+/// front-end can refresh the diagnostics panel without issuing a follow-up
+/// query.
+///
+/// Diagnostics are returned **flattened across stages** (`schema + load +
+/// check`) — same shape the front-end already gets from `load_project`.
+/// The check stage is the one that typically changes after a write; the
+/// other stages stay stable until the project is fully rebuilt.
+#[derive(Debug, Serialize)]
+pub struct WriteFieldOutcome {
+    pub row: RecordRow,
+    pub diagnostics: Vec<DiagnosticItem>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FieldCell {
     pub name: String,
     pub value: FieldValue,
-    /// True when this field comes from a `...spread` expansion at the top level
-    /// of the record. Such fields do not exist in the record's own .cfd source
-    /// — editing them would have to happen at the spread's source record.
-    /// Defaulted to false on deserialize so writes don't have to set it.
+    /// True when this field comes from a `...spread` expansion (any
+    /// nesting level). Mirrors `spread_info.is_some()` for legacy callers
+    /// that only need a boolean — new code should consult `spread_info`.
     #[serde(default, skip_serializing_if = "is_false")]
     pub is_spread: bool,
+    /// Where the value of this cell originally came from, when it was
+    /// imported via a `...spread` expansion. `None` means the cell is
+    /// declared directly on the host record. The editor uses this to:
+    /// - render the cell as inherited (greyed background, source tooltip),
+    /// - offer a "jump to source" affordance,
+    /// - decide write semantics: by default an edit creates a local
+    ///   override in the host record's source rather than mutating the
+    ///   spread origin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spread_info: Option<SpreadInfo>,
 }
 
 fn is_false(b: &bool) -> bool { !*b }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpreadInfo {
+    /// Record key the value was inherited from.
+    pub source_record_key: String,
+    /// Concrete type of the source record — useful for rendering the
+    /// jump-to-source link (`@Type.key`).
+    pub source_record_type: String,
+    /// Project-relative file path of the source record, if known. Front-end
+    /// uses this to navigate; absent for synthetic / inline sources.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_record_file: Option<String>,
+    /// Path inside the source record that this cell mirrors. Empty when
+    /// the spread is at the same nesting level as the source field. The
+    /// editor concatenates this with `source_record_key` to render
+    /// `Source.Key.path.to.field`.
+    pub source_field_path: Vec<String>,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind")]

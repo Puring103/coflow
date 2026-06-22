@@ -35,7 +35,8 @@ mod schema_view;
 
 use check::CheckRunner;
 use coflow_cft::CftContainer;
-use coflow_data_model::{CfdDataModel, CfdDiagnostics};
+use coflow_data_model::{CfdDataModel, CfdDiagnostics, CfdRecordId};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Executes CFT `check` blocks against an already-built data model.
 ///
@@ -44,6 +45,66 @@ use coflow_data_model::{CfdDataModel, CfdDiagnostics};
 /// Returns runtime check diagnostics for false conditions or evaluation errors.
 pub fn run_checks(schema: &CftContainer, model: &CfdDataModel) -> Result<(), CfdDiagnostics> {
     CheckRunner::new(schema, model).run()
+}
+
+/// Run checks for only a specified subset of records. Empty input is treated
+/// as "no checks to run" and returns Ok.
+///
+/// # Errors
+///
+/// Returns runtime check diagnostics for false conditions or evaluation
+/// errors discovered while checking the subset.
+pub fn run_checks_for(
+    schema: &CftContainer,
+    model: &CfdDataModel,
+    targets: &[CfdRecordId],
+) -> Result<(), CfdDiagnostics> {
+    if targets.is_empty() {
+        return Ok(());
+    }
+    CheckRunner::new(schema, model).run_for(targets)
+}
+
+/// A directional dependency graph captured during a full check run.
+///
+/// `reads_from[a]` is the set of records `a` reads while evaluating its own
+/// check blocks. The session inverts this graph to compute "given that
+/// records X changed, which records' checks need to re-run".
+#[derive(Debug, Clone, Default)]
+pub struct DependencyGraph {
+    pub reads_from: BTreeMap<CfdRecordId, BTreeSet<CfdRecordId>>,
+}
+
+impl DependencyGraph {
+    /// Compute the set of records whose checks may be invalidated when
+    /// `changed` records mutate. The output includes the changed records
+    /// themselves plus every record that reads them.
+    #[must_use]
+    pub fn affected_by(&self, changed: &[CfdRecordId]) -> Vec<CfdRecordId> {
+        let mut out: BTreeSet<CfdRecordId> = changed.iter().copied().collect();
+        let changed_set: BTreeSet<CfdRecordId> = changed.iter().copied().collect();
+        for (reader, reads) in &self.reads_from {
+            if reads.iter().any(|id| changed_set.contains(id)) {
+                out.insert(*reader);
+            }
+        }
+        out.into_iter().collect()
+    }
+}
+
+/// Run checks against a model and capture the read-from graph in the same
+/// pass.
+///
+/// # Errors
+///
+/// Returns runtime check diagnostics. The dependency graph is returned in
+/// either case (so callers can still wire incremental edits even when the
+/// initial state has check failures).
+pub fn run_checks_with_deps(
+    schema: &CftContainer,
+    model: &CfdDataModel,
+) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
+    CheckRunner::new(schema, model).run_with_deps()
 }
 
 pub trait CfdCheckExt {

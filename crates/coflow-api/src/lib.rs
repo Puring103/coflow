@@ -31,7 +31,8 @@ pub use coflow_cft::{
 };
 pub use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdDictKey, CfdInputRecord, CfdInputValue,
-    CfdLabel, CfdPath, CfdPathSegment, CfdRecord, CfdTable, CfdValue,
+    CfdLabel, CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdTable, CfdValue, RecordOrigin,
+    SourceDocument, TextSpan,
 };
 pub use export::{export_model_with_encoder, ExportEncoder, ExportError};
 
@@ -97,7 +98,7 @@ pub enum ArtifactContent {
     Json(serde_json::Value),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DiagnosticSet {
     pub diagnostics: Vec<Diagnostic>,
 }
@@ -227,18 +228,46 @@ pub enum SourceLocation {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SourceDocument {
-    Local(PathBuf),
-    Remote(String),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TextSpan {
-    pub start_line: usize,
-    pub start_character: usize,
-    pub end_line: usize,
-    pub end_character: usize,
+impl From<coflow_data_model::SourceLocation> for SourceLocation {
+    fn from(loc: coflow_data_model::SourceLocation) -> Self {
+        match loc {
+            coflow_data_model::SourceLocation::FileSpan {
+                path,
+                start_line,
+                start_character,
+                end_line,
+                end_character,
+            } => Self::FileSpan {
+                path,
+                start_line,
+                start_character,
+                end_line,
+                end_character,
+            },
+            coflow_data_model::SourceLocation::TableCell {
+                path,
+                sheet,
+                row,
+                column,
+            } => Self::TableCell {
+                path,
+                sheet,
+                row,
+                column,
+            },
+            coflow_data_model::SourceLocation::RemoteCell {
+                document,
+                sheet,
+                row,
+                column,
+            } => Self::RemoteCell {
+                document,
+                sheet,
+                row,
+                column,
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -365,182 +394,51 @@ pub struct CodegenContext<'a> {
 #[derive(Debug, Clone)]
 pub struct LoadedRecords {
     pub records: Vec<CfdInputRecord>,
-    pub origins: OriginMap,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct OriginMap {
-    records: Vec<RecordOrigin>,
-}
-
-impl OriginMap {
-    #[must_use]
-    pub fn record_count(&self) -> usize {
-        self.records.len()
-    }
-
-    pub fn extend(&mut self, other: Self) {
-        self.records.extend(other.records);
-    }
-
-    pub fn push_file_record(&mut self, path: impl Into<PathBuf>, span: Option<TextSpan>) {
-        self.records.push(RecordOrigin::File {
-            path: path.into(),
-            span,
-        });
-    }
-
-    pub fn push_file_records(&mut self, path: impl Into<PathBuf>, count: usize) {
-        let path = path.into();
-        self.records.extend(
-            std::iter::repeat_with(|| RecordOrigin::File {
-                path: path.clone(),
-                span: None,
-            })
-            .take(count),
-        );
-    }
-
-    pub(crate) fn push_table_record(
-        &mut self,
-        document: SourceDocument,
-        sheet: String,
-        row: usize,
-        id_column: usize,
-        field_columns: BTreeMap<Vec<String>, usize>,
-    ) {
-        self.records.push(RecordOrigin::Table {
-            document,
-            sheet,
-            row,
-            id_column,
-            field_columns,
-        });
-    }
-
-    #[must_use]
-    pub fn map_diagnostics(&self, diagnostics: CfdDiagnostics) -> DiagnosticSet {
-        DiagnosticSet {
-            diagnostics: diagnostics
-                .diagnostics
-                .into_iter()
-                .map(|diagnostic| self.map_diagnostic(diagnostic))
-                .collect(),
-        }
-    }
-
-    fn map_diagnostic(&self, diagnostic: CfdDiagnostic) -> Diagnostic {
-        Diagnostic {
-            code: diagnostic.code.as_str().to_string(),
-            stage: diagnostic.stage.to_string(),
-            severity: Severity::Error,
-            message: diagnostic.message,
-            primary: diagnostic
-                .primary
-                .as_ref()
-                .and_then(|label| self.map_label(label)),
-            related: diagnostic
-                .related
-                .iter()
-                .filter_map(|label| self.map_label(label))
-                .collect(),
-        }
-    }
-
-    fn map_label(&self, label: &CfdLabel) -> Option<Label> {
-        let record = label.record?;
-        let origin = self.records.get(record.index())?;
-        Some(Label {
-            location: origin.location_for_path(&label.path),
-            message: label.message.clone(),
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
-enum RecordOrigin {
-    Table {
-        document: SourceDocument,
-        sheet: String,
-        row: usize,
-        id_column: usize,
-        field_columns: BTreeMap<Vec<String>, usize>,
-    },
-    File {
-        path: PathBuf,
-        span: Option<TextSpan>,
-    },
-}
-
-impl RecordOrigin {
-    fn location_for_path(&self, path: &CfdPath) -> SourceLocation {
-        match self {
-            Self::Table {
-                document,
-                sheet,
-                row,
-                id_column,
-                field_columns,
-            } => {
-                let column = path_column(path, field_columns)
-                    .or_else(|| {
-                        root_field(path).and_then(|field| (field == "id").then_some(*id_column))
+/// Map [`CfdDiagnostics`] to [`DiagnosticSet`] using a record→origin lookup.
+///
+/// Loaders no longer maintain a separate [`coflow_data_model::origin::RecordOrigin`]
+/// map: each [`CfdInputRecord`] carries its own origin. Callers that need to
+/// produce wire diagnostics from compiler/check failures pass either a slice
+/// of records (or their extracted origins) and let this helper resolve labels.
+#[must_use]
+pub fn map_diagnostics_with_origins(
+    diagnostics: CfdDiagnostics,
+    origins: &[RecordOrigin],
+) -> DiagnosticSet {
+    let mapped = coflow_data_model::map_diagnostics(diagnostics, |id| {
+        origins.get(id.index()).cloned()
+    });
+    DiagnosticSet {
+        diagnostics: mapped
+            .into_iter()
+            .map(|d| Diagnostic {
+                code: d.code,
+                stage: d.stage,
+                severity: Severity::Error,
+                message: d.message,
+                primary: d.primary.map(|l| Label {
+                    location: l.location.into(),
+                    message: l.message,
+                }),
+                related: d
+                    .related
+                    .into_iter()
+                    .map(|l| Label {
+                        location: l.location.into(),
+                        message: l.message,
                     })
-                    .unwrap_or(*id_column);
-                match document {
-                    SourceDocument::Local(path) => SourceLocation::TableCell {
-                        path: path.clone(),
-                        sheet: Some(sheet.clone()),
-                        row: *row,
-                        column,
-                    },
-                    SourceDocument::Remote(document) => SourceLocation::RemoteCell {
-                        document: document.clone(),
-                        sheet: Some(sheet.clone()),
-                        row: *row,
-                        column,
-                    },
-                }
-            }
-            Self::File { path, span } => {
-                let span = span.unwrap_or(TextSpan {
-                    start_line: 0,
-                    start_character: 0,
-                    end_line: 0,
-                    end_character: 1,
-                });
-                SourceLocation::FileSpan {
-                    path: path.clone(),
-                    start_line: span.start_line,
-                    start_character: span.start_character,
-                    end_line: span.end_line,
-                    end_character: span.end_character,
-                }
-            }
-        }
+                    .collect(),
+            })
+            .collect(),
     }
 }
 
-fn root_field(path: &CfdPath) -> Option<&str> {
-    path.segments.iter().find_map(|segment| match segment {
-        CfdPathSegment::Field(name) => Some(name.as_str()),
-        CfdPathSegment::Index(_) | CfdPathSegment::DictKey(_) => None,
-    })
-}
-
-fn path_column(path: &CfdPath, field_columns: &BTreeMap<Vec<String>, usize>) -> Option<usize> {
-    let mut prefix = Vec::new();
-    let mut column = None;
-    for segment in &path.segments {
-        let CfdPathSegment::Field(field) = segment else {
-            break;
-        };
-        prefix.push(field.clone());
-        if let Some(candidate) = field_columns.get(&prefix) {
-            column = Some(*candidate);
-        }
-    }
-    column
+/// Convenience helper: extract origins from a slice of input records.
+#[must_use]
+pub fn origins_of(records: &[CfdInputRecord]) -> Vec<RecordOrigin> {
+    records.iter().map(|r| r.origin.clone()).collect()
 }
 
 pub trait DataLoader: Send + Sync {
@@ -577,6 +475,138 @@ pub trait DataLoader: Send + Sync {
         ctx: LoadContext<'_>,
         source: &ResolvedSource,
     ) -> Result<LoadedRecords, DiagnosticSet>;
+}
+
+/// One step in a field path used by writers and the wire protocol.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WriteFieldPathSegment {
+    Field(String),
+    Index(usize),
+}
+
+/// Static description of a writer provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WriterDescriptor {
+    pub id: &'static str,
+    pub display_name: &'static str,
+    pub capabilities: WriterCapabilities,
+}
+
+/// Editing capabilities exposed to the front-end so the UI can grey out
+/// disabled actions per source. Lower-bounded by the writer's actual
+/// implementation; the front-end must not assume a writer can do more than
+/// these flags claim.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WriterCapabilities {
+    pub can_edit_field: bool,
+    pub can_insert_record: bool,
+    pub can_delete_record: bool,
+    pub is_remote: bool,
+}
+
+impl WriterCapabilities {
+    #[must_use]
+    pub const fn read_only() -> Self {
+        Self {
+            can_edit_field: false,
+            can_insert_record: false,
+            can_delete_record: false,
+            is_remote: false,
+        }
+    }
+
+    #[must_use]
+    pub const fn local_full() -> Self {
+        Self {
+            can_edit_field: true,
+            can_insert_record: true,
+            can_delete_record: true,
+            is_remote: false,
+        }
+    }
+
+    #[must_use]
+    pub const fn remote_field_edit() -> Self {
+        Self {
+            can_edit_field: true,
+            can_insert_record: false,
+            can_delete_record: false,
+            is_remote: true,
+        }
+    }
+}
+
+/// Request describing a single field write.
+#[derive(Debug, Clone)]
+pub struct WriteCellRequest<'a> {
+    pub origin: &'a RecordOrigin,
+    pub record_key: &'a str,
+    pub actual_type: &'a str,
+    pub field_path: &'a [WriteFieldPathSegment],
+    /// Source-neutral new value, serialized to the source format by the writer.
+    pub new_value: &'a CfdValue,
+    /// Optional pre-resolved schema type for the record. Writers that produce
+    /// typed source representations (e.g. CFD) use this for serialization.
+    pub schema: &'a CftContainer,
+    /// Original `ResolvedSource` that produced the record. Writers consult
+    /// `source.options` to retrieve provider-specific configuration (Lark
+    /// app credentials, alternate Excel sheet mappings, etc.).
+    pub source: &'a ResolvedSource,
+}
+
+/// Outcome of a writer call: which records were actually touched (so the
+/// session can recompute checks) and any informational diagnostics.
+#[derive(Debug, Clone, Default)]
+pub struct WriteOutcome {
+    /// Origins of records whose backing source changed. The session uses these
+    /// to re-load specific records and run incremental checks; an empty vec
+    /// means the writer made no observable change.
+    pub touched_record_origins: Vec<RecordOrigin>,
+    /// Optional non-fatal diagnostics surfaced to the user.
+    pub diagnostics: DiagnosticSet,
+}
+
+/// Context passed to writers. Mirrors [`LoadContext`] but for writes.
+#[derive(Debug, Clone, Copy)]
+pub struct WriteContext<'a> {
+    pub project_root: &'a Path,
+    pub schema: &'a CftContainer,
+    /// The current data model. Writers use it to resolve [`CfdRecordId`]s
+    /// inside the request value (e.g. for ref serialization). May be `None`
+    /// when running pre-flight on a value that hasn't been merged into the
+    /// model yet.
+    pub model: Option<&'a CfdDataModel>,
+}
+
+/// Trait for source-specific writers that persist field edits.
+///
+/// Implementations dispatch on [`RecordOrigin`] to locate the cell/span, write
+/// the new value to the source (file, remote API, ...), and report which
+/// records were touched so the session can run incremental checks.
+pub trait DataWriter: Send + Sync {
+    fn descriptor(&self) -> &'static WriterDescriptor;
+
+    /// Cheap pre-flight check: type matches, target file exists, etc. The
+    /// default implementation does nothing.
+    fn preflight(
+        &self,
+        _ctx: WriteContext<'_>,
+        _request: &WriteCellRequest<'_>,
+    ) -> DiagnosticSet {
+        DiagnosticSet::empty()
+    }
+
+    /// Persist a single field change.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the write cannot be performed (origin
+    /// mismatch, missing file, transport error, schema-invalid value, etc.).
+    fn write_field(
+        &self,
+        ctx: WriteContext<'_>,
+        request: &WriteCellRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet>;
 }
 
 pub trait DataExporter: Send + Sync {
@@ -621,6 +651,7 @@ pub trait CodeGenerator: Send + Sync {
 #[derive(Default, Clone)]
 pub struct ProviderRegistry {
     loaders: BTreeMap<&'static str, Arc<dyn DataLoader>>,
+    writers: BTreeMap<&'static str, Arc<dyn DataWriter>>,
     exporters: BTreeMap<&'static str, Arc<dyn DataExporter>>,
     codegens: BTreeMap<&'static str, Arc<dyn CodeGenerator>>,
 }
@@ -629,6 +660,7 @@ impl fmt::Debug for ProviderRegistry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProviderRegistry")
             .field("loaders", &self.loaders.keys().collect::<Vec<_>>())
+            .field("writers", &self.writers.keys().collect::<Vec<_>>())
             .field("exporters", &self.exporters.keys().collect::<Vec<_>>())
             .field("codegens", &self.codegens.keys().collect::<Vec<_>>())
             .finish()
@@ -651,6 +683,24 @@ impl ProviderRegistry {
             return Err(ProviderRegistrationError::duplicate("loader", id));
         }
         self.loaders.insert(id, Arc::new(loader));
+        Ok(())
+    }
+
+    /// Registers a writer provider.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when another writer with the same provider id has
+    /// already been registered.
+    pub fn register_writer<W>(&mut self, writer: W) -> Result<(), ProviderRegistrationError>
+    where
+        W: DataWriter + 'static,
+    {
+        let id = writer.descriptor().id;
+        if self.writers.contains_key(id) {
+            return Err(ProviderRegistrationError::duplicate("writer", id));
+        }
+        self.writers.insert(id, Arc::new(writer));
         Ok(())
     }
 
@@ -693,6 +743,24 @@ impl ProviderRegistry {
     #[must_use]
     pub fn loader(&self, id: &str) -> Option<Arc<dyn DataLoader>> {
         self.loaders.get(id).cloned()
+    }
+
+    #[must_use]
+    pub fn writer(&self, id: &str) -> Option<Arc<dyn DataWriter>> {
+        self.writers.get(id).cloned()
+    }
+
+    #[must_use]
+    pub fn writers(&self) -> Vec<Arc<dyn DataWriter>> {
+        self.writers.values().cloned().collect()
+    }
+
+    #[must_use]
+    pub fn writer_descriptors(&self) -> Vec<&'static WriterDescriptor> {
+        self.writers
+            .values()
+            .map(|writer| writer.descriptor())
+            .collect()
     }
 
     #[must_use]

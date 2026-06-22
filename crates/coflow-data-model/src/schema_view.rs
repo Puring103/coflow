@@ -1,4 +1,5 @@
 use crate::model::{CfdDictKey, CfdInputValue, CfdRefPathSegment, CfdValue};
+use crate::origin::RecordOrigin;
 use coflow_cft::{
     CftContainer, CftSchemaDefaultValue, CftSchemaEnum, CftSchemaField, CftSchemaType,
     CftSchemaTypeRef,
@@ -10,6 +11,21 @@ pub(crate) struct RecordDraft {
     pub(crate) key: String,
     pub(crate) actual_type: String,
     pub(crate) fields: BTreeMap<String, CfdValueDraft>,
+    /// Origin moved from `CfdInputRecord`. For nested object drafts (created
+    /// inside fields), defaults to `RecordOrigin::None`.
+    pub(crate) origin: RecordOrigin,
+    /// Top-level only: which fields came from `...spread` references and
+    /// where they came from (target type + key, since record id resolution
+    /// happens later). Empty for nested objects.
+    pub(crate) spread_field_sources: BTreeMap<String, SpreadFieldSource>,
+}
+
+/// A spread origin captured during validation. The compiler resolves these to
+/// concrete `CfdRecordId` values once all drafts have been indexed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SpreadFieldSource {
+    pub(crate) target_type: String,
+    pub(crate) key: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]

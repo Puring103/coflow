@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type {
   ProjectSnapshot, FileRecords, RecordRow, GraphData, FieldPathSegment, FieldValue,
+  WriteFieldOutcome,
 } from './bindings/index'
 
 export const isTauri = '__TAURI_INTERNALS__' in window
@@ -18,8 +19,24 @@ export async function pickProjectYaml(): Promise<string | null> {
   return typeof path === 'string' ? path : null
 }
 
+export async function pickProjectDirectory(): Promise<string | null> {
+  if (!isTauri) {
+    alert('文件对话框仅在 Tauri 桌面环境可用。')
+    return null
+  }
+  const path = await openDialog({
+    multiple: false,
+    directory: true,
+  })
+  return typeof path === 'string' ? path : null
+}
+
 export async function loadProject(yamlPath: string): Promise<ProjectSnapshot> {
   return invoke<ProjectSnapshot>('load_project', { yamlPath })
+}
+
+export async function initProject(dir: string): Promise<ProjectSnapshot> {
+  return invoke<ProjectSnapshot>('init_project', { dir })
 }
 
 export async function getFileRecords(sessionId: number, filePath: string): Promise<FileRecords> {
@@ -56,8 +73,8 @@ export async function writeField(
   recordKey: string,
   fieldPath: FieldPathSegment[],
   newValue: FieldValue,
-): Promise<RecordRow> {
-  return invoke<RecordRow>('write_field', {
+): Promise<WriteFieldOutcome> {
+  return invoke<WriteFieldOutcome>('write_field', {
     sessionId, filePath, recordKey, fieldPath, newValue,
   })
 }
