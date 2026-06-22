@@ -1251,6 +1251,16 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 .dc-row-diag-warning::before { background: var(--yellow); }
 .dc-row-diag-warning .dc-row-label-text { color: var(--yellow); }
 
+/* Brief flash when a diagnostic jump targets a row: scrollIntoView + pulse. */
+@keyframes dc-row-flash-pulse {
+  0%   { box-shadow: inset 3px 0 0 var(--accent); background: color-mix(in srgb, var(--accent) 28%, transparent); }
+  100% { box-shadow: inset 3px 0 0 transparent; background: transparent; }
+}
+.dc-row-flash {
+  animation: dc-row-flash-pulse 1.6s ease-out;
+  border-radius: var(--radius-sm);
+}
+
 /* TableView cell tinting */
 .dc-cell-diag {
   display: inline-flex;
@@ -1851,9 +1861,93 @@ select.dc-input-flat {
 .diag-badge.warning { background: rgba(217, 185, 122, 0.16); color: var(--yellow); }
 .diag-badge.ok      { background: rgba(126, 194, 160, 0.14); color: var(--green); }
 
+.diag-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.diag-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.diag-sev-filters {
+  display: inline-flex;
+  gap: 4px;
+}
+.diag-filter-chip {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 10px;
+  padding: 2px 9px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.diag-filter-chip:hover { border-color: var(--border-strong); color: var(--text); }
+.diag-filter-chip.active {
+  background: var(--bg-3);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.diag-file-filter {
+  height: 24px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 11px;
+  font-family: inherit;
+  padding: 0 6px;
+  max-width: 200px;
+}
+.diag-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+.diag-group-toggle input { margin: 0; }
+
 .diag-list {
   overflow-y: auto;
   flex: 1;
+}
+.diag-group { }
+.diag-group-head {
+  padding: 5px 12px 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-mute);
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.diag-group-count {
+  font-weight: 400;
+  color: var(--text-mute);
+  opacity: 0.7;
+}
+.diag-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-mute);
+  font-size: 12px;
 }
 
 .diag-item {

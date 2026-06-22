@@ -11,11 +11,13 @@ interface Props {
   typeFilter?: string
   readOnly?: boolean
   diagnostics?: DiagnosticItem[]
+  highlightField?: string | null
+  onHighlightConsumed?: () => void
   onOpenRecord: (key: string) => void
   onWriteField?: (recordKey: string, fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<RecordRow | void>
 }
 
-export function RecordView({ data, recordKey, typeFilter, readOnly, diagnostics, onOpenRecord, onWriteField }: Props) {
+export function RecordView({ data, recordKey, typeFilter, readOnly, diagnostics, highlightField, onHighlightConsumed, onOpenRecord, onWriteField }: Props) {
   const record = data.records.find(r => r.key === recordKey)
   const [search, setSearch] = useState('')
   const sidebarRef = useRef<HTMLDivElement>(null)
@@ -123,6 +125,8 @@ export function RecordView({ data, recordKey, typeFilter, readOnly, diagnostics,
           fields={fields}
           onEdit={readOnly || !onWriteField ? undefined : (path, val) => { onWriteField(record.key, path, val) }}
           diagnostics={fieldDiags}
+          highlightField={highlightField}
+          onHighlightConsumed={onHighlightConsumed}
         />
       </div>
     </div>
