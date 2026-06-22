@@ -17,38 +17,46 @@ export function DiagnosticsPanel({ diagnostics, onJumpToRecord }: Props) {
   const isEmpty = diagnostics.length === 0
   return (
     <div className={`diag-panel${collapsed || isEmpty ? ' collapsed' : ''}`}>
-      <div className="diag-header" onClick={() => setCollapsed(c => !c)}>
+      <button
+        type="button"
+        className="diag-header"
+        aria-expanded={!collapsed && !isEmpty}
+        aria-controls="diag-list-region"
+        disabled={isEmpty}
+        onClick={() => setCollapsed(c => !c)}
+      >
         <span className="diag-title">
-          <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={11} />
+          <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={11} aria-hidden />
           诊断
         </span>
         {errors > 0 && (
           <span className="diag-badge error">
-            <Icon name="error" size={11} />
+            <Icon name="error" size={11} aria-hidden />
             {errors}
           </span>
         )}
         {warnings > 0 && (
           <span className="diag-badge warning">
-            <Icon name="warning" size={11} />
+            <Icon name="warning" size={11} aria-hidden />
             {warnings}
           </span>
         )}
         {errors === 0 && warnings === 0 && (
           <span className="diag-badge ok">
-            <Icon name="check" size={11} />
+            <Icon name="check" size={11} aria-hidden />
             无问题
           </span>
         )}
-      </div>
+      </button>
       {!collapsed && !isEmpty && (
-        <div className="diag-list">
+        <div className="diag-list" id="diag-list-region" role="list">
           {diagnostics.map((d, i) => (
-            <div key={i} className={`diag-item ${d.severity}`}>
+            <div key={i} className={`diag-item ${d.severity}`} role="listitem">
               <span className="diag-icon">
                 <Icon
                   name={d.severity === 'error' ? 'error' : d.severity === 'warning' ? 'warning' : 'info'}
                   size={14}
+                  aria-hidden
                 />
               </span>
               <span className="diag-msg">{d.message}</span>
@@ -57,8 +65,9 @@ export function DiagnosticsPanel({ diagnostics, onJumpToRecord }: Props) {
                 <button
                   className="diag-jump"
                   onClick={() => onJumpToRecord(d.file_path!, d.record_key!)}
+                  aria-label={`跳转到记录 ${d.record_key}`}
                 >
-                  <Icon name="jump" size={11} />
+                  <Icon name="jump" size={11} aria-hidden />
                   跳转
                 </button>
               )}

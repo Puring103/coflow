@@ -346,16 +346,33 @@ export default function App() {
             <>
               {/* File breadcrumb */}
               <div className="content-breadcrumb">
-                <Icon name="file" size={12} className="breadcrumb-icon" />
-                {activeFile?.split('/').map((part, i, arr) => (
-                  <span key={i} className="breadcrumb-part">
-                    {i > 0 && <span className="breadcrumb-sep">/</span>}
-                    <span className={i === arr.length - 1 ? 'breadcrumb-leaf' : ''}>{part}</span>
-                  </span>
-                ))}
+                <Icon name="file" size={12} className="breadcrumb-icon" aria-hidden />
+                {activeFile?.split('/').map((part, i, arr) => {
+                  const dirPath = arr.slice(0, i + 1).join('/')
+                  const isLeaf = i === arr.length - 1
+                  const siblingFile = findFirstSourceFileInDir(project, dirPath)
+                  const clickable = !isLeaf && !!siblingFile
+                  return (
+                    <span key={i} className="breadcrumb-part">
+                      {i > 0 && <span className="breadcrumb-sep" aria-hidden>/</span>}
+                      {clickable && siblingFile ? (
+                        <button
+                          type="button"
+                          className="breadcrumb-link"
+                          title={`跳转到 ${siblingFile}`}
+                          onClick={() => openFile(siblingFile)}
+                        >
+                          {part}
+                        </button>
+                      ) : (
+                        <span className={isLeaf ? 'breadcrumb-leaf' : ''}>{part}</span>
+                      )}
+                    </span>
+                  )
+                })}
                 {readOnly && (
                   <span className="breadcrumb-readonly" title="非 .cfd 源文件，仅可查看">
-                    <Icon name="lock" size={11} />
+                    <Icon name="lock" size={11} aria-hidden />
                     只读
                   </span>
                 )}
@@ -363,13 +380,18 @@ export default function App() {
 
               {/* Type tabs row */}
               {activeFileData.type_names.length > 0 && (
-                <div className="view-tabs view-tabs-types">
+                <div className="view-tabs view-tabs-types" role="tablist" aria-label="类型">
                   <div className="type-tabs-inline">
                     {activeFileData.type_names.map(t => (
                       <button
                         key={t}
                         className={`tab-btn${activeType === t ? ' active' : ''}`}
+                        role="tab"
+                        aria-selected={activeType === t}
+                        tabIndex={activeType === t ? 0 : -1}
+                        data-tab-id={t}
                         onClick={() => setActiveType(t)}
+                        onKeyDown={e => onTabListKeyDown(e, activeFileData.type_names, setActiveType)}
                         style={activeType === t ? {'--tab-color': typeColor(t)} as React.CSSProperties : undefined}
                       >
                         {t}
@@ -383,14 +405,19 @@ export default function App() {
               )}
 
               {/* View switcher */}
-              <div className="view-tabs view-tabs-views">
+              <div className="view-tabs view-tabs-views" role="tablist" aria-label="视图">
                 {(['table', 'record', 'graph'] as const).map(v => (
                   <button
                     key={v}
                     className={`tab-btn tab-view${currentRoute.view === v ? ' active' : ''}`}
+                    role="tab"
+                    aria-selected={currentRoute.view === v}
+                    tabIndex={currentRoute.view === v ? 0 : -1}
+                    data-tab-id={v}
                     onClick={() => switchView(v)}
+                    onKeyDown={e => onTabListKeyDown(e, ['table', 'record', 'graph'], v => switchView(v as 'table' | 'record' | 'graph'))}
                   >
-                    <Icon name={v === 'table' ? 'table' : v === 'record' ? 'record' : 'graph'} size={13} />
+                    <Icon name={v === 'table' ? 'table' : v === 'record' ? 'record' : 'graph'} size={13} aria-hidden />
                     {v === 'table' ? '表格' : v === 'record' ? '记录' : '图谱'}
                   </button>
                 ))}
@@ -532,4 +559,54 @@ function isTextTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   const tag = target.tagName
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable
+}
+
+/** Roving-tabindex arrow-key navigation for a `role="tablist"` of string ids. */
+function onTabListKeyDown(
+  e: React.KeyboardEvent,
+  tabs: string[],
+  onSelect: (id: string) => void,
+) {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') return
+  const nodes = Array.from(
+    e.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [],
+  )
+  const i = nodes.indexOf(e.currentTarget as HTMLElement)
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    e.preventDefault()
+    const dir = e.key === 'ArrowRight' ? 1 : -1
+    const next = nodes[(i + dir + nodes.length) % nodes.length]
+    next.focus()
+    const id = next.dataset.tabId
+    if (id) onSelect(id)
+  } else if (e.key === 'Home') {
+    e.preventDefault()
+    nodes[0]?.focus()
+    const id = nodes[0]?.dataset.tabId
+    if (id) onSelect(id)
+  } else if (e.key === 'End') {
+    e.preventDefault()
+    const last = nodes[nodes.length - 1]
+    last?.focus()
+    const id = last?.dataset.tabId
+    if (id) onSelect(id)
+  }
+}
+
+/** Find the first in-source file whose path starts with `dirPath/`. Used to
+ *  make breadcrumb path segments clickable to jump into that directory. */
+function findFirstSourceFileInDir(project: ProjectSnapshot | null, dirPath: string): string | null {
+  if (!project) return null
+  const prefix = dirPath.endsWith('/') ? dirPath : dirPath + '/'
+  let result: string | null = null
+  function walk(n: ProjectSnapshot['file_tree'][number]) {
+    if (result) return
+    if (!n.is_dir && n.in_sources && n.path.startsWith(prefix)) {
+      result = n.path
+      return
+    }
+    for (const c of n.children) walk(c)
+  }
+  for (const n of project.file_tree) walk(n)
+  return result
 }
