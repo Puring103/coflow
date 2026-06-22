@@ -104,6 +104,31 @@ fn parser_accepts_unicode_identifiers_whitespace_and_int_division() {
 }
 
 #[test]
+fn lexer_accepts_float_suffix_literals() {
+    let mut container = add_source(
+        r#"
+        const A = 1f;
+        const B = 2F;
+
+        type Rule {
+            value: float;
+            check { value >= 0f && value <= 1F; }
+        }
+    "#,
+    )
+    .unwrap();
+    container.compile().unwrap();
+    assert_eq!(
+        container.resolve_const("A").map(|constant| &constant.value),
+        Some(&CftConstValue::Float(1.0))
+    );
+    assert_eq!(
+        container.resolve_const("B").map(|constant| &constant.value),
+        Some(&CftConstValue::Float(2.0))
+    );
+}
+
+#[test]
 fn parser_rejects_invalid_top_level_item() {
     let err = add_source("let x = 1;").unwrap_err();
     assert_primary_stage(&err, CftErrorCode::InvalidTopLevelItem, CftStage::Syn);

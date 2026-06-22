@@ -113,7 +113,7 @@ fn check_runner_reports_false_conditions_with_paths() {
 }
 
 #[test]
-fn logical_and_bitwise_precedence_remains_left_associative() {
+fn logical_and_binds_tighter_than_or_and_bitwise_precedence_remains_left_associative() {
     let logical = compile_schema(
         r#"
             type Item { check { true || false && false; } }
@@ -126,10 +126,9 @@ fn logical_and_bitwise_precedence_remains_left_associative() {
         std::iter::empty::<(&str, CfdInputValue)>(),
     );
     let model = build_model(&logical, builder);
-    let err = model
+    model
         .run_checks(&logical)
-        .expect_err("same-precedence logical operators evaluate left-to-right");
-    assert_has_code(&err, CfdErrorCode::CheckFailed);
+        .expect("logical && should bind tighter than ||");
 
     let bitwise = compile_schema(
         r#"
