@@ -6,6 +6,7 @@ elite_monster: Monster {
   stats: {
     ...@Monster.basic_monster.stats,
     hp: 250,
+      attack: -100,
   },
   weaknesses: {
     ...@Monster.basic_monster.weaknesses,
