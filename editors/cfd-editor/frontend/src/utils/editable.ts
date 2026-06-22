@@ -20,10 +20,3 @@ export function isEditableFile(input: FileRecords | string | null | undefined): 
   }
   return input.capabilities.can_edit_field
 }
-
-/**
- * Boolean inverse, useful for read-only badges.
- */
-export function isReadOnlyFile(input: FileRecords | string | null | undefined): boolean {
-  return !isEditableFile(input)
-}

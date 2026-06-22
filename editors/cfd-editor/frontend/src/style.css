@@ -179,22 +179,6 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   justify-content: center;
 }
 
-.dirty-badge {
-  color: var(--yellow);
-  font-size: 11px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-left: 6px;
-}
-.dirty-badge::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--yellow);
-}
-
 .topbar-spacer { flex: 1; }
 
 .undo-badge {
@@ -284,11 +268,6 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   color: var(--text-mute);
   font-size: 12px;
   text-align: center;
-}
-
-.sidebar-footer {
-  padding: 8px;
-  border-top: 1px solid var(--border);
 }
 
 /* ─── File tree ─── */
@@ -1471,6 +1450,13 @@ select.dc-input-flat {
 }
 
 .dc-input-enum::before { content: '◆'; color: var(--purple); margin-right: 4px; }
+
+/* Select-based ref editor (when targets load). Matches the text input
+   width so swapping between free-text fallback and the real select doesn't
+   cause layout shift. */
+.dc-input-ref-select {
+  max-width: 220px;
+}
 
 /* Ref direct editor wrapper: leading dot + input + trailing type label */
 .dc-input-ref {

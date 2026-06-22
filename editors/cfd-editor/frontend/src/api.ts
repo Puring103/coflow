@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type {
-  ProjectSnapshot, FileRecords, RecordRow, GraphData, FieldPathSegment, FieldValue,
+  ProjectSnapshot, FileRecords, GraphData, FieldPathSegment, FieldValue,
   WriteFieldOutcome,
 } from './bindings/index'
 
@@ -41,10 +41,6 @@ export async function initProject(dir: string): Promise<ProjectSnapshot> {
 
 export async function getFileRecords(sessionId: number, filePath: string): Promise<FileRecords> {
   return invoke<FileRecords>('get_file_records', { sessionId, filePath })
-}
-
-export async function getRecord(sessionId: number, filePath: string, recordKey: string): Promise<RecordRow> {
-  return invoke<RecordRow>('get_record', { sessionId, filePath, recordKey })
 }
 
 export async function getGraph(sessionId: number, filePath: string): Promise<GraphData> {
