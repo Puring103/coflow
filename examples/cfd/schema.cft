@@ -6,6 +6,11 @@ enum Element {
 type Stats {
   hp: int;
   attack: int;
+
+  check{
+    hp > 0;
+    attack > 0;
+  }
 }
 
 type Item {
