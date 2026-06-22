@@ -123,7 +123,7 @@ pub struct FileTreeNode {
     pub path: String,
     pub is_dir: bool,
     pub in_sources: bool,
-    pub children: Vec<FileTreeNode>,
+    pub children: Vec<Self>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -149,6 +149,7 @@ pub struct FileRecords {
 
 /// Per-source capabilities surfaced to the editor UI. The front-end greys
 /// out actions whose flag is `false`.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct SourceCapabilities {
     pub provider_id: &'static str,
@@ -192,8 +193,9 @@ pub struct RecordRow {
     pub fields: Vec<FieldCell>,
 }
 
-/// Result of a successful `write_field` Tauri command. Bundles the
-/// refreshed row with the project's diagnostics post-rebuild so the
+/// Result of a successful `write_field` Tauri command.
+///
+/// Bundles the refreshed row with the project's diagnostics post-rebuild so the
 /// front-end can refresh the diagnostics panel without issuing a follow-up
 /// query.
 ///
@@ -228,7 +230,10 @@ pub struct FieldCell {
     pub spread_info: Option<SpreadInfo>,
 }
 
-fn is_false(b: &bool) -> bool { !*b }
+#[allow(clippy::trivially_copy_pass_by_ref)]
+const fn is_false(b: &bool) -> bool {
+    !*b
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpreadInfo {
@@ -279,7 +284,7 @@ pub enum FieldValue {
         target_file: Option<String>,
     },
     Array {
-        items: Vec<FieldValue>,
+        items: Vec<Self>,
     },
     Dict {
         entries: Vec<DictEntry>,

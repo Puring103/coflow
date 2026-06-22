@@ -49,7 +49,7 @@ impl CheckValue {
             CfdValue::String(value) => Self::String(value.clone()),
             CfdValue::Enum(value) => Self::Enum(value.clone()),
             CfdValue::Object(record) => Self::Record(CheckRecordRef::Inline {
-                record: record.as_ref().clone(),
+                record: Box::new(record.as_ref().clone()),
                 path,
             }),
             CfdValue::Ref { target, .. } => Self::Record(CheckRecordRef::Top(*target)),
@@ -124,7 +124,7 @@ impl LocatedCheckValue {
 pub(super) enum CheckRecordRef {
     Top(CfdRecordId),
     Inline {
-        record: CfdRecord,
+        record: Box<CfdRecord>,
         path: Option<CfdPath>,
     },
 }

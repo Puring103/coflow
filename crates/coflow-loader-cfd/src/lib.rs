@@ -22,7 +22,6 @@ use coflow_api::{
 };
 
 pub mod writer;
-pub use writer::{CfdWriter, CFD_WRITER_DESCRIPTOR};
 use coflow_cft::{record_key_ident_error, CftContainer, CftSchemaField, CftSchemaTypeRef};
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostics, CfdInputDictKey, CfdInputRecord, CfdInputRefIndex, CfdInputValue,
@@ -33,6 +32,7 @@ use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::path::Path;
+pub use writer::{CfdWriter, CFD_WRITER_DESCRIPTOR};
 
 /// Parses `.cfd` text into source-neutral input records.
 ///

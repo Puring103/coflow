@@ -1,6 +1,11 @@
 //! Round-trip tests for `ExcelWriter`: write a cell value, re-read with
 //! calamine, assert the new value plus that adjacent cells are unchanged.
-#![allow(clippy::expect_used, clippy::panic, clippy::panic_in_result_fn, clippy::unwrap_used)]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 
 use calamine::{open_workbook_auto, Data, Reader};
 use coflow_api::{
@@ -11,7 +16,7 @@ use coflow_cft::CftContainer;
 use coflow_loader_excel::ExcelWriter;
 use rust_xlsxwriter::{Workbook, XlsxError};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
@@ -43,12 +48,12 @@ fn write_seed_workbook(path: &PathBuf) -> Result<(), XlsxError> {
 /// Hand-build a `RecordOrigin::Table` matching the test workbook's "sword"
 /// row. The Excel loader normally produces one of these — but for a writer
 /// round-trip test we don't need to involve the loader.
-fn origin_for_sword(path: &PathBuf) -> RecordOrigin {
+fn origin_for_sword(path: &Path) -> RecordOrigin {
     let mut field_columns = BTreeMap::new();
     field_columns.insert(vec!["name".to_string()], 2);
     field_columns.insert(vec!["value".to_string()], 3);
     RecordOrigin::Table {
-        document: SourceDocument::Local(path.clone()),
+        document: SourceDocument::Local(path.to_path_buf()),
         sheet: "Items".to_string(),
         row: 2,
         id_column: 1,
@@ -56,16 +61,17 @@ fn origin_for_sword(path: &PathBuf) -> RecordOrigin {
     }
 }
 
-fn empty_source(path: &PathBuf) -> ResolvedSource {
+fn empty_source(path: &Path) -> ResolvedSource {
     ResolvedSource {
         provider_id: "excel".to_string(),
-        location: SourceLocationSpec::Path(path.clone()),
+        location: SourceLocationSpec::Path(path.to_path_buf()),
         options: serde_json::Value::default(),
         display_name: path.display().to_string(),
     }
 }
 
-fn read_cell(path: &PathBuf, sheet_name: &str, row: usize, col: usize) -> String {
+#[allow(clippy::cast_possible_truncation)]
+fn read_cell(path: &Path, sheet_name: &str, row: usize, col: usize) -> String {
     let mut workbook = open_workbook_auto(path).expect("re-open xlsx");
     let range = workbook.worksheet_range(sheet_name).expect("worksheet");
     let cell = range
@@ -187,7 +193,5 @@ fn rejects_missing_file_with_friendly_error() {
     ) else {
         panic!("missing file should fail");
     };
-    assert!(diag
-        .iter()
-        .any(|d| d.message.contains("does not exist")));
+    assert!(diag.iter().any(|d| d.message.contains("does not exist")));
 }

@@ -2,13 +2,8 @@
 
 Reward {
   sword_reward: ItemReward {
-    item: Item {
-  name: "",
-  element: Fire,
-  price: 0,
-  tags: ["", "", "", ""],
-},
-    count: 154364,
+    item: &sword_fire,
+    count: 1,
   }
 
   coin_reward: CurrencyReward {

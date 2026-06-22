@@ -920,10 +920,10 @@ fn init_project_scaffolds_minimal_layout() -> TestResult {
 }
 
 #[test]
-fn init_project_refuses_to_clobber_existing_yaml() -> TestResult {
+fn init_project_refuses_to_clobber_existing_yaml() {
     let dir = temp_project_dir("coflow-init-existing");
     std::fs::write(dir.join("coflow.yaml"), "# existing\n").expect("seed yaml");
-    let err = init_project(&dir).err().expect("must error");
+    let err = init_project(&dir).expect_err("must error");
     assert!(
         err.contains("already exists"),
         "expected clear refusal, got: {err}"
@@ -931,7 +931,6 @@ fn init_project_refuses_to_clobber_existing_yaml() -> TestResult {
     // The existing config wasn't touched.
     let preserved = std::fs::read_to_string(dir.join("coflow.yaml")).expect("read existing");
     assert_eq!(preserved, "# existing\n");
-    Ok(())
 }
 
 fn temp_project_dir(name: &str) -> PathBuf {

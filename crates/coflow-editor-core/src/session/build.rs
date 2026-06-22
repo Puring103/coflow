@@ -54,10 +54,9 @@ pub(super) fn default_provider_registry() -> (ProviderRegistry, Vec<DiagnosticIt
     if let Err(err) = registry.register_writer(coflow_loader_excel::ExcelWriter::new()) {
         warnings.push(loader_register_diagnostic(&err));
     }
-    if let Err(err) =
-        registry.register_writer(coflow_loader_lark::LarkSheetWriter::<
-            coflow_loader_lark::UreqLarkHttpClient,
-        >::default())
+    if let Err(err) = registry.register_writer(coflow_loader_lark::LarkSheetWriter::<
+        coflow_loader_lark::UreqLarkHttpClient,
+    >::default())
     {
         warnings.push(loader_register_diagnostic(&err));
     }
@@ -72,16 +71,15 @@ pub(super) fn session_capabilities_for_file(
     let provider_id = session
         .source_for_file
         .get(file_path)
-        .map(|s| s.provider_id.as_str())
-        .unwrap_or(FALLBACK_PROVIDER_ID);
+        .map_or(FALLBACK_PROVIDER_ID, |s| s.provider_id.as_str());
     let writer = registry.writer(provider_id);
-    match writer {
-        Some(w) => {
+    writer.map_or_else(
+        || SourceCapabilities::read_only(static_provider_id(provider_id)),
+        |w| {
             let descriptor = w.descriptor();
             SourceCapabilities::from_writer(descriptor.id, descriptor.capabilities)
-        }
-        None => SourceCapabilities::read_only(static_provider_id(provider_id)),
-    }
+        },
+    )
 }
 
 fn static_provider_id(id: &str) -> &'static str {
@@ -106,13 +104,13 @@ fn load_one_source(
     source_for_file: &mut HashMap<String, ResolvedSource>,
     diagnostics: &mut Vec<DiagnosticItem>,
 ) {
+    type Pair = (Arc<dyn DataLoader>, ResolvedSource);
     let configured = configured_resolved_source(project, source);
     let resolve_ctx = SourceResolveContext {
         project_root: &project.root_dir,
         schema,
     };
 
-    type Pair = (Arc<dyn DataLoader>, ResolvedSource);
     let mut pairs: Vec<Pair> = Vec::new();
     let is_untyped_dir = source.source_type.is_none()
         && matches!(&configured.location, SourceLocationSpec::Path(p) if p.is_dir());
@@ -240,6 +238,7 @@ fn file_label_for(project: &Project, sub: &ResolvedSource) -> String {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub(super) fn build_session(
     yaml_path_in: &Path,
     registry: &ProviderRegistry,
@@ -247,9 +246,8 @@ pub(super) fn build_session(
     let yaml_path = yaml_path_in.to_path_buf();
     let mut diagnostics = Diagnostics::default();
 
-    let project = Project::open_schema_only(Some(yaml_path.as_path())).map_err(|err| {
-        EditorError::project(format!("failed to open project: {err}"))
-    })?;
+    let project = Project::open_schema_only(Some(yaml_path.as_path()))
+        .map_err(|err| EditorError::project(format!("failed to open project: {err}")))?;
     let project_root = project.root_dir.clone();
 
     for d in project.schema_diagnostics() {
@@ -335,7 +333,7 @@ pub(super) fn build_session(
             let empty_schema = CftContainer::new();
             let empty_model = CfdDataModel::builder(&empty_schema)
                 .build()
-                .unwrap_or_else(|_| panic!("empty model build failed"));
+                .map_err(|_| EditorError::other("empty model build failed"))?;
             (empty_model, DependencyGraph::default())
         }
     };

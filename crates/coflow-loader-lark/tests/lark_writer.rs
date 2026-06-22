@@ -1,14 +1,19 @@
 //! Round-trip tests for `LarkSheetWriter`: mock the Lark HTTP API with a
 //! scripted client, write a cell, assert the writer issued the right
-//! sequence of calls (auth → sheets/query → values_batch_update), and
+//! sequence of calls (auth → sheets/query → `values_batch_update`), and
 //! verify the cache short-circuits the second write.
-#![allow(clippy::expect_used, clippy::panic, clippy::panic_in_result_fn, clippy::unwrap_used)]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 
+use coflow_api::CftContainer;
 use coflow_api::{
     CfdValue, DataWriter, RecordOrigin, ResolvedSource, SourceDocument, SourceLocationSpec,
     WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
-use coflow_api::CftContainer;
 use coflow_loader_lark::{LarkHttpClient, LarkSheetWriter};
 use serde_json::Value;
 use std::collections::{BTreeMap, VecDeque};
@@ -22,14 +27,14 @@ struct ScriptedResponse {
 }
 
 impl ScriptedResponse {
-    fn get(url_contains: &'static str, body: &'static str) -> Self {
+    const fn get(url_contains: &'static str, body: &'static str) -> Self {
         Self {
             method: "GET",
             url_contains,
             body,
         }
     }
-    fn post(url_contains: &'static str, body: &'static str) -> Self {
+    const fn post(url_contains: &'static str, body: &'static str) -> Self {
         Self {
             method: "POST",
             url_contains,
@@ -70,6 +75,7 @@ impl ScriptedClient {
             ));
         }
         inner.log.push((method, url.to_string()));
+        drop(inner);
         Ok(response.body.to_string())
     }
     fn calls(&self) -> Vec<(&'static str, String)> {
@@ -162,7 +168,9 @@ fn writes_cell_with_full_handshake_then_caches() {
         model: None,
     };
     writer.write_field(ctx, &request).expect("first write");
-    writer.write_field(ctx, &request).expect("second write (cached)");
+    writer
+        .write_field(ctx, &request)
+        .expect("second write (cached)");
 
     assert_eq!(client.remaining(), 0, "all responses consumed");
     let calls = client.calls();

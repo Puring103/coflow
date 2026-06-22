@@ -21,9 +21,10 @@ use std::path::PathBuf;
 /// values that aren't backed by a source location yet. Diagnostics and writers
 /// must handle `None` gracefully (typically by treating the record as
 /// non-editable / unlocatable).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum RecordOrigin {
     /// No known origin.
+    #[default]
     None,
     /// Record came from a text file with a byte/line span.
     File {
@@ -70,8 +71,8 @@ impl RecordOrigin {
     #[must_use]
     pub fn local_path(&self) -> Option<&PathBuf> {
         match self {
-            Self::File { path, .. } => Some(path),
-            Self::Table {
+            Self::File { path, .. }
+            | Self::Table {
                 document: SourceDocument::Local(path),
                 ..
             } => Some(path),
@@ -84,7 +85,10 @@ impl RecordOrigin {
     pub fn location_for_path(&self, path: &CfdPath) -> Option<SourceLocation> {
         match self {
             Self::None => None,
-            Self::File { path: file_path, span } => {
+            Self::File {
+                path: file_path,
+                span,
+            } => {
                 let span = span.unwrap_or(TextSpan {
                     start_line: 0,
                     start_character: 0,
@@ -130,12 +134,6 @@ impl RecordOrigin {
     }
 }
 
-impl Default for RecordOrigin {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
 /// A document key: either a local file or a remote document URI.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceDocument {
@@ -178,10 +176,7 @@ pub enum SourceLocation {
 /// Map a [`CfdLabel`] anchored on a record id to a [`SourceLocation`] using the
 /// record's own origin from the model.
 #[must_use]
-pub fn label_to_location(
-    label: &CfdLabel,
-    origin: &RecordOrigin,
-) -> Option<MappedLabel> {
+pub fn label_to_location(label: &CfdLabel, origin: &RecordOrigin) -> Option<MappedLabel> {
     let location = origin.location_for_path(&label.path)?;
     Some(MappedLabel {
         location,
@@ -217,14 +212,11 @@ pub fn map_diagnostics(
         .diagnostics
         .into_iter()
         .map(|diagnostic| {
-            let primary = diagnostic
-                .primary
-                .as_ref()
-                .and_then(|label| {
-                    let record = label.record?;
-                    let origin = resolve(record)?;
-                    label_to_location(label, &origin)
-                });
+            let primary = diagnostic.primary.as_ref().and_then(|label| {
+                let record = label.record?;
+                let origin = resolve(record)?;
+                label_to_location(label, &origin)
+            });
             let related = diagnostic
                 .related
                 .iter()
@@ -253,10 +245,7 @@ fn root_field(path: &CfdPath) -> Option<&str> {
     })
 }
 
-fn path_column(
-    path: &CfdPath,
-    field_columns: &BTreeMap<Vec<String>, usize>,
-) -> Option<usize> {
+fn path_column(path: &CfdPath, field_columns: &BTreeMap<Vec<String>, usize>) -> Option<usize> {
     let mut prefix = Vec::new();
     let mut column = None;
     for segment in &path.segments {

@@ -292,7 +292,10 @@ impl<'a> CheckEvaluator<'a> {
                             cmp_op_str(*op),
                             format_value_for_message(&rhs.value),
                         );
-                        return Ok((LocatedCheckValue::new(CheckValue::Bool(false), path), Some(detail)));
+                        return Ok((
+                            LocatedCheckValue::new(CheckValue::Bool(false), path),
+                            Some(detail),
+                        ));
                     }
                     lhs = rhs;
                 }
@@ -313,7 +316,8 @@ impl<'a> CheckEvaluator<'a> {
                         Some(detail),
                     ));
                 }
-                self.eval_unary(CftSchemaUnaryOp::Not, inner_val).map(|v| (v, None))
+                self.eval_unary(CftSchemaUnaryOp::Not, inner_val)
+                    .map(|v| (v, None))
             }
             CftSchemaCheckExprKind::BinOp {
                 op: CftSchemaBinOp::And,
@@ -1091,6 +1095,7 @@ impl<'a> CheckEvaluator<'a> {
         }
     }
 
+    #[allow(clippy::similar_names)]
     fn eval_bin_op(
         &mut self,
         op: CftSchemaBinOp,
@@ -1482,7 +1487,7 @@ fn cmp_op_str(op: CftSchemaCmpOp) -> &'static str {
     }
 }
 
-/// Render a CheckValue as a short token for inclusion in a diagnostic
+/// Render a `CheckValue` as a short token for inclusion in a diagnostic
 /// message — strings are quoted, collections summarize, records show their key.
 fn format_value_for_message(value: &CheckValue) -> String {
     match value {
@@ -1497,10 +1502,9 @@ fn format_value_for_message(value: &CheckValue) -> String {
         },
         CheckValue::EnumNamespace(name) => name.clone(),
         CheckValue::Record(_) => "<record>".to_string(),
-        CheckValue::Entry(entry) => format!(
-            "<entry key={}>",
-            format_value_for_message(&entry.key),
-        ),
+        CheckValue::Entry(entry) => {
+            format!("<entry key={}>", format_value_for_message(&entry.key))
+        }
         CheckValue::Array { items, .. } => format!("<array len={}>", items.len()),
         CheckValue::Dict { entries, .. } => format!("<dict len={}>", entries.len()),
     }

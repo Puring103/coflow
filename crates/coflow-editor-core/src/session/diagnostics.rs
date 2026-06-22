@@ -4,6 +4,7 @@
 use crate::types::DiagnosticItem;
 use coflow_data_model::CfdDataModel;
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::path::Path;
 
 use super::path::path_to_slash;
@@ -51,12 +52,12 @@ pub(super) fn diagnostic_from_api(d: &coflow_api::Diagnostic) -> DiagnosticItem 
         Severity::Info => "info",
     }
     .to_string();
-    let file_path = d.primary.as_ref().and_then(|label| match &label.location {
+    let file_path = d.primary.as_ref().map(|label| match &label.location {
         SourceLocation::FileSpan { path, .. }
         | SourceLocation::TableCell { path, .. }
         | SourceLocation::ProjectConfig { path, .. }
-        | SourceLocation::Artifact { path } => Some(path_to_slash(path)),
-        SourceLocation::RemoteCell { document, .. } => Some(document.clone()),
+        | SourceLocation::Artifact { path } => path_to_slash(path),
+        SourceLocation::RemoteCell { document, .. } => document.clone(),
     });
     DiagnosticItem {
         severity,
@@ -91,7 +92,7 @@ pub(super) fn diagnostic_from_project(diag: &coflow_project::DiagnosticJson) -> 
         ));
     }
     if !loc_parts.is_empty() {
-        message.push_str(&format!("\n  at {}", loc_parts.join(", ")));
+        let _ = write!(message, "\n  at {}", loc_parts.join(", "));
     }
     for related in &diag.related {
         let lbl = related.label.as_deref().unwrap_or("");
@@ -103,19 +104,25 @@ pub(super) fn diagnostic_from_project(diag: &coflow_project::DiagnosticJson) -> 
             if !loc.is_empty() {
                 loc.push(' ');
             }
-            loc.push_str(&format!("sheet '{sheet}'"));
+            let _ = write!(loc, "sheet '{sheet}'");
         }
         if let Some(cell) = &related.cell {
             if !loc.is_empty() {
                 loc.push(' ');
             }
-            loc.push_str(&format!("cell {cell}"));
+            let _ = write!(loc, "cell {cell}");
         }
         match (loc.is_empty(), lbl.is_empty()) {
             (true, true) => {}
-            (false, true) => message.push_str(&format!("\n  · {loc}")),
-            (true, false) => message.push_str(&format!("\n  · {lbl}")),
-            (false, false) => message.push_str(&format!("\n  · {loc}: {lbl}")),
+            (false, true) => {
+                let _ = write!(message, "\n  · {loc}");
+            }
+            (true, false) => {
+                let _ = write!(message, "\n  · {lbl}");
+            }
+            (false, false) => {
+                let _ = write!(message, "\n  · {loc}: {lbl}");
+            }
         }
     }
     DiagnosticItem {
@@ -168,10 +175,10 @@ pub(super) fn diagnostic_from_cfd(
             loc.push_str(&format_cfd_path(&primary.path));
         }
         if !loc.is_empty() {
-            message.push_str(&format!("\n  at {loc}"));
+            let _ = write!(message, "\n  at {loc}");
         }
         if let Some(extra) = &primary.message {
-            message.push_str(&format!("\n  → {extra}"));
+            let _ = write!(message, "\n  → {extra}");
         }
     }
     for related in &diag.related {
@@ -190,9 +197,15 @@ pub(super) fn diagnostic_from_cfd(
         let detail = related.message.as_deref().unwrap_or("");
         match (loc.is_empty(), detail.is_empty()) {
             (true, true) => {}
-            (false, true) => message.push_str(&format!("\n  · {loc}")),
-            (true, false) => message.push_str(&format!("\n  · {detail}")),
-            (false, false) => message.push_str(&format!("\n  · {loc}: {detail}")),
+            (false, true) => {
+                let _ = write!(message, "\n  · {loc}");
+            }
+            (true, false) => {
+                let _ = write!(message, "\n  · {detail}");
+            }
+            (false, false) => {
+                let _ = write!(message, "\n  · {loc}: {detail}");
+            }
         }
     }
     DiagnosticItem {
@@ -209,17 +222,17 @@ pub(super) fn diagnostic_from_cfd(
 pub(super) fn diagnostic_from_cft_schema(diag: &coflow_cft::CftDiagnostic) -> DiagnosticItem {
     let mut message = diag.message.clone();
     if let Some(primary) = &diag.primary {
-        message.push_str(&format!("\n  at {}", primary.module.as_str()));
+        let _ = write!(message, "\n  at {}", primary.module.as_str());
         if let Some(extra) = &primary.message {
-            message.push_str(&format!("\n  → {extra}"));
+            let _ = write!(message, "\n  → {extra}");
         }
     }
     for related in &diag.related {
         let detail = related.message.as_deref().unwrap_or("");
         if detail.is_empty() {
-            message.push_str(&format!("\n  · {}", related.module.as_str()));
+            let _ = write!(message, "\n  · {}", related.module.as_str());
         } else {
-            message.push_str(&format!("\n  · {}: {}", related.module.as_str(), detail));
+            let _ = write!(message, "\n  · {}: {}", related.module.as_str(), detail);
         }
     }
     DiagnosticItem {
@@ -244,10 +257,10 @@ fn format_cfd_path(path: &coflow_data_model::CfdPath) -> String {
                 out.push_str(name);
             }
             coflow_data_model::CfdPathSegment::Index(i) => {
-                out.push_str(&format!("[{i}]"));
+                let _ = write!(out, "[{i}]");
             }
             coflow_data_model::CfdPathSegment::DictKey(k) => {
-                out.push_str(&format!("[{k}]"));
+                let _ = write!(out, "[{k}]");
             }
         }
     }
