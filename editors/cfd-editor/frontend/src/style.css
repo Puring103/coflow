@@ -197,6 +197,20 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 
 .topbar-spacer { flex: 1; }
 
+.undo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
 .project-root {
   margin-left: 10px;
   font-size: 10.5px;
@@ -1353,6 +1367,46 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   max-width: 140px;
   padding: 2px 6px;
   font-size: 11px;
+}
+.dc-add-stack {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.dc-add-loading {
+  color: var(--text-mute);
+  font-size: 11px;
+  padding: 2px 6px;
+}
+/* Inline error badges for failed enum/ref loads and duplicate-key prompts.
+   Replaces blocking alert() dialogs with a non-disruptive inline signal. */
+.dc-load-error {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--red);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: help;
+  flex-shrink: 0;
+}
+.dc-inline-error {
+  color: var(--red);
+  font-size: 11px;
+  padding: 2px 6px;
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+.dc-input-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .dc-input {

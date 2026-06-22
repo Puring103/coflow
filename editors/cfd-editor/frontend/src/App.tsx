@@ -9,7 +9,7 @@ import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
 import { MOCK_PROJECT, MOCK_FILE_RECORDS, MOCK_GRAPH } from './mock'
 import * as api from './api'
-import type { ProjectSnapshot, FileRecords, GraphData, FieldValue, FieldPathSegment, DiagnosticItem } from './bindings/index'
+import type { ProjectSnapshot, FileRecords, GraphData, FieldValue, FieldPathSegment, DiagnosticItem, RecordRow } from './bindings/index'
 import { errorMessage } from './bindings/index'
 import type { FieldDiagnostic } from './components/DataCard'
 import { typeColor } from './utils/typeColor'
@@ -27,6 +27,15 @@ export default function App() {
   const [loadingFile, setLoadingFile] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
+  // Edit history for undo/redo. Each entry records the pre-edit value so we
+  // can replay it backwards through the same writeField pipeline. The future
+  // stack is populated by an undo and drained by redo.
+  const [undoStack, setUndoStack] = useState<EditEntry[]>([])
+  const [redoStack, setRedoStack] = useState<EditEntry[]>([])
+  // Monotonic sequence guard so stale write completions can't overwrite a
+  // newer edit's refresh (e.g. when two edits race on the same file).
+  const writeSeqRef = useRef(0)
+
   const router = useRouter()
   const { theme, toggle: toggleTheme } = useTheme()
   const [activeType, setActiveType] = useState<string>('')
@@ -43,22 +52,6 @@ export default function App() {
       if (firstFile) router.push({ view: 'table', file: firstFile.path })
     }
   }, [])
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault()
-      }
-      if (e.altKey && e.key === 'ArrowLeft') router.back()
-      if (e.altKey && e.key === 'ArrowRight') router.forward()
-      // `?` only toggles help when not focused inside a text-editing control,
-      // otherwise typing `?` into inputs/search boxes would steal focus.
-      if (e.key === '?' && !isTextTarget(e.target)) setShowHelp(v => !v)
-      if (e.key === 'Escape') setShowHelp(false)
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [router])
 
   // Reset all per-session UI state to a clean slate before swapping in a
   // new project snapshot. Used by both "open" and "new" flows so behavior
@@ -151,9 +144,20 @@ export default function App() {
     [router]
   )
 
-  const writeField = useCallback(
-    async (filePath: string, recordKey: string, fieldPath: FieldPathSegment[], newValue: FieldValue) => {
+  // Core write pipeline shared by user edits, undo, and redo.
+  // `opts.recordHistory` controls whether the edit is pushed onto the undo
+  // stack (redo intentionally replays without re-recording the inverse, so
+  // it passes the oldValue it is reverting to as the "new" value).
+  const writeFieldInternal = useCallback(
+    async (
+      filePath: string,
+      recordKey: string,
+      fieldPath: FieldPathSegment[],
+      newValue: FieldValue,
+      opts: { recordHistory: boolean; oldValue?: FieldValue } = { recordHistory: true },
+    ): Promise<RecordRow | void> => {
       if (!project || !api.isTauri) return
+      const mySeq = ++writeSeqRef.current
       try {
         const outcome = await api.writeField(
           project.session_id,
@@ -162,21 +166,85 @@ export default function App() {
           fieldPath,
           newValue,
         )
-        // The post-write rebuild reruns the checker; surface the new
-        // diagnostic set immediately so the panel reflects whatever the
-        // edit introduced or resolved.
+        // Stale guard: a newer edit superseded this one; drop our refresh so
+        // we don't clobber the newer state with older data.
+        if (mySeq !== writeSeqRef.current) return outcome.row
         setProject(p => (p ? { ...p, diagnostics: outcome.diagnostics } : p))
-        // Refresh the edited file eagerly; drop other caches so they re-load on next nav.
         const refreshed = await api.getFileRecords(project.session_id, filePath)
+        if (mySeq !== writeSeqRef.current) return outcome.row
         setFileDataCache({ [filePath]: refreshed })
         setGraphCache({})
+        if (opts.recordHistory) {
+          const oldValue = opts.oldValue ?? snapshotOldValue(fileDataCache, filePath, recordKey, fieldPath)
+          if (oldValue) {
+            setUndoStack(s => [...s, {
+              filePath, recordKey, fieldPath,
+              oldValue: cloneValue(oldValue),
+              newValue: cloneValue(newValue),
+            }])
+            setRedoStack([])
+          }
+        }
         return outcome.row
       } catch (err) {
         setErrorMsg(`写入失败: ${errorMessage(err)}`)
       }
     },
-    [project]
+    [project, fileDataCache],
   )
+
+  const writeField = useCallback(
+    (filePath: string, recordKey: string, fieldPath: FieldPathSegment[], newValue: FieldValue) =>
+      writeFieldInternal(filePath, recordKey, fieldPath, newValue),
+    [writeFieldInternal],
+  )
+
+  const undo = useCallback(async () => {
+    const entry = undoStack[undoStack.length - 1]
+    if (!entry) return
+    setUndoStack(s => s.slice(0, -1))
+    setRedoStack(s => [...s, entry])
+    await writeFieldInternal(entry.filePath, entry.recordKey, entry.fieldPath, entry.oldValue, {
+      recordHistory: false,
+    })
+  }, [undoStack, writeFieldInternal])
+
+  const redo = useCallback(async () => {
+    const entry = redoStack[redoStack.length - 1]
+    if (!entry) return
+    setRedoStack(s => s.slice(0, -1))
+    setUndoStack(s => [...s, entry])
+    await writeFieldInternal(entry.filePath, entry.recordKey, entry.fieldPath, entry.newValue, {
+      recordHistory: false,
+    })
+  }, [redoStack, writeFieldInternal])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault()
+      }
+      // Undo / redo. Skip when typing in a text control so native input
+      // undo stays available there.
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z') && !isTextTarget(e.target)) {
+        e.preventDefault()
+        if (e.shiftKey) redo()
+        else undo()
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'y' && !isTextTarget(e.target)) {
+        e.preventDefault()
+        redo()
+      }
+      if (e.altKey && e.key === 'ArrowLeft') router.back()
+      if (e.altKey && e.key === 'ArrowRight') router.forward()
+      // `?` only toggles help when not focused inside a text-editing control,
+      // otherwise typing `?` into inputs/search boxes would steal focus.
+      if (e.key === '?' && !isTextTarget(e.target)) setShowHelp(v => !v)
+      if (e.key === 'Escape') setShowHelp(false)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [router, undo, redo])
 
   const currentRoute = router.current
   const activeFile = currentRoute?.file ?? null
@@ -295,6 +363,11 @@ export default function App() {
           </span>
         )}
         <span className="topbar-spacer" />
+        {(undoStack.length > 0 || redoStack.length > 0) && (
+          <span className="undo-badge" title={`可撤销 ${undoStack.length} 步 / 可重做 ${redoStack.length} 步 (Ctrl+Z / Ctrl+Y)`}>
+            {undoStack.length > 0 ? `可撤销 ${undoStack.length}` : `可重做 ${redoStack.length}`}
+          </span>
+        )}
         <button
           className="btn btn-icon"
           onClick={toggleTheme}
@@ -511,6 +584,8 @@ export default function App() {
               <tbody>
                 <tr><td>Alt+←</td><td>后退</td></tr>
                 <tr><td>Alt+→</td><td>前进</td></tr>
+                <tr><td>Ctrl+Z</td><td>撤销编辑</td></tr>
+                <tr><td>Ctrl+Y / Ctrl+Shift+Z</td><td>重做编辑</td></tr>
                 <tr><td>?</td><td>显示/隐藏帮助</td></tr>
                 <tr><td>Esc</td><td>关闭弹窗</td></tr>
               </tbody>
@@ -559,6 +634,60 @@ function isTextTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   const tag = target.tagName
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable
+}
+
+/** A single reversible field edit. `oldValue` is the pre-edit FieldValue so
+ *  undo replays it back through writeField. We deep-clone via structuredClone
+ *  so later mutations of the cache can't retroactively rewrite history. */
+interface EditEntry {
+  filePath: string
+  recordKey: string
+  fieldPath: FieldPathSegment[]
+  oldValue: FieldValue
+  newValue: FieldValue
+}
+
+/** Walk a FieldValue along a FieldPathSegment path and return the value that
+ *  lives there, or null if any segment doesn't resolve. Used to snapshot the
+ *  pre-edit value of an arbitrary nested field. */
+function readFieldPath(root: FieldValue, path: FieldPathSegment[]): FieldValue | null {
+  let cur: FieldValue = root
+  for (const seg of path) {
+    if (seg.kind === 'field') {
+      if (cur.kind !== 'Object') return null
+      const fc = cur.fields.find(f => f.name === seg.name)
+      if (!fc) return null
+      cur = fc.value
+    } else {
+      if (cur.kind !== 'Array') return null
+      const item = cur.items[seg.i]
+      if (!item) return null
+      cur = item
+    }
+  }
+  return cur
+}
+
+function cloneValue(v: FieldValue): FieldValue {
+  if (typeof structuredClone === 'function') return structuredClone(v)
+  return JSON.parse(JSON.stringify(v)) as FieldValue
+}
+
+/** Look up the current value at (filePath, recordKey, fieldPath) in the
+ *  file-data cache so we can record it as the undo target. Returns null if
+ *  the file/record/path isn't present (e.g. cache miss). */
+function snapshotOldValue(
+  cache: Record<string, FileRecords>,
+  filePath: string,
+  recordKey: string,
+  fieldPath: FieldPathSegment[],
+): FieldValue | null {
+  const fr = cache[filePath]
+  if (!fr) return null
+  const row = fr.records.find(r => r.key === recordKey)
+  if (!row) return null
+  const root: FieldValue = { kind: 'Object', actual_type: row.actual_type, fields: row.fields }
+  return readFieldPath(root, fieldPath)
 }
 
 /** Roving-tabindex arrow-key navigation for a `role="tablist"` of string ids. */
