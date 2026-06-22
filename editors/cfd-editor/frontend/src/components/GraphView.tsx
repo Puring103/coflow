@@ -29,9 +29,14 @@ interface NodeData extends Record<string, unknown> {
   expanded: boolean
   /** Distinct edge field_paths whose source is this node (e.g. ["unlockGeneList[0]", "unlockGeneList[1]"]) */
   outgoingPaths: string[]
+  /** Stable signature of the per-row expanded set, so CfdNode can re-measure
+   *  handle Y positions only when something that affects row geometry changes. */
+  rowExpandKey: string
   onToggleExpand: () => void
   onRowToggle: (path: string, exp: boolean) => void
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
+  /** Ctrl+click on a node body opens that record in the record view. */
+  onCtrlClick?: () => void
 }
 
 // ─── CfdNode ─────────────────────────────────────────────────────────────────
@@ -40,7 +45,7 @@ interface NodeData extends Record<string, unknown> {
 // header height variation, or sub-row expansion.
 
 function CfdNode({ id, data }: NodeProps) {
-  const { graphNode: gn, expanded, outgoingPaths, onToggleExpand, onRowToggle, onEdit } = data as NodeData
+  const { graphNode: gn, expanded, outgoingPaths, rowExpandKey, onToggleExpand, onRowToggle, onEdit, onCtrlClick } = data as NodeData
   const rootRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLDivElement>(null)
   const updateNodeInternals = useUpdateNodeInternals()
@@ -50,6 +55,7 @@ function CfdNode({ id, data }: NodeProps) {
   const [pathOffsets, setPathOffsets] = useState<Map<string, number>>(new Map())
   const [headerCenterY, setHeaderCenterY] = useState(21)
 
+  const outgoingKey = outgoingPaths.join('|')
   useLayoutEffect(() => {
     const root = rootRef.current
     if (!root) return
@@ -89,7 +95,9 @@ function CfdNode({ id, data }: NodeProps) {
       for (const [k, v] of next) if (prev.get(k) !== v) return next
       return prev
     })
-  })
+    // Re-measure only when the set of outgoing paths, the node's expand
+    // state, or any sub-row expand state changes — not on every render.
+  }, [outgoingKey, expanded, rowExpandKey])
 
   // Tell React Flow to recompute edge paths AFTER our handle Y values land
   // in the DOM (i.e. after the render that uses pathOffsets/headerCenterY).
@@ -103,6 +111,16 @@ function CfdNode({ id, data }: NodeProps) {
       className={`graph-node${gn.in_focus_file ? ' focused' : ' dim'}`}
       data-nodeid={gn.id}
       style={{'--node-color': typeColor(gn.actual_type)} as React.CSSProperties}
+      onClick={e => {
+        // Ctrl+click (or Cmd+click on macOS) opens the record. Plain click
+        // is left for React Flow's selection/drag handling.
+        if ((e.ctrlKey || e.metaKey) && onCtrlClick) {
+          e.preventDefault()
+          e.stopPropagation()
+          onCtrlClick()
+        }
+      }}
+      title={onCtrlClick ? `${gn.key} — Ctrl+点击打开记录` : gn.key}
     >
       <Handle type="target" position={Position.Left} id="__in" style={{ top: headerCenterY }} />
       {/* Render a handle for EVERY outgoing path on first render (default Y=0)
@@ -257,85 +275,6 @@ function layerByLongestPath(
   }
   for (const n of nodes) visit(n.id)
   return layer
-}
-
-// ─── Barycenter with dummy nodes ──────────────────────────────────────────────
-
-function barycenterOrder(
-  layerToNodes: Map<number, { id: string }[]>,
-  forwardEdges: { source: string; target: string }[],
-  layerMap: Map<string, number>,
-  layers: number[],
-) {
-  interface BcItem { id: string }
-  const bcLayers = new Map<number, BcItem[]>()
-  for (const [l, ns] of layerToNodes) bcLayers.set(l, ns.map(n => ({ id: n.id })))
-
-  const bcOut = new Map<string, string[]>()
-  const bcIn  = new Map<string, string[]>()
-
-  for (const e of forwardEdges) {
-    const sl = layerMap.get(e.source) ?? 0
-    const tl = layerMap.get(e.target) ?? 0
-
-    if (tl - sl <= 1) {
-      ;(bcOut.get(e.source) ?? (bcOut.set(e.source, []), bcOut.get(e.source)!)).push(e.target)
-      ;(bcIn.get(e.target)  ?? (bcIn.set(e.target, []),  bcIn.get(e.target)!)).push(e.source)
-    } else {
-      let prev = e.source
-      for (let dl = sl + 1; dl < tl; dl++) {
-        const dId = `__d_${e.source}_${e.target}_${dl}`
-        if (!bcLayers.has(dl)) bcLayers.set(dl, [])
-        bcLayers.get(dl)!.push({ id: dId })
-        ;(bcOut.get(prev)  ?? (bcOut.set(prev,  []), bcOut.get(prev)!)).push(dId)
-        ;(bcIn.get(dId)    ?? (bcIn.set(dId,    []), bcIn.get(dId)!)).push(prev)
-        prev = dId
-      }
-      ;(bcOut.get(prev)      ?? (bcOut.set(prev,      []), bcOut.get(prev)!)).push(e.target)
-      ;(bcIn.get(e.target)   ?? (bcIn.set(e.target,   []), bcIn.get(e.target)!)).push(prev)
-    }
-  }
-
-  const bcLayerList = Array.from(bcLayers.keys()).sort((a, b) => a - b)
-
-  function idx(id: string, list: BcItem[]) { return list.findIndex(x => x.id === id) }
-  function meanIdx(id: string, nbs: string[] | undefined, nl: number) {
-    if (!nbs?.length) return Infinity
-    const list = bcLayers.get(nl); if (!list) return Infinity
-    let s = 0, n = 0
-    for (const nb of nbs) { const i = idx(nb, list); if (i >= 0) { s += i; n++ } }
-    return n === 0 ? Infinity : s / n
-  }
-
-  for (let it = 0; it < 24; it++) {
-    for (let i = 1; i < bcLayerList.length; i++) {
-      const cur = bcLayerList[i], prev = bcLayerList[i - 1]
-      const list = bcLayers.get(cur)!
-      list.sort((a, b) => {
-        const d = meanIdx(a.id, bcIn.get(a.id), prev) - meanIdx(b.id, bcIn.get(b.id), prev)
-        return d !== 0 ? d : a.id.localeCompare(b.id)
-      })
-    }
-    for (let i = bcLayerList.length - 2; i >= 0; i--) {
-      const cur = bcLayerList[i], next = bcLayerList[i + 1]
-      const list = bcLayers.get(cur)!
-      list.sort((a, b) => {
-        const d = meanIdx(a.id, bcOut.get(a.id), next) - meanIdx(b.id, bcOut.get(b.id), next)
-        return d !== 0 ? d : a.id.localeCompare(b.id)
-      })
-    }
-  }
-
-  // Write ordering back to real layers (drop dummy nodes)
-  for (const l of layers) {
-    const real = layerToNodes.get(l)
-    if (!real) continue
-    const ordered = (bcLayers.get(l) ?? [])
-      .filter(x => !x.id.startsWith('__d_'))
-      .map(x => x.id)
-    const order = new Map(ordered.map((id, i) => [id, i]))
-    real.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
-  }
 }
 
 // ─── Layout one connected component ──────────────────────────────────────────
@@ -585,7 +524,7 @@ interface Props {
   ) => Promise<RecordRow | void>
 }
 
-export function GraphView({ graphData, activeType, onWriteField }: Props) {
+export function GraphView({ graphData, activeType, onOpenRecord, onWriteField }: Props) {
   // Fields that actually appear in the subgraph for the current activeType.
   // Mirrors layoutAll's visibility logic but ignores field filtering itself,
   // so toggling all chips off doesn't hide the chip list.
@@ -624,14 +563,13 @@ export function GraphView({ graphData, activeType, onWriteField }: Props) {
   }, [graphData, activeType])
 
   const [enabledFields, setEnabledFields] = useState<Set<string>>(() => new Set(availableFields))
-  useMemo(() => {
+  useEffect(() => {
     setEnabledFields(prev => {
       const next = new Set<string>()
       for (const f of availableFields) if (prev.has(f) || prev.size === 0) next.add(f)
       return next
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availableFields.join('|')])
+  }, [availableFields])
 
   const [filterPanelOpen, setFilterPanelOpen] = useState(false)
 
@@ -690,6 +628,7 @@ export function GraphView({ graphData, activeType, onWriteField }: Props) {
       // Each node's host file determines whether it's editable. Non-cfd hosts
       // (e.g. Excel) and the absent onWriteField (read-only mode) both opt out.
       const editable = !!onWriteField && isEditableFile(n.file_path)
+      const rowExpanded = nodeRowExpandedMap.get(n.id)
       return {
         id: n.id,
         type: 'cfd',
@@ -698,15 +637,17 @@ export function GraphView({ graphData, activeType, onWriteField }: Props) {
           graphNode: n,
           expanded: nodeExpandedMap.get(n.id) ?? false,
           outgoingPaths: outgoingPathsByNode.get(n.id) ?? [],
+          rowExpandKey: rowExpanded ? Array.from(rowExpanded).sort().join('|') : '',
           onToggleExpand: () => toggleNodeExpanded(n.id),
           onRowToggle: (path: string, exp: boolean) => handleRowToggle(n.id, path, exp),
           onEdit: editable
             ? (path: FieldPathSegment[], val: FieldValue) => { onWriteField!(n.file_path, n.key, path, val) }
             : undefined,
+          onCtrlClick: onOpenRecord ? () => onOpenRecord(n.file_path, n.key) : undefined,
         } satisfies NodeData,
       }
     }),
-    [visibleNodes, positions, nodeExpandedMap, outgoingPathsByNode, toggleNodeExpanded, handleRowToggle, onWriteField]
+    [visibleNodes, positions, nodeExpandedMap, nodeRowExpandedMap, outgoingPathsByNode, toggleNodeExpanded, handleRowToggle, onWriteField, onOpenRecord]
   )
 
   const rfEdges: Edge[] = useMemo(() => {
@@ -763,7 +704,7 @@ export function GraphView({ graphData, activeType, onWriteField }: Props) {
 
   // nodeId → set of nodeIds it is directly connected to
   const adjacencyRef = useRef<Map<string, Set<string>>>(new Map())
-  useMemo(() => {
+  useEffect(() => {
     const adj = new Map<string, Set<string>>()
     for (const e of [...forwardEdges, ...backEdges]) {
       if (!adj.has(e.source)) adj.set(e.source, new Set())
@@ -832,7 +773,8 @@ export function GraphView({ graphData, activeType, onWriteField }: Props) {
         {rfNodes.length === 0 ? (
           <div className="empty-hint">无可显示的引用关系</div>
         ) : (
-          <ReactFlow
+          <>
+            <ReactFlow
             nodes={rfNodes}
             edges={rfEdges}
             nodeTypes={nodeTypes}
@@ -856,6 +798,10 @@ export function GraphView({ graphData, activeType, onWriteField }: Props) {
               zoomable
             />
           </ReactFlow>
+          <div className="graph-hint" title="按住 Ctrl 点击节点可跳转到该记录视图">
+            Ctrl+点击节点打开记录
+          </div>
+          </>
         )}
         {availableFields.length > 0 && (
           <div className={`graph-filter-float${filterPanelOpen ? ' open' : ''}`}>
