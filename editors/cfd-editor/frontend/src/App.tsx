@@ -44,6 +44,14 @@ export default function App() {
   // re-flash it.
   const [highlightField, setHighlightField] = useState<string | null>(null)
 
+  // Resizable sidebar width, persisted to localStorage.
+  const [sidebarW, setSidebarW] = useState<number>(() => {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('cfd-editor-sidebar-w') : null
+    const n = raw ? parseInt(raw, 10) : NaN
+    return Number.isFinite(n) ? Math.min(480, Math.max(160, n)) : 220
+  })
+  const [splitterDragging, setSplitterDragging] = useState(false)
+
   // Auto-load mock data only when not running in Tauri (browser preview).
   useEffect(() => {
     if (!api.isTauri) {
@@ -166,6 +174,36 @@ export default function App() {
     },
     [router]
   )
+
+  // Sidebar splitter: on mousedown, attach mousemove/mouseup listeners that
+  // track the pointer X and clamp the new width to [160, 480]. Persist on
+  // release. We use window listeners (not React state per move) so the drag
+  // is smooth and doesn't re-render the whole tree on each pixel.
+  const onSplitterMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    setSplitterDragging(true)
+    const startX = e.clientX
+    const startW = sidebarW
+    const onMove = (ev: MouseEvent) => {
+      const next = Math.min(480, Math.max(160, startW + (ev.clientX - startX)))
+      setSidebarW(next)
+      document.documentElement.style.setProperty('--sidebar-w', `${next}px`)
+    }
+    const onUp = () => {
+      setSplitterDragging(false)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      try { localStorage.setItem('cfd-editor-sidebar-w', String(sidebarW)) } catch { /* quota */ }
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [sidebarW])
+
+  // Apply the persisted width on mount and keep it in sync with keyboard
+  // adjustments (the mouse-drag path sets the CSS var directly for speed).
+  useEffect(() => {
+    document.documentElement.style.setProperty('--sidebar-w', `${sidebarW}px`)
+  }, [sidebarW])
 
   // Core write pipeline shared by user edits, undo, and redo.
   // `opts.recordHistory` controls whether the edit is pushed onto the undo
@@ -443,6 +481,19 @@ export default function App() {
             </div>
           )}
         </div>
+
+        <div
+          className={`sidebar-splitter${splitterDragging ? ' dragging' : ''}`}
+          onMouseDown={onSplitterMouseDown}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="调整侧栏宽度"
+          tabIndex={0}
+          onKeyDown={e => {
+            if (e.key === 'ArrowLeft') setSidebarW(w => Math.max(160, w - 16))
+            if (e.key === 'ArrowRight') setSidebarW(w => Math.min(480, w + 16))
+          }}
+        />
 
         <div className="content-area">
           {currentRoute && activeFileData ? (
