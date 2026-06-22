@@ -693,17 +693,19 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_or_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
+        let mut expr = self.parse_and_expr()?;
+        while self.eat(&TokenKind::PipePipe).is_some() {
+            let rhs = self.parse_and_expr()?;
+            expr = bin_expr(BinOp::Or, expr, rhs);
+        }
+        Ok(expr)
+    }
+
+    fn parse_and_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
         let mut expr = self.parse_is_expr()?;
-        loop {
-            let op = if self.eat(&TokenKind::PipePipe).is_some() {
-                BinOp::Or
-            } else if self.eat(&TokenKind::AmpAmp).is_some() {
-                BinOp::And
-            } else {
-                break;
-            };
+        while self.eat(&TokenKind::AmpAmp).is_some() {
             let rhs = self.parse_is_expr()?;
-            expr = bin_expr(op, expr, rhs);
+            expr = bin_expr(BinOp::And, expr, rhs);
         }
         Ok(expr)
     }

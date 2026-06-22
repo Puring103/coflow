@@ -320,13 +320,14 @@ impl<'a> Lexer<'a> {
             self.pos += 1;
         }
 
-        let is_float = if self.bytes.get(self.pos) == Some(&b'.') {
+        let mut is_float = false;
+        if self.bytes.get(self.pos) == Some(&b'.') {
             if self.bytes.get(self.pos + 1).is_some_and(u8::is_ascii_digit) {
                 self.pos += 1;
                 while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_digit() {
                     self.pos += 1;
                 }
-                true
+                is_float = true;
             } else {
                 return Err(self.err(
                     CftErrorCode::InvalidFloatLiteral,
@@ -334,9 +335,7 @@ impl<'a> Lexer<'a> {
                     "invalid float literal",
                 ));
             }
-        } else {
-            false
-        };
+        }
 
         if matches!(self.bytes.get(self.pos), Some(b'e' | b'E')) {
             let exp_start = self.pos;
@@ -355,11 +354,20 @@ impl<'a> Lexer<'a> {
                     "invalid float literal",
                 ));
             }
-            let raw = &self.source[start..self.pos];
-            return self.lex_float(raw, start);
+            is_float = true;
         }
 
-        let raw = &self.source[start..self.pos];
+        let raw_end = self.pos;
+        if matches!(self.bytes.get(self.pos), Some(b'f' | b'F')) {
+            let suffix_end = self.pos + 1;
+            let next = self.source[suffix_end..].chars().next();
+            if !next.is_some_and(|ch| ch == '_' || is_xid_continue(ch)) {
+                self.pos = suffix_end;
+                is_float = true;
+            }
+        }
+
+        let raw = &self.source[start..raw_end];
         if is_float {
             self.lex_float(raw, start)
         } else if let Ok(value) = raw.parse::<i64>() {

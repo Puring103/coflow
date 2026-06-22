@@ -8,7 +8,7 @@ use coflow_cft::{
 };
 
 #[test]
-fn logical_and_or_share_one_left_associative_precedence_level() {
+fn logical_and_binds_tighter_than_or() {
     let container = compile_one(
         r"
             type Rule {
@@ -20,13 +20,44 @@ fn logical_and_or_share_one_left_associative_precedence_level() {
 
     let expr = first_check_expr(&container, "Rule");
     let (op, lhs, rhs) = expect_binop(expr);
-    assert_eq!(op, CftSchemaBinOp::And);
-    assert!(matches!(rhs.kind, CftSchemaCheckExprKind::Bool(false)));
+    assert_eq!(op, CftSchemaBinOp::Or);
+    assert!(matches!(lhs.kind, CftSchemaCheckExprKind::Bool(true)));
 
-    let (lhs_op, lhs_lhs, lhs_rhs) = expect_binop(lhs);
-    assert_eq!(lhs_op, CftSchemaBinOp::Or);
-    assert!(matches!(lhs_lhs.kind, CftSchemaCheckExprKind::Bool(true)));
-    assert!(matches!(lhs_rhs.kind, CftSchemaCheckExprKind::Bool(false)));
+    let (rhs_op, rhs_lhs, rhs_rhs) = expect_binop(rhs);
+    assert_eq!(rhs_op, CftSchemaBinOp::And);
+    assert!(matches!(rhs_lhs.kind, CftSchemaCheckExprKind::Bool(false)));
+    assert!(matches!(rhs_rhs.kind, CftSchemaCheckExprKind::Bool(false)));
+}
+
+#[test]
+fn parenthesized_and_expression_can_be_rhs_of_or() {
+    let container = compile_one(
+        r"
+            type Rule {
+                ratioOfAir: float;
+                check {
+                    ratioOfAir == -1f || (ratioOfAir >= 0f && ratioOfAir <= 1f);
+                }
+            }
+        ",
+    )
+    .unwrap();
+
+    let expr = first_check_expr(&container, "Rule");
+    let (op, lhs, rhs) = expect_binop(expr);
+    assert_eq!(op, CftSchemaBinOp::Or);
+    assert!(matches!(lhs.kind, CftSchemaCheckExprKind::CmpChain { .. }));
+
+    let (rhs_op, rhs_lhs, rhs_rhs) = expect_binop(rhs);
+    assert_eq!(rhs_op, CftSchemaBinOp::And);
+    assert!(matches!(
+        rhs_lhs.kind,
+        CftSchemaCheckExprKind::CmpChain { .. }
+    ));
+    assert!(matches!(
+        rhs_rhs.kind,
+        CftSchemaCheckExprKind::CmpChain { .. }
+    ));
 }
 
 #[test]

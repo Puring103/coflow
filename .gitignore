@@ -1,4 +1,5 @@
 target/
+dist/
 examples/*/generated/**
 !examples/*/generated/
 !examples/*/coflow.enum.lock.json
