@@ -69,23 +69,23 @@ impl DataWriter for CfdWriter {
         }
 
         // Read or fetch from cache.
-        let (source, ast) = match self.cache.read() {
-            Ok(cache) => cache.get(path).cloned(),
-            Err(_) => None,
-        }
-        .map_or_else(
-            || -> Result<(String, CfdAst), DiagnosticSet> {
-                let text = std::fs::read_to_string(path).map_err(|err| {
-                    DiagnosticSet::one(diag(
-                        "CFD-READ",
-                        format!("failed to read `{}`: {err}", path.display()),
-                    ))
-                })?;
-                let (ast, _) = parse_cfd(&text);
-                Ok((text, ast))
-            },
-            Ok,
-        )?;
+        let (source, ast) = self
+            .cache
+            .read()
+            .map_or(None, |cache| cache.get(path).cloned())
+            .map_or_else(
+                || -> Result<(String, CfdAst), DiagnosticSet> {
+                    let text = std::fs::read_to_string(path).map_err(|err| {
+                        DiagnosticSet::one(diag(
+                            "CFD-READ",
+                            format!("failed to read `{}`: {err}", path.display()),
+                        ))
+                    })?;
+                    let (ast, _) = parse_cfd(&text);
+                    Ok((text, ast))
+                },
+                Ok,
+            )?;
 
         let new_source = apply_patch(&source, &ast, request, ctx.model)?;
 
@@ -235,7 +235,7 @@ fn validate_value(v: &CfdValue) -> Result<(), DiagnosticSet> {
             "cannot write empty reference; pick a target key first",
         ))),
         CfdValue::Object(record) => {
-            for (_, v) in &record.fields {
+            for v in record.fields.values() {
                 validate_value(v)?;
             }
             Ok(())
@@ -310,26 +310,20 @@ fn locate_target(
     locate_target_in_value(&field.value, &path[1..], 1)
 }
 
-fn find_field_in_record<'a>(
-    record: &'a AstRecord,
-    name: &str,
-) -> Option<&'a coflow_cfd::CfdField> {
-    record
-        .fields
-        .iter()
-        .find(|f| f.name == name)
-        .or_else(|| {
-            record.entries.iter().find_map(|e| match e {
-                CfdBlockEntry::Field(f) if f.name == name => Some(f),
-                _ => None,
-            })
+fn find_field_in_record<'a>(record: &'a AstRecord, name: &str) -> Option<&'a coflow_cfd::CfdField> {
+    record.fields.iter().find(|f| f.name == name).or_else(|| {
+        record.entries.iter().find_map(|e| match e {
+            CfdBlockEntry::Field(f) if f.name == name => Some(f),
+            _ => None,
         })
+    })
 }
 
 /// Recursive walker: navigate `path` inside `value` and decide whether to
 /// replace an existing span or insert into the surrounding block. `depth`
 /// is the current nesting depth from the top-level record body, used to
 /// pick indentation for inserted overrides.
+#[allow(clippy::option_if_let_else)]
 fn locate_target_in_value(
     value: &AstValue,
     path: &[WriteFieldPathSegment],
@@ -377,10 +371,7 @@ fn locate_target_in_value(
         }
         (WriteFieldPathSegment::Index(i), AstValue::Array(items, _)) => {
             let item = items.get(*i).ok_or_else(|| {
-                DiagnosticSet::one(diag(
-                    "CFD-WRITE",
-                    format!("index {i} out of bounds"),
-                ))
+                DiagnosticSet::one(diag("CFD-WRITE", format!("index {i} out of bounds")))
             })?;
             if path.len() == 1 {
                 Ok(WriteTarget::Replace(full_value_span(item)))
@@ -395,10 +386,12 @@ fn locate_target_in_value(
     }
 }
 
-/// Serialize a `CfdValue` to CFD source text. `depth` controls indentation
-/// for nested object bodies. When `model` is provided, refs are emitted as
-/// fully-qualified `@Type.key` (safe for polymorphic fields); otherwise the
-/// shortcut `&key` form is used.
+/// Serialize a `CfdValue` to CFD source text.
+///
+/// `depth` controls indentation for nested object bodies. When `model` is
+/// provided, refs are emitted as fully-qualified `@Type.key` (safe for
+/// polymorphic fields); otherwise the shortcut `&key` form is used.
+#[must_use]
 pub fn serialize_value(v: &CfdValue, depth: usize, model: Option<&CfdDataModel>) -> String {
     let indent = "  ".repeat(depth);
     let outer = "  ".repeat(depth.saturating_sub(1));
@@ -419,21 +412,23 @@ pub fn serialize_value(v: &CfdValue, depth: usize, model: Option<&CfdDataModel>)
             .variant
             .clone()
             .unwrap_or_else(|| format!("{}({})", e.enum_name, e.value)),
-        CfdValue::Ref { key, target } => match model.and_then(|m| m.record(*target)) {
-            Some(record) => format!("@{}.{key}", record.actual_type),
-            None => format!("&{key}"),
-        },
+        CfdValue::Ref { key, target } => model.and_then(|m| m.record(*target)).map_or_else(
+            || format!("&{key}"),
+            |record| format!("@{}.{key}", record.actual_type),
+        ),
         CfdValue::Object(boxed) => {
-            let body: String = boxed
+            let body = boxed
                 .fields
                 .iter()
-                .map(|(name, value)| {
-                    format!(
-                        "{indent}{name}: {},\n",
+                .fold(String::new(), |mut acc, (name, value)| {
+                    use std::fmt::Write;
+                    let _ = writeln!(
+                        acc,
+                        "{indent}{name}: {},",
                         serialize_value(value, depth + 1, model)
-                    )
-                })
-                .collect();
+                    );
+                    acc
+                });
             format!("{} {{\n{body}{outer}}}", boxed.actual_type)
         }
         CfdValue::Array(items) => {

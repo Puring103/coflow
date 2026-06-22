@@ -17,9 +17,11 @@ pub const EXCEL_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
     capabilities: WriterCapabilities::local_full(),
 };
 
-/// Writer for local Excel workbooks. Each call opens the file fresh — no
-/// in-memory cache, since umya-spreadsheet load is fast for typical config
-/// workbooks and the disk is always authoritative for external editors.
+/// Writer for local Excel workbooks.
+///
+/// Each call opens the file fresh — no in-memory cache, since
+/// umya-spreadsheet load is fast for typical config workbooks and the disk is
+/// always authoritative for external editors.
 #[derive(Debug, Default)]
 pub struct ExcelWriter;
 
@@ -60,8 +62,8 @@ impl DataWriter for ExcelWriter {
             )));
         };
 
-        let column = resolve_column(request.field_path, field_columns, *id_column).ok_or_else(
-            || {
+        let column =
+            resolve_column(request.field_path, field_columns, *id_column).ok_or_else(|| {
                 DiagnosticSet::one(diag(
                     "EXCEL-WRITE",
                     format!(
@@ -69,8 +71,7 @@ impl DataWriter for ExcelWriter {
                         request.field_path
                     ),
                 ))
-            },
-        )?;
+            })?;
         let cell_value = render_cell_value(request.new_value)?;
 
         write_cell(path, sheet, *row, column, &cell_value)?;
@@ -118,16 +119,14 @@ fn resolve_column(
 /// Render a `CfdValue` into a textual cell payload. Matches the `cell_value`
 /// parser's expectations on the read path so a round-trip preserves meaning.
 fn render_cell_value(value: &CfdValue) -> Result<String, DiagnosticSet> {
+    use std::fmt::Write;
     match value {
         CfdValue::Null => Ok(String::new()),
         CfdValue::Bool(v) => Ok(v.to_string()),
         CfdValue::Int(v) => Ok(v.to_string()),
         CfdValue::Float(v) => Ok(v.to_string()),
         CfdValue::String(v) => Ok(v.clone()),
-        CfdValue::Enum(e) => Ok(e
-            .variant
-            .clone()
-            .unwrap_or_else(|| e.value.to_string())),
+        CfdValue::Enum(e) => Ok(e.variant.clone().unwrap_or_else(|| e.value.to_string())),
         CfdValue::Ref { key, .. } => Ok(format!("@{key}")),
         CfdValue::Array(items) => {
             let mut out = String::from("[");
@@ -149,12 +148,11 @@ fn render_cell_value(value: &CfdValue) -> Result<String, DiagnosticSet> {
                 let key_text = match key {
                     coflow_api::CfdDictKey::String(s) => format!("{s:?}"),
                     coflow_api::CfdDictKey::Int(n) => n.to_string(),
-                    coflow_api::CfdDictKey::Enum(e) => e
-                        .variant
-                        .clone()
-                        .unwrap_or_else(|| e.value.to_string()),
+                    coflow_api::CfdDictKey::Enum(e) => {
+                        e.variant.clone().unwrap_or_else(|| e.value.to_string())
+                    }
                 };
-                out.push_str(&format!("{key_text}: {}", render_cell_value(value)?));
+                let _ = write!(out, "{key_text}: {}", render_cell_value(value)?);
             }
             out.push('}');
             Ok(out)
@@ -166,6 +164,7 @@ fn render_cell_value(value: &CfdValue) -> Result<String, DiagnosticSet> {
     }
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn write_cell(
     path: &Path,
     sheet: &str,

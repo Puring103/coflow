@@ -833,6 +833,10 @@ pub fn init_project(dir: impl AsRef<Path>) -> Result<InitOutcome, String> {
     Ok(InitOutcome { config_path })
 }
 
+/// Compile the schema for a project.
+///
+/// # Errors
+///
 /// Returns an error when project schema paths cannot be read or when stdin
 /// schema input cannot be consumed.
 pub fn compile_schema_project(
@@ -1488,7 +1492,8 @@ fn byte_position(source: &str, byte_offset: usize) -> Position {
 
 #[must_use]
 pub fn path_to_slash(path: &Path) -> String {
-    path.components()
+    let raw = path
+        .components()
         .filter_map(|component| match component {
             Component::Normal(part) => Some(part.to_string_lossy().replace('\\', "/")),
             Component::Prefix(prefix) => Some(prefix.as_os_str().to_string_lossy().to_string()),
@@ -1496,7 +1501,12 @@ pub fn path_to_slash(path: &Path) -> String {
             Component::ParentDir => Some("..".to_string()),
         })
         .collect::<Vec<_>>()
-        .join("/")
+        .join("/");
+    // Strip the Windows verbatim-path prefix (\\?\  or //?/) so the result
+    // is portable and can be round-tripped through YAML or the LSP protocol.
+    raw.strip_prefix(r"\\?\")
+        .or_else(|| raw.strip_prefix("//?/"))
+        .map_or_else(|| raw.clone(), str::to_owned)
 }
 
 #[must_use]

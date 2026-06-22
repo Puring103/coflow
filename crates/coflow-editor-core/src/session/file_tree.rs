@@ -34,9 +34,8 @@ pub(super) fn build_file_tree(
         if !by_extension && !in_sources.contains(&rel_for_check) {
             continue;
         }
-        let rel = match path.strip_prefix(root) {
-            Ok(rel) => rel,
-            Err(_) => continue,
+        let Ok(rel) = path.strip_prefix(root) else {
+            continue;
         };
         let parts: Vec<String> = rel
             .components()
@@ -80,7 +79,11 @@ fn insert_path(
         }
         return;
     }
-    let in_src = if is_dir { true } else { in_sources.contains(&path) };
+    let in_src = if is_dir {
+        true
+    } else {
+        in_sources.contains(&path)
+    };
     let mut node = FileTreeNode {
         name: name.clone(),
         path: path.clone(),

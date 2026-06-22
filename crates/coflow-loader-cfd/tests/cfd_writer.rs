@@ -1,17 +1,22 @@
 //! Round-trip tests for `CfdWriter`: write a value, re-parse the file from
 //! disk, assert the new value is reflected and that other records / fields
 //! are unchanged.
-#![allow(clippy::expect_used, clippy::panic, clippy::panic_in_result_fn, clippy::unwrap_used)]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used
+)]
 
 use coflow_api::{
-    CfdValue, DataWriter, RecordOrigin, ResolvedSource, SourceLocationSpec, TextSpan, WriteCellRequest,
-    WriteContext, WriteFieldPathSegment,
+    CfdValue, DataWriter, RecordOrigin, ResolvedSource, SourceLocationSpec, TextSpan,
+    WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::CfdDataModel;
 use coflow_loader_cfd::{load_cfd_model, parse_cfd_input_records, CfdWriter};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
@@ -35,18 +40,18 @@ fn compile_schema(source: &str) -> CftContainer {
     container
 }
 
-fn empty_source(path: &PathBuf) -> ResolvedSource {
+fn empty_source(path: &Path) -> ResolvedSource {
     ResolvedSource {
         provider_id: "cfd".to_string(),
-        location: SourceLocationSpec::Path(path.clone()),
+        location: SourceLocationSpec::Path(path.to_path_buf()),
         options: serde_json::Value::default(),
         display_name: path.display().to_string(),
     }
 }
 
-fn origin_for(path: &PathBuf) -> RecordOrigin {
+fn origin_for(path: &Path) -> RecordOrigin {
     RecordOrigin::File {
-        path: path.clone(),
+        path: path.to_path_buf(),
         span: Some(TextSpan {
             start_line: 0,
             start_character: 0,
@@ -112,10 +117,16 @@ shield: Item {
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(after.contains("value: 42"), "expected 42 in: {after}");
     // The other record's value must be untouched.
-    assert!(after.contains("value: 5"), "shield.value should remain 5: {after}");
+    assert!(
+        after.contains("value: 5"),
+        "shield.value should remain 5: {after}"
+    );
     // And the unchanged name lines too.
     assert!(after.contains("\"Old\""), "sword.name unchanged: {after}");
-    assert!(after.contains("\"Round\""), "shield.name unchanged: {after}");
+    assert!(
+        after.contains("\"Round\""),
+        "shield.name unchanged: {after}"
+    );
 }
 
 #[test]
@@ -271,10 +282,10 @@ fn rejects_empty_ref_key() {
     let file = dir.join("data.cfd");
     fs::write(
         &file,
-        r#"picker: Holder {
+        r"picker: Holder {
   current: @Item.x,
 }
-"#,
+",
     )
     .expect("write seed");
 
@@ -318,9 +329,7 @@ fn rejects_empty_ref_key() {
     let Err(diag) = result else {
         panic!("empty ref should be rejected");
     };
-    assert!(diag
-        .iter()
-        .any(|d| d.message.contains("empty reference")));
+    assert!(diag.iter().any(|d| d.message.contains("empty reference")));
 }
 
 fn empty_model(schema: &CftContainer) -> CfdDataModel {
@@ -428,8 +437,7 @@ elite_monster: Monster {
         .lookup("Monster", "basic_monster")
         .and_then(|id| model.record(id))
         .expect("basic_monster");
-    let CfdValue::Object(basic_stats) = basic.field("stats").expect("stats")
-    else {
+    let CfdValue::Object(basic_stats) = basic.field("stats").expect("stats") else {
         panic!("basic_monster.stats should be an Object");
     };
     assert_eq!(
@@ -591,8 +599,8 @@ elite: Monster {
         panic!("deep drill into spread should fail");
     };
     assert!(
-        diag.iter().any(|d| d.message.contains("not found")
-            || d.message.contains("spread")),
+        diag.iter()
+            .any(|d| d.message.contains("not found") || d.message.contains("spread")),
         "expected actionable diagnostic, got: {diag:?}"
     );
 }

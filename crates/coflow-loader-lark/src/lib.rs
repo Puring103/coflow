@@ -912,11 +912,7 @@ where
 {
     /// Get a cached tenant access token, refreshing it via the auth endpoint
     /// when the cache misses or the cached value is within 60s of expiry.
-    fn cached_tenant_token(
-        &self,
-        app_id: &str,
-        app_secret: &str,
-    ) -> Result<String, DiagnosticSet> {
+    fn cached_tenant_token(&self, app_id: &str, app_secret: &str) -> Result<String, DiagnosticSet> {
         let now = std::time::Instant::now();
         if let Ok(cache) = self.cache.lock() {
             if let Some(entry) = cache.tokens.get(app_id) {
@@ -928,10 +924,11 @@ where
         let (token, ttl_secs) = lark_tenant_token_with_ttl(&self.client, app_id, app_secret)?;
         // Refresh 60 s before declared expiry so a token doesn't expire
         // mid-call. Default to a 30-minute TTL when the response omits one.
-        let safety_margin = std::time::Duration::from_secs(60);
-        let lifetime = ttl_secs
-            .map(std::time::Duration::from_secs)
-            .unwrap_or_else(|| std::time::Duration::from_secs(30 * 60));
+        let safety_margin = std::time::Duration::from_mins(1);
+        let lifetime = ttl_secs.map_or_else(
+            || std::time::Duration::from_mins(30),
+            std::time::Duration::from_secs,
+        );
         let expires_at = now + lifetime.saturating_sub(safety_margin);
         if let Ok(mut cache) = self.cache.lock() {
             cache.tokens.insert(
@@ -965,19 +962,14 @@ where
             }
         }
         let map = fetch_sheet_id_map(&self.client, spreadsheet_token, tenant_token)?;
-        let resolved = map
-            .get(sheet_title)
-            .cloned()
-            .ok_or_else(|| {
-                DiagnosticSet::one(diag(
-                    "LARK-WRITE",
-                    format!("sheet `{sheet_title}` not found in spreadsheet"),
-                ))
-            })?;
+        let resolved = map.get(sheet_title).cloned().ok_or_else(|| {
+            DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                format!("sheet `{sheet_title}` not found in spreadsheet"),
+            ))
+        })?;
         if let Ok(mut cache) = self.cache.lock() {
-            cache
-                .sheet_ids
-                .insert(spreadsheet_token.to_string(), map);
+            cache.sheet_ids.insert(spreadsheet_token.to_string(), map);
         }
         Ok(resolved)
     }
@@ -1190,16 +1182,14 @@ fn resolve_lark_column(
 }
 
 fn render_lark_cell_value(value: &CfdValue) -> Result<String, DiagnosticSet> {
+    use std::fmt::Write;
     match value {
         CfdValue::Null => Ok(String::new()),
         CfdValue::Bool(v) => Ok(v.to_string()),
         CfdValue::Int(v) => Ok(v.to_string()),
         CfdValue::Float(v) => Ok(v.to_string()),
         CfdValue::String(v) => Ok(v.clone()),
-        CfdValue::Enum(e) => Ok(e
-            .variant
-            .clone()
-            .unwrap_or_else(|| e.value.to_string())),
+        CfdValue::Enum(e) => Ok(e.variant.clone().unwrap_or_else(|| e.value.to_string())),
         CfdValue::Ref { key, .. } => Ok(format!("@{key}")),
         CfdValue::Array(items) => {
             let mut out = String::from("[");
@@ -1221,12 +1211,11 @@ fn render_lark_cell_value(value: &CfdValue) -> Result<String, DiagnosticSet> {
                 let key_text = match key {
                     coflow_api::CfdDictKey::String(s) => format!("{s:?}"),
                     coflow_api::CfdDictKey::Int(n) => n.to_string(),
-                    coflow_api::CfdDictKey::Enum(e) => e
-                        .variant
-                        .clone()
-                        .unwrap_or_else(|| e.value.to_string()),
+                    coflow_api::CfdDictKey::Enum(e) => {
+                        e.variant.clone().unwrap_or_else(|| e.value.to_string())
+                    }
                 };
-                out.push_str(&format!("{key_text}: {}", render_lark_cell_value(value)?));
+                let _ = write!(out, "{key_text}: {}", render_lark_cell_value(value)?);
             }
             out.push('}');
             Ok(out)
@@ -1254,7 +1243,11 @@ fn lark_tenant_token_with_ttl(
     if envelope.code != 0 {
         return Err(DiagnosticSet::one(diag(
             "LARK-WRITE",
-            api_error_message("tenant access token", envelope.code, envelope.msg.as_deref()),
+            api_error_message(
+                "tenant access token",
+                envelope.code,
+                envelope.msg.as_deref(),
+            ),
         )));
     }
     let token = envelope.tenant_access_token.ok_or_else(|| {
@@ -1286,11 +1279,7 @@ fn fetch_sheet_id_map(
     if envelope.code != 0 {
         return Err(DiagnosticSet::one(diag(
             "LARK-WRITE",
-            api_error_message(
-                "spreadsheet sheets",
-                envelope.code,
-                envelope.msg.as_deref(),
-            ),
+            api_error_message("spreadsheet sheets", envelope.code, envelope.msg.as_deref()),
         )));
     }
     let data = envelope.data.ok_or_else(|| {

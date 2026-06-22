@@ -8,6 +8,5 @@ pub(super) fn path_to_slash(path: &Path) -> String {
 pub(super) fn strip_unc_prefix(path: &str) -> String {
     path.strip_prefix(r"\\?\")
         .or_else(|| path.strip_prefix("//?/"))
-        .map(str::to_owned)
-        .unwrap_or_else(|| path.to_owned())
+        .map_or_else(|| path.to_owned(), str::to_owned)
 }

@@ -319,7 +319,7 @@ impl<'s> Validator<'s> {
             else {
                 continue;
             };
-            for (name, _) in &spread_fields {
+            for name in spread_fields.keys() {
                 if let Some(origin) = &spread_origin {
                     spread_field_sources.insert(name.clone(), origin.clone());
                 }
@@ -1636,7 +1636,7 @@ fn record_value_to_draft(record: &CfdRecord) -> RecordDraft {
     }
 }
 
-/// If a spread is a `RecordRef`, return its (target_type, key) so the
+/// If a spread is a `RecordRef`, return its (`target_type`, key) so the
 /// compiler can mark fields imported via the spread as belonging to that
 /// source record. Path-refs and inline objects don't carry a stable record
 /// identity for write-back purposes and are not tracked — writers will

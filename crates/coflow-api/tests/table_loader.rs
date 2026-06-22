@@ -47,7 +47,10 @@ fn loads_table_source_with_excel_style_sheet_config() -> TestResult {
     let loaded =
         collect_table_input_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
     assert_eq!(loaded.records.len(), 1);
-    assert!(matches!(loaded.records[0].origin, RecordOrigin::Table { .. }));
+    assert!(matches!(
+        loaded.records[0].origin,
+        RecordOrigin::Table { .. }
+    ));
     assert_eq!(loaded.records[0].key, "sword_01");
 
     let loaded = collect_table_input_records(

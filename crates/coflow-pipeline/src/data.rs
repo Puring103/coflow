@@ -136,10 +136,7 @@ const fn source_ref<'a>(
     }
 }
 
-fn push_loaded_records(
-    records: &mut Vec<CfdInputRecord>,
-    loaded: LoadedRecords,
-) {
+fn push_loaded_records(records: &mut Vec<CfdInputRecord>, loaded: LoadedRecords) {
     records.extend(loaded.records);
 }
 

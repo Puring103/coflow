@@ -16,7 +16,7 @@
         clippy::unwrap_used
     )
 )]
-#![allow(clippy::missing_const_for_fn)]
+#![allow(clippy::missing_const_for_fn, clippy::multiple_crate_versions)]
 
 use calamine::{open_workbook_auto, Data, Reader};
 pub use coflow_api::table::TableSheet;
@@ -312,7 +312,10 @@ pub fn map_label_with_record_offset(
     map_label_to_table(&shifted, origins).map(ExcelLabel::from)
 }
 
-fn label_shifted(label: &coflow_data_model::CfdLabel, new_index: usize) -> coflow_data_model::CfdLabel {
+fn label_shifted(
+    label: &coflow_data_model::CfdLabel,
+    new_index: usize,
+) -> coflow_data_model::CfdLabel {
     coflow_data_model::CfdLabel {
         record: Some(coflow_data_model::CfdRecordId::from_index(new_index)),
         path: label.path.clone(),
@@ -366,9 +369,9 @@ pub fn load_excel(
     for record in loaded.records {
         builder.add_input_record(record);
     }
-    let model = builder
-        .build()
-        .map_err(|diagnostics| ExcelDiagnostics::from(map_table_diagnostics(diagnostics, &origins)))?;
+    let model = builder.build().map_err(|diagnostics| {
+        ExcelDiagnostics::from(map_table_diagnostics(diagnostics, &origins))
+    })?;
     let check_diagnostics = coflow_checker::run_checks(schema, &model)
         .err()
         .map(|diagnostics| ExcelDiagnostics::from(map_table_diagnostics(diagnostics, &origins)));
@@ -918,7 +921,6 @@ fn excel_label_to_api(label: ExcelLabel) -> Label {
         message: label.message,
     }
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -44,11 +44,7 @@ pub(super) fn build_graph(session: &EditorSession, file_path: &str) -> GraphData
         else {
             continue;
         };
-        let host_file = session
-            .key_to_file
-            .get(&key)
-            .cloned()
-            .unwrap_or_default();
+        let host_file = session.key_to_file.get(&key).cloned().unwrap_or_default();
         let id = format!("{host_file}::{key}");
         let in_focus = host_file == file_path;
         let is_collapsed = depth >= GRAPH_DEPTH;
@@ -62,7 +58,7 @@ pub(super) fn build_graph(session: &EditorSession, file_path: &str) -> GraphData
             f
         };
 
-        nodes.entry(id.clone()).or_insert(GraphNode {
+        nodes.entry(id.clone()).or_insert_with(|| GraphNode {
             id: id.clone(),
             key: record.key.clone(),
             actual_type: record.actual_type.clone(),

@@ -120,7 +120,7 @@ impl<'a> CheckRunner<'a> {
             CfdValue::Object(record) => {
                 self.run_record_checks(
                     CheckRecordRef::Inline {
-                        record: record.as_ref().clone(),
+                        record: Box::new(record.as_ref().clone()),
                         path: Some(path.clone()),
                     },
                     root_record,

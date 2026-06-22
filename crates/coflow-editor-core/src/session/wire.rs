@@ -1,8 +1,6 @@
 //! Bridges between the editor's wire types (`FieldValue`, `FieldPathSegment`,
 //! `DictKey`) and the runtime data-model values consumed by writers.
-use coflow_api::{
-    CfdDictKey as ApiCfdDictKey, CfdValue, RecordOrigin, WriteFieldPathSegment,
-};
+use coflow_api::{CfdDictKey as ApiCfdDictKey, CfdValue, RecordOrigin, WriteFieldPathSegment};
 use coflow_cft::{CftContainer, CftSchemaDefaultValue, CftSchemaTypeRef};
 use coflow_data_model::{
     CfdDataModel, CfdEnumValue, CfdRecord, CfdRecordId, CfdValue as DmCfdValue,
@@ -51,7 +49,10 @@ pub(super) fn field_value_to_cfd(
             variant: Some(variant.clone()),
             value: *int_value,
         })),
-        FieldValue::Object { actual_type, fields } => {
+        FieldValue::Object {
+            actual_type,
+            fields,
+        } => {
             let mut converted = BTreeMap::new();
             for cell in fields {
                 converted.insert(cell.name.clone(), field_value_to_cfd(&cell.value, model)?);
@@ -109,7 +110,7 @@ pub(super) fn field_value_to_cfd(
     }
 }
 
-/// Find the `CfdRecordId` for a (target_type, target_key) pair. Falls back
+/// Find the `CfdRecordId` for a (`target_type`, `target_key`) pair. Falls back
 /// to a linear scan over `model.records()` if neither the concrete table nor
 /// any polymorphic index has the key — covers the case where the wire
 /// `target_type` is missing or wrong but the key is still uniquely
@@ -144,10 +145,7 @@ pub(super) fn default_value_for_ty(
     default_zero_for_ty(ty, schema)
 }
 
-fn default_from_schema_default(
-    d: &CftSchemaDefaultValue,
-    schema: &CftContainer,
-) -> FieldValue {
+fn default_from_schema_default(d: &CftSchemaDefaultValue, schema: &CftContainer) -> FieldValue {
     let _ = schema;
     match d {
         CftSchemaDefaultValue::Null => FieldValue::Null,
@@ -165,7 +163,9 @@ fn default_from_schema_default(
             int_value: *value,
         },
         CftSchemaDefaultValue::EmptyArray => FieldValue::Array { items: Vec::new() },
-        CftSchemaDefaultValue::EmptyObject => FieldValue::Dict { entries: Vec::new() },
+        CftSchemaDefaultValue::EmptyObject => FieldValue::Dict {
+            entries: Vec::new(),
+        },
     }
 }
 
@@ -176,7 +176,9 @@ fn default_zero_for_ty(ty: &CftSchemaTypeRef, schema: &CftContainer) -> FieldVal
         CftSchemaTypeRef::Bool => FieldValue::Bool { v: false },
         CftSchemaTypeRef::String => FieldValue::Str { v: String::new() },
         CftSchemaTypeRef::Array(_) => FieldValue::Array { items: Vec::new() },
-        CftSchemaTypeRef::Dict(_, _) => FieldValue::Dict { entries: Vec::new() },
+        CftSchemaTypeRef::Dict(_, _) => FieldValue::Dict {
+            entries: Vec::new(),
+        },
         CftSchemaTypeRef::Nullable(_) => FieldValue::Null,
         CftSchemaTypeRef::Named(name) => {
             if let Some(en) = schema.resolve_enum(name) {

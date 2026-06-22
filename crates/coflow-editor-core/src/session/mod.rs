@@ -55,7 +55,7 @@ use build::{build_session, default_provider_registry, session_capabilities_for_f
 use diagnostics::diagnostic_from_api;
 use graph::{annotate_ref_files, build_graph};
 use path::strip_unc_prefix;
-use wire::{field_path_segment_to_api, field_value_to_cfd, default_value_for_ty};
+use wire::{default_value_for_ty, field_path_segment_to_api, field_value_to_cfd};
 
 /// A loaded project. Held inside `Arc<RwLock<…>>` so multi-session and
 /// multi-reader access stay independent.
@@ -86,7 +86,7 @@ impl std::fmt::Debug for EditorSession {
             .field("project_root", &self.project_root)
             .field("source_files", &self.source_files.len())
             .field("records", &self.key_to_file.len())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -135,7 +135,7 @@ impl SessionStore {
 
     /// Open a project: builds a session, returns its id and a snapshot.
     pub fn load_project(&self, yaml_path: &StdPath) -> Result<ProjectSnapshot, EditorError> {
-        let registry = self.registry();
+        let registry = self.registry()?;
         let (session, snapshot_partial) = build_session(yaml_path, registry.as_ref())?;
         let mut inner = self
             .inner
@@ -146,6 +146,7 @@ impl SessionStore {
         let project_root = strip_unc_prefix(&session.project_root.display().to_string());
         let diagnostics = session.diagnostics.flatten();
         inner.sessions.insert(id, Arc::new(RwLock::new(session)));
+        drop(inner);
         Ok(ProjectSnapshot {
             session_id: id,
             project_root,
@@ -155,19 +156,15 @@ impl SessionStore {
     }
 
     pub fn close_session(&self, id: u32) -> Result<(), EditorError> {
-        let mut inner = self
-            .inner
+        self.inner
             .write()
-            .map_err(|_| EditorError::session("session store poisoned"))?;
-        inner.sessions.remove(&id);
+            .map_err(|_| EditorError::session("session store poisoned"))?
+            .sessions
+            .remove(&id);
         Ok(())
     }
 
-    pub fn get_file_records(
-        &self,
-        id: u32,
-        file_path: &str,
-    ) -> Result<FileRecords, EditorError> {
+    pub fn get_file_records(&self, id: u32, file_path: &str) -> Result<FileRecords, EditorError> {
         let session_lock = self.session(id)?;
         let session = session_lock
             .read()
@@ -189,14 +186,19 @@ impl SessionStore {
                 let mut row = RecordRow {
                     key: record.key.clone(),
                     actual_type: record.actual_type.clone(),
-                    fields: record_to_field_cells_for_session(record, &session.model, &session.key_to_file),
+                    fields: record_to_field_cells_for_session(
+                        record,
+                        &session.model,
+                        &session.key_to_file,
+                    ),
                 };
                 annotate_ref_files(&mut row.fields, &session);
                 records.push(row);
             }
         }
         let capabilities =
-            session_capabilities_for_file(&session, self.registry().as_ref(), file_path);
+            session_capabilities_for_file(&session, self.registry()?.as_ref(), file_path);
+        drop(session);
         Ok(FileRecords {
             file_path: file_path.to_string(),
             type_names: type_seen,
@@ -220,23 +222,19 @@ impl SessionStore {
                 "record `{record_key}` not in `{file_path}`"
             )));
         }
-        let (_id, record) = lookup_record_by_key(&session.model, record_key).ok_or_else(|| {
-            EditorError::not_found(format!("record `{record_key}` not found"))
-        })?;
+        let (_id, record) = lookup_record_by_key(&session.model, record_key)
+            .ok_or_else(|| EditorError::not_found(format!("record `{record_key}` not found")))?;
         let mut row = RecordRow {
             key: record.key.clone(),
             actual_type: record.actual_type.clone(),
             fields: record_to_field_cells_for_session(record, &session.model, &session.key_to_file),
         };
         annotate_ref_files(&mut row.fields, &session);
+        drop(session);
         Ok(row)
     }
 
-    pub fn make_default_object(
-        &self,
-        id: u32,
-        type_name: &str,
-    ) -> Result<FieldValue, EditorError> {
+    pub fn make_default_object(&self, id: u32, type_name: &str) -> Result<FieldValue, EditorError> {
         let session_lock = self.session(id)?;
         let session = session_lock
             .read()
@@ -254,17 +252,14 @@ impl SessionStore {
                 spread_info: None,
             });
         }
+        drop(session);
         Ok(FieldValue::Object {
             actual_type: type_name.to_string(),
             fields,
         })
     }
 
-    pub fn get_enum_variants(
-        &self,
-        id: u32,
-        enum_name: &str,
-    ) -> Result<Vec<String>, EditorError> {
+    pub fn get_enum_variants(&self, id: u32, enum_name: &str) -> Result<Vec<String>, EditorError> {
         let session_lock = self.session(id)?;
         let session = session_lock
             .read()
@@ -291,6 +286,7 @@ impl SessionStore {
             .filter(|(_, r)| session.schema.is_assignable(&r.actual_type, expected_type))
             .map(|(_, r)| r.key.clone())
             .collect();
+        drop(session);
         keys.sort();
         keys.dedup();
         Ok(keys)
@@ -320,7 +316,7 @@ impl SessionStore {
         new_value: &FieldValue,
     ) -> Result<WriteFieldOutcome, EditorError> {
         let session_lock = self.session(id)?;
-        let registry = self.registry();
+        let registry = self.registry()?;
         let path_segments = field_path
             .iter()
             .map(field_path_segment_to_api)
@@ -334,9 +330,10 @@ impl SessionStore {
                 .map_err(|_| EditorError::session("session poisoned"))?;
             let new_cfd_value =
                 field_value_to_cfd(new_value, &session.model).map_err(EditorError::write)?;
-            let (_id, record) = lookup_record_by_key(&session.model, record_key).ok_or_else(
-                || EditorError::not_found(format!("record `{record_key}` not found")),
-            )?;
+            let (_id, record) =
+                lookup_record_by_key(&session.model, record_key).ok_or_else(|| {
+                    EditorError::not_found(format!("record `{record_key}` not found"))
+                })?;
             let host_file = session
                 .key_to_file
                 .get(&record.key)
@@ -354,14 +351,13 @@ impl SessionStore {
             let origin = resolve_effective_origin(&session.model, record, field_path);
             let actual_type = record.actual_type.clone();
 
-            let writer: Arc<dyn DataWriter> = registry.writer(&source.provider_id).ok_or_else(
-                || {
+            let writer: Arc<dyn DataWriter> =
+                registry.writer(&source.provider_id).ok_or_else(|| {
                     EditorError::write(format!(
                         "no writer registered for provider `{}`",
                         source.provider_id
                     ))
-                },
-            )?;
+                })?;
 
             let write_request = WriteCellRequest {
                 origin: &origin,
@@ -412,9 +408,9 @@ impl SessionStore {
         let session = session_lock
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let (_id, record) = lookup_record_by_key(&session.model, record_key).ok_or_else(
-            || EditorError::not_found(format!("record `{record_key}` not found after write")),
-        )?;
+        let (_id, record) = lookup_record_by_key(&session.model, record_key).ok_or_else(|| {
+            EditorError::not_found(format!("record `{record_key}` not found after write"))
+        })?;
         let mut row = RecordRow {
             key: record.key.clone(),
             actual_type: record.actual_type.clone(),
@@ -427,12 +423,12 @@ impl SessionStore {
         })
     }
 
-    fn registry(&self) -> Arc<ProviderRegistry> {
+    fn registry(&self) -> Result<Arc<ProviderRegistry>, EditorError> {
         let inner = self
             .inner
             .read()
-            .expect("session store poisoned during registry read");
-        Arc::clone(&inner.registry)
+            .map_err(|_| EditorError::session("session store poisoned during registry read"))?;
+        Ok(Arc::clone(&inner.registry))
     }
 
     fn session(&self, id: u32) -> Result<Arc<RwLock<EditorSession>>, EditorError> {

@@ -407,9 +407,8 @@ pub fn map_diagnostics_with_origins(
     diagnostics: CfdDiagnostics,
     origins: &[RecordOrigin],
 ) -> DiagnosticSet {
-    let mapped = coflow_data_model::map_diagnostics(diagnostics, |id| {
-        origins.get(id.index()).cloned()
-    });
+    let mapped =
+        coflow_data_model::map_diagnostics(diagnostics, |id| origins.get(id.index()).cloned());
     DiagnosticSet {
         diagnostics: mapped
             .into_iter()
@@ -493,9 +492,11 @@ pub struct WriterDescriptor {
 }
 
 /// Editing capabilities exposed to the front-end so the UI can grey out
-/// disabled actions per source. Lower-bounded by the writer's actual
-/// implementation; the front-end must not assume a writer can do more than
-/// these flags claim.
+/// disabled actions per source.
+///
+/// Lower-bounded by the writer's actual implementation; the front-end must
+/// not assume a writer can do more than these flags claim.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WriterCapabilities {
     pub can_edit_field: bool,
@@ -588,11 +589,7 @@ pub trait DataWriter: Send + Sync {
 
     /// Cheap pre-flight check: type matches, target file exists, etc. The
     /// default implementation does nothing.
-    fn preflight(
-        &self,
-        _ctx: WriteContext<'_>,
-        _request: &WriteCellRequest<'_>,
-    ) -> DiagnosticSet {
+    fn preflight(&self, _ctx: WriteContext<'_>, _request: &WriteCellRequest<'_>) -> DiagnosticSet {
         DiagnosticSet::empty()
     }
 
