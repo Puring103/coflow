@@ -11,8 +11,8 @@
 
 mod common;
 use coflow_api::{
-    DataLoader, DiagnosticSet, LoadContext, LoadedRecords, LoaderDescriptor, OriginMap,
-    ProbeResult, ProjectSourceRef, ResolvedSource, SourceLocationSpec, SourceResolveContext,
+    DataLoader, DiagnosticSet, LoadContext, LoadedRecords, LoaderDescriptor, ProbeResult,
+    ProjectSourceRef, ResolvedSource, SourceLocationSpec, SourceResolveContext,
 };
 use common::*;
 use std::sync::{
@@ -728,7 +728,6 @@ impl DataLoader for CustomDirLoader {
         self.loads.fetch_add(1, Ordering::SeqCst);
         Ok(LoadedRecords {
             records: Vec::new(),
-            origins: OriginMap::default(),
         })
     }
 

@@ -15,6 +15,8 @@ use coflow_data_model::{
 use regex::Regex;
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::value::CheckRecordRef;
+
 pub(super) struct CheckEvaluator<'a> {
     schema: &'a SchemaView,
     model: &'a CfdDataModel,
@@ -23,6 +25,11 @@ pub(super) struct CheckEvaluator<'a> {
     current: CheckValue,
     scopes: Vec<BTreeMap<String, LocatedCheckValue>>,
     pub(super) diagnostics: Vec<CfdDiagnostic>,
+    /// When `true`, every traversal that resolves to a different top-level
+    /// record id records a `reads_from` edge from the current root. The
+    /// runner toggles this on for full check runs that produce a dep graph.
+    pub(super) dep_collector_enabled: bool,
+    pub(super) reads_from: BTreeSet<CfdRecordId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +46,16 @@ impl<'a> CheckEvaluator<'a> {
         root_path: CfdPath,
         current: CheckValue,
     ) -> Self {
+        let mut reads_from = BTreeSet::new();
+        let initial_top = match &current {
+            CheckValue::Record(CheckRecordRef::Top(id)) => Some(*id),
+            _ => None,
+        };
+        if let (Some(my), Some(other)) = (root_record, initial_top) {
+            if my != other {
+                reads_from.insert(other);
+            }
+        }
         Self {
             schema,
             model,
@@ -47,7 +64,24 @@ impl<'a> CheckEvaluator<'a> {
             current,
             scopes: Vec::new(),
             diagnostics: Vec::new(),
+            dep_collector_enabled: false,
+            reads_from,
         }
+    }
+
+    /// Record a "this evaluator (rooted at `root_record`) read from another
+    /// top-level record" edge. Self-references are ignored. The dep graph is
+    /// built only when `dep_collector_enabled` is `true`.
+    pub(super) fn note_read_from(&mut self, target: CfdRecordId) {
+        if !self.dep_collector_enabled {
+            return;
+        }
+        if let Some(my) = self.root_record {
+            if my == target {
+                return;
+            }
+        }
+        self.reads_from.insert(target);
     }
 
     pub(super) fn eval_check_block(&mut self, check: &CftSchemaCheckBlock) -> EvalFlow {
@@ -341,7 +375,11 @@ impl<'a> CheckEvaluator<'a> {
             CftSchemaCheckExprKind::Index { expr: inner, index } => {
                 let target = self.eval_expr(inner)?;
                 let index = self.eval_expr(index)?;
-                self.eval_index(target, index)
+                let result = self.eval_index(target, index)?;
+                if let CheckValue::Record(CheckRecordRef::Top(id)) = &result.value {
+                    self.note_read_from(*id);
+                }
+                Ok(result)
             }
             CftSchemaCheckExprKind::Is {
                 expr: inner,
@@ -398,20 +436,27 @@ impl<'a> CheckEvaluator<'a> {
         Err(())
     }
 
-    fn current_field(&self, name: &str) -> Option<LocatedCheckValue> {
-        let CheckValue::Record(record) = &self.current else {
-            return None;
+    fn current_field(&mut self, name: &str) -> Option<LocatedCheckValue> {
+        let record = match &self.current {
+            CheckValue::Record(record) => record.clone(),
+            _ => return None,
         };
         if name == "id" {
-            return self.virtual_id(record, record.path());
+            return self.virtual_id(&record, record.path());
         }
-        let field_type = self.field_type_for_record(record, name);
-        record.field(self.model, field_type, name)
+        let field_type = self.field_type_for_record(&record, name);
+        let result = record.field(self.model, field_type, name);
+        if let Some(located) = &result {
+            if let CheckValue::Record(CheckRecordRef::Top(id)) = &located.value {
+                self.note_read_from(*id);
+            }
+        }
+        result
     }
 
     fn field_type_for_record(
         &self,
-        record: &super::value::CheckRecordRef,
+        record: &CheckRecordRef,
         name: &str,
     ) -> Option<&CftSchemaTypeRef> {
         record
@@ -444,13 +489,19 @@ impl<'a> CheckEvaluator<'a> {
                     });
                 }
                 let field_type = self.field_type_for_record(&record, name);
-                record.field(self.model, field_type, name).ok_or_else(|| {
+                let result = record.field(self.model, field_type, name).ok_or_else(|| {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         target.path,
                         format!("record has no field `{name}`"),
                     );
-                })
+                });
+                if let Ok(located) = &result {
+                    if let CheckValue::Record(CheckRecordRef::Top(id)) = &located.value {
+                        self.note_read_from(*id);
+                    }
+                }
+                result
             }
             CheckValue::Entry(entry) => match name {
                 "key" => Ok(LocatedCheckValue::new(*entry.key, target.path)),
@@ -480,7 +531,7 @@ impl<'a> CheckEvaluator<'a> {
 
     fn virtual_id(
         &self,
-        record: &super::value::CheckRecordRef,
+        record: &CheckRecordRef,
         path: Option<CfdPath>,
     ) -> Option<LocatedCheckValue> {
         let key = record

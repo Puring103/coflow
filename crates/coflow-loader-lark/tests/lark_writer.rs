@@ -1,0 +1,266 @@
+//! Round-trip tests for `LarkSheetWriter`: mock the Lark HTTP API with a
+//! scripted client, write a cell, assert the writer issued the right
+//! sequence of calls (auth → sheets/query → values_batch_update), and
+//! verify the cache short-circuits the second write.
+#![allow(clippy::expect_used, clippy::panic, clippy::panic_in_result_fn, clippy::unwrap_used)]
+
+use coflow_api::{
+    CfdValue, DataWriter, RecordOrigin, ResolvedSource, SourceDocument, SourceLocationSpec,
+    WriteCellRequest, WriteContext, WriteFieldPathSegment,
+};
+use coflow_api::CftContainer;
+use coflow_loader_lark::{LarkHttpClient, LarkSheetWriter};
+use serde_json::Value;
+use std::collections::{BTreeMap, VecDeque};
+use std::sync::{Arc, Mutex};
+
+#[derive(Debug, Clone)]
+struct ScriptedResponse {
+    method: &'static str,
+    url_contains: &'static str,
+    body: &'static str,
+}
+
+impl ScriptedResponse {
+    fn get(url_contains: &'static str, body: &'static str) -> Self {
+        Self {
+            method: "GET",
+            url_contains,
+            body,
+        }
+    }
+    fn post(url_contains: &'static str, body: &'static str) -> Self {
+        Self {
+            method: "POST",
+            url_contains,
+            body,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct Inner {
+    queue: VecDeque<ScriptedResponse>,
+    log: Vec<(&'static str, String)>,
+}
+
+/// Test HTTP client. Implements `LarkHttpClient` directly. Cloning the
+/// outer `Arc` lets tests both pass it to a writer and inspect call history
+/// after writes complete.
+#[derive(Debug, Clone)]
+struct ScriptedClient(Arc<Mutex<Inner>>);
+
+impl ScriptedClient {
+    fn new(responses: impl IntoIterator<Item = ScriptedResponse>) -> Self {
+        Self(Arc::new(Mutex::new(Inner {
+            queue: responses.into_iter().collect(),
+            log: Vec::new(),
+        })))
+    }
+    fn next(&self, method: &'static str, url: &str) -> Result<String, String> {
+        let mut inner = self.0.lock().unwrap();
+        let response = inner
+            .queue
+            .pop_front()
+            .ok_or_else(|| format!("unexpected {method} {url}"))?;
+        if response.method != method || !url.contains(response.url_contains) {
+            return Err(format!(
+                "expected {} *{}*, got {method} {url}",
+                response.method, response.url_contains
+            ));
+        }
+        inner.log.push((method, url.to_string()));
+        Ok(response.body.to_string())
+    }
+    fn calls(&self) -> Vec<(&'static str, String)> {
+        self.0.lock().unwrap().log.clone()
+    }
+    fn remaining(&self) -> usize {
+        self.0.lock().unwrap().queue.len()
+    }
+}
+
+impl LarkHttpClient for ScriptedClient {
+    fn get(&self, url: &str, _tenant_access_token: &str) -> Result<String, String> {
+        self.next("GET", url)
+    }
+    fn post_json(
+        &self,
+        url: &str,
+        _body: &Value,
+        _tenant_access_token: Option<&str>,
+    ) -> Result<String, String> {
+        self.next("POST", url)
+    }
+}
+
+fn lark_origin() -> RecordOrigin {
+    let mut field_columns = BTreeMap::new();
+    field_columns.insert(vec!["name".to_string()], 2);
+    RecordOrigin::Table {
+        document: SourceDocument::Remote("lark:sht_test".to_string()),
+        sheet: "Items".to_string(),
+        row: 2,
+        id_column: 1,
+        field_columns,
+    }
+}
+
+fn lark_source() -> ResolvedSource {
+    ResolvedSource {
+        provider_id: "lark-sheet".to_string(),
+        location: SourceLocationSpec::Uri("lark:sht_test".to_string()),
+        options: serde_json::json!({
+            "app_id": "cli_test",
+            "app_secret": "secret_test"
+        }),
+        display_name: "lark:sht_test".to_string(),
+    }
+}
+
+#[test]
+fn writes_cell_with_full_handshake_then_caches() {
+    // First write: 3 round-trips (auth → sheets/query → values_batch_update).
+    // Second write: 1 round-trip (just values_batch_update); token + sheet
+    // metadata are cached.
+    let client = ScriptedClient::new([
+        ScriptedResponse::post(
+            "auth/v3/tenant_access_token/internal",
+            r#"{"code":0,"tenant_access_token":"tk_first","expire":7200}"#,
+        ),
+        ScriptedResponse::get(
+            "/sheets/v3/spreadsheets/sht_test/sheets/query",
+            r#"{"code":0,"data":{"sheets":[{"sheet_id":"shtid_items","title":"Items","grid_properties":{"row_count":2,"column_count":3}}]}}"#,
+        ),
+        ScriptedResponse::post(
+            "/sheets/v2/spreadsheets/sht_test/values_batch_update",
+            r#"{"code":0,"data":{}}"#,
+        ),
+        ScriptedResponse::post(
+            "/sheets/v2/spreadsheets/sht_test/values_batch_update",
+            r#"{"code":0,"data":{}}"#,
+        ),
+    ]);
+    let writer = LarkSheetWriter::new(client.clone());
+    let schema = CftContainer::new();
+    let source = lark_source();
+    let origin = lark_origin();
+    let new_value = CfdValue::String("New".to_string());
+    let segments = vec![WriteFieldPathSegment::Field("name".to_string())];
+    let request = WriteCellRequest {
+        origin: &origin,
+        record_key: "sword",
+        actual_type: "Item",
+        field_path: &segments,
+        new_value: &new_value,
+        schema: &schema,
+        source: &source,
+    };
+    let ctx = WriteContext {
+        project_root: std::path::Path::new("."),
+        schema: &schema,
+        model: None,
+    };
+    writer.write_field(ctx, &request).expect("first write");
+    writer.write_field(ctx, &request).expect("second write (cached)");
+
+    assert_eq!(client.remaining(), 0, "all responses consumed");
+    let calls = client.calls();
+    assert_eq!(calls.len(), 4, "first write 3 RTTs + second 1 RTT");
+    assert!(calls[0].1.contains("tenant_access_token"));
+    assert!(calls[1].1.contains("/sheets/query"));
+    assert!(calls[2].1.contains("values_batch_update"));
+    assert!(calls[3].1.contains("values_batch_update"));
+}
+
+#[test]
+fn surfaces_business_error_on_failure() {
+    let client = ScriptedClient::new([
+        ScriptedResponse::post(
+            "auth/v3/tenant_access_token/internal",
+            r#"{"code":0,"tenant_access_token":"tk","expire":7200}"#,
+        ),
+        ScriptedResponse::get(
+            "/sheets/v3/spreadsheets/sht_test/sheets/query",
+            r#"{"code":0,"data":{"sheets":[{"sheet_id":"shtid_items","title":"Items","grid_properties":{"row_count":2,"column_count":3}}]}}"#,
+        ),
+        ScriptedResponse::post(
+            "/sheets/v2/spreadsheets/sht_test/values_batch_update",
+            r#"{"code":91402,"msg":"sheet not found"}"#,
+        ),
+    ]);
+    let writer = LarkSheetWriter::new(client);
+    let schema = CftContainer::new();
+    let source = lark_source();
+    let origin = lark_origin();
+    let new_value = CfdValue::String("X".to_string());
+    let segments = vec![WriteFieldPathSegment::Field("name".to_string())];
+    let request = WriteCellRequest {
+        origin: &origin,
+        record_key: "sword",
+        actual_type: "Item",
+        field_path: &segments,
+        new_value: &new_value,
+        schema: &schema,
+        source: &source,
+    };
+    let ctx = WriteContext {
+        project_root: std::path::Path::new("."),
+        schema: &schema,
+        model: None,
+    };
+    let Err(diag) = writer.write_field(ctx, &request) else {
+        panic!("error envelope must surface as diagnostic");
+    };
+    assert!(diag.iter().any(|d| d.message.contains("sheet not found")));
+}
+
+#[test]
+fn retries_once_after_token_expired() {
+    // First values_batch_update returns a stale-token error; the writer
+    // must invalidate the cached token, re-auth, and retry.
+    let client = ScriptedClient::new([
+        ScriptedResponse::post(
+            "auth/v3/tenant_access_token/internal",
+            r#"{"code":0,"tenant_access_token":"tk_old","expire":7200}"#,
+        ),
+        ScriptedResponse::get(
+            "/sheets/v3/spreadsheets/sht_test/sheets/query",
+            r#"{"code":0,"data":{"sheets":[{"sheet_id":"shtid_items","title":"Items","grid_properties":{"row_count":2,"column_count":3}}]}}"#,
+        ),
+        ScriptedResponse::post(
+            "/sheets/v2/spreadsheets/sht_test/values_batch_update",
+            r#"{"code":99991663,"msg":"access token expired"}"#,
+        ),
+        ScriptedResponse::post(
+            "auth/v3/tenant_access_token/internal",
+            r#"{"code":0,"tenant_access_token":"tk_new","expire":7200}"#,
+        ),
+        ScriptedResponse::post(
+            "/sheets/v2/spreadsheets/sht_test/values_batch_update",
+            r#"{"code":0,"data":{}}"#,
+        ),
+    ]);
+    let writer = LarkSheetWriter::new(client.clone());
+    let schema = CftContainer::new();
+    let source = lark_source();
+    let origin = lark_origin();
+    let new_value = CfdValue::String("Retry".to_string());
+    let segments = vec![WriteFieldPathSegment::Field("name".to_string())];
+    let request = WriteCellRequest {
+        origin: &origin,
+        record_key: "sword",
+        actual_type: "Item",
+        field_path: &segments,
+        new_value: &new_value,
+        schema: &schema,
+        source: &source,
+    };
+    let ctx = WriteContext {
+        project_root: std::path::Path::new("."),
+        schema: &schema,
+        model: None,
+    };
+    writer.write_field(ctx, &request).expect("retry succeeds");
+    assert_eq!(client.remaining(), 0, "retry must consume all responses");
+}

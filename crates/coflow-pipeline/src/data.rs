@@ -1,7 +1,7 @@
 use coflow_api::{
-    CfdInputRecord, CftContainer, Diagnostic, DiagnosticSet, Label, LoadContext, LoadedRecords,
-    LoaderSelectionError, OriginMap, ProjectSourceRef, ProviderRegistry, ResolvedSource,
-    SourceLocation, SourceResolveContext,
+    map_diagnostics_with_origins, origins_of, CfdInputRecord, CftContainer, Diagnostic,
+    DiagnosticSet, Label, LoadContext, LoadedRecords, LoaderSelectionError, ProjectSourceRef,
+    ProviderRegistry, RecordOrigin, ResolvedSource, SourceLocation, SourceResolveContext,
 };
 use coflow_project::{Project, SourceConfig, SourceLocationSpec};
 use serde_json::Value;
@@ -20,8 +20,7 @@ pub fn load_project_data(
     schema: &CftContainer,
     registry: &ProviderRegistry,
 ) -> Result<ProjectLoadOutput, DiagnosticSet> {
-    let mut records = Vec::new();
-    let mut origins = OriginMap::default();
+    let mut records: Vec<CfdInputRecord> = Vec::new();
     let mut diagnostics = DiagnosticSet::empty();
 
     for source in &project.config.sources {
@@ -57,7 +56,7 @@ pub fn load_project_data(
                 },
                 &spec,
             ) {
-                Ok(batch) => push_loaded_records(&mut records, &mut origins, batch),
+                Ok(batch) => push_loaded_records(&mut records, batch),
                 Err(err) => diagnostics.extend(err),
             }
         }
@@ -67,15 +66,16 @@ pub fn load_project_data(
         return Err(diagnostics);
     }
 
+    let origins: Vec<RecordOrigin> = origins_of(&records);
     let mut builder = coflow_api::CfdDataModel::builder(schema);
     for record in records {
         builder.add_input_record(record);
     }
     let model = builder
         .build()
-        .map_err(|err| origins.map_diagnostics(err))?;
+        .map_err(|err| map_diagnostics_with_origins(err, &origins))?;
     if let Err(checks) = coflow_checker::run_checks(schema, &model) {
-        return Err(origins.map_diagnostics(checks));
+        return Err(map_diagnostics_with_origins(checks, &origins));
     }
     Ok(ProjectLoadOutput { model })
 }
@@ -138,11 +138,9 @@ const fn source_ref<'a>(
 
 fn push_loaded_records(
     records: &mut Vec<CfdInputRecord>,
-    origins: &mut OriginMap,
     loaded: LoadedRecords,
 ) {
     records.extend(loaded.records);
-    origins.extend(loaded.origins);
 }
 
 fn configured_source(project: &Project, source: &SourceConfig) -> ResolvedSource {

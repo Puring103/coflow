@@ -21,14 +21,14 @@
 use calamine::{open_workbook_auto, Data, Reader};
 pub use coflow_api::table::TableSheet;
 use coflow_api::table::{
-    collect_table_input_records as collect_shared_table_input_records, TableDiagnostic,
-    TableDiagnostics, TableLabel, TableLocation, TableOrigins, TableSheetConfig,
-    TableSource as SharedTableSource,
+    collect_table_input_records as collect_shared_table_input_records, map_label_to_table,
+    map_table_diagnostics, TableDiagnostic, TableDiagnostics, TableLabel, TableLocation,
+    TableSheetConfig, TableSource as SharedTableSource,
 };
 use coflow_api::{
-    DataLoader, Diagnostic, DiagnosticSet, Label, LoadContext, LoadedRecords, LoaderDescriptor,
-    ProbeResult, ProjectSourceRef, ResolvedSource, SourceLocation, SourceLocationSpec,
-    SourceResolveContext,
+    origins_of, DataLoader, Diagnostic, DiagnosticSet, Label, LoadContext, LoadedRecords,
+    LoaderDescriptor, ProbeResult, ProjectSourceRef, RecordOrigin, ResolvedSource, SourceLocation,
+    SourceLocationSpec, SourceResolveContext,
 };
 use coflow_cft::CftContainer;
 use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdInputRecord};
@@ -36,6 +36,9 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+pub mod writer;
+pub use writer::{ExcelWriter, EXCEL_WRITER_DESCRIPTOR};
 
 const DEFAULT_KEY_COLUMN: &str = "id";
 
@@ -151,7 +154,6 @@ impl From<TableDiagnostics> for ExcelDiagnostics {
 #[derive(Debug, Clone)]
 pub struct ExcelInputRecords {
     pub records: Vec<CfdInputRecord>,
-    pub origins: ExcelOrigins,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -296,36 +298,25 @@ impl From<TableLocation> for ExcelLocation {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct ExcelOrigins {
-    inner: TableOrigins,
+/// Map a single CFD label (anchored on a record id) to an `ExcelLabel` using
+/// a slice of record origins extracted from input records.
+#[must_use]
+pub fn map_label_with_record_offset(
+    label: &coflow_data_model::CfdLabel,
+    origins: &[RecordOrigin],
+    record_offset: usize,
+) -> Option<ExcelLabel> {
+    let record = label.record?;
+    let local_record = record.index().checked_sub(record_offset)?;
+    let shifted = label_shifted(label, local_record);
+    map_label_to_table(&shifted, origins).map(ExcelLabel::from)
 }
 
-impl ExcelOrigins {
-    #[must_use]
-    pub fn record_count(&self) -> usize {
-        self.inner.record_count()
-    }
-
-    pub fn extend(&mut self, other: Self) {
-        self.inner.extend(other.inner);
-    }
-
-    #[must_use]
-    pub fn map_label_with_record_offset(
-        &self,
-        label: &coflow_data_model::CfdLabel,
-        record_offset: usize,
-    ) -> Option<ExcelLabel> {
-        self.inner
-            .map_label_with_record_offset(label, record_offset)
-            .map(ExcelLabel::from)
-    }
-}
-
-impl From<TableOrigins> for ExcelOrigins {
-    fn from(inner: TableOrigins) -> Self {
-        Self { inner }
+fn label_shifted(label: &coflow_data_model::CfdLabel, new_index: usize) -> coflow_data_model::CfdLabel {
+    coflow_data_model::CfdLabel {
+        record: Some(coflow_data_model::CfdRecordId::from_index(new_index)),
+        path: label.path.clone(),
+        message: label.message.clone(),
     }
 }
 
@@ -345,13 +336,14 @@ pub fn load_excel_model(
     let table_sources = table_sources_from_excel(sources)?;
     let loaded = collect_shared_table_input_records(schema, &table_sources)
         .map_err(ExcelDiagnostics::from)?;
+    let origins = origins_of(&loaded.records);
     let mut builder = CfdDataModel::builder(schema);
     for record in loaded.records {
         builder.add_input_record(record);
     }
     builder
         .build()
-        .map_err(|diagnostics| ExcelDiagnostics::from(loaded.origins.map(diagnostics)))
+        .map_err(|diagnostics| ExcelDiagnostics::from(map_table_diagnostics(diagnostics, &origins)))
 }
 
 /// Loads configured Excel sheets and runs CFT `check` blocks against the model.
@@ -369,16 +361,17 @@ pub fn load_excel(
     let table_sources = table_sources_from_excel(sources)?;
     let loaded = collect_shared_table_input_records(schema, &table_sources)
         .map_err(ExcelDiagnostics::from)?;
+    let origins = origins_of(&loaded.records);
     let mut builder = CfdDataModel::builder(schema);
     for record in loaded.records {
         builder.add_input_record(record);
     }
     let model = builder
         .build()
-        .map_err(|diagnostics| ExcelDiagnostics::from(loaded.origins.clone().map(diagnostics)))?;
+        .map_err(|diagnostics| ExcelDiagnostics::from(map_table_diagnostics(diagnostics, &origins)))?;
     let check_diagnostics = coflow_checker::run_checks(schema, &model)
         .err()
-        .map(|diagnostics| ExcelDiagnostics::from(loaded.origins.map(diagnostics)));
+        .map(|diagnostics| ExcelDiagnostics::from(map_table_diagnostics(diagnostics, &origins)));
     Ok(ExcelLoadOutput {
         model,
         check_diagnostics,
@@ -399,7 +392,6 @@ pub fn collect_input_records(
     collect_shared_table_input_records(schema, &table_sources)
         .map(|loaded| ExcelInputRecords {
             records: loaded.records,
-            origins: ExcelOrigins::from(loaded.origins),
         })
         .map_err(ExcelDiagnostics::from)
 }
@@ -426,7 +418,6 @@ pub fn collect_table_input_records(
     collect_shared_table_input_records(schema, &shared_sources)
         .map(|loaded| ExcelInputRecords {
             records: loaded.records,
-            origins: ExcelOrigins::from(loaded.origins),
         })
         .map_err(ExcelDiagnostics::from)
 }
@@ -726,7 +717,6 @@ impl DataLoader for ExcelLoader {
         collect_input_records(ctx.schema, &[excel_source])
             .map(|loaded| LoadedRecords {
                 records: loaded.records,
-                origins: loaded.origins.to_origin_map(),
             })
             .map_err(excel_diagnostics_to_api)
     }
@@ -929,12 +919,6 @@ fn excel_label_to_api(label: ExcelLabel) -> Label {
     }
 }
 
-impl ExcelOrigins {
-    #[must_use]
-    pub fn to_origin_map(&self) -> coflow_api::OriginMap {
-        self.inner.to_origin_map()
-    }
-}
 
 #[cfg(test)]
 mod tests {

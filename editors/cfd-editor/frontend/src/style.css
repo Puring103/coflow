@@ -351,6 +351,10 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   font-size: 13px;
   color: var(--text-dim);
 }
+.content-empty-actions {
+  display: flex;
+  gap: 8px;
+}
 
 /* ─── Content breadcrumb (file path) ─── */
 .content-breadcrumb {

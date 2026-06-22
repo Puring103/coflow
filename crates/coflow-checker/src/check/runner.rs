@@ -1,16 +1,20 @@
 use super::evaluator::CheckEvaluator;
 use super::value::{CheckRecordRef, CheckValue};
 use crate::schema_view::SchemaView;
+use crate::DependencyGraph;
 use coflow_cft::CftContainer;
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdPath, CfdRecordId, CfdValue,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) struct CheckRunner<'a> {
     schema: SchemaView,
     model: &'a CfdDataModel,
     diagnostics: Vec<CfdDiagnostic>,
+    /// When `Some`, the runner records read-from edges for each top-level
+    /// record. The current root is the most recently pushed entry.
+    deps: Option<BTreeMap<CfdRecordId, BTreeSet<CfdRecordId>>>,
 }
 
 impl<'a> CheckRunner<'a> {
@@ -19,20 +23,48 @@ impl<'a> CheckRunner<'a> {
             schema: SchemaView::new(schema),
             model,
             diagnostics: Vec::new(),
+            deps: None,
         }
     }
 
     pub(crate) fn run(mut self) -> Result<(), CfdDiagnostics> {
         for (record_id, record) in self.model.records() {
-            let path = CfdPath::root();
-            self.run_record_checks(
-                CheckRecordRef::Top(record_id),
-                Some(record_id),
-                path.clone(),
-            );
-            self.run_nested_field_checks(Some(record_id), &record.fields, path);
+            self.run_one_record(record_id, record);
         }
+        self.into_result()
+    }
 
+    pub(crate) fn run_for(mut self, targets: &[CfdRecordId]) -> Result<(), CfdDiagnostics> {
+        for id in targets {
+            if let Some(record) = self.model.record(*id) {
+                self.run_one_record(*id, record);
+            }
+        }
+        self.into_result()
+    }
+
+    pub(crate) fn run_with_deps(mut self) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
+        self.deps = Some(BTreeMap::new());
+        for (record_id, record) in self.model.records() {
+            self.run_one_record(record_id, record);
+        }
+        let graph = DependencyGraph {
+            reads_from: self.deps.take().unwrap_or_default(),
+        };
+        (self.into_result(), graph)
+    }
+
+    fn run_one_record(&mut self, record_id: CfdRecordId, record: &coflow_data_model::CfdRecord) {
+        let path = CfdPath::root();
+        self.run_record_checks(
+            CheckRecordRef::Top(record_id),
+            Some(record_id),
+            path.clone(),
+        );
+        self.run_nested_field_checks(Some(record_id), &record.fields, path);
+    }
+
+    fn into_result(self) -> Result<(), CfdDiagnostics> {
         if self.diagnostics.is_empty() {
             Ok(())
         } else {
@@ -53,10 +85,18 @@ impl<'a> CheckRunner<'a> {
         let root = CheckValue::Record(record);
         let mut evaluator =
             CheckEvaluator::new(&self.schema, self.model, root_record, root_path, root);
+        evaluator.dep_collector_enabled = self.deps.is_some();
         for check in checks {
             let _ = evaluator.eval_check_block(&check);
         }
         self.diagnostics.extend(evaluator.diagnostics);
+        if let (Some(deps), Some(root_id)) = (self.deps.as_mut(), root_record) {
+            if !evaluator.reads_from.is_empty() {
+                deps.entry(root_id)
+                    .or_default()
+                    .extend(evaluator.reads_from);
+            }
+        }
     }
 
     fn run_nested_field_checks(

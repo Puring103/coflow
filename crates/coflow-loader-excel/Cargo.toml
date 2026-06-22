@@ -20,6 +20,7 @@ coflow-cft = { path = "../coflow-cft" }
 coflow-checker = { path = "../coflow-checker" }
 coflow-data-model = { path = "../coflow-data-model" }
 serde_json = { version = "1", features = ["preserve_order"] }
+umya-spreadsheet = "2"
 
 [dev-dependencies]
 rust_xlsxwriter = "0.95"

@@ -32,6 +32,19 @@ export const NODE_PEEK_FIELDS = 4
 const MAX_DEPTH = 5
 const INDENT_PX = 14
 
+/**
+ * Build the tooltip shown on a spread-inherited cell. The text is short and
+ * actionable — users learn (a) where the value came from and (b) that
+ * editing creates a local override on the host record.
+ */
+function spreadHintText(info: import('../bindings/index').SpreadInfo | undefined): string | undefined {
+  if (!info) return undefined
+  const path = info.source_field_path.length > 0
+    ? `.${info.source_field_path.join('.')}`
+    : ''
+  return `继承自 ${info.source_record_type}.${info.source_record_key}${path}\n编辑会在本记录创建一个本地覆盖（不影响源记录）`
+}
+
 // ─── Type / kind labels ──────────────────────────────────────────────────────
 
 function valueKindLabel(v: FieldValue): string {
@@ -250,10 +263,12 @@ export function DataCardExpanded({ fields, depth = 0, onEdit, pathPrefix, onRowT
           label={fc.name}
           value={fc.value}
           depth={depth}
-          // Spread-introduced fields are not present in this record's source
-          // text — they belong to a different record. Disable editing.
-          onEdit={fc.is_spread ? undefined : onEdit}
+          // Spread cells stay editable — the writer materialises a local
+          // override on first edit. The cell's `spread_info` lets the
+          // child render a hint instead of treating it as a fresh value.
+          onEdit={onEdit}
           isSpread={fc.is_spread}
+          spreadInfo={fc.spread_info}
           fieldPath={[{ kind: 'field', name: fc.name }]}
           pathKey={pathPrefix ? `${pathPrefix}.${fc.name}` : fc.name}
           onRowToggle={onRowToggle}
@@ -280,12 +295,13 @@ function rowDiagSeverity(pathKey: string | undefined): { sev: 'error' | 'warning
   return { sev, messages: exact ? exact.map(d => d.message) : [] }
 }
 
-function FieldRow({ label, value, depth, onEdit, isSpread, fieldPath, pathKey, onRowToggle, leading, trailing, dragProps }: {
+function FieldRow({ label, value, depth, onEdit, isSpread, spreadInfo, fieldPath, pathKey, onRowToggle, leading, trailing, dragProps }: {
   label: string
   value: FieldValue
   depth: number
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   isSpread?: boolean
+  spreadInfo?: import('../bindings/index').SpreadInfo
   fieldPath: FieldPathSegment[]
   pathKey?: string
   onRowToggle?: (path: string, expanded: boolean) => void
@@ -304,6 +320,7 @@ function FieldRow({ label, value, depth, onEdit, isSpread, fieldPath, pathKey, o
         depth={depth}
         onEdit={onEdit}
         isSpread={isSpread}
+        spreadInfo={spreadInfo}
         fieldPath={fieldPath}
         pathKey={pathKey}
         onRowToggle={onRowToggle}
@@ -320,6 +337,7 @@ function FieldRow({ label, value, depth, onEdit, isSpread, fieldPath, pathKey, o
       depth={depth}
       onCommit={onEdit ? next => onEdit(fieldPath, next) : undefined}
       isSpread={isSpread}
+      spreadInfo={spreadInfo}
       pathKey={pathKey}
       leading={leading}
       trailing={trailing}
@@ -328,12 +346,13 @@ function FieldRow({ label, value, depth, onEdit, isSpread, fieldPath, pathKey, o
   )
 }
 
-function ScalarFieldRow({ label, value, depth, onCommit, isSpread, pathKey, leading, trailing, dragProps }: {
+function ScalarFieldRow({ label, value, depth, onCommit, isSpread, spreadInfo, pathKey, leading, trailing, dragProps }: {
   label: string
   value: FieldValue
   depth: number
   onCommit?: (newValue: FieldValue) => void
   isSpread?: boolean
+  spreadInfo?: import('../bindings/index').SpreadInfo
   pathKey?: string
   leading?: ReactNode
   trailing?: ReactNode
@@ -343,9 +362,11 @@ function ScalarFieldRow({ label, value, depth, onCommit, isSpread, pathKey, lead
                 || value.kind === 'Str' || value.kind === 'Enum' || value.kind === 'Ref'
   const canEdit = isScalar && !!onCommit
   const diag = rowDiagSeverity(pathKey)
+  const spreadHint = spreadHintText(spreadInfo)
+  const rowTitle = spreadHint || (diag.messages.join('\n') || undefined)
 
   return (
-    <div className={`dc-row${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} title={isSpread ? '此字段来自 ...spread 展开，需到源记录编辑' : (diag.messages.join('\n') || undefined)} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+    <div className={`dc-row${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} title={rowTitle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
       <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 8 }}>
         {leading}
         <span className="dc-row-label-text">{label}</span>
@@ -682,12 +703,13 @@ function RefSelect({
   )
 }
 
-function ExpandableRow({ label, value, depth, onEdit, isSpread, fieldPath, pathKey, onRowToggle, leading, trailing, dragProps }: {
+function ExpandableRow({ label, value, depth, onEdit, isSpread, spreadInfo, fieldPath, pathKey, onRowToggle, leading, trailing, dragProps }: {
   label: string
   value: FieldValue
   depth: number
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   isSpread?: boolean
+  spreadInfo?: import('../bindings/index').SpreadInfo
   fieldPath: FieldPathSegment[]
   pathKey?: string
   onRowToggle?: (path: string, expanded: boolean) => void
@@ -700,6 +722,8 @@ function ExpandableRow({ label, value, depth, onEdit, isSpread, fieldPath, pathK
   const summary = headerSummary(value)
   const count = childCount(value)
   const diag = rowDiagSeverity(pathKey)
+  const spreadHint = spreadHintText(spreadInfo)
+  const rowTitle = spreadHint || (diag.messages.join('\n') || undefined)
 
   function toggle() {
     const next = !expanded
@@ -709,7 +733,7 @@ function ExpandableRow({ label, value, depth, onEdit, isSpread, fieldPath, pathK
 
   return (
     <>
-      <div className={`dc-row dc-row-foldout${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} title={isSpread ? '此字段来自 ...spread 展开，需到源记录编辑' : (diag.messages.join('\n') || undefined)} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
+      <div className={`dc-row dc-row-foldout${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} title={rowTitle} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
         <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX }}>
           {leading}
           <span className="dc-fold-arrow">
@@ -757,6 +781,8 @@ function ExpandableRow({ label, value, depth, onEdit, isSpread, fieldPath, pathK
                 value={fc.value}
                 depth={depth + 1}
                 onEdit={onEdit}
+                isSpread={fc.is_spread}
+                spreadInfo={fc.spread_info}
                 fieldPath={[...fieldPath, { kind: 'field', name: fc.name }]}
                 pathKey={pathKey ? `${pathKey}.${fc.name}` : fc.name}
                 onRowToggle={onRowToggle}

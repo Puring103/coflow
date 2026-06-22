@@ -561,12 +561,13 @@ fn loader_file_origins_preserve_record_text_spans() -> TestResult {
             },
         )
         .map_err(|diagnostics| format!("{diagnostics:?}"))?;
+    let origins = coflow_api::origins_of(&loaded.records);
     let mut builder = CfdDataModel::builder(&schema);
     for record in loaded.records {
         builder.add_input_record(record);
     }
     let err = builder.build().expect_err("second record is missing value");
-    let mapped = loaded.origins.map_diagnostics(err);
+    let mapped = coflow_api::map_diagnostics_with_origins(err, &origins);
     let primary = mapped
         .diagnostics
         .first()

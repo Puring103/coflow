@@ -1,3 +1,4 @@
+use crate::origin::RecordOrigin;
 use crate::{compiler::ModelCompiler, CfdDiagnostics};
 use coflow_cft::CftContainer;
 use std::cmp::Ordering;
@@ -148,6 +149,16 @@ pub struct CfdRecord {
     pub key: String,
     pub actual_type: String,
     pub fields: BTreeMap<String, CfdValue>,
+    /// Where this record came from in its original source. Used by writers to
+    /// dispatch edits back to the right source and by diagnostics to map
+    /// record-anchored labels to file/cell locations. Defaults to
+    /// [`RecordOrigin::None`] for synthetic records.
+    pub origin: RecordOrigin,
+    /// For top-level records only: maps a field name that was imported via a
+    /// `...spread` expansion to the source record id whose origin should be
+    /// used when writing the field back. Direct fields are not present in
+    /// this map.
+    pub spread_field_sources: BTreeMap<String, CfdRecordId>,
 }
 
 impl CfdRecord {
@@ -160,6 +171,15 @@ impl CfdRecord {
     pub fn field(&self, name: &str) -> Option<&CfdValue> {
         self.fields.get(name)
     }
+
+    /// Effective origin used to write a top-level field. If the field was
+    /// imported via `...spread`, returns the spread source's record id (the
+    /// caller resolves it to a real `RecordOrigin` via the model). Otherwise
+    /// returns `None` and the caller uses `self.origin`.
+    #[must_use]
+    pub fn spread_source_for_field(&self, field: &str) -> Option<CfdRecordId> {
+        self.spread_field_sources.get(field).copied()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -168,6 +188,15 @@ pub struct CfdRecordId(usize);
 impl CfdRecordId {
     #[must_use]
     pub(crate) fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    /// Build a record id from its raw index. Mostly useful for diagnostic
+    /// rewriting where the caller knows the absolute index in a flattened
+    /// record stream. Construction does not validate that any record exists
+    /// at that index.
+    #[must_use]
+    pub fn from_index(index: usize) -> Self {
         Self(index)
     }
 
@@ -255,6 +284,11 @@ pub struct CfdInputRecord {
     pub actual_type: String,
     pub spreads: Vec<CfdInputValue>,
     pub fields: BTreeMap<String, CfdInputValue>,
+    /// Where this top-level record originated. Loaders set this when parsing;
+    /// synthetic records (tests, ad-hoc construction) leave it as
+    /// [`RecordOrigin::None`]. The compiler moves this onto the resulting
+    /// [`CfdRecord`].
+    pub origin: RecordOrigin,
 }
 
 impl CfdInputRecord {
@@ -272,6 +306,7 @@ impl CfdInputRecord {
                 .into_iter()
                 .map(|(name, value)| (name.into(), value))
                 .collect(),
+            origin: RecordOrigin::None,
         }
     }
 
@@ -290,7 +325,15 @@ impl CfdInputRecord {
                 .into_iter()
                 .map(|(name, value)| (name.into(), value))
                 .collect(),
+            origin: RecordOrigin::None,
         }
+    }
+
+    /// Builder-style: attach an origin to this input record.
+    #[must_use]
+    pub fn with_origin(mut self, origin: RecordOrigin) -> Self {
+        self.origin = origin;
+        self
     }
 }
 

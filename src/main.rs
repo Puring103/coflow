@@ -27,7 +27,6 @@ use coflow_project::{
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -220,42 +219,8 @@ struct CodegenCsharpArgs {
 
 fn init_project(args: InitArgs) -> Result<bool, String> {
     let dir = args.dir.unwrap_or_else(|| PathBuf::from("."));
-    let config_path = dir.join("coflow.yaml");
-    if config_path.exists() {
-        return Err(format!("`{}` already exists", config_path.display()));
-    }
-    fs::create_dir_all(dir.join("schema"))
-        .map_err(|err| format!("failed to create `{}`: {err}", dir.join("schema").display()))?;
-    fs::create_dir_all(dir.join("data"))
-        .map_err(|err| format!("failed to create `{}`: {err}", dir.join("data").display()))?;
-    fs::create_dir_all(dir.join("generated").join("data")).map_err(|err| {
-        format!(
-            "failed to create `{}`: {err}",
-            dir.join("generated").join("data").display()
-        )
-    })?;
-    fs::create_dir_all(dir.join("generated").join("csharp")).map_err(|err| {
-        format!(
-            "failed to create `{}`: {err}",
-            dir.join("generated").join("csharp").display()
-        )
-    })?;
-    let config = r"schema: schema/
-
-sources: []
-
-outputs:
-  data:
-    type: json
-    dir: generated/data
-  code:
-    type: csharp
-    dir: generated/csharp
-    namespace: Game.Config
-";
-    fs::write(&config_path, config)
-        .map_err(|err| format!("failed to write `{}`: {err}", config_path.display()))?;
-    println!("created {}", config_path.display());
+    let outcome = coflow_project::init_project(&dir)?;
+    println!("created {}", outcome.config_path.display());
     Ok(true)
 }
 

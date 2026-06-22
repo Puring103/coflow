@@ -4,9 +4,10 @@ use crate::model::{
     CfdInputValue, CfdPolymorphicIndex, CfdRecord, CfdRecordId, CfdRefPathSegment, CfdTable,
     CfdValue,
 };
+use crate::origin::RecordOrigin;
 use crate::schema_view::{
     input_value_kind, type_accepts_default, CfdType, CfdValueDraft, FieldMeta, RecordDraft,
-    SchemaView,
+    SchemaView, SpreadFieldSource,
 };
 use coflow_cft::{record_key_ident_error, CftContainer, CftSchemaDefaultValue};
 use std::collections::{BTreeMap, BTreeSet};
@@ -27,14 +28,15 @@ impl ModelCompiler {
     }
 
     pub(crate) fn build(mut self) -> Result<CfdDataModel, CfdDiagnostics> {
-        // Phase 1: validate input records into drafts.
+        // Phase 1: validate input records into drafts. Capture each record's
+        // origin so it can flow through to the final `CfdRecord`.
         let mut drafts = Vec::new();
         let input = std::mem::take(&mut self.input);
         {
             let mut v = Validator::new(&self.schema, &mut self.diagnostics);
             for (input_index, record) in input.into_iter().enumerate() {
                 let id = CfdRecordId::new(input_index);
-                if let Some(draft) = v.validate_record(
+                if let Some(mut draft) = v.validate_record(
                     None,
                     &record.key,
                     &record.actual_type,
@@ -42,7 +44,10 @@ impl ModelCompiler {
                     &record.fields,
                     Some(id),
                     CfdPath::root(),
+                    /*top_level=*/ true,
                 ) {
+                    // Top-level draft inherits the input's origin.
+                    draft.origin = record.origin;
                     drafts.push(draft);
                 }
             }
@@ -74,10 +79,18 @@ impl ModelCompiler {
                 ) else {
                     continue;
                 };
+                let spread_field_sources = resolve_spread_sources(
+                    &self.schema,
+                    &draft.spread_field_sources,
+                    &tables,
+                    &inheritance_index,
+                );
                 records.push(CfdRecord {
                     key: draft.key.clone(),
                     actual_type: draft.actual_type.clone(),
                     fields,
+                    origin: draft.origin.clone(),
+                    spread_field_sources,
                 });
             }
         }
@@ -230,6 +243,7 @@ impl<'s> Validator<'s> {
         input_fields: &BTreeMap<String, CfdInputValue>,
         record: Option<CfdRecordId>,
         path: CfdPath,
+        top_level: bool,
     ) -> Option<RecordDraft> {
         // Copy the shared schema reference so that the &'s [FieldMeta] slice
         // obtained below has a lifetime independent of `self`, allowing
@@ -290,18 +304,35 @@ impl<'s> Validator<'s> {
         }
 
         let mut out = BTreeMap::new();
+        let mut spread_field_sources = BTreeMap::new();
         for spread in input_spreads {
+            // Track which fields came from this spread, regardless of nesting.
+            // RecordRef spreads carry a stable target record identity (type+key)
+            // — those become resolvable record ids in phase 3 and let writers
+            // dispatch edits back to the source. PathRef / inline-object
+            // spreads don't carry a stable record identity, so we don't track
+            // them: writers will refuse to edit through the spread and
+            // surface a diagnostic instead.
+            let spread_origin = top_level_spread_source(spread);
             let Some(spread_fields) =
                 self.validate_object_spread(actual_type, spread, record, path.clone())
             else {
                 continue;
             };
+            for (name, _) in &spread_fields {
+                if let Some(origin) = &spread_origin {
+                    spread_field_sources.insert(name.clone(), origin.clone());
+                }
+            }
             out.extend(spread_fields);
         }
+        let _ = top_level;
 
         for field in fields {
             let field_path = path.clone().field(field.name.clone());
             let value = if let Some(value) = input_fields.get(&field.name) {
+                // An explicit field overrides any spread-imported value.
+                spread_field_sources.remove(&field.name);
                 self.validate_field_value(field, value, record, field_path)
             } else if out.contains_key(&field.name) {
                 continue;
@@ -327,6 +358,8 @@ impl<'s> Validator<'s> {
                 key: key.to_string(),
                 actual_type: actual_type.to_string(),
                 fields: out,
+                origin: RecordOrigin::None,
+                spread_field_sources,
             })
         } else {
             None
@@ -464,6 +497,7 @@ impl<'s> Validator<'s> {
                     fields,
                     record,
                     path,
+                    /*top_level=*/ false,
                 )?;
                 Some(CfdValueDraft::Object(Box::new(draft)))
             }
@@ -885,8 +919,16 @@ impl<'s> Validator<'s> {
         path: CfdPath,
     ) -> Option<CfdValueDraft> {
         let fields = BTreeMap::new();
-        let draft =
-            self.validate_record(Some(type_name), "", type_name, &[], &fields, record, path)?;
+        let draft = self.validate_record(
+            Some(type_name),
+            "",
+            type_name,
+            &[],
+            &fields,
+            record,
+            path,
+            /*top_level=*/ false,
+        )?;
         Some(CfdValueDraft::Object(Box::new(draft)))
     }
 
@@ -967,10 +1009,18 @@ impl<'s> Validator<'s> {
                     tables,
                     inheritance_index,
                 )?;
+                let spread_field_sources = resolve_spread_sources(
+                    self.schema,
+                    &record_draft.spread_field_sources,
+                    tables,
+                    inheritance_index,
+                );
                 Some(CfdValue::Object(Box::new(CfdRecord {
                     key: record_draft.key.clone(),
                     actual_type: record_draft.actual_type.clone(),
                     fields,
+                    origin: RecordOrigin::None,
+                    spread_field_sources,
                 })))
             }
             CfdValueDraft::Array(items) => {
@@ -1581,7 +1631,55 @@ fn record_value_to_draft(record: &CfdRecord) -> RecordDraft {
             .iter()
             .map(|(name, value)| (name.clone(), cfd_value_to_draft(value.clone())))
             .collect(),
+        origin: RecordOrigin::None,
+        spread_field_sources: BTreeMap::new(),
     }
+}
+
+/// If a spread is a `RecordRef`, return its (target_type, key) so the
+/// compiler can mark fields imported via the spread as belonging to that
+/// source record. Path-refs and inline objects don't carry a stable record
+/// identity for write-back purposes and are not tracked — writers will
+/// surface a diagnostic when the user tries to edit through them.
+fn top_level_spread_source(spread: &CfdInputValue) -> Option<SpreadFieldSource> {
+    match spread {
+        CfdInputValue::RecordRef { target_type, key } => Some(SpreadFieldSource {
+            target_type: target_type.clone(),
+            key: key.clone(),
+        }),
+        _ => None,
+    }
+}
+
+/// Resolve a draft's spread-field-source map (`name → SpreadFieldSource`,
+/// which holds the textual target type+key) into the public-facing
+/// `name → CfdRecordId` map stored on `CfdRecord`. Sources that don't
+/// resolve are dropped silently — phase 1 already reported them as
+/// unresolved record refs if they were truly missing.
+fn resolve_spread_sources(
+    schema: &SchemaView,
+    sources: &BTreeMap<String, SpreadFieldSource>,
+    tables: &BTreeMap<String, CfdTable>,
+    inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
+) -> BTreeMap<String, CfdRecordId> {
+    let mut out = BTreeMap::new();
+    for (field, source) in sources {
+        let target = if schema.range_is_polymorphic(&source.target_type) {
+            inheritance_index
+                .get(&source.target_type)
+                .and_then(|idx| idx.records.get(&source.key))
+                .copied()
+        } else {
+            tables
+                .get(&source.target_type)
+                .and_then(|t| t.primary_index.get(&source.key))
+                .copied()
+        };
+        if let Some(id) = target {
+            out.insert(field.clone(), id);
+        }
+    }
+    out
 }
 
 fn format_ref_index(index: &CfdInputRefIndex) -> String {

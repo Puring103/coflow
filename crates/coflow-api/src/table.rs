@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use crate::cell_value::{parse_cell, CellValueDiagnostics, ParsedCell};
 use crate::{
     CfdDiagnostic, CfdDiagnostics, CfdInputRecord, CfdInputValue, CfdLabel, CfdPath,
-    CfdPathSegment, CftContainer, Diagnostic, DiagnosticSet, Label, SourceDocument, SourceLocation,
+    CfdPathSegment, CftContainer, Diagnostic, DiagnosticSet, Label, RecordOrigin, SourceDocument,
+    SourceLocation,
 };
 
 const IMPORT_CONTROL_COLUMN: &str = "#";
@@ -158,8 +159,10 @@ impl From<TableDiagnostics> for DiagnosticSet {
 
 #[derive(Debug, Clone)]
 pub struct TableInputRecords {
+    /// Each record carries its own [`RecordOrigin`] (a [`RecordOrigin::Table`]
+    /// variant). Diagnostics produced before [`crate::map_diagnostics_with_origins`]
+    /// is called can use [`crate::origins_of`] to extract them.
     pub records: Vec<CfdInputRecord>,
-    pub origins: TableOrigins,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -345,8 +348,7 @@ pub fn collect_table_input_records(
     schema: &CftContainer,
     sources: &[TableSource],
 ) -> Result<TableInputRecords, TableDiagnostics> {
-    let mut records = Vec::new();
-    let mut origins = TableOrigins::default();
+    let mut records: Vec<CfdInputRecord> = Vec::new();
     let mut diagnostics = Vec::new();
     for source in sources {
         let sheet_names = source
@@ -496,19 +498,22 @@ pub fn collect_table_input_records(
                 if diagnostics.len() != row_diagnostic_start {
                     continue;
                 }
-                origins.push(TableRecordOrigin::new(
+                let record_origin = build_record_origin(
                     source.document.clone(),
                     sheet.sheet.clone(),
                     excel_row,
                     &columns,
                     id_column.excel_column,
-                ));
-                records.push(CfdInputRecord::new(record_key, type_name, input_fields));
+                );
+                records.push(
+                    CfdInputRecord::new(record_key, type_name, input_fields)
+                        .with_origin(record_origin),
+                );
             }
         }
     }
     if diagnostics.is_empty() {
-        Ok(TableInputRecords { records, origins })
+        Ok(TableInputRecords { records })
     } else {
         Err(TableDiagnostics { diagnostics })
     }
@@ -659,136 +664,99 @@ struct ExpandedSubColumn {
     field_type: String,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct TableOrigins {
-    records: Vec<TableRecordOrigin>,
-}
-
-impl TableOrigins {
-    fn push(&mut self, origin: TableRecordOrigin) {
-        self.records.push(origin);
-    }
-
-    #[must_use]
-    pub fn record_count(&self) -> usize {
-        self.records.len()
-    }
-
-    pub fn extend(&mut self, other: Self) {
-        self.records.extend(other.records);
-    }
-
-    #[must_use]
-    pub fn map(&self, diagnostics: CfdDiagnostics) -> TableDiagnostics {
-        TableDiagnostics {
-            diagnostics: diagnostics
-                .diagnostics
-                .into_iter()
-                .map(|diagnostic| self.map_diagnostic(diagnostic))
-                .collect(),
-        }
-    }
-
-    #[must_use]
-    pub fn map_label_with_record_offset(
-        &self,
-        label: &CfdLabel,
-        record_offset: usize,
-    ) -> Option<TableLabel> {
-        let record = label.record?;
-        let local_record = record.index().checked_sub(record_offset)?;
-        let origin = self.records.get(local_record)?;
-        Some(TableLabel {
-            location: origin.location_for_path(&label.path),
-            message: label.message.clone(),
-        })
-    }
-
-    #[must_use]
-    pub fn to_origin_map(&self) -> crate::OriginMap {
-        let mut origins = crate::OriginMap::default();
-        for record in &self.records {
-            origins.push_table_record(
-                record.document.clone(),
-                record.sheet.clone(),
-                record.row,
-                record.id_column,
-                record.field_columns.clone(),
-            );
-        }
-        origins
-    }
-
-    fn map_diagnostic(&self, diagnostic: CfdDiagnostic) -> TableDiagnostic {
-        TableDiagnostic {
-            code: diagnostic.code.as_str().to_string(),
-            stage: diagnostic.stage.to_string(),
-            message: diagnostic.message.clone(),
-            primary: diagnostic
-                .primary
-                .as_ref()
-                .and_then(|label| self.map_label_with_record_offset(label, 0)),
-            related: diagnostic
-                .related
-                .iter()
-                .filter_map(|label| self.map_label_with_record_offset(label, 0))
-                .collect(),
-            source: Some(diagnostic),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct TableRecordOrigin {
+/// Build a [`RecordOrigin::Table`] for a row, using the resolved columns to
+/// produce a `field_path → column` map.
+fn build_record_origin(
     document: SourceDocument,
     sheet: String,
     row: usize,
+    columns: &[ResolvedColumn],
     id_column: usize,
-    field_columns: BTreeMap<Vec<String>, usize>,
-}
-
-impl TableRecordOrigin {
-    fn new(
-        document: SourceDocument,
-        sheet: String,
-        row: usize,
-        columns: &[ResolvedColumn],
-        id_column: usize,
-    ) -> Self {
-        let mut field_columns = BTreeMap::new();
-        for column in columns {
-            field_columns.insert(vec![column.field.clone()], column.excel_column);
-            if let Some(children) = &column.expand {
-                for child in children {
-                    field_columns.insert(
-                        vec![column.field.clone(), child.field.clone()],
-                        child.excel_column,
-                    );
-                }
+) -> RecordOrigin {
+    let mut field_columns = BTreeMap::new();
+    for column in columns {
+        field_columns.insert(vec![column.field.clone()], column.excel_column);
+        if let Some(children) = &column.expand {
+            for child in children {
+                field_columns.insert(
+                    vec![column.field.clone(), child.field.clone()],
+                    child.excel_column,
+                );
             }
         }
-        Self {
-            document,
-            sheet,
-            row,
-            id_column,
-            field_columns,
-        }
     }
+    RecordOrigin::Table {
+        document,
+        sheet,
+        row,
+        id_column,
+        field_columns,
+    }
+}
 
-    fn location_for_path(&self, path: &CfdPath) -> TableLocation {
-        let column = path_column(path, &self.field_columns).or_else(|| {
-            root_field(path).and_then(|field| (field == "id").then_some(self.id_column))
-        });
-        let name = match &self.document {
-            SourceDocument::Local(path) => path.clone(),
-            SourceDocument::Remote(document) => PathBuf::from(document),
-        };
-        TableLocation::new(name)
-            .sheet(self.sheet.clone())
-            .with_row(self.row)
-            .with_column(column)
+/// Map [`CfdDiagnostics`] to per-row [`TableDiagnostic`] using a slice of
+/// record origins (typically extracted from the input records via
+/// [`crate::origins_of`]).
+#[must_use]
+pub fn map_table_diagnostics(
+    diagnostics: CfdDiagnostics,
+    origins: &[RecordOrigin],
+) -> TableDiagnostics {
+    TableDiagnostics {
+        diagnostics: diagnostics
+            .diagnostics
+            .into_iter()
+            .map(|diagnostic| {
+                let primary = diagnostic
+                    .primary
+                    .as_ref()
+                    .and_then(|label| map_label_to_table(label, origins));
+                let related = diagnostic
+                    .related
+                    .iter()
+                    .filter_map(|label| map_label_to_table(label, origins))
+                    .collect();
+                TableDiagnostic {
+                    code: diagnostic.code.as_str().to_string(),
+                    stage: diagnostic.stage.to_string(),
+                    message: diagnostic.message.clone(),
+                    primary,
+                    related,
+                    source: Some(diagnostic),
+                }
+            })
+            .collect(),
     }
+}
+
+#[must_use]
+pub fn map_label_to_table(label: &CfdLabel, origins: &[RecordOrigin]) -> Option<TableLabel> {
+    let record = label.record?;
+    let origin = origins.get(record.index())?;
+    let RecordOrigin::Table {
+        document,
+        sheet,
+        row,
+        id_column,
+        field_columns,
+    } = origin
+    else {
+        return None;
+    };
+    let column = path_column(&label.path, field_columns).or_else(|| {
+        root_field(&label.path).and_then(|field| (field == "id").then_some(*id_column))
+    });
+    let name = match document {
+        SourceDocument::Local(p) => p.clone(),
+        SourceDocument::Remote(doc) => PathBuf::from(doc),
+    };
+    Some(TableLabel {
+        location: TableLocation::new(name)
+            .sheet(sheet.clone())
+            .with_row(*row)
+            .with_column(column),
+        message: label.message.clone(),
+    })
 }
 
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)]

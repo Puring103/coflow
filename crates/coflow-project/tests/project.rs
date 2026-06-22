@@ -12,9 +12,9 @@
 use coflow_api::SourceLocation;
 use coflow_cft::{CftDiagnostic, CftErrorCode, ModuleId, Span};
 use coflow_project::{
-    compile_schema_project_with_overrides, dedupe_cft_diagnostics, normalize_path, path_to_slash,
-    resolve_config_path, DiagnosticJson, OutputConfig, OutputsConfig, Project, ProjectConfig,
-    SchemaConfig, SchemaSourceOverride,
+    compile_schema_project_with_overrides, dedupe_cft_diagnostics, init_project, normalize_path,
+    path_to_slash, resolve_config_path, DiagnosticJson, OutputConfig, OutputsConfig, Project,
+    ProjectConfig, SchemaConfig, SchemaSourceOverride, DEFAULT_PROJECT_YAML,
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -894,6 +894,44 @@ fn output_config(output_type: &str, dir: &str, namespace: Option<&str>) -> Outpu
         dir: PathBuf::from(dir),
         options: serde_json::Value::Object(options),
     }
+}
+
+#[test]
+fn init_project_scaffolds_minimal_layout() -> TestResult {
+    let dir = temp_project_dir("coflow-init");
+    let outcome = init_project(&dir).map_err(|err| err.to_string())?;
+    // Config landed at the expected path with the canonical template.
+    assert_eq!(outcome.config_path, dir.join("coflow.yaml"));
+    let written = std::fs::read_to_string(&outcome.config_path).expect("read config");
+    assert_eq!(written, DEFAULT_PROJECT_YAML);
+    // Standard subdirectories all exist.
+    for sub in ["schema", "data", "generated/data", "generated/csharp"] {
+        let p = dir.join(sub);
+        if !p.is_dir() {
+            return Err(format!("expected directory `{}`", p.display()));
+        }
+    }
+    // The freshly scaffolded project must round-trip through the regular
+    // open path — i.e. nothing about the layout is half-baked.
+    let project = Project::open_schema_only(Some(outcome.config_path.as_path()))
+        .map_err(|err| err.to_string())?;
+    assert!(project.config.sources.is_empty());
+    Ok(())
+}
+
+#[test]
+fn init_project_refuses_to_clobber_existing_yaml() -> TestResult {
+    let dir = temp_project_dir("coflow-init-existing");
+    std::fs::write(dir.join("coflow.yaml"), "# existing\n").expect("seed yaml");
+    let err = init_project(&dir).err().expect("must error");
+    assert!(
+        err.contains("already exists"),
+        "expected clear refusal, got: {err}"
+    );
+    // The existing config wasn't touched.
+    let preserved = std::fs::read_to_string(dir.join("coflow.yaml")).expect("read existing");
+    assert_eq!(preserved, "# existing\n");
+    Ok(())
 }
 
 fn temp_project_dir(name: &str) -> PathBuf {
