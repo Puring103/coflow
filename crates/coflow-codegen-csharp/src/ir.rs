@@ -1,9 +1,9 @@
 use crate::emit::{build_csharp_database, build_csharp_enum, build_csharp_type};
 use crate::model::{CsharpEnum, CsharpEnumVariant, CsharpProject};
 use crate::names::{
-    annotation_string_arg, camel_case, csharp_ident_error, csharp_member_ident_error,
-    csharp_namespace_error, csharp_type_name, index_param_name, index_var_name, pascal_case,
-    pluralize, ref_index_param_name, ref_index_var_name,
+    annotation_name_arg, camel_case, csharp_ident_error, csharp_member_ident_error,
+    csharp_namespace_error, csharp_type_name, display_annotation, has_annotation, index_param_name,
+    index_var_name, pluralize, ref_index_param_name, ref_index_var_name,
 };
 use crate::schema_view::SchemaView;
 use crate::CsharpCodegenError;
@@ -74,11 +74,16 @@ pub fn build_project(
     let key_as_enum_names = key_as_enum_names(schema);
     let view = SchemaView::new(schema);
 
-    let mut enums = schema
+    let mut key_as_enum_variants =
+        build_key_as_enums(schema, &key_as_enum_names, key_as_enum_variants);
+    let enums = schema
         .all_enums()
-        .map(build_csharp_enum)
+        .map(|schema_enum| {
+            key_as_enum_variants
+                .remove(&schema_enum.name)
+                .unwrap_or_else(|| build_csharp_enum(schema_enum))
+        })
         .collect::<Vec<_>>();
-    enums.extend(build_key_as_enums(&key_as_enum_names, key_as_enum_variants));
 
     let types = schema
         .all_types()
@@ -109,7 +114,7 @@ pub fn preflight_csharp_codegen(
     let key_as_enum_names = key_as_enum_names(schema);
     validate_key_as_enum_variants(&key_as_enum_names, key_as_enum_variants, &mut diagnostics);
     let view = SchemaView::new(schema);
-    validate_generated_names(&view, options, &key_as_enum_names, &mut diagnostics);
+    validate_generated_names(&view, options, &mut diagnostics);
     diagnostics
 }
 
@@ -164,8 +169,7 @@ fn validate_schema_names(schema: &CftContainer, diagnostics: &mut Vec<CsharpCode
         validate_ident("enum", &csharp_type_name(&schema_enum.name), diagnostics);
         let mut variants = BTreeMap::<String, String>::new();
         for variant in &schema_enum.variants {
-            validate_ident("enum variant", &variant.name, diagnostics);
-            let csharp_variant = pascal_case(&variant.name);
+            let csharp_variant = variant.name.clone();
             validate_ident("enum variant", &csharp_variant, diagnostics);
             insert_generated_enum_variant_name(
                 &mut variants,
@@ -185,7 +189,7 @@ fn validate_schema_names(schema: &CftContainer, diagnostics: &mut Vec<CsharpCode
             validate_ident("parent type", &csharp_type_name(parent), diagnostics);
         }
         for field in &schema_type.fields {
-            let property_name = pascal_case(&field.name);
+            let property_name = field.name.clone();
             validate_ident("field property", &property_name, diagnostics);
         }
     }
@@ -194,14 +198,13 @@ fn validate_schema_names(schema: &CftContainer, diagnostics: &mut Vec<CsharpCode
 fn validate_generated_names(
     view: &SchemaView,
     options: &CsharpCodegenOptions,
-    key_as_enum_names: impl IntoIterator<Item = impl AsRef<str>>,
     diagnostics: &mut Vec<CsharpCodegenDiagnostic>,
 ) {
     let tables = view.table_names();
     let ref_targets = view.ref_target_names();
     let resolves_refs = !ref_targets.is_empty();
 
-    validate_generated_file_names(view, options, key_as_enum_names, diagnostics);
+    validate_generated_file_names(view, options, diagnostics);
     validate_generated_member_names(view, diagnostics);
 
     for table_name in &tables {
@@ -246,7 +249,6 @@ fn validate_generated_names(
 fn validate_generated_file_names(
     view: &SchemaView,
     options: &CsharpCodegenOptions,
-    key_as_enum_names: impl IntoIterator<Item = impl AsRef<str>>,
     diagnostics: &mut Vec<CsharpCodegenDiagnostic>,
 ) {
     let mut reserved = BTreeSet::new();
@@ -269,18 +271,6 @@ fn validate_generated_file_names(
             diagnostics,
         );
     }
-    for enum_name in key_as_enum_names {
-        let enum_name = enum_name.as_ref();
-        let file_name = format!("{}.cs", csharp_type_name(enum_name));
-        insert_generated_file_name(
-            &mut file_sources,
-            &reserved,
-            &file_name,
-            "@keyAsEnum enum",
-            enum_name,
-            diagnostics,
-        );
-    }
     for type_name in view.all_type_names() {
         let file_name = format!("{}.cs", view.csharp_type_name(&type_name));
         insert_generated_file_name(
@@ -297,7 +287,7 @@ fn validate_generated_file_names(
 fn key_as_enum_names(schema: &CftContainer) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for schema_type in schema.all_types() {
-        if let Some(enum_name) = annotation_string_arg(&schema_type.annotations, "keyAsEnum") {
+        if let Some(enum_name) = annotation_name_arg(&schema_type.annotations, "keyAsEnum") {
             out.insert(enum_name);
         }
     }
@@ -334,10 +324,11 @@ fn validate_key_as_enum_variants(
 }
 
 fn build_key_as_enums(
+    schema: &CftContainer,
     declared: &BTreeSet<String>,
     mut variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
-) -> Vec<CsharpEnum> {
-    let mut out = Vec::new();
+) -> BTreeMap<String, CsharpEnum> {
+    let mut out = BTreeMap::new();
     for name in declared {
         let mut enum_variants = Vec::new();
         for variant in variants.remove(name).unwrap_or_default() {
@@ -348,13 +339,21 @@ fn build_key_as_enums(
                 obsolete: false,
             });
         }
-        out.push(CsharpEnum {
-            name: csharp_type_name(name),
-            is_flags: false,
-            summary: None,
-            obsolete: false,
-            variants: enum_variants,
-        });
+        let schema_enum = schema.resolve_enum(name);
+        out.insert(
+            name.clone(),
+            CsharpEnum {
+                name: csharp_type_name(name),
+                is_flags: schema_enum
+                    .is_some_and(|schema_enum| has_annotation(&schema_enum.annotations, "flag")),
+                summary: schema_enum
+                    .and_then(|schema_enum| display_annotation(&schema_enum.annotations)),
+                obsolete: schema_enum.is_some_and(|schema_enum| {
+                    has_annotation(&schema_enum.annotations, "deprecated")
+                }),
+                variants: enum_variants,
+            },
+        );
     }
     out
 }
@@ -396,7 +395,7 @@ fn validate_generated_member_names(
     for ty in view.types.values() {
         let mut members = BTreeMap::<String, String>::new();
         for field in &ty.all_fields {
-            let property_name = pascal_case(&field.name);
+            let property_name = field.name.clone();
             insert_generated_member_name(
                 &mut members,
                 &ty.name,

@@ -31,6 +31,39 @@ fn schema_reports_cross_module_duplicate_with_related_label() {
 }
 
 #[test]
+fn schema_accepts_builtin_method_calls_and_rejects_global_builtins() {
+    compile_one(
+        r#"
+        type Item {
+            key: string;
+            tags: [string];
+            attrs: {string: int};
+            check {
+                key.matches("^[a-z]+$");
+                tags.len() > 0;
+                tags.contains("weapon");
+                tags.unique();
+                attrs.keys().contains("power");
+                attrs.values().sum() >= 1;
+            }
+        }
+        "#,
+    )
+    .unwrap();
+
+    let err = compile_one(
+        r#"
+        type Item {
+            tags: [string];
+            check { len(tags) > 0; }
+        }
+        "#,
+    )
+    .unwrap_err();
+    assert_has_code(&err, CftErrorCode::UnknownFunction);
+}
+
+#[test]
 fn schema_reports_duplicate_field_enum_value_and_unknown_type() {
     let source = r#"
         enum E { A = 1, B = 1, }
@@ -270,7 +303,7 @@ fn schema_rejects_invalid_enum_variant_annotations() {
     let err = compile_one(
         r#"
             enum Rarity {
-                @keyAsEnum("RarityKey")
+                @keyAsEnum(RarityKey)
                 Common,
             }
         "#,
@@ -285,8 +318,8 @@ fn schema_rejects_duplicate_annotations_and_invalid_annotation_arguments() {
         @flag(1)
         enum Flags { A = 1, }
 
-        @keyAsEnum("ItemKey")
-        @keyAsEnum("ItemKey2")
+        @keyAsEnum(ItemKey)
+        @keyAsEnum(ItemKey2)
         type Holder {
             key: string;
 

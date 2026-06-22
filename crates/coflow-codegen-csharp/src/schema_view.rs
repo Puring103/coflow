@@ -1,4 +1,4 @@
-use crate::names::{annotation_string_arg, csharp_type_name, has_annotation};
+use crate::names::{annotation_name_arg, csharp_type_name, has_annotation};
 use crate::CsharpCodegenError;
 use coflow_cft::{
     CftAnnotation, CftContainer, CftSchemaDefaultValue, CftSchemaField, CftSchemaType,
@@ -147,6 +147,12 @@ impl SchemaView {
         None
     }
 
+    pub fn is_key_as_enum(&self, enum_name: &str) -> bool {
+        self.types
+            .values()
+            .any(|ty| ty.key_as_enum.as_deref() == Some(enum_name))
+    }
+
     pub fn key_field_type(&self, type_name: &str) -> FieldType {
         self.key_as_enum(type_name)
             .map_or(FieldType::String, FieldType::Enum)
@@ -238,7 +244,7 @@ impl TypeMeta {
             parent: schema_type.parent.clone(),
             is_abstract: schema_type.is_abstract,
             is_struct: has_annotation(&schema_type.annotations, "struct"),
-            key_as_enum: annotation_string_arg(&schema_type.annotations, "keyAsEnum"),
+            key_as_enum: annotation_name_arg(&schema_type.annotations, "keyAsEnum"),
             all_fields: schema_type
                 .all_fields
                 .iter()

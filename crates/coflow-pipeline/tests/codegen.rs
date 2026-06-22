@@ -69,8 +69,9 @@ fn generate_project_code_writes_key_as_enum_lockfile_for_declared_enums() {
     std::fs::write(
         root.join("schema").join("main.cft"),
         r#"
-            @keyAsEnum("GeneId")
+            @keyAsEnum(GeneId)
             type GeneConfig {}
+            enum GeneId {}
         "#,
     )
     .expect("write schema");
@@ -142,8 +143,9 @@ fn codegen_reports_malformed_enum_lockfile_before_overwriting_it() {
     std::fs::write(
         root.join("schema").join("main.cft"),
         r#"
-            @keyAsEnum("GeneId")
+            @keyAsEnum(GeneId)
             type GeneConfig {}
+            enum GeneId {}
         "#,
     )
     .expect("write schema");
@@ -196,12 +198,12 @@ fn codegen_preflight_reports_multiple_diagnostics_before_lockfile_or_writes() {
     std::fs::write(
         root.join("schema").join("main.cft"),
         r#"
-            type FooBar { value: int; }
-            @keyAsEnum("GeneId")
+            type class { value: int; }
+            @keyAsEnum(GeneId)
             type Foo_Bar {
-                foo_bar: int;
-                fooBar: int;
+                namespace: int;
             }
+            enum GeneId {}
         "#,
     )
     .expect("write schema");
@@ -242,13 +244,13 @@ outputs:
     assert!(
         messages
             .iter()
-            .any(|message| message.contains("generated C# file name `FooBar.cs` collides")),
+            .any(|message| message.contains("invalid C# type name `class`")),
         "messages: {messages:?}"
     );
     assert!(
         messages
             .iter()
-            .any(|message| message.contains("generated C# member name `FooBar` collides")),
+            .any(|message| message.contains("invalid C# field property name `namespace`")),
         "messages: {messages:?}"
     );
     assert!(!root

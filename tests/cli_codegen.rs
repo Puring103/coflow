@@ -50,8 +50,8 @@ fn codegen_csharp_writes_newtonsoft_json_loader() {
     let item_reward =
         std::fs::read_to_string(out_dir.join("ItemReward.cs")).expect("ItemReward.cs");
     assert!(item_reward.contains("public string Id { get; internal set; }"));
-    assert!(!item_reward.contains("public string ItemId { get; set; }"));
-    assert!(item_reward.contains("public Item Item { get; internal set; }"));
+    assert!(!item_reward.contains("public string item { get; set; }"));
+    assert!(item_reward.contains("public Item item { get; internal set; }"));
 
     std::fs::remove_dir_all(out_dir).expect("clean output dir");
 }
@@ -110,12 +110,12 @@ fn codegen_csharp_preflight_outputs_multiple_diagnostics_without_writing_files()
     std::fs::write(
         root.join("schema").join("main.cft"),
         r#"
-            type FooBar { value: int; }
-            @keyAsEnum("GeneId")
+            type class { value: int; }
+            @keyAsEnum(GeneId)
             type Foo_Bar {
-                foo_bar: int;
-                fooBar: int;
+                namespace: int;
             }
+            enum GeneId {}
         "#,
     )
     .expect("write schema");
@@ -150,8 +150,8 @@ outputs:
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("[CODEGEN-CSHARP-001] [CODEGEN]"));
     assert!(stderr.contains("invalid C# namespace `Game.1Bad`"));
-    assert!(stderr.contains("generated C# file name `FooBar.cs` collides"));
-    assert!(stderr.contains("generated C# member name `FooBar` collides"));
+    assert!(stderr.contains("invalid C# type name `class`"));
+    assert!(stderr.contains("invalid C# field property name `namespace`"));
     assert!(!stderr.contains("failed to parse"));
     assert_eq!(
         std::fs::read_to_string(&lockfile).expect("lockfile remains"),

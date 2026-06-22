@@ -322,6 +322,23 @@ type Item {\n\
     assert!(check_labels.contains(&"value".to_string()));
     assert!(check_labels.contains(&"target".to_string()));
     assert!(check_labels.contains(&"LIMIT".to_string()));
+    assert!(!check_labels.contains(&"len".to_string()));
+
+    let method_source = source.replacen("value > LIMIT", "xs.", 1);
+    let method_offset = method_source.find("xs.").expect("method receiver") + "xs.".len();
+    let method_document = LspDocument {
+        module_id: document.module_id.clone(),
+        uri: document.uri.clone(),
+        source: method_source,
+        ast: document.ast.clone(),
+    };
+    let method_labels = completion_labels(check_expression_completion_items(
+        &build,
+        &method_document,
+        method_offset,
+    ));
+    assert!(method_labels.contains(&"len".to_string()));
+    assert!(method_labels.contains(&"contains".to_string()));
 
     assert_eq!(
         completion_labels(dot_completion_items(

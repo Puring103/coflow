@@ -697,30 +697,30 @@ fn is_fatal_lsp_handler_error(message: &str) -> bool {
 const BUILTIN_FUNCTIONS: &[(&str, &str)] = &[
     (
         "len",
-        "len(col): return the number of items in an array or dict.",
+        "value.len(): return the number of items in an array or dict.",
     ),
     (
         "contains",
-        "contains(col, val): test array element or dict key presence.",
+        "value.contains(val): test array element or dict key presence.",
     ),
     (
         "unique",
-        "unique(array): true when supported scalar elements are unique.",
+        "value.unique(): true when supported scalar elements are unique.",
     ),
     (
         "min",
-        "min(array): minimum value in a non-empty int, float, or enum array.",
+        "value.min(): minimum value in a non-empty int, float, or enum array.",
     ),
     (
         "max",
-        "max(array): maximum value in a non-empty int, float, or enum array.",
+        "value.max(): maximum value in a non-empty int, float, or enum array.",
     ),
-    ("sum", "sum(array): sum an int or float array."),
-    ("keys", "keys(dict): return dict keys as an array."),
-    ("values", "values(dict): return dict values as an array."),
+    ("sum", "value.sum(): sum an int or float array."),
+    ("keys", "value.keys(): return dict keys as an array."),
+    ("values", "value.values(): return dict values as an array."),
     (
         "matches",
-        "matches(str, pat): regex match with a string literal pattern.",
+        "value.matches(pat): regex match with a string literal pattern.",
     ),
 ];
 
@@ -739,9 +739,9 @@ const ANNOTATIONS: &[AnnotationCompletion] = &[
     },
     AnnotationCompletion {
         label: "@keyAsEnum",
-        insert_text: "@keyAsEnum(\"${1:Name}\")",
+        insert_text: "@keyAsEnum(${1:EnumName})",
         detail: "type annotation",
-        documentation: "Generate a stable enum from this type's record keys.",
+        documentation: "Fill an empty enum placeholder from this type's record keys.",
     },
     AnnotationCompletion {
         label: "@display",
@@ -952,10 +952,13 @@ fn check_expression_completion_items(
     document: &LspDocument,
     offset: usize,
 ) -> Vec<Value> {
+    if is_method_completion_context(&document.source, offset) {
+        return function_completion_items();
+    }
+
     let mut items = Vec::new();
     items.extend(keyword_completion_items(&["when", "all", "any", "none"]));
     items.extend(literal_completion_items(true));
-    items.extend(function_completion_items());
     items.extend(const_completion_items(build));
 
     if let Some(current_type) = current_type_at(build, document, offset) {
@@ -1036,6 +1039,15 @@ fn function_completion_items() -> Vec<Value> {
             item
         })
         .collect()
+}
+
+fn is_method_completion_context(source: &str, offset: usize) -> bool {
+    let prefix = &source[..offset.min(source.len())];
+    prefix
+        .chars()
+        .rev()
+        .find(|ch| !ch.is_whitespace())
+        .is_some_and(|ch| ch == '.')
 }
 
 fn const_value_completion_items() -> Vec<Value> {
@@ -1999,6 +2011,23 @@ fn add_check_expr_semantic(
                 MOD_REFERENCE
             };
             push_semantic_span(&document.source, name.span, token_type, modifiers, tokens);
+            for arg in args {
+                add_check_expr_semantic(build, document, arg, tokens);
+            }
+        }
+        CheckExprKind::MethodCall {
+            receiver,
+            name,
+            args,
+        } => {
+            add_check_expr_semantic(build, document, receiver, tokens);
+            push_semantic_span(
+                &document.source,
+                name.span,
+                SEM_FUNCTION,
+                MOD_REFERENCE,
+                tokens,
+            );
             for arg in args {
                 add_check_expr_semantic(build, document, arg, tokens);
             }

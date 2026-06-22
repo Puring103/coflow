@@ -137,6 +137,11 @@ pub enum CftSchemaCheckExprKind {
         name: String,
         args: Vec<CftSchemaCheckExpr>,
     },
+    MethodCall {
+        receiver: Box<CftSchemaCheckExpr>,
+        name: String,
+        args: Vec<CftSchemaCheckExpr>,
+    },
     BinOp {
         op: CftSchemaBinOp,
         lhs: Box<CftSchemaCheckExpr>,

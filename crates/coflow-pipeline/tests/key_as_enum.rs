@@ -21,8 +21,9 @@ fn build_project_generates_key_as_enum_from_loaded_ids() {
     std::fs::write(
         root.join("schema").join("main.cft"),
         r#"
-            @keyAsEnum("GeneId")
+            @keyAsEnum(GeneId)
             type GeneConfig {}
+            enum GeneId {}
             type BioRemainsConfig {
                 gene: GeneConfig?;
             }
@@ -77,7 +78,7 @@ outputs:
     assert!(gene.contains("public GeneId Id { get; internal set; }"));
     let remains =
         std::fs::read_to_string(out_code.join("BioRemainsConfig.cs")).expect("BioRemainsConfig.cs");
-    assert!(remains.contains("public GeneConfig? Gene { get; internal set; }"));
+    assert!(remains.contains("public GeneConfig? gene { get; internal set; }"));
     assert!(root.join("coflow.enum.lock.json").exists());
     assert!(!out_code.join("coflow.enum.lock.json").exists());
 }
@@ -110,6 +111,71 @@ fn build_project_writes_key_as_enum_lockfile() {
     let gene_id = std::fs::read_to_string(code_dir.join("GeneId.cs")).expect("GeneId.cs");
     assert!(gene_id.contains("Gene_Spore = 0"));
     assert!(gene_id.contains("Gene_Mating = 1"));
+}
+
+#[test]
+fn build_project_allocates_flag_key_as_enum_values_as_bits() {
+    let root = temp_project_dir("coflow-pipeline-key-as-enum-flag-lockfile");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        r#"
+            @keyAsEnum(PermissionId)
+            type Permission {}
+
+            @flag
+            enum PermissionId {}
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("permissions.cfd"),
+        r"
+            Read: Permission {}
+            Write: Permission {}
+            Execute: Permission {}
+        ",
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - path: data
+outputs:
+  data:
+    type: json
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Game.Config
+",
+    )
+    .expect("write config");
+
+    let project = Project::open(Some(root.as_path())).expect("open project");
+    let outcome =
+        build_project(&project, BuildOptions::default()).expect("build project with flag key enum");
+
+    assert!(
+        matches!(outcome, PipelineOutcome::Success(_)),
+        "outcome: {outcome:?}"
+    );
+    let lockfile =
+        std::fs::read_to_string(root.join("coflow.enum.lock.json")).expect("enum lockfile");
+    assert!(lockfile.contains("\"Read\": 1"));
+    assert!(lockfile.contains("\"Write\": 2"));
+    assert!(lockfile.contains("\"Execute\": 4"));
+    let enum_file = std::fs::read_to_string(
+        root.join("generated")
+            .join("csharp")
+            .join("PermissionId.cs"),
+    )
+    .expect("PermissionId.cs");
+    assert!(enum_file.contains("[Flags]"));
 }
 
 #[test]

@@ -159,8 +159,10 @@ fn codegen_messagepack_uses_msgpack_loader_template() -> Result<(), String> {
 fn codegen_key_as_enum_generates_enum_and_strongly_typed_id_and_ref() -> Result<(), String> {
     let schema = compile_schema(
         r#"
-                @keyAsEnum("GeneId")
+                @keyAsEnum(GeneId)
                 type GeneConfig {}
+
+                enum GeneId {}
 
                 type BioRemainsConfig {
                     gene: GeneConfig?;
@@ -201,10 +203,10 @@ fn codegen_key_as_enum_generates_enum_and_strongly_typed_id_and_ref() -> Result<
     require_not_contains(gene, " = \"\";")?;
 
     let remains = generated_file(&files, "BioRemainsConfig.cs")?;
-    require_contains(remains, "public GeneConfig? Gene { get; internal set; }")?;
+    require_contains(remains, "public GeneConfig? gene { get; internal set; }")?;
     require_contains(
         remains,
-        "public GeneConfig FallbackGene { get; internal set; } = null!;",
+        "public GeneConfig fallback_gene { get; internal set; } = null!;",
     )?;
 
     let database = generated_file(&files, "GameConfig.cs")?;
@@ -223,8 +225,10 @@ fn codegen_key_as_enum_generates_enum_and_strongly_typed_id_and_ref() -> Result<
 fn codegen_key_as_enum_accepts_unicode_identifier_variants() -> Result<(), String> {
     let schema = compile_schema(
         r#"
-                @keyAsEnum("GeneId")
+                @keyAsEnum(GeneId)
                 type GeneConfig {}
+
+                enum GeneId {}
             "#,
     )?;
     let mut variants = BTreeMap::new();
@@ -245,6 +249,39 @@ fn codegen_key_as_enum_accepts_unicode_identifier_variants() -> Result<(), Strin
 
     let gene_id = generated_file(&files, "GeneId.cs")?;
     require_contains(gene_id, "Gene_孢子 = 0")?;
+    Ok(())
+}
+
+#[test]
+fn codegen_key_as_enum_preserves_placeholder_enum_flags() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+                @keyAsEnum(PermissionId)
+                type Permission {}
+
+                @flag
+                enum PermissionId {}
+            "#,
+    )?;
+    let mut variants = BTreeMap::new();
+    variants.insert(
+        "PermissionId".to_string(),
+        vec![CsharpKeyAsEnumVariant {
+            name: "Read".to_string(),
+            value: 1,
+        }],
+    );
+
+    let files = generate_json_with_key_as_enum_variants(
+        &schema,
+        &CsharpCodegenOptions::new("Game.Config"),
+        variants,
+    )
+    .map_err(|err| err.to_string())?;
+
+    let permission_id = generated_file(&files, "PermissionId.cs")?;
+    require_contains(permission_id, "[Flags]")?;
+    require_contains(permission_id, "Read = 1")?;
     Ok(())
 }
 
@@ -281,8 +318,10 @@ fn codegen_emits_unity_compatible_csharp_syntax() -> Result<(), String> {
 fn codegen_key_as_enum_generates_strongly_typed_string_field() -> Result<(), String> {
     let schema = compile_schema(
         r#"
-                @keyAsEnum("CreatureAttribute")
+                @keyAsEnum(CreatureAttribute)
                 type AttributeConfig {}
+
+                enum CreatureAttribute {}
 
                 sealed type ModifyValueOperation {
                     attribute: string;
@@ -325,10 +364,42 @@ fn codegen_key_as_enum_generates_strongly_typed_string_field() -> Result<(), Str
         "public CreatureAttribute Id { get; internal set; }",
     )?;
     let modifier = generated_file(&files, "ModifyValueOperation.cs")?;
-    require_contains(modifier, "public string Attribute { get; set; }")?;
+    require_contains(modifier, "public string attribute { get; set; }")?;
 
     let database = generated_file(&files, "GameConfig.cs")?;
     require_contains(database, "Id = id")?;
+    Ok(())
+}
+
+#[test]
+fn codegen_preserves_user_declared_csharp_names() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+                enum rarity_level {
+                    common_item,
+                }
+
+                type item_config {
+                    display_name: string;
+                    rarity: rarity_level = rarity_level.common_item;
+                }
+            "#,
+    )?;
+
+    let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+
+    let rarity = generated_file(&files, "rarity_level.cs")?;
+    require_contains(rarity, "public enum rarity_level")?;
+    require_contains(rarity, "common_item = 0")?;
+
+    let item = generated_file(&files, "item_config.cs")?;
+    require_contains(item, "public partial class item_config")?;
+    require_contains(item, "public string display_name { get; set; }")?;
+    require_contains(
+        item,
+        "public rarity_level rarity { get; set; } = rarity_level.common_item;",
+    )?;
     Ok(())
 }
 
@@ -509,8 +580,8 @@ fn codegen_does_not_emit_struct_property_initializers() -> Result<(), String> {
     let item = generated_file(&files, "Item.cs")?;
     require_contains(database, "var speed = ReadWithDefault")?;
     require_contains(database, "var crit = ReadWithDefault")?;
-    require_contains(item, "public StatBlock Stats { get; internal set; }")?;
-    require_not_contains(item, "public StatBlock Stats { get; set; } = null!;")?;
+    require_contains(item, "public StatBlock stats { get; internal set; }")?;
+    require_not_contains(item, "public StatBlock stats { get; set; } = null!;")?;
     Ok(())
 }
 
@@ -587,7 +658,7 @@ fn codegen_resolves_refs_inside_inline_polymorphic_values() -> Result<(), String
     let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
         .map_err(|err| err.to_string())?;
     let database = generated_file(&files, "GameConfig.cs")?;
-    require_contains(database, "ResolveRewardRefs(value.FirstClearReward")?;
+    require_contains(database, "ResolveRewardRefs(value.first_clear_reward")?;
     require_contains(database, "case SkillReward skillReward:")?;
     require_contains(database, "ResolveSkillRewardRefs(skillReward")?;
     require_contains(database, "ResolveRef(skillRefIndex")?;
@@ -616,7 +687,7 @@ fn codegen_preserves_missing_field_default_and_nullable_required_semantics() -> 
         .map_err(|err| err.to_string())?;
     let database = generated_file(&files, "GameConfig.cs")?;
     let item = generated_file(&files, "Item.cs")?;
-    require_contains(item, "public IReadOnlyList<string> Tags { get; set; }")?;
+    require_contains(item, "public IReadOnlyList<string> tags { get; set; }")?;
     require_contains(
         database,
         "var name = ReadWithDefault(obj, \"name\", path, \"unknown\"",
@@ -637,7 +708,7 @@ fn codegen_preserves_missing_field_default_and_nullable_required_semantics() -> 
 }
 
 #[test]
-fn codegen_renames_keyword_field_loader_locals() -> Result<(), String> {
+fn codegen_rejects_keyword_field_names() -> Result<(), String> {
     let schema = compile_schema(
         r"
                 type Item {
@@ -646,13 +717,9 @@ fn codegen_renames_keyword_field_loader_locals() -> Result<(), String> {
             ",
     )?;
 
-    let files = generate_messagepack(&schema, &CsharpCodegenOptions::new("Game.Config"))
-        .map_err(|err| err.to_string())?;
-    let database = generated_file(&files, "GameConfig.cs")?;
-    require_contains(database, "long paramsValue = default!;")?;
-    require_contains(database, "paramsValue = ReadInt(ref reader, fieldPath);")?;
-    require_contains(database, "Params = paramsValue,")?;
-    require_not_contains(database, "long params =")?;
+    let err = generate_messagepack(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .expect_err("keyword field should fail C# preflight");
+    require_contains(&err.to_string(), "invalid C# field property name `params`")?;
     Ok(())
 }
 
@@ -664,8 +731,6 @@ fn codegen_messagepack_renames_reserved_field_loader_locals() -> Result<(), Stri
                     has_id: string;
                     count: int;
                     count_value: int;
-                    params: int;
-                    params_value: int;
                     key: string;
                     key_value: string;
                     reader: string;
@@ -682,8 +747,6 @@ fn codegen_messagepack_renames_reserved_field_loader_locals() -> Result<(), Stri
     require_contains(database, "string hasId2 = default!;")?;
     require_contains(database, "long countValue = default!;")?;
     require_contains(database, "long countValue2 = default!;")?;
-    require_contains(database, "long paramsValue = default!;")?;
-    require_contains(database, "long paramsValue2 = default!;")?;
     require_contains(database, "string keyValue = default!;")?;
     require_contains(database, "string keyValue2 = default!;")?;
     require_contains(database, "string readerValue = default!;")?;
@@ -691,8 +754,6 @@ fn codegen_messagepack_renames_reserved_field_loader_locals() -> Result<(), Stri
     require_contains(database, "string fieldPathValue = default!;")?;
     require_contains(database, "countValue = ReadInt(ref reader, fieldPath);")?;
     require_contains(database, "countValue2 = ReadInt(ref reader, fieldPath);")?;
-    require_contains(database, "paramsValue = ReadInt(ref reader, fieldPath);")?;
-    require_contains(database, "paramsValue2 = ReadInt(ref reader, fieldPath);")?;
     require_contains(database, "hasId2 = ReadString(ref reader, fieldPath);")?;
     require_contains(database, "keyValue = ReadString(ref reader, fieldPath);")?;
     require_contains(database, "keyValue2 = ReadString(ref reader, fieldPath);")?;
@@ -702,18 +763,15 @@ fn codegen_messagepack_renames_reserved_field_loader_locals() -> Result<(), Stri
         database,
         "fieldPathValue = ReadString(ref reader, fieldPath);",
     )?;
-    require_contains(database, "Count = countValue,")?;
-    require_contains(database, "CountValue = countValue2,")?;
-    require_contains(database, "Params = paramsValue,")?;
-    require_contains(database, "ParamsValue = paramsValue2,")?;
-    require_contains(database, "HasId = hasId2,")?;
-    require_contains(database, "Key = keyValue,")?;
-    require_contains(database, "KeyValue = keyValue2,")?;
-    require_contains(database, "Reader = readerValue,")?;
-    require_contains(database, "Path = pathValue,")?;
-    require_contains(database, "FieldPath = fieldPathValue,")?;
+    require_contains(database, "count = countValue,")?;
+    require_contains(database, "count_value = countValue2,")?;
+    require_contains(database, "has_id = hasId2,")?;
+    require_contains(database, "key = keyValue,")?;
+    require_contains(database, "key_value = keyValue2,")?;
+    require_contains(database, "reader = readerValue,")?;
+    require_contains(database, "path = pathValue,")?;
+    require_contains(database, "field_path = fieldPathValue,")?;
     require_not_contains(database, "long count =")?;
-    require_not_contains(database, "long params =")?;
     require_not_contains(database, "string key =")?;
     require_not_contains(database, "string reader =")?;
     require_not_contains(database, "string path =")?;
@@ -735,8 +793,8 @@ fn codegen_struct_inheritance_emits_inherited_fields() -> Result<(), String> {
         .map_err(|err| err.to_string())?;
     let child = generated_file(&files, "Child.cs")?;
     let database = generated_file(&files, "GameConfig.cs")?;
-    require_contains(child, "public long BaseValue { get; set; }")?;
-    require_contains(child, "public long ChildValue { get; set; }")?;
+    require_contains(child, "public long base_value { get; set; }")?;
+    require_contains(child, "public long child_value { get; set; }")?;
     require_contains(
         database,
         "var baseValue = ReadRequired(obj, \"base_value\", path",
@@ -769,7 +827,7 @@ fn codegen_derived_class_inherits_base_id_property() -> Result<(), String> {
 }
 
 #[test]
-fn codegen_rejects_generated_member_name_collisions() -> Result<(), String> {
+fn codegen_allows_distinct_raw_member_names() -> Result<(), String> {
     let schema = compile_schema(
         r"
                 type Item {
@@ -779,13 +837,11 @@ fn codegen_rejects_generated_member_name_collisions() -> Result<(), String> {
             ",
     )?;
 
-    let Err(err) = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config")) else {
-        return Err("generated member collision should fail".to_string());
-    };
-    require_contains(
-        &err.to_string(),
-        "generated C# member name `FooBar` collides",
-    )?;
+    let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+    let item = generated_file(&files, "Item.cs")?;
+    require_contains(item, "public long foo_bar { get; set; }")?;
+    require_contains(item, "public long fooBar { get; set; }")?;
     Ok(())
 }
 
@@ -793,10 +849,9 @@ fn codegen_rejects_generated_member_name_collisions() -> Result<(), String> {
 fn codegen_preflight_collects_multiple_naming_diagnostics() -> Result<(), String> {
     let schema = compile_schema(
         r"
-                type FooBar { value: int; }
+                type class { value: int; }
                 type Foo_Bar {
-                    foo_bar: int;
-                    fooBar: int;
+                    namespace: int;
                 }
             ",
     )?;
@@ -820,13 +875,13 @@ fn codegen_preflight_collects_multiple_naming_diagnostics() -> Result<(), String
     assert!(
         messages
             .iter()
-            .any(|message| { message.contains("generated C# file name `FooBar.cs` collides") }),
+            .any(|message| { message.contains("invalid C# type name `class`") }),
         "messages: {messages:?}"
     );
     assert!(
         messages
             .iter()
-            .any(|message| { message.contains("generated C# member name `FooBar` collides") }),
+            .any(|message| { message.contains("invalid C# field property name `namespace`") }),
         "messages: {messages:?}"
     );
     assert!(
@@ -884,20 +939,6 @@ fn codegen_rejects_generated_file_name_collisions_and_reserved_names() -> Result
 
     let schema = compile_schema(
         r"
-                type FooBar { value: int; }
-                type Foo_Bar { value: int; }
-            ",
-    )?;
-    let Err(err) = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config")) else {
-        return Err("generated file collision should fail".to_string());
-    };
-    require_contains(
-        &err.to_string(),
-        "generated C# file name `FooBar.cs` collides",
-    )?;
-
-    let schema = compile_schema(
-        r"
                 type Item { value: int; }
                 type ITEM { value: int; }
             ",
@@ -912,7 +953,7 @@ fn codegen_rejects_generated_file_name_collisions_and_reserved_names() -> Result
 
     let schema = compile_schema(
         r"
-                type runtime_config { value: int; }
+                type RuntimeConfig { value: int; }
             ",
     )?;
     let Err(err) = generate_json(
@@ -929,7 +970,7 @@ fn codegen_rejects_generated_file_name_collisions_and_reserved_names() -> Result
 }
 
 #[test]
-fn codegen_uses_converted_type_and_enum_names_in_outputs() -> Result<(), String> {
+fn codegen_uses_raw_type_and_enum_names_in_outputs() -> Result<(), String> {
     let schema = compile_schema(
         r"
                 enum item_rarity { common, rare }
@@ -951,37 +992,36 @@ fn codegen_uses_converted_type_and_enum_names_in_outputs() -> Result<(), String>
 
     let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
         .map_err(|err| err.to_string())?;
-    let item = generated_file(&files, "ItemData.cs")?;
-    let rarity = generated_file(&files, "ItemRarity.cs")?;
-    let loot_table = generated_file(&files, "LootTable.cs")?;
+    let item = generated_file(&files, "item_data.cs")?;
+    let rarity = generated_file(&files, "item_rarity.cs")?;
+    let loot_table = generated_file(&files, "loot_table.cs")?;
     let database = generated_file(&files, "GameConfig.cs")?;
-    require_contains(rarity, "public enum ItemRarity")?;
-    require_contains(item, "public partial class ItemData")?;
-    require_contains(item, "public ItemRarity Rarity { get; set; }")?;
-    require_contains(loot_table, "public ItemData Item { get; internal set; }")?;
-    require_contains(database, "public IReadOnlyList<ItemData> ItemDatas")?;
+    require_contains(rarity, "public enum item_rarity")?;
+    require_contains(item, "public partial class item_data")?;
+    require_contains(item, "public item_rarity rarity { get; set; }")?;
+    require_contains(loot_table, "public item_data item { get; internal set; }")?;
+    require_contains(database, "public IReadOnlyList<item_data> item_datas")?;
     require_contains(
         database,
-        "private readonly Dictionary<string, ItemData> _itemDataIndex;",
+        "private readonly Dictionary<string, item_data> _itemDataIndex;",
     )?;
     require_contains(
         database,
-        "LoadTable(Path.Combine(dataDir, \"item_data.json\"), \"item_data\", LoadItemDataRow)",
+        "LoadTable(Path.Combine(dataDir, \"item_data.json\"), \"item_data\", Loaditem_dataRow)",
     )?;
     require_contains(database, "var itemDataRefIndex = itemDataIndex;")?;
     require_not_contains(database, "var itemDataRefIndex = item_dataIndex;")?;
-    require_contains(database, "private static ItemData LoadItemData(")?;
-    require_contains(database, "\"item_reward\" => LoadItemReward(token, path)")?;
+    require_contains(database, "private static item_data Loaditem_data(")?;
+    require_contains(database, "\"item_reward\" => Loaditem_reward(token, path)")?;
     require_contains(
         database,
-        "private static RewardBase LoadRewardBasePolymorphic(",
+        "private static reward_base Loadreward_basePolymorphic(",
     )?;
-    require_not_contains(database, "Loaditem_data")?;
     Ok(())
 }
 
 #[test]
-fn codegen_rejects_generated_enum_variant_name_collisions() -> Result<(), String> {
+fn codegen_allows_distinct_raw_enum_variant_names() -> Result<(), String> {
     let schema = compile_schema(
         r"
                 enum Rarity {
@@ -991,35 +1031,33 @@ fn codegen_rejects_generated_enum_variant_name_collisions() -> Result<(), String
             ",
     )?;
 
-    let Err(err) = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config")) else {
-        return Err("generated enum variant collision should fail".to_string());
-    };
-    require_contains(
-        &err.to_string(),
-        "generated C# enum variant name `CommonItem` collides",
-    )?;
+    let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+    let rarity = generated_file(&files, "Rarity.cs")?;
+    require_contains(rarity, "common_item = 0")?;
+    require_contains(rarity, "commonItem = 1")?;
     Ok(())
 }
 
 #[test]
-fn codegen_rejects_invalid_converted_generated_names() -> Result<(), String> {
-    let schema = compile_schema("type __ { value: int; }")?;
+fn codegen_rejects_invalid_raw_generated_names() -> Result<(), String> {
+    let schema = compile_schema("type class { value: int; }")?;
     let Err(err) = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config")) else {
-        return Err("empty converted type name should fail".to_string());
+        return Err("keyword type name should fail".to_string());
     };
-    require_contains(&err.to_string(), "invalid C# type name ``")?;
+    require_contains(&err.to_string(), "invalid C# type name `class`")?;
 
-    let schema = compile_schema("enum __ { Value }")?;
+    let schema = compile_schema("enum namespace { Value }")?;
     let Err(err) = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config")) else {
-        return Err("empty converted enum name should fail".to_string());
+        return Err("keyword enum name should fail".to_string());
     };
-    require_contains(&err.to_string(), "invalid C# enum name ``")?;
+    require_contains(&err.to_string(), "invalid C# enum name `namespace`")?;
 
-    let schema = compile_schema("enum Rarity { __ }")?;
+    let schema = compile_schema("enum Rarity { params }")?;
     let Err(err) = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config")) else {
-        return Err("empty converted enum variant name should fail".to_string());
+        return Err("keyword enum variant name should fail".to_string());
     };
-    require_contains(&err.to_string(), "invalid C# enum variant name ``")?;
+    require_contains(&err.to_string(), "invalid C# enum variant name `params`")?;
     Ok(())
 }
 
@@ -1091,8 +1129,8 @@ fn codegen_maps_float_to_double_everywhere() -> Result<(), String> {
         .map_err(|err| err.to_string())?;
     let item = generated_file(&json_files, "Item.cs")?;
     let database = generated_file(&json_files, "GameConfig.cs")?;
-    require_contains(item, "public double Scalar { get; set; } = 1.0;")?;
-    require_contains(item, "public IReadOnlyList<double> Amounts { get; set; }")?;
+    require_contains(item, "public double scalar { get; set; } = 1.0;")?;
+    require_contains(item, "public IReadOnlyList<double> amounts { get; set; }")?;
     require_contains(
         database,
         "private static double ReadFloat(JToken token, string path)",
@@ -1141,22 +1179,22 @@ fn codegen_struct_refs_return_updated_values_and_write_back() -> Result<(), Stri
     let child = generated_file(&files, "Child.cs")?;
     let parent = generated_file(&files, "Parent.cs")?;
     let database = generated_file(&files, "GameConfig.cs")?;
-    require_contains(child, "public Target Target { get; internal set; }")?;
-    require_contains(parent, "public Child Child { get; internal set; }")?;
+    require_contains(child, "public Target target { get; internal set; }")?;
+    require_contains(parent, "public Child child { get; internal set; }")?;
     require_contains(
         parent,
-        "public IReadOnlyList<Child> Children { get; internal set; }",
+        "public IReadOnlyList<Child> children { get; internal set; }",
     )?;
     require_contains(
         parent,
-        "public IReadOnlyDictionary<string, Child> ByName { get; internal set; }",
+        "public IReadOnlyDictionary<string, Child> by_name { get; internal set; }",
     )?;
     require_contains(database, "private static Child ResolveChildRefs(")?;
     require_contains(database, "return value;")?;
-    require_contains(database, "value.Child = ResolveChildRefs(")?;
+    require_contains(database, "value.child = ResolveChildRefs(")?;
     require_contains(database, "list1[i1] = ResolveChildRefs(")?;
     require_contains(database, "dictionary1[key1] = ResolveChildRefs(")?;
-    require_contains(database, "value.Parent = ResolveParentRefs(")?;
+    require_contains(database, "value.parent = ResolveParentRefs(")?;
     Ok(())
 }
 
@@ -1204,7 +1242,7 @@ fn codegen_does_not_write_back_nested_structs_without_refs() -> Result<(), Strin
         .map_err(|err| err.to_string())?;
     let holder = generated_file(&files, "Holder.cs")?;
     let database = generated_file(&files, "GameConfig.cs")?;
-    require_contains(holder, "public ValueBlock Block { get; internal set; }")?;
+    require_contains(holder, "public ValueBlock block { get; internal set; }")?;
     require_not_contains(database, "value.Block = ResolveValueBlockRefs(")?;
     Ok(())
 }
@@ -1234,7 +1272,7 @@ fn codegen_nested_struct_ref_containers_use_distinct_resolver_locals() -> Result
     let database = generated_file(&files, "GameConfig.cs")?;
     require_contains(
         database,
-        "var list1 = (List<List<Child>>)value.NestedChildren;",
+        "var list1 = (List<List<Child>>)value.nested_children;",
     )?;
     require_contains(database, "for (var i1 = 0; i1 < list1.Count; i1++)")?;
     require_contains(database, "var list2 = (List<Child>)list1[i1];")?;
@@ -1242,7 +1280,7 @@ fn codegen_nested_struct_ref_containers_use_distinct_resolver_locals() -> Result
     require_contains(database, "list2[i2] = ResolveChildRefs(")?;
     require_contains(
         database,
-        "var dictionary1 = (Dictionary<string, Dictionary<string, Child>>)value.NestedByName;",
+        "var dictionary1 = (Dictionary<string, Dictionary<string, Child>>)value.nested_by_name;",
     )?;
     require_contains(
         database,
@@ -1283,15 +1321,15 @@ fn codegen_nullable_struct_ref_collections_do_not_use_nullable_value() -> Result
     let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
         .map_err(|err| err.to_string())?;
     let database = generated_file(&files, "GameConfig.cs")?;
-    require_contains(database, "var nullableValue1 = value.MaybeChild.Value;")?;
-    require_contains(database, "value.MaybeChild = nullableValue1;")?;
-    require_contains(database, "var list1 = (List<Child>)value.MaybeChildren;")?;
+    require_contains(database, "var nullableValue1 = value.maybe_child.Value;")?;
+    require_contains(database, "value.maybe_child = nullableValue1;")?;
+    require_contains(database, "var list1 = (List<Child>)value.maybe_children;")?;
     require_contains(
         database,
-        "var dictionary1 = (Dictionary<string, Child>)value.MaybeByName;",
+        "var dictionary1 = (Dictionary<string, Child>)value.maybe_by_name;",
     )?;
-    require_not_contains(database, "value.MaybeChildren.Value")?;
-    require_not_contains(database, "value.MaybeByName.Value")?;
+    require_not_contains(database, "value.maybe_children.Value")?;
+    require_not_contains(database, "value.maybe_by_name.Value")?;
     Ok(())
 }
 

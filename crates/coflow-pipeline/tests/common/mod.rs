@@ -278,8 +278,9 @@ pub fn schema_only_project_with_outputs(
     std::fs::write(
         root.join("schema").join("main.cft"),
         r#"
-            @keyAsEnum("GeneId")
+            @keyAsEnum(GeneId)
             type GeneConfig {}
+            enum GeneId {}
         "#,
     )
     .expect("write schema");
@@ -372,8 +373,9 @@ pub fn write_key_as_enum_project(
     std::fs::write(
         root.join("schema").join("main.cft"),
         r#"
-            @keyAsEnum("GeneId")
+            @keyAsEnum(GeneId)
             type GeneConfig {}
+            enum GeneId {}
             type BioRemainsConfig {
                 gene: GeneConfig?;
             }
@@ -439,8 +441,9 @@ pub fn write_renamable_key_as_enum_project(
         root.join("schema").join("main.cft"),
         format!(
             r#"
-            @keyAsEnum("{enum_name}")
+            @keyAsEnum({enum_name})
             type GeneConfig {{}}
+            enum {enum_name} {{}}
         "#
         ),
     )

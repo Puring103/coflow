@@ -38,13 +38,13 @@ fn check_runner_accepts_virtual_ids_record_refs_and_quantifiers() {
                     id == "drop_1";
                     item.id == "item_1";
                     item.rarity >= Rarity.Common;
-                    len(weights) >= MIN_LEVEL;
-                    sum(weights) == 100;
+                    weights.len() >= MIN_LEVEL;
+                    weights.sum() == 100;
                     all entry in resistances {
                         entry.key >= Rarity.Common;
                         entry.value >= 0.0;
                     }
-                    contains(keys(resistances), Rarity.Rare);
+                    resistances.keys().contains(Rarity.Rare);
                 }
             }
         "#,
@@ -196,12 +196,12 @@ fn nullable_element_builtins_handle_nulls_and_empty_values() {
             type Holder {
                 nums: [int?] = [];
                 check {
-                    unique(nums);
-                    min(nums) == 1;
-                    max(nums) == 3;
-                    sum(nums) == 4;
-                    contains(nums, null);
-                    len(nums) == 3;
+                    nums.unique();
+                    nums.min() == 1;
+                    nums.max() == 3;
+                    nums.sum() == 4;
+                    nums.contains(null);
+                    nums.len() == 3;
                 }
             }
         "#,
@@ -226,7 +226,7 @@ fn nullable_element_builtins_handle_nulls_and_empty_values() {
         r#"
             type Holder {
                 nums: [int?] = [];
-                check { min(nums) >= 0; }
+                check { nums.min() >= 0; }
             }
         "#,
     );
@@ -249,7 +249,7 @@ fn contains_reports_runtime_type_errors_for_null_collections() {
         r#"
             type Holder {
                 items: [int]? = null;
-                check { contains(items, 1); }
+                check { items.contains(1); }
             }
         "#,
     );
@@ -569,7 +569,7 @@ fn runtime_reports_index_dict_and_regex_edges() {
         r#"
             type Item {
                 label: string;
-                check { matches(label, "配置"); }
+                check { label.matches("配置"); }
             }
         "#,
     );
@@ -639,7 +639,7 @@ fn empty_sum_and_float_edge_semantics_are_preserved() {
         r#"
             type Item {
                 nums: [int] = [];
-                check { sum(nums) == 0; }
+                check { nums.sum() == 0; }
             }
         "#,
     );

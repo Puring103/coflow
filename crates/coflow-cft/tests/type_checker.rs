@@ -18,6 +18,7 @@ fn type_checker_reports_name_field_enum_function_quantifier_index_and_regex_erro
         enum Rarity { Common, Rare, }
         type Item {
             key: string;
+            count: int;
             rarity: Rarity;
             tags: [string];
             scores: {string: int};
@@ -26,11 +27,11 @@ fn type_checker_reports_name_field_enum_function_quantifier_index_and_regex_erro
                 key.missing != "";
                 Rarity.Missing == rarity;
                 rarity > 5;
-                len(key);
+                key.len();
                 all ch in key { ch != ""; }
                 tags["x"] != "";
-                matches(key, PAT);
-                matches(key, "[");
+                key.matches(PAT);
+                key.matches("[");
             }
         }
     "#;
@@ -109,11 +110,11 @@ fn type_checker_accepts_nullable_element_builtins() {
             type Holder {
                 nums: [int?] = [];
                 check {
-                    unique(nums);
-                    min(nums) >= 0;
-                    max(nums) >= 0;
-                    sum(nums) >= 0;
-                    contains(nums, null);
+                    nums.unique();
+                    nums.min() >= 0;
+                    nums.max() >= 0;
+                    nums.sum() >= 0;
+                    nums.contains(null);
                 }
             }
         "#,
@@ -128,8 +129,8 @@ fn type_checker_treats_nullable_element_min_max_results_as_non_null() {
             type Holder {
                 nums: [int?] = [];
                 check {
-                    min(nums) is null;
-                    max(nums) is null;
+                    nums.min() is null;
+                    nums.max() is null;
                 }
             }
         "#,
@@ -222,12 +223,12 @@ fn type_checker_reports_bitwise_shift_and_function_edges() {
                 color | Color.Red != Color.Blue;
                 flags & 1 != Flags.A;
                 color << 1 == color;
-                unique(floats);
-                unique(objects);
-                min(texts) != "";
-                sum(texts) == 0;
-                contains(numbers, "x");
-                len(numbers, texts) == 0;
+                floats.unique();
+                objects.unique();
+                texts.min() != "";
+                texts.sum() == 0;
+                numbers.contains("x");
+                numbers.len(texts) == 0;
             }
         }
     "#;
@@ -254,9 +255,9 @@ fn type_checker_accepts_dict_entry_keys_values_and_enum_constructor() {
 
             check {
                 (flags & Flags.A) != Flags(0);
-                contains(resistances, Damage.Fire);
-                len(keys(resistances)) >= 0;
-                sum(values(names)) >= 0;
+                resistances.contains(Damage.Fire);
+                resistances.keys().len() >= 0;
+                names.values().sum() >= 0;
                 all entry in resistances {
                     entry.key >= Damage.Fire;
                     0.0 <= entry.value <= 1.0;
@@ -269,7 +270,7 @@ fn type_checker_accepts_dict_entry_keys_values_and_enum_constructor() {
 }
 
 /// Regression: bare enum names (e.g. `Rarity > 5`, `Rarity + 1`,
-/// `len(Rarity)`) used to surface as a generic `OperatorTypeMismatch` /
+/// `Rarity.len()`) used to surface as a generic `OperatorTypeMismatch` /
 /// `FunctionArgTypeMismatch` without explaining that the *enum type itself*
 /// was being used as a value. The diagnostic now mentions the enum and
 /// suggests `EnumName.Variant` or `EnumName(0)`.
@@ -282,7 +283,7 @@ fn type_checker_reports_bare_enum_name_used_as_value() {
             check {
                 Rarity > 5;
                 rarity == Rarity;
-                len(Rarity) > 0;
+                Rarity.len() > 0;
             }
         }
     "#;
@@ -342,12 +343,13 @@ fn type_checker_rejects_runtime_only_eval_edges_before_checker_runs() {
                 rarity | Element.Fire == rarity;
                 rarity << 1 == rarity;
                 key.missing != "";
-                len(key) > 0;
-                keys(nums);
-                values(nums);
-                sum(texts) > 0;
-                min(key) > 0;
-                matches(1, "[");
+                key.len() > 0;
+                nums.keys();
+                nums.values();
+                texts.sum() > 0;
+                key.min() > 0;
+                count.matches("[");
+                key.missingFn();
                 all entry in resistances {
                     entry.missing != 0;
                 }
@@ -373,6 +375,7 @@ fn type_checker_reports_builtin_arity_and_operator_edges() {
         enum Rarity { Common, Rare, }
         type Item {
             key: string;
+            count: int;
             flags: Flags;
             rarity: Rarity;
             nums: [int];
@@ -384,16 +387,17 @@ fn type_checker_reports_builtin_arity_and_operator_edges() {
                 true + false == 0;
                 1 // 1.0 == 1;
                 key[0] != "";
-                contains(key, 1);
-                contains(nums);
-                unique();
-                min();
-                sum();
-                keys();
-                values();
-                matches(key);
-                matches(key, "[");
-                matches(key, key);
+                key.contains(1);
+                nums.contains();
+                key.unique(1);
+                key.min(1);
+                key.sum(1);
+                key.keys(1);
+                key.values(1);
+                key.matches();
+                key.matches("[");
+                key.matches("[", "[");
+                key.matches(key);
                 all entry in weights {
                     entry.key > 0;
                 }
@@ -420,7 +424,7 @@ fn type_checker_reports_non_enum_variant_and_contains_dict_key_edges() {
             tags: {string: int};
             check {
                 Item.Missing == 0;
-                contains(tags, 1);
+                tags.contains(1);
             }
         }
     "#;
@@ -508,9 +512,9 @@ fn type_checker_suppresses_cascaded_function_and_field_errors_when_operand_is_un
                     nums[missing] > 0;
                     attrs[missing] > 0;
                     MissingEnum(missing) == 0;
-                    contains(nums, missing);
-                    contains(attrs, missing);
-                    matches(missing, "[");
+                    nums.contains(missing);
+                    attrs.contains(missing);
+                    missing.matches("[");
                     missing.value == 0;
                     !missing;
                     missing | 1 == 1;
@@ -563,10 +567,11 @@ fn type_checker_reports_array_contains_dict_contains_and_matches_arg_edges() {
             nums: [int];
             attrs: {Damage: int};
             key: string;
+            count: int;
             check {
-                contains(nums, "1");
-                contains(attrs, "Fire");
-                matches(1, ".*");
+                nums.contains("1");
+                attrs.contains("Fire");
+                count.matches(".*");
             }
         }
     "#;

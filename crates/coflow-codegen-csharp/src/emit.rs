@@ -25,7 +25,7 @@ pub fn build_csharp_enum(schema_enum: &CftSchemaEnum) -> CsharpEnum {
             .variants
             .iter()
             .map(|variant| CsharpEnumVariant {
-                name: pascal_case(&variant.name),
+                name: variant.name.clone(),
                 value: variant.value,
                 summary: display_annotation(&variant.annotations),
                 obsolete: has_annotation(&variant.annotations, "deprecated"),
@@ -104,7 +104,7 @@ pub fn build_csharp_type(schema_type: &CftSchemaType, view: &SchemaView) -> Csha
 
         properties.push(CsharpProperty {
             visibility: "public".to_string(),
-            name: pascal_case(&field.name),
+            name: field.name.clone(),
             type_name: csharp_property_type(&csharp_ty, view),
             setter: if field_needs_internal_set(&field_ty, view) {
                 "internal set".to_string()
@@ -370,7 +370,7 @@ fn loader_methods(view: &SchemaView) -> Result<Vec<CsharpLoader>, CsharpCodegenE
                             default_value_expr(field.default.as_ref(), &csharp_ty, view)?;
                         let is_required = default_expr.is_none();
                         Ok(CsharpLoadField {
-                            property: pascal_case(&field.name),
+                            property: field.name.clone(),
                             source_name: field.name.clone(),
                             local_name: local_name.clone(),
                             type_name: csharp_type(&csharp_ty, view),
@@ -384,7 +384,7 @@ fn loader_methods(view: &SchemaView) -> Result<Vec<CsharpLoader>, CsharpCodegenE
                             default_expr,
                             is_required,
                             assignments: vec![CsharpLoadAssignment {
-                                property: pascal_case(&field.name),
+                                property: field.name.clone(),
                                 expr: local_name,
                             }],
                         })
@@ -572,7 +572,7 @@ fn push_resolve_field(
     field: &FieldMeta,
     ref_targets: &[String],
 ) -> Result<(), CsharpCodegenError> {
-    let property = pascal_case(&field.name);
+    let property = field.name.clone();
 
     if !value_needs_resolve(&field.ty) {
         return Ok(());
@@ -988,6 +988,10 @@ fn read_token_expr(
         FieldType::Float => Ok(format!("ReadFloat({token}, {path})")),
         FieldType::Bool => Ok(format!("ReadBool({token}, {path})")),
         FieldType::String => Ok(format!("ReadString({token}, {path})")),
+        FieldType::Enum(name) if view.is_key_as_enum(name) => Ok(format!(
+            "ReadStringEnum<{}>({token}, {path})",
+            view.csharp_enum_name(name)
+        )),
         FieldType::Enum(name) if view.enums.contains(name) => Ok(format!(
             "ReadEnum<{}>({token}, {path})",
             view.csharp_enum_name(name)
@@ -1064,6 +1068,10 @@ fn read_messagepack_expr(
         FieldType::Float => Ok(format!("ReadFloat(ref {reader}, {path})")),
         FieldType::Bool => Ok(format!("ReadBool(ref {reader}, {path})")),
         FieldType::String => Ok(format!("ReadString(ref {reader}, {path})")),
+        FieldType::Enum(name) if view.is_key_as_enum(name) => Ok(format!(
+            "ReadStringEnum<{}>(ref {reader}, {path})",
+            view.csharp_enum_name(name)
+        )),
         FieldType::Enum(name) if view.enums.contains(name) => Ok(format!(
             "ReadEnum<{}>(ref {reader}, {path})",
             view.csharp_enum_name(name)
@@ -1201,11 +1209,7 @@ fn default_value_expr(
         CftSchemaDefaultValue::String(value) => string_default_expr(value, ty, view),
         CftSchemaDefaultValue::Enum {
             enum_name, variant, ..
-        } => format!(
-            "{}.{}",
-            view.csharp_enum_name(enum_name),
-            pascal_case(variant)
-        ),
+        } => format!("{}.{}", view.csharp_enum_name(enum_name), variant.clone()),
         CftSchemaDefaultValue::EmptyArray | CftSchemaDefaultValue::EmptyObject => {
             collection_default_expr(ty.non_nullable(), view)?
         }
@@ -1214,7 +1218,7 @@ fn default_value_expr(
 
 fn string_default_expr(value: &str, ty: &FieldType, view: &SchemaView) -> String {
     match ty.non_nullable() {
-        FieldType::Enum(name) if !view.enums.contains(name) => {
+        FieldType::Enum(name) if view.is_key_as_enum(name) => {
             let enum_name = view.csharp_enum_name(name);
             let value = escape_csharp_string(value);
             format!("({enum_name})Enum.Parse(typeof({enum_name}), \"{value}\")")

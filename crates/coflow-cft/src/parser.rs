@@ -900,14 +900,38 @@ impl<'a> Parser<'a> {
                 };
             } else if self.eat(&TokenKind::Dot).is_some() {
                 let name = self.expect_ident()?;
-                let span = Span::new(expr.span.start, name.span.end);
-                expr = CheckExpr {
-                    span,
-                    kind: CheckExprKind::Field {
-                        expr: Box::new(expr),
-                        name,
-                    },
-                };
+                if self.eat(&TokenKind::LParen).is_some() {
+                    let mut args = Vec::new();
+                    if !self.at(&TokenKind::RParen) {
+                        loop {
+                            args.push(self.parse_or_expr()?);
+                            if self.eat(&TokenKind::Comma).is_none() {
+                                break;
+                            }
+                        }
+                    }
+                    let end = self
+                        .expect_simple(&TokenKind::RParen, CftErrorCode::ExpectedToken)?
+                        .end;
+                    let span = Span::new(expr.span.start, end);
+                    expr = CheckExpr {
+                        span,
+                        kind: CheckExprKind::MethodCall {
+                            receiver: Box::new(expr),
+                            name,
+                            args,
+                        },
+                    };
+                } else {
+                    let span = Span::new(expr.span.start, name.span.end);
+                    expr = CheckExpr {
+                        span,
+                        kind: CheckExprKind::Field {
+                            expr: Box::new(expr),
+                            name,
+                        },
+                    };
+                }
             } else if self.eat(&TokenKind::LBracket).is_some() {
                 let index = self.parse_or_expr()?;
                 let end = self

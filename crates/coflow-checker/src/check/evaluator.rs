@@ -396,6 +396,11 @@ impl<'a> CheckEvaluator<'a> {
                 ))
             }
             CftSchemaCheckExprKind::Call { name, args } => self.eval_call(name, args),
+            CftSchemaCheckExprKind::MethodCall {
+                receiver,
+                name,
+                args,
+            } => self.eval_method_call(receiver, name, args),
             CftSchemaCheckExprKind::BinOp { op, lhs, rhs } => self.eval_bin_op(*op, lhs, rhs),
             CftSchemaCheckExprKind::Unary { op, expr: inner } => {
                 let value = self.eval_expr(inner)?;
@@ -857,6 +862,187 @@ impl<'a> CheckEvaluator<'a> {
         }
     }
 
+    fn eval_method_call(
+        &mut self,
+        receiver: &CftSchemaCheckExpr,
+        name: &str,
+        args: &[CftSchemaCheckExpr],
+    ) -> Result<LocatedCheckValue, ()> {
+        let Some(builtin) = Builtin::by_name(name) else {
+            self.diag(
+                CfdErrorCode::CheckEvalTypeError,
+                format!("unknown function `{name}`"),
+            );
+            return Err(());
+        };
+        let expected_args = builtin.arity().saturating_sub(1);
+        if args.len() != expected_args {
+            self.diag(
+                CfdErrorCode::CheckEvalTypeError,
+                format!(
+                    "{} expects {} argument{}",
+                    builtin.name(),
+                    expected_args,
+                    if expected_args == 1 { "" } else { "s" }
+                ),
+            );
+            return Err(());
+        }
+
+        let receiver_value = self.eval_expr(receiver)?;
+        match builtin {
+            Builtin::Len => match receiver_value.value {
+                CheckValue::Array { items, .. } => Ok(LocatedCheckValue::new(
+                    CheckValue::Int(items.len() as i64),
+                    receiver_value.path,
+                )),
+                CheckValue::Dict { entries, .. } => Ok(LocatedCheckValue::new(
+                    CheckValue::Int(entries.len() as i64),
+                    receiver_value.path,
+                )),
+                other => {
+                    self.diag_at(
+                        CfdErrorCode::CheckEvalTypeError,
+                        receiver_value.path,
+                        format!(
+                            "len expects array or dict, got {}",
+                            format_value_for_message(&other)
+                        ),
+                    );
+                    Err(())
+                }
+            },
+            Builtin::Contains => {
+                let value = self.eval_expr(&args[0])?;
+                Ok(LocatedCheckValue::new(
+                    CheckValue::Bool(self.contains_value(&receiver_value, &value.value)?),
+                    receiver_value.path.clone(),
+                ))
+            }
+            Builtin::Unique => {
+                let arg_kind = receiver_value.value.clone();
+                let CheckValue::Array { items, .. } = receiver_value.value else {
+                    self.diag_at(
+                        CfdErrorCode::CheckEvalTypeError,
+                        receiver_value.path,
+                        format!(
+                            "unique expects array, got {}",
+                            format_value_for_message(&arg_kind)
+                        ),
+                    );
+                    return Err(());
+                };
+                let mut seen = BTreeSet::new();
+                for item in items {
+                    let Some(key) = comparable_key(&item) else {
+                        self.diag_at(
+                            CfdErrorCode::CheckEvalTypeError,
+                            receiver_value.path.clone(),
+                            format!(
+                                "unique element is not comparable: got {}",
+                                format_value_for_message(&item)
+                            ),
+                        );
+                        return Err(());
+                    };
+                    if !seen.insert(key) {
+                        return Ok(LocatedCheckValue::new(
+                            CheckValue::Bool(false),
+                            receiver_value.path,
+                        ));
+                    }
+                }
+                Ok(LocatedCheckValue::new(
+                    CheckValue::Bool(true),
+                    receiver_value.path,
+                ))
+            }
+            Builtin::Min | Builtin::Max => self.eval_min_max_value(builtin, receiver_value),
+            Builtin::Sum => self.eval_sum_value(receiver_value),
+            Builtin::Keys => {
+                let arg_kind = receiver_value.value.clone();
+                let CheckValue::Dict {
+                    entries, key_type, ..
+                } = receiver_value.value
+                else {
+                    self.diag_at(
+                        CfdErrorCode::CheckEvalTypeError,
+                        receiver_value.path,
+                        format!(
+                            "keys expects dict, got {}",
+                            format_value_for_message(&arg_kind)
+                        ),
+                    );
+                    return Err(());
+                };
+                Ok(LocatedCheckValue::new(
+                    CheckValue::Array {
+                        items: entries.into_iter().map(|entry| *entry.key).collect(),
+                        element_type: key_type,
+                    },
+                    receiver_value.path,
+                ))
+            }
+            Builtin::Values => {
+                let arg_kind = receiver_value.value.clone();
+                let CheckValue::Dict {
+                    entries,
+                    value_type,
+                    ..
+                } = receiver_value.value
+                else {
+                    self.diag_at(
+                        CfdErrorCode::CheckEvalTypeError,
+                        receiver_value.path,
+                        format!(
+                            "values expects dict, got {}",
+                            format_value_for_message(&arg_kind)
+                        ),
+                    );
+                    return Err(());
+                };
+                Ok(LocatedCheckValue::new(
+                    CheckValue::Array {
+                        items: entries.into_iter().map(|entry| entry.value).collect(),
+                        element_type: value_type,
+                    },
+                    receiver_value.path,
+                ))
+            }
+            Builtin::Matches => {
+                let value_kind = receiver_value.value.clone();
+                let CheckValue::String(text) = receiver_value.value else {
+                    self.diag_at(
+                        CfdErrorCode::CheckEvalTypeError,
+                        receiver_value.path,
+                        format!(
+                            "matches value is not string: got {}",
+                            format_value_for_message(&value_kind)
+                        ),
+                    );
+                    return Err(());
+                };
+                let CftSchemaCheckExprKind::String(pattern) = &args[0].kind else {
+                    self.diag(
+                        CfdErrorCode::CheckEvalTypeError,
+                        "matches pattern must be a string literal",
+                    );
+                    return Err(());
+                };
+                let regex = Regex::new(pattern).map_err(|err| {
+                    self.diag(
+                        CfdErrorCode::CheckEvalTypeError,
+                        format!("regex pattern `{pattern}` cannot be compiled: {err}"),
+                    );
+                })?;
+                Ok(LocatedCheckValue::new(
+                    CheckValue::Bool(regex.is_match(&text)),
+                    receiver_value.path,
+                ))
+            }
+        }
+    }
+
     fn require_builtin_arity(
         &mut self,
         builtin: Builtin,
@@ -895,6 +1081,14 @@ impl<'a> CheckEvaluator<'a> {
         args: &[CftSchemaCheckExpr],
     ) -> Result<LocatedCheckValue, ()> {
         let arg_value = self.eval_expr(&args[0])?;
+        self.eval_min_max_value(builtin, arg_value)
+    }
+
+    fn eval_min_max_value(
+        &mut self,
+        builtin: Builtin,
+        arg_value: LocatedCheckValue,
+    ) -> Result<LocatedCheckValue, ()> {
         let arg_kind = arg_value.value.clone();
         let CheckValue::Array { items, .. } = arg_value.value else {
             self.diag_at(
@@ -943,6 +1137,10 @@ impl<'a> CheckEvaluator<'a> {
 
     fn eval_sum(&mut self, args: &[CftSchemaCheckExpr]) -> Result<LocatedCheckValue, ()> {
         let arg_value = self.eval_expr(&args[0])?;
+        self.eval_sum_value(arg_value)
+    }
+
+    fn eval_sum_value(&mut self, arg_value: LocatedCheckValue) -> Result<LocatedCheckValue, ()> {
         let arg_kind = arg_value.value.clone();
         let CheckValue::Array {
             items,

@@ -181,7 +181,7 @@ fn spec_comprehensive_example_compiles() {
         }
 
         @display("物品")
-        @keyAsEnum("ItemKey")
+        @keyAsEnum(ItemKey)
         type Item {
           key: string;
 
@@ -195,10 +195,11 @@ fn spec_comprehensive_example_compiles() {
             id != "";
             key != "";
             name != "";
-            matches(key, "^[a-z][a-z0-9_]*$");
+            key.matches("^[a-z][a-z0-9_]*$");
             none tag in tags { tag == ""; }
           }
         }
+        enum ItemKey {}
 
         abstract type Reward {
           key: string;
@@ -225,16 +226,16 @@ fn spec_comprehensive_example_compiles() {
           weights: [int];
 
           check {
-            len(rewards) == len(weights);
-            len(rewards) > 0;
-            sum(weights) == 100;
-            min(weights) >= 0;
+            rewards.len() == weights.len();
+            rewards.len() > 0;
+            weights.sum() == 100;
+            weights.min() >= 0;
             any reward in rewards { reward is CurrencyReward; }
           }
         }
 
         @display("怪物")
-        @keyAsEnum("MonsterKey")
+        @keyAsEnum(MonsterKey)
         type Monster {
           key: string;
 
@@ -257,7 +258,7 @@ fn spec_comprehensive_example_compiles() {
             1 <= level <= MAX_LEVEL;
             stats.hp > 0;
             rarity >= Rarity.Common;
-            contains(resistances, DamageType.Fire);
+            resistances.contains(DamageType.Fire);
 
             when boss_drop != null {
               boss_drop.rarity >= Rarity.Rare;
@@ -268,6 +269,7 @@ fn spec_comprehensive_example_compiles() {
             }
           }
         }
+        enum MonsterKey {}
 
         type Skill {
           key:        string;
@@ -292,5 +294,5 @@ fn spec_comprehensive_example_compiles() {
 
     let container = compile_one(source).unwrap();
     assert!(container.has_type("Monster"));
-    assert_eq!(container.all_enums().count(), 3);
+    assert_eq!(container.all_enums().count(), 5);
 }

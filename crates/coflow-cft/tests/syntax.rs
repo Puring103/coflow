@@ -52,11 +52,12 @@ fn parser_accepts_core_syntax() {
         sealed type Position { x: float; y: float; }
 
         @display("Item")
-        @keyAsEnum("BaseKey")
+        @keyAsEnum(BaseKey)
         abstract type Base {
             key: string;
             check { key != ""; }
         }
+        enum BaseKey {}
 
         sealed type Item : Base {
             rarity: Rarity = Rarity.Common;
