@@ -249,6 +249,11 @@ pub enum CheckExprKind {
         name: NameRef,
         args: Vec<CheckExpr>,
     },
+    MethodCall {
+        receiver: Box<CheckExpr>,
+        name: NameRef,
+        args: Vec<CheckExpr>,
+    },
     BinOp {
         op: BinOp,
         lhs: Box<CheckExpr>,

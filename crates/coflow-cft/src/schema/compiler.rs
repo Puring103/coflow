@@ -540,15 +540,13 @@ impl<'a> SchemaCompiler<'a> {
                 }
             }
             if let Some(annotation) = find_annotation(&info.def.annotations, "keyAsEnum") {
-                if let Some(crate::ast::AnnotationArg::String(enum_name, _)) =
-                    annotation.args.first()
-                {
-                    this.validate_key_as_enum_name(&info.module, annotation, enum_name);
+                if let Some(crate::ast::AnnotationArg::Name(enum_name)) = annotation.args.first() {
+                    this.validate_key_as_enum_name(&info.module, &enum_name.name, enum_name.span);
                     this.register_key_as_enum_name(
                         &mut key_as_enum_names,
                         &info.module,
                         annotation,
-                        enum_name,
+                        &enum_name.name,
                     );
                 }
             }
@@ -666,33 +664,54 @@ impl<'a> SchemaCompiler<'a> {
     fn validate_key_as_enum_name(
         &mut self,
         module: &ModuleId,
-        annotation: &Annotation,
         enum_name: &str,
+        enum_name_span: Span,
     ) {
-        if !is_valid_csharp_identifier(enum_name) {
-            self.push_diag(
-                CftErrorCode::InvalidAnnotationArgument,
-                module,
-                annotation.span,
-                format!("@keyAsEnum enum name `{enum_name}` is not a valid C# identifier"),
-            );
-        }
-        if let Some(symbol) = self.symbols.get(enum_name) {
-            self.diagnostics.push(
-                CftDiagnostic::error(
-                    CftErrorCode::DuplicateGlobalName,
-                    module.clone(),
-                    annotation.span,
-                    format!(
-                        "@keyAsEnum enum name `{enum_name}` collides with an existing schema name"
+        match self.symbols.get(enum_name) {
+            Some(symbol) if symbol.kind == SymbolKind::Enum => {
+                if let Some(info) = self.enums.get(enum_name) {
+                    if !info.def.variants.is_empty() {
+                        self.diagnostics.push(
+                            CftDiagnostic::error(
+                                CftErrorCode::KeyAsEnumRequiresEmptyEnum,
+                                module.clone(),
+                                enum_name_span,
+                                format!(
+                                    "@keyAsEnum enum `{enum_name}` must be declared with no variants"
+                                ),
+                            )
+                            .with_related(
+                                info.module.clone(),
+                                info.def.name_span,
+                                "enum placeholder is defined here",
+                            ),
+                        );
+                    }
+                }
+            }
+            Some(symbol) => {
+                self.diagnostics.push(
+                    CftDiagnostic::error(
+                        CftErrorCode::KeyAsEnumRequiresEmptyEnum,
+                        module.clone(),
+                        enum_name_span,
+                        format!("@keyAsEnum argument `{enum_name}` must name an enum"),
+                    )
+                    .with_related(
+                        symbol.module.clone(),
+                        symbol.span,
+                        "name is defined here",
                     ),
-                )
-                .with_related(
-                    symbol.module.clone(),
-                    symbol.span,
-                    "existing schema name is here",
-                ),
-            );
+                );
+            }
+            None => {
+                self.push_diag(
+                    CftErrorCode::UnknownNamedType,
+                    module,
+                    enum_name_span,
+                    format!("unknown @keyAsEnum enum `{enum_name}`"),
+                );
+            }
         }
     }
 
@@ -1196,97 +1215,4 @@ impl<'a> SchemaCompiler<'a> {
             }
         }
     }
-}
-
-fn is_valid_csharp_identifier(value: &str) -> bool {
-    let mut chars = value.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    !is_csharp_keyword(value)
-        && (first == '_' || first.is_ascii_alphabetic())
-        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
-}
-
-fn is_csharp_keyword(value: &str) -> bool {
-    matches!(
-        value,
-        "abstract"
-            | "as"
-            | "base"
-            | "bool"
-            | "break"
-            | "byte"
-            | "case"
-            | "catch"
-            | "char"
-            | "checked"
-            | "class"
-            | "const"
-            | "continue"
-            | "decimal"
-            | "default"
-            | "delegate"
-            | "do"
-            | "double"
-            | "else"
-            | "enum"
-            | "event"
-            | "explicit"
-            | "extern"
-            | "false"
-            | "finally"
-            | "fixed"
-            | "float"
-            | "for"
-            | "foreach"
-            | "goto"
-            | "if"
-            | "implicit"
-            | "in"
-            | "int"
-            | "interface"
-            | "internal"
-            | "is"
-            | "lock"
-            | "long"
-            | "namespace"
-            | "new"
-            | "null"
-            | "object"
-            | "operator"
-            | "out"
-            | "override"
-            | "params"
-            | "private"
-            | "protected"
-            | "public"
-            | "readonly"
-            | "ref"
-            | "return"
-            | "sbyte"
-            | "sealed"
-            | "short"
-            | "sizeof"
-            | "stackalloc"
-            | "static"
-            | "string"
-            | "struct"
-            | "switch"
-            | "this"
-            | "throw"
-            | "true"
-            | "try"
-            | "typeof"
-            | "uint"
-            | "ulong"
-            | "unchecked"
-            | "unsafe"
-            | "ushort"
-            | "using"
-            | "virtual"
-            | "void"
-            | "volatile"
-            | "while"
-    )
 }

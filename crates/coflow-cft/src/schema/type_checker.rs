@@ -120,6 +120,11 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 Ty::Bool
             }
             CheckExprKind::Call { name, args } => self.check_call(name, args, expr.span),
+            CheckExprKind::MethodCall {
+                receiver,
+                name,
+                args,
+            } => self.check_method_call(receiver, name, args, expr.span),
         }
     }
 
@@ -336,36 +341,54 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
             return Ty::Enum(name.name.clone());
         }
 
+        self.diag(
+            CftErrorCode::UnknownFunction,
+            name.span,
+            format!("unknown function `{}`", name.name),
+        );
+        for arg in args {
+            self.check_expr_value(arg);
+        }
+        Ty::Unknown
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn check_method_call(
+        &mut self,
+        receiver: &CheckExpr,
+        name: &NameRef,
+        args: &[CheckExpr],
+        span: Span,
+    ) -> Ty {
+        let receiver_ty = self.check_expr_value(receiver);
         match name.name.as_str() {
             "len" => {
-                if self.expect_arity(args, 1, span).is_err() {
+                if self.expect_arity(args, 0, span).is_err() {
                     return Ty::Unknown;
                 }
-                let ty = self.check_expr_value(&args[0]);
                 if !matches!(
-                    unwrap_nullable(&ty),
+                    unwrap_nullable(&receiver_ty),
                     Ty::Array(_) | Ty::Dict(_, _) | Ty::Unknown
                 ) {
                     self.diag(
                         CftErrorCode::FunctionArgTypeMismatch,
-                        args[0].span,
+                        receiver.span,
                         "len expects an array or dict",
                     );
                 }
                 Ty::Int
             }
             "contains" => {
-                if self.expect_arity(args, 2, span).is_err() {
+                if self.expect_arity(args, 1, span).is_err() {
                     return Ty::Bool;
                 }
-                let col_ty = self.check_expr_value(&args[0]);
-                let value_ty = self.check_expr_value(&args[1]);
-                match unwrap_nullable(&col_ty) {
+                let value_ty = self.check_expr_value(&args[0]);
+                match unwrap_nullable(&receiver_ty) {
                     Ty::Array(elem) => {
                         if !types_comparable(elem, &value_ty) && value_ty != Ty::Unknown {
                             self.diag(
                                 CftErrorCode::FunctionArgTypeMismatch,
-                                args[1].span,
+                                args[0].span,
                                 "contains value type does not match array element type",
                             );
                         }
@@ -374,7 +397,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                         if !types_comparable(key, &value_ty) && value_ty != Ty::Unknown {
                             self.diag(
                                 CftErrorCode::FunctionArgTypeMismatch,
-                                args[1].span,
+                                args[0].span,
                                 "contains value type does not match dict key type",
                             );
                         }
@@ -382,44 +405,42 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                     Ty::Unknown => {}
                     _ => self.diag(
                         CftErrorCode::FunctionArgTypeMismatch,
-                        args[0].span,
+                        receiver.span,
                         "contains expects an array or dict",
                     ),
                 }
                 Ty::Bool
             }
             "unique" => {
-                if self.expect_arity(args, 1, span).is_err() {
+                if self.expect_arity(args, 0, span).is_err() {
                     return Ty::Bool;
                 }
-                let ty = self.check_expr_value(&args[0]);
-                match unwrap_nullable(&ty) {
+                match unwrap_nullable(&receiver_ty) {
                     Ty::Array(elem) if unique_supported(elem) => {}
                     Ty::Array(_) => self.diag(
                         CftErrorCode::UniqueUnsupportedElementType,
-                        args[0].span,
+                        receiver.span,
                         "unique does not support this element type",
                     ),
                     Ty::Unknown => {}
                     _ => self.diag(
                         CftErrorCode::FunctionArgTypeMismatch,
-                        args[0].span,
+                        receiver.span,
                         "unique expects an array",
                     ),
                 }
                 Ty::Bool
             }
             "min" | "max" => {
-                if self.expect_arity(args, 1, span).is_err() {
+                if self.expect_arity(args, 0, span).is_err() {
                     return Ty::Unknown;
                 }
-                let ty = self.check_expr_value(&args[0]);
-                match unwrap_nullable(&ty) {
+                match unwrap_nullable(&receiver_ty) {
                     Ty::Array(elem) if min_max_supported(elem) => unwrap_nullable(elem).clone(),
                     Ty::Array(_) => {
                         self.diag(
                             CftErrorCode::FunctionArgTypeMismatch,
-                            args[0].span,
+                            receiver.span,
                             "min/max expects int, float, or enum arrays",
                         );
                         Ty::Unknown
@@ -428,7 +449,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                     _ => {
                         self.diag(
                             CftErrorCode::FunctionArgTypeMismatch,
-                            args[0].span,
+                            receiver.span,
                             "min/max expects an array",
                         );
                         Ty::Unknown
@@ -436,17 +457,16 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 }
             }
             "sum" => {
-                if self.expect_arity(args, 1, span).is_err() {
+                if self.expect_arity(args, 0, span).is_err() {
                     return Ty::Unknown;
                 }
-                let ty = self.check_expr_value(&args[0]);
-                match unwrap_nullable(&ty) {
+                match unwrap_nullable(&receiver_ty) {
                     Ty::Array(elem) => match unwrap_nullable(elem) {
                         Ty::Int | Ty::Float => unwrap_nullable(elem).clone(),
                         _ => {
                             self.diag(
                                 CftErrorCode::FunctionArgTypeMismatch,
-                                args[0].span,
+                                receiver.span,
                                 "sum expects an int or float array",
                             );
                             Ty::Unknown
@@ -456,7 +476,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                     _ => {
                         self.diag(
                             CftErrorCode::FunctionArgTypeMismatch,
-                            args[0].span,
+                            receiver.span,
                             "sum expects an array",
                         );
                         Ty::Unknown
@@ -464,17 +484,16 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 }
             }
             "keys" => {
-                if self.expect_arity(args, 1, span).is_err() {
+                if self.expect_arity(args, 0, span).is_err() {
                     return Ty::Unknown;
                 }
-                let ty = self.check_expr_value(&args[0]);
-                match unwrap_nullable(&ty) {
+                match unwrap_nullable(&receiver_ty) {
                     Ty::Dict(key, _) => Ty::Array(key.clone()),
                     Ty::Unknown => Ty::Unknown,
                     _ => {
                         self.diag(
                             CftErrorCode::FunctionArgTypeMismatch,
-                            args[0].span,
+                            receiver.span,
                             "keys expects a dict",
                         );
                         Ty::Unknown
@@ -482,17 +501,16 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 }
             }
             "values" => {
-                if self.expect_arity(args, 1, span).is_err() {
+                if self.expect_arity(args, 0, span).is_err() {
                     return Ty::Unknown;
                 }
-                let ty = self.check_expr_value(&args[0]);
-                match unwrap_nullable(&ty) {
+                match unwrap_nullable(&receiver_ty) {
                     Ty::Dict(_, value) => Ty::Array(value.clone()),
                     Ty::Unknown => Ty::Unknown,
                     _ => {
                         self.diag(
                             CftErrorCode::FunctionArgTypeMismatch,
-                            args[0].span,
+                            receiver.span,
                             "values expects a dict",
                         );
                         Ty::Unknown
@@ -500,30 +518,29 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 }
             }
             "matches" => {
-                if self.expect_arity(args, 2, span).is_err() {
+                if self.expect_arity(args, 1, span).is_err() {
                     return Ty::Bool;
                 }
-                let str_ty = self.check_expr_value(&args[0]);
-                if !types_comparable(&str_ty, &Ty::String) && str_ty != Ty::Unknown {
+                if !types_comparable(&receiver_ty, &Ty::String) && receiver_ty != Ty::Unknown {
                     self.diag(
                         CftErrorCode::FunctionArgTypeMismatch,
-                        args[0].span,
+                        receiver.span,
                         "matches first argument must be string",
                     );
                 }
-                if let CheckExprKind::String(pattern) = &args[1].kind {
+                if let CheckExprKind::String(pattern) = &args[0].kind {
                     if Regex::new(pattern).is_err() {
                         self.diag(
                             CftErrorCode::InvalidRegexPattern,
-                            args[1].span,
+                            args[0].span,
                             "regex pattern cannot be compiled",
                         );
                     }
                 } else {
-                    let _ = self.check_expr_value(&args[1]);
+                    let _ = self.check_expr_value(&args[0]);
                     self.diag(
                         CftErrorCode::RegexPatternMustBeLiteral,
-                        args[1].span,
+                        args[0].span,
                         "matches pattern must be a string literal",
                     );
                 }

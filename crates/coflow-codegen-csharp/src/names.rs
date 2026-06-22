@@ -5,13 +5,13 @@ pub fn has_annotation(annotations: &[CftAnnotation], name: &str) -> bool {
     annotations.iter().any(|annotation| annotation.name == name)
 }
 
-pub fn annotation_string_arg(annotations: &[CftAnnotation], name: &str) -> Option<String> {
+pub fn annotation_name_arg(annotations: &[CftAnnotation], name: &str) -> Option<String> {
     annotations
         .iter()
         .find(|annotation| annotation.name == name)
         .and_then(|annotation| annotation.args.first())
         .and_then(|arg| match arg {
-            CftAnnotationValue::String(value) => Some(value.clone()),
+            CftAnnotationValue::Name(value) => Some(value.clone()),
             _ => None,
         })
 }
@@ -106,7 +106,7 @@ pub fn pascal_case(name: &str) -> String {
 }
 
 pub fn csharp_type_name(name: &str) -> String {
-    pascal_case(name)
+    name.to_string()
 }
 
 fn is_csharp_ident_start(ch: char) -> bool {

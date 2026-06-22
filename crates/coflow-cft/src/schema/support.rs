@@ -91,7 +91,7 @@ impl AnnotationSpec {
             },
             "keyAsEnum" => Self {
                 targets: &[AnnotationTarget::Type],
-                args: AnnotationArgs::OneString,
+                args: AnnotationArgs::OneName,
             },
             "flag" => Self {
                 targets: &[AnnotationTarget::Enum],
@@ -129,6 +129,9 @@ impl AnnotationSpec {
             AnnotationArgs::OneString => {
                 matches!(annotation.args.as_slice(), [AnnotationArg::String(_, _)])
             }
+            AnnotationArgs::OneName => {
+                matches!(annotation.args.as_slice(), [AnnotationArg::Name(_)])
+            }
         }
     }
 }
@@ -137,6 +140,7 @@ impl AnnotationSpec {
 enum AnnotationArgs {
     None,
     OneString,
+    OneName,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -286,6 +290,15 @@ fn convert_check_expr(expr: &CheckExpr) -> CftSchemaCheckExpr {
                 },
             },
             CheckExprKind::Call { name, args } => CftSchemaCheckExprKind::Call {
+                name: name.name.clone(),
+                args: args.iter().map(convert_check_expr).collect(),
+            },
+            CheckExprKind::MethodCall {
+                receiver,
+                name,
+                args,
+            } => CftSchemaCheckExprKind::MethodCall {
+                receiver: Box::new(convert_check_expr(receiver)),
                 name: name.name.clone(),
                 args: args.iter().map(convert_check_expr).collect(),
             },

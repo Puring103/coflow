@@ -738,11 +738,17 @@ fn artifact_diagnostic_set(path: &Path, message: impl Into<String>) -> Diagnosti
 
 fn collect_declared_key_as_enum_ids(
     schema: &coflow_cft::CftContainer,
-) -> BTreeMap<String, Vec<String>> {
+) -> BTreeMap<String, KeyAsEnumIds> {
     let mut out = BTreeMap::new();
     for schema_type in schema.all_types() {
-        if let Some(enum_name) = annotation_string_arg(&schema_type.annotations, "keyAsEnum") {
-            out.entry(enum_name).or_default();
+        if let Some(enum_name) = annotation_name_arg(&schema_type.annotations, "keyAsEnum") {
+            let is_flags = schema
+                .resolve_enum(&enum_name)
+                .is_some_and(|schema_enum| has_annotation(&schema_enum.annotations, "flag"));
+            out.entry(enum_name).or_insert_with(|| KeyAsEnumIds {
+                ids: Vec::new(),
+                is_flags,
+            });
         }
     }
     out
@@ -751,10 +757,10 @@ fn collect_declared_key_as_enum_ids(
 fn collect_key_as_enum_ids(
     schema: &coflow_cft::CftContainer,
     model: &coflow_data_model::CfdDataModel,
-) -> BTreeMap<String, Vec<String>> {
+) -> BTreeMap<String, KeyAsEnumIds> {
     let mut out = collect_declared_key_as_enum_ids(schema);
     for schema_type in schema.all_types() {
-        let Some(enum_name) = annotation_string_arg(&schema_type.annotations, "keyAsEnum") else {
+        let Some(enum_name) = annotation_name_arg(&schema_type.annotations, "keyAsEnum") else {
             continue;
         };
 
@@ -774,12 +780,20 @@ fn collect_key_as_enum_ids(
                 }
             }
         }
-        out.insert(enum_name, variants);
+        if let Some(entry) = out.get_mut(&enum_name) {
+            entry.ids = variants;
+        }
     }
     out
 }
 
 type KeyAsEnumLockfile = BTreeMap<String, BTreeMap<String, i64>>;
+
+#[derive(Debug, Clone)]
+struct KeyAsEnumIds {
+    ids: Vec<String>,
+    is_flags: bool,
+}
 
 fn enum_lockfile_path(project: &Project) -> PathBuf {
     project
@@ -791,7 +805,7 @@ fn enum_lockfile_path(project: &Project) -> PathBuf {
 
 fn merge_key_as_enum_lockfile(
     lockfile: &Path,
-    current_ids: BTreeMap<String, Vec<String>>,
+    current_ids: BTreeMap<String, KeyAsEnumIds>,
 ) -> Result<(KeyAsEnumLockfile, BTreeMap<String, Vec<KeyAsEnumVariant>>), DiagnosticSet> {
     if current_ids.is_empty() {
         return Ok((BTreeMap::new(), BTreeMap::new()));
@@ -800,22 +814,19 @@ fn merge_key_as_enum_lockfile(
     let mut locked = read_key_as_enum_lockfile(lockfile)?;
     locked.retain(|enum_name, _| current_ids.contains_key(enum_name));
 
-    for (enum_name, ids) in current_ids {
+    for (enum_name, key_enum) in current_ids {
         let entries = locked.entry(enum_name).or_default();
-        let mut next_value = entries
-            .values()
-            .copied()
-            .max()
-            .map_or(Ok(0), |value| next_key_as_enum_value(lockfile, value))?;
-        for id in ids {
+        validate_existing_key_as_enum_values(lockfile, entries, key_enum.is_flags)?;
+        let mut next_value = next_key_as_enum_value_start(lockfile, entries, key_enum.is_flags)?;
+        for id in key_enum.ids {
             if entries.contains_key(&id) {
                 continue;
             }
             while entries.values().any(|value| *value == next_value) {
-                next_value = next_key_as_enum_value(lockfile, next_value)?;
+                next_value = next_key_as_enum_value(lockfile, next_value, key_enum.is_flags)?;
             }
             entries.insert(id, next_value);
-            next_value = next_key_as_enum_value(lockfile, next_value)?;
+            next_value = next_key_as_enum_value(lockfile, next_value, key_enum.is_flags)?;
         }
     }
 
@@ -839,10 +850,53 @@ fn merge_key_as_enum_lockfile(
     Ok((locked, variants))
 }
 
-fn next_key_as_enum_value(lockfile: &Path, value: i64) -> Result<i64, DiagnosticSet> {
+fn next_key_as_enum_value_start(
+    lockfile: &Path,
+    entries: &BTreeMap<String, i64>,
+    is_flags: bool,
+) -> Result<i64, DiagnosticSet> {
+    let Some(value) = entries.values().copied().max() else {
+        return Ok(if is_flags { 1 } else { 0 });
+    };
+    next_key_as_enum_value(lockfile, value, is_flags)
+}
+
+fn next_key_as_enum_value(
+    lockfile: &Path,
+    value: i64,
+    is_flags: bool,
+) -> Result<i64, DiagnosticSet> {
+    if is_flags {
+        return value.checked_mul(2).ok_or_else(|| {
+            artifact_diagnostic_set(
+                lockfile,
+                "@keyAsEnum lockfile exhausted i64 flag enum values",
+            )
+        });
+    }
     value.checked_add(1).ok_or_else(|| {
         artifact_diagnostic_set(lockfile, "@keyAsEnum lockfile exhausted i64 enum values")
     })
+}
+
+fn validate_existing_key_as_enum_values(
+    lockfile: &Path,
+    entries: &BTreeMap<String, i64>,
+    is_flags: bool,
+) -> Result<(), DiagnosticSet> {
+    if !is_flags {
+        return Ok(());
+    }
+    if let Some((name, value)) = entries
+        .iter()
+        .find(|(_, value)| **value <= 0 || (**value & (**value - 1)) != 0)
+    {
+        return Err(artifact_diagnostic_set(
+            lockfile,
+            format!("@keyAsEnum flag enum variant `{name}` has non-flag lockfile value `{value}`"),
+        ));
+    }
+    Ok(())
 }
 
 fn read_key_as_enum_lockfile(
@@ -891,13 +945,17 @@ struct KeyAsEnumVariant {
     value: i64,
 }
 
-fn annotation_string_arg(annotations: &[coflow_cft::CftAnnotation], name: &str) -> Option<String> {
+fn annotation_name_arg(annotations: &[coflow_cft::CftAnnotation], name: &str) -> Option<String> {
     annotations
         .iter()
         .find(|annotation| annotation.name == name)
         .and_then(|annotation| annotation.args.first())
         .and_then(|arg| match arg {
-            coflow_cft::CftAnnotationValue::String(value) => Some(value.clone()),
+            coflow_cft::CftAnnotationValue::Name(value) => Some(value.clone()),
             _ => None,
         })
+}
+
+fn has_annotation(annotations: &[coflow_cft::CftAnnotation], name: &str) -> bool {
+    annotations.iter().any(|annotation| annotation.name == name)
 }

@@ -300,8 +300,8 @@ fn cases() -> Vec<Case> {
         Case {
             name: "invalid annotation target",
             phase: Phase::Compile,
-            source: "@keyAsEnum(\"AKey\") enum A { X, }",
-            adjacent_valid_source: r#"@keyAsEnum("AKey") type A {}"#,
+            source: "@keyAsEnum(AKey) enum A { X, } enum AKey {}",
+            adjacent_valid_source: r#"@keyAsEnum(AKey) type A {} enum AKey {}"#,
             codes: &[CftErrorCode::InvalidAnnotationTarget],
         },
         Case {
@@ -324,6 +324,13 @@ fn cases() -> Vec<Case> {
             source: "@struct type A {}",
             adjacent_valid_source: "@struct sealed type A {}",
             codes: &[CftErrorCode::StructRequiresSealedType],
+        },
+        Case {
+            name: "keyAsEnum requires empty enum",
+            phase: Phase::Compile,
+            source: "@keyAsEnum(AKey) type A { key: string; } enum AKey { Existing, }",
+            adjacent_valid_source: r#"@keyAsEnum(AKey) type A { key: string; } enum AKey {}"#,
+            codes: &[CftErrorCode::KeyAsEnumRequiresEmptyEnum],
         },
         Case {
             name: "enum variant default on non-enum",
@@ -408,21 +415,21 @@ fn cases() -> Vec<Case> {
             name: "unknown function",
             phase: Phase::Compile,
             source: "type A { check { nope(); } }",
-            adjacent_valid_source: "type A { items: [int]; check { len(items) == 0; } }",
+            adjacent_valid_source: "type A { items: [int]; check { items.len() == 0; } }",
             codes: &[CftErrorCode::UnknownFunction],
         },
         Case {
             name: "function arity mismatch",
             phase: Phase::Compile,
-            source: "type A { items: [int]; check { len(items, items) == 0; } }",
-            adjacent_valid_source: "type A { items: [int]; check { len(items) == 0; } }",
+            source: "type A { items: [int]; check { items.len(items) == 0; } }",
+            adjacent_valid_source: "type A { items: [int]; check { items.len() == 0; } }",
             codes: &[CftErrorCode::FunctionArityMismatch],
         },
         Case {
             name: "function arg type mismatch",
             phase: Phase::Compile,
-            source: "type A { value: int; check { len(value) == 0; } }",
-            adjacent_valid_source: "type A { items: [int]; check { len(items) == 0; } }",
+            source: "type A { value: int; check { value.len() == 0; } }",
+            adjacent_valid_source: "type A { items: [int]; check { items.len() == 0; } }",
             codes: &[CftErrorCode::FunctionArgTypeMismatch],
         },
         Case {
@@ -465,8 +472,8 @@ fn cases() -> Vec<Case> {
         Case {
             name: "unique unsupported element type",
             phase: Phase::Compile,
-            source: "type A { items: [float]; check { unique(items); } }",
-            adjacent_valid_source: "type A { items: [int]; check { unique(items); } }",
+            source: "type A { items: [float]; check { items.unique(); } }",
+            adjacent_valid_source: "type A { items: [int]; check { items.unique(); } }",
             codes: &[CftErrorCode::UniqueUnsupportedElementType],
         },
         Case {
@@ -487,15 +494,15 @@ fn cases() -> Vec<Case> {
         Case {
             name: "regex pattern must be literal",
             phase: Phase::Compile,
-            source: r#"const PAT = "x"; type A { value: string; check { matches(value, PAT); } }"#,
-            adjacent_valid_source: r#"type A { value: string; check { matches(value, "x"); } }"#,
+            source: r#"const PAT = "x"; type A { value: string; check { value.matches(PAT); } }"#,
+            adjacent_valid_source: r#"type A { value: string; check { value.matches("x"); } }"#,
             codes: &[CftErrorCode::RegexPatternMustBeLiteral],
         },
         Case {
             name: "invalid regex pattern",
             phase: Phase::Compile,
-            source: r#"type A { value: string; check { matches(value, "["); } }"#,
-            adjacent_valid_source: r#"type A { value: string; check { matches(value, "[a-z]"); } }"#,
+            source: r#"type A { value: string; check { value.matches("["); } }"#,
+            adjacent_valid_source: r#"type A { value: string; check { value.matches("[a-z]"); } }"#,
             codes: &[CftErrorCode::InvalidRegexPattern],
         },
     ]
@@ -600,16 +607,23 @@ fn important_error_code_branches_emit_stable_codes() {
         Case {
             name: "invalid annotation target enum variant",
             phase: Phase::Compile,
-            source: "enum E { @keyAsEnum(\"EKey\") A, }",
-            adjacent_valid_source: r#"@keyAsEnum("EKey") type E { value: int; }"#,
+            source: "enum E { @keyAsEnum(EKey) A, } enum EKey {}",
+            adjacent_valid_source: r#"@keyAsEnum(EKey) type E { value: int; } enum EKey {}"#,
             codes: &[CftErrorCode::InvalidAnnotationTarget],
         },
         Case {
             name: "invalid annotation argument keyAsEnum name arg",
             phase: Phase::Compile,
-            source: "@keyAsEnum(AKey) type A { key: string; }",
-            adjacent_valid_source: r#"@keyAsEnum("AKey") type A { key: string; }"#,
+            source: r#"@keyAsEnum("AKey") type A { key: string; } enum AKey {}"#,
+            adjacent_valid_source: r#"@keyAsEnum(AKey) type A { key: string; } enum AKey {}"#,
             codes: &[CftErrorCode::InvalidAnnotationArgument],
+        },
+        Case {
+            name: "keyAsEnum requires empty enum",
+            phase: Phase::Compile,
+            source: "@keyAsEnum(AKey) type A { key: string; } enum AKey { Existing, }",
+            adjacent_valid_source: r#"@keyAsEnum(AKey) type A { key: string; } enum AKey {}"#,
+            codes: &[CftErrorCode::KeyAsEnumRequiresEmptyEnum],
         },
         Case {
             name: "invalid annotated field type expand",
@@ -670,8 +684,8 @@ fn important_error_code_branches_emit_stable_codes() {
         Case {
             name: "matches first arg type mismatch",
             phase: Phase::Compile,
-            source: r#"type A { value: int; check { matches(value, "x"); } }"#,
-            adjacent_valid_source: r#"type A { value: string; check { matches(value, "x"); } }"#,
+            source: r#"type A { value: int; check { value.matches("x"); } }"#,
+            adjacent_valid_source: r#"type A { value: string; check { value.matches("x"); } }"#,
             codes: &[CftErrorCode::FunctionArgTypeMismatch],
         },
     ];

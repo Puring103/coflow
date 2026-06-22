@@ -181,7 +181,7 @@ fn cases() -> Vec<Case> {
         },
         Case {
             name: "check eval type error",
-            schema: "type Item { nums: [int]? = null; check { contains(nums, 1); } }",
+            schema: "type Item { nums: [int]? = null; check { nums.contains(1); } }",
             phase: Phase::Check(build_default_item_model, run_checks),
             code: CfdErrorCode::CheckEvalTypeError,
             adjacent: adjacent_check_eval_type_valid,
@@ -209,7 +209,7 @@ fn cases() -> Vec<Case> {
         },
         Case {
             name: "check empty min max",
-            schema: "type Item { nums: [int] = []; check { min(nums) > 0; } }",
+            schema: "type Item { nums: [int] = []; check { nums.min() > 0; } }",
             phase: Phase::Check(build_default_item_model, run_checks),
             code: CfdErrorCode::CheckEmptyMinMax,
             adjacent: adjacent_non_empty_min,
@@ -600,7 +600,7 @@ fn adjacent_true_check() {
 
 fn adjacent_check_eval_type_valid() {
     assert_checks(
-        "type Item { nums: [int]? = null; check { contains(nums, 1); } }",
+        "type Item { nums: [int]? = null; check { nums.contains(1); } }",
         [one_record(
             "item",
             "Item",
@@ -652,7 +652,7 @@ fn adjacent_existing_dict_key() {
 
 fn adjacent_non_empty_min() {
     assert_checks(
-        "type Item { nums: [int]; check { min(nums) > 0; } }",
+        "type Item { nums: [int]; check { nums.min() > 0; } }",
         [one_record(
             "item",
             "Item",
