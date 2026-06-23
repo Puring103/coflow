@@ -82,9 +82,11 @@ pub struct ProjectSession {
     pub sources: SourceIndex,
     pub records: RecordIndex,
     pub files: FileIndex,
-    pub dependencies: DependencyGraph,
+    pub dependencies: DependencyIndex,
 }
 ```
+
+`DependencyIndex` 是 engine 自己的依赖视图。checker 可以在内部生成依赖图，但 `ProjectSession` 不直接暴露 checker crate 的具体类型。
 
 engine 返回可定位诊断时不抛命令级错误。`Err(String)` 只表示配置读取、schema 文件读取等还不能稳定聚合进 `DiagnosticSet` 的不可恢复失败。
 
