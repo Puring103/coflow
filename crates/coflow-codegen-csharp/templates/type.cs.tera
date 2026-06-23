@@ -2,8 +2,14 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+{% if project.uses_json and type.loader %}using System.IO;
+using Newtonsoft.Json.Linq;
+{% endif %}{% if project.uses_messagepack and type.loader %}using System.Buffers;
+using System.IO;
+using MessagePack;
+{% endif %}
 
-namespace {{ namespace }}
+namespace {{ project.namespace }}
 {
 
 {% if type.summary %}/// <summary>{{ type.summary }}</summary>
@@ -12,7 +18,33 @@ namespace {{ namespace }}
 {
 {% for property in type.properties %}{% if property.summary %}    /// <summary>{{ property.summary }}</summary>
 {% endif %}{% if property.obsolete %}    [Obsolete]
-{% endif %}    {{ property.visibility }} {{ property.type_name }} {{ property.name }} { get; {{ property.setter }}; }{% if property.initializer %} = {{ property.initializer }};{% endif %}
+{% endif %}    {{ property.visibility }} {{ property.type_name }} {{ property.name }} { get; }
 {% if not loop.last %}
-{% endif %}{% endfor %}}
+{% endif %}{% endfor %}{% if type.properties | length > 0 %}
+
+{% endif %}    {{ type.constructor_visibility }} {{ type.name }}(
+{% for parameter in type.constructor_parameters %}        {{ parameter.ty }} {{ parameter.name }}{% if not loop.last %},{% endif %}
+{% endfor %}    ){{ type.base_constructor_call | default(value="") }}
+    {
+{% for assignment in type.assignments %}        {{ assignment.property }} = {{ assignment.parameter }};
+{% endfor %}    }
+{% if type.loader %}
+{% if project.uses_json %}{% if type.loader.is_polymorphic %}{% include "type_json_polymorphic_loader.cs.tera" %}{% else %}{% include "type_json_loader.cs.tera" %}{% endif %}{% endif %}
+{% if project.uses_messagepack %}{% if type.loader.is_polymorphic %}{% include "type_messagepack_polymorphic_loader.cs.tera" %}{% else %}{% include "type_messagepack_loader.cs.tera" %}{% endif %}{% endif %}
+{% endif %}{% if type.equality %}
+
+    public override string ToString() => "{{ type.name }}(" + {{ type.equality.key_property }} + ")";
+
+{% if type.equality.is_struct %}    public bool Equals({{ type.name }} other) =>
+        {{ type.equality.key_property }}.Equals(other.{{ type.equality.key_property }});
+{% else %}    public bool Equals({{ type.name }}? other) =>
+        other is not null && {{ type.equality.key_property }}.Equals(other.{{ type.equality.key_property }});
+{% endif %}
+    public override bool Equals(object? obj) =>
+        obj is {{ type.name }} other && Equals(other);
+
+    public override int GetHashCode() =>
+        {{ type.equality.key_property }}.GetHashCode();
+{% endif %}
+}
 }

@@ -4,6 +4,9 @@ use serde::Serialize;
 pub struct CsharpProject {
     pub namespace: String,
     pub database_class: String,
+    pub data_format: String,
+    pub uses_json: bool,
+    pub uses_messagepack: bool,
     pub enums: Vec<CsharpEnum>,
     pub types: Vec<CsharpType>,
     pub database: CsharpDatabase,
@@ -30,9 +33,16 @@ pub struct CsharpEnumVariant {
 pub struct CsharpType {
     pub name: String,
     pub declaration: String,
+    pub constructor_visibility: String,
     pub summary: Option<String>,
     pub obsolete: bool,
     pub properties: Vec<CsharpProperty>,
+    pub constructor_parameters: Vec<CsharpParameter>,
+    pub base_constructor_args: Vec<String>,
+    pub base_constructor_call: Option<String>,
+    pub assignments: Vec<CsharpConstructorAssignment>,
+    pub loader: Option<CsharpLoader>,
+    pub equality: Option<CsharpEquality>,
 }
 
 #[derive(Debug, Serialize)]
@@ -40,57 +50,67 @@ pub struct CsharpProperty {
     pub visibility: String,
     pub name: String,
     pub type_name: String,
-    pub setter: String,
-    pub initializer: Option<String>,
     pub summary: Option<String>,
     pub obsolete: bool,
 }
 
 #[derive(Debug, Serialize)]
+pub struct CsharpConstructorAssignment {
+    pub property: String,
+    pub parameter: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct CsharpDatabase {
     pub tables: Vec<CsharpTable>,
-    pub ref_indexes: Vec<CsharpRefIndex>,
     pub constructor_parameters: Vec<CsharpParameter>,
     pub load_steps: Vec<String>,
     pub constructor_args: Vec<String>,
-    pub loaders: Vec<CsharpLoader>,
-    pub polymorphic_loaders: Vec<CsharpPolymorphicLoader>,
-    pub resolve: Option<CsharpResolve>,
+    pub context_fields: Vec<CsharpContextField>,
+    pub context_lookups: Vec<CsharpContextLookup>,
+    pub context_constructor_parameters: Vec<CsharpParameter>,
+    pub context_assignments: Vec<CsharpContextAssignment>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct CsharpTable {
     pub name: String,
     pub source_name: String,
-    pub list_property: String,
-    pub list_var: String,
-    pub item_var: String,
+    pub accessor_property: String,
+    pub accessor_parameter: String,
+    pub records_var: String,
     pub id_type: String,
     pub id_property: String,
     pub id_source_name: String,
-    pub index_field: String,
     pub index_var: String,
 }
 
 #[derive(Debug, Serialize)]
-pub struct CsharpRefIndex {
-    pub target_name: String,
-    pub target_source_name: String,
-    pub target_id_type: String,
-    pub index_field: String,
+pub struct CsharpContextField {
+    pub source_name: String,
+    pub field_name: String,
+    pub id_type: String,
+    pub type_name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CsharpContextAssignment {
+    pub field_name: String,
     pub parameter_name: String,
-    pub placeholder_name: Option<String>,
-    pub assignable_sources: Vec<CsharpRefIndexSource>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct CsharpRefIndexSource {
-    pub list_var: String,
-    pub table_name: String,
-    pub source_type_name: String,
-    pub index_var: String,
-    pub id_property: String,
-    pub id_source_name: String,
+pub struct CsharpContextLookup {
+    pub method_name: String,
+    pub id_type: String,
+    pub return_type: String,
+    pub fields: Vec<CsharpContextLookupField>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CsharpContextLookupField {
+    pub field_name: String,
+    pub value_name: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -102,11 +122,16 @@ pub struct CsharpParameter {
 #[derive(Debug, Serialize)]
 pub struct CsharpLoader {
     pub type_name: String,
+    pub source_name: String,
     pub key_type_name: String,
     pub key_local_name: String,
+    pub key_property: String,
     pub key_read_expr: String,
     pub key_messagepack_read_expr: String,
     pub fields: Vec<CsharpLoadField>,
+    pub polymorphic_cases: Vec<CsharpPolymorphicCase>,
+    pub is_polymorphic: bool,
+    pub expected: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -118,21 +143,9 @@ pub struct CsharpLoadField {
     pub read_expr: String,
     pub messagepack_read_expr: String,
     pub default_expr: Option<String>,
+    pub missing_expr: Option<String>,
     pub is_required: bool,
-    pub assignments: Vec<CsharpLoadAssignment>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CsharpLoadAssignment {
-    pub property: String,
-    pub expr: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CsharpPolymorphicLoader {
-    pub type_name: String,
-    pub cases: Vec<CsharpPolymorphicCase>,
-    pub expected: String,
+    pub has_name: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -142,37 +155,7 @@ pub struct CsharpPolymorphicCase {
 }
 
 #[derive(Debug, Serialize)]
-pub struct CsharpResolve {
-    pub parameters: Vec<CsharpParameter>,
-    pub table_calls: Vec<CsharpResolveTableCall>,
-    pub methods: Vec<CsharpResolveMethod>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CsharpResolveTableCall {
-    pub table_name: String,
-    pub source_name: String,
-    pub list_var: String,
-    pub item_var: String,
-    pub id_property: String,
-    pub index_args: String,
-    pub path_expr: String,
-    pub returns_value: bool,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CsharpResolveMethod {
-    pub type_name: String,
-    pub returns_value: bool,
-    pub is_polymorphic: bool,
-    pub parameters: Vec<CsharpParameter>,
-    pub statements: Vec<String>,
-    pub cases: Vec<CsharpResolveCase>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CsharpResolveCase {
-    pub type_name: String,
-    pub var_name: String,
-    pub index_args: String,
+pub struct CsharpEquality {
+    pub key_property: String,
+    pub is_struct: bool,
 }

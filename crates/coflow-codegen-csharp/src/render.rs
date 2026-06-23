@@ -5,13 +5,15 @@ use tera::{Context, Tera};
 
 const ENUM_TEMPLATE: &str = include_str!("../templates/enum.cs.tera");
 const TYPE_TEMPLATE: &str = include_str!("../templates/type.cs.tera");
+const TYPE_JSON_LOADER_TEMPLATE: &str = include_str!("../templates/type_json_loader.cs.tera");
+const TYPE_JSON_POLYMORPHIC_LOADER_TEMPLATE: &str =
+    include_str!("../templates/type_json_polymorphic_loader.cs.tera");
+const TYPE_MESSAGEPACK_LOADER_TEMPLATE: &str =
+    include_str!("../templates/type_messagepack_loader.cs.tera");
+const TYPE_MESSAGEPACK_POLYMORPHIC_LOADER_TEMPLATE: &str =
+    include_str!("../templates/type_messagepack_polymorphic_loader.cs.tera");
 const DATABASE_COMMON_MEMBERS_TEMPLATE: &str =
     include_str!("../templates/database_common_members.cs.tera");
-const DATABASE_COMMON_RESOLVE_TEMPLATE: &str =
-    include_str!("../templates/database_common_resolve.cs.tera");
-const DATABASE_COMMON_INDEXES_TEMPLATE: &str =
-    include_str!("../templates/database_common_indexes.cs.tera");
-const EXCEPTION_TEMPLATE: &str = include_str!("../templates/load_exception.cs.tera");
 
 pub fn render_project(
     project: &CsharpProject,
@@ -32,7 +34,7 @@ pub fn render_project(
 
     for schema_type in &project.types {
         let mut context = Context::new();
-        context.insert("namespace", &project.namespace);
+        context.insert("project", project);
         context.insert("type", schema_type);
         files.push(GeneratedFile {
             relative_path: PathBuf::from(format!("{}.cs", schema_type.name)),
@@ -51,13 +53,6 @@ pub fn render_project(
         )?,
     });
 
-    let mut exception_context = Context::new();
-    exception_context.insert("namespace", &project.namespace);
-    files.push(GeneratedFile {
-        relative_path: PathBuf::from("CftLoadException.cs"),
-        contents: render(&tera, "load_exception.cs.tera", &exception_context)?,
-    });
-
     Ok(files)
 }
 
@@ -67,6 +62,37 @@ fn templates(database_templates: &CsharpDatabaseTemplates) -> Result<Tera, Cshar
         .map_err(|err| CsharpCodegenError::new(format!("failed to add enum template: {err}")))?;
     tera.add_raw_template("type.cs.tera", TYPE_TEMPLATE)
         .map_err(|err| CsharpCodegenError::new(format!("failed to add type template: {err}")))?;
+    tera.add_raw_template("type_json_loader.cs.tera", TYPE_JSON_LOADER_TEMPLATE)
+        .map_err(|err| {
+            CsharpCodegenError::new(format!("failed to add JSON type loader template: {err}"))
+        })?;
+    tera.add_raw_template(
+        "type_json_polymorphic_loader.cs.tera",
+        TYPE_JSON_POLYMORPHIC_LOADER_TEMPLATE,
+    )
+    .map_err(|err| {
+        CsharpCodegenError::new(format!(
+            "failed to add JSON polymorphic type loader template: {err}"
+        ))
+    })?;
+    tera.add_raw_template(
+        "type_messagepack_loader.cs.tera",
+        TYPE_MESSAGEPACK_LOADER_TEMPLATE,
+    )
+    .map_err(|err| {
+        CsharpCodegenError::new(format!(
+            "failed to add MessagePack type loader template: {err}"
+        ))
+    })?;
+    tera.add_raw_template(
+        "type_messagepack_polymorphic_loader.cs.tera",
+        TYPE_MESSAGEPACK_POLYMORPHIC_LOADER_TEMPLATE,
+    )
+    .map_err(|err| {
+        CsharpCodegenError::new(format!(
+            "failed to add MessagePack polymorphic type loader template: {err}"
+        ))
+    })?;
     tera.add_raw_template(
         database_templates.database_template.name,
         database_templates.database_template.contents,
@@ -84,22 +110,6 @@ fn templates(database_templates: &CsharpDatabaseTemplates) -> Result<Tera, Cshar
     .map_err(|err| {
         CsharpCodegenError::new(format!("failed to add database members template: {err}"))
     })?;
-    tera.add_raw_template(
-        "database_common_resolve.cs.tera",
-        DATABASE_COMMON_RESOLVE_TEMPLATE,
-    )
-    .map_err(|err| {
-        CsharpCodegenError::new(format!("failed to add database resolve template: {err}"))
-    })?;
-    tera.add_raw_template(
-        "database_common_indexes.cs.tera",
-        DATABASE_COMMON_INDEXES_TEMPLATE,
-    )
-    .map_err(|err| {
-        CsharpCodegenError::new(format!(
-            "failed to add database index helpers template: {err}"
-        ))
-    })?;
     for template in database_templates.partials {
         tera.add_raw_template(template.name, template.contents)
             .map_err(|err| {
@@ -109,10 +119,6 @@ fn templates(database_templates: &CsharpDatabaseTemplates) -> Result<Tera, Cshar
                 ))
             })?;
     }
-    tera.add_raw_template("load_exception.cs.tera", EXCEPTION_TEMPLATE)
-        .map_err(|err| {
-            CsharpCodegenError::new(format!("failed to add exception template: {err}"))
-        })?;
     Ok(tera)
 }
 

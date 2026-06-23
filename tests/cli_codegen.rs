@@ -12,17 +12,16 @@ use common::*;
 
 #[test]
 fn codegen_csharp_writes_newtonsoft_json_loader() {
-    let out_dir =
-        std::env::temp_dir().join(format!("coflow-csharp-codegen-test-{}", std::process::id()));
-    if out_dir.exists() {
-        std::fs::remove_dir_all(&out_dir).expect("clean old output dir");
-    }
+    let root = temp_project_dir("csharp-codegen");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_acyclic_csharp_project(&root, "json");
+    let out_dir = root.join("csharp");
 
     let output = coflow()
         .args([
             "codegen",
             "csharp",
-            "examples/rpg",
+            root.to_str().expect("utf8 temp path"),
             "--out",
             out_dir.to_str().expect("utf8 temp path"),
         ])
@@ -40,40 +39,34 @@ fn codegen_csharp_writes_newtonsoft_json_loader() {
         String::from_utf8_lossy(&output.stdout)
     );
 
-    let game_config =
-        std::fs::read_to_string(out_dir.join("GameConfig.cs")).expect("GameConfig.cs");
-    assert!(game_config.contains("using Newtonsoft.Json.Linq;"));
-    assert!(game_config.contains("DuplicatePropertyNameHandling.Error"));
-    assert!(game_config.contains("LoadRewardPolymorphic"));
-    assert!(game_config.contains("ResolveDialogueNodeRefs(list1[i1]"));
+    let coflow_tables =
+        std::fs::read_to_string(out_dir.join("CoflowTables.cs")).expect("CoflowTables.cs");
+    assert!(coflow_tables.contains("using Newtonsoft.Json.Linq;"));
+    assert!(coflow_tables.contains("public Table<string, Item> TbItem { get; }"));
+    assert!(coflow_tables.contains("public TRecord Get(TKey id)"));
+    assert!(!coflow_tables.contains("CftLoadException"));
+    assert!(!out_dir.join("GameConfig.cs").exists());
+    assert!(!out_dir.join("CftLoadException.cs").exists());
 
-    let item_reward =
-        std::fs::read_to_string(out_dir.join("ItemReward.cs")).expect("ItemReward.cs");
-    assert!(item_reward.contains("public string Id { get; internal set; }"));
-    assert!(!item_reward.contains("public string item { get; set; }"));
-    assert!(item_reward.contains("public Item item { get; internal set; }"));
-
-    std::fs::remove_dir_all(out_dir).expect("clean output dir");
+    let item = std::fs::read_to_string(out_dir.join("Item.cs")).expect("Item.cs");
+    assert!(item.contains("public string Id { get; }"));
+    assert!(item.contains("public string DisplayName { get; }"));
+    assert!(item.contains("public Reward Reward { get; }"));
+    assert!(!item.contains("set;"));
+    assert!(item.contains("context.GetReward"));
 }
 
 #[test]
 fn codegen_csharp_uses_messagepack_loader_when_data_output_is_messagepack() {
     let suffix = unique_suffix();
     let root_dir = std::env::temp_dir().join(format!("coflow-csharp-messagepack-test-{suffix}"));
-    let project_dir = root_dir.join("rpg");
+    let project_dir = root_dir.join("project");
     let out_dir = root_dir.join("csharp");
     if root_dir.exists() {
         std::fs::remove_dir_all(&root_dir).expect("clean old temp dir");
     }
-    copy_dir_recursive(std::path::Path::new("examples/rpg"), &project_dir)
-        .expect("copy example project");
-    let config_path = project_dir.join("coflow.yaml");
-    let config = std::fs::read_to_string(&config_path).expect("read coflow.yaml");
-    std::fs::write(
-        &config_path,
-        config.replacen("type: json", "type: messagepack", 1),
-    )
-    .expect("write coflow.yaml");
+    std::fs::create_dir_all(&project_dir).expect("create project dir");
+    write_acyclic_csharp_project(&project_dir, "messagepack");
 
     let output = coflow()
         .args([
@@ -92,11 +85,11 @@ fn codegen_csharp_uses_messagepack_loader_when_data_output_is_messagepack() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let game_config =
-        std::fs::read_to_string(out_dir.join("GameConfig.cs")).expect("GameConfig.cs");
-    assert!(game_config.contains("using MessagePack;"));
-    assert!(game_config.contains("Item.msgpack"));
-    assert!(!game_config.contains("Newtonsoft.Json"));
+    let coflow_tables =
+        std::fs::read_to_string(out_dir.join("CoflowTables.cs")).expect("CoflowTables.cs");
+    assert!(coflow_tables.contains("using MessagePack;"));
+    assert!(coflow_tables.contains("Item.msgpack"));
+    assert!(!coflow_tables.contains("Newtonsoft.Json"));
 
     std::fs::remove_dir_all(root_dir).expect("clean temp dir");
 }
@@ -115,6 +108,7 @@ fn codegen_csharp_preflight_outputs_multiple_diagnostics_without_writing_files()
             type Foo_Bar {
                 namespace: int;
             }
+            enum namespace { Value }
             enum GeneId {}
         "#,
     )
@@ -151,7 +145,7 @@ outputs:
     assert!(stderr.contains("[CODEGEN-CSHARP-001] [CODEGEN]"));
     assert!(stderr.contains("invalid C# namespace `Game.1Bad`"));
     assert!(stderr.contains("invalid C# type name `class`"));
-    assert!(stderr.contains("invalid C# field property name `namespace`"));
+    assert!(stderr.contains("invalid C# enum name `namespace`"));
     assert!(!stderr.contains("failed to parse"));
     assert_eq!(
         std::fs::read_to_string(&lockfile).expect("lockfile remains"),
@@ -160,7 +154,7 @@ outputs:
     assert!(!root
         .join("generated")
         .join("csharp")
-        .join("GameConfig.cs")
+        .join("CoflowTables.cs")
         .exists());
 }
 
@@ -273,12 +267,15 @@ fn generated_csharp_compiles_and_loads_exported_json() {
         std::fs::remove_dir_all(&root_dir).expect("clean old output dir");
     }
     std::fs::create_dir_all(&root_dir).expect("create temp root");
+    let project_dir = root_dir.join("project");
+    std::fs::create_dir_all(&project_dir).expect("create project dir");
+    write_acyclic_csharp_project(&project_dir, "json");
 
     let export_output = coflow()
         .args([
             "export",
             "json",
-            "examples/rpg",
+            project_dir.to_str().expect("utf8 temp path"),
             "--out",
             export_dir.to_str().expect("utf8 temp path"),
         ])
@@ -295,7 +292,7 @@ fn generated_csharp_compiles_and_loads_exported_json() {
         .args([
             "codegen",
             "csharp",
-            "examples/rpg",
+            project_dir.to_str().expect("utf8 temp path"),
             "--namespace",
             "Game.Config",
             "--out",
@@ -356,31 +353,18 @@ fn generated_csharp_compiles_and_loads_exported_json() {
         dotnet_dir.join("Program.cs"),
         r#"using Game.Config;
 
-var config = GameConfig.Load(args[0]);
-Expect(config.Items.Count == 3, "expected 3 items");
-Expect(config.Equipments.Count == 4, "expected 4 equipment rows");
-Expect(config.DropTables.Count == 3, "expected 3 drop tables");
-Expect(config.Stages.Count == 3, "expected 3 stages");
-Expect(config.Quests.Count == 3, "expected 3 quests");
-Expect(config.Shops.Count == 3, "expected 3 shops");
+var tables = CoflowTables.Load(args[0]);
+Expect(tables.TbReward.Count == 1, "expected 1 reward");
+Expect(tables.TbItem.Count == 1, "expected 1 item");
+Expect(tables.TbBundle.Count == 1, "expected 1 bundle");
+Expect(tables.TbEmptyThing.Count == 0, "expected missing empty JSON table to load as empty");
 
-Expect(config.FindItem("healing_potion")?.FeaturedStage?.Id == "stage_forest_road", "item to CFD stage ref failed");
-Expect(config.FindEquipment("flame_staff")?.FeaturedStage?.Id == "stage_arcane_tower", "equipment to CFD stage ref failed");
-
-var arcaneStage = config.FindStage("stage_arcane_tower") ?? throw new Exception("missing stage_arcane_tower");
-Expect(arcaneStage.DropTable.Id == "drop_fire_mage", "stage to CFD drop table ref failed");
-Expect(arcaneStage.Spawns[0].Monster.Id == "fire_mage", "stage spawn to Excel monster ref failed");
-Expect(arcaneStage.FirstClearReward is SkillUnlockReward { Skill.Id: "fireball" }, "inline polymorphic reward ref failed");
-
-var dragonDrop = config.FindDropTable("drop_ancient_dragon") ?? throw new Exception("missing drop_ancient_dragon");
-Expect(dragonDrop.Monster.Id == "ancient_dragon", "drop table to Excel monster ref failed");
-Expect(dragonDrop.Rewards[0] is ItemReward { Item.Id: "phoenix_feather" }, "drop table reward item ref failed");
-Expect(dragonDrop.Rewards[2] is SkillUnlockReward { Skill.Id: "meteor" }, "drop table reward skill ref failed");
-
-var arcaneShop = config.FindShop("shop_arcane") ?? throw new Exception("missing shop_arcane");
-Expect(arcaneShop.StageGate?.Id == "stage_arcane_tower", "shop to CFD stage ref failed");
-Expect(arcaneShop.Entries[0].Item.Id == "flame_staff", "shop entry to Excel equipment ref failed");
-Expect(arcaneShop.Entries[0].RequiredQuest?.Id == "quest_mage_trial", "shop entry to CFD quest ref failed");
+var potion = tables.TbItem.Get("potion");
+Expect(potion.DisplayName == "Potion", "item field failed");
+Expect(potion.Reward.Id == "reward_small", "item ref failed");
+Expect(tables.TbItem.Find("missing") is null, "missing item should be null");
+Expect(tables.TbItem.TryGet("potion", out var found) && found == potion, "try get failed");
+Expect(tables.TbBundle.Get("starter").Item.Id == "potion", "bundle ref failed");
 
 Console.WriteLine("loaded");
 
@@ -436,7 +420,7 @@ fn generated_csharp_compiles_and_loads_exported_messagepack() {
 
     let suffix = unique_suffix();
     let root_dir = std::env::temp_dir().join(format!("coflow-csharp-messagepack-e2e-{suffix}"));
-    let project_dir = root_dir.join("rpg");
+    let project_dir = root_dir.join("project");
     let export_dir = root_dir.join("export");
     let csharp_dir = root_dir.join("csharp");
     let dotnet_dir = root_dir.join("dotnet");
@@ -446,15 +430,8 @@ fn generated_csharp_compiles_and_loads_exported_messagepack() {
     std::fs::create_dir_all(&root_dir).expect("create temp root");
     let _cleanup = TempDirCleanup(root_dir);
 
-    copy_dir_recursive(std::path::Path::new("examples/rpg"), &project_dir)
-        .expect("copy example project");
-    let config_path = project_dir.join("coflow.yaml");
-    let config = std::fs::read_to_string(&config_path).expect("read coflow.yaml");
-    std::fs::write(
-        &config_path,
-        config.replacen("type: json", "type: messagepack", 1),
-    )
-    .expect("write coflow.yaml");
+    std::fs::create_dir_all(&project_dir).expect("create project dir");
+    write_acyclic_csharp_project(&project_dir, "messagepack");
 
     let export_output = coflow()
         .args([
@@ -538,10 +515,14 @@ fn generated_csharp_compiles_and_loads_exported_messagepack() {
         dotnet_dir.join("Program.cs"),
         r#"using Game.Config;
 
-var config = GameConfig.Load(args[0]);
-if (config.Items.Count == 0)
+var tables = CoflowTables.Load(args[0]);
+if (tables.TbItem.Count == 0)
 {
     throw new Exception("expected items");
+}
+if (tables.TbItem.Get("potion").Reward.Id != "reward_small")
+{
+    throw new Exception("expected resolved reward");
 }
 Console.WriteLine("loaded");
 "#,

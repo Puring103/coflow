@@ -1,4 +1,4 @@
-use crate::names::{annotation_name_arg, csharp_type_name, has_annotation};
+use crate::names::{annotation_name_arg, csharp_type_name};
 use crate::CsharpCodegenError;
 use coflow_cft::{
     CftAnnotation, CftContainer, CftSchemaDefaultValue, CftSchemaField, CftSchemaType,
@@ -105,14 +105,6 @@ impl SchemaView {
             .is_some_and(|ty| ty.is_abstract || self.has_descendants(type_name))
     }
 
-    pub fn type_is_struct(&self, type_name: &str) -> bool {
-        self.types.get(type_name).is_some_and(|ty| ty.is_struct)
-    }
-
-    pub fn type_is_abstract(&self, type_name: &str) -> bool {
-        self.types.get(type_name).is_some_and(|ty| ty.is_abstract)
-    }
-
     pub fn csharp_type_name(&self, type_name: &str) -> String {
         self.csharp_types
             .get(type_name)
@@ -164,6 +156,10 @@ impl SchemaView {
             .is_some_and(|children| !children.is_empty())
     }
 
+    pub fn type_has_descendants(&self, type_name: &str) -> bool {
+        self.has_descendants(type_name)
+    }
+
     pub fn concrete_assignable_types(
         &self,
         type_name: &str,
@@ -203,28 +199,6 @@ impl SchemaView {
         }
         out.into_iter().collect()
     }
-
-    pub fn range_contains_ref(&self, type_name: &str) -> bool {
-        let mut visited = BTreeSet::new();
-        self.range_contains_ref_inner(type_name, &mut visited)
-    }
-
-    fn range_contains_ref_inner(&self, type_name: &str, visited: &mut BTreeSet<String>) -> bool {
-        if !visited.insert(type_name.to_string()) {
-            return false;
-        }
-        let Some(meta) = self.types.get(type_name) else {
-            return false;
-        };
-        if meta.contains_ref(self) {
-            return true;
-        }
-        self.children
-            .get(type_name)
-            .into_iter()
-            .flatten()
-            .any(|child| self.range_contains_ref_inner(child, visited))
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -232,7 +206,6 @@ pub struct TypeMeta {
     pub name: String,
     pub parent: Option<String>,
     pub is_abstract: bool,
-    pub is_struct: bool,
     pub key_as_enum: Option<String>,
     pub all_fields: Vec<FieldMeta>,
 }
@@ -243,7 +216,6 @@ impl TypeMeta {
             name: schema_type.name.clone(),
             parent: schema_type.parent.clone(),
             is_abstract: schema_type.is_abstract,
-            is_struct: has_annotation(&schema_type.annotations, "struct"),
             key_as_enum: annotation_name_arg(&schema_type.annotations, "keyAsEnum"),
             all_fields: schema_type
                 .all_fields
@@ -265,13 +237,6 @@ impl TypeMeta {
         for field in &self.all_fields {
             collect_ref_targets_in_field(view, field, out, visited);
         }
-    }
-
-    fn contains_ref(&self, view: &SchemaView) -> bool {
-        let mut refs = BTreeSet::new();
-        let mut visited = BTreeSet::new();
-        self.collect_ref_targets(view, &mut refs, &mut visited);
-        !refs.is_empty()
     }
 }
 
@@ -313,7 +278,6 @@ fn collect_ref_targets_in_type(
 pub struct FieldMeta {
     pub name: String,
     pub ty: FieldType,
-    pub has_default: bool,
     pub default: Option<CftSchemaDefaultValue>,
     pub annotations: Vec<CftAnnotation>,
 }
@@ -323,7 +287,6 @@ impl FieldMeta {
         Self {
             name: field.name.clone(),
             ty: FieldType::from_schema(&field.ty_ref, enums),
-            has_default: field.has_default,
             default: field.default.clone(),
             annotations: field.annotations.clone(),
         }

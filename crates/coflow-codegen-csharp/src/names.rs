@@ -106,7 +106,7 @@ pub fn pascal_case(name: &str) -> String {
 }
 
 pub fn csharp_type_name(name: &str) -> String {
-    name.to_string()
+    pascal_case(name)
 }
 
 fn is_csharp_ident_start(ch: char) -> bool {
@@ -217,20 +217,8 @@ pub fn pluralize(name: &str) -> String {
     }
 }
 
-pub fn index_var_name(type_name: &str) -> String {
-    format!("_{}Index", camel_case(type_name))
-}
-
 pub fn index_param_name(type_name: &str) -> String {
     format!("{}Index", camel_case(type_name))
-}
-
-pub fn ref_index_param_name(type_name: &str) -> String {
-    format!("{}RefIndex", camel_case(type_name))
-}
-
-pub fn ref_index_var_name(type_name: &str) -> String {
-    format!("_{}RefIndex", camel_case(type_name))
 }
 
 pub fn format_float(value: f64) -> String {

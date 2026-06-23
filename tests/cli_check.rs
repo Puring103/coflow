@@ -431,7 +431,7 @@ outputs:
         String::from_utf8_lossy(&codegen.stdout),
         String::from_utf8_lossy(&codegen.stderr)
     );
-    assert!(codegen_dir.join("GameConfig.cs").exists());
+    assert!(codegen_dir.join("CoflowTables.cs").exists());
 }
 
 #[test]

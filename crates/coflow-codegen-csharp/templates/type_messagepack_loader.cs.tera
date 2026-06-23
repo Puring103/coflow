@@ -1,0 +1,86 @@
+
+    internal static List<{{ type.loader.type_name }}> LoadTable(string path, {{ project.database_class }}.LoadContext context)
+    {
+        var bytes = File.ReadAllBytes(path);
+        var reader = new MessagePackReader(new ReadOnlySequence<byte>(bytes));
+        var count = reader.ReadArrayHeader();
+        var result = new List<{{ type.loader.type_name }}>(count);
+
+        for (var index = 0; index < count; index++)
+        {
+            result.Add(LoadRow(ref reader, context));
+        }
+
+        return result;
+    }
+
+    private static {{ type.loader.type_name }} LoadRow(ref MessagePackReader reader, {{ project.database_class }}.LoadContext context)
+    {
+        return LoadBody(ref reader, context, true);
+    }
+
+    internal static {{ type.loader.type_name }} LoadInline(ref MessagePackReader reader, {{ project.database_class }}.LoadContext context)
+    {
+        return LoadBody(ref reader, context, false);
+    }
+
+    internal static {{ type.loader.type_name }} LoadBodyAfterType(ref MessagePackReader reader, {{ project.database_class }}.LoadContext context, int count)
+    {
+        return LoadBodyFields(ref reader, context, count, false);
+    }
+
+    private static {{ type.loader.type_name }} LoadBody(ref MessagePackReader reader, {{ project.database_class }}.LoadContext context, bool requireId)
+    {
+        var count = reader.ReadMapHeader();
+        return LoadBodyFields(ref reader, context, count, requireId);
+    }
+
+    private static {{ type.loader.type_name }} LoadBodyFields(ref MessagePackReader reader, {{ project.database_class }}.LoadContext context, int count, bool requireId)
+    {
+        {{ type.loader.key_type_name }} {{ type.loader.key_local_name }} = default!;
+        var hasId = false;
+{% for field in type.loader.fields %}        {{ field.type_name }} {{ field.local_name }} = {% if field.missing_expr %}{{ field.missing_expr }}{% else %}default!{% endif %};
+        var {{ field.has_name }} = false;
+{% endfor %}
+        for (var i = 0; i < count; i++)
+        {
+            var key = CoflowMessagePack.ReadString(ref reader);
+
+            switch (key)
+            {
+                case "id":
+                    hasId = true;
+                    {{ type.loader.key_local_name }} = {{ type.loader.key_messagepack_read_expr }};
+                    break;
+{% for field in type.loader.fields %}                case "{{ field.source_name }}":
+                    {{ field.has_name }} = true;
+                    {{ field.local_name }} = {{ field.messagepack_read_expr }};
+                    break;
+{% endfor %}                default:
+                    reader.Skip();
+                    break;
+            }
+        }
+
+{% for field in type.loader.fields %}{% if field.is_required %}        if (!{{ field.has_name }})
+        {
+            throw new KeyNotFoundException("missing required field `{{ field.source_name }}`");
+        }
+
+{% endif %}{% endfor %}        return new {{ type.loader.type_name }}(
+            requireId ? {{ type.loader.key_local_name }} : default!{% if type.loader.fields | length > 0 %},{% endif %}
+{% for field in type.loader.fields %}            {{ field.local_name }}{% if not loop.last %},{% endif %}
+{% endfor %}        );
+    }
+
+    internal static Dictionary<{{ type.loader.key_type_name }}, {{ type.loader.type_name }}> BuildIndex(List<{{ type.loader.type_name }}> rows)
+    {
+        var result = new Dictionary<{{ type.loader.key_type_name }}, {{ type.loader.type_name }}>(rows.Count);
+
+        foreach (var row in rows)
+        {
+            result.Add(row.Id, row);
+        }
+
+        return result;
+    }
