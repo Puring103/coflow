@@ -7,7 +7,7 @@
     clippy::unwrap_used
 )]
 
-use coflow_api::{CftContainer, ModuleId};
+use coflow_api::{CftContainer, DataExporter, ExportContext, ModuleId, OutputSpec};
 use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
 use coflow_exporter_json::export_json_model;
 use serde_json::json;
@@ -113,6 +113,43 @@ fn exports_empty_tables_for_concrete_types() -> TestResult {
 
     assert_eq!(tables["Item"], json!([{ "id": "item_1", "name": "Sword" }]));
     assert_eq!(tables["Monster"], json!([]));
+    Ok(())
+}
+
+#[test]
+fn json_exporter_skips_empty_table_files() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            type Item { name: string; }
+            type Monster { level: int; }
+        "#,
+    )?;
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("item_1", "Item", [("name", CfdInputValue::from("Sword"))]);
+    let model = build_model(builder)?;
+    let artifacts = coflow_exporter_json::JsonExporter
+        .export(
+            ExportContext {
+                schema: &schema,
+                model: &model,
+            },
+            &OutputSpec {
+                output_type: "json".to_string(),
+                dir: "generated/data".into(),
+                options: Value::Null,
+            },
+        )
+        .map_err(|err| format!("export json artifacts: {err:?}"))?;
+
+    assert!(artifacts
+        .files
+        .iter()
+        .any(|file| file.relative_path.as_os_str() == "Item.json"));
+    assert!(!artifacts
+        .files
+        .iter()
+        .any(|file| file.relative_path.as_os_str() == "Monster.json"));
     Ok(())
 }
 

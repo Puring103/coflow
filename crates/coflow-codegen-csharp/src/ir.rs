@@ -3,7 +3,7 @@ use crate::model::{CsharpEnum, CsharpEnumVariant, CsharpProject};
 use crate::names::{
     annotation_name_arg, camel_case, csharp_ident_error, csharp_member_ident_error,
     csharp_namespace_error, csharp_type_name, display_annotation, has_annotation, index_param_name,
-    index_var_name, pluralize, ref_index_param_name, ref_index_var_name,
+    pluralize,
 };
 use crate::schema_view::SchemaView;
 use crate::CsharpCodegenError;
@@ -44,7 +44,7 @@ impl CsharpCodegenOptions {
     pub fn new(namespace: impl Into<String>) -> Self {
         Self {
             namespace: namespace.into(),
-            database_class: "GameConfig".to_string(),
+            database_class: "CoflowTables".to_string(),
         }
     }
 
@@ -88,7 +88,7 @@ pub fn build_project(
     let types = schema
         .all_types()
         .map(|schema_type| build_csharp_type(schema_type, &view))
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
 
     let tables = view.table_names();
     let database = build_csharp_database(&view, &tables, &options.database_class, data_format)?;
@@ -96,6 +96,12 @@ pub fn build_project(
     Ok(CsharpProject {
         namespace: options.namespace.clone(),
         database_class: options.database_class.clone(),
+        data_format: match data_format {
+            CsharpDataFormat::Json => "json".to_string(),
+            CsharpDataFormat::MessagePack => "messagepack".to_string(),
+        },
+        uses_json: data_format == CsharpDataFormat::Json,
+        uses_messagepack: data_format == CsharpDataFormat::MessagePack,
         enums,
         types,
         database,
@@ -152,15 +158,6 @@ fn validate_options(
             ),
         );
     }
-    if options
-        .database_class
-        .eq_ignore_ascii_case("CftLoadException")
-    {
-        push_codegen_diagnostic(
-            diagnostics,
-            "generated C# database file `CftLoadException.cs` collides with reserved load exception file",
-        );
-    }
 }
 
 fn validate_schema_names(schema: &CftContainer, diagnostics: &mut Vec<CsharpCodegenDiagnostic>) {
@@ -169,7 +166,7 @@ fn validate_schema_names(schema: &CftContainer, diagnostics: &mut Vec<CsharpCode
         validate_ident("enum", &csharp_type_name(&schema_enum.name), diagnostics);
         let mut variants = BTreeMap::<String, String>::new();
         for variant in &schema_enum.variants {
-            let csharp_variant = variant.name.clone();
+            let csharp_variant = csharp_type_name(&variant.name);
             validate_ident("enum variant", &csharp_variant, diagnostics);
             insert_generated_enum_variant_name(
                 &mut variants,
@@ -189,7 +186,7 @@ fn validate_schema_names(schema: &CftContainer, diagnostics: &mut Vec<CsharpCode
             validate_ident("parent type", &csharp_type_name(parent), diagnostics);
         }
         for field in &schema_type.fields {
-            let property_name = field.name.clone();
+            let property_name = csharp_type_name(&field.name);
             validate_ident("field property", &property_name, diagnostics);
         }
     }
@@ -202,44 +199,32 @@ fn validate_generated_names(
 ) {
     let tables = view.table_names();
     let ref_targets = view.ref_target_names();
-    let resolves_refs = !ref_targets.is_empty();
 
     validate_generated_file_names(view, options, diagnostics);
     validate_generated_member_names(view, diagnostics);
 
     for table_name in &tables {
         let csharp_table = view.csharp_type_name(table_name);
-        let list_property = pluralize(&csharp_table);
-        validate_member_ident("table list property", &list_property, diagnostics);
+        let list_property = format!("Tb{csharp_table}");
+        validate_member_ident("table accessor property", &list_property, diagnostics);
 
-        let list_var = camel_case(&list_property);
+        let list_var = camel_case(&pluralize(table_name));
         validate_ident("table list variable", &list_var, diagnostics);
-
-        let index_field = index_var_name(&csharp_table);
-        validate_member_ident("table index field", &index_field, diagnostics);
 
         let index_param = index_param_name(&csharp_table);
         validate_ident("table index parameter", &index_param, diagnostics);
-
-        if resolves_refs {
-            let item_var = camel_case(table_name);
-            validate_ident("table item variable", &item_var, diagnostics);
-        }
     }
 
     for target in &ref_targets {
         let csharp_target = view.csharp_type_name(target);
-        let ref_index_field = ref_index_var_name(&csharp_target);
-        validate_member_ident("ref index field", &ref_index_field, diagnostics);
-
-        let ref_index_arg = ref_index_param_name(&csharp_target);
-        validate_ident("ref index parameter", &ref_index_arg, diagnostics);
+        let lookup_method = format!("Get{csharp_target}");
+        validate_member_ident("context lookup method", &lookup_method, diagnostics);
     }
 
     for type_name in view.polymorphic_type_names() {
         if let Ok(case_names) = view.concrete_assignable_types(&type_name) {
             for case_name in case_names {
-                let var_name = camel_case(&case_name);
+                let var_name = camel_case(&view.csharp_type_name(&case_name));
                 validate_ident("polymorphic case variable", &var_name, diagnostics);
             }
         }
@@ -252,12 +237,10 @@ fn validate_generated_file_names(
     diagnostics: &mut Vec<CsharpCodegenDiagnostic>,
 ) {
     let mut reserved = BTreeSet::new();
-    reserved.insert(case_insensitive_file_key("GameConfig.cs"));
     reserved.insert(case_insensitive_file_key(&format!(
         "{}.cs",
         options.database_class
     )));
-    reserved.insert(case_insensitive_file_key("CftLoadException.cs"));
 
     let mut file_sources = BTreeMap::<String, String>::new();
     for enum_name in &view.enums {
@@ -333,7 +316,7 @@ fn build_key_as_enums(
         let mut enum_variants = Vec::new();
         for variant in variants.remove(name).unwrap_or_default() {
             enum_variants.push(CsharpEnumVariant {
-                name: variant.name,
+                name: csharp_type_name(&variant.name),
                 value: variant.value,
                 summary: None,
                 obsolete: false,
@@ -395,7 +378,7 @@ fn validate_generated_member_names(
     for ty in view.types.values() {
         let mut members = BTreeMap::<String, String>::new();
         for field in &ty.all_fields {
-            let property_name = field.name.clone();
+            let property_name = csharp_type_name(&field.name);
             insert_generated_member_name(
                 &mut members,
                 &ty.name,

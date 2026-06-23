@@ -1,0 +1,54 @@
+
+    internal static List<{{ type.loader.type_name }}> LoadTable(string path, {{ project.database_class }}.LoadContext context)
+    {
+        if (!File.Exists(path))
+        {
+            return new List<{{ type.loader.type_name }}>();
+        }
+
+        var array = JArray.Parse(File.ReadAllText(path));
+        var result = new List<{{ type.loader.type_name }}>(array.Count);
+
+        foreach (var row in array)
+        {
+            result.Add(LoadRow(row, context));
+        }
+
+        return result;
+    }
+
+    private static {{ type.loader.type_name }} LoadRow(JToken token, {{ project.database_class }}.LoadContext context)
+    {
+        var obj = CoflowJson.RequireObject(token);
+        var {{ type.loader.key_local_name }} = {{ type.loader.key_read_expr }};
+{% for field in type.loader.fields %}        var {{ field.local_name }} = {{ field.read_expr }};
+{% endfor %}
+        return new {{ type.loader.type_name }}(
+            {{ type.loader.key_local_name }}{% if type.loader.fields | length > 0 %},{% endif %}
+{% for field in type.loader.fields %}            {{ field.local_name }}{% if not loop.last %},{% endif %}
+{% endfor %}        );
+    }
+
+    internal static {{ type.loader.type_name }} LoadInline(JToken token, {{ project.database_class }}.LoadContext context)
+    {
+        var obj = CoflowJson.RequireObject(token);
+        var {{ type.loader.key_local_name }} = default({{ type.loader.key_type_name }})!;
+{% for field in type.loader.fields %}        var {{ field.local_name }} = {{ field.read_expr }};
+{% endfor %}
+        return new {{ type.loader.type_name }}(
+            {{ type.loader.key_local_name }}{% if type.loader.fields | length > 0 %},{% endif %}
+{% for field in type.loader.fields %}            {{ field.local_name }}{% if not loop.last %},{% endif %}
+{% endfor %}        );
+    }
+
+    internal static Dictionary<{{ type.loader.key_type_name }}, {{ type.loader.type_name }}> BuildIndex(List<{{ type.loader.type_name }}> rows)
+    {
+        var result = new Dictionary<{{ type.loader.key_type_name }}, {{ type.loader.type_name }}>(rows.Count);
+
+        foreach (var row in rows)
+        {
+            result.Add(row.Id, row);
+        }
+
+        return result;
+    }

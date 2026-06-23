@@ -77,6 +77,72 @@ outputs:
     Ok(())
 }
 
+pub fn write_acyclic_csharp_project(root: &std::path::Path, data_format: &str) {
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Reward {
+                amount: int;
+            }
+
+            type Item {
+                display_name: string;
+                reward: Reward;
+                tags: [string] = [];
+            }
+
+            type Bundle {
+                item: Item;
+                maybe_reward: Reward?;
+            }
+
+            type EmptyThing {
+                value: int;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("records.cfd"),
+        r#"
+            reward_small: Reward {
+                amount: 25,
+            }
+
+            potion: Item {
+                display_name: "Potion",
+                reward: &reward_small,
+                tags: ["consumable"],
+            }
+
+            starter: Bundle {
+                item: &potion,
+                maybe_reward: &reward_small,
+            }
+        "#,
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        format!(
+            r"schema: schema.cft
+sources:
+  - path: data
+outputs:
+  data:
+    type: {data_format}
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Game.Config
+"
+        ),
+    )
+    .expect("write config");
+}
+
 pub struct TempDirCleanup(pub std::path::PathBuf);
 
 impl Drop for TempDirCleanup {

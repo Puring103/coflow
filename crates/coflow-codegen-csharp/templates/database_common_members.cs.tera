@@ -1,21 +1,13 @@
-{% for table in project.database.tables %}    public IReadOnlyList<{{ table.name }}> {{ table.list_property }} { get; }
-{% endfor %}{% for table in project.database.tables %}    private readonly Dictionary<{{ table.id_type }}, {{ table.name }}> {{ table.index_field }};
-{% endfor %}{% for ref_index in project.database.ref_indexes %}    private readonly Dictionary<{{ ref_index.target_id_type }}, {{ ref_index.target_name }}> {{ ref_index.index_field }};
+{% for table in project.database.tables %}    public Table<{{ table.id_type }}, {{ table.name }}> {{ table.accessor_property }} { get; }
 {% endfor %}
     private {{ project.database_class }}(
 {% for parameter in project.database.constructor_parameters %}        {{ parameter.ty }} {{ parameter.name }}{% if not loop.last %},{% endif %}
 {% endfor %}    )
     {
-{% for table in project.database.tables %}        {{ table.list_property }} = {{ table.list_var }};
-        {{ table.index_field }} = {{ table.index_var }};
-
-{% endfor %}{% for ref_index in project.database.ref_indexes %}        {{ ref_index.index_field }} = {{ ref_index.parameter_name }};
+{% for table in project.database.tables %}        {{ table.accessor_property }} = {{ table.accessor_parameter }};
 {% endfor %}    }
 
-{% for table in project.database.tables %}    public {{ table.name }}? Find{{ table.name }}({{ table.id_type }} id) =>
-        {{ table.index_field }}.TryGetValue(id, out var value) ? value : null;
-
-{% endfor %}    public static {{ project.database_class }} Load(string dataDir)
+    public static {{ project.database_class }} Load(string dataDir)
     {
 {% for step in project.database.load_steps %}        {{ step }}
 {% endfor %}
@@ -24,11 +16,60 @@
 {% endfor %}        );
     }
 
-{% for ref_index in project.database.ref_indexes %}{% if ref_index.placeholder_name %}    private sealed class {{ ref_index.placeholder_name }} : {{ ref_index.target_name }}
+    internal readonly struct LoadContext
     {
-    }
+        public static readonly LoadContext Empty = new LoadContext();
 
-{% endif %}    private static {{ ref_index.target_name }} New{{ ref_index.target_name }}Ref({{ ref_index.target_id_type }} key) =>
-        new {% if ref_index.placeholder_name %}{{ ref_index.placeholder_name }}{% else %}{{ ref_index.target_name }}{% endif %} { __CoflowIsRef = true, __CoflowRefKey = key };
-
+{% for field in project.database.context_fields %}        internal readonly Dictionary<{{ field.id_type }}, {{ field.type_name }}>? {{ field.field_name }};
 {% endfor %}
+        internal LoadContext(
+{% for parameter in project.database.context_constructor_parameters %}            {{ parameter.ty }} {{ parameter.name }} = null{% if not loop.last %},{% endif %}
+{% endfor %}        )
+        {
+{% for assignment in project.database.context_assignments %}            {{ assignment.field_name }} = {{ assignment.parameter_name }};
+{% endfor %}        }
+
+{% for lookup in project.database.context_lookups %}        internal {{ lookup.return_type }} {{ lookup.method_name }}({{ lookup.id_type }} id)
+        {
+{% for field in lookup.fields %}            if ({{ field.field_name }} != null && {{ field.field_name }}.TryGetValue(id, out var {{ field.value_name }}))
+            {
+                return {{ field.value_name }};
+            }
+
+{% endfor %}            throw new KeyNotFoundException($"record `{{ lookup.return_type }}` with key `{id}` was not found");
+        }
+
+{% endfor %}    }
+
+    public sealed class Table<TKey, TRecord> : IReadOnlyList<TRecord>
+        where TKey : notnull
+    {
+        private readonly TRecord[] _records;
+        private readonly Dictionary<TKey, TRecord> _index;
+
+        internal Table(List<TRecord> records, Dictionary<TKey, TRecord> index)
+        {
+            _records = records.ToArray();
+            _index = index;
+        }
+
+        public int Count => _records.Length;
+
+        public TRecord this[int index] => _records[index];
+
+        public TRecord? Find(TKey id) =>
+            _index.TryGetValue(id, out var value) ? value : default;
+
+        public bool TryGet(TKey id, out TRecord value) =>
+            _index.TryGetValue(id, out value!);
+
+        public TRecord Get(TKey id) =>
+            _index.TryGetValue(id, out var value)
+                ? value
+                : throw new KeyNotFoundException($"record `{typeof(TRecord).Name}` with key `{id}` was not found");
+
+        public IEnumerator<TRecord> GetEnumerator() =>
+            ((IEnumerable<TRecord>)_records).GetEnumerator();
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }

@@ -140,16 +140,7 @@ const JSON_DATABASE_TEMPLATES: CsharpDatabaseTemplates = CsharpDatabaseTemplates
         name: "database_json.cs.tera",
         contents: include_str!("../templates/json/database_json.cs.tera"),
     },
-    partials: &[
-        CsharpTemplate {
-            name: "database_json_loaders.cs.tera",
-            contents: include_str!("../templates/json/database_json_loaders.cs.tera"),
-        },
-        CsharpTemplate {
-            name: "database_json_readers.cs.tera",
-            contents: include_str!("../templates/json/database_json_readers.cs.tera"),
-        },
-    ],
+    partials: &[],
 };
 
 const MESSAGEPACK_DATABASE_TEMPLATES: CsharpDatabaseTemplates = CsharpDatabaseTemplates {
@@ -157,16 +148,7 @@ const MESSAGEPACK_DATABASE_TEMPLATES: CsharpDatabaseTemplates = CsharpDatabaseTe
         name: "database_messagepack.cs.tera",
         contents: include_str!("../templates/messagepack/database_messagepack.cs.tera"),
     },
-    partials: &[
-        CsharpTemplate {
-            name: "database_messagepack_loaders.cs.tera",
-            contents: include_str!("../templates/messagepack/database_messagepack_loaders.cs.tera"),
-        },
-        CsharpTemplate {
-            name: "database_messagepack_readers.cs.tera",
-            contents: include_str!("../templates/messagepack/database_messagepack_readers.cs.tera"),
-        },
-    ],
+    partials: &[],
 };
 
 /// Generates C# type definitions and a Newtonsoft.Json based folder loader.

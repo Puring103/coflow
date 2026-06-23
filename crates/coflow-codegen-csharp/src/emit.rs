@@ -1,23 +1,22 @@
 use crate::ir::CsharpDataFormat;
 use crate::model::{
-    CsharpDatabase, CsharpEnum, CsharpEnumVariant, CsharpLoadAssignment, CsharpLoadField,
-    CsharpLoader, CsharpParameter, CsharpPolymorphicCase, CsharpPolymorphicLoader, CsharpProperty,
-    CsharpRefIndex, CsharpRefIndexSource, CsharpResolve, CsharpResolveCase, CsharpResolveMethod,
-    CsharpResolveTableCall, CsharpTable, CsharpType,
+    CsharpConstructorAssignment, CsharpContextAssignment, CsharpContextField, CsharpContextLookup,
+    CsharpContextLookupField, CsharpDatabase, CsharpEnum, CsharpEnumVariant, CsharpEquality,
+    CsharpLoadField, CsharpLoader, CsharpParameter, CsharpPolymorphicCase, CsharpProperty,
+    CsharpTable, CsharpType,
 };
 use crate::names::{
     camel_case, csharp_ident_error, display_annotation, escape_csharp_string, format_float,
-    has_annotation, index_param_name, index_var_name, pascal_case, pluralize, ref_index_param_name,
-    ref_index_var_name,
+    has_annotation, pascal_case,
 };
-use crate::schema_view::{FieldMeta, FieldType, SchemaView, TypeMeta};
+use crate::schema_view::{FieldMeta, FieldType, SchemaView};
 use crate::CsharpCodegenError;
 use coflow_cft::{CftSchemaDefaultValue, CftSchemaEnum, CftSchemaType};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 pub fn build_csharp_enum(schema_enum: &CftSchemaEnum) -> CsharpEnum {
     CsharpEnum {
-        name: crate::names::csharp_type_name(&schema_enum.name),
+        name: csharp_public_type_name(&schema_enum.name),
         is_flags: has_annotation(&schema_enum.annotations, "flag"),
         summary: display_annotation(&schema_enum.annotations),
         obsolete: has_annotation(&schema_enum.annotations, "deprecated"),
@@ -25,7 +24,7 @@ pub fn build_csharp_enum(schema_enum: &CftSchemaEnum) -> CsharpEnum {
             .variants
             .iter()
             .map(|variant| CsharpEnumVariant {
-                name: variant.name.clone(),
+                name: csharp_public_member_name(&variant.name),
                 value: variant.value,
                 summary: display_annotation(&variant.annotations),
                 obsolete: has_annotation(&variant.annotations, "deprecated"),
@@ -34,100 +33,103 @@ pub fn build_csharp_enum(schema_enum: &CftSchemaEnum) -> CsharpEnum {
     }
 }
 
-pub fn build_csharp_type(schema_type: &CftSchemaType, view: &SchemaView) -> CsharpType {
-    let mut properties = Vec::new();
+pub fn build_csharp_type(
+    schema_type: &CftSchemaType,
+    view: &SchemaView,
+) -> Result<CsharpType, CsharpCodegenError> {
     let is_struct = has_annotation(&schema_type.annotations, "struct");
-    let fields = if is_struct {
-        view.types.get(&schema_type.name).map_or_else(
-            || {
-                schema_type
-                    .fields
-                    .iter()
-                    .map(|field| FieldMeta::from_schema(field, &view.enums))
-                    .collect()
-            },
-            |ty| ty.all_fields.clone(),
-        )
-    } else {
-        schema_type
-            .fields
-            .iter()
-            .map(|field| FieldMeta::from_schema(field, &view.enums))
-            .collect()
-    };
+    let ty = view.type_meta(&schema_type.name)?;
+    let mut constructor_parameters = Vec::new();
+    let mut base_constructor_args = Vec::new();
+    let mut assignments = Vec::new();
+    let mut properties = Vec::new();
 
-    if !schema_type.is_abstract && !has_concrete_parent(&schema_type.name, view) {
+    if !schema_type.is_abstract {
         let key_ty = view.key_field_type(&schema_type.name);
-        properties.push(CsharpProperty {
-            visibility: "public".to_string(),
-            name: "Id".to_string(),
-            type_name: csharp_property_type(&key_ty, view),
-            setter: "internal set".to_string(),
-            initializer: if is_struct {
-                None
-            } else {
-                default_initializer_for_type(&key_ty, view)
-            },
-            summary: None,
-            obsolete: false,
+        let key_type = csharp_type(&key_ty, view);
+        constructor_parameters.push(CsharpParameter {
+            ty: key_type,
+            name: "id".to_string(),
         });
+        if has_concrete_parent(&schema_type.name, view) {
+            base_constructor_args.push("id".to_string());
+        } else {
+            properties.push(CsharpProperty {
+                visibility: "public".to_string(),
+                name: "Id".to_string(),
+                type_name: csharp_type(&key_ty, view),
+                summary: None,
+                obsolete: false,
+            });
+            assignments.push(CsharpConstructorAssignment {
+                property: "Id".to_string(),
+                parameter: "id".to_string(),
+            });
+        }
     }
 
-    if is_struct || schema_type.parent.is_none() {
-        properties.push(CsharpProperty {
-            visibility: "internal".to_string(),
-            name: ref_marker_property().to_string(),
-            type_name: "bool".to_string(),
-            setter: "set".to_string(),
-            initializer: if is_struct {
-                None
-            } else {
-                Some("false".to_string())
-            },
-            summary: None,
-            obsolete: false,
-        });
-        properties.push(CsharpProperty {
-            visibility: "internal".to_string(),
-            name: ref_key_property().to_string(),
-            type_name: "object?".to_string(),
-            setter: "set".to_string(),
-            initializer: None,
-            summary: None,
-            obsolete: false,
-        });
-    }
+    let own_field_names = schema_type
+        .fields
+        .iter()
+        .map(|field| field.name.clone())
+        .collect::<BTreeSet<_>>();
 
-    for field in &fields {
-        let field_ty = field.ty.clone();
-        let csharp_ty = csharp_field_type(field, view);
+    for field in &ty.all_fields {
+        let local_name = field_local_name(&field.name, &mut HashSet::new())?;
+        let property_type = csharp_property_type(&field.ty, view);
+        constructor_parameters.push(CsharpParameter {
+            ty: property_type,
+            name: local_name.clone(),
+        });
+        if !is_struct && schema_type.parent.is_some() && !own_field_names.contains(&field.name) {
+            base_constructor_args.push(local_name);
+            continue;
+        }
 
+        let property_name = csharp_public_member_name(&field.name);
         properties.push(CsharpProperty {
             visibility: "public".to_string(),
-            name: field.name.clone(),
-            type_name: csharp_property_type(&csharp_ty, view),
-            setter: if field_needs_internal_set(&field_ty, view) {
-                "internal set".to_string()
-            } else {
-                "set".to_string()
-            },
-            initializer: if is_struct {
-                None
-            } else {
-                default_initializer(field, &csharp_ty, view)
-            },
+            name: property_name.clone(),
+            type_name: csharp_property_type(&field.ty, view),
             summary: display_annotation(&field.annotations),
             obsolete: has_annotation(&field.annotations, "deprecated"),
         });
+        assignments.push(CsharpConstructorAssignment {
+            property: property_name,
+            parameter: local_name,
+        });
     }
 
-    CsharpType {
+    let loader = if schema_type.is_abstract {
+        Some(polymorphic_loader(&schema_type.name, view)?)
+    } else {
+        Some(loader_method(&schema_type.name, view)?)
+    };
+
+    let equality = (!schema_type.is_abstract).then(|| CsharpEquality {
+        key_property: "Id".to_string(),
+        is_struct,
+    });
+
+    Ok(CsharpType {
         name: view.csharp_type_name(&schema_type.name),
         declaration: type_declaration(schema_type, view),
+        constructor_visibility: if schema_type.is_abstract {
+            "protected".to_string()
+        } else {
+            "private".to_string()
+        },
         summary: display_annotation(&schema_type.annotations),
         obsolete: has_annotation(&schema_type.annotations, "deprecated"),
         properties,
-    }
+        constructor_parameters,
+        base_constructor_call: (!base_constructor_args.is_empty())
+            .then(|| format!(" : base({})", base_constructor_args.join(", "))),
+        base_constructor_args,
+        assignments,
+        loader,
+        equality,
+    })
 }
 
 fn has_concrete_parent(type_name: &str, view: &SchemaView) -> bool {
@@ -153,82 +155,130 @@ pub fn build_csharp_database(
     _database_class: &str,
     data_format: CsharpDataFormat,
 ) -> Result<CsharpDatabase, CsharpCodegenError> {
-    let table_models: Vec<CsharpTable> = tables
+    let ordered_tables = sort_tables_by_dependencies(view, tables)?;
+    let table_models = ordered_tables
         .iter()
         .map(|table_name| build_table_model(view, table_name))
-        .collect();
-    let ref_targets = view.ref_target_names();
-    let ref_indexes = build_ref_indexes(view, tables, &ref_targets)?;
-    let mut parameters = Vec::<CsharpParameter>::new();
-    let mut load_steps = Vec::new();
-
+        .collect::<Vec<_>>();
     let load_extension = match data_format {
         CsharpDataFormat::Json => "json",
         CsharpDataFormat::MessagePack => "msgpack",
     };
 
-    for table in &table_models {
-        parameters.push(CsharpParameter {
-            ty: format!("List<{}>", table.name),
-            name: table.list_var.clone(),
-        });
-        parameters.push(CsharpParameter {
-            ty: format!("Dictionary<{}, {}>", table.id_type, table.name),
-            name: table.index_var.clone(),
-        });
-        load_steps.push(format!(
-            "var {} = LoadTable(Path.Combine(dataDir, \"{}.{}\"), \"{}\", Load{}Row);",
-            table.list_var, table.source_name, load_extension, table.source_name, table.name
-        ));
-    }
-
-    for table in &table_models {
-        load_steps.push(format!(
-            "var {} = BuildUniqueIndex({}, x => x.{}, \"{}\", \"{}\");",
-            table.index_var,
-            table.list_var,
-            table.id_property,
-            table.source_name,
-            table.id_source_name
-        ));
-    }
-
-    for ref_index in &ref_indexes {
-        parameters.push(CsharpParameter {
-            ty: format!(
-                "Dictionary<{}, {}>",
-                ref_index.target_id_type, ref_index.target_name
-            ),
-            name: ref_index.parameter_name.clone(),
-        });
-        load_steps.push(ref_index_load_step(ref_index));
-    }
-
-    let resolve = if ref_targets.is_empty() {
-        None
-    } else {
-        load_steps.push(format!(
-            "ResolveRefs({});",
-            resolve_arguments(view, tables, &ref_targets).join(", ")
-        ));
-        Some(build_resolve_model(view, tables, &ref_targets)?)
-    };
-
-    let constructor_args = parameters
+    let context_fields = table_models
         .iter()
-        .map(|parameter| parameter.name.clone())
+        .map(|table| CsharpContextField {
+            source_name: table.source_name.clone(),
+            field_name: context_index_field_name(&table.name),
+            id_type: table.id_type.clone(),
+            type_name: table.name.clone(),
+        })
         .collect::<Vec<_>>();
+    let context_constructor_parameters = table_models
+        .iter()
+        .map(|table| CsharpParameter {
+            ty: format!("Dictionary<{}, {}>?", table.id_type, table.name),
+            name: table.index_var.clone(),
+        })
+        .collect::<Vec<_>>();
+    let context_assignments = table_models
+        .iter()
+        .map(|table| CsharpContextAssignment {
+            field_name: context_index_field_name(&table.name),
+            parameter_name: table.index_var.clone(),
+        })
+        .collect::<Vec<_>>();
+    let constructor_parameters = table_models
+        .iter()
+        .map(|table| CsharpParameter {
+            ty: format!("Table<{}, {}>", table.id_type, table.name),
+            name: table.accessor_parameter.clone(),
+        })
+        .collect::<Vec<_>>();
+    let constructor_args = table_models
+        .iter()
+        .map(|table| {
+            format!(
+                "new Table<{}, {}>({}, {})",
+                table.id_type, table.name, table.records_var, table.index_var
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let context_lookups = build_context_lookups(view, tables)?;
+    let load_steps = build_load_steps(&table_models, load_extension);
 
     Ok(CsharpDatabase {
         tables: table_models,
-        ref_indexes,
-        constructor_parameters: parameters,
+        constructor_parameters,
         load_steps,
         constructor_args,
-        loaders: loader_methods(view)?,
-        polymorphic_loaders: polymorphic_loaders(view)?,
-        resolve,
+        context_fields,
+        context_lookups,
+        context_constructor_parameters,
+        context_assignments,
     })
+}
+
+fn build_context_lookups(
+    view: &SchemaView,
+    tables: &[String],
+) -> Result<Vec<CsharpContextLookup>, CsharpCodegenError> {
+    let mut context_lookups = Vec::new();
+    for target in view.ref_target_names() {
+        let assignable = view
+            .concrete_assignable_types(&target)?
+            .into_iter()
+            .filter(|type_name| tables.contains(type_name))
+            .collect::<Vec<_>>();
+        if assignable.is_empty() {
+            return Err(CsharpCodegenError::new(format!(
+                "reference target `{target}` has no loadable key table"
+            )));
+        }
+        let csharp_target = view.csharp_type_name(&target);
+        context_lookups.push(CsharpContextLookup {
+            method_name: format!("Get{csharp_target}"),
+            id_type: csharp_type(&view.key_field_type(&target), view),
+            return_type: csharp_target,
+            fields: assignable
+                .into_iter()
+                .map(|type_name| {
+                    let csharp_name = view.csharp_type_name(&type_name);
+                    CsharpContextLookupField {
+                        field_name: context_index_field_name(&csharp_name),
+                        value_name: format!("{}Value", camel_case(&csharp_name)),
+                    }
+                })
+                .collect(),
+        });
+    }
+    Ok(context_lookups)
+}
+
+fn build_load_steps(table_models: &[CsharpTable], load_extension: &str) -> Vec<String> {
+    let mut load_steps = Vec::new();
+    for (idx, table) in table_models.iter().enumerate() {
+        let context_args = table_models
+            .iter()
+            .take(idx)
+            .map(|candidate| candidate.index_var.clone())
+            .collect::<Vec<_>>();
+        let context_expr = if context_args.is_empty() {
+            "LoadContext.Empty".to_string()
+        } else {
+            format!("new LoadContext({})", context_args.join(", "))
+        };
+        load_steps.push(format!(
+            "var {} = {}.LoadTable(Path.Combine(dataDir, \"{}.{}\"), {});",
+            table.records_var, table.name, table.source_name, load_extension, context_expr
+        ));
+        load_steps.push(format!(
+            "var {} = {}.BuildIndex({});",
+            table.index_var, table.name, table.records_var
+        ));
+    }
+    load_steps
 }
 
 fn build_table_model(view: &SchemaView, table_name: &str) -> CsharpTable {
@@ -237,169 +287,215 @@ fn build_table_model(view: &SchemaView, table_name: &str) -> CsharpTable {
     CsharpTable {
         name: csharp_name.clone(),
         source_name: table_name.to_string(),
-        list_property: pluralize(&csharp_name),
-        list_var: camel_case(&pluralize(table_name)),
-        item_var: camel_case(table_name),
+        accessor_property: format!("Tb{csharp_name}"),
+        accessor_parameter: format!("tb{csharp_name}"),
+        records_var: plural_records_var(table_name),
         id_type: csharp_type(&id_ty, view),
         id_property: "Id".to_string(),
         id_source_name: "id".to_string(),
-        index_field: index_var_name(&csharp_name),
-        index_var: index_param_name(&csharp_name),
+        index_var: format!("{}Index", camel_case(&csharp_name)),
     }
 }
 
-fn build_ref_indexes(
+fn sort_tables_by_dependencies(
     view: &SchemaView,
     tables: &[String],
-    ref_targets: &[String],
-) -> Result<Vec<CsharpRefIndex>, CsharpCodegenError> {
-    let table_set = tables
-        .iter()
-        .cloned()
-        .collect::<std::collections::BTreeSet<_>>();
-    let mut out = Vec::new();
+) -> Result<Vec<String>, CsharpCodegenError> {
+    let table_set = tables.iter().cloned().collect::<BTreeSet<_>>();
+    let mut deps = BTreeMap::<String, BTreeSet<String>>::new();
+    for table in tables {
+        let mut table_deps = BTreeSet::new();
+        collect_table_dependencies(view, table, &table_set, &mut table_deps)?;
+        deps.insert(table.clone(), table_deps);
+    }
 
-    for target in ref_targets {
-        let target_id_ty = view.key_field_type(target);
-        let csharp_target = view.csharp_type_name(target);
-        let assignable_sources = view
-            .concrete_assignable_types(target)?
-            .into_iter()
-            .filter(|type_name| table_set.contains(type_name))
-            .map(|type_name| {
-                Ok(CsharpRefIndexSource {
-                    list_var: camel_case(&pluralize(&type_name)),
-                    table_name: type_name.clone(),
-                    source_type_name: view.csharp_type_name(&type_name),
-                    index_var: index_param_name(&view.csharp_type_name(&type_name)),
-                    id_property: "Id".to_string(),
-                    id_source_name: "id".to_string(),
-                })
-            })
-            .collect::<Result<Vec<_>, CsharpCodegenError>>()?;
+    let mut ordered = Vec::new();
+    let mut temporary = BTreeSet::new();
+    let mut permanent = BTreeSet::new();
+    let mut stack = Vec::new();
 
-        if assignable_sources.is_empty() {
-            return Err(CsharpCodegenError::new(format!(
-                "reference target `{target}` has no loadable key table"
-            )));
+    for table in tables {
+        visit_table(
+            table,
+            &deps,
+            &mut temporary,
+            &mut permanent,
+            &mut stack,
+            &mut ordered,
+        )?;
+    }
+
+    Ok(ordered)
+}
+
+fn visit_table(
+    table: &str,
+    deps: &BTreeMap<String, BTreeSet<String>>,
+    temporary: &mut BTreeSet<String>,
+    permanent: &mut BTreeSet<String>,
+    stack: &mut Vec<String>,
+    ordered: &mut Vec<String>,
+) -> Result<(), CsharpCodegenError> {
+    if permanent.contains(table) {
+        return Ok(());
+    }
+    if temporary.contains(table) {
+        let start = stack
+            .iter()
+            .position(|entry| entry == table)
+            .unwrap_or_default();
+        let mut cycle = stack[start..].to_vec();
+        cycle.push(table.to_string());
+        return Err(CsharpCodegenError::new(format!(
+            "C# read-only immediate reference loading does not support cyclic table references: {}",
+            cycle.join(" -> ")
+        )));
+    }
+
+    temporary.insert(table.to_string());
+    stack.push(table.to_string());
+    for dep in deps.get(table).into_iter().flatten() {
+        visit_table(dep, deps, temporary, permanent, stack, ordered)?;
+    }
+    stack.pop();
+    temporary.remove(table);
+    permanent.insert(table.to_string());
+    ordered.push(table.to_string());
+    Ok(())
+}
+
+fn collect_table_dependencies(
+    view: &SchemaView,
+    type_name: &str,
+    table_set: &BTreeSet<String>,
+    out: &mut BTreeSet<String>,
+) -> Result<(), CsharpCodegenError> {
+    let ty = view.type_meta(type_name)?;
+    for field in &ty.all_fields {
+        collect_table_dependencies_for_field_type(view, &field.ty, table_set, out)?;
+    }
+    Ok(())
+}
+
+fn collect_table_dependencies_for_field_type(
+    view: &SchemaView,
+    ty: &FieldType,
+    table_set: &BTreeSet<String>,
+    out: &mut BTreeSet<String>,
+) -> Result<(), CsharpCodegenError> {
+    match ty {
+        FieldType::Type(name) => {
+            for concrete in view.concrete_assignable_types(name)? {
+                if table_set.contains(&concrete) {
+                    out.insert(concrete.clone());
+                }
+            }
         }
-
-        out.push(CsharpRefIndex {
-            target_name: csharp_target.clone(),
-            target_source_name: target.clone(),
-            target_id_type: csharp_type(&target_id_ty, view),
-            index_field: ref_index_var_name(&csharp_target),
-            parameter_name: ref_index_param_name(&csharp_target),
-            placeholder_name: view
-                .type_is_abstract(target)
-                .then(|| format!("__Coflow{csharp_target}Ref")),
-            assignable_sources,
-        });
+        FieldType::Array(inner) | FieldType::Nullable(inner) => {
+            collect_table_dependencies_for_field_type(view, inner, table_set, out)?;
+        }
+        FieldType::Dict(_, value) => {
+            collect_table_dependencies_for_field_type(view, value, table_set, out)?;
+        }
+        FieldType::Int
+        | FieldType::Float
+        | FieldType::Bool
+        | FieldType::String
+        | FieldType::Enum(_) => {}
     }
-
-    Ok(out)
+    Ok(())
 }
 
-fn ref_index_load_step(ref_index: &CsharpRefIndex) -> String {
-    if ref_index.assignable_sources.len() == 1
-        && ref_index.assignable_sources[0].table_name == ref_index.target_source_name
-    {
-        return format!(
-            "var {} = {};",
-            ref_index.parameter_name, ref_index.assignable_sources[0].index_var
-        );
-    }
-
-    let source_args = ref_index
-        .assignable_sources
-        .iter()
-        .map(|source| {
-            format!(
-                "new RefIndexSource<{}, {}>({}, x => {}, \"{}\", \"{}\")",
-                ref_index.target_id_type,
-                ref_index.target_name,
-                source.list_var,
-                ref_index_source_key_selector(source),
-                source.table_name,
-                source.id_source_name
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!(
-        "var {} = BuildRefIndex({});",
-        ref_index.parameter_name, source_args
-    )
+fn loader_method(type_name: &str, view: &SchemaView) -> Result<CsharpLoader, CsharpCodegenError> {
+    let ty = view.type_meta(type_name)?;
+    let mut used_local_names = loader_reserved_local_names(ty);
+    let key_ty = view.key_field_type(type_name);
+    let key_local_name = field_local_name("id", &mut used_local_names)?;
+    Ok(CsharpLoader {
+        type_name: view.csharp_type_name(type_name),
+        source_name: type_name.to_string(),
+        key_type_name: csharp_type(&key_ty, view),
+        key_local_name,
+        key_property: "Id".to_string(),
+        key_read_expr: read_required_expr(
+            "id",
+            "obj",
+            &read_token_expr(&key_ty, "token", "context", view)?,
+        ),
+        key_messagepack_read_expr: read_messagepack_expr(&key_ty, "reader", "context", view)?,
+        fields: ty
+            .all_fields
+            .iter()
+            .map(|field| load_field(field, &mut used_local_names, view))
+            .collect::<Result<Vec<_>, _>>()?,
+        polymorphic_cases: Vec::new(),
+        is_polymorphic: false,
+        expected: String::new(),
+    })
 }
 
-fn ref_index_source_key_selector(source: &CsharpRefIndexSource) -> String {
-    format!("(({})x).{}", source.source_type_name, source.id_property)
-}
-
-fn loader_methods(view: &SchemaView) -> Result<Vec<CsharpLoader>, CsharpCodegenError> {
-    view.non_abstract_type_names()
-        .into_iter()
-        .map(|type_name| {
-            let ty = view.type_meta(&type_name)?;
-            let mut used_local_names = loader_reserved_local_names(ty);
-            let key_ty = view.key_field_type(&type_name);
-            let key_local_name = field_local_name("id", &mut used_local_names)?;
-            Ok(CsharpLoader {
-                type_name: view.csharp_type_name(&type_name),
-                key_type_name: csharp_type(&key_ty, view),
-                key_local_name,
-                key_read_expr: read_required_expr(
-                    "id",
-                    "obj",
-                    "path",
-                    &read_token_expr(&key_ty, "token", "childPath", view)?,
-                ),
-                key_messagepack_read_expr: read_messagepack_expr(
-                    &key_ty,
-                    "reader",
-                    "fieldPath",
-                    view,
-                )?,
-                fields: ty
-                    .all_fields
-                    .iter()
-                    .map(|field| {
-                        let local_name = field_local_name(&field.name, &mut used_local_names)?;
-                        let csharp_ty = csharp_field_type(field, view);
-                        let default_expr =
-                            default_value_expr(field.default.as_ref(), &csharp_ty, view)?;
-                        let is_required = default_expr.is_none();
-                        Ok(CsharpLoadField {
-                            property: field.name.clone(),
-                            source_name: field.name.clone(),
-                            local_name: local_name.clone(),
-                            type_name: csharp_type(&csharp_ty, view),
-                            read_expr: read_field_expr(field, "obj", "path", view)?,
-                            messagepack_read_expr: read_messagepack_field_expr(
-                                field,
-                                "reader",
-                                "fieldPath",
-                                view,
-                            )?,
-                            default_expr,
-                            is_required,
-                            assignments: vec![CsharpLoadAssignment {
-                                property: field.name.clone(),
-                                expr: local_name,
-                            }],
-                        })
-                    })
-                    .collect::<Result<Vec<_>, CsharpCodegenError>>()?,
+fn polymorphic_loader(
+    type_name: &str,
+    view: &SchemaView,
+) -> Result<CsharpLoader, CsharpCodegenError> {
+    let assignable = view.concrete_assignable_types(type_name)?;
+    Ok(CsharpLoader {
+        type_name: view.csharp_type_name(type_name),
+        source_name: type_name.to_string(),
+        key_type_name: csharp_type(&view.key_field_type(type_name), view),
+        key_local_name: String::new(),
+        key_property: "Id".to_string(),
+        key_read_expr: String::new(),
+        key_messagepack_read_expr: String::new(),
+        fields: Vec::new(),
+        polymorphic_cases: assignable
+            .iter()
+            .map(|case| CsharpPolymorphicCase {
+                type_name: view.csharp_type_name(case),
+                source_name: case.clone(),
             })
-        })
-        .collect()
+            .collect(),
+        is_polymorphic: true,
+        expected: assignable.join(" | "),
+    })
 }
 
-fn loader_reserved_local_names(ty: &TypeMeta) -> HashSet<String> {
+fn load_field(
+    field: &FieldMeta,
+    used_local_names: &mut HashSet<String>,
+    view: &SchemaView,
+) -> Result<CsharpLoadField, CsharpCodegenError> {
+    let local_name = field_local_name(&field.name, used_local_names)?;
+    let default_expr = default_value_expr(field.default.as_ref(), &field.ty, view)?;
+    let missing_expr = default_expr.as_ref().map_or_else(
+        || {
+            if field.ty.is_nullable() {
+                None
+            } else {
+                collection_default_expr(field.ty.non_nullable(), view).ok()
+            }
+        },
+        |default| Some(default.clone()),
+    );
+    Ok(CsharpLoadField {
+        property: csharp_public_member_name(&field.name),
+        source_name: field.name.clone(),
+        local_name,
+        type_name: csharp_type(&field.ty, view),
+        read_expr: read_field_expr(field, "obj", "context", view, missing_expr.as_deref())?,
+        messagepack_read_expr: read_messagepack_field_expr(field, "reader", "context", view)?,
+        is_required: missing_expr.is_none(),
+        default_expr,
+        missing_expr,
+        has_name: format!("has{}", csharp_public_member_name(&field.name)),
+    })
+}
+
+fn loader_reserved_local_names(ty: &crate::schema_view::TypeMeta) -> HashSet<String> {
     let mut out = ty
         .all_fields
         .iter()
-        .map(|field| format!("has{}", pascal_case(&field.name)))
+        .map(|field| format!("has{}", csharp_public_member_name(&field.name)))
         .collect::<HashSet<_>>();
     out.insert("hasId".to_string());
     out
@@ -409,7 +505,7 @@ fn field_local_name(
     field_name: &str,
     used_names: &mut HashSet<String>,
 ) -> Result<String, CsharpCodegenError> {
-    let candidate = camel_case(field_name);
+    let candidate = camel_case(&pascal_case(field_name));
     let base_name = if csharp_ident_error(&candidate)
         .is_some_and(|reason| reason == "identifier is a C# keyword")
         || is_reserved_loader_local_name(&candidate)
@@ -438,593 +534,96 @@ fn field_local_name(
 fn is_reserved_loader_local_name(value: &str) -> bool {
     matches!(
         value,
-        "bytes"
-            | "count"
+        "count"
             | "fieldPath"
             | "i"
             | "index"
             | "item"
-            | "itemPath"
-            | "itemReader"
             | "key"
             | "keyPath"
-            | "list"
-            | "path"
-            | "rawKey"
+            | "obj"
             | "reader"
             | "result"
-            | "source"
             | "token"
-            | "typeKey"
             | "typeName"
             | "value"
             | "valuePath"
-            | "valueReader"
     )
-}
-
-fn polymorphic_loaders(
-    view: &SchemaView,
-) -> Result<Vec<CsharpPolymorphicLoader>, CsharpCodegenError> {
-    view.polymorphic_type_names()
-        .into_iter()
-        .map(|type_name| {
-            let assignable = view.concrete_assignable_types(&type_name)?;
-            Ok(CsharpPolymorphicLoader {
-                type_name: view.csharp_type_name(&type_name),
-                expected: assignable.join(" | "),
-                cases: assignable
-                    .into_iter()
-                    .map(|type_name| CsharpPolymorphicCase {
-                        type_name: view.csharp_type_name(&type_name),
-                        source_name: type_name,
-                    })
-                    .collect(),
-            })
-        })
-        .collect()
-}
-
-fn build_resolve_model(
-    view: &SchemaView,
-    tables: &[String],
-    ref_targets: &[String],
-) -> Result<CsharpResolve, CsharpCodegenError> {
-    let parameters = resolve_parameters(view, tables, ref_targets);
-    let mut table_calls = Vec::new();
-    for table_name in tables {
-        let table = view.type_meta(table_name)?;
-        let csharp_table = view.csharp_type_name(table_name);
-        table_calls.push(CsharpResolveTableCall {
-            table_name: csharp_table,
-            source_name: table_name.clone(),
-            list_var: camel_case(&pluralize(table_name)),
-            item_var: camel_case(table_name),
-            id_property: "Id".to_string(),
-            index_args: resolve_index_argument_list(view, ref_targets),
-            path_expr: format!("$\"{table_name}[{{{}.Id}}]\"", camel_case(table_name)),
-            returns_value: table.is_struct,
-        });
-    }
-
-    let mut methods = Vec::new();
-    for type_name in view.all_type_names() {
-        let ty = view.type_meta(&type_name)?;
-        methods.push(if ty.is_abstract {
-            build_polymorphic_resolver(view, ty, ref_targets)?
-        } else {
-            build_type_resolver(view, ty, ref_targets)?
-        });
-    }
-
-    Ok(CsharpResolve {
-        parameters,
-        table_calls,
-        methods,
-    })
-}
-
-fn build_type_resolver(
-    view: &SchemaView,
-    ty: &TypeMeta,
-    ref_targets: &[String],
-) -> Result<CsharpResolveMethod, CsharpCodegenError> {
-    let mut statements = Vec::new();
-    for field in &ty.all_fields {
-        push_resolve_field(&mut statements, view, field, ref_targets)?;
-    }
-    Ok(CsharpResolveMethod {
-        type_name: view.csharp_type_name(&ty.name),
-        returns_value: ty.is_struct,
-        is_polymorphic: false,
-        parameters: resolve_index_parameter_models(view, ref_targets),
-        statements,
-        cases: Vec::new(),
-    })
-}
-
-fn build_polymorphic_resolver(
-    view: &SchemaView,
-    ty: &TypeMeta,
-    ref_targets: &[String],
-) -> Result<CsharpResolveMethod, CsharpCodegenError> {
-    Ok(CsharpResolveMethod {
-        type_name: view.csharp_type_name(&ty.name),
-        returns_value: false,
-        is_polymorphic: true,
-        parameters: resolve_index_parameter_models(view, ref_targets),
-        statements: Vec::new(),
-        cases: view
-            .concrete_assignable_types(&ty.name)?
-            .into_iter()
-            .map(|type_name| CsharpResolveCase {
-                var_name: camel_case(&type_name),
-                type_name: view.csharp_type_name(&type_name),
-                index_args: resolve_index_argument_list(view, ref_targets),
-            })
-            .collect(),
-    })
-}
-
-fn push_resolve_field(
-    out: &mut Vec<String>,
-    view: &SchemaView,
-    field: &FieldMeta,
-    ref_targets: &[String],
-) -> Result<(), CsharpCodegenError> {
-    let property = field.name.clone();
-
-    if !value_needs_resolve(&field.ty) {
-        return Ok(());
-    }
-
-    let mut context = ResolveContext::new(view, ref_targets);
-    push_resolve_nested_value(
-        out,
-        &mut context,
-        &field.ty,
-        &format!("value.{property}"),
-        &field.name,
-    )
-}
-
-fn push_resolve_nested_value(
-    out: &mut Vec<String>,
-    context: &mut ResolveContext<'_>,
-    ty: &FieldType,
-    access: &str,
-    path_suffix: &str,
-) -> Result<(), CsharpCodegenError> {
-    match ty {
-        FieldType::Type(type_name) => {
-            push_resolve_type_value(out, context, type_name, access, path_suffix);
-        }
-        FieldType::Array(inner) => {
-            push_resolve_array_value(out, context, inner, access, path_suffix)?;
-        }
-        FieldType::Dict(key, value) => {
-            push_resolve_dict_value(out, context, key, value, access, path_suffix)?;
-        }
-        FieldType::Nullable(inner) => {
-            push_resolve_nullable_value(out, context, inner, access, path_suffix)?;
-        }
-        FieldType::Int
-        | FieldType::Float
-        | FieldType::Bool
-        | FieldType::String
-        | FieldType::Enum(_) => {}
-    }
-    Ok(())
-}
-
-struct ResolveContext<'a> {
-    view: &'a SchemaView,
-    ref_targets: &'a [String],
-    locals: ResolveLocalNames,
-}
-
-impl<'a> ResolveContext<'a> {
-    const fn new(view: &'a SchemaView, ref_targets: &'a [String]) -> Self {
-        Self {
-            view,
-            ref_targets,
-            locals: ResolveLocalNames {
-                lists: 0,
-                indexes: 0,
-                dictionaries: 0,
-                keys: 0,
-                nullables: 0,
-            },
-        }
-    }
-}
-
-#[derive(Default)]
-struct ResolveLocalNames {
-    lists: usize,
-    indexes: usize,
-    dictionaries: usize,
-    keys: usize,
-    nullables: usize,
-}
-
-impl ResolveLocalNames {
-    fn list(&mut self) -> String {
-        self.lists += 1;
-        format!("list{}", self.lists)
-    }
-
-    fn index(&mut self) -> String {
-        self.indexes += 1;
-        format!("i{}", self.indexes)
-    }
-
-    fn dictionary(&mut self) -> String {
-        self.dictionaries += 1;
-        format!("dictionary{}", self.dictionaries)
-    }
-
-    fn key(&mut self) -> String {
-        self.keys += 1;
-        format!("key{}", self.keys)
-    }
-
-    fn nullable_value(&mut self) -> String {
-        self.nullables += 1;
-        format!("nullableValue{}", self.nullables)
-    }
-}
-
-fn push_resolve_type_value(
-    out: &mut Vec<String>,
-    context: &ResolveContext<'_>,
-    type_name: &str,
-    access: &str,
-    path_suffix: &str,
-) {
-    let args = resolve_index_argument_list(context.view, context.ref_targets);
-    let csharp_name = context.view.csharp_type_name(type_name);
-    let target_index = ref_index_param_name(&csharp_name);
-    let target_id_type = csharp_type(&context.view.key_field_type(type_name), context.view);
-    out.push(format!("if ({access}.{})", ref_marker_property()));
-    out.push("{".to_string());
-    out.push(format!(
-        "    {access} = ResolveRef({target_index}, ({target_id_type}){access}.{}!, $\"{{path}}.{path_suffix}\", \"{type_name}\");",
-        ref_key_property()
-    ));
-    out.push("}".to_string());
-    out.push("else".to_string());
-    out.push("{".to_string());
-    if type_has_nested_resolvable_fields(type_name, context.view) {
-        if context.view.type_is_struct(type_name) {
-            out.push(format!(
-                "    {access} = Resolve{csharp_name}Refs({access}, {args}, $\"{{path}}.{path_suffix}\");"
-            ));
-        } else {
-            out.push(format!(
-                "    Resolve{csharp_name}Refs({access}, {args}, $\"{{path}}.{path_suffix}\");"
-            ));
-        }
-    }
-    out.push("}".to_string());
-}
-
-fn push_resolve_array_value(
-    out: &mut Vec<String>,
-    context: &mut ResolveContext<'_>,
-    inner: &FieldType,
-    access: &str,
-    path_suffix: &str,
-) -> Result<(), CsharpCodegenError> {
-    if !value_needs_resolve(inner) {
-        return Ok(());
-    }
-    let list_name = context.locals.list();
-    let index_name = context.locals.index();
-    out.push("{".to_string());
-    out.push(format!(
-        "    var {list_name} = (List<{}>){access};",
-        csharp_type(inner, context.view)
-    ));
-    out.push(format!(
-        "    for (var {index_name} = 0; {index_name} < {list_name}.Count; {index_name}++)"
-    ));
-    out.push("    {".to_string());
-    let item_access = format!("{list_name}[{index_name}]");
-    push_indented_resolve_nested_value(
-        out,
-        context,
-        inner,
-        &item_access,
-        &format!("{path_suffix}[{{{index_name}}}]"),
-        "        ",
-    )?;
-    out.push("    }".to_string());
-    out.push("}".to_string());
-    Ok(())
-}
-
-fn push_resolve_dict_value(
-    out: &mut Vec<String>,
-    context: &mut ResolveContext<'_>,
-    key: &FieldType,
-    value: &FieldType,
-    access: &str,
-    path_suffix: &str,
-) -> Result<(), CsharpCodegenError> {
-    if !value_needs_resolve(value) {
-        return Ok(());
-    }
-    let dictionary_name = context.locals.dictionary();
-    let key_name = context.locals.key();
-    out.push("{".to_string());
-    out.push(format!(
-        "    var {dictionary_name} = (Dictionary<{}, {}>){access};",
-        csharp_type(key, context.view),
-        csharp_type(value, context.view)
-    ));
-    out.push(format!(
-        "    foreach (var {key_name} in new List<{}>({dictionary_name}.Keys))",
-        csharp_type(key, context.view),
-    ));
-    out.push("    {".to_string());
-    let value_access = format!("{dictionary_name}[{key_name}]");
-    push_indented_resolve_nested_value(
-        out,
-        context,
-        value,
-        &value_access,
-        &format!("{path_suffix}[{{{key_name}}}]"),
-        "        ",
-    )?;
-    out.push("    }".to_string());
-    out.push("}".to_string());
-    Ok(())
-}
-
-fn push_resolve_nullable_value(
-    out: &mut Vec<String>,
-    context: &mut ResolveContext<'_>,
-    inner: &FieldType,
-    access: &str,
-    path_suffix: &str,
-) -> Result<(), CsharpCodegenError> {
-    if !value_needs_resolve(inner) {
-        return Ok(());
-    }
-    out.push(format!("if ({access} != null)"));
-    out.push("{".to_string());
-    let needs_value_copy = nullable_value_needs_copy(inner, context.view);
-    let nullable_value = if needs_value_copy {
-        Some(context.locals.nullable_value())
-    } else {
-        None
-    };
-    if needs_value_copy {
-        let local = nullable_value.as_deref().unwrap_or("");
-        out.push(format!("    var {local} = {access}.Value;"));
-    }
-    let nested_access = nullable_value.as_deref().unwrap_or(access);
-    push_indented_resolve_nested_value(out, context, inner, nested_access, path_suffix, "    ")?;
-    if let Some(local) = nullable_value {
-        out.push(format!("    {access} = {local};"));
-    }
-    out.push("}".to_string());
-    Ok(())
-}
-
-fn nullable_value_needs_copy(ty: &FieldType, view: &SchemaView) -> bool {
-    matches!(
-        ty.non_nullable(),
-        FieldType::Type(name) if view.type_is_struct(name) && view.range_contains_ref(name)
-    )
-}
-
-fn push_indented_resolve_nested_value(
-    out: &mut Vec<String>,
-    context: &mut ResolveContext<'_>,
-    ty: &FieldType,
-    access: &str,
-    path_suffix: &str,
-    indent: &str,
-) -> Result<(), CsharpCodegenError> {
-    let mut inner_statements = Vec::new();
-    push_resolve_nested_value(&mut inner_statements, context, ty, access, path_suffix)?;
-    out.extend(
-        inner_statements
-            .into_iter()
-            .map(|line| format!("{indent}{line}")),
-    );
-    Ok(())
-}
-
-fn value_needs_resolve(ty: &FieldType) -> bool {
-    match ty {
-        FieldType::Type(_) => true,
-        FieldType::Array(inner) | FieldType::Nullable(inner) => value_needs_resolve(inner),
-        FieldType::Dict(_, value) => value_needs_resolve(value),
-        FieldType::Int
-        | FieldType::Float
-        | FieldType::Bool
-        | FieldType::String
-        | FieldType::Enum(_) => false,
-    }
-}
-
-fn field_needs_internal_set(ty: &FieldType, view: &SchemaView) -> bool {
-    matches!(ty.non_nullable(), FieldType::Type(_)) || value_needs_resolve_writeback(ty, view)
-}
-
-fn value_needs_resolve_writeback(ty: &FieldType, view: &SchemaView) -> bool {
-    match ty {
-        FieldType::Type(name) => {
-            view.type_is_struct(name) && type_has_nested_resolvable_fields(name, view)
-        }
-        FieldType::Array(inner) | FieldType::Nullable(inner) => {
-            value_needs_resolve_writeback(inner, view)
-        }
-        FieldType::Dict(_, value) => value_needs_resolve_writeback(value, view),
-        FieldType::Int
-        | FieldType::Float
-        | FieldType::Bool
-        | FieldType::String
-        | FieldType::Enum(_) => false,
-    }
-}
-
-fn resolve_parameters(
-    view: &SchemaView,
-    tables: &[String],
-    ref_targets: &[String],
-) -> Vec<CsharpParameter> {
-    let mut out = Vec::new();
-
-    for table_name in tables {
-        let csharp_table = view.csharp_type_name(table_name);
-        out.push(CsharpParameter {
-            ty: format!("List<{csharp_table}>"),
-            name: camel_case(&pluralize(table_name)),
-        });
-    }
-
-    for target in ref_targets {
-        let csharp_target = view.csharp_type_name(target);
-        let id_type = csharp_type(&view.key_field_type(target), view);
-        out.push(CsharpParameter {
-            ty: format!("Dictionary<{id_type}, {csharp_target}>"),
-            name: ref_index_param_name(&csharp_target),
-        });
-    }
-
-    out
-}
-
-fn resolve_index_parameter_models(
-    view: &SchemaView,
-    ref_targets: &[String],
-) -> Vec<CsharpParameter> {
-    let mut out = Vec::new();
-    for target in ref_targets {
-        let csharp_target = view.csharp_type_name(target);
-        let id_type = csharp_type(&view.key_field_type(target), view);
-        out.push(CsharpParameter {
-            ty: format!("Dictionary<{id_type}, {csharp_target}>"),
-            name: ref_index_param_name(&csharp_target),
-        });
-    }
-    out
-}
-
-fn resolve_arguments(view: &SchemaView, tables: &[String], ref_targets: &[String]) -> Vec<String> {
-    tables
-        .iter()
-        .map(|table| camel_case(&pluralize(table)))
-        .chain(
-            ref_targets
-                .iter()
-                .map(|target| ref_index_param_name(&view.csharp_type_name(target))),
-        )
-        .collect()
-}
-
-fn resolve_index_argument_list(view: &SchemaView, ref_targets: &[String]) -> String {
-    ref_targets
-        .iter()
-        .map(|target| ref_index_param_name(&view.csharp_type_name(target)))
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 fn read_field_expr(
     field: &FieldMeta,
     obj: &str,
-    path: &str,
+    context: &str,
     view: &SchemaView,
+    missing_expr: Option<&str>,
 ) -> Result<String, CsharpCodegenError> {
     let name = &field.name;
-    let csharp_ty = csharp_field_type(field, view);
-    let reader = read_token_expr(csharp_ty.non_nullable(), "token", "childPath", view)?;
-
-    if let Some(default) = default_value_expr(field.default.as_ref(), &csharp_ty, view)? {
-        if field.ty.is_nullable() {
-            return Ok(format!(
-                "ReadNullableWithDefault({obj}, \"{name}\", {path}, {default}, (token, childPath) => {reader})"
-            ));
-        }
-        return Ok(read_with_default_expr(name, obj, path, &default, &reader));
-    }
-
+    let reader = read_token_expr(field.ty.non_nullable(), "token", context, view)?;
     if field.ty.is_nullable() {
         return Ok(format!(
-            "ReadRequiredNullable({obj}, \"{name}\", {path}, (token, childPath) => {reader})"
+            "CoflowJson.ReadNullable({obj}, \"{name}\", (token) => {reader})"
         ));
     }
-
-    Ok(read_required_expr(name, obj, path, &reader))
+    if let Some(missing_expr) = missing_expr {
+        return Ok(format!(
+            "CoflowJson.ReadOptional({obj}, \"{name}\", (token) => {reader}, {missing_expr})"
+        ));
+    }
+    Ok(read_required_expr(name, obj, &reader))
 }
 
-fn read_required_expr(name: &str, obj: &str, path: &str, reader: &str) -> String {
-    format!("ReadRequired({obj}, \"{name}\", {path}, (token, childPath) => {reader})")
-}
-
-fn read_with_default_expr(
-    name: &str,
-    obj: &str,
-    path: &str,
-    default: &str,
-    reader: &str,
-) -> String {
-    format!("ReadWithDefault({obj}, \"{name}\", {path}, {default}, (token, childPath) => {reader})")
+fn read_required_expr(name: &str, obj: &str, reader: &str) -> String {
+    format!("CoflowJson.ReadRequired({obj}, \"{name}\", (token) => {reader})")
 }
 
 fn read_token_expr(
     ty: &FieldType,
     token: &str,
-    path: &str,
+    context: &str,
     view: &SchemaView,
 ) -> Result<String, CsharpCodegenError> {
     match ty {
-        FieldType::Int => Ok(format!("ReadInt({token}, {path})")),
-        FieldType::Float => Ok(format!("ReadFloat({token}, {path})")),
-        FieldType::Bool => Ok(format!("ReadBool({token}, {path})")),
-        FieldType::String => Ok(format!("ReadString({token}, {path})")),
+        FieldType::Int => Ok(format!("CoflowJson.ReadInt({token})")),
+        FieldType::Float => Ok(format!("CoflowJson.ReadFloat({token})")),
+        FieldType::Bool => Ok(format!("CoflowJson.ReadBool({token})")),
+        FieldType::String => Ok(format!("CoflowJson.ReadString({token})")),
         FieldType::Enum(name) if view.is_key_as_enum(name) => Ok(format!(
-            "ReadStringEnum<{}>({token}, {path})",
+            "CoflowJson.ReadStringEnum<{}>({token})",
             view.csharp_enum_name(name)
         )),
         FieldType::Enum(name) if view.enums.contains(name) => Ok(format!(
-            "ReadEnum<{}>({token}, {path})",
+            "CoflowJson.ReadEnum<{}>({token})",
             view.csharp_enum_name(name)
         )),
         FieldType::Enum(name) => Ok(format!(
-            "ReadStringEnum<{}>({token}, {path})",
+            "CoflowJson.ReadStringEnum<{}>({token})",
             view.csharp_enum_name(name)
         )),
         FieldType::Type(name) => {
             let csharp_name = view.csharp_type_name(name);
-            let key_ty = csharp_type(&view.key_field_type(name), view);
-            let key_reader = read_token_expr(&view.key_field_type(name), token, path, view)?;
+            let key_reader = read_token_expr(&view.key_field_type(name), token, context, view)?;
             let inline_reader = if view.range_is_polymorphic(name) {
-                format!("Load{csharp_name}Polymorphic({token}, {path})")
+                format!("{csharp_name}.LoadPolymorphic({token}, {context})")
             } else {
-                format!("Load{csharp_name}({token}, {path})")
+                format!("{csharp_name}.LoadInline({token}, {context})")
             };
             Ok(format!(
-                "{token}.Type == JTokenType.String ? New{csharp_name}Ref(({key_ty})({key_reader})) : {inline_reader}"
+                "{token}.Type == JTokenType.String ? {context}.Get{csharp_name}({key_reader}) : {inline_reader}"
             ))
         }
         FieldType::Array(inner) => Ok(format!(
-            "ReadArray({token}, {path}, (item, itemPath) => {})",
-            read_token_expr(inner, "item", "itemPath", view)?
+            "CoflowJson.ReadArray({token}, (item) => {})",
+            read_token_expr(inner, "item", context, view)?
         )),
         FieldType::Dict(key, value) => Ok(format!(
-            "ReadDict({token}, {path}, (key, keyPath) => {}, (value, valuePath) => {})",
-            read_dict_key_expr(key, "key", "keyPath", view)?,
-            read_token_expr(value, "value", "valuePath", view)?
+            "CoflowJson.ReadDict({token}, (key) => {}, (value) => {})",
+            read_dict_key_expr(key, "key", view)?,
+            read_token_expr(value, "value", context, view)?
         )),
         FieldType::Nullable(inner) => Ok(format!(
             "{token}.Type == JTokenType.Null ? null : {}",
-            read_token_expr(inner, token, path, view)?
+            read_token_expr(inner, token, context, view)?
         )),
     }
 }
@@ -1032,14 +631,13 @@ fn read_token_expr(
 fn read_dict_key_expr(
     ty: &FieldType,
     key: &str,
-    path: &str,
     view: &SchemaView,
 ) -> Result<String, CsharpCodegenError> {
     match ty.non_nullable() {
         FieldType::String => Ok(key.to_string()),
-        FieldType::Int => Ok(format!("ReadIntKey({key}, {path})")),
+        FieldType::Int => Ok(format!("CoflowJson.ReadIntKey({key})")),
         FieldType::Enum(name) => Ok(format!(
-            "ReadEnumKey<{}>({key}, {path})",
+            "CoflowJson.ReadEnumKey<{}>({key})",
             view.csharp_enum_name(name)
         )),
         _ => Err(CsharpCodegenError::new(
@@ -1051,60 +649,59 @@ fn read_dict_key_expr(
 fn read_messagepack_field_expr(
     field: &FieldMeta,
     reader: &str,
-    path: &str,
+    context: &str,
     view: &SchemaView,
 ) -> Result<String, CsharpCodegenError> {
-    read_messagepack_expr(&csharp_field_type(field, view), reader, path, view)
+    read_messagepack_expr(&field.ty, reader, context, view)
 }
 
 fn read_messagepack_expr(
     ty: &FieldType,
     reader: &str,
-    path: &str,
+    context: &str,
     view: &SchemaView,
 ) -> Result<String, CsharpCodegenError> {
     match ty {
-        FieldType::Int => Ok(format!("ReadInt(ref {reader}, {path})")),
-        FieldType::Float => Ok(format!("ReadFloat(ref {reader}, {path})")),
-        FieldType::Bool => Ok(format!("ReadBool(ref {reader}, {path})")),
-        FieldType::String => Ok(format!("ReadString(ref {reader}, {path})")),
+        FieldType::Int => Ok(format!("CoflowMessagePack.ReadInt(ref {reader})")),
+        FieldType::Float => Ok(format!("CoflowMessagePack.ReadFloat(ref {reader})")),
+        FieldType::Bool => Ok(format!("CoflowMessagePack.ReadBool(ref {reader})")),
+        FieldType::String => Ok(format!("CoflowMessagePack.ReadString(ref {reader})")),
         FieldType::Enum(name) if view.is_key_as_enum(name) => Ok(format!(
-            "ReadStringEnum<{}>(ref {reader}, {path})",
+            "CoflowMessagePack.ReadStringEnum<{}>(ref {reader})",
             view.csharp_enum_name(name)
         )),
         FieldType::Enum(name) if view.enums.contains(name) => Ok(format!(
-            "ReadEnum<{}>(ref {reader}, {path})",
+            "CoflowMessagePack.ReadEnum<{}>(ref {reader})",
             view.csharp_enum_name(name)
         )),
         FieldType::Enum(name) => Ok(format!(
-            "ReadStringEnum<{}>(ref {reader}, {path})",
+            "CoflowMessagePack.ReadStringEnum<{}>(ref {reader})",
             view.csharp_enum_name(name)
         )),
         FieldType::Type(name) => {
             let csharp_name = view.csharp_type_name(name);
-            let key_ty = csharp_type(&view.key_field_type(name), view);
-            let key_reader = read_messagepack_expr(&view.key_field_type(name), reader, path, view)?;
+            let key_reader = read_messagepack_expr(&view.key_field_type(name), reader, context, view)?;
             let inline_reader = if view.range_is_polymorphic(name) {
-                format!("Load{csharp_name}Polymorphic(ref {reader}, {path})")
+                format!("{csharp_name}.LoadPolymorphic(ref {reader}, {context})")
             } else {
-                format!("Load{csharp_name}(ref {reader}, {path})")
+                format!("{csharp_name}.LoadInline(ref {reader}, {context})")
             };
             Ok(format!(
-                "NextIsString(ref {reader}) ? New{csharp_name}Ref(({key_ty})({key_reader})) : {inline_reader}"
+                "CoflowMessagePack.NextIsString(ref {reader}) ? {context}.Get{csharp_name}({key_reader}) : {inline_reader}"
             ))
         }
         FieldType::Array(inner) => Ok(format!(
-            "ReadArray(ref {reader}, {path}, static (ref MessagePackReader itemReader, string itemPath) => {})",
-            read_messagepack_expr(inner, "itemReader", "itemPath", view)?
+            "CoflowMessagePack.ReadArray(ref {reader}, {context}, static (ref MessagePackReader itemReader, CoflowTables.LoadContext context) => {})",
+            read_messagepack_expr(inner, "itemReader", "context", view)?
         )),
         FieldType::Dict(key, value) => Ok(format!(
-            "ReadDict(ref {reader}, {path}, static (key, keyPath) => {}, static (ref MessagePackReader valueReader, string valuePath) => {})",
-            read_messagepack_dict_key_expr(key, "key", "keyPath", view)?,
-            read_messagepack_expr(value, "valueReader", "valuePath", view)?
+            "CoflowMessagePack.ReadDict(ref {reader}, {context}, static (key) => {}, static (ref MessagePackReader valueReader, CoflowTables.LoadContext context) => {})",
+            read_messagepack_dict_key_expr(key, "key", view)?,
+            read_messagepack_expr(value, "valueReader", "context", view)?
         )),
         FieldType::Nullable(inner) => Ok(format!(
-            "ReadNil(ref {reader}, {path}) ? null : {}",
-            read_messagepack_expr(inner, reader, path, view)?
+            "CoflowMessagePack.ReadNil(ref {reader}) ? null : {}",
+            read_messagepack_expr(inner, reader, context, view)?
         )),
     }
 }
@@ -1112,14 +709,13 @@ fn read_messagepack_expr(
 fn read_messagepack_dict_key_expr(
     ty: &FieldType,
     key: &str,
-    path: &str,
     view: &SchemaView,
 ) -> Result<String, CsharpCodegenError> {
     match ty.non_nullable() {
         FieldType::String => Ok(key.to_string()),
-        FieldType::Int => Ok(format!("ReadIntKey({key}, {path})")),
+        FieldType::Int => Ok(format!("CoflowMessagePack.ReadIntKey({key})")),
         FieldType::Enum(name) => Ok(format!(
-            "ReadEnumKey<{}>({key}, {path})",
+            "CoflowMessagePack.ReadEnumKey<{}>({key})",
             view.csharp_enum_name(name)
         )),
         _ => Err(CsharpCodegenError::new(
@@ -1147,10 +743,6 @@ fn csharp_type(ty: &FieldType, view: &SchemaView) -> String {
     }
 }
 
-fn csharp_field_type(field: &FieldMeta, _view: &SchemaView) -> FieldType {
-    field.ty.clone()
-}
-
 fn csharp_property_type(ty: &FieldType, view: &SchemaView) -> String {
     match ty {
         FieldType::Array(inner) => format!("IReadOnlyList<{}>", csharp_type(inner, view)),
@@ -1171,21 +763,34 @@ fn type_declaration(schema_type: &CftSchemaType, view: &SchemaView) -> String {
         "public abstract partial class"
     } else if has_annotation(&schema_type.annotations, "struct") {
         "public partial struct"
-    } else if schema_type.is_sealed {
+    } else if schema_type.is_sealed || !view.type_has_descendants(&schema_type.name) {
         "public sealed partial class"
     } else {
         "public partial class"
     };
 
-    let parent = schema_type
+    let mut interfaces = Vec::new();
+    if let Some(parent) = schema_type
         .parent
         .as_ref()
         .filter(|_| !has_annotation(&schema_type.annotations, "struct"))
-        .map(|parent| format!(" : {}", view.csharp_type_name(parent)))
-        .unwrap_or_default();
+    {
+        interfaces.push(view.csharp_type_name(parent));
+    }
+    if !schema_type.is_abstract {
+        interfaces.push(format!(
+            "IEquatable<{}>",
+            view.csharp_type_name(&schema_type.name)
+        ));
+    }
+    let suffix = if interfaces.is_empty() {
+        String::new()
+    } else {
+        format!(" : {}", interfaces.join(", "))
+    };
 
     format!(
-        "{prefix} {}{parent}",
+        "{prefix} {}{suffix}",
         view.csharp_type_name(&schema_type.name)
     )
 }
@@ -1199,9 +804,6 @@ fn default_value_expr(
         return Ok(None);
     };
     Ok(Some(match default {
-        CftSchemaDefaultValue::Null if ty.is_nullable() && is_csharp_value_type(ty, view) => {
-            format!("({})null", csharp_type(ty, view))
-        }
         CftSchemaDefaultValue::Null => "null".to_string(),
         CftSchemaDefaultValue::Int(value) => value.to_string(),
         CftSchemaDefaultValue::Float(value) => format_float(*value),
@@ -1209,7 +811,11 @@ fn default_value_expr(
         CftSchemaDefaultValue::String(value) => string_default_expr(value, ty, view),
         CftSchemaDefaultValue::Enum {
             enum_name, variant, ..
-        } => format!("{}.{}", view.csharp_enum_name(enum_name), variant.clone()),
+        } => format!(
+            "{}.{}",
+            view.csharp_enum_name(enum_name),
+            csharp_public_member_name(variant)
+        ),
         CftSchemaDefaultValue::EmptyArray | CftSchemaDefaultValue::EmptyObject => {
             collection_default_expr(ty.non_nullable(), view)?
         }
@@ -1227,70 +833,11 @@ fn string_default_expr(value: &str, ty: &FieldType, view: &SchemaView) -> String
     }
 }
 
-fn default_initializer_for_type(ty: &FieldType, view: &SchemaView) -> Option<String> {
-    match ty.non_nullable() {
-        FieldType::String => Some("\"\"".to_string()),
-        FieldType::Type(name) if !view.type_is_struct(name) => Some("null!".to_string()),
-        FieldType::Array(_) | FieldType::Dict(_, _) => collection_default_expr(ty, view).ok(),
-        FieldType::Int
-        | FieldType::Float
-        | FieldType::Bool
-        | FieldType::Type(_)
-        | FieldType::Enum(_)
-        | FieldType::Nullable(_) => None,
-    }
-}
-
-fn type_has_nested_resolvable_fields(type_name: &str, view: &SchemaView) -> bool {
-    view.range_contains_ref(type_name)
-}
-
-fn default_initializer(field: &FieldMeta, ty: &FieldType, view: &SchemaView) -> Option<String> {
-    if let Some(default) = &field.default {
-        return default_value_expr(Some(default), ty, view).ok().flatten();
-    }
-
-    if field.has_default || ty.is_nullable() {
-        return None;
-    }
-
-    match ty.non_nullable() {
-        FieldType::String => Some("\"\"".to_string()),
-        FieldType::Type(name) if !view.type_is_struct(name) => Some("null!".to_string()),
-        FieldType::Array(_) | FieldType::Dict(_, _) => collection_default_expr(ty, view).ok(),
-        FieldType::Int
-        | FieldType::Float
-        | FieldType::Bool
-        | FieldType::Type(_)
-        | FieldType::Enum(_)
-        | FieldType::Nullable(_) => None,
-    }
-}
-
-const fn ref_marker_property() -> &'static str {
-    "__CoflowIsRef"
-}
-
-const fn ref_key_property() -> &'static str {
-    "__CoflowRefKey"
-}
-
-fn is_csharp_value_type(ty: &FieldType, view: &SchemaView) -> bool {
-    match ty.non_nullable() {
-        FieldType::Int | FieldType::Float | FieldType::Bool | FieldType::Enum(_) => true,
-        FieldType::Type(name) => view.type_is_struct(name),
-        FieldType::String
-        | FieldType::Array(_)
-        | FieldType::Dict(_, _)
-        | FieldType::Nullable(_) => false,
-    }
-}
-
 fn collection_default_expr(
     ty: &FieldType,
     view: &SchemaView,
 ) -> Result<String, CsharpCodegenError> {
-    match ty.non_nullable() {
+    match ty {
         FieldType::Array(inner) => Ok(format!("new List<{}>()", csharp_type(inner, view))),
         FieldType::Dict(key, value) => Ok(format!(
             "new Dictionary<{}, {}>()",
@@ -1301,4 +848,25 @@ fn collection_default_expr(
             "collection default requires array or dict type",
         )),
     }
+}
+
+fn csharp_public_type_name(name: &str) -> String {
+    pascal_case(name)
+}
+
+fn csharp_public_member_name(name: &str) -> String {
+    pascal_case(name)
+}
+
+fn plural_records_var(table_name: &str) -> String {
+    let base = camel_case(&pascal_case(table_name));
+    if base.ends_with('s') {
+        format!("{base}Rows")
+    } else {
+        format!("{base}s")
+    }
+}
+
+fn context_index_field_name(type_name: &str) -> String {
+    format!("{type_name}Index")
 }
