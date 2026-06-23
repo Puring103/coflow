@@ -244,9 +244,13 @@ Unity/IL2CPP 风格环境。
 
 ## 内部 crate 边界
 
-- `coflow-project` 负责项目配置、路径解析和 CFT schema 编译。
-- `coflow-pipeline` 负责 `check`、`build`、`export` 和 `codegen` 命令的项目执行。
-- CLI crate 负责命令行解析和终端输出。
+- `coflow-api` 只定义 provider trait、诊断、来源位置、产物和写入契约。
+- `coflow-project` 负责项目配置、路径解析、配置诊断、schema 文件发现和项目初始化。
+- `coflow-engine` 负责共享项目运行时：schema 编译、source resolve/load、data model、check、诊断和 source/record/file 索引。
+- `coflow-builtins` 负责默认 provider registry 注册，供 CLI、editor 和 LSP 装配使用。
+- 根 crate `coflow` 负责 CLI 命令编排、终端/JSON 输出、导出和 codegen 产物暂存与提交。
+- `editors/cfd-editor/src-tauri` 是 editor 的后端宿主，复用 `coflow-engine` 并只保留 editor wire DTO、graph/table 视图和写入命令桥接。
+- provider 共享算法分别位于 `coflow-loader-table-core` 和 `coflow-exporter-core`，不放在 `coflow-api`。
 
 ---
 

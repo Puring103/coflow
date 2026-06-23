@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use coflow_editor_core::{
+mod editor;
+
+use editor::{
     EditorError, FieldPathSegment, FieldValue, FileRecords, GraphData, ProjectSnapshot,
     SessionStore, WriteFieldOutcome,
 };
@@ -89,7 +91,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            app.manage(SessionStore::new());
+            let store = SessionStore::new().map_err(|err| err.to_string())?;
+            app.manage(store);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -1,10 +1,9 @@
 [package]
-name = "coflow-pipeline"
+name = "coflow-builtins"
 version = "0.1.0"
 edition = "2021"
-description = "Project execution pipeline for Coflow."
+description = "Default provider registry for Coflow hosts."
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/wtlll/ScriptForGame"
 publish = false
 
 [lints]
@@ -12,18 +11,9 @@ workspace = true
 
 [dependencies]
 coflow-api = { path = "../coflow-api" }
-coflow-cft = { path = "../coflow-cft" }
-coflow-checker = { path = "../coflow-checker" }
-coflow-data-model = { path = "../coflow-data-model" }
-coflow-project = { path = "../coflow-project" }
-serde = "1"
-serde_json = { version = "1", features = ["preserve_order"] }
-
-[dev-dependencies]
 coflow-codegen-csharp = { path = "../coflow-codegen-csharp" }
 coflow-exporter-json = { path = "../coflow-exporter-json" }
 coflow-exporter-messagepack = { path = "../coflow-exporter-messagepack" }
 coflow-loader-cfd = { path = "../coflow-loader-cfd" }
 coflow-loader-excel = { path = "../coflow-loader-excel" }
 coflow-loader-lark = { path = "../coflow-loader-lark" }
-rust_xlsxwriter = "0.95"

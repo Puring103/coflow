@@ -172,7 +172,7 @@
 
     .flow {
       display: grid;
-      gap: 10px;
+      gap: 14px;
     }
 
     .flow-row {
@@ -202,6 +202,23 @@
       margin-top: 3px;
       color: var(--muted);
       font-size: 13px;
+    }
+
+    .flow-inputs,
+    .flow-outputs {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .flow-engine {
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+
+    .flow-node.emphasis {
+      border-color: #2b7a78;
+      background: #eef8f7;
     }
 
     .arrow {
@@ -290,6 +307,11 @@
         grid-template-columns: 1fr;
       }
 
+      .flow-inputs,
+      .flow-outputs {
+        grid-template-columns: 1fr;
+      }
+
       h1 {
         font-size: 34px;
       }
@@ -334,20 +356,18 @@
         <figure class="workflow-visual" aria-label="Coflow 工作流">
           <figcaption class="visual-title">从设计数据到运行时产物</figcaption>
           <div class="flow">
-            <div class="flow-row">
+            <div class="flow-inputs">
               <div class="flow-node"><strong>CFT Schema</strong><span>类型、默认值、引用、check</span></div>
-              <div class="arrow">→</div>
               <div class="flow-node"><strong>Excel / CFD</strong><span>策划表格和文本配置</span></div>
             </div>
-            <div class="flow-row">
-              <div class="flow-node"><strong>Data Model</strong><span>统一构建、索引、引用解析</span></div>
-              <div class="arrow">→</div>
-              <div class="flow-node"><strong>Diagnostics</strong><span>稳定错误码和来源定位</span></div>
+            <div class="arrow">↓</div>
+            <div class="flow-engine">
+              <div class="flow-node emphasis"><strong>coflow-engine</strong><span>编译 schema、加载 provider、构建 model、执行 check、维护索引</span></div>
             </div>
-            <div class="flow-row">
-              <div class="flow-node"><strong>Export</strong><span>JSON / MessagePack</span></div>
-              <div class="arrow">→</div>
-              <div class="flow-node"><strong>C# Runtime</strong><span>.NET / Unity 加载代码</span></div>
+            <div class="arrow">↓</div>
+            <div class="flow-outputs">
+              <div class="flow-node"><strong>Diagnostics</strong><span>稳定错误码和来源定位</span></div>
+              <div class="flow-node"><strong>Artifacts</strong><span>JSON / MessagePack / C# Runtime</span></div>
             </div>
           </div>
         </figure>
@@ -385,29 +405,29 @@
       <div class="inner">
         <h2 id="architecture-title">项目的核心架构</h2>
         <p class="lead">
-          架构按职责分层：底层只表达语言和模型语义，上层只做数据源适配、管线编排和工具集成。
+          架构按职责分层：底层只表达语言和模型语义，`coflow-engine` 统一项目生命周期，CLI、editor 和 LSP 分别做命令、界面和协议集成。
         </p>
         <div class="pipeline" aria-label="Coflow 管线步骤">
           <div class="step"><strong>Project</strong><span>读取 coflow.yaml，标准化 schema、sources 和 provider options。</span></div>
           <div class="step"><strong>CFT</strong><span>编译 schema，产生类型系统和诊断。</span></div>
-          <div class="step"><strong>Loader</strong><span>provider resolve 并读取 Excel / Lark / CFD，输出输入记录。</span></div>
-          <div class="step"><strong>Cell Value</strong><span>按字段类型解析单元格复合值。</span></div>
-          <div class="step"><strong>Data Model</strong><span>构建表、记录、索引、默认值和引用。</span></div>
-          <div class="step"><strong>Checker</strong><span>执行 CFT check，返回数据诊断。</span></div>
-          <div class="step"><strong>Output</strong><span>导出数据并生成 C# 运行时代码。</span></div>
+          <div class="step"><strong>Provider</strong><span>loader/writer/exporter/codegen 只实现具体输入输出能力。</span></div>
+          <div class="step"><strong>Shared Core</strong><span>表格解析和导出遍历位于 table-core/exporter-core。</span></div>
+          <div class="step"><strong>Engine</strong><span>统一 load、model、check、诊断、来源和记录索引。</span></div>
+          <div class="step"><strong>Commands</strong><span>CLI 编排 export/codegen/build 的产物暂存和提交。</span></div>
+          <div class="step"><strong>Editor / LSP</strong><span>消费 engine 状态并转换成 UI 或协议 DTO。</span></div>
         </div>
         <div class="architecture-grid">
           <article class="module">
             <h3>语言与模型层</h3>
-            <p>`coflow-cft`、`coflow-api::cell_value`、`coflow-cfd`、`coflow-data-model` 负责核心语义。</p>
+            <p>`coflow-cft`、`coflow-cfd`、`coflow-data-model` 和 `coflow-checker` 负责核心语义。</p>
           </article>
           <article class="module">
-            <h3>管线与诊断层</h3>
-            <p>`coflow-project`、`coflow-api`、`coflow-loader-*`、`coflow-checker`、`coflow-pipeline` 负责编排和定位。</p>
+            <h3>运行时与诊断层</h3>
+            <p>`coflow-api` 定义契约，`coflow-project` 处理配置，`coflow-engine` 统一生命周期、诊断和来源索引。</p>
           </article>
           <article class="module">
-            <h3>产物与工具层</h3>
-            <p>`coflow-exporter-*`、`coflow-codegen-csharp`、CLI 和 LSP 对外提供可用入口。</p>
+            <h3>Provider 与入口层</h3>
+            <p>`coflow-loader-table-core`、`coflow-exporter-core` 和各 provider 提供输入输出能力；CLI、editor、LSP 是三个独立入口。</p>
           </article>
         </div>
       </div>

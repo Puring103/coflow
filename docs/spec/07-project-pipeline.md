@@ -1,13 +1,18 @@
-# 项目管线规格
+# 项目运行时与命令编排规格
 
-项目加载层负责把 `coflow.yaml`、schema、数据 source、数据导出和代码生成串成完整 CLI 工作流。它不重新实现底层 schema 编译、Excel/CFD 解析、数据模型构建或 C# 渲染规则。
+项目运行时负责把 `coflow.yaml`、schema、数据 source、data model、check 诊断和来源索引构造成可复用的 `ProjectSession`。CLI 在这个运行时之上执行导出、代码生成、产物暂存和提交。
 
-实现边界：
+本文保留原文件名是为了稳定文档链接；当前架构中不再存在独立的 `coflow-pipeline` crate。
 
-- `coflow-project` 负责项目配置 shape、路径解析、schema 文件发现、CFT 编译和 CFT 诊断映射；provider 私有字段只作为 options 保留。
-- `coflow-pipeline` 负责项目执行流水线：schema 编译后的控制流、provider registry dispatch、loader resolve/preflight/load、数据模型构建、check 诊断聚合、artifact 安全写入。
-- CLI 根包是内置 provider 的组合根：注册 Excel/Lark/CFD loader、JSON/MessagePack exporter 和 C# codegen，然后调用 pipeline API、输出成功消息和诊断。
-- `coflow-lsp` 依赖 `coflow-project` 和 `coflow-api` 做 schema-only 加载与诊断渲染，不依赖 `coflow-pipeline`。
+---
+
+## 边界
+
+- `coflow-project`：读取和校验 `coflow.yaml`，解析项目根目录和项目相对路径，发现 schema 文件，提供项目初始化能力。
+- `coflow-engine`：编译 schema，resolve/load sources，构建 `CfdDataModel`，运行 checker，聚合 `DiagnosticSet`，维护 `SourceIndex`、`RecordIndex` 和 `FileIndex`。
+- 根 crate `coflow`：CLI 参数解析、命令编排、human/json 输出、export/codegen/build 产物安全检查、staging 和 commit。
+- `coflow-builtins`：注册默认 provider。CLI、editor、LSP 通过它装配默认 `ProviderRegistry`。
+- provider crates：实现 loader、writer、exporter、codegen；不依赖 engine、CLI、editor 或 LSP。
 
 ---
 
@@ -17,6 +22,7 @@
 - 项目配置中发现的 CFT schema 文件
 - 数据 source 定义
 - CLI 命令和命令行覆盖项
+- 宿主传入的 `ProviderRegistry`
 
 ---
 
@@ -28,147 +34,116 @@
 - 参数是目录时，在该目录下查找 `coflow.yaml`，然后查找 `coflow.yml`。
 - 参数是文件时，直接作为项目配置读取。
 
-项目相对路径均以配置文件所在目录为根。`schema` 可以是单个精确小写 `.cft`
-文件、单个目录或文件/目录列表；目录会递归发现精确小写 `.cft` 文件，
-忽略其他扩展名。schema
-文件按 module id 排序后注册到 `CftContainer`，因此同一项目在不同文件系统
-遍历顺序下仍保持稳定。绝对 schema 路径允许指向项目根之外的文件。
+项目相对路径均以配置文件所在目录为根。`schema` 可以是单个精确小写 `.cft` 文件、单个目录或文件/目录列表；目录会递归发现精确小写 `.cft` 文件，忽略其他扩展名。schema 文件按 module id 排序后注册到 `CftContainer`，因此同一项目在不同文件系统遍历顺序下仍保持稳定。
 
-`coflow.yaml` 的顶层和 outputs 容器使用严格字段集。source 只能使用通用字段
-`type`、`path`、`url` 加 provider options；output 只能使用通用字段 `type`、`dir`
-加 provider options。source 必须且只能设置 `path` 或 `url` 之一。旧字段 `file`、
-`dir` 和 `lark_sheet` 会在 YAML 反序列化阶段被拒绝。`columns` 映射拒绝重复 Excel
-header key，避免 YAML map 后写覆盖导致隐式丢配置。
+`coflow.yaml` 的顶层和 outputs 容器使用严格字段集。source 只能使用通用字段 `type`、`path`、`url` 加 provider options；output 只能使用通用字段 `type`、`dir` 加 provider options。source 必须且只能设置 `path` 或 `url` 之一。旧字段 `file`、`dir` 和 `lark_sheet` 会在 YAML 反序列化阶段被拒绝。`columns` 映射拒绝重复 Excel header key，避免 YAML map 后写覆盖导致隐式丢配置。
 
 ---
 
-## 职责
+## 命令阶段矩阵
 
-- 解析项目配置 shape 并解析项目相对路径。
-- 发现并编译 schema，得到 `CftContainer`。
-- 通过 `coflow-api::ProviderRegistry` 选择 `DataLoader`，并把 source resolve 下沉给 loader provider。
-- 编排 CLI 命令，包括数据加载、数据模型构建和 check 诊断处理。
-- 根据 `outputs.data.type` 从 registry 查找 `DataExporter`，并写入 provider 返回的 `ArtifactSet`。
-- 根据 `outputs.code.type` 从 registry 查找 `CodeGenerator`，并把项目配置中的 codegen options 传入 provider。
+| 命令 | Schema | 数据源存在性 | Data model | Check | 产物写入 |
+| --- | --- | --- | --- | --- | --- |
+| `cft check` | 是 | 否 | 否 | 否 | 否 |
+| `lsp` | 是 | 否 | 否 | 否 | 否 |
+| `check` | 是 | 是 | 是 | 是 | 否 |
+| `build` | 是 | 是 | 是 | 是 | 是 |
+| `export json/messagepack` | 是 | 是 | 是 | 是 | 是 |
+| `codegen csharp` | 是 | 否 | 否 | 否 | 是 |
 
----
-
-## 阶段化打开和校验
-
-项目打开分为三个阶段：
-
-- `Project::open_schema_only`：只解析并反序列化 `coflow.yaml`；不要求数据源文件存在。
-- `Project::schema_diagnostic_set`：schema-only 命令在打开项目后调用，聚合 schema path、output 配置和 source 通用 shape 诊断；仍不要求数据源文件存在。
-- `Project::data_diagnostic_set`：在 schema-only 之上校验数据阶段 source，要求本地 `path` 指向存在的文件或目录；`url` 不做本地路径存在性校验，provider 私有字段由 loader 后续校验。
-- `Project::codegen_diagnostic_set`：校验 codegen 命令需要的 output 通用 shape；C# namespace 这类 provider option 不由 project 层解释。
-
-命令阶段矩阵：
-
-| 命令 | Schema | 数据源存在性 | Data model | Codegen 目标 |
-| --- | --- | --- | --- | --- |
-| `cft check` | 是 | 否 | 否 | 否 |
-| `lsp` | 是 | 否 | 否 | 否 |
-| `check` | 是 | 是 | 是 | 否 |
-| `build` | 是 | 是 | 是 | 可选 |
-| `export json/messagepack` | 是 | 是 | 是 | 否 |
-| `codegen csharp` | 是 | 否 | 否 | 是 |
-
-本地目录 source 没有显式 `type` 时，pipeline 会把目录交给所有注册 loader 的
-`resolve` 阶段，各 loader 自己发现可处理的文件并返回 `ResolvedSource`。单文件或
-远端 URL source 先通过 registry probe 选择 loader；若多个 loader 同等匹配，则要求
-显式设置 `type`。
+`Project::open_schema_only` 只打开配置和 schema 视图。需要数据源的命令由 engine 继续执行 data diagnostics、source resolve/load、model build 和 check。
 
 ---
 
-## Schema 覆盖与 LSP 边界
+## Engine 数据流
 
-`compile_schema_project` 支持 `--stdin-path` 覆盖单个 schema 文件内容，用于
-编辑器把未保存内容传入编译。覆盖目标必须匹配已经配置的 schema 文件：
+```text
+Project::open_schema_only
+  -> coflow-engine::build_project_session
+  -> compile schema
+  -> resolve configured sources
+  -> provider.preflight
+  -> provider.load
+  -> collect input records + origins
+  -> build SourceIndex / RecordIndex / FileIndex
+  -> CfdDataModel::builder
+  -> coflow-checker
+  -> ProjectSession
+```
 
-- 可按 project-relative module id 匹配，例如 `schema/main.cft`。
-- 也可按从项目根解析出的实际文件路径匹配。
-- 未匹配到任何已配置 schema 文件时返回 CLI 错误：
-  `` `--stdin-path ...` is not part of the configured schema ``。
+`ProjectSession` 是共享运行时状态，不是 CLI 输出结构，也不是 editor UI session：
 
-LSP 只使用 schema-only 加载和 schema 编译，不进入数据加载、data model、导出
-或 codegen 阶段。它维护打开文档的内存覆盖层，发布项目 schema 诊断，并提供
-completion、hover、definition、document symbol、formatting 和 semantic tokens。
+```rust
+pub struct ProjectSession {
+    pub project: Project,
+    pub schema: CftContainer,
+    pub model: CfdDataModel,
+    pub diagnostics: DiagnosticsStore,
+    pub sources: SourceIndex,
+    pub records: RecordIndex,
+    pub files: FileIndex,
+    pub dependencies: DependencyGraph,
+}
+```
+
+engine 返回可定位诊断时不抛命令级错误。`Err(String)` 只表示配置读取、schema 文件读取等还不能稳定聚合进 `DiagnosticSet` 的不可恢复失败。
 
 ---
 
-## 配置解析错误边界
+## Source Resolve
 
-`coflow.yaml` 的顶层和嵌套通用结构使用严格字段集。未知顶层/output 字段、旧
-source 字段、YAML 语法错误、重复 `columns` key、无法读取配置文件等问题发生在
-结构化项目诊断之前，CLI 以不可聚合错误返回；这些问题不会进入 `PROJECT-001`
-诊断列表。
+本地目录 source 没有显式 `type` 时，engine 会把目录交给所有注册 loader 的 `resolve` 阶段，各 loader 自己发现可处理的文件并返回 `ResolvedSource`。单文件或远端 URL source 先通过 registry probe 选择 loader；若多个 loader 同等匹配，则要求显式设置 `type`。
 
-`PROJECT-001` 只覆盖配置文件已经成功读取和反序列化之后的可聚合
-项目预检问题，例如路径为空、schema/source/output 配置缺失或类型不支持。
+engine 只通过 `ProviderRegistry` 和 provider trait 调用 loader/writer/exporter/codegen，不依赖具体 provider crate。默认 provider 装配属于宿主层，当前由 `coflow-builtins::default_provider_registry()` 提供。
+
+---
+
+## 诊断处理
+
+跨模块、engine 边界和宿主层流转只使用 `coflow_api::DiagnosticSet`：
+
+```text
+CftDiagnostics
+  -> DiagnosticSet
+
+CfdDiagnostics + RecordOrigin
+  -> DiagnosticSet + DiagnosticLogicalLocation
+
+provider / project / artifact diagnostics
+  -> DiagnosticSet
+
+DiagnosticSet
+  -> CLI DiagnosticJson
+  -> editor DiagnosticItem
+  -> LSP Diagnostic + publishDiagnostics
+```
+
+`DiagnosticsStore` 在 canonical diagnostics 上建立 `by_stage`、`by_file` 和 `by_record` 索引。editor 需要的 `record_key` / `field_path` 由 engine 在映射 data-model/check 诊断时保存为 `DiagnosticLogicalLocation`，宿主层不重新猜测 record/path。
 
 ---
 
 ## 产物写入安全
 
+产物写入属于 CLI 命令语义，不属于 engine。
+
 所有会写产物的命令都在写入前执行可聚合诊断和 artifact preflight：
 
-- `build`：先完成项目、schema、数据加载、data model、引用和 check；再检查
-  data output path；如果配置了 `outputs.code`，还会检查 C# codegen preflight
-  和 code output path。任一诊断存在时不写数据，也不写代码。
-- `export json/messagepack`：先完成数据校验，再检查目标输出目录；有诊断时
-  不写任何导出文件。
-- `codegen csharp`：先完成 schema-only 校验、codegen 配置校验、schema 编译、
-  codegen preflight 和 code output path 检查；有诊断时不读写 enum lockfile，
-  不替换 C# 输出目录，也不生成新 `.cs` 文件。
+- `build`：先完成项目、schema、数据加载、data model、引用和 check；再检查 data output path；如果配置了 `outputs.code`，还会检查 C# codegen preflight 和 code output path。任一诊断存在时不写数据，也不写代码。
+- `export json/messagepack`：先完成数据校验，再检查目标输出目录；有诊断时不写任何导出文件。
+- `codegen csharp`：先完成 schema-only 校验、codegen 配置校验、schema 编译、codegen preflight 和 code output path 检查；有诊断时不读写 enum lockfile，不替换 C# 输出目录，也不生成新 `.cs` 文件。
 
-artifact preflight 会检查输出目标是否能被 Coflow 安全接管，例如目标路径已经存在
-但不是目录、输出目录指向项目根或包含 schema/source、多个输出目录互相重叠。
-目录不存在时由写入阶段创建。staging、commit、lockfile 读写和 artifact path
-安全检查失败会返回 `DiagnosticSet`，使用 `SourceLocation::Artifact` 定位。
+artifact preflight 会检查输出目标是否能被 Coflow 安全接管，例如目标路径已经存在但不是目录、输出目录指向项目根或包含 schema/source、多个输出目录互相重叠。staging、commit、lockfile 读写和 artifact path 安全检查失败会返回 `DiagnosticSet`，使用 `SourceLocation::Artifact` 定位。
 
-数据导出和 C# codegen 的输出目录由 Coflow 完全接管。写入阶段先创建同级
-staging 目录并写入完整产物；所有文件成功写入后，再用 staging 目录替换目标
-输出目录。目标目录内旧文件、子目录、人工文件和其他工具产物均不会保留。
-因此 `outputs.data.dir` 和 `outputs.code.dir` 必须只用于 Coflow 生成物。
+数据导出和 C# codegen 的输出目录由 Coflow 完全接管。写入阶段先创建同级 staging 目录并写入完整产物；所有文件成功写入后，再用 staging 目录替换目标输出目录。目标目录内旧文件、子目录、人工文件和其他工具产物均不会保留。
 
-C# codegen 的 `coflow.enum.lock.json` 写在 `coflow.yaml` 同级，而不是 C# 输出
-目录内。codegen 会先读取并合并 lockfile，生成完整 C# staging 目录和 lockfile
-staging 文件；全部 staging 成功后再提交写入。若 `.cs` staging 或 lockfile
-staging 任一步失败，既有输出目录和既有 lockfile 保持不变。若提交阶段发生
-文件系统错误，pipeline 会尽力回滚 lockfile 和旧输出目录，并返回 artifact
-diagnostic。
-
-`build` 的 codegen 是可选阶段。项目没有配置 `outputs.code` 时，`build` 仍会
-完成数据校验和数据导出，但不会生成代码，也不会要求 code output 配置存在。
-
----
-
-## Check 诊断处理
-
-`coflow-pipeline::check_project` 在 schema、数据加载、data model 或 CFT `check`
-产生可定位错误时，返回 `PipelineOutcome::Diagnostics`，不返回 `Err`。`Err` 只表示
-配置文件发现/读取/YAML 解析这类还无法进入结构化诊断模型的命令级错误。
-
-`type: lark-sheet` 或可 probe 的 Feishu/Lark URL source 由 Lark loader 处理。
-它用 `app_id`/`app_secret` 获取 tenant access token；`url` 支持 `/sheets/{token}`
-或 `/wiki/{token}`，wiki 链接会通过 wiki node API 解析到真实电子表格 token；
-已知电子表格 token 可用 `url: lark:<spreadsheet_token>` 表达。读取到的飞书
-单元格会转换为共享 table loader 的 `TableSource`，因此 `sheets`、`key`、
-`columns` 的语义与 Excel 相同。暂不支持飞书多维表格/Base。
-
-CLI `coflow check` 对 `PipelineOutcome::Diagnostics` 的处理规则：
-
-- 退出码为非 0。
-- 默认 human 输出写入 stderr，包含诊断 code、stage、项目相对文件路径、sheet/cell（如果来自 Excel）和 message。
-- `--json` 输出写入 stdout，格式为 `{"diagnostics":[...]}`，退出码仍为非 0。
-- check 诊断使用 `CFD-CHECK-*` code，stage 为 `CHECK`。
+C# codegen 的 `coflow.enum.lock.json` 写在 `coflow.yaml` 同级，而不是 C# 输出目录内。codegen 会先读取并合并 lockfile，生成完整 C# staging 目录和 lockfile staging 文件；全部 staging 成功后再提交写入。
 
 ---
 
 ## 非职责
 
-- 不重新实现 CFT parser、schema compiler 或 schema 反射模型。
-- 不重新实现 Excel 单元格解析、飞书 API 读取或 CFD 文本解析；这些由注册进 registry 的 loader provider 负责。
-- 不拥有 JSON 或 MessagePack 的 schema-aware 导出遍历规则；这些由 `coflow-api::export` 以及具体 exporter provider 负责。
-- 不拥有 C# 类型映射、模板渲染或加载器生成规则；codegen provider 接收编译后的 `CftContainer` 和 options。
-- 不充当生成出的 C# trusted artifact loader。
+- `coflow-project` 不执行 loader、exporter 或 codegen。
+- `coflow-engine` 不写导出目录、不渲染 CLI JSON、不依赖具体 provider。
+- CLI 不重新实现 source resolve/load/model build/check。
+- provider 不发现项目配置、不持有宿主层状态。
+- `coflow-api` 不承载表格加载算法或导出遍历算法；这些分别属于 `coflow-loader-table-core` 和 `coflow-exporter-core`。

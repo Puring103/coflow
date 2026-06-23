@@ -7,7 +7,7 @@ use coflow_data_model::{
 };
 use std::collections::BTreeMap;
 
-use crate::types::{DictKey, FieldPathSegment, FieldValue};
+use crate::editor::types::{DictKey, FieldPathSegment, FieldValue};
 
 /// Map an editor wire `FieldPathSegment` to the api-level
 /// `WriteFieldPathSegment` consumed by writers.

@@ -1,0 +1,18 @@
+[package]
+name = "coflow-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Shared Coflow project runtime."
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+coflow-api = { path = "../coflow-api" }
+coflow-cft = { path = "../coflow-cft" }
+coflow-checker = { path = "../coflow-checker" }
+coflow-data-model = { path = "../coflow-data-model" }
+coflow-project = { path = "../coflow-project" }
+serde_json = { version = "1", features = ["preserve_order"] }

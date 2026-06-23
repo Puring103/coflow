@@ -6,8 +6,13 @@
     clippy::unwrap_used
 )]
 
+use coflow_api::origins_of;
 use coflow_cft::{CftContainer, ModuleId};
-use coflow_loader_excel::{load_excel_model, ExcelDiagnostic, ExcelSheet, ExcelSource};
+use coflow_data_model::CfdDataModel;
+use coflow_loader_excel::{
+    collect_input_records, ExcelDiagnostic, ExcelDiagnostics, ExcelSheet, ExcelSource,
+};
+use coflow_loader_table_core::map_table_diagnostics;
 use rust_xlsxwriter::{Formula, Workbook};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -15,6 +20,21 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
 
 type TestResult = Result<(), String>;
+
+fn build_model_from_excel_records(
+    schema: &CftContainer,
+    sources: &[ExcelSource],
+) -> Result<CfdDataModel, ExcelDiagnostics> {
+    let loaded = collect_input_records(schema, sources)?;
+    let origins = origins_of(&loaded.records);
+    let mut builder = CfdDataModel::builder(schema);
+    for record in loaded.records {
+        builder.add_input_record(record);
+    }
+    builder
+        .build()
+        .map_err(|diagnostics| ExcelDiagnostics::from(map_table_diagnostics(diagnostics, &origins)))
+}
 
 #[test]
 fn excel_error_codes_have_negative_location_and_adjacent_valid_coverage() -> TestResult {
@@ -42,7 +62,7 @@ fn excel_error_codes_have_negative_location_and_adjacent_valid_coverage() -> Tes
     let path = temp_xlsx_path("valid-adjacent");
     write_item_workbook(&path, "Item", "value", "item_1", 1.0)?;
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    load_excel_model(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+    build_model_from_excel_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
     Ok(())
 }
 
@@ -57,7 +77,7 @@ struct ErrorCase {
 fn error_open_workbook() -> Result<ErrorCase, String> {
     let schema = compile_schema("type Item { value: int; }\n")?;
     let path = temp_xlsx_path("missing-workbook");
-    let err = load_excel_model(
+    let err = build_model_from_excel_records(
         &schema,
         &[ExcelSource::new(&path, vec![ExcelSheet::new("Item")])],
     )
@@ -76,7 +96,8 @@ fn error_missing_sheet() -> Result<ErrorCase, String> {
     let path = temp_xlsx_path("missing-sheet");
     write_item_workbook(&path, "Other", "value", "item_1", 1.0)?;
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let err = load_excel_model(&schema, &[source]).expect_err("missing sheet should fail");
+    let err =
+        build_model_from_excel_records(&schema, &[source]).expect_err("missing sheet should fail");
     Ok(ErrorCase {
         name: "missing sheet",
         code: "EXCEL-SHEET",
@@ -91,7 +112,8 @@ fn error_unknown_type() -> Result<ErrorCase, String> {
     let path = temp_xlsx_path("unknown-type");
     write_item_workbook(&path, "Item", "value", "item_1", 1.0)?;
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item").with_type("Missing")]);
-    let err = load_excel_model(&schema, &[source]).expect_err("unknown type should fail");
+    let err =
+        build_model_from_excel_records(&schema, &[source]).expect_err("unknown type should fail");
     Ok(ErrorCase {
         name: "unknown type",
         code: "EXCEL-TYPE",
@@ -106,7 +128,8 @@ fn error_unknown_column() -> Result<ErrorCase, String> {
     let path = temp_xlsx_path("unknown-column");
     write_item_workbook(&path, "Item", "missing", "item_1", 1.0)?;
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let err = load_excel_model(&schema, &[source]).expect_err("unknown column should fail");
+    let err =
+        build_model_from_excel_records(&schema, &[source]).expect_err("unknown column should fail");
     Ok(ErrorCase {
         name: "unknown column",
         code: "EXCEL-COLUMN",
@@ -129,7 +152,8 @@ fn error_missing_id() -> Result<ErrorCase, String> {
         .map_err(|err| format!("{err:?}"))?;
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let err = load_excel_model(&schema, &[source]).expect_err("missing id should fail");
+    let err =
+        build_model_from_excel_records(&schema, &[source]).expect_err("missing id should fail");
     Ok(ErrorCase {
         name: "missing id",
         code: "EXCEL-ID",
@@ -161,7 +185,8 @@ fn error_unsupported_cell() -> Result<ErrorCase, String> {
         .map_err(|err| format!("{err:?}"))?;
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let err = load_excel_model(&schema, &[source]).expect_err("unsupported cell should fail");
+    let err = build_model_from_excel_records(&schema, &[source])
+        .expect_err("unsupported cell should fail");
     Ok(ErrorCase {
         name: "unsupported cell",
         code: "EXCEL-CELL",

@@ -40,12 +40,12 @@ pub fn write_invalid_check_project(
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
     std::fs::write(
         root.join("schema").join("main.cft"),
-        r#"
+        r"
             type Item {
                 level: int;
                 check { level > 0; }
             }
-        "#,
+        ",
     )
     .expect("write schema");
     let workbook_path = root.join("data").join("configs.xlsx");

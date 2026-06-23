@@ -21,11 +21,12 @@
 )]
 
 use coflow_api::{
-    CfdValue, DataLoader, DataWriter, Diagnostic, DiagnosticSet, Label, LoadContext, LoadedRecords,
+    DataLoader, DataWriter, Diagnostic, DiagnosticSet, Label, LoadContext, LoadedRecords,
     LoaderDescriptor, ProbeResult, ProjectSourceRef, RecordOrigin, ResolvedSource, SourceDocument,
     SourceLocation, SourceLocationSpec, SourceResolveContext, WriteCellRequest, WriteContext,
     WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
+use coflow_loader_table_core::cell_value::{render_cell_value, CellRenderError};
 use coflow_loader_table_core::{
     collect_table_input_records, TableDiagnostic, TableDiagnostics, TableLabel, TableSheet,
     TableSheetConfig, TableSource,
@@ -1075,7 +1076,7 @@ where
                     ),
                 ))
             })?;
-        let cell_value = render_lark_cell_value(request.new_value)?;
+        let cell_value = render_cell_value(request.new_value).map_err(lark_render_error)?;
 
         // Authenticate using the source's options so writes are scoped to
         // the same tenant as the read path. Tokens are cached per `app_id`
@@ -1215,52 +1216,6 @@ fn resolve_lark_column(
     None
 }
 
-fn render_lark_cell_value(value: &CfdValue) -> Result<String, DiagnosticSet> {
-    use std::fmt::Write;
-    match value {
-        CfdValue::Null => Ok(String::new()),
-        CfdValue::Bool(v) => Ok(v.to_string()),
-        CfdValue::Int(v) => Ok(v.to_string()),
-        CfdValue::Float(v) => Ok(v.to_string()),
-        CfdValue::String(v) => Ok(v.clone()),
-        CfdValue::Enum(e) => Ok(e.variant.clone().unwrap_or_else(|| e.value.to_string())),
-        CfdValue::Ref { key, .. } => Ok(format!("@{key}")),
-        CfdValue::Array(items) => {
-            let mut out = String::from("[");
-            for (idx, item) in items.iter().enumerate() {
-                if idx > 0 {
-                    out.push_str(", ");
-                }
-                out.push_str(&render_lark_cell_value(item)?);
-            }
-            out.push(']');
-            Ok(out)
-        }
-        CfdValue::Dict(entries) => {
-            let mut out = String::from("{");
-            for (idx, (key, value)) in entries.iter().enumerate() {
-                if idx > 0 {
-                    out.push_str(", ");
-                }
-                let key_text = match key {
-                    coflow_api::CfdDictKey::String(s) => format!("{s:?}"),
-                    coflow_api::CfdDictKey::Int(n) => n.to_string(),
-                    coflow_api::CfdDictKey::Enum(e) => {
-                        e.variant.clone().unwrap_or_else(|| e.value.to_string())
-                    }
-                };
-                let _ = write!(out, "{key_text}: {}", render_lark_cell_value(value)?);
-            }
-            out.push('}');
-            Ok(out)
-        }
-        CfdValue::Object(_) => Err(DiagnosticSet::one(diag(
-            "LARK-WRITE",
-            "writing nested object values into lark cells is not supported",
-        ))),
-    }
-}
-
 /// Fetch a tenant access token + the server-declared TTL (in seconds), which
 /// the writer cache uses to schedule refreshes.
 fn lark_tenant_token_with_ttl(
@@ -1332,6 +1287,18 @@ fn fetch_sheet_id_map(
 
 fn diag(code: &'static str, message: impl Into<String>) -> Diagnostic {
     Diagnostic::error(code, "LARK", message)
+}
+
+fn lark_render_error(err: CellRenderError) -> DiagnosticSet {
+    let message = match err {
+        CellRenderError::AnonymousEnum => {
+            "writing anonymous enum values into lark cells is not supported"
+        }
+        CellRenderError::NestedObject => {
+            "writing nested object values into lark cells is not supported"
+        }
+    };
+    DiagnosticSet::one(diag("LARK-WRITE", message))
 }
 
 #[derive(Debug, Deserialize)]

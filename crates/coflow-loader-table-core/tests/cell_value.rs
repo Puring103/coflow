@@ -9,10 +9,12 @@
 
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{
-    CfdDataModel, CfdInputDictKey, CfdInputRefIndex, CfdInputValue, CfdRefPathSegment, CfdValue,
+    CfdDataModel, CfdDictKey, CfdEnumValue, CfdInputDictKey, CfdInputRefIndex, CfdInputValue,
+    CfdRefPathSegment, CfdValue,
 };
 use coflow_loader_table_core::cell_value::{
-    parse_cell, CellValueDiagnostics, CellValueErrorCode, ParsedCell,
+    parse_cell, render_cell_value, CellRenderError, CellValueDiagnostics, CellValueErrorCode,
+    ParsedCell,
 };
 use std::collections::BTreeSet;
 
@@ -974,6 +976,88 @@ fn parses_full_nested_root_object_example() -> TestResult {
         ]))
     );
     Ok(())
+}
+
+#[test]
+fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            enum Rarity { Common = 0, Rare = 10, }
+            type Item { name: string; }
+            type Drop {
+                names: [string];
+                item: Item;
+                weights: {string: int};
+                rarity: Rarity;
+            }
+        "#,
+    )?;
+
+    let names = CfdValue::Array(vec![
+        CfdValue::String("weapon".to_string()),
+        CfdValue::String("melee, close".to_string()),
+    ]);
+    let rendered_names = render_cell_value(&names).map_err(|err| err.to_string())?;
+    assert_eq!(rendered_names, r#"[weapon | "melee, close"]"#);
+    assert_eq!(
+        parse_value(&schema, "[string]", &rendered_names)?,
+        CfdInputValue::Array(vec![
+            CfdInputValue::String("weapon".to_string()),
+            CfdInputValue::String("melee, close".to_string()),
+        ])
+    );
+
+    let reference = CfdValue::Ref {
+        key: "sword_01".to_string(),
+        target: coflow_data_model::CfdRecordId::from_index(0),
+    };
+    let rendered_reference = render_cell_value(&reference).map_err(|err| err.to_string())?;
+    assert_eq!(rendered_reference, "&sword_01");
+    assert_eq!(
+        parse_value(&schema, "Item", &rendered_reference)?,
+        CfdInputValue::record_ref("Item", "sword_01")
+    );
+
+    let dict = CfdValue::Dict(vec![(
+        CfdDictKey::String("rare:drop".to_string()),
+        CfdValue::Int(10),
+    )]);
+    let rendered_dict = render_cell_value(&dict).map_err(|err| err.to_string())?;
+    assert_eq!(rendered_dict, r#"{"rare:drop": 10}"#);
+    assert_eq!(
+        parse_value(&schema, "{string: int}", &rendered_dict)?,
+        CfdInputValue::dict([(
+            CfdInputDictKey::String("rare:drop".to_string()),
+            CfdInputValue::Int(10),
+        )])
+    );
+
+    let enum_value = CfdValue::Enum(CfdEnumValue {
+        enum_name: "Rarity".to_string(),
+        variant: Some("Rare".to_string()),
+        value: 10,
+    });
+    assert_eq!(
+        render_cell_value(&enum_value).map_err(|err| err.to_string())?,
+        "Rare"
+    );
+    Ok(())
+}
+
+#[test]
+fn rejects_rendering_nested_object_values_to_single_cells() {
+    let nested = CfdValue::Object(Box::new(coflow_data_model::CfdRecord {
+        key: "item_1".to_string(),
+        actual_type: "Item".to_string(),
+        fields: std::collections::BTreeMap::new(),
+        origin: coflow_data_model::RecordOrigin::None,
+        spread_field_sources: std::collections::BTreeMap::new(),
+    }));
+
+    assert_eq!(
+        render_cell_value(&nested),
+        Err(CellRenderError::NestedObject)
+    );
 }
 
 #[test]

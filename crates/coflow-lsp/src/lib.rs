@@ -14,6 +14,7 @@
 
 mod cfd;
 
+use coflow_api::SourceLocationSpec;
 use coflow_cfd::parse_cfd;
 use coflow_cft::ast::{
     Annotation, AnnotationArg, CheckExpr, CheckExprKind, CheckStmt, ConstLiteral, DefaultExpr,
@@ -27,7 +28,7 @@ use coflow_cft::{
 };
 use coflow_project::{
     compile_schema_project_with_overrides, dedupe_cft_diagnostics, diagnostic_set_from_cft,
-    normalize_path, Project, SchemaBuild, SchemaSourceOverride, SourceLocationSpec,
+    normalize_path, Project, SchemaBuild, SchemaSourceOverride,
 };
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
