@@ -12,6 +12,7 @@ type Item {\n\
     let (_cleanup, project) = test_project("lsp-trivia", source);
     let build = LspBuild::new(
         compile_schema_project_with_overrides(&project, &[]).expect("compile schema"),
+        None,
     );
     let document = build
         .documents
@@ -168,8 +169,23 @@ type Item {\n\
         completion_scope(document, source.len()),
         CompletionScope::TopLevel
     );
+    // Without an AST we fall back to a brace+keyword scan so the user still
+    // gets context-appropriate completions while the document is mid-edit.
+    let inside_check = source.find("key != ").expect("check body") + "key != ".len();
     assert_eq!(
-        completion_scope(&no_ast_document, check.span.start),
+        completion_scope(&no_ast_document, inside_check),
+        CompletionScope::CheckBlock
+    );
+    assert_eq!(
+        completion_scope(&no_ast_document, type_def.span.start + "type Item {".len()),
+        CompletionScope::TypeBody
+    );
+    assert_eq!(
+        completion_scope(&no_ast_document, enum_def.span.start + "enum Kind {".len()),
+        CompletionScope::EnumBody
+    );
+    assert_eq!(
+        completion_scope(&no_ast_document, 0),
         CompletionScope::TopLevel
     );
 }
@@ -402,11 +418,16 @@ fn dotted_word_parsing_rejects_partial_empty_or_punctuated_chains() {
     assert_eq!(parse_dotted_ident_chain("target..child"), None);
     assert_eq!(parse_dotted_ident_chain("target.child!"), None);
 
+    let prefix_input = "  target.child.  partial";
     assert_eq!(
-        receiver_chain_before_dot("  target.child.  partial"),
+        receiver_chain_before_dot(prefix_input, prefix_input.len()),
         Some(vec![s("target"), s("child")])
     );
-    assert_eq!(receiver_chain_before_dot("target.child.!"), None);
+    let punctuated_input = "target.child.!";
+    assert_eq!(
+        receiver_chain_before_dot(punctuated_input, punctuated_input.len()),
+        None
+    );
 
     let source = "check { target . child; other }";
     let word = word_at(source, source.find("child").expect("child")).expect("word");
@@ -421,6 +442,134 @@ fn dotted_word_parsing_rejects_partial_empty_or_punctuated_chains() {
         dotted_chain_at(punctuated, &word),
         Some(vec![s("target"), s("child")])
     );
+}
+
+#[test]
+fn completion_scope_fallback_recovers_inside_unclosed_type_body() {
+    // The `name` field is being typed; the closing `}` does not exist yet so
+    // the parser will reject the file. We still want field-name completion to
+    // know the cursor is inside the `Item` body, not at the top level.
+    let source = "type Item {\n  na";
+    let scope = completion_scope_fallback(source, source.len());
+    assert_eq!(scope, CompletionScope::TypeBody);
+
+    let check_source = "type Item {\n  key: string;\n  check {\n    ke";
+    let scope = completion_scope_fallback(check_source, check_source.len());
+    assert_eq!(scope, CompletionScope::CheckBlock);
+
+    let enum_source = "enum Kind {\n  One = 1,\n  Tw";
+    let scope = completion_scope_fallback(enum_source, enum_source.len());
+    assert_eq!(scope, CompletionScope::EnumBody);
+
+    let nested_source = "type Item {\n  default: int = 1;\n  ot";
+    let scope = completion_scope_fallback(nested_source, nested_source.len());
+    assert_eq!(scope, CompletionScope::TypeBody);
+}
+
+#[test]
+fn receiver_chain_before_dot_walks_across_lines() {
+    let multi_line = "check {\n  drop\n    .rewards\n    .";
+    let chain = receiver_chain_before_dot(multi_line, multi_line.len());
+    assert_eq!(chain, Some(vec![s("drop"), s("rewards")]));
+
+    let with_comment = "check {\n  drop // comment\n    .rewards\n    .";
+    let chain = receiver_chain_before_dot(with_comment, with_comment.len());
+    assert_eq!(chain, Some(vec![s("drop"), s("rewards")]));
+
+    let inside_string = "check {\n  drop // \"masked.dot\"\n    .";
+    let chain = receiver_chain_before_dot(inside_string, inside_string.len());
+    assert_eq!(chain, Some(vec![s("drop")]));
+}
+
+#[test]
+fn fallback_container_keeps_completion_when_recompile_fails() {
+    let good_source = "type Target { key: string; value: int; }\n\
+type Item {\n\
+  target: Target;\n\
+  check { target.value > 0; }\n\
+}\n";
+    let (_cleanup, project) = test_project("lsp-fallback-container", good_source);
+    let good_build =
+        compile_schema_project_with_overrides(&project, &[]).expect("compile good schema");
+    let last_good = good_build.container.expect("first compile succeeds");
+
+    // Simulate the user introducing a type error: the `Target` type is removed
+    // while still referenced from `Item`. The compile produces no container,
+    // but the LSP should fall back to the previous container so completions
+    // still resolve `target.<dot>`.
+    let main_path = project.root_dir.join("schema").join("main.cft");
+    let bad_source = "type Item {\n  target: Target;\n  check { target.value > 0; }\n}\n";
+    let bad_build = compile_schema_project_with_overrides(
+        &project,
+        &[SchemaSourceOverride {
+            requested_module: None,
+            normalized_path: normalize_path(&main_path),
+            source: bad_source.to_string(),
+        }],
+    )
+    .expect("compile bad schema");
+    assert!(bad_build.container.is_none());
+
+    let build = LspBuild::new(bad_build, Some(last_good));
+    let document = build
+        .documents
+        .values()
+        .next()
+        .expect("document should exist");
+    let dot_offset = document
+        .source
+        .find("target.value")
+        .expect("dot expression")
+        + "target.".len();
+    let position = position_from_byte(&document.source, dot_offset);
+    let labels = completion_labels(completion_items(&build, document, &position));
+    assert!(
+        labels.contains(&"value".to_string()),
+        "expected `value` field; got {labels:?}"
+    );
+    assert!(
+        labels.contains(&"key".to_string()),
+        "expected `key` field; got {labels:?}"
+    );
+}
+
+#[test]
+fn current_type_at_uses_ast_when_schema_is_missing() {
+    let source = "type Item {\n  key: string;\n  unresolved: Missing;\n}\n";
+    let (_cleanup, project) = test_project("lsp-current-type-ast", source);
+    let raw_build =
+        compile_schema_project_with_overrides(&project, &[]).expect("compile schema");
+    // Schema compilation fails (Missing is not a known type), but the AST is
+    // still parsed and we want the local Item type to be available.
+    assert!(raw_build.container.is_none());
+    let build = LspBuild::new(raw_build, None);
+    let document = build
+        .documents
+        .values()
+        .next()
+        .expect("document should exist");
+
+    let inside_offset = source.find("key: string").expect("key field");
+    let name = current_type_name_from_ast(document, inside_offset);
+    assert_eq!(name, Some("Item"));
+}
+
+#[test]
+fn completion_lists_const_and_type_from_ast_when_container_missing() {
+    let source = "const LIMIT: int = 5;\n\
+type Item { unresolved: Missing; }\n";
+    let (_cleanup, project) = test_project("lsp-const-fallback", source);
+    let raw_build =
+        compile_schema_project_with_overrides(&project, &[]).expect("compile schema");
+    assert!(raw_build.container.is_none());
+    let build = LspBuild::new(raw_build, None);
+
+    let const_labels = completion_labels(const_completion_items(&build));
+    assert!(const_labels.contains(&"LIMIT".to_string()));
+
+    let type_labels = completion_labels(type_completion_items(&build));
+    assert!(type_labels.contains(&"Item".to_string()));
+    assert!(type_labels.contains(&"int".to_string()));
 }
 
 #[test]

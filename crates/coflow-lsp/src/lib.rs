@@ -71,6 +71,7 @@ struct LspServer<W> {
     open_documents: BTreeMap<PathBuf, OpenDocument>,
     published_uris: BTreeSet<String>,
     build: Option<LspBuild>,
+    last_good_container: Option<coflow_cft::CftContainer>,
     shutdown_requested: bool,
     should_exit: bool,
 }
@@ -83,6 +84,7 @@ impl<W: Write> LspServer<W> {
             open_documents: BTreeMap::new(),
             published_uris: BTreeSet::new(),
             build: None,
+            last_good_container: None,
             shutdown_requested: false,
             should_exit: false,
         }
@@ -273,7 +275,10 @@ impl<W: Write> LspServer<W> {
 
         let preferred_uris = self.preferred_diagnostic_uris(&schema_by_path);
         let raw_build = compile_schema_project_with_overrides(&self.project, &overrides)?;
-        let build = LspBuild::new(raw_build);
+        if let Some(container) = &raw_build.container {
+            self.last_good_container = Some(container.clone());
+        }
+        let build = LspBuild::new(raw_build, self.last_good_container.clone());
         let diagnostics = dedupe_cft_diagnostics(build.schema.diagnostics.clone());
         let mut by_uri: BTreeMap<String, Vec<Value>> = BTreeMap::new();
 
@@ -770,6 +775,11 @@ struct LspBuild {
     documents: BTreeMap<String, LspDocument>,
     module_by_uri: BTreeMap<String, String>,
     module_by_path: BTreeMap<PathBuf, String>,
+    /// Fallback container preserved from the most recent successful compile.
+    /// Used by language features (completion/hover/definition) so that a
+    /// transient schema error does not silently disable completions.
+    /// Diagnostics still come from the live build.
+    fallback_container: Option<coflow_cft::CftContainer>,
 }
 
 struct LspDocument {
@@ -780,7 +790,7 @@ struct LspDocument {
 }
 
 impl LspBuild {
-    fn new(schema: SchemaBuild) -> Self {
+    fn new(schema: SchemaBuild, fallback_container: Option<coflow_cft::CftContainer>) -> Self {
         let mut documents = BTreeMap::new();
         let mut module_by_uri = BTreeMap::new();
         let mut module_by_path = BTreeMap::new();
@@ -810,11 +820,15 @@ impl LspBuild {
             documents,
             module_by_uri,
             module_by_path,
+            fallback_container,
         }
     }
 
-    const fn container(&self) -> Option<&coflow_cft::CftContainer> {
-        self.schema.container.as_ref()
+    fn container(&self) -> Option<&coflow_cft::CftContainer> {
+        self.schema
+            .container
+            .as_ref()
+            .or(self.fallback_container.as_ref())
     }
 
     fn document_by_uri(&self, uri: &str) -> Option<&LspDocument> {
@@ -902,7 +916,7 @@ fn completion_items(
         return annotation_completion_items(scope);
     }
 
-    if let Some(chain) = receiver_chain_before_dot(line_prefix) {
+    if let Some(chain) = receiver_chain_before_dot(&document.source, offset) {
         let mut items = dot_completion_items(build, document, offset, &chain);
         if scope == CompletionScope::CheckBlock {
             items.extend(function_completion_items());
@@ -1186,43 +1200,56 @@ fn type_completion_items(build: &LspBuild) -> Vec<Value> {
             Some(documentation),
         ));
     }
+    let mut seen = BTreeSet::new();
     if let Some(container) = build.container() {
         for ty in container.all_types() {
-            items.push(completion_item(
-                &ty.name,
-                COMPLETION_KIND_CLASS,
-                "CFT type",
-                None,
-            ));
+            if seen.insert(ty.name.clone()) {
+                items.push(completion_item(
+                    &ty.name,
+                    COMPLETION_KIND_CLASS,
+                    "CFT type",
+                    None,
+                ));
+            }
         }
         for enum_def in container.all_enums() {
-            items.push(completion_item(
-                &enum_def.name,
-                COMPLETION_KIND_ENUM,
-                "CFT enum",
-                None,
-            ));
+            if seen.insert(enum_def.name.clone()) {
+                items.push(completion_item(
+                    &enum_def.name,
+                    COMPLETION_KIND_ENUM,
+                    "CFT enum",
+                    None,
+                ));
+            }
         }
-    } else {
-        for document in build.documents.values() {
-            if let Some(ast) = &document.ast {
-                for item in &ast.items {
-                    match item {
-                        Item::Type(ty) => items.push(completion_item(
+    }
+    // Always merge in any AST-only declarations so freshly-typed types/enums
+    // remain available even when schema compilation has failed.
+    for document in build.documents.values() {
+        let Some(ast) = &document.ast else { continue };
+        for item in &ast.items {
+            match item {
+                Item::Type(ty) => {
+                    if seen.insert(ty.name.clone()) {
+                        items.push(completion_item(
                             &ty.name,
                             COMPLETION_KIND_CLASS,
                             "CFT type",
                             None,
-                        )),
-                        Item::Enum(enum_def) => items.push(completion_item(
+                        ));
+                    }
+                }
+                Item::Enum(enum_def) => {
+                    if seen.insert(enum_def.name.clone()) {
+                        items.push(completion_item(
                             &enum_def.name,
                             COMPLETION_KIND_ENUM,
                             "CFT enum",
                             None,
-                        )),
-                        Item::Const(_) => {}
+                        ));
                     }
                 }
+                Item::Const(_) => {}
             }
         }
     }
@@ -1231,14 +1258,32 @@ fn type_completion_items(build: &LspBuild) -> Vec<Value> {
 
 fn named_type_completion_items(build: &LspBuild) -> Vec<Value> {
     let mut items = Vec::new();
+    let mut seen = BTreeSet::new();
     if let Some(container) = build.container() {
         for ty in container.all_types() {
-            items.push(completion_item(
-                &ty.name,
-                COMPLETION_KIND_CLASS,
-                "CFT type",
-                None,
-            ));
+            if seen.insert(ty.name.clone()) {
+                items.push(completion_item(
+                    &ty.name,
+                    COMPLETION_KIND_CLASS,
+                    "CFT type",
+                    None,
+                ));
+            }
+        }
+    }
+    for document in build.documents.values() {
+        let Some(ast) = &document.ast else { continue };
+        for item in &ast.items {
+            if let Item::Type(ty) = item {
+                if seen.insert(ty.name.clone()) {
+                    items.push(completion_item(
+                        &ty.name,
+                        COMPLETION_KIND_CLASS,
+                        "CFT type",
+                        None,
+                    ));
+                }
+            }
         }
     }
     items
@@ -1246,18 +1291,36 @@ fn named_type_completion_items(build: &LspBuild) -> Vec<Value> {
 
 fn const_completion_items(build: &LspBuild) -> Vec<Value> {
     let mut items = Vec::new();
+    let mut seen = BTreeSet::new();
     if let Some(container) = build.container() {
         for constant in container
             .module_ids()
             .filter_map(|module_id| container.schema(module_id))
             .flat_map(|module| &module.consts)
         {
-            items.push(completion_item(
-                &constant.name,
-                COMPLETION_KIND_CONSTANT,
-                "CFT constant",
-                None,
-            ));
+            if seen.insert(constant.name.clone()) {
+                items.push(completion_item(
+                    &constant.name,
+                    COMPLETION_KIND_CONSTANT,
+                    "CFT constant",
+                    None,
+                ));
+            }
+        }
+    }
+    for document in build.documents.values() {
+        let Some(ast) = &document.ast else { continue };
+        for item in &ast.items {
+            if let Item::Const(constant) = item {
+                if seen.insert(constant.name.clone()) {
+                    items.push(completion_item(
+                        &constant.name,
+                        COMPLETION_KIND_CONSTANT,
+                        "CFT constant",
+                        None,
+                    ));
+                }
+            }
         }
     }
     items
@@ -2173,33 +2236,160 @@ fn current_type_at<'a>(
     document: &LspDocument,
     offset: usize,
 ) -> Option<&'a CftSchemaType> {
+    if let Some(name) = current_type_name_from_ast(document, offset) {
+        if let Some(ty) = build
+            .container()
+            .and_then(|container| container.resolve_type(name))
+        {
+            return Some(ty);
+        }
+    }
     build.container()?.all_types().find(|ty| {
         ty.module.as_str() == document.module_id && ty.span.start <= offset && offset <= ty.span.end
     })
 }
 
-fn completion_scope(document: &LspDocument, offset: usize) -> CompletionScope {
-    let Some(ast) = &document.ast else {
-        return CompletionScope::TopLevel;
-    };
-
+/// Return the name of the AST `type` definition that encloses `offset`, if
+/// any. Preferred over schema spans when looking up the current type, because
+/// the AST is available even when schema compilation has failed (or the type
+/// hasn't been added to the container yet).
+fn current_type_name_from_ast(document: &LspDocument, offset: usize) -> Option<&str> {
+    let ast = document.ast.as_ref()?;
     for item in &ast.items {
-        match item {
-            Item::Enum(enum_def)
-                if enum_def.span.start <= offset && offset <= enum_def.span.end =>
-            {
-                return CompletionScope::EnumBody;
+        if let Item::Type(ty) = item {
+            if ty.span.start <= offset && offset <= ty.span.end {
+                return Some(&ty.name);
             }
-            Item::Type(ty) if ty.span.start <= offset && offset <= ty.span.end => {
-                if check_block_contains(ty.check.as_ref(), offset) {
-                    return CompletionScope::CheckBlock;
-                }
-                return CompletionScope::TypeBody;
-            }
-            Item::Const(_) | Item::Enum(_) | Item::Type(_) => {}
         }
     }
+    None
+}
 
+fn completion_scope(document: &LspDocument, offset: usize) -> CompletionScope {
+    if let Some(ast) = &document.ast {
+        for item in &ast.items {
+            match item {
+                Item::Enum(enum_def)
+                    if enum_def.span.start <= offset && offset <= enum_def.span.end =>
+                {
+                    return CompletionScope::EnumBody;
+                }
+                Item::Type(ty) if ty.span.start <= offset && offset <= ty.span.end => {
+                    if check_block_contains(ty.check.as_ref(), offset) {
+                        return CompletionScope::CheckBlock;
+                    }
+                    return CompletionScope::TypeBody;
+                }
+                Item::Const(_) | Item::Enum(_) | Item::Type(_) => {}
+            }
+        }
+        return CompletionScope::TopLevel;
+    }
+
+    // AST is missing (the user is mid-edit and parsing failed). Fall back to a
+    // brace-and-keyword scan so we don't silently lose all in-body completions.
+    completion_scope_fallback(&document.source, offset)
+}
+
+#[derive(Clone, Copy)]
+enum FallbackFrame {
+    Type,
+    Enum,
+    Check,
+    Other,
+}
+
+fn completion_scope_fallback(source: &str, offset: usize) -> CompletionScope {
+    let bytes = source.as_bytes();
+    let limit = offset.min(bytes.len());
+    let mut stack: Vec<FallbackFrame> = Vec::new();
+    let mut pending: Option<FallbackFrame> = None;
+    let mut i = 0;
+
+    while i < limit {
+        let b = bytes[i];
+        if b == b'#' {
+            while i < limit && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if b == b'/' && i + 1 < limit && bytes[i + 1] == b'/' {
+            while i < limit && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if b == b'"' {
+            i += 1;
+            while i < limit {
+                let c = bytes[i];
+                if c == b'\\' && i + 1 < limit {
+                    i += 2;
+                    continue;
+                }
+                if c == b'"' {
+                    i += 1;
+                    break;
+                }
+                if c == b'\n' {
+                    // Unterminated string on this line; treat the newline as
+                    // string-terminator so we don't swallow the rest of the
+                    // file.
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+        if b == b'{' {
+            let frame = pending.take().unwrap_or(FallbackFrame::Other);
+            stack.push(frame);
+            i += 1;
+            continue;
+        }
+        if b == b'}' {
+            stack.pop();
+            pending = None;
+            i += 1;
+            continue;
+        }
+        if b.is_ascii_alphabetic() || b == b'_' {
+            let start = i;
+            while i < limit {
+                let c = bytes[i];
+                if c.is_ascii_alphanumeric() || c == b'_' {
+                    i += 1;
+                } else {
+                    break;
+                }
+            }
+            let word = &source[start..i];
+            match (word, stack.last()) {
+                ("type", None) => pending = Some(FallbackFrame::Type),
+                ("enum", None) => pending = Some(FallbackFrame::Enum),
+                ("check", Some(FallbackFrame::Type)) => pending = Some(FallbackFrame::Check),
+                _ => {}
+            }
+            continue;
+        }
+        // Identifiers, ':', whitespace, and '(' are part of declaration
+        // headers; everything else (semicolons, '=', etc.) cancels a pending
+        // header.
+        if !b.is_ascii_whitespace() && b != b':' && b != b'(' && b != b')' {
+            pending = None;
+        }
+        i += 1;
+    }
+
+    for frame in stack.iter().rev() {
+        match frame {
+            FallbackFrame::Check => return CompletionScope::CheckBlock,
+            FallbackFrame::Type => return CompletionScope::TypeBody,
+            FallbackFrame::Enum => return CompletionScope::EnumBody,
+            FallbackFrame::Other => {}
+        }
+    }
     CompletionScope::TopLevel
 }
 
@@ -2726,14 +2916,118 @@ fn is_inside_string(source: &str, offset: usize) -> bool {
     in_string
 }
 
-fn receiver_chain_before_dot(line_prefix: &str) -> Option<Vec<String>> {
-    let dot = line_prefix.rfind('.')?;
-    let typed = line_prefix[dot + 1..].trim_start();
+fn receiver_chain_before_dot(source: &str, offset: usize) -> Option<Vec<String>> {
+    let prefix = &source[..offset.min(source.len())];
+    // The text after the most recent `.` (the partial completion the user has
+    // typed so far) must still live on the cursor's own line.
+    let line_start = prefix.rfind('\n').map_or(0, |idx| idx + 1);
+    let line_prefix = &prefix[line_start..];
+
+    // Strip any trailing line comment from the cursor's line so that a `.`
+    // appearing inside a comment doesn't trigger receiver-style completion.
+    let line_prefix = line_comment_start(line_prefix).map_or(line_prefix, |idx| &line_prefix[..idx]);
+
+    let dot_in_line = line_prefix.rfind('.')?;
+    let typed = line_prefix[dot_in_line + 1..].trim_start();
     if !typed.chars().all(is_ident_continue) {
         return None;
     }
-    let receiver = trailing_dotted_ident_chain(&line_prefix[..dot])?;
+
+    // Combine the part of the prefix before the cursor's line with the line up
+    // to the trigger dot, then strip comments so that a multi-line receiver
+    // expression (e.g. `drop\n  .rewards\n  .|`) is recognised.
+    let dot_offset = line_start + dot_in_line;
+    let combined = strip_cft_comments(&prefix[..dot_offset]);
+    let receiver = trailing_dotted_ident_chain(&combined)?;
     parse_dotted_ident_chain(receiver)
+}
+
+fn line_comment_start(line: &str) -> Option<usize> {
+    let mut in_string = false;
+    let mut escaped = false;
+    let bytes = line.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if escaped {
+            escaped = false;
+            i += 1;
+            continue;
+        }
+        if in_string {
+            match c {
+                b'\\' => escaped = true,
+                b'"' => in_string = false,
+                _ => {}
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            b'"' => in_string = true,
+            b'#' => return Some(i),
+            b'/' if i + 1 < bytes.len() && bytes[i + 1] == b'/' => return Some(i),
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Replace CFT comments and string contents with spaces so that ident/dot
+/// scanners can walk the result without tripping over `//`, `#`, or `"..."`.
+/// Whitespace and structure are preserved so byte offsets stay meaningful.
+fn strip_cft_comments(source: &str) -> String {
+    let bytes = source.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if c == b'#' {
+            while i < bytes.len() && bytes[i] != b'\n' {
+                out.push(b' ');
+                i += 1;
+            }
+            continue;
+        }
+        if c == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+            while i < bytes.len() && bytes[i] != b'\n' {
+                out.push(b' ');
+                i += 1;
+            }
+            continue;
+        }
+        if c == b'"' {
+            out.push(b'"');
+            i += 1;
+            while i < bytes.len() {
+                let d = bytes[i];
+                if d == b'\\' && i + 1 < bytes.len() {
+                    out.push(b' ');
+                    out.push(b' ');
+                    i += 2;
+                    continue;
+                }
+                if d == b'"' {
+                    out.push(b'"');
+                    i += 1;
+                    break;
+                }
+                if d == b'\n' {
+                    break;
+                }
+                out.push(b' ');
+                i += 1;
+            }
+            continue;
+        }
+        out.push(c);
+        i += 1;
+    }
+    // SAFETY: every byte we pushed is either an ASCII byte (`#`, `/`, `"`,
+    // space, or '\n') copied from `source`, or is a UTF-8 byte preserved
+    // verbatim, so the result remains valid UTF-8.
+    String::from_utf8(out).unwrap_or_else(|_| source.to_string())
 }
 
 fn parse_dotted_ident_chain(text: &str) -> Option<Vec<String>> {

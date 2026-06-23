@@ -53,7 +53,7 @@ pub(crate) struct CftModule {
     pub(crate) ast: crate::ast::ModuleAst,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct CftContainer {
     pub(crate) modules: BTreeMap<ModuleId, CftModule>,
     compiled: Option<CompiledSchema>,

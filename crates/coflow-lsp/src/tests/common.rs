@@ -49,6 +49,7 @@ pub(super) fn test_lsp_build(name: &str, source: &str) -> (TempProject, LspBuild
     let (cleanup, project) = test_project(name, source);
     let build = LspBuild::new(
         compile_schema_project_with_overrides(&project, &[]).expect("compile schema"),
+        None,
     );
     (cleanup, build)
 }
