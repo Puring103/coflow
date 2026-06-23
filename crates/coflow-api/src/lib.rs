@@ -16,7 +16,6 @@
 #![allow(clippy::missing_const_for_fn)]
 
 pub mod cell_value;
-pub mod export;
 pub mod table;
 
 use std::cmp::Reverse;
@@ -34,8 +33,6 @@ pub use coflow_data_model::{
     CfdLabel, CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdTable, CfdValue, RecordOrigin,
     SourceDocument, TextSpan,
 };
-pub use export::{export_model_with_encoder, ExportEncoder, ExportError};
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArtifactContentKind {
     Text,

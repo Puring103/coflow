@@ -18,10 +18,10 @@
 )]
 
 use coflow_api::{
-    export_model_with_encoder, ArtifactContentKind, ArtifactFile, ArtifactSet, CfdDataModel,
-    CftContainer, DataExporter, Diagnostic, DiagnosticSet, ExportContext, ExportEncoder,
-    ExportError, ExporterDescriptor, OutputSpec,
+    ArtifactContentKind, ArtifactFile, ArtifactSet, CfdDataModel, CftContainer, DataExporter,
+    Diagnostic, DiagnosticSet, ExportContext, ExporterDescriptor, OutputSpec,
 };
+use coflow_exporter_core::{export_model_with_encoder, ExportEncoder, ExportError};
 use serde_json::{Map, Number, Value};
 use std::collections::BTreeMap;
 use std::fmt;

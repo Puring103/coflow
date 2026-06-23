@@ -7,9 +7,9 @@
     clippy::unwrap_used
 )]
 
-use coflow_api::{export_model_with_encoder, ExportEncoder};
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputDictKey, CfdInputValue};
+use coflow_exporter_core::{export_model_with_encoder, ExportEncoder};
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 

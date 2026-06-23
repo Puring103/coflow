@@ -1,12 +1,12 @@
 [package]
-name = "coflow-exporter-messagepack"
+name = "coflow-exporter-core"
 version = "0.1.0"
 edition = "2021"
-description = "MessagePack exporter for validated Coflow data models."
+description = "Shared schema-guided exporter traversal for Coflow data models."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/wtlll/ScriptForGame"
 readme = "../../README.md"
-keywords = ["config", "game-data", "messagepack"]
+keywords = ["config", "game-data", "export"]
 categories = ["config", "game-development"]
 publish = false
 
@@ -14,10 +14,5 @@ publish = false
 workspace = true
 
 [dependencies]
-coflow-api = { path = "../coflow-api" }
-coflow-exporter-core = { path = "../coflow-exporter-core" }
-rmp = "0.8"
-
-[dev-dependencies]
+coflow-cft = { path = "../coflow-cft" }
 coflow-data-model = { path = "../coflow-data-model" }
-rmpv = "1"
