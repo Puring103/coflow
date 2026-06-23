@@ -76,9 +76,9 @@ pub fn build_csharp_type(
 
     for field in &ty.all_fields {
         let local_name = field_local_name(&field.name, &mut HashSet::new())?;
-        let property_type = csharp_property_type(&field.ty, view);
+        let property_type = csharp_field_property_type(field, view);
         constructor_parameters.push(CsharpParameter {
-            ty: property_type,
+            ty: property_type.clone(),
             name: local_name.clone(),
         });
         if !is_struct && schema_type.parent.is_some() && !own_field_names.contains(&field.name) {
@@ -90,7 +90,7 @@ pub fn build_csharp_type(
         properties.push(CsharpProperty {
             visibility: "public".to_string(),
             name: property_name.clone(),
-            type_name: csharp_property_type(&field.ty, view),
+            type_name: property_type,
             summary: display_annotation(&field.annotations),
             obsolete: has_annotation(&field.annotations, "deprecated"),
         });
@@ -477,13 +477,39 @@ fn load_field(
         },
         |default| Some(default.clone()),
     );
+    let inner_property_type = csharp_property_type(&field.ty, view);
+    let property_type = if field.is_localized {
+        format!("Localized<{inner_property_type}>")
+    } else {
+        inner_property_type.clone()
+    };
+    let raw_read_expr = read_field_expr(field, "obj", "context", view, missing_expr.as_deref())?;
+    let raw_msgpack_expr = read_messagepack_field_expr(field, "reader", "context", view)?;
+    let (read_expr, messagepack_read_expr) = if field.is_localized {
+        let bucket = field
+            .localization_bucket
+            .clone()
+            .unwrap_or_else(|| "default".to_string());
+        let bucket_lit = escape_csharp_string(&bucket);
+        let field_lit = escape_csharp_string(&field.name);
+        // `id` is in scope inside the loader function (key local name).
+        let key_expr = format!(
+            "string.Concat(\"{bucket_lit}/\", id?.ToString() ?? string.Empty, \"/{field_lit}\")"
+        );
+        (
+            format!("new Localized<{inner_property_type}>({key_expr}, {raw_read_expr})"),
+            format!("new Localized<{inner_property_type}>({key_expr}, {raw_msgpack_expr})"),
+        )
+    } else {
+        (raw_read_expr, raw_msgpack_expr)
+    };
     Ok(CsharpLoadField {
         property: csharp_public_member_name(&field.name),
         source_name: field.name.clone(),
         local_name,
-        type_name: csharp_type(&field.ty, view),
-        read_expr: read_field_expr(field, "obj", "context", view, missing_expr.as_deref())?,
-        messagepack_read_expr: read_messagepack_field_expr(field, "reader", "context", view)?,
+        type_name: property_type,
+        read_expr,
+        messagepack_read_expr,
         is_required: missing_expr.is_none(),
         default_expr,
         missing_expr,
@@ -740,6 +766,19 @@ fn csharp_type(ty: &FieldType, view: &SchemaView) -> String {
             )
         }
         FieldType::Nullable(inner) => format!("{}?", csharp_type(inner, view)),
+    }
+}
+
+/// Property type for a field, with `Localized<T>` wrapping when the field is
+/// `@localized`. The wrapping is applied around the same type the field would
+/// normally receive (including `IReadOnlyList<T>` / `IReadOnlyDictionary<...>`
+/// for collection fields).
+fn csharp_field_property_type(field: &FieldMeta, view: &SchemaView) -> String {
+    let inner = csharp_property_type(&field.ty, view);
+    if field.is_localized {
+        format!("Localized<{inner}>")
+    } else {
+        inner
     }
 }
 

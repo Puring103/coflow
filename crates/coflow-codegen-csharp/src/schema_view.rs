@@ -79,6 +79,7 @@ impl SchemaView {
         self.types.keys().cloned().collect()
     }
 
+    #[allow(dead_code)]
     pub fn non_abstract_type_names(&self) -> Vec<String> {
         self.types
             .values()
@@ -296,6 +297,8 @@ pub struct FieldMeta {
     pub ty: FieldType,
     pub default: Option<CftSchemaDefaultValue>,
     pub annotations: Vec<CftAnnotation>,
+    pub is_localized: bool,
+    pub localization_bucket: Option<String>,
 }
 
 impl FieldMeta {
@@ -305,6 +308,8 @@ impl FieldMeta {
             ty: FieldType::from_schema(&field.ty_ref, enums),
             default: field.default.clone(),
             annotations: field.annotations.clone(),
+            is_localized: field.is_localized,
+            localization_bucket: field.localization_bucket.clone(),
         }
     }
 }

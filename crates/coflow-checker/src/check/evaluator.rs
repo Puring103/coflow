@@ -4,6 +4,7 @@ use super::value::{
     LocatedCheckValue,
 };
 use crate::schema_view::SchemaView;
+use crate::LocalizationOverrides;
 use coflow_cft::{
     CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
     CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind, CftSchemaTypePredicate,
@@ -30,6 +31,13 @@ pub(super) struct CheckEvaluator<'a> {
     /// runner toggles this on for full check runs that produce a dep graph.
     pub(super) dep_collector_enabled: bool,
     pub(super) reads_from: BTreeSet<CfdRecordId>,
+    /// Optional per-language overrides. When set, the evaluator substitutes
+    /// `@localized` string-typed field values with the matching translation
+    /// from `localization.translations` (key format
+    /// `{bucket}/{record_key}/{field_name}`). Non-string fields and missing
+    /// keys are left unchanged so downstream check evaluation transparently
+    /// falls back to the data-source default.
+    pub(super) localization: Option<LocalizationOverrides>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,6 +74,7 @@ impl<'a> CheckEvaluator<'a> {
             diagnostics: Vec::new(),
             dep_collector_enabled: false,
             reads_from,
+            localization: None,
         }
     }
 
@@ -82,6 +91,38 @@ impl<'a> CheckEvaluator<'a> {
             }
         }
         self.reads_from.insert(target);
+    }
+
+    /// If the resolved field is `@localized` and the active language has a
+    /// translation for `{bucket}/{record_key}/{field_name}`, replace the
+    /// string value in `located` with the translation. Other field shapes are
+    /// left untouched and silently fall back to the default — see
+    /// `docs/spec/13-localization.md` §6.
+    fn apply_localization_override(
+        &self,
+        record: &CheckRecordRef,
+        field_name: &str,
+        located: &mut LocatedCheckValue,
+    ) {
+        let Some(loc) = self.localization.as_ref() else {
+            return;
+        };
+        let Some(actual_type) = record.actual_type(self.model) else {
+            return;
+        };
+        let Some(bucket) = self.schema.field_localization_bucket(actual_type, field_name) else {
+            return;
+        };
+        let Some(record_key) = record.key(self.model) else {
+            return;
+        };
+        let key = format!("{bucket}/{record_key}/{field_name}");
+        let Some(translation) = loc.translations.get(&key) else {
+            return;
+        };
+        if matches!(located.value, CheckValue::String(_)) {
+            located.value = CheckValue::String(translation.clone());
+        }
     }
 
     pub(super) fn eval_check_block(&mut self, check: &CftSchemaCheckBlock) -> EvalFlow {
@@ -454,11 +495,14 @@ impl<'a> CheckEvaluator<'a> {
             return self.virtual_id(&record, record.path());
         }
         let field_type = self.field_type_for_record(&record, name);
-        let result = record.field(self.model, field_type, name);
+        let mut result = record.field(self.model, field_type, name);
         if let Some(located) = &result {
             if let CheckValue::Record(CheckRecordRef::Top(id)) = &located.value {
                 self.note_read_from(*id);
             }
+        }
+        if let Some(located) = result.as_mut() {
+            self.apply_localization_override(&record, name, located);
         }
         result
     }
@@ -498,7 +542,7 @@ impl<'a> CheckEvaluator<'a> {
                     });
                 }
                 let field_type = self.field_type_for_record(&record, name);
-                let result = record.field(self.model, field_type, name).ok_or_else(|| {
+                let mut result = record.field(self.model, field_type, name).ok_or_else(|| {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
                         target.path,
@@ -509,6 +553,9 @@ impl<'a> CheckEvaluator<'a> {
                     if let CheckValue::Record(CheckRecordRef::Top(id)) = &located.value {
                         self.note_read_from(*id);
                     }
+                }
+                if let Ok(located) = result.as_mut() {
+                    self.apply_localization_override(&record, name, located);
                 }
                 result
             }

@@ -118,6 +118,18 @@ impl SchemaView {
             .get(actual_type)
             .and_then(|meta| meta.fields.get(field_name))
     }
+
+    /// Returns the localization bucket for a field if it is `@localized`.
+    pub(crate) fn field_localization_bucket(
+        &self,
+        actual_type: &str,
+        field_name: &str,
+    ) -> Option<&str> {
+        self.types
+            .get(actual_type)
+            .and_then(|meta| meta.localized_fields.get(field_name))
+            .map(String::as_str)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -126,10 +138,28 @@ pub(crate) struct TypeMeta {
     parent: Option<String>,
     check: Option<CftSchemaCheckBlock>,
     fields: BTreeMap<String, CftSchemaTypeRef>,
+    /// Field name -> resolved localization bucket. Only contains entries for
+    /// fields that carry `@localized`. Used by the evaluator to substitute
+    /// values when running per-language check rounds.
+    localized_fields: BTreeMap<String, String>,
 }
 
 impl TypeMeta {
     fn from_schema(schema_type: &CftSchemaType) -> Self {
+        let localized_fields = schema_type
+            .all_fields
+            .iter()
+            .filter(|field| field.is_localized)
+            .map(|field| {
+                (
+                    field.name.clone(),
+                    field
+                        .localization_bucket
+                        .clone()
+                        .unwrap_or_else(|| schema_type.name.clone()),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
         Self {
             name: schema_type.name.clone(),
             parent: schema_type.parent.clone(),
@@ -139,6 +169,7 @@ impl TypeMeta {
                 .iter()
                 .map(|field| (field.name.clone(), field.ty_ref.clone()))
                 .collect(),
+            localized_fields,
         }
     }
 }

@@ -7,9 +7,25 @@ pub struct CsharpProject {
     pub data_format: String,
     pub uses_json: bool,
     pub uses_messagepack: bool,
+    pub uses_localization: bool,
     pub enums: Vec<CsharpEnum>,
     pub types: Vec<CsharpType>,
     pub database: CsharpDatabase,
+    pub singletons: Vec<CsharpSingleton>,
+}
+
+/// Per-singleton metadata used by the database template. Singletons do not
+/// generate `Tb*` accessors; the database class exposes a property whose name
+/// is the type name (lower-cased identifier) and whose value loads the single
+/// row from `<TypeName>.<ext>`.
+#[derive(Debug, Serialize)]
+pub struct CsharpSingleton {
+    pub type_name: String,
+    pub source_name: String,
+    /// Public property name on the database class. Equals `type_name` per
+    /// spec — no PascalCase rewrite.
+    pub accessor_property: String,
+    pub records_var: String,
 }
 
 #[derive(Debug, Serialize)]

@@ -127,6 +127,72 @@ fn generate_json_with_key_as_enum_variants(
 }
 
 #[test]
+fn codegen_wraps_localized_fields_and_emits_runtime_helper() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                @localized
+                display_name: string;
+                count: int;
+            }
+        "#,
+    )?;
+    let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+
+    let item = generated_file(&files, "Item.cs")?;
+    require_contains(item, "public Localized<string> DisplayName { get; }")?;
+    require_contains(item, "public long Count { get; }")?;
+    require_contains(
+        item,
+        "new Localized<string>(string.Concat(\"Item/\", id?.ToString() ?? string.Empty, \"/display_name\")",
+    )?;
+
+    let helper = generated_file(&files, "Localized.cs")?;
+    require_contains(helper, "public readonly struct Localized<T>")?;
+    require_contains(helper, "public static class Localization")?;
+    require_contains(helper, "public interface LocalizationProvider")?;
+    Ok(())
+}
+
+#[test]
+fn codegen_does_not_emit_localized_helper_without_localized_fields() -> Result<(), String> {
+    let schema = compile_schema("type Item { name: string; }")?;
+    let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+    require_missing_file(&files, "Localized.cs")?;
+    Ok(())
+}
+
+#[test]
+fn codegen_emits_singleton_property_on_database_class_and_skips_table() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+            @singleton
+            type GameConfig {
+                max_level: int;
+            }
+
+            type Item { name: string; }
+        "#,
+    )?;
+    let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+
+    let database = generated_file(&files, "CoflowTables.cs")?;
+    require_contains(database, "public GameConfig GameConfig { get; }")?;
+    require_contains(
+        database,
+        "GameConfig.LoadTable(Path.Combine(dataDir, \"GameConfig.json\"), LoadContext.Empty)",
+    )?;
+    require_contains(database, "must have exactly 1 record")?;
+    require_not_contains(database, "TbGameConfig")?;
+    // Item is still a regular table.
+    require_contains(database, "public Table<string, Item> TbItem { get; }")?;
+    Ok(())
+}
+
+#[test]
 fn data_format_serializes_messagepack_without_separator() -> Result<(), String> {
     let value = serde::Serialize::serialize(&CsharpDataFormat::MessagePack, StringSerializer)
         .map_err(|err| err.to_string())?;
