@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { FileTree } from './components/FileTree'
 import { TableView } from './components/TableView'
 import { RecordView } from './components/RecordView'
@@ -9,8 +9,8 @@ import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
 import { MOCK_PROJECT, MOCK_FILE_RECORDS, MOCK_GRAPH } from './mock'
 import * as api from './api'
-import type { ProjectSnapshot, FileRecords, GraphData, FieldValue, FieldPathSegment, DiagnosticItem } from './bindings/index'
-import { errorMessage } from './bindings/index'
+import type { ProjectSnapshot, FileRecords, GraphData, FieldValue, FieldPathSegment, DiagnosticItem, RecordRow } from './bindings/index'
+import { errorMessage, errorDiagnostics } from './bindings/index'
 import type { FieldDiagnostic } from './components/DataCard'
 import { typeColor } from './utils/typeColor'
 import { isEditableFile } from './utils/editable'
@@ -22,12 +22,35 @@ export default function App() {
   const [fileDataCache, setFileDataCache] = useState<Record<string, FileRecords>>({})
   const [graphCache, setGraphCache] = useState<Record<string, GraphData>>({})
   const [showHelp, setShowHelp] = useState(false)
+  const helpBoxRef = useRef<HTMLDivElement>(null)
+  const helpReturnRef = useRef<HTMLElement | null>(null)
   const [loadingFile, setLoadingFile] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  // Edit history for undo/redo. Each entry records the pre-edit value so we
+  // can replay it backwards through the same writeField pipeline. The future
+  // stack is populated by an undo and drained by redo.
+  const [undoStack, setUndoStack] = useState<EditEntry[]>([])
+  const [redoStack, setRedoStack] = useState<EditEntry[]>([])
+  // Monotonic sequence guard so stale write completions can't overwrite a
+  // newer edit's refresh (e.g. when two edits race on the same file).
+  const writeSeqRef = useRef(0)
 
   const router = useRouter()
   const { theme, toggle: toggleTheme } = useTheme()
   const [activeType, setActiveType] = useState<string>('')
+  // Field path to briefly highlight after a diagnostic jump. Cleared after
+  // the RecordView applies the highlight so subsequent navigations don't
+  // re-flash it.
+  const [highlightField, setHighlightField] = useState<string | null>(null)
+
+  // Resizable sidebar width, persisted to localStorage.
+  const [sidebarW, setSidebarW] = useState<number>(() => {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('cfd-editor-sidebar-w') : null
+    const n = raw ? parseInt(raw, 10) : NaN
+    return Number.isFinite(n) ? Math.min(480, Math.max(160, n)) : 220
+  })
+  const [splitterDragging, setSplitterDragging] = useState(false)
 
   // Auto-load mock data only when not running in Tauri (browser preview).
   useEffect(() => {
@@ -42,28 +65,25 @@ export default function App() {
     }
   }, [])
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-        e.preventDefault()
-      }
-      if (e.altKey && e.key === 'ArrowLeft') router.back()
-      if (e.altKey && e.key === 'ArrowRight') router.forward()
-      if (e.key === '?') setShowHelp(v => !v)
-      if (e.key === 'Escape') setShowHelp(false)
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [router])
-
   // Reset all per-session UI state to a clean slate before swapping in a
   // new project snapshot. Used by both "open" and "new" flows so behavior
-  // is identical.
+  // is identical. Also closes the previous backend session so the
+  // SessionStore doesn't accumulate stale sessions across project switches.
   const adoptSnapshot = useCallback(
     (snapshot: ProjectSnapshot) => {
-      setProject(snapshot)
+      setProject(prev => {
+        // Fire-and-forget close of the outgoing session. We read prev here
+        // (not `project` from the closure) so we always close exactly the
+        // session we're replacing, even if state was stale at call time.
+        if (prev && api.isTauri && prev.session_id !== snapshot.session_id) {
+          api.closeSession(prev.session_id).catch(() => { /* best-effort */ })
+        }
+        return snapshot
+      })
       setFileDataCache({})
       setGraphCache({})
+      setUndoStack([])
+      setRedoStack([])
       const firstFile = collectSourceFiles(snapshot)[0]
       if (firstFile) router.push({ view: 'table', file: firstFile })
     },
@@ -84,6 +104,10 @@ export default function App() {
       adoptSnapshot(snapshot)
     } catch (err) {
       setErrorMsg(`打开项目失败: ${errorMessage(err)}`)
+      const diags = errorDiagnostics(err)
+      if (diags.length > 0) {
+        setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
+      }
     }
   }, [adoptSnapshot])
 
@@ -104,6 +128,10 @@ export default function App() {
       adoptSnapshot(snapshot)
     } catch (err) {
       setErrorMsg(`新建工程失败: ${errorMessage(err)}`)
+      const diags = errorDiagnostics(err)
+      if (diags.length > 0) {
+        setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
+      }
     }
   }, [adoptSnapshot])
 
@@ -147,9 +175,50 @@ export default function App() {
     [router]
   )
 
-  const writeField = useCallback(
-    async (filePath: string, recordKey: string, fieldPath: FieldPathSegment[], newValue: FieldValue) => {
+  // Sidebar splitter: on mousedown, attach mousemove/mouseup listeners that
+  // track the pointer X and clamp the new width to [160, 480]. Persist on
+  // release. We use window listeners (not React state per move) so the drag
+  // is smooth and doesn't re-render the whole tree on each pixel.
+  const onSplitterMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    setSplitterDragging(true)
+    const startX = e.clientX
+    const startW = sidebarW
+    const onMove = (ev: MouseEvent) => {
+      const next = Math.min(480, Math.max(160, startW + (ev.clientX - startX)))
+      setSidebarW(next)
+      document.documentElement.style.setProperty('--sidebar-w', `${next}px`)
+    }
+    const onUp = () => {
+      setSplitterDragging(false)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      try { localStorage.setItem('cfd-editor-sidebar-w', String(sidebarW)) } catch { /* quota */ }
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [sidebarW])
+
+  // Apply the persisted width on mount and keep it in sync with keyboard
+  // adjustments (the mouse-drag path sets the CSS var directly for speed).
+  useEffect(() => {
+    document.documentElement.style.setProperty('--sidebar-w', `${sidebarW}px`)
+  }, [sidebarW])
+
+  // Core write pipeline shared by user edits, undo, and redo.
+  // `opts.recordHistory` controls whether the edit is pushed onto the undo
+  // stack (redo intentionally replays without re-recording the inverse, so
+  // it passes the oldValue it is reverting to as the "new" value).
+  const writeFieldInternal = useCallback(
+    async (
+      filePath: string,
+      recordKey: string,
+      fieldPath: FieldPathSegment[],
+      newValue: FieldValue,
+      opts: { recordHistory: boolean; oldValue?: FieldValue } = { recordHistory: true },
+    ): Promise<RecordRow | void> => {
       if (!project || !api.isTauri) return
+      const mySeq = ++writeSeqRef.current
       try {
         const outcome = await api.writeField(
           project.session_id,
@@ -158,21 +227,92 @@ export default function App() {
           fieldPath,
           newValue,
         )
-        // The post-write rebuild reruns the checker; surface the new
-        // diagnostic set immediately so the panel reflects whatever the
-        // edit introduced or resolved.
+        // Stale guard: a newer edit superseded this one; drop our refresh so
+        // we don't clobber the newer state with older data.
+        if (mySeq !== writeSeqRef.current) return outcome.row
         setProject(p => (p ? { ...p, diagnostics: outcome.diagnostics } : p))
-        // Refresh the edited file eagerly; drop other caches so they re-load on next nav.
         const refreshed = await api.getFileRecords(project.session_id, filePath)
+        if (mySeq !== writeSeqRef.current) return outcome.row
         setFileDataCache({ [filePath]: refreshed })
         setGraphCache({})
+        if (opts.recordHistory) {
+          const oldValue = opts.oldValue ?? snapshotOldValue(fileDataCache, filePath, recordKey, fieldPath)
+          if (oldValue) {
+            setUndoStack(s => [...s, {
+              filePath, recordKey, fieldPath,
+              oldValue: cloneValue(oldValue),
+              newValue: cloneValue(newValue),
+            }])
+            setRedoStack([])
+          }
+        }
         return outcome.row
       } catch (err) {
         setErrorMsg(`写入失败: ${errorMessage(err)}`)
+        // Surface structured diagnostics embedded in a failed write (e.g.
+        // type-mismatch detail from the backend) so they land in the
+        // diagnostics panel instead of being silently dropped.
+        const diags = errorDiagnostics(err)
+        if (diags.length > 0) {
+          setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
+        }
       }
     },
-    [project]
+    [project, fileDataCache],
   )
+
+  const writeField = useCallback(
+    (filePath: string, recordKey: string, fieldPath: FieldPathSegment[], newValue: FieldValue) =>
+      writeFieldInternal(filePath, recordKey, fieldPath, newValue),
+    [writeFieldInternal],
+  )
+
+  const undo = useCallback(async () => {
+    const entry = undoStack[undoStack.length - 1]
+    if (!entry) return
+    setUndoStack(s => s.slice(0, -1))
+    setRedoStack(s => [...s, entry])
+    await writeFieldInternal(entry.filePath, entry.recordKey, entry.fieldPath, entry.oldValue, {
+      recordHistory: false,
+    })
+  }, [undoStack, writeFieldInternal])
+
+  const redo = useCallback(async () => {
+    const entry = redoStack[redoStack.length - 1]
+    if (!entry) return
+    setRedoStack(s => s.slice(0, -1))
+    setUndoStack(s => [...s, entry])
+    await writeFieldInternal(entry.filePath, entry.recordKey, entry.fieldPath, entry.newValue, {
+      recordHistory: false,
+    })
+  }, [redoStack, writeFieldInternal])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault()
+      }
+      // Undo / redo. Skip when typing in a text control so native input
+      // undo stays available there.
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z') && !isTextTarget(e.target)) {
+        e.preventDefault()
+        if (e.shiftKey) redo()
+        else undo()
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'y' && !isTextTarget(e.target)) {
+        e.preventDefault()
+        redo()
+      }
+      if (e.altKey && e.key === 'ArrowLeft') router.back()
+      if (e.altKey && e.key === 'ArrowRight') router.forward()
+      // `?` only toggles help when not focused inside a text-editing control,
+      // otherwise typing `?` into inputs/search boxes would steal focus.
+      if (e.key === '?' && !isTextTarget(e.target)) setShowHelp(v => !v)
+      if (e.key === 'Escape') setShowHelp(false)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [router, undo, redo])
 
   const currentRoute = router.current
   const activeFile = currentRoute?.file ?? null
@@ -186,6 +326,50 @@ export default function App() {
   useEffect(() => {
     setActiveSession(project?.session_id ?? null)
   }, [project?.session_id])
+
+  // Help overlay: focus trap + autofocus + restore focus on close.
+  useEffect(() => {
+    if (!showHelp) return
+    helpReturnRef.current = document.activeElement as HTMLElement | null
+    const box = helpBoxRef.current
+    if (box) {
+      const focusable = box.querySelector<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      )
+      focusable?.focus()
+    }
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+      if (!box) return
+      const nodes = Array.from(
+        box.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter(el => !el.hasAttribute('disabled'))
+      if (nodes.length === 0) return
+      const first = nodes[0]
+      const last = nodes[nodes.length - 1]
+      const active = document.activeElement as HTMLElement | null
+      if (e.shiftKey) {
+        if (active === first || !box.contains(active)) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else {
+        if (active === last || !box.contains(active)) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => {
+      window.removeEventListener('keydown', handler)
+      const ret = helpReturnRef.current
+      if (ret && typeof ret.focus === 'function') ret.focus()
+      helpReturnRef.current = null
+    }
+  }, [showHelp])
 
   // Sync activeType when file or its type set changes
   useEffect(() => {
@@ -228,6 +412,7 @@ export default function App() {
           onClick={router.back}
           disabled={!router.canBack}
           title="后退 (Alt+←)"
+          aria-label="后退"
         >
           <Icon name="arrow-left" size={14} />
         </button>
@@ -236,6 +421,7 @@ export default function App() {
           onClick={router.forward}
           disabled={!router.canForward}
           title="前进 (Alt+→)"
+          aria-label="前进"
         >
           <Icon name="arrow-right" size={14} />
         </button>
@@ -245,23 +431,34 @@ export default function App() {
           </span>
         )}
         <span className="topbar-spacer" />
+        {(undoStack.length > 0 || redoStack.length > 0) && (
+          <span className="undo-badge" title={`可撤销 ${undoStack.length} 步 / 可重做 ${redoStack.length} 步 (Ctrl+Z / Ctrl+Y)`}>
+            {undoStack.length > 0 ? `可撤销 ${undoStack.length}` : `可重做 ${redoStack.length}`}
+          </span>
+        )}
         <button
           className="btn btn-icon"
           onClick={toggleTheme}
           title={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
+          aria-label={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
         >
           <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={14} />
         </button>
-        <button className="btn btn-icon" onClick={() => setShowHelp(v => !v)} title="帮助 (?)">
+        <button
+          className="btn btn-icon"
+          onClick={() => setShowHelp(v => !v)}
+          title="帮助 (?)"
+          aria-label="帮助"
+        >
           <Icon name="help" size={14} />
         </button>
       </div>
 
       {errorMsg && (
-        <div className="error-banner">
+        <div className="error-banner" role="alert">
           <Icon name="error" size={13} />
           {errorMsg}
-          <button className="btn btn-icon" onClick={() => setErrorMsg(null)}>
+          <button className="btn btn-icon" onClick={() => setErrorMsg(null)} aria-label="关闭错误提示">
             <Icon name="close" size={12} />
           </button>
         </div>
@@ -285,21 +482,51 @@ export default function App() {
           )}
         </div>
 
+        <div
+          className={`sidebar-splitter${splitterDragging ? ' dragging' : ''}`}
+          onMouseDown={onSplitterMouseDown}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="调整侧栏宽度"
+          tabIndex={0}
+          onKeyDown={e => {
+            if (e.key === 'ArrowLeft') setSidebarW(w => Math.max(160, w - 16))
+            if (e.key === 'ArrowRight') setSidebarW(w => Math.min(480, w + 16))
+          }}
+        />
+
         <div className="content-area">
           {currentRoute && activeFileData ? (
             <>
               {/* File breadcrumb */}
               <div className="content-breadcrumb">
-                <Icon name="file" size={12} className="breadcrumb-icon" />
-                {activeFile?.split('/').map((part, i, arr) => (
-                  <span key={i} className="breadcrumb-part">
-                    {i > 0 && <span className="breadcrumb-sep">/</span>}
-                    <span className={i === arr.length - 1 ? 'breadcrumb-leaf' : ''}>{part}</span>
-                  </span>
-                ))}
+                <Icon name="file" size={12} className="breadcrumb-icon" aria-hidden />
+                {activeFile?.split('/').map((part, i, arr) => {
+                  const dirPath = arr.slice(0, i + 1).join('/')
+                  const isLeaf = i === arr.length - 1
+                  const siblingFile = findFirstSourceFileInDir(project, dirPath)
+                  const clickable = !isLeaf && !!siblingFile
+                  return (
+                    <span key={i} className="breadcrumb-part">
+                      {i > 0 && <span className="breadcrumb-sep" aria-hidden>/</span>}
+                      {clickable && siblingFile ? (
+                        <button
+                          type="button"
+                          className="breadcrumb-link"
+                          title={`跳转到 ${siblingFile}`}
+                          onClick={() => openFile(siblingFile)}
+                        >
+                          {part}
+                        </button>
+                      ) : (
+                        <span className={isLeaf ? 'breadcrumb-leaf' : ''}>{part}</span>
+                      )}
+                    </span>
+                  )
+                })}
                 {readOnly && (
                   <span className="breadcrumb-readonly" title="非 .cfd 源文件，仅可查看">
-                    <Icon name="lock" size={11} />
+                    <Icon name="lock" size={11} aria-hidden />
                     只读
                   </span>
                 )}
@@ -307,13 +534,18 @@ export default function App() {
 
               {/* Type tabs row */}
               {activeFileData.type_names.length > 0 && (
-                <div className="view-tabs view-tabs-types">
+                <div className="view-tabs view-tabs-types" role="tablist" aria-label="类型">
                   <div className="type-tabs-inline">
                     {activeFileData.type_names.map(t => (
                       <button
                         key={t}
                         className={`tab-btn${activeType === t ? ' active' : ''}`}
+                        role="tab"
+                        aria-selected={activeType === t}
+                        tabIndex={activeType === t ? 0 : -1}
+                        data-tab-id={t}
                         onClick={() => setActiveType(t)}
+                        onKeyDown={e => onTabListKeyDown(e, activeFileData.type_names, setActiveType)}
                         style={activeType === t ? {'--tab-color': typeColor(t)} as React.CSSProperties : undefined}
                       >
                         {t}
@@ -327,14 +559,19 @@ export default function App() {
               )}
 
               {/* View switcher */}
-              <div className="view-tabs view-tabs-views">
+              <div className="view-tabs view-tabs-views" role="tablist" aria-label="视图">
                 {(['table', 'record', 'graph'] as const).map(v => (
                   <button
                     key={v}
                     className={`tab-btn tab-view${currentRoute.view === v ? ' active' : ''}`}
+                    role="tab"
+                    aria-selected={currentRoute.view === v}
+                    tabIndex={currentRoute.view === v ? 0 : -1}
+                    data-tab-id={v}
                     onClick={() => switchView(v)}
+                    onKeyDown={e => onTabListKeyDown(e, ['table', 'record', 'graph'], v => switchView(v as 'table' | 'record' | 'graph'))}
                   >
-                    <Icon name={v === 'table' ? 'table' : v === 'record' ? 'record' : 'graph'} size={13} />
+                    <Icon name={v === 'table' ? 'table' : v === 'record' ? 'record' : 'graph'} size={13} aria-hidden />
                     {v === 'table' ? '表格' : v === 'record' ? '记录' : '图谱'}
                   </button>
                 ))}
@@ -358,6 +595,8 @@ export default function App() {
                     typeFilter={activeType}
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
+                    highlightField={highlightField}
+                    onHighlightConsumed={() => setHighlightField(null)}
                     onOpenRecord={key => openRecord(currentRoute.file, key)}
                     onWriteField={(rk, path, val) => writeField(currentRoute.file, rk, path, val)}
                   />
@@ -407,12 +646,23 @@ export default function App() {
         <DiagnosticsPanel
           diagnostics={project.diagnostics}
           onJumpToRecord={(file, key) => openRecord(file, key)}
+          onJumpToField={(file, key, fieldPath) => {
+            setHighlightField(fieldPath)
+            openRecord(file, key)
+          }}
         />
       )}
 
       {showHelp && (
         <div className="help-overlay" onClick={() => setShowHelp(false)}>
-          <div className="help-box" onClick={e => e.stopPropagation()}>
+          <div
+            className="help-box"
+            ref={helpBoxRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="键盘快捷键"
+            onClick={e => e.stopPropagation()}
+          >
             <h3>
               <Icon name="help" size={16} />
               键盘快捷键
@@ -421,6 +671,8 @@ export default function App() {
               <tbody>
                 <tr><td>Alt+←</td><td>后退</td></tr>
                 <tr><td>Alt+→</td><td>前进</td></tr>
+                <tr><td>Ctrl+Z</td><td>撤销编辑</td></tr>
+                <tr><td>Ctrl+Y / Ctrl+Shift+Z</td><td>重做编辑</td></tr>
                 <tr><td>?</td><td>显示/隐藏帮助</td></tr>
                 <tr><td>Esc</td><td>关闭弹窗</td></tr>
               </tbody>
@@ -461,4 +713,116 @@ function collectSourceFiles(snapshot: ProjectSnapshot): string[] {
   }
   for (const n of snapshot.file_tree) walk(n)
   return out
+}
+
+/** True when the user is currently focused inside a text-editing control.
+ *  Used to gate global shortcuts (`?`, etc.) so they don't fire while typing. */
+function isTextTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const tag = target.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable
+}
+
+/** A single reversible field edit. `oldValue` is the pre-edit FieldValue so
+ *  undo replays it back through writeField. We deep-clone via structuredClone
+ *  so later mutations of the cache can't retroactively rewrite history. */
+interface EditEntry {
+  filePath: string
+  recordKey: string
+  fieldPath: FieldPathSegment[]
+  oldValue: FieldValue
+  newValue: FieldValue
+}
+
+/** Walk a FieldValue along a FieldPathSegment path and return the value that
+ *  lives there, or null if any segment doesn't resolve. Used to snapshot the
+ *  pre-edit value of an arbitrary nested field. */
+function readFieldPath(root: FieldValue, path: FieldPathSegment[]): FieldValue | null {
+  let cur: FieldValue = root
+  for (const seg of path) {
+    if (seg.kind === 'field') {
+      if (cur.kind !== 'Object') return null
+      const fc = cur.fields.find(f => f.name === seg.name)
+      if (!fc) return null
+      cur = fc.value
+    } else {
+      if (cur.kind !== 'Array') return null
+      const item = cur.items[seg.i]
+      if (!item) return null
+      cur = item
+    }
+  }
+  return cur
+}
+
+function cloneValue(v: FieldValue): FieldValue {
+  if (typeof structuredClone === 'function') return structuredClone(v)
+  return JSON.parse(JSON.stringify(v)) as FieldValue
+}
+
+/** Look up the current value at (filePath, recordKey, fieldPath) in the
+ *  file-data cache so we can record it as the undo target. Returns null if
+ *  the file/record/path isn't present (e.g. cache miss). */
+function snapshotOldValue(
+  cache: Record<string, FileRecords>,
+  filePath: string,
+  recordKey: string,
+  fieldPath: FieldPathSegment[],
+): FieldValue | null {
+  const fr = cache[filePath]
+  if (!fr) return null
+  const row = fr.records.find(r => r.key === recordKey)
+  if (!row) return null
+  const root: FieldValue = { kind: 'Object', actual_type: row.actual_type, fields: row.fields }
+  return readFieldPath(root, fieldPath)
+}
+
+/** Roving-tabindex arrow-key navigation for a `role="tablist"` of string ids. */
+function onTabListKeyDown(
+  e: React.KeyboardEvent,
+  tabs: string[],
+  onSelect: (id: string) => void,
+) {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') return
+  const nodes = Array.from(
+    e.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [],
+  )
+  const i = nodes.indexOf(e.currentTarget as HTMLElement)
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    e.preventDefault()
+    const dir = e.key === 'ArrowRight' ? 1 : -1
+    const next = nodes[(i + dir + nodes.length) % nodes.length]
+    next.focus()
+    const id = next.dataset.tabId
+    if (id) onSelect(id)
+  } else if (e.key === 'Home') {
+    e.preventDefault()
+    nodes[0]?.focus()
+    const id = nodes[0]?.dataset.tabId
+    if (id) onSelect(id)
+  } else if (e.key === 'End') {
+    e.preventDefault()
+    const last = nodes[nodes.length - 1]
+    last?.focus()
+    const id = last?.dataset.tabId
+    if (id) onSelect(id)
+  }
+}
+
+/** Find the first in-source file whose path starts with `dirPath/`. Used to
+ *  make breadcrumb path segments clickable to jump into that directory. */
+function findFirstSourceFileInDir(project: ProjectSnapshot | null, dirPath: string): string | null {
+  if (!project) return null
+  const prefix = dirPath.endsWith('/') ? dirPath : dirPath + '/'
+  let result: string | null = null
+  function walk(n: ProjectSnapshot['file_tree'][number]) {
+    if (result) return
+    if (!n.is_dir && n.in_sources && n.path.startsWith(prefix)) {
+      result = n.path
+      return
+    }
+    for (const c of n.children) walk(c)
+  }
+  for (const n of project.file_tree) walk(n)
+  return result
 }

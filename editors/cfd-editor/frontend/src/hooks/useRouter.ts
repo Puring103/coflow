@@ -1,4 +1,4 @@
-import { useReducer, useCallback } from 'react'
+import { useReducer, useCallback, useMemo } from 'react'
 import type { Route } from '../bindings/index'
 
 interface State {
@@ -46,7 +46,10 @@ export function useRouter(): RouterState {
   const back    = useCallback(() => dispatch({ type: 'back' }),    [])
   const forward = useCallback(() => dispatch({ type: 'forward' }), [])
 
-  return {
+  // Memoize the returned object so consumers that depend on `router` in
+  // their own useEffect/useCallback deps don't re-subscribe every render
+  // (the previous literal { ... } was a fresh reference each time).
+  return useMemo<RouterState>(() => ({
     current:    s.cursor >= 0 ? s.stack[s.cursor] ?? null : null,
     canBack:    s.cursor > 0,
     canForward: s.cursor < s.stack.length - 1,
@@ -54,5 +57,6 @@ export function useRouter(): RouterState {
     replace,
     back,
     forward,
-  }
+  }), [s, push, replace, back, forward])
 }
+

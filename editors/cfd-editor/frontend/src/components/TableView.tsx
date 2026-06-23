@@ -1,7 +1,17 @@
-import { useState, useEffect, useMemo } from 'react'
-import { useReactTable, getCoreRowModel, flexRender, createColumnHelper } from '@tanstack/react-table'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import {
+  useReactTable,
+  getCoreRowModel,
+  getSortedRowModel,
+  getFilteredRowModel,
+  flexRender,
+  createColumnHelper,
+  type SortingState,
+  type ColumnSizingState,
+} from '@tanstack/react-table'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import type { FileRecords, RecordRow, FieldValue, FieldPathSegment, DiagnosticItem } from '../bindings/index'
-import { DataCardCompact, DataCardExpanded, CardHeader, InlineEditor } from './DataCard'
+import { DataCardCompact, DataCardExpanded, CardHeader, InlineEditor, summaryOf } from './DataCard'
 import { Icon } from './Icon'
 import { diagnosticsForRecord } from '../App'
 
@@ -14,16 +24,25 @@ interface Props {
   onWriteField?: (recordKey: string, fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<RecordRow | void>
 }
 
+const ROW_H = 30
+
 export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecord, onWriteField }: Props) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; key: string } | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [newKey, setNewKey] = useState('')
   const [newType, setNewType] = useState<string>(activeType || data.type_names[0] || '')
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const [sorting, setSorting] = useState<SortingState>([])
+  const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({})
+  const [globalFilter, setGlobalFilter] = useState('')
 
-  // Reset selection when active file/type changes
+  const tableScrollRef = useRef<HTMLDivElement>(null)
+
+  // Reset transient UI state when active file/type changes.
   useEffect(() => {
     setSelectedKey(null)
+    setSorting([])
+    setGlobalFilter('')
   }, [data.file_path, activeType])
 
   useEffect(() => {
@@ -75,6 +94,7 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
       helper.accessor('key', {
         header: 'Key',
         cell: info => <span className="cell-key">{info.getValue()}</span>,
+        size: 140,
       }),
       ...allFieldNames.map(name =>
         helper.display({
@@ -94,58 +114,166 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
               </span>
             )
           },
-        })
+        }),
       ),
     ]
   }, [allFieldNames, canEdit, onWriteField, cellDiagIndex, diagnostics, data.file_path])
 
+  // Global filter: match key or any scalar field value (via summaryOf).
+  const globalFilterFn = useMemo(
+    () => (row: { original: RecordRow }, _columnId: string, filterValue: string) => {
+      const q = filterValue.trim().toLowerCase()
+      if (!q) return true
+      const r = row.original
+      if (r.key.toLowerCase().includes(q)) return true
+      for (const f of r.fields) {
+        const s = summaryOf(f.value).toLowerCase()
+        if (s.includes(q)) return true
+      }
+      return false
+    },
+  [],
+  )
+
   const table = useReactTable({
     data: filtered,
     columns,
+    state: { sorting, columnSizing, globalFilter },
+    onSortingChange: setSorting,
+    onColumnSizingChange: setColumnSizing,
+    onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    globalFilterFn,
+    columnResizeMode: 'onChange',
+    enableColumnResizing: true,
   })
 
+  const rows = table.getRowModel().rows
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => tableScrollRef.current,
+    estimateSize: () => ROW_H,
+    overscan: 12,
+  })
+  const virtualRows = rowVirtualizer.getVirtualItems()
+  const totalHeight = rowVirtualizer.getTotalSize()
+  const padBefore = virtualRows.length > 0 ? virtualRows[0].start : 0
+  const padAfter = virtualRows.length > 0 ? totalHeight - virtualRows[virtualRows.length - 1].end : 0
+
   const selectedRecord = selectedKey ? filtered.find(r => r.key === selectedKey) ?? null : null
+
+  // Close context menu on Escape.
+  useEffect(() => {
+    if (!contextMenu) return
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') setContextMenu(null) }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [contextMenu])
 
   return (
     <div className="table-view" onClick={() => setContextMenu(null)}>
       <div className={`table-main${selectedRecord ? ' has-detail' : ''}`}>
-        <div className="table-scroll">
-          <table className="data-table">
+        {(filtered.length > 8 || globalFilter) && (
+          <div className="table-toolbar">
+            <div className="table-search">
+              <Icon name="search" size={13} className="table-search-icon" aria-hidden />
+              <input
+                placeholder={`搜索 ${activeType}…`}
+                value={globalFilter}
+                onChange={e => setGlobalFilter(e.target.value)}
+                aria-label="搜索记录"
+              />
+              {globalFilter && (
+                <button className="rv-clear-search" onClick={() => setGlobalFilter('')} aria-label="清除搜索">
+                  <Icon name="close" size={13} aria-hidden />
+                </button>
+              )}
+            </div>
+            <span className="table-row-count">
+              {rows.length}{rows.length !== filtered.length ? ` / ${filtered.length}` : ''} 条
+            </span>
+          </div>
+        )}
+
+        <div className="table-scroll" ref={tableScrollRef}>
+          <table className="data-table" style={{ width: table.getTotalSize() }}>
             <thead>
               {table.getHeaderGroups().map(hg => (
                 <tr key={hg.id}>
-                  {hg.headers.map(h => (
-                    <th key={h.id}>{flexRender(h.column.columnDef.header, h.getContext())}</th>
-                  ))}
+                  {hg.headers.map(h => {
+                    const sort = h.column.getIsSorted()
+                    return (
+                      <th
+                        key={h.id}
+                        style={{ width: h.getSize() }}
+                        aria-sort={sort === 'asc' ? 'ascending' : sort === 'desc' ? 'descending' : 'none'}
+                      >
+                        <button
+                          type="button"
+                          className="th-sort-btn"
+                          onClick={h.column.getToggleSortingHandler()}
+                          disabled={!h.column.getCanSort()}
+                          title={h.column.getCanSort() ? '点击排序' : undefined}
+                        >
+                          {flexRender(h.column.columnDef.header, h.getContext())}
+                          {sort === 'asc' && <Icon name="chevron-down" size={10} className="th-sort-icon asc" aria-hidden />}
+                          {sort === 'desc' && <Icon name="chevron-right" size={10} className="th-sort-icon desc" aria-hidden />}
+                        </button>
+                        {h.column.getCanResize() && (
+                          <div
+                            className="th-resizer"
+                            onMouseDown={h.getResizeHandler()}
+                            onClick={e => e.stopPropagation()}
+                            aria-hidden
+                          />
+                        )}
+                      </th>
+                    )
+                  })}
                 </tr>
               ))}
             </thead>
             <tbody>
-              {table.getRowModel().rows.map(row => {
+              {padBefore > 0 && (
+                <tr style={{ height: padBefore }}>
+                  <td colSpan={columns.length} aria-hidden />
+                </tr>
+              )}
+              {virtualRows.map(vr => {
+                const row = rows[vr.index]
                 const rowSev = recordSeverity(row.original.key)
                 return (
-                <tr
-                  key={row.id}
-                  className={`table-row${selectedKey === row.original.key ? ' selected' : ''}${rowSev ? ' table-row-' + rowSev : ''}`}
-                  onClick={() => setSelectedKey(row.original.key)}
-                  onContextMenu={e => {
-                    e.preventDefault()
-                    setContextMenu({ x: e.clientX, y: e.clientY, key: row.original.key })
-                  }}
-                >
-                  {row.getVisibleCells().map(cell => (
-                    <td key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
-                </tr>
+                  <tr
+                    key={row.id}
+                    className={`table-row${selectedKey === row.original.key ? ' selected' : ''}${rowSev ? ' table-row-' + rowSev : ''}`}
+                    onClick={() => setSelectedKey(row.original.key)}
+                    onContextMenu={e => {
+                      e.preventDefault()
+                      setContextMenu({ x: e.clientX, y: e.clientY, key: row.original.key })
+                    }}
+                  >
+                    {row.getVisibleCells().map(cell => (
+                      <td key={cell.id} style={{ width: cell.column.getSize() }}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>
                 )
               })}
+              {padAfter > 0 && (
+                <tr style={{ height: padAfter }}>
+                  <td colSpan={columns.length} aria-hidden />
+                </tr>
+              )}
             </tbody>
           </table>
           {filtered.length === 0 && (
             <div className="empty-hint">暂无 {activeType} 类型的记录</div>
+          )}
+          {filtered.length > 0 && rows.length === 0 && (
+            <div className="empty-hint">无匹配 "{globalFilter}" 的记录</div>
           )}
         </div>
 
@@ -165,15 +293,16 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
                 autoFocus
                 onChange={e => setNewKey(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Escape') setShowNewRecord(false) }}
+                aria-label="新记录 Key"
               />
-              <select value={newType} onChange={e => setNewType(e.target.value)}>
+              <select value={newType} onChange={e => setNewType(e.target.value)} aria-label="新记录类型">
                 {data.type_names.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
               <button className="btn btn-primary" onClick={() => {
                 alert(`创建记录 ${newKey} (${newType}) — 原型演示`)
                 setShowNewRecord(false); setNewKey('')
               }}>创建</button>
-              <button className="btn" onClick={() => { setShowNewRecord(false); setNewKey('') }}>
+              <button className="btn" onClick={() => { setShowNewRecord(false); setNewKey('') }} aria-label="取消新建">
                 <Icon name="close" size={13} />
               </button>
             </span>
@@ -185,7 +314,7 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
         <aside className="table-detail">
           <div className="table-detail-header">
             <CardHeader recordKey={selectedRecord.key} actualType={selectedRecord.actual_type} filePath={data.file_path} />
-            <button className="btn btn-icon table-detail-close" onClick={() => setSelectedKey(null)} title="关闭面板">
+            <button className="btn btn-icon table-detail-close" onClick={() => setSelectedKey(null)} title="关闭面板" aria-label="关闭详情面板">
               <Icon name="close" size={13} />
             </button>
           </div>
@@ -204,17 +333,18 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
           className="context-menu"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={e => e.stopPropagation()}
+          role="menu"
         >
-          <div className="ctx-item" onClick={() => { onOpenRecord(contextMenu.key); setContextMenu(null) }}>
-            <Icon name="record" size={13} />
+          <div className="ctx-item" role="menuitem" onClick={() => { onOpenRecord(contextMenu.key); setContextMenu(null) }}>
+            <Icon name="record" size={13} aria-hidden />
             跳转到记录视图
           </div>
           {!readOnly && (
-            <div className="ctx-item ctx-danger" onClick={() => {
+            <div className="ctx-item ctx-danger" role="menuitem" onClick={() => {
               alert(`删除 ${contextMenu.key} — 原型演示`)
               setContextMenu(null)
             }}>
-              <Icon name="close" size={13} />
+              <Icon name="close" size={13} aria-hidden />
               删除记录
             </div>
           )}
@@ -265,8 +395,15 @@ function EditableCell({
   return (
     <div
       className={`cell-edit-wrap${canEdit ? ' editable' : ''}`}
+      onClick={canEdit ? (e: React.MouseEvent) => {
+        // Single-click enters edit mode (matches RecordView's DirectEditor).
+        // stopPropagation so the row's selection handler doesn't also fire
+        // and steal focus away from the freshly-mounted input.
+        e.stopPropagation()
+        setEditing(true)
+      } : undefined}
       onDoubleClick={canEdit ? () => setEditing(true) : undefined}
-      title={canEdit ? '双击编辑' : undefined}
+      title={canEdit ? '点击编辑' : undefined}
     >
       <DataCardCompact value={value} />
     </div>

@@ -251,15 +251,45 @@ export interface ExpandedProps {
   /** Diagnostics anchored to fields inside this record (already filtered to
    *  this record by the caller). Renders red/yellow ink + tooltip per row. */
   diagnostics?: FieldDiagnostic[]
+  /** A field path (e.g. "attributes[0].name") to briefly highlight + scroll
+   *  into view. Set by a diagnostic jump; cleared via onHighlightConsumed. */
+  highlightField?: string | null
+  onHighlightConsumed?: () => void
 }
 
-export function DataCardExpanded({ fields, depth = 0, onEdit, pathPrefix, onRowToggle, diagnostics }: ExpandedProps) {
+export function DataCardExpanded({ fields, depth = 0, onEdit, pathPrefix, onRowToggle, diagnostics, highlightField, onHighlightConsumed }: ExpandedProps) {
   const ctx = useMemo(() => buildDiagCtx(diagnostics), [diagnostics])
+  const inspectorRef = useRef<HTMLDivElement>(null)
+
+  // Apply the highlight: scroll the matching row into view + flash a class.
+  useEffect(() => {
+    if (!highlightField) return
+    const root = inspectorRef.current
+    if (!root) return
+    // Try exact path match first, then the top-level field name.
+    const exact = root.querySelector<HTMLElement>(
+      `.dc-row[data-field-path="${CSS.escape(highlightField)}"]`,
+    )
+    const top = highlightField.match(/^[^.[]+/)?.[0]
+    const fallback = top
+      ? root.querySelector<HTMLElement>(`.dc-row[data-field-name="${CSS.escape(top)}"]`)
+      : null
+    const target = exact ?? fallback
+    if (target) {
+      target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      target.classList.add('dc-row-flash')
+      const t = setTimeout(() => target.classList.remove('dc-row-flash'), 1600)
+      onHighlightConsumed?.()
+      return () => clearTimeout(t)
+    }
+    onHighlightConsumed?.()
+  }, [highlightField, onHighlightConsumed])
+
   const body = (
-    <div className="dc-inspector" style={{ '--depth': depth } as CSSProperties}>
-      {fields.map((fc, i) => (
+    <div className="dc-inspector" ref={inspectorRef} style={{ '--depth': depth } as CSSProperties}>
+      {fields.map((fc) => (
         <FieldRow
-          key={fc.name + i}
+          key={fc.name}
           label={fc.name}
           value={fc.value}
           depth={depth}
@@ -468,23 +498,33 @@ function EnumDirectSelect({
   onCommit: (next: FieldValue) => void
 }) {
   const [variants, setVariants] = useState<string[] | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   useEffect(() => {
     let alive = true
-    loadEnumVariants(value.enum_name).then(v => { if (alive) setVariants(v ?? []) })
+    setLoadError(null)
+    loadEnumVariants(value.enum_name).then(r => {
+      if (!alive) return
+      if (r.ok) setVariants(r.variants)
+      else { setVariants([]); setLoadError(r.error) }
+    })
     return () => { alive = false }
   }, [value.enum_name])
 
   if (variants === null || variants.length === 0) {
     return (
-      <input
-        className="dc-input dc-input-flat"
-        defaultValue={value.variant}
-        onBlur={e => {
-          if (e.target.value !== value.variant) {
-            onCommit({ kind: 'Enum', enum_name: value.enum_name, variant: e.target.value, int_value: value.int_value })
-          }
-        }}
-      />
+      <span className="dc-input-wrap">
+        <input
+          className="dc-input dc-input-flat"
+          defaultValue={value.variant}
+          aria-invalid={!!loadError}
+          onBlur={e => {
+            if (e.target.value !== value.variant) {
+              onCommit({ kind: 'Enum', enum_name: value.enum_name, variant: e.target.value, int_value: value.int_value })
+            }
+          }}
+        />
+        {loadError && <span className="dc-load-error" title={loadError}>!</span>}
+      </span>
     )
   }
   return (
@@ -507,9 +547,15 @@ function RefDirectSelect({
   autoFocus?: boolean
 }) {
   const [targets, setTargets] = useState<string[] | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   useEffect(() => {
     let alive = true
-    loadRefTargets(value.target_type).then(v => { if (alive) setTargets(v ?? []) })
+    setLoadError(null)
+    loadRefTargets(value.target_type).then(r => {
+      if (!alive) return
+      if (r.ok) setTargets(r.variants)
+      else { setTargets([]); setLoadError(r.error) }
+    })
     return () => { alive = false }
   }, [value.target_type])
 
@@ -528,6 +574,7 @@ function RefDirectSelect({
           className="dc-input dc-input-flat"
           defaultValue={value.target_key}
           autoFocus={autoFocus}
+          aria-invalid={!!loadError}
           placeholder={targets === null ? '加载中…' : `${value.target_type} key`}
           onBlur={e => commit(e.target.value)}
           onKeyDown={e => {
@@ -535,7 +582,9 @@ function RefDirectSelect({
             if (e.key === 'Escape') (e.target as HTMLInputElement).blur()
           }}
         />
-        <span className="dc-input-ref-type">{value.target_type}</span>
+        {loadError
+          ? <span className="dc-load-error" title={loadError}>!</span>
+          : <span className="dc-input-ref-type">{value.target_type}</span>}
       </span>
     )
   }
@@ -626,7 +675,7 @@ function EnumSelect({
   const [variants, setVariants] = useState<string[] | null>(null)
   useEffect(() => {
     let alive = true
-    loadEnumVariants(enumName).then(v => { if (alive) setVariants(v ?? []) })
+    loadEnumVariants(enumName).then(r => { if (alive) setVariants(r.ok ? r.variants : []) })
     return () => { alive = false }
   }, [enumName])
 
@@ -674,7 +723,7 @@ function RefSelect({
   const [val, setVal] = useState(current)
   useEffect(() => {
     let alive = true
-    loadRefTargets(targetType).then(v => { if (alive) setTargets(v ?? []) })
+    loadRefTargets(targetType).then(r => { if (alive) setTargets(r.ok ? r.variants : []) })
     return () => { alive = false }
   }, [targetType])
 
@@ -774,9 +823,9 @@ function ExpandableRow({ label, value, depth, onEdit, isSpread, spreadInfo, fiel
       {expanded && (
         <>
           {value.kind === 'Object' &&
-            value.fields.map((fc, i) => (
+            value.fields.map((fc) => (
               <FieldRow
-                key={fc.name + i}
+                key={fc.name}
                 label={fc.name}
                 value={fc.value}
                 depth={depth + 1}
@@ -799,9 +848,9 @@ function ExpandableRow({ label, value, depth, onEdit, isSpread, spreadInfo, fiel
             />
           )}
           {value.kind === 'Dict' &&
-            value.entries.map((e, i) => (
+            value.entries.map((e) => (
               <FieldRow
-                key={i}
+                key={dictKeyText(e.key)}
                 label={dictKeyText(e.key)}
                 value={e.value}
                 depth={depth + 1}
@@ -1062,8 +1111,9 @@ function CollectionAddRow({ container, depth, onAdd }: {
   onAdd: (next: FieldValue) => void
 }) {
   const [adding, setAdding] = useState(false)
+  const [dupError, setDupError] = useState<string | null>(null)
 
-  function reset() { setAdding(false) }
+  function reset() { setAdding(false); setDupError(null) }
 
   if (container.kind === 'Array') {
     // Sample first item's kind to decide whether to ask for a value first.
@@ -1109,7 +1159,7 @@ function CollectionAddRow({ container, depth, onAdd }: {
     if (container.kind !== 'Dict') return
     const dup = container.entries.some(e => dictKeyEq(e.key, key))
     if (dup) {
-      alert(`键 "${dictKeyText(key)}" 已存在`)
+      setDupError(`键 "${dictKeyText(key)}" 已存在`)
       return
     }
     onAdd(dictInsert(container, key, defaultElementFor(container)))
@@ -1118,15 +1168,18 @@ function CollectionAddRow({ container, depth, onAdd }: {
   return (
     <div className="dc-row dc-row-add" style={{ paddingLeft: depth * INDENT_PX + 8 }}>
       {!adding ? (
-        <button className="btn-add-item" onClick={() => setAdding(true)}>
+        <button className="btn-add-item" onClick={() => { setAdding(true); setDupError(null) }}>
           <Icon name="plus" size={11} /> 添加项
         </button>
       ) : (
-        <DictKeyEntry
-          sampleKey={sampleKey}
-          onCommit={tryAdd}
-          onCancel={reset}
-        />
+        <span className="dc-add-stack">
+          <DictKeyEntry
+            sampleKey={sampleKey}
+            onCommit={tryAdd}
+            onCancel={reset}
+          />
+          {dupError && <span className="dc-inline-error" role="alert">{dupError}</span>}
+        </span>
       )}
     </div>
   )
@@ -1141,10 +1194,16 @@ function DictKeyEntry({ sampleKey, onCommit, onCancel }: {
 
   // Enum-keyed dict: load variants and present a select.
   const [variants, setVariants] = useState<string[] | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   useEffect(() => {
     if (sampleKey.kind !== 'Enum') return
     let alive = true
-    loadEnumVariants(sampleKey.enum_name).then(v => { if (alive) setVariants(v ?? []) })
+    setLoadError(null)
+    loadEnumVariants(sampleKey.enum_name).then(r => {
+      if (!alive) return
+      if (r.ok) setVariants(r.variants)
+      else { setVariants([]); setLoadError(r.error) }
+    })
     return () => { alive = false }
   }, [sampleKey.kind === 'Enum' ? sampleKey.enum_name : ''])
 
@@ -1153,12 +1212,14 @@ function DictKeyEntry({ sampleKey, onCommit, onCancel }: {
       return <span className="dc-add-form"><span className="dc-add-loading">加载枚举…</span></span>
     }
     if (variants.length === 0) {
-      // Backend has no variants — fall back to text input.
+      // Backend has no variants (or load failed) — fall back to text input.
       return (
         <span className="dc-add-form">
+          {loadError && <span className="dc-load-error" title={loadError}>!</span>}
           <input
             className="dc-input" autoFocus value={text}
             placeholder="枚举变体"
+            aria-invalid={!!loadError}
             onChange={e => setText(e.target.value)}
             onKeyDown={e => {
               if (e.key === 'Enter' && text) onCommit({ kind: 'Enum', enum_name: sampleKey.enum_name, variant: text, int_value: 0 })

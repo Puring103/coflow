@@ -22,26 +22,42 @@ export async function buildDefaultObject(typeName: string): Promise<FieldValue |
   }
 }
 
-export async function loadEnumVariants(enumName: string): Promise<string[] | null> {
-  if (activeSessionId === null) return null
-  if (enumCache.has(enumName)) return enumCache.get(enumName)!
+export type LoadResult =
+  | { ok: true; variants: string[] }
+  | { ok: false; error: string }
+
+export async function loadEnumVariants(enumName: string): Promise<LoadResult> {
+  if (activeSessionId === null) return { ok: false, error: '未打开会话' }
+  const cached = enumCache.get(enumName)
+  if (cached) return { ok: true, variants: cached }
   try {
     const r = await api.getEnumVariants(activeSessionId, enumName)
     enumCache.set(enumName, r)
-    return r
-  } catch {
-    return null
+    return { ok: true, variants: r }
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) }
   }
 }
 
-export async function loadRefTargets(targetType: string): Promise<string[] | null> {
-  if (activeSessionId === null) return null
-  if (refCache.has(targetType)) return refCache.get(targetType)!
+export async function loadRefTargets(targetType: string): Promise<LoadResult> {
+  if (activeSessionId === null) return { ok: false, error: '未打开会话' }
+  const cached = refCache.get(targetType)
+  if (cached) return { ok: true, variants: cached }
   try {
     const r = await api.getRefTargets(activeSessionId, targetType)
     refCache.set(targetType, r)
-    return r
+    return { ok: true, variants: r }
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) }
+  }
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (typeof err === 'string') return err
+  try {
+    return JSON.stringify(err)
   } catch {
-    return null
+    return String(err)
   }
 }
