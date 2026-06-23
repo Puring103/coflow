@@ -20,13 +20,15 @@
     clippy::struct_field_names
 )]
 
-use coflow_api::table::{TableSheet, TableSheetConfig, TableSource};
 use coflow_api::{
-    table::collect_table_input_records, CfdValue, DataLoader, DataWriter, Diagnostic,
-    DiagnosticSet, Label, LoadContext, LoadedRecords, LoaderDescriptor, ProbeResult,
-    ProjectSourceRef, RecordOrigin, ResolvedSource, SourceDocument, SourceLocation,
-    SourceLocationSpec, SourceResolveContext, WriteCellRequest, WriteContext,
+    CfdValue, DataLoader, DataWriter, Diagnostic, DiagnosticSet, Label, LoadContext, LoadedRecords,
+    LoaderDescriptor, ProbeResult, ProjectSourceRef, RecordOrigin, ResolvedSource, SourceDocument,
+    SourceLocation, SourceLocationSpec, SourceResolveContext, WriteCellRequest, WriteContext,
     WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
+};
+use coflow_loader_table_core::{
+    collect_table_input_records, TableDiagnostic, TableDiagnostics, TableLabel, TableSheet,
+    TableSheetConfig, TableSource,
 };
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use serde::de::DeserializeOwned;
@@ -619,7 +621,7 @@ where
             .map(|loaded| LoadedRecords {
                 records: loaded.records,
             })
-            .map_err(DiagnosticSet::from)
+            .map_err(table_diagnostics_to_api)
     }
 }
 
@@ -844,6 +846,38 @@ fn lark_diagnostic_to_api(diagnostic: LarkDiagnostic) -> Diagnostic {
             message: None,
         }),
         related: Vec::new(),
+    }
+}
+
+fn table_diagnostics_to_api(err: TableDiagnostics) -> DiagnosticSet {
+    DiagnosticSet {
+        diagnostics: err
+            .diagnostics
+            .into_iter()
+            .map(table_diagnostic_to_api)
+            .collect(),
+    }
+}
+
+fn table_diagnostic_to_api(diagnostic: TableDiagnostic) -> Diagnostic {
+    Diagnostic {
+        code: diagnostic.code,
+        stage: diagnostic.stage,
+        severity: coflow_api::Severity::Error,
+        message: diagnostic.message,
+        primary: diagnostic.primary.map(table_label_to_api),
+        related: diagnostic
+            .related
+            .into_iter()
+            .map(table_label_to_api)
+            .collect(),
+    }
+}
+
+fn table_label_to_api(label: TableLabel) -> Label {
+    Label {
+        location: coflow_data_model::SourceLocation::from(label.location).into(),
+        message: label.message,
     }
 }
 

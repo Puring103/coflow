@@ -1,11 +1,12 @@
 #![allow(clippy::panic_in_result_fn)]
 
-use coflow_api::table::{collect_table_input_records, TableSheet, TableSheetConfig, TableSource};
-use coflow_api::{
-    map_diagnostics_with_origins, origins_of, RecordOrigin, SourceLocation, TextSpan,
-};
 use coflow_cft::{CftContainer, ModuleId};
-use coflow_data_model::{CfdDataModel, CfdInputValue, CfdValue};
+use coflow_data_model::{
+    CfdDataModel, CfdInputValue, CfdValue, RecordOrigin, SourceLocation, TextSpan,
+};
+use coflow_loader_table_core::{
+    collect_table_input_records, map_table_diagnostics, TableSheet, TableSheetConfig, TableSource,
+};
 use std::path::PathBuf;
 
 type TestResult = Result<(), String>;
@@ -148,7 +149,11 @@ fn maps_remote_table_data_model_diagnostics_to_remote_cells() -> TestResult {
 
     let loaded =
         collect_table_input_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
-    let origins = origins_of(&loaded.records);
+    let origins = loaded
+        .records
+        .iter()
+        .map(|record| record.origin.clone())
+        .collect::<Vec<_>>();
     let mut builder = CfdDataModel::builder(&schema);
     for record in loaded.records {
         builder.add_input_record(record);
@@ -156,7 +161,7 @@ fn maps_remote_table_data_model_diagnostics_to_remote_cells() -> TestResult {
     let Err(err) = builder.build() else {
         return Err("duplicate table keys should fail".to_string());
     };
-    let mapped = map_diagnostics_with_origins(err, &origins);
+    let mapped = map_table_diagnostics(err, &origins);
     let primary = mapped
         .diagnostics
         .first()
@@ -165,18 +170,18 @@ fn maps_remote_table_data_model_diagnostics_to_remote_cells() -> TestResult {
 
     assert_eq!(
         primary.location,
-        SourceLocation::RemoteCell {
-            document: "https://example.feishu.cn/wiki/wiki_token".to_string(),
+        coflow_loader_table_core::TableLocation {
+            file: PathBuf::from("https://example.feishu.cn/wiki/wiki_token"),
             sheet: Some("物品表".to_string()),
-            row: 3,
-            column: 1,
+            row: Some(3),
+            column: Some(1),
         }
     );
     Ok(())
 }
 
 #[test]
-fn maps_file_record_diagnostics_to_record_text_span() -> TestResult {
+fn maps_file_record_diagnostics_to_record_text_span_through_data_model_location() -> TestResult {
     let schema = compile_schema("type Item { value: int; }")?;
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
@@ -189,7 +194,7 @@ fn maps_file_record_diagnostics_to_record_text_span() -> TestResult {
     };
 
     let source_path = PathBuf::from("data/items.cfd");
-    let origins = vec![RecordOrigin::File {
+    let origins = [RecordOrigin::File {
         path: source_path.clone(),
         span: Some(TextSpan {
             start_line: 4,
@@ -198,9 +203,8 @@ fn maps_file_record_diagnostics_to_record_text_span() -> TestResult {
             end_character: 1,
         }),
     }];
-    let mapped = map_diagnostics_with_origins(err, &origins);
+    let mapped = coflow_data_model::map_diagnostics(err, |id| origins.get(id.index()).cloned());
     let primary = mapped
-        .diagnostics
         .first()
         .and_then(|diagnostic| diagnostic.primary.as_ref())
         .ok_or_else(|| "expected mapped primary label".to_string())?;

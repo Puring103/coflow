@@ -591,7 +591,6 @@ dependencies = [
  "coflow-data-model",
  "serde",
  "serde_json",
- "unicode-ident",
 ]
 
 [[package]]
@@ -704,6 +703,7 @@ dependencies = [
  "coflow-cft",
  "coflow-checker",
  "coflow-data-model",
+ "coflow-loader-table-core",
  "rust_xlsxwriter",
  "serde_json",
  "umya-spreadsheet",
@@ -715,10 +715,21 @@ name = "coflow-loader-lark"
 version = "0.1.0"
 dependencies = [
  "coflow-api",
+ "coflow-data-model",
+ "coflow-loader-table-core",
  "percent-encoding",
  "serde",
  "serde_json",
  "ureq",
+]
+
+[[package]]
+name = "coflow-loader-table-core"
+version = "0.1.0"
+dependencies = [
+ "coflow-cft",
+ "coflow-data-model",
+ "unicode-ident",
 ]
 
 [[package]]

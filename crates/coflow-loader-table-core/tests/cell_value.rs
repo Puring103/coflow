@@ -7,10 +7,12 @@
     clippy::unwrap_used
 )]
 
-use coflow_api::cell_value::{parse_cell, CellValueDiagnostics, CellValueErrorCode, ParsedCell};
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::{
     CfdDataModel, CfdInputDictKey, CfdInputRefIndex, CfdInputValue, CfdRefPathSegment, CfdValue,
+};
+use coflow_loader_table_core::cell_value::{
+    parse_cell, CellValueDiagnostics, CellValueErrorCode, ParsedCell,
 };
 use std::collections::BTreeSet;
 
