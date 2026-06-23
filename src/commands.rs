@@ -1,32 +1,15 @@
-#![cfg_attr(
-    not(test),
-    deny(
-        clippy::dbg_macro,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::panic_in_result_fn,
-        clippy::todo,
-        clippy::unimplemented,
-        clippy::unreachable,
-        clippy::unwrap_used
-    )
-)]
-#![allow(clippy::multiple_crate_versions)]
-
-mod artifacts;
-mod data;
-mod schema;
-
-use artifacts::{
+use crate::artifacts::{
     commit_staged_dir_and_file, commit_staged_dirs_and_file, configured_data_format,
     configured_data_output, output_dir, preflight_codegen, required_code_output,
     required_data_output, stage_codegen_artifacts, stage_data_tables, stage_json_file,
     write_data_tables, CodegenArtifactRequest,
 };
-use coflow_api::{Diagnostic, DiagnosticSet, Label, ProviderRegistry, Severity, SourceLocation};
-use coflow_project::{Project, SourceLocationSpec};
-use data::load_project_data;
-use schema::compile_project_schema;
+use coflow_api::{
+    Diagnostic, DiagnosticSet, Label, ProviderRegistry, Severity, SourceLocation,
+    SourceLocationSpec,
+};
+use coflow_engine::{build_project_schema_session, build_project_session, ProjectSession};
+use coflow_project::{OutputConfig, Project};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -38,7 +21,7 @@ pub const MESSAGEPACK_EXPORTER_ID: &str = "messagepack";
 pub const CSHARP_CODEGEN_ID: &str = "csharp";
 
 #[derive(Debug)]
-pub enum PipelineOutcome<T> {
+pub enum CommandOutcome<T> {
     Success(T),
     Diagnostics(DiagnosticSet),
 }
@@ -86,25 +69,18 @@ pub struct BuildReport {
 ///
 /// # Errors
 ///
-/// Returns an error for project configuration errors or unrecoverable I/O and
-/// artifact errors. Schema, data loading, data-model, and check diagnostics are
-/// returned as `PipelineOutcome::Diagnostics`.
+/// Returns an error for unrecoverable project/schema I/O errors. User-fixable
+/// project, schema, data loading, data-model, and check diagnostics are
+/// returned as `CommandOutcome::Diagnostics`.
 pub fn check_project(
-    project: &Project,
+    project: Project,
     registry: &ProviderRegistry,
-) -> Result<PipelineOutcome<CheckReport>, String> {
-    let mut diagnostics = project.schema_diagnostic_set();
-    diagnostics.extend(project.data_diagnostic_set());
-    if !diagnostics.is_empty() {
-        return Ok(PipelineOutcome::Diagnostics(diagnostics));
-    }
-    let schema = match compile_project_schema(project)? {
-        Ok(schema) => schema,
-        Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
-    };
-    match load_project_data(project, &schema, registry) {
-        Ok(_) => Ok(PipelineOutcome::Success(CheckReport)),
-        Err(diagnostics) => Ok(PipelineOutcome::Diagnostics(diagnostics)),
+) -> Result<CommandOutcome<CheckReport>, String> {
+    let session = build_project_session(project, registry)?;
+    if session.has_diagnostics() {
+        Ok(CommandOutcome::Diagnostics(session.diagnostics.into_set()))
+    } else {
+        Ok(CommandOutcome::Success(CheckReport))
     }
 }
 
@@ -112,89 +88,76 @@ pub fn check_project(
 ///
 /// # Errors
 ///
-/// Returns an error for invalid project/output configuration, unsupported
-/// output targets, or artifact write/codegen failures. Schema, data loading,
-/// data-model, and check diagnostics are returned as
-/// `PipelineOutcome::Diagnostics`.
+/// Returns an error for unrecoverable project/schema I/O errors. User-fixable
+/// diagnostics are returned as `CommandOutcome::Diagnostics`.
 pub fn build_project(
-    project: &Project,
+    project: Project,
     registry: &ProviderRegistry,
     options: BuildOptions<'_>,
-) -> Result<PipelineOutcome<BuildReport>, String> {
-    let diagnostics = build_config_diagnostics(project);
+) -> Result<CommandOutcome<BuildReport>, String> {
+    let diagnostics = build_config_diagnostics(&project);
     if !diagnostics.is_empty() {
-        return Ok(PipelineOutcome::Diagnostics(diagnostics));
+        return Ok(CommandOutcome::Diagnostics(diagnostics));
     }
-    let plan = match build_provider_plan(project, registry, options) {
+    let plan = match build_provider_plan(&project, registry, options) {
         Ok(plan) => plan,
-        Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
+        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
-    let schema = match compile_project_schema(project)? {
-        Ok(schema) => schema,
-        Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
-    };
-    let load_output = match load_project_data(project, &schema, registry) {
-        Ok(output) => output,
-        Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
-    };
+    let session = build_project_session(project, registry)?;
+    if session.has_diagnostics() {
+        return Ok(CommandOutcome::Diagnostics(session.diagnostics.into_set()));
+    }
 
-    let mut preflight_diagnostics =
-        build_codegen_preflight_diagnostics(registry, &schema, &load_output.model, &plan)?;
-    preflight_diagnostics.extend(artifact_safety_diagnostics(project, &plan.artifact_outputs));
+    let mut preflight_diagnostics = build_codegen_preflight_diagnostics(registry, &session, &plan)?;
+    preflight_diagnostics.extend(artifact_safety_diagnostics(
+        &session.project,
+        &plan.artifact_outputs,
+    ));
     if !preflight_diagnostics.is_empty() {
-        return Ok(PipelineOutcome::Diagnostics(preflight_diagnostics));
+        return Ok(CommandOutcome::Diagnostics(preflight_diagnostics));
     }
 
     let staged_data = match stage_data_tables(
         registry,
-        &schema,
-        &load_output.model,
-        plan.data.exporter_id,
-        plan.data.output,
+        &session.schema,
+        &session.model,
+        &plan.data.exporter_id,
+        &plan.data.output,
         &plan.data.dir,
     ) {
         Ok(staged_data) => staged_data,
-        Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
+        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
-    let code = match commit_build_artifacts(
-        project,
-        registry,
-        &schema,
-        &load_output.model,
-        staged_data,
-        &plan,
-    ) {
+    let code = match commit_build_artifacts(&session, registry, staged_data, &plan) {
         Ok(code) => code,
-        Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
+        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
 
     let data = ExportReport {
-        exporter_id: plan.data.exporter_id.to_string(),
+        exporter_id: plan.data.exporter_id.clone(),
         display_name: plan.data.display_name.to_string(),
         dir: plan.data.dir,
     };
 
-    Ok(PipelineOutcome::Success(BuildReport { data, code }))
+    Ok(CommandOutcome::Success(BuildReport { data, code }))
 }
 
 /// Exports project data in the requested format.
 ///
 /// # Errors
 ///
-/// Returns an error for invalid project/output configuration, unsupported data
-/// format configuration, or artifact write failures. Schema, data loading,
-/// data-model, and check diagnostics are returned as
-/// `PipelineOutcome::Diagnostics`.
+/// Returns an error for unrecoverable project/schema I/O errors. User-fixable
+/// diagnostics are returned as `CommandOutcome::Diagnostics`.
 pub fn export_project_data(
-    project: &Project,
+    project: Project,
     registry: &ProviderRegistry,
     exporter_id: &str,
     options: ExportOptions<'_>,
-) -> Result<PipelineOutcome<ExportReport>, String> {
+) -> Result<CommandOutcome<ExportReport>, String> {
     let mut diagnostics = project.schema_diagnostic_set();
     diagnostics.extend(project.data_diagnostic_set());
     let command = format!("coflow export {exporter_id}");
-    if let Err(message) = required_data_output(project, exporter_id, &command) {
+    if let Err(message) = required_data_output(&project, exporter_id, &command) {
         diagnostics.push(project_diagnostic(
             &project.config_path,
             message,
@@ -202,44 +165,40 @@ pub fn export_project_data(
         ));
     }
     if !diagnostics.is_empty() {
-        return Ok(PipelineOutcome::Diagnostics(diagnostics));
+        return Ok(CommandOutcome::Diagnostics(diagnostics));
     }
     let Some(exporter) = registry.exporter(exporter_id) else {
-        return Ok(PipelineOutcome::Diagnostics(project_diagnostic_set(
+        return Ok(CommandOutcome::Diagnostics(project_diagnostic_set(
             &project.config_path,
             format!("no data exporter registered for `{exporter_id}`"),
             ["outputs", "data", "type"],
         )));
     };
     let exporter_descriptor = exporter.descriptor();
-    let output = required_data_output(project, exporter_id, &command)?;
-    let dir = output_dir(project, output, options.out_dir);
-    let schema = match compile_project_schema(project)? {
-        Ok(schema) => schema,
-        Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
-    };
-    let load_output = match load_project_data(project, &schema, registry) {
-        Ok(output) => output,
-        Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
-    };
+    let output = required_data_output(&project, exporter_id, &command)?.clone();
+    let dir = output_dir(&project, &output, options.out_dir);
+    let session = build_project_session(project, registry)?;
+    if session.has_diagnostics() {
+        return Ok(CommandOutcome::Diagnostics(session.diagnostics.into_set()));
+    }
     let artifact_diagnostics = artifact_safety_diagnostics(
-        project,
+        &session.project,
         &[ArtifactOutputPlan::new("outputs.data.dir", dir.clone())],
     );
     if !artifact_diagnostics.is_empty() {
-        return Ok(PipelineOutcome::Diagnostics(artifact_diagnostics));
+        return Ok(CommandOutcome::Diagnostics(artifact_diagnostics));
     }
     if let Err(diagnostics) = write_data_tables(
         registry,
-        &schema,
-        &load_output.model,
+        &session.schema,
+        &session.model,
         exporter_id,
-        output,
+        &output,
         &dir,
     ) {
-        return Ok(PipelineOutcome::Diagnostics(diagnostics));
+        return Ok(CommandOutcome::Diagnostics(diagnostics));
     }
-    Ok(PipelineOutcome::Success(ExportReport {
+    Ok(CommandOutcome::Success(ExportReport {
         exporter_id: exporter_id.to_string(),
         display_name: exporter_descriptor.display_name.to_string(),
         dir,
@@ -252,23 +211,23 @@ pub fn export_project_data(
 ///
 /// Returns an error for invalid codegen configuration, unsupported target/data
 /// format combinations, or code artifact write failures. Schema diagnostics are
-/// returned as `PipelineOutcome::Diagnostics`.
+/// returned as `CommandOutcome::Diagnostics`.
 pub fn generate_project_code(
-    project: &Project,
+    project: Project,
     registry: &ProviderRegistry,
     codegen_id: &str,
     options: CodegenOptions<'_>,
-) -> Result<PipelineOutcome<CodegenReport>, String> {
+) -> Result<CommandOutcome<CodegenReport>, String> {
     let mut diagnostics = project.schema_diagnostic_set();
     diagnostics.extend(project.codegen_diagnostic_set());
     if !diagnostics.is_empty() {
-        return Ok(PipelineOutcome::Diagnostics(diagnostics));
+        return Ok(CommandOutcome::Diagnostics(diagnostics));
     }
     let command = format!("coflow codegen {codegen_id}");
-    let output = required_code_output(project, codegen_id, &command)?;
-    let data_format = configured_data_format(project, &command)?;
+    let output = required_code_output(&project, codegen_id, &command)?.clone();
+    let data_format = configured_data_format(&project, &command)?.to_string();
     let Some(codegen) = registry.codegen(codegen_id) else {
-        return Ok(PipelineOutcome::Diagnostics(project_diagnostic_set(
+        return Ok(CommandOutcome::Diagnostics(project_diagnostic_set(
             &project.config_path,
             format!("no code generator registered for `{codegen_id}`"),
             ["outputs", "code", "type"],
@@ -277,42 +236,48 @@ pub fn generate_project_code(
     let codegen_descriptor = codegen.descriptor();
     if !codegen_descriptor
         .supported_data_formats
-        .contains(&data_format)
+        .contains(&data_format.as_str())
     {
-        return Ok(PipelineOutcome::Diagnostics(project_diagnostic_set(
+        return Ok(CommandOutcome::Diagnostics(project_diagnostic_set(
             &project.config_path,
             format!("code generator `{codegen_id}` does not support data format `{data_format}`"),
             ["outputs", "code", "type"],
         )));
     }
-    let dir = output_dir(project, output, options.out_dir);
-    let schema = match compile_project_schema(project)? {
-        Ok(schema) => schema,
-        Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
-    };
-    let codegen_diagnostics =
-        preflight_codegen(registry, &schema, None, codegen_id, data_format, output)?;
+    let dir = output_dir(&project, &output, options.out_dir);
+    let session = build_project_schema_session(project)?;
+    if session.has_diagnostics() {
+        return Ok(CommandOutcome::Diagnostics(session.diagnostics.into_set()));
+    }
+    let codegen_diagnostics = preflight_codegen(
+        registry,
+        &session.schema,
+        None,
+        codegen_id,
+        &data_format,
+        &output,
+    )?;
     if !codegen_diagnostics.is_empty() {
-        return Ok(PipelineOutcome::Diagnostics(codegen_diagnostics));
+        return Ok(CommandOutcome::Diagnostics(codegen_diagnostics));
     }
     let artifact_diagnostics = artifact_safety_diagnostics(
-        project,
+        &session.project,
         &[ArtifactOutputPlan::new("outputs.code.dir", dir.clone())],
     );
     if !artifact_diagnostics.is_empty() {
-        return Ok(PipelineOutcome::Diagnostics(artifact_diagnostics));
+        return Ok(CommandOutcome::Diagnostics(artifact_diagnostics));
     }
-    let lockfile = enum_lockfile_path(project);
-    let key_as_enum_ids = collect_declared_key_as_enum_ids(&schema);
+    let lockfile = enum_lockfile_path(&session.project);
+    let key_as_enum_ids = collect_declared_key_as_enum_ids(&session.schema);
     let (locked_key_as_enum, key_as_enum_variants) =
         match merge_key_as_enum_lockfile(&lockfile, key_as_enum_ids) {
             Ok(lockfile) => lockfile,
-            Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
+            Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
         };
     let key_as_enum_variants = match serde_json::to_value(key_as_enum_variants) {
         Ok(value) => value,
         Err(err) => {
-            return Ok(PipelineOutcome::Diagnostics(artifact_diagnostic_set(
+            return Ok(CommandOutcome::Diagnostics(artifact_diagnostic_set(
                 &lockfile,
                 format!("failed to serialize @keyAsEnum variants: {err}"),
             )))
@@ -321,27 +286,27 @@ pub fn generate_project_code(
     let staged_code = match stage_codegen_artifacts(
         registry,
         CodegenArtifactRequest {
-            schema: &schema,
+            schema: &session.schema,
             model: None,
             codegen_id,
-            data_format,
-            output_config: output,
+            data_format: &data_format,
+            output_config: &output,
             dir: &dir,
             key_as_enum_variants: &key_as_enum_variants,
         },
     ) {
         Ok(staged_code) => staged_code,
-        Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
+        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
     let staged_lockfile = match stage_key_as_enum_lockfile_if_needed(&lockfile, &locked_key_as_enum)
     {
         Ok(staged_lockfile) => staged_lockfile,
-        Err(diagnostics) => return Ok(PipelineOutcome::Diagnostics(diagnostics)),
+        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
     if let Err(diagnostics) = commit_staged_dir_and_file(staged_code, staged_lockfile) {
-        return Ok(PipelineOutcome::Diagnostics(diagnostics));
+        return Ok(CommandOutcome::Diagnostics(diagnostics));
     }
-    Ok(PipelineOutcome::Success(CodegenReport {
+    Ok(CommandOutcome::Success(CodegenReport {
         codegen_id: codegen_id.to_string(),
         display_name: codegen_descriptor.display_name.to_string(),
         dir,
@@ -349,24 +314,24 @@ pub fn generate_project_code(
 }
 
 #[derive(Debug)]
-struct BuildProviderPlan<'a> {
-    data: BuildDataPlan<'a>,
-    code: Option<BuildCodegenPlan<'a>>,
+struct BuildProviderPlan {
+    data: BuildDataPlan,
+    code: Option<BuildCodegenPlan>,
     artifact_outputs: Vec<ArtifactOutputPlan>,
 }
 
 #[derive(Debug)]
-struct BuildDataPlan<'a> {
-    output: &'a coflow_project::OutputConfig,
-    exporter_id: &'a str,
+struct BuildDataPlan {
+    output: OutputConfig,
+    exporter_id: String,
     display_name: &'static str,
     dir: PathBuf,
 }
 
 #[derive(Debug)]
-struct BuildCodegenPlan<'a> {
-    output: &'a coflow_project::OutputConfig,
-    codegen_id: &'a str,
+struct BuildCodegenPlan {
+    output: OutputConfig,
+    codegen_id: String,
     display_name: &'static str,
     dir: PathBuf,
     needs_model_for_build: bool,
@@ -389,7 +354,7 @@ fn build_provider_plan<'a>(
     project: &'a Project,
     registry: &ProviderRegistry,
     options: BuildOptions<'a>,
-) -> Result<BuildProviderPlan<'a>, DiagnosticSet> {
+) -> Result<BuildProviderPlan, DiagnosticSet> {
     let (data_output, data_format) =
         configured_data_output(project, "coflow build").map_err(|message| {
             project_diagnostic_set(&project.config_path, message, ["outputs", "data"])
@@ -416,8 +381,8 @@ fn build_provider_plan<'a>(
 
     Ok(BuildProviderPlan {
         data: BuildDataPlan {
-            output: data_output,
-            exporter_id: data_format,
+            output: data_output.clone(),
+            exporter_id: data_format.to_string(),
             display_name: data_exporter.descriptor().display_name,
             dir: data_dir,
         },
@@ -432,12 +397,12 @@ fn build_codegen_plan<'a>(
     options: BuildOptions<'a>,
     data_format: &str,
     artifact_outputs: &mut Vec<ArtifactOutputPlan>,
-) -> Result<Option<BuildCodegenPlan<'a>>, DiagnosticSet> {
+) -> Result<Option<BuildCodegenPlan>, DiagnosticSet> {
     let Some(output) = project.config.outputs.code.as_ref() else {
         return Ok(None);
     };
-    let codegen_id = output.output_type.as_str();
-    let codegen = registry.codegen(codegen_id).ok_or_else(|| {
+    let codegen_id = output.output_type.clone();
+    let codegen = registry.codegen(&codegen_id).ok_or_else(|| {
         project_diagnostic_set(
             &project.config_path,
             format!("no code generator registered for `{codegen_id}`"),
@@ -456,7 +421,7 @@ fn build_codegen_plan<'a>(
     let dir = output_dir(project, output, options.code_out_dir);
     artifact_outputs.push(ArtifactOutputPlan::new("outputs.code.dir", dir.clone()));
     Ok(Some(BuildCodegenPlan {
-        output,
+        output: output.clone(),
         codegen_id,
         display_name: descriptor.display_name,
         dir,
@@ -466,38 +431,35 @@ fn build_codegen_plan<'a>(
 
 fn build_codegen_preflight_diagnostics(
     registry: &ProviderRegistry,
-    schema: &coflow_cft::CftContainer,
-    model: &coflow_data_model::CfdDataModel,
-    plan: &BuildProviderPlan<'_>,
+    session: &ProjectSession,
+    plan: &BuildProviderPlan,
 ) -> Result<DiagnosticSet, String> {
     let Some(code) = plan.code.as_ref() else {
         return Ok(DiagnosticSet::empty());
     };
     preflight_codegen(
         registry,
-        schema,
-        code.needs_model_for_build.then_some(model),
-        code.codegen_id,
-        plan.data.exporter_id,
-        code.output,
+        &session.schema,
+        code.needs_model_for_build.then_some(&session.model),
+        &code.codegen_id,
+        &plan.data.exporter_id,
+        &code.output,
     )
 }
 
 fn commit_build_artifacts(
-    project: &Project,
+    session: &ProjectSession,
     registry: &ProviderRegistry,
-    schema: &coflow_cft::CftContainer,
-    model: &coflow_data_model::CfdDataModel,
-    staged_data: artifacts::StagedArtifactDir,
-    plan: &BuildProviderPlan<'_>,
+    staged_data: crate::artifacts::StagedArtifactDir,
+    plan: &BuildProviderPlan,
 ) -> Result<Option<CodegenReport>, DiagnosticSet> {
     let Some(code) = plan.code.as_ref() else {
         staged_data.commit()?;
         return Ok(None);
     };
 
-    let lockfile = enum_lockfile_path(project);
-    let key_as_enum_ids = collect_key_as_enum_ids(schema, model);
+    let lockfile = enum_lockfile_path(&session.project);
+    let key_as_enum_ids = collect_key_as_enum_ids(&session.schema, &session.model);
     let (locked_key_as_enum, key_as_enum_variants) =
         merge_key_as_enum_lockfile(&lockfile, key_as_enum_ids)?;
     let key_as_enum_variants = serde_json::to_value(key_as_enum_variants).map_err(|err| {
@@ -509,11 +471,11 @@ fn commit_build_artifacts(
     let staged_code = stage_codegen_artifacts(
         registry,
         CodegenArtifactRequest {
-            schema,
-            model: code.needs_model_for_build.then_some(model),
-            codegen_id: code.codegen_id,
-            data_format: plan.data.exporter_id,
-            output_config: code.output,
+            schema: &session.schema,
+            model: code.needs_model_for_build.then_some(&session.model),
+            codegen_id: &code.codegen_id,
+            data_format: &plan.data.exporter_id,
+            output_config: &code.output,
             dir: &code.dir,
             key_as_enum_variants: &key_as_enum_variants,
         },
@@ -521,7 +483,7 @@ fn commit_build_artifacts(
     let staged_lockfile = stage_key_as_enum_lockfile_if_needed(&lockfile, &locked_key_as_enum)?;
     commit_staged_dirs_and_file(vec![staged_data, staged_code], staged_lockfile)?;
     Ok(Some(CodegenReport {
-        codegen_id: code.codegen_id.to_string(),
+        codegen_id: code.codegen_id.clone(),
         display_name: code.display_name.to_string(),
         dir: code.dir.clone(),
     }))
@@ -756,7 +718,7 @@ fn collect_declared_key_as_enum_ids(
 
 fn collect_key_as_enum_ids(
     schema: &coflow_cft::CftContainer,
-    model: &coflow_data_model::CfdDataModel,
+    model: &coflow_api::CfdDataModel,
 ) -> BTreeMap<String, KeyAsEnumIds> {
     let mut out = collect_declared_key_as_enum_ids(schema);
     for schema_type in schema.all_types() {
@@ -917,7 +879,7 @@ fn read_key_as_enum_lockfile(
 fn stage_key_as_enum_lockfile_if_needed(
     path: &Path,
     locked: &KeyAsEnumLockfile,
-) -> Result<Option<artifacts::StagedArtifactFile>, DiagnosticSet> {
+) -> Result<Option<crate::artifacts::StagedArtifactFile>, DiagnosticSet> {
     if locked.is_empty() {
         return Ok(None);
     }

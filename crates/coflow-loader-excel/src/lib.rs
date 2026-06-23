@@ -20,17 +20,16 @@
 
 use calamine::{open_workbook_auto, Data, Reader};
 use coflow_api::{
-    origins_of, DataLoader, Diagnostic, DiagnosticSet, Label, LoadContext, LoadedRecords,
-    LoaderDescriptor, ProbeResult, ProjectSourceRef, RecordOrigin, ResolvedSource, SourceLocation,
+    DataLoader, Diagnostic, DiagnosticSet, Label, LoadContext, LoadedRecords, LoaderDescriptor,
+    ProbeResult, ProjectSourceRef, RecordOrigin, ResolvedSource, SourceLocation,
     SourceLocationSpec, SourceResolveContext,
 };
 use coflow_cft::CftContainer;
-use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdInputRecord};
-pub use coflow_loader_table_core::TableSheet;
+use coflow_data_model::{CfdDiagnostic, CfdInputRecord};
 use coflow_loader_table_core::{
     collect_table_input_records as collect_shared_table_input_records, map_label_to_table,
-    map_table_diagnostics, TableDiagnostic, TableDiagnostics, TableLabel, TableLocation,
-    TableSheetConfig, TableSource as SharedTableSource,
+    TableDiagnostic, TableDiagnostics, TableLabel, TableLocation, TableSheet, TableSheetConfig,
+    TableSource,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -128,12 +127,6 @@ impl From<ExcelSheet> for TableSheetConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ExcelLoadOutput {
-    pub model: CfdDataModel,
-    pub check_diagnostics: Option<ExcelDiagnostics>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExcelDiagnostics {
     pub diagnostics: Vec<ExcelDiagnostic>,
@@ -154,28 +147,6 @@ impl From<TableDiagnostics> for ExcelDiagnostics {
 #[derive(Debug, Clone)]
 pub struct ExcelInputRecords {
     pub records: Vec<CfdInputRecord>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TableSource {
-    pub name: PathBuf,
-    pub sheets: Vec<TableSheet>,
-    pub configs: Vec<ExcelSheet>,
-}
-
-impl TableSource {
-    #[must_use]
-    pub fn new(
-        name: impl Into<PathBuf>,
-        sheets: Vec<TableSheet>,
-        configs: Vec<ExcelSheet>,
-    ) -> Self {
-        Self {
-            name: name.into(),
-            sheets,
-            configs,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -323,64 +294,6 @@ fn label_shifted(
     }
 }
 
-/// Loads configured Excel sheets into a validated data model without running
-/// CFT `check` blocks.
-///
-/// The caller is responsible for parsing any YAML/JSON/CLI configuration and
-/// compiling the provided schema container before calling this function.
-///
-/// # Errors
-///
-/// Returns Excel-stage errors, cell syntax errors, or data-model diagnostics.
-pub fn load_excel_model(
-    schema: &CftContainer,
-    sources: &[ExcelSource],
-) -> Result<CfdDataModel, ExcelDiagnostics> {
-    let table_sources = table_sources_from_excel(sources)?;
-    let loaded = collect_shared_table_input_records(schema, &table_sources)
-        .map_err(ExcelDiagnostics::from)?;
-    let origins = origins_of(&loaded.records);
-    let mut builder = CfdDataModel::builder(schema);
-    for record in loaded.records {
-        builder.add_input_record(record);
-    }
-    builder
-        .build()
-        .map_err(|diagnostics| ExcelDiagnostics::from(map_table_diagnostics(diagnostics, &origins)))
-}
-
-/// Loads configured Excel sheets and runs CFT `check` blocks against the model.
-///
-/// Check diagnostics are returned alongside the model because check failures do
-/// not invalidate the constructed data model.
-///
-/// # Errors
-///
-/// Returns Excel-stage errors, cell syntax errors, or data-model diagnostics.
-pub fn load_excel(
-    schema: &CftContainer,
-    sources: &[ExcelSource],
-) -> Result<ExcelLoadOutput, ExcelDiagnostics> {
-    let table_sources = table_sources_from_excel(sources)?;
-    let loaded = collect_shared_table_input_records(schema, &table_sources)
-        .map_err(ExcelDiagnostics::from)?;
-    let origins = origins_of(&loaded.records);
-    let mut builder = CfdDataModel::builder(schema);
-    for record in loaded.records {
-        builder.add_input_record(record);
-    }
-    let model = builder.build().map_err(|diagnostics| {
-        ExcelDiagnostics::from(map_table_diagnostics(diagnostics, &origins))
-    })?;
-    let check_diagnostics = coflow_checker::run_checks(schema, &model)
-        .err()
-        .map(|diagnostics| ExcelDiagnostics::from(map_table_diagnostics(diagnostics, &origins)));
-    Ok(ExcelLoadOutput {
-        model,
-        check_diagnostics,
-    })
-}
-
 /// Loads configured Excel sources into input records without building a data model.
 ///
 /// # Errors
@@ -399,35 +312,7 @@ pub fn collect_input_records(
         .map_err(ExcelDiagnostics::from)
 }
 
-/// Loads already-read table sources into input records without building a data model.
-///
-/// This is the shared Excel-like path used by local workbooks and remote sheet
-/// providers. Source readers own I/O and convert cells to strings before
-/// calling this function.
-///
-/// # Errors
-///
-/// Returns diagnostics when sheets, headers, or cells cannot be loaded
-/// according to the schema.
-pub fn collect_table_input_records(
-    schema: &CftContainer,
-    sources: &[TableSource],
-) -> Result<ExcelInputRecords, ExcelDiagnostics> {
-    let shared_sources = sources
-        .iter()
-        .cloned()
-        .map(shared_table_source_from_excel_table_source)
-        .collect::<Vec<_>>();
-    collect_shared_table_input_records(schema, &shared_sources)
-        .map(|loaded| ExcelInputRecords {
-            records: loaded.records,
-        })
-        .map_err(ExcelDiagnostics::from)
-}
-
-fn table_sources_from_excel(
-    sources: &[ExcelSource],
-) -> Result<Vec<SharedTableSource>, ExcelDiagnostics> {
+fn table_sources_from_excel(sources: &[ExcelSource]) -> Result<Vec<TableSource>, ExcelDiagnostics> {
     let mut table_sources = Vec::new();
     let mut diagnostics = Vec::new();
     for source in sources {
@@ -443,7 +328,7 @@ fn table_sources_from_excel(
     }
 }
 
-fn table_source_from_excel(source: &ExcelSource) -> Result<SharedTableSource, ExcelDiagnostics> {
+fn table_source_from_excel(source: &ExcelSource) -> Result<TableSource, ExcelDiagnostics> {
     let mut diagnostics = Vec::new();
     let mut workbook = match open_workbook_auto(&source.file) {
         Ok(workbook) => workbook,
@@ -528,7 +413,7 @@ fn table_source_from_excel(source: &ExcelSource) -> Result<SharedTableSource, Ex
     }
 
     if diagnostics.is_empty() {
-        Ok(SharedTableSource::new(
+        Ok(TableSource::new(
             source.file.clone(),
             table_sheets,
             configured_sheets
@@ -539,18 +424,6 @@ fn table_source_from_excel(source: &ExcelSource) -> Result<SharedTableSource, Ex
     } else {
         Err(ExcelDiagnostics { diagnostics })
     }
-}
-
-fn shared_table_source_from_excel_table_source(source: TableSource) -> SharedTableSource {
-    SharedTableSource::new(
-        source.name,
-        source.sheets,
-        source
-            .configs
-            .into_iter()
-            .map(TableSheetConfig::from)
-            .collect(),
-    )
 }
 
 fn cell_text(

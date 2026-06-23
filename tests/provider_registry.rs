@@ -1,6 +1,6 @@
 #[test]
 fn builtin_registry_contains_all_default_providers() -> Result<(), String> {
-    let registry = coflow::builtin_registry().map_err(|err| err.to_string())?;
+    let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
 
     ensure(registry.loader("excel").is_some(), "missing excel loader")?;
     ensure(
@@ -8,6 +8,12 @@ fn builtin_registry_contains_all_default_providers() -> Result<(), String> {
         "missing lark-sheet loader",
     )?;
     ensure(registry.loader("cfd").is_some(), "missing cfd loader")?;
+    ensure(registry.writer("excel").is_some(), "missing excel writer")?;
+    ensure(
+        registry.writer("lark-sheet").is_some(),
+        "missing lark-sheet writer",
+    )?;
+    ensure(registry.writer("cfd").is_some(), "missing cfd writer")?;
     ensure(registry.exporter("json").is_some(), "missing json exporter")?;
     ensure(
         registry.exporter("messagepack").is_some(),

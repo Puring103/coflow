@@ -13,6 +13,6 @@
 )]
 #![allow(clippy::multiple_crate_versions)]
 
-pub mod builtins;
-
-pub use builtins::builtin_registry;
+mod artifacts;
+pub mod commands;
+pub mod diagnostics;

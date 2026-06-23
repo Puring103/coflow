@@ -1,4 +1,4 @@
-// Hand-maintained bindings matching Rust types in coflow-editor-core/src/types.rs
+// Hand-maintained bindings matching Rust types in src-tauri/src/editor/types.rs
 
 /**
  * Structured error returned by every Tauri command. The editor surfaces

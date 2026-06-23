@@ -10,8 +10,8 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use coflow_api::CfdDictKey as ApiCfdDictKey;
 use coflow_data_model::{CfdRecord, CfdValue as DmCfdValue};
 
-use crate::convert::record_to_field_cells_for_session;
-use crate::types::{FieldCell, FieldValue, GraphData, GraphEdge, GraphNode};
+use crate::editor::convert::record_to_field_cells_for_session;
+use crate::editor::types::{FieldCell, FieldValue, GraphData, GraphEdge, GraphNode};
 
 use super::EditorSession;
 
@@ -21,11 +21,7 @@ pub(super) fn build_graph(session: &EditorSession, file_path: &str) -> GraphData
     let mut nodes: BTreeMap<String, GraphNode> = BTreeMap::new();
     let mut edges: Vec<GraphEdge> = Vec::new();
 
-    let starts: Vec<String> = session
-        .file_to_keys
-        .get(file_path)
-        .cloned()
-        .unwrap_or_default();
+    let starts: Vec<String> = session.engine.records.keys_for_file(file_path).to_vec();
 
     let mut queue: VecDeque<(String, usize)> = VecDeque::new();
     let mut depths: HashMap<String, usize> = HashMap::new();
@@ -37,6 +33,7 @@ pub(super) fn build_graph(session: &EditorSession, file_path: &str) -> GraphData
 
     while let Some((key, depth)) = queue.pop_front() {
         let Some(record) = session
+            .engine
             .model
             .records()
             .find(|(_, r)| r.key == key)
@@ -44,7 +41,12 @@ pub(super) fn build_graph(session: &EditorSession, file_path: &str) -> GraphData
         else {
             continue;
         };
-        let host_file = session.key_to_file.get(&key).cloned().unwrap_or_default();
+        let host_file = session
+            .engine
+            .records
+            .file_for_key(&key)
+            .unwrap_or_default()
+            .to_string();
         let id = format!("{host_file}::{key}");
         let in_focus = host_file == file_path;
         let is_collapsed = depth >= GRAPH_DEPTH;
@@ -52,8 +54,11 @@ pub(super) fn build_graph(session: &EditorSession, file_path: &str) -> GraphData
         let fields = if is_collapsed {
             Vec::new()
         } else {
-            let mut f =
-                record_to_field_cells_for_session(record, &session.model, &session.key_to_file);
+            let mut f = record_to_field_cells_for_session(
+                record,
+                &session.engine.model,
+                &session.record_file_map(),
+            );
             annotate_ref_files(&mut f, session);
             f
         };
@@ -74,7 +79,12 @@ pub(super) fn build_graph(session: &EditorSession, file_path: &str) -> GraphData
 
         let refs = collect_refs_in_record(record);
         for (path_str, target_key) in refs {
-            let Some(target_file) = session.key_to_file.get(&target_key).cloned() else {
+            let Some(target_file) = session
+                .engine
+                .records
+                .file_for_key(&target_key)
+                .map(str::to_string)
+            else {
                 continue;
             };
             let target_id = format!("{target_file}::{target_key}");
@@ -109,7 +119,11 @@ fn annotate_value(value: &mut FieldValue, session: &EditorSession) {
             target_file,
             ..
         } => {
-            *target_file = session.key_to_file.get(target_key).cloned();
+            *target_file = session
+                .engine
+                .records
+                .file_for_key(target_key)
+                .map(str::to_string);
         }
         FieldValue::Object { fields, .. } => annotate_ref_files(fields, session),
         FieldValue::Array { items } => {

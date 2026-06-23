@@ -8,7 +8,7 @@
 use coflow_data_model::{CfdDataModel, CfdDictKey, CfdRecord, CfdRecordId, CfdValue};
 use std::collections::HashMap;
 
-use crate::types::{DictEntry, DictKey, FieldCell, FieldValue, SpreadInfo};
+use crate::editor::types::{DictEntry, DictKey, FieldCell, FieldValue, SpreadInfo};
 
 /// Lookup table the converter consults when populating spread / ref source
 /// metadata. Holds the session's `record_key → file_path` map so we don't

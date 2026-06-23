@@ -7,12 +7,13 @@
     clippy::unwrap_used
 )]
 
+use coflow_api::origins_of;
 use coflow_cft::{CftContainer, ModuleId};
-use coflow_data_model::{CfdErrorCode, CfdValue};
+use coflow_data_model::{CfdDataModel, CfdErrorCode, CfdValue};
 use coflow_loader_excel::{
-    collect_table_input_records, load_excel, load_excel_model, ExcelDiagnostic, ExcelSheet,
-    ExcelSource, TableSheet, TableSource,
+    collect_input_records, ExcelDiagnostic, ExcelDiagnostics, ExcelSheet, ExcelSource,
 };
+use coflow_loader_table_core::map_table_diagnostics;
 use rust_xlsxwriter::{ExcelDateTime, Format, Formula, Workbook, XlsxError};
 use std::fs::File;
 use std::io::{Read, Write};
@@ -34,6 +35,21 @@ fn compile_schema(source: &str) -> Result<CftContainer, String> {
         .compile()
         .map_err(|err| format!("schema should compile: {err:?}"))?;
     Ok(container)
+}
+
+fn build_model_from_excel_records(
+    schema: &CftContainer,
+    sources: &[ExcelSource],
+) -> Result<CfdDataModel, ExcelDiagnostics> {
+    let loaded = collect_input_records(schema, sources)?;
+    let origins = origins_of(&loaded.records);
+    let mut builder = CfdDataModel::builder(schema);
+    for record in loaded.records {
+        builder.add_input_record(record);
+    }
+    builder
+        .build()
+        .map_err(|diagnostics| ExcelDiagnostics::from(map_table_diagnostics(diagnostics, &origins)))
 }
 
 fn temp_xlsx_path(name: &str) -> PathBuf {
@@ -119,7 +135,8 @@ fn loads_configured_xlsx_sheets_without_yaml_parsing() -> TestResult {
             .with_columns([("名称", "name"), ("稀有度", "rarity")])],
     );
 
-    let model = load_excel_model(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+    let model =
+        build_model_from_excel_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
     let Some(table) = model.table("Item") else {
         return Err("expected Item table".to_string());
     };
@@ -176,54 +193,13 @@ fn uses_id_header_as_default_record_key() -> TestResult {
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let model = load_excel_model(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+    let model =
+        build_model_from_excel_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
     let table = model
         .table("Item")
         .ok_or_else(|| "expected Item table".to_string())?;
 
     assert!(table.primary_index.contains_key("potion"));
-    Ok(())
-}
-
-#[test]
-fn collects_input_records_from_table_source_without_xlsx_io() -> TestResult {
-    let schema = compile_schema(
-        r#"
-            enum Rarity { Common = 0, Rare = 10, }
-            type Item {
-                name: string;
-                rarity: Rarity = Rarity.Common;
-            }
-        "#,
-    )?;
-    let source = TableSource::new(
-        "lark:sht_test",
-        vec![TableSheet::new(
-            "物品表",
-            vec![
-                vec![
-                    "物品ID".to_string(),
-                    "名称".to_string(),
-                    "稀有度".to_string(),
-                ],
-                vec![
-                    "sword_01".to_string(),
-                    "铁剑".to_string(),
-                    "Rare".to_string(),
-                ],
-            ],
-        )],
-        vec![ExcelSheet::new("物品表")
-            .with_type("Item")
-            .with_key("物品ID")
-            .with_columns([("名称", "name"), ("稀有度", "rarity")])],
-    );
-
-    let loaded =
-        collect_table_input_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
-    assert_eq!(loaded.records.len(), 1);
-    assert_eq!(loaded.records[0].key, "sword_01");
-    assert_eq!(loaded.records[0].actual_type, "Item");
     Ok(())
 }
 
@@ -244,7 +220,7 @@ fn reports_missing_sheet_before_read_sheet_errors() -> TestResult {
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Missing").with_type("Item")]);
-    let Err(err) = load_excel_model(&schema, &[source]) else {
+    let Err(err) = build_model_from_excel_records(&schema, &[source]) else {
         return Err("expected missing sheet error".to_string());
     };
 
@@ -290,7 +266,7 @@ fn reports_cell_parse_location_for_bad_cell_values() -> TestResult {
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let Err(err) = load_excel_model(&schema, &[source]) else {
+    let Err(err) = build_model_from_excel_records(&schema, &[source]) else {
         return Err("expected cell parse error".to_string());
     };
 
@@ -331,7 +307,7 @@ fn requires_id_column_on_every_loaded_sheet() -> TestResult {
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let Err(err) = load_excel_model(&schema, &[source]) else {
+    let Err(err) = build_model_from_excel_records(&schema, &[source]) else {
         return Err("expected missing id column error".to_string());
     };
 
@@ -375,7 +351,7 @@ fn rejects_empty_id_cells_on_data_rows() -> TestResult {
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let Err(err) = load_excel_model(&schema, &[source]) else {
+    let Err(err) = build_model_from_excel_records(&schema, &[source]) else {
         return Err("expected empty id cell error".to_string());
     };
 
@@ -422,7 +398,7 @@ fn rejects_non_identifier_id_cells_on_data_rows() -> TestResult {
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let Err(err) = load_excel_model(&schema, &[source]) else {
+    let Err(err) = build_model_from_excel_records(&schema, &[source]) else {
         return Err("expected invalid id cell error".to_string());
     };
 
@@ -469,7 +445,7 @@ fn rejects_excel_error_cells() -> TestResult {
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let Err(err) = load_excel_model(&schema, &[source]) else {
+    let Err(err) = build_model_from_excel_records(&schema, &[source]) else {
         return Err("expected unsupported cell value".to_string());
     };
 
@@ -525,7 +501,7 @@ fn rejects_native_excel_datetime_cells() -> TestResult {
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let Err(err) = load_excel_model(&schema, &[source]) else {
+    let Err(err) = build_model_from_excel_records(&schema, &[source]) else {
         return Err("expected unsupported cell value".to_string());
     };
 
@@ -595,7 +571,7 @@ fn rejects_typed_iso_excel_datetime_cells() -> TestResult {
     )?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let Err(err) = load_excel_model(&schema, &[source]) else {
+    let Err(err) = build_model_from_excel_records(&schema, &[source]) else {
         return Err("expected unsupported cell value".to_string());
     };
 
@@ -646,7 +622,8 @@ fn accepts_boolean_cells_for_bool_fields() -> TestResult {
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let model = load_excel_model(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+    let model =
+        build_model_from_excel_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
     let Some(table) = model.table("Item") else {
         return Err("expected Item table".to_string());
     };
@@ -686,7 +663,8 @@ fn ignores_rows_that_are_empty_in_mapped_columns() -> TestResult {
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let model = load_excel_model(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+    let model =
+        build_model_from_excel_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
 
     let Some(table) = model.table("Item") else {
         return Err("expected Item table".to_string());
@@ -738,7 +716,8 @@ fn optional_hash_control_column_skips_marked_rows_without_mapping_to_schema() ->
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let model = load_excel_model(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+    let model =
+        build_model_from_excel_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
 
     let Some(table) = model.table("Item") else {
         return Err("expected Item table".to_string());
@@ -746,64 +725,6 @@ fn optional_hash_control_column_skips_marked_rows_without_mapping_to_schema() ->
     assert_eq!(table.records.len(), 1);
     assert!(!table.primary_index.contains_key("skip_me"));
     assert!(table.primary_index.contains_key("keep_me"));
-    Ok(())
-}
-
-#[test]
-fn returns_check_diagnostics_without_discarding_model() -> TestResult {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                level: int;
-                check { level > 0; }
-            }
-        "#,
-    )?;
-    let path = temp_xlsx_path("check");
-    let mut workbook = Workbook::new();
-    let sheet = workbook
-        .add_worksheet()
-        .set_name("Item")
-        .map_err(|err| format!("{err:?}"))?;
-    sheet
-        .write_string(0, 0, "id")
-        .map_err(|err| format!("{err:?}"))?;
-    sheet
-        .write_string(0, 1, "level")
-        .map_err(|err| format!("{err:?}"))?;
-    sheet
-        .write_string(1, 0, "item_1")
-        .map_err(|err| format!("{err:?}"))?;
-    sheet
-        .write_number(1, 1, -1.0)
-        .map_err(|err| format!("{err:?}"))?;
-    workbook.save(&path).map_err(|err| format!("{err:?}"))?;
-
-    let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let output = load_excel(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
-
-    let Some(table) = output.model.table("Item") else {
-        return Err("expected Item table".to_string());
-    };
-    assert_eq!(table.records.len(), 1);
-    let Some(diagnostics) = output.check_diagnostics else {
-        return Err("expected check diagnostics".to_string());
-    };
-    let diagnostic = diagnostic_with_code(&diagnostics.diagnostics, CfdErrorCode::CheckFailed)?;
-    assert_eq!(
-        diagnostic
-            .primary
-            .as_ref()
-            .and_then(|label| label.location.row),
-        Some(2)
-    );
-    assert_eq!(
-        diagnostic
-            .primary
-            .as_ref()
-            .and_then(|label| label.location.column),
-        Some(2)
-    );
     Ok(())
 }
 
@@ -833,7 +754,7 @@ fn rejects_unknown_header_columns_before_model_build() -> TestResult {
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let Err(err) = load_excel_model(&schema, &[source]) else {
+    let Err(err) = build_model_from_excel_records(&schema, &[source]) else {
         return Err("expected unknown column".to_string());
     };
 
@@ -885,7 +806,7 @@ fn maps_duplicate_id_diagnostics_to_source_cells() -> TestResult {
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let Err(err) = load_excel_model(&schema, &[source]) else {
+    let Err(err) = build_model_from_excel_records(&schema, &[source]) else {
         return Err("expected data model diagnostics".to_string());
     };
 
@@ -941,7 +862,7 @@ fn maps_missing_required_field_diagnostics_to_source_cells() -> TestResult {
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let Err(err) = load_excel_model(&schema, &[source]) else {
+    let Err(err) = build_model_from_excel_records(&schema, &[source]) else {
         return Err("expected data model diagnostics".to_string());
     };
 
@@ -993,7 +914,7 @@ fn maps_multiple_invalid_input_rows_to_their_original_excel_rows() -> TestResult
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Item")]);
-    let Err(err) = load_excel_model(&schema, &[source]) else {
+    let Err(err) = build_model_from_excel_records(&schema, &[source]) else {
         return Err("expected data model diagnostics".to_string());
     };
 
@@ -1057,7 +978,8 @@ fn expand_consumes_parent_and_adjacent_columns_for_inner_fields() -> TestResult 
     write_terrain_workbook_with_expand(&path).map_err(|err| format!("write workbook: {err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Terrain").with_type("Terrain")]);
-    let model = load_excel_model(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+    let model =
+        build_model_from_excel_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
     let table = model
         .table("Terrain")
         .ok_or_else(|| "expected Terrain table".to_string())?;
@@ -1131,7 +1053,7 @@ fn expand_rejects_explicit_inner_field_headers() -> TestResult {
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Terrain")]);
-    let Err(err) = load_excel_model(&schema, &[source]) else {
+    let Err(err) = build_model_from_excel_records(&schema, &[source]) else {
         return Err("expected explicit @expand child header error".to_string());
     };
     let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-COLUMN")?;
@@ -1191,7 +1113,7 @@ fn rejects_expand_header_that_would_swallow_normal_column() -> TestResult {
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Terrain")]);
-    let Err(err) = load_excel_model(&schema, &[source]) else {
+    let Err(err) = build_model_from_excel_records(&schema, &[source]) else {
         return Err("expected @expand header collision error".to_string());
     };
     let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-COLUMN")?;
@@ -1265,7 +1187,8 @@ fn resolves_direct_reference_shorthand_cells_by_field_type() -> TestResult {
             ExcelSheet::new("Drop").with_type("Drop"),
         ],
     );
-    let model = load_excel_model(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+    let model =
+        build_model_from_excel_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
     let item_id = *model
         .table("Item")
         .and_then(|table| table.primary_index.get("sword_01"))
@@ -1306,7 +1229,7 @@ fn rejects_empty_sheets_and_duplicate_mapped_columns() -> TestResult {
         &empty_path,
         vec![ExcelSheet::new("Sheet1").with_type("Item")],
     );
-    let Err(err) = load_excel_model(&schema, &[empty_source]) else {
+    let Err(err) = build_model_from_excel_records(&schema, &[empty_source]) else {
         return Err("expected empty sheet error".to_string());
     };
     let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-SHEET")?;
@@ -1344,7 +1267,7 @@ fn rejects_empty_sheets_and_duplicate_mapped_columns() -> TestResult {
         &duplicate_path,
         vec![ExcelSheet::new("Item").with_columns([("alias", "id")])],
     );
-    let Err(err) = load_excel_model(&schema, &[duplicate_source]) else {
+    let Err(err) = build_model_from_excel_records(&schema, &[duplicate_source]) else {
         return Err("expected duplicate mapped column error".to_string());
     };
     let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-COLUMN")?;
@@ -1395,7 +1318,7 @@ fn rejects_expand_headers_without_enough_adjacent_columns() -> TestResult {
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Terrain")]);
-    let Err(err) = load_excel_model(&schema, &[source]) else {
+    let Err(err) = build_model_from_excel_records(&schema, &[source]) else {
         return Err("expected @expand header width error".to_string());
     };
     let diagnostic = diagnostic_with_string_code(&err.diagnostics, "EXCEL-COLUMN")?;
@@ -1452,7 +1375,7 @@ fn maps_expand_subfield_diagnostics_to_child_columns() -> TestResult {
     workbook.save(&path).map_err(|err| format!("{err:?}"))?;
 
     let source = ExcelSource::new(&path, vec![ExcelSheet::new("Terrain")]);
-    let Err(err) = load_excel_model(&schema, &[source]) else {
+    let Err(err) = build_model_from_excel_records(&schema, &[source]) else {
         return Err("expected @expand subfield parse diagnostic".to_string());
     };
     let diagnostic = err

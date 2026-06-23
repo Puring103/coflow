@@ -27,8 +27,6 @@ pub enum EditorErrorKind {
     /// Project parsing or schema compilation failed before any data could be
     /// loaded.
     Project,
-    /// One or more loaders failed to produce records.
-    Load,
     /// A writer rejected an edit (origin mismatch, schema-invalid value,
     /// transport error, ...).
     Write,
@@ -62,11 +60,6 @@ impl EditorError {
     #[must_use]
     pub fn project(message: impl Into<String>) -> Self {
         Self::new(EditorErrorKind::Project, message)
-    }
-
-    #[must_use]
-    pub fn load(message: impl Into<String>) -> Self {
-        Self::new(EditorErrorKind::Load, message)
     }
 
     #[must_use]

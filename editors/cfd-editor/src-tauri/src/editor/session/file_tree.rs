@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use crate::types::FileTreeNode;
+use crate::editor::types::FileTreeNode;
 
 use super::path::path_to_slash;
 

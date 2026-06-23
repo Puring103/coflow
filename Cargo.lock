@@ -445,12 +445,18 @@ dependencies = [
 name = "cfd-editor"
 version = "0.1.0"
 dependencies = [
- "coflow-editor-core",
+ "coflow-api",
+ "coflow-builtins",
+ "coflow-cft",
+ "coflow-data-model",
+ "coflow-engine",
+ "coflow-project",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
+ "walkdir",
 ]
 
 [[package]]
@@ -568,15 +574,13 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "coflow-api",
+ "coflow-builtins",
  "coflow-cft",
  "coflow-codegen-csharp",
+ "coflow-engine",
  "coflow-exporter-json",
- "coflow-exporter-messagepack",
- "coflow-loader-cfd",
  "coflow-loader-excel",
- "coflow-loader-lark",
  "coflow-lsp",
- "coflow-pipeline",
  "coflow-project",
  "rust_xlsxwriter",
  "serde",
@@ -591,6 +595,19 @@ dependencies = [
  "coflow-data-model",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "coflow-builtins"
+version = "0.1.0"
+dependencies = [
+ "coflow-api",
+ "coflow-codegen-csharp",
+ "coflow-exporter-json",
+ "coflow-exporter-messagepack",
+ "coflow-loader-cfd",
+ "coflow-loader-excel",
+ "coflow-loader-lark",
 ]
 
 [[package]]
@@ -637,21 +654,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "coflow-editor-core"
+name = "coflow-engine"
 version = "0.1.0"
 dependencies = [
  "coflow-api",
- "coflow-cfd",
  "coflow-cft",
  "coflow-checker",
  "coflow-data-model",
- "coflow-loader-cfd",
- "coflow-loader-excel",
- "coflow-loader-lark",
  "coflow-project",
- "serde",
  "serde_json",
- "walkdir",
 ]
 
 [[package]]
@@ -701,7 +712,6 @@ dependencies = [
  "calamine",
  "coflow-api",
  "coflow-cft",
- "coflow-checker",
  "coflow-data-model",
  "coflow-loader-table-core",
  "rust_xlsxwriter",
@@ -740,26 +750,6 @@ dependencies = [
  "coflow-cfd",
  "coflow-cft",
  "coflow-project",
- "serde_json",
-]
-
-[[package]]
-name = "coflow-pipeline"
-version = "0.1.0"
-dependencies = [
- "coflow-api",
- "coflow-cft",
- "coflow-checker",
- "coflow-codegen-csharp",
- "coflow-data-model",
- "coflow-exporter-json",
- "coflow-exporter-messagepack",
- "coflow-loader-cfd",
- "coflow-loader-excel",
- "coflow-loader-lark",
- "coflow-project",
- "rust_xlsxwriter",
- "serde",
  "serde_json",
 ]
 

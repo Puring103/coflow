@@ -16,8 +16,12 @@
 #![allow(clippy::missing_const_for_fn, clippy::similar_names, clippy::use_self)]
 
 use coflow_cft::{record_key_ident_error, CftContainer, CftSchemaField};
-use coflow_data_model::{CfdInputDictKey, CfdInputRefIndex, CfdInputValue, CfdRefPathSegment};
+use coflow_data_model::{
+    CfdDictKey, CfdEnumValue, CfdInputDictKey, CfdInputRefIndex, CfdInputValue, CfdRefPathSegment,
+    CfdValue,
+};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use unicode_ident::{is_xid_continue, is_xid_start};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -25,6 +29,27 @@ pub enum ParsedCell {
     Omitted,
     Value(CfdInputValue),
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CellRenderError {
+    AnonymousEnum,
+    NestedObject,
+}
+
+impl fmt::Display for CellRenderError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::AnonymousEnum => {
+                write!(f, "anonymous enum values cannot be rendered as table cells")
+            }
+            Self::NestedObject => {
+                write!(f, "nested object values cannot be rendered as table cells")
+            }
+        }
+    }
+}
+
+impl std::error::Error for CellRenderError {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CellValueDiagnostics {
@@ -70,6 +95,90 @@ pub fn parse_cell(
         return Ok(ParsedCell::Omitted);
     }
     parse_value(schema, &declared_type, text, ValueContext::Root).map(ParsedCell::Value)
+}
+
+/// Renders a runtime value into the same table-cell text grammar accepted by
+/// [`parse_cell`].
+///
+/// # Errors
+///
+/// Returns an error when the runtime value cannot be represented without
+/// schema context.
+pub fn render_cell_value(value: &CfdValue) -> Result<String, CellRenderError> {
+    match value {
+        CfdValue::Null => Ok(String::new()),
+        CfdValue::Bool(value) => Ok(value.to_string()),
+        CfdValue::Int(value) => Ok(value.to_string()),
+        CfdValue::Float(value) => Ok(value.to_string()),
+        CfdValue::String(value) => Ok(render_string(value)),
+        CfdValue::Enum(value) => render_enum_value(value),
+        CfdValue::Ref { key, .. } => Ok(format!("&{key}")),
+        CfdValue::Array(items) => render_array(items),
+        CfdValue::Dict(entries) => render_dict(entries),
+        CfdValue::Object(_) => Err(CellRenderError::NestedObject),
+    }
+}
+
+fn render_array(items: &[CfdValue]) -> Result<String, CellRenderError> {
+    let mut out = String::from("[");
+    for (idx, item) in items.iter().enumerate() {
+        if idx > 0 {
+            out.push_str(" | ");
+        }
+        out.push_str(&render_cell_value(item)?);
+    }
+    out.push(']');
+    Ok(out)
+}
+
+fn render_dict(entries: &[(CfdDictKey, CfdValue)]) -> Result<String, CellRenderError> {
+    let mut out = String::from("{");
+    for (idx, (key, value)) in entries.iter().enumerate() {
+        if idx > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&render_dict_key(key)?);
+        out.push_str(": ");
+        out.push_str(&render_cell_value(value)?);
+    }
+    out.push('}');
+    Ok(out)
+}
+
+fn render_dict_key(key: &CfdDictKey) -> Result<String, CellRenderError> {
+    match key {
+        CfdDictKey::String(value) => Ok(render_string(value)),
+        CfdDictKey::Int(value) => Ok(value.to_string()),
+        CfdDictKey::Enum(value) => render_enum_value(value),
+    }
+}
+
+fn render_enum_value(value: &CfdEnumValue) -> Result<String, CellRenderError> {
+    value.variant.clone().ok_or(CellRenderError::AnonymousEnum)
+}
+
+fn render_string(value: &str) -> String {
+    if string_needs_quotes(value) || value.contains('"') || value.contains('\\') {
+        quote_string(value)
+    } else {
+        value.to_string()
+    }
+}
+
+fn quote_string(value: &str) -> String {
+    let mut out = String::from("\"");
+    for ch in value.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+    out
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

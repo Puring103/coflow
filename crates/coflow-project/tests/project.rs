@@ -13,8 +13,8 @@ use coflow_api::SourceLocation;
 use coflow_cft::{CftDiagnostic, CftErrorCode, ModuleId, Span};
 use coflow_project::{
     compile_schema_project_with_overrides, dedupe_cft_diagnostics, init_project, normalize_path,
-    path_to_slash, resolve_config_path, DiagnosticJson, OutputConfig, OutputsConfig, Project,
-    ProjectConfig, SchemaConfig, SchemaSourceOverride, DEFAULT_PROJECT_YAML,
+    path_to_slash, resolve_config_path, OutputConfig, OutputsConfig, Project, ProjectConfig,
+    SchemaConfig, SchemaSourceOverride, DEFAULT_PROJECT_YAML,
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -185,7 +185,8 @@ fn project_validation_reports_schema_source_and_output_edges() -> TestResult {
             let project =
                 Project::open_schema_only(Some(&config)).map_err(|err| err.to_string())?;
             project
-                .schema_diagnostics()
+                .schema_diagnostic_set()
+                .diagnostics
                 .into_iter()
                 .map(|diagnostic| diagnostic.message)
                 .collect::<Vec<_>>()
@@ -267,7 +268,7 @@ outputs:
     .map_err(|err| err.to_string())?;
 
     let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
-    let diagnostics = project.schema_diagnostics();
+    let diagnostics = project.schema_diagnostic_set();
     assert!(
         diagnostics.is_empty(),
         "provider-neutral config should pass shape validation: {diagnostics:?}"
@@ -369,7 +370,7 @@ outputs:
     );
     assert_eq!(
         project.config.sources[0].location,
-        coflow_project::SourceLocationSpec::Path(PathBuf::from("data.custom"))
+        coflow_api::SourceLocationSpec::Path(PathBuf::from("data.custom"))
     );
     assert_eq!(
         project.config.sources[0].options["flavor"],
@@ -381,7 +382,7 @@ outputs:
     );
     assert_eq!(
         project.config.sources[1].location,
-        coflow_project::SourceLocationSpec::Uri(
+        coflow_api::SourceLocationSpec::Uri(
             "https://example.feishu.cn/wiki/wiki_token".to_string()
         )
     );
@@ -520,7 +521,7 @@ sources:
     assert_eq!(source.source_type.as_deref(), Some("lark-sheet"));
     assert_eq!(
         source.location,
-        coflow_project::SourceLocationSpec::Uri(
+        coflow_api::SourceLocationSpec::Uri(
             "https://fand3tbr90g.feishu.cn/wiki/K7M7wT1esizv6aklRy3cO4o6ntg".to_string()
         )
     );
@@ -784,7 +785,7 @@ fn schema_compile_with_override_parse_error_keeps_sources_and_paths() -> TestRes
 }
 
 #[test]
-fn diagnostic_json_uses_utf16_ranges_related_labels_and_dedup_keys() {
+fn cft_diagnostic_set_uses_utf16_ranges_and_dedup_keys() {
     let source = "type 表 {\n  名: string;\n}\n";
     let start = source.find('名').expect("field name");
     let end = start + "名".len();
@@ -823,15 +824,31 @@ fn diagnostic_json_uses_utf16_ranges_related_labels_and_dedup_keys() {
         "C:/project/schema/other.cft".to_string(),
     );
 
-    let json = DiagnosticJson::from_cft(&diagnostic, &sources, &paths);
-    assert_eq!(json.path, "C:/project/schema/main.cft");
-    assert_eq!(json.start_line, 1);
-    assert_eq!(json.start_character, 2);
-    assert_eq!(json.end_line, 1);
-    assert_eq!(json.end_character, 3);
-    assert_eq!(json.related.len(), 1);
-    assert_eq!(json.related[0].path, "C:/project/schema/other.cft");
-    assert_eq!(json.related[0].label.as_deref(), Some("related"));
+    let diagnostic_set =
+        coflow_project::diagnostic_set_from_cft(vec![diagnostic], &sources, &paths);
+    let diagnostic = diagnostic_set
+        .diagnostics
+        .first()
+        .expect("canonical diagnostic");
+    let primary = diagnostic.primary.as_ref().expect("primary label");
+    assert!(matches!(
+        &primary.location,
+        SourceLocation::FileSpan {
+            path,
+            start_line: 1,
+            start_character: 2,
+            end_line: 1,
+            end_character: 3,
+        } if path == &PathBuf::from("C:/project/schema/main.cft")
+    ));
+    assert_eq!(diagnostic.related.len(), 1);
+    let related = &diagnostic.related[0];
+    assert_eq!(related.message.as_deref(), Some("related"));
+    assert!(matches!(
+        &related.location,
+        SourceLocation::FileSpan { path, .. }
+            if path == &PathBuf::from("C:/project/schema/other.cft")
+    ));
 }
 
 #[test]

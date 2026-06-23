@@ -15,9 +15,11 @@ members = [
     "crates/coflow-api",
     "crates/coflow-cft",
     "crates/coflow-cfd",
+    "crates/coflow-builtins",
     "crates/coflow-loader-cfd",
     "crates/coflow-data-model",
     "crates/coflow-checker",
+    "crates/coflow-engine",
     "crates/coflow-loader-table-core",
     "crates/coflow-loader-excel",
     "crates/coflow-loader-lark",
@@ -26,9 +28,7 @@ members = [
     "crates/coflow-exporter-messagepack",
     "crates/coflow-codegen-csharp",
     "crates/coflow-project",
-    "crates/coflow-pipeline",
     "crates/coflow-lsp",
-    "crates/coflow-editor-core",
     "editors/cfd-editor/src-tauri",
 ]
 resolver = "2"
@@ -57,18 +57,16 @@ dbg_macro = "warn"
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 coflow-api = { path = "crates/coflow-api" }
+coflow-builtins = { path = "crates/coflow-builtins" }
 coflow-cft = { path = "crates/coflow-cft" }
-coflow-codegen-csharp = { path = "crates/coflow-codegen-csharp" }
-coflow-exporter-json = { path = "crates/coflow-exporter-json" }
-coflow-exporter-messagepack = { path = "crates/coflow-exporter-messagepack" }
-coflow-loader-cfd = { path = "crates/coflow-loader-cfd" }
-coflow-loader-excel = { path = "crates/coflow-loader-excel" }
-coflow-loader-lark = { path = "crates/coflow-loader-lark" }
+coflow-engine = { path = "crates/coflow-engine" }
 coflow-lsp = { path = "crates/coflow-lsp" }
-coflow-pipeline = { path = "crates/coflow-pipeline" }
 coflow-project = { path = "crates/coflow-project" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 
 [dev-dependencies]
+coflow-codegen-csharp = { path = "crates/coflow-codegen-csharp" }
+coflow-exporter-json = { path = "crates/coflow-exporter-json" }
+coflow-loader-excel = { path = "crates/coflow-loader-excel" }
 rust_xlsxwriter = "0.95"

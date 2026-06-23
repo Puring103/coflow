@@ -6,21 +6,19 @@
 //! don't block one another and a write is scoped to a single session.
 //!
 //! The data flow is:
-//! 1. `load_project` builds a session via `build_session`, which compiles
-//!    the schema, runs every loader against every source, and runs
-//!    `run_checks_with_deps` to capture diagnostics _and_ a dependency graph.
-//! 2. `get_*` commands read from the session under a read lock.
-//! 3. `write_field` looks up the target record, resolves its effective
-//!    origin (including spread tracing), routes the edit through the
-//!    registered `DataWriter`, fully rebuilds the model from disk so
-//!    cross-file ref indexes stay coherent, and reruns checks before
-//!    returning a fresh row.
+//! 1. `load_project` opens the project and asks `coflow-engine` to build a
+//!    `ProjectSession` containing schema, model, diagnostics, dependency graph,
+//!    and source/record/file indexes.
+//! 2. `get_*` commands read engine state under a read lock and derive only the
+//!    editor wire DTOs they need.
+//! 3. `write_field` uses the engine indexes to find the source and record
+//!    origin, routes the edit through the registered `DataWriter`, then rebuilds
+//!    the `ProjectSession` from disk before returning a fresh row.
 //!
 //! The implementation is split across several sub-modules so each one stays
 //! short and self-contained:
-//! - `build` — open/load/compile/check the project once.
-//! - `diagnostics` — convert upstream diagnostics into the wire shape and
-//!   keep them in stage buckets.
+//! - `build` — open the project and build the shared engine session.
+//! - `diagnostics` — convert canonical diagnostics into the wire shape.
 //! - `file_tree` — present sources + extension-matched files as a tree.
 //! - `graph` — build the BFS-bounded reference graph for a focus file.
 //! - `wire` — translate between editor wire types and runtime values.
@@ -32,19 +30,16 @@ mod graph;
 mod path;
 mod wire;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::path::Path as StdPath;
 use std::sync::{Arc, RwLock};
 
-use coflow_api::{
-    DataWriter, ProviderRegistry, RecordOrigin, ResolvedSource, WriteCellRequest, WriteContext,
-};
-use coflow_cft::CftContainer;
-use coflow_checker::DependencyGraph;
+use coflow_api::{DataWriter, ProviderRegistry, RecordOrigin, WriteCellRequest, WriteContext};
 use coflow_data_model::{CfdDataModel, CfdRecord, CfdRecordId};
+use coflow_engine::ProjectSession;
 
-use crate::convert::record_to_field_cells_for_session;
-use crate::types::{
+use crate::editor::convert::record_to_field_cells_for_session;
+use crate::editor::types::{
     EditorError, FieldCell, FieldPathSegment, FieldValue, FileRecords, GraphData, ProjectSnapshot,
     RecordRow, WriteFieldOutcome,
 };
@@ -62,31 +57,28 @@ use wire::{default_value_for_ty, field_path_segment_to_api, field_value_to_cfd};
 pub struct EditorSession {
     pub project_root: std::path::PathBuf,
     pub yaml_path: std::path::PathBuf,
-    pub schema: CftContainer,
-    pub model: CfdDataModel,
+    pub engine: ProjectSession,
     pub diagnostics: Diagnostics,
-    /// Read-from graph captured from the last full check run. Used to
-    /// expand the set of records that need re-checking after a write.
-    pub check_deps: DependencyGraph,
-    /// Files inside any `sources` dir, by relative slash path.
-    pub source_files: BTreeSet<String>,
-    /// `record_key` → relative slash path of the file it lives in.
-    pub key_to_file: HashMap<String, String>,
-    /// `file path → ordered record keys`.
-    pub file_to_keys: BTreeMap<String, Vec<String>>,
-    /// `file path → the resolved source that produced its records`. Writers
-    /// receive this back through `WriteCellRequest::source` so they can pull
-    /// provider-specific options (e.g. Lark app credentials).
-    pub source_for_file: HashMap<String, ResolvedSource>,
 }
 
 impl std::fmt::Debug for EditorSession {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EditorSession")
             .field("project_root", &self.project_root)
-            .field("source_files", &self.source_files.len())
-            .field("records", &self.key_to_file.len())
+            .field("source_files", &self.engine.files.source_files().len())
+            .field("records", &self.engine.records.by_key().len())
             .finish_non_exhaustive()
+    }
+}
+
+impl EditorSession {
+    fn record_file_map(&self) -> HashMap<String, String> {
+        self.engine
+            .records
+            .by_key()
+            .iter()
+            .map(|(key, record)| (key.clone(), record.display_path.clone()))
+            .collect()
     }
 }
 
@@ -102,20 +94,25 @@ impl Default for Inner {
         Self {
             next_id: 0,
             sessions: HashMap::new(),
-            registry: Arc::new(default_provider_registry().0),
+            registry: Arc::new(ProviderRegistry::default()),
         }
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SessionStore {
     inner: RwLock<Inner>,
 }
 
 impl SessionStore {
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new() -> Result<Self, EditorError> {
+        Ok(Self {
+            inner: RwLock::new(Inner {
+                next_id: 0,
+                sessions: HashMap::new(),
+                registry: Arc::new(default_provider_registry()?),
+            }),
+        })
     }
 
     /// Create a minimal new project at `dir` (mirrors the CLI's
@@ -169,17 +166,14 @@ impl SessionStore {
         let session = session_lock
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let keys = session
-            .file_to_keys
-            .get(file_path)
-            .cloned()
-            .unwrap_or_default();
+        let keys = session.engine.records.keys_for_file(file_path).to_vec();
 
         let mut records = Vec::with_capacity(keys.len());
         let mut type_seen = Vec::new();
         let mut type_set = HashSet::new();
+        let record_file_map = session.record_file_map();
         for key in &keys {
-            if let Some((_id, record)) = lookup_record_by_key(&session.model, key) {
+            if let Some((_id, record)) = lookup_record_by_key(&session.engine.model, key) {
                 if type_set.insert(record.actual_type.clone()) {
                     type_seen.push(record.actual_type.clone());
                 }
@@ -188,8 +182,8 @@ impl SessionStore {
                     actual_type: record.actual_type.clone(),
                     fields: record_to_field_cells_for_session(
                         record,
-                        &session.model,
-                        &session.key_to_file,
+                        &session.engine.model,
+                        &record_file_map,
                     ),
                 };
                 annotate_ref_files(&mut row.fields, &session);
@@ -207,44 +201,21 @@ impl SessionStore {
         })
     }
 
-    pub fn get_record(
-        &self,
-        id: u32,
-        file_path: &str,
-        record_key: &str,
-    ) -> Result<RecordRow, EditorError> {
-        let session_lock = self.session(id)?;
-        let session = session_lock
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
-        if session.key_to_file.get(record_key).map(String::as_str) != Some(file_path) {
-            return Err(EditorError::not_found(format!(
-                "record `{record_key}` not in `{file_path}`"
-            )));
-        }
-        let (_id, record) = lookup_record_by_key(&session.model, record_key)
-            .ok_or_else(|| EditorError::not_found(format!("record `{record_key}` not found")))?;
-        let mut row = RecordRow {
-            key: record.key.clone(),
-            actual_type: record.actual_type.clone(),
-            fields: record_to_field_cells_for_session(record, &session.model, &session.key_to_file),
-        };
-        annotate_ref_files(&mut row.fields, &session);
-        drop(session);
-        Ok(row)
-    }
-
     pub fn make_default_object(&self, id: u32, type_name: &str) -> Result<FieldValue, EditorError> {
         let session_lock = self.session(id)?;
         let session = session_lock
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let ty = session.schema.resolve_type(type_name).ok_or_else(|| {
-            EditorError::not_found(format!("type `{type_name}` not found in schema"))
-        })?;
+        let ty = session
+            .engine
+            .schema
+            .resolve_type(type_name)
+            .ok_or_else(|| {
+                EditorError::not_found(format!("type `{type_name}` not found in schema"))
+            })?;
         let mut fields = Vec::new();
         for f in &ty.all_fields {
-            let value = default_value_for_ty(&f.ty_ref, f.default.as_ref(), &session.schema);
+            let value = default_value_for_ty(&f.ty_ref, f.default.as_ref(), &session.engine.schema);
             fields.push(FieldCell {
                 name: f.name.clone(),
                 value,
@@ -265,6 +236,7 @@ impl SessionStore {
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
         Ok(session
+            .engine
             .schema
             .resolve_enum(enum_name)
             .map(|e| e.variants.iter().map(|v| v.name.clone()).collect())
@@ -281,9 +253,15 @@ impl SessionStore {
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
         let mut keys: Vec<String> = session
+            .engine
             .model
             .records()
-            .filter(|(_, r)| session.schema.is_assignable(&r.actual_type, expected_type))
+            .filter(|(_, r)| {
+                session
+                    .engine
+                    .schema
+                    .is_assignable(&r.actual_type, expected_type)
+            })
             .map(|(_, r)| r.key.clone())
             .collect();
         drop(session);
@@ -329,26 +307,29 @@ impl SessionStore {
                 .read()
                 .map_err(|_| EditorError::session("session poisoned"))?;
             let new_cfd_value =
-                field_value_to_cfd(new_value, &session.model).map_err(EditorError::write)?;
-            let (_id, record) =
-                lookup_record_by_key(&session.model, record_key).ok_or_else(|| {
+                field_value_to_cfd(new_value, &session.engine.model).map_err(EditorError::write)?;
+            let (_id, record) = lookup_record_by_key(&session.engine.model, record_key)
+                .ok_or_else(|| {
                     EditorError::not_found(format!("record `{record_key}` not found"))
                 })?;
             let host_file = session
-                .key_to_file
-                .get(&record.key)
-                .cloned()
+                .engine
+                .records
+                .file_for_key(&record.key)
+                .map(str::to_string)
                 .unwrap_or_else(|| file_path.to_string());
             let source = session
-                .source_for_file
-                .get(&host_file)
-                .cloned()
+                .engine
+                .files
+                .source_for_display(&host_file)
+                .and_then(|source_id| session.engine.sources.entries().get(source_id.index()))
+                .map(|entry| entry.source.clone())
                 .ok_or_else(|| {
                     EditorError::write(format!(
                         "no resolved source recorded for file `{host_file}` (cannot dispatch write)"
                     ))
                 })?;
-            let origin = resolve_effective_origin(&session.model, record, field_path);
+            let origin = resolve_effective_origin(&session.engine.model, record, field_path);
             let actual_type = record.actual_type.clone();
 
             let writer: Arc<dyn DataWriter> =
@@ -365,13 +346,13 @@ impl SessionStore {
                 actual_type: &actual_type,
                 field_path: &path_segments,
                 new_value: &new_cfd_value,
-                schema: &session.schema,
+                schema: &session.engine.schema,
                 source: &source,
             };
             let write_ctx = WriteContext {
                 project_root: &session.project_root,
-                schema: &session.schema,
-                model: Some(&session.model),
+                schema: &session.engine.schema,
+                model: Some(&session.engine.model),
             };
             writer
                 .write_field(write_ctx, &write_request)
@@ -408,13 +389,19 @@ impl SessionStore {
         let session = session_lock
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let (_id, record) = lookup_record_by_key(&session.model, record_key).ok_or_else(|| {
-            EditorError::not_found(format!("record `{record_key}` not found after write"))
-        })?;
+        let (_id, record) =
+            lookup_record_by_key(&session.engine.model, record_key).ok_or_else(|| {
+                EditorError::not_found(format!("record `{record_key}` not found after write"))
+            })?;
+        let record_file_map = session.record_file_map();
         let mut row = RecordRow {
             key: record.key.clone(),
             actual_type: record.actual_type.clone(),
-            fields: record_to_field_cells_for_session(record, &session.model, &session.key_to_file),
+            fields: record_to_field_cells_for_session(
+                record,
+                &session.engine.model,
+                &record_file_map,
+            ),
         };
         annotate_ref_files(&mut row.fields, &session);
         Ok(WriteFieldOutcome {

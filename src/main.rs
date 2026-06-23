@@ -14,16 +14,14 @@
 #![allow(clippy::multiple_crate_versions)]
 
 use clap::{Args, Parser, Subcommand};
-use coflow_cft::CftDiagnostic;
-use coflow_pipeline::{
+use coflow::commands::{
     build_project, check_project, export_project_data, generate_project_code, BuildOptions,
-    CodegenOptions, ExportOptions, PipelineOutcome, CSHARP_CODEGEN_ID, JSON_EXPORTER_ID,
+    CodegenOptions, CommandOutcome, ExportOptions, CSHARP_CODEGEN_ID, JSON_EXPORTER_ID,
     MESSAGEPACK_EXPORTER_ID,
 };
-use coflow_project::{
-    compile_schema_project, dedupe_cft_diagnostics, diagnostic_json_from_set, DiagnosticJson,
-    Project,
-};
+use coflow::diagnostics::{diagnostic_json_from_set, DiagnosticJson};
+use coflow_cft::CftDiagnostic;
+use coflow_project::{compile_schema_project, dedupe_cft_diagnostics, Project};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -267,23 +265,25 @@ fn run_lsp(args: &LspArgs) -> Result<bool, String> {
 
 fn project_check(args: &ProjectCheckArgs) -> Result<bool, String> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    let registry = coflow::builtin_registry().map_err(|err| err.to_string())?;
-    match check_project(&project, &registry)
-        .map_err(|message| relativize_message_paths(&message, &project.root_dir))?
+    let root_dir = project.root_dir.clone();
+    let config_path = project.config_path.clone();
+    let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
+    match check_project(project, &registry)
+        .map_err(|message| relativize_message_paths(&message, &root_dir))?
     {
-        PipelineOutcome::Success(_) => {
+        CommandOutcome::Success(_) => {
             if args.json {
                 write_json_diagnostics(Vec::new())?;
             } else {
                 println!(
                     "Project check passed: {}",
-                    project_path(&project, &project.config_path)
+                    display_path(&config_path.display().to_string(), Some(&root_dir))
                 );
             }
             Ok(true)
         }
-        PipelineOutcome::Diagnostics(diagnostics) => {
-            write_project_diagnostics(diagnostics, args.json, &project.root_dir)?;
+        CommandOutcome::Diagnostics(diagnostics) => {
+            write_project_diagnostics(diagnostics, args.json, &root_dir)?;
             Ok(false)
         }
     }
@@ -292,38 +292,40 @@ fn project_check(args: &ProjectCheckArgs) -> Result<bool, String> {
 fn project_build(args: &BuildArgs) -> Result<bool, String> {
     let mut project = Project::open_schema_only(args.config_or_dir.as_deref())?;
     override_code_namespace(&mut project, args.namespace.as_deref());
-    let registry = coflow::builtin_registry().map_err(|err| err.to_string())?;
+    let root_dir = project.root_dir.clone();
+    let config_path = project.config_path.clone();
+    let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
     match build_project(
-        &project,
+        project,
         &registry,
         BuildOptions {
             data_out_dir: args.data_out_dir.as_deref(),
             code_out_dir: args.code_out_dir.as_deref(),
         },
     )
-    .map_err(|message| relativize_message_paths(&message, &project.root_dir))?
+    .map_err(|message| relativize_message_paths(&message, &root_dir))?
     {
-        PipelineOutcome::Success(report) => {
+        CommandOutcome::Success(report) => {
             println!(
                 "{} data exported to {}",
                 report.data.display_name,
-                project_path(&project, &report.data.dir)
+                display_path(&report.data.dir.display().to_string(), Some(&root_dir))
             );
             if let Some(code) = report.code {
                 println!(
                     "{} code generated to {}",
                     code.display_name,
-                    project_path(&project, &code.dir)
+                    display_path(&code.dir.display().to_string(), Some(&root_dir))
                 );
             }
             println!(
                 "Build completed: {}",
-                project_path(&project, &project.config_path)
+                display_path(&config_path.display().to_string(), Some(&root_dir))
             );
             Ok(true)
         }
-        PipelineOutcome::Diagnostics(diagnostics) => {
-            write_project_diagnostics(diagnostics, false, &project.root_dir)?;
+        CommandOutcome::Diagnostics(diagnostics) => {
+            write_project_diagnostics(diagnostics, false, &root_dir)?;
             Ok(false)
         }
     }
@@ -331,26 +333,27 @@ fn project_build(args: &BuildArgs) -> Result<bool, String> {
 
 fn export_json(args: &ExportJsonArgs) -> Result<bool, String> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    let registry = coflow::builtin_registry().map_err(|err| err.to_string())?;
+    let root_dir = project.root_dir.clone();
+    let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
     match export_project_data(
-        &project,
+        project,
         &registry,
         JSON_EXPORTER_ID,
         ExportOptions {
             out_dir: args.out_dir.as_deref(),
         },
     )
-    .map_err(|message| relativize_message_paths(&message, &project.root_dir))?
+    .map_err(|message| relativize_message_paths(&message, &root_dir))?
     {
-        PipelineOutcome::Success(report) => {
+        CommandOutcome::Success(report) => {
             println!(
                 "JSON data exported to {}",
-                project_path(&project, &report.dir)
+                display_path(&report.dir.display().to_string(), Some(&root_dir))
             );
             Ok(true)
         }
-        PipelineOutcome::Diagnostics(diagnostics) => {
-            write_project_diagnostics(diagnostics, false, &project.root_dir)?;
+        CommandOutcome::Diagnostics(diagnostics) => {
+            write_project_diagnostics(diagnostics, false, &root_dir)?;
             Ok(false)
         }
     }
@@ -358,26 +361,27 @@ fn export_json(args: &ExportJsonArgs) -> Result<bool, String> {
 
 fn export_messagepack(args: &ExportMessagePackArgs) -> Result<bool, String> {
     let project = Project::open_schema_only(args.config_or_dir.as_deref())?;
-    let registry = coflow::builtin_registry().map_err(|err| err.to_string())?;
+    let root_dir = project.root_dir.clone();
+    let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
     match export_project_data(
-        &project,
+        project,
         &registry,
         MESSAGEPACK_EXPORTER_ID,
         ExportOptions {
             out_dir: args.out_dir.as_deref(),
         },
     )
-    .map_err(|message| relativize_message_paths(&message, &project.root_dir))?
+    .map_err(|message| relativize_message_paths(&message, &root_dir))?
     {
-        PipelineOutcome::Success(report) => {
+        CommandOutcome::Success(report) => {
             println!(
                 "MessagePack data exported to {}",
-                project_path(&project, &report.dir)
+                display_path(&report.dir.display().to_string(), Some(&root_dir))
             );
             Ok(true)
         }
-        PipelineOutcome::Diagnostics(diagnostics) => {
-            write_project_diagnostics(diagnostics, false, &project.root_dir)?;
+        CommandOutcome::Diagnostics(diagnostics) => {
+            write_project_diagnostics(diagnostics, false, &root_dir)?;
             Ok(false)
         }
     }
@@ -386,26 +390,27 @@ fn export_messagepack(args: &ExportMessagePackArgs) -> Result<bool, String> {
 fn codegen_csharp(args: &CodegenCsharpArgs) -> Result<bool, String> {
     let mut project = Project::open_schema_only(args.config_or_dir.as_deref())?;
     override_code_namespace(&mut project, args.namespace.as_deref());
-    let registry = coflow::builtin_registry().map_err(|err| err.to_string())?;
+    let root_dir = project.root_dir.clone();
+    let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
     match generate_project_code(
-        &project,
+        project,
         &registry,
         CSHARP_CODEGEN_ID,
         CodegenOptions {
             out_dir: args.out_dir.as_deref(),
         },
     )
-    .map_err(|message| relativize_message_paths(&message, &project.root_dir))?
+    .map_err(|message| relativize_message_paths(&message, &root_dir))?
     {
-        PipelineOutcome::Success(report) => {
+        CommandOutcome::Success(report) => {
             println!(
                 "C# code generated to {}",
-                project_path(&project, &report.dir)
+                display_path(&report.dir.display().to_string(), Some(&root_dir))
             );
             Ok(true)
         }
-        PipelineOutcome::Diagnostics(diagnostics) => {
-            write_project_diagnostics(diagnostics, false, &project.root_dir)?;
+        CommandOutcome::Diagnostics(diagnostics) => {
+            write_project_diagnostics(diagnostics, false, &root_dir)?;
             Ok(false)
         }
     }

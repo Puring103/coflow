@@ -5,10 +5,10 @@
 //! [`umya-spreadsheet`](https://docs.rs/umya-spreadsheet) so existing styles,
 //! merged cells, and column widths survive round-trips.
 use coflow_api::{
-    CfdValue, DataWriter, Diagnostic, DiagnosticSet, RecordOrigin, SourceDocument,
-    WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome, WriterCapabilities,
-    WriterDescriptor,
+    DataWriter, Diagnostic, DiagnosticSet, RecordOrigin, SourceDocument, WriteCellRequest,
+    WriteContext, WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
+use coflow_loader_table_core::cell_value::{render_cell_value, CellRenderError};
 use std::path::Path;
 
 pub const EXCEL_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
@@ -72,7 +72,7 @@ impl DataWriter for ExcelWriter {
                     ),
                 ))
             })?;
-        let cell_value = render_cell_value(request.new_value)?;
+        let cell_value = render_cell_value(request.new_value).map_err(excel_render_error)?;
 
         write_cell(path, sheet, *row, column, &cell_value)?;
 
@@ -114,54 +114,6 @@ fn resolve_column(
         }
     }
     None
-}
-
-/// Render a `CfdValue` into a textual cell payload. Matches the `cell_value`
-/// parser's expectations on the read path so a round-trip preserves meaning.
-fn render_cell_value(value: &CfdValue) -> Result<String, DiagnosticSet> {
-    use std::fmt::Write;
-    match value {
-        CfdValue::Null => Ok(String::new()),
-        CfdValue::Bool(v) => Ok(v.to_string()),
-        CfdValue::Int(v) => Ok(v.to_string()),
-        CfdValue::Float(v) => Ok(v.to_string()),
-        CfdValue::String(v) => Ok(v.clone()),
-        CfdValue::Enum(e) => Ok(e.variant.clone().unwrap_or_else(|| e.value.to_string())),
-        CfdValue::Ref { key, .. } => Ok(format!("@{key}")),
-        CfdValue::Array(items) => {
-            let mut out = String::from("[");
-            for (idx, item) in items.iter().enumerate() {
-                if idx > 0 {
-                    out.push_str(", ");
-                }
-                out.push_str(&render_cell_value(item)?);
-            }
-            out.push(']');
-            Ok(out)
-        }
-        CfdValue::Dict(entries) => {
-            let mut out = String::from("{");
-            for (idx, (key, value)) in entries.iter().enumerate() {
-                if idx > 0 {
-                    out.push_str(", ");
-                }
-                let key_text = match key {
-                    coflow_api::CfdDictKey::String(s) => format!("{s:?}"),
-                    coflow_api::CfdDictKey::Int(n) => n.to_string(),
-                    coflow_api::CfdDictKey::Enum(e) => {
-                        e.variant.clone().unwrap_or_else(|| e.value.to_string())
-                    }
-                };
-                let _ = write!(out, "{key_text}: {}", render_cell_value(value)?);
-            }
-            out.push('}');
-            Ok(out)
-        }
-        CfdValue::Object(_) => Err(DiagnosticSet::one(diag(
-            "EXCEL-WRITE",
-            "writing nested object values into excel cells is not supported",
-        ))),
-    }
 }
 
 #[allow(clippy::cast_possible_truncation)]
@@ -252,4 +204,16 @@ fn humanize_io_error(path: &Path, err: &std::io::Error, action: &str) -> String 
 
 fn diag(code: &'static str, message: impl Into<String>) -> Diagnostic {
     Diagnostic::error(code, "EXCEL", message)
+}
+
+fn excel_render_error(err: CellRenderError) -> DiagnosticSet {
+    let message = match err {
+        CellRenderError::AnonymousEnum => {
+            "writing anonymous enum values into excel cells is not supported"
+        }
+        CellRenderError::NestedObject => {
+            "writing nested object values into excel cells is not supported"
+        }
+    };
+    DiagnosticSet::one(diag("EXCEL-WRITE", message))
 }
