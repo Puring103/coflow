@@ -134,7 +134,7 @@ record key 必须是 string identifier。同一具体类型内 record key 必须
 
 ## Localized record key 校验
 
-包含 `@localized` 字段的 record，其 record key 必须是合法 CFT 标识符（Unicode XID）。否则报 `CFD-DATA-014 LocalizedRecordKeyInvalid`。该校验在数据模型构建阶段执行，使翻译表 key 生成始终输出合法标识符序列。
+包含 `@localized` 字段的 record，其 record key 仍需满足通用的 record key 规则（合法 CFT 标识符），由现有 `CFD-DATA-013 InvalidRecordKey` 路径覆盖。`CFD-DATA-014` 当前保留，等到 record key 与翻译表 key 规则发生分化时再启用。
 
 ---
 
@@ -142,7 +142,7 @@ record key 必须是 string identifier。同一具体类型内 record key 必须
 
 | 错误码 | 名称 | 含义 |
 |--------|------|------|
-| `CFD-DATA-014` | `LocalizedRecordKeyInvalid` | 含 `@localized` 字段的 record 其 key 不是合法 CFT 标识符 |
+| `CFD-DATA-014` | `LocalizedRecordKeyInvalid` | 保留：将来用于 record key 与翻译 key 规则分化 |
 | `CFD-DATA-015` | `SingletonRecordCountInvalid` | `@singleton` type 的 records 数量不等于 1 |
 | `CFD-DATA-016` | `SingletonKeyMissingOrInvalid` | `@singleton` type 的 record key 缺失或非合法 CFT 标识符 |
 | `CFD-DATA-017` | `SingletonKeyCollision` | 不同 `@singleton` type 的 record key 撞名 |

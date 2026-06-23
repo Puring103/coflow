@@ -15,6 +15,8 @@
 )]
 #![allow(clippy::multiple_crate_versions)]
 
+pub mod localization;
+
 use coflow_api::{
     map_diagnostics_with_origins, origins_of, CfdInputRecord, CftContainer, Diagnostic,
     DiagnosticSet, Label, LoadContext, LoadedRecords, LoaderSelectionError, ProjectSourceRef,
@@ -391,6 +393,16 @@ pub fn build_project_session(
                 records.index_model_ids(&output.model);
                 diagnostics
                     .extend_with_logical_locations(output.diagnostics, output.logical_locations);
+                // Localization tables are produced from the freshly built
+                // data model. IO failures surface as PROJECT-stage diagnostics.
+                if diagnostics.is_empty() {
+                    let loc_diags = localization::generate_localization_tables(
+                        &project,
+                        &schema,
+                        &output.model,
+                    );
+                    diagnostics.extend(loc_diags);
+                }
                 (output.model, output.dependencies)
             }
             Err(load_diagnostics) => {

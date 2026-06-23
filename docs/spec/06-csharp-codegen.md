@@ -106,6 +106,8 @@ schema 可空字段生成 `T?`。不可空集合缺省为空集合；JSON loader
 
 `@keyAsEnum(EnumName)` 会把对应 table 的 record key 类型从 `string` 提升为 `EnumName`，并把引用 key reader 也切换为该 enum。
 
+> **状态**：当前实现的范围 — 单例 type 不会被生成 `Tb*` table 访问器（schema_view 已正确过滤），但入口类上的单例属性、`Localized<T>` 包装类型与运行时 helper 文件尚未集成到模板渲染层。详见各小节末尾的"已知限制"。
+
 ### 3.1 `@singleton`
 
 被 `@singleton` 标记的 type 不生成 `Tb*` table 访问器。入口类直接挂一个以该 type 唯一 record 的 key 命名的属性，类型为 type 本身。属性名直接使用 record key 原文，不做 PascalCase 转换：

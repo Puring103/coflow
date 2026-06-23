@@ -88,7 +88,21 @@ impl SchemaView {
     }
 
     pub fn table_names(&self) -> Vec<String> {
-        self.non_abstract_type_names()
+        self.types
+            .values()
+            .filter(|ty| !ty.is_abstract && !ty.is_singleton)
+            .map(|ty| ty.name.clone())
+            .collect()
+    }
+
+    /// Names of `@singleton` types, in declaration order.
+    #[allow(dead_code)]
+    pub fn singleton_type_names(&self) -> Vec<String> {
+        self.types
+            .values()
+            .filter(|ty| ty.is_singleton)
+            .map(|ty| ty.name.clone())
+            .collect()
     }
 
     pub fn polymorphic_type_names(&self) -> Vec<String> {
@@ -206,6 +220,7 @@ pub struct TypeMeta {
     pub name: String,
     pub parent: Option<String>,
     pub is_abstract: bool,
+    pub is_singleton: bool,
     pub key_as_enum: Option<String>,
     pub all_fields: Vec<FieldMeta>,
 }
@@ -216,6 +231,7 @@ impl TypeMeta {
             name: schema_type.name.clone(),
             parent: schema_type.parent.clone(),
             is_abstract: schema_type.is_abstract,
+            is_singleton: schema_type.is_singleton,
             key_as_enum: annotation_name_arg(&schema_type.annotations, "keyAsEnum"),
             all_fields: schema_type
                 .all_fields

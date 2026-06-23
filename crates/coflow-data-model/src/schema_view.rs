@@ -134,6 +134,7 @@ impl SchemaView {
     }
 
     /// Whether the type (or any ancestor) declares a localized field.
+    #[allow(dead_code)]
     pub(crate) fn has_localized_field(&self, type_name: &str) -> bool {
         self.full_fields(type_name)
             .iter()

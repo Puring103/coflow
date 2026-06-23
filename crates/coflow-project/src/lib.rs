@@ -35,6 +35,21 @@ pub struct ProjectConfig {
     pub sources: Vec<SourceConfig>,
     #[serde(default)]
     pub outputs: OutputsConfig,
+    #[serde(default)]
+    pub localization: Option<LocalizationConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LocalizationConfig {
+    #[serde(default = "default_localization_out_dir")]
+    pub out_dir: PathBuf,
+    #[serde(default)]
+    pub languages: Vec<String>,
+}
+
+fn default_localization_out_dir() -> PathBuf {
+    PathBuf::from("data/localization")
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -505,6 +520,42 @@ fn validate_project_config_schema_only_collecting(
     diagnostics.extend(validate_schema_config_collecting(root_dir, &config.schema));
     diagnostics.extend(validate_outputs_collecting(&config.outputs));
     diagnostics.extend(validate_source_shapes_collecting(&config.sources));
+    if let Some(loc) = &config.localization {
+        diagnostics.extend(validate_localization_collecting(loc));
+    }
+    diagnostics
+}
+
+fn validate_localization_collecting(config: &LocalizationConfig) -> Vec<ProjectDiagnostic> {
+    let mut diagnostics = Vec::new();
+    let mut seen = BTreeSet::new();
+    for (index, lang) in config.languages.iter().enumerate() {
+        let key_path = vec![
+            "localization".to_string(),
+            "languages".to_string(),
+            index.to_string(),
+        ];
+        if lang == "default" {
+            diagnostics.push(ProjectDiagnostic::new(
+                "localization.languages cannot include reserved code `default`",
+                key_path.clone(),
+            ));
+            continue;
+        }
+        if !coflow_cft::is_cft_identifier(lang) {
+            diagnostics.push(ProjectDiagnostic::new(
+                format!("localization.languages[{index}] `{lang}` is not a valid CFT identifier"),
+                key_path.clone(),
+            ));
+            continue;
+        }
+        if !seen.insert(lang.clone()) {
+            diagnostics.push(ProjectDiagnostic::new(
+                format!("localization.languages contains duplicate code `{lang}`"),
+                key_path,
+            ));
+        }
+    }
     diagnostics
 }
 

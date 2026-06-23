@@ -59,13 +59,17 @@ impl ModelCompiler {
 
         // Phase 2: build primary / secondary / polymorphic indexes.
         let (tables, inheritance_index) = self.build_indexes(&drafts);
-        if !self.diagnostics.is_empty() {
-            return Err(CfdDiagnostics::new(self.diagnostics));
-        }
 
-        // Phase 2b: singleton + localized record-key validation.
+        // Phase 2b: singleton validation. We run this even when phase 2 has
+        // already collected diagnostics so that singleton-specific codes
+        // (SingletonRecordCountInvalid / SingletonKeyMissingOrInvalid /
+        // SingletonKeyCollision) are surfaced alongside generic ones; this
+        // gives users a complete picture in a single build pass.
+        // Localized record-key identifier requirements are already covered by
+        // the generic `InvalidRecordKey` path because `record_key_ident_error`
+        // and `is_cft_identifier` currently use the same rule set; the spec
+        // leaves `LocalizedRecordKeyInvalid` reserved for future divergence.
         self.validate_singletons(&drafts, &tables);
-        self.validate_localized_record_keys(&drafts);
         if !self.diagnostics.is_empty() {
             return Err(CfdDiagnostics::new(self.diagnostics));
         }
@@ -293,31 +297,6 @@ impl ModelCompiler {
         }
     }
 
-    fn validate_localized_record_keys(&mut self, drafts: &[RecordDraft]) {
-        for (index, draft) in drafts.iter().enumerate() {
-            if !self.schema.has_localized_field(&draft.actual_type) {
-                continue;
-            }
-            if draft.key.is_empty() {
-                continue;
-            }
-            if !is_cft_identifier(&draft.key) {
-                self.push(
-                    CfdDiagnostic::error(
-                        CfdErrorCode::LocalizedRecordKeyInvalid,
-                        format!(
-                            "record key `{}` is not a valid CFT identifier; required for localized fields in type `{}`",
-                            draft.key, draft.actual_type
-                        ),
-                    )
-                    .with_primary(
-                        Some(CfdRecordId::new(index)),
-                        CfdPath::root().field("id"),
-                    ),
-                );
-            }
-        }
-    }
 }
 
 /// Validation and resolution helper.

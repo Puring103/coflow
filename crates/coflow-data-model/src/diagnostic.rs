@@ -211,7 +211,6 @@ pub enum CfdErrorCode {
     InvalidRecordKey,
     DuplicateId,
     DuplicatePolymorphicId,
-    LocalizedRecordKeyInvalid,
     SingletonRecordCountInvalid,
     SingletonKeyMissingOrInvalid,
     SingletonKeyCollision,
@@ -241,7 +240,6 @@ impl CfdErrorCode {
             Self::DuplicateId => "CFD-DATA-011",
             Self::DuplicatePolymorphicId => "CFD-DATA-012",
             Self::InvalidRecordKey => "CFD-DATA-013",
-            Self::LocalizedRecordKeyInvalid => "CFD-DATA-014",
             Self::SingletonRecordCountInvalid => "CFD-DATA-015",
             Self::SingletonKeyMissingOrInvalid => "CFD-DATA-016",
             Self::SingletonKeyCollision => "CFD-DATA-017",
@@ -275,8 +273,7 @@ impl CfdErrorCode {
     pub fn is_data_model_localized_or_singleton(self) -> bool {
         matches!(
             self,
-            Self::LocalizedRecordKeyInvalid
-                | Self::SingletonRecordCountInvalid
+            Self::SingletonRecordCountInvalid
                 | Self::SingletonKeyMissingOrInvalid
                 | Self::SingletonKeyCollision
         )
