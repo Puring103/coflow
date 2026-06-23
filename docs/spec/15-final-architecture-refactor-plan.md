@@ -85,7 +85,7 @@ editors/cfd-editor -> coflow-engine
 coflow-lsp         -> coflow-engine
 ```
 
-依赖关系图分两张看。第一张只画跨层主依赖，避免把底层细节和 provider 注册揉在一起。
+依赖关系图分两张看。图描述的是目标态，包含部分当前尚未落地的 crate；实施时按阶段迁入，不把它误读为当前 workspace 的完整 crate 列表。第一张只画跨层主依赖，避免把底层细节和 provider 注册揉在一起。
 
 ```mermaid
 flowchart TB
@@ -188,7 +188,7 @@ flowchart LR
     Cfd --> Cft
 ```
 
-图中 CLI、editor 应用、LSP 都是宿主层。`editors/cfd-editor/src-tauri` 不单独作为一层，它属于 `editors/cfd-editor` 这个 editor 应用，原 `coflow-editor-core` 的后端能力迁入这里。图中也没有 `coflow-pipeline`，因为最终方案会删除这个 crate。运行时依赖进入 `coflow-engine`，CLI 命令产物流程进入根 crate `coflow`。
+图中 CLI、editor 应用、LSP 都是宿主层。`editors/cfd-editor/src-tauri` 不单独作为一层，它属于 `editors/cfd-editor` 这个 editor 应用；当前它仍通过 crate 依赖使用 `coflow-editor-core`，迁移后原 `coflow-editor-core` 的后端能力进入 `src-tauri` 内部模块，并删除独立 crate。图中也没有 `coflow-pipeline`，因为最终方案会删除这个 crate。运行时依赖进入 `coflow-engine`，CLI 命令产物流程进入根 crate `coflow`。
 
 依赖规则不是“只能依赖相邻层”。本项目更应该要求依赖方向严格，而不是强行做成一层套一层：
 
@@ -199,13 +199,15 @@ flowchart LR
 - LSP 可以直接依赖 `coflow-cft` / `coflow-cfd`，因为 completion、hover、semantic tokens 需要语法 AST。
 - 跨层依赖只允许用于稳定核心类型和协议边界，不能拿来绕过 engine 重新实现项目运行时。
 
-默认 provider 注册由 `coflow-builtins` 提供，只做一件事：
+默认 provider 注册由 `coflow-builtins` 提供。它是注册聚合 crate，不是新的 provider 算法实现层；当前根 CLI 内部的 `src/builtins.rs` 先抽到这里，再让 CLI、editor、LSP 复用同一个入口。它只做一件事：
 
 ```rust
 pub fn default_provider_registry() -> ProviderRegistry
 ```
 
 除此之外不扩大它的职责。
+
+宿主层依赖 `coflow-builtins` 只是为了装配默认 `ProviderRegistry`。`coflow-engine` 接受调用方传入的 registry，不依赖 `coflow-builtins`，也不直接依赖具体 provider。
 
 ## 各 crate 职责
 
@@ -686,7 +688,7 @@ CLI command
 改动：
 
 - 新增 `crates/coflow-engine`。
-- 新增 `coflow-builtins::default_provider_registry()`，作为 engine/editor/LSP 迁移期间的唯一默认 provider 注册入口。
+- 从根 CLI 当前 `src/builtins.rs` 抽出 `coflow-builtins::default_provider_registry()`，作为 CLI/editor/LSP 迁移期间的唯一默认 provider 注册入口。
 - 将 `coflow-pipeline/src/data.rs` 中的 `load_project_data`、`resolve_sources`、`configured_source` 等运行时逻辑迁入 engine。
 - engine 接受 `Project`、`ProviderRegistry`，不直接依赖具体 provider。
 - engine 输出 `ProjectSession`。
@@ -712,13 +714,15 @@ CLI command
 
 验收：
 
-- workspace 不再包含 `coflow-pipeline`。
+- Cargo workspace 不再包含 `coflow-pipeline`。
 - engine 中没有 CLI 输出、产物落盘、暂存、提交职责。
 - CLI 仍能执行 check/export/codegen/build。
 
 ### 阶段 5：合并并迁移 editor
 
 目标：删除 `crates/coflow-editor-core`，把 editor 后端核心迁入 `editors/cfd-editor/src-tauri`，并让 editor 不再维护第二套 project runtime。
+
+当前 `editors/cfd-editor/src-tauri` 仍依赖 `crates/coflow-editor-core`。本阶段先迁 DTO、graph、edit 命令桥接等 editor 后端能力，再删除旧 crate 依赖。
 
 改动：
 
@@ -734,7 +738,7 @@ CLI command
 
 - 删除 editor 中重复的 source resolve/load/model build/check 代码。
 - editor 与 CLI 对同一项目给出一致诊断。
-- workspace 不再包含 `coflow-editor-core`。
+- Cargo workspace 不再包含 `coflow-editor-core`。
 
 ### 阶段 6：迁移 LSP
 
@@ -772,12 +776,12 @@ CLI command
 
 改动：
 
-- 新增 `coflow-loader-table-core`。
+- 新增 `coflow-loader-table-core`。这是待新增 crate，负责接收当前 `coflow-api::table` 和 `coflow-api::cell_value` 中的表格共享逻辑。
 - 将 `coflow-api::table` 迁入 `coflow-loader-table-core`。
 - 将 `coflow-api::cell_value` 迁入 `coflow-loader-table-core`，作为表格/cell 解析共享能力。
 - `coflow-loader-excel` 和 `coflow-loader-lark` 改为依赖 `coflow-loader-table-core`。
-- 新增 `coflow-exporter-core`。
-- 将 `coflow-api::export` 中的 `ExportEncoder`、`ExportError`、`export_model_with_encoder` 迁入 `coflow-exporter-core`。
+- 完成 `coflow-exporter-core` 收口：把 `ExportEncoder`、`ExportError`、`export_model_with_encoder` 作为唯一实现保留在 `coflow-exporter-core`。
+- 删除 `coflow-api::export` 旧模块和 crate root re-export，避免 exporter traversal 在 `coflow-api` 和 `coflow-exporter-core` 中并存。
 - `coflow-exporter-json` 和 `coflow-exporter-messagepack` 改为依赖 `coflow-exporter-core`。
 - `coflow-api` 保留 provider trait、diagnostics、source location、artifact、resolved source、write request/outcome 和 provider registry。
 
@@ -795,7 +799,7 @@ CLI command
 改动：
 
 - 核心文档只使用 `Project` 表示 coflow.yaml 根。
-- `workspace` 只出现在 editor/LSP 宿主层语境。
+- `workspace` 只出现在 editor/LSP 宿主层语境；Cargo 语境统一写成 `Cargo workspace`。
 - 移除旧的 editor diagnostics bucket。
 - 移除 project 中 CLI DTO。
 - 删除不再需要的重复 path/diagnostic helper。
@@ -840,12 +844,12 @@ cargo test --workspace
 
 1. 先做 diagnostics canonical 化。
 2. 再做 source/record/file index。
-3. 引入 `coflow-engine` 和 `coflow-builtins`，迁入运行时逻辑并统一默认 provider 注册入口。
+3. 先从 CLI 内部 builtins 抽出 `coflow-builtins`，再引入 `coflow-engine` 并迁入运行时逻辑。
 4. 拆除 `coflow-pipeline`，把命令产物逻辑迁入 CLI。
 5. 迁移 editor。
 6. 迁移 LSP。
 7. 收口 provider registry，删除 host-local 注册清单。
-8. 瘦身 `coflow-api`，迁出 `coflow-loader-table-core` 和 `coflow-exporter-core`。
+8. 瘦身 `coflow-api`，新增 `coflow-loader-table-core`，并完成 `coflow-exporter-core` 旧 API 清理。
 9. 清理命名、文档和旧依赖。
 
 不要先拆 editor/app 或 language/commands。那些拆分不解决当前主要重复，反而会把重复代码搬到更多 crate 里。
