@@ -99,6 +99,34 @@ fn loads_table_source_with_excel_style_sheet_config() -> TestResult {
 }
 
 #[test]
+fn recognizes_default_id_header_aliases_as_record_key_columns() -> TestResult {
+    let schema = compile_schema("type Item { name: string; }")?;
+
+    for header in ["id", "Id", "ID"] {
+        let key = format!("item_{header}");
+        let source = TableSource::new(
+            format!("remote:sht_{header}"),
+            vec![TableSheet::new(
+                "Item",
+                vec![
+                    vec![header.to_string(), "name".to_string()],
+                    vec![key.clone(), "Potion".to_string()],
+                ],
+            )],
+            vec![TableSheetConfig::new("Item")],
+        );
+
+        let loaded =
+            collect_table_input_records(&schema, &[source]).map_err(|err| format!("{err:?}"))?;
+
+        assert_eq!(loaded.records.len(), 1, "{header}");
+        assert_eq!(loaded.records[0].key, key, "{header}");
+    }
+
+    Ok(())
+}
+
+#[test]
 fn maps_remote_table_data_model_diagnostics_to_remote_cells() -> TestResult {
     let schema = compile_schema("type Item { name: string; }")?;
     let source = TableSource::remote(

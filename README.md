@@ -87,7 +87,7 @@ source 字段会原样传给 provider 作为 options。`path` 可以指向 `.xls
 
 Excel 和飞书电子表格共享同一套 sheet 配置习惯：省略 `sheets` 时默认加载所有
 sheet，sheet 名作为 CFT 类型名，表头文本作为字段名；配置 `sheets` 时可显式映射
-sheet、类型、record key 列和列头。`key` 可省略，默认使用 `id` 表头列；`columns`
+sheet、类型、record key 列和列头。`key` 可省略，默认使用 `id`、`Id` 或 `ID` 表头列；`columns`
 是可选的列头重命名映射，不是白名单。
 
 飞书 source 示例：
@@ -212,7 +212,7 @@ type Monster {
 
 ## Excel 编写要点
 
-- 每个导入 sheet 必须有 `id` 列；它是 record key，不是 CFT 字段。
+- 每个导入 sheet 必须有 `id`、`Id` 或 `ID` 列；它是 record key，不是 CFT 字段。
 - record key 是 string identifier。
 - 名为 `#` 的表头是可选导入控制列；数据行中该列单元格为 `##` 时，整行在
   `id` 或字段解析前跳过。

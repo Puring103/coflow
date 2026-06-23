@@ -24,6 +24,8 @@ fn record_key_identifier_helper_accepts_only_cft_identifiers() {
     for key in [
         "",
         "id",
+        "Id",
+        "ID",
         "type",
         "fire-ball",
         "fire.ball",

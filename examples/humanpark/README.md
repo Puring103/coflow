@@ -33,8 +33,8 @@ cargo run --quiet -- build examples/humanpark
 
 ## 用到的 coflow 特性
 
-- **Excel `id` 特殊列**：每个 sheet 的 `id` 列是记录 key，不需要也不能在
-  CFT 中声明 `id` 字段。check 中的 `id` 是虚拟只读 key。
+- **Excel `id` 特殊列**：每个 sheet 的 `id`、`Id` 或 `ID` 列是记录 key，不需要也不能在
+  CFT 中声明 `id`、`Id` 或 `ID` 字段。check 中的 `id` 是虚拟只读 key。
 - **类型级 `@keyAsEnum` codegen**：用于“key 是策划起的字符串、希望 C# 强类型化”的表
   （`GeneConfig`、`SkinConfig`、`PhaseConfig`、`AbilityConfig`、`SubstanceConfig` 等）。
   build 时按表内实际 key 生成对应的 C# enum（例如 `GeneId.cs`），并让引用字段如
@@ -53,7 +53,7 @@ cargo run --quiet -- build examples/humanpark
 ## Excel 表格式约定
 
 - 每个 sheet 的第一行是字段名；第二行开始是数据行。
-- `id` 列是特殊记录 key 列，不映射到 CFT 字段。
+- `id`、`Id` 或 `ID` 列是特殊记录 key 列，不映射到 CFT 字段。
 - 表头为 `#` 的列是可选导入控制列，不映射到 schema 字段；该列值为 `##`
   的数据行会被 loader 跳过。
 - 空行会被跳过；只填了 id、其它列全空的占位行仍需要用 `# = ##` 显式跳过。
