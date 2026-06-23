@@ -1,6 +1,6 @@
 interface IconProps {
   name:
-    | 'folder' | 'file' | 'file-ghost'
+    | 'folder' | 'file' | 'file-cfd'
     | 'arrow-left' | 'arrow-right'
     | 'plus' | 'close' | 'search' | 'help'
     | 'chevron-right' | 'chevron-down'
@@ -14,7 +14,7 @@ interface IconProps {
 const PATHS: Record<IconProps['name'], string> = {
   'folder':        'M3 5a2 2 0 012-2h3.586a1 1 0 01.707.293l1.414 1.414A1 1 0 0011.414 5H17a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V5z',
   'file':          'M6 3h7l5 5v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2zm7 0v5h5',
-  'file-ghost':    'M6 3h7l5 5v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2zm7 0v5h5',
+  'file-cfd':      'M6 3h7l5 5v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5a2 2 0 012-2zm7 0v5h5M9 14h6M9 17h4',
   'arrow-left':    'M14 6l-6 6 6 6',
   'arrow-right':   'M10 6l6 6-6 6',
   'plus':          'M12 5v14M5 12h14',
