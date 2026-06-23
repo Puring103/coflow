@@ -21,7 +21,7 @@ use coflow_api::{
     ProviderRegistry, RecordOrigin, ResolvedSource, Severity, SourceLocation, SourceLocationSpec,
     SourceResolveContext,
 };
-use coflow_checker::{run_checks_with_deps, DependencyGraph};
+use coflow_checker::run_checks_with_deps;
 use coflow_data_model::{CfdDataModel, CfdDiagnostics, CfdPath, CfdPathSegment, CfdRecordId};
 use coflow_project::{
     compile_schema_project, dedupe_cft_diagnostics, diagnostic_set_from_cft, path_to_slash,
@@ -44,7 +44,7 @@ pub struct ProjectSession {
     pub sources: SourceIndex,
     pub records: RecordIndex,
     pub files: FileIndex,
-    pub dependencies: DependencyGraph,
+    pub dependencies: DependencyIndex,
 }
 
 impl ProjectSession {
@@ -319,6 +319,42 @@ impl FileIndex {
     }
 }
 
+/// Engine-owned dependency view captured during a full check run.
+///
+/// `reads_from[a]` is the set of records `a` reads while evaluating its own
+/// check blocks. The session can invert this graph to compute which records'
+/// checks may need to re-run after edits without exposing checker internals to
+/// hosts.
+#[derive(Debug, Clone, Default)]
+pub struct DependencyIndex {
+    reads_from: BTreeMap<CfdRecordId, BTreeSet<CfdRecordId>>,
+}
+
+impl DependencyIndex {
+    #[must_use]
+    pub const fn reads_from(&self) -> &BTreeMap<CfdRecordId, BTreeSet<CfdRecordId>> {
+        &self.reads_from
+    }
+
+    #[must_use]
+    pub fn affected_by(&self, changed: &[CfdRecordId]) -> Vec<CfdRecordId> {
+        let mut out: BTreeSet<CfdRecordId> = changed.iter().copied().collect();
+        let changed_set: BTreeSet<CfdRecordId> = changed.iter().copied().collect();
+        for (reader, reads) in &self.reads_from {
+            if reads.iter().any(|id| changed_set.contains(id)) {
+                out.insert(*reader);
+            }
+        }
+        out.into_iter().collect()
+    }
+}
+
+fn dependency_index_from_checker_graph(graph: coflow_checker::DependencyGraph) -> DependencyIndex {
+    DependencyIndex {
+        reads_from: graph.reads_from,
+    }
+}
+
 /// Opens, loads, builds, and checks a project into a reusable runtime session.
 ///
 /// # Errors
@@ -362,11 +398,11 @@ pub fn build_project_session(
                     load_diagnostics.diagnostics,
                     load_diagnostics.logical_locations,
                 );
-                (empty_model()?, DependencyGraph::default())
+                (empty_model()?, DependencyIndex::default())
             }
         }
     } else {
-        (empty_model()?, DependencyGraph::default())
+        (empty_model()?, DependencyIndex::default())
     };
 
     Ok(ProjectSession {
@@ -396,14 +432,14 @@ pub fn build_project_schema_session(project: Project) -> Result<ProjectSchemaSes
 #[derive(Debug, Clone)]
 struct ProjectLoadOutput {
     model: CfdDataModel,
-    dependencies: DependencyGraph,
+    dependencies: DependencyIndex,
     diagnostics: DiagnosticSet,
     logical_locations: BTreeMap<usize, DiagnosticLogicalLocation>,
 }
 
 #[derive(Debug)]
 struct CheckOutput {
-    dependencies: DependencyGraph,
+    dependencies: DependencyIndex,
     diagnostics: DiagnosticSet,
     logical_locations: BTreeMap<usize, DiagnosticLogicalLocation>,
 }
@@ -586,7 +622,7 @@ fn run_project_checks(
         (DiagnosticSet::empty(), BTreeMap::new())
     };
     CheckOutput {
-        dependencies,
+        dependencies: dependency_index_from_checker_graph(dependencies),
         diagnostics,
         logical_locations,
     }

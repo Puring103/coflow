@@ -78,11 +78,9 @@ flowchart TB
 
     CLI --> Engine
     Editor --> Engine
-    LSP --> Engine
 
     CLI --> Builtins
     Editor --> Builtins
-    LSP --> Builtins
 
     Engine --> Project
     Engine --> Api
@@ -116,7 +114,7 @@ flowchart TB
 - `coflow-engine` 不依赖具体 provider，只通过 `ProviderRegistry` 和 trait 使用 provider。
 - provider 不依赖 engine、CLI、editor、LSP。
 - 宿主层不承载共享项目生命周期；项目打开、加载、检查、索引和写回重检归 `coflow-engine`。
-- LSP 可以直接依赖 `coflow-cft` / `coflow-cfd`，因为 completion、hover、semantic tokens 需要语法 AST。
+- `coflow-lsp` 当前是 schema-only/text language server，不加载数据源，不装配默认 provider registry；它可以直接依赖 `coflow-cft` / `coflow-cfd`，因为 completion、hover、semantic tokens 需要语法 AST。
 - 跨层依赖只允许用于稳定核心类型和协议边界，不能拿来绕过 engine 重新实现项目运行时。
 
 ## 各 crate 职责

@@ -133,6 +133,26 @@ fn editor_backend_does_not_depend_on_checker_runtime_directly() {
 }
 
 #[test]
+fn engine_public_api_does_not_expose_checker_dependency_graph() {
+    let engine =
+        std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");
+
+    assert!(
+        !engine.contains("use coflow_checker::{run_checks_with_deps, DependencyGraph}"),
+        "coflow-engine should wrap checker dependency graph instead of re-exporting the checker type through ProjectSession"
+    );
+    assert!(
+        !engine.contains("pub dependencies: coflow_checker::DependencyGraph")
+            && !engine.contains("pub dependencies: DependencyGraph,"),
+        "ProjectSession should not expose the checker crate dependency graph type directly"
+    );
+    assert!(
+        !engine.contains("impl From<coflow_checker::DependencyGraph> for DependencyIndex"),
+        "checker dependency graph conversion should stay as an engine-internal helper, not a public From impl"
+    );
+}
+
+#[test]
 fn loaders_do_not_depend_on_checker_runtime_directly() {
     let excel_manifest = std::fs::read_to_string("crates/coflow-loader-excel/Cargo.toml")
         .expect("read excel loader manifest");
@@ -140,6 +160,25 @@ fn loaders_do_not_depend_on_checker_runtime_directly() {
     assert!(
         !excel_manifest.contains("coflow-checker"),
         "loaders should only produce input records; model checks belong in coflow-engine"
+    );
+}
+
+#[test]
+fn lsp_is_documented_as_schema_only_not_engine_runtime_host() {
+    let plan = std::fs::read_to_string("docs/spec/15-final-architecture-refactor-plan.md")
+        .expect("read final architecture plan");
+
+    assert!(
+        !plan.contains("LSP --> Engine"),
+        "final dependency graph should not show coflow-lsp depending on coflow-engine while the LSP remains schema-only"
+    );
+    assert!(
+        !plan.contains("LSP --> Builtins"),
+        "final dependency graph should not show coflow-lsp depending on builtins/provider registry while the LSP remains schema-only"
+    );
+    assert!(
+        plan.contains("schema-only"),
+        "final architecture plan should explicitly document why coflow-lsp does not depend on engine/builtins"
     );
 }
 
