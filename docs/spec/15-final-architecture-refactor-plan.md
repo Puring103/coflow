@@ -106,7 +106,8 @@ flowchart TB
 
     subgraph ProviderLayer["provider 实现"]
         Builtins["coflow-builtins\n默认 provider 注册"]
-        Loaders["loaders\ncfd / excel / lark"]
+        CfdLoader["coflow-loader-cfd"]
+        TableLoaders["table loaders\nexcel / lark"]
         TableCore["coflow-loader-table-core\n表格加载共享核心"]
         Exporters["exporters\njson / messagepack"]
         ExporterCore["coflow-exporter-core\n导出遍历共享核心"]
@@ -114,7 +115,8 @@ flowchart TB
     end
 
     subgraph Core["语言与数据核心"]
-        CoreLibs["coflow-cft\ncoflow-cfd\ncoflow-data-model\ncoflow-checker"]
+        RuntimeCore["coflow-cft\ncoflow-data-model\ncoflow-checker"]
+        CfdSyntax["coflow-cfd\n数据文本语法"]
     end
 
     CLI --> Engine
@@ -127,26 +129,33 @@ flowchart TB
 
     Engine --> Project
     Engine --> Api
-    Engine --> CoreLibs
+    Engine --> RuntimeCore
 
     Project --> Api
-    Project --> CoreLibs
+    Project --> RuntimeCore
 
-    Builtins --> Loaders
+    Builtins --> CfdLoader
+    Builtins --> TableLoaders
     Builtins --> Exporters
     Builtins --> Codegens
 
-    Loaders --> TableCore
-    Loaders --> Api
+    CfdLoader --> Api
+    CfdLoader --> CfdSyntax
+
+    TableLoaders --> TableCore
+    TableLoaders --> Api
     TableCore --> Api
+    TableCore --> RuntimeCore
 
     Exporters --> ExporterCore
     Exporters --> Api
     ExporterCore --> Api
+    ExporterCore --> RuntimeCore
 
     Codegens --> Api
 
-    Api --> CoreLibs
+    Api --> RuntimeCore
+    CfdSyntax --> RuntimeCore
 ```
 
 第二张只展开语言与数据核心内部依赖。
@@ -229,7 +238,7 @@ pub fn default_provider_registry() -> ProviderRegistry
 
 ### 宿主层
 
-- 根 crate `coflow`：CLI。负责命令参数、默认 provider 注册、调用 `coflow-engine`、触发 exporter/codegen provider、产物落盘、输出渲染。
+- 根 crate `coflow`：CLI。负责命令参数、调用 `coflow-builtins::default_provider_registry()`、调用 `coflow-engine`、触发 exporter/codegen provider、产物落盘、输出渲染。
 - `coflow-lsp`：LSP server。负责协议、文档同步、completion/hover/semantic tokens、诊断发布。重构后诊断来源应来自 canonical `DiagnosticSet`，自己只做 LSP JSON 转换。
 - `editors/cfd-editor`：editor 应用。`src-tauri` 是其中的 Tauri 后端 crate，负责桌面应用入口、命令桥接、窗口、前端通信 DTO、graph/table/detail 视图、编辑请求转换。
 
@@ -501,7 +510,7 @@ pub struct ProjectSession {
 
 ### DiagnosticsStore
 
-内部唯一诊断格式是：
+engine 内部唯一诊断事实来源是：
 
 ```rust
 coflow_api::DiagnosticSet
@@ -517,10 +526,18 @@ pub struct DiagnosticsStore {
     by_stage: BTreeMap<String, Vec<DiagnosticId>>,
     by_file: BTreeMap<PathBuf, Vec<DiagnosticId>>,
     by_record: BTreeMap<String, Vec<DiagnosticId>>,
+    logical_locations: BTreeMap<DiagnosticId, DiagnosticLogicalLocation>,
+}
+
+pub struct DiagnosticLogicalLocation {
+    pub record_key: Option<String>,
+    pub field_path: Option<String>,
 }
 ```
 
 `DiagnosticJson`、editor `DiagnosticItem`、LSP diagnostic JSON 都只能是宿主层转换结果，不能进入 engine 内部状态。
+
+`DiagnosticSet` 的 `SourceLocation` 负责最终可展示位置；editor 还需要 `record_key` / `field_path` 这类逻辑定位。engine 在把 `CfdDiagnostics + RecordOrigin` 映射成 `DiagnosticSet` 时，必须同步用 `RecordIndex` 保存 `DiagnosticLogicalLocation`，供 `DiagnosticSet -> DiagnosticItem` 转换使用，避免 editor 在宿主层重新猜测 record/path。
 
 ### SourceIndex / RecordIndex / FileIndex
 
@@ -578,8 +595,8 @@ LSP 的 `file://` URI 仍属于 LSP 宿主层，但应复用统一 path normaliz
 ### 检查和加载
 
 ```text
-Project::open_schema_only
-  -> compile schema
+Project::open / discover schema files
+  -> coflow-engine compiles schema
   -> resolve configured sources
   -> provider.preflight
   -> provider.load
@@ -631,7 +648,7 @@ CLI command
 
 ### 阶段 1：诊断收敛
 
-目标：所有内部模块都以 `DiagnosticSet` 作为唯一诊断格式。
+目标：所有跨模块、engine 边界、宿主层流转都以 `DiagnosticSet` 作为唯一 canonical 诊断格式。
 
 改动：
 
@@ -669,6 +686,7 @@ CLI command
 改动：
 
 - 新增 `crates/coflow-engine`。
+- 新增 `coflow-builtins::default_provider_registry()`，作为 engine/editor/LSP 迁移期间的唯一默认 provider 注册入口。
 - 将 `coflow-pipeline/src/data.rs` 中的 `load_project_data`、`resolve_sources`、`configured_source` 等运行时逻辑迁入 engine。
 - engine 接受 `Project`、`ProviderRegistry`，不直接依赖具体 provider。
 - engine 输出 `ProjectSession`。
@@ -677,6 +695,7 @@ CLI command
 验收：
 
 - CLI check 和 editor build 使用同一条 load/build/check 路径。
+- CLI、editor、LSP 不再各自手写默认 provider 注册清单。
 - `ProjectLoadOutput { model }` 被替换或升级为包含 session/index/diagnostics 的结构。
 
 ### 阶段 4：拆除 coflow-pipeline
@@ -703,7 +722,8 @@ CLI command
 
 改动：
 
-- 将 `crates/coflow-editor-core/src` 下的 session/store/DTO/graph/edit 能力迁入 `editors/cfd-editor/src-tauri/src` 内部模块。
+- 将 `crates/coflow-editor-core/src` 下的 DTO、graph、edit 命令桥接能力迁入 `editors/cfd-editor/src-tauri/src` 内部模块。
+- 旧 session/store 中的 source resolve、load、model build、check 逻辑删除或改为包裹 `ProjectSession`。
 - `editors/cfd-editor/src-tauri` 调用 `coflow-engine` 构建 `ProjectSession`。
 - editor 通信 DTO 从 `ProjectSession` 派生。
 - 写入逻辑使用 `RecordIndex` 找 `RecordOrigin` 和 writer provider。
@@ -732,14 +752,13 @@ CLI command
 - CFT、CFD、project、data diagnostics 走统一转换路径。
 - LSP 中表格/远程来源有明确展示策略；不能定位到打开文件时，显示在 project config 或虚拟诊断源，而不是静默降级为空路径。
 
-### 阶段 7：provider registry 统一
+### 阶段 7：provider registry 收口
 
-目标：新增最小 `coflow-builtins`，统一 CLI、editor、LSP 的默认 provider 注册。
+目标：确认 CLI、editor、LSP 只通过 `coflow-builtins` 获取默认 provider registry，不再保留 host-local 注册清单。
 
 改动：
 
-- 新增 `coflow-builtins::default_provider_registry()`。
-- CLI、editor、LSP 共用它。
+- 删除 CLI、editor、LSP 中残留的默认 provider 手写注册。
 - 不把业务命令、宿主层逻辑、engine 逻辑放入 `coflow-builtins`。
 
 验收：
@@ -821,11 +840,11 @@ cargo test --workspace
 
 1. 先做 diagnostics canonical 化。
 2. 再做 source/record/file index。
-3. 引入 `coflow-engine`，迁入运行时逻辑。
+3. 引入 `coflow-engine` 和 `coflow-builtins`，迁入运行时逻辑并统一默认 provider 注册入口。
 4. 拆除 `coflow-pipeline`，把命令产物逻辑迁入 CLI。
 5. 迁移 editor。
 6. 迁移 LSP。
-7. 新增 `coflow-builtins`，统一默认 provider 注册。
+7. 收口 provider registry，删除 host-local 注册清单。
 8. 瘦身 `coflow-api`，迁出 `coflow-loader-table-core` 和 `coflow-exporter-core`。
 9. 清理命名、文档和旧依赖。
 
