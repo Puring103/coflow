@@ -142,6 +142,24 @@ C# codegen 的 `coflow.enum.lock.json` 写在 `coflow.yaml` 同级，而不是 C
 
 ---
 
+## 本地化配置
+
+`coflow.yaml` 顶层支持可选 `localization` 段。完整规格见 [13-localization.md](13-localization.md)。
+
+```yaml
+localization:
+  out_dir: "data/localization"
+  languages:
+    - "zh_CN"
+    - "en"
+```
+
+`localization.out_dir` 默认 `data/localization`，相对项目根。`localization.languages` 列表中每项必须为合法 CFT 标识符且不为 `default`，列表内不允许重复。
+
+未配置 `localization` 段时，engine 跳过翻译表生成；schema 中 `@localized` 字段仍保留语义，仅默认轮 check 会执行。
+
+---
+
 ## 非职责
 
 - `coflow-project` 不执行 loader、exporter 或 codegen。

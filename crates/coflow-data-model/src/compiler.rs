@@ -9,7 +9,7 @@ use crate::schema_view::{
     input_value_kind, type_accepts_default, CfdType, CfdValueDraft, FieldMeta, RecordDraft,
     SchemaView, SpreadFieldSource,
 };
-use coflow_cft::{record_key_ident_error, CftContainer, CftSchemaDefaultValue};
+use coflow_cft::{is_cft_identifier, record_key_ident_error, CftContainer, CftSchemaDefaultValue};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) struct ModelCompiler {
@@ -59,6 +59,13 @@ impl ModelCompiler {
 
         // Phase 2: build primary / secondary / polymorphic indexes.
         let (tables, inheritance_index) = self.build_indexes(&drafts);
+        if !self.diagnostics.is_empty() {
+            return Err(CfdDiagnostics::new(self.diagnostics));
+        }
+
+        // Phase 2b: singleton + localized record-key validation.
+        self.validate_singletons(&drafts, &tables);
+        self.validate_localized_record_keys(&drafts);
         if !self.diagnostics.is_empty() {
             return Err(CfdDiagnostics::new(self.diagnostics));
         }
@@ -208,6 +215,108 @@ impl ModelCompiler {
 
     fn push(&mut self, diagnostic: CfdDiagnostic) {
         self.diagnostics.push(diagnostic);
+    }
+
+    fn validate_singletons(
+        &mut self,
+        drafts: &[RecordDraft],
+        tables: &BTreeMap<String, CfdTable>,
+    ) {
+        let singleton_names: Vec<String> = self
+            .schema
+            .singleton_types()
+            .map(|meta| meta.name.clone())
+            .collect();
+
+        let mut seen_keys: BTreeMap<String, (String, CfdRecordId)> = BTreeMap::new();
+
+        for type_name in &singleton_names {
+            let Some(table) = tables.get(type_name) else {
+                self.push(
+                    CfdDiagnostic::error(
+                        CfdErrorCode::SingletonRecordCountInvalid,
+                        format!("singleton type `{type_name}` has 0 records (must be exactly 1)"),
+                    )
+                    .with_primary(None, CfdPath::root()),
+                );
+                continue;
+            };
+            if table.records.len() != 1 {
+                let count = table.records.len();
+                self.push(
+                    CfdDiagnostic::error(
+                        CfdErrorCode::SingletonRecordCountInvalid,
+                        format!(
+                            "singleton type `{type_name}` has {count} records (must be exactly 1)"
+                        ),
+                    )
+                    .with_primary(table.records.first().copied(), CfdPath::root()),
+                );
+                continue;
+            }
+            let record_id = table.records[0];
+            let Some(draft) = drafts.get(record_id.index()) else {
+                continue;
+            };
+            if draft.key.is_empty() || !is_cft_identifier(&draft.key) {
+                self.push(
+                    CfdDiagnostic::error(
+                        CfdErrorCode::SingletonKeyMissingOrInvalid,
+                        format!(
+                            "singleton type `{type_name}` record key `{}` is missing or not a valid CFT identifier",
+                            draft.key
+                        ),
+                    )
+                    .with_primary(Some(record_id), CfdPath::root().field("id")),
+                );
+                continue;
+            }
+            if let Some((other_type, first_id)) = seen_keys.get(&draft.key) {
+                self.push(
+                    CfdDiagnostic::error(
+                        CfdErrorCode::SingletonKeyCollision,
+                        format!(
+                            "singleton record key `{}` collides between `{type_name}` and `{other_type}`",
+                            draft.key
+                        ),
+                    )
+                    .with_primary(Some(record_id), CfdPath::root().field("id"))
+                    .with_related(
+                        Some(*first_id),
+                        CfdPath::root().field("id"),
+                        "first occurrence is here",
+                    ),
+                );
+            } else {
+                seen_keys.insert(draft.key.clone(), (type_name.clone(), record_id));
+            }
+        }
+    }
+
+    fn validate_localized_record_keys(&mut self, drafts: &[RecordDraft]) {
+        for (index, draft) in drafts.iter().enumerate() {
+            if !self.schema.has_localized_field(&draft.actual_type) {
+                continue;
+            }
+            if draft.key.is_empty() {
+                continue;
+            }
+            if !is_cft_identifier(&draft.key) {
+                self.push(
+                    CfdDiagnostic::error(
+                        CfdErrorCode::LocalizedRecordKeyInvalid,
+                        format!(
+                            "record key `{}` is not a valid CFT identifier; required for localized fields in type `{}`",
+                            draft.key, draft.actual_type
+                        ),
+                    )
+                    .with_primary(
+                        Some(CfdRecordId::new(index)),
+                        CfdPath::root().field("id"),
+                    ),
+                );
+            }
+        }
     }
 }
 

@@ -539,6 +539,24 @@ impl<'a> SchemaCompiler<'a> {
                     );
                 }
             }
+            if let Some(singleton) = find_annotation(&info.def.annotations, "singleton") {
+                if info.def.is_abstract {
+                    this.push_diag(
+                        CftErrorCode::SingletonOnAbstractType,
+                        &info.module,
+                        singleton.span,
+                        "@singleton cannot be applied to an abstract type",
+                    );
+                }
+                if find_annotation(&info.def.annotations, "keyAsEnum").is_some() {
+                    this.push_diag(
+                        CftErrorCode::SingletonKeyAsEnumConflict,
+                        &info.module,
+                        singleton.span,
+                        "@singleton cannot be combined with @keyAsEnum",
+                    );
+                }
+            }
             if let Some(annotation) = find_annotation(&info.def.annotations, "keyAsEnum") {
                 if let Some(crate::ast::AnnotationArg::Name(enum_name)) = annotation.args.first() {
                     this.validate_key_as_enum_name(&info.module, &enum_name.name, enum_name.span);
@@ -625,8 +643,13 @@ impl<'a> SchemaCompiler<'a> {
                 seen.insert(&annotation.name, annotation.span);
             }
             if !spec.targets.contains(&target) {
+                let code = if annotation.name == "localized" {
+                    CftErrorCode::LocalizedOnInvalidTarget
+                } else {
+                    CftErrorCode::InvalidAnnotationTarget
+                };
                 self.push_diag(
-                    CftErrorCode::InvalidAnnotationTarget,
+                    code,
                     module,
                     annotation.span,
                     format!("@{} cannot be applied to this target", annotation.name),
@@ -658,6 +681,53 @@ impl<'a> SchemaCompiler<'a> {
                     "@expand fields must reference a concrete type (no nullable, arrays, dicts, enums, or primitives)",
                 );
             }
+        }
+        if let Some(annotation) = find_annotation(&field.annotations, "localized") {
+            if let Some(crate::ast::AnnotationArg::String(value, span)) = annotation.args.first() {
+                if !crate::is_cft_identifier(value) {
+                    self.push_diag(
+                        CftErrorCode::LocalizedBucketNotIdentifier,
+                        module,
+                        *span,
+                        format!("@localized bucket `{value}` is not a valid CFT identifier"),
+                    );
+                }
+            }
+        }
+        // Forbid referencing a singleton type from any field type position
+        // (top-level, array element, dict value/key, nullable inner).
+        self.check_no_singleton_reference(module, &field.ty);
+    }
+
+    fn check_no_singleton_reference(&mut self, module: &ModuleId, ty: &TypeRef) {
+        match &ty.kind {
+            TypeRefKind::Named(name) => {
+                if let Some(info) = self.types.get(name) {
+                    if has_annotation(&info.def.annotations, "singleton") {
+                        let owner_module = info.module.clone();
+                        let owner_span = info.def.name_span;
+                        self.diagnostics.push(
+                            CftDiagnostic::error(
+                                CftErrorCode::SingletonNotReferenceable,
+                                module.clone(),
+                                ty.span,
+                                format!(
+                                    "singleton type `{name}` cannot be used as a field type"
+                                ),
+                            )
+                            .with_related(owner_module, owner_span, "singleton is defined here"),
+                        );
+                    }
+                }
+            }
+            TypeRefKind::Array(inner) | TypeRefKind::Nullable(inner) => {
+                self.check_no_singleton_reference(module, inner);
+            }
+            TypeRefKind::Dict(key, value) => {
+                self.check_no_singleton_reference(module, key);
+                self.check_no_singleton_reference(module, value);
+            }
+            _ => {}
         }
     }
 
@@ -976,15 +1046,17 @@ impl<'a> SchemaCompiler<'a> {
                 .def
                 .fields
                 .iter()
-                .map(|field| self.build_schema_field(field))
+                .map(|field| self.build_schema_field(field, name))
                 .collect();
             let all_fields = self.collect_all_schema_fields(name);
+            let is_singleton = has_annotation(&info.def.annotations, "singleton");
             let schema = CftSchemaType {
                 module: info.module.clone(),
                 name: name.clone(),
                 parent: info.def.parent.as_ref().map(|parent| parent.name.clone()),
                 is_abstract: info.def.is_abstract,
                 is_sealed: info.def.is_sealed,
+                is_singleton,
                 fields,
                 all_fields,
                 check: info.def.check.as_ref().map(convert_check_block),
@@ -1005,7 +1077,13 @@ impl<'a> SchemaCompiler<'a> {
         }
     }
 
-    fn build_schema_field(&self, field: &FieldDef) -> CftSchemaField {
+    fn build_schema_field(&self, field: &FieldDef, owner_type: &str) -> CftSchemaField {
+        let localized = find_annotation(&field.annotations, "localized");
+        let is_localized = localized.is_some();
+        let localization_bucket = localized.map(|annotation| match annotation.args.as_slice() {
+            [crate::ast::AnnotationArg::String(value, _)] => value.clone(),
+            _ => owner_type.to_string(),
+        });
         CftSchemaField {
             name: field.name.clone(),
             ty: format_type_ref(&field.ty),
@@ -1016,6 +1094,8 @@ impl<'a> SchemaCompiler<'a> {
                 .as_ref()
                 .and_then(|default| self.schema_default_value(default)),
             annotations: convert_annotations(&field.annotations),
+            is_localized,
+            localization_bucket,
             span: field.span,
         }
     }
@@ -1024,10 +1104,11 @@ impl<'a> SchemaCompiler<'a> {
         self.ancestry_chain(type_name)
             .into_iter()
             .flat_map(|info| {
+                let owner = info.def.name.clone();
                 info.def
                     .fields
                     .iter()
-                    .map(|field| self.build_schema_field(field))
+                    .map(|field| self.build_schema_field(field, &owner))
                     .collect::<Vec<_>>()
             })
             .collect()

@@ -106,6 +106,45 @@ schema 可空字段生成 `T?`。不可空集合缺省为空集合；JSON loader
 
 `@keyAsEnum(EnumName)` 会把对应 table 的 record key 类型从 `string` 提升为 `EnumName`，并把引用 key reader 也切换为该 enum。
 
+### 3.1 `@singleton`
+
+被 `@singleton` 标记的 type 不生成 `Tb*` table 访问器。入口类直接挂一个以该 type 唯一 record 的 key 命名的属性，类型为 type 本身。属性名直接使用 record key 原文，不做 PascalCase 转换：
+
+```cft
+@singleton
+type GameConfig { max_level: int; }   # 数据源里 record key = "main_config"
+```
+
+```csharp
+public sealed partial class CoflowTables
+{
+    public GameConfig main_config { get; }
+    // 无 TbGameConfig
+}
+```
+
+撞名校验：所有 singleton 的 record key 之间、与普通 type 生成的 `Tb*` 访问器之间均不可冲突；冲突在 `CftSchemaType.is_singleton` 校验阶段已由 data model build 处理（`CFD-DATA-017 SingletonKeyCollision`），codegen 在生成期再次去重以避免成员名碰撞。
+
+`@singleton` type 不会被任何字段类型引用（CFT 编译期已禁止），因此 codegen 不为其生成 inline / record-ref loader 路径。
+
+### 3.2 `@localized`
+
+被 `@localized` 标记的字段类型在 C# 端统一包装为 `Localized<T>`，`T` 为字段原 CLR 类型（按 §3 类型映射推导）：
+
+```csharp
+public sealed partial class Item : IEquatable<Item>
+{
+    public string Id { get; }
+    public Localized<string> DisplayName { get; }
+    public Localized<long> SortOrder { get; }
+    public Localized<IReadOnlyList<string>> Tags { get; }
+}
+```
+
+构造时传入 `Key` 与 `Default` 两个值：`Key` 由 codegen 静态拼接（形如 `"Item/potion/name"`），`Default` 来自数据源原始字面量。
+
+运行时 helper（`Localized<T>` 与 `Localization` 入口）一次性生成到 `Coflow.Runtime/Localization.cs`，宿主可替换实现。详见 [13-localization.md](13-localization.md)。
+
 ---
 
 ## 4. 加载器生成

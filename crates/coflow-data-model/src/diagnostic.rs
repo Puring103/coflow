@@ -211,6 +211,10 @@ pub enum CfdErrorCode {
     InvalidRecordKey,
     DuplicateId,
     DuplicatePolymorphicId,
+    LocalizedRecordKeyInvalid,
+    SingletonRecordCountInvalid,
+    SingletonKeyMissingOrInvalid,
+    SingletonKeyCollision,
     RefTargetNotFound,
     CheckFailed,
     CheckEvalTypeError,
@@ -237,6 +241,10 @@ impl CfdErrorCode {
             Self::DuplicateId => "CFD-DATA-011",
             Self::DuplicatePolymorphicId => "CFD-DATA-012",
             Self::InvalidRecordKey => "CFD-DATA-013",
+            Self::LocalizedRecordKeyInvalid => "CFD-DATA-014",
+            Self::SingletonRecordCountInvalid => "CFD-DATA-015",
+            Self::SingletonKeyMissingOrInvalid => "CFD-DATA-016",
+            Self::SingletonKeyCollision => "CFD-DATA-017",
             Self::RefTargetNotFound => "CFD-REF-001",
             Self::CheckFailed => "CFD-CHECK-001",
             Self::CheckEvalTypeError => "CFD-CHECK-002",
@@ -259,6 +267,19 @@ impl CfdErrorCode {
             | Self::CheckEmptyMinMax => CfdStage::Check,
             _ => CfdStage::DataModel,
         }
+    }
+
+    /// Whether this error code is reserved for the data-model singleton/localized
+    /// validation pass. Used by tests to make sure the new pass emits stable codes.
+    #[must_use]
+    pub fn is_data_model_localized_or_singleton(self) -> bool {
+        matches!(
+            self,
+            Self::LocalizedRecordKeyInvalid
+                | Self::SingletonRecordCountInvalid
+                | Self::SingletonKeyMissingOrInvalid
+                | Self::SingletonKeyCollision
+        )
     }
 }
 

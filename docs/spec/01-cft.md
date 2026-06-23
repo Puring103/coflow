@@ -436,8 +436,29 @@ item is null              # null 判断
 | `@keyAsEnum(EnumName)` | `type` | — | EnumName 必须是已声明且没有手写变体的 enum；同一 enum 只能绑定一个 type | build/codegen 按记录 key 填充该 enum，并把记录 `Id` 提升为该 enum |
 | `@display("text")` | `type`、`enum`、`field`、`enum variant` | 任意 | — | 可读名称，codegen 生成 XML 注释，用于编辑器显示 |
 | `@deprecated` | `type`、`enum`、`field`、`enum variant` | 任意 | — | 标记废弃，codegen 输出对应语言的废弃标记；子类不自动继承父类的 `@deprecated` |
+| `@localized` 或 `@localized("bucket")` | `field` | 任意 | bucket 名必须是合法 CFT 标识符 | 字段值按语言变化；详见 [13-localization.md](13-localization.md) |
+| `@singleton` | `type` | — | 不能与 `abstract` 或 `@keyAsEnum` 并用；该 type 不能被任何字段类型引用（含 array/dict/nullable 内层） | 数据集中该 type 仅含 1 条 record；详见 §6.1 |
 
 枚举变体只允许 `@display("text")` 和 `@deprecated`；其他注解用于枚举变体时以 `CFT-SCHEMA-023 InvalidAnnotationTarget` 报错。
+
+### 6.1 `@singleton`
+
+`@singleton` 声明该 type 在数据集合中**有且仅有 1 条 record**。
+
+约束：
+
+- 不可用于 `abstract` 类型；与 `@keyAsEnum` 互斥
+- 允许用在父类型上；singleton 行为指"作为该具体类型的实例只有 1 条"，不影响其子类的 records
+- **该 type 不可被任何字段类型引用**（包括嵌套对象字段、`[T]` 元素、`{K:V}` 的 key 与 value、`T?` 内层）。引用单例需通过 `&key` 或 `@Type.key` 在数据源里写显式 record 引用，不允许在 schema 里把单例当作字段类型嵌套
+- record key 必须显式提供且为合法 CFT 标识符
+- **全局所有 singleton 的 record key 互不相同**（不限父子类，跨整个项目唯一）
+- record key 数量约束在 `CfdDataModel` 构建阶段判定（不在某一具体 loader 阶段判定）
+
+C# codegen 不为 singleton 生成 `Tb*` table 访问器，而是直接在入口类上挂以 record key 命名的属性（详见 [06-csharp-codegen.md](06-csharp-codegen.md)）。
+
+### 6.2 `@localized`
+
+`@localized` 声明字段值随当前语言变化。`@localized` 和 `@localized("bucket")` 两种形式；详见 [13-localization.md](13-localization.md)。
 
 示例：
 
@@ -681,6 +702,11 @@ pub enum CftConstValue {
 | `CFT-SCHEMA-031` | `ReservedIdentifier` | `const`、`enum`、`type`、字段、枚举变体或量词变量使用保留名 |
 | `CFT-SCHEMA-032` | `RefTargetHasNoId` | 保留的历史错误码；record key 由数据源提供 |
 | `CFT-SCHEMA-033` | `RefIdTypeMismatch` | 保留的历史错误码；引用类型兼容在 `CfdDataModel` 阶段检查 |
+| `CFT-SCHEMA-034` | `LocalizedOnInvalidTarget` | `@localized` 用在不支持的目标上 |
+| `CFT-SCHEMA-035` | `LocalizedBucketNotIdentifier` | `@localized("...")` 参数不是合法 CFT 标识符 |
+| `CFT-SCHEMA-036` | `SingletonOnAbstractType` | `@singleton` 用在 `abstract type` 上 |
+| `CFT-SCHEMA-037` | `SingletonKeyAsEnumConflict` | `@singleton` 与 `@keyAsEnum` 同时使用 |
+| `CFT-SCHEMA-038` | `SingletonNotReferenceable` | `@singleton` type 被作为字段类型引用 |
 
 旧的字段级 `@id`、`@ref`、`@index`、`@IdAsEnum`、`@GenAsEnum` 不在当前注解白名单中，会以未知注解或非法目标报错。字段名 `id`、`Id`、`ID` 是保留名，会以 `ReservedIdentifier` 报错。
 
