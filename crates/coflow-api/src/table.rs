@@ -18,6 +18,7 @@ use crate::{
 const IMPORT_CONTROL_COLUMN: &str = "#";
 const SKIP_IMPORT_ROW_MARKER: &str = "##";
 const DEFAULT_KEY_COLUMN: &str = "id";
+const DEFAULT_KEY_COLUMN_ALIASES: &[&str] = &["id", "Id", "ID"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableSheetConfig {
@@ -805,7 +806,7 @@ fn resolve_columns(
             .columns
             .get(&column_text)
             .map_or_else(|| column_text.clone(), Clone::clone);
-        if column_text == key_column || (!has_explicit_key && field == DEFAULT_KEY_COLUMN) {
+        if is_key_column(&column_text, &field, &key_column, has_explicit_key) {
             if id_column
                 .replace((index, excel_column, column_text.clone()))
                 .is_some()
@@ -947,6 +948,15 @@ fn resolve_columns(
         })
     } else {
         Err(TableDiagnostics { diagnostics })
+    }
+}
+
+fn is_key_column(column_text: &str, field: &str, key_column: &str, has_explicit_key: bool) -> bool {
+    if has_explicit_key {
+        column_text == key_column
+    } else {
+        DEFAULT_KEY_COLUMN_ALIASES.contains(&column_text)
+            || DEFAULT_KEY_COLUMN_ALIASES.contains(&field)
     }
 }
 

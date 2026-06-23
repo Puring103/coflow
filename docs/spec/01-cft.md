@@ -36,7 +36,7 @@ type Item { name: string; }  # 行尾注释
 - 关键字和字面量：`const`、`enum`、`type`、`abstract`、`sealed`、`check`、`when`、`all`、`any`、`none`、`in`、`is`、`true`、`false`、`null`
 - primitive 类型名：`int`、`float`、`bool`、`string`
 - 当前内建函数名：`len`、`contains`、`unique`、`min`、`max`、`sum`、`keys`、`values`、`matches`
-- 虚拟记录 key 字段：`id`
+- 虚拟记录 key 字段：`id`、`Id`、`ID`
 - 未来语法保留名：`if`、`else`、`match`、`case`、`for`、`while`、`let`、`module`、`import`、`export`、`from`、`as`、`use`
 - `_`
 
@@ -251,7 +251,7 @@ type B { value: int; }
 
 `check` 是 `type` 内部的可选校验块，必须位于所有字段声明之后。`check` 块在对象构建完成（含记录引用解析）后由宿主显式调用执行，执行期间对象图不可变，不影响对象图构建。
 
-`check` 内可以访问当前对象的所有字段（含继承字段）、虚拟 `id`、`const` 常量和枚举值，不能引用外部节点。check 内的引用字段已解析，可以直接访问目标对象的字段。
+`check` 内可以访问当前对象的所有字段（含继承字段）、虚拟 `id`、`const` 常量和枚举值，不能引用外部节点。check 内的引用字段已解析，可以直接访问目标对象的字段。`Id` 和 `ID` 仅作为保留标识符，虚拟字段访问名仍为小写 `id`。
 
 **继承与 check**：子类实例依次执行从根类到当前类的所有 `check` 块：
 
@@ -682,7 +682,7 @@ pub enum CftConstValue {
 | `CFT-SCHEMA-032` | `RefTargetHasNoId` | 保留的历史错误码；record key 由数据源提供 |
 | `CFT-SCHEMA-033` | `RefIdTypeMismatch` | 保留的历史错误码；引用类型兼容在 `CfdDataModel` 阶段检查 |
 
-旧的字段级 `@id`、`@ref`、`@index`、`@IdAsEnum`、`@GenAsEnum` 不在当前注解白名单中，会以未知注解或非法目标报错。字段名 `id` 是保留名，会以 `ReservedIdentifier` 报错。
+旧的字段级 `@id`、`@ref`、`@index`、`@IdAsEnum`、`@GenAsEnum` 不在当前注解白名单中，会以未知注解或非法目标报错。字段名 `id`、`Id`、`ID` 是保留名，会以 `ReservedIdentifier` 报错。
 
 #### TYPE
 
@@ -729,7 +729,7 @@ pub enum CftConstValue {
 | `@struct` 标注在非 `sealed type` 上 | 注解范围违反 |
 | `@flag` 变体值不是 2 的幂 | 注解约束违反 |
 | `@keyAsEnum` 参数不是 enum 名、目标不是 type、或绑定的 enum 不是空占位 enum | 注解参数/目标非法或 key enum 占位非法 |
-| 字段声明名为 `id` | 保留名违反 |
+| 字段声明名为 `id`、`Id` 或 `ID` | 保留名违反 |
 | 注解使用范围或字段类型不匹配 | 注解范围违反 |
 
 **check 执行阶段：**

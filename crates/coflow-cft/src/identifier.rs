@@ -30,6 +30,8 @@ pub fn is_cft_reserved_identifier(name: &str) -> bool {
     matches!(
         name,
         "_" | "id"
+            | "Id"
+            | "ID"
             | "const"
             | "enum"
             | "type"

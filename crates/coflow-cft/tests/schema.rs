@@ -90,6 +90,10 @@ fn schema_rejects_reserved_identifiers() {
         "type Item { check: int; }",
         "type Item { from: string; }",
         "type Item { id: string; }",
+        "type Item { Id: string; }",
+        "type Item { ID: string; }",
+        "type Id { value: string; }",
+        "enum ID { A, }",
         "enum E { _, }",
         "type Item { values: [int]; check { all all in values { true; } } }",
     ];
