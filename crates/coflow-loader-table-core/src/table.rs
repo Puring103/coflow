@@ -4,16 +4,15 @@
 //! values, then use this crate for schema-guided row, key, column, and cell
 //! parsing.
 
-use coflow_cft::record_key_ident_error;
+use coflow_cft::{record_key_ident_error, CftContainer};
+use coflow_data_model::{
+    CfdDiagnostic, CfdDiagnostics, CfdInputRecord, CfdInputValue, CfdLabel, CfdPath,
+    CfdPathSegment, RecordOrigin, SourceDocument, SourceLocation,
+};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::cell_value::{parse_cell, CellValueDiagnostics, ParsedCell};
-use crate::{
-    CfdDiagnostic, CfdDiagnostics, CfdInputRecord, CfdInputValue, CfdLabel, CfdPath,
-    CfdPathSegment, CftContainer, Diagnostic, DiagnosticSet, Label, RecordOrigin, SourceDocument,
-    SourceLocation,
-};
 
 const IMPORT_CONTROL_COLUMN: &str = "#";
 const SKIP_IMPORT_ROW_MARKER: &str = "##";
@@ -146,23 +145,11 @@ pub struct TableDiagnostics {
     pub diagnostics: Vec<TableDiagnostic>,
 }
 
-impl From<TableDiagnostics> for DiagnosticSet {
-    fn from(diagnostics: TableDiagnostics) -> Self {
-        Self {
-            diagnostics: diagnostics
-                .diagnostics
-                .into_iter()
-                .map(Diagnostic::from)
-                .collect(),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct TableInputRecords {
     /// Each record carries its own [`RecordOrigin`] (a [`RecordOrigin::Table`]
-    /// variant). Diagnostics produced before [`crate::map_diagnostics_with_origins`]
-    /// is called can use [`crate::origins_of`] to extract them.
+    /// variant). Diagnostics produced before data-model diagnostics are mapped
+    /// can use the records' origins to resolve labels back to source cells.
     pub records: Vec<CfdInputRecord>,
 }
 
@@ -174,19 +161,6 @@ pub struct TableDiagnostic {
     pub source: Option<CfdDiagnostic>,
     pub primary: Option<TableLabel>,
     pub related: Vec<TableLabel>,
-}
-
-impl From<TableDiagnostic> for Diagnostic {
-    fn from(diagnostic: TableDiagnostic) -> Self {
-        Self {
-            code: diagnostic.code,
-            stage: diagnostic.stage,
-            severity: crate::Severity::Error,
-            message: diagnostic.message,
-            primary: diagnostic.primary.map(Label::from),
-            related: diagnostic.related.into_iter().map(Label::from).collect(),
-        }
-    }
 }
 
 impl TableDiagnostic {
@@ -215,15 +189,6 @@ impl TableDiagnostic {
 pub struct TableLabel {
     pub location: TableLocation,
     pub message: Option<String>,
-}
-
-impl From<TableLabel> for Label {
-    fn from(label: TableLabel) -> Self {
-        Self {
-            location: SourceLocation::from(label.location),
-            message: label.message,
-        }
-    }
 }
 
 #[derive(Debug)]

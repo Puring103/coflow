@@ -1,9 +1,9 @@
 #![allow(clippy::missing_const_for_fn, clippy::panic_in_result_fn)]
 
-use coflow_api::table::TableSheetConfig;
 use coflow_loader_lark::{
     load_lark_table_source_with_client, LarkHttpClient, LarkSheetLocator, LarkSheetSource,
 };
+use coflow_loader_table_core::TableSheetConfig;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 

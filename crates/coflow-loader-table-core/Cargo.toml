@@ -1,12 +1,12 @@
 [package]
-name = "coflow-api"
+name = "coflow-loader-table-core"
 version = "0.1.0"
 edition = "2021"
-description = "Public provider API for Coflow loaders, exporters, and code generators."
+description = "Shared schema-guided table loading core for Coflow data sources."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/wtlll/ScriptForGame"
 readme = "../../README.md"
-keywords = ["config", "game-data", "api"]
+keywords = ["config", "game-data", "table"]
 categories = ["config", "game-development"]
 publish = false
 
@@ -16,5 +16,4 @@ workspace = true
 [dependencies]
 coflow-cft = { path = "../coflow-cft" }
 coflow-data-model = { path = "../coflow-data-model" }
-serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["preserve_order"] }
+unicode-ident = "1"

@@ -19,12 +19,6 @@
 #![allow(clippy::missing_const_for_fn, clippy::multiple_crate_versions)]
 
 use calamine::{open_workbook_auto, Data, Reader};
-pub use coflow_api::table::TableSheet;
-use coflow_api::table::{
-    collect_table_input_records as collect_shared_table_input_records, map_label_to_table,
-    map_table_diagnostics, TableDiagnostic, TableDiagnostics, TableLabel, TableLocation,
-    TableSheetConfig, TableSource as SharedTableSource,
-};
 use coflow_api::{
     origins_of, DataLoader, Diagnostic, DiagnosticSet, Label, LoadContext, LoadedRecords,
     LoaderDescriptor, ProbeResult, ProjectSourceRef, RecordOrigin, ResolvedSource, SourceLocation,
@@ -32,6 +26,12 @@ use coflow_api::{
 };
 use coflow_cft::CftContainer;
 use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdInputRecord};
+pub use coflow_loader_table_core::TableSheet;
+use coflow_loader_table_core::{
+    collect_table_input_records as collect_shared_table_input_records, map_label_to_table,
+    map_table_diagnostics, TableDiagnostic, TableDiagnostics, TableLabel, TableLocation,
+    TableSheetConfig, TableSource as SharedTableSource,
+};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;

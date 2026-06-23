@@ -15,9 +15,6 @@
 )]
 #![allow(clippy::missing_const_for_fn)]
 
-pub mod cell_value;
-pub mod table;
-
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
 use std::fmt;
