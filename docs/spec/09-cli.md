@@ -277,7 +277,7 @@ outputs:
 | `json` | Newtonsoft.Json loader |
 | `messagepack` | MessagePack-CSharp loader |
 
-`codegen csharp` 不要求数据 source 存在。对于 `@keyAsEnum`，它会读取
+`codegen csharp` 不要求数据 source 存在。对于 `@idAsEnum`，它会读取
 `coflow.yaml` 同级的 `coflow.enum.lock.json` 并保留已有 variant，但无法新增
 data-driven variant，因为它不加载数据。`coflow build` 已经加载 data model，
 因此可以新增这些 variant。新 variant 追加到 lockfile，已有 variant 的整数值

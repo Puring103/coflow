@@ -29,7 +29,7 @@ pub enum CsharpDataFormat {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CsharpKeyAsEnumVariant {
+pub struct CsharpIdAsEnumVariant {
     pub name: String,
     pub value: i64,
 }
@@ -75,10 +75,10 @@ pub fn build_project(
     schema: &CftContainer,
     options: &CsharpCodegenOptions,
     data_format: CsharpDataFormat,
-    key_as_enum_variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
+    id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&BTreeSet<String>>,
 ) -> Result<CsharpProject, CsharpCodegenError> {
-    let diagnostics = preflight_csharp_codegen(schema, options, &key_as_enum_variants);
+    let diagnostics = preflight_csharp_codegen(schema, options, &id_as_enum_variants);
     if !diagnostics.is_empty() {
         return Err(CsharpCodegenError::new(
             diagnostics
@@ -88,17 +88,17 @@ pub fn build_project(
                 .join("\n"),
         ));
     }
-    let key_as_enum_names = key_as_enum_names(schema);
+    let id_as_enum_names = id_as_enum_names(schema);
     let view = SchemaView::new(schema)
         .with_int_32(options.int_32)
         .with_float_32(options.float_32);
 
-    let mut key_as_enum_variants =
-        build_key_as_enums(schema, &key_as_enum_names, key_as_enum_variants);
+    let mut id_as_enum_variants =
+        build_id_as_enums(schema, &id_as_enum_names, id_as_enum_variants);
     let enums = schema
         .all_enums()
         .map(|schema_enum| {
-            key_as_enum_variants
+            id_as_enum_variants
                 .remove(&schema_enum.name)
                 .unwrap_or_else(|| build_csharp_enum(schema_enum))
         })
@@ -157,13 +157,13 @@ fn build_csharp_singletons(view: &SchemaView) -> Vec<crate::model::CsharpSinglet
 pub fn preflight_csharp_codegen(
     schema: &CftContainer,
     options: &CsharpCodegenOptions,
-    key_as_enum_variants: &BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
+    id_as_enum_variants: &BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
 ) -> Vec<CsharpCodegenDiagnostic> {
     let mut diagnostics = Vec::new();
     validate_options(options, &mut diagnostics);
     validate_schema_names(schema, &mut diagnostics);
-    let key_as_enum_names = key_as_enum_names(schema);
-    validate_key_as_enum_variants(&key_as_enum_names, key_as_enum_variants, &mut diagnostics);
+    let id_as_enum_names = id_as_enum_names(schema);
+    validate_id_as_enum_variants(&id_as_enum_names, id_as_enum_variants, &mut diagnostics);
     let view = SchemaView::new(schema)
         .with_int_32(options.int_32)
         .with_float_32(options.float_32);
@@ -314,37 +314,37 @@ fn validate_generated_file_names(
     }
 }
 
-fn key_as_enum_names(schema: &CftContainer) -> BTreeSet<String> {
+fn id_as_enum_names(schema: &CftContainer) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for schema_type in schema.all_types() {
-        if let Some(enum_name) = annotation_name_arg(&schema_type.annotations, "keyAsEnum") {
+        if let Some(enum_name) = annotation_name_arg(&schema_type.annotations, "idAsEnum") {
             out.insert(enum_name);
         }
     }
     out
 }
 
-fn validate_key_as_enum_variants(
+fn validate_id_as_enum_variants(
     declared: &BTreeSet<String>,
-    variants: &BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
+    variants: &BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     diagnostics: &mut Vec<CsharpCodegenDiagnostic>,
 ) {
     for enum_name in variants.keys() {
         if !declared.contains(enum_name) {
             push_codegen_diagnostic(
                 diagnostics,
-                format!("@keyAsEnum variants provided for undeclared enum `{enum_name}`"),
+                format!("@idAsEnum variants provided for undeclared enum `{enum_name}`"),
             );
         }
-        validate_ident("@keyAsEnum enum", enum_name, diagnostics);
+        validate_ident("@idAsEnum enum", enum_name, diagnostics);
         let mut values = BTreeMap::<i64, String>::new();
         for variant in variants.get(enum_name).into_iter().flatten() {
-            validate_ident("@keyAsEnum enum variant", &variant.name, diagnostics);
+            validate_ident("@idAsEnum enum variant", &variant.name, diagnostics);
             if let Some(existing) = values.insert(variant.value, variant.name.clone()) {
                 push_codegen_diagnostic(
                     diagnostics,
                     format!(
-                    "@keyAsEnum enum `{enum_name}` value `{}` is used by both `{existing}` and `{}`",
+                    "@idAsEnum enum `{enum_name}` value `{}` is used by both `{existing}` and `{}`",
                     variant.value, variant.name
                 ),
                 );
@@ -353,14 +353,25 @@ fn validate_key_as_enum_variants(
     }
 }
 
-fn build_key_as_enums(
+fn build_id_as_enums(
     schema: &CftContainer,
     declared: &BTreeSet<String>,
-    mut variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
+    mut variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
 ) -> BTreeMap<String, CsharpEnum> {
     let mut out = BTreeMap::new();
     for name in declared {
+        let schema_enum = schema.resolve_enum(name);
+        let is_flags = schema_enum
+            .is_some_and(|schema_enum| has_annotation(&schema_enum.annotations, "flag"));
         let mut enum_variants = Vec::new();
+        if is_flags {
+            enum_variants.push(CsharpEnumVariant {
+                name: "None".to_string(),
+                value: 0,
+                summary: None,
+                obsolete: false,
+            });
+        }
         for variant in variants.remove(name).unwrap_or_default() {
             enum_variants.push(CsharpEnumVariant {
                 name: variant.name,
@@ -369,13 +380,11 @@ fn build_key_as_enums(
                 obsolete: false,
             });
         }
-        let schema_enum = schema.resolve_enum(name);
         out.insert(
             name.clone(),
             CsharpEnum {
                 name: name.clone(),
-                is_flags: schema_enum
-                    .is_some_and(|schema_enum| has_annotation(&schema_enum.annotations, "flag")),
+                is_flags,
                 summary: schema_enum
                     .and_then(|schema_enum| display_annotation(&schema_enum.annotations)),
                 obsolete: schema_enum.is_some_and(|schema_enum| {

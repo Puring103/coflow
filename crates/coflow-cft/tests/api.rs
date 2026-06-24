@@ -183,7 +183,7 @@ fn spec_comprehensive_example_compiles() {
         }
 
         @display("物品")
-        @keyAsEnum(ItemKey)
+        @idAsEnum(ItemKey)
         type Item {
           key: string;
 
@@ -237,7 +237,7 @@ fn spec_comprehensive_example_compiles() {
         }
 
         @display("怪物")
-        @keyAsEnum(MonsterKey)
+        @idAsEnum(MonsterKey)
         type Monster {
           key: string;
 

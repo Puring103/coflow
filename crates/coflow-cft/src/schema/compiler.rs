@@ -522,7 +522,7 @@ impl<'a> SchemaCompiler<'a> {
             }
         });
 
-        let mut key_as_enum_names = BTreeMap::<String, (ModuleId, Span)>::new();
+        let mut id_as_enum_names = BTreeMap::<String, (ModuleId, Span)>::new();
         self.each_type(|this, info| {
             this.validate_annotation_list(
                 &info.module,
@@ -548,20 +548,20 @@ impl<'a> SchemaCompiler<'a> {
                         "@singleton cannot be applied to an abstract type",
                     );
                 }
-                if find_annotation(&info.def.annotations, "keyAsEnum").is_some() {
+                if find_annotation(&info.def.annotations, "idAsEnum").is_some() {
                     this.push_diag(
-                        CftErrorCode::SingletonKeyAsEnumConflict,
+                        CftErrorCode::SingletonIdAsEnumConflict,
                         &info.module,
                         singleton.span,
-                        "@singleton cannot be combined with @keyAsEnum",
+                        "@singleton cannot be combined with @idAsEnum",
                     );
                 }
             }
-            if let Some(annotation) = find_annotation(&info.def.annotations, "keyAsEnum") {
+            if let Some(annotation) = find_annotation(&info.def.annotations, "idAsEnum") {
                 if let Some(crate::ast::AnnotationArg::Name(enum_name)) = annotation.args.first() {
-                    this.validate_key_as_enum_name(&info.module, &enum_name.name, enum_name.span);
-                    this.register_key_as_enum_name(
-                        &mut key_as_enum_names,
+                    this.validate_id_as_enum_name(&info.module, &enum_name.name, enum_name.span);
+                    this.register_id_as_enum_name(
+                        &mut id_as_enum_names,
                         &info.module,
                         annotation,
                         &enum_name.name,
@@ -582,29 +582,29 @@ impl<'a> SchemaCompiler<'a> {
         });
     }
 
-    fn register_key_as_enum_name(
+    fn register_id_as_enum_name(
         &mut self,
-        key_as_enum_names: &mut BTreeMap<String, (ModuleId, Span)>,
+        id_as_enum_names: &mut BTreeMap<String, (ModuleId, Span)>,
         module: &ModuleId,
         annotation: &Annotation,
         enum_name: &str,
     ) {
-        if let Some((first_module, first_span)) = key_as_enum_names.get(enum_name) {
+        if let Some((first_module, first_span)) = id_as_enum_names.get(enum_name) {
             self.diagnostics.push(
                 CftDiagnostic::error(
                     CftErrorCode::DuplicateGlobalName,
                     module.clone(),
                     annotation.span,
-                    format!("duplicate @keyAsEnum enum name `{enum_name}`"),
+                    format!("duplicate @idAsEnum enum name `{enum_name}`"),
                 )
                 .with_related(
                     first_module.clone(),
                     *first_span,
-                    "first @keyAsEnum enum name is here",
+                    "first @idAsEnum enum name is here",
                 ),
             );
         } else {
-            key_as_enum_names.insert(enum_name.to_string(), (module.clone(), annotation.span));
+            id_as_enum_names.insert(enum_name.to_string(), (module.clone(), annotation.span));
         }
     }
 
@@ -736,7 +736,7 @@ impl<'a> SchemaCompiler<'a> {
         }
     }
 
-    fn validate_key_as_enum_name(
+    fn validate_id_as_enum_name(
         &mut self,
         module: &ModuleId,
         enum_name: &str,
@@ -748,11 +748,11 @@ impl<'a> SchemaCompiler<'a> {
                     if !info.def.variants.is_empty() {
                         self.diagnostics.push(
                             CftDiagnostic::error(
-                                CftErrorCode::KeyAsEnumRequiresEmptyEnum,
+                                CftErrorCode::IdAsEnumRequiresEmptyEnum,
                                 module.clone(),
                                 enum_name_span,
                                 format!(
-                                    "@keyAsEnum enum `{enum_name}` must be declared with no variants"
+                                    "@idAsEnum enum `{enum_name}` must be declared with no variants"
                                 ),
                             )
                             .with_related(
@@ -767,10 +767,10 @@ impl<'a> SchemaCompiler<'a> {
             Some(symbol) => {
                 self.diagnostics.push(
                     CftDiagnostic::error(
-                        CftErrorCode::KeyAsEnumRequiresEmptyEnum,
+                        CftErrorCode::IdAsEnumRequiresEmptyEnum,
                         module.clone(),
                         enum_name_span,
-                        format!("@keyAsEnum argument `{enum_name}` must name an enum"),
+                        format!("@idAsEnum argument `{enum_name}` must name an enum"),
                     )
                     .with_related(
                         symbol.module.clone(),
@@ -784,7 +784,7 @@ impl<'a> SchemaCompiler<'a> {
                     CftErrorCode::UnknownNamedType,
                     module,
                     enum_name_span,
-                    format!("unknown @keyAsEnum enum `{enum_name}`"),
+                    format!("unknown @idAsEnum enum `{enum_name}`"),
                 );
             }
         }

@@ -739,8 +739,8 @@ const ANNOTATIONS: &[AnnotationCompletion] = &[
         documentation: "Mark an enum as bit flags. Non-zero values must be powers of two.",
     },
     AnnotationCompletion {
-        label: "@keyAsEnum",
-        insert_text: "@keyAsEnum(${1:EnumName})",
+        label: "@idAsEnum",
+        insert_text: "@idAsEnum(${1:EnumName})",
         detail: "type annotation",
         documentation: "Fill an empty enum placeholder from this type's record keys.",
     },
@@ -1341,7 +1341,7 @@ fn annotation_completion_items(scope: CompletionScope) -> Vec<Value> {
 
 fn annotation_applies_to_scope(label: &str, scope: CompletionScope) -> bool {
     match label {
-        "@struct" | "@flag" | "@keyAsEnum" => scope == CompletionScope::TopLevel,
+        "@struct" | "@flag" | "@idAsEnum" => scope == CompletionScope::TopLevel,
         "@display" | "@deprecated" => {
             matches!(scope, CompletionScope::TopLevel | CompletionScope::TypeBody)
         }

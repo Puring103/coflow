@@ -104,7 +104,7 @@ fn codegen_csharp_preflight_outputs_multiple_diagnostics_without_writing_files()
         root.join("schema").join("main.cft"),
         r#"
             type class { value: int; }
-            @keyAsEnum(GeneId)
+            @idAsEnum(GeneId)
             type Foo_Bar {
                 namespace: int;
             }

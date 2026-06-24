@@ -156,7 +156,7 @@ enum Rarity {
 
 ```cft
 @display("物品")
-@keyAsEnum(ItemId)
+@idAsEnum(ItemId)
 type Item {
   name: string;
   rarity: Rarity = Rarity.Common;
@@ -202,7 +202,7 @@ type Monster {
 
 常用注解：
 
-- `@keyAsEnum(Name)`：把加载到的 record key 填充进手动声明的空 enum，并用于生成强类型 C# key。
+- `@idAsEnum(Name)`：把加载到的 record key 填充进手动声明的空 enum，并用于生成强类型 C# key。
 - `@display("text")`：在支持的位置输出可读说明。
 - `@deprecated`：把生成的 C# symbol 标记为 obsolete。
 - `@struct`：让 sealed value-like type 生成 C# struct。
@@ -223,7 +223,7 @@ type Monster {
   `"sword_01"` 这类纯 key 字符串，而不是 `"Item.sword_01"`。
 
 `coflow build` 会在 `coflow.yaml` 同级维护 `coflow.enum.lock.json`，用于稳定
-`@keyAsEnum` 的整数值。Excel 行顺序变化时，已有生成 enum 的整数值保持不变；
+`@idAsEnum` 的整数值。Excel 行顺序变化时，已有生成 enum 的整数值保持不变；
 新的数据驱动枚举变体会追加到 lockfile。该文件可提交到版本库；它不属于
 生成输出目录。占位 enum 带 `@flag` 时，新变体按 `1, 2, 4, ...` 分配，
 不会自动生成 `None = 0`。

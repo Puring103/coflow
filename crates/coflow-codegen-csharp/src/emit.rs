@@ -611,7 +611,7 @@ fn read_token_expr(
         FieldType::Float => Ok(format!("CoflowJson.ReadFloat({token})")),
         FieldType::Bool => Ok(format!("CoflowJson.ReadBool({token})")),
         FieldType::String => Ok(format!("CoflowJson.ReadString({token})")),
-        FieldType::Enum(name) if view.is_key_as_enum(name) => Ok(format!(
+        FieldType::Enum(name) if view.is_id_as_enum(name) => Ok(format!(
             "CoflowJson.ReadStringEnum<{}>({token})",
             view.csharp_enum_name(name)
         )),
@@ -689,7 +689,7 @@ fn read_messagepack_expr(
         FieldType::Float => Ok(format!("CoflowMessagePack.ReadFloat(ref {reader})")),
         FieldType::Bool => Ok(format!("CoflowMessagePack.ReadBool(ref {reader})")),
         FieldType::String => Ok(format!("CoflowMessagePack.ReadString(ref {reader})")),
-        FieldType::Enum(name) if view.is_key_as_enum(name) => Ok(format!(
+        FieldType::Enum(name) if view.is_id_as_enum(name) => Ok(format!(
             "CoflowMessagePack.ReadStringEnum<{}>(ref {reader})",
             view.csharp_enum_name(name)
         )),
@@ -872,7 +872,7 @@ fn default_value_expr(
 
 fn string_default_expr(value: &str, ty: &FieldType, view: &SchemaView) -> String {
     match ty.non_nullable() {
-        FieldType::Enum(name) if view.is_key_as_enum(name) => {
+        FieldType::Enum(name) if view.is_id_as_enum(name) => {
             let enum_name = view.csharp_enum_name(name);
             let value = escape_csharp_string(value);
             format!("({enum_name})Enum.Parse(typeof({enum_name}), \"{value}\")")

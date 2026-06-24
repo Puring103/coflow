@@ -52,7 +52,7 @@ fn parser_accepts_core_syntax() {
         sealed type Position { x: float; y: float; }
 
         @display("Item")
-        @keyAsEnum(BaseKey)
+        @idAsEnum(BaseKey)
         abstract type Base {
             key: string;
             check { key != ""; }

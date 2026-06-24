@@ -226,7 +226,7 @@ type Item {\n\
 
     let top_labels = completion_labels(annotation_completion_items(CompletionScope::TopLevel));
     assert!(top_labels.contains(&"@struct".to_string()));
-    assert!(top_labels.contains(&"@keyAsEnum".to_string()));
+    assert!(top_labels.contains(&"@idAsEnum".to_string()));
     assert!(!top_labels.contains(&"@id".to_string()));
     assert!(!top_labels.contains(&"@ref".to_string()));
     assert!(!top_labels.contains(&"@index".to_string()));
@@ -236,7 +236,7 @@ type Item {\n\
     assert!(!type_labels.contains(&"@id".to_string()));
     assert!(!type_labels.contains(&"@ref".to_string()));
     assert!(!type_labels.contains(&"@index".to_string()));
-    assert!(!type_labels.contains(&"@keyAsEnum".to_string()));
+    assert!(!type_labels.contains(&"@idAsEnum".to_string()));
     assert!(!type_labels.contains(&"@struct".to_string()));
 
     let enum_labels = completion_labels(annotation_completion_items(CompletionScope::EnumBody));

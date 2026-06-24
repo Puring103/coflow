@@ -112,12 +112,12 @@ fn generate_messagepack(
     )
 }
 
-fn generate_json_with_key_as_enum_variants(
+fn generate_json_with_id_as_enum_variants(
     schema: &CftContainer,
     options: &CsharpCodegenOptions,
-    variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
+    variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_csharp_with_key_as_enum_variants(
+    generate_csharp_with_id_as_enum_variants(
         schema,
         options,
         CsharpDataFormat::Json,
@@ -392,10 +392,10 @@ fn codegen_rejects_pascal_case_name_collisions() -> Result<(), String> {
 }
 
 #[test]
-fn codegen_key_as_enum_generates_strongly_typed_ids_and_refs() -> Result<(), String> {
+fn codegen_id_as_enum_generates_strongly_typed_ids_and_refs() -> Result<(), String> {
     let schema = compile_schema(
         r#"
-            @keyAsEnum(GeneId)
+            @idAsEnum(GeneId)
             type GeneConfig {}
 
             enum GeneId {}
@@ -410,18 +410,18 @@ fn codegen_key_as_enum_generates_strongly_typed_ids_and_refs() -> Result<(), Str
     variants.insert(
         "GeneId".to_string(),
         vec![
-            CsharpKeyAsEnumVariant {
+            CsharpIdAsEnumVariant {
                 name: "gene_spore".to_string(),
                 value: 0,
             },
-            CsharpKeyAsEnumVariant {
+            CsharpIdAsEnumVariant {
                 name: "gene_mating".to_string(),
                 value: 1,
             },
         ],
     );
 
-    let files = generate_json_with_key_as_enum_variants(
+    let files = generate_json_with_id_as_enum_variants(
         &schema,
         &CsharpCodegenOptions::new("Game.Config"),
         variants,

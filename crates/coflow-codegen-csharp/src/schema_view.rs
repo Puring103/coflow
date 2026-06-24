@@ -148,11 +148,11 @@ impl SchemaView {
         }
     }
 
-    pub fn key_as_enum(&self, type_name: &str) -> Option<String> {
+    pub fn id_as_enum(&self, type_name: &str) -> Option<String> {
         let mut current = Some(type_name);
         while let Some(name) = current {
             let meta = self.types.get(name)?;
-            if let Some(enum_name) = &meta.key_as_enum {
+            if let Some(enum_name) = &meta.id_as_enum {
                 return Some(enum_name.clone());
             }
             current = meta.parent.as_deref();
@@ -160,14 +160,14 @@ impl SchemaView {
         None
     }
 
-    pub fn is_key_as_enum(&self, enum_name: &str) -> bool {
+    pub fn is_id_as_enum(&self, enum_name: &str) -> bool {
         self.types
             .values()
-            .any(|ty| ty.key_as_enum.as_deref() == Some(enum_name))
+            .any(|ty| ty.id_as_enum.as_deref() == Some(enum_name))
     }
 
     pub fn key_field_type(&self, type_name: &str) -> FieldType {
-        self.key_as_enum(type_name)
+        self.id_as_enum(type_name)
             .map_or(FieldType::String, FieldType::Enum)
     }
 
@@ -228,7 +228,7 @@ pub struct TypeMeta {
     pub parent: Option<String>,
     pub is_abstract: bool,
     pub is_singleton: bool,
-    pub key_as_enum: Option<String>,
+    pub id_as_enum: Option<String>,
     pub all_fields: Vec<FieldMeta>,
 }
 
@@ -239,7 +239,7 @@ impl TypeMeta {
             parent: schema_type.parent.clone(),
             is_abstract: schema_type.is_abstract,
             is_singleton: schema_type.is_singleton,
-            key_as_enum: annotation_name_arg(&schema_type.annotations, "keyAsEnum"),
+            id_as_enum: annotation_name_arg(&schema_type.annotations, "idAsEnum"),
             all_fields: schema_type
                 .all_fields
                 .iter()

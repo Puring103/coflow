@@ -1,15 +1,15 @@
-# `@KeyAsEnum` 迁移计划
+# `@IdAsEnum` 迁移计划
 
-> 历史归档：本文记录的是旧的字段级 `@id/@ref/@KeyAsEnum` 设计迁移方案，不代表当前实现。当前语义见 `docs/spec/01-cft.md`、`docs/spec/02-data-model.md`、`docs/spec/06-csharp-codegen.md`：记录 key 来自数据记录的保留 `id`，引用使用显式 `@Type.key`，类型级注解为 `@keyAsEnum("EnumName")`。
+> 历史归档：本文记录的是旧的字段级 `@id/@ref/@IdAsEnum` 设计迁移方案，不代表当前实现。当前语义见 `docs/spec/01-cft.md`、`docs/spec/02-data-model.md`、`docs/spec/06-csharp-codegen.md`：记录 key 来自数据记录的保留 `id`，引用使用显式 `@Type.key`，类型级注解为 `@idAsEnum("EnumName")`。
 
-把当前的 `@KeyAsEnumValue`（type 级，仅生成 `<Type>Id.cs` 字符串常量类）
-完全替换成字段级 `@KeyAsEnum("EnumName")`，让 codegen 阶段生成真正的
+把当前的 `@IdAsEnumValue`（type 级，仅生成 `<Type>Id.cs` 字符串常量类）
+完全替换成字段级 `@IdAsEnum("EnumName")`，让 codegen 阶段生成真正的
 C# `enum` 类型，并把对应的字段类型从 `string` 提升为该 enum 类型。
 
 ## 目标
 
 ```cft
-@KeyAsEnum("GeneId")
+@IdAsEnum("GeneId")
 @id
 id: string;
 ```
@@ -27,12 +27,12 @@ id: string;
 
 ### 注解形态
 
-- 注解名：`@KeyAsEnum`
+- 注解名：`@IdAsEnum`
 - 目标：字段（与 `@id` 同位置）
 - 参数：单个字符串，作为 enum 的 C# 类型名
 - 限制：
-  - 必须配 `@id`（schema 规则：「`@KeyAsEnum` 必须出现在 `@id` 字段上」）
-  - 字段静态类型必须是 `string`（CFT 规则：「`@KeyAsEnum` 字段类型必须为
+  - 必须配 `@id`（schema 规则：「`@IdAsEnum` 必须出现在 `@id` 字段上」）
+  - 字段静态类型必须是 `string`（CFT 规则：「`@IdAsEnum` 字段类型必须为
     `string`」）
   - `EnumName` 必须是合法 C# 标识符
   - `EnumName` 不能与 schema 中已存在的 type / enum / const 同名，
@@ -43,20 +43,20 @@ id: string;
 | 层 | 改动 |
 |---|---|
 | CFT lexer/parser | 不改；OneString 注解已支持 |
-| CFT compiler | `support.rs` 中 `AnnotationSpec` 替换 `KeyAsEnumValue` 为 `KeyAsEnum`（target=Field, args=OneString）；`compiler.rs` 加上述三条语义校验 |
-| schema-api | `CftSchemaField.annotations` 透传不动，下游用 `find_annotation("KeyAsEnum")` 取参数即可 |
-| 数据模型 / cell parser / excel loader | 不改。`@KeyAsEnum` 字段在数据层完全等价于普通 `string` |
+| CFT compiler | `support.rs` 中 `AnnotationSpec` 替换 `IdAsEnumValue` 为 `IdAsEnum`（target=Field, args=OneString）；`compiler.rs` 加上述三条语义校验 |
+| schema-api | `CftSchemaField.annotations` 透传不动，下游用 `find_annotation("IdAsEnum")` 取参数即可 |
+| 数据模型 / cell parser / excel loader | 不改。`@IdAsEnum` 字段在数据层完全等价于普通 `string` |
 | `@ref` 解析 | 不改。引用解析仍按 string id 进行 |
 | JSON 导出 | 不改，输出 `"Gene_Spore"` 字符串 |
 | C# codegen | 主要工作（见下） |
-| pipeline | 删 `key_as_enum.rs`；改为 build 阶段先扫 schema 找出所有 `@KeyAsEnum` 字段，按 `<table>` 收集 records 的 id 列表，作为附加输入喂给 codegen |
+| pipeline | 删 `id_as_enum.rs`；改为 build 阶段先扫 schema 找出所有 `@IdAsEnum` 字段，按 `<table>` 收集 records 的 id 列表，作为附加输入喂给 codegen |
 | `cargo run -- codegen csharp` 命令（无数据） | 仍生成 enum 占位（空变体集），编译期合法 |
 
 ### codegen 内部要改的位置
 
 1. **`schema_view.rs`**
    - `FieldMeta` 加字段 `csharp_enum_override: Option<String>`，从
-     `@KeyAsEnum` 注解填入。
+     `@IdAsEnum` 注解填入。
    - `SchemaView` 加方法 `field_csharp_enum_override(type_name, field_name)`，
      给 emit 用。
    - 加方法：给定 `@ref(Target)` 的字段，返回 Target 的 @id 字段是否带
@@ -81,36 +81,36 @@ id: string;
      有 `annotation_name_arg` 对偶。
 
 5. **`ir.rs::build_project`**
-   - 现在 `enums` 来自 `schema.all_enums()`。在此基础上把 `@KeyAsEnum`
+   - 现在 `enums` 来自 `schema.all_enums()`。在此基础上把 `@IdAsEnum`
      字段的 enum 也合并进 `enums`：变体集合由数据驱动，`build_project`
-     需要接受额外参数 `key_as_enum_variants: BTreeMap<String, Vec<String>>`，
+     需要接受额外参数 `id_as_enum_variants: BTreeMap<String, Vec<String>>`，
      形成 `CsharpEnum`（无 flag、无 display、变体值用插入顺序的整数）。
 
 6. **新增模板（可选）**
-   - 不必新增。所有 `@KeyAsEnum` 生成的 enum 与普通 enum 走同一个
+   - 不必新增。所有 `@IdAsEnum` 生成的 enum 与普通 enum 走同一个
      emit 路径即可。
 
 7. **collision 检查**
-   - 多个表用相同 `@KeyAsEnum("Foo")`：合并变体（如果完全一致），不一致
+   - 多个表用相同 `@IdAsEnum("Foo")`：合并变体（如果完全一致），不一致
      时报 codegen 错误。`Foo` 名和已有 enum / type 冲突时报错。
 
 ### pipeline 改动
 
-- `coflow-pipeline/src/key_as_enum.rs` 全删。
+- `coflow-pipeline/src/id_as_enum.rs` 全删。
 - `coflow-pipeline/src/lib.rs::build_project`：build 阶段在 codegen 调用
-  之前，扫描 `schema.all_types()` 找带 `@KeyAsEnum` 的字段，从
+  之前，扫描 `schema.all_types()` 找带 `@IdAsEnum` 的字段，从
   `model.records_of_type(type)` 收集 id 字符串集合（已经构建好的
-  CfdValue::String），构造 `key_as_enum_variants` map 传给
+  CfdValue::String），构造 `id_as_enum_variants` map 传给
   `generate_csharp_*`。
 - `coflow-pipeline/src/lib.rs::generate_project_code`：纯 codegen 路径
   没有数据，直接传空 map。生成的 enum 空变体集合，C# 编译合法。
 
 ### 测试矩阵
 
-- `coflow-cft`：`@KeyAsEnum("GeneId")` 配 `@id: string` 通过；缺 `@id`
+- `coflow-cft`：`@IdAsEnum("GeneId")` 配 `@id: string` 通过；缺 `@id`
   报错；字段类型非 string 报错；EnumName 非法 ident 报错；EnumName 与
   现有 type/enum 冲突报错。
-- `coflow-codegen-csharp`：构造一个含 `@KeyAsEnum("GeneId")` 的 schema +
+- `coflow-codegen-csharp`：构造一个含 `@IdAsEnum("GeneId")` 的 schema +
   注入变体集合 + `@ref(GeneConfig) parent: string?` 字段，断言生成的 C#：
   - `enum GeneId { ... }` 被生成
   - `GeneConfig.Id` 类型为 `GeneId`
@@ -124,26 +124,26 @@ id: string;
 2. codegen `schema_view.rs` 加 override 字段、传播到 ref 字段。
 3. codegen `emit.rs` 把 `string` 翻译位置全部接上 override；C# helper
    `ReadStringEnum` 加进 JSON / messagepack database 模板。
-4. codegen `ir.rs` 接受 `key_as_enum_variants` 参数，合并成 `CsharpEnum`。
-5. pipeline 删 `key_as_enum.rs`，build 时收集变体集合喂给 codegen。
-6. humanpark example 替换为 `@KeyAsEnum("...")` 形式：
-   - `GeneConfig` -> `@KeyAsEnum("GeneId")`
-   - `SkinConfig` -> `@KeyAsEnum("SkinId")`
-   - `PhaseConfig` -> `@KeyAsEnum("PhaseId")`
-   - `AbilityConfig` -> `@KeyAsEnum("AbilityId")`
-   - `SubstanceConfig` -> `@KeyAsEnum("SubstanceId")`
+4. codegen `ir.rs` 接受 `id_as_enum_variants` 参数，合并成 `CsharpEnum`。
+5. pipeline 删 `id_as_enum.rs`，build 时收集变体集合喂给 codegen。
+6. humanpark example 替换为 `@IdAsEnum("...")` 形式：
+   - `GeneConfig` -> `@IdAsEnum("GeneId")`
+   - `SkinConfig` -> `@IdAsEnum("SkinId")`
+   - `PhaseConfig` -> `@IdAsEnum("PhaseId")`
+   - `AbilityConfig` -> `@IdAsEnum("AbilityId")`
+   - `SubstanceConfig` -> `@IdAsEnum("SubstanceId")`
    - `BioRemainsConfig.geneId` 是 `@ref(GeneConfig)`，C# 类型自动跟着
      变成 `GeneId`。
 7. 全 workspace `cargo test` + clippy 全绿；两个 example check + build。
-8. 删除/重写 `coflow-cft/tests/new_annotations.rs` 中关于 `KeyAsEnumValue`
+8. 删除/重写 `coflow-cft/tests/new_annotations.rs` 中关于 `IdAsEnumValue`
    的旧用例。
-9. 更新 `docs/spec/06-csharp-codegen.md` 描述 `@KeyAsEnum` 行为。
+9. 更新 `docs/spec/06-csharp-codegen.md` 描述 `@IdAsEnum` 行为。
 
 ### 不在本次范围
 
-- `@KeyAsEnum` 不试图反过来影响 schema 类型系统（即 cft 端 `id` 还是
+- `@IdAsEnum` 不试图反过来影响 schema 类型系统（即 cft 端 `id` 还是
   `string`，type checker 仍按 `string` 处理）。
-- 不支持把 `@KeyAsEnum` 用在非 @id 字段（避免无主索引情况下的语义不清）。
+- 不支持把 `@IdAsEnum` 用在非 @id 字段（避免无主索引情况下的语义不清）。
 - 不试图自动从 enum 变体里推回 cft enum 类型（这就是用户原方案的反向，
   没必要）。
 
@@ -152,8 +152,8 @@ id: string;
 - **变体来自数据**：codegen 输出依赖运行时数据，意味着 `codegen csharp`
   命令在没有数据时拿到的 enum 是空的；C# 编译合法但运行时谁也用不上。
   `build` 路径才有完整变体。这点要写清楚到 spec 06。
-- **collision 难发现**：两个表用同名 `@KeyAsEnum("Foo")` 但变体集合不同，
-  build 时才能 catch；可在 CFT compiler 阶段加一条「同名 @KeyAsEnum 必须
+- **collision 难发现**：两个表用同名 `@IdAsEnum("Foo")` 但变体集合不同，
+  build 时才能 catch；可在 CFT compiler 阶段加一条「同名 @IdAsEnum 必须
   来自同一个表」的硬约束作为兜底。
 - **变体顺序**：`Enum.Parse` 不依赖整数值，所以变体定义顺序对运行时没影响；
   但为了生成稳定输出，应按 records 出现顺序赋值，重复时去重。

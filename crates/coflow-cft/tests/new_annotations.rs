@@ -12,10 +12,10 @@ mod common;
 use common::*;
 
 #[test]
-fn key_as_enum_compiles_on_type() {
+fn id_as_enum_compiles_on_type() {
     let schema = compile_one(
         r#"
-            @keyAsEnum(SkillKey)
+            @idAsEnum(SkillKey)
             type Skill {
                 name: string;
             }
@@ -27,10 +27,10 @@ fn key_as_enum_compiles_on_type() {
             }
         "#,
     )
-    .expect("@keyAsEnum should compile on a type");
+    .expect("@idAsEnum should compile on a type");
 
     let skill = schema.resolve_type("Skill").expect("Skill type");
-    assert_eq!(skill.annotations[0].name, "keyAsEnum");
+    assert_eq!(skill.annotations[0].name, "idAsEnum");
     assert_eq!(
         skill.annotations[0].args,
         vec![coflow_cft::CftAnnotationValue::Name("SkillKey".to_string())]
@@ -39,60 +39,60 @@ fn key_as_enum_compiles_on_type() {
 }
 
 #[test]
-fn key_as_enum_requires_single_enum_name_argument_and_type_target() {
+fn id_as_enum_requires_single_enum_name_argument_and_type_target() {
     let invalid_arg = compile_one(
         r#"
-            @keyAsEnum("SkillKey")
+            @idAsEnum("SkillKey")
             type Skill {
                 name: string;
             }
             enum SkillKey {}
         "#,
     )
-    .expect_err("@keyAsEnum requires an enum name argument");
+    .expect_err("@idAsEnum requires an enum name argument");
     assert_has_code(&invalid_arg, CftErrorCode::InvalidAnnotationArgument);
 
     let invalid_target = compile_one(
         r#"
             type Skill {
-                @keyAsEnum(SkillKey)
+                @idAsEnum(SkillKey)
                 name: string;
             }
             enum SkillKey {}
         "#,
     )
-    .expect_err("@keyAsEnum is type-only");
+    .expect_err("@idAsEnum is type-only");
     assert_has_code(&invalid_target, CftErrorCode::InvalidAnnotationTarget);
 }
 
 #[test]
-fn key_as_enum_requires_existing_empty_enum_placeholder() {
+fn id_as_enum_requires_existing_empty_enum_placeholder() {
     let missing = compile_one(
         r#"
-            @keyAsEnum(SkillKey)
+            @idAsEnum(SkillKey)
             type Skill {
                 name: string;
             }
         "#,
     )
-    .expect_err("@keyAsEnum requires an existing enum");
+    .expect_err("@idAsEnum requires an existing enum");
     assert_has_code(&missing, CftErrorCode::UnknownNamedType);
 
     let non_enum = compile_one(
         r#"
-            @keyAsEnum(SkillKey)
+            @idAsEnum(SkillKey)
             type Skill {
                 name: string;
             }
             type SkillKey {}
         "#,
     )
-    .expect_err("@keyAsEnum requires an enum, not a type");
-    assert_has_code(&non_enum, CftErrorCode::KeyAsEnumRequiresEmptyEnum);
+    .expect_err("@idAsEnum requires an enum, not a type");
+    assert_has_code(&non_enum, CftErrorCode::IdAsEnumRequiresEmptyEnum);
 
     let with_variants = compile_one(
         r#"
-            @keyAsEnum(SkillKey)
+            @idAsEnum(SkillKey)
             type Skill {
                 name: string;
             }
@@ -101,8 +101,8 @@ fn key_as_enum_requires_existing_empty_enum_placeholder() {
             }
         "#,
     )
-    .expect_err("@keyAsEnum placeholder enum cannot declare variants");
-    assert_has_code(&with_variants, CftErrorCode::KeyAsEnumRequiresEmptyEnum);
+    .expect_err("@idAsEnum placeholder enum cannot declare variants");
+    assert_has_code(&with_variants, CftErrorCode::IdAsEnumRequiresEmptyEnum);
 }
 
 #[test]

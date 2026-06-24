@@ -104,7 +104,7 @@ public sealed partial class Item : IEquatable<Item>
 
 schema 可空字段生成 `T?`。不可空集合缺省为空集合；JSON loader 在字段缺失时使用生成的默认表达式。JSON 空表文件可以不存在，loader 会把它视为空表。
 
-`@keyAsEnum(EnumName)` 会把对应 table 的 record key 类型从 `string` 提升为 `EnumName`，并把引用 key reader 也切换为该 enum。
+`@idAsEnum(EnumName)` 会把对应 table 的 record key 类型从 `string` 提升为 `EnumName`，并把引用 key reader 也切换为该 enum。
 
 ### 3.1 `@singleton`
 

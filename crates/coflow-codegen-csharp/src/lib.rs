@@ -35,7 +35,7 @@ use std::path::PathBuf;
 
 pub use ir::{
     preflight_csharp_codegen, CsharpCodegenDiagnostic, CsharpCodegenOptions, CsharpDataFormat,
-    CsharpKeyAsEnumVariant,
+    CsharpIdAsEnumVariant,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,7 +108,7 @@ pub fn generate_csharp_with_database_templates(
     data_format: CsharpDataFormat,
     database_templates: &CsharpDatabaseTemplates,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_csharp_with_key_as_enum_variants(
+    generate_csharp_with_id_as_enum_variants(
         schema,
         options,
         data_format,
@@ -119,25 +119,25 @@ pub fn generate_csharp_with_database_templates(
 }
 
 /// Generates C# files and includes data-driven enum variants for types marked
-/// with `@keyAsEnum`.
+/// with `@idAsEnum`.
 ///
 /// # Errors
 ///
 /// Returns an error when the compiled schema cannot be mapped to C# runtime
 /// code or when a Tera template fails to render.
-pub fn generate_csharp_with_key_as_enum_variants(
+pub fn generate_csharp_with_id_as_enum_variants(
     schema: &CftContainer,
     options: &CsharpCodegenOptions,
     data_format: CsharpDataFormat,
     database_templates: &CsharpDatabaseTemplates,
-    key_as_enum_variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
+    id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&std::collections::BTreeSet<String>>,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
     let project = ir::build_project(
         schema,
         options,
         data_format,
-        key_as_enum_variants,
+        id_as_enum_variants,
         non_empty_tables,
     )?;
     render::render_project(&project, database_templates)
@@ -177,25 +177,25 @@ pub fn generate_csharp_json(
     )
 }
 
-/// Generates C# JSON loader files and includes data-driven `@keyAsEnum`
+/// Generates C# JSON loader files and includes data-driven `@idAsEnum`
 /// variants.
 ///
 /// # Errors
 ///
 /// Returns an error when the compiled schema cannot be mapped to C# runtime
 /// code or when a Tera template fails to render.
-pub fn generate_csharp_json_with_key_as_enum_variants(
+pub fn generate_csharp_json_with_id_as_enum_variants(
     schema: &CftContainer,
     options: &CsharpCodegenOptions,
-    key_as_enum_variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
+    id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&std::collections::BTreeSet<String>>,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_csharp_with_key_as_enum_variants(
+    generate_csharp_with_id_as_enum_variants(
         schema,
         options,
         CsharpDataFormat::Json,
         &JSON_DATABASE_TEMPLATES,
-        key_as_enum_variants,
+        id_as_enum_variants,
         non_empty_tables,
     )
 }
@@ -219,24 +219,24 @@ pub fn generate_csharp_messagepack(
 }
 
 /// Generates C# `MessagePack` loader files and includes data-driven
-/// `@keyAsEnum` variants.
+/// `@idAsEnum` variants.
 ///
 /// # Errors
 ///
 /// Returns an error when the compiled schema cannot be mapped to C# runtime
 /// code or when a Tera template fails to render.
-pub fn generate_csharp_messagepack_with_key_as_enum_variants(
+pub fn generate_csharp_messagepack_with_id_as_enum_variants(
     schema: &CftContainer,
     options: &CsharpCodegenOptions,
-    key_as_enum_variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
+    id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&std::collections::BTreeSet<String>>,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    generate_csharp_with_key_as_enum_variants(
+    generate_csharp_with_id_as_enum_variants(
         schema,
         options,
         CsharpDataFormat::MessagePack,
         &MESSAGEPACK_DATABASE_TEMPLATES,
-        key_as_enum_variants,
+        id_as_enum_variants,
         non_empty_tables,
     )
 }
@@ -310,7 +310,7 @@ impl CodeGenerator for CsharpCodeGenerator {
         let options = CsharpCodegenOptions::new(namespace)
             .with_int_32(int_32)
             .with_float_32(float_32);
-        let key_as_enum_variants = key_as_enum_variants_from_options(&output.options)?;
+        let id_as_enum_variants = id_as_enum_variants_from_options(&output.options)?;
         let non_empty_tables = ctx.model.map(|model| {
             model
                 .tables()
@@ -319,16 +319,16 @@ impl CodeGenerator for CsharpCodeGenerator {
                 .collect::<std::collections::BTreeSet<String>>()
         });
         let generated = match ctx.data_format {
-            "json" => generate_csharp_json_with_key_as_enum_variants(
+            "json" => generate_csharp_json_with_id_as_enum_variants(
                 ctx.schema,
                 &options,
-                key_as_enum_variants,
+                id_as_enum_variants,
                 non_empty_tables.as_ref(),
             ),
-            "messagepack" => generate_csharp_messagepack_with_key_as_enum_variants(
+            "messagepack" => generate_csharp_messagepack_with_id_as_enum_variants(
                 ctx.schema,
                 &options,
-                key_as_enum_variants,
+                id_as_enum_variants,
                 non_empty_tables.as_ref(),
             ),
             other => {
@@ -355,17 +355,17 @@ impl CodeGenerator for CsharpCodeGenerator {
     }
 }
 
-fn key_as_enum_variants_from_options(
+fn id_as_enum_variants_from_options(
     options: &serde_json::Value,
-) -> Result<BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>, DiagnosticSet> {
-    let Some(value) = options.get("key_as_enum_variants") else {
+) -> Result<BTreeMap<String, Vec<CsharpIdAsEnumVariant>>, DiagnosticSet> {
+    let Some(value) = options.get("id_as_enum_variants") else {
         return Ok(BTreeMap::new());
     };
     serde_json::from_value(value.clone()).map_err(|err| {
         DiagnosticSet::one(Diagnostic::error(
             "CSHARP-OPTIONS",
             "CODEGEN",
-            format!("invalid key_as_enum_variants option: {err}"),
+            format!("invalid id_as_enum_variants option: {err}"),
         ))
     })
 }
