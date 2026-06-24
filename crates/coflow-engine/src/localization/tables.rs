@@ -27,10 +27,10 @@ pub(super) struct BucketKey {
 
 impl BucketKey {
     pub fn file_stem(&self) -> String {
-        match &self.field_name {
-            Some(field) => format!("{}_{field}", self.type_name),
-            None => self.type_name.clone(),
-        }
+        self.field_name.as_ref().map_or_else(
+            || self.type_name.clone(),
+            |field| format!("{}_{field}", self.type_name),
+        )
     }
 }
 

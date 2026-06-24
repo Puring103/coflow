@@ -28,6 +28,24 @@
     {
         return LoadBodyFields(ref reader, context, count, false);
     }
+{% if type.loader.polymorphic_cases | length > 0 %}
+    internal static {{ type.loader.type_name }} LoadPolymorphic(ref MessagePackReader reader, {{ project.database_class }}.LoadContext context)
+    {
+        var count = reader.ReadMapHeader();
+        var typeKey = CoflowMessagePack.ReadString(ref reader);
+        if (typeKey != "$type")
+        {
+            throw new KeyNotFoundException("missing polymorphic `$type`");
+        }
+
+        var typeName = CoflowMessagePack.ReadString(ref reader);
+        return typeName switch
+        {
+{% for case in type.loader.polymorphic_cases %}            "{{ case.source_name }}" => {{ case.type_name }}.LoadBodyAfterType(ref reader, context, count - 1),
+{% endfor %}            _ => throw new KeyNotFoundException($"unknown polymorphic type `{typeName}`"),
+        };
+    }
+{% endif %}
 
     private static {{ type.loader.type_name }} LoadBody(ref MessagePackReader reader, {{ project.database_class }}.LoadContext context, bool requireId)
     {

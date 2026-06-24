@@ -1,4 +1,4 @@
-use crate::names::{annotation_name_arg, csharp_type_name};
+use crate::names::{annotation_name_arg, csharp_type_name, has_annotation};
 use crate::CsharpCodegenError;
 use coflow_cft::{
     CftAnnotation, CftContainer, CftSchemaDefaultValue, CftSchemaField, CftSchemaType,
@@ -76,13 +76,13 @@ impl SchemaView {
     }
 
     #[must_use]
-    pub fn with_int_32(mut self, value: bool) -> Self {
+    pub const fn with_int_32(mut self, value: bool) -> Self {
         self.int_32 = value;
         self
     }
 
     #[must_use]
-    pub fn with_float_32(mut self, value: bool) -> Self {
+    pub const fn with_float_32(mut self, value: bool) -> Self {
         self.float_32 = value;
         self
     }
@@ -100,12 +100,8 @@ impl SchemaView {
         if self.loadable_tables.contains(name) {
             return true;
         }
-        match self.concrete_assignable_types(name) {
-            Ok(assignable) => assignable
-                .iter()
-                .any(|t| self.loadable_tables.contains(t)),
-            Err(_) => false,
-        }
+        self.concrete_assignable_types(name)
+            .is_ok_and(|assignable| assignable.iter().any(|t| self.loadable_tables.contains(t)))
     }
 
     pub fn type_meta(&self, name: &str) -> Result<&TypeMeta, CsharpCodegenError> {
@@ -251,6 +247,7 @@ pub struct TypeMeta {
     pub parent: Option<String>,
     pub is_abstract: bool,
     pub is_singleton: bool,
+    pub is_struct: bool,
     pub id_as_enum: Option<String>,
     pub all_fields: Vec<FieldMeta>,
 }
@@ -262,6 +259,7 @@ impl TypeMeta {
             parent: schema_type.parent.clone(),
             is_abstract: schema_type.is_abstract,
             is_singleton: schema_type.is_singleton,
+            is_struct: has_annotation(&schema_type.annotations, "struct"),
             id_as_enum: annotation_name_arg(&schema_type.annotations, "idAsEnum"),
             all_fields: schema_type
                 .all_fields

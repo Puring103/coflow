@@ -68,6 +68,7 @@ pub struct CsharpProperty {
     pub visibility: String,
     pub name: String,
     pub type_name: String,
+    pub backing_field: Option<String>,
     pub summary: Option<String>,
     pub obsolete: bool,
 }
@@ -75,6 +76,7 @@ pub struct CsharpProperty {
 #[derive(Debug, Serialize)]
 pub struct CsharpConstructorAssignment {
     pub property: String,
+    pub target: String,
     pub parameter: String,
 }
 
@@ -97,6 +99,7 @@ pub struct CsharpTable {
     pub accessor_property: String,
     pub accessor_parameter: String,
     pub records_var: String,
+    pub raw_rows_var: String,
     pub id_type: String,
     pub id_property: String,
     pub id_source_name: String,
@@ -138,6 +141,7 @@ pub struct CsharpParameter {
 }
 
 #[derive(Debug, Serialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct CsharpLoader {
     pub type_name: String,
     pub source_name: String,
@@ -147,6 +151,8 @@ pub struct CsharpLoader {
     pub key_read_expr: String,
     pub key_messagepack_read_expr: String,
     pub is_table: bool,
+    pub is_struct: bool,
+    pub requires_hydration: bool,
     pub fields: Vec<CsharpLoadField>,
     pub polymorphic_cases: Vec<CsharpPolymorphicCase>,
     pub is_polymorphic: bool,
@@ -159,6 +165,7 @@ pub struct CsharpLoadField {
     pub source_name: String,
     pub local_name: String,
     pub type_name: String,
+    pub assignment_target: String,
     pub read_expr: String,
     pub inline_read_expr: String,
     pub messagepack_read_expr: String,
@@ -166,6 +173,7 @@ pub struct CsharpLoadField {
     pub default_expr: Option<String>,
     pub missing_expr: Option<String>,
     pub is_required: bool,
+    pub requires_context: bool,
     pub has_name: String,
 }
 

@@ -46,27 +46,14 @@ pub fn build_csharp_type(
 
     let is_table = !schema_type.is_abstract && type_is_table(&schema_type.name, view);
     if is_table {
-        let key_ty = view.key_field_type(&schema_type.name);
-        let key_type = csharp_type(&key_ty, view);
-        constructor_parameters.push(CsharpParameter {
-            ty: key_type,
-            name: "id".to_string(),
-        });
-        if has_concrete_parent(&schema_type.name, view) {
-            base_constructor_args.push("id".to_string());
-        } else {
-            properties.push(CsharpProperty {
-                visibility: "public".to_string(),
-                name: "Id".to_string(),
-                type_name: csharp_type(&key_ty, view),
-                summary: None,
-                obsolete: false,
-            });
-            assignments.push(CsharpConstructorAssignment {
-                property: "Id".to_string(),
-                parameter: "id".to_string(),
-            });
-        }
+        add_id_constructor_member(
+            schema_type,
+            view,
+            &mut constructor_parameters,
+            &mut base_constructor_args,
+            &mut properties,
+            &mut assignments,
+        );
     }
 
     let own_field_names = schema_type
@@ -87,18 +74,14 @@ pub fn build_csharp_type(
             continue;
         }
 
-        let property_name = csharp_public_member_name(&field.name);
-        properties.push(CsharpProperty {
-            visibility: "public".to_string(),
-            name: property_name.clone(),
-            type_name: property_type,
-            summary: display_annotation(&field.annotations),
-            obsolete: has_annotation(&field.annotations, "deprecated"),
-        });
-        assignments.push(CsharpConstructorAssignment {
-            property: property_name,
-            parameter: local_name,
-        });
+        add_field_constructor_member(
+            field,
+            property_type,
+            local_name,
+            view,
+            &mut properties,
+            &mut assignments,
+        );
     }
 
     let loader = if schema_type.is_abstract {
@@ -142,6 +125,63 @@ pub fn build_csharp_type(
     })
 }
 
+fn add_id_constructor_member(
+    schema_type: &CftSchemaType,
+    view: &SchemaView,
+    constructor_parameters: &mut Vec<CsharpParameter>,
+    base_constructor_args: &mut Vec<String>,
+    properties: &mut Vec<CsharpProperty>,
+    assignments: &mut Vec<CsharpConstructorAssignment>,
+) {
+    let key_ty = view.key_field_type(&schema_type.name);
+    constructor_parameters.push(CsharpParameter {
+        ty: csharp_type(&key_ty, view),
+        name: "id".to_string(),
+    });
+    if has_concrete_parent(&schema_type.name, view) {
+        base_constructor_args.push("id".to_string());
+        return;
+    }
+    properties.push(CsharpProperty {
+        visibility: "public".to_string(),
+        name: "Id".to_string(),
+        type_name: csharp_type(&key_ty, view),
+        backing_field: None,
+        summary: None,
+        obsolete: false,
+    });
+    assignments.push(CsharpConstructorAssignment {
+        property: "Id".to_string(),
+        target: "Id".to_string(),
+        parameter: "id".to_string(),
+    });
+}
+
+fn add_field_constructor_member(
+    field: &FieldMeta,
+    property_type: String,
+    local_name: String,
+    view: &SchemaView,
+    properties: &mut Vec<CsharpProperty>,
+    assignments: &mut Vec<CsharpConstructorAssignment>,
+) {
+    let property_name = csharp_public_member_name(&field.name);
+    let backing_field = backing_field_name(&property_name, &field.ty, view);
+    properties.push(CsharpProperty {
+        visibility: "public".to_string(),
+        name: property_name.clone(),
+        type_name: property_type,
+        backing_field: backing_field.clone(),
+        summary: display_annotation(&field.annotations),
+        obsolete: has_annotation(&field.annotations, "deprecated"),
+    });
+    assignments.push(CsharpConstructorAssignment {
+        target: backing_field.unwrap_or_else(|| property_name.clone()),
+        property: property_name,
+        parameter: local_name,
+    });
+}
+
 fn type_is_table(type_name: &str, view: &SchemaView) -> bool {
     view.is_ref_target_loadable(type_name)
 }
@@ -169,7 +209,10 @@ pub fn build_csharp_database(
     _database_class: &str,
     data_format: CsharpDataFormat,
 ) -> Result<CsharpDatabase, CsharpCodegenError> {
-    let ordered_tables = sort_tables_by_dependencies(view, tables)?;
+    let ordered_tables = match data_format {
+        CsharpDataFormat::Json => tables.to_vec(),
+        CsharpDataFormat::MessagePack => sort_tables_by_dependencies(view, tables)?,
+    };
     let table_models = ordered_tables
         .iter()
         .map(|table_name| build_table_model(view, table_name))
@@ -220,7 +263,12 @@ pub fn build_csharp_database(
         .collect::<Vec<_>>();
 
     let context_lookups = build_context_lookups(view, tables)?;
-    let load_steps = build_load_steps(&table_models, load_extension);
+    let load_steps = match data_format {
+        CsharpDataFormat::Json => build_json_load_steps(&table_models, load_extension),
+        CsharpDataFormat::MessagePack => {
+            build_messagepack_load_steps(&table_models, load_extension)
+        }
+    };
 
     Ok(CsharpDatabase {
         tables: table_models,
@@ -268,7 +316,40 @@ fn build_context_lookups(
     Ok(context_lookups)
 }
 
-fn build_load_steps(table_models: &[CsharpTable], load_extension: &str) -> Vec<String> {
+fn build_json_load_steps(table_models: &[CsharpTable], load_extension: &str) -> Vec<String> {
+    let mut load_steps = Vec::new();
+    for table in table_models {
+        load_steps.push(format!(
+            "var ({}, {}) = {}.LoadRawTable(Path.Combine(dataDir, \"{}.{}\"));",
+            table.records_var, table.raw_rows_var, table.name, table.source_name, load_extension
+        ));
+    }
+    for table in table_models {
+        load_steps.push(format!(
+            "var {} = {}.BuildIndex({});",
+            table.index_var, table.name, table.records_var
+        ));
+    }
+    let context_args = table_models
+        .iter()
+        .map(|table| table.index_var.clone())
+        .collect::<Vec<_>>();
+    let context_expr = if context_args.is_empty() {
+        "LoadContext.Empty".to_string()
+    } else {
+        format!("new LoadContext({})", context_args.join(", "))
+    };
+    load_steps.push(format!("var context = {context_expr};"));
+    for table in table_models {
+        load_steps.push(format!(
+            "{}.HydrateAll({}, {}, context);",
+            table.name, table.records_var, table.raw_rows_var
+        ));
+    }
+    load_steps
+}
+
+fn build_messagepack_load_steps(table_models: &[CsharpTable], load_extension: &str) -> Vec<String> {
     let mut load_steps = Vec::new();
     for (idx, table) in table_models.iter().enumerate() {
         let context_args = table_models
@@ -302,6 +383,7 @@ fn build_table_model(view: &SchemaView, table_name: &str) -> CsharpTable {
         accessor_property: format!("Tb{csharp_name}"),
         accessor_parameter: format!("tb{csharp_name}"),
         records_var: plural_records_var(table_name),
+        raw_rows_var: format!("{}RawRows", camel_case(&csharp_name)),
         id_type: csharp_type(&id_ty, view),
         id_property: "Id".to_string(),
         id_source_name: "id".to_string(),
@@ -407,9 +489,7 @@ fn collect_table_dependencies_for_field_type(
             if !hit_table {
                 if let Ok(meta) = view.type_meta(name) {
                     for field in &meta.all_fields {
-                        collect_table_dependencies_for_field_type(
-                            view, &field.ty, table_set, out,
-                        )?;
+                        collect_table_dependencies_for_field_type(view, &field.ty, table_set, out)?;
                     }
                 }
             }
@@ -435,6 +515,25 @@ fn loader_method(type_name: &str, view: &SchemaView) -> Result<CsharpLoader, Csh
     let key_ty = view.key_field_type(type_name);
     let key_local_name = field_local_name("id", &mut used_local_names)?;
     let is_table = type_is_table(type_name, view);
+    let fields = ty
+        .all_fields
+        .iter()
+        .map(|field| {
+            load_field(
+                field,
+                type_name,
+                ty.is_singleton,
+                &mut used_local_names,
+                view,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let requires_hydration = fields.iter().any(|field| field.requires_context);
+    let polymorphic_cases = if view.range_is_polymorphic(type_name) {
+        polymorphic_cases(type_name, view)?
+    } else {
+        Vec::new()
+    };
     Ok(CsharpLoader {
         type_name: view.csharp_type_name(type_name),
         source_name: type_name.to_string(),
@@ -448,12 +547,10 @@ fn loader_method(type_name: &str, view: &SchemaView) -> Result<CsharpLoader, Csh
         ),
         key_messagepack_read_expr: read_messagepack_expr(&key_ty, "reader", "context", view)?,
         is_table,
-        fields: ty
-            .all_fields
-            .iter()
-            .map(|field| load_field(field, type_name, ty.is_singleton, &mut used_local_names, view))
-            .collect::<Result<Vec<_>, _>>()?,
-        polymorphic_cases: Vec::new(),
+        is_struct: ty.is_struct,
+        requires_hydration,
+        fields,
+        polymorphic_cases,
         is_polymorphic: false,
         expected: String::new(),
     })
@@ -463,7 +560,6 @@ fn polymorphic_loader(
     type_name: &str,
     view: &SchemaView,
 ) -> Result<CsharpLoader, CsharpCodegenError> {
-    let assignable = view.concrete_assignable_types(type_name)?;
     Ok(CsharpLoader {
         type_name: view.csharp_type_name(type_name),
         source_name: type_name.to_string(),
@@ -473,17 +569,27 @@ fn polymorphic_loader(
         key_read_expr: String::new(),
         key_messagepack_read_expr: String::new(),
         is_table: type_is_table(type_name, view),
+        is_struct: view.type_meta(type_name)?.is_struct,
+        requires_hydration: false,
         fields: Vec::new(),
-        polymorphic_cases: assignable
-            .iter()
-            .map(|case| CsharpPolymorphicCase {
-                type_name: view.csharp_type_name(case),
-                source_name: case.clone(),
-            })
-            .collect(),
+        polymorphic_cases: polymorphic_cases(type_name, view)?,
         is_polymorphic: true,
-        expected: assignable.join(" | "),
+        expected: view.concrete_assignable_types(type_name)?.join(" | "),
     })
+}
+
+fn polymorphic_cases(
+    type_name: &str,
+    view: &SchemaView,
+) -> Result<Vec<CsharpPolymorphicCase>, CsharpCodegenError> {
+    Ok(view
+        .concrete_assignable_types(type_name)?
+        .iter()
+        .map(|case| CsharpPolymorphicCase {
+            type_name: view.csharp_type_name(case),
+            source_name: case.clone(),
+        })
+        .collect())
 }
 
 fn load_field(
@@ -526,9 +632,7 @@ fn load_field(
             (
                 format!("new Localized<{inner_property_type}>({row_key_expr}, {raw_read_expr})"),
                 format!("new Localized<{inner_property_type}>({row_key_expr}, {raw_msgpack_expr})"),
-                format!(
-                    "new Localized<{inner_property_type}>({inline_key_expr}, {raw_read_expr})"
-                ),
+                format!("new Localized<{inner_property_type}>({inline_key_expr}, {raw_read_expr})"),
                 format!(
                     "new Localized<{inner_property_type}>({inline_key_expr}, {raw_msgpack_expr})"
                 ),
@@ -546,6 +650,12 @@ fn load_field(
         source_name: field.name.clone(),
         local_name,
         type_name: property_type,
+        assignment_target: backing_field_name(
+            &csharp_public_member_name(&field.name),
+            &field.ty,
+            view,
+        )
+        .unwrap_or_else(|| csharp_public_member_name(&field.name)),
         read_expr,
         inline_read_expr,
         messagepack_read_expr,
@@ -553,8 +663,59 @@ fn load_field(
         is_required: missing_expr.is_none(),
         default_expr,
         missing_expr,
+        requires_context: field_type_requires_context(&field.ty, view)?,
         has_name: format!("has{}", csharp_public_member_name(&field.name)),
     })
+}
+
+fn field_type_requires_context(
+    ty: &FieldType,
+    view: &SchemaView,
+) -> Result<bool, CsharpCodegenError> {
+    let mut visited = BTreeSet::new();
+    field_type_requires_context_inner(ty, view, &mut visited)
+}
+
+fn field_type_requires_context_inner(
+    ty: &FieldType,
+    view: &SchemaView,
+    visited: &mut BTreeSet<String>,
+) -> Result<bool, CsharpCodegenError> {
+    match ty {
+        FieldType::Type(name) => {
+            if view.is_ref_target_loadable(name) {
+                return Ok(true);
+            }
+            if !visited.insert(name.clone()) {
+                return Ok(false);
+            }
+            for concrete in view.concrete_assignable_types(name)? {
+                let meta = view.type_meta(&concrete)?;
+                for field in &meta.all_fields {
+                    if field_type_requires_context_inner(&field.ty, view, visited)? {
+                        return Ok(true);
+                    }
+                }
+            }
+            Ok(false)
+        }
+        FieldType::Array(inner) | FieldType::Nullable(inner) => {
+            field_type_requires_context_inner(inner, view, visited)
+        }
+        FieldType::Dict(_, value) => field_type_requires_context_inner(value, view, visited),
+        FieldType::Int
+        | FieldType::Float
+        | FieldType::Bool
+        | FieldType::String
+        | FieldType::Enum(_) => Ok(false),
+    }
+}
+
+fn backing_field_name(property_name: &str, ty: &FieldType, view: &SchemaView) -> Option<String> {
+    field_type_requires_context(ty, view)
+        .ok()
+        .filter(|requires_context| *requires_context)
+        .map(|_| format!("_{}", camel_case(property_name)))
 }
 
 fn loader_reserved_local_names(ty: &crate::schema_view::TypeMeta) -> HashSet<String> {
@@ -564,6 +725,7 @@ fn loader_reserved_local_names(ty: &crate::schema_view::TypeMeta) -> HashSet<Str
         .map(|field| format!("has{}", csharp_public_member_name(&field.name)))
         .collect::<HashSet<_>>();
     out.insert("isTable".to_string());
+    out.insert("context".to_string());
     out
 }
 
@@ -601,6 +763,7 @@ fn is_reserved_loader_local_name(value: &str) -> bool {
     matches!(
         value,
         "count"
+            | "context"
             | "fieldPath"
             | "i"
             | "index"
@@ -674,8 +837,7 @@ fn read_token_expr(
                 format!("{csharp_name}.LoadInline({token}, {context})")
             };
             if view.is_ref_target_loadable(name) {
-                let key_reader =
-                    read_token_expr(&view.key_field_type(name), token, context, view)?;
+                let key_reader = read_token_expr(&view.key_field_type(name), token, context, view)?;
                 Ok(format!(
                     "{token}.Type == JTokenType.String ? {context}.Get{csharp_name}({key_reader}) : {inline_reader}"
                 ))

@@ -1,33 +1,54 @@
 {% if type.loader.is_table %}
-    internal static List<{{ type.loader.type_name }}> LoadTable(string path, {{ project.database_class }}.LoadContext context)
+    internal static (List<{{ type.loader.type_name }}> Rows, Dictionary<{{ type.loader.type_name }}, JToken> RawRows) LoadRawTable(string path)
     {
         if (!File.Exists(path))
         {
-            return new List<{{ type.loader.type_name }}>();
+            return (new List<{{ type.loader.type_name }}>(), new Dictionary<{{ type.loader.type_name }}, JToken>());
         }
 
         var array = JArray.Parse(File.ReadAllText(path));
         var result = new List<{{ type.loader.type_name }}>(array.Count);
+        var rawRows = new Dictionary<{{ type.loader.type_name }}, JToken>(array.Count);
 
         foreach (var row in array)
         {
-            result.Add(LoadRow(row, context));
+            var value = LoadRawRow(row);
+            result.Add(value);
+{% if type.loader.requires_hydration %}            rawRows.Add(value, row);
+{% endif %}
         }
 
-        return result;
+        return (result, rawRows);
     }
 
-    private static {{ type.loader.type_name }} LoadRow(JToken token, {{ project.database_class }}.LoadContext context)
+    private static {{ type.loader.type_name }} LoadRawRow(JToken token)
     {
         var obj = CoflowJson.RequireObject(token);
+        var context = {{ project.database_class }}.LoadContext.Empty;
         var {{ type.loader.key_local_name }} = {{ type.loader.key_read_expr }};
-{% for field in type.loader.fields %}        var {{ field.local_name }} = {{ field.read_expr }};
-{% endfor %}
+{% for field in type.loader.fields %}{% if not field.requires_context %}        var {{ field.local_name }} = {{ field.read_expr }};
+{% endif %}{% endfor %}
         return new {{ type.loader.type_name }}(
             {{ type.loader.key_local_name }}{% if type.loader.fields | length > 0 %},{% endif %}
-{% for field in type.loader.fields %}            {{ field.local_name }}{% if not loop.last %},{% endif %}
+{% for field in type.loader.fields %}            {% if field.requires_context %}default!{% else %}{{ field.local_name }}{% endif %}{% if not loop.last %},{% endif %}
 {% endfor %}        );
     }
+
+    internal static void HydrateAll(List<{{ type.loader.type_name }}> rows, Dictionary<{{ type.loader.type_name }}, JToken> rawRows, {{ project.database_class }}.LoadContext context)
+    {
+{% if type.loader.requires_hydration %}        foreach (var row in rows)
+        {
+            row.Hydrate(rawRows[row], context);
+        }
+{% endif %}    }
+{% if type.loader.requires_hydration %}
+    private void Hydrate(JToken raw, {{ project.database_class }}.LoadContext context)
+    {
+        var obj = CoflowJson.RequireObject(raw);
+        var {{ type.loader.key_local_name }} = Id;
+{% for field in type.loader.fields %}{% if field.requires_context %}        {{ field.assignment_target }} = {{ field.read_expr }};
+{% endif %}{% endfor %}    }
+{% endif %}
 {% endif %}
     internal static {{ type.loader.type_name }} LoadInline(JToken token, {{ project.database_class }}.LoadContext context)
     {
@@ -39,6 +60,19 @@
 {% endif %}{% for field in type.loader.fields %}            {{ field.local_name }}{% if not loop.last %},{% endif %}
 {% endfor %}        );
     }
+{% if type.loader.polymorphic_cases | length > 0 %}
+    internal static {{ type.loader.type_name }} LoadPolymorphic(JToken token, {{ project.database_class }}.LoadContext context)
+    {
+        var obj = CoflowJson.RequireObject(token);
+        var typeName = CoflowJson.ReadString(CoflowJson.ReadRequired(obj, "$type"));
+
+        return typeName switch
+        {
+{% for case in type.loader.polymorphic_cases %}            "{{ case.source_name }}" => {{ case.type_name }}.LoadInline(token, context),
+{% endfor %}            _ => throw new KeyNotFoundException($"unknown polymorphic type `{typeName}`"),
+        };
+    }
+{% endif %}
 {% if type.loader.is_table %}
     internal static Dictionary<{{ type.loader.key_type_name }}, {{ type.loader.type_name }}> BuildIndex(List<{{ type.loader.type_name }}> rows)
     {

@@ -878,9 +878,7 @@ fn stage_id_as_enum_lockfile_if_needed(
     stage_json_file(path, locked).map(Some)
 }
 
-fn lockfile_to_variants(
-    locked: &IdAsEnumLockfile,
-) -> BTreeMap<String, Vec<IdAsEnumVariant>> {
+fn lockfile_to_variants(locked: &IdAsEnumLockfile) -> BTreeMap<String, Vec<IdAsEnumVariant>> {
     locked
         .iter()
         .map(|(enum_name, entries)| {
