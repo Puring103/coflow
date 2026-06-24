@@ -107,9 +107,18 @@ pub fn build_csharp_type(
         Some(loader_method(&schema_type.name, view)?)
     };
 
-    let equality = (has_id).then(|| CsharpEquality {
-        key_property: "Id".to_string(),
-        is_struct,
+    let equality = (!schema_type.is_abstract).then(|| {
+        let all_field_props: Vec<String> = ty
+            .all_fields
+            .iter()
+            .map(|f| csharp_public_member_name(&f.name))
+            .collect();
+        CsharpEquality {
+            key_property: "Id".to_string(),
+            is_struct,
+            by_fields: !has_id,
+            fields: all_field_props,
+        }
     });
 
     Ok(CsharpType {
