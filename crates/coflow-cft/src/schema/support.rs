@@ -85,7 +85,7 @@ pub(super) struct AnnotationSpec {
 impl AnnotationSpec {
     pub(super) fn for_name(name: &str) -> Option<Self> {
         Some(match name {
-            "struct" => Self {
+            "struct" | "singleton" => Self {
                 targets: &[AnnotationTarget::Type],
                 args: AnnotationArgs::None,
             },
@@ -123,10 +123,6 @@ impl AnnotationSpec {
                 targets: &[AnnotationTarget::Field],
                 args: AnnotationArgs::NoneOrOneString,
             },
-            "singleton" => Self {
-                targets: &[AnnotationTarget::Type],
-                args: AnnotationArgs::None,
-            },
             _ => return None,
         })
     }
@@ -140,11 +136,10 @@ impl AnnotationSpec {
             AnnotationArgs::OneName => {
                 matches!(annotation.args.as_slice(), [AnnotationArg::Name(_)])
             }
-            AnnotationArgs::NoneOrOneString => match annotation.args.as_slice() {
-                [] => true,
-                [AnnotationArg::String(_, _)] => true,
-                _ => false,
-            },
+            AnnotationArgs::NoneOrOneString => matches!(
+                annotation.args.as_slice(),
+                [] | [AnnotationArg::String(_, _)]
+            ),
         }
     }
 }

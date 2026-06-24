@@ -71,11 +71,12 @@ pub fn run_checks(schema: &CftContainer, model: &CfdDataModel) -> Result<(), Cfd
     CheckRunner::new(schema, model).run()
 }
 
-/// Runs `check` blocks once per declared language, substituting `@localized`
-/// string-typed field values from the supplied `LocalizationOverrides`. The
-/// default-language round (`run_checks`) should be executed separately by the
-/// caller; this entry point only runs the per-language rounds and aggregates
-/// their diagnostics.
+/// Runs `check` blocks once per declared language.
+///
+/// Substitutes `@localized` string-typed field values from the supplied
+/// `LocalizationOverrides`. The default-language round (`run_checks`) should
+/// be executed separately by the caller; this entry point only runs the
+/// per-language rounds and aggregates their diagnostics.
 ///
 /// # Errors
 ///

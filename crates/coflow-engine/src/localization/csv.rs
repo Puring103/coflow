@@ -5,8 +5,6 @@
 //! treated as opaque strings; field-typed serialization is handled by the
 //! caller.
 
-use std::fmt::Write as _;
-
 /// Parse a CSV document into rows of cell strings. RFC 4180 quoting:
 /// - Fields containing `,`, `"`, `\r`, or `\n` may be quoted.
 /// - `""` inside a quoted field is an escaped quote.
@@ -101,10 +99,10 @@ fn write_cell(out: &mut String, value: &str) {
         }
     }
     out.push('"');
-    let _ = write!(out, ""); // silence unused import on some platforms
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

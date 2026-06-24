@@ -107,7 +107,7 @@ impl<'a> CheckRunner<'a> {
         let mut evaluator =
             CheckEvaluator::new(&self.schema, self.model, root_record, root_path, root);
         evaluator.dep_collector_enabled = self.deps.is_some();
-        evaluator.localization = self.localization.clone();
+        evaluator.localization.clone_from(&self.localization);
         for check in checks {
             let _ = evaluator.eval_check_block(&check);
         }

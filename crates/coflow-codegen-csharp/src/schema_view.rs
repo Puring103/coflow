@@ -79,15 +79,6 @@ impl SchemaView {
         self.types.keys().cloned().collect()
     }
 
-    #[allow(dead_code)]
-    pub fn non_abstract_type_names(&self) -> Vec<String> {
-        self.types
-            .values()
-            .filter(|ty| !ty.is_abstract)
-            .map(|ty| ty.name.clone())
-            .collect()
-    }
-
     pub fn table_names(&self) -> Vec<String> {
         self.types
             .values()
@@ -97,7 +88,6 @@ impl SchemaView {
     }
 
     /// Names of `@singleton` types, in declaration order.
-    #[allow(dead_code)]
     pub fn singleton_type_names(&self) -> Vec<String> {
         self.types
             .values()

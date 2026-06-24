@@ -48,7 +48,11 @@ mod tests {
     #[test]
     fn formats_nested_key() {
         assert_eq!(
-            format_key("Item", "potion", &["stats".to_string(), "label".to_string()]),
+            format_key(
+                "Item",
+                "potion",
+                &["stats".to_string(), "label".to_string()]
+            ),
             "Item/potion/stats/label"
         );
     }

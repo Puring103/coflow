@@ -135,14 +135,20 @@ CSV 第一行为表头，后续行按 key 字典序写出。
 
 ### 4.3 单元格值序列化
 
-CSV 单元格内的值采用与 Excel loader 一致的 cell parser 语法（见 [04-excel-loader.md](04-excel-loader.md)）。即：
+CSV 单元格采用一种**简单稳定的内部编码**，由工具链权威生成。设计原则：可读、易于人工核对，但不承诺与 Excel loader 的 cell parser 语法严格兼容；译者通常只编辑 string 字段对应的单元格，复合类型仅作展示。
 
-- string → 原文
-- int / float / bool → 字面量
-- `[T]` → 数组语法
-- `{K:V}` → 字典语法
-- 嵌套对象 → 对象语法
-- nullable 字段在值为 null 时单元格留空
+| 字段类型 | 单元格内容 |
+|----------|-----------|
+| string | 原文 |
+| int / float / bool | 字面量 |
+| null（nullable 字段值为 null） | 空单元格 |
+| enum | `EnumName.Variant`（命名变体）或 `EnumName(N)`（数值） |
+| `[T]` | `[a, b, c]` |
+| `{K:V}` | `{key1: value1, key2: value2}`（string key 加双引号，int/enum key 直接写） |
+| 嵌套对象 | `{field1: value1, field2: value2}` |
+| record 引用 | `&key` |
+
+> CSV 重新加载时，工具链按"原样"读取该单元格作为字符串供运行时使用；不会反向解析回结构化值。需要结构化覆盖请通过更上层的翻译流水线处理。
 
 CSV 自身的转义遵循 RFC 4180：含 `,`、`"`、换行的字段加双引号，内部 `"` 写作 `""`。
 

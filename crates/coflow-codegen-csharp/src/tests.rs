@@ -145,7 +145,7 @@ fn codegen_wraps_localized_fields_and_emits_runtime_helper() -> Result<(), Strin
     require_contains(item, "public long Count { get; }")?;
     require_contains(
         item,
-        "new Localized<string>(string.Concat(\"Item/\", id?.ToString() ?? string.Empty, \"/display_name\")",
+        "new Localized<string>(string.Concat(\"Item/\", id.ToString(), \"/display_name\")",
     )?;
 
     let helper = generated_file(&files, "Localized.cs")?;
@@ -189,6 +189,56 @@ fn codegen_emits_singleton_property_on_database_class_and_skips_table() -> Resul
     require_not_contains(database, "TbGameConfig")?;
     // Item is still a regular table.
     require_contains(database, "public Table<string, Item> TbItem { get; }")?;
+    Ok(())
+}
+
+#[test]
+fn codegen_emits_singleton_only_database_without_table_commas() -> Result<(), String> {
+    // Database with no regular tables: comma generation between table block
+    // and singleton block must not produce a stray leading or trailing comma.
+    let schema = compile_schema(
+        r#"
+            @singleton
+            type GameConfig {
+                max_level: int;
+            }
+        "#,
+    )?;
+    let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+    let database = generated_file(&files, "CoflowTables.cs")?;
+    require_contains(database, "public GameConfig GameConfig { get; }")?;
+    require_not_contains(database, "TbGameConfig")?;
+    // No leading "," before the first parameter and no double commas.
+    require_not_contains(database, "(\n            ,")?;
+    require_not_contains(database, ",,")?;
+    Ok(())
+}
+
+#[test]
+fn codegen_emits_multiple_singletons_with_correct_separators() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+            @singleton
+            type GameConfig {
+                max_level: int;
+            }
+
+            @singleton
+            type ServerConfig {
+                region: string;
+            }
+
+            type Item { name: string; }
+        "#,
+    )?;
+    let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+    let database = generated_file(&files, "CoflowTables.cs")?;
+    require_contains(database, "public GameConfig GameConfig { get; }")?;
+    require_contains(database, "public ServerConfig ServerConfig { get; }")?;
+    require_contains(database, "public Table<string, Item> TbItem { get; }")?;
+    require_not_contains(database, ",,")?;
     Ok(())
 }
 

@@ -23,7 +23,7 @@ pub struct CsharpSingleton {
     pub type_name: String,
     pub source_name: String,
     /// Public property name on the database class. Equals `type_name` per
-    /// spec — no PascalCase rewrite.
+    /// spec — no `PascalCase` rewrite.
     pub accessor_property: String,
     pub records_var: String,
 }

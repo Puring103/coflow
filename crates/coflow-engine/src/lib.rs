@@ -23,7 +23,7 @@ use coflow_api::{
     ProviderRegistry, RecordOrigin, ResolvedSource, Severity, SourceLocation, SourceLocationSpec,
     SourceResolveContext,
 };
-use coflow_checker::{run_checks_for_languages, run_checks_with_deps, LocalizationOverrides};
+use coflow_checker::{run_checks_for_languages, run_checks_with_deps};
 use coflow_data_model::{CfdDataModel, CfdDiagnostics, CfdPath, CfdPathSegment, CfdRecordId};
 use coflow_project::{
     compile_schema_project, dedupe_cft_diagnostics, diagnostic_set_from_cft, path_to_slash,
@@ -408,22 +408,17 @@ pub fn build_project_session(
                     // per language. Diagnostics carry a `[lang=...]` prefix
                     // so callers can attribute failures.
                     if let Some(loc_cfg) = project.config.localization.as_ref() {
-                        let overrides = localization::load_overrides_for_languages(
-                            &project,
-                            &schema,
-                            loc_cfg,
-                        );
-                        if !overrides.is_empty() {
+                        let loaded =
+                            localization::load_overrides_for_languages(&project, &schema, loc_cfg);
+                        diagnostics.extend(loaded.diagnostics);
+                        if !loaded.overrides.is_empty() {
                             if let Err(per_lang) =
-                                run_checks_for_languages(&schema, &output.model, &overrides)
+                                run_checks_for_languages(&schema, &output.model, &loaded.overrides)
                             {
                                 let origins = origins_of_records(&output.model);
                                 let mapped = map_diagnostics_with_origins(per_lang, &origins);
                                 diagnostics.extend(mapped);
                             }
-                            // Suppress unused-import warning when this branch
-                            // is taken without overrides.
-                            let _ = LocalizationOverrides::default();
                         }
                     }
                 }

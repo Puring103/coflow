@@ -110,7 +110,10 @@ impl<'a> CheckEvaluator<'a> {
         let Some(actual_type) = record.actual_type(self.model) else {
             return;
         };
-        let Some(bucket) = self.schema.field_localization_bucket(actual_type, field_name) else {
+        let Some(bucket) = self
+            .schema
+            .field_localization_bucket(actual_type, field_name)
+        else {
             return;
         };
         let Some(record_key) = record.key(self.model) else {

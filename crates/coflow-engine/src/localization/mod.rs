@@ -14,10 +14,10 @@ mod key;
 mod tables;
 
 use crate::localization::tables::{collect_entries, merge_with_existing, write_buckets};
-use coflow_api::DiagnosticSet;
+use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use coflow_data_model::CfdDataModel;
 use coflow_project::{LocalizationConfig, Project};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub use crate::localization::key::{format_key, LocalizationKey};
 
@@ -27,6 +27,7 @@ use std::fs;
 
 /// Generate translation tables for a project. No-op when localization is not
 /// configured. Returns diagnostics for any IO errors.
+#[must_use]
 pub fn generate_localization_tables(
     project: &Project,
     schema: &coflow_cft::CftContainer,
@@ -35,15 +36,23 @@ pub fn generate_localization_tables(
     let Some(config) = &project.config.localization else {
         return DiagnosticSet::empty();
     };
-    let out_dir: PathBuf = if config.out_dir.is_absolute() {
+    let out_dir = resolve_out_dir(project, config);
+    let entries = collect_entries(schema, model);
+    let buckets = group_by_bucket(entries);
+    let (merged, mut diagnostics) =
+        merge_with_existing(&out_dir, buckets, &config.languages, &project.config_path);
+    let write_diagnostics =
+        write_buckets(&out_dir, merged, &config.languages, &project.config_path);
+    diagnostics.extend(write_diagnostics);
+    diagnostics
+}
+
+fn resolve_out_dir(project: &Project, config: &LocalizationConfig) -> PathBuf {
+    if config.out_dir.is_absolute() {
         config.out_dir.clone()
     } else {
         project.root_dir.join(&config.out_dir)
-    };
-    let entries = collect_entries(schema, model);
-    let buckets = group_by_bucket(entries);
-    let merged = merge_with_existing(&out_dir, buckets, &config.languages);
-    write_buckets(&out_dir, merged, &config.languages, &project.config_path)
+    }
 }
 
 fn group_by_bucket(entries: Vec<tables::Entry>) -> BTreeMap<String, Vec<tables::Entry>> {
@@ -54,80 +63,164 @@ fn group_by_bucket(entries: Vec<tables::Entry>) -> BTreeMap<String, Vec<tables::
     out
 }
 
+/// Result of loading per-language overrides from disk.
+#[derive(Debug)]
+pub struct LoadedOverrides {
+    pub overrides: Vec<LocalizationOverrides>,
+    pub diagnostics: DiagnosticSet,
+}
+
 /// Builds one [`LocalizationOverrides`] per declared language by reading the
 /// freshly-generated CSV translation tables under `localization.out_dir`.
 ///
-/// Skipped silently when the out_dir does not yet exist (first build) or when
-/// no `@localized` fields exist in the schema. Per-language CSV columns that
-/// are empty fall back to the default value at check time.
+/// CSV parse failures surface as `LOC-IO-001` diagnostics. Per-language CSV
+/// columns that are empty fall back to the default value at check time.
+#[must_use]
 pub fn load_overrides_for_languages(
     project: &Project,
     schema: &coflow_cft::CftContainer,
     config: &LocalizationConfig,
-) -> Vec<LocalizationOverrides> {
-    if config.languages.is_empty() {
-        return Vec::new();
+) -> LoadedOverrides {
+    let mut diagnostics = DiagnosticSet::empty();
+    if config.languages.is_empty() || !schema_has_localized_field(schema) {
+        return LoadedOverrides {
+            overrides: Vec::new(),
+            diagnostics,
+        };
     }
-    // No @localized fields → no translations to load.
-    let any_localized = schema
-        .all_types()
-        .any(|t| t.all_fields.iter().any(|f| f.is_localized));
-    if !any_localized {
-        return Vec::new();
-    }
-    let out_dir = if config.out_dir.is_absolute() {
-        config.out_dir.clone()
-    } else {
-        project.root_dir.join(&config.out_dir)
+    let out_dir = resolve_out_dir(project, config);
+    let mut per_lang: BTreeMap<String, BTreeMap<String, String>> = config
+        .languages
+        .iter()
+        .map(|l| (l.clone(), BTreeMap::new()))
+        .collect();
+    let dir = match fs::read_dir(&out_dir) {
+        Ok(dir) => dir,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return LoadedOverrides {
+                overrides: Vec::new(),
+                diagnostics,
+            };
+        }
+        Err(err) => {
+            diagnostics.push(parse_diagnostic(
+                &project.config_path,
+                format!(
+                    "failed to read localization out_dir `{}`: {err}",
+                    out_dir.display()
+                ),
+            ));
+            return LoadedOverrides {
+                overrides: Vec::new(),
+                diagnostics,
+            };
+        }
     };
-    let mut per_lang: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
-    for lang in &config.languages {
-        per_lang.insert(lang.clone(), BTreeMap::new());
-    }
-    let Ok(entries) = fs::read_dir(&out_dir) else {
-        return Vec::new();
-    };
-    for entry in entries.flatten() {
+    for entry in dir.flatten() {
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("csv") {
             continue;
         }
-        let Ok(text) = fs::read_to_string(&path) else {
-            continue;
-        };
-        let Ok(rows) = csv::parse(&text) else {
-            continue;
-        };
-        let Some(header) = rows.first() else { continue };
-        let key_col = header.iter().position(|h| h == "key");
-        let Some(key_col) = key_col else { continue };
-        let mut lang_cols: BTreeMap<String, usize> = BTreeMap::new();
-        for (col, name) in header.iter().enumerate() {
-            if config.languages.iter().any(|l| l == name) {
-                lang_cols.insert(name.clone(), col);
-            }
-        }
-        for row in rows.iter().skip(1) {
-            let Some(key) = row.get(key_col) else {
-                continue;
-            };
-            for (lang, col) in &lang_cols {
-                if let Some(cell) = row.get(*col) {
-                    if !cell.is_empty() {
-                        if let Some(map) = per_lang.get_mut(lang) {
-                            map.insert(key.clone(), cell.clone());
-                        }
-                    }
-                }
-            }
-        }
+        load_one_csv(
+            &path,
+            &project.config_path,
+            config,
+            &mut per_lang,
+            &mut diagnostics,
+        );
     }
-    config
+    let overrides = config
         .languages
         .iter()
         .map(|lang| LocalizationOverrides {
             language: lang.clone(),
             translations: per_lang.remove(lang).unwrap_or_default(),
         })
-        .collect()
+        .collect();
+    LoadedOverrides {
+        overrides,
+        diagnostics,
+    }
+}
+
+fn schema_has_localized_field(schema: &coflow_cft::CftContainer) -> bool {
+    schema
+        .all_types()
+        .any(|t| t.all_fields.iter().any(|f| f.is_localized))
+}
+
+fn load_one_csv(
+    path: &Path,
+    config_path: &Path,
+    config: &LocalizationConfig,
+    per_lang: &mut BTreeMap<String, BTreeMap<String, String>>,
+    diagnostics: &mut DiagnosticSet,
+) {
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(err) => {
+            diagnostics.push(parse_diagnostic(
+                config_path,
+                format!(
+                    "failed to read localization table `{}`: {err}",
+                    path.display()
+                ),
+            ));
+            return;
+        }
+    };
+    let rows = match csv::parse(&text) {
+        Ok(rows) => rows,
+        Err(err) => {
+            diagnostics.push(parse_diagnostic(
+                config_path,
+                format!(
+                    "failed to parse localization table `{}`: {err}",
+                    path.display()
+                ),
+            ));
+            return;
+        }
+    };
+    let Some(header) = rows.first() else { return };
+    let Some(key_col) = header.iter().position(|h| h == "key") else {
+        return;
+    };
+    let lang_cols: BTreeMap<String, usize> = header
+        .iter()
+        .enumerate()
+        .filter(|(_, name)| config.languages.iter().any(|l| l == *name))
+        .map(|(col, name)| (name.clone(), col))
+        .collect();
+    for row in rows.iter().skip(1) {
+        let Some(key) = row.get(key_col) else {
+            continue;
+        };
+        for (lang, col) in &lang_cols {
+            if let Some(cell) = row.get(*col) {
+                if !cell.is_empty() {
+                    if let Some(map) = per_lang.get_mut(lang) {
+                        map.insert(key.clone(), cell.clone());
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn parse_diagnostic(config_path: &Path, message: String) -> Diagnostic {
+    Diagnostic {
+        code: "LOC-IO-001".to_string(),
+        stage: "LOCALIZATION".to_string(),
+        severity: Severity::Error,
+        message,
+        primary: Some(Label {
+            location: SourceLocation::ProjectConfig {
+                path: config_path.to_path_buf(),
+                key_path: vec!["localization".to_string()],
+            },
+            message: None,
+        }),
+        related: Vec::new(),
+    }
 }

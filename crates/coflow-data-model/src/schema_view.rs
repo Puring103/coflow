@@ -128,19 +128,6 @@ impl SchemaView {
             .copied()
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn type_meta(&self, type_name: &str) -> Option<&TypeMeta> {
-        self.types.get(type_name)
-    }
-
-    /// Whether the type (or any ancestor) declares a localized field.
-    #[allow(dead_code)]
-    pub(crate) fn has_localized_field(&self, type_name: &str) -> bool {
-        self.full_fields(type_name)
-            .iter()
-            .any(|f| f.is_localized)
-    }
-
     pub(crate) fn singleton_types(&self) -> impl Iterator<Item = &TypeMeta> {
         self.types.values().filter(|meta| meta.is_singleton)
     }
@@ -176,9 +163,6 @@ pub(crate) struct FieldMeta {
     pub(crate) name: String,
     pub(crate) ty: CfdType,
     pub(crate) default: Option<CftSchemaDefaultValue>,
-    pub(crate) is_localized: bool,
-    #[allow(dead_code)] // consumed by engine localization module
-    pub(crate) localization_bucket: Option<String>,
 }
 
 impl FieldMeta {
@@ -187,8 +171,6 @@ impl FieldMeta {
             name: field.name.clone(),
             ty: CfdType::from_schema(&field.ty_ref, schema),
             default: field.default.clone(),
-            is_localized: field.is_localized,
-            localization_bucket: field.localization_bucket.clone(),
         }
     }
 }

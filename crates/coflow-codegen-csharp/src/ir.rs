@@ -122,7 +122,7 @@ fn build_csharp_singletons(view: &SchemaView) -> Vec<crate::model::CsharpSinglet
             let csharp_name = view.csharp_type_name(&name);
             crate::model::CsharpSingleton {
                 accessor_property: name.clone(),
-                source_name: name.clone(),
+                source_name: name,
                 records_var: format!("{}Singleton", camel_case(&csharp_name)),
                 type_name: csharp_name,
             }

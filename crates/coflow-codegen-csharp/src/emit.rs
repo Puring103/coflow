@@ -492,10 +492,10 @@ fn load_field(
             .unwrap_or_else(|| "default".to_string());
         let bucket_lit = escape_csharp_string(&bucket);
         let field_lit = escape_csharp_string(&field.name);
-        // `id` is in scope inside the loader function (key local name).
-        let key_expr = format!(
-            "string.Concat(\"{bucket_lit}/\", id?.ToString() ?? string.Empty, \"/{field_lit}\")"
-        );
+        // `id` is in scope inside the loader function (key local name). Use
+        // `.ToString()` directly so the expression compiles for both reference
+        // (string) and value-type (enum) keys; record keys are never null.
+        let key_expr = format!("string.Concat(\"{bucket_lit}/\", id.ToString(), \"/{field_lit}\")");
         (
             format!("new Localized<{inner_property_type}>({key_expr}, {raw_read_expr})"),
             format!("new Localized<{inner_property_type}>({key_expr}, {raw_msgpack_expr})"),

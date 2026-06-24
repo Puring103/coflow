@@ -266,18 +266,6 @@ impl CfdErrorCode {
             _ => CfdStage::DataModel,
         }
     }
-
-    /// Whether this error code is reserved for the data-model singleton/localized
-    /// validation pass. Used by tests to make sure the new pass emits stable codes.
-    #[must_use]
-    pub fn is_data_model_localized_or_singleton(self) -> bool {
-        matches!(
-            self,
-            Self::SingletonRecordCountInvalid
-                | Self::SingletonKeyMissingOrInvalid
-                | Self::SingletonKeyCollision
-        )
-    }
 }
 
 impl fmt::Display for CfdErrorCode {

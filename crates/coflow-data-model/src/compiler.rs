@@ -221,11 +221,7 @@ impl ModelCompiler {
         self.diagnostics.push(diagnostic);
     }
 
-    fn validate_singletons(
-        &mut self,
-        drafts: &[RecordDraft],
-        tables: &BTreeMap<String, CfdTable>,
-    ) {
+    fn validate_singletons(&mut self, drafts: &[RecordDraft], tables: &BTreeMap<String, CfdTable>) {
         let singleton_names: Vec<String> = self
             .schema
             .singleton_types()
@@ -296,7 +292,6 @@ impl ModelCompiler {
             }
         }
     }
-
 }
 
 /// Validation and resolution helper.

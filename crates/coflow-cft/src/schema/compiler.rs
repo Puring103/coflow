@@ -711,11 +711,13 @@ impl<'a> SchemaCompiler<'a> {
                                 CftErrorCode::SingletonNotReferenceable,
                                 module.clone(),
                                 ty.span,
-                                format!(
-                                    "singleton type `{name}` cannot be used as a field type"
-                                ),
+                                format!("singleton type `{name}` cannot be used as a field type"),
                             )
-                            .with_related(owner_module, owner_span, "singleton is defined here"),
+                            .with_related(
+                                owner_module,
+                                owner_span,
+                                "singleton is defined here",
+                            ),
                         );
                     }
                 }
