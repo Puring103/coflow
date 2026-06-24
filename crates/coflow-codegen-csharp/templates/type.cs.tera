@@ -33,7 +33,25 @@ namespace {{ project.namespace }}
 {% if project.uses_messagepack %}{% if type.loader.is_polymorphic %}{% include "type_messagepack_polymorphic_loader.cs.tera" %}{% else %}{% include "type_messagepack_loader.cs.tera" %}{% endif %}{% endif %}
 {% endif %}{% if type.equality %}
 
-    public override string ToString() => "{{ type.name }}(" + {{ type.equality.key_property }} + ")";
+{% if type.equality.by_fields %}    public override string ToString() => "{{ type.name }}";
+
+{% if type.equality.is_struct %}    public bool Equals({{ type.name }} other) =>
+{% else %}    public bool Equals({{ type.name }}? other) =>
+        other is not null{% if type.equality.fields | length > 0 %} &&{% endif %}
+{% endif %}{% if type.equality.fields | length == 0 %}        true;
+{% else %}{% for f in type.equality.fields %}        System.Collections.Generic.EqualityComparer<object>.Default.Equals({{ f }}, other.{{ f }}){% if not loop.last %} &&
+{% else %};
+{% endif %}{% endfor %}{% endif %}
+    public override bool Equals(object? obj) =>
+        obj is {{ type.name }} other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        var hash = new System.HashCode();
+{% for f in type.equality.fields %}        hash.Add({{ f }});
+{% endfor %}        return hash.ToHashCode();
+    }
+{% else %}    public override string ToString() => "{{ type.name }}(" + {{ type.equality.key_property }} + ")";
 
 {% if type.equality.is_struct %}    public bool Equals({{ type.name }} other) =>
         {{ type.equality.key_property }}.Equals(other.{{ type.equality.key_property }});
@@ -45,6 +63,6 @@ namespace {{ project.namespace }}
 
     public override int GetHashCode() =>
         {{ type.equality.key_property }}.GetHashCode();
-{% endif %}
+{% endif %}{% endif %}
 }
 }

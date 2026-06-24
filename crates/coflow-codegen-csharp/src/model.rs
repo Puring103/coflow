@@ -177,4 +177,9 @@ pub struct CsharpPolymorphicCase {
 pub struct CsharpEquality {
     pub key_property: String,
     pub is_struct: bool,
+    /// When true, equality compares all fields (used for inline-only types
+    /// without an Id). When false, compares only `key_property`.
+    pub by_fields: bool,
+    /// Property names participating in by-fields equality.
+    pub fields: Vec<String>,
 }
