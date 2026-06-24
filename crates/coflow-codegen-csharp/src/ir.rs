@@ -16,7 +16,8 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct CsharpCodegenOptions {
     pub namespace: String,
     pub database_class: String,
-    pub use_32bit_numerics: bool,
+    pub int_32: bool,
+    pub float_32: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -46,7 +47,8 @@ impl CsharpCodegenOptions {
         Self {
             namespace: namespace.into(),
             database_class: "CoflowTables".to_string(),
-            use_32bit_numerics: false,
+            int_32: false,
+            float_32: false,
         }
     }
 
@@ -57,8 +59,14 @@ impl CsharpCodegenOptions {
     }
 
     #[must_use]
-    pub fn with_32bit_numerics(mut self) -> Self {
-        self.use_32bit_numerics = true;
+    pub fn with_int_32(mut self, value: bool) -> Self {
+        self.int_32 = value;
+        self
+    }
+
+    #[must_use]
+    pub fn with_float_32(mut self, value: bool) -> Self {
+        self.float_32 = value;
         self
     }
 }
@@ -81,11 +89,9 @@ pub fn build_project(
         ));
     }
     let key_as_enum_names = key_as_enum_names(schema);
-    let view = if options.use_32bit_numerics {
-        SchemaView::new(schema).with_32bit_numerics()
-    } else {
-        SchemaView::new(schema)
-    };
+    let view = SchemaView::new(schema)
+        .with_int_32(options.int_32)
+        .with_float_32(options.float_32);
 
     let mut key_as_enum_variants =
         build_key_as_enums(schema, &key_as_enum_names, key_as_enum_variants);
@@ -158,11 +164,9 @@ pub fn preflight_csharp_codegen(
     validate_schema_names(schema, &mut diagnostics);
     let key_as_enum_names = key_as_enum_names(schema);
     validate_key_as_enum_variants(&key_as_enum_names, key_as_enum_variants, &mut diagnostics);
-    let view = if options.use_32bit_numerics {
-        SchemaView::new(schema).with_32bit_numerics()
-    } else {
-        SchemaView::new(schema)
-    };
+    let view = SchemaView::new(schema)
+        .with_int_32(options.int_32)
+        .with_float_32(options.float_32);
     validate_generated_names(&view, options, &mut diagnostics);
     diagnostics
 }
