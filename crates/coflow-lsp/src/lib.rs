@@ -13,6 +13,8 @@
 )]
 
 mod cfd;
+mod diagnostics;
+mod uri;
 
 use coflow_api::SourceLocationSpec;
 use coflow_cfd::parse_cfd;
@@ -30,11 +32,16 @@ use coflow_project::{
     compile_schema_project_with_overrides, dedupe_cft_diagnostics, diagnostic_set_from_cft,
     normalize_path, Project, SchemaBuild, SchemaSourceOverride,
 };
+use diagnostics::{
+    label_uri, lsp_diagnostic, lsp_error_diagnostic, lsp_label_location, lsp_range,
+    preferred_diagnostic_uri,
+};
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+use uri::{path_from_file_uri, path_to_file_uri};
 
 /// Runs the CFT language server over stdio.
 ///
@@ -283,10 +290,10 @@ impl<W: Write> LspServer<W> {
             let uri = diagnostic
                 .primary
                 .as_ref()
-                .map(|label| label_path(&label.location))
+                .map(|label| lsp_label_location(&label.location))
                 .map_or_else(
                     || preferred_diagnostic_uri(&preferred_uris, Path::new("")),
-                    |path| preferred_diagnostic_uri(&preferred_uris, &path),
+                    |location| label_uri(&location, &preferred_uris),
                 );
             by_uri
                 .entry(uri)
@@ -3096,188 +3103,6 @@ fn text_document_uri(params: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-fn lsp_diagnostic(diagnostic: &coflow_api::Diagnostic) -> Value {
-    let related: Vec<_> = diagnostic
-        .related
-        .iter()
-        .map(|related| {
-            let location = lsp_label_location(&related.location);
-            json!({
-                "location": {
-                    "uri": path_to_file_uri(&location.path),
-                    "range": lsp_range(
-                        location.start_line,
-                        location.start_character,
-                        location.end_line,
-                        location.end_character,
-                    )
-                },
-                "message": related.message.as_deref().unwrap_or("")
-            })
-        })
-        .collect();
-
-    let primary = diagnostic
-        .primary
-        .as_ref()
-        .map(|label| lsp_label_location(&label.location))
-        .unwrap_or_default();
-    let mut out = Map::new();
-    out.insert(
-        "range".to_string(),
-        lsp_range(
-            primary.start_line,
-            primary.start_character,
-            primary.end_line,
-            primary.end_character,
-        ),
-    );
-    out.insert(
-        "severity".to_string(),
-        json!(lsp_diagnostic_severity(diagnostic.severity)),
-    );
-    out.insert("code".to_string(), json!(&diagnostic.code));
-    out.insert(
-        "source".to_string(),
-        json!(format!("cft {}", diagnostic.stage)),
-    );
-    out.insert("message".to_string(), json!(&diagnostic.message));
-
-    if !related.is_empty() {
-        out.insert("relatedInformation".to_string(), Value::Array(related));
-    }
-
-    Value::Object(out)
-}
-
-const fn lsp_diagnostic_severity(severity: coflow_api::Severity) -> u8 {
-    match severity {
-        coflow_api::Severity::Error => 1,
-        coflow_api::Severity::Warning => 2,
-        coflow_api::Severity::Info => 3,
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-struct LspLabelLocation {
-    path: PathBuf,
-    start_line: usize,
-    start_character: usize,
-    end_line: usize,
-    end_character: usize,
-}
-
-fn lsp_label_location(location: &coflow_api::SourceLocation) -> LspLabelLocation {
-    match location {
-        coflow_api::SourceLocation::FileSpan {
-            path,
-            start_line,
-            start_character,
-            end_line,
-            end_character,
-        } => LspLabelLocation {
-            path: path.clone(),
-            start_line: *start_line,
-            start_character: *start_character,
-            end_line: *end_line,
-            end_character: *end_character,
-        },
-        coflow_api::SourceLocation::ProjectConfig { path, .. }
-        | coflow_api::SourceLocation::Artifact { path }
-        | coflow_api::SourceLocation::TableCell { path, .. } => LspLabelLocation {
-            path: path.clone(),
-            start_line: 0,
-            start_character: 0,
-            end_line: 0,
-            end_character: 1,
-        },
-        coflow_api::SourceLocation::RemoteCell { .. } => LspLabelLocation {
-            path: PathBuf::new(),
-            start_line: 0,
-            start_character: 0,
-            end_line: 0,
-            end_character: 1,
-        },
-    }
-}
-
-fn label_path(location: &coflow_api::SourceLocation) -> PathBuf {
-    lsp_label_location(location).path
-}
-
-fn lsp_error_diagnostic(code: &str, message: &str) -> Value {
-    json!({
-        "range": lsp_range(0, 0, 0, 1),
-        "severity": 2,
-        "code": code,
-        "source": "cft LSP",
-        "message": message
-    })
-}
-
-fn preferred_diagnostic_uri(preferred_uris: &BTreeMap<PathBuf, String>, path: &Path) -> String {
-    preferred_uris
-        .get(&normalize_path(path))
-        .cloned()
-        .unwrap_or_else(|| path_to_file_uri(path))
-}
-
-fn lsp_range(
-    start_line: usize,
-    start_character: usize,
-    end_line: usize,
-    end_character: usize,
-) -> Value {
-    json!({
-        "start": {
-            "line": start_line,
-            "character": start_character
-        },
-        "end": {
-            "line": end_line,
-            "character": end_character
-        }
-    })
-}
-
-fn path_from_file_uri(uri: &str) -> Option<PathBuf> {
-    let rest = uri.strip_prefix("file://")?;
-    let (authority, path) = rest.strip_prefix('/').map_or_else(
-        || {
-            rest.split_once('/').map_or_else(
-                || (rest, String::new()),
-                |(authority, path)| (authority, format!("/{path}")),
-            )
-        },
-        |stripped| ("", format!("/{stripped}")),
-    );
-    let authority = percent_decode(authority)?;
-    let decoded = percent_decode(&path)?;
-    if decoded.is_empty() {
-        return None;
-    }
-    let path = if cfg!(windows) {
-        if authority.is_empty() || authority.eq_ignore_ascii_case("localhost") {
-            let without_leading_slash = if decoded.len() >= 3
-                && decoded.as_bytes()[0] == b'/'
-                && decoded.as_bytes()[2] == b':'
-            {
-                &decoded[1..]
-            } else {
-                decoded.as_str()
-            };
-            without_leading_slash.replace('/', "\\")
-        } else {
-            format!(r"\\{}{}", authority, decoded.replace('/', r"\"))
-        }
-    } else if authority.is_empty() || authority == "localhost" {
-        decoded
-    } else {
-        format!("//{authority}{decoded}")
-    };
-    Some(PathBuf::from(path))
-}
-
 fn is_cfd_path(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
@@ -3435,66 +3260,6 @@ fn cfd_source_from_path(path: &Path) -> Option<CfdProjectSource> {
         path: normalized,
         text,
     })
-}
-
-fn path_to_file_uri(path: &Path) -> String {
-    let mut path = path.to_string_lossy().replace('\\', "/");
-    if cfg!(windows) {
-        if let Some(stripped) = path.strip_prefix("//?/") {
-            path = stripped.to_string();
-        }
-    }
-    if cfg!(windows) && path.len() >= 2 && path.as_bytes()[1] == b':' {
-        path.insert(0, '/');
-    }
-    format!("file://{}", percent_encode_uri_path(&path))
-}
-
-fn percent_decode(value: &str) -> Option<String> {
-    let bytes = value.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-
-    while index < bytes.len() {
-        if bytes[index] == b'%' {
-            let high = hex_value(*bytes.get(index + 1)?)?;
-            let low = hex_value(*bytes.get(index + 2)?)?;
-            out.push((high << 4) | low);
-            index += 3;
-        } else {
-            out.push(bytes[index]);
-            index += 1;
-        }
-    }
-
-    String::from_utf8(out).ok()
-}
-
-const fn hex_value(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
-    }
-}
-
-fn percent_encode_uri_path(value: &str) -> String {
-    let mut out = String::new();
-
-    for byte in value.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' | b':' => {
-                out.push(byte as char);
-            }
-            _ => {
-                out.push('%');
-                let _ = write!(out, "{byte:02X}");
-            }
-        }
-    }
-
-    out
 }
 
 #[cfg(test)]

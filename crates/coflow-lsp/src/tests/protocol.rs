@@ -405,6 +405,56 @@ fn unified_diagnostic_severity_is_preserved_in_lsp_rendering() {
 }
 
 #[test]
+fn remote_cell_diagnostics_use_remote_document_uri() {
+    let diagnostic = coflow_api::Diagnostic {
+        code: "TEST".to_string(),
+        stage: "TEST".to_string(),
+        severity: coflow_api::Severity::Error,
+        message: "message".to_string(),
+        primary: Some(coflow_api::Label {
+            location: coflow_api::SourceLocation::RemoteCell {
+                document: "lark:sht_remote".to_string(),
+                sheet: Some("Items".to_string()),
+                row: 2,
+                column: 3,
+            },
+            message: None,
+        }),
+        related: vec![coflow_api::Label {
+            location: coflow_api::SourceLocation::RemoteCell {
+                document: "lark:sht_related".to_string(),
+                sheet: Some("Items".to_string()),
+                row: 4,
+                column: 5,
+            },
+            message: Some("related".to_string()),
+        }],
+    };
+
+    let rendered = lsp_diagnostic(&diagnostic);
+
+    assert_eq!(
+        rendered["relatedInformation"][0]["location"]["uri"],
+        json!("lark:sht_related")
+    );
+}
+
+#[test]
+fn remote_cell_path_for_publish_uses_remote_document_uri() {
+    let location = coflow_api::SourceLocation::RemoteCell {
+        document: "lark:sht_remote".to_string(),
+        sheet: Some("Items".to_string()),
+        row: 2,
+        column: 3,
+    };
+
+    assert_eq!(
+        label_uri(&lsp_label_location(&location), &BTreeMap::new()),
+        "lark:sht_remote"
+    );
+}
+
+#[test]
 fn file_uri_parser_rejects_file_uris_without_paths() {
     assert!(path_from_file_uri("file://").is_none());
     assert!(path_from_file_uri("file://localhost").is_none());

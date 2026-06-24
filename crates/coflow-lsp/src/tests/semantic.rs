@@ -1,5 +1,6 @@
 use super::common::*;
 use super::*;
+use crate::uri::{hex_value, percent_decode};
 
 #[test]
 fn semantic_range_helpers_ignore_empty_multiline_and_overlapping_tokens() {

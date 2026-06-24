@@ -6,6 +6,9 @@ description = "CFD Editor — Tauri 2 desktop app"
 license = "MIT OR Apache-2.0"
 publish = false
 
+[lints]
+workspace = true
+
 [lib]
 name = "cfd_editor_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]

@@ -740,7 +740,7 @@ pub fn map_label_to_table(label: &CfdLabel, origins: &[RecordOrigin]) -> Option<
     })
 }
 
-#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn resolve_columns(
     schema: &CftContainer,
     source_name: &Path,
@@ -751,204 +751,328 @@ fn resolve_columns(
     header_excel_row: usize,
     header_excel_col: usize,
 ) -> Result<ResolvedColumns, TableDiagnostics> {
-    let mut diagnostics = Vec::new();
-    let mut header = Vec::with_capacity(header_row.len());
-    for (index, cell) in header_row.iter().enumerate() {
-        let excel_column = header_excel_col + index;
-        let column = table_cell_text(Some(cell));
-        header.push((index, excel_column, column.trim().to_string()));
+    let mut resolution = ColumnResolution::new(
+        schema,
+        source_name,
+        sheet,
+        type_name,
+        fields,
+        header_row,
+        header_excel_row,
+        header_excel_col,
+    );
+    resolution.scan_header();
+    resolution.finish()
+}
+
+struct ColumnResolution<'a> {
+    source_name: &'a Path,
+    sheet: &'a TableSheetConfig,
+    type_name: &'a str,
+    fields: &'a BTreeMap<String, String>,
+    header_excel_row: usize,
+    header: Vec<(usize, usize, String)>,
+    expand_fields: BTreeMap<String, BTreeMap<String, String>>,
+    expand_inner_order: BTreeMap<String, Vec<String>>,
+    columns: Vec<ResolvedColumn>,
+    id_column: Option<IdColumn>,
+    control_column: Option<usize>,
+    seen_fields: BTreeMap<String, String>,
+    key_column: String,
+    has_explicit_key: bool,
+    diagnostics: Vec<TableDiagnostic>,
+}
+
+impl<'a> ColumnResolution<'a> {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        schema: &CftContainer,
+        source_name: &'a Path,
+        sheet: &'a TableSheetConfig,
+        type_name: &'a str,
+        fields: &'a BTreeMap<String, String>,
+        header_row: &[String],
+        header_excel_row: usize,
+        header_excel_col: usize,
+    ) -> Self {
+        let mut header = Vec::with_capacity(header_row.len());
+        for (index, cell) in header_row.iter().enumerate() {
+            let excel_column = header_excel_col + index;
+            let column = table_cell_text(Some(cell));
+            header.push((index, excel_column, column.trim().to_string()));
+        }
+
+        Self {
+            source_name,
+            sheet,
+            type_name,
+            fields,
+            header_excel_row,
+            header,
+            expand_fields: expand_field_index(schema, type_name),
+            expand_inner_order: expand_field_order_index(schema, type_name),
+            columns: Vec::new(),
+            id_column: None,
+            control_column: None,
+            seen_fields: BTreeMap::new(),
+            key_column: sheet.key_column().to_string(),
+            has_explicit_key: sheet.key.is_some(),
+            diagnostics: Vec::new(),
+        }
     }
 
-    let expand_fields = expand_field_index(schema, type_name);
-    let expand_inner_order = expand_field_order_index(schema, type_name);
-    let mut columns = Vec::new();
-    let mut id_column = None::<(usize, usize, String)>;
-    let mut control_column = None;
-    let mut seen_fields = BTreeMap::<String, String>::new();
-    let key_column = sheet.key_column().to_string();
-    let has_explicit_key = sheet.key.is_some();
+    fn scan_header(&mut self) {
+        let mut cursor = 0;
+        while cursor < self.header.len() {
+            self.scan_column(&mut cursor);
+        }
+    }
 
-    let mut cursor = 0;
-    while cursor < header.len() {
-        let (index, excel_column, column_text) = &header[cursor];
+    fn scan_column(&mut self, cursor: &mut usize) {
+        let (index, excel_column, column_text) = &self.header[*cursor];
         let index = *index;
         let excel_column = *excel_column;
         let column_text = column_text.clone();
-        cursor += 1;
+        *cursor += 1;
         if column_text.is_empty() {
-            continue;
+            return;
         }
         if column_text == IMPORT_CONTROL_COLUMN {
-            control_column = Some(index);
-            continue;
+            self.control_column = Some(index);
+            return;
         }
-        let field = sheet
+
+        let field = self
+            .sheet
             .columns
             .get(&column_text)
             .map_or_else(|| column_text.clone(), Clone::clone);
-        if is_key_column(&column_text, &field, &key_column, has_explicit_key) {
-            if fields.contains_key(&field) {
-                seen_fields.insert(field.clone(), column_text.clone());
-            }
-            if id_column
-                .replace((index, excel_column, column_text.clone()))
-                .is_some()
-            {
-                diagnostics.extend(table_load_error_diagnostics(
-                    TableLoadError::DuplicateKeyColumn {
-                        location: Box::new(
-                            TableLocation::new(source_name.to_path_buf())
-                                .sheet(sheet.sheet.clone())
-                                .cell(header_excel_row, excel_column),
-                        ),
-                        key: key_column.clone(),
-                    },
-                ));
-            }
-            continue;
-        }
-        let Some(field_type) = fields.get(&field) else {
-            diagnostics.extend(table_load_error_diagnostics(
-                TableLoadError::UnknownColumn {
-                    location: Box::new(
-                        TableLocation::new(source_name.to_path_buf())
-                            .sheet(sheet.sheet.clone())
-                            .cell(header_excel_row, excel_column),
-                    ),
-                    type_name: type_name.to_string(),
-                    column: column_text,
-                    field,
-                },
-            ));
-            continue;
-        };
-        if let Some(first_column) = seen_fields.insert(field.clone(), column_text.clone()) {
-            diagnostics.extend(table_load_error_diagnostics(
-                TableLoadError::DuplicateFieldColumn {
-                    location: Box::new(
-                        TableLocation::new(source_name.to_path_buf())
-                            .sheet(sheet.sheet.clone())
-                            .cell(header_excel_row, excel_column),
-                    ),
-                    field,
-                    first_column,
-                    duplicate_column: column_text,
-                },
-            ));
-            continue;
+        if is_key_column(
+            &column_text,
+            &field,
+            &self.key_column,
+            self.has_explicit_key,
+        ) {
+            self.record_id_column(index, excel_column, &field, &column_text);
+            return;
         }
 
-        let expand = expand_fields.get(&field).map(|child_fields| {
-            let inner_order = expand_inner_order.get(&field).cloned().unwrap_or_default();
-            let mut consumed = Vec::with_capacity(inner_order.len());
-            if let Some(first_inner) = inner_order.first() {
-                let inner_ty = child_fields.get(first_inner).cloned().unwrap_or_default();
-                consumed.push(ExpandedSubColumn {
-                    index,
-                    excel_column,
-                    field: first_inner.clone(),
-                    field_type: inner_ty,
-                });
-            }
-            for inner_field in inner_order.iter().skip(1) {
-                if cursor >= header.len() {
-                    diagnostics.extend(table_load_error_diagnostics(
-                        TableLoadError::UnknownColumn {
-                            location: Box::new(
-                                TableLocation::new(source_name.to_path_buf())
-                                    .sheet(sheet.sheet.clone())
-                                    .cell(header_excel_row, excel_column),
-                            ),
-                            type_name: type_name.to_string(),
-                            column: column_text.clone(),
-                            field: format!(
-                                "{field} (@expand): not enough columns to cover inner field `{inner_field}`"
-                            ),
-                        },
-                    ));
-                    break;
-                }
-                let (next_index, next_excel_col, next_text) = &header[cursor];
-                if !next_text.is_empty() {
-                    diagnostics.extend(table_load_error_diagnostics(
-                        TableLoadError::UnexpectedExpandHeader {
-                            location: Box::new(
-                                TableLocation::new(source_name.to_path_buf())
-                                    .sheet(sheet.sheet.clone())
-                                    .cell(header_excel_row, *next_excel_col),
-                            ),
-                            parent_field: field.clone(),
-                            expected_field: inner_field.clone(),
-                            header: next_text.clone(),
-                        },
-                    ));
-                }
-                let inner_ty = child_fields.get(inner_field).cloned().unwrap_or_default();
-                consumed.push(ExpandedSubColumn {
-                    index: *next_index,
-                    excel_column: *next_excel_col,
-                    field: inner_field.clone(),
-                    field_type: inner_ty,
-                });
-                cursor += 1;
-            }
-            consumed
+        let Some(field_type) = self.fields.get(&field).cloned() else {
+            self.add_unknown_column_diagnostic(excel_column, column_text, field);
+            return;
+        };
+        if !self.record_field_column(excel_column, &field, &column_text) {
+            return;
+        }
+
+        let expand = self.expand_fields.get(&field).cloned().map(|child_fields| {
+            let inner_order = self
+                .expand_inner_order
+                .get(&field)
+                .cloned()
+                .unwrap_or_default();
+            self.consume_expanded_columns(
+                cursor,
+                &ExpandedColumnRequest {
+                    parent_index: index,
+                    parent_excel_column: excel_column,
+                    parent_header: &column_text,
+                    parent_field: &field,
+                    child_fields: &child_fields,
+                    inner_order: &inner_order,
+                },
+            )
         });
 
-        columns.push(ResolvedColumn {
+        self.columns.push(ResolvedColumn {
             index,
             excel_column,
             field,
-            field_type: field_type.clone(),
+            field_type,
             expand,
         });
     }
 
-    for field_name in fields.keys() {
-        if seen_fields.contains_key(field_name) {
-            continue;
+    fn record_id_column(
+        &mut self,
+        index: usize,
+        excel_column: usize,
+        field: &str,
+        column_text: &str,
+    ) {
+        if self.fields.contains_key(field) {
+            self.seen_fields
+                .insert(field.to_string(), column_text.to_string());
         }
-        diagnostics.extend(table_load_error_diagnostics(
-            TableLoadError::MissingColumn {
-                location: Box::new(
-                    TableLocation::new(source_name.to_path_buf())
-                        .sheet(sheet.sheet.clone())
-                        .with_row(header_excel_row),
-                ),
-                type_name: type_name.to_string(),
-                field: field_name.clone(),
+        if self.id_column.is_some() {
+            self.diagnostics.extend(table_load_error_diagnostics(
+                TableLoadError::DuplicateKeyColumn {
+                    location: Box::new(self.location().cell(self.header_excel_row, excel_column)),
+                    key: self.key_column.clone(),
+                },
+            ));
+        }
+        self.id_column = Some(IdColumn {
+            index,
+            excel_column,
+        });
+    }
+
+    fn record_field_column(&mut self, excel_column: usize, field: &str, column_text: &str) -> bool {
+        if let Some(first_column) = self
+            .seen_fields
+            .insert(field.to_string(), column_text.to_string())
+        {
+            self.diagnostics.extend(table_load_error_diagnostics(
+                TableLoadError::DuplicateFieldColumn {
+                    location: Box::new(self.location().cell(self.header_excel_row, excel_column)),
+                    field: field.to_string(),
+                    first_column,
+                    duplicate_column: column_text.to_string(),
+                },
+            ));
+            return false;
+        }
+        true
+    }
+
+    fn add_unknown_column_diagnostic(
+        &mut self,
+        excel_column: usize,
+        column_text: String,
+        field: String,
+    ) {
+        self.diagnostics.extend(table_load_error_diagnostics(
+            TableLoadError::UnknownColumn {
+                location: Box::new(self.location().cell(self.header_excel_row, excel_column)),
+                type_name: self.type_name.to_string(),
+                column: column_text,
+                field,
             },
         ));
     }
 
-    let id_column = id_column.map(|(index, excel_column, _)| IdColumn {
-        index,
-        excel_column,
-    });
-    let Some(id_column) = id_column else {
-        diagnostics.extend(table_load_error_diagnostics(
-            TableLoadError::MissingKeyColumn {
-                location: Box::new(
-                    TableLocation::new(source_name.to_path_buf())
-                        .sheet(sheet.sheet.clone())
-                        .with_row(header_excel_row),
-                ),
-                type_name: type_name.to_string(),
-                key: key_column,
-            },
-        ));
-        return Err(TableDiagnostics { diagnostics });
-    };
-
-    if diagnostics.is_empty() {
-        Ok(ResolvedColumns {
-            columns,
-            id_column,
-            control_column,
-        })
-    } else {
-        Err(TableDiagnostics { diagnostics })
+    fn consume_expanded_columns(
+        &mut self,
+        cursor: &mut usize,
+        request: &ExpandedColumnRequest<'_>,
+    ) -> Vec<ExpandedSubColumn> {
+        let mut consumed = Vec::with_capacity(request.inner_order.len());
+        if let Some(first_inner) = request.inner_order.first() {
+            let inner_ty = request
+                .child_fields
+                .get(first_inner)
+                .cloned()
+                .unwrap_or_default();
+            consumed.push(ExpandedSubColumn {
+                index: request.parent_index,
+                excel_column: request.parent_excel_column,
+                field: first_inner.clone(),
+                field_type: inner_ty,
+            });
+        }
+        for inner_field in request.inner_order.iter().skip(1) {
+            if *cursor >= self.header.len() {
+                self.diagnostics.extend(table_load_error_diagnostics(
+                    TableLoadError::UnknownColumn {
+                        location: Box::new(
+                            self.location()
+                                .cell(self.header_excel_row, request.parent_excel_column),
+                        ),
+                        type_name: self.type_name.to_string(),
+                        column: request.parent_header.to_string(),
+                        field: format!(
+                            "{} (@expand): not enough columns to cover inner field `{inner_field}`",
+                            request.parent_field
+                        ),
+                    },
+                ));
+                break;
+            }
+            let (next_index, next_excel_col, next_text) = &self.header[*cursor];
+            if !next_text.is_empty() {
+                self.diagnostics.extend(table_load_error_diagnostics(
+                    TableLoadError::UnexpectedExpandHeader {
+                        location: Box::new(
+                            self.location().cell(self.header_excel_row, *next_excel_col),
+                        ),
+                        parent_field: request.parent_field.to_string(),
+                        expected_field: inner_field.clone(),
+                        header: next_text.clone(),
+                    },
+                ));
+            }
+            let inner_ty = request
+                .child_fields
+                .get(inner_field)
+                .cloned()
+                .unwrap_or_default();
+            consumed.push(ExpandedSubColumn {
+                index: *next_index,
+                excel_column: *next_excel_col,
+                field: inner_field.clone(),
+                field_type: inner_ty,
+            });
+            *cursor += 1;
+        }
+        consumed
     }
+
+    fn add_missing_field_diagnostics(&mut self) {
+        for field_name in self.fields.keys() {
+            if self.seen_fields.contains_key(field_name) {
+                continue;
+            }
+            self.diagnostics.extend(table_load_error_diagnostics(
+                TableLoadError::MissingColumn {
+                    location: Box::new(self.location().with_row(self.header_excel_row)),
+                    type_name: self.type_name.to_string(),
+                    field: field_name.clone(),
+                },
+            ));
+        }
+    }
+
+    fn finish(mut self) -> Result<ResolvedColumns, TableDiagnostics> {
+        self.add_missing_field_diagnostics();
+        let Some(id_column) = self.id_column.take() else {
+            self.diagnostics.extend(table_load_error_diagnostics(
+                TableLoadError::MissingKeyColumn {
+                    location: Box::new(self.location().with_row(self.header_excel_row)),
+                    type_name: self.type_name.to_string(),
+                    key: self.key_column,
+                },
+            ));
+            return Err(TableDiagnostics {
+                diagnostics: self.diagnostics,
+            });
+        };
+
+        if self.diagnostics.is_empty() {
+            Ok(ResolvedColumns {
+                columns: self.columns,
+                id_column,
+                control_column: self.control_column,
+            })
+        } else {
+            Err(TableDiagnostics {
+                diagnostics: self.diagnostics,
+            })
+        }
+    }
+
+    fn location(&self) -> TableLocation {
+        TableLocation::new(self.source_name.to_path_buf()).sheet(self.sheet.sheet.clone())
+    }
+}
+
+struct ExpandedColumnRequest<'a> {
+    parent_index: usize,
+    parent_excel_column: usize,
+    parent_header: &'a str,
+    parent_field: &'a str,
+    child_fields: &'a BTreeMap<String, String>,
+    inner_order: &'a [String],
 }
 
 fn is_key_column(column_text: &str, field: &str, key_column: &str, has_explicit_key: bool) -> bool {
