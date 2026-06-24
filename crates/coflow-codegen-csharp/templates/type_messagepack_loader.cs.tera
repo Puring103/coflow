@@ -37,9 +37,9 @@
 
     private static {{ type.loader.type_name }} LoadBodyFields(ref MessagePackReader reader, {{ project.database_class }}.LoadContext context, int count, bool requireId)
     {
-        {{ type.loader.key_type_name }} {{ type.loader.key_local_name }} = default!;
+{% if type.loader.has_id %}        {{ type.loader.key_type_name }} {{ type.loader.key_local_name }} = default!;
         var hasId = false;
-{% for field in type.loader.fields %}        {{ field.type_name }} {{ field.local_name }} = {% if field.missing_expr %}{{ field.missing_expr }}{% else %}default!{% endif %};
+{% endif %}{% for field in type.loader.fields %}        {{ field.type_name }} {{ field.local_name }} = {% if field.missing_expr %}{{ field.missing_expr }}{% else %}default!{% endif %};
         var {{ field.has_name }} = false;
 {% endfor %}
         for (var i = 0; i < count; i++)
@@ -48,11 +48,11 @@
 
             switch (key)
             {
-                case "id":
+{% if type.loader.has_id %}                case "id":
                     hasId = true;
                     {{ type.loader.key_local_name }} = {{ type.loader.key_messagepack_read_expr }};
                     break;
-{% for field in type.loader.fields %}                case "{{ field.source_name }}":
+{% endif %}{% for field in type.loader.fields %}                case "{{ field.source_name }}":
                     {{ field.has_name }} = true;
                     {{ field.local_name }} = {{ field.messagepack_read_expr }};
                     break;
@@ -68,8 +68,8 @@
         }
 
 {% endif %}{% endfor %}        return new {{ type.loader.type_name }}(
-            requireId ? {{ type.loader.key_local_name }} : default!{% if type.loader.fields | length > 0 %},{% endif %}
-{% for field in type.loader.fields %}            {{ field.local_name }}{% if not loop.last %},{% endif %}
+{% if type.loader.has_id %}            requireId ? {{ type.loader.key_local_name }} : default!{% if type.loader.fields | length > 0 %},{% endif %}
+{% endif %}{% for field in type.loader.fields %}            {{ field.local_name }}{% if not loop.last %},{% endif %}
 {% endfor %}        );
     }
 

@@ -44,7 +44,8 @@ pub fn build_csharp_type(
     let mut assignments = Vec::new();
     let mut properties = Vec::new();
 
-    if !schema_type.is_abstract {
+    let has_id = !schema_type.is_abstract && type_has_id(&schema_type.name, view);
+    if has_id {
         let key_ty = view.key_field_type(&schema_type.name);
         let key_type = csharp_type(&key_ty, view);
         constructor_parameters.push(CsharpParameter {
@@ -106,7 +107,7 @@ pub fn build_csharp_type(
         Some(loader_method(&schema_type.name, view)?)
     };
 
-    let equality = (!schema_type.is_abstract).then(|| CsharpEquality {
+    let equality = (has_id).then(|| CsharpEquality {
         key_property: "Id".to_string(),
         is_struct,
     });
@@ -130,6 +131,10 @@ pub fn build_csharp_type(
         loader,
         equality,
     })
+}
+
+fn type_has_id(type_name: &str, view: &SchemaView) -> bool {
+    view.is_ref_target_loadable(type_name)
 }
 
 fn has_concrete_parent(type_name: &str, view: &SchemaView) -> bool {
@@ -409,6 +414,7 @@ fn loader_method(type_name: &str, view: &SchemaView) -> Result<CsharpLoader, Csh
     let mut used_local_names = loader_reserved_local_names(ty);
     let key_ty = view.key_field_type(type_name);
     let key_local_name = field_local_name("id", &mut used_local_names)?;
+    let has_id = type_has_id(type_name, view);
     Ok(CsharpLoader {
         type_name: view.csharp_type_name(type_name),
         source_name: type_name.to_string(),
@@ -421,6 +427,7 @@ fn loader_method(type_name: &str, view: &SchemaView) -> Result<CsharpLoader, Csh
             &read_token_expr(&key_ty, "token", "context", view)?,
         ),
         key_messagepack_read_expr: read_messagepack_expr(&key_ty, "reader", "context", view)?,
+        has_id,
         fields: ty
             .all_fields
             .iter()
@@ -445,6 +452,7 @@ fn polymorphic_loader(
         key_property: "Id".to_string(),
         key_read_expr: String::new(),
         key_messagepack_read_expr: String::new(),
+        has_id: type_has_id(type_name, view),
         fields: Vec::new(),
         polymorphic_cases: assignable
             .iter()
