@@ -264,16 +264,19 @@ impl CodeGenerator for CsharpCodeGenerator {
             .get("namespace")
             .and_then(serde_json::Value::as_str)
             .unwrap_or("Game.Config");
-        let use_32bit = output
+        let int_32 = output
             .options
-            .get("numeric_width")
-            .and_then(serde_json::Value::as_u64)
-            .is_some_and(|w| w == 32);
-        let options = if use_32bit {
-            CsharpCodegenOptions::new(namespace).with_32bit_numerics()
-        } else {
-            CsharpCodegenOptions::new(namespace)
-        };
+            .get("int_32")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        let float_32 = output
+            .options
+            .get("float_32")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        let options = CsharpCodegenOptions::new(namespace)
+            .with_int_32(int_32)
+            .with_float_32(float_32);
         DiagnosticSet {
             diagnostics: preflight_csharp_codegen(ctx.schema, &options, &BTreeMap::new())
                 .into_iter()
@@ -294,16 +297,19 @@ impl CodeGenerator for CsharpCodeGenerator {
             .get("namespace")
             .and_then(serde_json::Value::as_str)
             .unwrap_or("Game.Config");
-        let use_32bit = output
+        let int_32 = output
             .options
-            .get("numeric_width")
-            .and_then(serde_json::Value::as_u64)
-            .is_some_and(|w| w == 32);
-        let options = if use_32bit {
-            CsharpCodegenOptions::new(namespace).with_32bit_numerics()
-        } else {
-            CsharpCodegenOptions::new(namespace)
-        };
+            .get("int_32")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        let float_32 = output
+            .options
+            .get("float_32")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        let options = CsharpCodegenOptions::new(namespace)
+            .with_int_32(int_32)
+            .with_float_32(float_32);
         let key_as_enum_variants = key_as_enum_variants_from_options(&output.options)?;
         let non_empty_tables = ctx.model.map(|model| {
             model

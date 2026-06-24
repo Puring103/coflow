@@ -10,7 +10,8 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct SchemaView {
     pub types: BTreeMap<String, TypeMeta>,
     pub enums: BTreeSet<String>,
-    pub use_32bit_numerics: bool,
+    pub int_32: bool,
+    pub float_32: bool,
     children: BTreeMap<String, BTreeSet<String>>,
     csharp_types: BTreeMap<String, String>,
     csharp_enums: BTreeMap<String, String>,
@@ -64,7 +65,8 @@ impl SchemaView {
         Self {
             types,
             enums,
-            use_32bit_numerics: false,
+            int_32: false,
+            float_32: false,
             children,
             csharp_types,
             csharp_enums,
@@ -72,8 +74,14 @@ impl SchemaView {
     }
 
     #[must_use]
-    pub fn with_32bit_numerics(mut self) -> Self {
-        self.use_32bit_numerics = true;
+    pub fn with_int_32(mut self, value: bool) -> Self {
+        self.int_32 = value;
+        self
+    }
+
+    #[must_use]
+    pub fn with_float_32(mut self, value: bool) -> Self {
+        self.float_32 = value;
         self
     }
 

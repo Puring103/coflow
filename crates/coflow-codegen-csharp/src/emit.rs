@@ -750,14 +750,14 @@ fn read_messagepack_dict_key_expr(
 fn csharp_type(ty: &FieldType, view: &SchemaView) -> String {
     match ty {
         FieldType::Int => {
-            if view.use_32bit_numerics {
+            if view.int_32 {
                 "int".to_string()
             } else {
                 "long".to_string()
             }
         }
         FieldType::Float => {
-            if view.use_32bit_numerics {
+            if view.float_32 {
                 "float".to_string()
             } else {
                 "double".to_string()
