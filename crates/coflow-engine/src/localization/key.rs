@@ -1,59 +1,32 @@
 /// Translation key components.
 ///
-/// Keys are formatted as `{Bucket}/{record_key}/{field_path}` per
-/// `docs/spec/13-localization.md` §3. All segments must be valid CFT
-/// identifiers; this is enforced upstream (data-model
-/// `LocalizedRecordKeyInvalid`, schema `LocalizedBucketNotIdentifier`).
+/// Keys identify a single translatable cell. They are emitted as
+/// `{record_id}` for normal table records and as `{field_name}` for singleton
+/// types (the table file name already encodes the type and field).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LocalizationKey {
-    pub bucket: String,
-    pub record_key: String,
-    pub field_path: Vec<String>,
+    pub type_name: String,
+    pub field_name: String,
+    pub row_id: String,
 }
 
 impl LocalizationKey {
     #[must_use]
     pub fn format(&self) -> String {
-        format_key(&self.bucket, &self.record_key, &self.field_path)
+        self.row_id.clone()
+    }
+
+    #[must_use]
+    pub fn table_file_stem(&self, is_singleton: bool) -> String {
+        if is_singleton {
+            self.type_name.clone()
+        } else {
+            format!("{}_{}", self.type_name, self.field_name)
+        }
     }
 }
 
 #[must_use]
-pub fn format_key(bucket: &str, record_key: &str, field_path: &[String]) -> String {
-    let mut out = String::with_capacity(
-        bucket.len() + record_key.len() + field_path.iter().map(|s| s.len() + 1).sum::<usize>() + 2,
-    );
-    out.push_str(bucket);
-    out.push('/');
-    out.push_str(record_key);
-    for segment in field_path {
-        out.push('/');
-        out.push_str(segment);
-    }
-    out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn formats_simple_key() {
-        assert_eq!(
-            format_key("Item", "potion", &["name".to_string()]),
-            "Item/potion/name"
-        );
-    }
-
-    #[test]
-    fn formats_nested_key() {
-        assert_eq!(
-            format_key(
-                "Item",
-                "potion",
-                &["stats".to_string(), "label".to_string()]
-            ),
-            "Item/potion/stats/label"
-        );
-    }
+pub fn format_key(_type_name: &str, _field_name: &str, row_id: &str) -> String {
+    row_id.to_string()
 }

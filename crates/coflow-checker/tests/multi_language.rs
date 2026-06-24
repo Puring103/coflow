@@ -45,7 +45,7 @@ fn translation_substitution_can_make_a_passing_check_fail_for_one_language() {
     let model = build_simple_model(&schema);
 
     let mut translations = BTreeMap::new();
-    translations.insert("Item/potion/name".to_string(), String::new()); // empty
+    translations.insert("Item/name/potion".to_string(), String::new()); // empty
     let overrides = vec![LocalizationOverrides::new("zh_CN", translations)];
 
     let err = run_checks_for_languages(&schema, &model, &overrides)

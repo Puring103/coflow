@@ -268,13 +268,12 @@ pub fn generate_project_code(
         return Ok(CommandOutcome::Diagnostics(artifact_diagnostics));
     }
     let lockfile = enum_lockfile_path(&session.project);
-    let key_as_enum_ids = collect_declared_key_as_enum_ids(&session.schema);
-    let (locked_key_as_enum, key_as_enum_variants) =
-        match merge_key_as_enum_lockfile(&lockfile, key_as_enum_ids) {
-            Ok(lockfile) => lockfile,
-            Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
-        };
-    let key_as_enum_variants = match serde_json::to_value(key_as_enum_variants) {
+    let existing_locked = match read_key_as_enum_lockfile(&lockfile) {
+        Ok(locked) => locked,
+        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
+    };
+    let key_as_enum_variants_map = lockfile_to_variants(&existing_locked);
+    let key_as_enum_variants = match serde_json::to_value(key_as_enum_variants_map) {
         Ok(value) => value,
         Err(err) => {
             return Ok(CommandOutcome::Diagnostics(artifact_diagnostic_set(
@@ -298,12 +297,7 @@ pub fn generate_project_code(
         Ok(staged_code) => staged_code,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
-    let staged_lockfile = match stage_key_as_enum_lockfile_if_needed(&lockfile, &locked_key_as_enum)
-    {
-        Ok(staged_lockfile) => staged_lockfile,
-        Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
-    };
-    if let Err(diagnostics) = commit_staged_dir_and_file(staged_code, staged_lockfile) {
+    if let Err(diagnostics) = commit_staged_dir_and_file(staged_code, None) {
         return Ok(CommandOutcome::Diagnostics(diagnostics));
     }
     Ok(CommandOutcome::Success(CodegenReport {
@@ -778,17 +772,16 @@ fn merge_key_as_enum_lockfile(
 
     for (enum_name, key_enum) in current_ids {
         let entries = locked.entry(enum_name).or_default();
+        let current_set: BTreeSet<String> = key_enum.ids.iter().cloned().collect();
+        entries.retain(|name, _| current_set.contains(name));
         validate_existing_key_as_enum_values(lockfile, entries, key_enum.is_flags)?;
-        let mut next_value = next_key_as_enum_value_start(lockfile, entries, key_enum.is_flags)?;
         for id in key_enum.ids {
             if entries.contains_key(&id) {
                 continue;
             }
-            while entries.values().any(|value| *value == next_value) {
-                next_value = next_key_as_enum_value(lockfile, next_value, key_enum.is_flags)?;
-            }
-            entries.insert(id, next_value);
-            next_value = next_key_as_enum_value(lockfile, next_value, key_enum.is_flags)?;
+            let used: BTreeSet<i64> = entries.values().copied().collect();
+            let value = allocate_key_as_enum_value(lockfile, &used, key_enum.is_flags)?;
+            entries.insert(id, value);
         }
     }
 
@@ -812,33 +805,32 @@ fn merge_key_as_enum_lockfile(
     Ok((locked, variants))
 }
 
-fn next_key_as_enum_value_start(
+fn allocate_key_as_enum_value(
     lockfile: &Path,
-    entries: &BTreeMap<String, i64>,
-    is_flags: bool,
-) -> Result<i64, DiagnosticSet> {
-    let Some(value) = entries.values().copied().max() else {
-        return Ok(i64::from(is_flags));
-    };
-    next_key_as_enum_value(lockfile, value, is_flags)
-}
-
-fn next_key_as_enum_value(
-    lockfile: &Path,
-    value: i64,
+    used: &BTreeSet<i64>,
     is_flags: bool,
 ) -> Result<i64, DiagnosticSet> {
     if is_flags {
-        return value.checked_mul(2).ok_or_else(|| {
-            artifact_diagnostic_set(
-                lockfile,
-                "@keyAsEnum lockfile exhausted i64 flag enum values",
-            )
-        });
+        let mut candidate: i64 = 1;
+        loop {
+            if !used.contains(&candidate) {
+                return Ok(candidate);
+            }
+            candidate = candidate.checked_mul(2).ok_or_else(|| {
+                artifact_diagnostic_set(
+                    lockfile,
+                    "@keyAsEnum lockfile exhausted i64 flag enum values",
+                )
+            })?;
+        }
     }
-    value.checked_add(1).ok_or_else(|| {
-        artifact_diagnostic_set(lockfile, "@keyAsEnum lockfile exhausted i64 enum values")
-    })
+    let mut candidate: i64 = 0;
+    while used.contains(&candidate) {
+        candidate = candidate.checked_add(1).ok_or_else(|| {
+            artifact_diagnostic_set(lockfile, "@keyAsEnum lockfile exhausted i64 enum values")
+        })?;
+    }
+    Ok(candidate)
 }
 
 fn validate_existing_key_as_enum_values(
@@ -884,6 +876,29 @@ fn stage_key_as_enum_lockfile_if_needed(
         return Ok(None);
     }
     stage_json_file(path, locked).map(Some)
+}
+
+fn lockfile_to_variants(
+    locked: &KeyAsEnumLockfile,
+) -> BTreeMap<String, Vec<KeyAsEnumVariant>> {
+    locked
+        .iter()
+        .map(|(enum_name, entries)| {
+            let mut variants = entries
+                .iter()
+                .map(|(name, value)| KeyAsEnumVariant {
+                    name: name.clone(),
+                    value: *value,
+                })
+                .collect::<Vec<_>>();
+            variants.sort_by(|left, right| {
+                left.value
+                    .cmp(&right.value)
+                    .then_with(|| left.name.cmp(&right.name))
+            });
+            (enum_name.clone(), variants)
+        })
+        .collect()
 }
 
 fn variants_to_lockfile(variants: &BTreeMap<String, Vec<KeyAsEnumVariant>>) -> KeyAsEnumLockfile {

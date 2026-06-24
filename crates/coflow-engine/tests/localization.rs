@@ -9,17 +9,14 @@ use coflow_data_model::{CfdDataModel, CfdInputRecord, CfdInputValue};
 use coflow_engine::localization::{format_key, LocalizationKey};
 
 #[test]
-fn formats_key_with_field_path_segments() {
+fn formats_key_uses_row_id_only() {
     let key = LocalizationKey {
-        bucket: "Item".to_string(),
-        record_key: "potion".to_string(),
-        field_path: vec!["name".to_string()],
+        type_name: "Item".to_string(),
+        field_name: "name".to_string(),
+        row_id: "potion".to_string(),
     };
-    assert_eq!(key.format(), "Item/potion/name");
-    assert_eq!(
-        format_key("ui", "main", &["a".to_string(), "b".to_string()]),
-        "ui/main/a/b"
-    );
+    assert_eq!(key.format(), "potion");
+    assert_eq!(format_key("Item", "name", "potion"), "potion");
 }
 
 fn schema_with_localized_string() -> CftContainer {
@@ -57,7 +54,6 @@ fn schema_publishes_localized_field_metadata() {
     let item = schema.resolve_type("Item").unwrap();
     let field = item.all_fields.iter().find(|f| f.name == "name").unwrap();
     assert!(field.is_localized);
-    assert_eq!(field.localization_bucket.as_deref(), Some("Item"));
 }
 
 #[test]

@@ -123,6 +123,7 @@ fn generate_json_with_key_as_enum_variants(
         CsharpDataFormat::Json,
         &json_database_templates(),
         variants,
+        None,
     )
 }
 
@@ -145,7 +146,7 @@ fn codegen_wraps_localized_fields_and_emits_runtime_helper() -> Result<(), Strin
     require_contains(item, "public long Count { get; }")?;
     require_contains(
         item,
-        "new Localized<string>(string.Concat(\"Item/\", id.ToString(), \"/display_name\")",
+        "new Localized<string>(string.Concat(\"Item/display_name/\", id.ToString())",
     )?;
 
     let helper = generated_file(&files, "Localized.cs")?;
@@ -429,8 +430,8 @@ fn codegen_key_as_enum_generates_strongly_typed_ids_and_refs() -> Result<(), Str
 
     let gene_id = generated_file(&files, "GeneId.cs")?;
     require_contains(gene_id, "public enum GeneId")?;
-    require_contains(gene_id, "GeneSpore = 0")?;
-    require_contains(gene_id, "GeneMating = 1")?;
+    require_contains(gene_id, "gene_spore = 0")?;
+    require_contains(gene_id, "gene_mating = 1")?;
 
     let gene = generated_file(&files, "GeneConfig.cs")?;
     require_contains(gene, "public GeneId Id { get; }")?;

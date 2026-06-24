@@ -1,7 +1,6 @@
 //! Localization entry collection, merge with on-disk CSV, and write-back.
 
 use crate::localization::csv;
-use crate::localization::key::format_key;
 use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use coflow_cft::CftContainer;
 use coflow_data_model::{CfdDataModel, CfdDictKey, CfdEnumValue, CfdRecord, CfdValue};
@@ -11,64 +10,60 @@ use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub(super) struct Entry {
-    pub bucket: String,
-    pub key: String,
+    pub type_name: String,
+    pub field_name: String,
+    pub is_singleton: bool,
+    pub row_id: String,
     pub default: String,
+}
+
+/// Bucket coordinate (one CSV file per (type, field) for normal types, one CSV
+/// per type for singletons).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct BucketKey {
+    pub type_name: String,
+    pub field_name: Option<String>,
+}
+
+impl BucketKey {
+    pub fn file_stem(&self) -> String {
+        match &self.field_name {
+            Some(field) => format!("{}_{field}", self.type_name),
+            None => self.type_name.clone(),
+        }
+    }
 }
 
 pub(super) fn collect_entries(schema: &CftContainer, model: &CfdDataModel) -> Vec<Entry> {
     let mut out = Vec::new();
     for (_, record) in model.records() {
-        collect_from_record(schema, record, record.key(), &[], &mut out);
+        let Some(schema_type) = schema.resolve_type(&record.actual_type) else {
+            continue;
+        };
+        let is_singleton = schema_type.is_singleton;
+        for field in &schema_type.all_fields {
+            if !field.is_localized {
+                continue;
+            }
+            let value = record.fields.get(&field.name);
+            let default = value.map_or_else(String::new, render_value);
+            let row_id = if is_singleton {
+                field.name.clone()
+            } else {
+                record.key().to_string()
+            };
+            out.push(Entry {
+                type_name: record.actual_type.clone(),
+                field_name: field.name.clone(),
+                is_singleton,
+                row_id,
+                default,
+            });
+        }
     }
     out
 }
 
-/// Walks one record (top-level or nested object value) and emits one entry per
-/// `@localized` field. Per spec §2.4:
-///   - A `@localized` field consumes the entire value: we emit one entry and
-///     do NOT descend into its sub-fields.
-///   - A non-`@localized` object field is transparent: we descend so any
-///     `@localized` sub-field still gets its own key.
-///   - Arrays/dicts are never descended.
-fn collect_from_record(
-    schema: &CftContainer,
-    record: &CfdRecord,
-    record_key: &str,
-    parent_path: &[String],
-    out: &mut Vec<Entry>,
-) {
-    let Some(schema_type) = schema.resolve_type(&record.actual_type) else {
-        return;
-    };
-    for field in &schema_type.all_fields {
-        let value = record.fields.get(&field.name);
-        let mut path = parent_path.to_vec();
-        path.push(field.name.clone());
-        if field.is_localized {
-            let bucket = field
-                .localization_bucket
-                .clone()
-                .unwrap_or_else(|| record.actual_type.clone());
-            let default = value.map_or_else(String::new, render_value);
-            let key = format_key(&bucket, record_key, &path);
-            out.push(Entry {
-                bucket,
-                key,
-                default,
-            });
-        } else if let Some(CfdValue::Object(nested)) = value {
-            collect_from_record(schema, nested, record_key, &path, out);
-        }
-    }
-}
-
-/// Render a `CfdValue` to a CSV cell string. Leaf primitives render
-/// straightforwardly; composite values use a JSON-like notation that preserves
-/// structure. The exact form is intentionally simple and stable; consumers of
-/// the CSV are expected to round-trip through this module rather than parse
-/// the string with arbitrary expectations. See `docs/spec/13-localization.md`
-/// §4.3 for the documented encoding.
 fn render_value(value: &CfdValue) -> String {
     match value {
         CfdValue::Null => String::new(),
@@ -126,7 +121,6 @@ fn format_object(record: &CfdRecord) -> String {
 /// In-memory representation of one bucket's CSV.
 #[derive(Debug, Clone)]
 pub(super) struct BucketTable {
-    /// `key -> (default, lang -> translation)`. `BTreeMap` so output is sorted.
     pub rows: BTreeMap<String, BucketRow>,
 }
 
@@ -136,25 +130,21 @@ pub(super) struct BucketRow {
     pub translations: BTreeMap<String, String>,
 }
 
-/// Merge freshly collected entries with on-disk CSVs. Parse failures and
-/// other recoverable IO errors are reported as `LOC-IO-001` diagnostics; the
-/// merge then proceeds as if the file did not exist (no human translations
-/// preserved for that bucket on this run, which is the safest fallback).
 pub(super) fn merge_with_existing(
     out_dir: &Path,
-    by_bucket: BTreeMap<String, Vec<Entry>>,
+    by_bucket: BTreeMap<BucketKey, Vec<Entry>>,
     languages: &[String],
     config_path: &Path,
-) -> (BTreeMap<String, BucketTable>, DiagnosticSet) {
+) -> (BTreeMap<BucketKey, BucketTable>, DiagnosticSet) {
     let mut out = BTreeMap::new();
     let mut diagnostics = DiagnosticSet::empty();
     for (bucket, entries) in by_bucket {
         let mut rows: BTreeMap<String, BucketRow> = BTreeMap::new();
         for entry in entries {
-            let row = rows.entry(entry.key).or_default();
+            let row = rows.entry(entry.row_id).or_default();
             row.default = entry.default;
         }
-        let path = out_dir.join(format!("{bucket}.csv"));
+        let path = out_dir.join(format!("{}.csv", bucket.file_stem()));
         match fs::read_to_string(&path) {
             Ok(text) => match csv::parse(&text) {
                 Ok(parsed) => merge_existing_rows(&parsed, &mut rows, languages),
@@ -190,21 +180,21 @@ fn merge_existing_rows(
     };
     let mut lang_columns: BTreeMap<String, usize> = BTreeMap::new();
     for (col, name) in header.iter().enumerate() {
-        if name == "key" || name == "default" {
+        if name == "id" || name == "default" {
             continue;
         }
         if languages.iter().any(|lang| lang == name) {
             lang_columns.insert(name.clone(), col);
         }
     }
-    let Some(key_col) = header.iter().position(|h| h == "key") else {
+    let Some(id_col) = header.iter().position(|h| h == "id") else {
         return;
     };
     for record in parsed.iter().skip(1) {
-        let Some(key) = record.get(key_col) else {
+        let Some(id) = record.get(id_col) else {
             continue;
         };
-        let Some(row) = rows.get_mut(key) else {
+        let Some(row) = rows.get_mut(id) else {
             continue;
         };
         for (lang, col) in &lang_columns {
@@ -219,7 +209,7 @@ fn merge_existing_rows(
 
 pub(super) fn write_buckets(
     out_dir: &Path,
-    buckets: BTreeMap<String, BucketTable>,
+    buckets: BTreeMap<BucketKey, BucketTable>,
     languages: &[String],
     config_path: &Path,
 ) -> DiagnosticSet {
@@ -238,13 +228,13 @@ pub(super) fn write_buckets(
         return diagnostics;
     }
     for (bucket, table) in buckets {
-        let path = out_dir.join(format!("{bucket}.csv"));
+        let path = out_dir.join(format!("{}.csv", bucket.file_stem()));
         let mut rows: Vec<Vec<String>> = Vec::new();
-        let mut header = vec!["key".to_string(), "default".to_string()];
+        let mut header = vec!["id".to_string(), "default".to_string()];
         header.extend(languages.iter().cloned());
         rows.push(header);
-        for (key, row) in table.rows {
-            let mut record = vec![key, row.default];
+        for (id, row) in table.rows {
+            let mut record = vec![id, row.default];
             for lang in languages {
                 let cell = row.translations.get(lang).cloned().unwrap_or_default();
                 record.push(cell);

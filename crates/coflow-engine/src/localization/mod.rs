@@ -13,7 +13,7 @@ mod csv;
 mod key;
 mod tables;
 
-use crate::localization::tables::{collect_entries, merge_with_existing, write_buckets};
+use crate::localization::tables::{collect_entries, merge_with_existing, write_buckets, BucketKey};
 use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use coflow_data_model::CfdDataModel;
 use coflow_project::{LocalizationConfig, Project};
@@ -55,10 +55,18 @@ fn resolve_out_dir(project: &Project, config: &LocalizationConfig) -> PathBuf {
     }
 }
 
-fn group_by_bucket(entries: Vec<tables::Entry>) -> BTreeMap<String, Vec<tables::Entry>> {
-    let mut out: BTreeMap<String, Vec<tables::Entry>> = BTreeMap::new();
+fn group_by_bucket(entries: Vec<tables::Entry>) -> BTreeMap<BucketKey, Vec<tables::Entry>> {
+    let mut out: BTreeMap<BucketKey, Vec<tables::Entry>> = BTreeMap::new();
     for entry in entries {
-        out.entry(entry.bucket.clone()).or_default().push(entry);
+        let bucket = BucketKey {
+            type_name: entry.type_name.clone(),
+            field_name: if entry.is_singleton {
+                None
+            } else {
+                Some(entry.field_name.clone())
+            },
+        };
+        out.entry(bucket).or_default().push(entry);
     }
     out
 }
@@ -94,40 +102,39 @@ pub fn load_overrides_for_languages(
         .iter()
         .map(|l| (l.clone(), BTreeMap::new()))
         .collect();
-    let dir = match fs::read_dir(&out_dir) {
-        Ok(dir) => dir,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            return LoadedOverrides {
-                overrides: Vec::new(),
-                diagnostics,
+    if !out_dir.exists() {
+        return LoadedOverrides {
+            overrides: Vec::new(),
+            diagnostics,
+        };
+    }
+    for schema_type in schema.all_types() {
+        let is_singleton = schema_type.is_singleton;
+        for field in &schema_type.all_fields {
+            if !field.is_localized {
+                continue;
+            }
+            let (file_stem, key_prefix) = if is_singleton {
+                (schema_type.name.clone(), schema_type.name.clone())
+            } else {
+                (
+                    format!("{}_{}", schema_type.name, field.name),
+                    format!("{}/{}", schema_type.name, field.name),
+                )
             };
-        }
-        Err(err) => {
-            diagnostics.push(parse_diagnostic(
+            let path = out_dir.join(format!("{file_stem}.csv"));
+            if !path.exists() {
+                continue;
+            }
+            load_one_csv(
+                &path,
                 &project.config_path,
-                format!(
-                    "failed to read localization out_dir `{}`: {err}",
-                    out_dir.display()
-                ),
-            ));
-            return LoadedOverrides {
-                overrides: Vec::new(),
-                diagnostics,
-            };
+                config,
+                &key_prefix,
+                &mut per_lang,
+                &mut diagnostics,
+            );
         }
-    };
-    for entry in dir.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("csv") {
-            continue;
-        }
-        load_one_csv(
-            &path,
-            &project.config_path,
-            config,
-            &mut per_lang,
-            &mut diagnostics,
-        );
     }
     let overrides = config
         .languages
@@ -153,6 +160,7 @@ fn load_one_csv(
     path: &Path,
     config_path: &Path,
     config: &LocalizationConfig,
+    key_prefix: &str,
     per_lang: &mut BTreeMap<String, BTreeMap<String, String>>,
     diagnostics: &mut DiagnosticSet,
 ) {
@@ -183,7 +191,7 @@ fn load_one_csv(
         }
     };
     let Some(header) = rows.first() else { return };
-    let Some(key_col) = header.iter().position(|h| h == "key") else {
+    let Some(id_col) = header.iter().position(|h| h == "id") else {
         return;
     };
     let lang_cols: BTreeMap<String, usize> = header
@@ -193,14 +201,15 @@ fn load_one_csv(
         .map(|(col, name)| (name.clone(), col))
         .collect();
     for row in rows.iter().skip(1) {
-        let Some(key) = row.get(key_col) else {
+        let Some(row_id) = row.get(id_col) else {
             continue;
         };
+        let lookup_key = format!("{key_prefix}/{row_id}");
         for (lang, col) in &lang_cols {
             if let Some(cell) = row.get(*col) {
                 if !cell.is_empty() {
                     if let Some(map) = per_lang.get_mut(lang) {
-                        map.insert(key.clone(), cell.clone());
+                        map.insert(lookup_key.clone(), cell.clone());
                     }
                 }
             }

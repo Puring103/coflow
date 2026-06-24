@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct SchemaView {
     pub types: BTreeMap<String, TypeMeta>,
     pub enums: BTreeSet<String>,
+    pub use_32bit_numerics: bool,
     children: BTreeMap<String, BTreeSet<String>>,
     csharp_types: BTreeMap<String, String>,
     csharp_enums: BTreeMap<String, String>,
@@ -63,10 +64,17 @@ impl SchemaView {
         Self {
             types,
             enums,
+            use_32bit_numerics: false,
             children,
             csharp_types,
             csharp_enums,
         }
+    }
+
+    #[must_use]
+    pub fn with_32bit_numerics(mut self) -> Self {
+        self.use_32bit_numerics = true;
+        self
     }
 
     pub fn type_meta(&self, name: &str) -> Result<&TypeMeta, CsharpCodegenError> {
@@ -288,7 +296,6 @@ pub struct FieldMeta {
     pub default: Option<CftSchemaDefaultValue>,
     pub annotations: Vec<CftAnnotation>,
     pub is_localized: bool,
-    pub localization_bucket: Option<String>,
 }
 
 impl FieldMeta {
@@ -299,7 +306,6 @@ impl FieldMeta {
             default: field.default.clone(),
             annotations: field.annotations.clone(),
             is_localized: field.is_localized,
-            localization_bucket: field.localization_bucket.clone(),
         }
     }
 }
