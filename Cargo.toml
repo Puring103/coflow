@@ -70,3 +70,4 @@ coflow-codegen-csharp = { path = "crates/coflow-codegen-csharp" }
 coflow-exporter-json = { path = "crates/coflow-exporter-json" }
 coflow-loader-excel = { path = "crates/coflow-loader-excel" }
 rust_xlsxwriter = "0.95"
+toml = "0.9"

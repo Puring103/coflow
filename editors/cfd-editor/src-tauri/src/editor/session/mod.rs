@@ -34,7 +34,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path as StdPath;
 use std::sync::{Arc, RwLock};
 
-use coflow_api::{DataWriter, ProviderRegistry, RecordOrigin, WriteCellRequest, WriteContext};
+use coflow_api::{
+    DataWriter, ProviderRegistry, RecordOrigin, WriteCellRequest, WriteContext,
+    WriteFieldPathSegment,
+};
 use coflow_data_model::{CfdDataModel, CfdRecord, CfdRecordId};
 use coflow_engine::ProjectSession;
 
@@ -300,92 +303,22 @@ impl SessionStore {
             .map(field_path_segment_to_api)
             .collect::<Vec<_>>();
 
-        // Phase 1: resolve everything we need from the session and run the
-        // writer while holding only a read lock.
-        let yaml_path = {
-            let session = session_lock
-                .read()
-                .map_err(|_| EditorError::session("session poisoned"))?;
-            let new_cfd_value =
-                field_value_to_cfd(new_value, &session.engine.model).map_err(EditorError::write)?;
-            let (_id, record) = lookup_record_by_key(&session.engine.model, record_key)
-                .ok_or_else(|| {
-                    EditorError::not_found(format!("record `{record_key}` not found"))
-                })?;
-            let host_file = session
-                .engine
-                .records
-                .file_for_key(&record.key)
-                .map(str::to_string)
-                .unwrap_or_else(|| file_path.to_string());
-            let source = session
-                .engine
-                .files
-                .source_for_display(&host_file)
-                .and_then(|source_id| session.engine.sources.entries().get(source_id.index()))
-                .map(|entry| entry.source.clone())
-                .ok_or_else(|| {
-                    EditorError::write(format!(
-                        "no resolved source recorded for file `{host_file}` (cannot dispatch write)"
-                    ))
-                })?;
-            let origin = resolve_effective_origin(&session.engine.model, record, field_path);
-            let actual_type = record.actual_type.clone();
+        let yaml_path = write_field_to_source(
+            &session_lock,
+            registry.as_ref(),
+            file_path,
+            record_key,
+            field_path,
+            &path_segments,
+            new_value,
+        )?;
 
-            let writer: Arc<dyn DataWriter> =
-                registry.writer(&source.provider_id).ok_or_else(|| {
-                    EditorError::write(format!(
-                        "no writer registered for provider `{}`",
-                        source.provider_id
-                    ))
-                })?;
+        // Rebuild the session under a write lock so cross-file ref indexes
+        // and check diagnostics stay coherent.
+        refresh_session_after_write(&session_lock, registry.as_ref(), &yaml_path)?;
 
-            let write_request = WriteCellRequest {
-                origin: &origin,
-                record_key: &record.key,
-                actual_type: &actual_type,
-                field_path: &path_segments,
-                new_value: &new_cfd_value,
-                schema: &session.engine.schema,
-                source: &source,
-            };
-            let write_ctx = WriteContext {
-                project_root: &session.project_root,
-                schema: &session.engine.schema,
-                model: Some(&session.engine.model),
-            };
-            writer
-                .write_field(write_ctx, &write_request)
-                .map_err(|diagnostics| {
-                    let message = diagnostics
-                        .iter()
-                        .map(|d| d.message.as_str())
-                        .collect::<Vec<_>>()
-                        .join("; ");
-                    EditorError::write(message).with_diagnostics(
-                        diagnostics
-                            .diagnostics
-                            .iter()
-                            .map(diagnostic_from_api)
-                            .collect(),
-                    )
-                })?;
-            session.yaml_path.clone()
-        };
-
-        // Phase 2: rebuild the session under a write lock so cross-file ref
-        // indexes and check diagnostics stay coherent.
-        let (new_session, _snapshot) = build_session(&yaml_path, registry.as_ref())?;
-        {
-            let mut session = session_lock
-                .write()
-                .map_err(|_| EditorError::session("session poisoned"))?;
-            *session = new_session;
-        }
-
-        // Phase 3: return the refreshed row + the diagnostics produced by
-        // the rebuild, so the front-end can refresh its diagnostics panel
-        // without issuing a separate query.
+        // Return the refreshed row + diagnostics from the rebuild so the
+        // front-end does not need a follow-up diagnostics query.
         let session = session_lock
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
@@ -429,6 +362,95 @@ impl SessionStore {
             .cloned()
             .ok_or_else(|| EditorError::not_found(format!("unknown session id {id}")))
     }
+}
+
+fn write_field_to_source(
+    session_lock: &RwLock<EditorSession>,
+    registry: &ProviderRegistry,
+    file_path: &str,
+    record_key: &str,
+    field_path: &[FieldPathSegment],
+    path_segments: &[WriteFieldPathSegment],
+    new_value: &FieldValue,
+) -> Result<std::path::PathBuf, EditorError> {
+    let session = session_lock
+        .read()
+        .map_err(|_| EditorError::session("session poisoned"))?;
+    let new_cfd_value =
+        field_value_to_cfd(new_value, &session.engine.model).map_err(EditorError::write)?;
+    let (_id, record) = lookup_record_by_key(&session.engine.model, record_key)
+        .ok_or_else(|| EditorError::not_found(format!("record `{record_key}` not found")))?;
+    let host_file = session
+        .engine
+        .records
+        .file_for_key(&record.key)
+        .map_or_else(|| file_path.to_string(), str::to_string);
+    let source = session
+        .engine
+        .files
+        .source_for_display(&host_file)
+        .and_then(|source_id| session.engine.sources.entries().get(source_id.index()))
+        .map(|entry| entry.source.clone())
+        .ok_or_else(|| {
+            EditorError::write(format!(
+                "no resolved source recorded for file `{host_file}` (cannot dispatch write)"
+            ))
+        })?;
+    let origin = resolve_effective_origin(&session.engine.model, record, field_path);
+    let actual_type = record.actual_type.clone();
+
+    let writer: Arc<dyn DataWriter> = registry.writer(&source.provider_id).ok_or_else(|| {
+        EditorError::write(format!(
+            "no writer registered for provider `{}`",
+            source.provider_id
+        ))
+    })?;
+
+    let write_request = WriteCellRequest {
+        origin: &origin,
+        record_key: &record.key,
+        actual_type: &actual_type,
+        field_path: path_segments,
+        new_value: &new_cfd_value,
+        schema: &session.engine.schema,
+        source: &source,
+    };
+    let write_ctx = WriteContext {
+        project_root: &session.project_root,
+        schema: &session.engine.schema,
+        model: Some(&session.engine.model),
+    };
+    writer
+        .write_field(write_ctx, &write_request)
+        .map_err(|diagnostics| {
+            let message = diagnostics
+                .iter()
+                .map(|d| d.message.as_str())
+                .collect::<Vec<_>>()
+                .join("; ");
+            EditorError::write(message).with_diagnostics(
+                diagnostics
+                    .diagnostics
+                    .iter()
+                    .map(diagnostic_from_api)
+                    .collect(),
+            )
+        })?;
+    Ok(session.yaml_path.clone())
+}
+
+fn refresh_session_after_write(
+    session_lock: &RwLock<EditorSession>,
+    registry: &ProviderRegistry,
+    yaml_path: &StdPath,
+) -> Result<(), EditorError> {
+    let (new_session, _snapshot) = build_session(yaml_path, registry)?;
+    let mut session = session_lock
+        .write()
+        .map_err(|_| EditorError::session("session poisoned"))?;
+    *session = new_session;
+    drop(session);
+    Ok(())
 }
 
 fn lookup_record_by_key<'a>(

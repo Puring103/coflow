@@ -1,3 +1,5 @@
+#![allow(clippy::multiple_crate_versions)]
+
 use std::path::PathBuf;
 
 mod editor;
@@ -8,6 +10,7 @@ use editor::{
 };
 use tauri::{Manager, State};
 
+#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 fn load_project(
     yaml_path: String,
@@ -16,6 +19,7 @@ fn load_project(
     store.load_project(&PathBuf::from(yaml_path))
 }
 
+#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 fn init_project(
     dir: String,
@@ -24,11 +28,13 @@ fn init_project(
     store.init_project(&PathBuf::from(dir))
 }
 
+#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 fn close_session(session_id: u32, store: State<'_, SessionStore>) -> Result<(), EditorError> {
     store.close_session(session_id)
 }
 
+#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 fn get_file_records(
     session_id: u32,
@@ -38,6 +44,7 @@ fn get_file_records(
     store.get_file_records(session_id, &file_path)
 }
 
+#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 fn get_graph(
     session_id: u32,
@@ -47,6 +54,7 @@ fn get_graph(
     store.get_graph(session_id, &file_path)
 }
 
+#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 fn get_enum_variants(
     session_id: u32,
@@ -56,6 +64,7 @@ fn get_enum_variants(
     store.get_enum_variants(session_id, &enum_name)
 }
 
+#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 fn get_ref_targets(
     session_id: u32,
@@ -65,6 +74,7 @@ fn get_ref_targets(
     store.get_ref_targets(session_id, &target_type)
 }
 
+#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 fn make_default_object(
     session_id: u32,
@@ -74,6 +84,7 @@ fn make_default_object(
     store.make_default_object(session_id, &type_name)
 }
 
+#[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 fn write_field(
     session_id: u32,
@@ -87,6 +98,11 @@ fn write_field(
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Start the CFD editor Tauri application.
+///
+/// # Errors
+/// Returns a Tauri error if application setup, context generation, or the
+/// runtime event loop fails to start.
 pub fn run() -> tauri::Result<()> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

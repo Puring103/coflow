@@ -229,6 +229,7 @@ const fn is_false(b: &bool) -> bool {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::struct_field_names)]
 pub struct SpreadInfo {
     /// Record key the value was inherited from.
     pub source_record_key: String,

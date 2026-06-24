@@ -14,6 +14,7 @@ pub fn parse(source: &str) -> Result<Vec<Vec<String>>, String> {
     let mut row: Vec<String> = Vec::new();
     let mut field = String::new();
     let mut in_quotes = false;
+    let mut after_closing_quote = false;
     let mut chars = source.chars().peekable();
     while let Some(ch) = chars.next() {
         if in_quotes {
@@ -24,11 +25,17 @@ pub fn parse(source: &str) -> Result<Vec<Vec<String>>, String> {
                         field.push('"');
                     } else {
                         in_quotes = false;
+                        after_closing_quote = true;
                     }
                 }
                 _ => field.push(ch),
             }
         } else {
+            if after_closing_quote && !matches!(ch, ',' | '\n' | '\r') {
+                return Err(format!(
+                    "unexpected character `{ch}` after closing quoted field"
+                ));
+            }
             match ch {
                 '"' => {
                     if !field.is_empty() {
@@ -38,10 +45,12 @@ pub fn parse(source: &str) -> Result<Vec<Vec<String>>, String> {
                 }
                 ',' => {
                     row.push(std::mem::take(&mut field));
+                    after_closing_quote = false;
                 }
                 '\n' => {
                     row.push(std::mem::take(&mut field));
                     rows.push(std::mem::take(&mut row));
+                    after_closing_quote = false;
                 }
                 '\r' => {
                     if matches!(chars.peek(), Some('\n')) {
@@ -49,6 +58,7 @@ pub fn parse(source: &str) -> Result<Vec<Vec<String>>, String> {
                     }
                     row.push(std::mem::take(&mut field));
                     rows.push(std::mem::take(&mut row));
+                    after_closing_quote = false;
                 }
                 _ => field.push(ch),
             }
@@ -58,7 +68,7 @@ pub fn parse(source: &str) -> Result<Vec<Vec<String>>, String> {
         return Err("unterminated quoted field".to_string());
     }
     // Trailing field without newline.
-    if !field.is_empty() || !row.is_empty() {
+    if !field.is_empty() || !row.is_empty() || after_closing_quote {
         row.push(field);
         rows.push(row);
     }
@@ -123,5 +133,21 @@ mod tests {
         let rows = parse(csv).unwrap();
         assert_eq!(rows[1], vec!["foo", "a, b"]);
         assert_eq!(rows[2], vec![r#"with"quote"#, "bar"]);
+    }
+
+    #[test]
+    fn rejects_characters_after_closing_quote_before_delimiter() {
+        let err = parse("k,v\nfoo,\"bar\"baz\n").unwrap_err();
+        assert_eq!(err, "unexpected character `b` after closing quoted field");
+    }
+
+    #[test]
+    fn accepts_closing_quote_at_end_of_file_and_before_crlf() {
+        assert_eq!(parse("\"bar\"").unwrap(), vec![vec!["bar"]]);
+        assert_eq!(parse("\"\"").unwrap(), vec![vec![""]]);
+        assert_eq!(
+            parse("k,v\r\nfoo,\"bar\"\r\n").unwrap()[1],
+            vec!["foo", "bar"]
+        );
     }
 }

@@ -1,6 +1,7 @@
 #![allow(clippy::expect_used, clippy::panic)]
 
 use std::process::Command;
+use toml::{Table, Value};
 
 #[test]
 fn cell_value_is_part_of_table_loader_core_not_a_standalone_crate() {
@@ -160,6 +161,39 @@ fn loaders_do_not_depend_on_checker_runtime_directly() {
     assert!(
         !excel_manifest.contains("coflow-checker"),
         "loaders should only produce input records; model checks belong in coflow-engine"
+    );
+}
+
+#[test]
+fn workspace_members_inherit_workspace_lints() {
+    let manifest = std::fs::read_to_string("Cargo.toml").expect("read workspace manifest");
+    let manifest = manifest.parse::<Table>().expect("parse workspace manifest");
+    let members = manifest["workspace"]["members"]
+        .as_array()
+        .expect("workspace members");
+
+    let missing = members
+        .iter()
+        .filter_map(Value::as_str)
+        .filter(|member| {
+            let manifest_path = std::path::Path::new(member).join("Cargo.toml");
+            let member_manifest = std::fs::read_to_string(&manifest_path)
+                .unwrap_or_else(|err| panic!("read {}: {err}", manifest_path.display()));
+            let member_manifest = member_manifest
+                .parse::<Table>()
+                .unwrap_or_else(|err| panic!("parse {}: {err}", manifest_path.display()));
+            !member_manifest
+                .get("lints")
+                .and_then(Value::as_table)
+                .and_then(|lints| lints.get("workspace"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        missing.is_empty(),
+        "workspace members must inherit workspace lints with `[lints] workspace = true`: {missing:#?}"
     );
 }
 

@@ -13,7 +13,7 @@ pub struct Diagnostics {
 
 impl Diagnostics {
     #[must_use]
-    pub fn from_items(items: Vec<DiagnosticItem>) -> Self {
+    pub const fn from_items(items: Vec<DiagnosticItem>) -> Self {
         Self { items }
     }
 
