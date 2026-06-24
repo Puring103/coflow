@@ -89,9 +89,17 @@ pub fn build_project(
         ));
     }
     let id_as_enum_names = id_as_enum_names(schema);
+    let probe = SchemaView::new(schema);
+    let tables: Vec<String> = probe
+        .table_names()
+        .into_iter()
+        .filter(|name| non_empty_tables.is_none_or(|set| set.contains(name)))
+        .collect();
+    let loadable: BTreeSet<String> = tables.iter().cloned().collect();
     let view = SchemaView::new(schema)
         .with_int_32(options.int_32)
-        .with_float_32(options.float_32);
+        .with_float_32(options.float_32)
+        .with_loadable_tables(loadable);
 
     let mut id_as_enum_variants =
         build_id_as_enums(schema, &id_as_enum_names, id_as_enum_variants);
@@ -109,11 +117,6 @@ pub fn build_project(
         .map(|schema_type| build_csharp_type(schema_type, &view))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let tables: Vec<String> = view
-        .table_names()
-        .into_iter()
-        .filter(|name| non_empty_tables.is_none_or(|set| set.contains(name)))
-        .collect();
     let database = build_csharp_database(&view, &tables, &options.database_class, data_format)?;
     let singletons = build_csharp_singletons(&view);
 

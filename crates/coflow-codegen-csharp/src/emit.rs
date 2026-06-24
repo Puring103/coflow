@@ -625,15 +625,20 @@ fn read_token_expr(
         )),
         FieldType::Type(name) => {
             let csharp_name = view.csharp_type_name(name);
-            let key_reader = read_token_expr(&view.key_field_type(name), token, context, view)?;
             let inline_reader = if view.range_is_polymorphic(name) {
                 format!("{csharp_name}.LoadPolymorphic({token}, {context})")
             } else {
                 format!("{csharp_name}.LoadInline({token}, {context})")
             };
-            Ok(format!(
-                "{token}.Type == JTokenType.String ? {context}.Get{csharp_name}({key_reader}) : {inline_reader}"
-            ))
+            if view.is_ref_target_loadable(name) {
+                let key_reader =
+                    read_token_expr(&view.key_field_type(name), token, context, view)?;
+                Ok(format!(
+                    "{token}.Type == JTokenType.String ? {context}.Get{csharp_name}({key_reader}) : {inline_reader}"
+                ))
+            } else {
+                Ok(inline_reader)
+            }
         }
         FieldType::Array(inner) => Ok(format!(
             "CoflowJson.ReadArray({token}, (item) => {})",
@@ -703,15 +708,20 @@ fn read_messagepack_expr(
         )),
         FieldType::Type(name) => {
             let csharp_name = view.csharp_type_name(name);
-            let key_reader = read_messagepack_expr(&view.key_field_type(name), reader, context, view)?;
             let inline_reader = if view.range_is_polymorphic(name) {
                 format!("{csharp_name}.LoadPolymorphic(ref {reader}, {context})")
             } else {
                 format!("{csharp_name}.LoadInline(ref {reader}, {context})")
             };
-            Ok(format!(
-                "CoflowMessagePack.NextIsString(ref {reader}) ? {context}.Get{csharp_name}({key_reader}) : {inline_reader}"
-            ))
+            if view.is_ref_target_loadable(name) {
+                let key_reader =
+                    read_messagepack_expr(&view.key_field_type(name), reader, context, view)?;
+                Ok(format!(
+                    "CoflowMessagePack.NextIsString(ref {reader}) ? {context}.Get{csharp_name}({key_reader}) : {inline_reader}"
+                ))
+            } else {
+                Ok(inline_reader)
+            }
         }
         FieldType::Array(inner) => Ok(format!(
             "CoflowMessagePack.ReadArray(ref {reader}, {context}, static (ref MessagePackReader itemReader, CoflowTables.LoadContext context) => {})",
@@ -853,8 +863,20 @@ fn default_value_expr(
     };
     Ok(Some(match default {
         CftSchemaDefaultValue::Null => "null".to_string(),
-        CftSchemaDefaultValue::Int(value) => value.to_string(),
-        CftSchemaDefaultValue::Float(value) => format_float(*value),
+        CftSchemaDefaultValue::Int(value) => {
+            if view.int_32 {
+                value.to_string()
+            } else {
+                format!("{value}L")
+            }
+        }
+        CftSchemaDefaultValue::Float(value) => {
+            let mut text = format_float(*value);
+            if view.float_32 {
+                text.push('f');
+            }
+            text
+        }
         CftSchemaDefaultValue::Bool(value) => value.to_string(),
         CftSchemaDefaultValue::String(value) => string_default_expr(value, ty, view),
         CftSchemaDefaultValue::Enum {
