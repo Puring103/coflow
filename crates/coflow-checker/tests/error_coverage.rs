@@ -214,7 +214,84 @@ fn cases() -> Vec<Case> {
             code: CfdErrorCode::CheckEmptyMinMax,
             adjacent: adjacent_non_empty_min,
         },
+        Case {
+            name: "singleton record count invalid",
+            schema: "@singleton type Cfg { value: int; }",
+            phase: Phase::Build(build_singleton_count_invalid),
+            code: CfdErrorCode::SingletonRecordCountInvalid,
+            adjacent: adjacent_singleton_count_valid,
+        },
+        Case {
+            name: "singleton key missing or invalid",
+            schema: "@singleton type Cfg { value: int; }",
+            phase: Phase::Build(build_singleton_key_invalid),
+            code: CfdErrorCode::SingletonKeyMissingOrInvalid,
+            adjacent: adjacent_singleton_count_valid,
+        },
+        Case {
+            name: "singleton key collision",
+            schema: "@singleton type A { x: int; } @singleton type B { y: int; }",
+            phase: Phase::Build(build_singleton_key_collision),
+            code: CfdErrorCode::SingletonKeyCollision,
+            adjacent: adjacent_singleton_keys_unique,
+        },
     ]
+}
+
+fn build_singleton_count_invalid(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+    // Two records of a singleton type triggers SingletonRecordCountInvalid.
+    model_from_records(
+        schema,
+        [
+            one_record("first", "Cfg", [("value", CfdInputValue::from(1_i64))]),
+            one_record("second", "Cfg", [("value", CfdInputValue::from(2_i64))]),
+        ],
+    )
+}
+
+fn adjacent_singleton_count_valid() {
+    assert_builds(
+        "@singleton type Cfg { value: int; }",
+        [one_record(
+            "main",
+            "Cfg",
+            [("value", CfdInputValue::from(1_i64))],
+        )],
+    );
+}
+
+fn build_singleton_key_invalid(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+    // A singleton record with an invalid identifier key. We use a leading
+    // digit to slip past the generic InvalidRecordKey path's prerequisites
+    // and reach the singleton-specific check.
+    model_from_records(
+        schema,
+        [one_record(
+            "1bad",
+            "Cfg",
+            [("value", CfdInputValue::from(1_i64))],
+        )],
+    )
+}
+
+fn build_singleton_key_collision(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+    model_from_records(
+        schema,
+        [
+            one_record("dup", "A", [("x", CfdInputValue::from(1_i64))]),
+            one_record("dup", "B", [("y", CfdInputValue::from(2_i64))]),
+        ],
+    )
+}
+
+fn adjacent_singleton_keys_unique() {
+    assert_builds(
+        "@singleton type A { x: int; } @singleton type B { y: int; }",
+        [
+            one_record("a", "A", [("x", CfdInputValue::from(1_i64))]),
+            one_record("b", "B", [("y", CfdInputValue::from(2_i64))]),
+        ],
+    );
 }
 
 fn model_from_records(
