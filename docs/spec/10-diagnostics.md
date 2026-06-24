@@ -152,7 +152,7 @@ annotation 语法错误、非法 check 语句或重复 check block。
 - 未知命名类型。
 - 非法继承。
 - 非法使用 `@struct`、`@expand`、`@flag`、`@display`、`@deprecated` 或
-  `@keyAsEnum`。
+  `@idAsEnum`。
 - 旧字段级 `@id`、`@index`、`@ref`、`@IdAsEnum` 和 `@GenAsEnum` 已移除；
   应改用字段的 CFT 类型以及 `@Type.key` 或 `&key` 单元格引用。
 - 声明保留字段 `id`。
@@ -363,8 +363,8 @@ C# codegen preflight 诊断，发生在任何生成文件被修改之前。
 - 生成文件名冲突。
 - 生成 member 名冲突。
 - 配置的 database 文件名冲突。
-- `@keyAsEnum` 生成 variant 非法。
-- `@keyAsEnum` variant value 重复。
+- `@idAsEnum` 生成 variant 非法。
+- `@idAsEnum` variant value 重复。
 
 存在这些诊断时，Coflow 不读写 enum lockfile，不替换 C# 输出目录，也不生成
 新的 `.cs` 文件。

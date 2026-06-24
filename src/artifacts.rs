@@ -76,7 +76,7 @@ pub struct CodegenArtifactRequest<'a> {
     pub data_format: &'a str,
     pub output_config: &'a OutputConfig,
     pub dir: &'a Path,
-    pub key_as_enum_variants: &'a Value,
+    pub id_as_enum_variants: &'a Value,
 }
 
 pub fn stage_codegen_artifacts(
@@ -92,7 +92,7 @@ pub fn stage_codegen_artifacts(
     let output = OutputSpec {
         output_type: request.codegen_id.to_string(),
         dir: request.dir.to_path_buf(),
-        options: codegen_output_options(request.output_config, request.key_as_enum_variants),
+        options: codegen_output_options(request.output_config, request.id_as_enum_variants),
     };
     let artifacts = codegen.generate(
         CodegenContext {
@@ -259,12 +259,12 @@ fn output_options(output: &OutputConfig) -> Value {
     output.options().clone()
 }
 
-fn codegen_output_options(output: &OutputConfig, key_as_enum_variants: &Value) -> Value {
+fn codegen_output_options(output: &OutputConfig, id_as_enum_variants: &Value) -> Value {
     let mut options = output.options().as_object().cloned().unwrap_or_default();
-    if !key_as_enum_variants.is_null() {
+    if !id_as_enum_variants.is_null() {
         options.insert(
-            "key_as_enum_variants".to_string(),
-            key_as_enum_variants.clone(),
+            "id_as_enum_variants".to_string(),
+            id_as_enum_variants.clone(),
         );
     }
     Value::Object(options)

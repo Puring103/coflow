@@ -433,11 +433,11 @@ item is null              # null 判断
 | `@struct` | `type` | — | 必须是 `sealed type` | codegen 生成值类型（C# struct） |
 | `@flag` | `enum` | — | 变体值必须为 2 的幂（0 除外） | 位标志枚举（C# [Flags]） |
 | `@expand` | `field` | 具体 `type` | 字段不能是 primitive、enum、array、dict 或 nullable | Excel loader 将父字段及相邻列展开为嵌套对象 |
-| `@keyAsEnum(EnumName)` | `type` | — | EnumName 必须是已声明且没有手写变体的 enum；同一 enum 只能绑定一个 type | build/codegen 按记录 key 填充该 enum，并把记录 `Id` 提升为该 enum |
+| `@idAsEnum(EnumName)` | `type` | — | EnumName 必须是已声明且没有手写变体的 enum；同一 enum 只能绑定一个 type | build/codegen 按记录 key 填充该 enum，并把记录 `Id` 提升为该 enum |
 | `@display("text")` | `type`、`enum`、`field`、`enum variant` | 任意 | — | 可读名称，codegen 生成 XML 注释，用于编辑器显示 |
 | `@deprecated` | `type`、`enum`、`field`、`enum variant` | 任意 | — | 标记废弃，codegen 输出对应语言的废弃标记；子类不自动继承父类的 `@deprecated` |
 | `@localized` 或 `@localized("bucket")` | `field` | 任意 | bucket 名必须是合法 CFT 标识符 | 字段值按语言变化；详见 [13-localization.md](13-localization.md) |
-| `@singleton` | `type` | — | 不能与 `abstract` 或 `@keyAsEnum` 并用；该 type 不能被任何字段类型引用（含 array/dict/nullable 内层） | 数据集中该 type 仅含 1 条 record；详见 §6.1 |
+| `@singleton` | `type` | — | 不能与 `abstract` 或 `@idAsEnum` 并用；该 type 不能被任何字段类型引用（含 array/dict/nullable 内层） | 数据集中该 type 仅含 1 条 record；详见 §6.1 |
 
 枚举变体只允许 `@display("text")` 和 `@deprecated`；其他注解用于枚举变体时以 `CFT-SCHEMA-023 InvalidAnnotationTarget` 报错。
 
@@ -447,7 +447,7 @@ item is null              # null 判断
 
 约束：
 
-- 不可用于 `abstract` 类型；与 `@keyAsEnum` 互斥
+- 不可用于 `abstract` 类型；与 `@idAsEnum` 互斥
 - 允许用在父类型上；singleton 行为指"作为该具体类型的实例只有 1 条"，不影响其子类的 records
 - **该 type 不可被任何字段类型引用**（包括嵌套对象字段、`[T]` 元素、`{K:V}` 的 key 与 value、`T?` 内层）。引用单例需通过 `&key` 或 `@Type.key` 在数据源里写显式 record 引用，不允许在 schema 里把单例当作字段类型嵌套
 - record key 必须显式提供且为合法 CFT 标识符
@@ -464,7 +464,7 @@ C# codegen 不为 singleton 生成 `Tb*` table 访问器，而是直接在入口
 
 ```cft
 @display("物品")
-@keyAsEnum(ItemId)
+@idAsEnum(ItemId)
 type Item {
   @display("稀有度")
   rarity: Rarity;
@@ -695,7 +695,7 @@ pub enum CftConstValue {
 | `CFT-SCHEMA-024` | `InvalidAnnotationArgument` | 注解参数数量或类型错误 |
 | `CFT-SCHEMA-025` | `InvalidAnnotatedFieldType` | `@expand` 字段类型不合法 |
 | `CFT-SCHEMA-026` | `StructRequiresSealedType` | `@struct` 标注的 `type` 不是 `sealed type` |
-| `CFT-SCHEMA-027` | `KeyAsEnumRequiresEmptyEnum` | `@keyAsEnum` 参数不是已声明的空 enum |
+| `CFT-SCHEMA-027` | `IdAsEnumRequiresEmptyEnum` | `@idAsEnum` 参数不是已声明的空 enum |
 | `CFT-SCHEMA-028` | `EnumVariantOnNonEnum` | 默认值使用 `Name.Variant`，但 `Name` 不是 `enum` |
 | `CFT-SCHEMA-029` | `UnknownEnumVariant` | 默认值引用未知枚举变体 |
 | `CFT-SCHEMA-030` | `InvalidConstValue` | `const` 值不是允许的字面量类型 |
@@ -705,7 +705,7 @@ pub enum CftConstValue {
 | `CFT-SCHEMA-034` | `LocalizedOnInvalidTarget` | `@localized` 用在不支持的目标上 |
 | `CFT-SCHEMA-035` | `LocalizedBucketNotIdentifier` | `@localized("...")` 参数不是合法 CFT 标识符 |
 | `CFT-SCHEMA-036` | `SingletonOnAbstractType` | `@singleton` 用在 `abstract type` 上 |
-| `CFT-SCHEMA-037` | `SingletonKeyAsEnumConflict` | `@singleton` 与 `@keyAsEnum` 同时使用 |
+| `CFT-SCHEMA-037` | `SingletonIdAsEnumConflict` | `@singleton` 与 `@idAsEnum` 同时使用 |
 | `CFT-SCHEMA-038` | `SingletonNotReferenceable` | `@singleton` type 被作为字段类型引用 |
 
 旧的字段级 `@id`、`@ref`、`@index`、`@IdAsEnum`、`@GenAsEnum` 不在当前注解白名单中，会以未知注解或非法目标报错。字段名 `id`、`Id`、`ID` 是保留名，会以 `ReservedIdentifier` 报错。
@@ -735,7 +735,7 @@ pub enum CftConstValue {
 | `CFT-TYPE-019` | `RegexPatternMustBeLiteral` | `matches` 的 pattern 不是字符串字面量 |
 | `CFT-TYPE-020` | `InvalidRegexPattern` | `matches` 的正则 pattern 无法编译 |
 
-编译诊断应包含错误码、阶段、消息、主位置和相关位置。重复定义、继承冲突、`@keyAsEnum` 绑定冲突等错误必须用相关位置指向首次定义或冲突来源。
+编译诊断应包含错误码、阶段、消息、主位置和相关位置。重复定义、继承冲突、`@idAsEnum` 绑定冲突等错误必须用相关位置指向首次定义或冲突来源。
 
 **`add_module` 阶段（注册时立即报错）：**
 
@@ -754,7 +754,7 @@ pub enum CftConstValue {
 | `abstract` + `sealed` 同时使用 | 修饰符互斥 |
 | `@struct` 标注在非 `sealed type` 上 | 注解范围违反 |
 | `@flag` 变体值不是 2 的幂 | 注解约束违反 |
-| `@keyAsEnum` 参数不是 enum 名、目标不是 type、或绑定的 enum 不是空占位 enum | 注解参数/目标非法或 key enum 占位非法 |
+| `@idAsEnum` 参数不是 enum 名、目标不是 type、或绑定的 enum 不是空占位 enum | 注解参数/目标非法或 key enum 占位非法 |
 | 字段声明名为 `id`、`Id` 或 `ID` | 保留名违反 |
 | 注解使用范围或字段类型不匹配 | 注解范围违反 |
 
@@ -816,7 +816,7 @@ type Stats {
 }
 
 @display("物品")
-@keyAsEnum(ItemId)
+@idAsEnum(ItemId)
 type Item {
   @display("名称")
   name: string;

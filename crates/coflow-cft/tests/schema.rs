@@ -307,7 +307,7 @@ fn schema_rejects_invalid_enum_variant_annotations() {
     let err = compile_one(
         r#"
             enum Rarity {
-                @keyAsEnum(RarityKey)
+                @idAsEnum(RarityKey)
                 Common,
             }
         "#,
@@ -322,8 +322,8 @@ fn schema_rejects_duplicate_annotations_and_invalid_annotation_arguments() {
         @flag(1)
         enum Flags { A = 1, }
 
-        @keyAsEnum(ItemKey)
-        @keyAsEnum(ItemKey2)
+        @idAsEnum(ItemKey)
+        @idAsEnum(ItemKey2)
         type Holder {
             key: string;
 

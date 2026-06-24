@@ -268,17 +268,17 @@ pub fn generate_project_code(
         return Ok(CommandOutcome::Diagnostics(artifact_diagnostics));
     }
     let lockfile = enum_lockfile_path(&session.project);
-    let existing_locked = match read_key_as_enum_lockfile(&lockfile) {
+    let existing_locked = match read_id_as_enum_lockfile(&lockfile) {
         Ok(locked) => locked,
         Err(diagnostics) => return Ok(CommandOutcome::Diagnostics(diagnostics)),
     };
-    let key_as_enum_variants_map = lockfile_to_variants(&existing_locked);
-    let key_as_enum_variants = match serde_json::to_value(key_as_enum_variants_map) {
+    let id_as_enum_variants_map = lockfile_to_variants(&existing_locked);
+    let id_as_enum_variants = match serde_json::to_value(id_as_enum_variants_map) {
         Ok(value) => value,
         Err(err) => {
             return Ok(CommandOutcome::Diagnostics(artifact_diagnostic_set(
                 &lockfile,
-                format!("failed to serialize @keyAsEnum variants: {err}"),
+                format!("failed to serialize @idAsEnum variants: {err}"),
             )))
         }
     };
@@ -291,7 +291,7 @@ pub fn generate_project_code(
             data_format: &data_format,
             output_config: &output,
             dir: &dir,
-            key_as_enum_variants: &key_as_enum_variants,
+            id_as_enum_variants: &id_as_enum_variants,
         },
     ) {
         Ok(staged_code) => staged_code,
@@ -453,13 +453,13 @@ fn commit_build_artifacts(
     };
 
     let lockfile = enum_lockfile_path(&session.project);
-    let key_as_enum_ids = collect_key_as_enum_ids(&session.schema, &session.model);
-    let (locked_key_as_enum, key_as_enum_variants) =
-        merge_key_as_enum_lockfile(&lockfile, key_as_enum_ids)?;
-    let key_as_enum_variants = serde_json::to_value(key_as_enum_variants).map_err(|err| {
+    let id_as_enum_ids = collect_id_as_enum_ids(&session.schema, &session.model);
+    let (locked_id_as_enum, id_as_enum_variants) =
+        merge_id_as_enum_lockfile(&lockfile, id_as_enum_ids)?;
+    let id_as_enum_variants = serde_json::to_value(id_as_enum_variants).map_err(|err| {
         artifact_diagnostic_set(
             &lockfile,
-            format!("failed to serialize @keyAsEnum variants: {err}"),
+            format!("failed to serialize @idAsEnum variants: {err}"),
         )
     })?;
     let staged_code = stage_codegen_artifacts(
@@ -471,10 +471,10 @@ fn commit_build_artifacts(
             data_format: &plan.data.exporter_id,
             output_config: &code.output,
             dir: &code.dir,
-            key_as_enum_variants: &key_as_enum_variants,
+            id_as_enum_variants: &id_as_enum_variants,
         },
     )?;
-    let staged_lockfile = stage_key_as_enum_lockfile_if_needed(&lockfile, &locked_key_as_enum)?;
+    let staged_lockfile = stage_id_as_enum_lockfile_if_needed(&lockfile, &locked_id_as_enum)?;
     commit_staged_dirs_and_file(vec![staged_data, staged_code], staged_lockfile)?;
     Ok(Some(CodegenReport {
         codegen_id: code.codegen_id.clone(),
@@ -692,16 +692,16 @@ fn artifact_diagnostic_set(path: &Path, message: impl Into<String>) -> Diagnosti
     DiagnosticSet::one(artifact_diagnostic(path, message))
 }
 
-fn collect_declared_key_as_enum_ids(
+fn collect_declared_id_as_enum_ids(
     schema: &coflow_cft::CftContainer,
-) -> BTreeMap<String, KeyAsEnumIds> {
+) -> BTreeMap<String, IdAsEnumIds> {
     let mut out = BTreeMap::new();
     for schema_type in schema.all_types() {
-        if let Some(enum_name) = annotation_name_arg(&schema_type.annotations, "keyAsEnum") {
+        if let Some(enum_name) = annotation_name_arg(&schema_type.annotations, "idAsEnum") {
             let is_flags = schema
                 .resolve_enum(&enum_name)
                 .is_some_and(|schema_enum| has_annotation(&schema_enum.annotations, "flag"));
-            out.entry(enum_name).or_insert_with(|| KeyAsEnumIds {
+            out.entry(enum_name).or_insert_with(|| IdAsEnumIds {
                 ids: Vec::new(),
                 is_flags,
             });
@@ -710,13 +710,13 @@ fn collect_declared_key_as_enum_ids(
     out
 }
 
-fn collect_key_as_enum_ids(
+fn collect_id_as_enum_ids(
     schema: &coflow_cft::CftContainer,
     model: &coflow_api::CfdDataModel,
-) -> BTreeMap<String, KeyAsEnumIds> {
-    let mut out = collect_declared_key_as_enum_ids(schema);
+) -> BTreeMap<String, IdAsEnumIds> {
+    let mut out = collect_declared_id_as_enum_ids(schema);
     for schema_type in schema.all_types() {
-        let Some(enum_name) = annotation_name_arg(&schema_type.annotations, "keyAsEnum") else {
+        let Some(enum_name) = annotation_name_arg(&schema_type.annotations, "idAsEnum") else {
             continue;
         };
 
@@ -743,10 +743,10 @@ fn collect_key_as_enum_ids(
     out
 }
 
-type KeyAsEnumLockfile = BTreeMap<String, BTreeMap<String, i64>>;
+type IdAsEnumLockfile = BTreeMap<String, BTreeMap<String, i64>>;
 
 #[derive(Debug, Clone)]
-struct KeyAsEnumIds {
+struct IdAsEnumIds {
     ids: Vec<String>,
     is_flags: bool,
 }
@@ -759,28 +759,28 @@ fn enum_lockfile_path(project: &Project) -> PathBuf {
         .join(ENUM_LOCKFILE_NAME)
 }
 
-fn merge_key_as_enum_lockfile(
+fn merge_id_as_enum_lockfile(
     lockfile: &Path,
-    current_ids: BTreeMap<String, KeyAsEnumIds>,
-) -> Result<(KeyAsEnumLockfile, BTreeMap<String, Vec<KeyAsEnumVariant>>), DiagnosticSet> {
+    current_ids: BTreeMap<String, IdAsEnumIds>,
+) -> Result<(IdAsEnumLockfile, BTreeMap<String, Vec<IdAsEnumVariant>>), DiagnosticSet> {
     if current_ids.is_empty() {
         return Ok((BTreeMap::new(), BTreeMap::new()));
     }
 
-    let mut locked = read_key_as_enum_lockfile(lockfile)?;
+    let mut locked = read_id_as_enum_lockfile(lockfile)?;
     locked.retain(|enum_name, _| current_ids.contains_key(enum_name));
 
     for (enum_name, key_enum) in current_ids {
         let entries = locked.entry(enum_name).or_default();
         let current_set: BTreeSet<String> = key_enum.ids.iter().cloned().collect();
         entries.retain(|name, _| current_set.contains(name));
-        validate_existing_key_as_enum_values(lockfile, entries, key_enum.is_flags)?;
+        validate_existing_id_as_enum_values(lockfile, entries, key_enum.is_flags)?;
         for id in key_enum.ids {
             if entries.contains_key(&id) {
                 continue;
             }
             let used: BTreeSet<i64> = entries.values().copied().collect();
-            let value = allocate_key_as_enum_value(lockfile, &used, key_enum.is_flags)?;
+            let value = allocate_id_as_enum_value(lockfile, &used, key_enum.is_flags)?;
             entries.insert(id, value);
         }
     }
@@ -790,7 +790,7 @@ fn merge_key_as_enum_lockfile(
         .map(|(enum_name, entries)| {
             let mut variants = entries
                 .into_iter()
-                .map(|(name, value)| KeyAsEnumVariant { name, value })
+                .map(|(name, value)| IdAsEnumVariant { name, value })
                 .collect::<Vec<_>>();
             variants.sort_by(|left, right| {
                 left.value
@@ -805,7 +805,7 @@ fn merge_key_as_enum_lockfile(
     Ok((locked, variants))
 }
 
-fn allocate_key_as_enum_value(
+fn allocate_id_as_enum_value(
     lockfile: &Path,
     used: &BTreeSet<i64>,
     is_flags: bool,
@@ -819,7 +819,7 @@ fn allocate_key_as_enum_value(
             candidate = candidate.checked_mul(2).ok_or_else(|| {
                 artifact_diagnostic_set(
                     lockfile,
-                    "@keyAsEnum lockfile exhausted i64 flag enum values",
+                    "@idAsEnum lockfile exhausted i64 flag enum values",
                 )
             })?;
         }
@@ -827,13 +827,13 @@ fn allocate_key_as_enum_value(
     let mut candidate: i64 = 0;
     while used.contains(&candidate) {
         candidate = candidate.checked_add(1).ok_or_else(|| {
-            artifact_diagnostic_set(lockfile, "@keyAsEnum lockfile exhausted i64 enum values")
+            artifact_diagnostic_set(lockfile, "@idAsEnum lockfile exhausted i64 enum values")
         })?;
     }
     Ok(candidate)
 }
 
-fn validate_existing_key_as_enum_values(
+fn validate_existing_id_as_enum_values(
     lockfile: &Path,
     entries: &BTreeMap<String, i64>,
     is_flags: bool,
@@ -847,13 +847,13 @@ fn validate_existing_key_as_enum_values(
     {
         return Err(artifact_diagnostic_set(
             lockfile,
-            format!("@keyAsEnum flag enum variant `{name}` has non-flag lockfile value `{value}`"),
+            format!("@idAsEnum flag enum variant `{name}` has non-flag lockfile value `{value}`"),
         ));
     }
     Ok(())
 }
 
-fn read_key_as_enum_lockfile(
+fn read_id_as_enum_lockfile(
     path: &Path,
 ) -> Result<BTreeMap<String, BTreeMap<String, i64>>, DiagnosticSet> {
     if !path.exists() {
@@ -868,9 +868,9 @@ fn read_key_as_enum_lockfile(
     })
 }
 
-fn stage_key_as_enum_lockfile_if_needed(
+fn stage_id_as_enum_lockfile_if_needed(
     path: &Path,
-    locked: &KeyAsEnumLockfile,
+    locked: &IdAsEnumLockfile,
 ) -> Result<Option<crate::artifacts::StagedArtifactFile>, DiagnosticSet> {
     if locked.is_empty() {
         return Ok(None);
@@ -879,14 +879,14 @@ fn stage_key_as_enum_lockfile_if_needed(
 }
 
 fn lockfile_to_variants(
-    locked: &KeyAsEnumLockfile,
-) -> BTreeMap<String, Vec<KeyAsEnumVariant>> {
+    locked: &IdAsEnumLockfile,
+) -> BTreeMap<String, Vec<IdAsEnumVariant>> {
     locked
         .iter()
         .map(|(enum_name, entries)| {
             let mut variants = entries
                 .iter()
-                .map(|(name, value)| KeyAsEnumVariant {
+                .map(|(name, value)| IdAsEnumVariant {
                     name: name.clone(),
                     value: *value,
                 })
@@ -901,7 +901,7 @@ fn lockfile_to_variants(
         .collect()
 }
 
-fn variants_to_lockfile(variants: &BTreeMap<String, Vec<KeyAsEnumVariant>>) -> KeyAsEnumLockfile {
+fn variants_to_lockfile(variants: &BTreeMap<String, Vec<IdAsEnumVariant>>) -> IdAsEnumLockfile {
     variants
         .iter()
         .map(|(enum_name, entries)| {
@@ -917,7 +917,7 @@ fn variants_to_lockfile(variants: &BTreeMap<String, Vec<KeyAsEnumVariant>>) -> K
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-struct KeyAsEnumVariant {
+struct IdAsEnumVariant {
     name: String,
     value: i64,
 }

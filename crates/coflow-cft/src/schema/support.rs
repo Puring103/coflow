@@ -89,7 +89,7 @@ impl AnnotationSpec {
                 targets: &[AnnotationTarget::Type],
                 args: AnnotationArgs::None,
             },
-            "keyAsEnum" => Self {
+            "idAsEnum" => Self {
                 targets: &[AnnotationTarget::Type],
                 args: AnnotationArgs::OneName,
             },
