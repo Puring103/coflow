@@ -1,7 +1,7 @@
 {% for table in project.database.tables %}    public Table<{{ table.id_type }}, {{ table.name }}> {{ table.accessor_property }} { get; }
 {% endfor %}{% for s in project.singletons %}    public {{ s.type_name }} {{ s.accessor_property }} { get; }
 {% endfor %}
-    private {{ project.database_class }}(
+    public {{ project.database_class }}(
 {% for parameter in project.database.constructor_parameters %}        {{ parameter.ty }} {{ parameter.name }}{% if not loop.last or project.singletons | length > 0 %},{% endif %}
 {% endfor %}{% for s in project.singletons %}        {{ s.type_name }} {{ s.records_var }}{% if not loop.last %},{% endif %}
 {% endfor %}    )
