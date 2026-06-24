@@ -397,9 +397,20 @@ fn collect_table_dependencies_for_field_type(
 ) -> Result<(), CsharpCodegenError> {
     match ty {
         FieldType::Type(name) => {
+            let mut hit_table = false;
             for concrete in view.concrete_assignable_types(name)? {
                 if table_set.contains(&concrete) {
                     out.insert(concrete.clone());
+                    hit_table = true;
+                }
+            }
+            if !hit_table {
+                if let Ok(meta) = view.type_meta(name) {
+                    for field in &meta.all_fields {
+                        collect_table_dependencies_for_field_type(
+                            view, &field.ty, table_set, out,
+                        )?;
+                    }
                 }
             }
         }
