@@ -35,6 +35,21 @@ pub struct ProjectConfig {
     pub sources: Vec<SourceConfig>,
     #[serde(default)]
     pub outputs: OutputsConfig,
+    #[serde(default)]
+    pub localization: Option<LocalizationConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LocalizationConfig {
+    #[serde(default = "default_localization_out_dir")]
+    pub out_dir: PathBuf,
+    #[serde(default)]
+    pub languages: Vec<String>,
+}
+
+fn default_localization_out_dir() -> PathBuf {
+    PathBuf::from("data/localization")
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -481,6 +496,7 @@ impl Project {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ProjectDiagnostic {
+    code: Option<String>,
     message: String,
     key_path: Vec<String>,
 }
@@ -491,9 +507,15 @@ impl ProjectDiagnostic {
         key_path: impl IntoIterator<Item = impl Into<String>>,
     ) -> Self {
         Self {
+            code: None,
             message: message.into(),
             key_path: key_path.into_iter().map(Into::into).collect(),
         }
+    }
+
+    fn with_code(mut self, code: impl Into<String>) -> Self {
+        self.code = Some(code.into());
+        self
     }
 }
 
@@ -505,6 +527,53 @@ fn validate_project_config_schema_only_collecting(
     diagnostics.extend(validate_schema_config_collecting(root_dir, &config.schema));
     diagnostics.extend(validate_outputs_collecting(&config.outputs));
     diagnostics.extend(validate_source_shapes_collecting(&config.sources));
+    if let Some(loc) = &config.localization {
+        diagnostics.extend(validate_localization_collecting(loc));
+    }
+    diagnostics
+}
+
+fn validate_localization_collecting(config: &LocalizationConfig) -> Vec<ProjectDiagnostic> {
+    let mut diagnostics = Vec::new();
+    let mut seen = BTreeSet::new();
+    for (index, lang) in config.languages.iter().enumerate() {
+        let key_path = vec![
+            "localization".to_string(),
+            "languages".to_string(),
+            index.to_string(),
+        ];
+        if lang == "default" {
+            diagnostics.push(
+                ProjectDiagnostic::new(
+                    "localization.languages cannot include reserved code `default`",
+                    key_path.clone(),
+                )
+                .with_code("CFG-LOC-001"),
+            );
+            continue;
+        }
+        if !coflow_cft::is_cft_identifier(lang) {
+            diagnostics.push(
+                ProjectDiagnostic::new(
+                    format!(
+                        "localization.languages[{index}] `{lang}` is not a valid CFT identifier"
+                    ),
+                    key_path.clone(),
+                )
+                .with_code("CFG-LOC-003"),
+            );
+            continue;
+        }
+        if !seen.insert(lang.clone()) {
+            diagnostics.push(
+                ProjectDiagnostic::new(
+                    format!("localization.languages contains duplicate code `{lang}`"),
+                    key_path,
+                )
+                .with_code("CFG-LOC-002"),
+            );
+        }
+    }
     diagnostics
 }
 
@@ -1163,7 +1232,7 @@ fn project_diagnostics_to_set(
 
 fn project_diagnostic(config_path: &Path, diagnostic: ProjectDiagnostic) -> Diagnostic {
     Diagnostic {
-        code: "PROJECT-001".to_string(),
+        code: diagnostic.code.unwrap_or_else(|| "PROJECT-001".to_string()),
         stage: PROJECT_DIAGNOSTIC_STAGE.to_string(),
         severity: Severity::Error,
         message: diagnostic.message,

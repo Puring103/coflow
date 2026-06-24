@@ -92,6 +92,11 @@ pub fn build_project(
 
     let tables = view.table_names();
     let database = build_csharp_database(&view, &tables, &options.database_class, data_format)?;
+    let singletons = build_csharp_singletons(&view);
+
+    let uses_localization = schema
+        .all_types()
+        .any(|t| t.all_fields.iter().any(|f| f.is_localized));
 
     Ok(CsharpProject {
         namespace: options.namespace.clone(),
@@ -102,10 +107,27 @@ pub fn build_project(
         },
         uses_json: data_format == CsharpDataFormat::Json,
         uses_messagepack: data_format == CsharpDataFormat::MessagePack,
+        uses_localization,
         enums,
         types,
         database,
+        singletons,
     })
+}
+
+fn build_csharp_singletons(view: &SchemaView) -> Vec<crate::model::CsharpSingleton> {
+    view.singleton_type_names()
+        .into_iter()
+        .map(|name| {
+            let csharp_name = view.csharp_type_name(&name);
+            crate::model::CsharpSingleton {
+                accessor_property: name.clone(),
+                source_name: name,
+                records_var: format!("{}Singleton", camel_case(&csharp_name)),
+                type_name: csharp_name,
+            }
+        })
+        .collect()
 }
 
 #[must_use]

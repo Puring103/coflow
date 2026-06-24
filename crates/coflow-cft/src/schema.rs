@@ -38,6 +38,7 @@ pub struct CftSchemaType {
     pub parent: Option<String>,
     pub is_abstract: bool,
     pub is_sealed: bool,
+    pub is_singleton: bool,
     pub fields: Vec<CftSchemaField>,     // 自身字段（不含继承）
     pub all_fields: Vec<CftSchemaField>, // 含继承的完整字段列表
     pub check: Option<CftSchemaCheckBlock>,
@@ -65,6 +66,8 @@ pub struct CftSchemaField {
     pub has_default: bool,
     pub default: Option<CftSchemaDefaultValue>,
     pub annotations: Vec<CftAnnotation>,
+    pub is_localized: bool,
+    pub localization_bucket: Option<String>,
     pub span: Span,
 }
 

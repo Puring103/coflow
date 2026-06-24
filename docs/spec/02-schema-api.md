@@ -29,6 +29,9 @@ Schema API 只描述已经完成 CFT 解析和编译后的反射结构：
 - `default` 保存编译后的默认值。
 - `CftSchemaEnumVariant.annotations` 保存 enum variant 级 `@display` 和
   `@deprecated`。
+- `CftSchemaType.is_singleton` 在 type 标注了 `@singleton` 时为 `true`。
+- `CftSchemaField.is_localized` 在字段标注了 `@localized` 时为 `true`；
+  `CftSchemaField.localization_bucket` 为该字段最终归属的 bucket 名（无参 `@localized` 时为字段所属 type 名，带参时为参数值；非本地化字段为 `None`）。
 
 ---
 

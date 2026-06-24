@@ -127,6 +127,10 @@ impl SchemaView {
             .and_then(|meta| meta.variants.get(variant))
             .copied()
     }
+
+    pub(crate) fn singleton_types(&self) -> impl Iterator<Item = &TypeMeta> {
+        self.types.values().filter(|meta| meta.is_singleton)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -134,6 +138,7 @@ pub(crate) struct TypeMeta {
     pub(crate) name: String,
     pub(crate) parent: Option<String>,
     pub(crate) is_abstract: bool,
+    pub(crate) is_singleton: bool,
     fields: Vec<FieldMeta>,
 }
 
@@ -143,6 +148,7 @@ impl TypeMeta {
             name: schema_type.name.clone(),
             parent: schema_type.parent.clone(),
             is_abstract: schema_type.is_abstract,
+            is_singleton: schema_type.is_singleton,
             fields: schema_type
                 .all_fields
                 .iter()

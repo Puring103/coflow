@@ -894,6 +894,7 @@ fn project_with_outputs(root: &Path, outputs: OutputsConfig) -> Project {
             schema: SchemaConfig::One(PathBuf::from("schema/main.cft")),
             sources: Vec::new(),
             outputs,
+            localization: None,
         },
     }
 }

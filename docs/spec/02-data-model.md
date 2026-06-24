@@ -119,3 +119,30 @@ record key 必须是 string identifier。同一具体类型内 record key 必须
 1. 按配置文件 `sources` 列表的顺序
 2. 同一 file 内按 `sheets` 列表的顺序
 3. 同一 sheet 内按行序
+
+---
+
+## Singleton 校验
+
+被 `@singleton` 标记的 type 在数据模型构建阶段（`CfdDataModel` build）执行下列校验，与具体数据来源无关：
+
+- 该 type 的 records 数量必须 = 1，否则报 `CFD-DATA-015 SingletonRecordCountInvalid`（多于 1 条与少于 1 条共用此错误码，附带数量信息）
+- record key 必须显式提供且为合法 CFT 标识符；否则报 `CFD-DATA-016 SingletonKeyMissingOrInvalid`
+- 项目中所有 `@singleton` type 的 record key 互不相同（跨 type 全局唯一）；否则报 `CFD-DATA-017 SingletonKeyCollision`，相关位置指向首次出现
+
+---
+
+## Localized record key 校验
+
+包含 `@localized` 字段的 record，其 record key 仍需满足通用的 record key 规则（合法 CFT 标识符），由现有 `CFD-DATA-013 InvalidRecordKey` 路径覆盖。`CFD-DATA-014` 当前保留，等到 record key 与翻译表 key 规则发生分化时再启用。
+
+---
+
+## CFD-DATA 错误码增量
+
+| 错误码 | 名称 | 含义 |
+|--------|------|------|
+| `CFD-DATA-014` | `LocalizedRecordKeyInvalid` | 保留：将来用于 record key 与翻译 key 规则分化 |
+| `CFD-DATA-015` | `SingletonRecordCountInvalid` | `@singleton` type 的 records 数量不等于 1 |
+| `CFD-DATA-016` | `SingletonKeyMissingOrInvalid` | `@singleton` type 的 record key 缺失或非合法 CFT 标识符 |
+| `CFD-DATA-017` | `SingletonKeyCollision` | 不同 `@singleton` type 的 record key 撞名 |

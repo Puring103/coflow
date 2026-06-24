@@ -14,6 +14,7 @@ const TYPE_MESSAGEPACK_POLYMORPHIC_LOADER_TEMPLATE: &str =
     include_str!("../templates/type_messagepack_polymorphic_loader.cs.tera");
 const DATABASE_COMMON_MEMBERS_TEMPLATE: &str =
     include_str!("../templates/database_common_members.cs.tera");
+const LOCALIZED_TEMPLATE: &str = include_str!("../templates/localized.cs.tera");
 
 pub fn render_project(
     project: &CsharpProject,
@@ -52,6 +53,15 @@ pub fn render_project(
             &database_context,
         )?,
     });
+
+    if project.uses_localization {
+        let mut localized_context = Context::new();
+        localized_context.insert("project", project);
+        files.push(GeneratedFile {
+            relative_path: PathBuf::from("Localized.cs"),
+            contents: render(&tera, "localized.cs.tera", &localized_context)?,
+        });
+    }
 
     Ok(files)
 }
@@ -110,6 +120,10 @@ fn templates(database_templates: &CsharpDatabaseTemplates) -> Result<Tera, Cshar
     .map_err(|err| {
         CsharpCodegenError::new(format!("failed to add database members template: {err}"))
     })?;
+    tera.add_raw_template("localized.cs.tera", LOCALIZED_TEMPLATE)
+        .map_err(|err| {
+            CsharpCodegenError::new(format!("failed to add localized template: {err}"))
+        })?;
     for template in database_templates.partials {
         tera.add_raw_template(template.name, template.contents)
             .map_err(|err| {
