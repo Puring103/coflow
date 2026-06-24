@@ -12,6 +12,7 @@ pub struct SchemaView {
     pub enums: BTreeSet<String>,
     pub int_32: bool,
     pub float_32: bool,
+    pub loadable_tables: BTreeSet<String>,
     children: BTreeMap<String, BTreeSet<String>>,
     csharp_types: BTreeMap<String, String>,
     csharp_enums: BTreeMap<String, String>,
@@ -67,6 +68,7 @@ impl SchemaView {
             enums,
             int_32: false,
             float_32: false,
+            loadable_tables: BTreeSet::new(),
             children,
             csharp_types,
             csharp_enums,
@@ -83,6 +85,27 @@ impl SchemaView {
     pub fn with_float_32(mut self, value: bool) -> Self {
         self.float_32 = value;
         self
+    }
+
+    #[must_use]
+    pub fn with_loadable_tables(mut self, tables: BTreeSet<String>) -> Self {
+        self.loadable_tables = tables;
+        self
+    }
+
+    /// Returns true if `name` resolves (directly or via descendants) to at
+    /// least one type that has a generated table loader. This determines
+    /// whether `context.GetX(...)` is callable for fields of that type.
+    pub fn is_ref_target_loadable(&self, name: &str) -> bool {
+        if self.loadable_tables.contains(name) {
+            return true;
+        }
+        match self.concrete_assignable_types(name) {
+            Ok(assignable) => assignable
+                .iter()
+                .any(|t| self.loadable_tables.contains(t)),
+            Err(_) => false,
+        }
     }
 
     pub fn type_meta(&self, name: &str) -> Result<&TypeMeta, CsharpCodegenError> {
