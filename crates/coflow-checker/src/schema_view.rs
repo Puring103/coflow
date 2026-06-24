@@ -119,16 +119,18 @@ impl SchemaView {
             .and_then(|meta| meta.fields.get(field_name))
     }
 
-    /// Returns the localization bucket for a field if it is `@localized`.
-    pub(crate) fn field_localization_bucket(
-        &self,
-        actual_type: &str,
-        field_name: &str,
-    ) -> Option<&str> {
+    /// Returns whether a field is `@localized`.
+    pub(crate) fn field_is_localized(&self, actual_type: &str, field_name: &str) -> bool {
         self.types
             .get(actual_type)
-            .and_then(|meta| meta.localized_fields.get(field_name))
-            .map(String::as_str)
+            .is_some_and(|meta| meta.localized_fields.contains(field_name))
+    }
+
+    /// Returns whether a type is `@singleton`.
+    pub(crate) fn type_is_singleton(&self, type_name: &str) -> bool {
+        self.types
+            .get(type_name)
+            .is_some_and(|meta| meta.is_singleton)
     }
 }
 
@@ -138,10 +140,9 @@ pub(crate) struct TypeMeta {
     parent: Option<String>,
     check: Option<CftSchemaCheckBlock>,
     fields: BTreeMap<String, CftSchemaTypeRef>,
-    /// Field name -> resolved localization bucket. Only contains entries for
-    /// fields that carry `@localized`. Used by the evaluator to substitute
-    /// values when running per-language check rounds.
-    localized_fields: BTreeMap<String, String>,
+    is_singleton: bool,
+    /// Names of fields that carry `@localized`.
+    localized_fields: std::collections::BTreeSet<String>,
 }
 
 impl TypeMeta {
@@ -150,16 +151,8 @@ impl TypeMeta {
             .all_fields
             .iter()
             .filter(|field| field.is_localized)
-            .map(|field| {
-                (
-                    field.name.clone(),
-                    field
-                        .localization_bucket
-                        .clone()
-                        .unwrap_or_else(|| schema_type.name.clone()),
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
+            .map(|field| field.name.clone())
+            .collect::<std::collections::BTreeSet<_>>();
         Self {
             name: schema_type.name.clone(),
             parent: schema_type.parent.clone(),
@@ -169,6 +162,7 @@ impl TypeMeta {
                 .iter()
                 .map(|field| (field.name.clone(), field.ty_ref.clone()))
                 .collect(),
+            is_singleton: schema_type.is_singleton,
             localized_fields,
         }
     }

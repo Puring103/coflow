@@ -121,7 +121,7 @@ impl AnnotationSpec {
             },
             "localized" => Self {
                 targets: &[AnnotationTarget::Field],
-                args: AnnotationArgs::NoneOrOneString,
+                args: AnnotationArgs::None,
             },
             _ => return None,
         })
@@ -136,10 +136,6 @@ impl AnnotationSpec {
             AnnotationArgs::OneName => {
                 matches!(annotation.args.as_slice(), [AnnotationArg::Name(_)])
             }
-            AnnotationArgs::NoneOrOneString => matches!(
-                annotation.args.as_slice(),
-                [] | [AnnotationArg::String(_, _)]
-            ),
         }
     }
 }
@@ -149,7 +145,6 @@ enum AnnotationArgs {
     None,
     OneString,
     OneName,
-    NoneOrOneString,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -577,7 +577,7 @@ impl<'a> SchemaCompiler<'a> {
                     AnnotationTarget::Field,
                     &field.annotations,
                 );
-                this.validate_field_annotations(&info.module, field);
+                this.validate_field_annotations(&info.module, field, info.def.is_sealed);
             }
         });
     }
@@ -666,7 +666,22 @@ impl<'a> SchemaCompiler<'a> {
         }
     }
 
-    fn validate_field_annotations(&mut self, module: &ModuleId, field: &FieldDef) {
+    fn validate_field_annotations(
+        &mut self,
+        module: &ModuleId,
+        field: &FieldDef,
+        owner_is_sealed: bool,
+    ) {
+        if owner_is_sealed {
+            if let Some(annotation) = find_annotation(&field.annotations, "localized") {
+                self.push_diag(
+                    CftErrorCode::LocalizedOnInvalidTarget,
+                    module,
+                    annotation.span,
+                    "@localized can only appear on top-level type fields, not inside sealed types",
+                );
+            }
+        }
         if let Some(annotation) = find_annotation(&field.annotations, "expand") {
             // @expand requires the field to reference a concrete `type`. Arrays,
             // dicts, primitives, enums, and nullable wrappers don't make sense
@@ -680,18 +695,6 @@ impl<'a> SchemaCompiler<'a> {
                     annotation.span,
                     "@expand fields must reference a concrete type (no nullable, arrays, dicts, enums, or primitives)",
                 );
-            }
-        }
-        if let Some(annotation) = find_annotation(&field.annotations, "localized") {
-            if let Some(crate::ast::AnnotationArg::String(value, span)) = annotation.args.first() {
-                if !crate::is_cft_identifier(value) {
-                    self.push_diag(
-                        CftErrorCode::LocalizedBucketNotIdentifier,
-                        module,
-                        *span,
-                        format!("@localized bucket `{value}` is not a valid CFT identifier"),
-                    );
-                }
             }
         }
         // Forbid referencing a singleton type from any field type position
@@ -1082,10 +1085,7 @@ impl<'a> SchemaCompiler<'a> {
     fn build_schema_field(&self, field: &FieldDef, owner_type: &str) -> CftSchemaField {
         let localized = find_annotation(&field.annotations, "localized");
         let is_localized = localized.is_some();
-        let localization_bucket = localized.map(|annotation| match annotation.args.as_slice() {
-            [crate::ast::AnnotationArg::String(value, _)] => value.clone(),
-            _ => owner_type.to_string(),
-        });
+        let localization_bucket = localized.map(|_| owner_type.to_string());
         CftSchemaField {
             name: field.name.clone(),
             ty: format_type_ref(&field.ty),

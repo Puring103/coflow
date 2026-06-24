@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct CsharpCodegenOptions {
     pub namespace: String,
     pub database_class: String,
+    pub use_32bit_numerics: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -45,12 +46,19 @@ impl CsharpCodegenOptions {
         Self {
             namespace: namespace.into(),
             database_class: "CoflowTables".to_string(),
+            use_32bit_numerics: false,
         }
     }
 
     #[must_use]
     pub fn with_database_class(mut self, database_class: impl Into<String>) -> Self {
         self.database_class = database_class.into();
+        self
+    }
+
+    #[must_use]
+    pub fn with_32bit_numerics(mut self) -> Self {
+        self.use_32bit_numerics = true;
         self
     }
 }
@@ -60,6 +68,7 @@ pub fn build_project(
     options: &CsharpCodegenOptions,
     data_format: CsharpDataFormat,
     key_as_enum_variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
+    non_empty_tables: Option<&BTreeSet<String>>,
 ) -> Result<CsharpProject, CsharpCodegenError> {
     let diagnostics = preflight_csharp_codegen(schema, options, &key_as_enum_variants);
     if !diagnostics.is_empty() {
@@ -72,7 +81,11 @@ pub fn build_project(
         ));
     }
     let key_as_enum_names = key_as_enum_names(schema);
-    let view = SchemaView::new(schema);
+    let view = if options.use_32bit_numerics {
+        SchemaView::new(schema).with_32bit_numerics()
+    } else {
+        SchemaView::new(schema)
+    };
 
     let mut key_as_enum_variants =
         build_key_as_enums(schema, &key_as_enum_names, key_as_enum_variants);
@@ -90,7 +103,11 @@ pub fn build_project(
         .map(|schema_type| build_csharp_type(schema_type, &view))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let tables = view.table_names();
+    let tables: Vec<String> = view
+        .table_names()
+        .into_iter()
+        .filter(|name| non_empty_tables.is_none_or(|set| set.contains(name)))
+        .collect();
     let database = build_csharp_database(&view, &tables, &options.database_class, data_format)?;
     let singletons = build_csharp_singletons(&view);
 
@@ -141,7 +158,11 @@ pub fn preflight_csharp_codegen(
     validate_schema_names(schema, &mut diagnostics);
     let key_as_enum_names = key_as_enum_names(schema);
     validate_key_as_enum_variants(&key_as_enum_names, key_as_enum_variants, &mut diagnostics);
-    let view = SchemaView::new(schema);
+    let view = if options.use_32bit_numerics {
+        SchemaView::new(schema).with_32bit_numerics()
+    } else {
+        SchemaView::new(schema)
+    };
     validate_generated_names(&view, options, &mut diagnostics);
     diagnostics
 }
@@ -338,7 +359,7 @@ fn build_key_as_enums(
         let mut enum_variants = Vec::new();
         for variant in variants.remove(name).unwrap_or_default() {
             enum_variants.push(CsharpEnumVariant {
-                name: csharp_type_name(&variant.name),
+                name: variant.name,
                 value: variant.value,
                 summary: None,
                 obsolete: false,
@@ -348,7 +369,7 @@ fn build_key_as_enums(
         out.insert(
             name.clone(),
             CsharpEnum {
-                name: csharp_type_name(name),
+                name: name.clone(),
                 is_flags: schema_enum
                     .is_some_and(|schema_enum| has_annotation(&schema_enum.annotations, "flag")),
                 summary: schema_enum

@@ -210,6 +210,11 @@ enum TableLoadError {
         column: String,
         field: String,
     },
+    MissingColumn {
+        location: Box<TableLocation>,
+        type_name: String,
+        field: String,
+    },
     DuplicateFieldColumn {
         location: Box<TableLocation>,
         field: String,
@@ -523,6 +528,16 @@ fn table_load_error_diagnostics(err: TableLoadError) -> Vec<TableDiagnostic> {
             format!("column `{column}` maps to unknown field `{field}` on type `{type_name}`"),
             *location,
         )],
+        TableLoadError::MissingColumn {
+            location,
+            type_name,
+            field,
+        } => vec![TableDiagnostic::table(
+            "TABLE-COLUMN",
+            "TABLE",
+            format!("sheet for type `{type_name}` is missing column for field `{field}`"),
+            *location,
+        )],
         TableLoadError::DuplicateFieldColumn {
             location,
             field,
@@ -772,6 +787,9 @@ fn resolve_columns(
             .get(&column_text)
             .map_or_else(|| column_text.clone(), Clone::clone);
         if is_key_column(&column_text, &field, &key_column, has_explicit_key) {
+            if fields.contains_key(&field) {
+                seen_fields.insert(field.clone(), column_text.clone());
+            }
             if id_column
                 .replace((index, excel_column, column_text.clone()))
                 .is_some()
@@ -884,6 +902,23 @@ fn resolve_columns(
             field_type: field_type.clone(),
             expand,
         });
+    }
+
+    for field_name in fields.keys() {
+        if seen_fields.contains_key(field_name) {
+            continue;
+        }
+        diagnostics.extend(table_load_error_diagnostics(
+            TableLoadError::MissingColumn {
+                location: Box::new(
+                    TableLocation::new(source_name.to_path_buf())
+                        .sheet(sheet.sheet.clone())
+                        .with_row(header_excel_row),
+                ),
+                type_name: type_name.to_string(),
+                field: field_name.clone(),
+            },
+        ));
     }
 
     let id_column = id_column.map(|(index, excel_column, _)| IdColumn {

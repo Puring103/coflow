@@ -110,16 +110,17 @@ impl<'a> CheckEvaluator<'a> {
         let Some(actual_type) = record.actual_type(self.model) else {
             return;
         };
-        let Some(bucket) = self
-            .schema
-            .field_localization_bucket(actual_type, field_name)
-        else {
+        if !self.schema.field_is_localized(actual_type, field_name) {
             return;
+        }
+        let key = if self.schema.type_is_singleton(actual_type) {
+            format!("{actual_type}/{field_name}")
+        } else {
+            let Some(record_key) = record.key(self.model) else {
+                return;
+            };
+            format!("{actual_type}/{field_name}/{record_key}")
         };
-        let Some(record_key) = record.key(self.model) else {
-            return;
-        };
-        let key = format!("{bucket}/{record_key}/{field_name}");
         let Some(translation) = loc.translations.get(&key) else {
             return;
         };

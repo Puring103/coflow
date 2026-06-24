@@ -232,9 +232,7 @@ fn build_context_lookups(
             .filter(|type_name| tables.contains(type_name))
             .collect::<Vec<_>>();
         if assignable.is_empty() {
-            return Err(CsharpCodegenError::new(format!(
-                "reference target `{target}` has no loadable key table"
-            )));
+            continue;
         }
         let csharp_target = view.csharp_type_name(&target);
         context_lookups.push(CsharpContextLookup {
@@ -426,7 +424,7 @@ fn loader_method(type_name: &str, view: &SchemaView) -> Result<CsharpLoader, Csh
         fields: ty
             .all_fields
             .iter()
-            .map(|field| load_field(field, &mut used_local_names, view))
+            .map(|field| load_field(field, type_name, ty.is_singleton, &mut used_local_names, view))
             .collect::<Result<Vec<_>, _>>()?,
         polymorphic_cases: Vec::new(),
         is_polymorphic: false,
@@ -462,6 +460,8 @@ fn polymorphic_loader(
 
 fn load_field(
     field: &FieldMeta,
+    owner_type_name: &str,
+    owner_is_singleton: bool,
     used_local_names: &mut HashSet<String>,
     view: &SchemaView,
 ) -> Result<CsharpLoadField, CsharpCodegenError> {
@@ -486,16 +486,13 @@ fn load_field(
     let raw_read_expr = read_field_expr(field, "obj", "context", view, missing_expr.as_deref())?;
     let raw_msgpack_expr = read_messagepack_field_expr(field, "reader", "context", view)?;
     let (read_expr, messagepack_read_expr) = if field.is_localized {
-        let bucket = field
-            .localization_bucket
-            .clone()
-            .unwrap_or_else(|| "default".to_string());
-        let bucket_lit = escape_csharp_string(&bucket);
+        let type_lit = escape_csharp_string(owner_type_name);
         let field_lit = escape_csharp_string(&field.name);
-        // `id` is in scope inside the loader function (key local name). Use
-        // `.ToString()` directly so the expression compiles for both reference
-        // (string) and value-type (enum) keys; record keys are never null.
-        let key_expr = format!("string.Concat(\"{bucket_lit}/\", id.ToString(), \"/{field_lit}\")");
+        let key_expr = if owner_is_singleton {
+            format!("\"{type_lit}/{field_lit}\"")
+        } else {
+            format!("string.Concat(\"{type_lit}/{field_lit}/\", id.ToString())")
+        };
         (
             format!("new Localized<{inner_property_type}>({key_expr}, {raw_read_expr})"),
             format!("new Localized<{inner_property_type}>({key_expr}, {raw_msgpack_expr})"),
@@ -752,8 +749,20 @@ fn read_messagepack_dict_key_expr(
 
 fn csharp_type(ty: &FieldType, view: &SchemaView) -> String {
     match ty {
-        FieldType::Int => "long".to_string(),
-        FieldType::Float => "double".to_string(),
+        FieldType::Int => {
+            if view.use_32bit_numerics {
+                "int".to_string()
+            } else {
+                "long".to_string()
+            }
+        }
+        FieldType::Float => {
+            if view.use_32bit_numerics {
+                "float".to_string()
+            } else {
+                "double".to_string()
+            }
+        }
         FieldType::Bool => "bool".to_string(),
         FieldType::String => "string".to_string(),
         FieldType::Type(name) | FieldType::Enum(name) => view.csharp_named_type(name),

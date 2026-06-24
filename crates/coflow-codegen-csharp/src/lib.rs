@@ -114,6 +114,7 @@ pub fn generate_csharp_with_database_templates(
         data_format,
         database_templates,
         BTreeMap::new(),
+        None,
     )
 }
 
@@ -130,8 +131,15 @@ pub fn generate_csharp_with_key_as_enum_variants(
     data_format: CsharpDataFormat,
     database_templates: &CsharpDatabaseTemplates,
     key_as_enum_variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
+    non_empty_tables: Option<&std::collections::BTreeSet<String>>,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
-    let project = ir::build_project(schema, options, data_format, key_as_enum_variants)?;
+    let project = ir::build_project(
+        schema,
+        options,
+        data_format,
+        key_as_enum_variants,
+        non_empty_tables,
+    )?;
     render::render_project(&project, database_templates)
 }
 
@@ -180,6 +188,7 @@ pub fn generate_csharp_json_with_key_as_enum_variants(
     schema: &CftContainer,
     options: &CsharpCodegenOptions,
     key_as_enum_variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
+    non_empty_tables: Option<&std::collections::BTreeSet<String>>,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
     generate_csharp_with_key_as_enum_variants(
         schema,
@@ -187,6 +196,7 @@ pub fn generate_csharp_json_with_key_as_enum_variants(
         CsharpDataFormat::Json,
         &JSON_DATABASE_TEMPLATES,
         key_as_enum_variants,
+        non_empty_tables,
     )
 }
 
@@ -219,6 +229,7 @@ pub fn generate_csharp_messagepack_with_key_as_enum_variants(
     schema: &CftContainer,
     options: &CsharpCodegenOptions,
     key_as_enum_variants: BTreeMap<String, Vec<CsharpKeyAsEnumVariant>>,
+    non_empty_tables: Option<&std::collections::BTreeSet<String>>,
 ) -> Result<Vec<GeneratedFile>, CsharpCodegenError> {
     generate_csharp_with_key_as_enum_variants(
         schema,
@@ -226,6 +237,7 @@ pub fn generate_csharp_messagepack_with_key_as_enum_variants(
         CsharpDataFormat::MessagePack,
         &MESSAGEPACK_DATABASE_TEMPLATES,
         key_as_enum_variants,
+        non_empty_tables,
     )
 }
 
@@ -252,7 +264,16 @@ impl CodeGenerator for CsharpCodeGenerator {
             .get("namespace")
             .and_then(serde_json::Value::as_str)
             .unwrap_or("Game.Config");
-        let options = CsharpCodegenOptions::new(namespace);
+        let use_32bit = output
+            .options
+            .get("numeric_width")
+            .and_then(serde_json::Value::as_u64)
+            .is_some_and(|w| w == 32);
+        let options = if use_32bit {
+            CsharpCodegenOptions::new(namespace).with_32bit_numerics()
+        } else {
+            CsharpCodegenOptions::new(namespace)
+        };
         DiagnosticSet {
             diagnostics: preflight_csharp_codegen(ctx.schema, &options, &BTreeMap::new())
                 .into_iter()
@@ -273,18 +294,36 @@ impl CodeGenerator for CsharpCodeGenerator {
             .get("namespace")
             .and_then(serde_json::Value::as_str)
             .unwrap_or("Game.Config");
-        let options = CsharpCodegenOptions::new(namespace);
+        let use_32bit = output
+            .options
+            .get("numeric_width")
+            .and_then(serde_json::Value::as_u64)
+            .is_some_and(|w| w == 32);
+        let options = if use_32bit {
+            CsharpCodegenOptions::new(namespace).with_32bit_numerics()
+        } else {
+            CsharpCodegenOptions::new(namespace)
+        };
         let key_as_enum_variants = key_as_enum_variants_from_options(&output.options)?;
+        let non_empty_tables = ctx.model.map(|model| {
+            model
+                .tables()
+                .filter(|(_, table)| !table.records.is_empty())
+                .map(|(name, _)| name.to_string())
+                .collect::<std::collections::BTreeSet<String>>()
+        });
         let generated = match ctx.data_format {
             "json" => generate_csharp_json_with_key_as_enum_variants(
                 ctx.schema,
                 &options,
                 key_as_enum_variants,
+                non_empty_tables.as_ref(),
             ),
             "messagepack" => generate_csharp_messagepack_with_key_as_enum_variants(
                 ctx.schema,
                 &options,
                 key_as_enum_variants,
+                non_empty_tables.as_ref(),
             ),
             other => {
                 return Err(DiagnosticSet::one(Diagnostic::error(
