@@ -301,7 +301,7 @@ fn codegen_emits_coflow_tables_accessor_api_without_load_exception_or_ref_placeh
     require_contains(item, "public string DisplayName { get; }")?;
     require_contains(item, "public Reward Reward { get; }")?;
     require_contains(item, "public IReadOnlyList<string> Tags { get; }")?;
-    require_contains(item, "private Item(")?;
+    require_contains(item, "public Item(")?;
     require_contains(item, "internal static List<Item> LoadTable(")?;
     require_contains(item, "internal static Dictionary<string, Item> BuildIndex(")?;
     require_contains(item, "context.GetReward(CoflowJson.ReadString(token))")?;

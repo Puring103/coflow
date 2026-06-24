@@ -117,7 +117,7 @@ pub fn build_csharp_type(
         constructor_visibility: if schema_type.is_abstract {
             "protected".to_string()
         } else {
-            "private".to_string()
+            "public".to_string()
         },
         summary: display_annotation(&schema_type.annotations),
         obsolete: has_annotation(&schema_type.annotations, "deprecated"),
