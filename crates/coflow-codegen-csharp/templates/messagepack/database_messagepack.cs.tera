@@ -63,11 +63,14 @@ internal static class CoflowMessagePack
     internal static string ReadString(ref MessagePackReader reader) =>
         reader.ReadString()!;
 
-    internal static long ReadInt(ref MessagePackReader reader) =>
-        reader.ReadInt64();
-
-    internal static double ReadFloat(ref MessagePackReader reader) =>
-        reader.NextMessagePackType == MessagePackType.Integer ? (double)reader.ReadInt64() : reader.ReadDouble();
+    internal static {{ project.int_type }} ReadInt(ref MessagePackReader reader) =>
+{% if project.int_type == "int" %}        reader.ReadInt32();
+{% else %}        reader.ReadInt64();
+{% endif %}
+    internal static {{ project.float_type }} ReadFloat(ref MessagePackReader reader) =>
+{% if project.float_type == "float" %}        reader.NextMessagePackType == MessagePackType.Integer ? (float)reader.ReadInt64() : reader.ReadSingle();
+{% else %}        reader.NextMessagePackType == MessagePackType.Integer ? (double)reader.ReadInt64() : reader.ReadDouble();
+{% endif %}
 
     internal static bool ReadBool(ref MessagePackReader reader) =>
         reader.ReadBoolean();
@@ -80,8 +83,8 @@ internal static class CoflowMessagePack
         where TEnum : struct, Enum =>
         (TEnum)Enum.Parse(typeof(TEnum), ReadString(ref reader));
 
-    internal static long ReadIntKey(string key) =>
-        long.Parse(key, NumberStyles.Integer, CultureInfo.InvariantCulture);
+    internal static {{ project.int_type }} ReadIntKey(string key) =>
+        {{ project.int_type }}.Parse(key, NumberStyles.Integer, CultureInfo.InvariantCulture);
 
     internal static TEnum ReadEnumKey<TEnum>(string key)
         where TEnum : struct, Enum =>

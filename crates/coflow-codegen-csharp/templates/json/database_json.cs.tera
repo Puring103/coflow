@@ -68,9 +68,9 @@ internal static class CoflowJson
 
     internal static string ReadString(JToken token) => token.Value<string>()!;
 
-    internal static long ReadInt(JToken token) => token.Value<long>();
+    internal static {{ project.int_type }} ReadInt(JToken token) => token.Value<{{ project.int_type }}>();
 
-    internal static double ReadFloat(JToken token) => token.Value<double>();
+    internal static {{ project.float_type }} ReadFloat(JToken token) => token.Value<{{ project.float_type }}>();
 
     internal static bool ReadBool(JToken token) => token.Value<bool>();
 
@@ -82,8 +82,8 @@ internal static class CoflowJson
         where TEnum : struct, Enum =>
         (TEnum)Enum.Parse(typeof(TEnum), ReadString(token));
 
-    internal static long ReadIntKey(string key) =>
-        long.Parse(key, NumberStyles.Integer, CultureInfo.InvariantCulture);
+    internal static {{ project.int_type }} ReadIntKey(string key) =>
+        {{ project.int_type }}.Parse(key, NumberStyles.Integer, CultureInfo.InvariantCulture);
 
     internal static TEnum ReadEnumKey<TEnum>(string key)
         where TEnum : struct, Enum =>
