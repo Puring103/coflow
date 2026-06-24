@@ -87,7 +87,7 @@ fn write_field(
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+pub fn run() -> tauri::Result<()> {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -107,5 +107,4 @@ pub fn run() {
             write_field,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
 }
