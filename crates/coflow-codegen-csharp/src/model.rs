@@ -146,6 +146,7 @@ pub struct CsharpLoader {
     pub key_property: String,
     pub key_read_expr: String,
     pub key_messagepack_read_expr: String,
+    pub has_id: bool,
     pub fields: Vec<CsharpLoadField>,
     pub polymorphic_cases: Vec<CsharpPolymorphicCase>,
     pub is_polymorphic: bool,
