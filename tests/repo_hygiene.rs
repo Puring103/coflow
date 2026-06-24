@@ -210,6 +210,29 @@ fn table_writers_use_shared_cell_renderer() {
 }
 
 #[test]
+fn editor_backend_entrypoints_do_not_use_crash_error_handling() {
+    for path in [
+        "editors/cfd-editor/src-tauri/src/lib.rs",
+        "editors/cfd-editor/src-tauri/src/main.rs",
+    ] {
+        let source = std::fs::read_to_string(path).expect("read editor backend entrypoint");
+        for forbidden in [
+            ".expect(",
+            ".unwrap(",
+            "panic!",
+            "todo!",
+            "unimplemented!",
+            "dbg!",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "editor backend entrypoint `{path}` should return or report errors instead of using `{forbidden}`"
+            );
+        }
+    }
+}
+
+#[test]
 fn tracked_files_do_not_include_generated_outputs() {
     let output = Command::new("git")
         .args(["ls-files"])
