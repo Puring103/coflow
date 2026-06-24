@@ -1,4 +1,4 @@
-
+{% if type.loader.is_table %}
     internal static List<{{ type.loader.type_name }}> LoadTable(string path, {{ project.database_class }}.LoadContext context)
     {
         var bytes = File.ReadAllBytes(path);
@@ -18,7 +18,7 @@
     {
         return LoadBody(ref reader, context, true);
     }
-
+{% endif %}
     internal static {{ type.loader.type_name }} LoadInline(ref MessagePackReader reader, {{ project.database_class }}.LoadContext context)
     {
         return LoadBody(ref reader, context, false);
@@ -37,8 +37,8 @@
 
     private static {{ type.loader.type_name }} LoadBodyFields(ref MessagePackReader reader, {{ project.database_class }}.LoadContext context, int count, bool requireId)
     {
-{% if type.loader.has_id %}        {{ type.loader.key_type_name }} {{ type.loader.key_local_name }} = default!;
-        var hasId = false;
+{% if type.loader.is_table %}        {{ type.loader.key_type_name }} {{ type.loader.key_local_name }} = default!;
+        var isTable = false;
 {% endif %}{% for field in type.loader.fields %}        {{ field.type_name }} {{ field.local_name }} = {% if field.missing_expr %}{{ field.missing_expr }}{% else %}default!{% endif %};
         var {{ field.has_name }} = false;
 {% endfor %}
@@ -48,14 +48,15 @@
 
             switch (key)
             {
-{% if type.loader.has_id %}                case "id":
-                    hasId = true;
+{% if type.loader.is_table %}                case "id":
+                    isTable = true;
                     {{ type.loader.key_local_name }} = {{ type.loader.key_messagepack_read_expr }};
                     break;
 {% endif %}{% for field in type.loader.fields %}                case "{{ field.source_name }}":
                     {{ field.has_name }} = true;
-                    {{ field.local_name }} = {{ field.messagepack_read_expr }};
-                    break;
+{% if type.loader.is_table %}                    {{ field.local_name }} = requireId ? {{ field.messagepack_read_expr }} : {{ field.inline_messagepack_read_expr }};
+{% else %}                    {{ field.local_name }} = {{ field.inline_messagepack_read_expr }};
+{% endif %}                    break;
 {% endfor %}                default:
                     reader.Skip();
                     break;
@@ -68,11 +69,11 @@
         }
 
 {% endif %}{% endfor %}        return new {{ type.loader.type_name }}(
-{% if type.loader.has_id %}            requireId ? {{ type.loader.key_local_name }} : default!{% if type.loader.fields | length > 0 %},{% endif %}
+{% if type.loader.is_table %}            requireId ? {{ type.loader.key_local_name }} : default!{% if type.loader.fields | length > 0 %},{% endif %}
 {% endif %}{% for field in type.loader.fields %}            {{ field.local_name }}{% if not loop.last %},{% endif %}
 {% endfor %}        );
     }
-
+{% if type.loader.is_table %}
     internal static Dictionary<{{ type.loader.key_type_name }}, {{ type.loader.type_name }}> BuildIndex(List<{{ type.loader.type_name }}> rows)
     {
         var result = new Dictionary<{{ type.loader.key_type_name }}, {{ type.loader.type_name }}>(rows.Count);
@@ -84,3 +85,4 @@
 
         return result;
     }
+{% endif %}

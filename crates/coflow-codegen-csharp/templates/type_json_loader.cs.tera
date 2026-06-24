@@ -1,4 +1,4 @@
-
+{% if type.loader.is_table %}
     internal static List<{{ type.loader.type_name }}> LoadTable(string path, {{ project.database_class }}.LoadContext context)
     {
         if (!File.Exists(path))
@@ -20,27 +20,26 @@
     private static {{ type.loader.type_name }} LoadRow(JToken token, {{ project.database_class }}.LoadContext context)
     {
         var obj = CoflowJson.RequireObject(token);
-{% if type.loader.has_id %}        var {{ type.loader.key_local_name }} = {{ type.loader.key_read_expr }};
-{% endif %}{% for field in type.loader.fields %}        var {{ field.local_name }} = {{ field.read_expr }};
+        var {{ type.loader.key_local_name }} = {{ type.loader.key_read_expr }};
+{% for field in type.loader.fields %}        var {{ field.local_name }} = {{ field.read_expr }};
 {% endfor %}
         return new {{ type.loader.type_name }}(
-{% if type.loader.has_id %}            {{ type.loader.key_local_name }}{% if type.loader.fields | length > 0 %},{% endif %}
-{% endif %}{% for field in type.loader.fields %}            {{ field.local_name }}{% if not loop.last %},{% endif %}
+            {{ type.loader.key_local_name }}{% if type.loader.fields | length > 0 %},{% endif %}
+{% for field in type.loader.fields %}            {{ field.local_name }}{% if not loop.last %},{% endif %}
 {% endfor %}        );
     }
-
+{% endif %}
     internal static {{ type.loader.type_name }} LoadInline(JToken token, {{ project.database_class }}.LoadContext context)
     {
         var obj = CoflowJson.RequireObject(token);
-{% if type.loader.has_id %}        var {{ type.loader.key_local_name }} = default({{ type.loader.key_type_name }})!;
-{% endif %}{% for field in type.loader.fields %}        var {{ field.local_name }} = {{ field.read_expr }};
+{% for field in type.loader.fields %}        var {{ field.local_name }} = {{ field.inline_read_expr }};
 {% endfor %}
         return new {{ type.loader.type_name }}(
-{% if type.loader.has_id %}            {{ type.loader.key_local_name }}{% if type.loader.fields | length > 0 %},{% endif %}
+{% if type.loader.is_table %}            default({{ type.loader.key_type_name }})!{% if type.loader.fields | length > 0 %},{% endif %}
 {% endif %}{% for field in type.loader.fields %}            {{ field.local_name }}{% if not loop.last %},{% endif %}
 {% endfor %}        );
     }
-
+{% if type.loader.is_table %}
     internal static Dictionary<{{ type.loader.key_type_name }}, {{ type.loader.type_name }}> BuildIndex(List<{{ type.loader.type_name }}> rows)
     {
         var result = new Dictionary<{{ type.loader.key_type_name }}, {{ type.loader.type_name }}>(rows.Count);
@@ -52,3 +51,4 @@
 
         return result;
     }
+{% endif %}

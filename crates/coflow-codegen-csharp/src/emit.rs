@@ -44,8 +44,8 @@ pub fn build_csharp_type(
     let mut assignments = Vec::new();
     let mut properties = Vec::new();
 
-    let has_id = !schema_type.is_abstract && type_has_id(&schema_type.name, view);
-    if has_id {
+    let is_table = !schema_type.is_abstract && type_is_table(&schema_type.name, view);
+    if is_table {
         let key_ty = view.key_field_type(&schema_type.name);
         let key_type = csharp_type(&key_ty, view);
         constructor_parameters.push(CsharpParameter {
@@ -116,7 +116,7 @@ pub fn build_csharp_type(
         CsharpEquality {
             key_property: "Id".to_string(),
             is_struct,
-            by_fields: !has_id,
+            by_fields: !is_table,
             fields: all_field_props,
         }
     });
@@ -142,7 +142,7 @@ pub fn build_csharp_type(
     })
 }
 
-fn type_has_id(type_name: &str, view: &SchemaView) -> bool {
+fn type_is_table(type_name: &str, view: &SchemaView) -> bool {
     view.is_ref_target_loadable(type_name)
 }
 
@@ -423,7 +423,7 @@ fn loader_method(type_name: &str, view: &SchemaView) -> Result<CsharpLoader, Csh
     let mut used_local_names = loader_reserved_local_names(ty);
     let key_ty = view.key_field_type(type_name);
     let key_local_name = field_local_name("id", &mut used_local_names)?;
-    let has_id = type_has_id(type_name, view);
+    let is_table = type_is_table(type_name, view);
     Ok(CsharpLoader {
         type_name: view.csharp_type_name(type_name),
         source_name: type_name.to_string(),
@@ -436,7 +436,7 @@ fn loader_method(type_name: &str, view: &SchemaView) -> Result<CsharpLoader, Csh
             &read_token_expr(&key_ty, "token", "context", view)?,
         ),
         key_messagepack_read_expr: read_messagepack_expr(&key_ty, "reader", "context", view)?,
-        has_id,
+        is_table,
         fields: ty
             .all_fields
             .iter()
@@ -461,7 +461,7 @@ fn polymorphic_loader(
         key_property: "Id".to_string(),
         key_read_expr: String::new(),
         key_messagepack_read_expr: String::new(),
-        has_id: type_has_id(type_name, view),
+        is_table: type_is_table(type_name, view),
         fields: Vec::new(),
         polymorphic_cases: assignable
             .iter()
@@ -502,28 +502,43 @@ fn load_field(
     };
     let raw_read_expr = read_field_expr(field, "obj", "context", view, missing_expr.as_deref())?;
     let raw_msgpack_expr = read_messagepack_field_expr(field, "reader", "context", view)?;
-    let (read_expr, messagepack_read_expr) = if field.is_localized {
-        let type_lit = escape_csharp_string(owner_type_name);
-        let field_lit = escape_csharp_string(&field.name);
-        let key_expr = if owner_is_singleton {
-            format!("\"{type_lit}/{field_lit}\"")
+    let (read_expr, messagepack_read_expr, inline_read_expr, inline_messagepack_read_expr) =
+        if field.is_localized {
+            let type_lit = escape_csharp_string(owner_type_name);
+            let field_lit = escape_csharp_string(&field.name);
+            let row_key_expr = if owner_is_singleton {
+                format!("\"{type_lit}/{field_lit}\"")
+            } else {
+                format!("string.Concat(\"{type_lit}/{field_lit}/\", id.ToString())")
+            };
+            let inline_key_expr = format!("\"{type_lit}/{field_lit}\"");
+            (
+                format!("new Localized<{inner_property_type}>({row_key_expr}, {raw_read_expr})"),
+                format!("new Localized<{inner_property_type}>({row_key_expr}, {raw_msgpack_expr})"),
+                format!(
+                    "new Localized<{inner_property_type}>({inline_key_expr}, {raw_read_expr})"
+                ),
+                format!(
+                    "new Localized<{inner_property_type}>({inline_key_expr}, {raw_msgpack_expr})"
+                ),
+            )
         } else {
-            format!("string.Concat(\"{type_lit}/{field_lit}/\", id.ToString())")
+            (
+                raw_read_expr.clone(),
+                raw_msgpack_expr.clone(),
+                raw_read_expr,
+                raw_msgpack_expr,
+            )
         };
-        (
-            format!("new Localized<{inner_property_type}>({key_expr}, {raw_read_expr})"),
-            format!("new Localized<{inner_property_type}>({key_expr}, {raw_msgpack_expr})"),
-        )
-    } else {
-        (raw_read_expr, raw_msgpack_expr)
-    };
     Ok(CsharpLoadField {
         property: csharp_public_member_name(&field.name),
         source_name: field.name.clone(),
         local_name,
         type_name: property_type,
         read_expr,
+        inline_read_expr,
         messagepack_read_expr,
+        inline_messagepack_read_expr,
         is_required: missing_expr.is_none(),
         default_expr,
         missing_expr,
@@ -537,7 +552,7 @@ fn loader_reserved_local_names(ty: &crate::schema_view::TypeMeta) -> HashSet<Str
         .iter()
         .map(|field| format!("has{}", csharp_public_member_name(&field.name)))
         .collect::<HashSet<_>>();
-    out.insert("hasId".to_string());
+    out.insert("isTable".to_string());
     out
 }
 
