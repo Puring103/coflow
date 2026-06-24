@@ -280,12 +280,21 @@ fn codegen_emits_coflow_tables_accessor_api_without_load_exception_or_ref_placeh
     require_contains(database, "public static CoflowTables Load(string dataDir)")?;
     require_contains(
         database,
-        "Reward.LoadTable(Path.Combine(dataDir, \"Reward.json\"), LoadContext.Empty)",
+        "Reward.LoadRawTable(Path.Combine(dataDir, \"Reward.json\"))",
     )?;
     require_contains(
         database,
-        "Item.LoadTable(Path.Combine(dataDir, \"Item.json\"), new LoadContext(rewardIndex))",
+        "Item.LoadRawTable(Path.Combine(dataDir, \"Item.json\"))",
     )?;
+    require_contains(
+        database,
+        "var context = new LoadContext(itemIndex, rewardIndex);",
+    )?;
+    require_contains(
+        database,
+        "Reward.HydrateAll(rewards, rewardRawRows, context);",
+    )?;
+    require_contains(database, "Item.HydrateAll(items, itemRawRows, context);")?;
     require_contains(
         database,
         "public sealed class Table<TKey, TRecord> : IReadOnlyList<TRecord>",
@@ -299,10 +308,17 @@ fn codegen_emits_coflow_tables_accessor_api_without_load_exception_or_ref_placeh
     require_contains(item, "public sealed partial class Item : IEquatable<Item>")?;
     require_contains(item, "public string Id { get; }")?;
     require_contains(item, "public string DisplayName { get; }")?;
-    require_contains(item, "public Reward Reward { get; }")?;
+    require_contains(item, "public Reward Reward { get => _reward; }")?;
     require_contains(item, "public IReadOnlyList<string> Tags { get; }")?;
     require_contains(item, "public Item(")?;
-    require_contains(item, "internal static List<Item> LoadTable(")?;
+    require_contains(
+        item,
+        "internal static (List<Item> Rows, Dictionary<Item, JToken> RawRows) LoadRawTable(",
+    )?;
+    require_contains(
+        item,
+        "internal static void HydrateAll(List<Item> rows, Dictionary<Item, JToken> rawRows,",
+    )?;
     require_contains(item, "internal static Dictionary<string, Item> BuildIndex(")?;
     require_contains(item, "context.GetReward(CoflowJson.ReadString(token))")?;
     require_contains(item, "public override string ToString()")?;
@@ -438,8 +454,11 @@ fn codegen_id_as_enum_generates_strongly_typed_ids_and_refs() -> Result<(), Stri
     require_not_contains(gene, "public string Id")?;
 
     let remains = generated_file(&files, "BioRemainsConfig.cs")?;
-    require_contains(remains, "public GeneConfig Gene { get; }")?;
-    require_contains(remains, "public GeneConfig? MaybeGene { get; }")?;
+    require_contains(remains, "public GeneConfig Gene { get => _gene; }")?;
+    require_contains(
+        remains,
+        "public GeneConfig? MaybeGene { get => _maybeGene; }",
+    )?;
     require_contains(
         remains,
         "context.GetGeneConfig(CoflowJson.ReadStringEnum<GeneId>(token))",
@@ -465,7 +484,10 @@ fn codegen_applies_nullable_and_missing_collection_rules() -> Result<(), String>
         .map_err(|err| err.to_string())?;
     let holder = generated_file(&files, "Holder.cs")?;
 
-    require_contains(holder, "public Target? MaybeTarget { get; }")?;
+    require_contains(
+        holder,
+        "public Target? MaybeTarget { get => _maybeTarget; }",
+    )?;
     require_contains(holder, "public IReadOnlyList<string> Tags { get; }")?;
     require_contains(
         holder,
@@ -504,6 +526,60 @@ fn codegen_concrete_inheritance_passes_base_fields_and_emits_equality() -> Resul
     require_contains(equipment, ") : base(id, displayName)")?;
     require_contains(equipment, "public bool Equals(Equipment? other)")?;
     require_contains(equipment, "public override int GetHashCode()")?;
+    Ok(())
+}
+
+#[test]
+fn codegen_renames_context_field_local_to_avoid_loader_parameter_collision() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+            type Text {
+                context: string;
+            }
+        "#,
+    )?;
+
+    let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+    let text = generated_file(&files, "Text.cs")?;
+
+    require_contains(text, "public string Context { get; }")?;
+    require_contains(text, "var contextValue = CoflowJson.ReadRequired")?;
+    require_contains(text, "Context = contextValue;")?;
+    require_not_contains(text, "var context = CoflowJson.ReadRequired")?;
+    Ok(())
+}
+
+#[test]
+fn codegen_generates_polymorphic_loader_for_concrete_base_types() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                name: string;
+            }
+
+            type Equipment : Item {
+                power: int;
+            }
+
+            type Holder {
+                item: Item;
+            }
+        "#,
+    )?;
+
+    let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+    let item = generated_file(&files, "Item.cs")?;
+    let holder = generated_file(&files, "Holder.cs")?;
+
+    require_contains(item, "internal static Item LoadPolymorphic(")?;
+    require_contains(item, "\"Item\" => Item.LoadInline(token, context),")?;
+    require_contains(
+        item,
+        "\"Equipment\" => Equipment.LoadInline(token, context),",
+    )?;
+    require_contains(holder, "Item.LoadPolymorphic(token, context)")?;
     Ok(())
 }
 
@@ -548,7 +624,7 @@ fn codegen_allows_old_reserved_type_names_but_rejects_database_class_collision(
 }
 
 #[test]
-fn codegen_sorts_tables_by_reference_dependencies() -> Result<(), String> {
+fn codegen_json_loads_tables_without_reference_dependency_order() -> Result<(), String> {
     let schema = compile_schema(
         r#"
             type Reward {}
@@ -566,31 +642,51 @@ fn codegen_sorts_tables_by_reference_dependencies() -> Result<(), String> {
     let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
         .map_err(|err| err.to_string())?;
     let database = generated_file(&files, "CoflowTables.cs")?;
-    let reward = database
-        .find("Reward.LoadTable")
-        .ok_or_else(|| "missing Reward load".to_string())?;
-    let drop_table = database
-        .find("DropTable.LoadTable")
-        .ok_or_else(|| "missing DropTable load".to_string())?;
-    let item = database
-        .find("Item.LoadTable")
-        .ok_or_else(|| "missing Item load".to_string())?;
+    let drop_table_raw = database
+        .find("var (dropTables, dropTableRawRows) = DropTable.LoadRawTable")
+        .ok_or_else(|| "missing DropTable raw load".to_string())?;
+    let item_raw = database
+        .find("var (items, itemRawRows) = Item.LoadRawTable")
+        .ok_or_else(|| "missing Item raw load".to_string())?;
+    let reward_raw = database
+        .find("var (rewards, rewardRawRows) = Reward.LoadRawTable")
+        .ok_or_else(|| "missing Reward raw load".to_string())?;
+    let first_index = database
+        .find("BuildIndex")
+        .ok_or_else(|| "missing index build".to_string())?;
+    let context = database
+        .find("var context = new LoadContext")
+        .ok_or_else(|| "missing full load context".to_string())?;
+    let first_hydrate = database
+        .find("HydrateAll")
+        .ok_or_else(|| "missing hydrate pass".to_string())?;
 
-    assert!(reward < drop_table, "Reward should load before DropTable");
-    assert!(drop_table < item, "DropTable should load before Item");
+    assert!(
+        drop_table_raw < first_index && item_raw < first_index && reward_raw < first_index,
+        "all raw table loads should happen before any index build"
+    );
+    assert!(
+        first_index < context && context < first_hydrate,
+        "indexes should be built before the full context and hydrate pass"
+    );
     require_contains(
         database,
-        "DropTable.LoadTable(Path.Combine(dataDir, \"DropTable.json\"), new LoadContext(rewardIndex))",
+        "var context = new LoadContext(dropTableIndex, itemIndex, rewardIndex);",
     )?;
     require_contains(
         database,
-        "Item.LoadTable(Path.Combine(dataDir, \"Item.json\"), new LoadContext(rewardIndex, dropTableIndex))",
+        "DropTable.HydrateAll(dropTables, dropTableRawRows, context);",
+    )?;
+    require_contains(database, "Item.HydrateAll(items, itemRawRows, context);")?;
+    require_contains(
+        database,
+        "Reward.HydrateAll(rewards, rewardRawRows, context);",
     )?;
     Ok(())
 }
 
 #[test]
-fn codegen_rejects_cyclic_table_references_for_immediate_readonly_loading() -> Result<(), String> {
+fn codegen_json_allows_cyclic_table_references() -> Result<(), String> {
     let schema = compile_schema(
         r#"
             type Item {
@@ -599,13 +695,28 @@ fn codegen_rejects_cyclic_table_references_for_immediate_readonly_loading() -> R
         "#,
     )?;
 
-    let Err(err) = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config")) else {
-        return Err("cyclic table reference should fail".to_string());
-    };
+    let files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+    let database = generated_file(&files, "CoflowTables.cs")?;
     require_contains(
-        &err.to_string(),
-        "C# read-only immediate reference loading does not support cyclic table references",
+        database,
+        "Item.LoadRawTable(Path.Combine(dataDir, \"Item.json\"))",
     )?;
+    require_contains(database, "var context = new LoadContext(itemIndex);")?;
+    require_contains(database, "Item.HydrateAll(items, itemRawRows, context);")?;
+
+    let item = generated_file(&files, "Item.cs")?;
+    require_contains(item, "public Item Next { get => _next; }")?;
+    require_not_contains(item, "_coflowRaw")?;
+    require_contains(
+        item,
+        "internal static (List<Item> Rows, Dictionary<Item, JToken> RawRows) LoadRawTable(",
+    )?;
+    require_contains(
+        item,
+        "internal static void HydrateAll(List<Item> rows, Dictionary<Item, JToken> rawRows,",
+    )?;
+    require_contains(item, "context.GetItem(CoflowJson.ReadString(token))")?;
     Ok(())
 }
 

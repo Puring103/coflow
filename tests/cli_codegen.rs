@@ -51,7 +51,7 @@ fn codegen_csharp_writes_newtonsoft_json_loader() {
     let item = std::fs::read_to_string(out_dir.join("Item.cs")).expect("Item.cs");
     assert!(item.contains("public string Id { get; }"));
     assert!(item.contains("public string DisplayName { get; }"));
-    assert!(item.contains("public Reward Reward { get; }"));
+    assert!(item.contains("public Reward Reward { get => _reward; }"));
     assert!(!item.contains("set;"));
     assert!(item.contains("context.GetReward"));
 }
@@ -409,6 +409,187 @@ static void Expect(bool condition, string message)
     );
 
     std::fs::remove_dir_all(root_dir).expect("clean output dir");
+}
+
+#[test]
+fn generated_csharp_loads_cyclic_json_references() {
+    if std::env::var_os("COFLOW_RUN_DOTNET_E2E").is_none() {
+        eprintln!("skipping dotnet E2E test; set COFLOW_RUN_DOTNET_E2E=1 to run");
+        return;
+    }
+
+    let root = temp_project_dir("csharp-cyclic-e2e");
+    let _cleanup = TempDirCleanup(root.clone());
+    let project_dir = root.join("project");
+    let export_dir = root.join("export");
+    let csharp_dir = root.join("csharp");
+    let dotnet_dir = root.join("dotnet");
+    std::fs::create_dir_all(project_dir.join("data")).expect("create data dir");
+    std::fs::write(
+        project_dir.join("schema.cft"),
+        r"
+            type Node {
+                next: Node;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        project_dir.join("data").join("records.cfd"),
+        r#"
+            a: Node {
+                next: &b,
+            }
+
+            b: Node {
+                next: &a,
+            }
+        "#,
+    )
+    .expect("write data");
+    std::fs::write(
+        project_dir.join("coflow.yaml"),
+        r"schema: schema.cft
+sources:
+  - path: data
+outputs:
+  data:
+    type: json
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Game.Config
+",
+    )
+    .expect("write config");
+
+    let export_output = coflow()
+        .args([
+            "export",
+            "json",
+            project_dir.to_str().expect("utf8 temp path"),
+            "--out",
+            export_dir.to_str().expect("utf8 temp path"),
+        ])
+        .output()
+        .expect("run coflow export");
+    assert!(
+        export_output.status.success(),
+        "export failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&export_output.stdout),
+        String::from_utf8_lossy(&export_output.stderr)
+    );
+
+    let codegen_output = coflow()
+        .args([
+            "codegen",
+            "csharp",
+            project_dir.to_str().expect("utf8 temp path"),
+            "--namespace",
+            "Game.Config",
+            "--out",
+            csharp_dir.to_str().expect("utf8 temp path"),
+        ])
+        .output()
+        .expect("run coflow codegen");
+    assert!(
+        codegen_output.status.success(),
+        "codegen failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&codegen_output.stdout),
+        String::from_utf8_lossy(&codegen_output.stderr)
+    );
+
+    let new_output = Command::new("dotnet")
+        .args([
+            "new",
+            "console",
+            "--framework",
+            "net8.0",
+            "--output",
+            dotnet_dir.to_str().expect("utf8 temp path"),
+        ])
+        .output()
+        .expect("run dotnet new");
+    assert!(
+        new_output.status.success(),
+        "dotnet new failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&new_output.stdout),
+        String::from_utf8_lossy(&new_output.stderr)
+    );
+
+    let add_package_output = Command::new("dotnet")
+        .current_dir(&dotnet_dir)
+        .args(["add", "package", "Newtonsoft.Json", "--version", "13.0.3"])
+        .output()
+        .expect("run dotnet add package");
+    assert!(
+        add_package_output.status.success(),
+        "dotnet add package failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&add_package_output.stdout),
+        String::from_utf8_lossy(&add_package_output.stderr)
+    );
+
+    for entry in std::fs::read_dir(&csharp_dir).expect("read generated C# dir") {
+        let entry = entry.expect("generated C# entry");
+        let path = entry.path();
+        if path.extension().is_some_and(|extension| extension == "cs") {
+            std::fs::copy(
+                &path,
+                dotnet_dir.join(path.file_name().expect("generated C# file name")),
+            )
+            .expect("copy generated C# file");
+        }
+    }
+
+    std::fs::write(
+        dotnet_dir.join("Program.cs"),
+        r#"using Game.Config;
+
+var tables = CoflowTables.Load(args[0]);
+var a = tables.TbNode.Get("a");
+var b = tables.TbNode.Get("b");
+if (!object.ReferenceEquals(a.Next, b))
+{
+    throw new Exception("a.Next should be b");
+}
+if (!object.ReferenceEquals(b.Next, a))
+{
+    throw new Exception("b.Next should be a");
+}
+Console.WriteLine("loaded");
+"#,
+    )
+    .expect("write Program.cs");
+
+    let build_output = Command::new("dotnet")
+        .current_dir(&dotnet_dir)
+        .arg("build")
+        .output()
+        .expect("run dotnet build");
+    assert!(
+        build_output.status.success(),
+        "dotnet build failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&build_output.stdout),
+        String::from_utf8_lossy(&build_output.stderr)
+    );
+
+    let run_output = Command::new("dotnet")
+        .current_dir(&dotnet_dir)
+        .args(["run", "--", export_dir.to_str().expect("utf8 temp path")])
+        .output()
+        .expect("run dotnet app");
+    assert!(
+        run_output.status.success(),
+        "dotnet run failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&run_output.stdout),
+        String::from_utf8_lossy(&run_output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&run_output.stdout).contains("loaded"),
+        "dotnet run stdout: {}",
+        String::from_utf8_lossy(&run_output.stdout)
+    );
 }
 
 #[test]

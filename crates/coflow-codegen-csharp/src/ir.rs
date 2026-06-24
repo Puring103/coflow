@@ -59,13 +59,13 @@ impl CsharpCodegenOptions {
     }
 
     #[must_use]
-    pub fn with_int_32(mut self, value: bool) -> Self {
+    pub const fn with_int_32(mut self, value: bool) -> Self {
         self.int_32 = value;
         self
     }
 
     #[must_use]
-    pub fn with_float_32(mut self, value: bool) -> Self {
+    pub const fn with_float_32(mut self, value: bool) -> Self {
         self.float_32 = value;
         self
     }
@@ -101,8 +101,7 @@ pub fn build_project(
         .with_float_32(options.float_32)
         .with_loadable_tables(loadable);
 
-    let mut id_as_enum_variants =
-        build_id_as_enums(schema, &id_as_enum_names, id_as_enum_variants);
+    let mut id_as_enum_variants = build_id_as_enums(schema, &id_as_enum_names, id_as_enum_variants);
     let enums = schema
         .all_enums()
         .map(|schema_enum| {
@@ -366,8 +365,8 @@ fn build_id_as_enums(
     let mut out = BTreeMap::new();
     for name in declared {
         let schema_enum = schema.resolve_enum(name);
-        let is_flags = schema_enum
-            .is_some_and(|schema_enum| has_annotation(&schema_enum.annotations, "flag"));
+        let is_flags =
+            schema_enum.is_some_and(|schema_enum| has_annotation(&schema_enum.annotations, "flag"));
         let mut enum_variants = Vec::new();
         if is_flags {
             enum_variants.push(CsharpEnumVariant {

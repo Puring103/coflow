@@ -97,7 +97,7 @@ impl AnnotationSpec {
                 targets: &[AnnotationTarget::Enum],
                 args: AnnotationArgs::None,
             },
-            "expand" => Self {
+            "expand" | "localized" => Self {
                 targets: &[AnnotationTarget::Field],
                 args: AnnotationArgs::None,
             },
@@ -117,10 +117,6 @@ impl AnnotationSpec {
                     AnnotationTarget::EnumVariant,
                     AnnotationTarget::Field,
                 ],
-                args: AnnotationArgs::None,
-            },
-            "localized" => Self {
-                targets: &[AnnotationTarget::Field],
                 args: AnnotationArgs::None,
             },
             _ => return None,

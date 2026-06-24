@@ -16,9 +16,11 @@ namespace {{ project.namespace }}
 {% endif %}{% if type.obsolete %}[Obsolete]
 {% endif %}{{ type.declaration }}
 {
-{% for property in type.properties %}{% if property.summary %}    /// <summary>{{ property.summary }}</summary>
+{% for property in type.properties %}{% if property.backing_field %}    internal {{ property.type_name }} {{ property.backing_field }} = default!;
+
+{% endif %}{% if property.summary %}    /// <summary>{{ property.summary }}</summary>
 {% endif %}{% if property.obsolete %}    [Obsolete]
-{% endif %}    {{ property.visibility }} {{ property.type_name }} {{ property.name }} { get; }
+{% endif %}    {{ property.visibility }} {{ property.type_name }} {{ property.name }} { get{% if property.backing_field %} => {{ property.backing_field }}{% endif %}; }
 {% if not loop.last %}
 {% endif %}{% endfor %}{% if type.properties | length > 0 %}
 
@@ -26,7 +28,7 @@ namespace {{ project.namespace }}
 {% for parameter in type.constructor_parameters %}        {{ parameter.ty }} {{ parameter.name }}{% if not loop.last %},{% endif %}
 {% endfor %}    ){{ type.base_constructor_call | default(value="") }}
     {
-{% for assignment in type.assignments %}        {{ assignment.property }} = {{ assignment.parameter }};
+{% for assignment in type.assignments %}        {{ assignment.target }} = {{ assignment.parameter }};
 {% endfor %}    }
 {% if type.loader %}
 {% if project.uses_json %}{% if type.loader.is_polymorphic %}{% include "type_json_polymorphic_loader.cs.tera" %}{% else %}{% include "type_json_loader.cs.tera" %}{% endif %}{% endif %}
