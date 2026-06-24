@@ -131,6 +131,8 @@ pub fn build_project(
         uses_json: data_format == CsharpDataFormat::Json,
         uses_messagepack: data_format == CsharpDataFormat::MessagePack,
         uses_localization,
+        int_type: if options.int_32 { "int" } else { "long" },
+        float_type: if options.float_32 { "float" } else { "double" },
         enums,
         types,
         database,

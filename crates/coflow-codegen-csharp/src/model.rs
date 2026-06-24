@@ -8,6 +8,8 @@ pub struct CsharpProject {
     pub uses_json: bool,
     pub uses_messagepack: bool,
     pub uses_localization: bool,
+    pub int_type: &'static str,
+    pub float_type: &'static str,
     pub enums: Vec<CsharpEnum>,
     pub types: Vec<CsharpType>,
     pub database: CsharpDatabase,
