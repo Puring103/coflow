@@ -6,7 +6,8 @@
 //! `(source_text, CfdAst)` keyed by absolute file path so that repeated edits
 //! avoid re-reading and re-parsing the file.
 use coflow_api::{
-    CfdDataModel, CfdValue, DataWriter, Diagnostic, DiagnosticSet, RecordOrigin, WriteCellRequest,
+    CfdDataModel, CfdValue, DataWriter, DeleteRecordRequest, Diagnostic, DiagnosticSet,
+    InsertRecordRequest, RecordOrigin, SourceLocationSpec, TextSpan, WriteCellRequest,
     WriteContext, WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_cfd::ast::{CfdBlockEntry, CfdRecord as AstRecord, CfdValue as AstValue};
@@ -43,6 +44,40 @@ impl CfdWriter {
             cache.remove(path);
         }
     }
+
+    fn read_or_parse(&self, path: &Path) -> Result<(String, CfdAst), DiagnosticSet> {
+        self.cache
+            .read()
+            .map_or(None, |cache| cache.get(path).cloned())
+            .map_or_else(
+                || -> Result<(String, CfdAst), DiagnosticSet> {
+                    let text = std::fs::read_to_string(path).map_err(|err| {
+                        DiagnosticSet::one(diag(
+                            "CFD-READ",
+                            format!("failed to read `{}`: {err}", path.display()),
+                        ))
+                    })?;
+                    let (ast, _) = parse_cfd(&text);
+                    Ok((text, ast))
+                },
+                Ok,
+            )
+    }
+
+    fn write_source(&self, path: &Path, new_source: String) -> Result<(), DiagnosticSet> {
+        std::fs::write(path, &new_source).map_err(|err| {
+            DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                format!("failed to write `{}`: {err}", path.display()),
+            ))
+        })?;
+
+        let (new_ast, _) = parse_cfd(&new_source);
+        if let Ok(mut cache) = self.cache.write() {
+            cache.insert(path.to_path_buf(), (new_source, new_ast));
+        }
+        Ok(())
+    }
 }
 
 impl DataWriter for CfdWriter {
@@ -68,42 +103,98 @@ impl DataWriter for CfdWriter {
             )));
         }
 
-        // Read or fetch from cache.
-        let (source, ast) = self
-            .cache
-            .read()
-            .map_or(None, |cache| cache.get(path).cloned())
-            .map_or_else(
-                || -> Result<(String, CfdAst), DiagnosticSet> {
-                    let text = std::fs::read_to_string(path).map_err(|err| {
-                        DiagnosticSet::one(diag(
-                            "CFD-READ",
-                            format!("failed to read `{}`: {err}", path.display()),
-                        ))
-                    })?;
-                    let (ast, _) = parse_cfd(&text);
-                    Ok((text, ast))
-                },
-                Ok,
-            )?;
+        let (source, ast) = self.read_or_parse(path)?;
 
         let new_source = apply_patch(&source, &ast, request, ctx.model)?;
 
-        // Write back to disk and refresh cache.
-        std::fs::write(path, &new_source).map_err(|err| {
-            DiagnosticSet::one(diag(
-                "CFD-WRITE",
-                format!("failed to write `{}`: {err}", path.display()),
-            ))
-        })?;
-
-        let (new_ast, _) = parse_cfd(&new_source);
-        if let Ok(mut cache) = self.cache.write() {
-            cache.insert(path.clone(), (new_source, new_ast));
-        }
+        self.write_source(path, new_source)?;
 
         Ok(WriteOutcome {
             touched_record_origins: vec![request.origin.clone()],
+            inserted_record_origin: None,
+            deleted_record_origin: None,
+            diagnostics: DiagnosticSet::empty(),
+        })
+    }
+
+    fn insert_record(
+        &self,
+        ctx: WriteContext<'_>,
+        request: &InsertRecordRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &request.source.location else {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                "cfd writer requires a path source",
+            )));
+        };
+        validate_record_key(request.record_key)?;
+        validate_values(request.fields.values())?;
+
+        let (source, ast) = self.read_or_parse(path)?;
+        if ast
+            .records
+            .iter()
+            .any(|record| record.key == request.record_key)
+        {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                format!("record `{}` already exists", request.record_key),
+            )));
+        }
+        let fragment = serialize_record(
+            request.record_key,
+            request.actual_type,
+            request.fields,
+            ctx.model,
+        );
+        let new_source = append_record_source(&source, &fragment);
+        self.write_source(path, new_source)?;
+        Ok(WriteOutcome {
+            touched_record_origins: Vec::new(),
+            inserted_record_origin: Some(RecordOrigin::File {
+                path: path.clone(),
+                span: Some(TextSpan {
+                    start_line: 0,
+                    start_character: 0,
+                    end_line: 0,
+                    end_character: 0,
+                }),
+            }),
+            deleted_record_origin: None,
+            diagnostics: DiagnosticSet::empty(),
+        })
+    }
+
+    fn delete_record(
+        &self,
+        _ctx: WriteContext<'_>,
+        request: &DeleteRecordRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        let RecordOrigin::File { path, .. } = request.origin else {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                "cfd writer requires a File origin",
+            )));
+        };
+        let (source, ast) = self.read_or_parse(path)?;
+        let record = ast
+            .records
+            .iter()
+            .find(|record| record.key == request.record_key)
+            .ok_or_else(|| {
+                DiagnosticSet::one(diag(
+                    "CFD-WRITE",
+                    format!("record `{}` not found in AST", request.record_key),
+                ))
+            })?;
+        let span = delete_record_span(&source, record.span);
+        let new_source = format!("{}{}", &source[..span.start], &source[span.end..]);
+        self.write_source(path, new_source)?;
+        Ok(WriteOutcome {
+            touched_record_origins: Vec::new(),
+            inserted_record_origin: None,
+            deleted_record_origin: Some(request.origin.clone()),
             diagnostics: DiagnosticSet::empty(),
         })
     }
@@ -254,6 +345,75 @@ fn validate_value(v: &CfdValue) -> Result<(), DiagnosticSet> {
         }
         _ => Ok(()),
     }
+}
+
+fn validate_values<'a>(
+    values: impl IntoIterator<Item = &'a CfdValue>,
+) -> Result<(), DiagnosticSet> {
+    for value in values {
+        validate_value(value)?;
+    }
+    Ok(())
+}
+
+fn validate_record_key(key: &str) -> Result<(), DiagnosticSet> {
+    if key.trim().is_empty() {
+        return Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            "record key must not be empty",
+        )));
+    }
+    if let Some(reason) = coflow_cft::record_key_ident_error(key) {
+        return Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            format!("record key `{key}` is invalid: {reason}"),
+        )));
+    }
+    Ok(())
+}
+
+fn serialize_record(
+    key: &str,
+    actual_type: &str,
+    fields: &std::collections::BTreeMap<String, CfdValue>,
+    model: Option<&CfdDataModel>,
+) -> String {
+    let mut out = format!("{key}: {actual_type} {{\n");
+    for (name, value) in fields {
+        out.push_str("  ");
+        out.push_str(name);
+        out.push_str(": ");
+        out.push_str(&serialize_value(value, 2, model));
+        out.push_str(",\n");
+    }
+    out.push_str("}\n");
+    out
+}
+
+fn append_record_source(source: &str, fragment: &str) -> String {
+    if source.trim().is_empty() {
+        return fragment.to_string();
+    }
+    let mut out = source.trim_end().to_string();
+    out.push_str("\n\n");
+    out.push_str(fragment);
+    out
+}
+
+fn delete_record_span(source: &str, span: Span) -> Span {
+    let mut start = span.start.min(source.len());
+    let end = span.end.min(source.len());
+    while start > 0 {
+        let Some(prev) = source[..start].chars().next_back() else {
+            break;
+        };
+        if prev == '\n' || prev == '\r' {
+            start -= prev.len_utf8();
+            continue;
+        }
+        break;
+    }
+    Span::new(start, end)
 }
 
 fn find_closing_brace(source: &str, near: usize) -> Result<usize, DiagnosticSet> {
