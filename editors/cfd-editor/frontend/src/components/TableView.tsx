@@ -112,12 +112,13 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
             const f = row.original.fields.find(f => f.name === name)
             const sev = cellDiagIndex.get(`${row.original.key}::${name}`)
             if (!f) return <span className={`dc-null${sev ? ' dc-cell-diag dc-cell-diag-' + sev : ''}`}>—</span>
+            const cellEditable = canEdit && !f.read_only
             return (
               <span className={sev ? `dc-cell-diag dc-cell-diag-${sev}` : undefined} title={sev ? findDiagMessage(diagnostics, data.file_path, row.original.key, name) : undefined}>
                 <EditableCell
                   value={f.value}
-                  editable={canEdit}
-                  onCommit={canEdit ? next => onWriteField!(row.original.key, [{ kind: 'field', name }], next) : undefined}
+                  editable={cellEditable}
+                  onCommit={cellEditable ? next => onWriteField!(row.original.key, [{ kind: 'field', name }], next) : undefined}
                 />
               </span>
             )

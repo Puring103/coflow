@@ -412,13 +412,13 @@ function ScalarFieldRow({ label, value, depth, onCommit, isSpread, spreadInfo, p
         {onCommit && value.kind === 'Ref' && (
           <button
             className="btn-tiny dc-row-mode-btn"
-            title="切换为内联对象（用 schema 默认值新建）"
+            title={`将引用 "${value.target_key}" 转为内联对象（使用 schema 默认值）`}
             onClick={async e => {
               e.stopPropagation()
               const obj = await buildDefaultObject(value.target_type)
               if (obj) onCommit(obj)
             }}
-          >→Inline</button>
+          >内联</button>
         )}
         {trailing}
       </div>

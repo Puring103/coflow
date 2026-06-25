@@ -87,6 +87,7 @@ export function RecordView({ data, recordKey, typeFilter, readOnly, diagnostics,
               aria-selected={r.key === recordKey}
               tabIndex={r.key === recordKey ? 0 : -1}
               data-key={r.key}
+              style={{ '--type-color': typeColor(r.actual_type) } as React.CSSProperties}
               onClick={() => onOpenRecord(r.key)}
               onKeyDown={e => {
                 if (e.key === 'Enter') {
