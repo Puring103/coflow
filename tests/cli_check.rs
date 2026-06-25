@@ -66,7 +66,7 @@ fn full_project_check_failure_uses_check_diagnostics_in_human_output() {
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("[CFD-CHECK-001] [CHECK]"),
+        stderr.contains("[CFD-CHECK-007] [CHECK]"),
         "stderr: {stderr}"
     );
     assert!(
@@ -76,9 +76,11 @@ fn full_project_check_failure_uses_check_diagnostics_in_human_output() {
     assert!(stderr.contains("sheet   Item"), "stderr: {stderr}");
     assert!(stderr.contains("cell    B2"), "stderr: {stderr}");
     assert!(
-        stderr.contains("message\n  check condition evaluated to false"),
+        stderr.contains("message\n  校验失败: level > 0"),
         "stderr: {stderr}"
     );
+    assert!(stderr.contains("实际值: level = 0"), "stderr: {stderr}");
+    assert!(stderr.contains("期望: > 0"), "stderr: {stderr}");
     assert!(
         !stderr.contains(root.to_string_lossy().as_ref()),
         "stderr should use project-relative paths: {stderr}"
@@ -106,8 +108,12 @@ fn full_project_check_failure_uses_check_diagnostics_in_json_output() {
     let diagnostics = json["diagnostics"].as_array().expect("diagnostics array");
     assert_eq!(diagnostics.len(), 1);
     let diagnostic = &diagnostics[0];
-    assert_eq!(diagnostic["code"], "CFD-CHECK-001");
+    assert_eq!(diagnostic["code"], "CFD-CHECK-007");
     assert_eq!(diagnostic["stage"], "CHECK");
+    assert_eq!(
+        diagnostic["message"],
+        "校验失败: level > 0\n实际值: level = 0\n期望: > 0"
+    );
     assert!(
         diagnostic["path"]
             .as_str()
