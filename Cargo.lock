@@ -450,6 +450,7 @@ dependencies = [
  "coflow-cft",
  "coflow-data-model",
  "coflow-engine",
+ "coflow-loader-csv",
  "coflow-project",
  "serde",
  "serde_json",

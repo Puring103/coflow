@@ -18,6 +18,9 @@
 )]
 #![allow(clippy::missing_const_for_fn)]
 
+pub mod writer;
+pub use writer::CsvWriter;
+
 use coflow_api::{
     DataLoader, Diagnostic, DiagnosticSet, Label, LoadContext, LoadedRecords, LoaderDescriptor,
     ProbeResult, ProjectSourceRef, ResolvedSource, Severity, SourceLocation, SourceLocationSpec,

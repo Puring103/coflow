@@ -8,7 +8,7 @@ use coflow_engine::{build_project_session, ProjectSession};
 use coflow_project::Project;
 
 use super::diagnostics::diagnostics_from_store;
-use super::file_tree::build_file_tree;
+use super::file_tree::{build_file_tree, build_localization_subtree, LOCALIZATION_ROOT};
 use super::path::path_to_slash;
 use super::EditorSession;
 use crate::editor::types::{EditorError, FileTreeNode, SourceCapabilities};
@@ -92,5 +92,43 @@ fn session_file_tree(engine: &ProjectSession, registry: &ProviderRegistry) -> Ve
         .iter()
         .map(|path| path_to_slash(Path::new(path)))
         .collect::<BTreeSet<_>>();
-    build_file_tree(&engine.project.root_dir, &source_files, &ext_whitelist)
+
+    // Carve the localization output dir out of the main tree (if it lives
+    // under the project root) and surface it as a separate top-level
+    // virtual folder. Reason: localization tables are produced by the
+    // engine (not authored), so they don't belong next to user-edited
+    // sources; pulling them out keeps the `data/` listing clean.
+    let mut skip: BTreeSet<String> = BTreeSet::new();
+    let localization_dir = engine
+        .project
+        .config
+        .localization
+        .as_ref()
+        .map(|cfg| {
+            if cfg.out_dir.is_absolute() {
+                cfg.out_dir.clone()
+            } else {
+                engine.project.root_dir.join(&cfg.out_dir)
+            }
+        });
+    if let Some(dir) = &localization_dir {
+        if let Ok(rel) = dir.strip_prefix(&engine.project.root_dir) {
+            let slash = path_to_slash(rel);
+            if !slash.is_empty() {
+                skip.insert(slash);
+            }
+        }
+    }
+
+    let mut tree = build_file_tree(&engine.project.root_dir, &source_files, &ext_whitelist, &skip);
+    if let Some(dir) = &localization_dir {
+        if let Some(node) = build_localization_subtree(dir) {
+            // Insert localization root at the top so it's the first thing
+            // the user sees in the sidebar.
+            tree.insert(0, node);
+        } else {
+            let _ = LOCALIZATION_ROOT; // keep the constant exported even if unused
+        }
+    }
+    tree
 }
