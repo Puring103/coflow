@@ -1,7 +1,7 @@
 use super::evaluator::CheckEvaluator;
 use super::value::{CheckRecordRef, CheckValue};
 use crate::schema_view::SchemaView;
-use crate::{DependencyGraph, LocalizationOverrides};
+use crate::{DependencyGraph, DimensionCheckContext};
 use coflow_cft::CftContainer;
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdPath, CfdRecordId, CfdValue,
@@ -15,12 +15,7 @@ pub(crate) struct CheckRunner<'a> {
     /// When `Some`, the runner records read-from edges for each top-level
     /// record. The current root is the most recently pushed entry.
     deps: Option<BTreeMap<CfdRecordId, BTreeSet<CfdRecordId>>>,
-    /// When `Some`, evaluators created by this runner substitute string-typed
-    /// `@localized` field values from `translations` keyed by
-    /// `{bucket}/{record_key}/{field_name}`. Missing keys fall back to the
-    /// default value, mirroring the runtime contract in
-    /// `docs/spec/13-localization.md` §6.
-    localization: Option<LocalizationOverrides>,
+    dimension_context: Option<DimensionCheckContext>,
 }
 
 impl<'a> CheckRunner<'a> {
@@ -30,21 +25,21 @@ impl<'a> CheckRunner<'a> {
             model,
             diagnostics: Vec::new(),
             deps: None,
-            localization: None,
+            dimension_context: None,
         }
     }
 
-    pub(crate) fn with_localization(
+    pub(crate) fn with_dimension_context(
         schema: &'a CftContainer,
         model: &'a CfdDataModel,
-        localization: LocalizationOverrides,
+        dimension_context: DimensionCheckContext,
     ) -> Self {
         Self {
             schema: SchemaView::new(schema),
             model,
             diagnostics: Vec::new(),
             deps: None,
-            localization: Some(localization),
+            dimension_context: Some(dimension_context),
         }
     }
 
@@ -107,7 +102,9 @@ impl<'a> CheckRunner<'a> {
         let mut evaluator =
             CheckEvaluator::new(&self.schema, self.model, root_record, root_path, root);
         evaluator.dep_collector_enabled = self.deps.is_some();
-        evaluator.localization.clone_from(&self.localization);
+        evaluator
+            .dimension_context
+            .clone_from(&self.dimension_context);
         for check in checks {
             let _ = evaluator.eval_check_block(&check);
         }

@@ -1,6 +1,6 @@
 use coflow_cft::{
     CftConstValue, CftContainer, CftSchemaCheckBlock, CftSchemaEnum, CftSchemaType,
-    CftSchemaTypeRef,
+    CftSchemaTypeRef, Dimension, DimensionSpec,
 };
 use coflow_data_model::CfdEnumValue;
 use std::collections::BTreeMap;
@@ -119,18 +119,14 @@ impl SchemaView {
             .and_then(|meta| meta.fields.get(field_name))
     }
 
-    /// Returns whether a field is `@localized`.
-    pub(crate) fn field_is_localized(&self, actual_type: &str, field_name: &str) -> bool {
+    pub(crate) fn dimension_field(
+        &self,
+        actual_type: &str,
+        field_name: &str,
+    ) -> Option<&DimensionFieldMeta> {
         self.types
             .get(actual_type)
-            .is_some_and(|meta| meta.localized_fields.contains(field_name))
-    }
-
-    /// Returns whether a type is `@singleton`.
-    pub(crate) fn type_is_singleton(&self, type_name: &str) -> bool {
-        self.types
-            .get(type_name)
-            .is_some_and(|meta| meta.is_singleton)
+            .and_then(|meta| meta.dimension_fields.get(field_name))
     }
 }
 
@@ -140,19 +136,35 @@ pub(crate) struct TypeMeta {
     parent: Option<String>,
     check: Option<CftSchemaCheckBlock>,
     fields: BTreeMap<String, CftSchemaTypeRef>,
-    is_singleton: bool,
-    /// Names of fields that carry `@localized`.
-    localized_fields: std::collections::BTreeSet<String>,
+    dimension_fields: BTreeMap<String, DimensionFieldMeta>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DimensionFieldMeta {
+    pub(crate) dimension: String,
+    pub(crate) source_field: String,
+    pub(crate) synthesized_type: String,
+    pub(crate) is_singleton: bool,
 }
 
 impl TypeMeta {
     fn from_schema(schema_type: &CftSchemaType) -> Self {
-        let localized_fields = schema_type
+        let dimension_fields = schema_type
             .all_fields
             .iter()
-            .filter(|field| field.is_localized)
-            .map(|field| field.name.clone())
-            .collect::<std::collections::BTreeSet<_>>();
+            .filter_map(|field| {
+                let dimension = dimension_name(field.dimension.as_ref())?;
+                Some((
+                    field.name.clone(),
+                    DimensionFieldMeta {
+                        dimension: dimension.to_string(),
+                        source_field: field.name.clone(),
+                        synthesized_type: format!("{}_{}Variants", schema_type.name, field.name),
+                        is_singleton: schema_type.is_singleton,
+                    },
+                ))
+            })
+            .collect();
         Self {
             name: schema_type.name.clone(),
             parent: schema_type.parent.clone(),
@@ -162,9 +174,15 @@ impl TypeMeta {
                 .iter()
                 .map(|field| (field.name.clone(), field.ty_ref.clone()))
                 .collect(),
-            is_singleton: schema_type.is_singleton,
-            localized_fields,
+            dimension_fields,
         }
+    }
+}
+
+fn dimension_name(dimension: Option<&DimensionSpec>) -> Option<&str> {
+    match &dimension?.kind {
+        Dimension::Localized => Some("language"),
+        Dimension::Custom(name) => Some(name.as_str()),
     }
 }
 

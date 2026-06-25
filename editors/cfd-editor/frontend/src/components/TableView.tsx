@@ -112,9 +112,13 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
             const f = row.original.fields.find(f => f.name === name)
             const sev = cellDiagIndex.get(`${row.original.key}::${name}`)
             if (!f) return <span className={`dc-null${sev ? ' dc-cell-diag dc-cell-diag-' + sev : ''}`}>—</span>
-            const cellEditable = canEdit && !f.read_only
+            const isDimensionDefault = isDimensionDefaultField(row.original, f.name)
+            const cellEditable = canEdit && !isDimensionDefault
+            const title = isDimensionDefault
+              ? '由源记录决定，不可编辑'
+              : sev ? findDiagMessage(diagnostics, data.file_path, row.original.key, name) : undefined
             return (
-              <span className={sev ? `dc-cell-diag dc-cell-diag-${sev}` : undefined} title={sev ? findDiagMessage(diagnostics, data.file_path, row.original.key, name) : undefined}>
+              <span className={sev ? `dc-cell-diag dc-cell-diag-${sev}` : undefined} title={title}>
                 <EditableCell
                   value={f.value}
                   editable={cellEditable}
@@ -342,6 +346,7 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
           <div className="table-detail-body">
             <DataCardExpanded
               fields={selectedRecord.fields}
+              actualType={selectedRecord.actual_type}
               onEdit={readOnly || !onWriteField ? undefined : (path, val) => { onWriteField(selectedRecord.key, path, val) }}
               diagnostics={diagnostics ? diagnosticsForRecord(diagnostics, data.file_path, selectedRecord.key) : []}
             />
@@ -376,6 +381,10 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
       )}
     </div>
   )
+}
+
+function isDimensionDefaultField(record: RecordRow, fieldName: string): boolean {
+  return record.actual_type.endsWith('Variants') && fieldName === 'default'
 }
 
 function findDiagMessage(

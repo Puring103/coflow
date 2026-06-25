@@ -38,7 +38,6 @@ pub fn record_to_field_cells_for_session(
                 value: cfd_value_to_wire(value, &ctx),
                 is_spread: spread_info.is_some(),
                 spread_info,
-                read_only: false,
             }
         })
         .collect()
@@ -64,7 +63,6 @@ fn record_to_field_cells_nested(
                 value: cfd_value_to_wire_with_path(value, ctx, parent_path, name),
                 is_spread: spread_info.is_some(),
                 spread_info,
-                read_only: false,
             }
         })
         .collect()

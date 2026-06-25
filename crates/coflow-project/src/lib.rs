@@ -27,29 +27,65 @@ const PROJECT_DIAGNOSTIC_STAGE: &str = "PROJECT";
 #[derive(Debug)]
 struct NoDuplicateValue(Value);
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone)]
 pub struct ProjectConfig {
     pub schema: SchemaConfig,
-    #[serde(default)]
     pub sources: Vec<SourceConfig>,
-    #[serde(default)]
     pub outputs: OutputsConfig,
-    #[serde(default)]
-    pub localization: Option<LocalizationConfig>,
+    pub dimensions: BTreeMap<String, DimensionConfig>,
+}
+
+impl<'de> Deserialize<'de> for ProjectConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut fields = no_duplicate_object(deserializer)?;
+        if fields.contains_key("localization") {
+            return Err(de::Error::custom(
+                "PROJECT-CONFIG-LOCALIZATION-REMOVED: `localization` has been removed; use `dimensions.language` instead.",
+            ));
+        }
+
+        let schema = fields
+            .remove("schema")
+            .ok_or_else(|| de::Error::missing_field("schema"))
+            .and_then(|value| config_value(value).map_err(de::Error::custom))?;
+        let sources = fields
+            .remove("sources")
+            .map(|value| config_value(value).map_err(de::Error::custom))
+            .transpose()?
+            .unwrap_or_default();
+        let outputs = fields
+            .remove("outputs")
+            .map(|value| config_value(value).map_err(de::Error::custom))
+            .transpose()?
+            .unwrap_or_default();
+        let dimensions = fields
+            .remove("dimensions")
+            .map(|value| config_value(value).map_err(de::Error::custom))
+            .transpose()?
+            .unwrap_or_default();
+
+        if let Some(key) = fields.keys().next() {
+            return Err(de::Error::custom(format!("unknown field `{key}`")));
+        }
+
+        Ok(Self {
+            schema,
+            sources,
+            outputs,
+            dimensions,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct LocalizationConfig {
-    #[serde(default = "default_localization_out_dir")]
-    pub out_dir: PathBuf,
+pub struct DimensionConfig {
     #[serde(default)]
-    pub languages: Vec<String>,
-}
-
-fn default_localization_out_dir() -> PathBuf {
-    PathBuf::from("data/localization")
+    pub variants: Vec<String>,
+    pub out_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -269,6 +305,13 @@ fn string_field(label: &'static str) -> impl FnOnce(Value) -> Result<String, Str
         };
         Ok(value)
     }
+}
+
+fn config_value<T>(value: Value) -> Result<T, String>
+where
+    T: de::DeserializeOwned,
+{
+    serde_json::from_value(value).map_err(|err| err.to_string())
 }
 
 fn reject_removed_source_fields(fields: &Map<String, Value>) -> Result<(), String> {
@@ -527,50 +570,77 @@ fn validate_project_config_schema_only_collecting(
     diagnostics.extend(validate_schema_config_collecting(root_dir, &config.schema));
     diagnostics.extend(validate_outputs_collecting(&config.outputs));
     diagnostics.extend(validate_source_shapes_collecting(&config.sources));
-    if let Some(loc) = &config.localization {
-        diagnostics.extend(validate_localization_collecting(loc));
+    diagnostics.extend(validate_dimensions_collecting(&config.dimensions));
+    diagnostics
+}
+
+fn validate_dimensions_collecting(
+    dimensions: &BTreeMap<String, DimensionConfig>,
+) -> Vec<ProjectDiagnostic> {
+    let mut diagnostics = Vec::new();
+    if let Some(config) = dimensions.get("language") {
+        diagnostics.extend(validate_language_dimension_collecting(config));
     }
     diagnostics
 }
 
-fn validate_localization_collecting(config: &LocalizationConfig) -> Vec<ProjectDiagnostic> {
+fn validate_language_dimension_collecting(config: &DimensionConfig) -> Vec<ProjectDiagnostic> {
     let mut diagnostics = Vec::new();
+    if config.out_dir.is_none() {
+        diagnostics.push(
+            ProjectDiagnostic::new(
+                "dimensions.language.out_dir is required",
+                ["dimensions", "language", "out_dir"],
+            )
+            .with_code("DIM-CONFIG-003"),
+        );
+    }
+    if config.variants.is_empty() {
+        diagnostics.push(
+            ProjectDiagnostic::new(
+                "dimensions.language.variants must not be empty",
+                ["dimensions", "language", "variants"],
+            )
+            .with_code("DIM-CONFIG-002"),
+        );
+    }
     let mut seen = BTreeSet::new();
-    for (index, lang) in config.languages.iter().enumerate() {
+    for (index, variant) in config.variants.iter().enumerate() {
         let key_path = vec![
-            "localization".to_string(),
-            "languages".to_string(),
+            "dimensions".to_string(),
+            "language".to_string(),
+            "variants".to_string(),
             index.to_string(),
         ];
-        if lang == "default" {
+        if variant == "default" {
             diagnostics.push(
                 ProjectDiagnostic::new(
-                    "localization.languages cannot include reserved code `default`",
+                    "dimensions.language.variants cannot include reserved variant `default`",
                     key_path.clone(),
                 )
-                .with_code("CFG-LOC-001"),
+                .with_code("DIM-CONFIG-002"),
             );
             continue;
         }
-        if !coflow_cft::is_cft_identifier(lang) {
+        if !coflow_cft::is_cft_identifier(variant) {
             diagnostics.push(
                 ProjectDiagnostic::new(
                     format!(
-                        "localization.languages[{index}] `{lang}` is not a valid CFT identifier"
+                        "dimensions.language.variants[{index}] `{variant}` is not a valid CFT identifier"
                     ),
                     key_path.clone(),
                 )
-                .with_code("CFG-LOC-003"),
+                .with_code("DIM-CONFIG-002"),
             );
             continue;
         }
-        if !seen.insert(lang.clone()) {
+        if !seen.insert(variant.clone()) {
             diagnostics.push(
                 ProjectDiagnostic::new(
-                    format!("localization.languages contains duplicate code `{lang}`"),
+                    format!("dimensions.language.variants contains duplicate variant `{variant}`"),
                     key_path,
                 )
-                .with_code("CFG-LOC-002"),
+                .with_code("DIM-CONFIG-002"),
             );
         }
     }

@@ -16,4 +16,5 @@ workspace = true
 [dependencies]
 coflow-cft = { path = "../coflow-cft" }
 coflow-data-model = { path = "../coflow-data-model" }
+coflow-project = { path = "../coflow-project" }
 regex = "1"
