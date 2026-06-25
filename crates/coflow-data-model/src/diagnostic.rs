@@ -221,6 +221,19 @@ pub enum CfdErrorCode {
     CheckIndexOutOfBounds,
     CheckMissingDictKey,
     CheckEmptyMinMax,
+    CheckComparisonFailed,
+    CheckBoolExpectedTrue,
+    CheckNegationFailed,
+    CheckAndFailed,
+    CheckOrFailed,
+    CheckTypePredicateFailed,
+    CheckNullPredicateFailed,
+    CheckContainsFailed,
+    CheckUniqueFailed,
+    CheckMatchesFailed,
+    CheckAnyQuantifierFailed,
+    CheckNoneQuantifierFailed,
+    CheckAllQuantifierFailed,
 }
 
 impl CfdErrorCode {
@@ -250,6 +263,19 @@ impl CfdErrorCode {
             Self::CheckIndexOutOfBounds => "CFD-CHECK-004",
             Self::CheckMissingDictKey => "CFD-CHECK-005",
             Self::CheckEmptyMinMax => "CFD-CHECK-006",
+            Self::CheckComparisonFailed => "CFD-CHECK-007",
+            Self::CheckBoolExpectedTrue => "CFD-CHECK-008",
+            Self::CheckNegationFailed => "CFD-CHECK-009",
+            Self::CheckAndFailed => "CFD-CHECK-010",
+            Self::CheckOrFailed => "CFD-CHECK-011",
+            Self::CheckTypePredicateFailed => "CFD-CHECK-012",
+            Self::CheckNullPredicateFailed => "CFD-CHECK-013",
+            Self::CheckContainsFailed => "CFD-CHECK-014",
+            Self::CheckUniqueFailed => "CFD-CHECK-015",
+            Self::CheckMatchesFailed => "CFD-CHECK-016",
+            Self::CheckAnyQuantifierFailed => "CFD-CHECK-017",
+            Self::CheckNoneQuantifierFailed => "CFD-CHECK-018",
+            Self::CheckAllQuantifierFailed => "CFD-CHECK-019",
         }
     }
 
@@ -262,7 +288,20 @@ impl CfdErrorCode {
             | Self::CheckNullAccess
             | Self::CheckIndexOutOfBounds
             | Self::CheckMissingDictKey
-            | Self::CheckEmptyMinMax => CfdStage::Check,
+            | Self::CheckEmptyMinMax
+            | Self::CheckComparisonFailed
+            | Self::CheckBoolExpectedTrue
+            | Self::CheckNegationFailed
+            | Self::CheckAndFailed
+            | Self::CheckOrFailed
+            | Self::CheckTypePredicateFailed
+            | Self::CheckNullPredicateFailed
+            | Self::CheckContainsFailed
+            | Self::CheckUniqueFailed
+            | Self::CheckMatchesFailed
+            | Self::CheckAnyQuantifierFailed
+            | Self::CheckNoneQuantifierFailed
+            | Self::CheckAllQuantifierFailed => CfdStage::Check,
             _ => CfdStage::DataModel,
         }
     }
