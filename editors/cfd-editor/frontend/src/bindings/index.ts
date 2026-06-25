@@ -76,6 +76,7 @@ export interface FileRecords {
 export interface SourceCapabilities {
   provider_id: string
   can_edit_field: boolean
+  can_edit_key: boolean
   can_insert_record: boolean
   can_delete_record: boolean
   is_remote: boolean
@@ -97,6 +98,27 @@ export interface RecordRow {
 export interface WriteFieldOutcome {
   row: RecordRow
   diagnostics: DiagnosticItem[]
+}
+
+/**
+ * Result returned by `insert_record` / `delete_record`. Bundles the refreshed
+ * `FileRecords` for the host file with the project's diagnostics after the
+ * post-write rebuild — same shape as `WriteFieldOutcome` but the whole file's
+ * row list changes (not just one row).
+ */
+export interface InsertRecordOutcome {
+  file_records: FileRecords
+  diagnostics: DiagnosticItem[]
+}
+
+export interface DeleteRecordOutcome {
+  file_records: FileRecords
+  diagnostics: DiagnosticItem[]
+  /** Authoritative snapshot of the deleted record (Object FieldValue) for
+   *  undo to re-insert. Absent only when the record could not be located
+   *  before deletion. */
+  deleted_snapshot: FieldValue | null
+  deleted_actual_type: string | null
 }
 
 export interface FieldCell {

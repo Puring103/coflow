@@ -17,9 +17,10 @@
 
 pub mod cell_value;
 mod table;
+pub mod writer;
 
 pub use table::{
-    collect_table_input_records, map_label_to_table, map_table_diagnostics, TableDiagnostic,
-    TableDiagnostics, TableInputRecords, TableLabel, TableLocation, TableSheet, TableSheetConfig,
-    TableSource,
+    collect_table_input_records, map_label_to_table, map_table_diagnostics,
+    resolve_table_write_layout, TableDiagnostic, TableDiagnostics, TableInputRecords, TableLabel,
+    TableLocation, TableSheet, TableSheetConfig, TableSource, TableWriteLayout,
 };

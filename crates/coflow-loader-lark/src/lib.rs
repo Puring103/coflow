@@ -1124,6 +1124,8 @@ where
 
         Ok(WriteOutcome {
             touched_record_origins: vec![request.origin.clone()],
+            inserted_record_origin: None,
+            deleted_record_origin: None,
             diagnostics: DiagnosticSet::empty(),
         })
     }
