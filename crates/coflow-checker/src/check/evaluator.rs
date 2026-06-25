@@ -3,8 +3,8 @@ use super::value::{
     comparable_key, dict_key_from_check_value, format_check_key_for_path, values_equal, CheckValue,
     LocatedCheckValue,
 };
-use crate::schema_view::SchemaView;
-use crate::LocalizationOverrides;
+use crate::schema_view::{DimensionFieldMeta, SchemaView};
+use crate::DimensionCheckContext;
 use coflow_cft::{
     CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
     CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind, CftSchemaTypePredicate,
@@ -32,13 +32,7 @@ pub(super) struct CheckEvaluator<'a> {
     /// runner toggles this on for full check runs that produce a dep graph.
     pub(super) dep_collector_enabled: bool,
     pub(super) reads_from: BTreeSet<CfdRecordId>,
-    /// Optional per-language overrides. When set, the evaluator substitutes
-    /// `@localized` string-typed field values with the matching translation
-    /// from `localization.translations` (key format
-    /// `{bucket}/{record_key}/{field_name}`). Non-string fields and missing
-    /// keys are left unchanged so downstream check evaluation transparently
-    /// falls back to the data-source default.
-    pub(super) localization: Option<LocalizationOverrides>,
+    pub(super) dimension_context: Option<DimensionCheckContext>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,7 +125,7 @@ impl<'a> CheckEvaluator<'a> {
             diagnostics: Vec::new(),
             dep_collector_enabled: false,
             reads_from,
-            localization: None,
+            dimension_context: None,
         }
     }
 
@@ -150,40 +144,53 @@ impl<'a> CheckEvaluator<'a> {
         self.reads_from.insert(target);
     }
 
-    /// If the resolved field is `@localized` and the active language has a
-    /// translation for `{bucket}/{record_key}/{field_name}`, replace the
-    /// string value in `located` with the translation. Other field shapes are
-    /// left untouched and silently fall back to the default — see
-    /// `docs/spec/13-localization.md` §6.
-    fn apply_localization_override(
-        &self,
+    fn apply_dimension_variant(
+        &mut self,
         record: &CheckRecordRef,
         field_name: &str,
         located: &mut LocatedCheckValue,
     ) {
-        let Some(loc) = self.localization.as_ref() else {
+        let Some(context) = self.dimension_context.as_ref() else {
+            return;
+        };
+        let context_dimension = context.dimension.clone();
+        let Some(variant) = context.variant.clone() else {
             return;
         };
         let Some(actual_type) = record.actual_type(self.model) else {
             return;
         };
-        if !self.schema.field_is_localized(actual_type, field_name) {
-            return;
-        }
-        let key = if self.schema.type_is_singleton(actual_type) {
-            format!("{actual_type}/{field_name}")
-        } else {
-            let Some(record_key) = record.key(self.model) else {
-                return;
-            };
-            format!("{actual_type}/{field_name}/{record_key}")
-        };
-        let Some(translation) = loc.translations.get(&key) else {
+        let Some(field) = self.schema.dimension_field(actual_type, field_name) else {
             return;
         };
-        if matches!(located.value, CheckValue::String(_)) {
-            located.value = CheckValue::String(translation.clone());
+        if field.dimension != context_dimension {
+            return;
         }
+        let field = field.clone();
+        let Some(record_key) = dimension_record_key(self.model, record, &field) else {
+            return;
+        };
+        let Some(variant_record_id) = self.model.lookup(&field.synthesized_type, &record_key)
+        else {
+            return;
+        };
+        self.note_read_from(variant_record_id);
+        let Some(variant_record) = self.model.record(variant_record_id) else {
+            return;
+        };
+        let Some(value) = variant_record.fields.get(&variant) else {
+            return;
+        };
+        let path = located.path.clone();
+        located.value = CheckValue::from_cfd_value_with_path(
+            value,
+            self.schema.field_type(&field.synthesized_type, &variant),
+            path.clone(),
+        );
+        if matches!(located.value, CheckValue::Null) {
+            located.value = CheckValue::Skipped;
+        }
+        located.path = path;
     }
 
     pub(super) fn eval_check_block(&mut self, check: &CftSchemaCheckBlock) -> EvalFlow {
@@ -205,6 +212,7 @@ impl<'a> CheckEvaluator<'a> {
                 Ok((value, _)) if matches!(value.value, CheckValue::Bool(true)) => {
                     EvalFlow::Continue
                 }
+                Ok((value, _)) if matches!(value.value, CheckValue::Skipped) => EvalFlow::Continue,
                 Ok((value, explanation)) if matches!(value.value, CheckValue::Bool(false)) => {
                     let explanation = self
                         .explain_false_expr(expr, &value)
@@ -244,7 +252,11 @@ impl<'a> CheckEvaluator<'a> {
                     let _ = self.contexts.pop();
                     flow
                 }
-                Ok(value) if matches!(value.value, CheckValue::Bool(false)) => EvalFlow::Continue,
+                Ok(value)
+                    if matches!(value.value, CheckValue::Bool(false) | CheckValue::Skipped) =>
+                {
+                    EvalFlow::Continue
+                }
                 Ok(value) => {
                     self.diag_at(
                         CfdErrorCode::CheckEvalTypeError,
@@ -402,6 +414,7 @@ impl<'a> CheckEvaluator<'a> {
         collection: LocatedCheckValue,
     ) -> Option<Vec<LocatedCheckValue>> {
         match collection.value {
+            CheckValue::Skipped => Some(Vec::new()),
             CheckValue::Array { items, .. } => Some(
                 items
                     .into_iter()
@@ -886,6 +899,14 @@ impl<'a> CheckEvaluator<'a> {
                 let mut lhs = self.eval_expr(first)?;
                 for (op, rhs_expr) in rest {
                     let rhs = self.eval_expr(rhs_expr)?;
+                    if matches!(lhs.value, CheckValue::Skipped)
+                        || matches!(rhs.value, CheckValue::Skipped)
+                    {
+                        return Ok(LocatedCheckValue::new(
+                            CheckValue::Skipped,
+                            lhs.path.or(rhs.path),
+                        ));
+                    }
                     let path = lhs.path.clone().or_else(|| rhs.path.clone());
                     if !self.compare(*op, &lhs.value, &rhs.value, rhs.path.clone())? {
                         return Ok(LocatedCheckValue::new(CheckValue::Bool(false), path));
@@ -937,7 +958,7 @@ impl<'a> CheckEvaluator<'a> {
             }
         }
         if let Some(located) = result.as_mut() {
-            self.apply_localization_override(&record, name, located);
+            self.apply_dimension_variant(&record, name, located);
         }
         result
     }
@@ -966,6 +987,7 @@ impl<'a> CheckEvaluator<'a> {
             return Err(());
         }
         match target.value {
+            CheckValue::Skipped => Ok(LocatedCheckValue::new(CheckValue::Skipped, target.path)),
             CheckValue::Record(record) => {
                 if name == "id" {
                     return self.virtual_id(&record, target.path).ok_or_else(|| {
@@ -986,7 +1008,7 @@ impl<'a> CheckEvaluator<'a> {
                     }
                 }
                 if let Ok(located) = result.as_mut() {
-                    self.apply_localization_override(&record, name, located);
+                    self.apply_dimension_variant(&record, name, located);
                 }
                 result
             }
@@ -1052,6 +1074,7 @@ impl<'a> CheckEvaluator<'a> {
             return Err(());
         }
         match target.value {
+            CheckValue::Skipped => Ok(LocatedCheckValue::new(CheckValue::Skipped, target.path)),
             CheckValue::Array { items, .. } => {
                 let CheckValue::Int(idx) = index.value else {
                     self.diag_at(
@@ -1853,6 +1876,9 @@ impl<'a> CheckEvaluator<'a> {
         rhs: CheckValue,
         path: Option<CfdPath>,
     ) -> Result<LocatedCheckValue, ()> {
+        if matches!(lhs, CheckValue::Skipped) || matches!(rhs, CheckValue::Skipped) {
+            return Ok(LocatedCheckValue::new(CheckValue::Skipped, path));
+        }
         if matches!(lhs, CheckValue::Null) || matches!(rhs, CheckValue::Null) {
             self.diag_at(
                 CfdErrorCode::CheckNullAccess,
@@ -2029,6 +2055,9 @@ impl<'a> CheckEvaluator<'a> {
         rhs: &CheckValue,
         path: Option<CfdPath>,
     ) -> Result<bool, ()> {
+        if matches!(lhs, CheckValue::Skipped) || matches!(rhs, CheckValue::Skipped) {
+            return Ok(true);
+        }
         Ok(match op {
             CftSchemaCmpOp::Eq => values_equal(lhs, rhs),
             CftSchemaCmpOp::Ne => !values_equal(lhs, rhs),
@@ -2119,6 +2148,18 @@ impl<'a> CheckEvaluator<'a> {
         }
         self.diagnostics
             .push(CfdDiagnostic::error(code, message).with_primary(self.root_record, path));
+    }
+}
+
+fn dimension_record_key(
+    model: &CfdDataModel,
+    record: &CheckRecordRef,
+    field: &DimensionFieldMeta,
+) -> Option<String> {
+    if field.is_singleton {
+        Some(field.source_field.clone())
+    } else {
+        record.key(model).map(str::to_string)
     }
 }
 
@@ -2290,6 +2331,7 @@ fn one_line_message(message: &str) -> String {
 fn format_value_for_message(value: &CheckValue) -> String {
     match value {
         CheckValue::Null => "null".to_string(),
+        CheckValue::Skipped => "<skipped>".to_string(),
         CheckValue::Bool(v) => v.to_string(),
         CheckValue::Int(v) => v.to_string(),
         CheckValue::Float(v) => v.to_string(),

@@ -27,7 +27,6 @@ mod build;
 mod diagnostics;
 mod file_tree;
 mod graph;
-mod localization;
 mod path;
 mod wire;
 
@@ -183,9 +182,6 @@ impl SessionStore {
     }
 
     pub fn get_file_records(&self, id: u32, file_path: &str) -> Result<FileRecords, EditorError> {
-        if localization::is_localization_path(file_path) {
-            return self.get_localization_records(id, file_path);
-        }
         let entry = self.session(id)?;
         let session_lock = &entry.state;
         let session = session_lock
@@ -247,7 +243,6 @@ impl SessionStore {
                 value,
                 is_spread: false,
                 spread_info: None,
-                read_only: false,
             });
         }
         drop(session);
@@ -323,9 +318,6 @@ impl SessionStore {
         field_path: &[FieldPathSegment],
         new_value: &FieldValue,
     ) -> Result<WriteFieldOutcome, EditorError> {
-        if localization::is_localization_path(file_path) {
-            return self.write_localization_field(id, file_path, record_key, field_path, new_value);
-        }
         let entry = self.session(id)?;
         let _write_guard = entry
             .write_mutex
@@ -448,92 +440,6 @@ impl SessionStore {
             deleted_snapshot,
             deleted_actual_type,
         })
-    }
-
-    /// Read a synthetic localization CSV as a `FileRecords` so the front-end
-    /// can render it through the same TableView used for regular sources.
-    fn get_localization_records(
-        &self,
-        id: u32,
-        file_path: &str,
-    ) -> Result<FileRecords, EditorError> {
-        let entry = self.session(id)?;
-        let session = entry
-            .state
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
-        let Some(cfg) = &session.engine.project.config.localization else {
-            return Err(EditorError::not_found(
-                "this project has no localization config",
-            ));
-        };
-        let csv = localization::load(&session.project_root, &cfg.out_dir, file_path)?;
-        Ok(localization::to_file_records(file_path, &csv))
-    }
-
-    /// Apply a single translation edit to a localization CSV. Returns a
-    /// refreshed `WriteFieldOutcome` so the front-end can update its cache
-    /// using the same code path as regular `writeField` calls. No engine
-    /// rebuild is required since the CSV is not part of the data model.
-    fn write_localization_field(
-        &self,
-        id: u32,
-        file_path: &str,
-        record_key: &str,
-        field_path: &[FieldPathSegment],
-        new_value: &FieldValue,
-    ) -> Result<WriteFieldOutcome, EditorError> {
-        // Localization edits target a single top-level field cell (lang
-        // column). Reject anything more complex up-front to keep failure
-        // modes obvious.
-        let [FieldPathSegment::Field { name: field_name }] = field_path else {
-            return Err(EditorError::write(
-                "localization edits must target a single top-level field",
-            ));
-        };
-        let FieldValue::Str { v: new_value } = new_value else {
-            return Err(EditorError::write(
-                "localization cells must be edited as strings",
-            ));
-        };
-        let entry = self.session(id)?;
-        let _write_guard = entry
-            .write_mutex
-            .lock()
-            .map_err(|_| EditorError::session("session write mutex poisoned"))?;
-        let session = entry
-            .state
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
-        let Some(cfg) = &session.engine.project.config.localization else {
-            return Err(EditorError::not_found(
-                "this project has no localization config",
-            ));
-        };
-        let project_root = session.project_root.clone();
-        let out_dir = cfg.out_dir.clone();
-        let diagnostics = session.diagnostics.flatten();
-        drop(session);
-
-        let csv = localization::write_field(
-            &project_root,
-            &out_dir,
-            file_path,
-            record_key,
-            field_name,
-            new_value,
-        )?;
-        // Build a refreshed row so the front-end can drop it into its cache
-        // without round-tripping `get_file_records`.
-        let records = localization::to_file_records(file_path, &csv);
-        let row = records
-            .records
-            .into_iter()
-            .find(|r| r.key == record_key)
-            .ok_or_else(|| {
-                EditorError::not_found(format!("row `{record_key}` missing after write"))
-            })?;
-        Ok(WriteFieldOutcome { row, diagnostics })
     }
 
     fn registry(&self) -> Result<Arc<ProviderRegistry>, EditorError> {

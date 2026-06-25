@@ -635,6 +635,7 @@ version = "0.1.0"
 dependencies = [
  "coflow-cft",
  "coflow-data-model",
+ "coflow-project",
  "regex",
 ]
 
@@ -662,10 +663,13 @@ name = "coflow-engine"
 version = "0.1.0"
 dependencies = [
  "coflow-api",
+ "coflow-cfd",
  "coflow-cft",
  "coflow-checker",
  "coflow-data-model",
+ "coflow-loader-cfd",
  "coflow-loader-csv",
+ "coflow-loader-table-core",
  "coflow-project",
  "serde_json",
 ]

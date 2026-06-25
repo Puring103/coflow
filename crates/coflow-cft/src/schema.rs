@@ -58,6 +58,18 @@ pub enum CftSchemaTypeRef {
     Nullable(Box<CftSchemaTypeRef>),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Dimension {
+    Localized,
+    Custom(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DimensionSpec {
+    pub kind: Dimension,
+    pub bucket: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct CftSchemaField {
     pub name: String,
@@ -66,8 +78,7 @@ pub struct CftSchemaField {
     pub has_default: bool,
     pub default: Option<CftSchemaDefaultValue>,
     pub annotations: Vec<CftAnnotation>,
-    pub is_localized: bool,
-    pub localization_bucket: Option<String>,
+    pub dimension: Option<DimensionSpec>,
     pub span: Span,
 }
 

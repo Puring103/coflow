@@ -36,30 +36,13 @@ mod schema_view;
 use check::CheckRunner;
 use coflow_cft::CftContainer;
 use coflow_data_model::{CfdDataModel, CfdDiagnostics, CfdRecordId};
+use coflow_project::DimensionConfig;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Per-language translation overrides for `@localized` fields.
-///
-/// Keys are formatted as `{Bucket}/{record_key}/{field_path}` (see
-/// `docs/spec/13-localization.md` §3) and values are the cell text exactly as
-/// stored in the CSV translation table. The checker substitutes string-typed
-/// localized fields with the corresponding entry when a translation is
-/// present; missing keys / non-string fields fall back to the default value.
-#[derive(Debug, Clone, Default)]
-pub struct LocalizationOverrides {
-    pub language: String,
-    pub translations: BTreeMap<String, String>,
-}
-
-impl LocalizationOverrides {
-    /// Convenience constructor.
-    #[must_use]
-    pub fn new(language: impl Into<String>, translations: BTreeMap<String, String>) -> Self {
-        Self {
-            language: language.into(),
-            translations,
-        }
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DimensionCheckContext {
+    pub(crate) dimension: String,
+    pub(crate) variant: Option<String>,
 }
 
 /// Executes CFT `check` blocks against an already-built data model.
@@ -71,33 +54,35 @@ pub fn run_checks(schema: &CftContainer, model: &CfdDataModel) -> Result<(), Cfd
     CheckRunner::new(schema, model).run()
 }
 
-/// Runs `check` blocks once per declared language.
-///
-/// Substitutes `@localized` string-typed field values from the supplied
-/// `LocalizationOverrides`. The default-language round (`run_checks`) should
-/// be executed separately by the caller; this entry point only runs the
-/// per-language rounds and aggregates their diagnostics.
+/// Runs `check` blocks for the default data plus every configured dimension
+/// variant. Variant rounds read dimensional field values from the synthesized
+/// `<Type>_<Field>Variants` records in the same model.
 ///
 /// # Errors
 ///
-/// Returns the union of every per-language round's diagnostics. Each
-/// diagnostic message is prefixed with `[lang=<code>]` so callers can
-/// distinguish rounds without a typed channel.
-pub fn run_checks_for_languages(
+/// Returns the union of every failing round's diagnostics. Variant diagnostics
+/// are prefixed with `[dimension=variant]`.
+pub fn run_checks_for_dimensions(
     schema: &CftContainer,
     model: &CfdDataModel,
-    overrides: &[LocalizationOverrides],
+    dimensions: &BTreeMap<String, DimensionConfig>,
 ) -> Result<(), CfdDiagnostics> {
-    if overrides.is_empty() {
-        return Ok(());
-    }
     let mut all = Vec::new();
-    for over in overrides {
-        let runner = CheckRunner::with_localization(schema, model, over.clone());
-        if let Err(diagnostics) = runner.run() {
-            for mut diagnostic in diagnostics.diagnostics {
-                diagnostic.message = format!("[lang={}] {}", over.language, diagnostic.message);
-                all.push(diagnostic);
+    if let Err(diagnostics) = run_checks(schema, model) {
+        all.extend(diagnostics.diagnostics);
+    }
+    if let Some(config) = dimensions.get("language") {
+        for variant in &config.variants {
+            let context = DimensionCheckContext {
+                dimension: "language".to_string(),
+                variant: Some(variant.clone()),
+            };
+            let runner = CheckRunner::with_dimension_context(schema, model, context);
+            if let Err(diagnostics) = runner.run() {
+                for mut diagnostic in diagnostics.diagnostics {
+                    diagnostic.message = format!("[language={variant}] {}", diagnostic.message);
+                    all.push(diagnostic);
+                }
             }
         }
     }
