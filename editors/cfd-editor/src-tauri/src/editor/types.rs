@@ -166,6 +166,21 @@ impl SourceCapabilities {
         }
     }
 
+    /// Capability profile for localization CSVs: only field edits are
+    /// allowed, and even those are further gated by `FieldCell.read_only`
+    /// on the per-cell level (id / default columns stay read-only).
+    #[must_use]
+    pub const fn localization() -> Self {
+        Self {
+            provider_id: "localization",
+            can_edit_field: true,
+            can_edit_key: false,
+            can_insert_record: false,
+            can_delete_record: false,
+            is_remote: false,
+        }
+    }
+
     #[must_use]
     pub const fn from_writer(
         provider_id: &'static str,
@@ -240,6 +255,11 @@ pub struct FieldCell {
     /// that only need a boolean — new code should consult `spread_info`.
     #[serde(default, skip_serializing_if = "is_false")]
     pub is_spread: bool,
+    /// True when this cell must not be edited by the user. Set by the
+    /// localization wire path for the `id` and `default` columns; not
+    /// emitted for regular records.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub read_only: bool,
     /// Where the value of this cell originally came from, when it was
     /// imported via a `...spread` expansion. `None` means the cell is
     /// declared directly on the host record. The editor uses this to:

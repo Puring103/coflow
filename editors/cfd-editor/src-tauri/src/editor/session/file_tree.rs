@@ -10,10 +10,16 @@ use crate::editor::types::FileTreeNode;
 
 use super::path::path_to_slash;
 
+/// Prefix used for the synthetic localization root in the file tree. The
+/// front-end recognises this prefix to route reads/writes through the
+/// localization-specific commands (not the generic `writeField` pipeline).
+pub(super) const LOCALIZATION_ROOT: &str = "__localization__";
+
 pub(super) fn build_file_tree(
     root: &Path,
     in_sources: &BTreeSet<String>,
     ext_whitelist: &BTreeSet<String>,
+    skip_dirs: &BTreeSet<String>,
 ) -> Vec<FileTreeNode> {
     let mut files: Vec<Vec<String>> = Vec::new();
     for entry in walkdir::WalkDir::new(root)
@@ -32,6 +38,14 @@ pub(super) fn build_file_tree(
             .unwrap_or_default();
         let by_extension = !ext.is_empty() && ext_whitelist.contains(ext);
         if !by_extension && !in_sources.contains(&rel_for_check) {
+            continue;
+        }
+        // Skip files that live under an explicitly excluded directory
+        // (e.g. the localization out_dir surfaced as a separate root).
+        if skip_dirs.iter().any(|dir| {
+            rel_for_check == *dir
+                || rel_for_check.starts_with(&format!("{dir}/"))
+        }) {
             continue;
         }
         let Ok(rel) = path.strip_prefix(root) else {
@@ -95,6 +109,61 @@ fn insert_path(
         insert_path(&mut node.children, parts, idx + 1, &path, in_sources);
     }
     nodes.push(node);
+}
+
+/// Build the synthetic "本地化" root listing every CSV under `dir`. Returns
+/// `None` when the directory is missing or contains no CSV files — the
+/// caller treats `None` as "skip the root entirely" so we don't show an
+/// empty top-level folder when localization isn't actually used.
+pub(super) fn build_localization_subtree(dir: &Path) -> Option<FileTreeNode> {
+    if !dir.is_dir() {
+        return None;
+    }
+    let mut children: Vec<FileTreeNode> = Vec::new();
+    for entry in walkdir::WalkDir::new(dir)
+        .min_depth(1)
+        .max_depth(1)
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let p = entry.path();
+        let is_csv = p
+            .extension()
+            .and_then(|s| s.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("csv"));
+        if !is_csv {
+            continue;
+        }
+        let name = p
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+        if name.is_empty() {
+            continue;
+        }
+        children.push(FileTreeNode {
+            name: name.clone(),
+            path: format!("{LOCALIZATION_ROOT}/{name}"),
+            is_dir: false,
+            in_sources: true,
+            children: Vec::new(),
+        });
+    }
+    if children.is_empty() {
+        return None;
+    }
+    children.sort_by(|a, b| a.name.cmp(&b.name));
+    Some(FileTreeNode {
+        name: "本地化".to_string(),
+        path: LOCALIZATION_ROOT.to_string(),
+        is_dir: true,
+        in_sources: true,
+        children,
+    })
 }
 
 fn sort_tree(nodes: &mut Vec<FileTreeNode>) {

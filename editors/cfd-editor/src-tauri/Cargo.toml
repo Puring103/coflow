@@ -26,5 +26,6 @@ coflow-builtins = { path = "../../../crates/coflow-builtins" }
 coflow-cft = { path = "../../../crates/coflow-cft" }
 coflow-data-model = { path = "../../../crates/coflow-data-model" }
 coflow-engine = { path = "../../../crates/coflow-engine" }
+coflow-loader-csv = { path = "../../../crates/coflow-loader-csv" }
 coflow-project = { path = "../../../crates/coflow-project" }
 walkdir = "2"

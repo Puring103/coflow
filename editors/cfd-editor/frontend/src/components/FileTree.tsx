@@ -1,4 +1,4 @@
-import { useRef, useState, useMemo } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import type { FileTreeNode } from '../bindings/index'
 import { Icon } from './Icon'
 
@@ -92,17 +92,24 @@ export function FileTree({ nodes, selectedFile, onSelectFile }: Props) {
     }
   }
 
-  // Expand parents of the selected file so it stays visible after navigation.
-  const expandedForSelection = useMemo(() => {
-    if (!selectedFile) return collapsed
-    const next = new Set(collapsed)
-    for (const n of nodes) {
-      walkExpandIfParent(n, selectedFile, next)
-    }
-    // Only persist if it actually changed to avoid thrashing localStorage.
-    if (next.size !== collapsed.size) saveCollapsed(next)
-    return next
-  }, [collapsed, selectedFile, nodes])
+  // Expand ancestors of the selected file when selection changes, so
+  // navigation always reveals the target. We deliberately do NOT re-run this
+  // on every `collapsed` change — otherwise a user collapsing an ancestor of
+  // the currently-selected file would be immediately undone, which is the
+  // bug that made top-level folders feel "uncollapsible".
+  useEffect(() => {
+    if (!selectedFile) return
+    setCollapsed(prev => {
+      let changed = false
+      const next = new Set(prev)
+      for (const n of nodes) {
+        if (walkExpandIfParent(n, selectedFile, next)) changed = true
+      }
+      if (!changed) return prev
+      saveCollapsed(next)
+      return next
+    })
+  }, [selectedFile, nodes])
 
   return (
     <div className="file-tree" role="tree" aria-label="项目文件" onKeyDown={onKeyDown} ref={rootRef}>
@@ -113,7 +120,7 @@ export function FileTree({ nodes, selectedFile, onSelectFile }: Props) {
           selectedFile={selectedFile}
           onSelectFile={onSelectFile}
           depth={0}
-          collapsed={expandedForSelection}
+          collapsed={collapsed}
           onToggle={toggle}
         />
       ))}
@@ -122,13 +129,18 @@ export function FileTree({ nodes, selectedFile, onSelectFile }: Props) {
 }
 
 /** If `node` is an ancestor directory of `targetFile`, remove it from
- *  `collapsed` (i.e. expand it) and recurse into children. */
-function walkExpandIfParent(node: FileTreeNode, targetFile: string, collapsed: Set<string>) {
-  if (!node.is_dir) return
+ *  `collapsed` (i.e. expand it) and recurse into children. Returns true when
+ *  the set actually changed. */
+function walkExpandIfParent(node: FileTreeNode, targetFile: string, collapsed: Set<string>): boolean {
+  if (!node.is_dir) return false
   const prefix = node.path.endsWith('/') ? node.path : node.path + '/'
-  if (!targetFile.startsWith(prefix)) return
-  collapsed.delete(node.path)
-  for (const c of node.children) walkExpandIfParent(c, targetFile, collapsed)
+  if (!targetFile.startsWith(prefix)) return false
+  let changed = false
+  if (collapsed.delete(node.path)) changed = true
+  for (const c of node.children) {
+    if (walkExpandIfParent(c, targetFile, collapsed)) changed = true
+  }
+  return changed
 }
 
 /** Find the treeitem element by data-path and focus it. */
