@@ -1,9 +1,13 @@
 [package]
-name = "coflow-engine"
+name = "coflow-loader-csv"
 version = "0.1.0"
 edition = "2021"
-description = "Shared Coflow project runtime."
+description = "CSV loader for Coflow data models."
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/wtlll/ScriptForGame"
+readme = "../../README.md"
+keywords = ["config", "game-data", "csv"]
+categories = ["config", "game-development"]
 publish = false
 
 [lints]
@@ -12,8 +16,6 @@ workspace = true
 [dependencies]
 coflow-api = { path = "../coflow-api" }
 coflow-cft = { path = "../coflow-cft" }
-coflow-checker = { path = "../coflow-checker" }
 coflow-data-model = { path = "../coflow-data-model" }
-coflow-loader-csv = { path = "../coflow-loader-csv" }
-coflow-project = { path = "../coflow-project" }
+coflow-loader-table-core = { path = "../coflow-loader-table-core" }
 serde_json = { version = "1", features = ["preserve_order"] }

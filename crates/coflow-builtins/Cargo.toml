@@ -15,5 +15,6 @@ coflow-codegen-csharp = { path = "../coflow-codegen-csharp" }
 coflow-exporter-json = { path = "../coflow-exporter-json" }
 coflow-exporter-messagepack = { path = "../coflow-exporter-messagepack" }
 coflow-loader-cfd = { path = "../coflow-loader-cfd" }
+coflow-loader-csv = { path = "../coflow-loader-csv" }
 coflow-loader-excel = { path = "../coflow-loader-excel" }
 coflow-loader-lark = { path = "../coflow-loader-lark" }

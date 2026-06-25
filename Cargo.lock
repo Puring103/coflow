@@ -579,6 +579,7 @@ dependencies = [
  "coflow-codegen-csharp",
  "coflow-engine",
  "coflow-exporter-json",
+ "coflow-loader-csv",
  "coflow-loader-excel",
  "coflow-lsp",
  "coflow-project",
@@ -607,6 +608,7 @@ dependencies = [
  "coflow-exporter-json",
  "coflow-exporter-messagepack",
  "coflow-loader-cfd",
+ "coflow-loader-csv",
  "coflow-loader-excel",
  "coflow-loader-lark",
 ]
@@ -662,6 +664,7 @@ dependencies = [
  "coflow-cft",
  "coflow-checker",
  "coflow-data-model",
+ "coflow-loader-csv",
  "coflow-project",
  "serde_json",
 ]
@@ -703,6 +706,17 @@ dependencies = [
  "coflow-cfd",
  "coflow-cft",
  "coflow-data-model",
+ "serde_json",
+]
+
+[[package]]
+name = "coflow-loader-csv"
+version = "0.1.0"
+dependencies = [
+ "coflow-api",
+ "coflow-cft",
+ "coflow-data-model",
+ "coflow-loader-table-core",
  "serde_json",
 ]
 

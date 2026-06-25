@@ -9,13 +9,13 @@
 //! human-edited translation columns), and writes CSV files back to
 //! `<localization.out_dir>/<bucket>.csv`.
 
-mod csv;
 mod key;
 mod tables;
 
 use crate::localization::tables::{collect_entries, merge_with_existing, write_buckets, BucketKey};
 use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use coflow_data_model::CfdDataModel;
+use coflow_loader_csv as csv;
 use coflow_project::{LocalizationConfig, Project};
 use std::path::{Path, PathBuf};
 

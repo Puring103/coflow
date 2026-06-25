@@ -3,6 +3,7 @@ fn builtin_registry_contains_all_default_providers() -> Result<(), String> {
     let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
 
     ensure(registry.loader("excel").is_some(), "missing excel loader")?;
+    ensure(registry.loader("csv").is_some(), "missing csv loader")?;
     ensure(
         registry.loader("lark-sheet").is_some(),
         "missing lark-sheet loader",
