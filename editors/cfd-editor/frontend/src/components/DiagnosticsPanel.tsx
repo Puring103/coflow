@@ -97,17 +97,25 @@ export function DiagnosticsPanel({ diagnostics, onJumpToRecord, onJumpToField }:
               ))}
             </div>
             {files.length > 1 && (
-              <select
-                className="diag-file-filter"
-                value={fileFilter}
-                onChange={e => setFileFilter(e.target.value)}
-                aria-label="按文件过滤"
-              >
-                <option value="all">全部文件 ({diagnostics.length})</option>
+              <div className="diag-file-pills" role="group" aria-label="按文件过滤">
+                <button
+                  className={`diag-file-pill${fileFilter === 'all' ? ' active' : ''}`}
+                  onClick={() => setFileFilter('all')}
+                  aria-pressed={fileFilter === 'all'}
+                >
+                  全部
+                </button>
                 {files.map(f => (
-                  <option key={f} value={f}>{f.split('/').pop()}</option>
+                  <button
+                    key={f}
+                    className={`diag-file-pill${fileFilter === f ? ' active' : ''}`}
+                    onClick={() => setFileFilter(f)}
+                    aria-pressed={fileFilter === f}
+                  >
+                    {f.split('/').pop()}
+                  </button>
                 ))}
-              </select>
+              </div>
             )}
             <label className="diag-group-toggle">
               <input

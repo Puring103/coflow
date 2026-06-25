@@ -662,7 +662,7 @@ export default function App() {
                         data-tab-id={t}
                         onClick={() => setActiveType(t)}
                         onKeyDown={e => onTabListKeyDown(e, activeFileData.type_names, setActiveType)}
-                        style={activeType === t ? {'--tab-color': typeColor(t)} as React.CSSProperties : undefined}
+                        style={{'--tab-color': typeColor(t), '--tab-color-dim': typeColor(t)} as React.CSSProperties}
                       >
                         {t}
                         <span className="tab-count">
