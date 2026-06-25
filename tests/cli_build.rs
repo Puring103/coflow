@@ -97,3 +97,64 @@ fn build_exports_messagepack_when_configured() {
 
     std::fs::remove_dir_all(root_dir).expect("clean temp dir");
 }
+
+#[test]
+fn build_loads_csv_sources_and_exports_json() {
+    let root = temp_project_dir("build-csv-json");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        r#"
+            enum Rarity { Common = 0, Rare = 10, }
+            type Item {
+                name: string;
+                rarity: Rarity = Rarity.Common;
+                tags: [string] = [];
+            }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("items.csv"),
+        "物品ID,名称,稀有度,tags\nsword_01,铁剑,Rare,weapon | melee\n",
+    )
+    .expect("write csv");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - type: csv
+    path: data/items.csv
+    sheets:
+      - sheet: Items
+        type: Item
+        key: 物品ID
+        columns:
+          名称: name
+          稀有度: rarity
+outputs:
+  data:
+    type: json
+    dir: generated/data
+",
+    )
+    .expect("write config");
+
+    let output = coflow()
+        .args(["build", root.to_str().expect("utf8 temp path")])
+        .output()
+        .expect("run coflow build");
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let exported = std::fs::read_to_string(root.join("generated").join("data").join("Item.json"))
+        .expect("read exported Item.json");
+    assert!(exported.contains("sword_01"), "exported: {exported}");
+    assert!(exported.contains("铁剑"), "exported: {exported}");
+}

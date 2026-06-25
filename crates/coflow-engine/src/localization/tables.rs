@@ -1,9 +1,9 @@
 //! Localization entry collection, merge with on-disk CSV, and write-back.
 
-use crate::localization::csv;
 use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use coflow_cft::CftContainer;
 use coflow_data_model::{CfdDataModel, CfdDictKey, CfdEnumValue, CfdRecord, CfdValue};
+use coflow_loader_csv as csv;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
