@@ -9,8 +9,9 @@
 
 use calamine::{open_workbook_auto, Data, Reader};
 use coflow_api::{
-    CfdValue, DataWriter, RecordOrigin, ResolvedSource, SourceDocument, SourceLocationSpec,
-    WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    CfdInputRecord, CfdInputValue, CfdValue, DataWriter, DeleteRecordRequest, InsertRecordRequest,
+    RecordOrigin, ResolvedSource, SourceDocument, SourceLocationSpec, WriteCellRequest,
+    WriteContext, WriteFieldPathSegment,
 };
 use coflow_cft::CftContainer;
 use coflow_loader_excel::ExcelWriter;
@@ -61,6 +62,19 @@ fn origin_for_sword(path: &Path) -> RecordOrigin {
     }
 }
 
+fn origin_for_shield(path: &Path) -> RecordOrigin {
+    let mut field_columns = BTreeMap::new();
+    field_columns.insert(vec!["name".to_string()], 2);
+    field_columns.insert(vec!["value".to_string()], 3);
+    RecordOrigin::Table {
+        document: SourceDocument::Local(path.to_path_buf()),
+        sheet: "Items".to_string(),
+        row: 3,
+        id_column: 1,
+        field_columns,
+    }
+}
+
 fn empty_source(path: &Path) -> ResolvedSource {
     ResolvedSource {
         provider_id: "excel".to_string(),
@@ -86,6 +100,101 @@ fn read_cell(path: &Path, sheet_name: &str, row: usize, col: usize) -> String {
         Data::Bool(v) => v.to_string(),
         other => format!("{other:?}"),
     }
+}
+
+fn schema_for_items() -> CftContainer {
+    let mut schema = CftContainer::new();
+    schema
+        .add_module(
+            coflow_cft::ModuleId::from("main"),
+            r"
+            type Item {
+              name: string;
+              value: int;
+            }
+            ",
+        )
+        .expect("schema parse");
+    schema.compile().expect("schema compile");
+    schema
+}
+
+fn schema_for_tagged_items() -> CftContainer {
+    let mut schema = CftContainer::new();
+    schema
+        .add_module(
+            coflow_cft::ModuleId::from("main"),
+            r"
+            type Item {
+              tags: [string];
+            }
+            ",
+        )
+        .expect("schema parse");
+    schema.compile().expect("schema compile");
+    schema
+}
+
+fn write_tagged_workbook(path: &PathBuf) -> Result<(), XlsxError> {
+    let mut workbook = Workbook::new();
+    let sheet = workbook.add_worksheet().set_name("Items")?;
+    sheet.write_string(0, 0, "id")?;
+    sheet.write_string(0, 1, "tags")?;
+    sheet.write_string(1, 0, "sword")?;
+    sheet.write_string(1, 1, "[old | keep]")?;
+    workbook.save(path)
+}
+
+fn schema_for_terrain() -> CftContainer {
+    let mut schema = CftContainer::new();
+    schema
+        .add_module(
+            coflow_cft::ModuleId::from("main"),
+            r"
+            @struct sealed type EnvCfg {
+              shc: float;
+              temperature: float;
+              diffusion: float;
+            }
+
+            type Terrain {
+              name: string;
+              @expand
+              env: EnvCfg;
+            }
+            ",
+        )
+        .expect("schema parse");
+    schema.compile().expect("schema compile");
+    schema
+}
+
+fn write_terrain_workbook_with_expand(path: &PathBuf) -> Result<(), XlsxError> {
+    let mut workbook = Workbook::new();
+    let sheet = workbook.add_worksheet().set_name("Terrain")?;
+    sheet.write_string(0, 0, "id")?;
+    sheet.write_string(0, 1, "name")?;
+    sheet.write_string(0, 2, "env")?;
+    sheet.write_string(1, 0, "Water")?;
+    sheet.write_string(1, 1, "lake")?;
+    sheet.write_number(1, 2, 4.0)?;
+    sheet.write_number(1, 3, 20.0)?;
+    sheet.write_number(1, 4, 0.5)?;
+    workbook.save(path)
+}
+
+fn expanded_env_value(shc: f64, temperature: f64, diffusion: f64) -> CfdValue {
+    CfdValue::Object(Box::new(coflow_api::CfdRecord {
+        key: String::new(),
+        actual_type: "EnvCfg".to_string(),
+        fields: BTreeMap::from([
+            ("shc".to_string(), CfdValue::Float(shc)),
+            ("temperature".to_string(), CfdValue::Float(temperature)),
+            ("diffusion".to_string(), CfdValue::Float(diffusion)),
+        ]),
+        origin: RecordOrigin::None,
+        spread_field_sources: BTreeMap::new(),
+    }))
 }
 
 #[test]
@@ -164,6 +273,142 @@ fn writes_numeric_cell_as_text() {
 }
 
 #[test]
+fn writes_record_key_cell() {
+    let path = temp_xlsx("key");
+    write_seed_workbook(&path).expect("seed");
+
+    let schema = CftContainer::new();
+    let source = empty_source(&path);
+    let origin = origin_for_sword(&path);
+    let new_value = CfdValue::String("blade".to_string());
+    let segments = vec![WriteFieldPathSegment::Field("id".to_string())];
+    let writer = ExcelWriter::new();
+    writer
+        .write_field(
+            WriteContext {
+                project_root: &std::env::temp_dir(),
+                schema: &schema,
+                model: None,
+            },
+            &WriteCellRequest {
+                origin: &origin,
+                record_key: "sword",
+                actual_type: "Item",
+                field_path: &segments,
+                new_value: &new_value,
+                schema: &schema,
+                source: &source,
+            },
+        )
+        .expect("write key succeeds");
+
+    assert_eq!(read_cell(&path, "Items", 2, 1), "blade");
+    assert_eq!(read_cell(&path, "Items", 2, 2), "Old");
+}
+
+#[test]
+fn writes_collection_element_by_rewriting_owning_cell() {
+    let path = temp_xlsx("collection-element");
+    write_tagged_workbook(&path).expect("seed");
+
+    let schema = schema_for_tagged_items();
+    let source = empty_source(&path);
+    let origin = RecordOrigin::Table {
+        document: SourceDocument::Local(path.clone()),
+        sheet: "Items".to_string(),
+        row: 2,
+        id_column: 1,
+        field_columns: BTreeMap::from([(vec!["tags".to_string()], 2)]),
+    };
+    let input = CfdInputRecord::new(
+        "sword",
+        "Item",
+        [(
+            "tags",
+            CfdInputValue::Array(vec![
+                CfdInputValue::String("old".to_string()),
+                CfdInputValue::String("keep".to_string()),
+            ]),
+        )],
+    )
+    .with_origin(origin.clone());
+    let mut builder = coflow_api::CfdDataModel::builder(&schema);
+    builder.add_input_record(input);
+    let model = builder.build().expect("model");
+
+    let new_value = CfdValue::String("new".to_string());
+    let segments = vec![
+        WriteFieldPathSegment::Field("tags".to_string()),
+        WriteFieldPathSegment::Index(0),
+    ];
+    let writer = ExcelWriter::new();
+    writer
+        .write_field(
+            WriteContext {
+                project_root: &std::env::temp_dir(),
+                schema: &schema,
+                model: Some(&model),
+            },
+            &WriteCellRequest {
+                origin: &origin,
+                record_key: "sword",
+                actual_type: "Item",
+                field_path: &segments,
+                new_value: &new_value,
+                schema: &schema,
+                source: &source,
+            },
+        )
+        .expect("write collection element succeeds");
+
+    assert_eq!(read_cell(&path, "Items", 2, 2), "[new | keep]");
+}
+
+#[test]
+fn writes_expanded_object_fields_to_child_columns() {
+    let path = temp_xlsx("expand-write");
+    write_terrain_workbook_with_expand(&path).expect("seed");
+
+    let schema = schema_for_terrain();
+    let source = empty_source(&path);
+    let source_def = coflow_loader_excel::ExcelSource::new(
+        &path,
+        vec![coflow_loader_excel::ExcelSheet::new("Terrain")],
+    );
+    let loaded =
+        coflow_loader_excel::collect_input_records(&schema, &[source_def]).expect("load records");
+    let origin = loaded.records[0].origin.clone();
+    let new_value = expanded_env_value(6.0, 21.5, 0.75);
+    let segments = vec![WriteFieldPathSegment::Field("env".to_string())];
+    let writer = ExcelWriter::new();
+    writer
+        .write_field(
+            WriteContext {
+                project_root: &std::env::temp_dir(),
+                schema: &schema,
+                model: None,
+            },
+            &WriteCellRequest {
+                origin: &origin,
+                record_key: "Water",
+                actual_type: "Terrain",
+                field_path: &segments,
+                new_value: &new_value,
+                schema: &schema,
+                source: &source,
+            },
+        )
+        .expect("write expanded object succeeds");
+
+    assert!(matches!(
+        read_cell(&path, "Terrain", 2, 3).as_str(),
+        "6" | "6.0"
+    ));
+    assert_eq!(read_cell(&path, "Terrain", 2, 4), "21.5");
+    assert_eq!(read_cell(&path, "Terrain", 2, 5), "0.75");
+}
+
+#[test]
 fn rejects_missing_file_with_friendly_error() {
     let path = std::env::temp_dir().join("coflow-excel-writer-no-such-file.xlsx");
     if path.exists() {
@@ -194,4 +439,196 @@ fn rejects_missing_file_with_friendly_error() {
         panic!("missing file should fail");
     };
     assert!(diag.iter().any(|d| d.message.contains("does not exist")));
+}
+
+#[test]
+fn refuses_field_write_when_row_key_changed() {
+    let path = temp_xlsx("row-key-guard");
+    write_seed_workbook(&path).expect("seed");
+    let mut workbook = umya_spreadsheet::reader::xlsx::read(&path).expect("read workbook");
+    workbook
+        .get_sheet_by_name_mut("Items")
+        .expect("sheet")
+        .get_cell_mut((1, 2))
+        .set_value("other");
+    umya_spreadsheet::writer::xlsx::write(&workbook, &path).expect("save workbook");
+
+    let schema = CftContainer::new();
+    let source = empty_source(&path);
+    let origin = origin_for_sword(&path);
+    let new_value = CfdValue::String("New Sword".to_string());
+    let segments = vec![WriteFieldPathSegment::Field("name".to_string())];
+    let writer = ExcelWriter::new();
+    let Err(diag) = writer.write_field(
+        WriteContext {
+            project_root: &std::env::temp_dir(),
+            schema: &schema,
+            model: None,
+        },
+        &WriteCellRequest {
+            origin: &origin,
+            record_key: "sword",
+            actual_type: "Item",
+            field_path: &segments,
+            new_value: &new_value,
+            schema: &schema,
+            source: &source,
+        },
+    ) else {
+        panic!("stale row should fail");
+    };
+    assert!(diag
+        .iter()
+        .any(|d| d.message.contains("expected key `sword`")));
+    assert_eq!(read_cell(&path, "Items", 2, 2), "Old");
+}
+
+#[test]
+fn inserts_record_row_and_loader_can_read_it() {
+    let path = temp_xlsx("insert");
+    write_seed_workbook(&path).expect("seed");
+
+    let schema = schema_for_items();
+    let source = empty_source(&path);
+    let writer = ExcelWriter::new();
+    let fields = BTreeMap::from([
+        ("name".to_string(), CfdValue::String("Potion".to_string())),
+        ("value".to_string(), CfdValue::Int(3)),
+    ]);
+    let outcome = writer
+        .insert_record(
+            WriteContext {
+                project_root: &std::env::temp_dir(),
+                schema: &schema,
+                model: None,
+            },
+            &InsertRecordRequest {
+                source: &source,
+                sheet: Some("Items"),
+                record_key: "potion",
+                actual_type: "Item",
+                fields: &fields,
+                schema: &schema,
+            },
+        )
+        .expect("insert succeeds");
+
+    assert!(outcome.inserted_record_origin.is_some());
+    assert_eq!(read_cell(&path, "Items", 4, 1), "potion");
+    assert_eq!(read_cell(&path, "Items", 4, 2), "Potion");
+    assert!(matches!(
+        read_cell(&path, "Items", 4, 3).as_str(),
+        "3" | "3.0"
+    ));
+
+    let source_def = coflow_loader_excel::ExcelSource::new(
+        path,
+        vec![coflow_loader_excel::ExcelSheet::new("Items").with_type("Item")],
+    );
+    let loaded =
+        coflow_loader_excel::collect_input_records(&schema, &[source_def]).expect("reload records");
+    assert!(loaded.records.iter().any(|record| record.key == "potion"));
+}
+
+#[test]
+fn inserts_record_with_expanded_object_into_child_columns() {
+    let path = temp_xlsx("insert-expand");
+    write_terrain_workbook_with_expand(&path).expect("seed");
+
+    let schema = schema_for_terrain();
+    let source = empty_source(&path);
+    let writer = ExcelWriter::new();
+    let fields = BTreeMap::from([
+        ("name".to_string(), CfdValue::String("desert".to_string())),
+        ("env".to_string(), expanded_env_value(2.0, 35.0, 0.2)),
+    ]);
+    let outcome = writer
+        .insert_record(
+            WriteContext {
+                project_root: &std::env::temp_dir(),
+                schema: &schema,
+                model: None,
+            },
+            &InsertRecordRequest {
+                source: &source,
+                sheet: Some("Terrain"),
+                record_key: "Sand",
+                actual_type: "Terrain",
+                fields: &fields,
+                schema: &schema,
+            },
+        )
+        .expect("insert expanded record succeeds");
+
+    assert!(outcome.inserted_record_origin.is_some());
+    assert_eq!(read_cell(&path, "Terrain", 3, 1), "Sand");
+    assert_eq!(read_cell(&path, "Terrain", 3, 2), "desert");
+    assert!(matches!(
+        read_cell(&path, "Terrain", 3, 3).as_str(),
+        "2" | "2.0"
+    ));
+    assert!(matches!(
+        read_cell(&path, "Terrain", 3, 4).as_str(),
+        "35" | "35.0"
+    ));
+    assert_eq!(read_cell(&path, "Terrain", 3, 5), "0.2");
+}
+
+#[test]
+fn deletes_record_row() {
+    let path = temp_xlsx("delete");
+    write_seed_workbook(&path).expect("seed");
+
+    let schema = CftContainer::new();
+    let source = empty_source(&path);
+    let origin = origin_for_sword(&path);
+    let writer = ExcelWriter::new();
+    writer
+        .delete_record(
+            WriteContext {
+                project_root: &std::env::temp_dir(),
+                schema: &schema,
+                model: None,
+            },
+            &DeleteRecordRequest {
+                origin: &origin,
+                record_key: "sword",
+                actual_type: "Item",
+                source: &source,
+            },
+        )
+        .expect("delete succeeds");
+
+    assert_eq!(read_cell(&path, "Items", 2, 1), "shield");
+    assert_eq!(read_cell(&path, "Items", 2, 2), "Round");
+}
+
+#[test]
+fn refuses_delete_when_row_key_changed() {
+    let path = temp_xlsx("delete-key-guard");
+    write_seed_workbook(&path).expect("seed");
+
+    let schema = CftContainer::new();
+    let source = empty_source(&path);
+    let origin = origin_for_shield(&path);
+    let writer = ExcelWriter::new();
+    let Err(diag) = writer.delete_record(
+        WriteContext {
+            project_root: &std::env::temp_dir(),
+            schema: &schema,
+            model: None,
+        },
+        &DeleteRecordRequest {
+            origin: &origin,
+            record_key: "sword",
+            actual_type: "Item",
+            source: &source,
+        },
+    ) else {
+        panic!("delete should reject mismatched key");
+    };
+    assert!(diag
+        .iter()
+        .any(|d| d.message.contains("expected key `sword`")));
+    assert_eq!(read_cell(&path, "Items", 3, 1), "shield");
 }
