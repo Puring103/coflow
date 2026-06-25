@@ -233,12 +233,13 @@ export default function App() {
         setProject(p => (p ? { ...p, diagnostics: outcome.diagnostics } : p))
         const refreshed = await api.getFileRecords(project.session_id, filePath)
         if (mySeq !== writeSeqRef.current) return outcome.row
-        setFileDataCache({ [filePath]: refreshed })
+        setFileDataCache(c => ({ ...c, [filePath]: refreshed }))
         setGraphCache({})
         if (opts.recordHistory) {
           const oldValue = opts.oldValue ?? snapshotOldValue(fileDataCache, filePath, recordKey, fieldPath)
           if (oldValue) {
             setUndoStack(s => [...s, {
+              kind: 'field',
               filePath, recordKey, fieldPath,
               oldValue: cloneValue(oldValue),
               newValue: cloneValue(newValue),
@@ -267,25 +268,140 @@ export default function App() {
     [writeFieldInternal],
   )
 
+  // Insert a new record at the top level of `filePath`. The back-end picks
+  // the sheet name (for table sources) by reusing an existing record's sheet
+  // when one is available, and falls back to provider-specific options
+  // otherwise. The returned `FileRecords` is already refreshed — drop it
+  // straight into the cache instead of issuing a follow-up `getFileRecords`.
+  //
+  // `opts.recordHistory` mirrors `writeFieldInternal`: user-initiated inserts
+  // push onto the undo stack; replays from undo/redo pass `false` so the
+  // history isn't re-entered while we're walking it.
+  const insertRecordInternal = useCallback(
+    async (
+      filePath: string,
+      recordKey: string,
+      actualType: string,
+      fields: FieldValue,
+      opts: { recordHistory: boolean } = { recordHistory: true },
+    ) => {
+      if (!project || !api.isTauri) return
+      try {
+        const outcome = await api.insertRecord(project.session_id, filePath, recordKey, actualType, fields)
+        setProject(p => (p ? { ...p, diagnostics: outcome.diagnostics } : p))
+        setFileDataCache(c => ({ ...c, [filePath]: outcome.file_records }))
+        setGraphCache({})
+        if (opts.recordHistory) {
+          setUndoStack(s => [...s, {
+            kind: 'insert',
+            filePath,
+            recordKey,
+            actualType,
+            fields: cloneValue(fields),
+          }])
+          setRedoStack([])
+        }
+      } catch (err) {
+        setErrorMsg(`新建记录失败: ${errorMessage(err)}`)
+        const diags = errorDiagnostics(err)
+        if (diags.length > 0) {
+          setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
+        }
+      }
+    },
+    [project],
+  )
+
+  const deleteRecordInternal = useCallback(
+    async (
+      filePath: string,
+      recordKey: string,
+      opts: { recordHistory: boolean } = { recordHistory: true },
+    ) => {
+      if (!project || !api.isTauri) return
+      try {
+        const outcome = await api.deleteRecord(project.session_id, filePath, recordKey)
+        setProject(p => (p ? { ...p, diagnostics: outcome.diagnostics } : p))
+        setFileDataCache(c => ({ ...c, [filePath]: outcome.file_records }))
+        setGraphCache({})
+        // Undo payload comes from the back-end's authoritative snapshot —
+        // captured under the same lock as the delete, so it always reflects
+        // the engine's view at the moment of deletion (spread/ref metadata
+        // included). No front-end cache dependency.
+        if (opts.recordHistory && outcome.deleted_snapshot && outcome.deleted_actual_type) {
+          setUndoStack(s => [...s, {
+            kind: 'delete',
+            filePath,
+            recordKey,
+            actualType: outcome.deleted_actual_type!,
+            snapshot: outcome.deleted_snapshot!,
+          }])
+          setRedoStack([])
+        }
+      } catch (err) {
+        setErrorMsg(`删除记录失败: ${errorMessage(err)}`)
+        const diags = errorDiagnostics(err)
+        if (diags.length > 0) {
+          setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
+        }
+      }
+    },
+    [project],
+  )
+
+  const insertRecord = useCallback(
+    (filePath: string, recordKey: string, actualType: string, fields: FieldValue) =>
+      insertRecordInternal(filePath, recordKey, actualType, fields),
+    [insertRecordInternal],
+  )
+  const deleteRecord = useCallback(
+    (filePath: string, recordKey: string) => deleteRecordInternal(filePath, recordKey),
+    [deleteRecordInternal],
+  )
+
   const undo = useCallback(async () => {
     const entry = undoStack[undoStack.length - 1]
     if (!entry) return
     setUndoStack(s => s.slice(0, -1))
     setRedoStack(s => [...s, entry])
-    await writeFieldInternal(entry.filePath, entry.recordKey, entry.fieldPath, entry.oldValue, {
-      recordHistory: false,
-    })
-  }, [undoStack, writeFieldInternal])
+    if (entry.kind === 'field') {
+      await writeFieldInternal(entry.filePath, entry.recordKey, entry.fieldPath, entry.oldValue, {
+        recordHistory: false,
+      })
+    } else if (entry.kind === 'insert') {
+      // Invert insert: delete the record we just created. The redo path
+      // re-runs the insert from this same entry, so we don't need to
+      // capture another snapshot here.
+      await deleteRecordInternal(entry.filePath, entry.recordKey, {
+        recordHistory: false,
+      })
+    } else {
+      // Invert delete: re-create the record with the captured snapshot.
+      await insertRecordInternal(entry.filePath, entry.recordKey, entry.actualType, entry.snapshot, {
+        recordHistory: false,
+      })
+    }
+  }, [undoStack, writeFieldInternal, insertRecordInternal, deleteRecordInternal])
 
   const redo = useCallback(async () => {
     const entry = redoStack[redoStack.length - 1]
     if (!entry) return
     setRedoStack(s => s.slice(0, -1))
     setUndoStack(s => [...s, entry])
-    await writeFieldInternal(entry.filePath, entry.recordKey, entry.fieldPath, entry.newValue, {
-      recordHistory: false,
-    })
-  }, [redoStack, writeFieldInternal])
+    if (entry.kind === 'field') {
+      await writeFieldInternal(entry.filePath, entry.recordKey, entry.fieldPath, entry.newValue, {
+        recordHistory: false,
+      })
+    } else if (entry.kind === 'insert') {
+      await insertRecordInternal(entry.filePath, entry.recordKey, entry.actualType, entry.fields, {
+        recordHistory: false,
+      })
+    } else {
+      await deleteRecordInternal(entry.filePath, entry.recordKey, {
+        recordHistory: false,
+      })
+    }
+  }, [redoStack, writeFieldInternal, insertRecordInternal, deleteRecordInternal])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -586,6 +702,9 @@ export default function App() {
                     diagnostics={fileDiagnostics}
                     onOpenRecord={key => openRecord(currentRoute.file, key)}
                     onWriteField={(rk, path, val) => writeField(currentRoute.file, rk, path, val)}
+                    onInsertRecord={(rk, type, fields) => insertRecord(currentRoute.file, rk, type, fields)}
+                    onDeleteRecord={rk => deleteRecord(currentRoute.file, rk)}
+                    onMakeDefaultObject={async type => project ? api.makeDefaultObject(project.session_id, type) : null}
                   />
                 )}
                 {currentRoute.view === 'record' && (
@@ -723,15 +842,44 @@ function isTextTarget(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable
 }
 
-/** A single reversible field edit. `oldValue` is the pre-edit FieldValue so
- *  undo replays it back through writeField. We deep-clone via structuredClone
- *  so later mutations of the cache can't retroactively rewrite history. */
-interface EditEntry {
+/** A reversible mutation. Tagged so undo/redo can dispatch to the right API
+ *  (field edits replay through `writeField`, record creation/deletion replay
+ *  via `insertRecord` / `deleteRecord`). All payloads are deep-cloned via
+ *  structuredClone so later cache mutations can't retroactively rewrite
+ *  history. */
+type EditEntry =
+  | FieldEditEntry
+  | InsertEditEntry
+  | DeleteEditEntry
+
+interface FieldEditEntry {
+  kind: 'field'
   filePath: string
   recordKey: string
   fieldPath: FieldPathSegment[]
   oldValue: FieldValue
   newValue: FieldValue
+}
+
+/** Inverted by `deleteRecord(recordKey)`; redone by `insertRecord` with the
+ *  same payload. `fields` is the Object FieldValue used at create time so a
+ *  redo reproduces the exact same record. */
+interface InsertEditEntry {
+  kind: 'insert'
+  filePath: string
+  recordKey: string
+  actualType: string
+  fields: FieldValue
+}
+
+/** Inverted by re-inserting with `snapshot` (captured before deletion so the
+ *  full record can be reconstructed); redone by `deleteRecord(recordKey)`. */
+interface DeleteEditEntry {
+  kind: 'delete'
+  filePath: string
+  recordKey: string
+  actualType: string
+  snapshot: FieldValue
 }
 
 /** Walk a FieldValue along a FieldPathSegment path and return the value that

@@ -25,9 +25,21 @@ pub const CFD_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
 
 /// Writer for `.cfd` text sources. Holds a cache of source text + AST per
 /// file so repeated edits don't re-parse from disk.
+/// Cache entry tagged with the file's modification time at the moment the
+/// `(source, ast)` pair was captured. We compare mtime on every read so an
+/// external editor that edited the same `.cfd` between writes invalidates
+/// us automatically — without that, patches built off a stale AST would
+/// compute spans against the wrong text and silently corrupt the file.
+#[derive(Debug, Clone)]
+struct CacheEntry {
+    mtime: Option<std::time::SystemTime>,
+    source: String,
+    ast: CfdAst,
+}
+
 #[derive(Debug, Default)]
 pub struct CfdWriter {
-    cache: RwLock<HashMap<PathBuf, (String, CfdAst)>>,
+    cache: RwLock<HashMap<PathBuf, CacheEntry>>,
 }
 
 impl CfdWriter {
@@ -46,22 +58,37 @@ impl CfdWriter {
     }
 
     fn read_or_parse(&self, path: &Path) -> Result<(String, CfdAst), DiagnosticSet> {
-        self.cache
+        let disk_mtime = file_mtime(path);
+        let cached = self
+            .cache
             .read()
-            .map_or(None, |cache| cache.get(path).cloned())
-            .map_or_else(
-                || -> Result<(String, CfdAst), DiagnosticSet> {
-                    let text = std::fs::read_to_string(path).map_err(|err| {
-                        DiagnosticSet::one(diag(
-                            "CFD-READ",
-                            format!("failed to read `{}`: {err}", path.display()),
-                        ))
-                    })?;
-                    let (ast, _) = parse_cfd(&text);
-                    Ok((text, ast))
+            .ok()
+            .and_then(|cache| cache.get(path).cloned());
+        if let Some(entry) = cached {
+            if entry.mtime == disk_mtime {
+                return Ok((entry.source, entry.ast));
+            }
+            // mtime drifted — fall through to re-read from disk.
+        }
+
+        let text = std::fs::read_to_string(path).map_err(|err| {
+            DiagnosticSet::one(diag(
+                "CFD-READ",
+                format!("failed to read `{}`: {err}", path.display()),
+            ))
+        })?;
+        let (ast, _) = parse_cfd(&text);
+        if let Ok(mut cache) = self.cache.write() {
+            cache.insert(
+                path.to_path_buf(),
+                CacheEntry {
+                    mtime: disk_mtime,
+                    source: text.clone(),
+                    ast: ast.clone(),
                 },
-                Ok,
-            )
+            );
+        }
+        Ok((text, ast))
     }
 
     fn write_source(&self, path: &Path, new_source: String) -> Result<(), DiagnosticSet> {
@@ -73,11 +100,23 @@ impl CfdWriter {
         })?;
 
         let (new_ast, _) = parse_cfd(&new_source);
+        let mtime = file_mtime(path);
         if let Ok(mut cache) = self.cache.write() {
-            cache.insert(path.to_path_buf(), (new_source, new_ast));
+            cache.insert(
+                path.to_path_buf(),
+                CacheEntry {
+                    mtime,
+                    source: new_source,
+                    ast: new_ast,
+                },
+            );
         }
         Ok(())
     }
+}
+
+fn file_mtime(path: &Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
 }
 
 impl DataWriter for CfdWriter {

@@ -5,8 +5,8 @@ use std::path::PathBuf;
 mod editor;
 
 use editor::{
-    EditorError, FieldPathSegment, FieldValue, FileRecords, GraphData, ProjectSnapshot,
-    SessionStore, WriteFieldOutcome,
+    DeleteRecordOutcome, EditorError, FieldPathSegment, FieldValue, FileRecords, GraphData,
+    InsertRecordOutcome, ProjectSnapshot, SessionStore, WriteFieldOutcome,
 };
 use tauri::{Manager, State};
 
@@ -97,6 +97,30 @@ fn write_field(
     store.write_field(session_id, &file_path, &record_key, &field_path, &new_value)
 }
 
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+fn insert_record(
+    session_id: u32,
+    file_path: String,
+    record_key: String,
+    actual_type: String,
+    fields: FieldValue,
+    store: State<'_, SessionStore>,
+) -> Result<InsertRecordOutcome, EditorError> {
+    store.insert_record(session_id, &file_path, &record_key, &actual_type, &fields)
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+fn delete_record(
+    session_id: u32,
+    file_path: String,
+    record_key: String,
+    store: State<'_, SessionStore>,
+) -> Result<DeleteRecordOutcome, EditorError> {
+    store.delete_record(session_id, &file_path, &record_key)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// Start the CFD editor Tauri application.
 ///
@@ -121,6 +145,8 @@ pub fn run() -> tauri::Result<()> {
             get_ref_targets,
             make_default_object,
             write_field,
+            insert_record,
+            delete_record,
         ])
         .run(tauri::generate_context!())
 }

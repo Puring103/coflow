@@ -497,8 +497,11 @@ pub struct WriterCapabilities {
     pub can_edit_key: bool,
     pub can_insert_record: bool,
     pub can_delete_record: bool,
-    pub can_write_expanded_fields: bool,
-    pub can_write_collection_cells: bool,
+    /// True when the host should treat a write as invalidating the whole
+    /// project view (force a full session rebuild) rather than relying on
+    /// a writer-supplied incremental outcome. Currently set by every writer
+    /// because the session always rebuilds — kept so the incremental-update
+    /// path can flip it per-writer later without breaking the wire shape.
     pub requires_full_refresh_after_write: bool,
     pub is_remote: bool,
 }
@@ -511,8 +514,6 @@ impl WriterCapabilities {
             can_edit_key: false,
             can_insert_record: false,
             can_delete_record: false,
-            can_write_expanded_fields: false,
-            can_write_collection_cells: false,
             requires_full_refresh_after_write: false,
             is_remote: false,
         }
@@ -525,8 +526,6 @@ impl WriterCapabilities {
             can_edit_key: true,
             can_insert_record: true,
             can_delete_record: true,
-            can_write_expanded_fields: true,
-            can_write_collection_cells: true,
             requires_full_refresh_after_write: true,
             is_remote: false,
         }
@@ -539,8 +538,6 @@ impl WriterCapabilities {
             can_edit_key: true,
             can_insert_record: false,
             can_delete_record: false,
-            can_write_expanded_fields: true,
-            can_write_collection_cells: true,
             requires_full_refresh_after_write: true,
             is_remote: true,
         }
