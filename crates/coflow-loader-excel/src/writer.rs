@@ -260,12 +260,77 @@ fn mutable_sheet<'a>(
     path: &Path,
     sheet: &str,
 ) -> Result<&'a mut umya_spreadsheet::Worksheet, DiagnosticSet> {
-    book.get_sheet_by_name_mut(sheet).ok_or_else(|| {
-        DiagnosticSet::one(diag(
-            "EXCEL-WRITE",
-            format!("sheet `{sheet}` not found in `{}`", path.display()),
-        ))
-    })
+    // Resolve the requested name against the workbook's actual sheet
+    // names, allowing a trimmed / whitespace-tolerant fallback when the
+    // exact name doesn't match. We've seen real workbooks where calamine
+    // surfaced a sheet name with hidden whitespace (full-width space, BOM,
+    // zero-width joiners) that umya stored without — strict equality then
+    // misses the sheet.
+    let target = normalize_sheet_name(sheet);
+    let names: Vec<String> = book
+        .get_sheet_collection_no_check()
+        .iter()
+        .map(|s| s.get_name().to_string())
+        .collect();
+    let resolved = names
+        .iter()
+        .find(|name| name.as_str() == sheet || normalize_sheet_name(name) == target)
+        .cloned();
+
+    if let Some(name) = resolved {
+        if let Some(ws) = book.get_sheet_by_name_mut(&name) {
+            return Ok(ws);
+        }
+    }
+
+    // Surface the candidate list so users can see whether it's a typo or
+    // a hidden whitespace / encoding issue.
+    let available = names
+        .iter()
+        .map(|name| format!("`{name}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let available = if available.is_empty() {
+        "(workbook has no sheets)".to_string()
+    } else {
+        format!("available: {available}")
+    };
+    Err(DiagnosticSet::one(diag(
+        "EXCEL-WRITE",
+        format!(
+            "sheet `{sheet}` not found in `{}` ({available})",
+            path.display()
+        ),
+    )))
+}
+
+/// Normalize a sheet name for tolerant comparison: trim outer whitespace
+/// (including the full-width space `U+3000` and zero-width joiners that
+/// sometimes leak in via copy-paste) and strip BOM / zero-width
+/// formatting characters. We deliberately do **not** lowercase — Excel
+/// sheet names are case-sensitive on the wire.
+///
+/// Not a full Unicode NFC normalize: we don't pull in the
+/// `unicode-normalization` crate just for this edge case. If a workbook
+/// ever surfaces decomposed CJK marks that mismatch umya's stored form,
+/// we'll revisit.
+fn normalize_sheet_name(name: &str) -> String {
+    name.trim_matches(|c: char| c.is_whitespace() || is_invisible_format_char(c))
+        .chars()
+        .filter(|c| !is_invisible_format_char(*c))
+        .collect()
+}
+
+const fn is_invisible_format_char(c: char) -> bool {
+    matches!(
+        c,
+        '\u{200B}'  // ZERO WIDTH SPACE
+        | '\u{200C}' // ZERO WIDTH NON-JOINER
+        | '\u{200D}' // ZERO WIDTH JOINER
+        | '\u{FEFF}' // ZERO WIDTH NO-BREAK SPACE / BOM
+        | '\u{00A0}' // NO-BREAK SPACE
+        | '\u{3000}' // IDEOGRAPHIC SPACE
+    )
 }
 
 fn write_sheet_cell(
