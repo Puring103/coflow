@@ -154,6 +154,12 @@ pub struct TableInputRecords {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableWriteLayout {
+    pub id_column: usize,
+    pub field_columns: BTreeMap<Vec<String>, usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableDiagnostic {
     pub code: String,
     pub stage: String,
@@ -490,6 +496,49 @@ pub fn collect_table_input_records(
     }
 }
 
+/// Resolves a table header into the field-column map used by table writers.
+///
+/// This uses the same schema-guided column resolution as the table loader,
+/// including configured column aliases, key-column detection, and `@expand`
+/// child columns.
+///
+/// # Errors
+///
+/// Returns diagnostics when the type is unknown, the header is missing required
+/// columns, or `@expand` columns are malformed.
+pub fn resolve_table_write_layout(
+    schema: &CftContainer,
+    source_name: &Path,
+    sheet: &TableSheetConfig,
+    header_row: &[String],
+) -> Result<TableWriteLayout, TableDiagnostics> {
+    let type_name = sheet.type_name();
+    let Some(fields) = full_field_types(schema, type_name) else {
+        return Err(TableDiagnostics {
+            diagnostics: table_load_error_diagnostics(TableLoadError::UnknownType {
+                location: Box::new(
+                    TableLocation::new(source_name.to_path_buf()).sheet(sheet.sheet.clone()),
+                ),
+                type_name: type_name.to_string(),
+            }),
+        });
+    };
+    let resolved = resolve_columns(
+        schema,
+        source_name,
+        sheet,
+        type_name,
+        &fields,
+        header_row,
+        1,
+        1,
+    )?;
+    Ok(TableWriteLayout {
+        id_column: resolved.id_column.excel_column,
+        field_columns: field_columns_from_resolved(&resolved.columns),
+    })
+}
+
 #[allow(clippy::too_many_lines)]
 fn table_load_error_diagnostics(err: TableLoadError) -> Vec<TableDiagnostic> {
     match err {
@@ -654,6 +703,16 @@ fn build_record_origin(
     columns: &[ResolvedColumn],
     id_column: usize,
 ) -> RecordOrigin {
+    RecordOrigin::Table {
+        document,
+        sheet,
+        row,
+        id_column,
+        field_columns: field_columns_from_resolved(columns),
+    }
+}
+
+fn field_columns_from_resolved(columns: &[ResolvedColumn]) -> BTreeMap<Vec<String>, usize> {
     let mut field_columns = BTreeMap::new();
     for column in columns {
         field_columns.insert(vec![column.field.clone()], column.excel_column);
@@ -666,13 +725,7 @@ fn build_record_origin(
             }
         }
     }
-    RecordOrigin::Table {
-        document,
-        sheet,
-        row,
-        id_column,
-        field_columns,
-    }
+    field_columns
 }
 
 /// Map [`CfdDiagnostics`] to per-row [`TableDiagnostic`] using a slice of

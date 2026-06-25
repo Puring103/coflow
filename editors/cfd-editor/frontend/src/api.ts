@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type {
   ProjectSnapshot, FileRecords, GraphData, FieldPathSegment, FieldValue,
-  WriteFieldOutcome,
+  WriteFieldOutcome, InsertRecordOutcome, DeleteRecordOutcome,
 } from './bindings/index'
 
 export const isTauri = '__TAURI_INTERNALS__' in window
@@ -72,5 +72,27 @@ export async function writeField(
 ): Promise<WriteFieldOutcome> {
   return invoke<WriteFieldOutcome>('write_field', {
     sessionId, filePath, recordKey, fieldPath, newValue,
+  })
+}
+
+export async function insertRecord(
+  sessionId: number,
+  filePath: string,
+  recordKey: string,
+  actualType: string,
+  fields: FieldValue,
+): Promise<InsertRecordOutcome> {
+  return invoke<InsertRecordOutcome>('insert_record', {
+    sessionId, filePath, recordKey, actualType, fields,
+  })
+}
+
+export async function deleteRecord(
+  sessionId: number,
+  filePath: string,
+  recordKey: string,
+): Promise<DeleteRecordOutcome> {
+  return invoke<DeleteRecordOutcome>('delete_record', {
+    sessionId, filePath, recordKey,
   })
 }

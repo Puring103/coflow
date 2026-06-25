@@ -9,8 +9,8 @@
 )]
 
 use coflow_api::{
-    CfdValue, DataWriter, RecordOrigin, ResolvedSource, SourceLocationSpec, TextSpan,
-    WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    CfdValue, DataWriter, DeleteRecordRequest, InsertRecordRequest, RecordOrigin, ResolvedSource,
+    SourceLocationSpec, TextSpan, WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::CfdDataModel;
@@ -334,6 +334,112 @@ fn rejects_empty_ref_key() {
 
 fn empty_model(schema: &CftContainer) -> CfdDataModel {
     CfdDataModel::builder(schema).build().expect("empty model")
+}
+
+#[test]
+fn inserts_record_at_end_of_cfd_file() {
+    let dir = temp_dir("insert-record");
+    let file = dir.join("items.cfd");
+    fs::write(
+        &file,
+        r#"sword: Item {
+  name: "Sword",
+  value: 10,
+}
+"#,
+    )
+    .expect("write seed");
+    let schema = compile_schema(
+        r"
+        type Item {
+          name: string;
+          value: int;
+        }
+        ",
+    );
+    let source = empty_source(&file);
+    let writer = CfdWriter::new();
+    let fields = std::collections::BTreeMap::from([
+        ("name".to_string(), CfdValue::String("Potion".to_string())),
+        ("value".to_string(), CfdValue::Int(3)),
+    ]);
+
+    let outcome = writer
+        .insert_record(
+            WriteContext {
+                project_root: &dir,
+                schema: &schema,
+                model: None,
+            },
+            &InsertRecordRequest {
+                source: &source,
+                sheet: None,
+                record_key: "potion",
+                actual_type: "Item",
+                fields: &fields,
+                schema: &schema,
+            },
+        )
+        .expect("insert succeeds");
+
+    assert!(outcome.inserted_record_origin.is_some());
+    let after = fs::read_to_string(&file).expect("re-read");
+    assert!(after.contains("potion: Item"));
+    assert!(after.contains("name: \"Potion\""));
+    assert!(after.contains("value: 3"));
+    let model = load_cfd_model(&schema, &after).expect("reload");
+    assert!(model.lookup("Item", "potion").is_some());
+}
+
+#[test]
+fn deletes_record_span_from_cfd_file() {
+    let dir = temp_dir("delete-record");
+    let file = dir.join("items.cfd");
+    fs::write(
+        &file,
+        r#"sword: Item {
+  name: "Sword",
+}
+
+shield: Item {
+  name: "Shield",
+}
+"#,
+    )
+    .expect("write seed");
+    let schema = compile_schema(
+        r"
+        type Item {
+          name: string;
+        }
+        ",
+    );
+    let source = empty_source(&file);
+    let origin = origin_for(&file);
+    let writer = CfdWriter::new();
+
+    writer
+        .delete_record(
+            WriteContext {
+                project_root: &dir,
+                schema: &schema,
+                model: None,
+            },
+            &DeleteRecordRequest {
+                origin: &origin,
+                record_key: "sword",
+                actual_type: "Item",
+                source: &source,
+            },
+        )
+        .expect("delete succeeds");
+
+    let after = fs::read_to_string(&file).expect("re-read");
+    assert!(!after.contains("sword: Item"));
+    assert!(after.contains("shield: Item"));
+    let model = load_cfd_model(&schema, &after).expect("reload");
+    assert!(model.lookup("Item", "sword").is_none());
+    assert!(model.lookup("Item", "shield").is_some());
 }
 
 #[test]

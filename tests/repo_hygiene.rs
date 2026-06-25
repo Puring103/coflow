@@ -220,12 +220,15 @@ fn lsp_is_documented_as_schema_only_not_engine_runtime_host() {
 fn table_writers_use_shared_cell_renderer() {
     let excel = std::fs::read_to_string("crates/coflow-loader-excel/src/writer.rs")
         .expect("read excel writer");
+    let table_writer = std::fs::read_to_string("crates/coflow-loader-table-core/src/writer.rs")
+        .expect("read table writer");
     let lark =
         std::fs::read_to_string("crates/coflow-loader-lark/src/lib.rs").expect("read lark loader");
 
     assert!(
-        excel.contains("coflow_loader_table_core::cell_value::{render_cell_value"),
-        "Excel writer should use the shared table-core cell renderer"
+        excel.contains("coflow_loader_table_core::writer::{")
+            && table_writer.contains("crate::cell_value::{render_cell_value"),
+        "Excel writer should use the shared table-core writer and renderer"
     );
     assert!(
         lark.contains("coflow_loader_table_core::cell_value::{render_cell_value"),

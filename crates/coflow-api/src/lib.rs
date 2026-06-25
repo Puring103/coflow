@@ -494,8 +494,15 @@ pub struct WriterDescriptor {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WriterCapabilities {
     pub can_edit_field: bool,
+    pub can_edit_key: bool,
     pub can_insert_record: bool,
     pub can_delete_record: bool,
+    /// True when the host should treat a write as invalidating the whole
+    /// project view (force a full session rebuild) rather than relying on
+    /// a writer-supplied incremental outcome. Currently set by every writer
+    /// because the session always rebuilds — kept so the incremental-update
+    /// path can flip it per-writer later without breaking the wire shape.
+    pub requires_full_refresh_after_write: bool,
     pub is_remote: bool,
 }
 
@@ -504,8 +511,10 @@ impl WriterCapabilities {
     pub const fn read_only() -> Self {
         Self {
             can_edit_field: false,
+            can_edit_key: false,
             can_insert_record: false,
             can_delete_record: false,
+            requires_full_refresh_after_write: false,
             is_remote: false,
         }
     }
@@ -514,8 +523,10 @@ impl WriterCapabilities {
     pub const fn local_full() -> Self {
         Self {
             can_edit_field: true,
+            can_edit_key: true,
             can_insert_record: true,
             can_delete_record: true,
+            requires_full_refresh_after_write: true,
             is_remote: false,
         }
     }
@@ -524,8 +535,10 @@ impl WriterCapabilities {
     pub const fn remote_field_edit() -> Self {
         Self {
             can_edit_field: true,
+            can_edit_key: true,
             can_insert_record: false,
             can_delete_record: false,
+            requires_full_refresh_after_write: true,
             is_remote: true,
         }
     }
@@ -549,6 +562,28 @@ pub struct WriteCellRequest<'a> {
     pub source: &'a ResolvedSource,
 }
 
+/// Request describing a new top-level record insertion.
+#[derive(Debug, Clone)]
+pub struct InsertRecordRequest<'a> {
+    /// Target source that should receive the new record.
+    pub source: &'a ResolvedSource,
+    /// Target sheet/table name for table sources. Text writers may ignore it.
+    pub sheet: Option<&'a str>,
+    pub record_key: &'a str,
+    pub actual_type: &'a str,
+    pub fields: &'a BTreeMap<String, CfdValue>,
+    pub schema: &'a CftContainer,
+}
+
+/// Request describing a top-level record deletion.
+#[derive(Debug, Clone)]
+pub struct DeleteRecordRequest<'a> {
+    pub origin: &'a RecordOrigin,
+    pub record_key: &'a str,
+    pub actual_type: &'a str,
+    pub source: &'a ResolvedSource,
+}
+
 /// Outcome of a writer call: which records were actually touched (so the
 /// session can recompute checks) and any informational diagnostics.
 #[derive(Debug, Clone, Default)]
@@ -557,6 +592,8 @@ pub struct WriteOutcome {
     /// to re-load specific records and run incremental checks; an empty vec
     /// means the writer made no observable change.
     pub touched_record_origins: Vec<RecordOrigin>,
+    pub inserted_record_origin: Option<RecordOrigin>,
+    pub deleted_record_origin: Option<RecordOrigin>,
     /// Optional non-fatal diagnostics surfaced to the user.
     pub diagnostics: DiagnosticSet,
 }
@@ -598,6 +635,42 @@ pub trait DataWriter: Send + Sync {
         ctx: WriteContext<'_>,
         request: &WriteCellRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet>;
+
+    /// Persist a new top-level record.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the writer cannot insert records for this
+    /// source or when the request cannot be represented by the source format.
+    fn insert_record(
+        &self,
+        _ctx: WriteContext<'_>,
+        _request: &InsertRecordRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        Err(DiagnosticSet::one(Diagnostic::error(
+            "WRITE-UNSUPPORTED",
+            "WRITE",
+            "writer does not support inserting records",
+        )))
+    }
+
+    /// Delete a top-level record.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the writer cannot delete records for this
+    /// source or when the target no longer matches the requested record.
+    fn delete_record(
+        &self,
+        _ctx: WriteContext<'_>,
+        _request: &DeleteRecordRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        Err(DiagnosticSet::one(Diagnostic::error(
+            "WRITE-UNSUPPORTED",
+            "WRITE",
+            "writer does not support deleting records",
+        )))
+    }
 }
 
 pub trait DataExporter: Send + Sync {
