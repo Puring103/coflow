@@ -13,12 +13,14 @@ use std::collections::BTreeSet;
 
 type BuildFn = fn(&CftContainer) -> Result<CfdDataModel, CfdDiagnostics>;
 type CheckFn = fn(&CftContainer, &CfdDataModel) -> Result<(), CfdDiagnostics>;
+type DirectFn = fn() -> CfdDiagnostics;
 type AdjacentFn = fn();
 
 #[derive(Clone, Copy)]
 enum Phase {
     Build(BuildFn),
     Check(BuildFn, CheckFn),
+    Direct(DirectFn),
 }
 
 struct Case {
@@ -30,10 +32,14 @@ struct Case {
 }
 
 fn diagnostics_for(case: &Case) -> CfdDiagnostics {
-    let schema = compile_schema(case.schema);
     match case.phase {
-        Phase::Build(build) => build(&schema).expect_err(case.name),
+        Phase::Direct(build) => build(),
+        Phase::Build(build) => {
+            let schema = compile_schema(case.schema);
+            build(&schema).expect_err(case.name)
+        }
         Phase::Check(build, check) => {
+            let schema = compile_schema(case.schema);
             let model = build(&schema).expect("check coverage model should build");
             check(&schema, &model).expect_err(case.name)
         }
@@ -173,11 +179,102 @@ fn cases() -> Vec<Case> {
             adjacent: adjacent_existing_ref_target,
         },
         Case {
-            name: "check failed",
-            schema: "type Item { value: int; check { value > 0; } }",
-            phase: Phase::Check(build_check_failed_model, run_checks),
+            name: "check failed fallback",
+            schema: "",
+            phase: Phase::Direct(build_check_failed_fallback),
             code: CfdErrorCode::CheckFailed,
             adjacent: adjacent_true_check,
+        },
+        Case {
+            name: "check comparison failed",
+            schema: "type Item { value: int; check { value > 0; } }",
+            phase: Phase::Check(build_check_failed_model, run_checks),
+            code: CfdErrorCode::CheckComparisonFailed,
+            adjacent: adjacent_true_check,
+        },
+        Case {
+            name: "check bool expected true",
+            schema: scalar_false_schema(),
+            phase: Phase::Check(build_scalar_false_model, run_checks),
+            code: CfdErrorCode::CheckBoolExpectedTrue,
+            adjacent: adjacent_scalar_false_checks,
+        },
+        Case {
+            name: "check negation failed",
+            schema: scalar_false_schema(),
+            phase: Phase::Check(build_scalar_false_model, run_checks),
+            code: CfdErrorCode::CheckNegationFailed,
+            adjacent: adjacent_scalar_false_checks,
+        },
+        Case {
+            name: "check and failed",
+            schema: scalar_false_schema(),
+            phase: Phase::Check(build_scalar_false_model, run_checks),
+            code: CfdErrorCode::CheckAndFailed,
+            adjacent: adjacent_scalar_false_checks,
+        },
+        Case {
+            name: "check or failed",
+            schema: scalar_false_schema(),
+            phase: Phase::Check(build_scalar_false_model, run_checks),
+            code: CfdErrorCode::CheckOrFailed,
+            adjacent: adjacent_scalar_false_checks,
+        },
+        Case {
+            name: "check type predicate failed",
+            schema: scalar_false_schema(),
+            phase: Phase::Check(build_scalar_false_model, run_checks),
+            code: CfdErrorCode::CheckTypePredicateFailed,
+            adjacent: adjacent_scalar_false_checks,
+        },
+        Case {
+            name: "check null predicate failed",
+            schema: scalar_false_schema(),
+            phase: Phase::Check(build_scalar_false_model, run_checks),
+            code: CfdErrorCode::CheckNullPredicateFailed,
+            adjacent: adjacent_scalar_false_checks,
+        },
+        Case {
+            name: "check contains failed",
+            schema: scalar_false_schema(),
+            phase: Phase::Check(build_scalar_false_model, run_checks),
+            code: CfdErrorCode::CheckContainsFailed,
+            adjacent: adjacent_scalar_false_checks,
+        },
+        Case {
+            name: "check unique failed",
+            schema: scalar_false_schema(),
+            phase: Phase::Check(build_scalar_false_model, run_checks),
+            code: CfdErrorCode::CheckUniqueFailed,
+            adjacent: adjacent_scalar_false_checks,
+        },
+        Case {
+            name: "check matches failed",
+            schema: scalar_false_schema(),
+            phase: Phase::Check(build_scalar_false_model, run_checks),
+            code: CfdErrorCode::CheckMatchesFailed,
+            adjacent: adjacent_scalar_false_checks,
+        },
+        Case {
+            name: "check any quantifier failed",
+            schema: quantifier_false_schema(),
+            phase: Phase::Check(build_quantifier_false_model, run_checks),
+            code: CfdErrorCode::CheckAnyQuantifierFailed,
+            adjacent: adjacent_quantifier_checks,
+        },
+        Case {
+            name: "check none quantifier failed",
+            schema: quantifier_false_schema(),
+            phase: Phase::Check(build_quantifier_false_model, run_checks),
+            code: CfdErrorCode::CheckNoneQuantifierFailed,
+            adjacent: adjacent_quantifier_checks,
+        },
+        Case {
+            name: "check all quantifier failed",
+            schema: quantifier_false_schema(),
+            phase: Phase::Check(build_quantifier_false_model, run_checks),
+            code: CfdErrorCode::CheckAllQuantifierFailed,
+            adjacent: adjacent_quantifier_checks,
         },
         Case {
             name: "check eval type error",
@@ -478,6 +575,118 @@ fn build_check_failed_model(schema: &CftContainer) -> Result<CfdDataModel, CfdDi
     )
 }
 
+fn build_check_failed_fallback() -> CfdDiagnostics {
+    CfdDiagnostics::one(
+        CfdDiagnostic::error(CfdErrorCode::CheckFailed, "fallback false condition")
+            .with_primary(None, CfdPath::root()),
+    )
+}
+
+const fn scalar_false_schema() -> &'static str {
+    r#"
+        abstract type Reward {}
+        type CurrencyReward : Reward {}
+        type ItemReward : Reward {}
+        type Item {
+            enabled: bool;
+            negated: bool;
+            left: bool;
+            right: bool;
+            reward: Reward;
+            optional: int? = null;
+            tags: [string];
+            name: string;
+            check {
+                enabled;
+                !negated;
+                left && right;
+                left || right;
+                reward is CurrencyReward;
+                optional != null;
+                tags.contains("boss");
+                tags.unique();
+                name.matches("^npc_");
+            }
+        }
+    "#
+}
+
+fn build_scalar_false_model(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+    model_from_records(
+        schema,
+        [
+            one_record("reward", "ItemReward", []),
+            one_record(
+                "item",
+                "Item",
+                [
+                    ("enabled", CfdInputValue::from(false)),
+                    ("negated", CfdInputValue::from(true)),
+                    ("left", CfdInputValue::from(false)),
+                    ("right", CfdInputValue::from(false)),
+                    ("reward", CfdInputValue::record_ref("Reward", "reward")),
+                    (
+                        "tags",
+                        CfdInputValue::Array(vec![
+                            CfdInputValue::from("mob"),
+                            CfdInputValue::from("mob"),
+                        ]),
+                    ),
+                    ("name", CfdInputValue::from("mob_1")),
+                ],
+            ),
+        ],
+    )
+}
+
+const fn quantifier_false_schema() -> &'static str {
+    r#"
+        type Item {
+            any_flags: [bool];
+            none_flags: [bool];
+            all_flags: [bool];
+            check {
+                any flag in any_flags { flag; }
+                none flag in none_flags { flag; }
+                all flag in all_flags { flag; }
+            }
+        }
+    "#
+}
+
+fn build_quantifier_false_model(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
+    model_from_records(
+        schema,
+        [one_record(
+            "item",
+            "Item",
+            [
+                (
+                    "any_flags",
+                    CfdInputValue::Array(vec![
+                        CfdInputValue::from(false),
+                        CfdInputValue::from(false),
+                    ]),
+                ),
+                (
+                    "none_flags",
+                    CfdInputValue::Array(vec![
+                        CfdInputValue::from(false),
+                        CfdInputValue::from(true),
+                    ]),
+                ),
+                (
+                    "all_flags",
+                    CfdInputValue::Array(vec![
+                        CfdInputValue::from(true),
+                        CfdInputValue::from(false),
+                    ]),
+                ),
+            ],
+        )],
+    )
+}
+
 fn build_default_item_model(schema: &CftContainer) -> Result<CfdDataModel, CfdDiagnostics> {
     model_from_records(schema, [one_record("item", "Item", [])])
 }
@@ -671,6 +880,103 @@ fn adjacent_true_check() {
             "item",
             "Item",
             [("value", CfdInputValue::from(1_i64))],
+        )],
+    );
+}
+
+fn adjacent_scalar_false_checks() {
+    assert_checks(
+        r#"
+            abstract type Reward {}
+            type CurrencyReward : Reward {}
+            type Item {
+                enabled: bool;
+                negated: bool;
+                left: bool;
+                right: bool;
+                reward: Reward;
+                optional: int? = null;
+                tags: [string];
+                name: string;
+                check {
+                    enabled;
+                    !negated;
+                    left && right;
+                    left || right;
+                    reward is CurrencyReward;
+                    optional != null;
+                    tags.contains("boss");
+                    tags.unique();
+                    name.matches("^npc_");
+                }
+            }
+        "#,
+        [
+            one_record("reward", "CurrencyReward", []),
+            one_record(
+                "item",
+                "Item",
+                [
+                    ("enabled", CfdInputValue::from(true)),
+                    ("negated", CfdInputValue::from(false)),
+                    ("left", CfdInputValue::from(true)),
+                    ("right", CfdInputValue::from(true)),
+                    ("reward", CfdInputValue::record_ref("Reward", "reward")),
+                    ("optional", CfdInputValue::from(1_i64)),
+                    (
+                        "tags",
+                        CfdInputValue::Array(vec![
+                            CfdInputValue::from("mob"),
+                            CfdInputValue::from("boss"),
+                        ]),
+                    ),
+                    ("name", CfdInputValue::from("npc_1")),
+                ],
+            ),
+        ],
+    );
+}
+
+fn adjacent_quantifier_checks() {
+    assert_checks(
+        r#"
+            type Item {
+                any_flags: [bool];
+                none_flags: [bool];
+                all_flags: [bool];
+                check {
+                    any flag in any_flags { flag; }
+                    none flag in none_flags { flag; }
+                    all flag in all_flags { flag; }
+                }
+            }
+        "#,
+        [one_record(
+            "item",
+            "Item",
+            [
+                (
+                    "any_flags",
+                    CfdInputValue::Array(vec![
+                        CfdInputValue::from(false),
+                        CfdInputValue::from(true),
+                    ]),
+                ),
+                (
+                    "none_flags",
+                    CfdInputValue::Array(vec![
+                        CfdInputValue::from(false),
+                        CfdInputValue::from(false),
+                    ]),
+                ),
+                (
+                    "all_flags",
+                    CfdInputValue::Array(vec![
+                        CfdInputValue::from(true),
+                        CfdInputValue::from(true),
+                    ]),
+                ),
+            ],
         )],
     );
 }
