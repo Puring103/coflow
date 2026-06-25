@@ -6,6 +6,7 @@ import type {
 const MOCK_CFD_CAPS: SourceCapabilities = {
   provider_id: 'cfd',
   can_edit_field: true,
+  can_edit_key: true,
   can_insert_record: true,
   can_delete_record: true,
   is_remote: false,

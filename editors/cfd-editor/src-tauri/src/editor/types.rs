@@ -147,6 +147,7 @@ pub struct FileRecords {
 pub struct SourceCapabilities {
     pub provider_id: &'static str,
     pub can_edit_field: bool,
+    pub can_edit_key: bool,
     pub can_insert_record: bool,
     pub can_delete_record: bool,
     pub is_remote: bool,
@@ -158,6 +159,7 @@ impl SourceCapabilities {
         Self {
             provider_id,
             can_edit_field: false,
+            can_edit_key: false,
             can_insert_record: false,
             can_delete_record: false,
             is_remote: false,
@@ -172,6 +174,7 @@ impl SourceCapabilities {
         Self {
             provider_id,
             can_edit_field: capabilities.can_edit_field,
+            can_edit_key: capabilities.can_edit_key,
             can_insert_record: capabilities.can_insert_record,
             can_delete_record: capabilities.can_delete_record,
             is_remote: capabilities.is_remote,
@@ -200,6 +203,32 @@ pub struct RecordRow {
 pub struct WriteFieldOutcome {
     pub row: RecordRow,
     pub diagnostics: Vec<DiagnosticItem>,
+}
+
+/// Result of `insert_record`: the refreshed list of records for the host
+/// file plus the project's diagnostics post-rebuild.
+#[derive(Debug, Serialize)]
+pub struct InsertRecordOutcome {
+    pub file_records: FileRecords,
+    pub diagnostics: Vec<DiagnosticItem>,
+}
+
+/// Result of `delete_record`: the refreshed list of records for the host
+/// file plus the project's diagnostics post-rebuild.
+#[derive(Debug, Serialize)]
+pub struct DeleteRecordOutcome {
+    pub file_records: FileRecords,
+    pub diagnostics: Vec<DiagnosticItem>,
+    /// Snapshot of the deleted record as the front-end's `FieldValue::Object`
+    /// shape. Front-end persists this in its undo stack so a later undo can
+    /// re-insert the record with full fidelity (including spread/ref
+    /// metadata) without depending on a still-warm `fileDataCache` row.
+    ///
+    /// `actual_type` mirrors the deleted record's concrete type. Both fields
+    /// are `None` only when the record could not be located before
+    /// deletion (defensive — should not happen in normal flows).
+    pub deleted_snapshot: Option<FieldValue>,
+    pub deleted_actual_type: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

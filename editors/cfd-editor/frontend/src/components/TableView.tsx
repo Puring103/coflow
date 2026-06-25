@@ -22,11 +22,19 @@ interface Props {
   diagnostics?: DiagnosticItem[]
   onOpenRecord: (key: string) => void
   onWriteField?: (recordKey: string, fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<RecordRow | void>
+  /** Create a new record. Resolves once the back-end has persisted and the
+   *  parent has refreshed `data` for this file. */
+  onInsertRecord?: (recordKey: string, actualType: string, fields: FieldValue) => Promise<void>
+  /** Delete an existing record by key. */
+  onDeleteRecord?: (recordKey: string) => Promise<void>
+  /** Build a defaulted Object FieldValue for a given type — used to seed
+   *  the "new record" payload before sending it to the back-end. */
+  onMakeDefaultObject?: (typeName: string) => Promise<FieldValue | null>
 }
 
 const ROW_H = 30
 
-export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecord, onWriteField }: Props) {
+export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecord, onWriteField, onInsertRecord, onDeleteRecord, onMakeDefaultObject }: Props) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; key: string } | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [newKey, setNewKey] = useState('')
@@ -280,6 +288,8 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
         <div className="table-footer">
           {readOnly ? (
             <span className="table-footer-readonly">该文件为只读</span>
+          ) : !data.capabilities.can_insert_record || !onInsertRecord ? (
+            <span className="table-footer-readonly">该来源不支持新建记录</span>
           ) : !showNewRecord ? (
             <button className="btn btn-outlined" onClick={() => setShowNewRecord(true)}>
               <Icon name="plus" size={13} />
@@ -298,10 +308,20 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
               <select value={newType} onChange={e => setNewType(e.target.value)} aria-label="新记录类型">
                 {data.type_names.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
-              <button className="btn btn-primary" onClick={() => {
-                alert(`创建记录 ${newKey} (${newType}) — 原型演示`)
-                setShowNewRecord(false); setNewKey('')
-              }}>创建</button>
+              <button
+                className="btn btn-primary"
+                disabled={!newKey.trim() || !data.capabilities.can_insert_record || !onInsertRecord}
+                onClick={async () => {
+                  const key = newKey.trim()
+                  if (!key || !onInsertRecord) return
+                  const seedFields = onMakeDefaultObject
+                    ? await onMakeDefaultObject(newType)
+                    : null
+                  const fields: FieldValue = seedFields ?? { kind: 'Object', actual_type: newType, fields: [] }
+                  await onInsertRecord(key, newType, fields)
+                  setShowNewRecord(false); setNewKey('')
+                }}
+              >创建</button>
               <button className="btn" onClick={() => { setShowNewRecord(false); setNewKey('') }} aria-label="取消新建">
                 <Icon name="close" size={13} />
               </button>
@@ -339,10 +359,13 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
             <Icon name="record" size={13} aria-hidden />
             跳转到记录视图
           </div>
-          {!readOnly && (
-            <div className="ctx-item ctx-danger" role="menuitem" onClick={() => {
-              alert(`删除 ${contextMenu.key} — 原型演示`)
+          {!readOnly && data.capabilities.can_delete_record && onDeleteRecord && (
+            <div className="ctx-item ctx-danger" role="menuitem" onClick={async () => {
+              const key = contextMenu.key
               setContextMenu(null)
+              if (!window.confirm(`确认删除记录 ${key}？此操作不可撤销。`)) return
+              if (selectedKey === key) setSelectedKey(null)
+              await onDeleteRecord(key)
             }}>
               <Icon name="close" size={13} aria-hidden />
               删除记录
