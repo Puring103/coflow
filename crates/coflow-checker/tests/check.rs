@@ -14,6 +14,20 @@ fn build_model(_schema: &CftContainer, builder: CfdModelBuilder<'_>) -> CfdDataM
     builder.build().expect("data model should build")
 }
 
+fn assert_first_code(diags: &CfdDiagnostics, code: CfdErrorCode) {
+    assert_eq!(diags.diagnostics[0].code, code, "{diags:#?}");
+}
+
+fn assert_message_contains(diags: &CfdDiagnostics, text: &str) {
+    assert!(
+        diags
+            .diagnostics
+            .iter()
+            .any(|diag| diag.message.contains(text)),
+        "missing `{text}` in {diags:#?}"
+    );
+}
+
 #[test]
 fn check_runner_accepts_virtual_ids_record_refs_and_quantifiers() {
     let schema = compile_schema(
@@ -88,6 +102,146 @@ fn check_runner_accepts_virtual_ids_record_refs_and_quantifiers() {
 }
 
 #[test]
+fn check_diagnostics_use_specific_codes_for_scalar_false_conditions() {
+    let schema = compile_schema(
+        r#"
+            abstract type Reward {}
+            type CurrencyReward : Reward {}
+            type ItemReward : Reward {}
+
+            type Item {
+                level: int;
+                enabled: bool;
+                negated: bool;
+                left: bool;
+                right: bool;
+                reward: Reward;
+                optional: int? = null;
+                tags: [string];
+                name: string;
+                check {
+                    level > 0;
+                    enabled;
+                    !negated;
+                    left && right;
+                    left || right;
+                    reward is CurrencyReward;
+                    optional != null;
+                    tags.contains("boss");
+                    tags.unique();
+                    name.matches("^npc_");
+                }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "reward_1",
+        "ItemReward",
+        std::iter::empty::<(&str, CfdInputValue)>(),
+    );
+    builder.add_record(
+        "item_1",
+        "Item",
+        [
+            ("level", CfdInputValue::from(0_i64)),
+            ("enabled", CfdInputValue::from(false)),
+            ("negated", CfdInputValue::from(true)),
+            ("left", CfdInputValue::from(false)),
+            ("right", CfdInputValue::from(false)),
+            ("reward", CfdInputValue::record_ref("Reward", "reward_1")),
+            (
+                "tags",
+                CfdInputValue::Array(vec![CfdInputValue::from("mob"), CfdInputValue::from("mob")]),
+            ),
+            ("name", CfdInputValue::from("mob_1")),
+        ],
+    );
+    let model = build_model(&schema, builder);
+    let err = model
+        .run_checks(&schema)
+        .expect_err("scalar check diagnostics should fail");
+
+    assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
+    assert_has_code(&err, CfdErrorCode::CheckBoolExpectedTrue);
+    assert_has_code(&err, CfdErrorCode::CheckNegationFailed);
+    assert_has_code(&err, CfdErrorCode::CheckAndFailed);
+    assert_has_code(&err, CfdErrorCode::CheckOrFailed);
+    assert_has_code(&err, CfdErrorCode::CheckTypePredicateFailed);
+    assert_has_code(&err, CfdErrorCode::CheckNullPredicateFailed);
+    assert_has_code(&err, CfdErrorCode::CheckContainsFailed);
+    assert_has_code(&err, CfdErrorCode::CheckUniqueFailed);
+    assert_has_code(&err, CfdErrorCode::CheckMatchesFailed);
+
+    assert_message_contains(&err, "校验失败: level > 0");
+    assert_message_contains(&err, "实际值: level = 0");
+    assert_message_contains(&err, "期望: > 0");
+    assert_message_contains(&err, "校验失败: tags.contains(\"boss\")");
+    assert_message_contains(&err, "期望: 包含 \"boss\"");
+    assert_message_contains(&err, "校验失败: name.matches(\"^npc_\")");
+}
+
+#[test]
+fn check_diagnostics_use_specific_codes_for_quantifiers_and_when_context() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                any_flags: [bool];
+                none_flags: [bool];
+                all_flags: [bool];
+                gated: bool;
+                optional: int? = null;
+                check {
+                    any flag in any_flags { flag; }
+                    none flag in none_flags { flag; }
+                    all flag in all_flags { flag; }
+                    when gated {
+                        optional != null;
+                    }
+                }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "item_1",
+        "Item",
+        [
+            (
+                "any_flags",
+                CfdInputValue::Array(vec![CfdInputValue::from(false), CfdInputValue::from(false)]),
+            ),
+            (
+                "none_flags",
+                CfdInputValue::Array(vec![CfdInputValue::from(false), CfdInputValue::from(true)]),
+            ),
+            (
+                "all_flags",
+                CfdInputValue::Array(vec![CfdInputValue::from(true), CfdInputValue::from(false)]),
+            ),
+            ("gated", CfdInputValue::from(true)),
+        ],
+    );
+    let model = build_model(&schema, builder);
+    let err = model
+        .run_checks(&schema)
+        .expect_err("quantifier and when diagnostics should fail");
+
+    assert_first_code(&err, CfdErrorCode::CheckAnyQuantifierFailed);
+    assert_has_code(&err, CfdErrorCode::CheckNoneQuantifierFailed);
+    assert_has_code(&err, CfdErrorCode::CheckAllQuantifierFailed);
+    assert_has_code(&err, CfdErrorCode::CheckNullPredicateFailed);
+
+    assert_message_contains(&err, "校验失败: any flag in any_flags");
+    assert_message_contains(&err, "实际值: 0 / 2 个元素匹配");
+    assert_message_contains(&err, "校验失败: none flag in none_flags");
+    assert_message_contains(&err, "校验失败: all flag in all_flags");
+    assert_message_contains(&err, "上下文: 在 when gated 内");
+}
+
+#[test]
 fn check_runner_reports_false_conditions_with_paths() {
     let schema = compile_schema(
         r#"
@@ -102,7 +256,7 @@ fn check_runner_reports_false_conditions_with_paths() {
     builder.add_record("item_1", "Item", [("value", CfdInputValue::from(0_i64))]);
     let model = build_model(&schema, builder);
     let err = model.run_checks(&schema).expect_err("check should fail");
-    assert_has_code(&err, CfdErrorCode::CheckFailed);
+    assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
     assert_eq!(
         err.diagnostics[0]
             .primary
@@ -281,9 +435,14 @@ fn contains_reports_runtime_type_errors_for_null_collections() {
 
     assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
     assert!(
-        !err.diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code == CfdErrorCode::CheckFailed),
+        !err.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.code,
+                CfdErrorCode::CheckFailed
+                    | CfdErrorCode::CheckContainsFailed
+                    | CfdErrorCode::CheckBoolExpectedTrue
+            )
+        }),
         "contains(null, value) must not be downgraded into a false check: {err:?}"
     );
 }
@@ -334,7 +493,7 @@ fn inherited_checks_and_statement_order_are_stable() {
     let paths = err
         .diagnostics
         .iter()
-        .filter(|diag| diag.code == CfdErrorCode::CheckFailed)
+        .filter(|diag| diag.code == CfdErrorCode::CheckComparisonFailed)
         .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
         .collect::<Vec<_>>();
     assert_eq!(
@@ -375,7 +534,7 @@ fn hard_stop_in_one_check_block_does_not_skip_later_blocks() {
     let err = model.run_checks(&schema).expect_err("checks should fail");
 
     assert_has_code(&err, CfdErrorCode::CheckIndexOutOfBounds);
-    assert_has_code(&err, CfdErrorCode::CheckFailed);
+    assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
 }
 
 #[test]
@@ -407,7 +566,7 @@ fn quantifiers_report_soft_failures_and_preserve_hard_errors() {
     let soft_fail_paths = err
         .diagnostics
         .iter()
-        .filter(|diag| diag.code == CfdErrorCode::CheckFailed)
+        .filter(|diag| diag.code == CfdErrorCode::CheckAllQuantifierFailed)
         .filter_map(|diag| diag.primary.as_ref().map(|label| label.path.clone()))
         .collect::<Vec<_>>();
     assert_eq!(
@@ -471,11 +630,11 @@ fn inline_object_checks_use_nested_paths() {
     );
     let model = build_model(&schema, builder);
     let err = model.run_checks(&schema).expect_err("nested check fails");
-    assert_has_code(&err, CfdErrorCode::CheckFailed);
+    assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
     let diag = err
         .diagnostics
         .iter()
-        .find(|diag| diag.code == CfdErrorCode::CheckFailed)
+        .find(|diag| diag.code == CfdErrorCode::CheckComparisonFailed)
         .expect("check failed diagnostic");
     assert_eq!(
         diag.primary.as_ref().map(|label| label.path.clone()),
@@ -624,7 +783,7 @@ fn top_level_ref_targets_run_checks_once_by_identity() {
     let failures = err
         .diagnostics
         .iter()
-        .filter(|diag| diag.code == CfdErrorCode::CheckFailed)
+        .filter(|diag| diag.code == CfdErrorCode::CheckComparisonFailed)
         .collect::<Vec<_>>();
     assert_eq!(failures.len(), 1);
     assert_eq!(

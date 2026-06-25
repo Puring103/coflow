@@ -762,12 +762,28 @@ pub enum CftConstValue {
 
 | 错误码 | 名称 | 原因 |
 |--------|------|------|
-| `CFD-CHECK-001` | `CheckFailed` | check 表达式求值结果为 false |
+| `CFD-CHECK-001` | `CheckFailed` | 兜底 false 条件，只有无法归类到更具体规则时使用 |
 | `CFD-CHECK-002` | `CheckEvalTypeError` | 执行期类型错误，例如对不支持的类型使用运算符或函数 |
 | `CFD-CHECK-003` | `CheckNullAccess` | 对 `null` 做字段访问、索引访问、大小比较或算术 |
 | `CFD-CHECK-004` | `CheckIndexOutOfBounds` | 数组索引越界 |
 | `CFD-CHECK-005` | `CheckMissingDictKey` | 字典 key 不存在 |
 | `CFD-CHECK-006` | `CheckEmptyMinMax` | `min` / `max` 对空数组或无非 `null` 值的数组调用 |
+| `CFD-CHECK-007` | `CheckComparisonFailed` | 比较条件失败，包括链式比较中的某一段失败 |
+| `CFD-CHECK-008` | `CheckBoolExpectedTrue` | 裸 bool 表达式或 bool 字段求值为 `false` |
+| `CFD-CHECK-009` | `CheckNegationFailed` | `!expr` 失败，因为 `expr` 求值为 `true` |
+| `CFD-CHECK-010` | `CheckAndFailed` | `lhs && rhs` 失败 |
+| `CFD-CHECK-011` | `CheckOrFailed` | `lhs || rhs` 失败 |
+| `CFD-CHECK-012` | `CheckTypePredicateFailed` | `expr is TypeName` 求值为 false |
+| `CFD-CHECK-013` | `CheckNullPredicateFailed` | null 谓词失败，包括 `is null`、`== null`、`!= null` |
+| `CFD-CHECK-014` | `CheckContainsFailed` | `contains` 返回 false |
+| `CFD-CHECK-015` | `CheckUniqueFailed` | `unique` 返回 false |
+| `CFD-CHECK-016` | `CheckMatchesFailed` | `matches` 返回 false |
+| `CFD-CHECK-017` | `CheckAnyQuantifierFailed` | `any` 量词没有任何元素满足 |
+| `CFD-CHECK-018` | `CheckNoneQuantifierFailed` | `none` 量词存在满足条件的元素 |
+| `CFD-CHECK-019` | `CheckAllQuantifierFailed` | `all` 量词存在不满足条件的元素 |
+
+`when` 不分配独立执行期错误码。`when` 条件成立后 body 内规则失败时，诊断使用
+内部真实规则的错误码，并在 message 中追加 `上下文: 在 when <condition> 内`。
 
 ---
 

@@ -50,7 +50,7 @@ fn translation_substitution_can_make_a_passing_check_fail_for_one_language() {
 
     let err = run_checks_for_languages(&schema, &model, &overrides)
         .expect_err("empty translation should fail check");
-    assert_has_code(&err, CfdErrorCode::CheckFailed);
+    assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
     let msg = &err.diagnostics[0].message;
     assert!(
         msg.contains("[lang=zh_CN]"),
