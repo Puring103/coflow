@@ -227,6 +227,8 @@ impl<'a> CheckEvaluator<'a> {
             value,
             self.schema.field_type(&field.synthesized_type, &variant),
             path.clone(),
+            self.model,
+            Some(variant_record_id),
         );
         if matches!(located.value, CheckValue::Null) {
             return Err(EvalAbort::Skipped);

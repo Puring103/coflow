@@ -149,6 +149,7 @@ impl<'a> CheckRunner<'a> {
                     CheckRecordRef::Inline {
                         record: Box::new(record.as_ref().clone()),
                         path: Some(path.clone()),
+                        host: root_record,
                     },
                     root_record,
                     path.clone(),

@@ -27,7 +27,7 @@ fn engine_builds_record_and_source_indexes() {
     );
     let record = session
         .records
-        .get("item_1")
+        .get_by_coordinate("Item", "item_1")
         .expect("record index should contain item_1");
     assert_eq!(record.display_path, "data/configs.xlsx");
     assert_eq!(record.provider_id, "excel");

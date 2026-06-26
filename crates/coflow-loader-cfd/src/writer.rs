@@ -360,10 +360,12 @@ enum WriteTarget {
 
 fn validate_value(v: &CfdValue) -> Result<(), DiagnosticSet> {
     match v {
-        CfdValue::Ref { key, .. } if key.is_empty() => Err(DiagnosticSet::one(diag(
-            "CFD-WRITE",
-            "cannot write empty reference; pick a target key first",
-        ))),
+        CfdValue::Ref { target_key, .. } if target_key.is_empty() => {
+            Err(DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                "cannot write empty reference; pick a target key first",
+            )))
+        }
         CfdValue::Object(record) => {
             for v in record.fields.values() {
                 validate_value(v)?;
@@ -611,10 +613,10 @@ pub fn serialize_value(v: &CfdValue, depth: usize, model: Option<&CfdDataModel>)
             .variant
             .clone()
             .unwrap_or_else(|| format!("{}({})", e.enum_name, e.value)),
-        CfdValue::Ref { key, target } => model.and_then(|m| m.record(*target)).map_or_else(
-            || format!("&{key}"),
-            |record| format!("@{}.{key}", record.actual_type),
-        ),
+        CfdValue::Ref {
+            target_type,
+            target_key,
+        } => format!("@{target_type}.{target_key}"),
         CfdValue::Object(boxed) => {
             let body = boxed
                 .fields

@@ -293,7 +293,9 @@ where
     fn encode_ref(&mut self, value: &CfdValue) -> Result<E::Value, ExportError> {
         match value {
             CfdValue::Null => self.encoder.null().map_err(encoder_error),
-            CfdValue::Ref { key, .. } => self.encoder.string(key).map_err(encoder_error),
+            CfdValue::Ref { target_key, .. } => {
+                self.encoder.string(target_key).map_err(encoder_error)
+            }
             other => Err(ExportError::new(format!(
                 "expected ref value, got `{}`",
                 value_kind(other)

@@ -124,21 +124,21 @@ fn typed_refs_and_direct_ref_shorthand_follow_latest_model() -> TestResult {
         "#,
     )?;
 
-    let item_id = model.lookup("Item", "sword").expect("item record");
+    let _item_id = model.lookup("Item", "sword").expect("item record");
     let holder_id = model.lookup("Holder", "holder").expect("holder record");
     let holder = model.record(holder_id).expect("holder");
     assert_eq!(
         holder.field("item"),
         Some(&CfdValue::Ref {
-            key: "sword".to_string(),
-            target: item_id,
+            target_type: "Item".to_string(),
+            target_key: "sword".to_string(),
         })
     );
     assert_eq!(
         holder.field("first_item"),
         Some(&CfdValue::Ref {
-            key: "sword".to_string(),
-            target: item_id,
+            target_type: "Item".to_string(),
+            target_key: "sword".to_string(),
         })
     );
     Ok(())
@@ -342,15 +342,15 @@ fn cfd_allows_cyclic_record_references() -> TestResult {
     assert_eq!(
         model.record(a_id).and_then(|record| record.field("next")),
         Some(&CfdValue::Ref {
-            key: "b".to_string(),
-            target: b_id,
+            target_type: "Node".to_string(),
+            target_key: "b".to_string(),
         })
     );
     assert_eq!(
         model.record(b_id).and_then(|record| record.field("next")),
         Some(&CfdValue::Ref {
-            key: "a".to_string(),
-            target: a_id,
+            target_type: "Node".to_string(),
+            target_key: "a".to_string(),
         })
     );
     Ok(())
@@ -705,7 +705,7 @@ fn examples_cfd_files_load_together() -> TestResult {
     );
     assert!(matches!(
         encounter.field("featured_item"),
-        Some(CfdValue::Ref { key, .. }) if key == "sword_fire"
+        Some(CfdValue::Ref { target_key, .. }) if target_key == "sword_fire"
     ));
     Ok(())
 }

@@ -130,16 +130,14 @@ fn cfd_value_to_wire_with_path(
                 fields: record_to_field_cells_nested(boxed, ctx, &next),
             }
         }
-        CfdValue::Ref { key, target } => {
-            let target_record = ctx.model.record(*target);
-            FieldValue::Ref {
-                target_type: target_record
-                    .map(|r| r.actual_type.clone())
-                    .unwrap_or_default(),
-                target_key: key.clone(),
-                target_file: ctx.key_to_file.get(key).cloned(),
-            }
-        }
+        CfdValue::Ref {
+            target_type,
+            target_key,
+        } => FieldValue::Ref {
+            target_type: target_type.clone(),
+            target_key: target_key.clone(),
+            target_file: ctx.key_to_file.get(target_key).cloned(),
+        },
         CfdValue::Array(items) => FieldValue::Array {
             items: items.iter().map(|i| cfd_value_to_wire(i, ctx)).collect(),
         },

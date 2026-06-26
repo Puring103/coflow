@@ -13,6 +13,18 @@ workspace = true
 name = "cfd_editor_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = []
+# When enabled, derives `ts_rs::TS` on wire types and runs the
+# `export_bindings` test to refresh `editors/cfd-editor/frontend/src/bindings/`.
+ts-export = [
+    "dep:ts-rs",
+    "coflow-api/ts-export",
+    "coflow-data-model/ts-export",
+    "coflow-engine/ts-export",
+    "coflow-project/ts-export",
+]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -29,3 +41,4 @@ coflow-engine = { path = "../../../crates/coflow-engine" }
 coflow-loader-csv = { path = "../../../crates/coflow-loader-csv" }
 coflow-project = { path = "../../../crates/coflow-project" }
 walkdir = "2"
+ts-rs = { version = "10", optional = true }

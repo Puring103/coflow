@@ -70,14 +70,18 @@ pub(super) fn field_value_to_cfd(
             target_key,
             ..
         } => {
-            let target = resolve_ref_target(model, target_type, target_key).ok_or_else(|| {
-                format!(
+            // Validate the target exists so we surface a friendly error on
+            // bad input — but the ref itself only carries the textual
+            // coordinate; the model's `ref_index` resolves it to an id at
+            // build time.
+            if resolve_ref_target(model, target_type, target_key).is_none() {
+                return Err(format!(
                     "ref target `{target_type}.{target_key}` does not match any record in the model"
-                )
-            })?;
+                ));
+            }
             Ok(DmCfdValue::Ref {
-                key: target_key.clone(),
-                target,
+                target_type: target_type.clone(),
+                target_key: target_key.clone(),
             })
         }
         FieldValue::Array { items } => {

@@ -13,5 +13,17 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+default = []
+# Enable TypeScript binding export via `ts-rs`. Off by default so CLI / non-UI
+# hosts don't pull in ts-rs. The cfd-editor crate flips this on for its
+# `export_bindings` test.
+ts-export = ["dep:ts-rs"]
+
 [dependencies]
 coflow-cft = { path = "../coflow-cft" }
+serde = { version = "1", features = ["derive"] }
+ts-rs = { version = "10", optional = true }
+
+[dev-dependencies]
+serde_json = "1"

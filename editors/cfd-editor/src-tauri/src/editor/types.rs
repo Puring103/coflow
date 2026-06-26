@@ -110,14 +110,7 @@ pub struct ProjectSnapshot {
     pub diagnostics: Vec<DiagnosticItem>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct FileTreeNode {
-    pub name: String,
-    pub path: String,
-    pub is_dir: bool,
-    pub in_sources: bool,
-    pub children: Vec<Self>,
-}
+pub use coflow_engine::FileTreeNode;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DiagnosticItem {

@@ -2,7 +2,7 @@ use crate::diagnostic::{CfdDiagnostic, CfdDiagnostics, CfdErrorCode, CfdPath};
 use crate::model::{
     CfdDataModel, CfdDictKey, CfdEnumValue, CfdInputDictKey, CfdInputRecord, CfdInputRefIndex,
     CfdInputValue, CfdPolymorphicIndex, CfdRecord, CfdRecordId, CfdRefPathSegment, CfdTable,
-    CfdValue,
+    CfdValue, RefSite,
 };
 use crate::origin::RecordOrigin;
 use crate::schema_view::{
@@ -110,10 +110,13 @@ impl ModelCompiler {
             return Err(CfdDiagnostics::new(self.diagnostics));
         }
 
+        let ref_index = build_ref_index(&records, &tables, &inheritance_index, &self.schema);
+
         Ok(CfdDataModel {
             tables,
             inheritance_index,
             records,
+            ref_index,
         })
     }
 
@@ -1054,7 +1057,11 @@ impl<'s> Validator<'s> {
         match value {
             CfdValueDraft::Value(value) => Some(value.clone()),
             CfdValueDraft::PendingRef { target_type, key } => {
-                let target = self.resolve_ref_target(
+                // Ref resolution still happens here so we surface
+                // RefTargetNotFound diagnostics during build, but the
+                // resolved id is stashed in the model's `ref_index` after
+                // all records are built rather than carried in the value.
+                let _ = self.resolve_ref_target(
                     target_type,
                     key,
                     tables,
@@ -1063,8 +1070,8 @@ impl<'s> Validator<'s> {
                     &path,
                 )?;
                 Some(CfdValue::Ref {
-                    key: key.clone(),
-                    target,
+                    target_type: target_type.clone(),
+                    target_key: key.clone(),
                 })
             }
             CfdValueDraft::PathRef {
@@ -1573,7 +1580,18 @@ impl<'s> Validator<'s> {
             CfdValueDraft::Value(CfdValue::Object(record)) => {
                 Some(record_value_to_draft(record.as_ref()))
             }
-            CfdValueDraft::Value(CfdValue::Ref { target, .. }) => {
+            CfdValueDraft::Value(CfdValue::Ref {
+                target_type,
+                target_key,
+            }) => {
+                let target = self.resolve_ref_target(
+                    target_type,
+                    target_key,
+                    tables,
+                    inheritance_index,
+                    record,
+                    &path,
+                )?;
                 drafts.get(target.index()).cloned()
             }
             _ => {
@@ -1763,6 +1781,113 @@ fn resolve_spread_sources(
         }
     }
     out
+}
+
+/// Walk every record's field tree and collect a `(host, path) -> target id`
+/// map for each `CfdValue::Ref` instance. Refs whose `(target_type,
+/// target_key)` no longer resolve at this point are silently skipped — the
+/// compiler already emitted a `RefTargetNotFound` diagnostic for them in
+/// phase 3 (the model only ships when there are no diagnostics).
+fn build_ref_index(
+    records: &[CfdRecord],
+    tables: &BTreeMap<String, CfdTable>,
+    inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
+    schema: &SchemaView,
+) -> BTreeMap<RefSite, CfdRecordId> {
+    let mut out = BTreeMap::new();
+    for (index, record) in records.iter().enumerate() {
+        let host = CfdRecordId::from_index(index);
+        let root = CfdPath::root();
+        for (name, value) in &record.fields {
+            collect_ref_sites(
+                value,
+                host,
+                root.clone().field(name.clone()),
+                tables,
+                inheritance_index,
+                schema,
+                &mut out,
+            );
+        }
+    }
+    out
+}
+
+fn collect_ref_sites(
+    value: &CfdValue,
+    host: CfdRecordId,
+    path: CfdPath,
+    tables: &BTreeMap<String, CfdTable>,
+    inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
+    schema: &SchemaView,
+    out: &mut BTreeMap<RefSite, CfdRecordId>,
+) {
+    match value {
+        CfdValue::Ref {
+            target_type,
+            target_key,
+        } => {
+            let target = if schema.range_is_polymorphic(target_type) {
+                inheritance_index
+                    .get(target_type)
+                    .and_then(|index| index.records.get(target_key))
+                    .copied()
+            } else {
+                tables
+                    .get(target_type)
+                    .and_then(|table| table.primary_index.get(target_key))
+                    .copied()
+            };
+            if let Some(id) = target {
+                out.insert(RefSite::new(host, path), id);
+            }
+        }
+        CfdValue::Object(boxed) => {
+            for (name, inner) in &boxed.fields {
+                collect_ref_sites(
+                    inner,
+                    host,
+                    path.clone().field(name.clone()),
+                    tables,
+                    inheritance_index,
+                    schema,
+                    out,
+                );
+            }
+        }
+        CfdValue::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                collect_ref_sites(
+                    item,
+                    host,
+                    path.clone().index(index),
+                    tables,
+                    inheritance_index,
+                    schema,
+                    out,
+                );
+            }
+        }
+        CfdValue::Dict(entries) => {
+            for (key, item) in entries {
+                collect_ref_sites(
+                    item,
+                    host,
+                    path.clone().dict_key_value(key),
+                    tables,
+                    inheritance_index,
+                    schema,
+                    out,
+                );
+            }
+        }
+        CfdValue::Null
+        | CfdValue::Bool(_)
+        | CfdValue::Int(_)
+        | CfdValue::Float(_)
+        | CfdValue::String(_)
+        | CfdValue::Enum(_) => {}
+    }
 }
 
 fn format_ref_index(index: &CfdInputRefIndex) -> String {

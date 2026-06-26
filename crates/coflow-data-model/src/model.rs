@@ -1,6 +1,8 @@
+use crate::diagnostic::CfdPath;
 use crate::origin::RecordOrigin;
 use crate::{compiler::ModelCompiler, CfdDiagnostics};
 use coflow_cft::CftContainer;
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -11,6 +13,26 @@ pub struct CfdDataModel {
     pub(crate) tables: BTreeMap<String, CfdTable>,
     pub(crate) inheritance_index: BTreeMap<String, CfdPolymorphicIndex>,
     pub(crate) records: Vec<CfdRecord>,
+    /// Cache of resolved `CfdValue::Ref` sites in the model. Populated by the
+    /// compiler in `model.build()`. Look up the id of a ref's target via
+    /// [`CfdDataModel::resolve_ref`].
+    pub(crate) ref_index: BTreeMap<RefSite, CfdRecordId>,
+}
+
+/// Logical address of a `CfdValue::Ref` instance inside the model: the host
+/// record and the `CfdPath` to the ref. Used as the key of the model's
+/// `ref_index`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct RefSite {
+    pub host: CfdRecordId,
+    pub path: CfdPath,
+}
+
+impl RefSite {
+    #[must_use]
+    pub const fn new(host: CfdRecordId, path: CfdPath) -> Self {
+        Self { host, path }
+    }
 }
 
 impl CfdDataModel {
@@ -83,6 +105,26 @@ impl CfdDataModel {
         ids.iter()
             .filter_map(move |id| self.records.get(id.0).map(|record| (*id, record)))
     }
+
+    /// Look up the resolved target id for the `CfdValue::Ref` at `site`.
+    ///
+    /// Returns `None` when no ref lives at that path (the caller asked about
+    /// a non-ref field) or when the ref's `(target_type, target_key)` was
+    /// not resolvable when the model was built.
+    #[must_use]
+    pub fn resolve_ref(&self, site: &RefSite) -> Option<CfdRecordId> {
+        self.ref_index.get(site).copied()
+    }
+
+    /// Convenience for the common case "I have a host id and a path; tell me
+    /// where the Ref at that path resolves to". Equivalent to
+    /// [`CfdDataModel::resolve_ref`] with a freshly constructed `RefSite`.
+    #[must_use]
+    pub fn resolve_ref_at(&self, host: CfdRecordId, path: &CfdPath) -> Option<CfdRecordId> {
+        self.ref_index
+            .get(&RefSite::new(host, path.clone()))
+            .copied()
+    }
 }
 
 #[derive(Debug)]
@@ -144,7 +186,12 @@ pub struct CfdPolymorphicIndex {
     pub records: BTreeMap<String, CfdRecordId>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct CfdRecord {
     pub key: String,
     pub actual_type: String,
@@ -153,11 +200,23 @@ pub struct CfdRecord {
     /// dispatch edits back to the right source and by diagnostics to map
     /// record-anchored labels to file/cell locations. Defaults to
     /// [`RecordOrigin::None`] for synthetic records.
+    ///
+    /// Not exported to TS — origin metadata is internal to the engine and
+    /// not consumed by the editor frontend (which routes by coordinate).
+    #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(skip))]
     pub origin: RecordOrigin,
     /// For top-level records only: maps a field name that was imported via a
     /// `...spread` expansion to the source record id whose origin should be
     /// used when writing the field back. Direct fields are not present in
     /// this map.
+    ///
+    /// `#[serde(skip)]` because `CfdRecordId` is an internal index; wire
+    /// consumers receive `SpreadInfo` derived via [`crate::CfdDataModel`]
+    /// look-ups instead. Round-trip through serde leaves this empty, which
+    /// `model.build()` repopulates correctly.
+    #[serde(skip)]
+    #[cfg_attr(feature = "ts-export", ts(skip))]
     pub spread_field_sources: BTreeMap<String, CfdRecordId>,
 }
 
@@ -182,7 +241,9 @@ impl CfdRecord {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct CfdRecordId(usize);
 
 impl CfdRecordId {
@@ -212,7 +273,13 @@ impl fmt::Display for CfdRecordId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum CfdValue {
     Null,
     Bool(bool),
@@ -221,12 +288,21 @@ pub enum CfdValue {
     String(String),
     Enum(CfdEnumValue),
     Object(Box<CfdRecord>),
-    Ref { key: String, target: CfdRecordId },
+    Ref {
+        target_type: String,
+        target_key: String,
+    },
     Array(Vec<CfdValue>),
     Dict(Vec<(CfdDictKey, CfdValue)>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum CfdDictKey {
     String(String),
     Int(i64),
@@ -242,7 +318,12 @@ pub enum CfdDictKey {
 /// identified by `enum_name + value` only. Codegen and JSON serialization
 /// should therefore prefer `value` (always meaningful) and treat `variant` as
 /// a presentation hint that may be missing.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct CfdEnumValue {
     pub enum_name: String,
     pub variant: Option<String>,

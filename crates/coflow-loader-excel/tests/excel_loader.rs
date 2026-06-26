@@ -1204,10 +1204,11 @@ fn resolves_direct_reference_shorthand_cells_by_field_type() -> TestResult {
     assert_eq!(
         drop.field("item"),
         Some(&CfdValue::Ref {
-            key: "sword_01".to_string(),
-            target: item_id,
+            target_type: "Item".to_string(),
+            target_key: "sword_01".to_string(),
         })
     );
+    let _ = item_id;
     Ok(())
 }
 

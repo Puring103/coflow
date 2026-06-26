@@ -314,7 +314,7 @@ fn render_value(value: &CfdValue) -> String {
         CfdValue::String(value) => value.clone(),
         CfdValue::Enum(value) => format_enum(value),
         CfdValue::Object(record) => format_object(record),
-        CfdValue::Ref { key, .. } => format!("&{key}"),
+        CfdValue::Ref { target_key, .. } => format!("&{target_key}"),
         CfdValue::Array(items) => {
             let inner = items
                 .iter()
@@ -360,7 +360,7 @@ fn render_cfd_value(value: &CfdValue) -> String {
             .clone()
             .unwrap_or_else(|| format!("{}({})", value.enum_name, value.value)),
         CfdValue::Object(record) => format_cfd_object(record),
-        CfdValue::Ref { key, .. } => format!("&{key}"),
+        CfdValue::Ref { target_key, .. } => format!("&{target_key}"),
         CfdValue::Array(items) => {
             let inner = items
                 .iter()

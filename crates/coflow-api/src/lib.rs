@@ -15,6 +15,7 @@
 )]
 #![allow(clippy::missing_const_for_fn)]
 
+use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -92,7 +93,7 @@ pub enum ArtifactContent {
     Json(serde_json::Value),
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiagnosticSet {
     pub diagnostics: Vec<Diagnostic>,
 }
@@ -145,13 +146,14 @@ impl<'a> IntoIterator for &'a DiagnosticSet {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Diagnostic {
     pub code: String,
     pub stage: String,
     pub severity: Severity,
     pub message: String,
     pub primary: Option<Label>,
+    #[serde(default)]
     pub related: Vec<Label>,
 }
 
@@ -179,20 +181,22 @@ impl Diagnostic {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Severity {
     Error,
     Warning,
     Info,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Label {
     pub location: SourceLocation,
     pub message: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SourceLocation {
     FileSpan {
         path: PathBuf,
@@ -264,7 +268,8 @@ impl From<coflow_data_model::SourceLocation> for SourceLocation {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SourceLocationSpec {
     Path(PathBuf),
     Uri(String),
@@ -283,7 +288,7 @@ pub struct SourceResolveContext<'a> {
     pub schema: &'a CftContainer,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolvedSource {
     pub provider_id: String,
     pub location: SourceLocationSpec,
@@ -491,7 +496,7 @@ pub struct WriterDescriptor {
 /// Lower-bounded by the writer's actual implementation; the front-end must
 /// not assume a writer can do more than these flags claim.
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WriterCapabilities {
     pub can_edit_field: bool,
     pub can_edit_key: bool,
@@ -953,3 +958,68 @@ impl fmt::Display for ProviderRegistrationError {
 }
 
 impl std::error::Error for ProviderRegistrationError {}
+
+/// Wire-friendly flat view of a [`Diagnostic`]. Used by editor hosts that
+/// surface diagnostics as a single severity/code/message tuple anchored to a
+/// file/record/field. Heavier-weight callers can keep the structured form.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct FlatDiagnostic {
+    pub severity: String,
+    pub code: String,
+    pub stage: String,
+    pub message: String,
+    pub file_path: Option<String>,
+    pub record_key: Option<String>,
+    pub field_path: Option<String>,
+}
+
+impl Diagnostic {
+    /// Flatten a diagnostic into the wire shape consumed by editor hosts.
+    /// `record_key` / `field_path` are not derivable from the structured
+    /// diagnostic alone — hosts that know the record id of the diagnostic's
+    /// label populate them out-of-band.
+    #[must_use]
+    pub fn flat_view(
+        &self,
+        record_key: Option<String>,
+        field_path: Option<String>,
+    ) -> FlatDiagnostic {
+        let file_path = self
+            .primary
+            .as_ref()
+            .map(|label| source_location_display_path(&label.location));
+        FlatDiagnostic {
+            severity: severity_str(self.severity).to_string(),
+            code: self.code.clone(),
+            stage: self.stage.clone(),
+            message: self.message.clone(),
+            file_path,
+            record_key,
+            field_path,
+        }
+    }
+}
+
+fn severity_str(severity: Severity) -> &'static str {
+    match severity {
+        Severity::Error => "error",
+        Severity::Warning => "warning",
+        Severity::Info => "info",
+    }
+}
+
+fn source_location_display_path(location: &SourceLocation) -> String {
+    let path_to_slash = |path: &Path| path.to_string_lossy().replace('\\', "/");
+    match location {
+        SourceLocation::FileSpan { path, .. }
+        | SourceLocation::TableCell { path, .. }
+        | SourceLocation::ProjectConfig { path, .. }
+        | SourceLocation::Artifact { path } => path_to_slash(path),
+        SourceLocation::RemoteCell { document, .. } => document.clone(),
+    }
+}

@@ -1,6 +1,6 @@
 use coflow_cft::{CftConstValue, CftSchemaTypeRef};
 use coflow_data_model::{
-    CfdDataModel, CfdDictKey, CfdEnumValue, CfdPath, CfdRecord, CfdRecordId, CfdValue,
+    CfdDataModel, CfdDictKey, CfdEnumValue, CfdPath, CfdRecord, CfdRecordId, CfdValue, RefSite,
 };
 use std::collections::BTreeMap;
 
@@ -40,6 +40,8 @@ impl CheckValue {
         value: &CfdValue,
         ty: Option<&CftSchemaTypeRef>,
         path: Option<CfdPath>,
+        model: &CfdDataModel,
+        ref_host: Option<CfdRecordId>,
     ) -> Self {
         match value {
             CfdValue::Null => Self::Null,
@@ -51,8 +53,18 @@ impl CheckValue {
             CfdValue::Object(record) => Self::Record(CheckRecordRef::Inline {
                 record: Box::new(record.as_ref().clone()),
                 path,
+                host: ref_host,
             }),
-            CfdValue::Ref { target, .. } => Self::Record(CheckRecordRef::Top(*target)),
+            CfdValue::Ref { .. } => {
+                let resolved = ref_host.and_then(|host| {
+                    let site_path = path.clone().unwrap_or_else(CfdPath::root);
+                    model.resolve_ref(&RefSite::new(host, site_path))
+                });
+                resolved.map_or_else(
+                    || Self::Record(CheckRecordRef::Unresolved),
+                    |id| Self::Record(CheckRecordRef::Top(id)),
+                )
+            }
             CfdValue::Array(items) => {
                 let element_type = array_element_type(ty).cloned();
                 Self::Array {
@@ -64,6 +76,8 @@ impl CheckValue {
                                 item,
                                 array_element_type(ty),
                                 path.clone().map(|path| path.index(index)),
+                                model,
+                                ref_host,
                             )
                         })
                         .collect(),
@@ -79,6 +93,8 @@ impl CheckValue {
                             value,
                             dict_value_type(ty),
                             path.clone().map(|path| path.dict_key_value(key)),
+                            model,
+                            ref_host,
                         ),
                     })
                     .collect(),
@@ -126,7 +142,16 @@ pub(super) enum CheckRecordRef {
     Inline {
         record: Box<CfdRecord>,
         path: Option<CfdPath>,
+        /// The original top-level record this inline object lives inside.
+        /// Needed so refs encountered inside `record.fields` can be resolved
+        /// against the model's `ref_index`, which is keyed by `(host, path)`
+        /// relative to the top-level record.
+        host: Option<CfdRecordId>,
     },
+    /// A `CfdValue::Ref` whose target could not be resolved (target type/key
+    /// missing from the model). Reads through this ref return `None`, so
+    /// callers surface a check diagnostic instead of crashing.
+    Unresolved,
 }
 
 impl CheckRecordRef {
@@ -137,6 +162,7 @@ impl CheckRecordRef {
         match self {
             Self::Top(id) => model.record(*id).map(|record| &record.fields),
             Self::Inline { record, .. } => Some(&record.fields),
+            Self::Unresolved => None,
         }
     }
 
@@ -144,6 +170,7 @@ impl CheckRecordRef {
         match self {
             Self::Top(id) => model.record(*id).map(|record| record.actual_type.as_str()),
             Self::Inline { record, .. } => Some(&record.actual_type),
+            Self::Unresolved => None,
         }
     }
 
@@ -151,6 +178,7 @@ impl CheckRecordRef {
         match self {
             Self::Top(id) => model.record(*id).map(CfdRecord::key),
             Self::Inline { record, .. } => Some(record.key()),
+            Self::Unresolved => None,
         }
     }
 
@@ -162,16 +190,35 @@ impl CheckRecordRef {
     ) -> Option<LocatedCheckValue> {
         let value = self.fields(model)?.get(name)?;
         let path = self.path().map(|path| path.field(name.to_string()));
+        let ref_host = self.ref_host();
         Some(LocatedCheckValue::new(
-            CheckValue::from_cfd_value_with_path(value, field_type, path.clone()),
+            CheckValue::from_cfd_value_with_path(
+                value,
+                field_type,
+                path.clone(),
+                model,
+                ref_host,
+            ),
             path,
         ))
     }
 
     pub(super) fn path(&self) -> Option<CfdPath> {
         match self {
-            Self::Top(_) => Some(CfdPath::root()),
+            Self::Top(_) | Self::Unresolved => Some(CfdPath::root()),
             Self::Inline { path, .. } => path.clone(),
+        }
+    }
+
+    /// Returns the top-level record id refs nested inside this object should
+    /// resolve against. Top-level records carry their own id; inline objects
+    /// (`...` inside another record) carry the host id of the originating
+    /// top-level record so the model's `ref_index` can look them up.
+    pub(super) fn ref_host(&self) -> Option<CfdRecordId> {
+        match self {
+            Self::Top(id) => Some(*id),
+            Self::Inline { host, .. } => *host,
+            Self::Unresolved => None,
         }
     }
 }
