@@ -163,6 +163,143 @@ language server 使用 schema-only 项目加载，不要求数据源文件存在
 - 提供 document symbols、document formatting 和 full semantic tokens。
 - 遵循标准 JSON-RPC `shutdown` / `exit` 生命周期。
 
+### `coflow schema inspect [CONFIG_OR_DIR] [--type TYPE] [--include-derived] [--human]`
+
+输出编译后的 schema 视图，供自动化工具和 AI agent 读取。该命令默认输出 JSON；
+传入 `--human` 时输出面向终端浏览的文本。
+
+JSON 报告包含：
+
+- `types`：类型、父类型、类型标记、注解和继承后的字段列表。
+- `fields`：字段名、结构化类型引用、原始类型文本、默认值、注解和维度信息。
+- `enums`：枚举、枚举值和注解。
+- `consts`：schema 常量。
+- `diagnostics`：schema 编译或项目配置诊断。
+
+```powershell
+cargo run -- schema inspect examples/rpg
+cargo run -- schema inspect examples/rpg --type Item
+cargo run -- schema inspect examples/rpg --type Item --include-derived
+```
+
+`--type TYPE` 只输出指定类型。`--include-derived` 会同时输出可赋值给该类型的
+派生类型，适合需要了解多态可写值的 agent。注解信息会保留在 JSON 中；如果需要
+读取注释、check block 或原始 CFT 文本，使用 `schema files`。
+
+### `coflow schema files [CONFIG_OR_DIR] [--human]`
+
+输出参与本次 schema 编译的 CFT module 源文本。该命令默认输出 JSON，形状为
+`{"files":[{"module":"...","source":"..."}],"diagnostics":[]}`；传入 `--human`
+时按 module 名和源码文本直接打印。
+
+```powershell
+cargo run -- schema files examples/rpg
+```
+
+该命令用于让 agent 读取当前 schema 定义、注释、注解、默认值和 check 逻辑。
+
+### `coflow data sources [CONFIG_OR_DIR] [--human]`
+
+输出已解析的数据 source、provider id、writer capabilities，以及每个 source 中
+发现的 record 类型。该命令会加载完整项目数据，因此要求数据源文件存在。
+
+```powershell
+cargo run -- data sources examples/rpg
+```
+
+### `coflow data list [CONFIG_OR_DIR] [--type TYPE] [--file FILE] [--limit N] [--offset N] [--human]`
+
+输出轻量 record 索引。每条记录包含 `record.type`、`record.key`、`file` 和
+`provider`，不包含完整字段值。
+
+```powershell
+cargo run -- data list examples/rpg --type Item
+cargo run -- data list examples/rpg --file data/items.cfd --limit 20
+```
+
+### `coflow data get [CONFIG_OR_DIR] [TYPE.KEY] [--type TYPE] [--file FILE] [--keys a,b] [--limit N] [--offset N] [--all] [--human]`
+
+输出完整 record 数据。可以直接读取单条记录，也可以按类型、文件、key 集合批量读取。
+字段值使用 Coflow 数据模型的结构化 JSON 表示，整数值为了跨语言精度稳定会序列化为
+字符串。
+
+```powershell
+cargo run -- data get examples/rpg Item.sword
+cargo run -- data get examples/rpg --type Item --keys sword,shield
+cargo run -- data get examples/rpg --type Item --limit 50
+```
+
+未指定单条 `TYPE.KEY` 时，如果匹配记录超过默认安全上限，需要显式传入 `--limit`
+或 `--all`，避免 agent 无意中 dump 整个项目。`CONFIG_OR_DIR` 省略时按通用项目
+参数规则从当前目录解析；如果只传一个带点的相对配置文件名，例如 `coflow.yaml`，
+它仍按项目配置路径处理。
+
+### `coflow data patch [CONFIG_OR_DIR] --patch PATCH_FILE [--human]`
+
+通过 provider writer 应用批量数据补丁。该命令默认读取 JSON patch 文件并输出
+JSON 报告；传入 `--human` 时输出终端文本。写入会走和编辑器相同的 writer 层，
+不会绕过 provider。
+
+```powershell
+cargo run -- data patch examples/rpg --patch patch.json
+```
+
+patch 文件示例：
+
+```json
+{
+  "check_after_write": true,
+  "stop_on_write_error": true,
+  "ops": [
+    {
+      "op": "insert_record",
+      "file": "data/items.cfd",
+      "type": "Item",
+      "key": "steel_sword",
+      "fields": {
+        "name": "Steel Sword",
+        "price": 250
+      }
+    },
+    {
+      "op": "set_field",
+      "record": { "type": "Item", "key": "steel_sword" },
+      "path": ["rarity"],
+      "value": "Rare"
+    }
+  ]
+}
+```
+
+支持的操作：
+
+- `insert_record`：新增顶层记录，必须指定 `file`。
+- `set_field`：修改字段路径，`file` 是可选 guard；如果字段来自 spread source，
+  guard 按实际写入文件判断。
+- `delete_record`：删除记录，`file` 是可选 guard。
+
+patch value 支持普通 JSON 值，也支持特殊对象：
+
+```json
+{ "$ref": "Item.sword_01" }
+{ "$ref": { "type": "Item", "key": "sword_01" } }
+{ "$type": "ItemReward", "item": { "$ref": "Item.sword_01" }, "count": 1 }
+{ "$dict": [{ "key": "Fire", "value": 10 }] }
+```
+
+`$ref` 写入 record 引用，`$type` 写入多态 inline object，`$dict` 用于 enum/int 等
+非字符串 key 的 dict。第一版不支持 dict-key 路径写入，例如直接修改
+`["resistances", "Fire"]` 会被拒绝。
+
+写入语义：
+
+- 单个写入或 patch value 校验失败时，当前 op 会进入 `failed`。无失败时
+  `failed` 是空数组 `[]`。
+- `stop_on_write_error: true` 时，首个写入错误会停止后续 op。
+- CFT `check {}` 不阻拦写入；命令会写完后重建项目并返回诊断，因此可能短暂留下
+  有错误的数据。
+- CLI 在写入失败或最终诊断中存在 error severity 时返回非 `0`。
+
 ### `coflow check [CONFIG_OR_DIR] [--json]`
 
 运行完整校验管线，但不写产物：

@@ -127,6 +127,20 @@ cargo run -- codegen csharp examples/rpg --out generated/csharp --namespace Game
 cargo run -- lsp examples/rpg
 ```
 
+AI/data automation 命令默认输出 JSON：
+
+```powershell
+cargo run -- schema inspect examples/rpg
+cargo run -- schema files examples/rpg
+cargo run -- data sources examples/rpg
+cargo run -- data list examples/rpg --type Item
+cargo run -- data get examples/rpg Item.sword
+cargo run -- data patch examples/rpg --patch patch.json
+```
+
+`data patch` 通过和编辑器相同的 provider writer 层写入数据。它不会用 CFT
+`check {}` 阻拦写入；写完后会重建项目并返回诊断，供 agent 继续修正。
+
 完整命令行为见 [CLI 命令规格](docs/spec/09-cli.md)。
 
 ---
