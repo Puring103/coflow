@@ -352,9 +352,11 @@ impl SessionStore {
         let session = session_lock
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let (_id, record) =
-            lookup_record_by_key(&session.engine.model, record_key).ok_or_else(|| {
-                EditorError::not_found(format!("record `{record_key}` not found after write"))
+        let (_id, record) = lookup_record_in_file(&session.engine, file_path, record_key)
+            .ok_or_else(|| {
+                EditorError::not_found(format!(
+                    "record `{record_key}` not found in `{file_path}` after write"
+                ))
             })?;
         let record_file_map = session.record_file_map();
         let mut row = RecordRow {
@@ -429,7 +431,7 @@ impl SessionStore {
         let session_lock = &entry.state;
         let registry = self.registry()?;
         let (deleted_snapshot, deleted_actual_type) =
-            snapshot_record_before_delete(session_lock, record_key)?;
+            snapshot_record_before_delete(session_lock, file_path, record_key)?;
         let yaml_path =
             delete_record_in_source(session_lock, registry.as_ref(), file_path, record_key)?;
         refresh_session_after_write(session_lock, registry.as_ref(), &yaml_path)?;
@@ -480,14 +482,13 @@ fn write_field_to_source(
         .map_err(|_| EditorError::session("session poisoned"))?;
     let new_cfd_value =
         field_value_to_cfd(new_value, &session.engine.model).map_err(EditorError::write)?;
-    let (_id, record) = lookup_record_by_key(&session.engine.model, record_key)
-        .ok_or_else(|| EditorError::not_found(format!("record `{record_key}` not found")))?;
-    let host_file = session
-        .engine
-        .records
-        .file_for_coordinate(&record.actual_type, &record.key)
-        .map_or_else(|| file_path.to_string(), str::to_string);
-    let source = resolved_source_for_file(&session, &host_file)?;
+    // Scope the lookup to the file the front-end opened so source/synthetic
+    // records sharing a key resolve to the correct table. file_path is the
+    // authoritative host once an edit gesture is on screen — the front-end
+    // already navigated by it.
+    let (_id, record) = lookup_record_in_file(&session.engine, file_path, record_key)
+        .ok_or_else(|| EditorError::not_found(format!("record `{record_key}` not found in `{file_path}`")))?;
+    let source = resolved_source_for_file(&session, file_path)?;
     let origin = resolve_effective_origin(&session.engine.model, record, field_path);
     let actual_type = record.actual_type.clone();
 
@@ -590,13 +591,15 @@ fn insert_record_in_source(
 /// error — deletion of an unknown key will fail at the writer anyway.
 fn snapshot_record_before_delete(
     session_lock: &RwLock<EditorSession>,
+    file_path: &str,
     record_key: &str,
 ) -> Result<(Option<FieldValue>, Option<String>), EditorError> {
     let (snapshot, actual_type) = {
         let session = session_lock
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let Some((_, record)) = lookup_record_by_key(&session.engine.model, record_key) else {
+        let Some((_, record)) = lookup_record_in_file(&session.engine, file_path, record_key)
+        else {
             return Ok((None, None));
         };
         let record_file_map = session.record_file_map();
@@ -624,14 +627,11 @@ fn delete_record_in_source(
     let session = session_lock
         .read()
         .map_err(|_| EditorError::session("session poisoned"))?;
-    let (_id, record) = lookup_record_by_key(&session.engine.model, record_key)
-        .ok_or_else(|| EditorError::not_found(format!("record `{record_key}` not found")))?;
-    let host_file = session
-        .engine
-        .records
-        .file_for_coordinate(&record.actual_type, &record.key)
-        .map_or_else(|| file_path.to_string(), str::to_string);
-    let source = resolved_source_for_file(&session, &host_file)?;
+    let (_id, record) = lookup_record_in_file(&session.engine, file_path, record_key)
+        .ok_or_else(|| {
+            EditorError::not_found(format!("record `{record_key}` not found in `{file_path}`"))
+        })?;
+    let source = resolved_source_for_file(&session, file_path)?;
     let actual_type = record.actual_type.clone();
     let origin = record.origin.clone();
     let writer: Arc<dyn DataWriter> = registry.writer(&source.provider_id).ok_or_else(|| {
@@ -736,11 +736,25 @@ fn refresh_session_after_write(
     Ok(())
 }
 
-fn lookup_record_by_key<'a>(
-    model: &'a CfdDataModel,
+/// Locate a record by `(file_path, key)`. Files only host records of a single
+/// `actual_type` in practice (the editor presents one type per table), so a
+/// `key`-only match scoped to a specific file uniquely identifies the row
+/// even when the same key exists in a sibling type (e.g. source `Item.potion`
+/// vs synthetic `Item_nameVariants.potion`).
+fn lookup_record_in_file<'a>(
+    engine: &'a ProjectSession,
+    file_path: &str,
     key: &str,
 ) -> Option<(CfdRecordId, &'a CfdRecord)> {
-    model.records().find(|(_, record)| record.key == key)
+    for id in engine.records.ids_in_file(file_path) {
+        let Some(record) = engine.model.record(*id) else {
+            continue;
+        };
+        if record.key == key {
+            return Some((*id, record));
+        }
+    }
+    None
 }
 
 /// Resolve the origin to use when writing the given field.
