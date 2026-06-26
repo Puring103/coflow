@@ -18,6 +18,7 @@
 mod dimensions;
 mod files;
 mod records;
+mod schema_inspect;
 mod writes;
 
 pub use dimensions::{
@@ -26,6 +27,12 @@ pub use dimensions::{
 };
 pub use files::{DimensionGroup, FileTreeNode, FileTreeOptions};
 pub use records::{RecordTarget, RecordView, WriteOutcome};
+pub use schema_inspect::{
+    inspect_schema, schema_files, SchemaAnnotation, SchemaAnnotationValueInfo, SchemaConstInfo,
+    SchemaConstValueInfo, SchemaDefaultValueInfo, SchemaEnumInfo, SchemaEnumVariantInfo,
+    SchemaFieldInfo, SchemaFileInfo, SchemaFilesReport, SchemaInspectReport, SchemaTypeInfo,
+    SchemaTypeRefInfo,
+};
 
 use coflow_api::{
     map_diagnostics_with_origins, origins_of, CfdInputRecord, CftContainer, Diagnostic,
