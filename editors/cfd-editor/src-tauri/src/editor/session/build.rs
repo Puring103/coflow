@@ -34,21 +34,12 @@ pub(super) fn session_capabilities_for_file(
         .map_or(FALLBACK_PROVIDER_ID, |entry| entry.provider_id.as_str());
     let writer = registry.writer(provider_id);
     writer.map_or_else(
-        || SourceCapabilities::read_only(static_provider_id(provider_id)),
+        || SourceCapabilities::read_only(provider_id),
         |w| {
             let descriptor = w.descriptor();
             SourceCapabilities::from_writer(descriptor.id, descriptor.capabilities)
         },
     )
-}
-
-fn static_provider_id(id: &str) -> &'static str {
-    match id {
-        "cfd" => "cfd",
-        "excel" => "excel",
-        "lark-sheet" => "lark-sheet",
-        _ => "unknown",
-    }
 }
 
 pub(super) fn build_session(

@@ -2,11 +2,13 @@
 
 use std::path::PathBuf;
 
-mod editor;
+pub mod editor;
 
+use coflow_data_model::{CfdPathSegment, CfdValue};
+use coflow_engine::RecordCoordinate;
 use editor::{
-    DeleteRecordOutcome, EditorError, FieldPathSegment, FieldValue, FileRecords, GraphData,
-    InsertRecordOutcome, ProjectSnapshot, SessionStore, WriteFieldOutcome,
+    DeleteRecordOutcome, EditorError, FileRecords, GraphData, InsertRecordOutcome,
+    ProjectSnapshot, RefTarget, SessionStore, WriteFieldOutcome,
 };
 use tauri::{Manager, State};
 
@@ -70,7 +72,7 @@ fn get_ref_targets(
     session_id: u32,
     target_type: String,
     store: State<'_, SessionStore>,
-) -> Result<Vec<String>, EditorError> {
+) -> Result<Vec<RefTarget>, EditorError> {
     store.get_ref_targets(session_id, &target_type)
 }
 
@@ -80,7 +82,7 @@ fn make_default_object(
     session_id: u32,
     type_name: String,
     store: State<'_, SessionStore>,
-) -> Result<FieldValue, EditorError> {
+) -> Result<CfdValue, EditorError> {
     store.make_default_object(session_id, &type_name)
 }
 
@@ -89,12 +91,12 @@ fn make_default_object(
 fn write_field(
     session_id: u32,
     file_path: String,
-    record_key: String,
-    field_path: Vec<FieldPathSegment>,
-    new_value: FieldValue,
+    coordinate: RecordCoordinate,
+    field_path: Vec<CfdPathSegment>,
+    new_value: CfdValue,
     store: State<'_, SessionStore>,
 ) -> Result<WriteFieldOutcome, EditorError> {
-    store.write_field(session_id, &file_path, &record_key, &field_path, &new_value)
+    store.write_field(session_id, &file_path, coordinate, field_path, new_value)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -104,10 +106,10 @@ fn insert_record(
     file_path: String,
     record_key: String,
     actual_type: String,
-    fields: FieldValue,
+    fields: CfdValue,
     store: State<'_, SessionStore>,
 ) -> Result<InsertRecordOutcome, EditorError> {
-    store.insert_record(session_id, &file_path, &record_key, &actual_type, &fields)
+    store.insert_record(session_id, &file_path, &record_key, &actual_type, fields)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -115,10 +117,10 @@ fn insert_record(
 fn delete_record(
     session_id: u32,
     file_path: String,
-    record_key: String,
+    coordinate: RecordCoordinate,
     store: State<'_, SessionStore>,
 ) -> Result<DeleteRecordOutcome, EditorError> {
-    store.delete_record(session_id, &file_path, &record_key)
+    store.delete_record(session_id, &file_path, coordinate)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
