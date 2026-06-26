@@ -190,6 +190,46 @@ fn codegen_emits_singleton_property_on_database_class_and_skips_table() -> Resul
     require_not_contains(database, "TbGameConfig")?;
     // Item is still a regular table.
     require_contains(database, "public Table<string, Item> TbItem { get; }")?;
+
+    // The singleton type's loader must actually define the `LoadTable`
+    // method the database template calls. Without this, the generated C#
+    // doesn't compile — a regression pre-spec-17 already shipped silently
+    // because no test downloaded the artifacts and ran `dotnet build`.
+    let singleton = generated_file(&files, "GameConfig.cs")?;
+    require_contains(
+        singleton,
+        "internal static List<GameConfig> LoadTable(string path, CoflowTables.LoadContext context)",
+    )?;
+    // The singleton has no per-row `id` field; `LoadTable` should wrap
+    // `LoadInline`, which silently skips the wire-side `"id"` key that
+    // the JSON exporter writes for each row.
+    require_contains(singleton, "result.Add(LoadInline(row, context));")?;
+    Ok(())
+}
+
+#[test]
+fn codegen_emits_singleton_loadtable_for_messagepack() -> Result<(), String> {
+    // Same regression check for the msgpack code path: a singleton type
+    // must expose `LoadTable` so the shared database template links.
+    let schema = compile_schema(
+        r#"
+            @singleton
+            type GameConfig {
+                max_level: int;
+            }
+        "#,
+    )?;
+    let files = generate_messagepack(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+    let singleton = generated_file(&files, "GameConfig.cs")?;
+    require_contains(
+        singleton,
+        "internal static List<GameConfig> LoadTable(string path, CoflowTables.LoadContext context)",
+    )?;
+    // The msgpack loader for a singleton wraps `LoadInline`, same as
+    // JSON. `LoadInline` reads the type's field map; the writer emits an
+    // `"id"` key the reader's `default: reader.Skip()` swallows.
+    require_contains(singleton, "result.Add(LoadInline(ref reader, context));")?;
     Ok(())
 }
 

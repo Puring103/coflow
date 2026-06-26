@@ -1,0 +1,37 @@
+# Source data carries the default-language values for every @localized
+# field. Variant files override on a per-(record, field, language) basis.
+
+Item {
+  potion {
+    name: "Potion",
+    description: "Restores 50 HP when consumed.",
+    flavor_text: "Tastes faintly of mint.",
+    weight_grams: 50,
+    price_factor: 1.0,
+    region: Global,
+    rarity: Common,
+    price: 20,
+  }
+
+  elixir {
+    name: "Elixir",
+    description: "Restores 200 HP and removes one status effect.",
+    flavor_text: "Crystalline and herbal.",
+    weight_grams: 120,
+    price_factor: 1.0,
+    region: Global,
+    rarity: Rare,
+    price: 250,
+  }
+
+  phoenix_feather {
+    name: "Phoenix Feather",
+    description: "Revives a fallen ally to full health.",
+    flavor_text: "Warm to the touch.",
+    weight_grams: 5,
+    price_factor: 1.0,
+    region: Global,
+    rarity: Legendary,
+    price: 1500,
+  }
+}

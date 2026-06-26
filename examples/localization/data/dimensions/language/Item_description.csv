@@ -1,0 +1,4 @@
+id,default,zh,en
+elixir,Restores 200 HP and removes one status effect.,恢复 200 点生命值并解除一种异常状态。,Restores 200 HP and removes one status effect.
+phoenix_feather,Revives a fallen ally to full health.,以满状态复活一名倒下的队友。,Revives a fallen ally to full health.
+potion,Restores 50 HP when consumed.,饮用后恢复 50 点生命值。,Restores 50 HP when consumed.

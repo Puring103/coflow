@@ -1,0 +1,99 @@
+# Localization example schema
+#
+# Demonstrates `@localized` on several field shapes:
+#   1. primitive string (`Item.name`, `Item.description`)
+#   2. nullable / composite string (`Item.flavor_text`)
+#   3. list (`Skill.tags`) — entire [string] per variant
+#   4. non-string primitive (`Item.weight_grams: int`, `Item.price_factor: float`)
+#   5. enum (`Item.region: Region`)
+#   6. nested object (`Skill.tooltip: TooltipStyle`)
+#
+# Every variant test (zh / en) re-runs check, so we can prove localization
+# actually takes effect by writing per-variant check predicates and seeing
+# them succeed under the variant's own value.
+
+enum Rarity {
+  Common = 0,
+  Rare = 1,
+  Legendary = 2,
+}
+
+# Regional rating — different countries may classify the same item differently.
+enum Region {
+  Global = 0,
+  CnOnly = 1,
+  EuOnly = 2,
+}
+
+# Tooltip style used by Skill.tooltip. Nested object — the whole object is
+# stored per-variant, but its inner fields stay typed.
+type TooltipStyle {
+  background: string;
+  text_color: string;
+}
+
+# Item: string + non-string localized fields.
+type Item {
+  @localized
+  name: string;
+
+  @localized
+  description: string;
+
+  @localized
+  flavor_text: string?;
+
+  # Item weight differs by locale (US uses ounces, EU uses grams) — keep
+  # the unit consistent and let the variant override the numeric value.
+  @localized
+  weight_grams: int;
+
+  # Price multiplier per locale (1.0 = same as global).
+  @localized
+  price_factor: float;
+
+  # Regional classification of the item.
+  @localized
+  region: Region;
+
+  rarity: Rarity;
+  price: int = 0;
+
+  # Cross-variant invariants: weight is always positive and the locale's
+  # price factor must stay positive. Both predicates re-run per variant,
+  # so a Chinese-locale value can be checked against its own field.
+  check {
+    weight_grams > 0;
+    price_factor > 0.0;
+  }
+}
+
+# Skill: list + nested-object localized fields.
+type Skill {
+  @localized
+  name: string;
+
+  @localized
+  tags: [string] = [];
+
+  # Different locales prefer different UI accents for skill tooltips.
+  @localized
+  tooltip: TooltipStyle;
+
+  cooldown: float = 0.0;
+}
+
+# Singleton: the HUD's top-banner copy. Singleton dimension files use CFD.
+@singleton
+type Hud {
+  @localized
+  welcome: string;
+
+  @localized
+  hint: string;
+
+  # Different locales support different maximum banner widths (because the
+  # translated text takes more or fewer pixels).
+  @localized
+  banner_width_px: int;
+}

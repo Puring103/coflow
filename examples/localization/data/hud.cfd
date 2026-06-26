@@ -1,0 +1,6 @@
+# A `@singleton` type uses its type name as the record key.
+Hud: Hud {
+  welcome: "Welcome, adventurer!",
+  hint: "Press [Tab] to open the inventory.",
+  banner_width_px: 800,
+}

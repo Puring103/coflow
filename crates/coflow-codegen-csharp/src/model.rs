@@ -151,6 +151,12 @@ pub struct CsharpLoader {
     pub key_read_expr: String,
     pub key_messagepack_read_expr: String,
     pub is_table: bool,
+    /// True when the type lands in a top-level JSON / msgpack file as an
+    /// array of records. Tables and singletons both qualify; abstract /
+    /// inline-only types do not. The loader templates emit `LoadTable`
+    /// for any disk-loadable type so the shared database template can
+    /// call it uniformly.
+    pub is_disk_loadable: bool,
     pub is_struct: bool,
     pub requires_hydration: bool,
     pub fields: Vec<CsharpLoadField>,

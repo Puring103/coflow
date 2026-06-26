@@ -1,4 +1,23 @@
-{% if type.loader.is_table %}
+{% if type.loader.is_disk_loadable and not type.loader.is_table %}
+    internal static List<{{ type.loader.type_name }}> LoadTable(string path, {{ project.database_class }}.LoadContext context)
+    {
+        if (!File.Exists(path))
+        {
+            return new List<{{ type.loader.type_name }}>();
+        }
+
+        var array = JArray.Parse(File.ReadAllText(path));
+        var result = new List<{{ type.loader.type_name }}>(array.Count);
+
+        foreach (var row in array)
+        {
+            result.Add(LoadInline(row, context));
+        }
+
+        return result;
+    }
+
+{% endif %}{% if type.loader.is_table %}
     internal static (List<{{ type.loader.type_name }}> Rows, Dictionary<{{ type.loader.type_name }}, JToken> RawRows) LoadRawTable(string path)
     {
         if (!File.Exists(path))

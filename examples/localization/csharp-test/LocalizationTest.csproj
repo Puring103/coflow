@@ -1,0 +1,36 @@
+<!--
+  Standalone test harness that proves the generated C# bindings actually
+  resolve `@localized` fields to per-variant values at runtime.
+
+  This project lives outside `generated/` so `coflow build` won't sweep it.
+  It depends on the generated sources via `Compile Include="..."` glob so
+  re-running `coflow build` keeps it in sync without manual file lists.
+
+  Run with:
+      dotnet test examples/localization/csharp-test/
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Example.Localization.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.10.0" />
+    <PackageReference Include="xunit" Version="2.9.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <!-- Pull in every generated .cs file. Re-running `coflow build` may add
+       or remove files (e.g. when a new `@localized` field is introduced);
+       the glob keeps both halves in sync without manual edits. -->
+  <ItemGroup>
+    <Compile Include="..\generated\csharp\**\*.cs" />
+  </ItemGroup>
+
+</Project>
