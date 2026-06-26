@@ -17,6 +17,19 @@ impl Diagnostics {
         Self { items }
     }
 
+    /// Construct from a freshly rebuilt `DiagnosticSet`. The engine's
+    /// `write_field` returns the post-write set; we flatten it into wire
+    /// shape so the front-end gets the same view as the initial snapshot.
+    ///
+    /// Logical (record / field) locations are not reconstructed here — the
+    /// session does that lazily via `diagnostics_from_store` when the
+    /// front-end re-opens a file. For the post-write payload, code + stage
+    /// + message + file are sufficient.
+    #[must_use]
+    pub fn from_set(set: coflow_api::DiagnosticSet) -> Self {
+        Self::from_items(set.diagnostics.iter().map(diagnostic_from_api).collect())
+    }
+
     #[must_use]
     pub fn flatten(&self) -> Vec<DiagnosticItem> {
         self.items.clone()
