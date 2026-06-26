@@ -121,6 +121,7 @@ fn language_dimension_injects_variant_type_and_implicit_sources() {
         std::fs::remove_dir_all(&root).expect("clean temp dir");
     }
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
     std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create dimensions dir");
     std::fs::write(
         root.join("schema/main.cft"),
@@ -196,6 +197,128 @@ dimensions:
 }
 
 #[test]
+fn language_dimension_synthesizes_nullable_source_fields_once() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-engine-dim-nullable-synthesis-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        r#"
+        type Item {
+            @localized
+            name: string?;
+        }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+sources: []
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let mut registry = coflow_api::ProviderRegistry::default();
+    registry
+        .register_loader(coflow_loader_csv::CsvLoader)
+        .expect("csv loader");
+    let session = build_project_session(project, &registry).expect("build session");
+
+    let variants = session
+        .schema
+        .resolve_type("Item_nameVariants")
+        .expect("synthesized type");
+    assert_eq!(variants.all_fields[0].ty, "string?");
+    assert_eq!(variants.all_fields[1].ty, "string?");
+
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
+fn inherited_localized_fields_are_not_synthesized_for_child_types() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-engine-dim-inherited-field-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        r#"
+        type Base {
+            @localized
+            name: string;
+            check { name != ""; }
+        }
+
+        type Child : Base {
+            power: int;
+        }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/children.csv"),
+        "id,name,power\nchild,Potion,1\n",
+    )
+    .expect("write child source");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+sources:
+  - path: data/children.csv
+    type: csv
+    sheets:
+      - sheet: children
+        type: Child
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let mut registry = coflow_api::ProviderRegistry::default();
+    registry
+        .register_loader(coflow_loader_csv::CsvLoader)
+        .expect("csv loader");
+    let session = build_project_session(project, &registry).expect("build session");
+    assert!(
+        !session.has_diagnostics(),
+        "diagnostics: {:?}",
+        session.diagnostics.as_set()
+    );
+
+    assert!(session.schema.resolve_type("Base_nameVariants").is_some());
+    assert!(session.schema.resolve_type("Child_nameVariants").is_none());
+    assert!(root.join("data/dimensions/language/Base_name.csv").exists());
+    assert!(
+        !root
+            .join("data/dimensions/language/Child_name.csv")
+            .exists(),
+        "inherited localized fields should not generate child dimension files"
+    );
+
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
 fn language_dimension_regenerates_csv_with_defaults_and_preserved_variants() {
     let root = std::env::temp_dir().join(format!(
         "coflow-engine-dim-regenerate-{}",
@@ -254,6 +377,70 @@ dimensions:
     let generated = std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
         .expect("read generated dimension csv");
     assert_eq!(generated, "id,default,zh,en\npotion,Potion,药水,null\n");
+
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
+fn language_dimension_uses_bucket_for_csv_file_names() {
+    let root =
+        std::env::temp_dir().join(format!("coflow-engine-dim-bucket-{}", std::process::id()));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create dimensions dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        r#"
+        type Item {
+            @localized(bucket = "ui")
+            icon: string;
+        }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.csv"), "id,icon\npotion,Icon\n").expect("write items");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+sources:
+  - path: data/items.csv
+    type: csv
+    sheets:
+      - sheet: items
+        type: Item
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let mut registry = coflow_api::ProviderRegistry::default();
+    registry
+        .register_loader(coflow_loader_csv::CsvLoader)
+        .expect("csv loader");
+    let session = build_project_session(project, &registry).expect("build session");
+    assert!(
+        !session.has_diagnostics(),
+        "diagnostics: {:?}",
+        session.diagnostics.as_set()
+    );
+
+    assert!(session
+        .files
+        .source_files()
+        .contains("data/dimensions/language/ui_icon.csv"));
+    let generated = std::fs::read_to_string(root.join("data/dimensions/language/ui_icon.csv"))
+        .expect("read generated dimension csv");
+    assert_eq!(generated, "id,default,zh\npotion,Icon,null\n");
+    assert!(
+        !root.join("data/dimensions/language/Item_icon.csv").exists(),
+        "bucketed fields should not use source type csv name"
+    );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }
@@ -325,7 +512,10 @@ dimensions:
     let generated_tags =
         std::fs::read_to_string(root.join("data/dimensions/language/Item_tags.csv"))
             .expect("read generated tags csv");
-    assert_eq!(generated_name, "id,default,zh\npotion,\"\"\"Potion, Large\"\"\",null\n");
+    assert_eq!(
+        generated_name,
+        "id,default,zh\npotion,\"\"\"Potion, Large\"\"\",null\n"
+    );
     assert_eq!(
         generated_tags,
         "id,default,zh\npotion,\"[healing | \"\"fast, use\"\"]\",null\n"

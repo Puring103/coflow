@@ -97,7 +97,12 @@ impl<'a> CheckRunner<'a> {
         let Some(actual_type) = record.actual_type(self.model).map(ToOwned::to_owned) else {
             return;
         };
-        let checks = self.schema.checks_for_actual(&actual_type);
+        let checks = self.schema.checks_for_actual(
+            &actual_type,
+            self.dimension_context
+                .as_ref()
+                .map(|context| context.dimension.as_str()),
+        );
         let root = CheckValue::Record(record);
         let mut evaluator =
             CheckEvaluator::new(&self.schema, self.model, root_record, root_path, root);
@@ -124,6 +129,9 @@ impl<'a> CheckRunner<'a> {
         fields: &BTreeMap<String, CfdValue>,
         root_path: CfdPath,
     ) {
+        if self.dimension_context.is_some() {
+            return;
+        }
         for (name, value) in fields {
             self.run_nested_value_checks(root_record, value, root_path.clone().field(name));
         }

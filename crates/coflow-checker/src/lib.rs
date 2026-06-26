@@ -78,19 +78,42 @@ pub fn run_checks_for_dimensions(
                 variant: Some(variant.clone()),
             };
             let runner = CheckRunner::with_dimension_context(schema, model, context);
-            if let Err(diagnostics) = runner.run() {
-                for mut diagnostic in diagnostics.diagnostics {
-                    diagnostic.message = format!("[language={variant}] {}", diagnostic.message);
-                    all.push(diagnostic);
-                }
-            }
+            push_dimension_diagnostics(&mut all, variant, runner.run());
         }
     }
-    if all.is_empty() {
-        Ok(())
-    } else {
-        Err(CfdDiagnostics::new(all))
+    diagnostics_result(all)
+}
+
+/// Run dimension-aware checks and capture the read-from graph across the
+/// default round plus every configured variant round.
+///
+/// # Errors
+///
+/// Returns the union of every failing round's diagnostics. The dependency
+/// graph is returned even when diagnostics fail.
+pub fn run_checks_for_dimensions_with_deps(
+    schema: &CftContainer,
+    model: &CfdDataModel,
+    dimensions: &BTreeMap<String, DimensionConfig>,
+) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
+    let mut all = Vec::new();
+    let (default_result, mut graph) = run_checks_with_deps(schema, model);
+    if let Err(diagnostics) = default_result {
+        all.extend(diagnostics.diagnostics);
     }
+    if let Some(config) = dimensions.get("language") {
+        for variant in &config.variants {
+            let context = DimensionCheckContext {
+                dimension: "language".to_string(),
+                variant: Some(variant.clone()),
+            };
+            let runner = CheckRunner::with_dimension_context(schema, model, context);
+            let (result, variant_graph) = runner.run_with_deps();
+            merge_dependency_graph(&mut graph, variant_graph);
+            push_dimension_diagnostics(&mut all, variant, result);
+        }
+    }
+    (diagnostics_result(all), graph)
 }
 
 /// Run checks for only a specified subset of records. Empty input is treated
@@ -151,6 +174,35 @@ pub fn run_checks_with_deps(
     model: &CfdDataModel,
 ) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
     CheckRunner::new(schema, model).run_with_deps()
+}
+
+fn push_dimension_diagnostics(
+    all: &mut Vec<coflow_data_model::CfdDiagnostic>,
+    variant: &str,
+    result: Result<(), CfdDiagnostics>,
+) {
+    if let Err(diagnostics) = result {
+        for mut diagnostic in diagnostics.diagnostics {
+            diagnostic.message = format!("[language={variant}] {}", diagnostic.message);
+            all.push(diagnostic);
+        }
+    }
+}
+
+fn diagnostics_result(
+    diagnostics: Vec<coflow_data_model::CfdDiagnostic>,
+) -> Result<(), CfdDiagnostics> {
+    if diagnostics.is_empty() {
+        Ok(())
+    } else {
+        Err(CfdDiagnostics::new(diagnostics))
+    }
+}
+
+fn merge_dependency_graph(target: &mut DependencyGraph, source: DependencyGraph) {
+    for (reader, reads) in source.reads_from {
+        target.reads_from.entry(reader).or_default().extend(reads);
+    }
 }
 
 pub trait CfdCheckExt {

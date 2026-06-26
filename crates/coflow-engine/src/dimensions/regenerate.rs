@@ -69,7 +69,7 @@ fn regenerate_csv_file(
     out_dir: &Path,
     variants: &[String],
 ) -> DiagnosticSet {
-    let path = out_dir.join(format!("{}_{}.csv", field.source_type, field.source_field));
+    let path = out_dir.join(format!("{}_{}.csv", field.bucket, field.source_field));
     let mut existing = match read_existing_csv(&path, &project.config_path, variants) {
         Ok(existing) => existing,
         Err(diagnostics) => return diagnostics,
@@ -337,8 +337,7 @@ fn render_value(value: &CfdValue) -> String {
 fn render_csv_value(value: &CfdValue) -> String {
     match render_cell_value(value) {
         Ok(value) => value,
-        Err(CellRenderError::NestedObject) => render_value(value),
-        Err(CellRenderError::AnonymousEnum) => render_value(value),
+        Err(CellRenderError::NestedObject | CellRenderError::AnonymousEnum) => render_value(value),
     }
 }
 

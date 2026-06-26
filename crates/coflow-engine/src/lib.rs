@@ -23,7 +23,7 @@ use coflow_api::{
     ProviderRegistry, RecordOrigin, ResolvedSource, Severity, SourceLocation, SourceLocationSpec,
     SourceResolveContext,
 };
-use coflow_checker::{run_checks_for_dimensions, run_checks_with_deps};
+use coflow_checker::run_checks_for_dimensions_with_deps;
 use coflow_data_model::{CfdDataModel, CfdDiagnostics, CfdPath, CfdPathSegment, CfdRecordId};
 use coflow_project::{
     compile_schema_project, dedupe_cft_diagnostics, diagnostic_set_from_cft, path_to_slash,
@@ -792,8 +792,8 @@ fn run_project_checks(
     model: &CfdDataModel,
     origins: &[RecordOrigin],
 ) -> CheckOutput {
-    let (_, dependencies) = run_checks_with_deps(schema, model);
-    let check_result = run_checks_for_dimensions(schema, model, &project.config.dimensions);
+    let (check_result, dependencies) =
+        run_checks_for_dimensions_with_deps(schema, model, &project.config.dimensions);
     let (diagnostics, logical_locations) = if let Err(checks) = check_result {
         let logical_locations = logical_locations_from_cfd(&checks, |id| {
             model.record(id).map(|record| record.key.clone())

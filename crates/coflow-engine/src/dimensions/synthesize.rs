@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 pub struct DimensionField {
     pub source_type: String,
     pub source_field: String,
+    pub bucket: String,
     pub synthesized_type: String,
     pub is_singleton: bool,
 }
@@ -26,7 +27,7 @@ pub fn inject_language_dimension_types(
             continue;
         };
         let Some(source_field) = source_type
-            .all_fields
+            .fields
             .iter()
             .find(|candidate| candidate.name == field.source_field)
         else {
@@ -74,13 +75,18 @@ pub fn language_dimension_sources(
 pub fn language_dimension_fields(schema: &CftContainer) -> Vec<DimensionField> {
     let mut fields = Vec::new();
     for schema_type in schema.all_types() {
-        for field in &schema_type.all_fields {
+        for field in &schema_type.fields {
             if !is_language_dimension(field.dimension.as_ref()) {
                 continue;
             }
             fields.push(DimensionField {
                 source_type: schema_type.name.clone(),
                 source_field: field.name.clone(),
+                bucket: field
+                    .dimension
+                    .as_ref()
+                    .and_then(|dimension| dimension.bucket.clone())
+                    .unwrap_or_else(|| schema_type.name.clone()),
                 synthesized_type: format!("{}_{}Variants", schema_type.name, field.name),
                 is_singleton: schema_type.is_singleton,
             });
@@ -121,10 +127,11 @@ fn synthesized_type(
 }
 
 fn synthesized_field(name: &str, source_ty: &CftSchemaTypeRef) -> CftSchemaField {
+    let inner_ty = non_nullable_type(source_ty).clone();
     CftSchemaField {
         name: name.to_string(),
-        ty: format!("{}?", format_type_ref(source_ty)),
-        ty_ref: CftSchemaTypeRef::Nullable(Box::new(non_nullable_type(source_ty).clone())),
+        ty: format!("{}?", format_type_ref(&inner_ty)),
+        ty_ref: CftSchemaTypeRef::Nullable(Box::new(inner_ty)),
         has_default: false,
         default: None,
         annotations: Vec::new(),
@@ -197,7 +204,7 @@ fn field_for_file_stem<'a>(
         if extension == "cfd" && field.is_singleton {
             stem == field.source_type
         } else {
-            stem == format!("{}_{}", field.source_type, field.source_field)
+            stem == format!("{}_{}", field.bucket, field.source_field)
         }
     })
 }
@@ -206,7 +213,7 @@ fn source_options(field: &DimensionField, extension: &str) -> Value {
     if extension == "csv" {
         json!({
             "sheets": [{
-                "sheet": format!("{}_{}", field.source_type, field.source_field),
+                "sheet": format!("{}_{}", field.bucket, field.source_field),
                 "type": field.synthesized_type,
             }]
         })
