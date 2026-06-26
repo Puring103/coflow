@@ -20,7 +20,9 @@ use coflow::commands::{
     MESSAGEPACK_EXPORTER_ID,
 };
 use coflow::diagnostics::{diagnostic_json_from_set, DiagnosticJson};
+use coflow::{data_commands, schema_commands};
 use coflow_cft::CftDiagnostic;
+use coflow_engine::RecordCoordinate;
 use coflow_project::{compile_schema_project, dedupe_cft_diagnostics, Project};
 use serde::Serialize;
 use serde_json::Value;
@@ -51,6 +53,8 @@ fn run() -> Result<bool, String> {
         Command::Build(args) => project_build(&args),
         Command::Export(command) => run_export(&command),
         Command::Codegen(command) => run_codegen(&command),
+        Command::Schema(command) => run_schema(&command),
+        Command::Data(command) => run_data(&command),
     }
 }
 
@@ -70,6 +74,53 @@ fn run_export(command: &ExportArgs) -> Result<bool, String> {
 fn run_codegen(command: &CodegenArgs) -> Result<bool, String> {
     match &command.command {
         CodegenCommand::Csharp(args) => codegen_csharp(args),
+    }
+}
+
+fn run_schema(command: &SchemaArgs) -> Result<bool, String> {
+    match &command.command {
+        SchemaCommand::Inspect(args) => schema_commands::inspect(
+            args.config_or_dir.as_deref(),
+            args.type_filter.as_deref(),
+            args.include_derived,
+            args.human,
+        ),
+        SchemaCommand::Files(args) => {
+            schema_commands::files(args.config_or_dir.as_deref(), args.human)
+        }
+    }
+}
+
+fn run_data(command: &DataArgs) -> Result<bool, String> {
+    match &command.command {
+        DataCommand::Sources(args) => {
+            data_commands::sources(args.config_or_dir.as_deref(), args.human)
+        }
+        DataCommand::List(args) => data_commands::list(
+            args.config_or_dir.as_deref(),
+            args.actual_type.clone(),
+            args.file.clone(),
+            args.limit,
+            args.offset,
+            args.human,
+        ),
+        DataCommand::Get(args) => {
+            let target = parse_data_get_target(&args.target)?;
+            data_commands::get(data_commands::DataGetOptions {
+                config_or_dir: target.config_or_dir,
+                selector: target.selector,
+                actual_type: args.actual_type.clone(),
+                file: args.file.clone(),
+                keys: split_keys(&args.keys),
+                limit: args.limit,
+                offset: args.offset,
+                all: args.all,
+                human: args.human,
+            })
+        }
+        DataCommand::Patch(args) => {
+            data_commands::patch(args.config_or_dir.as_deref(), &args.patch, args.human)
+        }
     }
 }
 
@@ -97,6 +148,10 @@ enum Command {
     Export(ExportArgs),
     /// Generate runtime code.
     Codegen(CodegenArgs),
+    /// Schema inspection tools for automation and AI agents.
+    Schema(SchemaArgs),
+    /// Data inspection and patch tools for automation and AI agents.
+    Data(DataArgs),
 }
 
 #[derive(Debug, Args)]
@@ -215,11 +270,209 @@ struct CodegenCsharpArgs {
     namespace: Option<String>,
 }
 
+#[derive(Debug, Args)]
+struct SchemaArgs {
+    #[command(subcommand)]
+    command: SchemaCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum SchemaCommand {
+    /// Inspect compiled schema types, enums, consts, and diagnostics.
+    Inspect(SchemaInspectArgs),
+    /// Print compiled schema file sources.
+    Files(SchemaFilesArgs),
+}
+
+#[derive(Debug, Args)]
+struct SchemaInspectArgs {
+    #[arg(value_name = "CONFIG_OR_DIR")]
+    config_or_dir: Option<PathBuf>,
+    /// Restrict output to a schema type.
+    #[arg(long = "type", value_name = "TYPE")]
+    type_filter: Option<String>,
+    /// Include derived types when --type is supplied.
+    #[arg(long)]
+    include_derived: bool,
+    /// Emit human-readable text instead of JSON.
+    #[arg(long)]
+    human: bool,
+}
+
+#[derive(Debug, Args)]
+struct SchemaFilesArgs {
+    #[arg(value_name = "CONFIG_OR_DIR")]
+    config_or_dir: Option<PathBuf>,
+    /// Emit human-readable text instead of JSON.
+    #[arg(long)]
+    human: bool,
+}
+
+#[derive(Debug, Args)]
+struct DataArgs {
+    #[command(subcommand)]
+    command: DataCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum DataCommand {
+    /// List configured and resolved data sources.
+    Sources(DataSourcesArgs),
+    /// List record coordinates.
+    List(DataListArgs),
+    /// Fetch complete records.
+    Get(DataGetArgs),
+    /// Apply a JSON data patch through provider writers.
+    Patch(DataPatchArgs),
+}
+
+#[derive(Debug, Args)]
+struct DataSourcesArgs {
+    #[arg(value_name = "CONFIG_OR_DIR")]
+    config_or_dir: Option<PathBuf>,
+    /// Emit human-readable text instead of JSON.
+    #[arg(long)]
+    human: bool,
+}
+
+#[derive(Debug, Args)]
+struct DataListArgs {
+    #[arg(value_name = "CONFIG_OR_DIR")]
+    config_or_dir: Option<PathBuf>,
+    /// Restrict output to a concrete record type.
+    #[arg(long = "type", value_name = "TYPE")]
+    actual_type: Option<String>,
+    /// Restrict output to a project-relative source file.
+    #[arg(long, value_name = "FILE")]
+    file: Option<String>,
+    /// Maximum number of records to return.
+    #[arg(long)]
+    limit: Option<usize>,
+    /// Number of matching records to skip.
+    #[arg(long, default_value_t = 0)]
+    offset: usize,
+    /// Emit human-readable text instead of JSON.
+    #[arg(long)]
+    human: bool,
+}
+
+#[derive(Debug, Args)]
+struct DataGetArgs {
+    // Clap cannot disambiguate two optional positionals reliably. Parse this
+    // tail manually so `coflow data get <project> Item.sword` stays supported.
+    /// Optional `CONFIG_OR_DIR` and `TYPE.KEY` tail.
+    #[arg(value_name = "CONFIG_OR_DIR_OR_TYPE.KEY", num_args = 0..=2)]
+    target: Vec<String>,
+    /// Restrict output to a concrete record type.
+    #[arg(long = "type", value_name = "TYPE")]
+    actual_type: Option<String>,
+    /// Restrict output to a project-relative source file.
+    #[arg(long, value_name = "FILE")]
+    file: Option<String>,
+    /// Restrict output to comma-separated keys.
+    #[arg(long, value_delimiter = ',')]
+    keys: Vec<String>,
+    /// Maximum number of records to return.
+    #[arg(long)]
+    limit: Option<usize>,
+    /// Number of matching records to skip.
+    #[arg(long, default_value_t = 0)]
+    offset: usize,
+    /// Fetch all matching records without the default safety limit.
+    #[arg(long)]
+    all: bool,
+    /// Emit human-readable text instead of JSON.
+    #[arg(long)]
+    human: bool,
+}
+
+#[derive(Debug, Args)]
+struct DataPatchArgs {
+    #[arg(value_name = "CONFIG_OR_DIR")]
+    config_or_dir: Option<PathBuf>,
+    /// JSON patch request file.
+    #[arg(long, value_name = "PATCH_FILE")]
+    patch: PathBuf,
+    /// Emit human-readable text instead of JSON.
+    #[arg(long)]
+    human: bool,
+}
+
 fn init_project(args: InitArgs) -> Result<bool, String> {
     let dir = args.dir.unwrap_or_else(|| PathBuf::from("."));
     let outcome = coflow_project::init_project(&dir)?;
     println!("created {}", outcome.config_path.display());
     Ok(true)
+}
+
+#[derive(Debug)]
+struct DataGetTarget {
+    config_or_dir: Option<PathBuf>,
+    selector: Option<RecordCoordinate>,
+}
+
+fn parse_data_get_target(values: &[String]) -> Result<DataGetTarget, String> {
+    match values {
+        [] => Ok(DataGetTarget {
+            config_or_dir: None,
+            selector: None,
+        }),
+        [only] if looks_like_config_path(only) => Ok(DataGetTarget {
+            config_or_dir: Some(PathBuf::from(only)),
+            selector: None,
+        }),
+        [only] if looks_like_record_selector(only) => Ok(DataGetTarget {
+            config_or_dir: None,
+            selector: Some(parse_record_selector(only)?),
+        }),
+        [only] => Ok(DataGetTarget {
+            config_or_dir: Some(PathBuf::from(only)),
+            selector: None,
+        }),
+        [config_or_dir, selector] => Ok(DataGetTarget {
+            config_or_dir: Some(PathBuf::from(config_or_dir)),
+            selector: Some(parse_record_selector(selector)?),
+        }),
+        _ => Err("data get accepts at most CONFIG_OR_DIR and TYPE.KEY".to_string()),
+    }
+}
+
+fn looks_like_record_selector(value: &str) -> bool {
+    value.split_once('.').is_some_and(|(actual_type, key)| {
+        !actual_type.is_empty() && !key.is_empty() && !value.contains('/') && !value.contains('\\')
+    })
+}
+
+fn looks_like_config_path(value: &str) -> bool {
+    let path = Path::new(value);
+    if path.exists() || value.contains('/') || value.contains('\\') {
+        return true;
+    }
+    path.extension().is_some_and(|extension| {
+        extension.eq_ignore_ascii_case("yaml") || extension.eq_ignore_ascii_case("yml")
+    })
+}
+
+fn parse_record_selector(value: &str) -> Result<RecordCoordinate, String> {
+    let Some((actual_type, key)) = value.split_once('.') else {
+        return Err(format!(
+            "record selector `{value}` must be written as TYPE.KEY"
+        ));
+    };
+    if actual_type.is_empty() || key.is_empty() {
+        return Err(format!(
+            "record selector `{value}` must be written as TYPE.KEY"
+        ));
+    }
+    Ok(RecordCoordinate::new(actual_type, key))
+}
+
+fn split_keys(keys: &[String]) -> Vec<String> {
+    keys.iter()
+        .flat_map(|key| key.split(','))
+        .filter(|key| !key.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
 }
 
 fn cft_check(args: &CftCheckArgs) -> Result<bool, String> {
