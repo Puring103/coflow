@@ -31,13 +31,10 @@ mod wire;
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path as StdPath;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
-use coflow_api::{
-    DataWriter, DeleteRecordRequest, InsertRecordRequest, ProviderRegistry, RecordOrigin,
-    ResolvedSource, WriteCellRequest, WriteContext, WriteFieldPathSegment,
-};
-use coflow_data_model::{CfdDataModel, CfdRecord, CfdRecordId, RecordOrigin as DmRecordOrigin};
+use coflow_api::ProviderRegistry;
+use coflow_data_model::{CfdRecord, CfdRecordId};
 use coflow_engine::ProjectSession;
 
 use crate::editor::convert::record_to_field_cells_for_session;
@@ -58,6 +55,10 @@ use wire::{default_value_for_ty, field_path_segment_to_api, field_value_to_cfd};
 /// multi-reader access stay independent.
 pub struct EditorSession {
     pub project_root: std::path::PathBuf,
+    /// Path to the project's `coflow.yaml`. Kept for diagnostic / future
+    /// API use; rebuilds now happen in place via the engine's write methods
+    /// rather than by re-opening the project file.
+    #[allow(dead_code)]
     pub yaml_path: std::path::PathBuf,
     pub engine: ProjectSession,
     pub diagnostics: Diagnostics,
@@ -88,15 +89,14 @@ impl EditorSession {
     }
 }
 
-/// Container for one open project. The `state` `RwLock` guards reads of the
-/// engine view; `write_mutex` serializes write operations within the same
-/// session so two concurrent edits can't observe each other half-applied
-/// (each writer call is followed by a project rebuild, which must be atomic
-/// with respect to other writers). Reads do not contend on `write_mutex`.
+/// Container for one open project. Writes acquire the inner `RwLock` for
+/// write access — the engine's `write_field` / `insert_record` /
+/// `delete_record` mutates the session in place (rebuilding model +
+/// diagnostics on success), so the lock alone is enough to serialise
+/// concurrent edits.
 #[derive(Debug)]
 struct SessionEntry {
     state: RwLock<EditorSession>,
-    write_mutex: Mutex<()>,
 }
 
 #[derive(Debug)]
@@ -163,7 +163,6 @@ impl SessionStore {
             id,
             Arc::new(SessionEntry {
                 state: RwLock::new(session),
-                write_mutex: Mutex::new(()),
             }),
         );
         drop(inner);
@@ -322,10 +321,6 @@ impl SessionStore {
         new_value: &FieldValue,
     ) -> Result<WriteFieldOutcome, EditorError> {
         let entry = self.session(id)?;
-        let _write_guard = entry
-            .write_mutex
-            .lock()
-            .map_err(|_| EditorError::session("session write mutex poisoned"))?;
         let session_lock = &entry.state;
         let registry = self.registry()?;
         let path_segments = field_path
@@ -333,31 +328,67 @@ impl SessionStore {
             .map(field_path_segment_to_api)
             .collect::<Vec<_>>();
 
-        let yaml_path = write_field_to_source(
-            session_lock,
-            registry.as_ref(),
-            file_path,
-            record_key,
-            field_path,
-            &path_segments,
-            new_value,
-        )?;
+        // Convert wire value → core CfdValue + resolve coordinate inside the
+        // write lock so the engine sees a coherent snapshot.
+        let (new_cfd_value, coordinate) = {
+            let session = session_lock
+                .read()
+                .map_err(|_| EditorError::session("session poisoned"))?;
+            let value = field_value_to_cfd(new_value, &session.engine.model)
+                .map_err(EditorError::write)?;
+            let (_id, record) = lookup_record_in_file(&session.engine, file_path, record_key)
+                .ok_or_else(|| {
+                    EditorError::not_found(format!(
+                        "record `{record_key}` not found in `{file_path}`"
+                    ))
+                })?;
+            (
+                value,
+                coflow_engine::RecordCoordinate::new(
+                    record.actual_type.clone(),
+                    record.key.clone(),
+                ),
+            )
+        };
 
-        // Rebuild the session under a write lock so cross-file ref indexes
-        // and check diagnostics stay coherent.
-        refresh_session_after_write(session_lock, registry.as_ref(), &yaml_path)?;
+        let new_coordinate = {
+            let mut session = session_lock
+                .write()
+                .map_err(|_| EditorError::session("session poisoned"))?;
+            let outcome = session
+                .engine
+                .write_field(
+                    registry.as_ref(),
+                    &coordinate.actual_type,
+                    &coordinate.key,
+                    &path_segments,
+                    &new_cfd_value,
+                )
+                .map_err(api_diagnostics_to_editor_error)?;
+            // Engine has already replaced `session.engine` with the rebuilt
+            // ProjectSession; refresh editor's `Diagnostics` view to match.
+            session.diagnostics = Diagnostics::from_set(outcome.diagnostics.clone());
+            outcome
+                .renamed
+                .map(|(_, new)| new)
+                .or_else(|| outcome.touched.into_iter().next())
+                .unwrap_or(coordinate)
+        };
 
-        // Return the refreshed row + diagnostics from the rebuild so the
-        // front-end does not need a follow-up diagnostics query.
         let session = session_lock
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let (_id, record) = lookup_record_in_file(&session.engine, file_path, record_key)
-            .ok_or_else(|| {
-                EditorError::not_found(format!(
-                    "record `{record_key}` not found in `{file_path}` after write"
-                ))
-            })?;
+        let (_id, record) = lookup_record_in_file(
+            &session.engine,
+            file_path,
+            &new_coordinate.key,
+        )
+        .ok_or_else(|| {
+            EditorError::not_found(format!(
+                "record `{}` not found in `{file_path}` after write",
+                new_coordinate.key
+            ))
+        })?;
         let record_file_map = session.record_file_map();
         let mut row = RecordRow {
             key: record.key.clone(),
@@ -385,21 +416,43 @@ impl SessionStore {
         fields: &FieldValue,
     ) -> Result<InsertRecordOutcome, EditorError> {
         let entry = self.session(id)?;
-        let _write_guard = entry
-            .write_mutex
-            .lock()
-            .map_err(|_| EditorError::session("session write mutex poisoned"))?;
         let session_lock = &entry.state;
         let registry = self.registry()?;
-        let yaml_path = insert_record_in_source(
-            session_lock,
-            registry.as_ref(),
-            file_path,
-            record_key,
-            actual_type,
-            fields,
-        )?;
-        refresh_session_after_write(session_lock, registry.as_ref(), &yaml_path)?;
+
+        let fields_map = {
+            let session = session_lock
+                .read()
+                .map_err(|_| EditorError::session("session poisoned"))?;
+            let FieldValue::Object { fields: cells, .. } = fields else {
+                return Err(EditorError::write(
+                    "insert_record requires an Object FieldValue for fields",
+                ));
+            };
+            let mut map = std::collections::BTreeMap::new();
+            for cell in cells {
+                let value = field_value_to_cfd(&cell.value, &session.engine.model)
+                    .map_err(EditorError::write)?;
+                map.insert(cell.name.clone(), value);
+            }
+            map
+        };
+
+        {
+            let mut session = session_lock
+                .write()
+                .map_err(|_| EditorError::session("session poisoned"))?;
+            let outcome = session
+                .engine
+                .insert_record(
+                    registry.as_ref(),
+                    file_path,
+                    record_key,
+                    actual_type,
+                    fields_map,
+                )
+                .map_err(api_diagnostics_to_editor_error)?;
+            session.diagnostics = Diagnostics::from_set(outcome.diagnostics);
+        }
         let file_records = self.get_file_records(id, file_path)?;
         let session = session_lock
             .read()
@@ -424,17 +477,36 @@ impl SessionStore {
         record_key: &str,
     ) -> Result<DeleteRecordOutcome, EditorError> {
         let entry = self.session(id)?;
-        let _write_guard = entry
-            .write_mutex
-            .lock()
-            .map_err(|_| EditorError::session("session write mutex poisoned"))?;
         let session_lock = &entry.state;
         let registry = self.registry()?;
         let (deleted_snapshot, deleted_actual_type) =
             snapshot_record_before_delete(session_lock, file_path, record_key)?;
-        let yaml_path =
-            delete_record_in_source(session_lock, registry.as_ref(), file_path, record_key)?;
-        refresh_session_after_write(session_lock, registry.as_ref(), &yaml_path)?;
+        let coordinate = {
+            let session = session_lock
+                .read()
+                .map_err(|_| EditorError::session("session poisoned"))?;
+            let (_id, record) = lookup_record_in_file(&session.engine, file_path, record_key)
+                .ok_or_else(|| {
+                    EditorError::not_found(format!(
+                        "record `{record_key}` not found in `{file_path}`"
+                    ))
+                })?;
+            coflow_engine::RecordCoordinate::new(record.actual_type.clone(), record.key.clone())
+        };
+        {
+            let mut session = session_lock
+                .write()
+                .map_err(|_| EditorError::session("session poisoned"))?;
+            let outcome = session
+                .engine
+                .delete_record(
+                    registry.as_ref(),
+                    &coordinate.actual_type,
+                    &coordinate.key,
+                )
+                .map_err(api_diagnostics_to_editor_error)?;
+            session.diagnostics = Diagnostics::from_set(outcome.diagnostics);
+        }
         let file_records = self.get_file_records(id, file_path)?;
         let session = session_lock
             .read()
@@ -466,121 +538,6 @@ impl SessionStore {
             .cloned()
             .ok_or_else(|| EditorError::not_found(format!("unknown session id {id}")))
     }
-}
-
-fn write_field_to_source(
-    session_lock: &RwLock<EditorSession>,
-    registry: &ProviderRegistry,
-    file_path: &str,
-    record_key: &str,
-    field_path: &[FieldPathSegment],
-    path_segments: &[WriteFieldPathSegment],
-    new_value: &FieldValue,
-) -> Result<std::path::PathBuf, EditorError> {
-    let session = session_lock
-        .read()
-        .map_err(|_| EditorError::session("session poisoned"))?;
-    let new_cfd_value =
-        field_value_to_cfd(new_value, &session.engine.model).map_err(EditorError::write)?;
-    // Scope the lookup to the file the front-end opened so source/synthetic
-    // records sharing a key resolve to the correct table. file_path is the
-    // authoritative host once an edit gesture is on screen — the front-end
-    // already navigated by it.
-    let (_id, record) = lookup_record_in_file(&session.engine, file_path, record_key)
-        .ok_or_else(|| EditorError::not_found(format!("record `{record_key}` not found in `{file_path}`")))?;
-    let source = resolved_source_for_file(&session, file_path)?;
-    let origin = resolve_effective_origin(&session.engine.model, record, field_path);
-    let actual_type = record.actual_type.clone();
-
-    let writer: Arc<dyn DataWriter> = registry.writer(&source.provider_id).ok_or_else(|| {
-        EditorError::write(format!(
-            "no writer registered for provider `{}`",
-            source.provider_id
-        ))
-    })?;
-
-    let write_request = WriteCellRequest {
-        origin: &origin,
-        record_key: &record.key,
-        actual_type: &actual_type,
-        field_path: path_segments,
-        new_value: &new_cfd_value,
-        schema: &session.engine.schema,
-        source: &source,
-    };
-    let write_ctx = WriteContext {
-        project_root: &session.project_root,
-        schema: &session.engine.schema,
-        model: Some(&session.engine.model),
-    };
-    // Cheap pre-flight first: writers use this to surface "file is locked
-    // by Excel" / "remote token invalid" / "type mismatch" without actually
-    // attempting the write. Treat any non-empty pre-flight diagnostic as a
-    // hard failure so the editor doesn't half-commit.
-    let preflight = writer.preflight(write_ctx, &write_request);
-    if !preflight.is_empty() {
-        return Err(api_diagnostics_to_editor_error(preflight));
-    }
-
-    writer
-        .write_field(write_ctx, &write_request)
-        .map_err(api_diagnostics_to_editor_error)?;
-    Ok(session.yaml_path.clone())
-}
-
-fn insert_record_in_source(
-    session_lock: &RwLock<EditorSession>,
-    registry: &ProviderRegistry,
-    file_path: &str,
-    record_key: &str,
-    actual_type: &str,
-    fields_value: &FieldValue,
-) -> Result<std::path::PathBuf, EditorError> {
-    let session = session_lock
-        .read()
-        .map_err(|_| EditorError::session("session poisoned"))?;
-    let FieldValue::Object {
-        fields: cells,
-        actual_type: _,
-    } = fields_value
-    else {
-        return Err(EditorError::write(
-            "insert_record requires an Object FieldValue for fields",
-        ));
-    };
-    let mut fields_map = std::collections::BTreeMap::new();
-    for cell in cells {
-        let value =
-            field_value_to_cfd(&cell.value, &session.engine.model).map_err(EditorError::write)?;
-        fields_map.insert(cell.name.clone(), value);
-    }
-
-    let source = resolved_source_for_file(&session, file_path)?;
-    let sheet = sheet_for_file_type(&session, file_path, actual_type);
-    let writer: Arc<dyn DataWriter> = registry.writer(&source.provider_id).ok_or_else(|| {
-        EditorError::write(format!(
-            "no writer registered for provider `{}`",
-            source.provider_id
-        ))
-    })?;
-
-    let request = InsertRecordRequest {
-        source: &source,
-        sheet: sheet.as_deref(),
-        record_key,
-        actual_type,
-        fields: &fields_map,
-        schema: &session.engine.schema,
-    };
-    let ctx = WriteContext {
-        project_root: &session.project_root,
-        schema: &session.engine.schema,
-        model: Some(&session.engine.model),
-    };
-    writer
-        .insert_record(ctx, &request)
-        .map_err(api_diagnostics_to_editor_error)?;
-    Ok(session.yaml_path.clone())
 }
 
 /// Render the engine's current view of `record_key` as a wire `FieldValue`
@@ -618,94 +575,6 @@ fn snapshot_record_before_delete(
     Ok((Some(snapshot), Some(actual_type)))
 }
 
-fn delete_record_in_source(
-    session_lock: &RwLock<EditorSession>,
-    registry: &ProviderRegistry,
-    file_path: &str,
-    record_key: &str,
-) -> Result<std::path::PathBuf, EditorError> {
-    let session = session_lock
-        .read()
-        .map_err(|_| EditorError::session("session poisoned"))?;
-    let (_id, record) = lookup_record_in_file(&session.engine, file_path, record_key)
-        .ok_or_else(|| {
-            EditorError::not_found(format!("record `{record_key}` not found in `{file_path}`"))
-        })?;
-    let source = resolved_source_for_file(&session, file_path)?;
-    let actual_type = record.actual_type.clone();
-    let origin = record.origin.clone();
-    let writer: Arc<dyn DataWriter> = registry.writer(&source.provider_id).ok_or_else(|| {
-        EditorError::write(format!(
-            "no writer registered for provider `{}`",
-            source.provider_id
-        ))
-    })?;
-
-    let request = DeleteRecordRequest {
-        origin: &origin,
-        record_key,
-        actual_type: &actual_type,
-        source: &source,
-    };
-    let ctx = WriteContext {
-        project_root: &session.project_root,
-        schema: &session.engine.schema,
-        model: Some(&session.engine.model),
-    };
-    writer
-        .delete_record(ctx, &request)
-        .map_err(api_diagnostics_to_editor_error)?;
-    Ok(session.yaml_path.clone())
-}
-
-fn resolved_source_for_file(
-    session: &EditorSession,
-    file_path: &str,
-) -> Result<ResolvedSource, EditorError> {
-    session
-        .engine
-        .files
-        .source_for_display(file_path)
-        .and_then(|source_id| session.engine.sources.entries().get(source_id.index()))
-        .map(|entry| entry.source.clone())
-        .ok_or_else(|| {
-            EditorError::write(format!(
-                "no resolved source recorded for file `{file_path}` (cannot dispatch write)"
-            ))
-        })
-}
-
-/// Pick the sheet name to target when inserting a record into a table source.
-///
-/// Strategy: look at any existing record in this file whose `actual_type`
-/// matches, and reuse its sheet. Returns `None` when no same-type record
-/// exists yet; the writer then consults `source.options.sheets[].type` for an
-/// explicit mapping (and errors out if neither is available).
-///
-/// **Never** falls back to "any table-origin sheet in this file": picking an
-/// arbitrary sheet on type mismatch silently appends a record into the wrong
-/// sheet (e.g. an `Item` row into the `monsters` sheet), which is a
-/// data-corruption class bug — we'd rather fail loudly so the user fixes the
-/// project config.
-fn sheet_for_file_type(
-    session: &EditorSession,
-    file_path: &str,
-    actual_type: &str,
-) -> Option<String> {
-    for id in session.engine.records.ids_in_file(file_path) {
-        let Some(record_ref) = session.engine.records.get(*id) else {
-            continue;
-        };
-        let DmRecordOrigin::Table { sheet, .. } = &record_ref.origin else {
-            continue;
-        };
-        if record_ref.coordinate.actual_type == actual_type {
-            return Some(sheet.clone());
-        }
-    }
-    None
-}
-
 #[allow(clippy::needless_pass_by_value)]
 fn api_diagnostics_to_editor_error(diagnostics: coflow_api::DiagnosticSet) -> EditorError {
     let message = diagnostics
@@ -720,20 +589,6 @@ fn api_diagnostics_to_editor_error(diagnostics: coflow_api::DiagnosticSet) -> Ed
             .map(diagnostic_from_api)
             .collect(),
     )
-}
-
-fn refresh_session_after_write(
-    session_lock: &RwLock<EditorSession>,
-    registry: &ProviderRegistry,
-    yaml_path: &StdPath,
-) -> Result<(), EditorError> {
-    let (new_session, _snapshot) = build_session(yaml_path, registry)?;
-    let mut session = session_lock
-        .write()
-        .map_err(|_| EditorError::session("session poisoned"))?;
-    *session = new_session;
-    drop(session);
-    Ok(())
 }
 
 /// Locate a record by `(file_path, key)`. Files only host records of a single
@@ -755,25 +610,4 @@ fn lookup_record_in_file<'a>(
         }
     }
     None
-}
-
-/// Resolve the origin to use when writing the given field.
-///
-/// Always returns the host record's own origin. When the targeted field
-/// was inherited via a `...spread`, the writer creates a local override in
-/// the host record's source rather than mutating the spread origin —
-/// editing `elite_monster.attack` should change the elite monster only,
-/// not its `basic_monster` template.
-///
-/// The `model` and `field_path` arguments are kept on the signature so
-/// future overrides (e.g. an explicit "edit at source" gesture from the
-/// front-end) can fall back to `record.spread_field_sources[name]`'s
-/// origin without changing call sites.
-fn resolve_effective_origin(
-    model: &CfdDataModel,
-    record: &CfdRecord,
-    field_path: &[FieldPathSegment],
-) -> RecordOrigin {
-    let _ = (model, field_path);
-    record.origin.clone()
 }
