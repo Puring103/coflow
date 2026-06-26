@@ -163,13 +163,12 @@ picker: Holder {
     );
     let model = load_cfd_model(&schema, &fs::read_to_string(&file).expect("read seed"))
         .expect("load model");
-    // Resolve target_b's record id so the writer emits @Item.target_b.
-    let target_b_id = model.lookup("Item", "target_b").expect("target_b id");
+    let _ = model.lookup("Item", "target_b").expect("target_b id");
 
     let writer = CfdWriter::new();
     let new_value = CfdValue::Ref {
-        key: "target_b".to_string(),
-        target: target_b_id,
+        target_type: "Item".to_string(),
+        target_key: "target_b".to_string(),
     };
     let segments = vec![WriteFieldPathSegment::Field("current".to_string())];
     let source = empty_source(&file);
@@ -240,12 +239,12 @@ picker: Holder {
     );
 
     let writer = CfdWriter::new();
+    // `CfdValue::Ref` is now pure data — it carries (target_type, target_key)
+    // without an id cache. The writer always emits the qualified form
+    // `@Type.key` because the value itself contains both halves.
     let new_value = CfdValue::Ref {
-        key: "ghost".to_string(),
-        // Sentinel id — the writer will not find this in the (None) model
-        // and must fall back to short-form. The text might fail to type-check
-        // on reload; that's the caller's problem, not the writer's.
-        target: coflow_data_model::CfdRecordId::from_index(usize::MAX),
+        target_type: "Item".to_string(),
+        target_key: "ghost".to_string(),
     };
     let segments = vec![WriteFieldPathSegment::Field("current".to_string())];
     let source = empty_source(&file);
@@ -271,8 +270,8 @@ picker: Holder {
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
-        after.contains("&ghost"),
-        "expected short-form ref fallback, got: {after}"
+        after.contains("@Item.ghost"),
+        "expected qualified ref form, got: {after}"
     );
 }
 
@@ -303,8 +302,8 @@ fn rejects_empty_ref_key() {
 
     let writer = CfdWriter::new();
     let new_value = CfdValue::Ref {
-        key: String::new(),
-        target: coflow_data_model::CfdRecordId::from_index(0),
+        target_type: "Item".to_string(),
+        target_key: String::new(),
     };
     let segments = vec![WriteFieldPathSegment::Field("current".to_string())];
     let source = empty_source(&file);

@@ -447,6 +447,7 @@ fn language_dimensions() -> BTreeMap<String, DimensionConfig> {
         DimensionConfig {
             variants: vec!["zh".to_string(), "en".to_string()],
             out_dir: None,
+            display_name: None,
         },
     )])
 }
@@ -510,6 +511,7 @@ fn unknown_dimensions_are_accepted_but_do_not_run_extra_check_rounds() {
         DimensionConfig {
             variants: vec!["pc".to_string(), "mobile".to_string()],
             out_dir: None,
+            display_name: None,
         },
     )]);
 

@@ -1,17 +1,14 @@
 //! Project session construction through the shared Coflow engine.
 
 use std::collections::BTreeSet;
-use std::path::Path;
 
 use coflow_api::ProviderRegistry;
-use coflow_engine::{build_project_session, ProjectSession};
+use coflow_engine::{build_project_session, FileTreeNode, ProjectSession};
 use coflow_project::Project;
 
 use super::diagnostics::diagnostics_from_store;
-use super::file_tree::{build_dimension_subtree, build_file_tree};
-use super::path::path_to_slash;
 use super::EditorSession;
-use crate::editor::types::{EditorError, FileTreeNode, SourceCapabilities};
+use crate::editor::types::{EditorError, SourceCapabilities};
 
 const FALLBACK_PROVIDER_ID: &str = "unknown";
 
@@ -55,7 +52,7 @@ fn static_provider_id(id: &str) -> &'static str {
 }
 
 pub(super) fn build_session(
-    yaml_path_in: &Path,
+    yaml_path_in: &std::path::Path,
     registry: &ProviderRegistry,
 ) -> Result<(EditorSession, SessionSnapshotParts), EditorError> {
     let project = Project::open_schema_only(Some(yaml_path_in))
@@ -78,6 +75,10 @@ pub(super) fn build_session(
     ))
 }
 
+/// Build the file-tree snapshot the front-end sees. Walks every loader-
+/// registered extension via the engine's [`ProjectSession::file_tree`] so
+/// other hosts (CLI, future LSP UI) can render the same tree without
+/// reimplementing the walker.
 fn session_file_tree(engine: &ProjectSession, registry: &ProviderRegistry) -> Vec<FileTreeNode> {
     let mut ext_whitelist: BTreeSet<String> = BTreeSet::new();
     for loader in registry.loaders() {
@@ -85,69 +86,5 @@ fn session_file_tree(engine: &ProjectSession, registry: &ProviderRegistry) -> Ve
             ext_whitelist.insert((*ext).to_string());
         }
     }
-
-    let source_files = engine
-        .files
-        .source_files()
-        .iter()
-        .map(|path| path_to_slash(Path::new(path)))
-        .collect::<BTreeSet<_>>();
-
-    let mut skip: BTreeSet<String> = BTreeSet::new();
-    let dimension_dirs = dimension_out_dirs(engine);
-    for (_, dir) in &dimension_dirs {
-        if let Ok(rel) = dir.strip_prefix(&engine.project.root_dir) {
-            let slash = path_to_slash(rel);
-            if !slash.is_empty() {
-                skip.insert(slash);
-            }
-        }
-    }
-
-    let mut tree = build_file_tree(
-        &engine.project.root_dir,
-        &source_files,
-        &ext_whitelist,
-        &skip,
-    );
-    for (dimension, dir) in dimension_dirs.iter().rev() {
-        if let Some(node) = build_dimension_subtree(
-            &engine.project.root_dir,
-            dimension_group_name(dimension),
-            dir,
-            &source_files,
-            &ext_whitelist,
-        ) {
-            tree.insert(0, node);
-        }
-    }
-    tree
-}
-
-fn dimension_out_dirs(engine: &ProjectSession) -> Vec<(String, std::path::PathBuf)> {
-    let mut dirs = engine
-        .project
-        .config
-        .dimensions
-        .iter()
-        .filter_map(|(name, config)| {
-            config.out_dir.as_ref().map(|out_dir| {
-                let dir = if out_dir.is_absolute() {
-                    out_dir.clone()
-                } else {
-                    engine.project.root_dir.join(out_dir)
-                };
-                (name.clone(), dir)
-            })
-        })
-        .collect::<Vec<_>>();
-    dirs.sort_by(|(left, _), (right, _)| left.cmp(right));
-    dirs
-}
-
-fn dimension_group_name(name: &str) -> &'static str {
-    match name {
-        "language" => "本地化",
-        _ => "维度",
-    }
+    engine.file_tree(ext_whitelist)
 }

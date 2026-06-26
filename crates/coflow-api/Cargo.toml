@@ -13,8 +13,13 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+default = []
+ts-export = ["dep:ts-rs", "coflow-data-model/ts-export"]
+
 [dependencies]
 coflow-cft = { path = "../coflow-cft" }
 coflow-data-model = { path = "../coflow-data-model" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+ts-rs = { version = "10", optional = true }

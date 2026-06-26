@@ -9,6 +9,15 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+default = []
+ts-export = [
+    "dep:ts-rs",
+    "coflow-api/ts-export",
+    "coflow-data-model/ts-export",
+    "coflow-project/ts-export",
+]
+
 [dependencies]
 coflow-api = { path = "../coflow-api" }
 coflow-cfd = { path = "../coflow-cfd" }
@@ -18,7 +27,10 @@ coflow-data-model = { path = "../coflow-data-model" }
 coflow-loader-csv = { path = "../coflow-loader-csv" }
 coflow-loader-table-core = { path = "../coflow-loader-table-core" }
 coflow-project = { path = "../coflow-project" }
+serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+ts-rs = { version = "10", optional = true }
+walkdir = "2"
 
 [dev-dependencies]
 coflow-loader-cfd = { path = "../coflow-loader-cfd" }

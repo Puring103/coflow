@@ -95,7 +95,22 @@ pub struct CfdLabel {
     pub message: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct CfdPath {
     pub segments: Vec<CfdPathSegment>,
 }
@@ -146,7 +161,22 @@ impl CfdPath {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum CfdPathSegment {
     Field(String),
     Index(usize),

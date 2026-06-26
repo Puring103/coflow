@@ -45,10 +45,11 @@ fn record_keys_build_indexes_and_record_refs_resolve_by_expected_type() {
             .record(drop_id)
             .and_then(|record| record.field("reward")),
         Some(&CfdValue::Ref {
-            key: "reward_1".to_string(),
-            target: reward_id,
+            target_type: "Reward".to_string(),
+            target_key: "reward_1".to_string(),
         })
     );
+    let _ = reward_id;
 }
 
 #[test]

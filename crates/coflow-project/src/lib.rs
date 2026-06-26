@@ -15,7 +15,7 @@
 use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation, SourceLocationSpec};
 use coflow_cft::{CftContainer, CftDiagnostic, CftLabel, ModuleId};
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -80,12 +80,22 @@ impl<'de> Deserialize<'de> for ProjectConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct DimensionConfig {
     #[serde(default)]
     pub variants: Vec<String>,
     pub out_dir: Option<PathBuf>,
+    /// Human-readable label for this dimension. The editor falls back to a
+    /// built-in mapping (e.g. `"language" → "本地化"`) when missing, and to
+    /// the raw dimension name otherwise.
+    #[serde(default)]
+    pub display_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -367,7 +377,7 @@ fn env_reference_name(value: &str) -> Option<&str> {
     value.strip_prefix("${")?.strip_suffix('}')
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Project {
     pub config_path: PathBuf,
     pub root_dir: PathBuf,

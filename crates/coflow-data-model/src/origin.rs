@@ -12,6 +12,7 @@
 //! parse records; writers branch on the variant to perform an edit.
 use crate::diagnostic::{CfdDiagnostic, CfdDiagnostics, CfdLabel, CfdPath, CfdPathSegment};
 use crate::model::CfdRecordId;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -21,7 +22,8 @@ use std::path::PathBuf;
 /// values that aren't backed by a source location yet. Diagnostics and writers
 /// must handle `None` gracefully (typically by treating the record as
 /// non-editable / unlocatable).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum RecordOrigin {
     /// No known origin.
     #[default]
@@ -135,13 +137,14 @@ impl RecordOrigin {
 }
 
 /// A document key: either a local file or a remote document URI.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SourceDocument {
     Local(PathBuf),
     Remote(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TextSpan {
     pub start_line: usize,
     pub start_character: usize,
@@ -150,7 +153,8 @@ pub struct TextSpan {
 }
 
 /// Concrete location of a label inside a source.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SourceLocation {
     FileSpan {
         path: PathBuf,

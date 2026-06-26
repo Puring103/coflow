@@ -40,7 +40,7 @@ pub use diagnostic::{
 pub use model::{
     CfdDataModel, CfdDictKey, CfdEnumValue, CfdInputDictKey, CfdInputRecord, CfdInputRefIndex,
     CfdInputValue, CfdModelBuilder, CfdPolymorphicIndex, CfdRecord, CfdRecordId, CfdRefPathSegment,
-    CfdTable, CfdValue,
+    CfdTable, CfdValue, RefSite,
 };
 pub use origin::{
     label_to_location, map_diagnostics, MappedDiagnostic, MappedLabel, RecordOrigin,

@@ -112,7 +112,7 @@ pub fn render_cell_value(value: &CfdValue) -> Result<String, CellRenderError> {
         CfdValue::Float(value) => Ok(value.to_string()),
         CfdValue::String(value) => Ok(render_string(value)),
         CfdValue::Enum(value) => render_enum_value(value),
-        CfdValue::Ref { key, .. } => Ok(format!("&{key}")),
+        CfdValue::Ref { target_key, .. } => Ok(format!("&{target_key}")),
         CfdValue::Array(items) => render_array(items),
         CfdValue::Dict(entries) => render_dict(entries),
         CfdValue::Object(_) => Err(CellRenderError::NestedObject),

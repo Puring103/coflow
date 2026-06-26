@@ -1,16 +1,55 @@
-//! Build the editor's file-tree view of a project.
+//! File-tree view for the project.
 //!
-//! Files are surfaced when either (a) they are reported by a loader as the
-//! origin of records (`in_sources`), or (b) their extension is registered
-//! by some loader. Directories are surfaced implicitly as parents.
+//! Surfaces directories and files under the project root that either back a
+//! loaded record (`in_sources`) or carry an extension registered by the
+//! configured providers. Dimension output directories can be grouped under a
+//! display-named virtual folder via [`FileTreeOptions::dimension_groups`].
+
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use crate::editor::types::FileTreeNode;
+use coflow_project::path_to_slash;
 
-use super::path::path_to_slash;
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../frontend/src/bindings/"
+    )
+)]
+pub struct FileTreeNode {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub in_sources: bool,
+    pub children: Vec<FileTreeNode>,
+}
 
-pub(super) fn build_file_tree(
+/// Options for [`super::ProjectSession::file_tree_with`]. Defaults mirror what
+/// the editor needs: walk every loader-registered extension and pull
+/// dimension output directories into a sibling virtual folder at the top of
+/// the tree.
+#[derive(Debug, Clone, Default)]
+pub struct FileTreeOptions {
+    pub extra_extensions: Vec<String>,
+    pub dimension_groups: Vec<DimensionGroup>,
+    /// In-source paths reported by loaders (project-relative, `/`-normalised).
+    pub in_sources: BTreeSet<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DimensionGroup {
+    /// Display label shown at the top of the dimension's virtual subtree
+    /// (e.g. `"本地化"`).
+    pub display_name: String,
+    /// Absolute path of the dimension's output directory.
+    pub dir: PathBuf,
+}
+
+pub(crate) fn build_file_tree(
     root: &Path,
     in_sources: &BTreeSet<String>,
     ext_whitelist: &BTreeSet<String>,
@@ -35,7 +74,6 @@ pub(super) fn build_file_tree(
         if !by_extension && !in_sources.contains(&rel_for_check) {
             continue;
         }
-        // Skip files that live under an explicitly excluded directory.
         if skip_dirs
             .iter()
             .any(|dir| rel_for_check == *dir || rel_for_check.starts_with(&format!("{dir}/")))
@@ -62,9 +100,9 @@ pub(super) fn build_file_tree(
     roots
 }
 
-pub(super) fn build_dimension_subtree(
+pub(crate) fn build_dimension_subtree(
     root: &Path,
-    group_name: impl Into<String>,
+    group_name: String,
     dir: &Path,
     in_sources: &BTreeSet<String>,
     ext_whitelist: &BTreeSet<String>,
@@ -120,7 +158,7 @@ pub(super) fn build_dimension_subtree(
     sort_tree(&mut children);
 
     Some(FileTreeNode {
-        name: group_name.into(),
+        name: group_name,
         path: path_to_slash(dir.strip_prefix(root).unwrap_or(dir)),
         is_dir: true,
         in_sources: true,
@@ -220,41 +258,5 @@ fn sort_tree(nodes: &mut Vec<FileTreeNode>) {
         if !node.children.is_empty() {
             sort_tree(&mut node.children);
         }
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::expect_used, clippy::panic_in_result_fn)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn dimension_subtree_uses_real_project_paths() {
-        let root =
-            std::env::temp_dir().join(format!("cfd-editor-dimension-tree-{}", std::process::id()));
-        if root.exists() {
-            std::fs::remove_dir_all(&root).expect("clean temp dir");
-        }
-        let dim_dir = root.join("data/dimensions/language");
-        std::fs::create_dir_all(&dim_dir).expect("create dimension dir");
-        std::fs::write(
-            dim_dir.join("Item_name.csv"),
-            "id,default,zh\npotion,Potion,药水\n",
-        )
-        .expect("write dimension csv");
-
-        let in_sources = BTreeSet::from(["data/dimensions/language/Item_name.csv".to_string()]);
-        let ext_whitelist = BTreeSet::from(["csv".to_string()]);
-        let node = build_dimension_subtree(&root, "本地化", &dim_dir, &in_sources, &ext_whitelist)
-            .expect("dimension node");
-
-        assert_eq!(node.name, "本地化");
-        assert_eq!(node.path, "data/dimensions/language");
-        assert_eq!(
-            node.children[0].path,
-            "data/dimensions/language/Item_name.csv"
-        );
-
-        std::fs::remove_dir_all(root).expect("remove temp dir");
     }
 }

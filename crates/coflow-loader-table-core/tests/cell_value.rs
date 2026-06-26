@@ -1008,8 +1008,8 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
     );
 
     let reference = CfdValue::Ref {
-        key: "sword_01".to_string(),
-        target: coflow_data_model::CfdRecordId::from_index(0),
+        target_type: "Item".to_string(),
+        target_key: "sword_01".to_string(),
     };
     let rendered_reference = render_cell_value(&reference).map_err(|err| err.to_string())?;
     assert_eq!(rendered_reference, "&sword_01");
@@ -1380,10 +1380,11 @@ fn explicit_record_refs_resolve_to_cfd_refs() -> TestResult {
     assert_eq!(
         drop_record.field("item"),
         Some(&CfdValue::Ref {
-            key: "item_1".into(),
-            target: item_record_id,
+            target_type: "Item".to_string(),
+            target_key: "item_1".into(),
         })
     );
+    let _ = item_record_id;
     Ok(())
 }
 
@@ -1420,10 +1421,11 @@ fn direct_record_ref_shorthand_resolves_to_cfd_refs_by_expected_type() -> TestRe
     assert_eq!(
         drop_record.field("reward"),
         Some(&CfdValue::Ref {
-            key: "reward_1".into(),
-            target: reward_record_id,
+            target_type: "Reward".to_string(),
+            target_key: "reward_1".into(),
         })
     );
+    let _ = reward_record_id;
     Ok(())
 }
 

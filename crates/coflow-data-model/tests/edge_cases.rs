@@ -131,14 +131,14 @@ fn path_refs_can_follow_polymorphic_values_to_child_fields() {
     let model = builder
         .build()
         .expect("path refs should follow actual child type fields");
-    let item_id = record_id_at(&model, 0);
+    let _item_id = record_id_at(&model, 0);
     let holder_id = record_id_at(&model, 2);
     let holder = model.record(holder_id).expect("holder record");
     assert_eq!(
         holder.field("first_item"),
         Some(&CfdValue::Ref {
-            key: "sword".to_string(),
-            target: item_id,
+            target_type: "Item".to_string(),
+            target_key: "sword".to_string(),
         })
     );
 }
@@ -288,8 +288,8 @@ fn cyclic_record_refs_are_allowed_because_resolution_is_two_phase() {
             .record(alice_id)
             .and_then(|record| record.field("parent")),
         Some(&CfdValue::Ref {
-            key: "bob".to_string(),
-            target: bob_id,
+            target_type: "Person".to_string(),
+            target_key: "bob".to_string(),
         })
     );
     assert_eq!(
@@ -297,8 +297,8 @@ fn cyclic_record_refs_are_allowed_because_resolution_is_two_phase() {
             .record(bob_id)
             .and_then(|record| record.field("parent")),
         Some(&CfdValue::Ref {
-            key: "alice".to_string(),
-            target: alice_id,
+            target_type: "Person".to_string(),
+            target_key: "alice".to_string(),
         })
     );
 }

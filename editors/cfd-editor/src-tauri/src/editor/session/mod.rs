@@ -25,7 +25,6 @@
 //! - `path` — small helpers for slash-normalised path strings.
 mod build;
 mod diagnostics;
-mod file_tree;
 mod graph;
 mod path;
 mod wire;
@@ -69,18 +68,22 @@ impl std::fmt::Debug for EditorSession {
         f.debug_struct("EditorSession")
             .field("project_root", &self.project_root)
             .field("source_files", &self.engine.files.source_files().len())
-            .field("records", &self.engine.records.by_key().len())
+            .field("records", &self.engine.records.by_id().len())
             .finish_non_exhaustive()
     }
 }
 
 impl EditorSession {
+    /// `record_key → file_path` map for cells that carry a record reference.
+    /// Uses the first record found for a given key (synthetic records of a
+    /// given key share the same backing file as their source, so collisions
+    /// in this map don't matter for navigation).
     fn record_file_map(&self) -> HashMap<String, String> {
         self.engine
             .records
-            .by_key()
-            .iter()
-            .map(|(key, record)| (key.clone(), record.display_path.clone()))
+            .by_id()
+            .values()
+            .map(|record| (record.coordinate.key.clone(), record.display_path.clone()))
             .collect()
     }
 }
@@ -187,14 +190,14 @@ impl SessionStore {
         let session = session_lock
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let keys = session.engine.records.keys_for_file(file_path).to_vec();
+        let ids = session.engine.records.ids_in_file(file_path).to_vec();
 
-        let mut records = Vec::with_capacity(keys.len());
+        let mut records = Vec::with_capacity(ids.len());
         let mut type_seen = Vec::new();
         let mut type_set = HashSet::new();
         let record_file_map = session.record_file_map();
-        for key in &keys {
-            if let Some((_id, record)) = lookup_record_by_key(&session.engine.model, key) {
+        for id in &ids {
+            if let Some(record) = session.engine.model.record(*id) {
                 if type_set.insert(record.actual_type.clone()) {
                     type_seen.push(record.actual_type.clone());
                 }
@@ -482,7 +485,7 @@ fn write_field_to_source(
     let host_file = session
         .engine
         .records
-        .file_for_key(&record.key)
+        .file_for_coordinate(&record.actual_type, &record.key)
         .map_or_else(|| file_path.to_string(), str::to_string);
     let source = resolved_source_for_file(&session, &host_file)?;
     let origin = resolve_effective_origin(&session.engine.model, record, field_path);
@@ -626,7 +629,7 @@ fn delete_record_in_source(
     let host_file = session
         .engine
         .records
-        .file_for_key(&record.key)
+        .file_for_coordinate(&record.actual_type, &record.key)
         .map_or_else(|| file_path.to_string(), str::to_string);
     let source = resolved_source_for_file(&session, &host_file)?;
     let actual_type = record.actual_type.clone();
@@ -689,17 +692,14 @@ fn sheet_for_file_type(
     file_path: &str,
     actual_type: &str,
 ) -> Option<String> {
-    for key in session.engine.records.keys_for_file(file_path) {
-        let Some(record_ref) = session.engine.records.get(key) else {
+    for id in session.engine.records.ids_in_file(file_path) {
+        let Some(record_ref) = session.engine.records.get(*id) else {
             continue;
         };
         let DmRecordOrigin::Table { sheet, .. } = &record_ref.origin else {
             continue;
         };
-        let Some((_, record)) = lookup_record_by_key(&session.engine.model, key) else {
-            continue;
-        };
-        if record.actual_type == actual_type {
+        if record_ref.coordinate.actual_type == actual_type {
             return Some(sheet.clone());
         }
     }
