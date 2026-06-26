@@ -1,8 +1,31 @@
 import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
-import type {
-  ProjectSnapshot, FileRecords, GraphData, FieldPathSegment, FieldValue,
-  WriteFieldOutcome, InsertRecordOutcome, DeleteRecordOutcome,
+import type { CfdValue as WireCfdValue } from './bindings/CfdValue'
+import type { DeleteRecordOutcome as WireDeleteRecordOutcome } from './bindings/DeleteRecordOutcome'
+import type { FileRecords as WireFileRecords } from './bindings/FileRecords'
+import type { GraphData as WireGraphData } from './bindings/GraphData'
+import type { InsertRecordOutcome as WireInsertRecordOutcome } from './bindings/InsertRecordOutcome'
+import type { ProjectSnapshot as WireProjectSnapshot } from './bindings/ProjectSnapshot'
+import type { RefTarget } from './bindings/RefTarget'
+import type { WriteFieldOutcome as WireWriteFieldOutcome } from './bindings/WriteFieldOutcome'
+import {
+  cfdValueFromWire,
+  cfdValueToWire,
+  deleteRecordOutcomeFromWire,
+  fieldPathSegmentToWire,
+  fileRecordsFromWire,
+  graphFromWire,
+  insertRecordOutcomeFromWire,
+  projectSnapshotFromWire,
+  writeFieldOutcomeFromWire,
+  type DeleteRecordOutcome,
+  type FieldPathSegment,
+  type FieldValue,
+  type FileRecords,
+  type GraphData,
+  type InsertRecordOutcome,
+  type ProjectSnapshot,
+  type WriteFieldOutcome,
 } from './bindings/index'
 
 export const isTauri = '__TAURI_INTERNALS__' in window
@@ -32,19 +55,23 @@ export async function pickProjectDirectory(): Promise<string | null> {
 }
 
 export async function loadProject(yamlPath: string): Promise<ProjectSnapshot> {
-  return invoke<ProjectSnapshot>('load_project', { yamlPath })
+  const wire = await invoke<WireProjectSnapshot>('load_project', { yamlPath })
+  return projectSnapshotFromWire(wire)
 }
 
 export async function initProject(dir: string): Promise<ProjectSnapshot> {
-  return invoke<ProjectSnapshot>('init_project', { dir })
+  const wire = await invoke<WireProjectSnapshot>('init_project', { dir })
+  return projectSnapshotFromWire(wire)
 }
 
 export async function getFileRecords(sessionId: number, filePath: string): Promise<FileRecords> {
-  return invoke<FileRecords>('get_file_records', { sessionId, filePath })
+  const wire = await invoke<WireFileRecords>('get_file_records', { sessionId, filePath })
+  return fileRecordsFromWire(wire)
 }
 
 export async function getGraph(sessionId: number, filePath: string): Promise<GraphData> {
-  return invoke<GraphData>('get_graph', { sessionId, filePath })
+  const wire = await invoke<WireGraphData>('get_graph', { sessionId, filePath })
+  return graphFromWire(wire)
 }
 
 export async function closeSession(sessionId: number): Promise<void> {
@@ -56,11 +83,13 @@ export async function getEnumVariants(sessionId: number, enumName: string): Prom
 }
 
 export async function getRefTargets(sessionId: number, targetType: string): Promise<string[]> {
-  return invoke<string[]>('get_ref_targets', { sessionId, targetType })
+  const targets = await invoke<RefTarget[]>('get_ref_targets', { sessionId, targetType })
+  return targets.map((t) => t.coordinate.key)
 }
 
 export async function makeDefaultObject(sessionId: number, typeName: string): Promise<FieldValue> {
-  return invoke<FieldValue>('make_default_object', { sessionId, typeName })
+  const wire = await invoke<WireCfdValue>('make_default_object', { sessionId, typeName })
+  return cfdValueFromWire(wire)
 }
 
 export async function writeField(
@@ -69,10 +98,17 @@ export async function writeField(
   recordKey: string,
   fieldPath: FieldPathSegment[],
   newValue: FieldValue,
+  actualType?: string,
 ): Promise<WriteFieldOutcome> {
-  return invoke<WriteFieldOutcome>('write_field', {
-    sessionId, filePath, recordKey, fieldPath, newValue,
+  const coordinate = await resolveCoordinate(sessionId, filePath, recordKey, actualType)
+  const wire = await invoke<WireWriteFieldOutcome>('write_field', {
+    sessionId,
+    filePath,
+    coordinate,
+    fieldPath: fieldPath.map(fieldPathSegmentToWire),
+    newValue: cfdValueToWire(newValue),
   })
+  return writeFieldOutcomeFromWire(wire)
 }
 
 export async function insertRecord(
@@ -82,17 +118,51 @@ export async function insertRecord(
   actualType: string,
   fields: FieldValue,
 ): Promise<InsertRecordOutcome> {
-  return invoke<InsertRecordOutcome>('insert_record', {
-    sessionId, filePath, recordKey, actualType, fields,
+  const wire = await invoke<WireInsertRecordOutcome>('insert_record', {
+    sessionId,
+    filePath,
+    recordKey,
+    actualType,
+    fields: cfdValueToWire(fields),
   })
+  return insertRecordOutcomeFromWire(wire)
 }
 
 export async function deleteRecord(
   sessionId: number,
   filePath: string,
   recordKey: string,
+  actualType?: string,
 ): Promise<DeleteRecordOutcome> {
-  return invoke<DeleteRecordOutcome>('delete_record', {
-    sessionId, filePath, recordKey,
+  const coordinate = await resolveCoordinate(sessionId, filePath, recordKey, actualType)
+  const wire = await invoke<WireDeleteRecordOutcome>('delete_record', {
+    sessionId,
+    filePath,
+    coordinate,
   })
+  return deleteRecordOutcomeFromWire(wire)
+}
+
+/**
+ * Compute the wire `RecordCoordinate` from `(file_path, recordKey)` plus an
+ * optional explicit `actualType`. When the caller doesn't know the type
+ * (legacy code paths, mock data) we re-fetch the file's records and pick
+ * the row matching `recordKey`. Cheap and correct; the front-end already
+ * caches `FileRecords` by file so the round-trip rarely hits the wire.
+ */
+async function resolveCoordinate(
+  sessionId: number,
+  filePath: string,
+  recordKey: string,
+  actualType: string | undefined,
+): Promise<{ actual_type: string; key: string }> {
+  if (actualType) {
+    return { actual_type: actualType, key: recordKey }
+  }
+  const records = await getFileRecords(sessionId, filePath)
+  const row = records.records.find((r) => r.key === recordKey)
+  if (!row) {
+    throw new Error(`record \`${recordKey}\` not found in \`${filePath}\``)
+  }
+  return { actual_type: row.actual_type, key: recordKey }
 }
