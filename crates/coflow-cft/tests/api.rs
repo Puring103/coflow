@@ -8,7 +8,10 @@
 )]
 
 mod common;
-use coflow_cft::{is_cft_identifier, record_key_ident_error};
+use coflow_cft::{
+    is_cft_identifier, record_key_ident_error, CftSchemaField, CftSchemaType, CftSchemaTypeRef,
+    Span,
+};
 use common::*;
 
 #[test]
@@ -136,6 +139,70 @@ fn failed_recompile_without_new_modules_keeps_old_schema() {
     // container preserves observable state.
     container.compile().unwrap();
     assert!(container.has_type("A"));
+}
+
+#[test]
+fn register_runtime_type_injects_schema_type_and_rejects_duplicates() {
+    let mut container = compile_one("type Item { name: string; }").unwrap();
+    let runtime_type = runtime_variants_type("Item_nameVariants");
+
+    container
+        .register_runtime_type(runtime_type.clone())
+        .expect("runtime type registers");
+
+    let resolved = container
+        .resolve_type("Item_nameVariants")
+        .expect("runtime type is visible");
+    assert_eq!(resolved.fields.len(), 2);
+    assert_eq!(resolved.fields[0].name, "default");
+    assert_eq!(
+        resolved.fields[0].ty_ref,
+        CftSchemaTypeRef::Nullable(Box::new(CftSchemaTypeRef::String))
+    );
+    assert!(container
+        .schema(&ModuleId::from("__runtime__"))
+        .expect("runtime module")
+        .types
+        .iter()
+        .any(|ty| ty.name == "Item_nameVariants"));
+
+    let err = container
+        .register_runtime_type(runtime_type)
+        .expect_err("duplicate runtime type should fail");
+    assert_has_code(&err, CftErrorCode::DuplicateGlobalName);
+}
+
+fn runtime_variants_type(name: &str) -> CftSchemaType {
+    let fields = vec![
+        runtime_variant_field("default"),
+        runtime_variant_field("zh"),
+    ];
+    CftSchemaType {
+        module: ModuleId::from("__runtime__"),
+        name: name.to_string(),
+        parent: None,
+        is_abstract: false,
+        is_sealed: false,
+        is_singleton: false,
+        fields: fields.clone(),
+        all_fields: fields,
+        check: None,
+        annotations: Vec::new(),
+        span: Span::new(0, 0),
+    }
+}
+
+fn runtime_variant_field(name: &str) -> CftSchemaField {
+    CftSchemaField {
+        name: name.to_string(),
+        ty: "string?".to_string(),
+        ty_ref: CftSchemaTypeRef::Nullable(Box::new(CftSchemaTypeRef::String)),
+        has_default: false,
+        default: None,
+        annotations: Vec::new(),
+        dimension: None,
+        span: Span::new(0, 0),
+    }
 }
 
 #[test]

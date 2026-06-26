@@ -612,7 +612,7 @@ fn load_field(
         |default| Some(default.clone()),
     );
     let inner_property_type = csharp_property_type(&field.ty, view);
-    let property_type = if field.is_localized {
+    let property_type = if field.is_dimensional {
         format!("Localized<{inner_property_type}>")
     } else {
         inner_property_type.clone()
@@ -620,7 +620,7 @@ fn load_field(
     let raw_read_expr = read_field_expr(field, "obj", "context", view, missing_expr.as_deref())?;
     let raw_msgpack_expr = read_messagepack_field_expr(field, "reader", "context", view)?;
     let (read_expr, messagepack_read_expr, inline_read_expr, inline_messagepack_read_expr) =
-        if field.is_localized {
+        if field.is_dimensional {
             let type_lit = escape_csharp_string(owner_type_name);
             let field_lit = escape_csharp_string(&field.name);
             let row_key_expr = if owner_is_singleton {
@@ -999,7 +999,7 @@ fn csharp_type(ty: &FieldType, view: &SchemaView) -> String {
 /// for collection fields).
 fn csharp_field_property_type(field: &FieldMeta, view: &SchemaView) -> String {
     let inner = csharp_property_type(&field.ty, view);
-    if field.is_localized {
+    if field.is_dimensional {
         format!("Localized<{inner}>")
     } else {
         inner

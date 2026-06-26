@@ -149,6 +149,7 @@ function CfdNode({ id, data }: NodeProps) {
       ) : (
         <DataCardNode
           fields={gn.fields}
+          actualType={gn.actual_type}
           showAll={expanded}
           onToggle={onToggleExpand}
           onRowToggle={onRowToggle}

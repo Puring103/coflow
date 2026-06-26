@@ -10,11 +10,6 @@ use crate::editor::types::FileTreeNode;
 
 use super::path::path_to_slash;
 
-/// Prefix used for the synthetic localization root in the file tree. The
-/// front-end recognises this prefix to route reads/writes through the
-/// localization-specific commands (not the generic `writeField` pipeline).
-pub(super) const LOCALIZATION_ROOT: &str = "__localization__";
-
 pub(super) fn build_file_tree(
     root: &Path,
     in_sources: &BTreeSet<String>,
@@ -40,12 +35,11 @@ pub(super) fn build_file_tree(
         if !by_extension && !in_sources.contains(&rel_for_check) {
             continue;
         }
-        // Skip files that live under an explicitly excluded directory
-        // (e.g. the localization out_dir surfaced as a separate root).
-        if skip_dirs.iter().any(|dir| {
-            rel_for_check == *dir
-                || rel_for_check.starts_with(&format!("{dir}/"))
-        }) {
+        // Skip files that live under an explicitly excluded directory.
+        if skip_dirs
+            .iter()
+            .any(|dir| rel_for_check == *dir || rel_for_check.starts_with(&format!("{dir}/")))
+        {
             continue;
         }
         let Ok(rel) = path.strip_prefix(root) else {
@@ -66,6 +60,72 @@ pub(super) fn build_file_tree(
     }
     sort_tree(&mut roots);
     roots
+}
+
+pub(super) fn build_dimension_subtree(
+    root: &Path,
+    group_name: impl Into<String>,
+    dir: &Path,
+    in_sources: &BTreeSet<String>,
+    ext_whitelist: &BTreeSet<String>,
+) -> Option<FileTreeNode> {
+    if !dir.is_dir() {
+        return None;
+    }
+    let mut files: Vec<Vec<String>> = Vec::new();
+    for entry in walkdir::WalkDir::new(dir)
+        .min_depth(1)
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let path = entry.path();
+        let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+        let rel_for_check = path
+            .strip_prefix(root)
+            .map(path_to_slash)
+            .unwrap_or_default();
+        let by_extension = !ext.is_empty() && ext_whitelist.contains(ext);
+        if !by_extension && !in_sources.contains(&rel_for_check) {
+            continue;
+        }
+        let Ok(rel) = path.strip_prefix(dir) else {
+            continue;
+        };
+        let parts: Vec<String> = rel
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy().to_string())
+            .collect();
+        if !parts.is_empty() {
+            files.push(parts);
+        }
+    }
+
+    if files.is_empty() {
+        return None;
+    }
+
+    let mut children = Vec::new();
+    for parts in files {
+        insert_dimension_path(
+            &mut children,
+            &parts,
+            0,
+            &path_to_slash(dir.strip_prefix(root).unwrap_or(dir)),
+            in_sources,
+        );
+    }
+    sort_tree(&mut children);
+
+    Some(FileTreeNode {
+        name: group_name.into(),
+        path: path_to_slash(dir.strip_prefix(root).unwrap_or(dir)),
+        is_dir: true,
+        in_sources: true,
+        children,
+    })
 }
 
 fn insert_path(
@@ -111,59 +171,43 @@ fn insert_path(
     nodes.push(node);
 }
 
-/// Build the synthetic "本地化" root listing every CSV under `dir`. Returns
-/// `None` when the directory is missing or contains no CSV files — the
-/// caller treats `None` as "skip the root entirely" so we don't show an
-/// empty top-level folder when localization isn't actually used.
-pub(super) fn build_localization_subtree(dir: &Path) -> Option<FileTreeNode> {
-    if !dir.is_dir() {
-        return None;
+fn insert_dimension_path(
+    nodes: &mut Vec<FileTreeNode>,
+    parts: &[String],
+    idx: usize,
+    display_root: &str,
+    in_sources: &BTreeSet<String>,
+) {
+    if idx >= parts.len() {
+        return;
     }
-    let mut children: Vec<FileTreeNode> = Vec::new();
-    for entry in walkdir::WalkDir::new(dir)
-        .min_depth(1)
-        .max_depth(1)
-        .into_iter()
-        .filter_map(Result::ok)
-    {
-        if !entry.file_type().is_file() {
-            continue;
+    let name = &parts[idx];
+    let rel_path = parts[..=idx].join("/");
+    let path = if display_root.is_empty() {
+        rel_path
+    } else {
+        format!("{display_root}/{rel_path}")
+    };
+    let is_dir = idx + 1 < parts.len();
+
+    let existing = nodes.iter_mut().find(|n| n.name == *name);
+    if let Some(node) = existing {
+        if is_dir {
+            insert_dimension_path(&mut node.children, parts, idx + 1, display_root, in_sources);
         }
-        let p = entry.path();
-        let is_csv = p
-            .extension()
-            .and_then(|s| s.to_str())
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("csv"));
-        if !is_csv {
-            continue;
-        }
-        let name = p
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_string();
-        if name.is_empty() {
-            continue;
-        }
-        children.push(FileTreeNode {
-            name: name.clone(),
-            path: format!("{LOCALIZATION_ROOT}/{name}"),
-            is_dir: false,
-            in_sources: true,
-            children: Vec::new(),
-        });
+        return;
     }
-    if children.is_empty() {
-        return None;
+    let mut node = FileTreeNode {
+        name: name.clone(),
+        path: path.clone(),
+        is_dir,
+        in_sources: is_dir || in_sources.contains(&path),
+        children: Vec::new(),
+    };
+    if is_dir {
+        insert_dimension_path(&mut node.children, parts, idx + 1, display_root, in_sources);
     }
-    children.sort_by(|a, b| a.name.cmp(&b.name));
-    Some(FileTreeNode {
-        name: "本地化".to_string(),
-        path: LOCALIZATION_ROOT.to_string(),
-        is_dir: true,
-        in_sources: true,
-        children,
-    })
+    nodes.push(node);
 }
 
 fn sort_tree(nodes: &mut Vec<FileTreeNode>) {
@@ -176,5 +220,41 @@ fn sort_tree(nodes: &mut Vec<FileTreeNode>) {
         if !node.children.is_empty() {
             sort_tree(&mut node.children);
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic_in_result_fn)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dimension_subtree_uses_real_project_paths() {
+        let root =
+            std::env::temp_dir().join(format!("cfd-editor-dimension-tree-{}", std::process::id()));
+        if root.exists() {
+            std::fs::remove_dir_all(&root).expect("clean temp dir");
+        }
+        let dim_dir = root.join("data/dimensions/language");
+        std::fs::create_dir_all(&dim_dir).expect("create dimension dir");
+        std::fs::write(
+            dim_dir.join("Item_name.csv"),
+            "id,default,zh\npotion,Potion,药水\n",
+        )
+        .expect("write dimension csv");
+
+        let in_sources = BTreeSet::from(["data/dimensions/language/Item_name.csv".to_string()]);
+        let ext_whitelist = BTreeSet::from(["csv".to_string()]);
+        let node = build_dimension_subtree(&root, "本地化", &dim_dir, &in_sources, &ext_whitelist)
+            .expect("dimension node");
+
+        assert_eq!(node.name, "本地化");
+        assert_eq!(node.path, "data/dimensions/language");
+        assert_eq!(
+            node.children[0].path,
+            "data/dimensions/language/Item_name.csv"
+        );
+
+        std::fs::remove_dir_all(root).expect("remove temp dir");
     }
 }

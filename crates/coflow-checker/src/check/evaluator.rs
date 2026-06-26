@@ -3,8 +3,8 @@ use super::value::{
     comparable_key, dict_key_from_check_value, format_check_key_for_path, values_equal, CheckValue,
     LocatedCheckValue,
 };
-use crate::schema_view::SchemaView;
-use crate::LocalizationOverrides;
+use crate::schema_view::{DimensionFieldMeta, SchemaView};
+use crate::DimensionCheckContext;
 use coflow_cft::{
     CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
     CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind, CftSchemaTypePredicate,
@@ -32,20 +32,23 @@ pub(super) struct CheckEvaluator<'a> {
     /// runner toggles this on for full check runs that produce a dep graph.
     pub(super) dep_collector_enabled: bool,
     pub(super) reads_from: BTreeSet<CfdRecordId>,
-    /// Optional per-language overrides. When set, the evaluator substitutes
-    /// `@localized` string-typed field values with the matching translation
-    /// from `localization.translations` (key format
-    /// `{bucket}/{record_key}/{field_name}`). Non-string fields and missing
-    /// keys are left unchanged so downstream check evaluation transparently
-    /// falls back to the data-source default.
-    pub(super) localization: Option<LocalizationOverrides>,
+    pub(super) dimension_context: Option<DimensionCheckContext>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum EvalFlow {
     Continue,
+    Skipped,
     HardStop,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EvalAbort {
+    Skipped,
+    Error,
+}
+
+type EvalResult<T> = Result<T, EvalAbort>;
 
 #[derive(Debug)]
 struct CheckExplanation {
@@ -131,7 +134,7 @@ impl<'a> CheckEvaluator<'a> {
             diagnostics: Vec::new(),
             dep_collector_enabled: false,
             reads_from,
-            localization: None,
+            dimension_context: None,
         }
     }
 
@@ -150,40 +153,86 @@ impl<'a> CheckEvaluator<'a> {
         self.reads_from.insert(target);
     }
 
-    /// If the resolved field is `@localized` and the active language has a
-    /// translation for `{bucket}/{record_key}/{field_name}`, replace the
-    /// string value in `located` with the translation. Other field shapes are
-    /// left untouched and silently fall back to the default — see
-    /// `docs/spec/13-localization.md` §6.
-    fn apply_localization_override(
-        &self,
+    fn apply_dimension_variant(
+        &mut self,
         record: &CheckRecordRef,
         field_name: &str,
         located: &mut LocatedCheckValue,
-    ) {
-        let Some(loc) = self.localization.as_ref() else {
-            return;
+    ) -> EvalResult<()> {
+        let Some(context) = self.dimension_context.as_ref() else {
+            return Ok(());
+        };
+        if !matches!(record, CheckRecordRef::Top(_)) {
+            return Ok(());
+        }
+        let context_dimension = context.dimension.clone();
+        let Some(variant) = context.variant.clone() else {
+            return Ok(());
         };
         let Some(actual_type) = record.actual_type(self.model) else {
-            return;
+            return Ok(());
         };
-        if !self.schema.field_is_localized(actual_type, field_name) {
-            return;
+        let Some(field) = self.schema.dimension_field(actual_type, field_name) else {
+            return Ok(());
+        };
+        if field.dimension != context_dimension {
+            return Ok(());
         }
-        let key = if self.schema.type_is_singleton(actual_type) {
-            format!("{actual_type}/{field_name}")
-        } else {
-            let Some(record_key) = record.key(self.model) else {
-                return;
-            };
-            format!("{actual_type}/{field_name}/{record_key}")
+        let field = field.clone();
+        let Some(record_key) = dimension_record_key(self.model, record, &field) else {
+            self.diag_at(
+                CfdErrorCode::CheckEvalTypeError,
+                located.path.clone(),
+                format!("维度字段 `{actual_type}.{field_name}` 无法定位合成记录 key"),
+            );
+            return Err(EvalAbort::Error);
         };
-        let Some(translation) = loc.translations.get(&key) else {
-            return;
+        let Some(variant_record_id) = self.model.lookup(&field.synthesized_type, &record_key)
+        else {
+            self.diag_at(
+                CfdErrorCode::CheckEvalTypeError,
+                located.path.clone(),
+                format!(
+                    "维度字段 `{actual_type}.{field_name}` 缺少合成记录 `{}:{record_key}`",
+                    field.synthesized_type
+                ),
+            );
+            return Err(EvalAbort::Error);
         };
-        if matches!(located.value, CheckValue::String(_)) {
-            located.value = CheckValue::String(translation.clone());
+        self.note_read_from(variant_record_id);
+        let Some(variant_record) = self.model.record(variant_record_id) else {
+            self.diag_at(
+                CfdErrorCode::CheckEvalTypeError,
+                located.path.clone(),
+                format!(
+                    "维度字段 `{actual_type}.{field_name}` 的合成记录 `{}:{record_key}` 不存在",
+                    field.synthesized_type
+                ),
+            );
+            return Err(EvalAbort::Error);
+        };
+        let Some(value) = variant_record.fields.get(&variant) else {
+            self.diag_at(
+                CfdErrorCode::CheckEvalTypeError,
+                located.path.clone(),
+                format!(
+                    "维度字段 `{actual_type}.{field_name}` 的合成记录 `{}:{record_key}` 缺少 variant `{variant}`",
+                    field.synthesized_type
+                ),
+            );
+            return Err(EvalAbort::Error);
+        };
+        let path = located.path.clone();
+        located.value = CheckValue::from_cfd_value_with_path(
+            value,
+            self.schema.field_type(&field.synthesized_type, &variant),
+            path.clone(),
+        );
+        if matches!(located.value, CheckValue::Null) {
+            return Err(EvalAbort::Skipped);
         }
+        located.path = path;
+        Ok(())
     }
 
     pub(super) fn eval_check_block(&mut self, check: &CftSchemaCheckBlock) -> EvalFlow {
@@ -191,12 +240,19 @@ impl<'a> CheckEvaluator<'a> {
     }
 
     fn eval_stmts(&mut self, stmts: &[CftSchemaCheckStmt]) -> EvalFlow {
+        let mut skipped = false;
         for stmt in stmts {
-            if self.eval_stmt(stmt) == EvalFlow::HardStop {
-                return EvalFlow::HardStop;
+            match self.eval_stmt(stmt) {
+                EvalFlow::Continue => {}
+                EvalFlow::Skipped => skipped = true,
+                EvalFlow::HardStop => return EvalFlow::HardStop,
             }
         }
-        EvalFlow::Continue
+        if skipped {
+            EvalFlow::Skipped
+        } else {
+            EvalFlow::Continue
+        }
     }
 
     fn eval_stmt(&mut self, stmt: &CftSchemaCheckStmt) -> EvalFlow {
@@ -232,7 +288,8 @@ impl<'a> CheckEvaluator<'a> {
                     );
                     EvalFlow::HardStop
                 }
-                Err(()) => EvalFlow::HardStop,
+                Err(EvalAbort::Skipped) => EvalFlow::Skipped,
+                Err(EvalAbort::Error) => EvalFlow::HardStop,
             },
             CftSchemaCheckStmt::When {
                 condition, body, ..
@@ -253,7 +310,8 @@ impl<'a> CheckEvaluator<'a> {
                     );
                     EvalFlow::HardStop
                 }
-                Err(()) => EvalFlow::HardStop,
+                Err(EvalAbort::Skipped) => EvalFlow::Skipped,
+                Err(EvalAbort::Error) => EvalFlow::HardStop,
             },
             CftSchemaCheckStmt::Quantifier {
                 kind,
@@ -263,8 +321,10 @@ impl<'a> CheckEvaluator<'a> {
                 ..
             } => {
                 let collection_expr = collection;
-                let Ok(collection_value) = self.eval_expr(collection_expr) else {
-                    return EvalFlow::HardStop;
+                let collection_value = match self.eval_expr(collection_expr) {
+                    Ok(value) => value,
+                    Err(EvalAbort::Skipped) => return EvalFlow::Skipped,
+                    Err(EvalAbort::Error) => return EvalFlow::HardStop,
                 };
                 let Some(items) = self.quantifier_items(collection_value) else {
                     return EvalFlow::HardStop;
@@ -304,8 +364,13 @@ impl<'a> CheckEvaluator<'a> {
             let _ = self.contexts.pop();
             let _ = self.scopes.pop();
 
-            if flow == EvalFlow::HardStop {
-                return EvalFlow::HardStop;
+            match flow {
+                EvalFlow::Continue => {}
+                EvalFlow::Skipped => {
+                    self.diagnostics.truncate(diagnostic_start);
+                    continue;
+                }
+                EvalFlow::HardStop => return EvalFlow::HardStop,
             }
 
             match kind {
@@ -448,7 +513,7 @@ impl<'a> CheckEvaluator<'a> {
     fn eval_expr_explained(
         &mut self,
         expr: &CftSchemaCheckExpr,
-    ) -> Result<(LocatedCheckValue, Option<String>), ()> {
+    ) -> EvalResult<(LocatedCheckValue, Option<String>)> {
         match &expr.kind {
             CftSchemaCheckExprKind::CmpChain { first, rest } => {
                 // Re-implement CmpChain so we can capture the failing pair.
@@ -781,7 +846,7 @@ impl<'a> CheckEvaluator<'a> {
 
     fn value_expr_actual(&mut self, expr: &CftSchemaCheckExpr) -> String {
         self.eval_expr(expr).map_or_else(
-            |()| render_expr(expr),
+            |_| render_expr(expr),
             |value| {
                 format!(
                     "{} = {}",
@@ -823,7 +888,7 @@ impl<'a> CheckEvaluator<'a> {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn eval_expr(&mut self, expr: &CftSchemaCheckExpr) -> Result<LocatedCheckValue, ()> {
+    fn eval_expr(&mut self, expr: &CftSchemaCheckExpr) -> EvalResult<LocatedCheckValue> {
         match &expr.kind {
             CftSchemaCheckExprKind::Int(value) => {
                 Ok(LocatedCheckValue::value(CheckValue::Int(*value)))
@@ -897,13 +962,13 @@ impl<'a> CheckEvaluator<'a> {
         }
     }
 
-    fn eval_name(&mut self, name: &str) -> Result<LocatedCheckValue, ()> {
+    fn eval_name(&mut self, name: &str) -> EvalResult<LocatedCheckValue> {
         for scope in self.scopes.iter().rev() {
             if let Some(value) = scope.get(name) {
                 return Ok(value.clone());
             }
         }
-        if let Some(value) = self.current_field(name) {
+        if let Some(value) = self.current_field(name)? {
             return Ok(value);
         }
         if let Some(value) = self.schema.consts.get(name) {
@@ -918,16 +983,16 @@ impl<'a> CheckEvaluator<'a> {
             CfdErrorCode::CheckEvalTypeError,
             format!("未知 check 值 `{name}`"),
         );
-        Err(())
+        Err(EvalAbort::Error)
     }
 
-    fn current_field(&mut self, name: &str) -> Option<LocatedCheckValue> {
+    fn current_field(&mut self, name: &str) -> EvalResult<Option<LocatedCheckValue>> {
         let record = match &self.current {
             CheckValue::Record(record) => record.clone(),
-            _ => return None,
+            _ => return Ok(None),
         };
         if name == "id" {
-            return self.virtual_id(&record, record.path());
+            return Ok(self.virtual_id(&record, record.path()));
         }
         let field_type = self.field_type_for_record(&record, name);
         let mut result = record.field(self.model, field_type, name);
@@ -937,9 +1002,9 @@ impl<'a> CheckEvaluator<'a> {
             }
         }
         if let Some(located) = result.as_mut() {
-            self.apply_localization_override(&record, name, located);
+            self.apply_dimension_variant(&record, name, located)?;
         }
-        result
+        Ok(result)
     }
 
     fn field_type_for_record(
@@ -956,20 +1021,21 @@ impl<'a> CheckEvaluator<'a> {
         &mut self,
         target: LocatedCheckValue,
         name: &str,
-    ) -> Result<LocatedCheckValue, ()> {
+    ) -> EvalResult<LocatedCheckValue> {
         if matches!(target.value, CheckValue::Null) {
             self.diag_at(
                 CfdErrorCode::CheckNullAccess,
                 target.path,
                 format!("不能访问 null 的字段: 尝试在 null 上读取 `.{name}`"),
             );
-            return Err(());
+            return Err(EvalAbort::Error);
         }
         match target.value {
             CheckValue::Record(record) => {
                 if name == "id" {
                     return self.virtual_id(&record, target.path).ok_or_else(|| {
                         self.diag_at(CfdErrorCode::CheckEvalTypeError, None, "记录没有虚拟 id");
+                        EvalAbort::Error
                     });
                 }
                 let field_type = self.field_type_for_record(&record, name);
@@ -979,6 +1045,7 @@ impl<'a> CheckEvaluator<'a> {
                         target.path,
                         format!("记录没有字段 `{name}`"),
                     );
+                    EvalAbort::Error
                 });
                 if let Ok(located) = &result {
                     if let CheckValue::Record(CheckRecordRef::Top(id)) = &located.value {
@@ -986,7 +1053,7 @@ impl<'a> CheckEvaluator<'a> {
                     }
                 }
                 if let Ok(located) = result.as_mut() {
-                    self.apply_localization_override(&record, name, located);
+                    self.apply_dimension_variant(&record, name, located)?;
                 }
                 result
             }
@@ -999,7 +1066,7 @@ impl<'a> CheckEvaluator<'a> {
                         target.path,
                         format!("dict entry 没有字段 `{name}`，只有 `key` 和 `value`"),
                     );
-                    Err(())
+                    Err(EvalAbort::Error)
                 }
             },
             other => {
@@ -1011,7 +1078,7 @@ impl<'a> CheckEvaluator<'a> {
                         format_value_for_message(&other)
                     ),
                 );
-                Err(())
+                Err(EvalAbort::Error)
             }
         }
     }
@@ -1039,7 +1106,7 @@ impl<'a> CheckEvaluator<'a> {
         &mut self,
         target: LocatedCheckValue,
         index: LocatedCheckValue,
-    ) -> Result<LocatedCheckValue, ()> {
+    ) -> EvalResult<LocatedCheckValue> {
         if matches!(target.value, CheckValue::Null) {
             self.diag_at(
                 CfdErrorCode::CheckNullAccess,
@@ -1049,7 +1116,7 @@ impl<'a> CheckEvaluator<'a> {
                     format_value_for_message(&index.value)
                 ),
             );
-            return Err(());
+            return Err(EvalAbort::Error);
         }
         match target.value {
             CheckValue::Array { items, .. } => {
@@ -1062,7 +1129,7 @@ impl<'a> CheckEvaluator<'a> {
                             format_value_for_message(&index.value)
                         ),
                     );
-                    return Err(());
+                    return Err(EvalAbort::Error);
                 };
                 let len = items.len();
                 let Ok(idx_us) = usize::try_from(idx) else {
@@ -1071,7 +1138,7 @@ impl<'a> CheckEvaluator<'a> {
                         target.path,
                         format!("数组索引为负数: 实际为 {idx}，长度为 {len}"),
                     );
-                    return Err(());
+                    return Err(EvalAbort::Error);
                 };
                 items
                     .get(idx_us)
@@ -1088,6 +1155,7 @@ impl<'a> CheckEvaluator<'a> {
                             target.path,
                             format!("数组索引越界: 索引 {idx_us}，长度 {len}"),
                         );
+                        EvalAbort::Error
                     })
             }
             CheckValue::Dict { entries, .. } => {
@@ -1100,7 +1168,7 @@ impl<'a> CheckEvaluator<'a> {
                             format_value_for_message(&index.value)
                         ),
                     );
-                    return Err(());
+                    return Err(EvalAbort::Error);
                 };
                 let key_label = format_value_for_message(&index.value);
                 entries
@@ -1113,6 +1181,7 @@ impl<'a> CheckEvaluator<'a> {
                             target.path,
                             format!("dict key {key_label} 不存在"),
                         );
+                        EvalAbort::Error
                     })
             }
             other => {
@@ -1125,7 +1194,7 @@ impl<'a> CheckEvaluator<'a> {
                         format_value_for_message(&other),
                     ),
                 );
-                Err(())
+                Err(EvalAbort::Error)
             }
         }
     }
@@ -1143,7 +1212,7 @@ impl<'a> CheckEvaluator<'a> {
         &mut self,
         name: &str,
         args: &[CftSchemaCheckExpr],
-    ) -> Result<LocatedCheckValue, ()> {
+    ) -> EvalResult<LocatedCheckValue> {
         if self.schema.enums.contains_key(name) {
             let arg = self.exactly_one_arg(args, "枚举构造函数需要 1 个参数")?;
             let arg_value = self.eval_expr(arg)?;
@@ -1157,7 +1226,7 @@ impl<'a> CheckEvaluator<'a> {
                         format_value_for_message(&arg_kind)
                     ),
                 );
-                return Err(());
+                return Err(EvalAbort::Error);
             };
             let enum_value = match self.schema.enum_value_from_int(name, value) {
                 Some(enum_value) => enum_value,
@@ -1171,7 +1240,7 @@ impl<'a> CheckEvaluator<'a> {
                 CfdErrorCode::CheckEvalTypeError,
                 format!("未知函数 `{name}`"),
             );
-            return Err(());
+            return Err(EvalAbort::Error);
         };
         self.require_builtin_arity(builtin, args)?;
 
@@ -1197,7 +1266,7 @@ impl<'a> CheckEvaluator<'a> {
                                 format_value_for_message(&other)
                             ),
                         );
-                        Err(())
+                        Err(EvalAbort::Error)
                     }
                 }
             }
@@ -1222,7 +1291,7 @@ impl<'a> CheckEvaluator<'a> {
                             format_value_for_message(&arg_kind)
                         ),
                     );
-                    return Err(());
+                    return Err(EvalAbort::Error);
                 };
                 let mut seen = BTreeSet::new();
                 for item in items {
@@ -1235,7 +1304,7 @@ impl<'a> CheckEvaluator<'a> {
                                 format_value_for_message(&item)
                             ),
                         );
-                        return Err(());
+                        return Err(EvalAbort::Error);
                     };
                     if !seen.insert(key) {
                         return Ok(LocatedCheckValue::new(
@@ -1267,7 +1336,7 @@ impl<'a> CheckEvaluator<'a> {
                             format_value_for_message(&arg_kind)
                         ),
                     );
-                    return Err(());
+                    return Err(EvalAbort::Error);
                 };
                 Ok(LocatedCheckValue::new(
                     CheckValue::Array {
@@ -1295,7 +1364,7 @@ impl<'a> CheckEvaluator<'a> {
                             format_value_for_message(&arg_kind)
                         ),
                     );
-                    return Err(());
+                    return Err(EvalAbort::Error);
                 };
                 Ok(LocatedCheckValue::new(
                     CheckValue::Array {
@@ -1317,20 +1386,21 @@ impl<'a> CheckEvaluator<'a> {
                             format_value_for_message(&value_kind)
                         ),
                     );
-                    return Err(());
+                    return Err(EvalAbort::Error);
                 };
                 let CftSchemaCheckExprKind::String(pattern) = &args[1].kind else {
                     self.diag(
                         CfdErrorCode::CheckEvalTypeError,
                         "matches 的 pattern 必须是字符串字面量",
                     );
-                    return Err(());
+                    return Err(EvalAbort::Error);
                 };
                 let regex = Regex::new(pattern).map_err(|err| {
                     self.diag(
                         CfdErrorCode::CheckEvalTypeError,
                         format!("正则 pattern `{pattern}` 无法编译: {err}"),
                     );
+                    EvalAbort::Error
                 })?;
                 Ok(LocatedCheckValue::new(
                     CheckValue::Bool(regex.is_match(&text)),
@@ -1345,13 +1415,13 @@ impl<'a> CheckEvaluator<'a> {
         receiver: &CftSchemaCheckExpr,
         name: &str,
         args: &[CftSchemaCheckExpr],
-    ) -> Result<LocatedCheckValue, ()> {
+    ) -> EvalResult<LocatedCheckValue> {
         let Some(builtin) = Builtin::by_name(name) else {
             self.diag(
                 CfdErrorCode::CheckEvalTypeError,
                 format!("未知函数 `{name}`"),
             );
-            return Err(());
+            return Err(EvalAbort::Error);
         };
         let expected_args = builtin.arity().saturating_sub(1);
         if args.len() != expected_args {
@@ -1359,7 +1429,7 @@ impl<'a> CheckEvaluator<'a> {
                 CfdErrorCode::CheckEvalTypeError,
                 format!("{} 需要 {} 个参数", builtin.name(), expected_args),
             );
-            return Err(());
+            return Err(EvalAbort::Error);
         }
 
         let receiver_value = self.eval_expr(receiver)?;
@@ -1382,7 +1452,7 @@ impl<'a> CheckEvaluator<'a> {
                             format_value_for_message(&other)
                         ),
                     );
-                    Err(())
+                    Err(EvalAbort::Error)
                 }
             },
             Builtin::Contains => {
@@ -1403,7 +1473,7 @@ impl<'a> CheckEvaluator<'a> {
                             format_value_for_message(&arg_kind)
                         ),
                     );
-                    return Err(());
+                    return Err(EvalAbort::Error);
                 };
                 let mut seen = BTreeSet::new();
                 for item in items {
@@ -1416,7 +1486,7 @@ impl<'a> CheckEvaluator<'a> {
                                 format_value_for_message(&item)
                             ),
                         );
-                        return Err(());
+                        return Err(EvalAbort::Error);
                     };
                     if !seen.insert(key) {
                         return Ok(LocatedCheckValue::new(
@@ -1446,7 +1516,7 @@ impl<'a> CheckEvaluator<'a> {
                             format_value_for_message(&arg_kind)
                         ),
                     );
-                    return Err(());
+                    return Err(EvalAbort::Error);
                 };
                 Ok(LocatedCheckValue::new(
                     CheckValue::Array {
@@ -1472,7 +1542,7 @@ impl<'a> CheckEvaluator<'a> {
                             format_value_for_message(&arg_kind)
                         ),
                     );
-                    return Err(());
+                    return Err(EvalAbort::Error);
                 };
                 Ok(LocatedCheckValue::new(
                     CheckValue::Array {
@@ -1493,20 +1563,21 @@ impl<'a> CheckEvaluator<'a> {
                             format_value_for_message(&value_kind)
                         ),
                     );
-                    return Err(());
+                    return Err(EvalAbort::Error);
                 };
                 let CftSchemaCheckExprKind::String(pattern) = &args[0].kind else {
                     self.diag(
                         CfdErrorCode::CheckEvalTypeError,
                         "matches 的 pattern 必须是字符串字面量",
                     );
-                    return Err(());
+                    return Err(EvalAbort::Error);
                 };
                 let regex = Regex::new(pattern).map_err(|err| {
                     self.diag(
                         CfdErrorCode::CheckEvalTypeError,
                         format!("正则 pattern `{pattern}` 无法编译: {err}"),
                     );
+                    EvalAbort::Error
                 })?;
                 Ok(LocatedCheckValue::new(
                     CheckValue::Bool(regex.is_match(&text)),
@@ -1520,7 +1591,7 @@ impl<'a> CheckEvaluator<'a> {
         &mut self,
         builtin: Builtin,
         args: &[CftSchemaCheckExpr],
-    ) -> Result<(), ()> {
+    ) -> EvalResult<()> {
         if args.len() == builtin.arity() {
             return Ok(());
         }
@@ -1528,17 +1599,17 @@ impl<'a> CheckEvaluator<'a> {
             CfdErrorCode::CheckEvalTypeError,
             format!("{} 需要 {} 个参数", builtin.name(), builtin.arity()),
         );
-        Err(())
+        Err(EvalAbort::Error)
     }
 
     fn exactly_one_arg<'b>(
         &mut self,
         args: &'b [CftSchemaCheckExpr],
         message: &str,
-    ) -> Result<&'b CftSchemaCheckExpr, ()> {
+    ) -> EvalResult<&'b CftSchemaCheckExpr> {
         let [arg] = args else {
             self.diag(CfdErrorCode::CheckEvalTypeError, message);
-            return Err(());
+            return Err(EvalAbort::Error);
         };
         Ok(arg)
     }
@@ -1547,7 +1618,7 @@ impl<'a> CheckEvaluator<'a> {
         &mut self,
         builtin: Builtin,
         args: &[CftSchemaCheckExpr],
-    ) -> Result<LocatedCheckValue, ()> {
+    ) -> EvalResult<LocatedCheckValue> {
         let arg_value = self.eval_expr(&args[0])?;
         self.eval_min_max_value(builtin, arg_value)
     }
@@ -1556,7 +1627,7 @@ impl<'a> CheckEvaluator<'a> {
         &mut self,
         builtin: Builtin,
         arg_value: LocatedCheckValue,
-    ) -> Result<LocatedCheckValue, ()> {
+    ) -> EvalResult<LocatedCheckValue> {
         let arg_kind = arg_value.value.clone();
         let CheckValue::Array { items, .. } = arg_value.value else {
             self.diag_at(
@@ -1568,7 +1639,7 @@ impl<'a> CheckEvaluator<'a> {
                     format_value_for_message(&arg_kind)
                 ),
             );
-            return Err(());
+            return Err(EvalAbort::Error);
         };
         if items.is_empty() {
             self.diag_at(
@@ -1576,7 +1647,7 @@ impl<'a> CheckEvaluator<'a> {
                 arg_value.path,
                 format!("{} 不能作用于空数组", builtin.name()),
             );
-            return Err(());
+            return Err(EvalAbort::Error);
         }
         let mut non_null_items = items
             .iter()
@@ -1591,7 +1662,7 @@ impl<'a> CheckEvaluator<'a> {
                     items.len()
                 ),
             );
-            return Err(());
+            return Err(EvalAbort::Error);
         };
         for item in non_null_items {
             let ord = self.compare_order(&out, item, arg_value.path.clone())?;
@@ -1603,12 +1674,12 @@ impl<'a> CheckEvaluator<'a> {
         Ok(LocatedCheckValue::new(out, arg_value.path))
     }
 
-    fn eval_sum(&mut self, args: &[CftSchemaCheckExpr]) -> Result<LocatedCheckValue, ()> {
+    fn eval_sum(&mut self, args: &[CftSchemaCheckExpr]) -> EvalResult<LocatedCheckValue> {
         let arg_value = self.eval_expr(&args[0])?;
         self.eval_sum_value(arg_value)
     }
 
-    fn eval_sum_value(&mut self, arg_value: LocatedCheckValue) -> Result<LocatedCheckValue, ()> {
+    fn eval_sum_value(&mut self, arg_value: LocatedCheckValue) -> EvalResult<LocatedCheckValue> {
         let arg_kind = arg_value.value.clone();
         let CheckValue::Array {
             items,
@@ -1623,7 +1694,7 @@ impl<'a> CheckEvaluator<'a> {
                     format_value_for_message(&arg_kind)
                 ),
             );
-            return Err(());
+            return Err(EvalAbort::Error);
         };
         let mut int_sum = 0_i64;
         let mut float_sum = 0.0_f64;
@@ -1639,7 +1710,7 @@ impl<'a> CheckEvaluator<'a> {
                             arg_value.path.clone(),
                             format!("整数求和溢出: {int_sum} + {value}"),
                         );
-                        return Err(());
+                        return Err(EvalAbort::Error);
                     };
                     int_sum = next;
                 }
@@ -1665,7 +1736,7 @@ impl<'a> CheckEvaluator<'a> {
                             format_value_for_message(&other)
                         ),
                     );
-                    return Err(());
+                    return Err(EvalAbort::Error);
                 }
             }
         }
@@ -1686,7 +1757,7 @@ impl<'a> CheckEvaluator<'a> {
         &mut self,
         collection: &LocatedCheckValue,
         value: &CheckValue,
-    ) -> Result<bool, ()> {
+    ) -> EvalResult<bool> {
         match &collection.value {
             CheckValue::Array { items, .. } => {
                 Ok(items.iter().any(|item| values_equal(item, value)))
@@ -1701,7 +1772,7 @@ impl<'a> CheckEvaluator<'a> {
                             format_value_for_message(value)
                         ),
                     );
-                    return Err(());
+                    return Err(EvalAbort::Error);
                 };
                 Ok(entries
                     .iter()
@@ -1716,7 +1787,7 @@ impl<'a> CheckEvaluator<'a> {
                         format_value_for_message(other)
                     ),
                 );
-                Err(())
+                Err(EvalAbort::Error)
             }
         }
     }
@@ -1725,7 +1796,7 @@ impl<'a> CheckEvaluator<'a> {
         &mut self,
         op: CftSchemaUnaryOp,
         value: LocatedCheckValue,
-    ) -> Result<LocatedCheckValue, ()> {
+    ) -> EvalResult<LocatedCheckValue> {
         let path = value.path;
         match (op, value.value) {
             (CftSchemaUnaryOp::Not, CheckValue::Bool(value)) => {
@@ -1756,7 +1827,7 @@ impl<'a> CheckEvaluator<'a> {
                         format_value_for_message(&value)
                     ),
                 );
-                Err(())
+                Err(EvalAbort::Error)
             }
         }
     }
@@ -1767,7 +1838,7 @@ impl<'a> CheckEvaluator<'a> {
         op: CftSchemaBinOp,
         lhs: &CftSchemaCheckExpr,
         rhs: &CftSchemaCheckExpr,
-    ) -> Result<LocatedCheckValue, ()> {
+    ) -> EvalResult<LocatedCheckValue> {
         match op {
             CftSchemaBinOp::Or => {
                 let lhs = self.eval_expr(lhs)?;
@@ -1782,7 +1853,7 @@ impl<'a> CheckEvaluator<'a> {
                             format_value_for_message(&bad_lhs_value)
                         ),
                     );
-                    return Err(());
+                    return Err(EvalAbort::Error);
                 };
                 if lhs {
                     return Ok(LocatedCheckValue::new(CheckValue::Bool(true), lhs_path));
@@ -1799,7 +1870,7 @@ impl<'a> CheckEvaluator<'a> {
                             format_value_for_message(&bad_rhs_value)
                         ),
                     );
-                    return Err(());
+                    return Err(EvalAbort::Error);
                 };
                 Ok(LocatedCheckValue::new(CheckValue::Bool(rhs), rhs_path))
             }
@@ -1816,7 +1887,7 @@ impl<'a> CheckEvaluator<'a> {
                             format_value_for_message(&bad_lhs_value)
                         ),
                     );
-                    return Err(());
+                    return Err(EvalAbort::Error);
                 };
                 if !lhs {
                     return Ok(LocatedCheckValue::new(CheckValue::Bool(false), lhs_path));
@@ -1833,7 +1904,7 @@ impl<'a> CheckEvaluator<'a> {
                             format_value_for_message(&bad_rhs_value)
                         ),
                     );
-                    return Err(());
+                    return Err(EvalAbort::Error);
                 };
                 Ok(LocatedCheckValue::new(CheckValue::Bool(rhs), rhs_path))
             }
@@ -1852,7 +1923,7 @@ impl<'a> CheckEvaluator<'a> {
         lhs: CheckValue,
         rhs: CheckValue,
         path: Option<CfdPath>,
-    ) -> Result<LocatedCheckValue, ()> {
+    ) -> EvalResult<LocatedCheckValue> {
         if matches!(lhs, CheckValue::Null) || matches!(rhs, CheckValue::Null) {
             self.diag_at(
                 CfdErrorCode::CheckNullAccess,
@@ -1864,7 +1935,7 @@ impl<'a> CheckEvaluator<'a> {
                     format_value_for_message(&rhs)
                 ),
             );
-            return Err(());
+            return Err(EvalAbort::Error);
         }
         match (op, lhs, rhs) {
             (CftSchemaBinOp::Add, CheckValue::Int(lhs), CheckValue::Int(rhs)) => self.checked_int(
@@ -1907,7 +1978,7 @@ impl<'a> CheckEvaluator<'a> {
                             path,
                             format!("整数幂运算失败: {lhs} ** {rhs}"),
                         );
-                        Err(())
+                        Err(EvalAbort::Error)
                     }
                 }
             }
@@ -1989,7 +2060,7 @@ impl<'a> CheckEvaluator<'a> {
                         format_value_for_message(&rhs)
                     ),
                 );
-                Err(())
+                Err(EvalAbort::Error)
             }
         }
     }
@@ -1999,11 +2070,12 @@ impl<'a> CheckEvaluator<'a> {
         value: Option<i64>,
         path: Option<CfdPath>,
         message: impl Into<String>,
-    ) -> Result<LocatedCheckValue, ()> {
+    ) -> EvalResult<LocatedCheckValue> {
         value
             .map(|value| LocatedCheckValue::new(CheckValue::Int(value), path.clone()))
             .ok_or_else(|| {
                 self.diag_at(CfdErrorCode::CheckEvalTypeError, path, message);
+                EvalAbort::Error
             })
     }
 
@@ -2014,10 +2086,10 @@ impl<'a> CheckEvaluator<'a> {
         rhs: i64,
         path: Option<CfdPath>,
         message: impl Into<String>,
-    ) -> Result<LocatedCheckValue, ()> {
+    ) -> EvalResult<LocatedCheckValue> {
         let Some(rhs) = rhs.try_into().ok() else {
             self.diag_at(CfdErrorCode::CheckEvalTypeError, path, message);
-            return Err(());
+            return Err(EvalAbort::Error);
         };
         self.checked_int(op(lhs, rhs), path, message)
     }
@@ -2028,7 +2100,7 @@ impl<'a> CheckEvaluator<'a> {
         lhs: &CheckValue,
         rhs: &CheckValue,
         path: Option<CfdPath>,
-    ) -> Result<bool, ()> {
+    ) -> EvalResult<bool> {
         Ok(match op {
             CftSchemaCmpOp::Eq => values_equal(lhs, rhs),
             CftSchemaCmpOp::Ne => !values_equal(lhs, rhs),
@@ -2044,7 +2116,7 @@ impl<'a> CheckEvaluator<'a> {
         lhs: &CheckValue,
         rhs: &CheckValue,
         path: Option<CfdPath>,
-    ) -> Result<std::cmp::Ordering, ()> {
+    ) -> EvalResult<std::cmp::Ordering> {
         if matches!(lhs, CheckValue::Null) || matches!(rhs, CheckValue::Null) {
             self.diag_at(
                 CfdErrorCode::CheckNullAccess,
@@ -2055,7 +2127,7 @@ impl<'a> CheckEvaluator<'a> {
                     format_value_for_message(rhs)
                 ),
             );
-            return Err(());
+            return Err(EvalAbort::Error);
         }
         match (lhs, rhs) {
             (CheckValue::Int(lhs), CheckValue::Int(rhs)) => Ok(lhs.cmp(rhs)),
@@ -2066,6 +2138,7 @@ impl<'a> CheckEvaluator<'a> {
                         path,
                         format!("float 比较失败: {lhs} cmp {rhs}"),
                     );
+                    EvalAbort::Error
                 })
             }
             (CheckValue::Enum(lhs), CheckValue::Enum(rhs)) if lhs.enum_name == rhs.enum_name => {
@@ -2081,7 +2154,7 @@ impl<'a> CheckEvaluator<'a> {
                         format_value_for_message(rhs)
                     ),
                 );
-                Err(())
+                Err(EvalAbort::Error)
             }
         }
     }
@@ -2119,6 +2192,18 @@ impl<'a> CheckEvaluator<'a> {
         }
         self.diagnostics
             .push(CfdDiagnostic::error(code, message).with_primary(self.root_record, path));
+    }
+}
+
+fn dimension_record_key(
+    model: &CfdDataModel,
+    record: &CheckRecordRef,
+    field: &DimensionFieldMeta,
+) -> Option<String> {
+    if field.is_singleton {
+        Some(field.source_field.clone())
+    } else {
+        record.key(model).map(str::to_string)
     }
 }
 

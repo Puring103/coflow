@@ -36,7 +36,7 @@ impl CheckValue {
         }
     }
 
-    fn from_cfd_value_with_path(
+    pub(super) fn from_cfd_value_with_path(
         value: &CfdValue,
         ty: Option<&CftSchemaTypeRef>,
         path: Option<CfdPath>,

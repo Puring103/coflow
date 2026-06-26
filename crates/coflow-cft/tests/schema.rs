@@ -303,6 +303,74 @@ fn schema_accepts_display_and_deprecated_on_enum_variants() {
 }
 
 #[test]
+fn schema_compiles_localized_annotation_to_language_dimension() {
+    let schema = compile_one(
+        r#"
+            type Item {
+                name: string;
+                @localized
+                description: string;
+            }
+        "#,
+    )
+    .expect("localized fields should compile");
+
+    let item = schema.resolve_type("Item").expect("Item type");
+    assert_eq!(item.fields[0].dimension, None);
+    assert_eq!(
+        item.fields[1].dimension,
+        Some(coflow_cft::DimensionSpec {
+            kind: coflow_cft::Dimension::Localized,
+            bucket: Some("Item".to_string()),
+        })
+    );
+}
+
+#[test]
+fn schema_compiles_localized_bucket_to_dimension_spec() {
+    let schema = compile_one(
+        r#"
+            type Item {
+                @localized("ui")
+                icon: string;
+            }
+        "#,
+    )
+    .expect("localized bucket should compile");
+
+    let item = schema.resolve_type("Item").expect("Item type");
+    assert_eq!(
+        item.fields[0].dimension,
+        Some(coflow_cft::DimensionSpec {
+            kind: coflow_cft::Dimension::Localized,
+            bucket: Some("ui".to_string()),
+        })
+    );
+}
+
+#[test]
+fn schema_compiles_named_localized_bucket_to_dimension_spec() {
+    let schema = compile_one(
+        r#"
+            type Item {
+                @localized(bucket = "ui")
+                icon: string;
+            }
+        "#,
+    )
+    .expect("named localized bucket should compile");
+
+    let item = schema.resolve_type("Item").expect("Item type");
+    assert_eq!(
+        item.fields[0].dimension,
+        Some(coflow_cft::DimensionSpec {
+            kind: coflow_cft::Dimension::Localized,
+            bucket: Some("ui".to_string()),
+        })
+    );
+}
+
+#[test]
 fn schema_rejects_invalid_enum_variant_annotations() {
     let err = compile_one(
         r#"

@@ -89,7 +89,7 @@ impl<'a> Parser<'a> {
                         "unterminated annotation argument list",
                     );
                 }
-                args.push(self.parse_annotation_arg()?);
+                args.push(self.parse_annotation_arg_for(&name.name)?);
                 if self.eat(&TokenKind::Comma).is_none() {
                     break;
                 }
@@ -145,6 +145,30 @@ impl<'a> Parser<'a> {
                 "invalid annotation argument",
             ),
         }
+    }
+
+    fn parse_annotation_arg_for(
+        &mut self,
+        annotation_name: &str,
+    ) -> Result<AnnotationArg, CftDiagnostics> {
+        if annotation_name == "localized"
+            && self.peek_ident_is("bucket")
+            && self.next_at(&TokenKind::Equal)
+        {
+            let _bucket = self.expect_ident_with_code(CftErrorCode::InvalidAnnotationSyntax)?;
+            self.expect_simple(&TokenKind::Equal, CftErrorCode::InvalidAnnotationSyntax)?;
+            let token = self.peek().clone();
+            if let TokenKind::String(value) = token.kind {
+                self.bump();
+                return Ok(AnnotationArg::String(value, token.span));
+            }
+            return self.err_at(
+                CftErrorCode::InvalidAnnotationSyntax,
+                token.span,
+                "expected string literal for @localized bucket",
+            );
+        }
+        self.parse_annotation_arg()
     }
 
     fn parse_const(&mut self, annotations: Vec<Annotation>) -> Result<ConstDef, CftDiagnostics> {
@@ -1171,6 +1195,10 @@ impl<'a> Parser<'a> {
         self.tokens.get(self.pos + 1).is_some_and(|token| {
             std::mem::discriminant(&token.kind) == std::mem::discriminant(kind)
         })
+    }
+
+    fn peek_ident_is(&self, name: &str) -> bool {
+        matches!(&self.peek().kind, TokenKind::Ident(value) if value == name)
     }
 
     fn bump(&mut self) -> Token {

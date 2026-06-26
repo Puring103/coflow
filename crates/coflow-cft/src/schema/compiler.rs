@@ -7,10 +7,11 @@ use super::support::{
 use super::type_checker::TypeChecker;
 use super::{
     CftConstValue, CftSchemaConst, CftSchemaDefaultValue, CftSchemaEnum, CftSchemaEnumVariant,
-    CftSchemaField, CftSchemaModule, CftSchemaType, CompiledSchema,
+    CftSchemaField, CftSchemaModule, CftSchemaType, CompiledSchema, Dimension, DimensionSpec,
 };
 use crate::ast::{
-    Annotation, ConstLiteral, DefaultExpr, DefaultExprKind, FieldDef, Item, TypeRef, TypeRefKind,
+    Annotation, AnnotationArg, ConstLiteral, DefaultExpr, DefaultExprKind, FieldDef, Item, TypeRef,
+    TypeRefKind,
 };
 use crate::container::{CftContainer, ModuleId};
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
@@ -558,7 +559,7 @@ impl<'a> SchemaCompiler<'a> {
                 }
             }
             if let Some(annotation) = find_annotation(&info.def.annotations, "idAsEnum") {
-                if let Some(crate::ast::AnnotationArg::Name(enum_name)) = annotation.args.first() {
+                if let Some(AnnotationArg::Name(enum_name)) = annotation.args.first() {
                     this.validate_id_as_enum_name(&info.module, &enum_name.name, enum_name.span);
                     this.register_id_as_enum_name(
                         &mut id_as_enum_names,
@@ -680,6 +681,18 @@ impl<'a> SchemaCompiler<'a> {
                     annotation.span,
                     "@localized can only appear on top-level type fields, not inside sealed types",
                 );
+            }
+        }
+        if let Some(annotation) = find_annotation(&field.annotations, "localized") {
+            if let Some(AnnotationArg::String(bucket, span)) = annotation.args.first() {
+                if !crate::is_cft_identifier(bucket) {
+                    self.push_diag(
+                        CftErrorCode::LocalizedBucketNotIdentifier,
+                        module,
+                        *span,
+                        format!("@localized bucket `{bucket}` is not a valid CFT identifier"),
+                    );
+                }
             }
         }
         if let Some(annotation) = find_annotation(&field.annotations, "expand") {
@@ -1084,8 +1097,10 @@ impl<'a> SchemaCompiler<'a> {
 
     fn build_schema_field(&self, field: &FieldDef, owner_type: &str) -> CftSchemaField {
         let localized = find_annotation(&field.annotations, "localized");
-        let is_localized = localized.is_some();
-        let localization_bucket = localized.map(|_| owner_type.to_string());
+        let dimension = localized.map(|_| DimensionSpec {
+            kind: Dimension::Localized,
+            bucket: localized_bucket(field).or_else(|| Some(owner_type.to_string())),
+        });
         CftSchemaField {
             name: field.name.clone(),
             ty: format_type_ref(&field.ty),
@@ -1096,8 +1111,7 @@ impl<'a> SchemaCompiler<'a> {
                 .as_ref()
                 .and_then(|default| self.schema_default_value(default)),
             annotations: convert_annotations(&field.annotations),
-            is_localized,
-            localization_bucket,
+            dimension,
             span: field.span,
         }
     }
@@ -1297,5 +1311,13 @@ impl<'a> SchemaCompiler<'a> {
                 body(self, &info);
             }
         }
+    }
+}
+
+fn localized_bucket(field: &FieldDef) -> Option<String> {
+    let annotation = find_annotation(&field.annotations, "localized")?;
+    match annotation.args.first() {
+        Some(AnnotationArg::String(bucket, _)) => Some(bucket.clone()),
+        _ => None,
     }
 }

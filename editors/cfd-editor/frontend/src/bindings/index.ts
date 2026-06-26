@@ -132,10 +132,6 @@ export interface FieldCell {
    *  via a spread. Front-end uses it to render the cell as inherited and
    *  show a "jump to source" affordance. */
   spread_info?: SpreadInfo
-  /** Marker for cells the user must not edit (e.g. localization `id` and
-   *  `default` columns). The editor still renders the value, but disables
-   *  inline editing. Defaults to false for regular records. */
-  read_only?: boolean
 }
 
 export interface SpreadInfo {

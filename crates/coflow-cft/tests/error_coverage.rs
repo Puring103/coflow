@@ -368,11 +368,11 @@ fn cases() -> Vec<Case> {
             codes: &[CftErrorCode::LocalizedOnInvalidTarget],
         },
         Case {
-            name: "localized takes no args",
+            name: "localized bucket must be identifier",
             phase: Phase::Compile,
-            source: r#"type A { @localized("ui") name: string; }"#,
-            adjacent_valid_source: "type A { @localized name: string; }",
-            codes: &[CftErrorCode::InvalidAnnotationArgument],
+            source: r#"type A { @localized(bucket = "bad-name") name: string; }"#,
+            adjacent_valid_source: r#"type A { @localized(bucket = "ui") name: string; }"#,
+            codes: &[CftErrorCode::LocalizedBucketNotIdentifier],
         },
         Case {
             name: "singleton on abstract type",

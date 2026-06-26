@@ -197,14 +197,12 @@ fn apply_plan(plan: &TableWritePlan) -> Result<Option<RecordOrigin>, DiagnosticS
             let path = local_path(document)?;
             mutate_csv(path, |rows| {
                 ensure_expected_key(rows, path, *row, *id_column, expected_key)?;
-                let idx = row
-                    .checked_sub(1)
-                    .ok_or_else(|| {
-                        DiagnosticSet::one(diag(
-                            "CSV-WRITE",
-                            "csv row index must be at least 1".to_string(),
-                        ))
-                    })?;
+                let idx = row.checked_sub(1).ok_or_else(|| {
+                    DiagnosticSet::one(diag(
+                        "CSV-WRITE",
+                        "csv row index must be at least 1".to_string(),
+                    ))
+                })?;
                 if idx < rows.len() {
                     rows.remove(idx);
                 }
@@ -262,9 +260,10 @@ fn mutate_csv(
 }
 
 fn set_csv_cell(rows: &mut Vec<Vec<String>>, cell: &TableSetCell) -> Result<(), DiagnosticSet> {
-    let row_idx = cell.row.checked_sub(1).ok_or_else(|| {
-        DiagnosticSet::one(diag("CSV-WRITE", "csv row index must be at least 1"))
-    })?;
+    let row_idx = cell
+        .row
+        .checked_sub(1)
+        .ok_or_else(|| DiagnosticSet::one(diag("CSV-WRITE", "csv row index must be at least 1")))?;
     let col_idx = cell.column.checked_sub(1).ok_or_else(|| {
         DiagnosticSet::one(diag("CSV-WRITE", "csv column index must be at least 1"))
     })?;
@@ -275,7 +274,7 @@ fn set_csv_cell(rows: &mut Vec<Vec<String>>, cell: &TableSetCell) -> Result<(), 
     while row.len() <= col_idx {
         row.push(String::new());
     }
-    row[col_idx] = cell.value.clone();
+    row[col_idx].clone_from(&cell.value);
     Ok(())
 }
 
@@ -286,17 +285,16 @@ fn ensure_expected_key(
     id_column: usize,
     expected_key: &str,
 ) -> Result<(), DiagnosticSet> {
-    let row_idx = row.checked_sub(1).ok_or_else(|| {
-        DiagnosticSet::one(diag("CSV-WRITE", "csv row index must be at least 1"))
-    })?;
+    let row_idx = row
+        .checked_sub(1)
+        .ok_or_else(|| DiagnosticSet::one(diag("CSV-WRITE", "csv row index must be at least 1")))?;
     let col_idx = id_column.checked_sub(1).ok_or_else(|| {
         DiagnosticSet::one(diag("CSV-WRITE", "csv column index must be at least 1"))
     })?;
     let actual = rows
         .get(row_idx)
         .and_then(|r| r.get(col_idx))
-        .map(String::as_str)
-        .unwrap_or("");
+        .map_or("", String::as_str);
     if actual.trim() == expected_key {
         return Ok(());
     }
