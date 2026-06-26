@@ -602,3 +602,109 @@ dimensions:
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }
+
+/// Regression: spec 17 §1.1 — source record `Item.potion` and synthetic
+/// dimension record `Item_nameVariants.potion` share the record key `potion`
+/// but live in different types. The pre-refactor `RecordIndex` keyed records
+/// by bare `key`, so the second `add(potion)` clobbered the first and
+/// `keys_for_file("Item_name.csv")` returned the wrong record's fields.
+///
+/// After Phase 2, `RecordIndex` is keyed by `(actual_type, key)`. Both
+/// records coexist; `ids_in_file("Item_name.csv")` lists only the synthetic
+/// row and `record.actual_type` resolves to `Item_nameVariants` (not `Item`).
+#[test]
+fn synthetic_and_source_records_with_same_key_do_not_collide() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-engine-record-coordinate-collision-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create dimensions dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        r#"
+        type Item {
+            @localized
+            name: string;
+        }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n").expect("write items");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+sources:
+  - path: data/items.csv
+    type: csv
+    sheets:
+      - sheet: items
+        type: Item
+dimensions:
+  language:
+    variants: [zh, en]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let mut registry = coflow_api::ProviderRegistry::default();
+    registry
+        .register_loader(coflow_loader_csv::CsvLoader)
+        .expect("csv loader");
+    let session = build_project_session(project, &registry).expect("build session");
+    assert!(
+        !session.has_diagnostics(),
+        "diagnostics: {:?}",
+        session.diagnostics.as_set()
+    );
+
+    // Both records exist in the model, each addressable by (type, key).
+    let source = session
+        .records
+        .get_by_coordinate("Item", "potion")
+        .expect("source `Item.potion` should be indexed");
+    let synthetic = session
+        .records
+        .get_by_coordinate("Item_nameVariants", "potion")
+        .expect("synthetic `Item_nameVariants.potion` should be indexed");
+    assert_ne!(source.id, synthetic.id, "both records have distinct ids");
+    assert_eq!(source.display_path, "data/items.csv");
+    assert_eq!(synthetic.display_path, "data/dimensions/language/Item_name.csv");
+
+    // The synthetic file lists only the synthetic record — the source row's
+    // fields must not bleed through.
+    let ids_in_variants_file = session
+        .records
+        .ids_in_file("data/dimensions/language/Item_name.csv")
+        .to_vec();
+    assert_eq!(
+        ids_in_variants_file,
+        vec![synthetic.id],
+        "synthetic file index should hold only the variant record"
+    );
+    let coordinate = session
+        .records
+        .get(synthetic.id)
+        .expect("synthetic record ref")
+        .coordinate
+        .clone();
+    assert_eq!(coordinate.actual_type, "Item_nameVariants");
+    assert_eq!(coordinate.key, "potion");
+
+    // `record_view` returns the synthetic record's fields when addressed by
+    // its coordinate — not the source `Item` record's fields.
+    let view = session
+        .record_view("Item_nameVariants", "potion")
+        .expect("record view");
+    assert!(view.record.fields.contains_key("default"));
+    assert!(view.record.fields.contains_key("zh"));
+    assert!(view.record.fields.contains_key("en"));
+    assert!(!view.record.fields.contains_key("name"));
+
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
