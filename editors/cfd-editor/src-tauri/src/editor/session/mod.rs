@@ -5,24 +5,18 @@
 //! `ProviderRegistry`. Each session is wrapped in its own `RwLock` so reads
 //! don't block one another and a write is scoped to a single session.
 //!
-//! The data flow is:
+//! After spec 17, the data flow is:
 //! 1. `load_project` opens the project and asks `coflow-engine` to build a
-//!    `ProjectSession` containing schema, model, diagnostics, dependency graph,
-//!    and source/record/file indexes.
-//! 2. `get_*` commands read engine state under a read lock and derive only the
-//!    editor wire DTOs they need.
-//! 3. `write_field` uses the engine indexes to find the source and record
-//!    origin, routes the edit through the registered `DataWriter`, then rebuilds
-//!    the `ProjectSession` from disk before returning a fresh row.
-//!
-//! The implementation is split across several sub-modules so each one stays
-//! short and self-contained:
-//! - `build` — open the project and build the shared engine session.
-//! - `diagnostics` — convert canonical diagnostics into the wire shape.
-//! - `file_tree` — present sources + extension-matched files as a tree.
-//! - `graph` — build the BFS-bounded reference graph for a focus file.
-//! - `wire` — translate between editor wire types and runtime values.
-//! - `path` — small helpers for slash-normalised path strings.
+//!    `ProjectSession` (schema, model, diagnostics, dependency graph, and
+//!    source/record/file indexes).
+//! 2. `get_*` commands read engine state under a read lock and derive only
+//!    the wire DTOs they need.
+//! 3. `write_field` / `insert_record` / `delete_record` call straight into
+//!    `session.engine.write_field(...)` etc. The engine handles preflight,
+//!    writer dispatch, and the post-write rebuild; we just translate the
+//!    `(actual_type, key)` coordinate the front-end sent into the engine's
+//!    APIs and copy the new diagnostics back.
+
 mod build;
 mod diagnostics;
 mod graph;
@@ -34,22 +28,20 @@ use std::path::Path as StdPath;
 use std::sync::{Arc, RwLock};
 
 use coflow_api::ProviderRegistry;
-use coflow_data_model::{CfdRecord, CfdRecordId};
-use coflow_engine::ProjectSession;
+use coflow_data_model::{CfdRecord, CfdRecordId, CfdValue};
+use coflow_engine::{ProjectSession, RecordCoordinate, RecordView};
 
-use crate::editor::convert::record_to_field_cells_for_session;
+use crate::editor::convert::{record_view_to_row, WireContext};
 use crate::editor::types::{
-    DeleteRecordOutcome, EditorError, FieldCell, FieldPathSegment, FieldValue, FileRecords,
-    GraphData, InsertRecordOutcome, ProjectSnapshot, RecordRow, WriteFieldOutcome,
+    DeleteRecordOutcome, DeletedRecordSnapshot, EditorError, FileRecords, GraphData,
+    InsertRecordOutcome, ProjectSnapshot, RefTarget, WriteFieldOutcome,
 };
 
 pub use diagnostics::Diagnostics;
 
 use build::{build_session, default_provider_registry, session_capabilities_for_file};
-use diagnostics::diagnostic_from_api;
-use graph::{annotate_ref_files, build_graph};
 use path::strip_unc_prefix;
-use wire::{default_value_for_ty, field_path_segment_to_api, field_value_to_cfd};
+use wire::default_value_for_ty;
 
 /// A loaded project. Held inside `Arc<RwLock<…>>` so multi-session and
 /// multi-reader access stay independent.
@@ -75,10 +67,10 @@ impl std::fmt::Debug for EditorSession {
 }
 
 impl EditorSession {
-    /// `record_key → file_path` map for cells that carry a record reference.
-    /// Uses the first record found for a given key (synthetic records of a
-    /// given key share the same backing file as their source, so collisions
-    /// in this map don't matter for navigation).
+    /// `record_key → file_path` map for soft navigation hints. When the
+    /// same key lives in multiple types the entry may be approximate; the
+    /// front-end uses it only as a hint and re-queries the engine for the
+    /// authoritative record on click.
     fn record_file_map(&self) -> HashMap<String, String> {
         self.engine
             .records
@@ -89,11 +81,6 @@ impl EditorSession {
     }
 }
 
-/// Container for one open project. Writes acquire the inner `RwLock` for
-/// write access — the engine's `write_field` / `insert_record` /
-/// `delete_record` mutates the session in place (rebuilding model +
-/// diagnostics on success), so the lock alone is enough to serialise
-/// concurrent edits.
 #[derive(Debug)]
 struct SessionEntry {
     state: RwLock<EditorSession>,
@@ -132,22 +119,11 @@ impl SessionStore {
         })
     }
 
-    /// Create a minimal new project at `dir` (mirrors the CLI's
-    /// `coflow init`) and immediately open it.
-    ///
-    /// Equivalent to running `coflow init <dir>` and then
-    /// `load_project(<dir>/coflow.yaml)` — but in-process, so the front-end
-    /// can offer "新建工程" without spawning a subprocess.
-    ///
-    /// # Errors
-    /// Surfaces `EditorErrorKind::Project` when the directory already
-    /// holds a `coflow.yaml` or when scaffolding the layout fails.
     pub fn init_project(&self, dir: &StdPath) -> Result<ProjectSnapshot, EditorError> {
         let outcome = coflow_project::init_project(dir).map_err(EditorError::project)?;
         self.load_project(&outcome.config_path)
     }
 
-    /// Open a project: builds a session, returns its id and a snapshot.
     pub fn load_project(&self, yaml_path: &StdPath) -> Result<ProjectSnapshot, EditorError> {
         let registry = self.registry()?;
         let (session, snapshot_partial) = build_session(yaml_path, registry.as_ref())?;
@@ -189,29 +165,19 @@ impl SessionStore {
         let session = session_lock
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let ids = session.engine.records.ids_in_file(file_path).to_vec();
-
-        let mut records = Vec::with_capacity(ids.len());
+        let record_file_map = session.record_file_map();
+        let ctx = WireContext {
+            session: &session.engine,
+            key_to_file: &record_file_map,
+        };
+        let mut records = Vec::new();
         let mut type_seen = Vec::new();
         let mut type_set = HashSet::new();
-        let record_file_map = session.record_file_map();
-        for id in &ids {
-            if let Some(record) = session.engine.model.record(*id) {
-                if type_set.insert(record.actual_type.clone()) {
-                    type_seen.push(record.actual_type.clone());
-                }
-                let mut row = RecordRow {
-                    key: record.key.clone(),
-                    actual_type: record.actual_type.clone(),
-                    fields: record_to_field_cells_for_session(
-                        record,
-                        &session.engine.model,
-                        &record_file_map,
-                    ),
-                };
-                annotate_ref_files(&mut row.fields, &session);
-                records.push(row);
+        for view in session.engine.record_views_in_file(file_path) {
+            if type_set.insert(view.coordinate.actual_type.clone()) {
+                type_seen.push(view.coordinate.actual_type.clone());
             }
+            records.push(record_view_to_row(&view, &ctx));
         }
         let capabilities =
             session_capabilities_for_file(&session, self.registry()?.as_ref(), file_path);
@@ -224,7 +190,7 @@ impl SessionStore {
         })
     }
 
-    pub fn make_default_object(&self, id: u32, type_name: &str) -> Result<FieldValue, EditorError> {
+    pub fn make_default_object(&self, id: u32, type_name: &str) -> Result<CfdValue, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
         let session = session_lock
@@ -237,21 +203,20 @@ impl SessionStore {
             .ok_or_else(|| {
                 EditorError::not_found(format!("type `{type_name}` not found in schema"))
             })?;
-        let mut fields = Vec::new();
+        let mut fields = std::collections::BTreeMap::new();
         for f in &ty.all_fields {
-            let value = default_value_for_ty(&f.ty_ref, f.default.as_ref(), &session.engine.schema);
-            fields.push(FieldCell {
-                name: f.name.clone(),
-                value,
-                is_spread: false,
-                spread_info: None,
-            });
+            let value =
+                default_value_for_ty(&f.ty_ref, f.default.as_ref(), &session.engine.schema);
+            fields.insert(f.name.clone(), value);
         }
         drop(session);
-        Ok(FieldValue::Object {
+        Ok(CfdValue::Object(Box::new(CfdRecord {
+            key: String::new(),
             actual_type: type_name.to_string(),
             fields,
-        })
+            origin: coflow_data_model::RecordOrigin::None,
+            spread_field_sources: std::collections::BTreeMap::new(),
+        })))
     }
 
     pub fn get_enum_variants(&self, id: u32, enum_name: &str) -> Result<Vec<String>, EditorError> {
@@ -268,32 +233,43 @@ impl SessionStore {
             .unwrap_or_default())
     }
 
+    /// Records assignable to `expected_type`, surfaced as `RefTarget`s so
+    /// the front-end can render `Type.key` and jump directly.
     pub fn get_ref_targets(
         &self,
         id: u32,
         expected_type: &str,
-    ) -> Result<Vec<String>, EditorError> {
+    ) -> Result<Vec<RefTarget>, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
         let session = session_lock
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let mut keys: Vec<String> = session
+        let mut targets: Vec<RefTarget> = session
             .engine
-            .model
-            .records()
-            .filter(|(_, r)| {
+            .records
+            .by_id()
+            .values()
+            .filter(|record_ref| {
                 session
                     .engine
                     .schema
-                    .is_assignable(&r.actual_type, expected_type)
+                    .is_assignable(&record_ref.coordinate.actual_type, expected_type)
             })
-            .map(|(_, r)| r.key.clone())
+            .map(|record_ref| RefTarget {
+                coordinate: record_ref.coordinate.clone(),
+                file_path: record_ref.display_path.clone(),
+            })
             .collect();
         drop(session);
-        keys.sort();
-        keys.dedup();
-        Ok(keys)
+        targets.sort_by(|a, b| {
+            a.coordinate
+                .actual_type
+                .cmp(&b.coordinate.actual_type)
+                .then_with(|| a.coordinate.key.cmp(&b.coordinate.key))
+        });
+        targets.dedup_by(|a, b| a.coordinate == b.coordinate);
+        Ok(targets)
     }
 
     pub fn get_graph(&self, id: u32, file_path: &str) -> Result<GraphData, EditorError> {
@@ -302,56 +278,29 @@ impl SessionStore {
         let session = session_lock
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        Ok(build_graph(&session, file_path))
+        Ok(graph::build_graph(&session, file_path))
     }
 
-    /// Persist a single field edit and refresh diagnostics.
-    ///
-    /// Returns a [`WriteFieldOutcome`] containing both the refreshed row
-    /// and the project's diagnostics after the post-write rebuild — that
-    /// rebuild always reruns the checker, so any check failures the edit
-    /// introduced (or fixed) are reflected here without the caller having
-    /// to issue a follow-up query.
+    /// Persist a single field edit. Coordinate carries the host record's
+    /// `(actual_type, key)` so the engine can address synthetic-vs-source
+    /// rows that share a key.
     pub fn write_field(
         &self,
         id: u32,
         file_path: &str,
-        record_key: &str,
-        field_path: &[FieldPathSegment],
-        new_value: &FieldValue,
+        coordinate: RecordCoordinate,
+        field_path: Vec<coflow_data_model::CfdPathSegment>,
+        new_value: CfdValue,
     ) -> Result<WriteFieldOutcome, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
         let registry = self.registry()?;
-        let path_segments = field_path
+        let path_segments: Vec<coflow_api::WriteFieldPathSegment> = field_path
             .iter()
-            .map(field_path_segment_to_api)
-            .collect::<Vec<_>>();
+            .map(coflow_path_to_write_segment)
+            .collect();
 
-        // Convert wire value → core CfdValue + resolve coordinate inside the
-        // write lock so the engine sees a coherent snapshot.
-        let (new_cfd_value, coordinate) = {
-            let session = session_lock
-                .read()
-                .map_err(|_| EditorError::session("session poisoned"))?;
-            let value = field_value_to_cfd(new_value, &session.engine.model)
-                .map_err(EditorError::write)?;
-            let (_id, record) = lookup_record_in_file(&session.engine, file_path, record_key)
-                .ok_or_else(|| {
-                    EditorError::not_found(format!(
-                        "record `{record_key}` not found in `{file_path}`"
-                    ))
-                })?;
-            (
-                value,
-                coflow_engine::RecordCoordinate::new(
-                    record.actual_type.clone(),
-                    record.key.clone(),
-                ),
-            )
-        };
-
-        let new_coordinate = {
+        let (final_coordinate, renamed) = {
             let mut session = session_lock
                 .write()
                 .map_err(|_| EditorError::session("session poisoned"))?;
@@ -362,80 +311,62 @@ impl SessionStore {
                     &coordinate.actual_type,
                     &coordinate.key,
                     &path_segments,
-                    &new_cfd_value,
+                    &new_value,
                 )
                 .map_err(api_diagnostics_to_editor_error)?;
-            // Engine has already replaced `session.engine` with the rebuilt
-            // ProjectSession; refresh editor's `Diagnostics` view to match.
             session.diagnostics = Diagnostics::from_set(outcome.diagnostics.clone());
-            outcome
+            let renamed = outcome.renamed.clone().map(|(_, new)| new);
+            let final_coord = outcome
                 .renamed
                 .map(|(_, new)| new)
                 .or_else(|| outcome.touched.into_iter().next())
-                .unwrap_or(coordinate)
+                .unwrap_or(coordinate);
+            (final_coord, renamed)
         };
 
         let session = session_lock
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let (_id, record) = lookup_record_in_file(
-            &session.engine,
-            file_path,
-            &new_coordinate.key,
-        )
-        .ok_or_else(|| {
-            EditorError::not_found(format!(
-                "record `{}` not found in `{file_path}` after write",
-                new_coordinate.key
-            ))
-        })?;
+        let view = session
+            .engine
+            .record_view(&final_coordinate.actual_type, &final_coordinate.key)
+            .ok_or_else(|| {
+                EditorError::not_found(format!(
+                    "record `{}.{}` not found after write",
+                    final_coordinate.actual_type, final_coordinate.key
+                ))
+            })?;
         let record_file_map = session.record_file_map();
-        let mut row = RecordRow {
-            key: record.key.clone(),
-            actual_type: record.actual_type.clone(),
-            fields: record_to_field_cells_for_session(
-                record,
-                &session.engine.model,
-                &record_file_map,
-            ),
+        let ctx = WireContext {
+            session: &session.engine,
+            key_to_file: &record_file_map,
         };
-        annotate_ref_files(&mut row.fields, &session);
+        let row = record_view_to_row(&view, &ctx);
+        let _ = file_path; // navigation hint only — the engine view is authoritative
         Ok(WriteFieldOutcome {
             row,
             diagnostics: session.diagnostics.flatten(),
+            renamed,
         })
     }
 
-    /// Persist a new top-level record and refresh diagnostics.
     pub fn insert_record(
         &self,
         id: u32,
         file_path: &str,
         record_key: &str,
         actual_type: &str,
-        fields: &FieldValue,
+        fields: CfdValue,
     ) -> Result<InsertRecordOutcome, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
         let registry = self.registry()?;
-
-        let fields_map = {
-            let session = session_lock
-                .read()
-                .map_err(|_| EditorError::session("session poisoned"))?;
-            let FieldValue::Object { fields: cells, .. } = fields else {
-                return Err(EditorError::write(
-                    "insert_record requires an Object FieldValue for fields",
-                ));
-            };
-            let mut map = std::collections::BTreeMap::new();
-            for cell in cells {
-                let value = field_value_to_cfd(&cell.value, &session.engine.model)
-                    .map_err(EditorError::write)?;
-                map.insert(cell.name.clone(), value);
-            }
-            map
+        let CfdValue::Object(boxed) = fields else {
+            return Err(EditorError::write(
+                "insert_record requires a CfdValue::Object for fields",
+            ));
         };
+        let fields_map = boxed.fields;
 
         {
             let mut session = session_lock
@@ -463,47 +394,23 @@ impl SessionStore {
         })
     }
 
-    /// Delete a top-level record and refresh diagnostics.
-    ///
-    /// Captures a wire-shaped snapshot of the record **before** the writer
-    /// touches the source so the front-end's undo can re-insert it later
-    /// without depending on its `fileDataCache`. The snapshot reflects the
-    /// engine's authoritative view (spread metadata, ref types, ...) at the
-    /// moment of deletion.
     pub fn delete_record(
         &self,
         id: u32,
         file_path: &str,
-        record_key: &str,
+        coordinate: RecordCoordinate,
     ) -> Result<DeleteRecordOutcome, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
         let registry = self.registry()?;
-        let (deleted_snapshot, deleted_actual_type) =
-            snapshot_record_before_delete(session_lock, file_path, record_key)?;
-        let coordinate = {
-            let session = session_lock
-                .read()
-                .map_err(|_| EditorError::session("session poisoned"))?;
-            let (_id, record) = lookup_record_in_file(&session.engine, file_path, record_key)
-                .ok_or_else(|| {
-                    EditorError::not_found(format!(
-                        "record `{record_key}` not found in `{file_path}`"
-                    ))
-                })?;
-            coflow_engine::RecordCoordinate::new(record.actual_type.clone(), record.key.clone())
-        };
+        let deleted_snapshot = snapshot_record_before_delete(session_lock, &coordinate)?;
         {
             let mut session = session_lock
                 .write()
                 .map_err(|_| EditorError::session("session poisoned"))?;
             let outcome = session
                 .engine
-                .delete_record(
-                    registry.as_ref(),
-                    &coordinate.actual_type,
-                    &coordinate.key,
-                )
+                .delete_record(registry.as_ref(), &coordinate.actual_type, &coordinate.key)
                 .map_err(api_diagnostics_to_editor_error)?;
             session.diagnostics = Diagnostics::from_set(outcome.diagnostics);
         }
@@ -515,7 +422,6 @@ impl SessionStore {
             file_records,
             diagnostics: session.diagnostics.flatten(),
             deleted_snapshot,
-            deleted_actual_type,
         })
     }
 
@@ -540,39 +446,44 @@ impl SessionStore {
     }
 }
 
-/// Render the engine's current view of `record_key` as a wire `FieldValue`
-/// suitable for round-tripping back through `insert_record` later (for undo).
-///
-/// Returns `(None, None)` when the record cannot be found in the model.
-/// Callers should treat that as "no snapshot available" rather than an
-/// error — deletion of an unknown key will fail at the writer anyway.
+/// Capture the record as `(CfdRecord, display_path)` before the writer
+/// touches the source. Returns `None` when no record matches the
+/// coordinate — undo is best-effort in that case.
 fn snapshot_record_before_delete(
     session_lock: &RwLock<EditorSession>,
-    file_path: &str,
-    record_key: &str,
-) -> Result<(Option<FieldValue>, Option<String>), EditorError> {
-    let (snapshot, actual_type) = {
-        let session = session_lock
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
-        let Some((_, record)) = lookup_record_in_file(&session.engine, file_path, record_key)
-        else {
-            return Ok((None, None));
-        };
-        let record_file_map = session.record_file_map();
-        let fields =
-            record_to_field_cells_for_session(record, &session.engine.model, &record_file_map);
-        let actual_type = record.actual_type.clone();
-        drop(session);
-        (
-            FieldValue::Object {
-                actual_type: actual_type.clone(),
-                fields,
-            },
-            actual_type,
-        )
+    coordinate: &RecordCoordinate,
+) -> Result<Option<DeletedRecordSnapshot>, EditorError> {
+    let session = session_lock
+        .read()
+        .map_err(|_| EditorError::session("session poisoned"))?;
+    let Some(view) = session
+        .engine
+        .record_view(&coordinate.actual_type, &coordinate.key)
+    else {
+        return Ok(None);
     };
-    Ok((Some(snapshot), Some(actual_type)))
+    Ok(Some(DeletedRecordSnapshot {
+        record: view.record.clone(),
+        display_path: view.display_path.to_string(),
+    }))
+}
+
+fn coflow_path_to_write_segment(
+    segment: &coflow_data_model::CfdPathSegment,
+) -> coflow_api::WriteFieldPathSegment {
+    match segment {
+        coflow_data_model::CfdPathSegment::Field(name) => {
+            coflow_api::WriteFieldPathSegment::Field(name.clone())
+        }
+        coflow_data_model::CfdPathSegment::Index(i) => {
+            coflow_api::WriteFieldPathSegment::Index(*i)
+        }
+        // Dict-key writes were always tunnelled through the `Field` variant —
+        // the editor never produced a `DictKey` segment for writes.
+        coflow_data_model::CfdPathSegment::DictKey(key) => {
+            coflow_api::WriteFieldPathSegment::Field(key.clone())
+        }
+    }
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -582,13 +493,12 @@ fn api_diagnostics_to_editor_error(diagnostics: coflow_api::DiagnosticSet) -> Ed
         .map(|d| d.message.as_str())
         .collect::<Vec<_>>()
         .join("; ");
-    EditorError::write(message).with_diagnostics(
-        diagnostics
-            .diagnostics
-            .iter()
-            .map(diagnostic_from_api)
-            .collect(),
-    )
+    let flat: Vec<coflow_api::FlatDiagnostic> = diagnostics
+        .diagnostics
+        .iter()
+        .map(|d| d.flat_view(None, None))
+        .collect();
+    EditorError::write(message).with_diagnostics(flat)
 }
 
 /// Locate a record by `(file_path, key)`. Files only host records of a single
@@ -596,6 +506,7 @@ fn api_diagnostics_to_editor_error(diagnostics: coflow_api::DiagnosticSet) -> Ed
 /// `key`-only match scoped to a specific file uniquely identifies the row
 /// even when the same key exists in a sibling type (e.g. source `Item.potion`
 /// vs synthetic `Item_nameVariants.potion`).
+#[allow(dead_code)]
 fn lookup_record_in_file<'a>(
     engine: &'a ProjectSession,
     file_path: &str,
@@ -610,4 +521,9 @@ fn lookup_record_in_file<'a>(
         }
     }
     None
+}
+
+#[allow(dead_code)]
+fn _record_view_marker(view: &RecordView<'_>) {
+    let _ = view;
 }

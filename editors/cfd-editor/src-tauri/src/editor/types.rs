@@ -1,8 +1,20 @@
 //! Wire types serialized to the editor frontend.
 //!
-//! These mirror `editors/cfd-editor/frontend/src/bindings/index.ts`.
+//! After the core-types refactor (spec 17), the editor stops re-defining
+//! "value", "path segment", "dict key" and friends; those are imported
+//! from `coflow-data-model` / `coflow-api` / `coflow-engine` and shipped
+//! straight to the front-end. The types that *remain* here are
+//! composition views — `RecordRow`, `FieldCell`, `FieldAnnotation`,
+//! `ProjectSnapshot`, ... — that bundle core data with editor-specific
+//! derived metadata (file hints, enum int values, spread info, ...).
 
+use coflow_api::{FlatDiagnostic, WriterCapabilities};
+use coflow_data_model::{CfdRecord, CfdValue};
+use coflow_engine::{FileTreeNode, RecordCoordinate};
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "ts-export")]
+use ts_rs::TS;
 
 /// Structured error returned by `SessionStore` methods.
 ///
@@ -11,29 +23,25 @@ use serde::{Deserialize, Serialize};
 /// front-end already renders for build/load/check errors. The front-end can
 /// route by `kind`, show `message` in a banner, and inject `diagnostics`
 /// into the diagnostics panel without doing any string parsing.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
 pub struct EditorError {
     pub kind: EditorErrorKind,
     pub message: String,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub diagnostics: Vec<DiagnosticItem>,
+    pub diagnostics: Vec<FlatDiagnostic>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
 #[serde(rename_all = "snake_case")]
 pub enum EditorErrorKind {
-    /// Session lookup / poisoning / lifecycle failures.
     Session,
-    /// Project parsing or schema compilation failed before any data could be
-    /// loaded.
     Project,
-    /// A writer rejected an edit (origin mismatch, schema-invalid value,
-    /// transport error, ...).
     Write,
-    /// A precondition for the requested operation was not met (record not
-    /// found, file not in this project, ...).
     NotFound,
-    /// Anything else.
     Other,
 }
 
@@ -73,7 +81,7 @@ impl EditorError {
     }
 
     #[must_use]
-    pub fn with_diagnostics(mut self, diagnostics: Vec<DiagnosticItem>) -> Self {
+    pub fn with_diagnostics(mut self, diagnostics: Vec<FlatDiagnostic>) -> Self {
         self.diagnostics = diagnostics;
         self
     }
@@ -99,268 +107,205 @@ impl From<String> for EditorError {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
 pub struct ProjectSnapshot {
     pub session_id: u32,
     pub project_root: String,
     pub file_tree: Vec<FileTreeNode>,
-    /// Flattened diagnostics for the initial wire snapshot. Each item
-    /// already carries its `stage` (`SCHEMA`, `LOAD`, `CHECK`, ...) so the
-    /// front-end can group/filter without keeping a separate index.
-    pub diagnostics: Vec<DiagnosticItem>,
+    pub diagnostics: Vec<FlatDiagnostic>,
 }
 
-pub use coflow_engine::FileTreeNode;
-
-#[derive(Debug, Clone, Serialize)]
-pub struct DiagnosticItem {
-    pub severity: String,
-    pub code: String,
-    pub stage: String,
-    pub message: String,
-    pub file_path: Option<String>,
-    pub record_key: Option<String>,
-    pub field_path: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
 pub struct FileRecords {
     pub file_path: String,
     pub type_names: Vec<String>,
     pub records: Vec<RecordRow>,
-    /// What the front-end is allowed to do with this file. Driven by the
-    /// `WriterCapabilities` of the registered writer for this source.
+    /// Per-source capabilities the front-end uses to grey out actions.
+    /// Bundles the writer's capabilities with its provider id so the UI can
+    /// also display "edited via excel" / "edited via lark-sheet".
     pub capabilities: SourceCapabilities,
 }
 
-/// Per-source capabilities surfaced to the editor UI. The front-end greys
-/// out actions whose flag is `false`.
-#[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Clone, Copy, Serialize)]
+/// Wire-friendly view of a writer's capabilities + the provider id that
+/// produced them. Replaces the previous standalone `SourceCapabilities`
+/// struct.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
 pub struct SourceCapabilities {
-    pub provider_id: &'static str,
-    pub can_edit_field: bool,
-    pub can_edit_key: bool,
-    pub can_insert_record: bool,
-    pub can_delete_record: bool,
-    pub is_remote: bool,
+    pub provider_id: String,
+    #[serde(flatten)]
+    pub capabilities: WriterCapabilities,
 }
 
 impl SourceCapabilities {
     #[must_use]
-    pub const fn read_only(provider_id: &'static str) -> Self {
+    pub fn read_only(provider_id: impl Into<String>) -> Self {
         Self {
-            provider_id,
-            can_edit_field: false,
-            can_edit_key: false,
-            can_insert_record: false,
-            can_delete_record: false,
-            is_remote: false,
+            provider_id: provider_id.into(),
+            capabilities: WriterCapabilities::read_only(),
         }
     }
 
     #[must_use]
-    pub const fn from_writer(
-        provider_id: &'static str,
-        capabilities: coflow_api::WriterCapabilities,
-    ) -> Self {
+    pub fn from_writer(provider_id: impl Into<String>, capabilities: WriterCapabilities) -> Self {
         Self {
-            provider_id,
-            can_edit_field: capabilities.can_edit_field,
-            can_edit_key: capabilities.can_edit_key,
-            can_insert_record: capabilities.can_insert_record,
-            can_delete_record: capabilities.can_delete_record,
-            is_remote: capabilities.is_remote,
+            provider_id: provider_id.into(),
+            capabilities,
         }
     }
 }
 
-#[derive(Debug, Serialize)]
+/// One top-level record's view inside a file. The record's stable identity
+/// is its `(actual_type, key)` coordinate; `display_path` repeats the file
+/// path for hosts that already have a row but want to display its origin.
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
 pub struct RecordRow {
-    pub key: String,
-    pub actual_type: String,
+    pub coordinate: RecordCoordinate,
+    pub display_path: String,
     pub fields: Vec<FieldCell>,
 }
 
-/// Result of a successful `write_field` Tauri command.
-///
-/// Bundles the refreshed row with the project's diagnostics post-rebuild so the
-/// front-end can refresh the diagnostics panel without issuing a follow-up
-/// query.
-///
-/// Diagnostics are returned **flattened across stages** (`schema + load +
-/// check`) — same shape the front-end already gets from `load_project`.
-/// The check stage is the one that typically changes after a write; the
-/// other stages stay stable until the project is fully rebuilt.
-#[derive(Debug, Serialize)]
-pub struct WriteFieldOutcome {
-    pub row: RecordRow,
-    pub diagnostics: Vec<DiagnosticItem>,
-}
-
-/// Result of `insert_record`: the refreshed list of records for the host
-/// file plus the project's diagnostics post-rebuild.
-#[derive(Debug, Serialize)]
-pub struct InsertRecordOutcome {
-    pub file_records: FileRecords,
-    pub diagnostics: Vec<DiagnosticItem>,
-}
-
-/// Result of `delete_record`: the refreshed list of records for the host
-/// file plus the project's diagnostics post-rebuild.
-#[derive(Debug, Serialize)]
-pub struct DeleteRecordOutcome {
-    pub file_records: FileRecords,
-    pub diagnostics: Vec<DiagnosticItem>,
-    /// Snapshot of the deleted record as the front-end's `FieldValue::Object`
-    /// shape. Front-end persists this in its undo stack so a later undo can
-    /// re-insert the record with full fidelity (including spread/ref
-    /// metadata) without depending on a still-warm `fileDataCache` row.
-    ///
-    /// `actual_type` mirrors the deleted record's concrete type. Both fields
-    /// are `None` only when the record could not be located before
-    /// deletion (defensive — should not happen in normal flows).
-    pub deleted_snapshot: Option<FieldValue>,
-    pub deleted_actual_type: Option<String>,
-}
-
+/// One cell in a record row. `value` is the authoritative `CfdValue` —
+/// shipped straight from the core model, no wire-only re-encoding — and
+/// `annotation` carries everything *not* present on the value itself:
+/// spread-source, ref target file hint, enum integer value.
 #[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
 pub struct FieldCell {
     pub name: String,
-    pub value: FieldValue,
-    /// True when this field comes from a `...spread` expansion (any
-    /// nesting level). Mirrors `spread_info.is_some()` for legacy callers
-    /// that only need a boolean — new code should consult `spread_info`.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub is_spread: bool,
-    /// Where the value of this cell originally came from, when it was
-    /// imported via a `...spread` expansion. `None` means the cell is
-    /// declared directly on the host record. The editor uses this to:
-    /// - render the cell as inherited (greyed background, source tooltip),
-    /// - offer a "jump to source" affordance,
-    /// - decide write semantics: by default an edit creates a local
-    ///   override in the host record's source rather than mutating the
-    ///   spread origin.
+    pub value: CfdValue,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotation: Option<FieldAnnotation>,
+}
+
+/// Editor-only derived metadata for a single cell.
+///
+/// - `spread_info`: cell came from a `...spread`; carries the source coordinate
+///   and a file-path hint for jump-to-source.
+/// - `ref_target_file`: project-relative file path of the record this cell
+///   refers to. Only meaningful when `value` is a `CfdValue::Ref`.
+/// - `enum_int_value`: integer backing the variant when `value` is a
+///   `CfdValue::Enum`. The variant name lives on the value itself; the
+///   integer is convenient for displays / filtering.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+pub struct FieldAnnotation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spread_info: Option<SpreadInfo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ref_target_file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enum_int_value: Option<i64>,
 }
 
-#[allow(clippy::trivially_copy_pass_by_ref)]
-const fn is_false(b: &bool) -> bool {
-    !*b
+impl FieldAnnotation {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.spread_info.is_none()
+            && self.ref_target_file.is_none()
+            && self.enum_int_value.is_none()
+    }
 }
 
+/// Source record coordinate of a spread-inherited cell, plus the field
+/// path within the source record so the UI can render
+/// `@Source.Key.path.to.field`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(clippy::struct_field_names)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
 pub struct SpreadInfo {
-    /// Record key the value was inherited from.
-    pub source_record_key: String,
-    /// Concrete type of the source record — useful for rendering the
-    /// jump-to-source link (`@Type.key`).
-    pub source_record_type: String,
-    /// Project-relative file path of the source record, if known. Front-end
-    /// uses this to navigate; absent for synthetic / inline sources.
+    pub source: RecordCoordinate,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_record_file: Option<String>,
-    /// Path inside the source record that this cell mirrors. Empty when
-    /// the spread is at the same nesting level as the source field. The
-    /// editor concatenates this with `source_record_key` to render
-    /// `Source.Key.path.to.field`.
     pub source_field_path: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "kind")]
-pub enum FieldValue {
-    Null,
-    Bool {
-        v: bool,
-    },
-    Int {
-        v: i64,
-    },
-    Float {
-        v: f64,
-    },
-    Str {
-        v: String,
-    },
-    Enum {
-        enum_name: String,
-        variant: String,
-        int_value: i64,
-    },
-    Object {
-        actual_type: String,
-        fields: Vec<FieldCell>,
-    },
-    Ref {
-        target_type: String,
-        target_key: String,
-        target_file: Option<String>,
-    },
-    Array {
-        items: Vec<Self>,
-    },
-    Dict {
-        entries: Vec<DictEntry>,
-    },
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+pub struct WriteFieldOutcome {
+    pub row: RecordRow,
+    pub diagnostics: Vec<FlatDiagnostic>,
+    /// `Some(new_coordinate)` when the write changed the host record's `id`
+    /// field. The front-end refreshes any caches keyed by the old coordinate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed: Option<RecordCoordinate>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct DictEntry {
-    pub key: DictKey,
-    pub value: FieldValue,
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+pub struct InsertRecordOutcome {
+    pub file_records: FileRecords,
+    pub diagnostics: Vec<FlatDiagnostic>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "kind")]
-pub enum DictKey {
-    Str {
-        v: String,
-    },
-    Int {
-        v: i64,
-    },
-    Enum {
-        enum_name: String,
-        variant: String,
-        int_value: i64,
-    },
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+pub struct DeleteRecordOutcome {
+    pub file_records: FileRecords,
+    pub diagnostics: Vec<FlatDiagnostic>,
+    /// Authoritative snapshot of the deleted record so the front-end's undo
+    /// can re-insert it. `None` only when the record was missing before
+    /// deletion (defensive — should not happen in normal flows).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_snapshot: Option<DeletedRecordSnapshot>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(tag = "kind")]
-pub enum FieldPathSegment {
-    /// Field-name segment. Also used for dict keys: the parser stores dict
-    /// entries as Block fields whose `name` is the AST-form key (string keys
-    /// without quotes, ints as their digit form, enum variants as identifier).
-    #[serde(rename = "field")]
-    Field { name: String },
-    #[serde(rename = "index")]
-    Index { i: usize },
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+pub struct DeletedRecordSnapshot {
+    pub record: CfdRecord,
+    pub display_path: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
 pub struct GraphData {
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
 pub struct GraphNode {
-    pub id: String,
-    pub key: String,
-    pub actual_type: String,
+    pub coordinate: RecordCoordinate,
     pub file_path: String,
     pub in_focus_file: bool,
     pub is_collapsed: bool,
     pub fields: Vec<FieldCell>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
 pub struct GraphEdge {
-    pub source: String,
-    pub target: String,
+    pub source: RecordCoordinate,
+    pub target: RecordCoordinate,
     pub field_path: String,
 }
+
+/// Wire-friendly handle on a record the editor can jump to (a `Ref`'s
+/// resolved target). Carries the coordinate + the file the record lives
+/// in so the front-end can navigate without a follow-up query.
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+pub struct RefTarget {
+    pub coordinate: RecordCoordinate,
+    pub file_path: String,
+}
+

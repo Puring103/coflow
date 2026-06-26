@@ -1,81 +1,98 @@
-//! Convert internal data-model values into wire types for the editor.
+//! Build editor-facing `RecordRow` / `FieldCell` views over engine records.
 //!
-//! Top-level conversion needs the session's `key_to_file` map so cells that
-//! reference (or are inherited from) other records can carry a file path
-//! the front-end uses for jump-to-source. Nested object/array/dict values
-//! flow through pure `cfd_value_to_wire` calls that fold this context with
-//! the model.
-use coflow_data_model::{CfdDataModel, CfdDictKey, CfdRecord, CfdRecordId, CfdValue};
+//! After spec 17, `FieldCell.value` is a `CfdValue` straight from the
+//! core model — no wire-only re-encoding. Editor-derived metadata
+//! (spread-source, ref target file hint, enum integer value) is
+//! collected into `FieldAnnotation` on the side. Conversion is a single
+//! walk of the record so the annotation tree mirrors the value tree.
+
+use coflow_data_model::{CfdRecord, CfdRecordId, CfdValue};
+use coflow_engine::{ProjectSession, RecordCoordinate, RecordView};
 use std::collections::HashMap;
 
-use crate::editor::types::{DictEntry, DictKey, FieldCell, FieldValue, SpreadInfo};
+use crate::editor::types::{FieldAnnotation, FieldCell, RecordRow, SpreadInfo};
 
-/// Lookup table the converter consults when populating spread / ref source
-/// metadata. Holds the session's `record_key → file_path` map so we don't
-/// have to thread the entire `EditorSession` through.
+/// Lookup context the converter consults when annotating cells.
 pub struct WireContext<'a> {
-    pub model: &'a CfdDataModel,
+    pub session: &'a ProjectSession,
+    /// `record_key → display_path` for `Ref` target navigation hints. When
+    /// the same key lives in multiple types the file hint may be
+    /// approximate; the front-end uses it as a soft hint only.
     pub key_to_file: &'a HashMap<String, String>,
 }
 
-/// Convert a top-level record into wire `FieldCell`s. Each cell whose value
-/// originated from a `...spread` expansion carries a [`SpreadInfo`] payload
-/// so the front-end can render it as inherited and dispatch edits to the
-/// right place.
-pub fn record_to_field_cells_for_session(
-    record: &CfdRecord,
-    model: &CfdDataModel,
-    key_to_file: &HashMap<String, String>,
-) -> Vec<FieldCell> {
-    let ctx = WireContext { model, key_to_file };
-    record
+/// Translate a [`RecordView`] into a wire [`RecordRow`].
+#[must_use]
+pub fn record_view_to_row(view: &RecordView<'_>, ctx: &WireContext<'_>) -> RecordRow {
+    let fields = view
+        .record
         .fields
         .iter()
-        .map(|(name, value)| {
-            let spread_info = spread_info_for_field(record, name, &ctx, &[]);
-            FieldCell {
-                name: name.clone(),
-                value: cfd_value_to_wire(value, &ctx),
-                is_spread: spread_info.is_some(),
-                spread_info,
-            }
+        .map(|(name, value)| FieldCell {
+            name: name.clone(),
+            value: value.clone(),
+            annotation: build_annotation(view.record, name, value, ctx, &[]),
         })
-        .collect()
+        .collect();
+    RecordRow {
+        coordinate: view.coordinate.clone(),
+        display_path: view.display_path.to_string(),
+        fields,
+    }
 }
 
-/// Convert a nested `CfdRecord` (inside `CfdValue::Object`) into cells.
-/// `parent_path` is the field path inside the host record that leads to
-/// this object; it's used to compose `spread_info.source_field_path` so the
-/// front-end can show "inherited from `basic_monster.stats.attack`" rather
-/// than just "inherited from `basic_monster`".
-fn record_to_field_cells_nested(
+/// Convenience: pull the [`RecordView`] from the session, then render it.
+#[must_use]
+pub fn record_to_row(
     record: &CfdRecord,
+    display_path: &str,
     ctx: &WireContext<'_>,
-    parent_path: &[String],
-) -> Vec<FieldCell> {
-    record
+) -> RecordRow {
+    let fields = record
         .fields
         .iter()
-        .map(|(name, value)| {
-            let spread_info = spread_info_for_field(record, name, ctx, parent_path);
-            FieldCell {
-                name: name.clone(),
-                value: cfd_value_to_wire_with_path(value, ctx, parent_path, name),
-                is_spread: spread_info.is_some(),
-                spread_info,
-            }
+        .map(|(name, value)| FieldCell {
+            name: name.clone(),
+            value: value.clone(),
+            annotation: build_annotation(record, name, value, ctx, &[]),
         })
-        .collect()
+        .collect();
+    RecordRow {
+        coordinate: RecordCoordinate::new(record.actual_type.clone(), record.key.clone()),
+        display_path: display_path.to_string(),
+        fields,
+    }
 }
 
-fn spread_info_for_field(
-    record: &CfdRecord,
+fn build_annotation(
+    host: &CfdRecord,
     field_name: &str,
+    value: &CfdValue,
     ctx: &WireContext<'_>,
     parent_path: &[String],
-) -> Option<SpreadInfo> {
-    let source_id = record.spread_field_sources.get(field_name).copied()?;
-    spread_info_for_source(ctx, source_id, parent_path, field_name)
+) -> Option<FieldAnnotation> {
+    let mut annotation = FieldAnnotation::default();
+    if let Some(source_id) = host.spread_field_sources.get(field_name).copied() {
+        annotation.spread_info = spread_info_for_source(ctx, source_id, parent_path, field_name);
+    }
+    annotation_for_value(value, ctx, &mut annotation);
+    if annotation.is_empty() {
+        None
+    } else {
+        Some(annotation)
+    }
+}
+
+fn annotation_for_value(value: &CfdValue, ctx: &WireContext<'_>, annotation: &mut FieldAnnotation) {
+    match value {
+        CfdValue::Ref { target_key, .. } => {
+            annotation.ref_target_file = ctx.key_to_file.get(target_key).cloned();
+        }
+        CfdValue::Enum(enum_value) => {
+            annotation.enum_int_value = Some(enum_value.value);
+        }
+        _ => {}
+    }
 }
 
 fn spread_info_for_source(
@@ -84,83 +101,16 @@ fn spread_info_for_source(
     parent_path: &[String],
     field_name: &str,
 ) -> Option<SpreadInfo> {
-    let source = ctx.model.record(source_id)?;
-    // `source_field_path` mirrors where in the source record the inherited
-    // value lives. Top-level spreads (`...@T.k`) lift the source record's
-    // field with the same name as our own; nested spreads inside an object
-    // carry the same field name at the corresponding nesting depth.
+    let source = ctx.session.model.record(source_id)?;
     let mut source_field_path = parent_path.to_vec();
     source_field_path.push(field_name.to_string());
+    let source_record_file = ctx
+        .session
+        .file_for_record(&source.actual_type, &source.key)
+        .map(str::to_string);
     Some(SpreadInfo {
-        source_record_key: source.key.clone(),
-        source_record_type: source.actual_type.clone(),
-        source_record_file: ctx.key_to_file.get(&source.key).cloned(),
+        source: RecordCoordinate::new(source.actual_type.clone(), source.key.clone()),
+        source_record_file,
         source_field_path,
     })
-}
-
-pub fn cfd_value_to_wire(value: &CfdValue, ctx: &WireContext<'_>) -> FieldValue {
-    cfd_value_to_wire_with_path(value, ctx, &[], "")
-}
-
-fn cfd_value_to_wire_with_path(
-    value: &CfdValue,
-    ctx: &WireContext<'_>,
-    parent_path: &[String],
-    field_name: &str,
-) -> FieldValue {
-    match value {
-        CfdValue::Null => FieldValue::Null,
-        CfdValue::Bool(v) => FieldValue::Bool { v: *v },
-        CfdValue::Int(v) => FieldValue::Int { v: *v },
-        CfdValue::Float(v) => FieldValue::Float { v: *v },
-        CfdValue::String(v) => FieldValue::Str { v: v.clone() },
-        CfdValue::Enum(e) => FieldValue::Enum {
-            enum_name: e.enum_name.clone(),
-            variant: e.variant.clone().unwrap_or_else(|| e.value.to_string()),
-            int_value: e.value,
-        },
-        CfdValue::Object(boxed) => {
-            let mut next = parent_path.to_vec();
-            if !field_name.is_empty() {
-                next.push(field_name.to_string());
-            }
-            FieldValue::Object {
-                actual_type: boxed.actual_type.clone(),
-                fields: record_to_field_cells_nested(boxed, ctx, &next),
-            }
-        }
-        CfdValue::Ref {
-            target_type,
-            target_key,
-        } => FieldValue::Ref {
-            target_type: target_type.clone(),
-            target_key: target_key.clone(),
-            target_file: ctx.key_to_file.get(target_key).cloned(),
-        },
-        CfdValue::Array(items) => FieldValue::Array {
-            items: items.iter().map(|i| cfd_value_to_wire(i, ctx)).collect(),
-        },
-        CfdValue::Dict(entries) => FieldValue::Dict {
-            entries: entries
-                .iter()
-                .map(|(k, v)| DictEntry {
-                    key: dict_key_to_wire(k),
-                    value: cfd_value_to_wire(v, ctx),
-                })
-                .collect(),
-        },
-    }
-}
-
-fn dict_key_to_wire(key: &CfdDictKey) -> DictKey {
-    match key {
-        CfdDictKey::String(v) => DictKey::Str { v: v.clone() },
-        CfdDictKey::Int(v) => DictKey::Int { v: *v },
-        CfdDictKey::Enum(e) => DictKey::Enum {
-            enum_name: e.enum_name.clone(),
-            variant: e.variant.clone().unwrap_or_else(|| e.value.to_string()),
-            int_value: e.value,
-        },
-    }
 }

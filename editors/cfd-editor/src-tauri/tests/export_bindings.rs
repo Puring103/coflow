@@ -7,7 +7,9 @@
 #[cfg(feature = "ts-export")]
 #[test]
 fn export_bindings() {
+    use cfd_editor_lib::editor::types as t;
     use ts_rs::TS;
+    // Core types
     coflow_data_model::CfdValue::export_all().expect("export CfdValue tree");
     coflow_data_model::CfdRecord::export_all().expect("export CfdRecord tree");
     coflow_data_model::CfdDictKey::export_all().expect("export CfdDictKey tree");
@@ -18,6 +20,23 @@ fn export_bindings() {
     coflow_engine::DimensionInfo::export_all().expect("export DimensionInfo");
     coflow_engine::WriteOutcome::export_all().expect("export WriteOutcome");
     coflow_project::DimensionConfig::export_all().expect("export DimensionConfig");
+    // Editor composition views
+    t::EditorError::export_all().expect("export EditorError");
+    t::ProjectSnapshot::export_all().expect("export ProjectSnapshot");
+    t::FileRecords::export_all().expect("export FileRecords");
+    t::SourceCapabilities::export_all().expect("export SourceCapabilities");
+    t::RecordRow::export_all().expect("export RecordRow");
+    t::FieldCell::export_all().expect("export FieldCell");
+    t::FieldAnnotation::export_all().expect("export FieldAnnotation");
+    t::SpreadInfo::export_all().expect("export SpreadInfo");
+    t::WriteFieldOutcome::export_all().expect("export WriteFieldOutcome");
+    t::InsertRecordOutcome::export_all().expect("export InsertRecordOutcome");
+    t::DeleteRecordOutcome::export_all().expect("export DeleteRecordOutcome");
+    t::DeletedRecordSnapshot::export_all().expect("export DeletedRecordSnapshot");
+    t::GraphData::export_all().expect("export GraphData");
+    t::GraphNode::export_all().expect("export GraphNode");
+    t::GraphEdge::export_all().expect("export GraphEdge");
+    t::RefTarget::export_all().expect("export RefTarget");
 }
 
 #[cfg(not(feature = "ts-export"))]

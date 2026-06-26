@@ -497,6 +497,11 @@ pub struct WriterDescriptor {
 /// not assume a writer can do more than these flags claim.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct WriterCapabilities {
     pub can_edit_field: bool,
     pub can_edit_key: bool,
