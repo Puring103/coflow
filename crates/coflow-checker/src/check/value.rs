@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum CheckValue {
-    Skipped,
     Null,
     Bool(bool),
     Int(i64),
@@ -224,7 +223,6 @@ pub(super) enum ComparableKey {
 
 pub(super) fn values_equal(lhs: &CheckValue, rhs: &CheckValue) -> bool {
     match (lhs, rhs) {
-        (CheckValue::Skipped, _) | (_, CheckValue::Skipped) => true,
         (CheckValue::Null, CheckValue::Null) => true,
         (CheckValue::Bool(lhs), CheckValue::Bool(rhs)) => lhs == rhs,
         (CheckValue::Int(lhs), CheckValue::Int(rhs)) => lhs == rhs,
