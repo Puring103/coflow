@@ -55,6 +55,7 @@ pub struct SchemaEnumInfo {
 #[derive(Debug, Clone, Serialize)]
 pub struct SchemaEnumVariantInfo {
     pub name: String,
+    #[serde(with = "coflow_data_model::serde_i64")]
     pub value: i64,
     pub annotations: Vec<SchemaAnnotation>,
 }
@@ -70,7 +71,7 @@ pub struct SchemaAnnotation {
 pub enum SchemaAnnotationValueInfo {
     Name(String),
     String(String),
-    Int(i64),
+    Int(#[serde(with = "coflow_data_model::serde_i64")] i64),
     Float(f64),
     Bool(bool),
     Null,
@@ -93,13 +94,14 @@ pub enum SchemaTypeRefInfo {
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum SchemaDefaultValueInfo {
     Null,
-    Int(i64),
+    Int(#[serde(with = "coflow_data_model::serde_i64")] i64),
     Float(f64),
     Bool(bool),
     String(String),
     Enum {
         enum_name: String,
         variant: String,
+        #[serde(with = "coflow_data_model::serde_i64")]
         value: i64,
     },
     EmptyArray,
@@ -116,7 +118,7 @@ pub struct SchemaConstInfo {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum SchemaConstValueInfo {
-    Int(i64),
+    Int(#[serde(with = "coflow_data_model::serde_i64")] i64),
     Float(f64),
     Bool(bool),
     String(String),
