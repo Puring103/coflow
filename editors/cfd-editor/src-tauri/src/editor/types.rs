@@ -25,7 +25,10 @@ use ts_rs::TS;
 /// into the diagnostics panel without doing any string parsing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct EditorError {
     pub kind: EditorErrorKind,
     pub message: String,
@@ -35,7 +38,10 @@ pub struct EditorError {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 #[serde(rename_all = "snake_case")]
 pub enum EditorErrorKind {
     Session,
@@ -109,7 +115,10 @@ impl From<String> for EditorError {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct ProjectSnapshot {
     pub session_id: u32,
     pub project_root: String,
@@ -119,66 +128,43 @@ pub struct ProjectSnapshot {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct FileRecords {
     pub file_path: String,
     pub type_names: Vec<String>,
     pub records: Vec<RecordRow>,
-    /// Per-source capabilities the front-end uses to grey out actions.
-    /// Bundles the writer's capabilities with its provider id so the UI can
-    /// also display "edited via excel" / "edited via lark-sheet".
-    pub capabilities: SourceCapabilities,
-}
-
-/// Wire-friendly view of a writer's capabilities + the provider id that
-/// produced them. Replaces the previous standalone `SourceCapabilities`
-/// struct.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
-pub struct SourceCapabilities {
-    pub provider_id: String,
-    #[serde(flatten)]
     pub capabilities: WriterCapabilities,
 }
 
-impl SourceCapabilities {
-    #[must_use]
-    pub fn read_only(provider_id: impl Into<String>) -> Self {
-        Self {
-            provider_id: provider_id.into(),
-            capabilities: WriterCapabilities::read_only(),
-        }
-    }
-
-    #[must_use]
-    pub fn from_writer(provider_id: impl Into<String>, capabilities: WriterCapabilities) -> Self {
-        Self {
-            provider_id: provider_id.into(),
-            capabilities,
-        }
-    }
-}
-
-/// One top-level record's view inside a file. The record's stable identity
-/// is its `(actual_type, key)` coordinate; `display_path` repeats the file
-/// path for hosts that already have a row but want to display its origin.
+/// One top-level record's view inside a file.
+///
+/// The record's stable identity is its `(actual_type, key)` coordinate.
+/// `display_path` repeats the file path for hosts that already have a row.
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct RecordRow {
     pub coordinate: RecordCoordinate,
     pub display_path: String,
     pub fields: Vec<FieldCell>,
 }
 
-/// One cell in a record row. `value` is the authoritative `CfdValue` —
-/// shipped straight from the core model, no wire-only re-encoding — and
-/// `annotation` carries everything *not* present on the value itself:
-/// spread-source, ref target file hint, enum integer value.
+/// One cell in a record row.
+///
+/// `value` is the authoritative `CfdValue`, shipped straight from the core
+/// model. `annotation` carries spread, ref-target, and enum metadata.
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct FieldCell {
     pub name: String,
     pub value: CfdValue,
@@ -197,19 +183,26 @@ pub struct FieldCell {
 ///   integer is convenient for displays / filtering.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct FieldAnnotation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spread_info: Option<SpreadInfo>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ref_target_file: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        with = "coflow_data_model::serde_i64::option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub enum_int_value: Option<i64>,
 }
 
 impl FieldAnnotation {
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.spread_info.is_none()
             && self.ref_target_file.is_none()
             && self.enum_int_value.is_none()
@@ -221,7 +214,10 @@ impl FieldAnnotation {
 /// `@Source.Key.path.to.field`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct SpreadInfo {
     pub source: RecordCoordinate,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -231,7 +227,10 @@ pub struct SpreadInfo {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct WriteFieldOutcome {
     pub row: RecordRow,
     pub diagnostics: Vec<FlatDiagnostic>,
@@ -243,7 +242,10 @@ pub struct WriteFieldOutcome {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct InsertRecordOutcome {
     pub file_records: FileRecords,
     pub diagnostics: Vec<FlatDiagnostic>,
@@ -251,7 +253,10 @@ pub struct InsertRecordOutcome {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct DeleteRecordOutcome {
     pub file_records: FileRecords,
     pub diagnostics: Vec<FlatDiagnostic>,
@@ -264,7 +269,10 @@ pub struct DeleteRecordOutcome {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct DeletedRecordSnapshot {
     pub record: CfdRecord,
     pub display_path: String,
@@ -272,7 +280,10 @@ pub struct DeletedRecordSnapshot {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct GraphData {
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
@@ -280,7 +291,10 @@ pub struct GraphData {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct GraphNode {
     pub coordinate: RecordCoordinate,
     pub file_path: String,
@@ -291,7 +305,10 @@ pub struct GraphNode {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct GraphEdge {
     pub source: RecordCoordinate,
     pub target: RecordCoordinate,
@@ -303,9 +320,11 @@ pub struct GraphEdge {
 /// in so the front-end can navigate without a follow-up query.
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
-#[cfg_attr(feature = "ts-export", ts(export, export_to = "../../frontend/src/bindings/"))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct RefTarget {
     pub coordinate: RecordCoordinate,
     pub file_path: String,
 }
-

@@ -7,8 +7,8 @@ pub mod editor;
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_engine::RecordCoordinate;
 use editor::{
-    DeleteRecordOutcome, EditorError, FileRecords, GraphData, InsertRecordOutcome,
-    ProjectSnapshot, RefTarget, SessionStore, WriteFieldOutcome,
+    DeleteRecordOutcome, EditorError, FileRecords, GraphData, InsertRecordOutcome, ProjectSnapshot,
+    RefTarget, SessionStore, WriteFieldOutcome,
 };
 use tauri::{Manager, State};
 
@@ -90,13 +90,12 @@ fn make_default_object(
 #[tauri::command]
 fn write_field(
     session_id: u32,
-    file_path: String,
     coordinate: RecordCoordinate,
     field_path: Vec<CfdPathSegment>,
     new_value: CfdValue,
     store: State<'_, SessionStore>,
 ) -> Result<WriteFieldOutcome, EditorError> {
-    store.write_field(session_id, &file_path, coordinate, field_path, new_value)
+    store.write_field(session_id, &coordinate, &field_path, &new_value)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -116,11 +115,10 @@ fn insert_record(
 #[tauri::command]
 fn delete_record(
     session_id: u32,
-    file_path: String,
     coordinate: RecordCoordinate,
     store: State<'_, SessionStore>,
 ) -> Result<DeleteRecordOutcome, EditorError> {
-    store.delete_record(session_id, &file_path, coordinate)
+    store.delete_record(session_id, &coordinate)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

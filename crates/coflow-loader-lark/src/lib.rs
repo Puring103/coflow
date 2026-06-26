@@ -884,10 +884,18 @@ fn table_label_to_api(label: TableLabel) -> Label {
 
 /// Writer descriptor for Lark sheets. Capabilities expose this as a remote,
 /// field-edit-only writer (no record insertion via this writer yet).
-pub const LARK_SHEET_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
+pub static LARK_SHEET_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
     id: "lark-sheet",
     display_name: "Lark Sheet",
-    capabilities: WriterCapabilities::remote_field_edit(),
+    capabilities: WriterCapabilities {
+        provider_id: String::new(),
+        can_edit_field: true,
+        can_edit_key: true,
+        can_insert_record: false,
+        can_delete_record: false,
+        requires_full_refresh_after_write: true,
+        is_remote: true,
+    },
 };
 
 /// `DataWriter` for [`RecordOrigin::Table`] origins whose document is a

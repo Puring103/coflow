@@ -15,7 +15,7 @@ use coflow_api::{
 };
 use coflow_data_model::{CfdRecord, CfdValue};
 
-use super::records::{RecordView, WriteOutcome};
+use super::records::WriteOutcome;
 use super::{build_project_session, ProjectSession, RecordCoordinate};
 
 impl ProjectSession {
@@ -49,17 +49,16 @@ impl ProjectSession {
         let Some(record) = self.model.record(record_ref.id) else {
             return Err(DiagnosticSet::one(not_found(actual_type, key)));
         };
-        let display_path = record_ref.display_path.clone();
         let coordinate = record_ref.coordinate.clone();
-        let source = source_for_file(self, &display_path)?;
-        let origin = effective_origin(record);
+        let target = write_target_for_path(self, record, record_ref, path)?;
+        let source = source_for_file(self, &target.display_path)?;
         let writer = lookup_writer(registry, &source)?;
         let yaml_path = self.project.config_path.clone();
 
         let write_request = WriteCellRequest {
-            origin: &origin,
-            record_key: &coordinate.key,
-            actual_type: &coordinate.actual_type,
+            origin: &target.origin,
+            record_key: &target.coordinate.key,
+            actual_type: &target.coordinate.actual_type,
             field_path: path,
             new_value,
             schema: &self.schema,
@@ -83,13 +82,19 @@ impl ProjectSession {
                 format!("post-write rebuild failed: {err}"),
             ))
         })?;
-        let new_coordinate = guess_new_coordinate(&new_session, &coordinate, path, new_value);
-        let renamed = (new_coordinate != coordinate).then(|| (coordinate.clone(), new_coordinate.clone()));
+        let new_write_coordinate =
+            guess_new_coordinate(&new_session, &target.coordinate, path, new_value);
+        let renamed = (new_write_coordinate != target.coordinate)
+            .then(|| (target.coordinate.clone(), new_write_coordinate.clone()));
         let diagnostics = new_session.diagnostics.as_set().clone();
         *self = new_session;
         let _ = yaml_path;
+        let mut touched = vec![coordinate.clone()];
+        if new_write_coordinate != coordinate {
+            touched.push(new_write_coordinate);
+        }
         Ok(WriteOutcome {
-            touched: vec![new_coordinate.clone()],
+            touched,
             inserted: None,
             deleted: None,
             renamed,
@@ -109,7 +114,7 @@ impl ProjectSession {
         file: &str,
         record_key: &str,
         actual_type: &str,
-        fields: std::collections::BTreeMap<String, CfdValue>,
+        fields: &std::collections::BTreeMap<String, CfdValue>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let source = source_for_file(self, file)?;
         let sheet = sheet_for_file_type(self, file, actual_type);
@@ -119,7 +124,7 @@ impl ProjectSession {
             sheet: sheet.as_deref(),
             record_key,
             actual_type,
-            fields: &fields,
+            fields,
             schema: &self.schema,
         };
         let ctx = WriteContext {
@@ -211,10 +216,7 @@ fn not_found(actual_type: &str, key: &str) -> Diagnostic {
     )
 }
 
-fn source_for_file(
-    session: &ProjectSession,
-    file: &str,
-) -> Result<ResolvedSource, DiagnosticSet> {
+fn source_for_file(session: &ProjectSession, file: &str) -> Result<ResolvedSource, DiagnosticSet> {
     session
         .files
         .source_for_display(file)
@@ -224,9 +226,7 @@ fn source_for_file(
             DiagnosticSet::one(Diagnostic::error(
                 "WRITE-NO-SOURCE",
                 "WRITE",
-                format!(
-                    "no resolved source recorded for file `{file}` (cannot dispatch write)"
-                ),
+                format!("no resolved source recorded for file `{file}` (cannot dispatch write)"),
             ))
         })
 }
@@ -240,10 +240,7 @@ fn lookup_writer(
             code: "WRITE-NO-WRITER".to_string(),
             stage: "WRITE".to_string(),
             severity: Severity::Error,
-            message: format!(
-                "no writer registered for provider `{}`",
-                source.provider_id
-            ),
+            message: format!("no writer registered for provider `{}`", source.provider_id),
             primary: None,
             related: Vec::new(),
         })
@@ -251,11 +248,7 @@ fn lookup_writer(
 }
 
 /// Pick the sheet name to target when inserting a record into a table source.
-fn sheet_for_file_type(
-    session: &ProjectSession,
-    file: &str,
-    actual_type: &str,
-) -> Option<String> {
+fn sheet_for_file_type(session: &ProjectSession, file: &str, actual_type: &str) -> Option<String> {
     for id in session.records.ids_in_file(file) {
         let Some(record_ref) = session.records.get(*id) else {
             continue;
@@ -299,18 +292,43 @@ fn guess_new_coordinate(
     old.clone()
 }
 
-#[doc(hidden)]
-#[allow(dead_code)]
-fn _record_view_marker(view: &RecordView<'_>) {
-    let _ = view;
+#[derive(Debug, Clone)]
+struct WriteTarget {
+    coordinate: RecordCoordinate,
+    origin: RecordOrigin,
+    display_path: String,
 }
 
-#[doc(hidden)]
-#[allow(dead_code)]
-fn _record_marker(record: &CfdRecord) {
-    let _ = record;
-}
-
-fn effective_origin(record: &CfdRecord) -> RecordOrigin {
-    record.origin.clone()
+fn write_target_for_path(
+    session: &ProjectSession,
+    host_record: &CfdRecord,
+    host_ref: &super::RecordRef,
+    path: &[WriteFieldPathSegment],
+) -> Result<WriteTarget, DiagnosticSet> {
+    let Some(WriteFieldPathSegment::Field(top_field)) = path.first() else {
+        return Ok(WriteTarget {
+            coordinate: host_ref.coordinate.clone(),
+            origin: host_ref.origin.clone(),
+            display_path: host_ref.display_path.clone(),
+        });
+    };
+    let Some(source_id) = host_record.spread_source_for_field(top_field) else {
+        return Ok(WriteTarget {
+            coordinate: host_ref.coordinate.clone(),
+            origin: host_ref.origin.clone(),
+            display_path: host_ref.display_path.clone(),
+        });
+    };
+    let Some(source_ref) = session.records.get(source_id) else {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "WRITE-SPREAD-SOURCE",
+            "WRITE",
+            format!("spread source for field `{top_field}` is no longer indexed"),
+        )));
+    };
+    Ok(WriteTarget {
+        coordinate: source_ref.coordinate.clone(),
+        origin: source_ref.origin.clone(),
+        display_path: source_ref.display_path.clone(),
+    })
 }

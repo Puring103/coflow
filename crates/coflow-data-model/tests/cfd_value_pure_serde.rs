@@ -5,9 +5,24 @@
 
 use coflow_data_model::{CfdDictKey, CfdEnumValue, CfdRecord, CfdValue, RecordOrigin};
 use std::collections::BTreeMap;
+use std::fmt::Debug;
+
+fn expect_eq<T: PartialEq + Debug + ?Sized>(
+    actual: &T,
+    expected: &T,
+    context: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if actual != expected {
+        return Err(std::io::Error::other(format!(
+            "{context}: expected {expected:?}, got {actual:?}"
+        ))
+        .into());
+    }
+    Ok(())
+}
 
 #[test]
-fn cfd_value_round_trips_through_json() {
+fn cfd_value_round_trips_through_json() -> Result<(), Box<dyn std::error::Error>> {
     let mut fields = BTreeMap::new();
     fields.insert("hp".to_string(), CfdValue::Int(42));
     fields.insert(
@@ -59,11 +74,68 @@ fn cfd_value_round_trips_through_json() {
         spread_field_sources: BTreeMap::new(),
     };
 
-    let json = serde_json::to_string(&record).expect("serialize");
-    assert!(
-        !json.contains("\"target\""),
-        "wire should not contain old `target` id field: {json}"
-    );
-    let round: CfdRecord = serde_json::from_str(&json).expect("deserialize");
-    assert_eq!(record, round);
+    let json = serde_json::to_string(&record)?;
+    if json.contains("\"target\"") {
+        return Err(std::io::Error::other(format!(
+            "wire should not contain old `target` id field: {json}"
+        ))
+        .into());
+    }
+    if json.contains("\"origin\"") {
+        return Err(std::io::Error::other(format!(
+            "wire should not contain internal origin metadata: {json}"
+        ))
+        .into());
+    }
+    if json.contains("spread_field_sources") {
+        return Err(std::io::Error::other(format!(
+            "wire should not contain internal spread source indexes: {json}"
+        ))
+        .into());
+    }
+    let round: CfdRecord = serde_json::from_str(&json)?;
+    if record != round {
+        return Err(std::io::Error::other(format!("round trip changed record: {round:?}")).into());
+    }
+    Ok(())
+}
+
+#[test]
+fn cfd_i64_wire_uses_strings_and_accepts_legacy_numbers() -> Result<(), Box<dyn std::error::Error>>
+{
+    let value = CfdValue::Int(i64::MIN);
+    let json = serde_json::to_string(&value)?;
+    expect_eq(
+        json.as_str(),
+        r#"{"kind":"int","value":"-9223372036854775808"}"#,
+        "i64 values should serialize as decimal strings",
+    )?;
+    expect_eq(
+        &serde_json::from_str::<CfdValue>(&json)?,
+        &value,
+        "serialized i64 value should round-trip",
+    )?;
+    expect_eq(
+        &serde_json::from_str::<CfdValue>(r#"{"kind":"int","value":42}"#)?,
+        &CfdValue::Int(42),
+        "legacy numeric i64 values should deserialize",
+    )?;
+
+    expect_eq(
+        &serde_json::from_str::<CfdDictKey>(r#"{"kind":"int","value":2}"#)?,
+        &CfdDictKey::Int(2),
+        "legacy numeric dict keys should deserialize",
+    )?;
+    expect_eq(
+        &serde_json::from_str::<CfdEnumValue>(
+            r#"{"enum_name":"Flag","variant":null,"value":"9223372036854775807"}"#,
+        )?,
+        &CfdEnumValue {
+            enum_name: "Flag".into(),
+            variant: None,
+            value: i64::MAX,
+        },
+        "enum integer payloads should deserialize from decimal strings",
+    )?;
+    Ok(())
 }

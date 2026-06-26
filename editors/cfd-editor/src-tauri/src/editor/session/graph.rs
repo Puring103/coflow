@@ -30,10 +30,8 @@ pub(super) fn build_graph(session: &EditorSession, file_path: &str) -> GraphData
         depths.insert(*id, 0);
     }
 
-    let record_file_map = session.record_file_map();
     let ctx = WireContext {
         session: &session.engine,
-        key_to_file: &record_file_map,
     };
 
     while let Some((id, depth)) = queue.pop_front() {

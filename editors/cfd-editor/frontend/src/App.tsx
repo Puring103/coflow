@@ -9,8 +9,27 @@ import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
 import { MOCK_PROJECT, MOCK_FILE_RECORDS, MOCK_GRAPH } from './mock'
 import * as api from './api'
-import type { ProjectSnapshot, FileRecords, GraphData, FieldValue, FieldPathSegment, DiagnosticItem, RecordRow } from './bindings/index'
-import { errorMessage, errorDiagnostics } from './bindings/index'
+import type { FileRecords } from './bindings/FileRecords'
+import type { GraphData } from './bindings/GraphData'
+import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
+import type { RecordCoordinate } from './bindings/RecordCoordinate'
+import type { RecordRow } from './bindings/RecordRow'
+import {
+  cloneValue,
+  deletedSnapshotValue,
+  diagnosticMatchesCoordinate,
+  diagnosticSeverity,
+  errorDiagnostics,
+  errorMessage,
+  makeObjectValue,
+  objectFields,
+  recordActualType,
+  recordKey,
+  sameCoordinate,
+  type DiagnosticItem,
+  type FieldPathSegment,
+  type FieldValue,
+} from './wire'
 import type { FieldDiagnostic } from './components/DataCard'
 import { typeColor } from './utils/typeColor'
 import { isEditableFile } from './utils/editable'
@@ -169,10 +188,53 @@ export default function App() {
   )
 
   const openRecord = useCallback(
-    (filePath: string, recordKey: string) => {
-      router.push({ view: 'record', file: filePath, recordKey })
+    (filePath: string, coordinate: RecordCoordinate) => {
+      router.push({ view: 'record', file: filePath, coordinate })
     },
     [router]
+  )
+
+  const openRecordByKey = useCallback(
+    (filePath: string, recordKey: string, actualType?: string | null) => {
+      const cached = fileDataCache[filePath]
+      const cachedRow = cached?.records.find(r =>
+        r.coordinate.key === recordKey && (!actualType || r.coordinate.actual_type === actualType)
+      )
+      if (cachedRow) {
+        openRecord(filePath, cachedRow.coordinate)
+        return
+      }
+      if (!project || !api.isTauri) {
+        setErrorMsg(`记录 ${recordKey} 未找到`)
+        return
+      }
+      api.getFileRecords(project.session_id, filePath)
+        .then(records => {
+          setFileDataCache(c => ({ ...c, [filePath]: records }))
+          const row = records.records.find(r =>
+            r.coordinate.key === recordKey && (!actualType || r.coordinate.actual_type === actualType)
+          )
+          if (row) openRecord(filePath, row.coordinate)
+          else setErrorMsg(`记录 ${recordKey} 未找到`)
+        })
+        .catch(err => setErrorMsg(`读取文件失败: ${errorMessage(err)}`))
+    },
+    [fileDataCache, openRecord, project],
+  )
+
+  const rebindCoordinate = useCallback(
+    (oldCoordinate: RecordCoordinate, newCoordinate: RecordCoordinate) => {
+      if (sameCoordinate(oldCoordinate, newCoordinate)) return
+      if (
+        router.current?.view === 'record' &&
+        sameCoordinate(router.current.coordinate, oldCoordinate)
+      ) {
+        router.replace({ ...router.current, coordinate: newCoordinate })
+      }
+      setUndoStack(stack => stack.map(entry => rebindEntryCoordinate(entry, oldCoordinate, newCoordinate)))
+      setRedoStack(stack => stack.map(entry => rebindEntryCoordinate(entry, oldCoordinate, newCoordinate)))
+    },
+    [router],
   )
 
   // Sidebar splitter: on mousedown, attach mousemove/mouseup listeners that
@@ -212,7 +274,7 @@ export default function App() {
   const writeFieldInternal = useCallback(
     async (
       filePath: string,
-      recordKey: string,
+      coordinate: RecordCoordinate,
       fieldPath: FieldPathSegment[],
       newValue: FieldValue,
       opts: { recordHistory: boolean; oldValue?: FieldValue } = { recordHistory: true },
@@ -222,8 +284,7 @@ export default function App() {
       try {
         const outcome = await api.writeField(
           project.session_id,
-          filePath,
-          recordKey,
+          coordinate,
           fieldPath,
           newValue,
         )
@@ -235,12 +296,16 @@ export default function App() {
         if (mySeq !== writeSeqRef.current) return outcome.row
         setFileDataCache(c => ({ ...c, [filePath]: refreshed }))
         setGraphCache({})
+        const finalCoordinate = outcome.renamed ?? coordinate
+        if (outcome.renamed) {
+          rebindCoordinate(coordinate, outcome.renamed)
+        }
         if (opts.recordHistory) {
-          const oldValue = opts.oldValue ?? snapshotOldValue(fileDataCache, filePath, recordKey, fieldPath)
+          const oldValue = opts.oldValue ?? snapshotOldValue(fileDataCache, filePath, coordinate, fieldPath)
           if (oldValue) {
             setUndoStack(s => [...s, {
               kind: 'field',
-              filePath, recordKey, fieldPath,
+              filePath, coordinate: finalCoordinate, fieldPath,
               oldValue: cloneValue(oldValue),
               newValue: cloneValue(newValue),
             }])
@@ -259,12 +324,12 @@ export default function App() {
         }
       }
     },
-    [project, fileDataCache],
+    [project, fileDataCache, rebindCoordinate],
   )
 
   const writeField = useCallback(
-    (filePath: string, recordKey: string, fieldPath: FieldPathSegment[], newValue: FieldValue) =>
-      writeFieldInternal(filePath, recordKey, fieldPath, newValue),
+    (filePath: string, coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue) =>
+      writeFieldInternal(filePath, coordinate, fieldPath, newValue),
     [writeFieldInternal],
   )
 
@@ -295,8 +360,7 @@ export default function App() {
           setUndoStack(s => [...s, {
             kind: 'insert',
             filePath,
-            recordKey,
-            actualType,
+            coordinate: { actual_type: actualType, key: recordKey },
             fields: cloneValue(fields),
           }])
           setRedoStack([])
@@ -315,12 +379,12 @@ export default function App() {
   const deleteRecordInternal = useCallback(
     async (
       filePath: string,
-      recordKey: string,
+      coordinate: RecordCoordinate,
       opts: { recordHistory: boolean } = { recordHistory: true },
     ) => {
       if (!project || !api.isTauri) return
       try {
-        const outcome = await api.deleteRecord(project.session_id, filePath, recordKey)
+        const outcome = await api.deleteRecord(project.session_id, coordinate)
         setProject(p => (p ? { ...p, diagnostics: outcome.diagnostics } : p))
         setFileDataCache(c => ({ ...c, [filePath]: outcome.file_records }))
         setGraphCache({})
@@ -328,13 +392,12 @@ export default function App() {
         // captured under the same lock as the delete, so it always reflects
         // the engine's view at the moment of deletion (spread/ref metadata
         // included). No front-end cache dependency.
-        if (opts.recordHistory && outcome.deleted_snapshot && outcome.deleted_actual_type) {
+        if (opts.recordHistory && outcome.deleted_snapshot) {
           setUndoStack(s => [...s, {
             kind: 'delete',
             filePath,
-            recordKey,
-            actualType: outcome.deleted_actual_type!,
-            snapshot: outcome.deleted_snapshot!,
+            coordinate,
+            snapshot: deletedSnapshotValue(outcome.deleted_snapshot!),
           }])
           setRedoStack([])
         }
@@ -355,7 +418,7 @@ export default function App() {
     [insertRecordInternal],
   )
   const deleteRecord = useCallback(
-    (filePath: string, recordKey: string) => deleteRecordInternal(filePath, recordKey),
+    (filePath: string, coordinate: RecordCoordinate) => deleteRecordInternal(filePath, coordinate),
     [deleteRecordInternal],
   )
 
@@ -365,19 +428,19 @@ export default function App() {
     setUndoStack(s => s.slice(0, -1))
     setRedoStack(s => [...s, entry])
     if (entry.kind === 'field') {
-      await writeFieldInternal(entry.filePath, entry.recordKey, entry.fieldPath, entry.oldValue, {
+      await writeFieldInternal(entry.filePath, entry.coordinate, entry.fieldPath, entry.oldValue, {
         recordHistory: false,
       })
     } else if (entry.kind === 'insert') {
       // Invert insert: delete the record we just created. The redo path
       // re-runs the insert from this same entry, so we don't need to
       // capture another snapshot here.
-      await deleteRecordInternal(entry.filePath, entry.recordKey, {
+      await deleteRecordInternal(entry.filePath, entry.coordinate, {
         recordHistory: false,
       })
     } else {
       // Invert delete: re-create the record with the captured snapshot.
-      await insertRecordInternal(entry.filePath, entry.recordKey, entry.actualType, entry.snapshot, {
+      await insertRecordInternal(entry.filePath, entry.coordinate.key, entry.coordinate.actual_type, entry.snapshot, {
         recordHistory: false,
       })
     }
@@ -389,15 +452,15 @@ export default function App() {
     setRedoStack(s => s.slice(0, -1))
     setUndoStack(s => [...s, entry])
     if (entry.kind === 'field') {
-      await writeFieldInternal(entry.filePath, entry.recordKey, entry.fieldPath, entry.newValue, {
+      await writeFieldInternal(entry.filePath, entry.coordinate, entry.fieldPath, entry.newValue, {
         recordHistory: false,
       })
     } else if (entry.kind === 'insert') {
-      await insertRecordInternal(entry.filePath, entry.recordKey, entry.actualType, entry.fields, {
+      await insertRecordInternal(entry.filePath, entry.coordinate.key, entry.coordinate.actual_type, entry.fields, {
         recordHistory: false,
       })
     } else {
-      await deleteRecordInternal(entry.filePath, entry.recordKey, {
+      await deleteRecordInternal(entry.filePath, entry.coordinate, {
         recordHistory: false,
       })
     }
@@ -498,9 +561,9 @@ export default function App() {
   function switchView(view: 'table' | 'record' | 'graph') {
     if (!currentRoute) return
     if (view === 'record') {
-      const firstKey = activeFileData?.records[0]?.key
-      if (!firstKey) return
-      router.replace({ view, file: currentRoute.file, recordKey: firstKey })
+      const firstCoordinate = activeFileData?.records[0]?.coordinate
+      if (!firstCoordinate) return
+      router.replace({ view, file: currentRoute.file, coordinate: firstCoordinate })
     } else {
       router.replace({ view, file: currentRoute.file } as typeof currentRoute)
     }
@@ -663,10 +726,10 @@ export default function App() {
                         onClick={() => setActiveType(t)}
                         onKeyDown={e => onTabListKeyDown(e, activeFileData.type_names, setActiveType)}
                         style={{'--tab-color': typeColor(t), '--tab-color-dim': typeColor(t)} as React.CSSProperties}
-                      >
-                        {t}
-                        <span className="tab-count">
-                          {activeFileData.records.filter(r => r.actual_type === t).length}
+                        >
+                          {t}
+                          <span className="tab-count">
+                          {activeFileData.records.filter(r => recordActualType(r) === t).length}
                         </span>
                       </button>
                     ))}
@@ -700,24 +763,24 @@ export default function App() {
                     activeType={activeType}
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
-                    onOpenRecord={key => openRecord(currentRoute.file, key)}
-                    onWriteField={(rk, path, val) => writeField(currentRoute.file, rk, path, val)}
+                    onOpenRecord={coordinate => openRecord(currentRoute.file, coordinate)}
+                    onWriteField={(coordinate, path, val) => writeField(currentRoute.file, coordinate, path, val)}
                     onInsertRecord={(rk, type, fields) => insertRecord(currentRoute.file, rk, type, fields)}
-                    onDeleteRecord={rk => deleteRecord(currentRoute.file, rk)}
+                    onDeleteRecord={coordinate => deleteRecord(currentRoute.file, coordinate)}
                     onMakeDefaultObject={async type => project ? api.makeDefaultObject(project.session_id, type) : null}
                   />
                 )}
                 {currentRoute.view === 'record' && (
                   <RecordView
                     data={activeFileData}
-                    recordKey={currentRoute.recordKey}
+                    coordinate={currentRoute.coordinate}
                     typeFilter={activeType}
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
                     highlightField={highlightField}
                     onHighlightConsumed={() => setHighlightField(null)}
-                    onOpenRecord={key => openRecord(currentRoute.file, key)}
-                    onWriteField={(rk, path, val) => writeField(currentRoute.file, rk, path, val)}
+                    onOpenRecord={coordinate => openRecord(currentRoute.file, coordinate)}
+                    onWriteField={(coordinate, path, val) => writeField(currentRoute.file, coordinate, path, val)}
                   />
                 )}
                 {currentRoute.view === 'graph' && (
@@ -725,7 +788,7 @@ export default function App() {
                     <GraphView
                       graphData={activeGraph}
                       activeType={activeType}
-                      onOpenRecord={(file, key) => openRecord(file, key)}
+                      onOpenRecord={(file, coordinate) => openRecord(file, coordinate)}
                       onWriteField={writeField}
                     />
                   ) : (
@@ -764,10 +827,10 @@ export default function App() {
       {project && (
         <DiagnosticsPanel
           diagnostics={project.diagnostics}
-          onJumpToRecord={(file, key) => openRecord(file, key)}
-          onJumpToField={(file, key, fieldPath) => {
+          onJumpToRecord={(file, key, actualType) => openRecordByKey(file, key, actualType)}
+          onJumpToField={(file, key, actualType, fieldPath) => {
             setHighlightField(fieldPath)
-            openRecord(file, key)
+            openRecordByKey(file, key, actualType)
           }}
         />
       )}
@@ -812,14 +875,14 @@ export default function App() {
 export function diagnosticsForRecord(
   diags: DiagnosticItem[],
   filePath: string,
-  recordKey: string,
+  coordinate: RecordCoordinate,
 ): FieldDiagnostic[] {
   const out: FieldDiagnostic[] = []
   for (const d of diags) {
     if (d.file_path !== filePath) continue
-    if (d.record_key !== recordKey) continue
+    if (!diagnosticMatchesCoordinate(d, coordinate)) continue
     if (!d.field_path) continue
-    out.push({ severity: d.severity, fieldPath: d.field_path, message: d.message })
+    out.push({ severity: diagnosticSeverity(d.severity), fieldPath: d.field_path, message: d.message })
   }
   return out
 }
@@ -855,31 +918,38 @@ type EditEntry =
 interface FieldEditEntry {
   kind: 'field'
   filePath: string
-  recordKey: string
+  coordinate: RecordCoordinate
   fieldPath: FieldPathSegment[]
   oldValue: FieldValue
   newValue: FieldValue
 }
 
-/** Inverted by `deleteRecord(recordKey)`; redone by `insertRecord` with the
+/** Inverted by `deleteRecord(coordinate)`; redone by `insertRecord` with the
  *  same payload. `fields` is the Object FieldValue used at create time so a
  *  redo reproduces the exact same record. */
 interface InsertEditEntry {
   kind: 'insert'
   filePath: string
-  recordKey: string
-  actualType: string
+  coordinate: RecordCoordinate
   fields: FieldValue
 }
 
 /** Inverted by re-inserting with `snapshot` (captured before deletion so the
- *  full record can be reconstructed); redone by `deleteRecord(recordKey)`. */
+ *  full record can be reconstructed); redone by `deleteRecord(coordinate)`. */
 interface DeleteEditEntry {
   kind: 'delete'
   filePath: string
-  recordKey: string
-  actualType: string
+  coordinate: RecordCoordinate
   snapshot: FieldValue
+}
+
+function rebindEntryCoordinate(
+  entry: EditEntry,
+  oldCoordinate: RecordCoordinate,
+  newCoordinate: RecordCoordinate,
+): EditEntry {
+  if (!sameCoordinate(entry.coordinate, oldCoordinate)) return entry
+  return { ...entry, coordinate: newCoordinate }
 }
 
 /** Walk a FieldValue along a FieldPathSegment path and return the value that
@@ -889,39 +959,36 @@ function readFieldPath(root: FieldValue, path: FieldPathSegment[]): FieldValue |
   let cur: FieldValue = root
   for (const seg of path) {
     if (seg.kind === 'field') {
-      if (cur.kind !== 'Object') return null
-      const fc = cur.fields.find(f => f.name === seg.name)
+      if (cur.kind !== 'object') return null
+      const fc = objectFields(cur).find(f => f.name === seg.value)
       if (!fc) return null
       cur = fc.value
-    } else {
-      if (cur.kind !== 'Array') return null
-      const item = cur.items[seg.i]
+    } else if (seg.kind === 'index') {
+      if (cur.kind !== 'array') return null
+      const item = cur.value[seg.value]
       if (!item) return null
       cur = item
+    } else {
+      return null
     }
   }
   return cur
 }
 
-function cloneValue(v: FieldValue): FieldValue {
-  if (typeof structuredClone === 'function') return structuredClone(v)
-  return JSON.parse(JSON.stringify(v)) as FieldValue
-}
-
-/** Look up the current value at (filePath, recordKey, fieldPath) in the
+/** Look up the current value at (filePath, coordinate, fieldPath) in the
  *  file-data cache so we can record it as the undo target. Returns null if
  *  the file/record/path isn't present (e.g. cache miss). */
 function snapshotOldValue(
   cache: Record<string, FileRecords>,
   filePath: string,
-  recordKey: string,
+  coordinate: RecordCoordinate,
   fieldPath: FieldPathSegment[],
 ): FieldValue | null {
   const fr = cache[filePath]
   if (!fr) return null
-  const row = fr.records.find(r => r.key === recordKey)
+  const row = fr.records.find(r => sameCoordinate(r.coordinate, coordinate))
   if (!row) return null
-  const root: FieldValue = { kind: 'Object', actual_type: row.actual_type, fields: row.fields }
+  const root: FieldValue = makeObjectValue(recordActualType(row), row.fields, recordKey(row))
   return readFieldPath(root, fieldPath)
 }
 

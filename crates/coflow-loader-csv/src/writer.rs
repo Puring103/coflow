@@ -24,10 +24,18 @@ use std::path::Path;
 
 use crate::{parse, write};
 
-pub const CSV_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
+pub static CSV_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
     id: "csv",
     display_name: "CSV file",
-    capabilities: WriterCapabilities::local_full(),
+    capabilities: WriterCapabilities {
+        provider_id: String::new(),
+        can_edit_field: true,
+        can_edit_key: true,
+        can_insert_record: true,
+        can_delete_record: true,
+        requires_full_refresh_after_write: true,
+        is_remote: false,
+    },
 };
 
 /// Writer for local CSV files. Stateless: each call reads the file fresh and

@@ -201,9 +201,9 @@ pub struct CfdRecord {
     /// record-anchored labels to file/cell locations. Defaults to
     /// [`RecordOrigin::None`] for synthetic records.
     ///
-    /// Not exported to TS — origin metadata is internal to the engine and
-    /// not consumed by the editor frontend (which routes by coordinate).
-    #[serde(default)]
+    /// Not exported to wire — origin metadata is internal to the engine and
+    /// not consumed by editor frontends (which route by stable coordinate).
+    #[serde(skip)]
     #[cfg_attr(feature = "ts-export", ts(skip))]
     pub origin: RecordOrigin,
     /// For top-level records only: maps a field name that was imported via a
@@ -241,9 +241,7 @@ impl CfdRecord {
     }
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct CfdRecordId(usize);
 
 impl CfdRecordId {
@@ -283,7 +281,11 @@ impl fmt::Display for CfdRecordId {
 pub enum CfdValue {
     Null,
     Bool(bool),
-    Int(i64),
+    Int(
+        #[serde(with = "crate::serde_i64")]
+        #[cfg_attr(feature = "ts-export", ts(type = "bigint"))]
+        i64,
+    ),
     Float(f64),
     String(String),
     Enum(CfdEnumValue),
@@ -305,7 +307,11 @@ pub enum CfdValue {
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum CfdDictKey {
     String(String),
-    Int(i64),
+    Int(
+        #[serde(with = "crate::serde_i64")]
+        #[cfg_attr(feature = "ts-export", ts(type = "bigint"))]
+        i64,
+    ),
     Enum(CfdEnumValue),
 }
 
@@ -327,6 +333,8 @@ pub enum CfdDictKey {
 pub struct CfdEnumValue {
     pub enum_name: String,
     pub variant: Option<String>,
+    #[serde(with = "crate::serde_i64")]
+    #[cfg_attr(feature = "ts-export", ts(type = "bigint"))]
     pub value: i64,
 }
 

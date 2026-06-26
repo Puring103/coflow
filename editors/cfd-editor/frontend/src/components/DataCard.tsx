@@ -1,10 +1,36 @@
-import { useState, useEffect, useRef, useContext, createContext, useMemo, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, type DragEvent as ReactDragEvent } from 'react'
-import type { FieldValue, FieldCell, DictKey, FieldPathSegment } from '../bindings/index'
+import {
+  useState,
+  useEffect,
+  useRef,
+  useContext,
+  createContext,
+  useMemo,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  type DragEvent as ReactDragEvent,
+} from 'react'
+import type { FieldCell } from '../bindings/FieldCell'
+import type { RefTarget } from '../bindings/RefTarget'
+import type { SpreadInfo } from '../bindings/SpreadInfo'
+import type { DictKey, FieldPathSegment, FieldValue } from '../wire'
+import {
+  boolValue,
+  cellSpreadInfo,
+  coordinateId,
+  enumValue,
+  fieldPathField,
+  fieldPathIndex,
+  floatValue,
+  intValue,
+  objectFields,
+  refValue,
+  refValueFromTarget,
+  stringValue,
+} from '../wire'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
 import { loadEnumVariants, loadRefTargets, buildDefaultObject } from '../utils/editContext'
-
-// ─── Shared card header (used in graph nodes, record view, table detail) ─────
 
 export function CardHeader({
   recordKey,
@@ -32,98 +58,83 @@ export const NODE_PEEK_FIELDS = 4
 const MAX_DEPTH = 5
 const INDENT_PX = 14
 
-/**
- * Build the tooltip shown on a spread-inherited cell. The text is short and
- * actionable — users learn (a) where the value came from and (b) that
- * editing creates a local override on the host record.
- */
-function spreadHintText(info: import('../bindings/index').SpreadInfo | undefined): string | undefined {
+function spreadHintText(info: SpreadInfo | undefined): string | undefined {
   if (!info) return undefined
   const path = info.source_field_path.length > 0
     ? `.${info.source_field_path.join('.')}`
     : ''
-  return `继承自 ${info.source_record_type}.${info.source_record_key}${path}\n编辑会在本记录创建一个本地覆盖（不影响源记录）`
+  return `继承自 ${info.source.actual_type}.${info.source.key}${path}\n编辑会写回来源记录`
 }
 
-// ─── Type / kind labels ──────────────────────────────────────────────────────
+function enumVariantText(value: FieldValue & { kind: 'enum' }): string {
+  return value.value.variant ?? String(value.value.value)
+}
+
+function dictEnumVariantText(key: DictKey & { kind: 'enum' }): string {
+  return key.value.variant ?? String(key.value.value)
+}
 
 function valueKindLabel(v: FieldValue): string {
   switch (v.kind) {
-    case 'Null':   return 'null'
-    case 'Bool':   return 'bool'
-    case 'Int':    return 'int'
-    case 'Float':  return 'float'
-    case 'Str':    return 'string'
-    case 'Enum':   return v.enum_name
-    case 'Object': return v.actual_type
-    case 'Ref':    return v.target_type
-    case 'Array':  return v.items[0] ? `${valueKindLabel(v.items[0])}[]` : '[]'
-    case 'Dict':   return v.entries[0]
-      ? `{${dictKindLabel(v.entries[0].key)}:${valueKindLabel(v.entries[0].value)}}`
+    case 'null': return 'null'
+    case 'bool': return 'bool'
+    case 'int': return 'int'
+    case 'float': return 'float'
+    case 'string': return 'string'
+    case 'enum': return v.value.enum_name
+    case 'object': return v.value.actual_type
+    case 'ref': return v.value.target_type
+    case 'array': return v.value[0] ? `${valueKindLabel(v.value[0])}[]` : '[]'
+    case 'dict': return v.value[0]
+      ? `{${dictKindLabel(v.value[0][0])}:${valueKindLabel(v.value[0][1])}}`
       : '{}'
   }
 }
 
 function dictKindLabel(k: DictKey): string {
   switch (k.kind) {
-    case 'Str':  return 'string'
-    case 'Int':  return 'int'
-    case 'Enum': return k.enum_name
+    case 'string': return 'string'
+    case 'int': return 'int'
+    case 'enum': return k.value.enum_name
   }
 }
 
 function dictKeyText(k: DictKey): string {
   switch (k.kind) {
-    case 'Str':  return `"${k.v}"`
-    case 'Int':  return String(k.v)
-    case 'Enum': return k.variant
+    case 'string': return `"${k.value}"`
+    case 'int': return String(k.value)
+    case 'enum': return dictEnumVariantText(k)
   }
 }
-
-/** AST-form of a dict key: the parser stores dict entries as Block fields whose
- * name is the unquoted text (string keys without quotes, ints as digits, enum
- * variants as identifiers). Backend path navigation matches by this form. */
-function dictKeyAstName(k: DictKey): string {
-  switch (k.kind) {
-    case 'Str':  return k.v
-    case 'Int':  return String(k.v)
-    case 'Enum': return k.variant
-  }
-}
-
-// ─── Compact summary text ────────────────────────────────────────────────────
 
 export function summaryOf(v: FieldValue): string {
   switch (v.kind) {
-    case 'Null':  return '—'
-    case 'Bool':  return v.v ? 'true' : 'false'
-    case 'Int':   return String(v.v)
-    case 'Float': return String(v.v)
-    case 'Str':   return v.v.length > 32 ? `"${v.v.slice(0, 30)}…"` : `"${v.v}"`
-    case 'Enum':  return v.variant
-    case 'Ref':   return v.target_key
-    case 'Object': return v.actual_type
-    case 'Array': {
-      if (v.items.length === 0) return '[]'
-      const allScalar = v.items.every(i =>
-        i.kind === 'Bool' || i.kind === 'Int' || i.kind === 'Float' || i.kind === 'Str' || i.kind === 'Enum'
+    case 'null': return '-'
+    case 'bool': return v.value ? 'true' : 'false'
+    case 'int': return String(v.value)
+    case 'float': return String(v.value)
+    case 'string': return v.value.length > 32 ? `"${v.value.slice(0, 30)}..."` : `"${v.value}"`
+    case 'enum': return enumVariantText(v)
+    case 'ref': return v.value.target_key
+    case 'object': return v.value.actual_type
+    case 'array': {
+      if (v.value.length === 0) return '[]'
+      const allScalar = v.value.every(i =>
+        i.kind === 'bool' || i.kind === 'int' || i.kind === 'float' || i.kind === 'string' || i.kind === 'enum'
       )
-      if (allScalar && v.items.length <= 6) {
-        const joined = v.items.map(summaryOf).join(', ')
+      if (allScalar && v.value.length <= 6) {
+        const joined = v.value.map(summaryOf).join(', ')
         if (joined.length <= 60) return `[${joined}]`
       }
-      return `${valueKindLabel(v.items[0])}[${v.items.length}]`
+      return `${valueKindLabel(v.value[0])}[${v.value.length}]`
     }
-    case 'Dict': {
-      if (v.entries.length === 0) return '{}'
-      const first = v.entries[0]
-      return `${dictKindLabel(first.key)}→${valueKindLabel(first.value)}  (${v.entries.length})`
+    case 'dict': {
+      if (v.value.length === 0) return '{}'
+      const first = v.value[0]
+      return `${dictKindLabel(first[0])}->${valueKindLabel(first[1])}  (${v.value.length})`
     }
   }
 }
-
-// ─── Count visible rows (for height estimation in GraphView) ─────────────────
-// Recursively counts how many rows would be rendered given the expanded paths.
 
 export function countVisibleRows(
   fields: FieldCell[],
@@ -135,18 +146,16 @@ export function countVisibleRows(
     count++
     const path = prefix ? `${prefix}.${f.name}` : f.name
     if (!expandedPaths.has(path)) continue
-    if (f.value.kind === 'Object') {
-      count += countVisibleRows(f.value.fields, expandedPaths, path)
-    } else if (f.value.kind === 'Array') {
-      count += f.value.items.length
-    } else if (f.value.kind === 'Dict') {
-      count += f.value.entries.length
+    if (f.value.kind === 'object') {
+      count += countVisibleRows(objectFields(f.value), expandedPaths, path)
+    } else if (f.value.kind === 'array') {
+      count += f.value.value.length
+    } else if (f.value.kind === 'dict') {
+      count += f.value.value.length
     }
   }
   return count
 }
-
-// ─── Compact cell (used inside TableView) ────────────────────────────────────
 
 export function DataCardCompact({ value }: { value: FieldValue }) {
   return <ValueChip value={value} />
@@ -154,53 +163,47 @@ export function DataCardCompact({ value }: { value: FieldValue }) {
 
 function ValueChip({ value }: { value: FieldValue }) {
   switch (value.kind) {
-    case 'Null':
+    case 'null':
       return <span className="vc vc-null">null</span>
-    case 'Bool':
-      return <span className={`vc vc-bool${value.v ? ' on' : ''}`}>{value.v ? 'true' : 'false'}</span>
-    case 'Int':
-    case 'Float':
-      return <span className="vc vc-num">{value.kind === 'Int' ? value.v : value.v}</span>
-    case 'Str':
+    case 'bool':
+      return <span className={`vc vc-bool${value.value ? ' on' : ''}`}>{value.value ? 'true' : 'false'}</span>
+    case 'int':
+    case 'float':
+      return <span className="vc vc-num">{String(value.value)}</span>
+    case 'string':
       return <span className="vc vc-str">{summaryOf(value)}</span>
-    case 'Enum':
+    case 'enum':
       return (
         <span className="vc vc-enum">
           <span className="vc-enum-dot" />
-          {value.variant}
+          {enumVariantText(value)}
         </span>
       )
-    case 'Ref':
+    case 'ref':
       return (
-        <span className="vc vc-ref" title={`${value.target_type}.${value.target_key}`}>
+        <span className="vc vc-ref" title={`${value.value.target_type}.${value.value.target_key}`}>
           <Icon name="dot" size={9} />
-          <span className="vc-ref-key">{value.target_key}</span>
-          <span className="vc-ref-type">({value.target_type})</span>
+          <span className="vc-ref-key">{value.value.target_key}</span>
+          <span className="vc-ref-type">({value.value.target_type})</span>
         </span>
       )
-    case 'Object':
-      return <span className="vc vc-obj">{value.actual_type}</span>
-    case 'Array':
+    case 'object':
+      return <span className="vc vc-obj">{value.value.actual_type}</span>
+    case 'array':
       return <span className="vc vc-arr">{summaryOf(value)}</span>
-    case 'Dict':
+    case 'dict':
       return <span className="vc vc-dict">{summaryOf(value)}</span>
   }
 }
 
-// ─── Expanded inspector (RecordView / TableView detail) ───────────────────────
-
-/** A diagnostic anchored to a specific row inside this record's field tree. */
 export interface FieldDiagnostic {
   severity: 'error' | 'warning' | 'info'
-  fieldPath: string  // dotted path matching DataCard's pathKey, e.g. "rewards[0].count"
+  fieldPath: string
   message: string
 }
 
 interface DiagCtxValue {
-  /** Map from pathKey → strongest severity at that exact path */
   byPath: Map<string, FieldDiagnostic[]>
-  /** Set of every prefix path that has at least one descendant error/warning,
-   *  used to flag foldout rows whose collapsed children contain a problem. */
   prefixes: Map<string, 'error' | 'warning'>
 }
 const DiagCtx = createContext<DiagCtxValue | null>(null)
@@ -224,10 +227,8 @@ function buildDiagCtx(diags: FieldDiagnostic[] | undefined): DiagCtxValue | null
     list.push(d)
     byPath.set(d.fieldPath, list)
     if (d.severity === 'info') continue
-    // Walk every parent prefix — collapsed parents should glow if a child errs.
     let p = d.fieldPath
     while (true) {
-      // Strip trailing "[i]" or ".name"
       const lastDot = p.lastIndexOf('.')
       const lastBracket = p.lastIndexOf('[')
       const cut = Math.max(lastDot, lastBracket)
@@ -245,29 +246,32 @@ export interface ExpandedProps {
   fields: FieldCell[]
   actualType?: string
   depth?: number
-  /** Called with the full path from the record root (Field/Index segments). */
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   pathPrefix?: string
   onRowToggle?: (path: string, expanded: boolean) => void
-  /** Diagnostics anchored to fields inside this record (already filtered to
-   *  this record by the caller). Renders red/yellow ink + tooltip per row. */
   diagnostics?: FieldDiagnostic[]
-  /** A field path (e.g. "attributes[0].name") to briefly highlight + scroll
-   *  into view. Set by a diagnostic jump; cleared via onHighlightConsumed. */
   highlightField?: string | null
   onHighlightConsumed?: () => void
 }
 
-export function DataCardExpanded({ fields, actualType, depth = 0, onEdit, pathPrefix, onRowToggle, diagnostics, highlightField, onHighlightConsumed }: ExpandedProps) {
+export function DataCardExpanded({
+  fields,
+  actualType,
+  depth = 0,
+  onEdit,
+  pathPrefix,
+  onRowToggle,
+  diagnostics,
+  highlightField,
+  onHighlightConsumed,
+}: ExpandedProps) {
   const ctx = useMemo(() => buildDiagCtx(diagnostics), [diagnostics])
   const inspectorRef = useRef<HTMLDivElement>(null)
 
-  // Apply the highlight: scroll the matching row into view + flash a class.
   useEffect(() => {
     if (!highlightField) return
     const root = inspectorRef.current
     if (!root) return
-    // Try exact path match first, then the top-level field name.
     const exact = root.querySelector<HTMLElement>(
       `.dc-row[data-field-path="${CSS.escape(highlightField)}"]`,
     )
@@ -290,19 +294,17 @@ export function DataCardExpanded({ fields, actualType, depth = 0, onEdit, pathPr
     <div className="dc-inspector" ref={inspectorRef} style={{ '--depth': depth } as CSSProperties}>
       {fields.map((fc) => {
         const fieldEdit = isDimensionDefaultField(actualType, fc.name) ? undefined : onEdit
+        const spreadInfo = cellSpreadInfo(fc)
         return (
           <FieldRow
             key={fc.name}
             label={fc.name}
             value={fc.value}
             depth={depth}
-            // Spread cells stay editable — the writer materialises a local
-            // override on first edit. The cell's `spread_info` lets the
-            // child render a hint instead of treating it as a fresh value.
             onEdit={fieldEdit}
-            isSpread={fc.is_spread}
-            spreadInfo={fc.spread_info}
-            fieldPath={[{ kind: 'field', name: fc.name }]}
+            isSpread={!!spreadInfo}
+            spreadInfo={spreadInfo}
+            fieldPath={[fieldPathField(fc.name)]}
             pathKey={pathPrefix ? `${pathPrefix}.${fc.name}` : fc.name}
             onRowToggle={onRowToggle}
           />
@@ -317,8 +319,6 @@ function isDimensionDefaultField(actualType: string | undefined, fieldName: stri
   return !!actualType && actualType.endsWith('Variants') && fieldName === 'default'
 }
 
-/** Returns the strongest severity for a row at the given pathKey, considering
- *  exact matches and (for foldouts) prefix descendants. */
 function rowDiagSeverity(pathKey: string | undefined): { sev: 'error' | 'warning' | 'info' | null; messages: string[] } {
   const ctx = useContext(DiagCtx)
   if (!ctx || !pathKey) return { sev: null, messages: [] }
@@ -333,13 +333,26 @@ function rowDiagSeverity(pathKey: string | undefined): { sev: 'error' | 'warning
   return { sev, messages: exact ? exact.map(d => d.message) : [] }
 }
 
-function FieldRow({ label, value, depth, onEdit, isSpread, spreadInfo, fieldPath, pathKey, onRowToggle, leading, trailing, dragProps }: {
+function FieldRow({
+  label,
+  value,
+  depth,
+  onEdit,
+  isSpread,
+  spreadInfo,
+  fieldPath,
+  pathKey,
+  onRowToggle,
+  leading,
+  trailing,
+  dragProps,
+}: {
   label: string
   value: FieldValue
   depth: number
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   isSpread?: boolean
-  spreadInfo?: import('../bindings/index').SpreadInfo
+  spreadInfo?: SpreadInfo
   fieldPath: FieldPathSegment[]
   pathKey?: string
   onRowToggle?: (path: string, expanded: boolean) => void
@@ -347,7 +360,7 @@ function FieldRow({ label, value, depth, onEdit, isSpread, spreadInfo, fieldPath
   trailing?: ReactNode
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
 }) {
-  const isComplex = value.kind === 'Object' || value.kind === 'Array' || value.kind === 'Dict'
+  const isComplex = value.kind === 'object' || value.kind === 'array' || value.kind === 'dict'
   const canExpand = isComplex && depth < MAX_DEPTH
 
   if (canExpand) {
@@ -384,20 +397,31 @@ function FieldRow({ label, value, depth, onEdit, isSpread, spreadInfo, fieldPath
   )
 }
 
-function ScalarFieldRow({ label, value, depth, onCommit, isSpread, spreadInfo, pathKey, leading, trailing, dragProps }: {
+function ScalarFieldRow({
+  label,
+  value,
+  depth,
+  onCommit,
+  isSpread,
+  spreadInfo,
+  pathKey,
+  leading,
+  trailing,
+  dragProps,
+}: {
   label: string
   value: FieldValue
   depth: number
   onCommit?: (newValue: FieldValue) => void
   isSpread?: boolean
-  spreadInfo?: import('../bindings/index').SpreadInfo
+  spreadInfo?: SpreadInfo
   pathKey?: string
   leading?: ReactNode
   trailing?: ReactNode
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
 }) {
-  const isScalar = value.kind === 'Bool' || value.kind === 'Int' || value.kind === 'Float'
-                || value.kind === 'Str' || value.kind === 'Enum' || value.kind === 'Ref'
+  const isScalar = value.kind === 'bool' || value.kind === 'int' || value.kind === 'float'
+    || value.kind === 'string' || value.kind === 'enum' || value.kind === 'ref'
   const canEdit = isScalar && !!onCommit
   const diag = rowDiagSeverity(pathKey)
   const spreadHint = spreadHintText(spreadInfo)
@@ -417,13 +441,13 @@ function ScalarFieldRow({ label, value, depth, onCommit, isSpread, spreadInfo, p
             <ValueChip value={value} />
           )}
         </div>
-        {onCommit && value.kind === 'Ref' && (
+        {onCommit && value.kind === 'ref' && (
           <button
             className="btn-tiny dc-row-mode-btn"
-            title={`将引用 "${value.target_key}" 转为内联对象（使用 schema 默认值）`}
+            title={`将引用 "${value.value.target_key}" 转为内联对象（使用 schema 默认值）`}
             onClick={async e => {
               e.stopPropagation()
-              const obj = await buildDefaultObject(value.target_type)
+              const obj = await buildDefaultObject(value.value.target_type)
               if (obj) onCommit(obj)
             }}
           >内联</button>
@@ -434,47 +458,46 @@ function ScalarFieldRow({ label, value, depth, onCommit, isSpread, spreadInfo, p
   )
 }
 
-/** Always-editable widget. Scalars render as inputs/selects directly — no
- * double-click step. Commits on blur/change/Enter. */
 function DirectEditor({
-  value, onCommit,
+  value,
+  onCommit,
 }: {
   value: FieldValue
   onCommit: (next: FieldValue) => void
 }) {
-  if (value.kind === 'Bool') {
+  if (value.kind === 'bool') {
     return (
       <select
         className="dc-input dc-input-flat"
-        value={value.v ? 'true' : 'false'}
-        onChange={e => onCommit({ kind: 'Bool', v: e.target.value === 'true' })}
+        value={value.value ? 'true' : 'false'}
+        onChange={e => onCommit(boolValue(e.target.value === 'true'))}
       >
         <option value="true">true</option>
         <option value="false">false</option>
       </select>
     )
   }
-  if (value.kind === 'Enum') {
+  if (value.kind === 'enum') {
     return <EnumDirectSelect value={value} onCommit={onCommit} />
   }
-  if (value.kind === 'Ref') {
+  if (value.kind === 'ref') {
     return <RefDirectSelect value={value} onCommit={onCommit} />
   }
-  if (value.kind === 'Int' || value.kind === 'Float' || value.kind === 'Str') {
+  if (value.kind === 'int' || value.kind === 'float' || value.kind === 'string') {
     return <TextDirectInput value={value} onCommit={onCommit} />
   }
   return <ValueChip value={value} />
 }
 
 function TextDirectInput({
-  value, onCommit,
+  value,
+  onCommit,
 }: {
-  value: FieldValue & { kind: 'Int' | 'Float' | 'Str' }
+  value: FieldValue & { kind: 'int' | 'float' | 'string' }
   onCommit: (next: FieldValue) => void
 }) {
   const initial = plainText(value)
   const [text, setText] = useState(initial)
-  // Keep local state in sync with prop changes (e.g. after parent reload)
   useEffect(() => { setText(initial) }, [initial])
 
   function commit() {
@@ -487,7 +510,7 @@ function TextDirectInput({
   return (
     <input
       className="dc-input dc-input-flat"
-      type={value.kind === 'Int' || value.kind === 'Float' ? 'number' : 'text'}
+      type={value.kind === 'int' || value.kind === 'float' ? 'number' : 'text'}
       value={text}
       onChange={e => setText(e.target.value)}
       onBlur={commit}
@@ -500,34 +523,36 @@ function TextDirectInput({
 }
 
 function EnumDirectSelect({
-  value, onCommit,
+  value,
+  onCommit,
 }: {
-  value: FieldValue & { kind: 'Enum' }
+  value: FieldValue & { kind: 'enum' }
   onCommit: (next: FieldValue) => void
 }) {
   const [variants, setVariants] = useState<string[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const current = enumVariantText(value)
   useEffect(() => {
     let alive = true
     setLoadError(null)
-    loadEnumVariants(value.enum_name).then(r => {
+    loadEnumVariants(value.value.enum_name).then(r => {
       if (!alive) return
       if (r.ok) setVariants(r.variants)
       else { setVariants([]); setLoadError(r.error) }
     })
     return () => { alive = false }
-  }, [value.enum_name])
+  }, [value.value.enum_name])
 
   if (variants === null || variants.length === 0) {
     return (
       <span className="dc-input-wrap">
         <input
           className="dc-input dc-input-flat"
-          defaultValue={value.variant}
+          defaultValue={current}
           aria-invalid={!!loadError}
           onBlur={e => {
-            if (e.target.value !== value.variant) {
-              onCommit({ kind: 'Enum', enum_name: value.enum_name, variant: e.target.value, int_value: value.int_value })
+            if (e.target.value !== current) {
+              onCommit(enumValue(value.value.enum_name, e.target.value, value.value.value))
             }
           }}
         />
@@ -538,52 +563,53 @@ function EnumDirectSelect({
   return (
     <select
       className="dc-input dc-input-flat dc-input-enum"
-      value={value.variant}
-      onChange={e => onCommit({ kind: 'Enum', enum_name: value.enum_name, variant: e.target.value, int_value: value.int_value })}
+      value={current}
+      onChange={e => onCommit(enumValue(value.value.enum_name, e.target.value, value.value.value))}
     >
-      {!variants.includes(value.variant) && <option value={value.variant}>{value.variant}</option>}
+      {!variants.includes(current) && <option value={current}>{current}</option>}
       {variants.map(v => <option key={v} value={v}>{v}</option>)}
     </select>
   )
 }
 
 function RefDirectSelect({
-  value, onCommit, autoFocus = false,
+  value,
+  onCommit,
+  autoFocus = false,
 }: {
-  value: FieldValue & { kind: 'Ref' }
+  value: FieldValue & { kind: 'ref' }
   onCommit: (next: FieldValue) => void
   autoFocus?: boolean
 }) {
-  const [targets, setTargets] = useState<string[] | null>(null)
+  const [targets, setTargets] = useState<RefTarget[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   useEffect(() => {
     let alive = true
     setLoadError(null)
-    loadRefTargets(value.target_type).then(r => {
+    loadRefTargets(value.value.target_type).then(r => {
       if (!alive) return
-      if (r.ok) setTargets(r.variants)
+      if (r.ok) setTargets(r.targets)
       else { setTargets([]); setLoadError(r.error) }
     })
     return () => { alive = false }
-  }, [value.target_type])
+  }, [value.value.target_type])
 
   function commit(key: string) {
-    if (key !== value.target_key) {
-      onCommit({ kind: 'Ref', target_type: value.target_type, target_key: key, target_file: null })
+    if (key !== value.value.target_key) {
+      onCommit(refValue(value.value.target_type, key))
     }
   }
 
-  // No targets yet or empty list — fall back to free-text input.
   if (targets === null || targets.length === 0) {
     return (
       <span className="dc-input-ref">
         <span className="dc-input-ref-dot" />
         <input
           className="dc-input dc-input-flat"
-          defaultValue={value.target_key}
+          defaultValue={value.value.target_key}
           autoFocus={autoFocus}
           aria-invalid={!!loadError}
-          placeholder={targets === null ? '加载中…' : `${value.target_type} key`}
+          placeholder={targets === null ? '加载中...' : `${value.value.target_type} key`}
           onBlur={e => commit(e.target.value)}
           onKeyDown={e => {
             if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
@@ -592,35 +618,49 @@ function RefDirectSelect({
         />
         {loadError
           ? <span className="dc-load-error" title={loadError}>!</span>
-          : <span className="dc-input-ref-type">{value.target_type}</span>}
+          : <span className="dc-input-ref-type">{value.value.target_type}</span>}
       </span>
     )
   }
 
-  // Real select listing all targets, with the current value preserved if not present.
-  const inList = targets.includes(value.target_key)
+  const currentId = value.value.target_key
+    ? coordinateId({ actual_type: value.value.target_type, key: value.value.target_key })
+    : ''
+  const targetById = new Map(targets.map(t => [refTargetId(t), t]))
+  const inList = currentId ? targetById.has(currentId) : false
   return (
     <span className="dc-input-ref">
       <span className="dc-input-ref-dot" />
       <select
         className="dc-input dc-input-flat dc-input-ref-select"
-        value={value.target_key}
+        value={currentId}
         autoFocus={autoFocus}
-        onChange={e => commit(e.target.value)}
+        onChange={e => {
+          const target = targetById.get(e.target.value)
+          if (target) onCommit(refValueFromTarget(target))
+        }}
       >
-        {!inList && <option value={value.target_key}>{value.target_key || '(未选择)'}</option>}
-        {!value.target_key && inList && <option value="" disabled>选择…</option>}
-        {targets.map(t => <option key={t} value={t}>{t}</option>)}
+        {!value.value.target_key && <option value="" disabled>选择...</option>}
+        {value.value.target_key && !inList && <option value={currentId}>{value.value.target_type}.{value.value.target_key}</option>}
+        {targets.map(t => <option key={refTargetId(t)} value={refTargetId(t)}>{refTargetLabel(t)}</option>)}
       </select>
-      <span className="dc-input-ref-type">{value.target_type}</span>
+      <span className="dc-input-ref-type">{value.value.target_type}</span>
     </span>
   )
 }
 
-/// Standalone inline editor: picks the right input widget by kind and emits the
-/// fully-typed FieldValue. Used by RecordView/TableView detail panel and table cells.
+function refTargetId(target: RefTarget): string {
+  return coordinateId(target.coordinate)
+}
+
+function refTargetLabel(target: RefTarget): string {
+  return `${target.coordinate.actual_type}.${target.coordinate.key}`
+}
+
 export function InlineEditor({
-  value, onCommit, onCancel,
+  value,
+  onCommit,
+  onCancel,
 }: {
   value: FieldValue
   onCommit: (next: FieldValue) => void
@@ -635,7 +675,7 @@ export function InlineEditor({
     else onCancel()
   }
 
-  if (value.kind === 'Bool') {
+  if (value.kind === 'bool') {
     return (
       <select
         className="dc-input"
@@ -650,16 +690,23 @@ export function InlineEditor({
       </select>
     )
   }
-  if (value.kind === 'Enum') {
-    return <EnumSelect enumName={value.enum_name} current={editVal} onCommit={commit} onCancel={onCancel} />
+  if (value.kind === 'enum') {
+    return (
+      <EnumSelect
+        value={value}
+        current={editVal}
+        onCommit={variant => onCommit(enumValue(value.value.enum_name, variant, value.value.value))}
+        onCancel={onCancel}
+      />
+    )
   }
-  if (value.kind === 'Ref') {
-    return <RefSelect targetType={value.target_type} current={editVal} onCommit={commit} onCancel={onCancel} />
+  if (value.kind === 'ref') {
+    return <RefSelect value={value} onCommit={onCommit} onCancel={onCancel} />
   }
   return (
     <input
       className="dc-input"
-      type={value.kind === 'Int' || value.kind === 'Float' ? 'number' : 'text'}
+      type={value.kind === 'int' || value.kind === 'float' ? 'number' : 'text'}
       value={editVal}
       autoFocus
       onChange={e => setEditVal(e.target.value)}
@@ -673,9 +720,12 @@ export function InlineEditor({
 }
 
 function EnumSelect({
-  enumName, current, onCommit, onCancel,
+  value,
+  current,
+  onCommit,
+  onCancel,
 }: {
-  enumName: string
+  value: FieldValue & { kind: 'enum' }
   current: string
   onCommit: (v: string) => void
   onCancel: () => void
@@ -683,12 +733,12 @@ function EnumSelect({
   const [variants, setVariants] = useState<string[] | null>(null)
   useEffect(() => {
     let alive = true
-    loadEnumVariants(enumName).then(r => { if (alive) setVariants(r.ok ? r.variants : []) })
+    loadEnumVariants(value.value.enum_name).then(r => { if (alive) setVariants(r.ok ? r.variants : []) })
     return () => { alive = false }
-  }, [enumName])
+  }, [value.value.enum_name])
 
   if (variants === null) {
-    return <input className="dc-input" value={current} disabled placeholder="加载中…" />
+    return <input className="dc-input" value={current} disabled placeholder="加载中..." />
   }
   if (variants.length === 0) {
     return (
@@ -720,53 +770,86 @@ function EnumSelect({
 }
 
 function RefSelect({
-  targetType, current, onCommit, onCancel,
+  value,
+  onCommit,
+  onCancel,
 }: {
-  targetType: string
-  current: string
-  onCommit: (v: string) => void
+  value: FieldValue & { kind: 'ref' }
+  onCommit: (next: FieldValue) => void
   onCancel: () => void
 }) {
-  const [targets, setTargets] = useState<string[] | null>(null)
-  const [val, setVal] = useState(current)
+  const [targets, setTargets] = useState<RefTarget[] | null>(null)
+  const [val, setVal] = useState(value.value.target_key)
   useEffect(() => {
     let alive = true
-    loadRefTargets(targetType).then(r => { if (alive) setTargets(r.ok ? r.variants : []) })
+    loadRefTargets(value.value.target_type).then(r => { if (alive) setTargets(r.ok ? r.targets : []) })
     return () => { alive = false }
-  }, [targetType])
+  }, [value.value.target_type])
+  useEffect(() => { setVal(value.value.target_key) }, [value.value.target_key])
 
-  const listId = `ref-targets-${targetType}`
+  if (targets && targets.length > 0) {
+    const currentId = value.value.target_key
+      ? coordinateId({ actual_type: value.value.target_type, key: value.value.target_key })
+      : ''
+    const targetById = new Map(targets.map(t => [refTargetId(t), t]))
+    const inList = currentId ? targetById.has(currentId) : false
+    return (
+      <select
+        className="dc-input"
+        value={currentId}
+        autoFocus
+        onChange={e => {
+          const target = targetById.get(e.target.value)
+          if (target) onCommit(refValueFromTarget(target))
+        }}
+        onBlur={onCancel}
+        onKeyDown={e => { if (e.key === 'Escape') onCancel() }}
+      >
+        {!value.value.target_key && <option value="" disabled>选择...</option>}
+        {value.value.target_key && !inList && <option value={currentId}>{value.value.target_type}.{value.value.target_key}</option>}
+        {targets.map(t => <option key={refTargetId(t)} value={refTargetId(t)}>{refTargetLabel(t)}</option>)}
+      </select>
+    )
+  }
+
   return (
-    <>
+    <span className="dc-input-wrap">
       <input
         className="dc-input"
-        list={listId}
         value={val}
         autoFocus
-        placeholder={targets === null ? '加载中…' : `${targetType} key`}
+        placeholder={targets === null ? '加载中...' : `${value.value.target_type} key`}
         onChange={e => setVal(e.target.value)}
-        onBlur={() => onCommit(val)}
+        onBlur={() => onCommit(refValue(value.value.target_type, val))}
         onKeyDown={e => {
-          if (e.key === 'Enter') onCommit(val)
+          if (e.key === 'Enter') onCommit(refValue(value.value.target_type, val))
           if (e.key === 'Escape') onCancel()
         }}
       />
-      {targets && targets.length > 0 && (
-        <datalist id={listId}>
-          {targets.map(t => <option key={t} value={t} />)}
-        </datalist>
-      )}
-    </>
+    </span>
   )
 }
 
-function ExpandableRow({ label, value, depth, onEdit, isSpread, spreadInfo, fieldPath, pathKey, onRowToggle, leading, trailing, dragProps }: {
+function ExpandableRow({
+  label,
+  value,
+  depth,
+  onEdit,
+  isSpread,
+  spreadInfo,
+  fieldPath,
+  pathKey,
+  onRowToggle,
+  leading,
+  trailing,
+  dragProps,
+}: {
   label: string
   value: FieldValue
   depth: number
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   isSpread?: boolean
-  spreadInfo?: import('../bindings/index').SpreadInfo
+  spreadInfo?: SpreadInfo
   fieldPath: FieldPathSegment[]
   pathKey?: string
   onRowToggle?: (path: string, expanded: boolean) => void
@@ -799,18 +882,18 @@ function ExpandableRow({ label, value, depth, onEdit, isSpread, spreadInfo, fiel
           <span className="dc-row-label-text">{label}</span>
         </div>
         <div className="dc-row-value">
-          {pickingRef && value.kind === 'Object' ? (
+          {pickingRef && value.kind === 'object' ? (
             <span className="dc-row-value-inner" onClick={e => e.stopPropagation()}>
               <RefDirectSelect
-                value={{ kind: 'Ref', target_type: value.actual_type, target_key: '', target_file: null }}
+                value={refValue(value.value.actual_type, '') as FieldValue & { kind: 'ref' }}
                 autoFocus
                 onCommit={next => {
                   setPickingRef(false)
-                  if (next.kind !== 'Ref' || !next.target_key) return
+                  if (next.kind !== 'ref' || !next.value.target_key) return
                   onEdit?.(fieldPath, next)
                 }}
               />
-              <button className="btn-tiny" onClick={e => { e.stopPropagation(); setPickingRef(false) }}>✕</button>
+              <button className="btn-tiny" onClick={e => { e.stopPropagation(); setPickingRef(false) }}>x</button>
             </span>
           ) : (
             <div className="dc-row-value-inner">
@@ -818,34 +901,32 @@ function ExpandableRow({ label, value, depth, onEdit, isSpread, spreadInfo, fiel
               {count !== null && <span className="vc-count">{count}</span>}
             </div>
           )}
-          {onEdit && value.kind === 'Object' && !pickingRef && (
+          {onEdit && value.kind === 'object' && !pickingRef && (
             <button
               className="btn-tiny dc-row-mode-btn"
               title="切换为引用（指向已有同类型记录）"
               onClick={e => { e.stopPropagation(); setPickingRef(true) }}
-            >→Ref</button>
+            >-&gt;Ref</button>
           )}
           {trailing}
         </div>
       </div>
       {expanded && (
         <>
-          {value.kind === 'Object' &&
-            value.fields.map((fc) => (
+          {value.kind === 'object' &&
+            objectFields(value).map((fc) => (
               <FieldRow
                 key={fc.name}
                 label={fc.name}
                 value={fc.value}
                 depth={depth + 1}
                 onEdit={onEdit}
-                isSpread={fc.is_spread}
-                spreadInfo={fc.spread_info}
-                fieldPath={[...fieldPath, { kind: 'field', name: fc.name }]}
+                fieldPath={[...fieldPath, fieldPathField(fc.name)]}
                 pathKey={pathKey ? `${pathKey}.${fc.name}` : fc.name}
                 onRowToggle={onRowToggle}
               />
             ))}
-          {value.kind === 'Array' && (
+          {value.kind === 'array' && (
             <ArrayItems
               container={value}
               depth={depth + 1}
@@ -855,36 +936,42 @@ function ExpandableRow({ label, value, depth, onEdit, isSpread, spreadInfo, fiel
               onRowToggle={onRowToggle}
             />
           )}
-          {value.kind === 'Dict' &&
-            value.entries.map((e) => (
+          {value.kind === 'dict' &&
+            value.value.map(([key, item]) => (
               <FieldRow
-                key={dictKeyText(e.key)}
-                label={dictKeyText(e.key)}
-                value={e.value}
+                key={dictKeyText(key)}
+                label={dictKeyText(key)}
+                value={item}
                 depth={depth + 1}
-                onEdit={onEdit}
-                fieldPath={[...fieldPath, { kind: 'field', name: dictKeyAstName(e.key) }]}
-                pathKey={pathKey ? `${pathKey}[${dictKeyText(e.key)}]` : `[${dictKeyText(e.key)}]`}
+                onEdit={onEdit ? (childPath, next) => {
+                  const relativePath = childPath.slice(fieldPath.length)
+                  const nextItem = relativePath.length === 0
+                    ? next
+                    : replaceValueAtPath(item, relativePath, next)
+                  if (nextItem) onEdit(fieldPath, dictInsert(value, key, nextItem))
+                } : undefined}
+                fieldPath={fieldPath}
+                pathKey={pathKey ? `${pathKey}[${dictKeyText(key)}]` : `[${dictKeyText(key)}]`}
                 onRowToggle={onRowToggle}
                 trailing={onEdit ? (
                   <DeleteButton
                     title="删除"
-                    onClick={() => onEdit(fieldPath, dictRemove(value, e.key))}
+                    onClick={() => onEdit(fieldPath, dictRemove(value, key))}
                   />
                 ) : undefined}
               />
             ))}
-          {onEdit && (value.kind === 'Array' || value.kind === 'Dict') && (
+          {onEdit && (value.kind === 'array' || value.kind === 'dict') && (
             <CollectionAddRow
               container={value}
               depth={depth + 1}
               onAdd={next => onEdit(fieldPath, next)}
             />
           )}
-          {value.kind === 'Array' && value.items.length === 0 && (
+          {value.kind === 'array' && value.value.length === 0 && (
             <EmptyHint depth={depth + 1} text="空数组" />
           )}
-          {value.kind === 'Dict' && value.entries.length === 0 && (
+          {value.kind === 'dict' && value.value.length === 0 && (
             <EmptyHint depth={depth + 1} text="空字典" />
           )}
         </>
@@ -906,110 +993,148 @@ function EmptyHint({ depth, text }: { depth: number; text: string }) {
 
 function headerSummary(v: FieldValue): string {
   switch (v.kind) {
-    case 'Object': return v.actual_type
-    case 'Array':  return v.items[0] ? `${valueKindLabel(v.items[0])}[]` : 'array'
-    case 'Dict':   return v.entries[0]
-      ? `${dictKindLabel(v.entries[0].key)} → ${valueKindLabel(v.entries[0].value)}`
+    case 'object': return v.value.actual_type
+    case 'array': return v.value[0] ? `${valueKindLabel(v.value[0])}[]` : 'array'
+    case 'dict': return v.value[0]
+      ? `${dictKindLabel(v.value[0][0])} -> ${valueKindLabel(v.value[0][1])}`
       : 'dict'
-    default:       return ''
+    default: return ''
   }
 }
 
 function childCount(v: FieldValue): number | null {
   switch (v.kind) {
-    case 'Array': return v.items.length
-    case 'Dict':  return v.entries.length
-    default:      return null
+    case 'array': return v.value.length
+    case 'dict': return v.value.length
+    default: return null
   }
 }
 
-// ─── Collection mutations (array/dict) ───────────────────────────────────────
-// Build a *new full collection* value with the change applied. The caller then
-// calls onEdit(fieldPath_to_collection, newCollection); the backend's existing
-// span-patch writer replaces the whole collection.
-
-function arrayMove(arr: FieldValue & { kind: 'Array' }, from: number, to: number): FieldValue {
-  if (from === to || from < 0 || to < 0 || from >= arr.items.length || to >= arr.items.length) {
+function arrayMove(arr: FieldValue & { kind: 'array' }, from: number, to: number): FieldValue {
+  if (from === to || from < 0 || to < 0 || from >= arr.value.length || to >= arr.value.length) {
     return arr
   }
-  const items = arr.items.slice()
+  const items = arr.value.slice()
   const [moved] = items.splice(from, 1)
   items.splice(to, 0, moved)
-  return { kind: 'Array', items }
+  return { kind: 'array', value: items }
 }
 
-function arrayRemove(arr: FieldValue & { kind: 'Array' }, i: number): FieldValue {
-  const items = arr.items.slice()
+function arrayRemove(arr: FieldValue & { kind: 'array' }, i: number): FieldValue {
+  const items = arr.value.slice()
   items.splice(i, 1)
-  return { kind: 'Array', items }
+  return { kind: 'array', value: items }
 }
 
-function arrayAppend(arr: FieldValue & { kind: 'Array' }, value: FieldValue): FieldValue {
-  return { kind: 'Array', items: [...arr.items, value] }
+function arrayAppend(arr: FieldValue & { kind: 'array' }, value: FieldValue): FieldValue {
+  return { kind: 'array', value: [...arr.value, value] }
 }
 
-function dictRemove(d: FieldValue & { kind: 'Dict' }, key: DictKey): FieldValue {
-  return { kind: 'Dict', entries: d.entries.filter(e => !dictKeyEq(e.key, key)) }
+function dictRemove(d: FieldValue & { kind: 'dict' }, key: DictKey): FieldValue {
+  return { kind: 'dict', value: d.value.filter(([entryKey]) => !dictKeyEq(entryKey, key)) }
 }
 
-function dictInsert(d: FieldValue & { kind: 'Dict' }, key: DictKey, value: FieldValue): FieldValue {
-  // If the key already exists, replace its value; otherwise append.
-  const idx = d.entries.findIndex(e => dictKeyEq(e.key, key))
+function dictInsert(d: FieldValue & { kind: 'dict' }, key: DictKey, value: FieldValue): FieldValue {
+  const idx = d.value.findIndex(([entryKey]) => dictKeyEq(entryKey, key))
   if (idx >= 0) {
-    const entries = d.entries.slice()
-    entries[idx] = { key, value }
-    return { kind: 'Dict', entries }
+    const entries = d.value.slice()
+    entries[idx] = [key, value]
+    return { kind: 'dict', value: entries }
   }
-  return { kind: 'Dict', entries: [...d.entries, { key, value }] }
+  return { kind: 'dict', value: [...d.value, [key, value]] }
 }
 
 function dictKeyEq(a: DictKey, b: DictKey): boolean {
   if (a.kind !== b.kind) return false
-  if (a.kind === 'Str' && b.kind === 'Str') return a.v === b.v
-  if (a.kind === 'Int' && b.kind === 'Int') return a.v === b.v
-  if (a.kind === 'Enum' && b.kind === 'Enum') return a.enum_name === b.enum_name && a.variant === b.variant
+  if (a.kind === 'string' && b.kind === 'string') return a.value === b.value
+  if (a.kind === 'int' && b.kind === 'int') return a.value === b.value
+  if (a.kind === 'enum' && b.kind === 'enum') {
+    return a.value.enum_name === b.value.enum_name && a.value.variant === b.value.variant && a.value.value === b.value.value
+  }
   return false
 }
 
-/** Default value for a brand-new collection element, derived from a sibling.
- * If the collection has no existing items we fall back to `Null`; the user
- * can then double-click to enter a value and the parser will need a concrete
- * type, so this is best-effort. */
+function replaceValueAtPath(
+  root: FieldValue,
+  path: FieldPathSegment[],
+  replacement: FieldValue,
+): FieldValue | null {
+  if (path.length === 0) return replacement
+  const [head, ...tail] = path
+  if (head.kind === 'field') {
+    if (root.kind !== 'object') return null
+    const current = root.value.fields[head.value]
+    if (!current) return null
+    const next = replaceValueAtPath(current, tail, replacement)
+    if (!next) return null
+    return {
+      kind: 'object',
+      value: {
+        ...root.value,
+        fields: {
+          ...root.value.fields,
+          [head.value]: next,
+        },
+      },
+    }
+  }
+  if (head.kind === 'index') {
+    if (root.kind !== 'array') return null
+    const current = root.value[head.value]
+    if (!current) return null
+    const next = replaceValueAtPath(current, tail, replacement)
+    if (!next) return null
+    const values = root.value.slice()
+    values[head.value] = next
+    return { kind: 'array', value: values }
+  }
+  return null
+}
+
 function defaultElementFor(container: FieldValue): FieldValue {
-  // Find the first non-null sample to derive shape from. Falling back to a
-  // Null sample would emit `null` which most schemas reject.
-  if (container.kind === 'Array') {
-    const sample = container.items.find(i => i.kind !== 'Null') ?? container.items[0]
+  if (container.kind === 'array') {
+    const sample = container.value.find(i => i.kind !== 'null') ?? container.value[0]
     if (sample) return defaultLikeShape(sample)
   }
-  if (container.kind === 'Dict') {
-    const sample = container.entries.find(e => e.value.kind !== 'Null')?.value
-      ?? container.entries[0]?.value
+  if (container.kind === 'dict') {
+    const sample = container.value.find(([, item]) => item.kind !== 'null')?.[1]
+      ?? container.value[0]?.[1]
     if (sample) return defaultLikeShape(sample)
   }
-  return { kind: 'Str', v: '' }
+  return stringValue('')
 }
 
 function defaultLikeShape(sample: FieldValue): FieldValue {
   switch (sample.kind) {
-    case 'Bool':  return { kind: 'Bool', v: false }
-    case 'Int':   return { kind: 'Int', v: 0 }
-    case 'Float': return { kind: 'Float', v: 0 }
-    case 'Str':   return { kind: 'Str', v: '' }
-    case 'Null':  return { kind: 'Str', v: '' }  // can't keep null as default — schema usually disallows
-    case 'Enum':  return { kind: 'Enum', enum_name: sample.enum_name, variant: sample.variant, int_value: sample.int_value }
-    case 'Ref':   return { kind: 'Ref', target_type: sample.target_type, target_key: '', target_file: null }
-    case 'Object': return { kind: 'Object', actual_type: sample.actual_type, fields: sample.fields.map(f => ({ name: f.name, value: defaultLikeShape(f.value) })) }
-    case 'Array': return { kind: 'Array', items: [] }
-    case 'Dict':  return { kind: 'Dict', entries: [] }
+    case 'bool': return boolValue(false)
+    case 'int': return intValue(0)
+    case 'float': return floatValue(0)
+    case 'string': return stringValue('')
+    case 'null': return stringValue('')
+    case 'enum': return enumValue(sample.value.enum_name, sample.value.variant, sample.value.value)
+    case 'ref': return refValue(sample.value.target_type, '')
+    case 'object': return {
+      kind: 'object',
+      value: {
+        key: '',
+        actual_type: sample.value.actual_type,
+        fields: Object.fromEntries(objectFields(sample).map(f => [f.name, defaultLikeShape(f.value)])),
+      },
+    }
+    case 'array': return { kind: 'array', value: [] }
+    case 'dict': return { kind: 'dict', value: [] }
   }
 }
 
-/** Array items list with HTML5 drag-and-drop reorder. The drag handle lives
- * in the row's leading slot (left of the label) and the delete button in the
- * trailing slot (right of the value), so neither covers content. */
-function ArrayItems({ container, depth, fieldPath, pathKey, onEdit, onRowToggle }: {
-  container: FieldValue & { kind: 'Array' }
+function ArrayItems({
+  container,
+  depth,
+  fieldPath,
+  pathKey,
+  onEdit,
+  onRowToggle,
+}: {
+  container: FieldValue & { kind: 'array' }
   depth: number
   fieldPath: FieldPathSegment[]
   pathKey?: string
@@ -1029,11 +1154,7 @@ function ArrayItems({ container, depth, fieldPath, pathKey, onEdit, onRowToggle 
 
   return (
     <>
-      {container.items.map((item, i) => {
-        // Native HTML5 dnd: row is always draggable=true so the browser will
-        // emit dragstart, but we cancel the drag in dragstart unless the user
-        // initiated it from the drag handle. The handle records on mousedown
-        // whether the press originated from it, via a ref.
+      {container.value.map((item, i) => {
         const dragHandle = onEdit ? <DragHandle rowIndex={i} dragArmedRef={dragArmedRef} /> : undefined
         const trailing = onEdit ? (
           <DeleteButton title="删除" onClick={() => onEdit(fieldPath, arrayRemove(container, i))} />
@@ -1045,7 +1166,7 @@ function ArrayItems({ container, depth, fieldPath, pathKey, onEdit, onRowToggle 
             value={item}
             depth={depth}
             onEdit={onEdit}
-            fieldPath={[...fieldPath, { kind: 'index', i }]}
+            fieldPath={[...fieldPath, fieldPathIndex(i)]}
             pathKey={pathKey ? `${pathKey}[${i}]` : `[${i}]`}
             onRowToggle={onRowToggle}
             leading={dragHandle}
@@ -1095,8 +1216,8 @@ function DragHandle({ rowIndex, dragArmedRef }: {
       onClick={e => e.stopPropagation()}
     >
       <svg width="8" height="14" viewBox="0 0 8 14" fill="currentColor" aria-hidden>
-        <circle cx="2" cy="3"  r="1" /><circle cx="6" cy="3"  r="1" />
-        <circle cx="2" cy="7"  r="1" /><circle cx="6" cy="7"  r="1" />
+        <circle cx="2" cy="3" r="1" /><circle cx="6" cy="3" r="1" />
+        <circle cx="2" cy="7" r="1" /><circle cx="6" cy="7" r="1" />
         <circle cx="2" cy="11" r="1" /><circle cx="6" cy="11" r="1" />
       </svg>
     </span>
@@ -1109,12 +1230,12 @@ function DeleteButton({ onClick, title }: { onClick: () => void; title: string }
       className="btn-tiny btn-tiny-danger dc-row-delete"
       title={title}
       onClick={(e: ReactMouseEvent) => { e.stopPropagation(); onClick() }}
-    >✕</button>
+    >x</button>
   )
 }
 
 function CollectionAddRow({ container, depth, onAdd }: {
-  container: FieldValue & { kind: 'Array' | 'Dict' }
+  container: FieldValue & { kind: 'array' | 'dict' }
   depth: number
   onAdd: (next: FieldValue) => void
 }) {
@@ -1123,12 +1244,10 @@ function CollectionAddRow({ container, depth, onAdd }: {
 
   function reset() { setAdding(false); setDupError(null) }
 
-  if (container.kind === 'Array') {
-    // Sample first item's kind to decide whether to ask for a value first.
-    const sample = container.items[0]
-    const needsPicker = sample && (sample.kind === 'Enum' || sample.kind === 'Ref' || sample.kind === 'Bool')
+  if (container.kind === 'array') {
+    const sample = container.value[0]
+    const needsPicker = sample && (sample.kind === 'enum' || sample.kind === 'ref' || sample.kind === 'bool')
     if (!needsPicker) {
-      // Plain types — append a default and let the user double-click to edit.
       return (
         <div className="dc-row dc-row-add" style={{ paddingLeft: depth * INDENT_PX + 8 }}>
           <button
@@ -1153,19 +1272,17 @@ function CollectionAddRow({ container, depth, onAdd }: {
               onCommit={v => { onAdd(arrayAppend(container, v)); reset() }}
               onCancel={reset}
             />
-            <button className="btn-tiny" onClick={reset}>✕</button>
+            <button className="btn-tiny" onClick={reset}>x</button>
           </span>
         )}
       </div>
     )
   }
 
-  // Dict
-  if (container.kind !== 'Dict') return null  // unreachable; narrows for ts
-  const sampleKey: DictKey = container.entries[0]?.key ?? { kind: 'Str', v: '' }
+  const sampleKey: DictKey = container.value[0]?.[0] ?? { kind: 'string', value: '' }
   function tryAdd(key: DictKey) {
-    if (container.kind !== 'Dict') return
-    const dup = container.entries.some(e => dictKeyEq(e.key, key))
+    if (container.kind !== 'dict') return
+    const dup = container.value.some(([entryKey]) => dictKeyEq(entryKey, key))
     if (dup) {
       setDupError(`键 "${dictKeyText(key)}" 已存在`)
       return
@@ -1199,28 +1316,25 @@ function DictKeyEntry({ sampleKey, onCommit, onCancel }: {
   onCancel: () => void
 }) {
   const [text, setText] = useState('')
-
-  // Enum-keyed dict: load variants and present a select.
   const [variants, setVariants] = useState<string[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   useEffect(() => {
-    if (sampleKey.kind !== 'Enum') return
+    if (sampleKey.kind !== 'enum') return
     let alive = true
     setLoadError(null)
-    loadEnumVariants(sampleKey.enum_name).then(r => {
+    loadEnumVariants(sampleKey.value.enum_name).then(r => {
       if (!alive) return
       if (r.ok) setVariants(r.variants)
       else { setVariants([]); setLoadError(r.error) }
     })
     return () => { alive = false }
-  }, [sampleKey.kind === 'Enum' ? sampleKey.enum_name : ''])
+  }, [sampleKey.kind === 'enum' ? sampleKey.value.enum_name : ''])
 
-  if (sampleKey.kind === 'Enum') {
+  if (sampleKey.kind === 'enum') {
     if (variants === null) {
-      return <span className="dc-add-form"><span className="dc-add-loading">加载枚举…</span></span>
+      return <span className="dc-add-form"><span className="dc-add-loading">加载枚举...</span></span>
     }
     if (variants.length === 0) {
-      // Backend has no variants (or load failed) — fall back to text input.
       return (
         <span className="dc-add-form">
           {loadError && <span className="dc-load-error" title={loadError}>!</span>}
@@ -1230,12 +1344,12 @@ function DictKeyEntry({ sampleKey, onCommit, onCancel }: {
             aria-invalid={!!loadError}
             onChange={e => setText(e.target.value)}
             onKeyDown={e => {
-              if (e.key === 'Enter' && text) onCommit({ kind: 'Enum', enum_name: sampleKey.enum_name, variant: text, int_value: 0 })
+              if (e.key === 'Enter' && text) onCommit({ kind: 'enum', value: { enum_name: sampleKey.value.enum_name, variant: text, value: 0n } })
               if (e.key === 'Escape') onCancel()
             }}
           />
-          <button className="btn-tiny" onClick={() => text && onCommit({ kind: 'Enum', enum_name: sampleKey.enum_name, variant: text, int_value: 0 })}>✓</button>
-          <button className="btn-tiny" onClick={onCancel}>✕</button>
+          <button className="btn-tiny" onClick={() => text && onCommit({ kind: 'enum', value: { enum_name: sampleKey.value.enum_name, variant: text, value: 0n } })}>✓</button>
+          <button className="btn-tiny" onClick={onCancel}>x</button>
         </span>
       )
     }
@@ -1246,34 +1360,35 @@ function DictKeyEntry({ sampleKey, onCommit, onCancel }: {
           autoFocus
           defaultValue=""
           onChange={e => {
-            if (e.target.value) onCommit({ kind: 'Enum', enum_name: sampleKey.enum_name, variant: e.target.value, int_value: 0 })
+            if (e.target.value) onCommit({ kind: 'enum', value: { enum_name: sampleKey.value.enum_name, variant: e.target.value, value: 0n } })
           }}
           onKeyDown={e => { if (e.key === 'Escape') onCancel() }}
         >
-          <option value="" disabled>选择…</option>
+          <option value="" disabled>选择...</option>
           {variants.map(v => <option key={v} value={v}>{v}</option>)}
         </select>
-        <button className="btn-tiny" onClick={onCancel}>✕</button>
+        <button className="btn-tiny" onClick={onCancel}>x</button>
       </span>
     )
   }
 
-  // Str / Int key entry.
   function commit() {
     if (!text) return
-    if (sampleKey.kind === 'Int') {
-      const n = parseInt(text, 10)
-      if (!Number.isFinite(n)) return
-      onCommit({ kind: 'Int', v: n })
+    if (sampleKey.kind === 'int') {
+      try {
+        onCommit({ kind: 'int', value: BigInt(text) })
+      } catch {
+        return
+      }
     } else {
-      onCommit({ kind: 'Str', v: text })
+      onCommit({ kind: 'string', value: text })
     }
   }
   return (
     <span className="dc-add-form">
       <input
         className="dc-input"
-        placeholder={sampleKey.kind === 'Int' ? '整数 key' : '字符串 key'}
+        placeholder={sampleKey.kind === 'int' ? '整数 key' : '字符串 key'}
         autoFocus
         value={text}
         onChange={e => setText(e.target.value)}
@@ -1283,41 +1398,31 @@ function DictKeyEntry({ sampleKey, onCommit, onCancel }: {
         }}
       />
       <button className="btn-tiny" onClick={commit}>✓</button>
-      <button className="btn-tiny" onClick={onCancel}>✕</button>
+      <button className="btn-tiny" onClick={onCancel}>x</button>
     </span>
   )
 }
 
-// Build a FieldValue of the same kind as `original` from raw text input.
-// Returns null if the text can't be parsed for the kind (caller cancels).
 function buildFieldValue(original: FieldValue, raw: string): FieldValue | null {
   switch (original.kind) {
-    case 'Bool':
-      return { kind: 'Bool', v: raw === 'true' }
-    case 'Int': {
-      const n = parseInt(raw, 10)
-      return Number.isFinite(n) ? { kind: 'Int', v: n } : null
-    }
-    case 'Float': {
+    case 'bool':
+      return boolValue(raw === 'true')
+    case 'int':
+      try {
+        return intValue(raw)
+      } catch {
+        return null
+      }
+    case 'float': {
       const n = parseFloat(raw)
-      return Number.isFinite(n) ? { kind: 'Float', v: n } : null
+      return Number.isFinite(n) ? floatValue(n) : null
     }
-    case 'Str':
-      return { kind: 'Str', v: raw }
-    case 'Enum':
-      return {
-        kind: 'Enum',
-        enum_name: original.enum_name,
-        variant: raw,
-        int_value: original.int_value,
-      }
-    case 'Ref':
-      return {
-        kind: 'Ref',
-        target_type: original.target_type,
-        target_key: raw,
-        target_file: null,
-      }
+    case 'string':
+      return stringValue(raw)
+    case 'enum':
+      return enumValue(original.value.enum_name, raw, original.value.value)
+    case 'ref':
+      return refValue(original.value.target_type, raw)
     default:
       return null
   }
@@ -1325,17 +1430,15 @@ function buildFieldValue(original: FieldValue, raw: string): FieldValue | null {
 
 function plainText(v: FieldValue): string {
   switch (v.kind) {
-    case 'Bool':  return v.v ? 'true' : 'false'
-    case 'Int':   return String(v.v)
-    case 'Float': return String(v.v)
-    case 'Str':   return v.v
-    case 'Enum':  return v.variant
-    case 'Ref':   return v.target_key
-    default:      return ''
+    case 'bool': return v.value ? 'true' : 'false'
+    case 'int': return String(v.value)
+    case 'float': return String(v.value)
+    case 'string': return v.value
+    case 'enum': return enumVariantText(v)
+    case 'ref': return v.value.target_key
+    default: return ''
   }
 }
-
-// ─── Node mode (GraphView) ────────────────────────────────────────────────────
 
 export function DataCardNode({
   fields,

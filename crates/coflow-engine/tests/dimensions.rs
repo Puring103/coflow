@@ -4,8 +4,9 @@
     clippy::needless_raw_string_hashes
 )]
 
+use coflow_api::WriteFieldPathSegment;
 use coflow_cft::{CftContainer, Dimension, ModuleId};
-use coflow_data_model::{CfdDataModel, CfdInputRecord, CfdInputValue};
+use coflow_data_model::{CfdDataModel, CfdInputRecord, CfdInputValue, CfdValue};
 use coflow_engine::build_project_session;
 use coflow_project::Project;
 
@@ -674,7 +675,10 @@ dimensions:
         .expect("synthetic `Item_nameVariants.potion` should be indexed");
     assert_ne!(source.id, synthetic.id, "both records have distinct ids");
     assert_eq!(source.display_path, "data/items.csv");
-    assert_eq!(synthetic.display_path, "data/dimensions/language/Item_name.csv");
+    assert_eq!(
+        synthetic.display_path,
+        "data/dimensions/language/Item_name.csv"
+    );
 
     // The synthetic file lists only the synthetic record — the source row's
     // fields must not bleed through.
@@ -705,6 +709,93 @@ dimensions:
     assert!(view.record.fields.contains_key("zh"));
     assert!(view.record.fields.contains_key("en"));
     assert!(!view.record.fields.contains_key("name"));
+
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
+fn write_field_redirects_spread_fields_to_source_record() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-engine-spread-write-source-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        r#"
+        type Item {
+            name: string;
+            power: int;
+        }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/source.cfd"),
+        r#"base: Item {
+    name: "Base",
+    power: 1,
+}
+"#,
+    )
+    .expect("write source");
+    std::fs::write(
+        root.join("data/host.cfd"),
+        r#"child: Item {
+    ...@Item.base,
+}
+"#,
+    )
+    .expect("write host");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+sources:
+  - path: data/source.cfd
+  - path: data/host.cfd
+"#,
+    )
+    .expect("write config");
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let mut registry = coflow_api::ProviderRegistry::default();
+    registry
+        .register_loader(coflow_loader_cfd::CfdLoader)
+        .expect("cfd loader");
+    registry
+        .register_writer(coflow_loader_cfd::CfdWriter::new())
+        .expect("cfd writer");
+    let mut session = build_project_session(project, &registry).expect("build session");
+    assert!(
+        !session.has_diagnostics(),
+        "diagnostics: {:?}",
+        session.diagnostics.as_set()
+    );
+
+    session
+        .write_field(
+            &registry,
+            "Item",
+            "child",
+            &[WriteFieldPathSegment::Field("name".to_string())],
+            &CfdValue::String("Edited".to_string()),
+        )
+        .expect("spread field write");
+
+    let source = std::fs::read_to_string(root.join("data/source.cfd")).expect("read source");
+    let host = std::fs::read_to_string(root.join("data/host.cfd")).expect("read host");
+    assert!(
+        source.contains(r#"name: "Edited""#),
+        "source file should receive spread edit:\n{source}"
+    );
+    assert!(
+        host.contains("...@Item.base") && !host.contains("Edited"),
+        "host file should not receive spread edit:\n{host}"
+    );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }

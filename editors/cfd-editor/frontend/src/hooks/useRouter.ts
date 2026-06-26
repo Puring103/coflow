@@ -1,5 +1,5 @@
 import { useReducer, useCallback, useMemo } from 'react'
-import type { Route } from '../bindings/index'
+import type { Route } from '../wire'
 
 interface State {
   stack: Route[]
