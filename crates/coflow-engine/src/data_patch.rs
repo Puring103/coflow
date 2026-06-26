@@ -64,7 +64,7 @@ pub struct DataPatchReport {
     pub write_ok: bool,
     pub check_ok: bool,
     pub applied: Vec<DataPatchAppliedOp>,
-    pub failed: Option<DataPatchFailedOp>,
+    pub failed: Vec<DataPatchFailedOp>,
     pub diagnostics: Vec<FlatDiagnostic>,
 }
 
@@ -108,7 +108,8 @@ impl ProjectSession {
             ops,
         } = request;
         let mut applied = Vec::new();
-        let mut failed = None;
+        let mut failed = Vec::new();
+        let mut failure_diagnostics = Vec::new();
         let mut write_ok = true;
 
         for (index, op) in ops.iter().enumerate() {
@@ -117,30 +118,33 @@ impl ProjectSession {
                     index,
                     ..applied_op
                 }),
-                Err(diagnostics) => {
+                Err(err) => {
                     write_ok = false;
+                    let diagnostics = err.diagnostics();
+                    let flat = flat_diagnostics(diagnostics);
                     let failed_op = DataPatchFailedOp {
                         index,
                         op: op_name(op).to_string(),
-                        diagnostics: flat_diagnostics(&diagnostics),
+                        diagnostics: flat.clone(),
                     };
-                    if stop_on_write_error {
+                    failure_diagnostics.extend(flat);
+                    failed.push(failed_op);
+                    if stop_on_write_error || err.is_terminal() {
+                        failure_diagnostics.extend(session_flat_diagnostics(self));
                         return Ok(DataPatchReport {
                             write_ok: false,
                             check_ok: false,
                             applied,
-                            failed: Some(failed_op),
-                            diagnostics: session_flat_diagnostics(self),
+                            failed,
+                            diagnostics: failure_diagnostics,
                         });
-                    }
-                    if failed.is_none() {
-                        failed = Some(failed_op);
                     }
                 }
             }
         }
 
-        let diagnostics = session_flat_diagnostics(self);
+        let mut diagnostics = failure_diagnostics;
+        diagnostics.extend(session_flat_diagnostics(self));
         let check_ok = write_ok
             && (!check_after_write
                 || diagnostics
@@ -160,7 +164,7 @@ fn apply_one(
     session: &mut ProjectSession,
     registry: &ProviderRegistry,
     op: &DataPatchOp,
-) -> Result<DataPatchAppliedOp, DiagnosticSet> {
+) -> Result<DataPatchAppliedOp, PatchApplyError> {
     match op {
         DataPatchOp::InsertRecord {
             file,
@@ -168,10 +172,13 @@ fn apply_one(
             key,
             fields,
         } => {
-            ensure_source_file(session, file)?;
-            ensure_type_can_insert(session, actual_type)?;
-            let values = coerce_insert_fields(session, actual_type, fields)?;
-            let outcome = session.insert_record(registry, file, key, actual_type, &values)?;
+            ensure_source_file(session, file).map_err(PatchApplyError::Recoverable)?;
+            ensure_type_can_insert(session, actual_type).map_err(PatchApplyError::Recoverable)?;
+            let values = coerce_insert_fields(session, actual_type, fields)
+                .map_err(PatchApplyError::Recoverable)?;
+            let outcome = session
+                .insert_record(registry, file, key, actual_type, &values)
+                .map_err(PatchApplyError::Terminal)?;
             Ok(DataPatchAppliedOp {
                 index: 0,
                 op: "insert_record".to_string(),
@@ -187,36 +194,43 @@ fn apply_one(
             value,
         } => {
             let coordinate = RecordCoordinate::new(&record.actual_type, &record.key);
-            ensure_file_guard(session, &coordinate, file.as_deref())?;
-            let expected = expected_type_for_path(session, &coordinate, path)?;
-            let write_path = patch_path_to_write_path(path)?;
-            let new_value = coerce_value(session, &expected, value)?;
-            let report_file = file
-                .clone()
-                .or_else(|| record_file(session, &coordinate).map(ToOwned::to_owned));
-            let outcome = session.write_field(
-                registry,
-                &coordinate.actual_type,
-                &coordinate.key,
-                &write_path,
-                &new_value,
-            )?;
+            let expected = expected_type_for_path(session, &coordinate, path)
+                .map_err(PatchApplyError::Recoverable)?;
+            let write_file = effective_write_file_for_set_field(session, &coordinate, path)
+                .map_err(PatchApplyError::Recoverable)?;
+            ensure_file_guard_for_file(&coordinate, &write_file, file.as_deref())
+                .map_err(PatchApplyError::Recoverable)?;
+            let write_path =
+                patch_path_to_write_path(path).map_err(PatchApplyError::Recoverable)?;
+            let new_value =
+                coerce_value(session, &expected, value).map_err(PatchApplyError::Recoverable)?;
+            let outcome = session
+                .write_field(
+                    registry,
+                    &coordinate.actual_type,
+                    &coordinate.key,
+                    &write_path,
+                    &new_value,
+                )
+                .map_err(PatchApplyError::Terminal)?;
             Ok(DataPatchAppliedOp {
                 index: 0,
                 op: "set_field".to_string(),
                 record: Some(coordinate),
-                file: report_file,
+                file: Some(write_file),
                 outcome,
             })
         }
         DataPatchOp::DeleteRecord { record, file } => {
             let coordinate = RecordCoordinate::new(&record.actual_type, &record.key);
-            ensure_file_guard(session, &coordinate, file.as_deref())?;
+            ensure_file_guard(session, &coordinate, file.as_deref())
+                .map_err(PatchApplyError::Recoverable)?;
             let report_file = file
                 .clone()
                 .or_else(|| record_file(session, &coordinate).map(ToOwned::to_owned));
-            let outcome =
-                session.delete_record(registry, &coordinate.actual_type, &coordinate.key)?;
+            let outcome = session
+                .delete_record(registry, &coordinate.actual_type, &coordinate.key)
+                .map_err(PatchApplyError::Terminal)?;
             Ok(DataPatchAppliedOp {
                 index: 0,
                 op: "delete_record".to_string(),
@@ -224,6 +238,24 @@ fn apply_one(
                 file: report_file,
                 outcome,
             })
+        }
+    }
+}
+
+#[derive(Debug)]
+enum PatchApplyError {
+    Recoverable(DiagnosticSet),
+    Terminal(DiagnosticSet),
+}
+
+impl PatchApplyError {
+    const fn is_terminal(&self) -> bool {
+        matches!(self, Self::Terminal(_))
+    }
+
+    const fn diagnostics(&self) -> &DiagnosticSet {
+        match self {
+            Self::Recoverable(diagnostics) | Self::Terminal(diagnostics) => diagnostics,
         }
     }
 }
@@ -262,6 +294,26 @@ fn ensure_file_guard(
         "PATCH-FILE-GUARD",
         format!(
             "record `{}.{}` belongs to `{actual_file}`, not `{expected_file}`",
+            coordinate.actual_type, coordinate.key
+        ),
+    ))
+}
+
+fn ensure_file_guard_for_file(
+    coordinate: &RecordCoordinate,
+    actual_file: &str,
+    expected_file: Option<&str>,
+) -> Result<(), DiagnosticSet> {
+    let Some(expected_file) = expected_file else {
+        return Ok(());
+    };
+    if actual_file == expected_file {
+        return Ok(());
+    }
+    Err(one_patch_error(
+        "PATCH-FILE-GUARD",
+        format!(
+            "record `{}.{}` writes to `{actual_file}`, not `{expected_file}`",
             coordinate.actual_type, coordinate.key
         ),
     ))
@@ -410,6 +462,50 @@ fn patch_path_to_write_path(
             PatchPathSegment::Index(index) => WriteFieldPathSegment::Index(*index),
         })
         .collect())
+}
+
+fn effective_write_file_for_set_field(
+    session: &ProjectSession,
+    coordinate: &RecordCoordinate,
+    path: &[PatchPathSegment],
+) -> Result<String, DiagnosticSet> {
+    let record_ref = session
+        .records
+        .get_by_coordinate(&coordinate.actual_type, &coordinate.key)
+        .ok_or_else(|| {
+            one_patch_error(
+                "PATCH-PATH",
+                format!(
+                    "record `{}.{}` was not found",
+                    coordinate.actual_type, coordinate.key
+                ),
+            )
+        })?;
+    let Some(PatchPathSegment::Field(top_field)) = path.first() else {
+        return Ok(record_ref.display_path.clone());
+    };
+    let record = session.model.record(record_ref.id).ok_or_else(|| {
+        one_patch_error(
+            "PATCH-PATH",
+            format!(
+                "record `{}.{}` was not found in the data model",
+                coordinate.actual_type, coordinate.key
+            ),
+        )
+    })?;
+    let Some(source_id) = record.spread_source_for_field(top_field) else {
+        return Ok(record_ref.display_path.clone());
+    };
+    session
+        .records
+        .get(source_id)
+        .map(|source_ref| source_ref.display_path.clone())
+        .ok_or_else(|| {
+            one_patch_error(
+                "PATCH-PATH",
+                format!("spread source for field `{top_field}` is no longer indexed"),
+            )
+        })
 }
 
 fn coerce_value(
