@@ -15,12 +15,17 @@
 )]
 #![allow(clippy::multiple_crate_versions)]
 
+mod data_read;
 mod dimensions;
 mod files;
 mod records;
 mod schema_inspect;
 mod writes;
 
+pub use data_read::{
+    data_get, data_list, data_sources, DataGetQuery, DataGetReport, DataListQuery, DataListReport,
+    DataRecordInfo, DataRecordSummary, DataSourceInfo, DataSourcesReport,
+};
 pub use dimensions::{
     builtin_display_name as dimension_builtin_display_name, dimensions_for_project,
     resolved_display_name as dimension_resolved_display_name, DimensionFieldInfo, DimensionInfo,
