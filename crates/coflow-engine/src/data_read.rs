@@ -128,7 +128,7 @@ pub fn data_get(
             "DATA-GET-LIMIT",
             "DATA",
             format!(
-                "data get matched {} records; pass --limit or --all to fetch this many records",
+                "data get matched {} records before pagination; pass --limit or --all to fetch this many records (--offset alone is not enough)",
                 summaries.len()
             ),
         )));
@@ -168,6 +168,9 @@ fn selected_summaries(
         let view = session
             .record_view(&selector.actual_type, &selector.key)
             .ok_or_else(|| DiagnosticSet::one(not_found(selector)))?;
+        if !matches_query_filters(&view.coordinate, view.display_path, query) {
+            return Ok(Vec::new());
+        }
         return Ok(vec![DataRecordSummary {
             record: view.coordinate,
             file: view.display_path.to_string(),
@@ -180,6 +183,17 @@ fn selected_summaries(
         query.file.as_deref(),
         query.actual_type.as_deref(),
     ))
+}
+
+fn matches_query_filters(coordinate: &RecordCoordinate, file: &str, query: &DataGetQuery) -> bool {
+    query
+        .actual_type
+        .as_ref()
+        .is_none_or(|actual_type| coordinate.actual_type == *actual_type)
+        && query
+            .file
+            .as_ref()
+            .is_none_or(|filter_file| file == filter_file)
 }
 
 fn record_summaries(

@@ -172,6 +172,37 @@ fn data_get_supports_selector_and_key_filters() {
 }
 
 #[test]
+fn data_get_applies_file_filter_to_selected_record() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-get-selector-file-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_project(&root);
+    let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
+    let registry = registry();
+    let session = build_project_session(project, &registry).expect("session");
+
+    let report = data_get(
+        &session,
+        &DataGetQuery {
+            selector: Some(RecordCoordinate::new("Item", "sword")),
+            actual_type: None,
+            file: Some("data/other.cfd".to_string()),
+            keys: Vec::new(),
+            limit: None,
+            offset: 0,
+            all: false,
+        },
+    )
+    .expect("selector excluded by filter should succeed");
+
+    assert!(report.records.is_empty());
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn data_get_returns_diagnostic_for_missing_selector() {
     let root = std::env::temp_dir().join(format!("coflow-data-get-missing-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
@@ -229,6 +260,10 @@ fn data_get_requires_limit_or_all_for_large_unselected_results() {
         .diagnostics
         .iter()
         .any(|diagnostic| diagnostic.code == "DATA-GET-LIMIT"));
+    assert!(diagnostics.diagnostics.iter().any(|diagnostic| {
+        diagnostic.message.contains("records before pagination")
+            && diagnostic.message.contains("--offset alone is not enough")
+    }));
 
     let limited = data_get(
         &session,
