@@ -124,6 +124,7 @@ export function RecordView({ data, recordKey, typeFilter, readOnly, diagnostics,
         )}
         <DataCardExpanded
           fields={fields}
+          actualType={record.actual_type}
           onEdit={readOnly || !onWriteField ? undefined : (path, val) => { onWriteField(record.key, path, val) }}
           diagnostics={fieldDiags}
           highlightField={highlightField}

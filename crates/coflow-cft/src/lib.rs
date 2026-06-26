@@ -47,6 +47,6 @@ pub use schema::{
     CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaConst,
     CftSchemaDefaultValue, CftSchemaEnum, CftSchemaEnumVariant, CftSchemaField, CftSchemaModule,
     CftSchemaQuantifierKind, CftSchemaType, CftSchemaTypePredicate, CftSchemaTypeRef,
-    CftSchemaUnaryOp,
+    CftSchemaUnaryOp, Dimension, DimensionSpec,
 };
 pub use span::Span;

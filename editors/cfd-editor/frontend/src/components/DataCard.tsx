@@ -243,6 +243,7 @@ function buildDiagCtx(diags: FieldDiagnostic[] | undefined): DiagCtxValue | null
 
 export interface ExpandedProps {
   fields: FieldCell[]
+  actualType?: string
   depth?: number
   /** Called with the full path from the record root (Field/Index segments). */
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
@@ -257,7 +258,7 @@ export interface ExpandedProps {
   onHighlightConsumed?: () => void
 }
 
-export function DataCardExpanded({ fields, depth = 0, onEdit, pathPrefix, onRowToggle, diagnostics, highlightField, onHighlightConsumed }: ExpandedProps) {
+export function DataCardExpanded({ fields, actualType, depth = 0, onEdit, pathPrefix, onRowToggle, diagnostics, highlightField, onHighlightConsumed }: ExpandedProps) {
   const ctx = useMemo(() => buildDiagCtx(diagnostics), [diagnostics])
   const inspectorRef = useRef<HTMLDivElement>(null)
 
@@ -287,26 +288,33 @@ export function DataCardExpanded({ fields, depth = 0, onEdit, pathPrefix, onRowT
 
   const body = (
     <div className="dc-inspector" ref={inspectorRef} style={{ '--depth': depth } as CSSProperties}>
-      {fields.map((fc) => (
-        <FieldRow
-          key={fc.name}
-          label={fc.name}
-          value={fc.value}
-          depth={depth}
-          // Spread cells stay editable — the writer materialises a local
-          // override on first edit. The cell's `spread_info` lets the
-          // child render a hint instead of treating it as a fresh value.
-          onEdit={onEdit}
-          isSpread={fc.is_spread}
-          spreadInfo={fc.spread_info}
-          fieldPath={[{ kind: 'field', name: fc.name }]}
-          pathKey={pathPrefix ? `${pathPrefix}.${fc.name}` : fc.name}
-          onRowToggle={onRowToggle}
-        />
-      ))}
+      {fields.map((fc) => {
+        const fieldEdit = isDimensionDefaultField(actualType, fc.name) ? undefined : onEdit
+        return (
+          <FieldRow
+            key={fc.name}
+            label={fc.name}
+            value={fc.value}
+            depth={depth}
+            // Spread cells stay editable — the writer materialises a local
+            // override on first edit. The cell's `spread_info` lets the
+            // child render a hint instead of treating it as a fresh value.
+            onEdit={fieldEdit}
+            isSpread={fc.is_spread}
+            spreadInfo={fc.spread_info}
+            fieldPath={[{ kind: 'field', name: fc.name }]}
+            pathKey={pathPrefix ? `${pathPrefix}.${fc.name}` : fc.name}
+            onRowToggle={onRowToggle}
+          />
+        )
+      })}
     </div>
   )
   return ctx ? <DiagCtx.Provider value={ctx}>{body}</DiagCtx.Provider> : body
+}
+
+function isDimensionDefaultField(actualType: string | undefined, fieldName: string): boolean {
+  return !!actualType && actualType.endsWith('Variants') && fieldName === 'default'
 }
 
 /** Returns the strongest severity for a row at the given pathKey, considering
@@ -1331,12 +1339,14 @@ function plainText(v: FieldValue): string {
 
 export function DataCardNode({
   fields,
+  actualType,
   showAll,
   onToggle,
   onRowToggle,
   onEdit,
 }: {
   fields: FieldCell[]
+  actualType: string
   showAll: boolean
   onToggle: () => void
   onRowToggle?: (path: string, expanded: boolean) => void
@@ -1345,7 +1355,7 @@ export function DataCardNode({
   const visible = showAll ? fields : fields.slice(0, NODE_PEEK_FIELDS)
   return (
     <div className="dc-node-card">
-      <DataCardExpanded fields={visible} onRowToggle={onRowToggle} onEdit={onEdit} />
+      <DataCardExpanded fields={visible} actualType={actualType} onRowToggle={onRowToggle} onEdit={onEdit} />
       {fields.length > NODE_PEEK_FIELDS && (
         <button className="dc-node-more" onClick={onToggle}>
           {showAll ? '收起' : `显示全部 (+${fields.length - NODE_PEEK_FIELDS})`}

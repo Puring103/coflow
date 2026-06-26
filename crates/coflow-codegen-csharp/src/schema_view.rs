@@ -324,7 +324,7 @@ pub struct FieldMeta {
     pub ty: FieldType,
     pub default: Option<CftSchemaDefaultValue>,
     pub annotations: Vec<CftAnnotation>,
-    pub is_localized: bool,
+    pub is_dimensional: bool,
 }
 
 impl FieldMeta {
@@ -334,7 +334,7 @@ impl FieldMeta {
             ty: FieldType::from_schema(&field.ty_ref, enums),
             default: field.default.clone(),
             annotations: field.annotations.clone(),
-            is_localized: field.is_localized,
+            is_dimensional: field.dimension.is_some(),
         }
     }
 }

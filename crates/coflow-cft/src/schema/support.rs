@@ -97,9 +97,13 @@ impl AnnotationSpec {
                 targets: &[AnnotationTarget::Enum],
                 args: AnnotationArgs::None,
             },
-            "expand" | "localized" => Self {
+            "expand" => Self {
                 targets: &[AnnotationTarget::Field],
                 args: AnnotationArgs::None,
+            },
+            "localized" => Self {
+                targets: &[AnnotationTarget::Field],
+                args: AnnotationArgs::NoneOrOneString,
             },
             "display" => Self {
                 targets: &[
@@ -126,6 +130,10 @@ impl AnnotationSpec {
     pub(super) fn args_valid(&self, annotation: &Annotation) -> bool {
         match self.args {
             AnnotationArgs::None => annotation.args.is_empty(),
+            AnnotationArgs::NoneOrOneString => {
+                annotation.args.is_empty()
+                    || matches!(annotation.args.as_slice(), [AnnotationArg::String(_, _)])
+            }
             AnnotationArgs::OneString => {
                 matches!(annotation.args.as_slice(), [AnnotationArg::String(_, _)])
             }
@@ -139,6 +147,7 @@ impl AnnotationSpec {
 #[derive(Debug, Clone, Copy)]
 enum AnnotationArgs {
     None,
+    NoneOrOneString,
     OneString,
     OneName,
 }

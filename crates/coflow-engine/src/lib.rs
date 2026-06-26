@@ -15,7 +15,7 @@
 )]
 #![allow(clippy::multiple_crate_versions)]
 
-pub mod localization;
+mod dimensions;
 
 use coflow_api::{
     map_diagnostics_with_origins, origins_of, CfdInputRecord, CftContainer, Diagnostic,
@@ -23,7 +23,7 @@ use coflow_api::{
     ProviderRegistry, RecordOrigin, ResolvedSource, Severity, SourceLocation, SourceLocationSpec,
     SourceResolveContext,
 };
-use coflow_checker::{run_checks_for_languages, run_checks_with_deps};
+use coflow_checker::run_checks_for_dimensions_with_deps;
 use coflow_data_model::{CfdDataModel, CfdDiagnostics, CfdPath, CfdPathSegment, CfdRecordId};
 use coflow_project::{
     compile_schema_project, dedupe_cft_diagnostics, diagnostic_set_from_cft, path_to_slash,
@@ -380,6 +380,7 @@ pub fn build_project_session(
     let mut sources = SourceIndex::default();
     let mut records = RecordIndex::default();
     let mut files = FileIndex::default();
+    let dimension_fields = dimensions::language_dimension_fields(&schema);
     let (model, dependencies) = if diagnostics.is_empty() {
         match load_project_data(
             &project,
@@ -388,40 +389,47 @@ pub fn build_project_session(
             &mut sources,
             &mut records,
             &mut files,
+            LoadProjectDataOptions {
+                include_implicit_dimension_sources: false,
+                run_checks: dimension_fields.is_empty(),
+            },
         ) {
-            Ok(output) => {
-                records.index_model_ids(&output.model);
-                diagnostics
-                    .extend_with_logical_locations(output.diagnostics, output.logical_locations);
-                // Localization tables are produced from the freshly built
-                // data model. IO failures surface as PROJECT-stage diagnostics.
-                if diagnostics.is_empty() {
-                    let loc_diags = localization::generate_localization_tables(
+            Ok(mut output) => {
+                let dimension_diags = dimensions::regenerate_dimension_sources(
+                    &project,
+                    &output.model,
+                    &dimension_fields,
+                );
+                diagnostics.extend(dimension_diags);
+                if diagnostics.is_empty() && !dimension_fields.is_empty() {
+                    sources = SourceIndex::default();
+                    records = RecordIndex::default();
+                    files = FileIndex::default();
+                    match load_project_data(
                         &project,
                         &schema,
-                        &output.model,
-                    );
-                    diagnostics.extend(loc_diags);
-
-                    // Per-language check rounds: load each language's CSV
-                    // column into a translation map and run the checker once
-                    // per language. Diagnostics carry a `[lang=...]` prefix
-                    // so callers can attribute failures.
-                    if let Some(loc_cfg) = project.config.localization.as_ref() {
-                        let loaded =
-                            localization::load_overrides_for_languages(&project, &schema, loc_cfg);
-                        diagnostics.extend(loaded.diagnostics);
-                        if !loaded.overrides.is_empty() {
-                            if let Err(per_lang) =
-                                run_checks_for_languages(&schema, &output.model, &loaded.overrides)
-                            {
-                                let origins = origins_of_records(&output.model);
-                                let mapped = map_diagnostics_with_origins(per_lang, &origins);
-                                diagnostics.extend(mapped);
-                            }
+                        registry,
+                        &mut sources,
+                        &mut records,
+                        &mut files,
+                        LoadProjectDataOptions {
+                            include_implicit_dimension_sources: true,
+                            run_checks: true,
+                        },
+                    ) {
+                        Ok(reloaded) => output = reloaded,
+                        Err(load_diagnostics) => {
+                            diagnostics.extend_with_logical_locations(
+                                load_diagnostics.diagnostics,
+                                load_diagnostics.logical_locations,
+                            );
+                            output = empty_load_output()?;
                         }
                     }
                 }
+                records.index_model_ids(&output.model);
+                diagnostics
+                    .extend_with_logical_locations(output.diagnostics, output.logical_locations);
                 (output.model, output.dependencies)
             }
             Err(load_diagnostics) => {
@@ -481,6 +489,21 @@ struct LoadDiagnostics {
     logical_locations: BTreeMap<usize, DiagnosticLogicalLocation>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct LoadProjectDataOptions {
+    include_implicit_dimension_sources: bool,
+    run_checks: bool,
+}
+
+fn empty_load_output() -> Result<ProjectLoadOutput, String> {
+    Ok(ProjectLoadOutput {
+        model: empty_model()?,
+        dependencies: DependencyIndex::default(),
+        diagnostics: DiagnosticSet::empty(),
+        logical_locations: BTreeMap::new(),
+    })
+}
+
 fn build_project_schema_with_diagnostics(
     project: Project,
     diagnostics: DiagnosticSet,
@@ -488,7 +511,23 @@ fn build_project_schema_with_diagnostics(
     let mut diagnostics = DiagnosticsStore::from_set(diagnostics);
     let schema = if diagnostics.is_empty() {
         match compile_project_schema(&project)? {
-            Ok(schema) => schema,
+            Ok(mut schema) => {
+                diagnostics.extend(validate_dimension_schema_config(&project, &schema));
+                if diagnostics.is_empty() {
+                    if let Some(config) = project.config.dimensions.get("language") {
+                        if let Err(err) =
+                            dimensions::inject_language_dimension_types(&mut schema, config)
+                        {
+                            diagnostics.extend(diagnostic_set_from_cft(
+                                err.diagnostics,
+                                &BTreeMap::new(),
+                                &BTreeMap::new(),
+                            ));
+                        }
+                    }
+                }
+                schema
+            }
             Err(schema_diagnostics) => {
                 diagnostics.extend(schema_diagnostics);
                 CftContainer::new()
@@ -502,6 +541,30 @@ fn build_project_schema_with_diagnostics(
         schema,
         diagnostics,
     })
+}
+
+fn validate_dimension_schema_config(project: &Project, schema: &CftContainer) -> DiagnosticSet {
+    let mut diagnostics = DiagnosticSet::empty();
+    if !dimensions::language_dimension_fields(schema).is_empty()
+        && !project.config.dimensions.contains_key("language")
+    {
+        diagnostics.push(Diagnostic {
+            code: "DIM-CONFIG-001".to_string(),
+            stage: "PROJECT".to_string(),
+            severity: Severity::Error,
+            message: "schema contains @localized fields but dimensions.language is not configured"
+                .to_string(),
+            primary: Some(Label {
+                location: SourceLocation::ProjectConfig {
+                    path: project.config_path.clone(),
+                    key_path: vec!["dimensions".to_string(), "language".to_string()],
+                },
+                message: None,
+            }),
+            related: Vec::new(),
+        });
+    }
+    diagnostics
 }
 
 fn compile_project_schema(
@@ -538,6 +601,7 @@ fn load_project_data(
     sources: &mut SourceIndex,
     records_index: &mut RecordIndex,
     files: &mut FileIndex,
+    options: LoadProjectDataOptions,
 ) -> Result<ProjectLoadOutput, LoadDiagnostics> {
     let mut records: Vec<CfdInputRecord> = Vec::new();
     let mut diagnostics = DiagnosticSet::empty();
@@ -553,50 +617,37 @@ fn load_project_data(
             }
         };
 
-        let mut source_diagnostics = DiagnosticSet::empty();
-        for (loader, spec) in &resolved_sources {
-            source_diagnostics.extend(loader.preflight(
-                LoadContext {
-                    project_root: &project.root_dir,
-                    schema,
-                },
-                spec,
+        diagnostics.extend(load_resolved_sources(
+            project,
+            schema,
+            sources,
+            records_index,
+            files,
+            &mut records,
+            resolved_sources,
+        ));
+    }
+
+    if options.include_implicit_dimension_sources {
+        let dimension_fields = dimensions::language_dimension_fields(schema);
+        for configured in dimensions::language_dimension_sources(project, &dimension_fields) {
+            let resolved_sources =
+                match resolve_implicit_source(project, schema, registry, &configured) {
+                    Ok(resolved_sources) => resolved_sources,
+                    Err(err) => {
+                        diagnostics.extend(err);
+                        continue;
+                    }
+                };
+            diagnostics.extend(load_resolved_sources(
+                project,
+                schema,
+                sources,
+                records_index,
+                files,
+                &mut records,
+                resolved_sources,
             ));
-        }
-        if !source_diagnostics.is_empty() {
-            diagnostics.extend(source_diagnostics);
-            continue;
-        }
-        for (loader, mut spec) in resolved_sources {
-            if spec.provider_id.is_empty() {
-                spec.provider_id = loader.descriptor().id.to_string();
-            }
-            let display_path = display_path_for(project, &spec);
-            let source_id = SourceId(sources.entries.len());
-            files.add_source_file(display_path.clone(), source_id);
-            sources.push(ResolvedSourceEntry {
-                id: source_id,
-                provider_id: spec.provider_id.clone(),
-                source: spec.clone(),
-                display_path: display_path.clone(),
-            });
-            match loader.load(
-                LoadContext {
-                    project_root: &project.root_dir,
-                    schema,
-                },
-                &spec,
-            ) {
-                Ok(batch) => push_loaded_records(
-                    &mut records,
-                    records_index,
-                    source_id,
-                    &spec,
-                    &display_path,
-                    batch,
-                ),
-                Err(err) => diagnostics.extend(err),
-            }
         }
     }
 
@@ -628,7 +679,15 @@ fn load_project_data(
             });
         }
     };
-    let check = run_project_checks(schema, &model, &origins);
+    let check = if options.run_checks {
+        run_project_checks(project, schema, &model, &origins)
+    } else {
+        CheckOutput {
+            dependencies: DependencyIndex::default(),
+            diagnostics: DiagnosticSet::empty(),
+            logical_locations: BTreeMap::new(),
+        }
+    };
     Ok(ProjectLoadOutput {
         model,
         dependencies: check.dependencies,
@@ -637,12 +696,104 @@ fn load_project_data(
     })
 }
 
+fn load_resolved_sources(
+    project: &Project,
+    schema: &CftContainer,
+    sources: &mut SourceIndex,
+    records_index: &mut RecordIndex,
+    files: &mut FileIndex,
+    records: &mut Vec<CfdInputRecord>,
+    resolved_sources: Vec<ResolvedLoaderSource>,
+) -> DiagnosticSet {
+    let mut diagnostics = DiagnosticSet::empty();
+    for (loader, spec) in &resolved_sources {
+        diagnostics.extend(loader.preflight(
+            LoadContext {
+                project_root: &project.root_dir,
+                schema,
+            },
+            spec,
+        ));
+    }
+    if !diagnostics.is_empty() {
+        return diagnostics;
+    }
+
+    for (loader, mut spec) in resolved_sources {
+        if spec.provider_id.is_empty() {
+            spec.provider_id = loader.descriptor().id.to_string();
+        }
+        let display_path = display_path_for(project, &spec);
+        let source_id = SourceId(sources.entries.len());
+        files.add_source_file(display_path.clone(), source_id);
+        sources.push(ResolvedSourceEntry {
+            id: source_id,
+            provider_id: spec.provider_id.clone(),
+            source: spec.clone(),
+            display_path: display_path.clone(),
+        });
+        match loader.load(
+            LoadContext {
+                project_root: &project.root_dir,
+                schema,
+            },
+            &spec,
+        ) {
+            Ok(batch) => push_loaded_records(
+                records,
+                records_index,
+                source_id,
+                &spec,
+                &display_path,
+                batch,
+            ),
+            Err(err) => diagnostics.extend(err),
+        }
+    }
+    diagnostics
+}
+
+fn resolve_implicit_source(
+    project: &Project,
+    schema: &CftContainer,
+    registry: &ProviderRegistry,
+    configured: &ResolvedSource,
+) -> Result<Vec<ResolvedLoaderSource>, DiagnosticSet> {
+    let ctx = SourceResolveContext {
+        project_root: &project.root_dir,
+        schema,
+    };
+    let option_keys = source_option_keys(&configured.options);
+    let source_type =
+        (!configured.provider_id.is_empty()).then_some(configured.provider_id.as_str());
+    let source_ref = source_ref(configured, source_type, &option_keys);
+    let loader = match registry.select_loader(&source_ref) {
+        Ok(loader) => loader,
+        Err(err) => {
+            let mut diagnostics = DiagnosticSet::empty();
+            diagnostics.push(loader_selection_diagnostic(
+                &project.config_path,
+                configured,
+                err,
+            ));
+            return Err(diagnostics);
+        }
+    };
+    Ok(loader
+        .resolve(ctx, configured)?
+        .into_iter()
+        .map(|source| (Arc::clone(&loader), source))
+        .collect())
+}
+
 fn run_project_checks(
+    project: &Project,
     schema: &CftContainer,
     model: &CfdDataModel,
     origins: &[RecordOrigin],
 ) -> CheckOutput {
-    let (check_result, dependencies) = run_checks_with_deps(schema, model);
+    let (check_result, dependencies) =
+        run_checks_for_dimensions_with_deps(schema, model, &project.config.dimensions);
     let (diagnostics, logical_locations) = if let Err(checks) = check_result {
         let logical_locations = logical_locations_from_cfd(&checks, |id| {
             model.record(id).map(|record| record.key.clone())
@@ -869,18 +1020,6 @@ fn source_location_display_path(location: &SourceLocation) -> String {
         | SourceLocation::Artifact { path } => path_to_slash(path),
         SourceLocation::RemoteCell { document, .. } => document.clone(),
     }
-}
-
-fn origins_of_records(model: &CfdDataModel) -> Vec<RecordOrigin> {
-    let mut out = Vec::new();
-    for (id, record) in model.records() {
-        let need = id.index() + 1;
-        if out.len() < need {
-            out.resize(need, RecordOrigin::None);
-        }
-        out[id.index()] = record.origin.clone();
-    }
-    out
 }
 
 fn empty_model() -> Result<CfdDataModel, String> {

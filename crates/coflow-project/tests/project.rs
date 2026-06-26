@@ -536,6 +536,144 @@ sources:
 }
 
 #[test]
+fn project_config_accepts_language_dimension_config() -> TestResult {
+    let root = temp_project_dir("coflow-project-dimensions-config");
+    std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
+    std::fs::write(root.join("schema/main.cft"), "type Item { name: string; }")
+        .map_err(|err| err.to_string())?;
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+dimensions:
+  language:
+    variants: [zh, en]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .map_err(|err| err.to_string())?;
+
+    let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
+    let language = project
+        .config
+        .dimensions
+        .get("language")
+        .expect("language dimension");
+    assert_eq!(language.variants, ["zh".to_string(), "en".to_string()]);
+    assert_eq!(
+        language.out_dir.as_deref(),
+        Some(Path::new("data/dimensions/language"))
+    );
+    assert!(project.schema_diagnostic_set().is_empty());
+
+    std::fs::remove_dir_all(root).map_err(|err| err.to_string())
+}
+
+#[test]
+fn project_config_rejects_removed_localization_key() -> TestResult {
+    let root = temp_project_dir("coflow-project-localization-removed");
+    std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
+    std::fs::write(root.join("schema/main.cft"), "type Item { name: string; }")
+        .map_err(|err| err.to_string())?;
+    let config = root.join("coflow.yaml");
+    std::fs::write(
+        &config,
+        r#"schema: schema/main.cft
+localization:
+  languages: [zh]
+"#,
+    )
+    .map_err(|err| err.to_string())?;
+
+    let err =
+        Project::open_schema_only(Some(&config)).expect_err("old localization key should fail");
+    assert!(err.contains("PROJECT-CONFIG-LOCALIZATION-REMOVED"));
+    assert!(err.contains("`localization` has been removed; use `dimensions.language` instead"));
+
+    std::fs::remove_dir_all(root).map_err(|err| err.to_string())
+}
+
+#[test]
+fn project_config_validates_language_dimension_variants_and_out_dir() -> TestResult {
+    let root = temp_project_dir("coflow-project-dimensions-validation");
+    std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
+    std::fs::write(root.join("schema/main.cft"), "type Item { name: string; }")
+        .map_err(|err| err.to_string())?;
+
+    let cases = [
+        (
+            "missing-out-dir",
+            r#"schema: schema/main.cft
+dimensions:
+  language:
+    variants: [zh]
+"#,
+            "DIM-CONFIG-003",
+            "dimensions.language.out_dir is required",
+        ),
+        (
+            "empty-variants",
+            r#"schema: schema/main.cft
+dimensions:
+  language:
+    variants: []
+    out_dir: data/dimensions/language
+"#,
+            "DIM-CONFIG-002",
+            "dimensions.language.variants must not be empty",
+        ),
+        (
+            "reserved-default",
+            r#"schema: schema/main.cft
+dimensions:
+  language:
+    variants: [default]
+    out_dir: data/dimensions/language
+"#,
+            "DIM-CONFIG-002",
+            "dimensions.language.variants cannot include reserved variant `default`",
+        ),
+        (
+            "invalid-ident",
+            r#"schema: schema/main.cft
+dimensions:
+  language:
+    variants: [zh-CN]
+    out_dir: data/dimensions/language
+"#,
+            "DIM-CONFIG-002",
+            "dimensions.language.variants[0] `zh-CN` is not a valid CFT identifier",
+        ),
+        (
+            "duplicate",
+            r#"schema: schema/main.cft
+dimensions:
+  language:
+    variants: [zh, zh]
+    out_dir: data/dimensions/language
+"#,
+            "DIM-CONFIG-002",
+            "dimensions.language.variants contains duplicate variant `zh`",
+        ),
+    ];
+
+    for (name, yaml, code, expected) in cases {
+        let config = root.join(format!("{name}.yaml"));
+        std::fs::write(&config, yaml).map_err(|err| err.to_string())?;
+        let project = Project::open_schema_only(Some(&config)).map_err(|err| err.to_string())?;
+        let diagnostics = project.schema_diagnostic_set();
+        assert!(
+            diagnostics
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == code && diagnostic.message == expected),
+            "case {name} expected `{code}: {expected}`, got {diagnostics:?}"
+        );
+    }
+
+    std::fs::remove_dir_all(root).map_err(|err| err.to_string())
+}
+
+#[test]
 fn validate_for_codegen_reports_unvalidated_output_combinations() -> TestResult {
     let root = temp_project_dir("coflow-project-codegen-validation");
     let missing_code = project_with_outputs(&root, OutputsConfig::default());
@@ -894,7 +1032,7 @@ fn project_with_outputs(root: &Path, outputs: OutputsConfig) -> Project {
             schema: SchemaConfig::One(PathBuf::from("schema/main.cft")),
             sources: Vec::new(),
             outputs,
-            localization: None,
+            dimensions: BTreeMap::new(),
         },
     }
 }

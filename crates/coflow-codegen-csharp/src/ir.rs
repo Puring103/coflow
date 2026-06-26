@@ -121,7 +121,7 @@ pub fn build_project(
 
     let uses_localization = schema
         .all_types()
-        .any(|t| t.all_fields.iter().any(|f| f.is_localized));
+        .any(|t| t.all_fields.iter().any(|f| f.dimension.is_some()));
 
     Ok(CsharpProject {
         namespace: options.namespace.clone(),

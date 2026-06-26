@@ -60,6 +60,8 @@ pub struct CftContainer {
 }
 
 impl CftContainer {
+    const RUNTIME_MODULE_ID: &'static str = "__runtime__";
+
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -100,6 +102,55 @@ impl CftContainer {
     pub fn compile(&mut self) -> Result<(), CftDiagnostics> {
         let compiled = compile_container(self)?;
         self.compiled = Some(compiled);
+        Ok(())
+    }
+
+    /// Registers a runtime-built type in the already-compiled schema.
+    ///
+    /// # Errors
+    ///
+    /// Returns a duplicate-name diagnostic when a type with the same name is
+    /// already present, or a schema diagnostic when called before a successful
+    /// compile has published schema reflection.
+    pub fn register_runtime_type(&mut self, mut ty: CftSchemaType) -> Result<(), CftDiagnostics> {
+        let Some(compiled) = self.compiled.as_mut() else {
+            return Err(CftDiagnostics::one(CftDiagnostic::error(
+                CftErrorCode::UnknownNamedType,
+                ModuleId::from(Self::RUNTIME_MODULE_ID),
+                Span::new(0, 0),
+                "cannot register runtime type before schema is compiled",
+            )));
+        };
+        if compiled.types.contains_key(&ty.name) {
+            return Err(CftDiagnostics::one(CftDiagnostic::error(
+                CftErrorCode::DuplicateGlobalName,
+                ty.module.clone(),
+                ty.span,
+                format!("duplicate global name `{}`", ty.name),
+            )));
+        }
+
+        let runtime_module = ModuleId::from(Self::RUNTIME_MODULE_ID);
+        ty.module = runtime_module.clone();
+        for field in &mut ty.fields {
+            field.dimension = None;
+        }
+        for field in &mut ty.all_fields {
+            field.dimension = None;
+        }
+
+        let name = ty.name.clone();
+        compiled
+            .modules
+            .entry(runtime_module)
+            .or_insert_with(|| CftSchemaModule {
+                consts: Vec::new(),
+                types: Vec::new(),
+                enums: Vec::new(),
+            })
+            .types
+            .push(ty.clone());
+        compiled.types.insert(name, ty);
         Ok(())
     }
 

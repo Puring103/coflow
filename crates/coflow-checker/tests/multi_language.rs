@@ -3,7 +3,8 @@
 mod common;
 use common::*;
 
-use coflow_checker::{run_checks, run_checks_for_languages, LocalizationOverrides};
+use coflow_checker::{run_checks, run_checks_for_dimensions, run_checks_for_dimensions_with_deps};
+use coflow_project::DimensionConfig;
 use std::collections::BTreeMap;
 
 fn build_simple_model(schema: &CftContainer) -> CfdDataModel {
@@ -14,6 +15,47 @@ fn build_simple_model(schema: &CftContainer) -> CfdDataModel {
         [("name", CfdInputValue::from("Potion"))],
     ));
     builder.build().expect("model builds")
+}
+
+fn build_dimension_model(
+    schema: &CftContainer,
+    zh_name: CfdInputValue,
+    en_name: CfdInputValue,
+) -> CfdDataModel {
+    let mut builder = CfdDataModel::builder(schema);
+    builder.add_input_record(CfdInputRecord::new(
+        "potion",
+        "Item",
+        [("name", CfdInputValue::from("Potion"))],
+    ));
+    builder.add_input_record(CfdInputRecord::new(
+        "potion",
+        "Item_nameVariants",
+        [
+            ("default", CfdInputValue::from("Potion")),
+            ("zh", zh_name),
+            ("en", en_name),
+        ],
+    ));
+    builder.build().expect("model builds")
+}
+
+fn dimension_schema() -> CftContainer {
+    compile_schema(
+        r#"
+            type Item {
+                @localized
+                name: string;
+                check { name != ""; }
+            }
+
+            type Item_nameVariants {
+                default: string?;
+                zh: string?;
+                en: string?;
+            }
+        "#,
+    )
 }
 
 #[test]
@@ -32,34 +74,385 @@ fn default_round_passes_when_default_value_satisfies_check() {
 }
 
 #[test]
-fn translation_substitution_can_make_a_passing_check_fail_for_one_language() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                @localized
-                name: string;
-                check { name != ""; }
-            }
-        "#,
+fn dimension_variant_record_can_make_a_passing_check_fail_for_one_language() {
+    let schema = dimension_schema();
+    let model = build_dimension_model(
+        &schema,
+        CfdInputValue::from(""),
+        CfdInputValue::from("Potion"),
     );
-    let model = build_simple_model(&schema);
+    let dimensions = language_dimensions();
 
-    let mut translations = BTreeMap::new();
-    translations.insert("Item/name/potion".to_string(), String::new()); // empty
-    let overrides = vec![LocalizationOverrides::new("zh_CN", translations)];
+    let err = run_checks_for_dimensions(&schema, &model, &dimensions)
+        .expect_err("empty zh variant should fail check");
 
-    let err = run_checks_for_languages(&schema, &model, &overrides)
-        .expect_err("empty translation should fail check");
     assert_has_code(&err, CfdErrorCode::CheckComparisonFailed);
     let msg = &err.diagnostics[0].message;
     assert!(
-        msg.contains("[lang=zh_CN]"),
-        "expected language tag in diagnostic, got `{msg}`"
+        msg.contains("[language=zh]"),
+        "expected dimension variant tag in diagnostic, got `{msg}`"
     );
 }
 
 #[test]
-fn missing_translation_falls_back_to_default_value() {
+fn null_dimension_variant_skips_that_field_check() {
+    let schema = dimension_schema();
+    let model = build_dimension_model(&schema, CfdInputValue::Null, CfdInputValue::from("Potion"));
+    let dimensions = language_dimensions();
+
+    run_checks_for_dimensions(&schema, &model, &dimensions).expect("null zh variant skips check");
+}
+
+#[test]
+fn missing_dimension_variant_record_is_an_eval_error_not_a_skip() {
+    let schema = dimension_schema();
+    let model = build_simple_model(&schema);
+
+    let err = run_checks_for_dimensions(&schema, &model, &language_dimensions())
+        .expect_err("missing synthesized variant record should be reported");
+
+    assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
+    assert!(err.diagnostics.iter().any(|diagnostic| diagnostic
+        .message
+        .contains("缺少合成记录 `Item_nameVariants:potion`")));
+}
+
+#[test]
+fn missing_dimension_variant_field_is_an_eval_error_not_a_skip() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                @localized
+                name: string;
+                check { name != ""; }
+            }
+
+            type Item_nameVariants {
+                default: string?;
+                zh: string?;
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(CfdInputRecord::new(
+        "potion",
+        "Item",
+        [("name", CfdInputValue::from("Potion"))],
+    ));
+    builder.add_input_record(CfdInputRecord::new(
+        "potion",
+        "Item_nameVariants",
+        [
+            ("default", CfdInputValue::from("Potion")),
+            ("zh", CfdInputValue::from("药水")),
+        ],
+    ));
+    let model = builder.build().expect("model builds");
+
+    let err = run_checks_for_dimensions(&schema, &model, &language_dimensions())
+        .expect_err("missing synthesized variant field should be reported");
+
+    assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
+    assert!(err
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.message.contains("缺少 variant `en`")));
+}
+
+#[test]
+fn variant_rounds_only_run_checks_that_read_top_level_dimension_fields() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                @localized
+                name: string;
+                count: int;
+                check {
+                    count > 0;
+                    name != "";
+                }
+            }
+
+            type Item_nameVariants {
+                default: string?;
+                zh: string?;
+                en: string?;
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(CfdInputRecord::new(
+        "potion",
+        "Item",
+        [
+            ("name", CfdInputValue::from("Potion")),
+            ("count", CfdInputValue::from(0_i64)),
+        ],
+    ));
+    builder.add_input_record(CfdInputRecord::new(
+        "potion",
+        "Item_nameVariants",
+        [
+            ("default", CfdInputValue::from("Potion")),
+            ("zh", CfdInputValue::from("")),
+            ("en", CfdInputValue::from("Potion")),
+        ],
+    ));
+    let model = builder.build().expect("model builds");
+
+    let err = run_checks_for_dimensions(&schema, &model, &language_dimensions())
+        .expect_err("default count and zh name checks should fail");
+
+    assert_eq!(err.diagnostics.len(), 2, "diagnostics: {err:?}");
+    assert_eq!(
+        err.diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.message.contains("count > 0"))
+            .count(),
+        1,
+        "non-dimensional check should only run in default round: {err:?}"
+    );
+    assert!(err
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.message.contains("[language=zh]")));
+    assert!(!err
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.message.contains("[language=en]")));
+}
+
+#[test]
+fn null_dimension_variant_skips_methods_and_operators_by_control_flow() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                @localized
+                tags: [string];
+                check {
+                    tags.len() > 0;
+                    tags.contains("rare");
+                    tags.len() > 0 && tags.contains("rare");
+                }
+            }
+
+            type Item_tagsVariants {
+                default: [string]?;
+                zh: [string]?;
+                en: [string]?;
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(CfdInputRecord::new(
+        "potion",
+        "Item",
+        [(
+            "tags",
+            CfdInputValue::Array(vec![CfdInputValue::from("rare")]),
+        )],
+    ));
+    builder.add_input_record(CfdInputRecord::new(
+        "potion",
+        "Item_tagsVariants",
+        [
+            (
+                "default",
+                CfdInputValue::Array(vec![CfdInputValue::from("rare")]),
+            ),
+            ("zh", CfdInputValue::Null),
+            (
+                "en",
+                CfdInputValue::Array(vec![CfdInputValue::from("rare")]),
+            ),
+        ],
+    ));
+    let model = builder.build().expect("model builds");
+
+    run_checks_for_dimensions(&schema, &model, &language_dimensions())
+        .expect("null zh variant should skip related checks without type errors");
+}
+
+#[test]
+fn nested_dimension_fields_do_not_trigger_variant_round_checks() {
+    let schema = compile_schema(
+        r#"
+            type Text {
+                @localized
+                label: string;
+            }
+
+            type Item {
+                text: Text;
+                check { text.label != ""; }
+            }
+
+            type Text_labelVariants {
+                default: string?;
+                zh: string?;
+                en: string?;
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(CfdInputRecord::new(
+        "potion",
+        "Item",
+        [(
+            "text",
+            CfdInputValue::object_with_declared_type([("label", CfdInputValue::from("Potion"))]),
+        )],
+    ));
+    builder.add_input_record(CfdInputRecord::new(
+        "potion",
+        "Text_labelVariants",
+        [
+            ("default", CfdInputValue::from("Potion")),
+            ("zh", CfdInputValue::from("")),
+            ("en", CfdInputValue::from("")),
+        ],
+    ));
+    let model = builder.build().expect("model builds");
+
+    run_checks_for_dimensions(&schema, &model, &language_dimensions())
+        .expect("nested localized fields are not variant-expanded");
+}
+
+#[test]
+fn nested_inline_record_checks_do_not_run_in_variant_rounds() {
+    let schema = compile_schema(
+        r#"
+            type Text {
+                @localized
+                label: string;
+                check { label != ""; }
+            }
+
+            type Item {
+                text: Text;
+                check { true; }
+            }
+
+            type Text_labelVariants {
+                default: string?;
+                zh: string?;
+                en: string?;
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(CfdInputRecord::new(
+        "potion",
+        "Item",
+        [(
+            "text",
+            CfdInputValue::object_with_declared_type([("label", CfdInputValue::from(""))]),
+        )],
+    ));
+    builder.add_input_record(CfdInputRecord::new(
+        "potion",
+        "Text_labelVariants",
+        [
+            ("default", CfdInputValue::from("")),
+            ("zh", CfdInputValue::from("药水")),
+            ("en", CfdInputValue::from("Potion")),
+        ],
+    ));
+    let model = builder.build().expect("model builds");
+
+    let err = run_checks_for_dimensions(&schema, &model, &language_dimensions())
+        .expect_err("default nested check should still fail");
+
+    assert_eq!(err.diagnostics.len(), 1, "diagnostics: {err:?}");
+    assert!(
+        !err.diagnostics[0].message.contains("[language="),
+        "nested inline record checks must not run in variant rounds: {err:?}"
+    );
+}
+
+#[test]
+fn inherited_dimension_fields_do_not_trigger_child_variant_round_checks() {
+    let schema = compile_schema(
+        r#"
+            type Base {
+                @localized
+                name: string;
+                check { name != ""; }
+            }
+
+            type Child : Base {
+                power: int;
+            }
+
+            type Base_nameVariants {
+                default: string?;
+                zh: string?;
+                en: string?;
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(CfdInputRecord::new(
+        "child",
+        "Child",
+        [
+            ("name", CfdInputValue::from("Potion")),
+            ("power", CfdInputValue::from(1_i64)),
+        ],
+    ));
+    builder.add_input_record(CfdInputRecord::new(
+        "child",
+        "Base_nameVariants",
+        [
+            ("default", CfdInputValue::from("Potion")),
+            ("zh", CfdInputValue::from("")),
+            ("en", CfdInputValue::from("")),
+        ],
+    ));
+    let model = builder.build().expect("model builds");
+
+    run_checks_for_dimensions(&schema, &model, &language_dimensions())
+        .expect("child records do not run inherited dimension checks in variant rounds");
+}
+
+#[test]
+fn dimension_dependency_graph_includes_variant_records() {
+    let schema = dimension_schema();
+    let model = build_dimension_model(
+        &schema,
+        CfdInputValue::from("药水"),
+        CfdInputValue::from("Potion"),
+    );
+
+    let (result, graph) =
+        run_checks_for_dimensions_with_deps(&schema, &model, &language_dimensions());
+
+    result.expect("checks pass");
+    let source_id = model.lookup("Item", "potion").expect("source record");
+    let variant_id = model
+        .lookup("Item_nameVariants", "potion")
+        .expect("variant record");
+    assert!(
+        graph
+            .reads_from
+            .get(&source_id)
+            .is_some_and(|reads| reads.contains(&variant_id)),
+        "dependency graph should include source -> variant read edge: {graph:?}"
+    );
+}
+
+fn language_dimensions() -> BTreeMap<String, DimensionConfig> {
+    BTreeMap::from([(
+        "language".to_string(),
+        DimensionConfig {
+            variants: vec!["zh".to_string(), "en".to_string()],
+            out_dir: None,
+        },
+    )])
+}
+
+#[test]
+fn empty_dimensions_map_runs_default_round() {
     let schema = compile_schema(
         r#"
             type Item {
@@ -70,30 +463,11 @@ fn missing_translation_falls_back_to_default_value() {
         "#,
     );
     let model = build_simple_model(&schema);
-
-    // No translations supplied — every key falls back to the default value
-    // (which is "Potion") so the check passes.
-    let overrides = vec![LocalizationOverrides::new("en", BTreeMap::new())];
-    run_checks_for_languages(&schema, &model, &overrides).expect("fallback passes");
+    run_checks_for_dimensions(&schema, &model, &BTreeMap::new()).expect("default round passes");
 }
 
 #[test]
-fn empty_overrides_list_is_a_noop() {
-    let schema = compile_schema(
-        r#"
-            type Item {
-                @localized
-                name: string;
-                check { name != ""; }
-            }
-        "#,
-    );
-    let model = build_simple_model(&schema);
-    run_checks_for_languages(&schema, &model, &[]).expect("noop");
-}
-
-#[test]
-fn non_localized_fields_are_unaffected_by_overrides() {
+fn non_dimensional_fields_are_unaffected_by_dimension_rounds() {
     let schema = compile_schema(
         r#"
             type Item {
@@ -110,10 +484,42 @@ fn non_localized_fields_are_unaffected_by_overrides() {
     ));
     let model = builder.build().expect("model builds");
 
-    // Even an entry that *would* match the formatted key has no effect because
-    // the field is not @localized.
-    let mut translations = BTreeMap::new();
-    translations.insert("Item/potion/name".to_string(), String::new());
-    let overrides = vec![LocalizationOverrides::new("zh_CN", translations)];
-    run_checks_for_languages(&schema, &model, &overrides).expect("non-localized is unchanged");
+    run_checks_for_dimensions(&schema, &model, &language_dimensions())
+        .expect("non-dimensional is unchanged");
+}
+
+#[test]
+fn unknown_dimensions_are_accepted_but_do_not_run_extra_check_rounds() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                name: string;
+                check { name != ""; }
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(CfdInputRecord::new(
+        "potion",
+        "Item",
+        [("name", CfdInputValue::from(""))],
+    ));
+    let model = builder.build().expect("model builds");
+    let dimensions = BTreeMap::from([(
+        "platform".to_string(),
+        DimensionConfig {
+            variants: vec!["pc".to_string(), "mobile".to_string()],
+            out_dir: None,
+        },
+    )]);
+
+    let err = run_checks_for_dimensions(&schema, &model, &dimensions)
+        .expect_err("default check still fails once");
+
+    assert_eq!(err.diagnostics.len(), 1, "diagnostics: {err:?}");
+    assert!(
+        !err.diagnostics[0].message.contains("[platform="),
+        "unknown dimensions should not add variant diagnostics: {}",
+        err.diagnostics[0].message
+    );
 }
