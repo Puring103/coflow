@@ -1,0 +1,3 @@
+id,default,zh,en
+fireball,"{background: #400000, text_color: #ffd0a0}","{background: #5a1a1a, text_color: #ffe0c0}","{background: #400000, text_color: #ffd0a0}"
+heal,"{background: #202060, text_color: #ffffff}","{background: #283478, text_color: #ffffff}","{background: #202060, text_color: #ffffff}"

@@ -1,0 +1,42 @@
+# 本地化示例工程
+#
+# `dimensions.language` 启用语言维度：
+# - `variants` 列举需要的语言代号；
+# - `out_dir` 指向放置 variant 文件的目录。
+#
+# 加载顺序：
+# 1. engine 先读 `sources` 下的源 CFD，构建默认轮的数据模型；
+# 2. 然后 regenerate `out_dir` 下的 CSV / CFD 变体文件：
+#    - 已存在的 variant 列保留；
+#    - `default` 列每次 build 都从源数据重新填写；
+# 3. 最后再把 variant 文件加载回 model，让 check 能在每个语言下跑一遍。
+#
+# `display_name` 是可选的人类可读名字，编辑器在文件树上把这一组维度文件
+# 放进同名虚拟文件夹。缺省时编辑器会用内置映射（`language` → 「本地化」）。
+
+schema: schema/main.cft
+
+sources:
+  - path: data/items.cfd
+  - path: data/skills.cfd
+  - path: data/hud.cfd
+
+dimensions:
+  language:
+    variants: [zh, en]
+    out_dir: data/dimensions/language
+    display_name: 本地化
+
+# Codegen outputs. `cargo run -p coflow -- build coflow.yaml` writes both.
+# The C# code wraps every `@localized` field in `Localized<T>`; the JSON
+# carries the synthesized variant records too, so the host's
+# `LocalizationProvider` can look them up at runtime (see
+# `csharp-test/Program.cs`).
+outputs:
+  data:
+    type: json
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Example.Localization

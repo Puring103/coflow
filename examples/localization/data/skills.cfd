@@ -1,0 +1,23 @@
+# Skill: list-typed `tags` and nested-object `tooltip` are both @localized.
+
+Skill {
+  fireball {
+    name: "Fireball",
+    tags: ["fire", "ranged", "aoe"],
+    tooltip: TooltipStyle {
+      background: "#400000",
+      text_color: "#ffd0a0",
+    },
+    cooldown: 1.5,
+  }
+
+  heal {
+    name: "Heal",
+    tags: ["holy", "single-target"],
+    tooltip: TooltipStyle {
+      background: "#202060",
+      text_color: "#ffffff",
+    },
+    cooldown: 4.0,
+  }
+}

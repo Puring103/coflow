@@ -18,6 +18,24 @@
     {
         return LoadBody(ref reader, context, true);
     }
+{% endif %}{% if type.loader.is_disk_loadable and not type.loader.is_table %}
+    internal static List<{{ type.loader.type_name }}> LoadTable(string path, {{ project.database_class }}.LoadContext context)
+    {
+        var bytes = File.ReadAllBytes(path);
+        var reader = new MessagePackReader(new ReadOnlySequence<byte>(bytes));
+        var count = reader.ReadArrayHeader();
+        var result = new List<{{ type.loader.type_name }}>(count);
+
+        for (var index = 0; index < count; index++)
+        {
+            // Singletons land on disk as an array of records but use the
+            // inline (id-less) loader; `LoadInline` reads only field
+            // entries and skips the `id` key the exporter writes.
+            result.Add(LoadInline(ref reader, context));
+        }
+
+        return result;
+    }
 {% endif %}
     internal static {{ type.loader.type_name }} LoadInline(ref MessagePackReader reader, {{ project.database_class }}.LoadContext context)
     {

@@ -515,6 +515,13 @@ fn loader_method(type_name: &str, view: &SchemaView) -> Result<CsharpLoader, Csh
     let key_ty = view.key_field_type(type_name);
     let key_local_name = field_local_name("id", &mut used_local_names)?;
     let is_table = type_is_table(type_name, view);
+    // Singletons are not regular tables (they don't get a `Table<TKey, T>`
+    // accessor) but they do land on disk as a top-level array of records
+    // — the database loader calls `LoadTable` on them just like a table.
+    // Without `is_disk_loadable` the type-loader templates would skip
+    // `LoadTable` for singletons and the shared `Load(dataDir)` body would
+    // fail to compile.
+    let is_disk_loadable = is_table || ty.is_singleton;
     let fields = ty
         .all_fields
         .iter()
@@ -547,6 +554,7 @@ fn loader_method(type_name: &str, view: &SchemaView) -> Result<CsharpLoader, Csh
         ),
         key_messagepack_read_expr: read_messagepack_expr(&key_ty, "reader", "context", view)?,
         is_table,
+        is_disk_loadable,
         is_struct: ty.is_struct,
         requires_hydration,
         fields,
@@ -560,6 +568,8 @@ fn polymorphic_loader(
     type_name: &str,
     view: &SchemaView,
 ) -> Result<CsharpLoader, CsharpCodegenError> {
+    let is_table = type_is_table(type_name, view);
+    let is_singleton = view.type_meta(type_name)?.is_singleton;
     Ok(CsharpLoader {
         type_name: view.csharp_type_name(type_name),
         source_name: type_name.to_string(),
@@ -568,7 +578,8 @@ fn polymorphic_loader(
         key_property: "Id".to_string(),
         key_read_expr: String::new(),
         key_messagepack_read_expr: String::new(),
-        is_table: type_is_table(type_name, view),
+        is_table,
+        is_disk_loadable: is_table || is_singleton,
         is_struct: view.type_meta(type_name)?.is_struct,
         requires_hydration: false,
         fields: Vec::new(),

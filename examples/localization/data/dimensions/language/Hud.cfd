@@ -1,0 +1,18 @@
+banner_width_px: Hud_banner_width_pxVariants {
+    default: 800,
+    zh: 720,
+    en: 800,
+}
+
+hint: Hud_hintVariants {
+    default: "Press [Tab] to open the inventory.",
+    zh: "按 [Tab] 键打开背包。",
+    en: "Press [Tab] to open the inventory.",
+}
+
+welcome: Hud_welcomeVariants {
+    default: "Welcome, adventurer!",
+    zh: "欢迎，冒险者！",
+    en: "Welcome, adventurer!",
+}
+
