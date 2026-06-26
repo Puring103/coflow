@@ -13,6 +13,7 @@ use crate::cell_value::{render_cell_value, CellRenderError};
 pub enum WriteFieldPathSegment {
     Field(String),
     Index(usize),
+    DictKey(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -320,6 +321,15 @@ fn replace_subvalue(
             );
             Ok(value)
         }
+        (WriteFieldPathSegment::DictKey(key), CfdValue::Dict(entries)) => {
+            let index = entries
+                .iter()
+                .position(|(entry_key, _)| format_dict_key_for_path(entry_key) == *key)
+                .ok_or_else(|| one_error("TABLE-WRITE", format!("dict key `{key}` not found")))?;
+            let current = entries[index].1.clone();
+            entries[index].1 = replace_subvalue(current, &path[1..], new_value)?;
+            Ok(value)
+        }
         _ => Err(one_error(
             "TABLE-WRITE",
             format!("cannot navigate path segment {:?}", path[0]),
@@ -362,7 +372,7 @@ fn column_path(path: &[WriteFieldPathSegment]) -> Vec<WriteFieldPathSegment> {
             WriteFieldPathSegment::Field(field) => {
                 out.push(WriteFieldPathSegment::Field(field.clone()));
             }
-            WriteFieldPathSegment::Index(_) => break,
+            WriteFieldPathSegment::Index(_) | WriteFieldPathSegment::DictKey(_) => break,
         }
     }
     out
@@ -397,6 +407,17 @@ fn direct_child_columns(
 
 fn is_id_path(path: &[WriteFieldPathSegment]) -> bool {
     matches!(path, [WriteFieldPathSegment::Field(name)] if name == "id")
+}
+
+fn format_dict_key_for_path(key: &coflow_data_model::CfdDictKey) -> String {
+    match key {
+        coflow_data_model::CfdDictKey::String(value) => format!("\"{value}\""),
+        coflow_data_model::CfdDictKey::Int(value) => value.to_string(),
+        coflow_data_model::CfdDictKey::Enum(value) => value.variant.as_deref().map_or_else(
+            || format!("{}({})", value.enum_name, value.value),
+            |variant| format!("{}.{}", value.enum_name, variant),
+        ),
+    }
 }
 
 fn unmapped_path_error(

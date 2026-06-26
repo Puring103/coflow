@@ -10,6 +10,7 @@ fn builtin_registry_contains_all_default_providers() -> Result<(), String> {
     )?;
     ensure(registry.loader("cfd").is_some(), "missing cfd loader")?;
     ensure(registry.writer("excel").is_some(), "missing excel writer")?;
+    ensure(registry.writer("csv").is_some(), "missing csv writer")?;
     ensure(
         registry.writer("lark-sheet").is_some(),
         "missing lark-sheet writer",

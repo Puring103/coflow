@@ -7,9 +7,10 @@
 use calamine::Reader;
 use coflow_api::{
     DataWriter, DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, RecordOrigin,
-    SourceDocument, SourceLocationSpec, WriteCellRequest, WriteContext, WriteOutcome,
-    WriterCapabilities, WriterDescriptor,
+    RenameRecordRequest, RewriteRecordReferencesRequest, SourceDocument, SourceLocationSpec,
+    WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
+use coflow_loader_table_core::cell_value::rewrite_record_reference_text;
 use coflow_loader_table_core::writer::{
     plan_delete_record, plan_field_write, plan_insert_record, TableAppendRow, TableDeleteRow,
     TableFieldWrite, TableInsertRecord, TableSetCell, TableWriteDiagnostics, TableWritePlan,
@@ -122,6 +123,27 @@ impl DataWriter for ExcelWriter {
         })
     }
 
+    fn rename_record(
+        &self,
+        ctx: WriteContext<'_>,
+        request: &RenameRecordRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        let path = [coflow_api::WriteFieldPathSegment::Field("id".to_string())];
+        let value = coflow_api::CfdValue::String(request.new_key.to_string());
+        self.write_field(
+            ctx,
+            &WriteCellRequest {
+                origin: request.origin,
+                record_key: request.old_key,
+                actual_type: request.actual_type,
+                field_path: &path,
+                new_value: &value,
+                schema: request.schema,
+                source: request.source,
+            },
+        )
+    }
+
     fn delete_record(
         &self,
         _ctx: WriteContext<'_>,
@@ -134,6 +156,54 @@ impl DataWriter for ExcelWriter {
             touched_record_origins: Vec::new(),
             inserted_record_origin: None,
             deleted_record_origin: Some(request.origin.clone()),
+            diagnostics: DiagnosticSet::empty(),
+        })
+    }
+
+    fn rewrite_record_references(
+        &self,
+        _ctx: WriteContext<'_>,
+        request: &RewriteRecordReferencesRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &request.source.location else {
+            return Ok(WriteOutcome::default());
+        };
+        let changed = mutate_workbook(path, |book| {
+            let mut changed = false;
+            for sheet in book.get_sheet_collection_mut() {
+                let (max_column, max_row) = sheet.get_highest_column_and_row();
+                for row in 1..=max_row {
+                    for column in 1..=max_column {
+                        let coord = (column, row);
+                        let value = sheet
+                            .get_cell(coord)
+                            .map_or_else(String::new, |cell| cell.get_value().to_string());
+                        if value.is_empty() {
+                            continue;
+                        }
+                        if let Some(updated) = rewrite_record_reference_text(
+                            &value,
+                            request.target_type_names,
+                            request.old_key,
+                            request.new_key,
+                            request.rewrite_direct_refs,
+                        ) {
+                            sheet.get_cell_mut(coord).set_value(updated);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            Ok((changed).then_some(RecordOrigin::None))
+        })?
+        .is_some();
+        if !changed {
+            return Ok(WriteOutcome::default());
+        }
+        Ok(WriteOutcome {
+            touched_record_origins: Vec::new(),
+            inserted_record_origin: None,
+            deleted_record_origin: None,
             diagnostics: DiagnosticSet::empty(),
         })
     }
@@ -572,6 +642,9 @@ fn api_path_segment_to_table(
         }
         coflow_api::WriteFieldPathSegment::Index(index) => {
             TableWriteFieldPathSegment::Index(*index)
+        }
+        coflow_api::WriteFieldPathSegment::DictKey(key) => {
+            TableWriteFieldPathSegment::DictKey(key.clone())
         }
     }
 }

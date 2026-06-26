@@ -799,6 +799,28 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   color: var(--text-key);
   font-size: var(--fs-ui);
 }
+.cell-key.editable {
+  cursor: text;
+  display: inline-block;
+  max-width: 100%;
+  border-radius: 3px;
+  padding: 1px 3px;
+  margin: -1px -3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+.cell-key.editable:hover {
+  background: var(--bg-3);
+  outline: 1px solid var(--border-strong);
+}
+.key-editor {
+  width: 100%;
+  min-width: 80px;
+  height: 22px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--fs-ui);
+}
 
 /* 表格行选中：左侧 accent 色条 + 背景 */
 .table-row.selected td { background: var(--bg-4) !important; }
@@ -963,6 +985,12 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 .rv-main > .gn-header {
   margin-bottom: 18px;
   border-radius: 0;
+}
+.record-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -8px 0 14px;
 }
 
 .rv-type-badge {

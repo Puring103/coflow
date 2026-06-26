@@ -125,6 +125,11 @@ impl CfdDataModel {
             .get(&RefSite::new(host, path.clone()))
             .copied()
     }
+
+    /// Iterate every resolved `CfdValue::Ref` site in the model.
+    pub fn ref_sites(&self) -> impl Iterator<Item = (&RefSite, CfdRecordId)> {
+        self.ref_index.iter().map(|(site, target)| (site, *target))
+    }
 }
 
 #[derive(Debug)]

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { FileTree } from './components/FileTree'
 import { TableView } from './components/TableView'
 import { RecordView } from './components/RecordView'
@@ -14,6 +14,7 @@ import type { GraphData } from './bindings/GraphData'
 import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
 import type { RecordCoordinate } from './bindings/RecordCoordinate'
 import type { RecordRow } from './bindings/RecordRow'
+import type { WriterCapabilities } from './bindings/WriterCapabilities'
 import {
   cloneValue,
   deletedSnapshotValue,
@@ -21,6 +22,7 @@ import {
   diagnosticSeverity,
   errorDiagnostics,
   errorMessage,
+  fieldPathField,
   makeObjectValue,
   objectFields,
   recordActualType,
@@ -333,6 +335,53 @@ export default function App() {
     [writeFieldInternal],
   )
 
+  const renameRecordInternal = useCallback(
+    async (
+      filePath: string,
+      coordinate: RecordCoordinate,
+      newKey: string,
+      opts: { recordHistory: boolean } = { recordHistory: true },
+    ): Promise<RecordRow | void> => {
+      if (!project || !api.isTauri) return
+      const mySeq = ++writeSeqRef.current
+      try {
+        const outcome = await api.renameRecordKey(project.session_id, coordinate, newKey)
+        if (mySeq !== writeSeqRef.current) return outcome.row
+        setProject(p => (p ? { ...p, diagnostics: outcome.diagnostics } : p))
+        const refreshed = await api.getFileRecords(project.session_id, filePath)
+        if (mySeq !== writeSeqRef.current) return outcome.row
+        setFileDataCache(c => ({ ...c, [filePath]: refreshed }))
+        setGraphCache({})
+        rebindCoordinate(coordinate, outcome.renamed)
+        if (opts.recordHistory) {
+          setUndoStack(s => [...s, {
+            kind: 'field',
+            filePath,
+            coordinate: outcome.renamed,
+            fieldPath: [fieldPathField('id')],
+            oldValue: { kind: 'string', value: coordinate.key },
+            newValue: { kind: 'string', value: newKey },
+          }])
+          setRedoStack([])
+        }
+        return outcome.row
+      } catch (err) {
+        setErrorMsg(`重命名失败: ${errorMessage(err)}`)
+        const diags = errorDiagnostics(err)
+        if (diags.length > 0) {
+          setProject(p => p ? { ...p, diagnostics: [...p.diagnostics, ...diags] } : p)
+        }
+      }
+    },
+    [project, rebindCoordinate],
+  )
+
+  const renameRecord = useCallback(
+    (filePath: string, coordinate: RecordCoordinate, newKey: string) =>
+      renameRecordInternal(filePath, coordinate, newKey),
+    [renameRecordInternal],
+  )
+
   // Insert a new record at the top level of `filePath`. The back-end picks
   // the sheet name (for table sources) by reusing an existing record's sheet
   // when one is available, and falls back to provider-specific options
@@ -498,6 +547,13 @@ export default function App() {
   const activeFileData = activeFile ? fileDataCache[activeFile] : null
   const activeGraph = activeFile ? graphCache[activeFile] : null
   const readOnly = !isEditableFile(activeFileData)
+  const fileCapabilities = useMemo(() => {
+    const map: Record<string, WriterCapabilities> = {}
+    for (const [file, records] of Object.entries(fileDataCache)) {
+      map[file] = records.capabilities
+    }
+    return map
+  }, [fileDataCache])
   const fileDiagnostics = activeFile && project
     ? project.diagnostics.filter(d => d.file_path === activeFile)
     : []
@@ -704,7 +760,7 @@ export default function App() {
                   )
                 })}
                 {readOnly && (
-                  <span className="breadcrumb-readonly" title="非 .cfd 源文件，仅可查看">
+                  <span className="breadcrumb-readonly" title="该来源未提供可写能力">
                     <Icon name="lock" size={11} aria-hidden />
                     只读
                   </span>
@@ -765,6 +821,7 @@ export default function App() {
                     diagnostics={fileDiagnostics}
                     onOpenRecord={coordinate => openRecord(currentRoute.file, coordinate)}
                     onWriteField={(coordinate, path, val) => writeField(currentRoute.file, coordinate, path, val)}
+                    onRenameRecord={(coordinate, newKey) => renameRecord(currentRoute.file, coordinate, newKey)}
                     onInsertRecord={(rk, type, fields) => insertRecord(currentRoute.file, rk, type, fields)}
                     onDeleteRecord={coordinate => deleteRecord(currentRoute.file, coordinate)}
                     onMakeDefaultObject={async type => project ? api.makeDefaultObject(project.session_id, type) : null}
@@ -781,6 +838,7 @@ export default function App() {
                     onHighlightConsumed={() => setHighlightField(null)}
                     onOpenRecord={coordinate => openRecord(currentRoute.file, coordinate)}
                     onWriteField={(coordinate, path, val) => writeField(currentRoute.file, coordinate, path, val)}
+                    onRenameRecord={(coordinate, newKey) => renameRecord(currentRoute.file, coordinate, newKey)}
                   />
                 )}
                 {currentRoute.view === 'graph' && (
@@ -788,6 +846,7 @@ export default function App() {
                     <GraphView
                       graphData={activeGraph}
                       activeType={activeType}
+                      fileCapabilities={fileCapabilities}
                       onOpenRecord={(file, coordinate) => openRecord(file, coordinate)}
                       onWriteField={writeField}
                     />

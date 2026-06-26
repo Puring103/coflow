@@ -5,7 +5,7 @@ interface IconProps {
     | 'plus' | 'close' | 'search' | 'help'
     | 'chevron-right' | 'chevron-down'
     | 'error' | 'warning' | 'info' | 'check'
-    | 'jump' | 'open' | 'dot'
+    | 'jump' | 'open' | 'dot' | 'edit'
     | 'table' | 'record' | 'graph' | 'filter' | 'sun' | 'moon' | 'lock'
   size?: number
   className?: string
@@ -30,6 +30,7 @@ const PATHS: Record<IconProps['name'], string> = {
   'jump':          'M7 17L17 7M17 7H8M17 7v9',
   'open':          'M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z',
   'dot':           'M12 12m-3 0a3 3 0 106 0 3 3 0 10-6 0',
+  'edit':          'M4 20h4L18.5 9.5a2.1 2.1 0 00-3-3L5 17v3zM13.5 7.5l3 3',
   'table':         'M3 4h18v16H3zM3 10h18M9 4v16',
   'record':        'M4 6h16M4 12h16M4 18h16',
   'graph':         'M5 19V8m0 0a2 2 0 100-4 2 2 0 000 4zm14 11V12m0 0a2 2 0 100-4 2 2 0 000 4zM7 19l5-7 5 4',

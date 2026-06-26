@@ -1,4 +1,5 @@
 import type { FileRecords } from '../bindings/FileRecords'
+import type { WriterCapabilities } from '../bindings/WriterCapabilities'
 
 /**
  * Decide whether the front-end is allowed to edit fields in a file.
@@ -16,7 +17,15 @@ export function isEditableFile(input: FileRecords | string | null | undefined): 
   if (!input) return false
   if (typeof input === 'string') {
     const lower = input.toLowerCase()
-    return lower.endsWith('.cfd') || lower.endsWith('.xlsx')
+    return lower.endsWith('.cfd') || lower.endsWith('.csv') || lower.endsWith('.xlsx')
   }
-  return input.capabilities.can_edit_field
+  return isEditableCapabilities(input.capabilities)
+}
+
+export function isEditableCapabilities(input: WriterCapabilities | null | undefined): boolean {
+  return !!input?.can_edit_field
+}
+
+export function canRenameKey(input: FileRecords | null | undefined): boolean {
+  return !!input?.capabilities.can_edit_key
 }

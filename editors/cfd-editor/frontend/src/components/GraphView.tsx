@@ -8,6 +8,7 @@ import '@xyflow/react/dist/style.css'
 import type { GraphData } from '../bindings/GraphData'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
+import type { WriterCapabilities } from '../bindings/WriterCapabilities'
 import {
   graphEdgeView,
   graphNodeView,
@@ -16,7 +17,7 @@ import {
   type GraphEdgeView,
   type GraphNodeView,
 } from '../wire'
-import { isEditableFile } from '../utils/editable'
+import { isEditableCapabilities, isEditableFile } from '../utils/editable'
 import { DataCardNode, CardHeader, NODE_PEEK_FIELDS, countVisibleRows } from './DataCard'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
@@ -533,13 +534,14 @@ function layoutAll(
 interface Props {
   graphData: GraphData
   activeType?: string
+  fileCapabilities?: Record<string, WriterCapabilities>
   onOpenRecord: (file: string, coordinate: RecordCoordinate) => void
   onWriteField?: (
     filePath: string, coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue
   ) => Promise<RecordRow | void>
 }
 
-export function GraphView({ graphData, activeType, onOpenRecord, onWriteField }: Props) {
+export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecord, onWriteField }: Props) {
   const graph = useMemo(
     () => ({
       nodes: graphData.nodes.map(graphNodeView),
@@ -648,9 +650,8 @@ export function GraphView({ graphData, activeType, onOpenRecord, onWriteField }:
 
   const rfNodes: Node[] = useMemo(
     () => visibleNodes.map(n => {
-      // Each node's host file determines whether it's editable. Non-cfd hosts
-      // (e.g. Excel) and the absent onWriteField (read-only mode) both opt out.
-      const editable = !!onWriteField && isEditableFile(n.file_path)
+      const capability = fileCapabilities?.[n.file_path]
+      const editable = !!onWriteField && (capability ? isEditableCapabilities(capability) : isEditableFile(n.file_path))
       const rowExpanded = nodeRowExpandedMap.get(n.id)
       return {
         id: n.id,
@@ -670,7 +671,7 @@ export function GraphView({ graphData, activeType, onOpenRecord, onWriteField }:
         } satisfies NodeData,
       }
     }),
-    [visibleNodes, positions, nodeExpandedMap, nodeRowExpandedMap, outgoingPathsByNode, toggleNodeExpanded, handleRowToggle, onWriteField, onOpenRecord]
+    [visibleNodes, positions, nodeExpandedMap, nodeRowExpandedMap, outgoingPathsByNode, toggleNodeExpanded, handleRowToggle, onWriteField, onOpenRecord, fileCapabilities]
   )
 
   const rfEdges: Edge[] = useMemo(() => {

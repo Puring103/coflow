@@ -27,9 +27,10 @@ interface Props {
   onHighlightConsumed?: () => void
   onOpenRecord: (coordinate: RecordCoordinate) => void
   onWriteField?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<RecordRow | void>
+  onRenameRecord?: (coordinate: RecordCoordinate, newKey: string) => Promise<RecordRow | void>
 }
 
-export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, highlightField, onHighlightConsumed, onOpenRecord, onWriteField }: Props) {
+export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, highlightField, onHighlightConsumed, onOpenRecord, onWriteField, onRenameRecord }: Props) {
   const record = data.records.find(r => sameCoordinate(r.coordinate, coordinate))
   const [search, setSearch] = useState('')
   const sidebarRef = useRef<HTMLDivElement>(null)
@@ -51,6 +52,7 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
   const fieldDiags = diagnostics
     ? diagnosticsForRecord(diagnostics, data.file_path, record.coordinate)
     : []
+  const canRename = !readOnly && data.capabilities.can_edit_key && !!onRenameRecord
   // Per-record severity for sidebar dots: any error in any field, or a record-
   // level diagnostic (field_path is null) attached to that record.
   const recordSeverity = (coordinate: RecordCoordinate): 'error' | 'warning' | null => {
@@ -121,6 +123,21 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
 
       <div className="rv-main">
         <CardHeader recordKey={recordKey(record)} actualType={recordActualType(record)} filePath={data.file_path} />
+        {canRename && (
+          <div className="record-actions">
+            <button
+              className="btn btn-outlined"
+              onClick={async () => {
+                const next = window.prompt('重命名 Key', recordKey(record))?.trim()
+                if (!next || next === recordKey(record)) return
+                await onRenameRecord!(record.coordinate, next)
+              }}
+            >
+              <Icon name="edit" size={13} />
+              重命名 Key
+            </button>
+          </div>
+        )}
         {showSearch && (
           <div className="rv-search-bar">
             <Icon name="search" size={13} className="rv-search-icon" aria-hidden />

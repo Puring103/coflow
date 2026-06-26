@@ -34,7 +34,7 @@ use coflow_engine::{ProjectSession, RecordCoordinate};
 use crate::editor::convert::{record_view_to_row, WireContext};
 use crate::editor::types::{
     DeleteRecordOutcome, DeletedRecordSnapshot, EditorError, FileRecords, GraphData,
-    InsertRecordOutcome, ProjectSnapshot, RefTarget, WriteFieldOutcome,
+    InsertRecordOutcome, ProjectSnapshot, RefTarget, RenameRecordOutcome, WriteFieldOutcome,
 };
 
 pub use diagnostics::Diagnostics;
@@ -279,7 +279,7 @@ impl SessionStore {
         let path_segments: Vec<coflow_api::WriteFieldPathSegment> = field_path
             .iter()
             .map(coflow_path_to_write_segment)
-            .collect::<Result<_, _>>()?;
+            .collect();
 
         let (final_coordinate, renamed) = {
             let mut session = session_lock
@@ -368,6 +368,60 @@ impl SessionStore {
         Ok(InsertRecordOutcome {
             file_records,
             diagnostics: session.diagnostics.flatten(),
+        })
+    }
+
+    pub fn rename_record_key(
+        &self,
+        id: u32,
+        coordinate: &RecordCoordinate,
+        new_key: &str,
+    ) -> Result<RenameRecordOutcome, EditorError> {
+        let entry = self.session(id)?;
+        let session_lock = &entry.state;
+        let registry = self.registry()?;
+        let renamed = {
+            let mut session = session_lock
+                .write()
+                .map_err(|_| EditorError::session("session poisoned"))?;
+            let outcome = session
+                .engine
+                .rename_record_key(
+                    registry.as_ref(),
+                    &coordinate.actual_type,
+                    &coordinate.key,
+                    new_key,
+                )
+                .map_err(api_diagnostics_to_editor_error)?;
+            session.diagnostics = Diagnostics::from_store(&session.engine.diagnostics);
+            let renamed = outcome
+                .renamed
+                .and_then(|(old, new)| (old == *coordinate).then_some(new))
+                .ok_or_else(|| EditorError::write("rename did not produce a new coordinate"))?;
+            drop(session);
+            renamed
+        };
+
+        let session = session_lock
+            .read()
+            .map_err(|_| EditorError::session("session poisoned"))?;
+        let view = session
+            .engine
+            .record_view(&renamed.actual_type, &renamed.key)
+            .ok_or_else(|| {
+                EditorError::not_found(format!(
+                    "record `{}.{}` not found after rename",
+                    renamed.actual_type, renamed.key
+                ))
+            })?;
+        let ctx = WireContext {
+            session: &session.engine,
+        };
+        let row = record_view_to_row(&view, &ctx);
+        Ok(RenameRecordOutcome {
+            row,
+            diagnostics: session.diagnostics.flatten(),
+            renamed,
         })
     }
 
@@ -462,17 +516,15 @@ fn snapshot_record_before_delete(
 
 fn coflow_path_to_write_segment(
     segment: &coflow_data_model::CfdPathSegment,
-) -> Result<coflow_api::WriteFieldPathSegment, EditorError> {
+) -> coflow_api::WriteFieldPathSegment {
     match segment {
         coflow_data_model::CfdPathSegment::Field(name) => {
-            Ok(coflow_api::WriteFieldPathSegment::Field(name.clone()))
+            coflow_api::WriteFieldPathSegment::Field(name.clone())
         }
-        coflow_data_model::CfdPathSegment::Index(i) => {
-            Ok(coflow_api::WriteFieldPathSegment::Index(*i))
+        coflow_data_model::CfdPathSegment::Index(i) => coflow_api::WriteFieldPathSegment::Index(*i),
+        coflow_data_model::CfdPathSegment::DictKey(key) => {
+            coflow_api::WriteFieldPathSegment::DictKey(key.clone())
         }
-        coflow_data_model::CfdPathSegment::DictKey(key) => Err(EditorError::write(format!(
-            "dict-key writes are not supported by the writer API yet: `{key}`"
-        ))),
     }
 }
 

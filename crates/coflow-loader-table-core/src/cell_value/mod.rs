@@ -119,6 +119,116 @@ pub fn render_cell_value(value: &CfdValue) -> Result<String, CellRenderError> {
     }
 }
 
+/// Rewrites reference tokens inside one table-cell value string.
+///
+/// This intentionally scans the cell grammar instead of doing a blind
+/// replace: quoted strings are skipped, and typed references only match
+/// complete `@Type.old` tokens so paths like `@Type.old.name` become
+/// `@Type.new.name` without touching unrelated text.
+#[must_use]
+pub fn rewrite_record_reference_text(
+    text: &str,
+    target_type_names: &[String],
+    old_key: &str,
+    new_key: &str,
+    rewrite_direct_refs: bool,
+) -> Option<String> {
+    let mut replacements = Vec::<(usize, usize)>::new();
+    let mut index = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    while index < text.len() {
+        let Some(ch) = text[index..].chars().next() else {
+            break;
+        };
+        if in_string {
+            index += ch.len_utf8();
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        if ch == '"' {
+            in_string = true;
+            index += ch.len_utf8();
+            continue;
+        }
+        if ch == '@' {
+            if let Some((key_start, key_end)) =
+                typed_ref_key_span(text, index, target_type_names, old_key)
+            {
+                replacements.push((key_start, key_end));
+                index = key_end;
+                continue;
+            }
+        } else if ch == '&' && rewrite_direct_refs {
+            let key_start = index + ch.len_utf8();
+            let key_end = scan_ref_name_end(text, key_start);
+            if key_start < key_end && &text[key_start..key_end] == old_key {
+                replacements.push((key_start, key_end));
+                index = key_end;
+                continue;
+            }
+        }
+        index += ch.len_utf8();
+    }
+
+    if replacements.is_empty() {
+        return None;
+    }
+    let mut out = text.to_string();
+    replacements.sort_unstable();
+    replacements.dedup();
+    for (start, end) in replacements.into_iter().rev() {
+        out.replace_range(start..end, new_key);
+    }
+    Some(out)
+}
+
+fn typed_ref_key_span(
+    text: &str,
+    at_index: usize,
+    target_type_names: &[String],
+    old_key: &str,
+) -> Option<(usize, usize)> {
+    let type_start = at_index + '@'.len_utf8();
+    let type_end = scan_ref_name_end(text, type_start);
+    if type_start == type_end || text[type_end..].chars().next()? != '.' {
+        return None;
+    }
+    let target_type = &text[type_start..type_end];
+    if !target_type_names.iter().any(|name| name == target_type) {
+        return None;
+    }
+    let key_start = type_end + '.'.len_utf8();
+    let key_end = scan_ref_name_end(text, key_start);
+    (key_start < key_end && &text[key_start..key_end] == old_key).then_some((key_start, key_end))
+}
+
+fn scan_ref_name_end(text: &str, start: usize) -> usize {
+    let mut end = start;
+    while end < text.len() {
+        let Some(ch) = text[end..].chars().next() else {
+            break;
+        };
+        if ch.is_whitespace()
+            || matches!(
+                ch,
+                '.' | '[' | ']' | ',' | ';' | '}' | ')' | ':' | '@' | '&' | '|' | '{'
+            )
+        {
+            break;
+        }
+        end += ch.len_utf8();
+    }
+    end
+}
+
 fn render_array(items: &[CfdValue]) -> Result<String, CellRenderError> {
     let mut out = String::from("[");
     for (idx, item) in items.iter().enumerate() {

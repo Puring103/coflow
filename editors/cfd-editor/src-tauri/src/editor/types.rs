@@ -246,6 +246,18 @@ pub struct WriteFieldOutcome {
     feature = "ts-export",
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
+pub struct RenameRecordOutcome {
+    pub row: RecordRow,
+    pub diagnostics: Vec<FlatDiagnostic>,
+    pub renamed: RecordCoordinate,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
 pub struct InsertRecordOutcome {
     pub file_records: FileRecords,
     pub diagnostics: Vec<FlatDiagnostic>,

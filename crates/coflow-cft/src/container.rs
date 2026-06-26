@@ -223,6 +223,30 @@ impl CftContainer {
         false
     }
 
+    /// Returns true when `type_name` is abstract or has at least one
+    /// descendant type.
+    #[must_use]
+    pub fn range_is_polymorphic(&self, type_name: &str) -> bool {
+        self.resolve_type(type_name).is_some_and(|ty| {
+            ty.is_abstract
+                || self.all_types().any(|candidate| {
+                    self.is_assignable(&candidate.name, type_name) && candidate.name != type_name
+                })
+        })
+    }
+
+    /// Type names whose polymorphic ranges include `actual_type`.
+    #[must_use]
+    pub fn assignable_target_names(&self, actual_type: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut current = Some(actual_type);
+        while let Some(name) = current {
+            out.push(name.to_string());
+            current = self.resolve_type(name).and_then(|ty| ty.parent.as_deref());
+        }
+        out
+    }
+
     /// Resolves the integer value of a single enum variant. Returns `None`
     /// when the enum or variant is unknown.
     #[must_use]

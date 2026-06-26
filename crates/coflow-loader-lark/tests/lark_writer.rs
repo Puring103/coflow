@@ -9,11 +9,13 @@
     clippy::unwrap_used
 )]
 
-use coflow_api::CftContainer;
 use coflow_api::{
-    CfdValue, DataWriter, RecordOrigin, ResolvedSource, SourceDocument, SourceLocationSpec,
-    WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    CfdValue, DataWriter, DeleteRecordRequest, InsertRecordRequest, RecordOrigin, ResolvedSource,
+    RewriteRecordReferencesRequest, SourceDocument, SourceLocationSpec, WriteCellRequest,
+    WriteContext, WriteFieldPathSegment,
 };
+use coflow_api::{CftContainer, ModuleId};
+use coflow_data_model::{CfdDataModel, CfdInputRecord, CfdInputValue};
 use coflow_loader_lark::{LarkHttpClient, LarkSheetWriter};
 use serde_json::Value;
 use std::collections::{BTreeMap, VecDeque};
@@ -46,7 +48,7 @@ impl ScriptedResponse {
 #[derive(Debug, Default)]
 struct Inner {
     queue: VecDeque<ScriptedResponse>,
-    log: Vec<(&'static str, String)>,
+    log: Vec<(&'static str, String, Option<Value>)>,
 }
 
 /// Test HTTP client. Implements `LarkHttpClient` directly. Cloning the
@@ -74,11 +76,29 @@ impl ScriptedClient {
                 response.method, response.url_contains
             ));
         }
-        inner.log.push((method, url.to_string()));
+        inner.log.push((method, url.to_string(), None));
         drop(inner);
         Ok(response.body.to_string())
     }
-    fn calls(&self) -> Vec<(&'static str, String)> {
+    fn next_json(&self, method: &'static str, url: &str, body: &Value) -> Result<String, String> {
+        let mut inner = self.0.lock().unwrap();
+        let response = inner
+            .queue
+            .pop_front()
+            .ok_or_else(|| format!("unexpected {method} {url}"))?;
+        if response.method != method || !url.contains(response.url_contains) {
+            return Err(format!(
+                "expected {} *{}*, got {method} {url}",
+                response.method, response.url_contains
+            ));
+        }
+        inner
+            .log
+            .push((method, url.to_string(), Some(body.clone())));
+        drop(inner);
+        Ok(response.body.to_string())
+    }
+    fn calls(&self) -> Vec<(&'static str, String, Option<Value>)> {
         self.0.lock().unwrap().log.clone()
     }
     fn remaining(&self) -> usize {
@@ -93,10 +113,18 @@ impl LarkHttpClient for ScriptedClient {
     fn post_json(
         &self,
         url: &str,
-        _body: &Value,
+        body: &Value,
         _tenant_access_token: Option<&str>,
     ) -> Result<String, String> {
-        self.next("POST", url)
+        self.next_json("POST", url, body)
+    }
+    fn delete_json(
+        &self,
+        url: &str,
+        body: &Value,
+        _tenant_access_token: &str,
+    ) -> Result<String, String> {
+        self.next_json("DELETE", url, body)
     }
 }
 
@@ -271,4 +299,247 @@ fn retries_once_after_token_expired() {
     };
     writer.write_field(ctx, &request).expect("retry succeeds");
     assert_eq!(client.remaining(), 0, "retry must consume all responses");
+}
+
+fn item_schema() -> CftContainer {
+    let mut schema = CftContainer::new();
+    schema
+        .add_module(
+            ModuleId::from("main"),
+            "type Item { name: string; power: int; }",
+        )
+        .expect("schema parse");
+    schema.compile().expect("schema compile");
+    schema
+}
+
+#[test]
+fn inserts_record_by_appending_lark_row() {
+    let client = ScriptedClient::new([
+        ScriptedResponse::post(
+            "auth/v3/tenant_access_token/internal",
+            r#"{"code":0,"tenant_access_token":"tk","expire":7200}"#,
+        ),
+        ScriptedResponse::get(
+            "/sheets/v3/spreadsheets/sht_test/sheets/query",
+            r#"{"code":0,"data":{"sheets":[{"sheet_id":"shtid_items","title":"Items","grid_properties":{"row_count":2,"column_count":3}}]}}"#,
+        ),
+        ScriptedResponse::get(
+            "/sheets/v2/spreadsheets/sht_test/values/shtid_items%21A1%3AIV1?valueRenderOption=ToString",
+            r#"{"code":0,"data":{"valueRange":{"values":[["id","name","power"]]}}}"#,
+        ),
+        ScriptedResponse::post(
+            "/sheets/v2/spreadsheets/sht_test/values_append",
+            r#"{"code":0,"data":{}}"#,
+        ),
+    ]);
+    let writer = LarkSheetWriter::new(client.clone());
+    let schema = item_schema();
+    let source = lark_source();
+    let fields = BTreeMap::from([
+        ("name".to_string(), CfdValue::String("Blade".to_string())),
+        ("power".to_string(), CfdValue::Int(7)),
+    ]);
+    let request = InsertRecordRequest {
+        source: &source,
+        sheet: Some("Items"),
+        record_key: "blade",
+        actual_type: "Item",
+        fields: &fields,
+        schema: &schema,
+    };
+    let ctx = WriteContext {
+        project_root: std::path::Path::new("."),
+        schema: &schema,
+        model: None,
+    };
+
+    writer.insert_record(ctx, &request).expect("insert row");
+
+    assert_eq!(client.remaining(), 0);
+    let calls = client.calls();
+    let Some(body) = calls
+        .iter()
+        .find(|(_, url, _)| url.contains("values_append"))
+        .and_then(|(_, _, body)| body.as_ref())
+    else {
+        panic!("values_append body should be recorded");
+    };
+    assert_eq!(
+        body,
+        &serde_json::json!({
+            "valueRange": {
+                "range": "shtid_items!A:C",
+                "values": [["blade", "Blade", "7"]],
+            }
+        })
+    );
+}
+
+#[test]
+fn deletes_record_after_remote_key_guard() {
+    let client = ScriptedClient::new([
+        ScriptedResponse::post(
+            "auth/v3/tenant_access_token/internal",
+            r#"{"code":0,"tenant_access_token":"tk","expire":7200}"#,
+        ),
+        ScriptedResponse::get(
+            "/sheets/v3/spreadsheets/sht_test/sheets/query",
+            r#"{"code":0,"data":{"sheets":[{"sheet_id":"shtid_items","title":"Items","grid_properties":{"row_count":3,"column_count":3}}]}}"#,
+        ),
+        ScriptedResponse::get(
+            "/sheets/v2/spreadsheets/sht_test/values/shtid_items%21A2%3AA2?valueRenderOption=ToString",
+            r#"{"code":0,"data":{"valueRange":{"values":[["sword"]]}}}"#,
+        ),
+        ScriptedResponse {
+            method: "DELETE",
+            url_contains: "/sheets/v2/spreadsheets/sht_test/dimension_range",
+            body: r#"{"code":0,"data":{}}"#,
+        },
+    ]);
+    let writer = LarkSheetWriter::new(client.clone());
+    let schema = CftContainer::new();
+    let source = lark_source();
+    let origin = lark_origin();
+    let request = DeleteRecordRequest {
+        origin: &origin,
+        record_key: "sword",
+        actual_type: "Item",
+        source: &source,
+    };
+    let ctx = WriteContext {
+        project_root: std::path::Path::new("."),
+        schema: &schema,
+        model: None,
+    };
+
+    writer.delete_record(ctx, &request).expect("delete row");
+
+    assert_eq!(client.remaining(), 0);
+    let calls = client.calls();
+    let Some(body) = calls
+        .iter()
+        .find(|(method, url, _)| *method == "DELETE" && url.contains("dimension_range"))
+        .and_then(|(_, _, body)| body.as_ref())
+    else {
+        panic!("dimension_range delete body should be recorded");
+    };
+    assert_eq!(
+        body,
+        &serde_json::json!({
+            "dimension": {
+                "sheetId": "shtid_items",
+                "majorDimension": "ROWS",
+                "startIndex": 1,
+                "endIndex": 2,
+            }
+        })
+    );
+}
+
+#[test]
+fn rewrites_only_records_from_requested_lark_source() {
+    let client = ScriptedClient::new([
+        ScriptedResponse::post(
+            "auth/v3/tenant_access_token/internal",
+            r#"{"code":0,"tenant_access_token":"tk","expire":7200}"#,
+        ),
+        ScriptedResponse::get(
+            "/sheets/v3/spreadsheets/sht_test/sheets/query",
+            r#"{"code":0,"data":{"sheets":[{"sheet_id":"shtid_items","title":"Items","grid_properties":{"row_count":3,"column_count":3}}]}}"#,
+        ),
+        ScriptedResponse::post(
+            "/sheets/v2/spreadsheets/sht_test/values_batch_update",
+            r#"{"code":0,"data":{}}"#,
+        ),
+    ]);
+    let writer = LarkSheetWriter::new(client.clone());
+    let schema = item_schema();
+    let model = lark_rewrite_model(&schema);
+    let source = lark_source();
+    let target_types = vec!["Item".to_string()];
+    let request = RewriteRecordReferencesRequest {
+        source: &source,
+        target_type_names: &target_types,
+        old_key: "sword",
+        new_key: "blade",
+        rewrite_direct_refs: true,
+        schema: &schema,
+    };
+    let ctx = WriteContext {
+        project_root: std::path::Path::new("."),
+        schema: &schema,
+        model: Some(&model),
+    };
+
+    writer
+        .rewrite_record_references(ctx, &request)
+        .expect("rewrite lark source");
+
+    assert_eq!(client.remaining(), 0);
+    let calls = client.calls();
+    let Some(body) = calls
+        .iter()
+        .find(|(_, url, _)| url.contains("values_batch_update"))
+        .and_then(|(_, _, body)| body.as_ref())
+    else {
+        panic!("values_batch_update body should be recorded");
+    };
+    assert_eq!(
+        body,
+        &serde_json::json!({
+            "valueRanges": [
+                {
+                    "range": "shtid_items!B2:B2",
+                    "values": [["@Item.blade.name"]],
+                }
+            ]
+        })
+    );
+}
+
+fn lark_rewrite_model(schema: &CftContainer) -> CfdDataModel {
+    let mut builder = CfdDataModel::builder(schema);
+    builder.add_record(
+        "sword",
+        "Item",
+        [
+            ("name", CfdInputValue::from("Sword")),
+            ("power", CfdInputValue::from(7_i64)),
+        ],
+    );
+    builder.add_input_record(lark_rewrite_record(
+        "current",
+        "lark:sht_test",
+        2,
+        "@Item.sword.name",
+    ));
+    builder.add_input_record(lark_rewrite_record(
+        "other",
+        "lark:sht_other",
+        3,
+        "@Item.sword.name",
+    ));
+    builder.build().expect("rewrite model")
+}
+
+fn lark_rewrite_record(key: &str, document: &str, row: usize, path_name: &str) -> CfdInputRecord {
+    let mut field_columns = BTreeMap::new();
+    field_columns.insert(vec!["name".to_string()], 2);
+    field_columns.insert(vec!["power".to_string()], 3);
+    CfdInputRecord::new(
+        key,
+        "Item",
+        [
+            ("name", CfdInputValue::from(path_name)),
+            ("power", CfdInputValue::from(1_i64)),
+        ],
+    )
+    .with_origin(RecordOrigin::Table {
+        document: SourceDocument::Remote(document.to_string()),
+        sheet: "Items".to_string(),
+        row,
+        id_column: 1,
+        field_columns,
+    })
 }

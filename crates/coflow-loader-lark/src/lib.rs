@@ -21,15 +21,20 @@
 )]
 
 use coflow_api::{
-    DataLoader, DataWriter, Diagnostic, DiagnosticSet, Label, LoadContext, LoadedRecords,
-    LoaderDescriptor, ProbeResult, ProjectSourceRef, RecordOrigin, ResolvedSource, SourceDocument,
-    SourceLocation, SourceLocationSpec, SourceResolveContext, WriteCellRequest, WriteContext,
-    WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
+    DataLoader, DataWriter, DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest,
+    Label, LoadContext, LoadedRecords, LoaderDescriptor, ProbeResult, ProjectSourceRef,
+    RecordOrigin, RenameRecordRequest, ResolvedSource, RewriteRecordReferencesRequest,
+    SourceDocument, SourceLocation, SourceLocationSpec, SourceResolveContext, WriteCellRequest,
+    WriteContext, WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
-use coflow_loader_table_core::cell_value::{render_cell_value, CellRenderError};
+use coflow_loader_table_core::cell_value::CellRenderError;
+use coflow_loader_table_core::cell_value::{render_cell_value, rewrite_record_reference_text};
+use coflow_loader_table_core::writer::{
+    plan_insert_record, TableInsertRecord, TableWriteDiagnostics, TableWritePlan,
+};
 use coflow_loader_table_core::{
-    collect_table_input_records, TableDiagnostic, TableDiagnostics, TableLabel, TableSheet,
-    TableSheetConfig, TableSource,
+    collect_table_input_records, resolve_table_write_layout, TableDiagnostic, TableDiagnostics,
+    TableLabel, TableSheet, TableSheetConfig, TableSource, TableWriteLayout,
 };
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use serde::de::DeserializeOwned;
@@ -175,6 +180,20 @@ pub trait LarkHttpClient {
     ) -> Result<String, String> {
         self.post_json(url, body, Some(tenant_access_token))
     }
+
+    /// Performs an authenticated DELETE request with a JSON body.
+    ///
+    /// # Errors
+    ///
+    /// Returns a transport or HTTP response error message.
+    fn delete_json(
+        &self,
+        _url: &str,
+        _body: &Value,
+        _tenant_access_token: &str,
+    ) -> Result<String, String> {
+        Err("DELETE with JSON body is not implemented by this Lark HTTP client".to_string())
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -216,6 +235,21 @@ impl LarkHttpClient for UreqLarkHttpClient {
         tenant_access_token: &str,
     ) -> Result<String, String> {
         ureq::put(url)
+            .set("Content-Type", "application/json")
+            .set("Authorization", &format!("Bearer {tenant_access_token}"))
+            .send_string(&body.to_string())
+            .map_err(ureq_error_message)?
+            .into_string()
+            .map_err(|err| err.to_string())
+    }
+
+    fn delete_json(
+        &self,
+        url: &str,
+        body: &Value,
+        tenant_access_token: &str,
+    ) -> Result<String, String> {
+        ureq::delete(url)
             .set("Content-Type", "application/json")
             .set("Authorization", &format!("Bearer {tenant_access_token}"))
             .send_string(&body.to_string())
@@ -796,6 +830,40 @@ fn table_sheet_config_from_value(value: &Value) -> Result<TableSheetConfig, Diag
     Ok(sheet)
 }
 
+fn sheet_config_from_options(
+    options: &Value,
+    sheet: &str,
+    actual_type: &str,
+) -> Result<TableSheetConfig, DiagnosticSet> {
+    for config in table_sheet_configs_from_options(options)? {
+        let matches_sheet = config.sheet == sheet;
+        let matches_type = config
+            .type_name
+            .as_deref()
+            .is_some_and(|candidate| candidate == actual_type);
+        if matches_sheet || matches_type {
+            return Ok(config);
+        }
+    }
+    Ok(TableSheetConfig::new(sheet).with_type(actual_type))
+}
+
+fn sheet_for_type_from_options<'a>(options: &'a Value, actual_type: &str) -> Option<&'a str> {
+    options
+        .get("sheets")
+        .and_then(Value::as_array)?
+        .iter()
+        .filter_map(Value::as_object)
+        .find(|object| {
+            object
+                .get("type")
+                .and_then(Value::as_str)
+                .is_some_and(|candidate| candidate == actual_type)
+        })?
+        .get("sheet")
+        .and_then(Value::as_str)
+}
+
 fn lark_document(source: &LarkSheetSource) -> String {
     match &source.locator {
         LarkSheetLocator::Url(url) => url.clone(),
@@ -860,6 +928,14 @@ fn table_diagnostics_to_api(err: TableDiagnostics) -> DiagnosticSet {
     }
 }
 
+fn table_write_diagnostics_to_api(err: TableWriteDiagnostics) -> DiagnosticSet {
+    err.diagnostics
+        .into_iter()
+        .map(|diagnostic| diag("LARK-WRITE", diagnostic.message))
+        .collect::<Vec<_>>()
+        .into()
+}
+
 fn table_diagnostic_to_api(diagnostic: TableDiagnostic) -> Diagnostic {
     Diagnostic {
         code: diagnostic.code,
@@ -882,8 +958,7 @@ fn table_label_to_api(label: TableLabel) -> Label {
     }
 }
 
-/// Writer descriptor for Lark sheets. Capabilities expose this as a remote,
-/// field-edit-only writer (no record insertion via this writer yet).
+/// Writer descriptor for Lark sheets.
 pub static LARK_SHEET_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
     id: "lark-sheet",
     display_name: "Lark Sheet",
@@ -891,8 +966,8 @@ pub static LARK_SHEET_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
         provider_id: String::new(),
         can_edit_field: true,
         can_edit_key: true,
-        can_insert_record: false,
-        can_delete_record: false,
+        can_insert_record: true,
+        can_delete_record: true,
         requires_full_refresh_after_write: true,
         is_remote: true,
     },
@@ -1137,6 +1212,227 @@ where
             diagnostics: DiagnosticSet::empty(),
         })
     }
+
+    fn rename_record(
+        &self,
+        ctx: WriteContext<'_>,
+        request: &RenameRecordRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        let path = [WriteFieldPathSegment::Field("id".to_string())];
+        let value = coflow_api::CfdValue::String(request.new_key.to_string());
+        self.write_field(
+            ctx,
+            &WriteCellRequest {
+                origin: request.origin,
+                record_key: request.old_key,
+                actual_type: request.actual_type,
+                field_path: &path,
+                new_value: &value,
+                schema: request.schema,
+                source: request.source,
+            },
+        )
+    }
+
+    fn insert_record(
+        &self,
+        ctx: WriteContext<'_>,
+        request: &InsertRecordRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        let spreadsheet_token = lark_spreadsheet_token_from_source(request.source)?;
+        let sheet = request
+            .sheet
+            .or_else(|| sheet_for_type_from_options(&request.source.options, request.actual_type))
+            .unwrap_or(request.actual_type);
+        let auth = self.lark_write_auth(request.source)?;
+        let sheet_id = self.cached_sheet_id(&spreadsheet_token, sheet, &auth.token)?;
+        let layout = lark_insert_layout(&LarkInsertLayoutRequest {
+            ctx,
+            writer: self,
+            source: request.source,
+            spreadsheet_token: &spreadsheet_token,
+            sheet_id: &sheet_id,
+            sheet,
+            actual_type: request.actual_type,
+            token: &auth.token,
+        })?;
+        let plan = plan_insert_record(&TableInsertRecord {
+            document: SourceDocument::Remote(format!("lark:{spreadsheet_token}")),
+            sheet,
+            record_key: request.record_key,
+            actual_type: request.actual_type,
+            fields: request.fields,
+            field_columns: &layout.field_columns,
+            id_column: layout.id_column,
+        })
+        .map_err(table_write_diagnostics_to_api)?;
+        let TableWritePlan::AppendRow(row) = plan else {
+            return Err(DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                "internal error: lark insert did not produce an append-row plan",
+            )));
+        };
+        let width = row
+            .values
+            .iter()
+            .map(|(column, _)| *column)
+            .max()
+            .unwrap_or(layout.id_column);
+        let mut values = vec![String::new(); width];
+        for (column, value) in row.values {
+            if column == 0 {
+                return Err(DiagnosticSet::one(diag(
+                    "LARK-WRITE",
+                    "lark column index must be at least 1",
+                )));
+            }
+            if values.len() < column {
+                values.resize(column, String::new());
+            }
+            values[column - 1] = value;
+        }
+        self.append_lark_row(&spreadsheet_token, &sheet_id, &values, &auth)?;
+        Ok(WriteOutcome {
+            touched_record_origins: Vec::new(),
+            inserted_record_origin: Some(RecordOrigin::Table {
+                document: SourceDocument::Remote(format!("lark:{spreadsheet_token}")),
+                sheet: sheet.to_string(),
+                row: 0,
+                id_column: layout.id_column,
+                field_columns: layout.field_columns,
+            }),
+            deleted_record_origin: None,
+            diagnostics: DiagnosticSet::empty(),
+        })
+    }
+
+    fn delete_record(
+        &self,
+        _ctx: WriteContext<'_>,
+        request: &DeleteRecordRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        let RecordOrigin::Table {
+            document,
+            sheet,
+            row,
+            id_column,
+            ..
+        } = request.origin
+        else {
+            return Err(DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                "lark writer requires a Table origin",
+            )));
+        };
+        let SourceDocument::Remote(doc) = document else {
+            return Err(DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                "lark writer requires a remote table document",
+            )));
+        };
+        if doc
+            != &format!(
+                "lark:{}",
+                lark_spreadsheet_token_from_source(request.source)?
+            )
+        {
+            return Err(DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                "record origin does not belong to the requested lark source",
+            )));
+        }
+        if *id_column == 0 || *row == 0 {
+            return Err(DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                "lark row and id column indexes must be at least 1",
+            )));
+        }
+        let spreadsheet_token = lark_spreadsheet_token_from_source(request.source)?;
+        let auth = self.lark_write_auth(request.source)?;
+        let sheet_id = self.cached_sheet_id(&spreadsheet_token, sheet, &auth.token)?;
+        let current_key =
+            self.read_lark_cell(&spreadsheet_token, &sheet_id, *row, *id_column, &auth)?;
+        if current_key.trim() != request.record_key {
+            return Err(DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                format!(
+                    "row {row} in lark sheet `{sheet}` expected key `{}` but found `{}`",
+                    request.record_key,
+                    current_key.trim()
+                ),
+            )));
+        }
+        self.delete_lark_row(&spreadsheet_token, &sheet_id, *row, &auth)?;
+        Ok(WriteOutcome {
+            touched_record_origins: Vec::new(),
+            inserted_record_origin: None,
+            deleted_record_origin: Some(request.origin.clone()),
+            diagnostics: DiagnosticSet::empty(),
+        })
+    }
+
+    fn rewrite_record_references(
+        &self,
+        ctx: WriteContext<'_>,
+        request: &RewriteRecordReferencesRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        let SourceLocationSpec::Uri(_) = &request.source.location else {
+            return Ok(WriteOutcome::default());
+        };
+        let Some(model) = ctx.model else {
+            return Ok(WriteOutcome::default());
+        };
+        let spreadsheet_token = lark_spreadsheet_token_from_source(request.source)?;
+        let source_document = format!("lark:{spreadsheet_token}");
+        let mut updates = Vec::<(String, String)>::new();
+        for (_, record) in model.records() {
+            let RecordOrigin::Table {
+                document,
+                sheet,
+                row,
+                field_columns,
+                ..
+            } = &record.origin
+            else {
+                continue;
+            };
+            let SourceDocument::Remote(doc) = document else {
+                continue;
+            };
+            if doc != &source_document {
+                continue;
+            }
+            for (path, column) in field_columns {
+                let Some(value) = value_for_table_path(record, path) else {
+                    continue;
+                };
+                let rendered = render_cell_value(value).map_err(lark_render_error)?;
+                let Some(rewritten) = rewrite_record_reference_text(
+                    &rendered,
+                    request.target_type_names,
+                    request.old_key,
+                    request.new_key,
+                    request.rewrite_direct_refs,
+                ) else {
+                    continue;
+                };
+                updates.push((
+                    format!("{sheet}!{}{}", column_name(*column), row),
+                    rewritten,
+                ));
+            }
+        }
+        if updates.is_empty() {
+            return Ok(WriteOutcome::default());
+        }
+        self.write_lark_ranges(request.source, updates)?;
+        Ok(WriteOutcome {
+            touched_record_origins: Vec::new(),
+            inserted_record_origin: None,
+            deleted_record_origin: None,
+            diagnostics: DiagnosticSet::empty(),
+        })
+    }
 }
 
 /// Outcome of a single `values_batch_update` HTTP call. Distinguishing
@@ -1153,6 +1449,268 @@ impl<C> LarkSheetWriter<C>
 where
     C: LarkHttpClient + Send + Sync,
 {
+    fn lark_write_auth(&self, source: &ResolvedSource) -> Result<LarkWriteAuth, DiagnosticSet> {
+        let app_id = required_option_string(&source.options, "app_id")?;
+        let app_secret = required_option_string(&source.options, "app_secret")?;
+        let token = self.cached_tenant_token(&app_id, &app_secret)?;
+        Ok(LarkWriteAuth {
+            app_id,
+            app_secret,
+            token,
+        })
+    }
+
+    fn append_lark_row(
+        &self,
+        spreadsheet_token: &str,
+        sheet_id: &str,
+        values: &[String],
+        auth: &LarkWriteAuth,
+    ) -> Result<(), DiagnosticSet> {
+        let last_column = column_name(values.len().max(1));
+        let endpoint = format!(
+            "{API_BASE}/sheets/v2/spreadsheets/{}/values_append",
+            url_component(spreadsheet_token)
+        );
+        let body = json!({
+            "valueRange": {
+                "range": format!("{sheet_id}!A:{last_column}"),
+                "values": [values],
+            }
+        });
+        self.send_lark_write(
+            "values_append",
+            &endpoint,
+            &body,
+            auth,
+            LarkHttpMethod::Post,
+        )
+    }
+
+    fn delete_lark_row(
+        &self,
+        spreadsheet_token: &str,
+        sheet_id: &str,
+        row: usize,
+        auth: &LarkWriteAuth,
+    ) -> Result<(), DiagnosticSet> {
+        let zero_based = row.checked_sub(1).ok_or_else(|| {
+            DiagnosticSet::one(diag("LARK-WRITE", "lark row index must be at least 1"))
+        })?;
+        let endpoint = format!(
+            "{API_BASE}/sheets/v2/spreadsheets/{}/dimension_range",
+            url_component(spreadsheet_token)
+        );
+        let body = json!({
+            "dimension": {
+                "sheetId": sheet_id,
+                "majorDimension": "ROWS",
+                "startIndex": zero_based,
+                "endIndex": zero_based + 1,
+            }
+        });
+        self.send_lark_write(
+            "delete dimension_range",
+            &endpoint,
+            &body,
+            auth,
+            LarkHttpMethod::Delete,
+        )
+    }
+
+    fn read_lark_cell(
+        &self,
+        spreadsheet_token: &str,
+        sheet_id: &str,
+        row: usize,
+        column: usize,
+        auth: &LarkWriteAuth,
+    ) -> Result<String, DiagnosticSet> {
+        let column_letters = column_name(column);
+        let range = format!("{sheet_id}!{column_letters}{row}:{column_letters}{row}");
+        let endpoint = format!(
+            "{API_BASE}/sheets/v2/spreadsheets/{}/values/{}?valueRenderOption=ToString",
+            url_component(spreadsheet_token),
+            url_component(&range)
+        );
+        let response = self.client.get(&endpoint, &auth.token).map_err(|message| {
+            DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                format!("read id cell before delete failed: {message}"),
+            ))
+        })?;
+        let envelope: ApiEnvelope<ValuesData> = serde_json::from_str(&response).map_err(|err| {
+            DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                format!("failed to parse id cell response: {err}"),
+            ))
+        })?;
+        if envelope.code != 0 {
+            return Err(DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                api_error_message("read id cell", envelope.code, envelope.msg.as_deref()),
+            )));
+        }
+        let data = envelope.data.ok_or_else(|| {
+            DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                "read id cell response did not include `data`",
+            ))
+        })?;
+        Ok(data
+            .value_range
+            .values
+            .into_iter()
+            .next()
+            .and_then(|row| row.into_iter().next())
+            .map_or_else(String::new, json_cell_text))
+    }
+
+    fn read_lark_header(
+        &self,
+        spreadsheet_token: &str,
+        sheet_id: &str,
+        token: &str,
+    ) -> Result<Vec<String>, DiagnosticSet> {
+        const HEADER_SCAN_COLUMNS: usize = 256;
+        let last_column = column_name(HEADER_SCAN_COLUMNS);
+        let range = format!("{sheet_id}!A1:{last_column}1");
+        let endpoint = format!(
+            "{API_BASE}/sheets/v2/spreadsheets/{}/values/{}?valueRenderOption=ToString",
+            url_component(spreadsheet_token),
+            url_component(&range)
+        );
+        let response = self.client.get(&endpoint, token).map_err(|message| {
+            DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                format!("failed to read lark header row: {message}"),
+            ))
+        })?;
+        let envelope: ApiEnvelope<ValuesData> = serde_json::from_str(&response).map_err(|err| {
+            DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                format!("failed to parse lark header row response: {err}"),
+            ))
+        })?;
+        if envelope.code != 0 {
+            return Err(DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                api_error_message(
+                    "read lark header row",
+                    envelope.code,
+                    envelope.msg.as_deref(),
+                ),
+            )));
+        }
+        let data = envelope.data.ok_or_else(|| {
+            DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                "read lark header row response did not include `data`",
+            ))
+        })?;
+        Ok(data
+            .value_range
+            .values
+            .into_iter()
+            .next()
+            .unwrap_or_default()
+            .into_iter()
+            .map(json_cell_text)
+            .collect())
+    }
+
+    fn send_lark_write(
+        &self,
+        operation: &'static str,
+        endpoint: &str,
+        body: &Value,
+        auth: &LarkWriteAuth,
+        method: LarkHttpMethod,
+    ) -> Result<(), DiagnosticSet> {
+        match self.send_lark_write_once(operation, endpoint, body, &auth.token, method) {
+            Ok(()) => Ok(()),
+            Err(LarkWriteFailure::TokenExpired(diag_set)) => {
+                self.invalidate_caches(Some(&auth.app_id), None);
+                let fresh = self.cached_tenant_token(&auth.app_id, &auth.app_secret)?;
+                self.send_lark_write_once(operation, endpoint, body, &fresh, method)
+                    .map_err(|err| match err {
+                        LarkWriteFailure::TokenExpired(d) | LarkWriteFailure::Other(d) => d,
+                    })
+                    .map_err(|d| {
+                        let mut combined = diag_set.clone();
+                        combined.extend(d);
+                        combined
+                    })
+            }
+            Err(LarkWriteFailure::Other(diag_set)) => Err(diag_set),
+        }
+    }
+
+    fn send_lark_write_once(
+        &self,
+        operation: &'static str,
+        endpoint: &str,
+        body: &Value,
+        token: &str,
+        method: LarkHttpMethod,
+    ) -> Result<(), LarkWriteFailure> {
+        let response = match method {
+            LarkHttpMethod::Post => self.client.post_json(endpoint, body, Some(token)),
+            LarkHttpMethod::Delete => self.client.delete_json(endpoint, body, token),
+        }
+        .map_err(|message| {
+            LarkWriteFailure::Other(DiagnosticSet::one(diag(
+                "LARK-WRITE",
+                format!("{operation} failed: {message}"),
+            )))
+        })?;
+        parse_write_envelope(operation, &response)
+    }
+
+    fn write_lark_ranges(
+        &self,
+        source: &ResolvedSource,
+        updates: Vec<(String, String)>,
+    ) -> Result<(), DiagnosticSet> {
+        let spreadsheet_token = lark_spreadsheet_token_from_source(source)?;
+        let app_id = required_option_string(&source.options, "app_id")?;
+        let app_secret = required_option_string(&source.options, "app_secret")?;
+        let token = self.cached_tenant_token(&app_id, &app_secret)?;
+        let mut ranges = Vec::new();
+        for (range, value) in updates {
+            let (sheet_title, cell) = range.split_once('!').ok_or_else(|| {
+                DiagnosticSet::one(diag("LARK-WRITE", format!("invalid lark range `{range}`")))
+            })?;
+            let sheet_id = self.cached_sheet_id(&spreadsheet_token, sheet_title, &token)?;
+            ranges.push(json!({
+                "range": format!("{sheet_id}!{cell}:{cell}"),
+                "values": [[value]],
+            }));
+        }
+        let endpoint = format!(
+            "{API_BASE}/sheets/v2/spreadsheets/{}/values_batch_update",
+            url_component(&spreadsheet_token)
+        );
+        let body = json!({ "valueRanges": ranges });
+        match self.send_values_batch_update(&endpoint, &body, &token) {
+            Ok(()) => Ok(()),
+            Err(LarkWriteFailure::TokenExpired(diag_set)) => {
+                self.invalidate_caches(Some(&app_id), None);
+                let fresh = self.cached_tenant_token(&app_id, &app_secret)?;
+                self.send_values_batch_update(&endpoint, &body, &fresh)
+                    .map_err(|err| match err {
+                        LarkWriteFailure::TokenExpired(d) | LarkWriteFailure::Other(d) => d,
+                    })
+                    .map_err(|d| {
+                        let mut combined = diag_set.clone();
+                        combined.extend(d);
+                        combined
+                    })
+            }
+            Err(LarkWriteFailure::Other(diag_set)) => Err(diag_set),
+        }
+    }
+
     fn send_values_batch_update(
         &self,
         endpoint: &str,
@@ -1168,32 +1726,140 @@ where
                     format!("values_batch_update failed: {message}"),
                 )))
             })?;
-        let envelope: ApiEnvelope<Value> = serde_json::from_str(&response).map_err(|err| {
-            LarkWriteFailure::Other(DiagnosticSet::one(diag(
-                "LARK-WRITE",
-                format!("failed to parse values_batch_update response: {err}"),
-            )))
-        })?;
-        if envelope.code == 0 {
-            return Ok(());
-        }
-        let diag_set = DiagnosticSet::one(diag(
+        parse_write_envelope("values_batch_update", &response)
+    }
+}
+
+fn parse_write_envelope(operation: &'static str, response: &str) -> Result<(), LarkWriteFailure> {
+    let envelope: ApiEnvelope<Value> = serde_json::from_str(response).map_err(|err| {
+        LarkWriteFailure::Other(DiagnosticSet::one(diag(
             "LARK-WRITE",
-            api_error_message(
-                "values_batch_update",
-                envelope.code,
-                envelope.msg.as_deref(),
-            ),
-        ));
-        // Lark's "tenant access token invalid / expired" family hovers
-        // around 99991663 / 99991668. Treat any 9999xxxx code as a hint
-        // that the token has gone stale and let the writer retry once.
-        if (99_991_000..100_000_000).contains(&envelope.code) {
-            Err(LarkWriteFailure::TokenExpired(diag_set))
-        } else {
-            Err(LarkWriteFailure::Other(diag_set))
+            format!("failed to parse {operation} response: {err}"),
+        )))
+    })?;
+    if envelope.code == 0 {
+        return Ok(());
+    }
+    let diag_set = DiagnosticSet::one(diag(
+        "LARK-WRITE",
+        api_error_message(operation, envelope.code, envelope.msg.as_deref()),
+    ));
+    // Lark's tenant-token-expired family hovers around 99991663 / 99991668.
+    if (99_991_000..100_000_000).contains(&envelope.code) {
+        Err(LarkWriteFailure::TokenExpired(diag_set))
+    } else {
+        Err(LarkWriteFailure::Other(diag_set))
+    }
+}
+
+#[derive(Debug, Clone)]
+struct LarkWriteAuth {
+    app_id: String,
+    app_secret: String,
+    token: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum LarkHttpMethod {
+    Post,
+    Delete,
+}
+
+struct LarkInsertLayoutRequest<'a, C> {
+    ctx: WriteContext<'a>,
+    writer: &'a LarkSheetWriter<C>,
+    source: &'a ResolvedSource,
+    spreadsheet_token: &'a str,
+    sheet_id: &'a str,
+    sheet: &'a str,
+    actual_type: &'a str,
+    token: &'a str,
+}
+
+fn lark_insert_layout<C>(
+    request: &LarkInsertLayoutRequest<'_, C>,
+) -> Result<TableWriteLayout, DiagnosticSet>
+where
+    C: LarkHttpClient + Send + Sync,
+{
+    if let Some(model) = request.ctx.model {
+        if let Some(layout) = model.records().find_map(|(_, record)| {
+            let RecordOrigin::Table {
+                document,
+                sheet: record_sheet,
+                id_column,
+                field_columns,
+                ..
+            } = &record.origin
+            else {
+                return None;
+            };
+            let SourceDocument::Remote(doc) = document else {
+                return None;
+            };
+            (doc == &format!("lark:{}", request.spreadsheet_token)
+                && record_sheet == request.sheet
+                && record.actual_type == request.actual_type)
+                .then_some(TableWriteLayout {
+                    id_column: *id_column,
+                    field_columns: field_columns.clone(),
+                })
+        }) {
+            return Ok(layout);
         }
     }
+    let header = request.writer.read_lark_header(
+        request.spreadsheet_token,
+        request.sheet_id,
+        request.token,
+    )?;
+    let config =
+        sheet_config_from_options(&request.source.options, request.sheet, request.actual_type)?;
+    resolve_table_write_layout(
+        request.ctx.schema,
+        std::path::Path::new(request.spreadsheet_token),
+        &config,
+        &header,
+    )
+    .map_err(table_diagnostics_to_api)
+}
+
+fn lark_spreadsheet_token_from_source(source: &ResolvedSource) -> Result<String, DiagnosticSet> {
+    match &source.location {
+        SourceLocationSpec::Uri(uri) => uri
+            .strip_prefix("lark:")
+            .map(str::to_string)
+            .or_else(|| token_after_path_marker(uri, "/sheets/"))
+            .ok_or_else(|| {
+                DiagnosticSet::one(diag(
+                    "LARK-WRITE",
+                    format!("unsupported lark source uri `{uri}`"),
+                ))
+            }),
+        SourceLocationSpec::Path(path) => Err(DiagnosticSet::one(diag(
+            "LARK-WRITE",
+            format!(
+                "lark writer requires a uri source, got `{}`",
+                path.display()
+            ),
+        ))),
+    }
+}
+
+fn value_for_table_path<'a>(
+    record: &'a coflow_api::CfdRecord,
+    path: &[String],
+) -> Option<&'a coflow_api::CfdValue> {
+    let mut segments = path.iter();
+    let first = segments.next()?;
+    let mut current = record.fields.get(first)?;
+    for segment in segments {
+        let coflow_api::CfdValue::Object(record) = current else {
+            return None;
+        };
+        current = record.fields.get(segment)?;
+    }
+    Some(current)
 }
 
 fn resolve_lark_column(

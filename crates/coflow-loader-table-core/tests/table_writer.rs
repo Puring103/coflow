@@ -101,6 +101,72 @@ fn nested_collection_edit_rewrites_owning_cell_value() {
 }
 
 #[test]
+fn nested_dict_entry_edit_rewrites_owning_cell_value() {
+    let schema = compile_schema(
+        r"
+        type Item {
+          weights: {string: int};
+        }
+        ",
+    );
+    let input = CfdInputRecord::new(
+        "sword",
+        "Item",
+        [(
+            "weights",
+            CfdInputValue::dict([
+                (
+                    coflow_data_model::CfdInputDictKey::from("rare"),
+                    CfdInputValue::Int(1),
+                ),
+                (
+                    coflow_data_model::CfdInputDictKey::from("common"),
+                    CfdInputValue::Int(2),
+                ),
+            ]),
+        )],
+    )
+    .with_origin(table_origin(BTreeMap::from([(
+        vec!["weights".to_string()],
+        2,
+    )])));
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(input);
+    let model = builder.build().expect("model");
+    let origin = table_origin(BTreeMap::from([(vec!["weights".to_string()], 2)]));
+    let new_value = CfdValue::Int(9);
+    let path = vec![
+        WriteFieldPathSegment::Field("weights".to_string()),
+        WriteFieldPathSegment::DictKey("\"rare\"".to_string()),
+    ];
+    let request = TableFieldWrite {
+        origin: &origin,
+        record_key: "sword",
+        actual_type: "Item",
+        field_path: &path,
+        new_value: &new_value,
+        model: Some(&model),
+    };
+
+    let plan = plan_field_write(&request).expect("plan");
+
+    assert_eq!(
+        plan,
+        TableWritePlan::SetCells {
+            document: SourceDocument::Local(PathBuf::from("data.xlsx")),
+            sheet: "Items".to_string(),
+            id_column: 1,
+            expected_key: "sword".to_string(),
+            cells: vec![TableSetCell {
+                row: 2,
+                column: 2,
+                value: "{rare: 9, common: 2}".to_string(),
+            }],
+        }
+    );
+}
+
+#[test]
 fn expanded_object_edit_writes_each_child_column() {
     let _schema = compile_schema(
         r"

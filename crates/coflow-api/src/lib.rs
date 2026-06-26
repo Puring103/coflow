@@ -480,6 +480,7 @@ pub trait DataLoader: Send + Sync {
 pub enum WriteFieldPathSegment {
     Field(String),
     Index(usize),
+    DictKey(String),
 }
 
 /// Static description of a writer provider.
@@ -599,6 +600,32 @@ pub struct DeleteRecordRequest<'a> {
     pub source: &'a ResolvedSource,
 }
 
+/// Request describing a top-level record key rename.
+#[derive(Debug, Clone)]
+pub struct RenameRecordRequest<'a> {
+    pub origin: &'a RecordOrigin,
+    pub old_key: &'a str,
+    pub new_key: &'a str,
+    pub actual_type: &'a str,
+    pub source: &'a ResolvedSource,
+    pub schema: &'a CftContainer,
+}
+
+/// Request to rewrite reference tokens inside one source after a record key
+/// rename.
+///
+/// Engines use this for source syntax that compiles away before the runtime
+/// model is built, such as `@Type.old.path` path refs or `...spread` entries.
+#[derive(Debug, Clone)]
+pub struct RewriteRecordReferencesRequest<'a> {
+    pub source: &'a ResolvedSource,
+    pub target_type_names: &'a [String],
+    pub old_key: &'a str,
+    pub new_key: &'a str,
+    pub rewrite_direct_refs: bool,
+    pub schema: &'a CftContainer,
+}
+
 /// Outcome of a writer call: which records were actually touched (so the
 /// session can recompute checks) and any informational diagnostics.
 #[derive(Debug, Clone, Default)]
@@ -667,6 +694,42 @@ pub trait DataWriter: Send + Sync {
             "WRITE",
             "writer does not support inserting records",
         )))
+    }
+
+    /// Rename a top-level record key.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the writer cannot rename keys for this source
+    /// or when the existing source no longer matches the requested old key.
+    fn rename_record(
+        &self,
+        _ctx: WriteContext<'_>,
+        _request: &RenameRecordRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        Err(DiagnosticSet::one(Diagnostic::error(
+            "WRITE-UNSUPPORTED",
+            "WRITE",
+            "writer does not support renaming record keys",
+        )))
+    }
+
+    /// Rewrite source-level references to a renamed record key.
+    ///
+    /// The default implementation is a no-op because ordinary `CfdValue::Ref`
+    /// locations are updated via [`DataWriter::write_field`]. Providers should
+    /// override this when their source syntax contains references that do not
+    /// survive as runtime refs.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the source cannot be read or updated.
+    fn rewrite_record_references(
+        &self,
+        _ctx: WriteContext<'_>,
+        _request: &RewriteRecordReferencesRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        Ok(WriteOutcome::default())
     }
 
     /// Delete a top-level record.

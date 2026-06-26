@@ -36,6 +36,7 @@ interface Props {
   diagnostics?: DiagnosticItem[]
   onOpenRecord: (coordinate: RecordCoordinate) => void
   onWriteField?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<RecordRow | void>
+  onRenameRecord?: (coordinate: RecordCoordinate, newKey: string) => Promise<RecordRow | void>
   /** Create a new record. Resolves once the back-end has persisted and the
    *  parent has refreshed `data` for this file. */
   onInsertRecord?: (recordKey: string, actualType: string, fields: FieldValue) => Promise<void>
@@ -48,7 +49,7 @@ interface Props {
 
 const ROW_H = 30
 
-export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecord, onWriteField, onInsertRecord, onDeleteRecord, onMakeDefaultObject }: Props) {
+export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onDeleteRecord, onMakeDefaultObject }: Props) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: RecordRow } | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [newKey, setNewKey] = useState('')
@@ -119,13 +120,20 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
   )
 
   const canEdit = !readOnly && !!onWriteField
+  const canRename = !readOnly && data.capabilities.can_edit_key && !!onRenameRecord
   const columns = useMemo(() => {
     const helper = createColumnHelper<RecordRow>()
     return [
       helper.accessor(row => recordKey(row), {
         id: 'key',
         header: 'Key',
-        cell: info => <span className="cell-key">{info.getValue()}</span>,
+        cell: info => (
+          <EditableKeyCell
+            value={info.getValue()}
+            editable={canRename}
+            onCommit={canRename ? next => onRenameRecord!(info.row.original.coordinate, next) : undefined}
+          />
+        ),
         size: 140,
       }),
       ...allFieldNames.map(name =>
@@ -154,7 +162,7 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
         }),
       ),
     ]
-  }, [allFieldNames, canEdit, onWriteField, cellDiagIndex, diagnostics, data.file_path])
+  }, [allFieldNames, canEdit, canRename, onWriteField, onRenameRecord, cellDiagIndex, diagnostics, data.file_path])
 
   // Global filter: match key or any scalar field value (via summaryOf).
   const globalFilterFn = useMemo(
@@ -390,6 +398,19 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
             <Icon name="record" size={13} aria-hidden />
             跳转到记录视图
           </div>
+          {!readOnly && data.capabilities.can_edit_key && onRenameRecord && (
+            <div className="ctx-item" role="menuitem" onClick={async () => {
+              const key = recordKey(contextMenu.row)
+              const next = window.prompt('重命名 Key', key)?.trim()
+              const coordinate = contextMenu.row.coordinate
+              setContextMenu(null)
+              if (!next || next === key) return
+              await onRenameRecord(coordinate, next)
+            }}>
+              <Icon name="edit" size={13} aria-hidden />
+              重命名 Key
+            </div>
+          )}
           {!readOnly && data.capabilities.can_delete_record && onDeleteRecord && (
             <div className="ctx-item ctx-danger" role="menuitem" onClick={async () => {
               const key = recordKey(contextMenu.row)
@@ -466,5 +487,60 @@ function EditableCell({
     >
       <DataCardCompact value={value} />
     </div>
+  )
+}
+
+function EditableKeyCell({
+  value, editable, onCommit,
+}: {
+  value: string
+  editable: boolean
+  onCommit?: (next: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+
+  useEffect(() => {
+    if (!editing) setDraft(value)
+  }, [value, editing])
+
+  const commit = () => {
+    const next = draft.trim()
+    if (next && next !== value && onCommit) onCommit(next)
+    setEditing(false)
+  }
+
+  if (editing && editable) {
+    return (
+      <input
+        className="inline-editor key-editor"
+        value={draft}
+        autoFocus
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.key === 'Enter') commit()
+          if (e.key === 'Escape') {
+            setDraft(value)
+            setEditing(false)
+          }
+        }}
+        onClick={e => e.stopPropagation()}
+        aria-label="重命名记录 Key"
+      />
+    )
+  }
+
+  return (
+    <span
+      className={`cell-key${editable ? ' editable' : ''}`}
+      onClick={editable ? e => {
+        e.stopPropagation()
+        setEditing(true)
+      } : undefined}
+      title={editable ? '点击重命名 Key' : undefined}
+    >
+      {value}
+    </span>
   )
 }

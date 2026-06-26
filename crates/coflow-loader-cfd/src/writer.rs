@@ -7,10 +7,13 @@
 //! avoid re-reading and re-parsing the file.
 use coflow_api::{
     CfdValue, DataWriter, DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest,
-    RecordOrigin, SourceLocationSpec, TextSpan, WriteCellRequest, WriteContext,
-    WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
+    RecordOrigin, RenameRecordRequest, RewriteRecordReferencesRequest, SourceLocationSpec,
+    TextSpan, WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome,
+    WriterCapabilities, WriterDescriptor,
 };
-use coflow_cfd::ast::{CfdBlockEntry, CfdRecord as AstRecord, CfdValue as AstValue};
+use coflow_cfd::ast::{
+    CfdBlock, CfdBlockEntry, CfdRecord as AstRecord, CfdRefKind, CfdValue as AstValue,
+};
 use coflow_cfd::{parse_cfd, CfdAst};
 use coflow_cft::Span;
 use std::collections::HashMap;
@@ -237,6 +240,78 @@ impl DataWriter for CfdWriter {
             touched_record_origins: Vec::new(),
             inserted_record_origin: None,
             deleted_record_origin: Some(request.origin.clone()),
+            diagnostics: DiagnosticSet::empty(),
+        })
+    }
+
+    fn rename_record(
+        &self,
+        _ctx: WriteContext<'_>,
+        request: &RenameRecordRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        let RecordOrigin::File { path, .. } = request.origin else {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                "cfd writer requires a File origin",
+            )));
+        };
+        validate_record_key(request.new_key)?;
+        let (source, ast) = self.read_or_parse(path)?;
+        let record = ast
+            .records
+            .iter()
+            .find(|record| record.key == request.old_key && record.type_name == request.actual_type)
+            .ok_or_else(|| {
+                DiagnosticSet::one(diag(
+                    "CFD-WRITE",
+                    format!(
+                        "record `{}.{}` not found in AST",
+                        request.actual_type, request.old_key
+                    ),
+                ))
+            })?;
+        let new_source = replace_spans(&source, &[(record.key_span, request.new_key.to_string())])?;
+        self.write_source(path, new_source)?;
+        Ok(WriteOutcome {
+            touched_record_origins: vec![request.origin.clone()],
+            inserted_record_origin: None,
+            deleted_record_origin: None,
+            diagnostics: DiagnosticSet::empty(),
+        })
+    }
+
+    fn rewrite_record_references(
+        &self,
+        _ctx: WriteContext<'_>,
+        request: &RewriteRecordReferencesRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &request.source.location else {
+            return Ok(WriteOutcome::default());
+        };
+        let (source, ast) = self.read_or_parse(path)?;
+        let mut spans = Vec::new();
+        for record in &ast.records {
+            collect_ref_key_spans(
+                &record.entries,
+                request.target_type_names,
+                request.old_key,
+                request.rewrite_direct_refs,
+                &mut spans,
+            );
+        }
+        if spans.is_empty() {
+            return Ok(WriteOutcome::default());
+        }
+        let replacements = spans
+            .into_iter()
+            .map(|span| (span, request.new_key.to_string()))
+            .collect::<Vec<_>>();
+        let new_source = replace_spans(&source, &replacements)?;
+        self.write_source(path, new_source)?;
+        Ok(WriteOutcome {
+            touched_record_origins: Vec::new(),
+            inserted_record_origin: None,
+            deleted_record_origin: None,
             diagnostics: DiagnosticSet::empty(),
         })
     }
@@ -579,6 +654,23 @@ fn locate_target_in_value(
                 locate_target_in_value(item, &path[1..], depth + 1)
             }
         }
+        (WriteFieldPathSegment::DictKey(key), AstValue::Block(block)) => {
+            let field = block.entries.iter().find_map(|entry| match entry {
+                CfdBlockEntry::Field(field) if field.name == *key => Some(field),
+                _ => None,
+            });
+            let Some(field) = field else {
+                return Err(DiagnosticSet::one(diag(
+                    "CFD-WRITE",
+                    format!("dict key `{key}` not found in source block"),
+                )));
+            };
+            if path.len() == 1 {
+                Ok(WriteTarget::Replace(full_value_span(&field.value)))
+            } else {
+                locate_target_in_value(&field.value, &path[1..], depth + 1)
+            }
+        }
         _ => Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
             format!("cannot navigate path segment {:?} in value", path[0]),
@@ -657,4 +749,125 @@ pub fn serialize_value(v: &CfdValue, depth: usize) -> String {
 
 fn diag(code: &'static str, message: impl Into<String>) -> Diagnostic {
     Diagnostic::error(code, "CFD", message)
+}
+
+fn collect_ref_key_spans(
+    entries: &[CfdBlockEntry],
+    target_type_names: &[String],
+    old_key: &str,
+    rewrite_direct_refs: bool,
+    out: &mut Vec<Span>,
+) {
+    for entry in entries {
+        match entry {
+            CfdBlockEntry::Field(field) => {
+                collect_ref_key_spans_in_value(
+                    &field.value,
+                    target_type_names,
+                    old_key,
+                    rewrite_direct_refs,
+                    out,
+                );
+            }
+            CfdBlockEntry::Spread(value, _) => {
+                collect_ref_key_spans_in_value(
+                    value,
+                    target_type_names,
+                    old_key,
+                    rewrite_direct_refs,
+                    out,
+                );
+            }
+        }
+    }
+}
+
+fn collect_ref_key_spans_in_value(
+    value: &AstValue,
+    target_type_names: &[String],
+    old_key: &str,
+    rewrite_direct_refs: bool,
+    out: &mut Vec<Span>,
+) {
+    match value {
+        AstValue::Ref(reference) => {
+            let should_rewrite = reference.key.0 == old_key
+                && match reference.kind {
+                    CfdRefKind::Typed => reference
+                        .type_name
+                        .as_ref()
+                        .is_some_and(|(name, _)| target_type_names.iter().any(|ty| ty == name)),
+                    CfdRefKind::Direct => rewrite_direct_refs,
+                };
+            if should_rewrite {
+                out.push(reference.key.1);
+            }
+        }
+        AstValue::Block(block) => collect_ref_key_spans_in_block(
+            block,
+            target_type_names,
+            old_key,
+            rewrite_direct_refs,
+            out,
+        ),
+        AstValue::Array(items, _) => {
+            for item in items {
+                collect_ref_key_spans_in_value(
+                    item,
+                    target_type_names,
+                    old_key,
+                    rewrite_direct_refs,
+                    out,
+                );
+            }
+        }
+        AstValue::Spread(inner, _) => collect_ref_key_spans_in_value(
+            inner,
+            target_type_names,
+            old_key,
+            rewrite_direct_refs,
+            out,
+        ),
+        AstValue::Scalar(_, _) | AstValue::QuotedString(_, _) | AstValue::Null(_) => {}
+    }
+}
+
+fn collect_ref_key_spans_in_block(
+    block: &CfdBlock,
+    target_type_names: &[String],
+    old_key: &str,
+    rewrite_direct_refs: bool,
+    out: &mut Vec<Span>,
+) {
+    collect_ref_key_spans(
+        &block.entries,
+        target_type_names,
+        old_key,
+        rewrite_direct_refs,
+        out,
+    );
+}
+
+fn replace_spans(source: &str, replacements: &[(Span, String)]) -> Result<String, DiagnosticSet> {
+    let mut out = source.to_string();
+    let mut sorted = replacements.to_vec();
+    sorted.sort_by_key(|(span, _)| span.start);
+    for (span, _) in &sorted {
+        if span.start > source.len() || span.end > source.len() || span.start > span.end {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                format!(
+                    "span [{}, {}) is out of bounds for source of length {}",
+                    span.start,
+                    span.end,
+                    source.len()
+                ),
+            )));
+        }
+    }
+    sorted.dedup_by_key(|(span, _)| (span.start, span.end));
+    for (span, replacement) in sorted.into_iter().rev() {
+        out.replace_range(span.start..span.end, &replacement);
+    }
+    Ok(out)
 }

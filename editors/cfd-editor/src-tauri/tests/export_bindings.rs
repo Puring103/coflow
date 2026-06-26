@@ -30,6 +30,7 @@ fn export_bindings() {
     t::FieldAnnotation::export_all().expect("export FieldAnnotation");
     t::SpreadInfo::export_all().expect("export SpreadInfo");
     t::WriteFieldOutcome::export_all().expect("export WriteFieldOutcome");
+    t::RenameRecordOutcome::export_all().expect("export RenameRecordOutcome");
     t::InsertRecordOutcome::export_all().expect("export InsertRecordOutcome");
     t::DeleteRecordOutcome::export_all().expect("export DeleteRecordOutcome");
     t::DeletedRecordSnapshot::export_all().expect("export DeletedRecordSnapshot");

@@ -7,6 +7,7 @@ import type { GraphData } from './bindings/GraphData'
 import type { InsertRecordOutcome } from './bindings/InsertRecordOutcome'
 import type { ProjectSnapshot } from './bindings/ProjectSnapshot'
 import type { RefTarget } from './bindings/RefTarget'
+import type { RenameRecordOutcome } from './bindings/RenameRecordOutcome'
 import type { WriteFieldOutcome } from './bindings/WriteFieldOutcome'
 import type { RecordCoordinate } from './bindings/RecordCoordinate'
 import { fromIpc, toIpc, type FieldPathSegment, type FieldValue } from './wire'
@@ -96,6 +97,18 @@ export async function insertRecord(
     recordKey,
     actualType,
     fields,
+  })
+}
+
+export async function renameRecordKey(
+  sessionId: number,
+  coordinate: RecordCoordinate,
+  newKey: string,
+): Promise<RenameRecordOutcome> {
+  return invokeCommand<RenameRecordOutcome>('rename_record_key', {
+    sessionId,
+    coordinate,
+    newKey,
   })
 }
 

@@ -8,7 +8,7 @@ use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_engine::RecordCoordinate;
 use editor::{
     DeleteRecordOutcome, EditorError, FileRecords, GraphData, InsertRecordOutcome, ProjectSnapshot,
-    RefTarget, SessionStore, WriteFieldOutcome,
+    RefTarget, RenameRecordOutcome, SessionStore, WriteFieldOutcome,
 };
 use tauri::{Manager, State};
 
@@ -113,6 +113,17 @@ fn insert_record(
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
+fn rename_record_key(
+    session_id: u32,
+    coordinate: RecordCoordinate,
+    new_key: String,
+    store: State<'_, SessionStore>,
+) -> Result<RenameRecordOutcome, EditorError> {
+    store.rename_record_key(session_id, &coordinate, &new_key)
+}
+
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
 fn delete_record(
     session_id: u32,
     coordinate: RecordCoordinate,
@@ -146,6 +157,7 @@ pub fn run() -> tauri::Result<()> {
             make_default_object,
             write_field,
             insert_record,
+            rename_record_key,
             delete_record,
         ])
         .run(tauri::generate_context!())

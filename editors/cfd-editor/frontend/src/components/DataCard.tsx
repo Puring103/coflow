@@ -19,6 +19,7 @@ import {
   cellSpreadInfo,
   coordinateId,
   enumValue,
+  fieldPathDictKey,
   fieldPathField,
   fieldPathIndex,
   floatValue,
@@ -943,14 +944,8 @@ function ExpandableRow({
                 label={dictKeyText(key)}
                 value={item}
                 depth={depth + 1}
-                onEdit={onEdit ? (childPath, next) => {
-                  const relativePath = childPath.slice(fieldPath.length)
-                  const nextItem = relativePath.length === 0
-                    ? next
-                    : replaceValueAtPath(item, relativePath, next)
-                  if (nextItem) onEdit(fieldPath, dictInsert(value, key, nextItem))
-                } : undefined}
-                fieldPath={fieldPath}
+                onEdit={onEdit}
+                fieldPath={[...fieldPath, fieldPathDictKey(dictKeyPathText(key))]}
                 pathKey={pathKey ? `${pathKey}[${dictKeyText(key)}]` : `[${dictKeyText(key)}]`}
                 onRowToggle={onRowToggle}
                 trailing={onEdit ? (
@@ -1052,6 +1047,17 @@ function dictKeyEq(a: DictKey, b: DictKey): boolean {
     return a.value.enum_name === b.value.enum_name && a.value.variant === b.value.variant && a.value.value === b.value.value
   }
   return false
+}
+
+function dictKeyPathText(key: DictKey): string {
+  switch (key.kind) {
+    case 'string': return JSON.stringify(key.value)
+    case 'int': return String(key.value)
+    case 'enum': {
+      const variant = key.value.variant
+      return variant ? `${key.value.enum_name}.${variant}` : `${key.value.enum_name}(${key.value.value})`
+    }
+  }
 }
 
 function replaceValueAtPath(
