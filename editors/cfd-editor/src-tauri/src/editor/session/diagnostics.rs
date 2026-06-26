@@ -1,7 +1,7 @@
 //! Editor-side view of the engine's diagnostics in wire-friendly
 //! [`coflow_api::FlatDiagnostic`] shape.
 
-use coflow_api::{Diagnostic, DiagnosticSet, FlatDiagnostic};
+use coflow_api::FlatDiagnostic;
 use coflow_engine::DiagnosticsStore;
 
 #[derive(Debug, Default, Clone)]
@@ -15,17 +15,9 @@ impl Diagnostics {
         Self { items }
     }
 
-    /// Construct from a freshly rebuilt `DiagnosticSet`. The engine's
-    /// `write_field` returns the post-write set; we flatten it into wire
-    /// shape so the front-end's diagnostics panel sees the right state
-    /// without an extra query.
-    ///
-    /// Logical (record / field) locations are not reconstructed here — the
-    /// session does that lazily via [`diagnostics_from_store`] on the next
-    /// full snapshot.
     #[must_use]
-    pub fn from_set(set: DiagnosticSet) -> Self {
-        Self::from_items(set.diagnostics.iter().map(flat_view_no_logical).collect())
+    pub fn from_store(store: &DiagnosticsStore) -> Self {
+        diagnostics_from_store(store)
     }
 
     #[must_use]
@@ -47,14 +39,11 @@ pub fn diagnostics_from_store(store: &DiagnosticsStore) -> Diagnostics {
             .map(|(index, diagnostic)| {
                 let logical = store.logical_location(index);
                 diagnostic.flat_view(
+                    logical.and_then(|loc| loc.actual_type.clone()),
                     logical.and_then(|loc| loc.record_key.clone()),
                     logical.and_then(|loc| loc.field_path.clone()),
                 )
             })
             .collect(),
     )
-}
-
-fn flat_view_no_logical(d: &Diagnostic) -> FlatDiagnostic {
-    d.flat_view(None, None)
 }

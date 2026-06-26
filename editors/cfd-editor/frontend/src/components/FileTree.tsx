@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react'
-import type { FileTreeNode } from '../bindings/index'
+import type { FileTreeNode } from '../bindings/FileTreeNode'
 import { Icon } from './Icon'
 
 interface Props {

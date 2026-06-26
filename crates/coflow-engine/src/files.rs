@@ -15,23 +15,21 @@ use coflow_project::path_to_slash;
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
-    ts(
-        export,
-        export_to = "../../frontend/src/bindings/"
-    )
+    ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct FileTreeNode {
     pub name: String,
     pub path: String,
     pub is_dir: bool,
     pub in_sources: bool,
-    pub children: Vec<FileTreeNode>,
+    pub children: Vec<Self>,
 }
 
-/// Options for [`super::ProjectSession::file_tree_with`]. Defaults mirror what
-/// the editor needs: walk every loader-registered extension and pull
-/// dimension output directories into a sibling virtual folder at the top of
-/// the tree.
+/// Options for [`super::ProjectSession::file_tree_with`].
+///
+/// Defaults mirror what the editor needs: walk every loader-registered
+/// extension and pull dimension output directories into a sibling virtual
+/// folder at the top of the tree.
 #[derive(Debug, Clone, Default)]
 pub struct FileTreeOptions {
     pub extra_extensions: Vec<String>,
@@ -49,7 +47,7 @@ pub struct DimensionGroup {
     pub dir: PathBuf,
 }
 
-pub(crate) fn build_file_tree(
+pub fn build_file_tree(
     root: &Path,
     in_sources: &BTreeSet<String>,
     ext_whitelist: &BTreeSet<String>,
@@ -100,7 +98,7 @@ pub(crate) fn build_file_tree(
     roots
 }
 
-pub(crate) fn build_dimension_subtree(
+pub fn build_dimension_subtree(
     root: &Path,
     group_name: String,
     dir: &Path,

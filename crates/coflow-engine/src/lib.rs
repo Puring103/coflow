@@ -46,18 +46,16 @@ use std::fmt::Write as _;
 use std::path::Path;
 use std::sync::Arc;
 
-/// Stable, wire-friendly coordinate of a top-level record: its actual type
-/// name plus its record key. Top-level records always have a `(actual_type,
-/// key)` pair that uniquely identifies them inside a single model build, even
-/// when synthetic dimension records share keys with their source records.
+/// Stable, wire-friendly coordinate of a top-level record.
+///
+/// Top-level records always have an `(actual_type, key)` pair that uniquely
+/// identifies them inside a model build, even when synthetic dimension
+/// records share keys with their source records.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
-    ts(
-        export,
-        export_to = "../../frontend/src/bindings/"
-    )
+    ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct RecordCoordinate {
     pub actual_type: String,
@@ -86,6 +84,7 @@ pub struct ProjectSession {
     pub records: RecordIndex,
     pub files: FileIndex,
     pub dependencies: DependencyIndex,
+    loader_extensions: BTreeSet<String>,
 }
 
 impl ProjectSession {
@@ -172,37 +171,32 @@ impl ProjectSession {
         &'a self,
         file: &str,
     ) -> impl Iterator<Item = RecordView<'a>> + 'a {
-        self.records
-            .ids_in_file(file)
-            .iter()
-            .filter_map(move |id| {
-                let record_ref = self.records.get(*id)?;
-                let record = self.model.record(*id)?;
-                Some(RecordView {
-                    coordinate: record_ref.coordinate.clone(),
-                    display_path: record_ref.display_path.as_str(),
-                    record,
-                    origin: &record_ref.origin,
-                    source_id: record_ref.source_id,
-                    provider_id: record_ref.provider_id.as_str(),
-                })
+        self.records.ids_in_file(file).iter().filter_map(move |id| {
+            let record_ref = self.records.get(*id)?;
+            let record = self.model.record(*id)?;
+            Some(RecordView {
+                coordinate: record_ref.coordinate.clone(),
+                display_path: record_ref.display_path.as_str(),
+                record,
+                origin: &record_ref.origin,
+                source_id: record_ref.source_id,
+                provider_id: record_ref.provider_id.as_str(),
             })
+        })
     }
 
     /// File-tree view of the project using default options (every
-    /// loader-registered extension is walked, dimension out_dirs become
+    /// loader-registered extension is walked, dimension `out_dirs` become
     /// virtual subtrees).
     #[must_use]
-    pub fn file_tree(&self, ext_whitelist: BTreeSet<String>) -> Vec<FileTreeNode> {
+    pub fn file_tree(&self) -> Vec<FileTreeNode> {
         let mut options = FileTreeOptions {
-            extra_extensions: ext_whitelist.into_iter().collect(),
+            extra_extensions: self.loader_extensions.iter().cloned().collect(),
             dimension_groups: Vec::new(),
             in_sources: BTreeSet::new(),
         };
         for source in self.files.source_files() {
-            options
-                .in_sources
-                .insert(path_to_slash(Path::new(source)));
+            options.in_sources.insert(path_to_slash(Path::new(source)));
         }
         for info in self.dimensions() {
             if let Some(out_dir) = info.out_dir.as_ref() {
@@ -250,6 +244,11 @@ impl ProjectSession {
         }
         tree
     }
+
+    #[must_use]
+    pub const fn loader_extensions(&self) -> &BTreeSet<String> {
+        &self.loader_extensions
+    }
 }
 
 #[derive(Debug)]
@@ -271,7 +270,7 @@ pub struct DiagnosticsStore {
     diagnostics: DiagnosticSet,
     by_stage: BTreeMap<String, Vec<usize>>,
     by_file: BTreeMap<String, Vec<usize>>,
-    by_record: BTreeMap<String, Vec<usize>>,
+    by_record: BTreeMap<RecordCoordinate, Vec<usize>>,
     logical_locations: BTreeMap<usize, DiagnosticLogicalLocation>,
 }
 
@@ -351,8 +350,10 @@ impl DiagnosticsStore {
     }
 
     #[must_use]
-    pub fn by_record(&self, record_key: &str) -> &[usize] {
-        self.by_record.get(record_key).map_or(&[], Vec::as_slice)
+    pub fn by_record(&self, actual_type: &str, record_key: &str) -> &[usize] {
+        self.by_record
+            .get(&RecordCoordinate::new(actual_type, record_key))
+            .map_or(&[], Vec::as_slice)
     }
 
     fn rebuild_indexes(&mut self) {
@@ -372,11 +373,8 @@ impl DiagnosticsStore {
                 self.by_file.entry(file).or_default().push(index);
             }
             if let Some(location) = self.logical_locations.get(&index) {
-                if let Some(record_key) = &location.record_key {
-                    self.by_record
-                        .entry(record_key.clone())
-                        .or_default()
-                        .push(index);
+                if let Some(coordinate) = location.coordinate() {
+                    self.by_record.entry(coordinate).or_default().push(index);
                 }
             }
         }
@@ -385,8 +383,19 @@ impl DiagnosticsStore {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DiagnosticLogicalLocation {
+    pub actual_type: Option<String>,
     pub record_key: Option<String>,
     pub field_path: Option<String>,
+}
+
+impl DiagnosticLogicalLocation {
+    #[must_use]
+    pub fn coordinate(&self) -> Option<RecordCoordinate> {
+        Some(RecordCoordinate::new(
+            self.actual_type.clone()?,
+            self.record_key.clone()?,
+        ))
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -423,9 +432,10 @@ impl SourceId {
     }
 }
 
-/// Index of every top-level record in the project. The authoritative key is
-/// `(actual_type, key)` so synthetic records that share a key with their
-/// source record (dimension variants of a same-key source row) don't collide.
+/// Index of every top-level record in the project.
+///
+/// The authoritative key is `(actual_type, key)` so synthetic records that
+/// share a key with their source record do not collide.
 ///
 /// Loaders push `PendingRecordRef` entries during the load pass; after
 /// `model.build()` returns, [`RecordIndex::finalize_with_model`] walks
@@ -455,11 +465,7 @@ impl RecordIndex {
     }
 
     #[must_use]
-    pub fn get_by_coordinate(
-        &self,
-        actual_type: &str,
-        key: &str,
-    ) -> Option<&RecordRef> {
+    pub fn get_by_coordinate(&self, actual_type: &str, key: &str) -> Option<&RecordRef> {
         let id = self
             .by_coordinate
             .get(&RecordCoordinate::new(actual_type, key))?;
@@ -467,11 +473,7 @@ impl RecordIndex {
     }
 
     #[must_use]
-    pub fn id_for_coordinate(
-        &self,
-        actual_type: &str,
-        key: &str,
-    ) -> Option<CfdRecordId> {
+    pub fn id_for_coordinate(&self, actual_type: &str, key: &str) -> Option<CfdRecordId> {
         self.by_coordinate
             .get(&RecordCoordinate::new(actual_type, key))
             .copied()
@@ -722,7 +724,18 @@ pub fn build_project_session(
         records,
         files,
         dependencies,
+        loader_extensions: loader_extensions(registry),
     })
+}
+
+fn loader_extensions(registry: &ProviderRegistry) -> BTreeSet<String> {
+    let mut extensions = BTreeSet::new();
+    for loader in registry.loaders() {
+        for ext in loader.descriptor().extensions {
+            extensions.insert((*ext).to_string());
+        }
+    }
+    extensions
 }
 
 /// Opens and compiles a project schema without validating or loading data
@@ -928,9 +941,9 @@ fn load_project_data(
     }
 
     let origins: Vec<RecordOrigin> = origins_of(&records);
-    let record_keys = records
+    let record_coordinates = records
         .iter()
-        .map(|record| record.key.clone())
+        .map(|record| RecordCoordinate::new(record.actual_type.clone(), record.key.clone()))
         .collect::<Vec<_>>();
     let mut builder = CfdDataModel::builder(schema);
     for record in records {
@@ -940,7 +953,7 @@ fn load_project_data(
         Ok(model) => model,
         Err(err) => {
             let logical_locations =
-                logical_locations_from_cfd(&err, |id| record_keys.get(id.index()).cloned());
+                logical_locations_from_cfd(&err, |id| record_coordinates.get(id.index()).cloned());
             let diagnostics = map_diagnostics_with_origins(err, &origins);
             return Err(LoadDiagnostics {
                 diagnostics,
@@ -1065,7 +1078,9 @@ fn run_project_checks(
         run_checks_for_dimensions_with_deps(schema, model, &project.config.dimensions);
     let (diagnostics, logical_locations) = if let Err(checks) = check_result {
         let logical_locations = logical_locations_from_cfd(&checks, |id| {
-            model.record(id).map(|record| record.key.clone())
+            model
+                .record(id)
+                .map(|record| RecordCoordinate::new(record.actual_type.clone(), record.key.clone()))
         });
         let diagnostics = map_diagnostics_with_origins(checks, origins);
         (diagnostics, logical_locations)
@@ -1238,7 +1253,7 @@ fn project_diagnostic(config_path: &Path, message: impl Into<String>) -> Diagnos
 
 fn logical_locations_from_cfd(
     diagnostics: &CfdDiagnostics,
-    resolve_record_key: impl Fn(CfdRecordId) -> Option<String>,
+    resolve_coordinate: impl Fn(CfdRecordId) -> Option<RecordCoordinate>,
 ) -> BTreeMap<usize, DiagnosticLogicalLocation> {
     diagnostics
         .diagnostics
@@ -1246,13 +1261,14 @@ fn logical_locations_from_cfd(
         .enumerate()
         .filter_map(|(index, diagnostic)| {
             let primary = diagnostic.primary.as_ref()?;
-            let record_key = primary.record.and_then(&resolve_record_key);
+            let coordinate = primary.record.and_then(&resolve_coordinate);
             let field_path =
                 (!primary.path.segments.is_empty()).then(|| format_cfd_path(&primary.path));
-            (record_key.is_some() || field_path.is_some()).then_some((
+            (coordinate.is_some() || field_path.is_some()).then_some((
                 index,
                 DiagnosticLogicalLocation {
-                    record_key,
+                    actual_type: coordinate.as_ref().map(|c| c.actual_type.clone()),
+                    record_key: coordinate.map(|c| c.key),
                     field_path,
                 },
             ))

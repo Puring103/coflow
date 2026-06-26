@@ -13,10 +13,7 @@ use super::synthesize::DimensionField;
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
-    ts(
-        export,
-        export_to = "../../frontend/src/bindings/"
-    )
+    ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct DimensionInfo {
     /// Stable dimension name from `coflow.yaml` (e.g. `"language"`).
@@ -38,10 +35,7 @@ pub struct DimensionInfo {
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
-    ts(
-        export,
-        export_to = "../../frontend/src/bindings/"
-    )
+    ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct DimensionFieldInfo {
     pub source_type: String,
@@ -52,17 +46,18 @@ pub struct DimensionFieldInfo {
 
 /// Resolve all configured dimensions into `DimensionInfo`. Synthetic fields
 /// passed in are typically the result of `language_dimension_fields(schema)`.
-pub fn dimensions_for_project(
-    project: &Project,
-    fields: &[DimensionField],
-) -> Vec<DimensionInfo> {
+#[must_use]
+pub fn dimensions_for_project(project: &Project, fields: &[DimensionField]) -> Vec<DimensionInfo> {
     let mut by_name: std::collections::BTreeMap<&str, Vec<&DimensionField>> =
         std::collections::BTreeMap::new();
     // Today every `@localized` field lives in the `language` dimension. The
     // bucket on `DimensionField` already names it, so future dimensions can
     // partition the field list by `field.bucket` without touching callers.
     for field in fields {
-        by_name.entry(field.bucket.as_str()).or_default().push(field);
+        by_name
+            .entry(field.bucket.as_str())
+            .or_default()
+            .push(field);
     }
 
     let mut out = Vec::new();
@@ -70,7 +65,9 @@ pub fn dimensions_for_project(
         let display_name = resolved_display_name(name, config);
         let out_dir = config.out_dir.as_ref().map(|p: &PathBuf| {
             let absolute = project.resolve_path(p);
-            let rel = absolute.strip_prefix(&project.root_dir).unwrap_or(&absolute);
+            let rel = absolute
+                .strip_prefix(&project.root_dir)
+                .unwrap_or(&absolute);
             rel.to_string_lossy().replace('\\', "/")
         });
         let info_fields = by_name
@@ -105,9 +102,7 @@ pub fn resolved_display_name(name: &str, config: &DimensionConfig) -> String {
     if let Some(custom) = &config.display_name {
         return custom.clone();
     }
-    builtin_display_name(name)
-        .map(str::to_string)
-        .unwrap_or_else(|| name.to_string())
+    builtin_display_name(name).map_or_else(|| name.to_string(), str::to_string)
 }
 
 #[must_use]

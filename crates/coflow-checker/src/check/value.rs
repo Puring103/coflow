@@ -192,13 +192,7 @@ impl CheckRecordRef {
         let path = self.path().map(|path| path.field(name.to_string()));
         let ref_host = self.ref_host();
         Some(LocatedCheckValue::new(
-            CheckValue::from_cfd_value_with_path(
-                value,
-                field_type,
-                path.clone(),
-                model,
-                ref_host,
-            ),
+            CheckValue::from_cfd_value_with_path(value, field_type, path.clone(), model, ref_host),
             path,
         ))
     }

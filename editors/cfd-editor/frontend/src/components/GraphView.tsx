@@ -5,7 +5,17 @@ import {
   type Node, type Edge,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import type { GraphData, GraphNode, FieldValue, FieldPathSegment, RecordRow } from '../bindings/index'
+import type { GraphData } from '../bindings/GraphData'
+import type { RecordCoordinate } from '../bindings/RecordCoordinate'
+import type { RecordRow } from '../bindings/RecordRow'
+import {
+  graphEdgeView,
+  graphNodeView,
+  type FieldPathSegment,
+  type FieldValue,
+  type GraphEdgeView,
+  type GraphNodeView,
+} from '../wire'
 import { isEditableFile } from '../utils/editable'
 import { DataCardNode, CardHeader, NODE_PEEK_FIELDS, countVisibleRows } from './DataCard'
 import { Icon } from './Icon'
@@ -25,7 +35,7 @@ const PAD_V      = 12
 // ─── Node data ───────────────────────────────────────────────────────────────
 
 interface NodeData extends Record<string, unknown> {
-  graphNode: GraphNode
+  graphNode: GraphNodeView
   expanded: boolean
   /** Distinct edge field_paths whose source is this node (e.g. ["unlockGeneList[0]", "unlockGeneList[1]"]) */
   outgoingPaths: string[]
@@ -165,7 +175,7 @@ const nodeTypes = { cfd: CfdNode }
 // ─── Height estimation ────────────────────────────────────────────────────────
 
 function estimateNodeHeight(
-  gn: GraphNode,
+  gn: GraphNodeView,
   expanded: boolean,
   expandedRows: Set<string>,
 ): number {
@@ -185,6 +195,10 @@ function estimateNodeHeight(
 function topLevelField(path: string): string {
   const m = path.match(/^[^.[]+/)
   return m ? m[0] : path
+}
+
+function graphEdgeId(kind: 'fwd' | 'back', edge: { source: string; target: string; field_path: string }): string {
+  return `${kind}:${edge.source}->${edge.target}:${encodeURIComponent(edge.field_path)}`
 }
 
 // ─── Connected components ─────────────────────────────────────────────────────
@@ -281,15 +295,15 @@ function layerByLongestPath(
 // ─── Layout one connected component ──────────────────────────────────────────
 
 function layoutComponent(
-  compNodes: GraphNode[],
-  forwardEdges: { source: string; target: string; field_path: string }[],
+  compNodes: GraphNodeView[],
+  forwardEdges: GraphEdgeView[],
   forcedRoots: Set<string>,
   nodeExpandedMap: Map<string, boolean>,
   nodeRowExpandedMap: Map<string, Set<string>>,
 ): Map<string, { x: number; y: number }> {
   const layer = layerByLongestPath(compNodes, forwardEdges, forcedRoots)
 
-  const layerToNodes = new Map<number, GraphNode[]>()
+  const layerToNodes = new Map<number, GraphNodeView[]>()
   for (const n of compNodes) {
     const l = layer.get(n.id) ?? 0
     if (!layerToNodes.has(l)) layerToNodes.set(l, [])
@@ -367,7 +381,7 @@ function layoutComponent(
 
   const positions = new Map<string, { x: number; y: number }>()
 
-  function nodeH(n: GraphNode) {
+  function nodeH(n: GraphNodeView) {
     const exp = nodeExpandedMap.get(n.id) ?? false
     const rows = nodeRowExpandedMap.get(n.id) ?? new Set<string>()
     return estimateNodeHeight(n, exp, rows)
@@ -417,13 +431,13 @@ function layoutComponent(
 
 interface LayoutResult {
   positions: Map<string, { x: number; y: number }>
-  visibleNodes: GraphNode[]
-  forwardEdges: { source: string; target: string; field_path: string }[]
-  backEdges:    { source: string; target: string; field_path: string }[]
+  visibleNodes: GraphNodeView[]
+  forwardEdges: GraphEdgeView[]
+  backEdges: GraphEdgeView[]
 }
 
 function layoutAll(
-  graph: GraphData,
+  graph: { nodes: GraphNodeView[]; edges: GraphEdgeView[] },
   enabledFields: Set<string>,
   activeType: string | undefined,
   nodeExpandedMap: Map<string, boolean>,
@@ -519,23 +533,31 @@ function layoutAll(
 interface Props {
   graphData: GraphData
   activeType?: string
-  onOpenRecord: (file: string, key: string) => void
+  onOpenRecord: (file: string, coordinate: RecordCoordinate) => void
   onWriteField?: (
-    filePath: string, recordKey: string, fieldPath: FieldPathSegment[], newValue: FieldValue
+    filePath: string, coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue
   ) => Promise<RecordRow | void>
 }
 
 export function GraphView({ graphData, activeType, onOpenRecord, onWriteField }: Props) {
+  const graph = useMemo(
+    () => ({
+      nodes: graphData.nodes.map(graphNodeView),
+      edges: graphData.edges.map(graphEdgeView),
+    }),
+    [graphData],
+  )
+
   // Fields that actually appear in the subgraph for the current activeType.
   // Mirrors layoutAll's visibility logic but ignores field filtering itself,
   // so toggling all chips off doesn't hide the chip list.
   const availableFields = useMemo(() => {
-    const allEdges = graphData.edges
+    const allEdges = graph.edges
     let visibleSet: Set<string>
     if (activeType) {
       const touched = new Set<string>()
       for (const e of allEdges) { touched.add(e.source); touched.add(e.target) }
-      const roots = graphData.nodes
+      const roots = graph.nodes
         .filter(n => n.in_focus_file && n.actual_type === activeType && touched.has(n.id))
         .map(n => n.id)
       visibleSet = new Set(roots)
@@ -561,7 +583,7 @@ export function GraphView({ graphData, activeType, onOpenRecord, onWriteField }:
       }
     }
     return Array.from(set).sort()
-  }, [graphData, activeType])
+  }, [graph, activeType])
 
   const [enabledFields, setEnabledFields] = useState<Set<string>>(() => new Set(availableFields))
   useEffect(() => {
@@ -599,8 +621,8 @@ export function GraphView({ graphData, activeType, onOpenRecord, onWriteField }:
   }, [])
 
   const { positions, visibleNodes, forwardEdges, backEdges } = useMemo(
-    () => layoutAll(graphData, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap),
-    [graphData, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap]
+    () => layoutAll(graph, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap),
+    [graph, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap]
   )
 
   // Group outgoing edge paths by source node id (used to render per-path handles).
@@ -642,9 +664,9 @@ export function GraphView({ graphData, activeType, onOpenRecord, onWriteField }:
           onToggleExpand: () => toggleNodeExpanded(n.id),
           onRowToggle: (path: string, exp: boolean) => handleRowToggle(n.id, path, exp),
           onEdit: editable
-            ? (path: FieldPathSegment[], val: FieldValue) => { onWriteField!(n.file_path, n.key, path, val) }
+            ? (path: FieldPathSegment[], val: FieldValue) => { onWriteField!(n.file_path, n.coordinate, path, val) }
             : undefined,
-          onCtrlClick: onOpenRecord ? () => onOpenRecord(n.file_path, n.key) : undefined,
+          onCtrlClick: onOpenRecord ? () => onOpenRecord(n.file_path, n.coordinate) : undefined,
         } satisfies NodeData,
       }
     }),
@@ -657,7 +679,7 @@ export function GraphView({ graphData, activeType, onOpenRecord, onWriteField }:
       .map((e, i) => {
         const { sourceHandle, targetHandle } = edgeHandleId(e.source, e.field_path)
         return {
-          id: `f${i}`,
+          id: graphEdgeId('fwd', e),
           source: e.source,
           target: e.target,
           sourceHandle,
@@ -676,8 +698,8 @@ export function GraphView({ graphData, activeType, onOpenRecord, onWriteField }:
 
     const bkEdges: Edge[] = backEdges
       .filter(e => positions.has(e.source) && positions.has(e.target))
-      .map((e, i) => ({
-        id: `b${i}`,
+      .map(e => ({
+        id: graphEdgeId('back', e),
         source: e.source,
         target: e.target,
         sourceHandle: `path-${e.field_path}`,

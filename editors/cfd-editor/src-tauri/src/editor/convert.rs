@@ -8,17 +8,12 @@
 
 use coflow_data_model::{CfdRecord, CfdRecordId, CfdValue};
 use coflow_engine::{ProjectSession, RecordCoordinate, RecordView};
-use std::collections::HashMap;
 
 use crate::editor::types::{FieldAnnotation, FieldCell, RecordRow, SpreadInfo};
 
 /// Lookup context the converter consults when annotating cells.
 pub struct WireContext<'a> {
     pub session: &'a ProjectSession,
-    /// `record_key → display_path` for `Ref` target navigation hints. When
-    /// the same key lives in multiple types the file hint may be
-    /// approximate; the front-end uses it as a soft hint only.
-    pub key_to_file: &'a HashMap<String, String>,
 }
 
 /// Translate a [`RecordView`] into a wire [`RecordRow`].
@@ -43,11 +38,7 @@ pub fn record_view_to_row(view: &RecordView<'_>, ctx: &WireContext<'_>) -> Recor
 
 /// Convenience: pull the [`RecordView`] from the session, then render it.
 #[must_use]
-pub fn record_to_row(
-    record: &CfdRecord,
-    display_path: &str,
-    ctx: &WireContext<'_>,
-) -> RecordRow {
+pub fn record_to_row(record: &CfdRecord, display_path: &str, ctx: &WireContext<'_>) -> RecordRow {
     let fields = record
         .fields
         .iter()
@@ -85,8 +76,14 @@ fn build_annotation(
 
 fn annotation_for_value(value: &CfdValue, ctx: &WireContext<'_>, annotation: &mut FieldAnnotation) {
     match value {
-        CfdValue::Ref { target_key, .. } => {
-            annotation.ref_target_file = ctx.key_to_file.get(target_key).cloned();
+        CfdValue::Ref {
+            target_type,
+            target_key,
+        } => {
+            annotation.ref_target_file = ctx
+                .session
+                .file_for_record(target_type, target_key)
+                .map(str::to_string);
         }
         CfdValue::Enum(enum_value) => {
             annotation.enum_int_value = Some(enum_value.value);

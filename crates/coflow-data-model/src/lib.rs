@@ -32,6 +32,7 @@ mod diagnostic;
 mod model;
 mod origin;
 mod schema_view;
+pub mod serde_i64;
 
 pub use diagnostic::{
     CfdDiagnostic, CfdDiagnostics, CfdErrorCode, CfdLabel, CfdPath, CfdPathSegment, CfdSeverity,

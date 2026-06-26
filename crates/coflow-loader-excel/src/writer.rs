@@ -20,10 +20,18 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-pub const EXCEL_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
+pub static EXCEL_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
     id: "excel",
     display_name: "Excel workbook",
-    capabilities: WriterCapabilities::local_full(),
+    capabilities: WriterCapabilities {
+        provider_id: String::new(),
+        can_edit_field: true,
+        can_edit_key: true,
+        can_insert_record: true,
+        can_delete_record: true,
+        requires_full_refresh_after_write: true,
+        is_remote: false,
+    },
 };
 
 /// Writer for local Excel workbooks.

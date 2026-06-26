@@ -16,6 +16,7 @@ fn export_bindings() {
     coflow_data_model::CfdPath::export_all().expect("export CfdPath tree");
     coflow_data_model::CfdPathSegment::export_all().expect("export CfdPathSegment tree");
     coflow_api::FlatDiagnostic::export_all().expect("export FlatDiagnostic");
+    coflow_api::WriterCapabilities::export_all().expect("export WriterCapabilities");
     coflow_engine::FileTreeNode::export_all().expect("export FileTreeNode");
     coflow_engine::DimensionInfo::export_all().expect("export DimensionInfo");
     coflow_engine::WriteOutcome::export_all().expect("export WriteOutcome");
@@ -24,7 +25,6 @@ fn export_bindings() {
     t::EditorError::export_all().expect("export EditorError");
     t::ProjectSnapshot::export_all().expect("export ProjectSnapshot");
     t::FileRecords::export_all().expect("export FileRecords");
-    t::SourceCapabilities::export_all().expect("export SourceCapabilities");
     t::RecordRow::export_all().expect("export RecordRow");
     t::FieldCell::export_all().expect("export FieldCell");
     t::FieldAnnotation::export_all().expect("export FieldAnnotation");

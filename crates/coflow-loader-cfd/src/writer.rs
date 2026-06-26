@@ -6,9 +6,9 @@
 //! `(source_text, CfdAst)` keyed by absolute file path so that repeated edits
 //! avoid re-reading and re-parsing the file.
 use coflow_api::{
-    CfdDataModel, CfdValue, DataWriter, DeleteRecordRequest, Diagnostic, DiagnosticSet,
-    InsertRecordRequest, RecordOrigin, SourceLocationSpec, TextSpan, WriteCellRequest,
-    WriteContext, WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
+    CfdValue, DataWriter, DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest,
+    RecordOrigin, SourceLocationSpec, TextSpan, WriteCellRequest, WriteContext,
+    WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_cfd::ast::{CfdBlockEntry, CfdRecord as AstRecord, CfdValue as AstValue};
 use coflow_cfd::{parse_cfd, CfdAst};
@@ -17,10 +17,18 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
-pub const CFD_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
+pub static CFD_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
     id: "cfd",
     display_name: "Coflow data text",
-    capabilities: WriterCapabilities::local_full(),
+    capabilities: WriterCapabilities {
+        provider_id: String::new(),
+        can_edit_field: true,
+        can_edit_key: true,
+        can_insert_record: true,
+        can_delete_record: true,
+        requires_full_refresh_after_write: true,
+        is_remote: false,
+    },
 };
 
 /// Writer for `.cfd` text sources. Holds a cache of source text + AST per
@@ -126,7 +134,7 @@ impl DataWriter for CfdWriter {
 
     fn write_field(
         &self,
-        ctx: WriteContext<'_>,
+        _ctx: WriteContext<'_>,
         request: &WriteCellRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let RecordOrigin::File { path, .. } = request.origin else {
@@ -144,7 +152,7 @@ impl DataWriter for CfdWriter {
 
         let (source, ast) = self.read_or_parse(path)?;
 
-        let new_source = apply_patch(&source, &ast, request, ctx.model)?;
+        let new_source = apply_patch(&source, &ast, request)?;
 
         self.write_source(path, new_source)?;
 
@@ -158,7 +166,7 @@ impl DataWriter for CfdWriter {
 
     fn insert_record(
         &self,
-        ctx: WriteContext<'_>,
+        _ctx: WriteContext<'_>,
         request: &InsertRecordRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let SourceLocationSpec::Path(path) = &request.source.location else {
@@ -181,12 +189,7 @@ impl DataWriter for CfdWriter {
                 format!("record `{}` already exists", request.record_key),
             )));
         }
-        let fragment = serialize_record(
-            request.record_key,
-            request.actual_type,
-            request.fields,
-            ctx.model,
-        );
+        let fragment = serialize_record(request.record_key, request.actual_type, request.fields);
         let new_source = append_record_source(&source, &fragment);
         self.write_source(path, new_source)?;
         Ok(WriteOutcome {
@@ -243,7 +246,6 @@ fn apply_patch(
     source: &str,
     ast: &CfdAst,
     request: &WriteCellRequest<'_>,
-    model: Option<&CfdDataModel>,
 ) -> Result<String, DiagnosticSet> {
     validate_value(request.new_value)?;
     let record = ast
@@ -282,7 +284,7 @@ fn apply_patch(
                     ),
                 )));
             }
-            let fragment = serialize_value(request.new_value, 1, model);
+            let fragment = serialize_value(request.new_value, 1);
             Ok(format!(
                 "{}{}{}",
                 &source[..span.start],
@@ -297,7 +299,7 @@ fn apply_patch(
             let insert_pos = find_closing_brace(source, block_end)?;
             let fragment = format!(
                 "  {top_field}: {},\n",
-                serialize_value(request.new_value, 2, model)
+                serialize_value(request.new_value, 2)
             );
             Ok(format!(
                 "{}{}{}",
@@ -324,7 +326,7 @@ fn apply_patch(
             let outer = "  ".repeat(depth);
             let fragment = format!(
                 "{indent}{field_name}: {},\n{outer}",
-                serialize_value(request.new_value, depth + 2, model)
+                serialize_value(request.new_value, depth + 2)
             );
             Ok(format!(
                 "{}{}{}",
@@ -360,12 +362,10 @@ enum WriteTarget {
 
 fn validate_value(v: &CfdValue) -> Result<(), DiagnosticSet> {
     match v {
-        CfdValue::Ref { target_key, .. } if target_key.is_empty() => {
-            Err(DiagnosticSet::one(diag(
-                "CFD-WRITE",
-                "cannot write empty reference; pick a target key first",
-            )))
-        }
+        CfdValue::Ref { target_key, .. } if target_key.is_empty() => Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            "cannot write empty reference; pick a target key first",
+        ))),
         CfdValue::Object(record) => {
             for v in record.fields.values() {
                 validate_value(v)?;
@@ -417,14 +417,13 @@ fn serialize_record(
     key: &str,
     actual_type: &str,
     fields: &std::collections::BTreeMap<String, CfdValue>,
-    model: Option<&CfdDataModel>,
 ) -> String {
     let mut out = format!("{key}: {actual_type} {{\n");
     for (name, value) in fields {
         out.push_str("  ");
         out.push_str(name);
         out.push_str(": ");
-        out.push_str(&serialize_value(value, 2, model));
+        out.push_str(&serialize_value(value, 2));
         out.push_str(",\n");
     }
     out.push_str("}\n");
@@ -589,11 +588,11 @@ fn locate_target_in_value(
 
 /// Serialize a `CfdValue` to CFD source text.
 ///
-/// `depth` controls indentation for nested object bodies. When `model` is
-/// provided, refs are emitted as fully-qualified `@Type.key` (safe for
-/// polymorphic fields); otherwise the shortcut `&key` form is used.
+/// `depth` controls indentation for nested object bodies. Refs are emitted
+/// as fully-qualified `@Type.key` so polymorphic fields keep their concrete
+/// target type.
 #[must_use]
-pub fn serialize_value(v: &CfdValue, depth: usize, model: Option<&CfdDataModel>) -> String {
+pub fn serialize_value(v: &CfdValue, depth: usize) -> String {
     let indent = "  ".repeat(depth);
     let outer = "  ".repeat(depth.saturating_sub(1));
     match v {
@@ -626,17 +625,14 @@ pub fn serialize_value(v: &CfdValue, depth: usize, model: Option<&CfdDataModel>)
                     let _ = writeln!(
                         acc,
                         "{indent}{name}: {},",
-                        serialize_value(value, depth + 1, model)
+                        serialize_value(value, depth + 1)
                     );
                     acc
                 });
             format!("{} {{\n{body}{outer}}}", boxed.actual_type)
         }
         CfdValue::Array(items) => {
-            let elems: Vec<String> = items
-                .iter()
-                .map(|i| serialize_value(i, depth, model))
-                .collect();
+            let elems: Vec<String> = items.iter().map(|i| serialize_value(i, depth)).collect();
             format!("[{}]", elems.join(", "))
         }
         CfdValue::Dict(entries) => {
@@ -651,7 +647,7 @@ pub fn serialize_value(v: &CfdValue, depth: usize, model: Option<&CfdDataModel>)
                             .clone()
                             .unwrap_or_else(|| format!("{}({})", e.enum_name, e.value)),
                     };
-                    format!("{key}: {}", serialize_value(v, depth, model))
+                    format!("{key}: {}", serialize_value(v, depth))
                 })
                 .collect();
             format!("{{{}}}", pairs.join(", "))

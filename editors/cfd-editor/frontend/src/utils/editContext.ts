@@ -1,9 +1,10 @@
 import * as api from '../api'
-import type { FieldValue } from '../bindings/index'
+import type { RefTarget } from '../bindings/RefTarget'
+import type { FieldValue } from '../wire'
 
 let activeSessionId: number | null = null
 const enumCache = new Map<string, string[]>()
-const refCache = new Map<string, string[]>()
+const refCache = new Map<string, RefTarget[]>()
 
 export function setActiveSession(id: number | null) {
   if (activeSessionId !== id) {
@@ -26,6 +27,10 @@ export type LoadResult =
   | { ok: true; variants: string[] }
   | { ok: false; error: string }
 
+export type RefLoadResult =
+  | { ok: true; targets: RefTarget[] }
+  | { ok: false; error: string }
+
 export async function loadEnumVariants(enumName: string): Promise<LoadResult> {
   if (activeSessionId === null) return { ok: false, error: '未打开会话' }
   const cached = enumCache.get(enumName)
@@ -39,14 +44,14 @@ export async function loadEnumVariants(enumName: string): Promise<LoadResult> {
   }
 }
 
-export async function loadRefTargets(targetType: string): Promise<LoadResult> {
+export async function loadRefTargets(targetType: string): Promise<RefLoadResult> {
   if (activeSessionId === null) return { ok: false, error: '未打开会话' }
   const cached = refCache.get(targetType)
-  if (cached) return { ok: true, variants: cached }
+  if (cached) return { ok: true, targets: cached }
   try {
     const r = await api.getRefTargets(activeSessionId, targetType)
     refCache.set(targetType, r)
-    return { ok: true, variants: r }
+    return { ok: true, targets: r }
   } catch (err) {
     return { ok: false, error: errorMessage(err) }
   }

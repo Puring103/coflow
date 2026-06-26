@@ -3,9 +3,9 @@ import type { CfdValue } from "./CfdValue";
 import type { FieldAnnotation } from "./FieldAnnotation";
 
 /**
- * One cell in a record row. `value` is the authoritative `CfdValue` —
- * shipped straight from the core model, no wire-only re-encoding — and
- * `annotation` carries everything *not* present on the value itself:
- * spread-source, ref target file hint, enum integer value.
+ * One cell in a record row.
+ *
+ * `value` is the authoritative `CfdValue`, shipped straight from the core
+ * model. `annotation` carries spread, ref-target, and enum metadata.
  */
 export type FieldCell = { name: string, value: CfdValue, annotation: FieldAnnotation | null, };

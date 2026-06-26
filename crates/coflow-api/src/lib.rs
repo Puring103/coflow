@@ -483,7 +483,7 @@ pub enum WriteFieldPathSegment {
 }
 
 /// Static description of a writer provider.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WriterDescriptor {
     pub id: &'static str,
     pub display_name: &'static str,
@@ -496,30 +496,27 @@ pub struct WriterDescriptor {
 /// Lower-bounded by the writer's actual implementation; the front-end must
 /// not assume a writer can do more than these flags claim.
 #[allow(clippy::struct_excessive_bools)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
     ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct WriterCapabilities {
+    pub provider_id: String,
     pub can_edit_field: bool,
     pub can_edit_key: bool,
     pub can_insert_record: bool,
     pub can_delete_record: bool,
-    /// True when the host should treat a write as invalidating the whole
-    /// project view (force a full session rebuild) rather than relying on
-    /// a writer-supplied incremental outcome. Currently set by every writer
-    /// because the session always rebuilds — kept so the incremental-update
-    /// path can flip it per-writer later without breaking the wire shape.
     pub requires_full_refresh_after_write: bool,
     pub is_remote: bool,
 }
 
 impl WriterCapabilities {
     #[must_use]
-    pub const fn read_only() -> Self {
+    pub fn read_only() -> Self {
         Self {
+            provider_id: String::new(),
             can_edit_field: false,
             can_edit_key: false,
             can_insert_record: false,
@@ -530,8 +527,9 @@ impl WriterCapabilities {
     }
 
     #[must_use]
-    pub const fn local_full() -> Self {
+    pub fn local_full() -> Self {
         Self {
+            provider_id: String::new(),
             can_edit_field: true,
             can_edit_key: true,
             can_insert_record: true,
@@ -542,8 +540,9 @@ impl WriterCapabilities {
     }
 
     #[must_use]
-    pub const fn remote_field_edit() -> Self {
+    pub fn remote_field_edit() -> Self {
         Self {
+            provider_id: String::new(),
             can_edit_field: true,
             can_edit_key: true,
             can_insert_record: false,
@@ -551,6 +550,12 @@ impl WriterCapabilities {
             requires_full_refresh_after_write: true,
             is_remote: true,
         }
+    }
+
+    #[must_use]
+    pub fn with_provider_id(mut self, provider_id: impl Into<String>) -> Self {
+        self.provider_id = provider_id.into();
+        self
     }
 }
 
@@ -964,9 +969,10 @@ impl fmt::Display for ProviderRegistrationError {
 
 impl std::error::Error for ProviderRegistrationError {}
 
-/// Wire-friendly flat view of a [`Diagnostic`]. Used by editor hosts that
-/// surface diagnostics as a single severity/code/message tuple anchored to a
-/// file/record/field. Heavier-weight callers can keep the structured form.
+/// Wire-friendly flat view of a [`Diagnostic`].
+///
+/// Editor hosts use this as a single severity/code/message tuple anchored to
+/// a file/record/field. Heavier-weight callers can keep the structured form.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
@@ -979,18 +985,20 @@ pub struct FlatDiagnostic {
     pub stage: String,
     pub message: String,
     pub file_path: Option<String>,
+    pub actual_type: Option<String>,
     pub record_key: Option<String>,
     pub field_path: Option<String>,
 }
 
 impl Diagnostic {
     /// Flatten a diagnostic into the wire shape consumed by editor hosts.
-    /// `record_key` / `field_path` are not derivable from the structured
+    /// `actual_type` / `record_key` / `field_path` are not derivable from the structured
     /// diagnostic alone — hosts that know the record id of the diagnostic's
     /// label populate them out-of-band.
     #[must_use]
     pub fn flat_view(
         &self,
+        actual_type: Option<String>,
         record_key: Option<String>,
         field_path: Option<String>,
     ) -> FlatDiagnostic {
@@ -1004,6 +1012,7 @@ impl Diagnostic {
             stage: self.stage.clone(),
             message: self.message.clone(),
             file_path,
+            actual_type,
             record_key,
             field_path,
         }

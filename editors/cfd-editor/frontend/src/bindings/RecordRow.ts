@@ -3,8 +3,9 @@ import type { FieldCell } from "./FieldCell";
 import type { RecordCoordinate } from "./RecordCoordinate";
 
 /**
- * One top-level record's view inside a file. The record's stable identity
- * is its `(actual_type, key)` coordinate; `display_path` repeats the file
- * path for hosts that already have a row but want to display its origin.
+ * One top-level record's view inside a file.
+ *
+ * The record's stable identity is its `(actual_type, key)` coordinate.
+ * `display_path` repeats the file path for hosts that already have a row.
  */
 export type RecordRow = { coordinate: RecordCoordinate, display_path: string, fields: Array<FieldCell>, };

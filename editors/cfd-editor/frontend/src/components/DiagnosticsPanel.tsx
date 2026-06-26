@@ -1,11 +1,11 @@
 import { useState, useMemo } from 'react'
-import type { DiagnosticItem } from '../bindings/index'
+import type { DiagnosticItem } from '../wire'
 import { Icon } from './Icon'
 
 interface Props {
   diagnostics: DiagnosticItem[]
-  onJumpToRecord?: (file: string, key: string) => void
-  onJumpToField?: (file: string, key: string, fieldPath: string) => void
+  onJumpToRecord?: (file: string, key: string, actualType: string | null) => void
+  onJumpToField?: (file: string, key: string, actualType: string | null, fieldPath: string) => void
 }
 
 type SevFilter = 'all' | 'error' | 'warning' | 'info'
@@ -146,7 +146,7 @@ export function DiagnosticsPanel({ diagnostics, onJumpToRecord, onJumpToField }:
                     {d.field_path && d.file_path && d.record_key && onJumpToField ? (
                       <button
                         className="diag-jump"
-                        onClick={() => onJumpToField(d.file_path!, d.record_key!, d.field_path!)}
+                        onClick={() => onJumpToField(d.file_path!, d.record_key!, d.actual_type, d.field_path!)}
                         title={`跳转到字段 ${d.field_path}`}
                       >
                         <Icon name="jump" size={11} aria-hidden />
@@ -155,7 +155,7 @@ export function DiagnosticsPanel({ diagnostics, onJumpToRecord, onJumpToField }:
                     ) : d.file_path && d.record_key && onJumpToRecord ? (
                       <button
                         className="diag-jump"
-                        onClick={() => onJumpToRecord(d.file_path!, d.record_key!)}
+                        onClick={() => onJumpToRecord(d.file_path!, d.record_key!, d.actual_type)}
                         aria-label={`跳转到记录 ${d.record_key}`}
                       >
                         <Icon name="jump" size={11} aria-hidden />

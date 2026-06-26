@@ -30,10 +30,7 @@ pub struct RecordView<'a> {
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
     feature = "ts-export",
-    ts(
-        export,
-        export_to = "../../frontend/src/bindings/"
-    )
+    ts(export, export_to = "../../frontend/src/bindings/")
 )]
 pub struct WriteOutcome {
     pub touched: Vec<RecordCoordinate>,
@@ -57,10 +54,10 @@ impl WriteOutcome {
     }
 }
 
-/// Unused: the editor still resolves writes via its own path. Kept here so
-/// future hosts that want a uniform `(actual_type, key)` write surface can
-/// import a single descriptor instead of stitching together coordinate +
-/// record id at the call site.
+/// Target descriptor for future host write APIs.
+///
+/// The editor still resolves writes through its own path. Other hosts can use
+/// this descriptor to carry a coordinate and record id together.
 #[derive(Debug, Clone)]
 pub struct RecordTarget {
     pub id: CfdRecordId,

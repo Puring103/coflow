@@ -1,4 +1,4 @@
-import type { FileRecords } from '../bindings/index'
+import type { FileRecords } from '../bindings/FileRecords'
 
 /**
  * Decide whether the front-end is allowed to edit fields in a file.
