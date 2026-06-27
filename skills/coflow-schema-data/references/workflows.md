@@ -137,4 +137,4 @@ coflow data write-file <project> --file data/items.cfd --stdin --dry-run
 coflow check <project>
 ```
 
-如果在 Coflow 仓库内修改代码，还要运行仓库级 cargo 检查。
+如果本次还修改了工具实现代码，按当前项目的开发规范运行对应检查。

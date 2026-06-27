@@ -13,6 +13,7 @@
 - [继承和多态](#继承和多态)
 - [CFD 记录](#cfd-记录)
 - [表格与 CFD 的关系](#表格与-cfd-的关系)
+- [表格单元格语法](#表格单元格语法)
 
 ## CFT 示例
 
@@ -343,8 +344,6 @@ sealed type CurrencyReward : Reward {
 - 把 singleton type 当字段类型引用：singleton 只能作为数据集中唯一记录，通过显式引用访问。
 - 在 `check` 后继续声明字段：`check` 必须是 type 内最后一段。
 
-本文件是随 skill 携带的 CFT/CFD 速查；不要假设安装 skill 的环境还能读取 Coflow 源码仓库里的规格文档。
-
 ## CFD 记录
 
 ```cfd
@@ -433,19 +432,104 @@ spread 按出现顺序合并；本地字段覆盖 spread 来源。
 - CFD 和表格最终进入同一个 data model，可以互相引用。
 - 表格适合大量同构数据；CFD 适合复杂嵌套和模板覆盖。
 
-## 表格单元格高级写法
+## 表格单元格语法
+
+表格单元格语法由字段的 CFT 类型决定。目标类型是 `string` 时，`true`、`123`、`@Item.sword` 都是字符串；目标类型是对象或 enum 时才按对象、引用或枚举解析。
+
+### 标量和字符串
+
+| 目标类型 | 写法 |
+| --- | --- |
+| `int` | `42`、`-3` |
+| `float` | `3.14`、`-1.5`，不能写 `NaN` 或 `inf` |
+| `bool` | `true`、`false`，也可写 `1`/`0`、`yes`/`no`、`y`/`n` |
+| `string` | 可裸写；含 `,`、`|`、`:`、括号、空字符串、`_`、`null` 时用双引号 |
+| `EnumName` | `Rare` 或 `Rarity.Rare` |
+
+字符串转义使用 JSON 风格：`\"`、`\\`、`\n`、`\r`、`\t`。
+
+### 引用和路径
 
 ```text
 @Item.sword_01
 @DropTable.default.rewards[0]
 &sword_01
-ItemReward{item: @Item.sword_01, count: 1}
-Fire: 10, Ice: 5
-{Fire: 10, Ice: 5}
 ```
 
 - `@Type.key` 是显式记录引用；路径引用必须从它开始。
 - `&key` 是按目标字段类型推断的直接引用，不支持路径。
-- 多态对象在表格单元格里写 `ConcreteType{...}`。
-- 数组用 `|` 分隔；对象和字典用 `,` 分隔。
 - 目标类型是 string 时，`@Item.x` 和 `&x` 都只是字符串。
+
+### 对象
+
+对象可以按字段顺序写，也可以按字段名写；同一个对象内不要混用。
+
+```text
+100, 50
+hp: 100, attack: 50
+hp: 100, speed: 2.0
+```
+
+根对象可以省略 `{}`；嵌套对象必须写 `{}`：
+
+```text
+level: 5, stats: {hp: 100, attack: 50}
+```
+
+对象字段可以用 `_` 跳过，等价于该字段未提供，后续按 schema 默认值处理：
+
+```text
+_, 3
+_, _, notice
+```
+
+### 数组
+
+数组用 `|` 分隔。根数组可以省略 `[]`，嵌套数组必须写 `[]`。
+
+```text
+1 | 2 | 3
+Rare | Epic | Common
+warrior | tank | elite
+tags: [weapon | melee]
+```
+
+数组元素是对象时，每个对象元素必须写 `{}`：
+
+```text
+{hp: 100, attack: 50} | {hp: 200, attack: 80}
+```
+
+### 字典
+
+字典条目用 `,` 分隔，key 和 value 用 `:` 分隔。根字典可以省略 `{}`，嵌套字典必须写 `{}`。
+
+```text
+Fire: 10, Ice: 5
+{Fire: 10, Ice: 5}
+alice: 10, bob: 20
+1: sword, 2: shield
+```
+
+字典 key 按 schema 类型解析：`string`、`int` 或 enum。重复 key 是错误。
+
+### 多态对象
+
+字段声明为父类或 abstract type 时，用 `ConcreteType{...}` 标记实际类型：
+
+```text
+ItemReward{item: @Item.sword_01, count: 1}
+CurrencyReward{amount: 100}
+CurrencyReward{amount: 100} | ItemReward{item: &sword_01, count: 1}
+```
+
+### 空值、跳过和边界
+
+| 写法 | 语义 |
+| --- | --- |
+| 空单元格 | root 字段未提供，按 schema 默认值处理 |
+| `_` | root 或对象字段未提供，按 schema 默认值处理 |
+| `null` | 显式 null，目标类型必须是 `T?` |
+| `"_"` / `"null"` | 字符串内容 `_` / `null` |
+
+只在括号深度为 0 且不在字符串内的位置分隔 `,` 和 `|`；引号内的分隔符只是字符串内容。数组不用逗号分隔，对象和字典不用 `|` 分隔。
