@@ -1,4 +1,4 @@
-use coflow_api::{DiagnosticSet, FlatDiagnostic, ProviderRegistry};
+use coflow_api::{DiagnosticSet, FlatDiagnostic, ProviderRegistry, SourceLocationSpec};
 use coflow_engine::{
     build_project_schema_session, build_project_session, create_data_file, data_get, data_list,
     data_sources, sync_data_header, DataCreateFileOptions, DataFileReport, DataGetQuery,
@@ -7,12 +7,12 @@ use coflow_engine::{
 };
 use coflow_project::Project;
 use serde::Serialize;
-use std::io::{self, Write};
-use std::path::Path;
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub struct DataGetOptions {
-    pub config_or_dir: Option<std::path::PathBuf>,
+    pub config_or_dir: Option<PathBuf>,
     pub selector: Option<RecordCoordinate>,
     pub actual_type: Option<String>,
     pub file: Option<String>,
@@ -21,6 +21,49 @@ pub struct DataGetOptions {
     pub offset: usize,
     pub all: bool,
     pub human: bool,
+}
+
+#[derive(Debug)]
+pub struct DataWriteFileOptions {
+    pub file: String,
+    pub input: DataWriteInput,
+    pub mode: DataWriteMode,
+    pub check: DataWriteCheck,
+    pub output: DataWriteOutput,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum DataWriteInput {
+    Stdin,
+    Missing,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum DataWriteMode {
+    Write,
+    DryRun,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum DataWriteCheck {
+    Run,
+    Skip,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum DataWriteOutput {
+    Json,
+    Human,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DataWriteFileReport {
+    pub file: String,
+    pub written: bool,
+    pub dry_run: bool,
+    pub changed: bool,
+    pub check_ok: Option<bool>,
+    pub diagnostics: Vec<FlatDiagnostic>,
 }
 
 /// Lists resolved data sources and provider writer capabilities.
@@ -241,10 +284,151 @@ pub fn sync_header(
     }
 }
 
+/// Writes a configured local CFD data file from stdin.
+///
+/// # Errors
+///
+/// Returns an error when the project cannot be opened, the target is not a
+/// configured local `.cfd` data file, stdin cannot be read, the file cannot be
+/// written, full project validation cannot run, or output cannot be written.
+pub fn write_file(
+    config_or_dir: Option<&Path>,
+    options: &DataWriteFileOptions,
+) -> Result<bool, String> {
+    let project = Project::open_schema_only(config_or_dir)?;
+    let target = resolve_data_write_target(&project, &options.file)?;
+    let current = std::fs::read_to_string(&target.absolute_path)
+        .map_err(|err| format!("failed to read `{}`: {err}", target.absolute_path.display()))?;
+    let source = match options.input {
+        DataWriteInput::Stdin => read_stdin_source()?,
+        DataWriteInput::Missing => return Err("data write-file requires --stdin".to_string()),
+    };
+    let changed = current != source;
+    let dry_run = matches!(options.mode, DataWriteMode::DryRun);
+    if !dry_run {
+        std::fs::write(&target.absolute_path, &source).map_err(|err| {
+            format!(
+                "failed to write `{}`: {err}",
+                target.absolute_path.display()
+            )
+        })?;
+    }
+
+    let should_check = matches!(options.check, DataWriteCheck::Run) && !dry_run;
+    let diagnostics = if should_check {
+        check_project_after_data_write(config_or_dir)?
+    } else {
+        Vec::new()
+    };
+    let check_ok = if should_check {
+        Some(diagnostics.is_empty())
+    } else {
+        None
+    };
+    let report = DataWriteFileReport {
+        file: target.project_path,
+        written: !dry_run,
+        dry_run,
+        changed,
+        check_ok,
+        diagnostics,
+    };
+    let ok = report.check_ok.unwrap_or(true);
+    match options.output {
+        DataWriteOutput::Json => write_json(&report)?,
+        DataWriteOutput::Human => write_data_write_file_human(&report)?,
+    }
+    Ok(ok)
+}
+
 fn has_error_diagnostics(diagnostics: &[FlatDiagnostic]) -> bool {
     diagnostics
         .iter()
         .any(|diagnostic| diagnostic.severity == "error")
+}
+
+#[derive(Debug)]
+struct DataWriteTarget {
+    absolute_path: PathBuf,
+    project_path: String,
+}
+
+fn resolve_data_write_target(project: &Project, file: &str) -> Result<DataWriteTarget, String> {
+    let requested_path = Path::new(file);
+    if requested_path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        != Some("cfd")
+    {
+        return Err(format!(
+            "`--file {file}` must name a configured .cfd data file"
+        ));
+    }
+    let absolute_path = project.resolve_path(requested_path);
+    let canonical_path = std::fs::canonicalize(&absolute_path).map_err(|err| {
+        format!(
+            "failed to resolve data file `{}`: {err}",
+            absolute_path.display()
+        )
+    })?;
+    if !is_within_configured_local_data_source(project, &canonical_path) {
+        return Err(format!(
+            "`--file {file}` is not covered by a configured local CFD data source"
+        ));
+    }
+    let project_path = canonical_path.strip_prefix(&project.root_dir).map_or_else(
+        |_| coflow_project::path_to_slash(&canonical_path),
+        coflow_project::path_to_slash,
+    );
+    Ok(DataWriteTarget {
+        absolute_path,
+        project_path,
+    })
+}
+
+fn is_within_configured_local_data_source(project: &Project, canonical_path: &Path) -> bool {
+    project.config.sources.iter().any(|source| {
+        if source
+            .source_type
+            .as_deref()
+            .is_some_and(|source_type| source_type != "cfd")
+        {
+            return false;
+        }
+        let SourceLocationSpec::Path(path) = source.location() else {
+            return false;
+        };
+        let source_path = project.resolve_path(path);
+        let Ok(source_canonical) = std::fs::canonicalize(source_path) else {
+            return false;
+        };
+        if source_canonical.is_file() {
+            canonical_path == source_canonical
+        } else {
+            canonical_path.starts_with(source_canonical)
+        }
+    })
+}
+
+fn read_stdin_source() -> Result<String, String> {
+    let mut source = String::new();
+    io::stdin()
+        .read_to_string(&mut source)
+        .map_err(|err| format!("failed to read stdin: {err}"))?;
+    Ok(source)
+}
+
+fn check_project_after_data_write(
+    config_or_dir: Option<&Path>,
+) -> Result<Vec<FlatDiagnostic>, String> {
+    let (session, _registry) = open_session(config_or_dir)?;
+    Ok(session
+        .diagnostics
+        .as_set()
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.flat_view(None, None, None))
+        .collect())
 }
 
 fn open_session(
@@ -366,6 +550,23 @@ fn write_file_report_human(report: &DataFileReport) -> Result<(), String> {
         writeln!(stdout, "removed\t{}", report.removed.join(","))
             .map_err(|err| format!("failed to write output: {err}"))?;
     }
+    write_flat_diagnostics(&mut stdout, &report.diagnostics)
+}
+
+fn write_data_write_file_human(report: &DataWriteFileReport) -> Result<(), String> {
+    let mut stdout = io::stdout().lock();
+    writeln!(
+        stdout,
+        "{}\twritten={}\tdry_run={}\tchanged={}\tcheck_ok={}",
+        report.file,
+        report.written,
+        report.dry_run,
+        report.changed,
+        report
+            .check_ok
+            .map_or_else(|| "skipped".to_string(), |ok| ok.to_string())
+    )
+    .map_err(|err| format!("failed to write output: {err}"))?;
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }
 

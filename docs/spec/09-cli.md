@@ -199,6 +199,35 @@ cargo run -- schema files examples/rpg
 
 该命令用于让 agent 读取当前 schema 定义、注释、注解、默认值和 check 逻辑。
 
+### `coflow schema write-file [CONFIG_OR_DIR] --file FILE --stdin [--dry-run] [--check] [--human]`
+
+从标准输入写入项目配置包含的本地 CFT schema 文件。该命令只接受精确小写 `.cft`
+文件，并且 `--file` 必须能匹配当前 `schema` 配置展开后的文件；不能写入数据文件、
+输出目录或未配置的任意路径。
+
+```powershell
+cargo run -- schema write-file examples/rpg --file schema/main.cft --stdin --check
+cargo run -- schema write-file examples/rpg --file schema/main.cft --stdin --dry-run --check
+```
+
+默认输出 JSON：
+
+```json
+{
+  "file": "schema/main.cft",
+  "written": true,
+  "dry_run": false,
+  "changed": true,
+  "check_ok": true,
+  "diagnostics": []
+}
+```
+
+`--dry-run` 不落盘，但仍会比较目标文件内容并在 `--check` 存在时用内存中的新内容
+编译 schema。`--check` 不是强制项；传入时命令会返回 CFT/project diagnostics，
+存在诊断时退出码非 `0`。非 dry-run 模式下，即使 `--check` 发现 schema 诊断，
+文件也已经写入，调用方应根据 JSON 报告继续修正。
+
 ### `coflow data sources [CONFIG_OR_DIR] [--human]`
 
 输出已解析的数据 source、provider id、writer capabilities，以及每个 source 中
@@ -263,6 +292,35 @@ cargo run -- data sync-header examples/rpg --file data/items.cfd --type Item
 ```
 
 当前只支持本地 `.cfd`、`.csv` 和 `.xlsx` 文件，不操作远端飞书表格。
+
+### `coflow data write-file [CONFIG_OR_DIR] --file FILE --stdin [--dry-run] [--check] [--human]`
+
+从标准输入重写配置内本地 CFD source 覆盖的 CFD 文件。该命令只接受精确小写
+`.cfd` 文件，且 `--file` 必须位于未指定 `type` 的本地 `sources[].path`，或显式
+`type: cfd` 的本地 source 指向的文件或目录下；不能写入表格文件、远端 source、
+输出目录、显式非 CFD provider source 或任意未配置路径。
+
+```powershell
+cargo run -- data write-file examples/rpg --file data/items.cfd --stdin --check
+cargo run -- data write-file examples/rpg --file data/items.cfd --stdin --dry-run
+```
+
+默认输出 JSON：
+
+```json
+{
+  "file": "data/items.cfd",
+  "written": true,
+  "dry_run": false,
+  "changed": true,
+  "check_ok": true,
+  "diagnostics": []
+}
+```
+
+`--dry-run` 不落盘，只比较目标文件内容并输出报告；当前不会用 stdin 内容运行完整
+项目检查。`--check` 在非 dry-run 写入后重建完整项目并返回 diagnostics；存在诊断
+时退出码非 `0`，但文件已经写入，调用方应根据 JSON 报告继续修复。
 
 ### `coflow data patch [CONFIG_OR_DIR] --patch PATCH_FILE [--human]`
 

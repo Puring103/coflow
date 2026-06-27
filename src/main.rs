@@ -88,6 +88,32 @@ fn run_schema(command: &SchemaArgs) -> Result<bool, String> {
         SchemaCommand::Files(args) => {
             schema_commands::files(args.config_or_dir.as_deref(), args.human)
         }
+        SchemaCommand::WriteFile(args) => schema_commands::write_file(
+            args.config_or_dir.as_deref(),
+            &schema_commands::SchemaWriteFileOptions {
+                file: args.file.clone(),
+                input: if args.stdin {
+                    schema_commands::SchemaWriteInput::Stdin
+                } else {
+                    schema_commands::SchemaWriteInput::Missing
+                },
+                mode: if args.dry_run {
+                    schema_commands::SchemaWriteMode::DryRun
+                } else {
+                    schema_commands::SchemaWriteMode::Write
+                },
+                check: if args.check {
+                    schema_commands::SchemaWriteCheck::Run
+                } else {
+                    schema_commands::SchemaWriteCheck::Skip
+                },
+                output: if args.human {
+                    schema_commands::SchemaWriteOutput::Human
+                } else {
+                    schema_commands::SchemaWriteOutput::Json
+                },
+            },
+        ),
     }
 }
 
@@ -136,6 +162,32 @@ fn run_data(command: &DataArgs) -> Result<bool, String> {
             args.provider.clone(),
             args.sheet.clone(),
             args.human,
+        ),
+        DataCommand::WriteFile(args) => data_commands::write_file(
+            args.config_or_dir.as_deref(),
+            &data_commands::DataWriteFileOptions {
+                file: args.file.clone(),
+                input: if args.stdin {
+                    data_commands::DataWriteInput::Stdin
+                } else {
+                    data_commands::DataWriteInput::Missing
+                },
+                mode: if args.dry_run {
+                    data_commands::DataWriteMode::DryRun
+                } else {
+                    data_commands::DataWriteMode::Write
+                },
+                check: if args.check {
+                    data_commands::DataWriteCheck::Run
+                } else {
+                    data_commands::DataWriteCheck::Skip
+                },
+                output: if args.human {
+                    data_commands::DataWriteOutput::Human
+                } else {
+                    data_commands::DataWriteOutput::Json
+                },
+            },
         ),
     }
 }
@@ -298,6 +350,8 @@ enum SchemaCommand {
     Inspect(SchemaInspectArgs),
     /// Print compiled schema file sources.
     Files(SchemaFilesArgs),
+    /// Write a configured CFT schema file from stdin.
+    WriteFile(SchemaWriteFileArgs),
 }
 
 #[derive(Debug, Args)]
@@ -325,6 +379,28 @@ struct SchemaFilesArgs {
 }
 
 #[derive(Debug, Args)]
+#[allow(clippy::struct_excessive_bools)]
+struct SchemaWriteFileArgs {
+    #[arg(value_name = "CONFIG_OR_DIR")]
+    config_or_dir: Option<PathBuf>,
+    /// Project-relative configured .cft schema file to write.
+    #[arg(long, value_name = "FILE")]
+    file: String,
+    /// Read the replacement CFT source from stdin.
+    #[arg(long)]
+    stdin: bool,
+    /// Validate and report without writing the file.
+    #[arg(long)]
+    dry_run: bool,
+    /// Compile the schema after writing, or against the in-memory source in --dry-run mode.
+    #[arg(long)]
+    check: bool,
+    /// Emit human-readable text instead of JSON.
+    #[arg(long)]
+    human: bool,
+}
+
+#[derive(Debug, Args)]
 struct DataArgs {
     #[command(subcommand)]
     command: DataCommand,
@@ -344,6 +420,8 @@ enum DataCommand {
     CreateFile(DataCreateFileArgs),
     /// Synchronize local data file columns with the latest schema.
     SyncHeader(DataSyncHeaderArgs),
+    /// Write a configured local CFD data file from stdin.
+    WriteFile(DataWriteFileArgs),
 }
 
 #[derive(Debug, Args)]
@@ -455,6 +533,28 @@ struct DataSyncHeaderArgs {
     /// Sheet name for Excel/table sources.
     #[arg(long, value_name = "SHEET")]
     sheet: Option<String>,
+    /// Emit human-readable text instead of JSON.
+    #[arg(long)]
+    human: bool,
+}
+
+#[derive(Debug, Args)]
+#[allow(clippy::struct_excessive_bools)]
+struct DataWriteFileArgs {
+    #[arg(value_name = "CONFIG_OR_DIR")]
+    config_or_dir: Option<PathBuf>,
+    /// Project-relative configured .cfd data file to write.
+    #[arg(long, value_name = "FILE")]
+    file: String,
+    /// Read the replacement CFD source from stdin.
+    #[arg(long)]
+    stdin: bool,
+    /// Validate and report without writing the file.
+    #[arg(long)]
+    dry_run: bool,
+    /// Run full project validation after writing. In --dry-run mode this is skipped.
+    #[arg(long)]
+    check: bool,
     /// Emit human-readable text instead of JSON.
     #[arg(long)]
     human: bool,

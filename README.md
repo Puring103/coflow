@@ -132,20 +132,56 @@ AI/data automation 命令默认输出 JSON：
 ```powershell
 cargo run -- schema inspect examples/rpg
 cargo run -- schema files examples/rpg
+cargo run -- schema write-file examples/rpg --file schema/main.cft --stdin --check
 cargo run -- data sources examples/rpg
 cargo run -- data list examples/rpg --type Item
 cargo run -- data get examples/rpg Item.sword
 cargo run -- data create-file examples/rpg --file data/items.csv --type Item --provider csv
 cargo run -- data sync-header examples/rpg --file data/items.csv --type Item
+cargo run -- data write-file examples/rpg --file data/items.cfd --stdin --check
 cargo run -- data patch examples/rpg --patch patch.json
 ```
 
+`schema write-file` 只允许写入项目配置已包含的精确小写 `.cft` schema 文件；
+`--dry-run` 可预览，`--check` 会在写入后或 dry-run 内存内容上编译 schema 并返回诊断。
+
 `data patch` 通过和编辑器相同的 provider writer 层写入数据。它不会用 CFT
 `check {}` 阻拦写入；写完后会重建项目并返回诊断，供 agent 继续修正。
+`data write-file` 只允许重写配置内本地 CFD source 覆盖的精确小写 `.cfd` 文件
+（未指定 `type` 的目录/`.cfd`，或显式 `type: cfd`），适合复杂 CFD 整文件修改；
+表格文件仍应使用 `data patch`、`data create-file` 和 `data sync-header`。
 `data create-file` / `data sync-header` 是本地文件级命令，支持 `.cfd`、`.csv`
 和 `.xlsx`；表格文件同步表头，CFD 文件同步记录顶层字段而不写表头。
 
 完整命令行为见 [CLI 命令规格](docs/spec/09-cli.md)。
+
+---
+
+## AI Agent Skills
+
+仓库内提供面向 AI agent 的 Coflow skills：
+
+- `coflow-schema-data`：维护 Coflow schema、数据文件和记录写入。
+- `coflow-cli-development`：开发 Coflow CLI / engine 功能。
+- `coflow-cft-cfd-authoring`：编写 CFT schema 和 CFD 文本配置。
+
+从本仓库安装指定 skill：
+
+```powershell
+npx skills add <owner>/<repo> -s coflow-schema-data -y
+```
+
+安装全部 skill：
+
+```powershell
+npx skills add <owner>/<repo> --all
+```
+
+本地开发时可先预览可安装的 skill：
+
+```powershell
+npx skills add . -l
+```
 
 ---
 
