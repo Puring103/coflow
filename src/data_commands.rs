@@ -1,8 +1,9 @@
 use coflow_api::{DiagnosticSet, FlatDiagnostic, ProviderRegistry};
 use coflow_engine::{
-    build_project_session, data_get, data_list, data_sources, DataGetQuery, DataGetReport,
-    DataListQuery, DataPatchReport, DataPatchRequest, DataSourcesReport, ProjectSession,
-    RecordCoordinate,
+    build_project_schema_session, build_project_session, create_data_file, data_get, data_list,
+    data_sources, sync_data_header, DataCreateFileOptions, DataFileReport, DataGetQuery,
+    DataGetReport, DataListQuery, DataPatchReport, DataPatchRequest, DataSourcesReport,
+    DataSyncHeaderOptions, ProjectSession, RecordCoordinate,
 };
 use coflow_project::Project;
 use serde::Serialize;
@@ -150,6 +151,96 @@ pub fn patch(config_or_dir: Option<&Path>, patch_path: &Path, human: bool) -> Re
     Ok(ok)
 }
 
+/// Creates a local data file for a project.
+///
+/// # Errors
+///
+/// Returns an error when the project cannot be opened or output cannot be
+/// written. User-fixable create diagnostics are written as command output and
+/// return `Ok(false)`.
+pub fn create_file(
+    config_or_dir: Option<&Path>,
+    file: String,
+    actual_type: Option<String>,
+    provider: Option<String>,
+    sheet: Option<String>,
+    human: bool,
+) -> Result<bool, String> {
+    let session = open_schema_session(config_or_dir)?;
+    match create_data_file(
+        &session,
+        DataCreateFileOptions {
+            file,
+            actual_type,
+            provider,
+            sheet,
+        },
+    ) {
+        Ok(report) => {
+            if human {
+                write_file_report_human(&report)?;
+            } else {
+                write_json(&report)?;
+            }
+            Ok(report.diagnostics.is_empty())
+        }
+        Err(diagnostics) => {
+            let report = file_error_report(&diagnostics);
+            if human {
+                write_file_report_human(&report)?;
+            } else {
+                write_json(&report)?;
+            }
+            Ok(false)
+        }
+    }
+}
+
+/// Synchronizes a local data file's schema-controlled columns.
+///
+/// # Errors
+///
+/// Returns an error when the project cannot be opened or output cannot be
+/// written. User-fixable sync diagnostics are written as command output and
+/// return `Ok(false)`.
+pub fn sync_header(
+    config_or_dir: Option<&Path>,
+    file: String,
+    actual_type: String,
+    provider: Option<String>,
+    sheet: Option<String>,
+    human: bool,
+) -> Result<bool, String> {
+    let session = open_schema_session(config_or_dir)?;
+    match sync_data_header(
+        &session,
+        DataSyncHeaderOptions {
+            file,
+            actual_type,
+            provider,
+            sheet,
+        },
+    ) {
+        Ok(report) => {
+            if human {
+                write_file_report_human(&report)?;
+            } else {
+                write_json(&report)?;
+            }
+            Ok(report.diagnostics.is_empty())
+        }
+        Err(diagnostics) => {
+            let report = file_error_report(&diagnostics);
+            if human {
+                write_file_report_human(&report)?;
+            } else {
+                write_json(&report)?;
+            }
+            Ok(false)
+        }
+    }
+}
+
 fn has_error_diagnostics(diagnostics: &[FlatDiagnostic]) -> bool {
     diagnostics
         .iter()
@@ -163,6 +254,13 @@ fn open_session(
     let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
     let session = build_project_session(project, &registry)?;
     Ok((session, registry))
+}
+
+fn open_schema_session(
+    config_or_dir: Option<&Path>,
+) -> Result<coflow_engine::ProjectSchemaSession, String> {
+    let project = Project::open_schema_only(config_or_dir)?;
+    build_project_schema_session(project)
 }
 
 fn write_json(value: &impl Serialize) -> Result<(), String> {
@@ -250,6 +348,27 @@ fn write_patch_human(report: &DataPatchReport) -> Result<(), String> {
     write_flat_diagnostics(&mut stdout, &report.diagnostics)
 }
 
+fn write_file_report_human(report: &DataFileReport) -> Result<(), String> {
+    let mut stdout = io::stdout().lock();
+    writeln!(
+        stdout,
+        "{}\t{}\t{}",
+        report.provider,
+        report.file,
+        report.headers.join(",")
+    )
+    .map_err(|err| format!("failed to write output: {err}"))?;
+    if !report.added.is_empty() {
+        writeln!(stdout, "added\t{}", report.added.join(","))
+            .map_err(|err| format!("failed to write output: {err}"))?;
+    }
+    if !report.removed.is_empty() {
+        writeln!(stdout, "removed\t{}", report.removed.join(","))
+            .map_err(|err| format!("failed to write output: {err}"))?;
+    }
+    write_flat_diagnostics(&mut stdout, &report.diagnostics)
+}
+
 fn write_flat_diagnostics(
     stdout: &mut impl Write,
     diagnostics: &[FlatDiagnostic],
@@ -271,4 +390,17 @@ fn flat_diagnostics(diagnostics: &DiagnosticSet) -> Vec<FlatDiagnostic> {
         .iter()
         .map(|diagnostic| diagnostic.flat_view(None, None, None))
         .collect()
+}
+
+fn file_error_report(diagnostics: &DiagnosticSet) -> DataFileReport {
+    DataFileReport {
+        file: String::new(),
+        provider: String::new(),
+        sheet: None,
+        actual_type: None,
+        headers: Vec::new(),
+        added: Vec::new(),
+        removed: Vec::new(),
+        diagnostics: flat_diagnostics(diagnostics),
+    }
 }

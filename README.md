@@ -135,11 +135,15 @@ cargo run -- schema files examples/rpg
 cargo run -- data sources examples/rpg
 cargo run -- data list examples/rpg --type Item
 cargo run -- data get examples/rpg Item.sword
+cargo run -- data create-file examples/rpg --file data/items.csv --type Item --provider csv
+cargo run -- data sync-header examples/rpg --file data/items.csv --type Item
 cargo run -- data patch examples/rpg --patch patch.json
 ```
 
 `data patch` 通过和编辑器相同的 provider writer 层写入数据。它不会用 CFT
 `check {}` 阻拦写入；写完后会重建项目并返回诊断，供 agent 继续修正。
+`data create-file` / `data sync-header` 是本地文件级命令，支持 `.cfd`、`.csv`
+和 `.xlsx`；表格文件同步表头，CFD 文件同步记录顶层字段而不写表头。
 
 完整命令行为见 [CLI 命令规格](docs/spec/09-cli.md)。
 

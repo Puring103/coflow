@@ -35,6 +35,28 @@ fn write_project(root: &std::path::Path) {
     .expect("write config");
 }
 
+fn write_table_project(root: &std::path::Path, fields: &str, source: &str) {
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        format!(
+            r"
+            type Item {{
+{fields}
+            }}
+        "
+        ),
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        format!(
+            "schema: schema.cft\nsources:\n  - path: {source}\n    type: csv\n    sheets:\n      - sheet: Item\n        type: Item\noutputs:\n  data:\n    type: json\n    dir: generated/data\n"
+        ),
+    )
+    .expect("write config");
+}
+
 #[test]
 fn schema_inspect_outputs_json_by_default_and_includes_item_annotations() {
     let root = temp_project_dir("cli-schema-inspect");
@@ -231,4 +253,174 @@ fn data_patch_returns_nonzero_when_check_after_write_is_false_but_errors_remain(
             .any(|diagnostic| diagnostic["severity"] == "error" && diagnostic["stage"] == "CHECK"),
         "patch output: {json:?}"
     );
+}
+
+#[test]
+fn data_create_file_creates_csv_with_schema_header() {
+    let root = temp_project_dir("cli-data-create-file-csv");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_table_project(
+        &root,
+        "                name: string;\n                price: int;",
+        "data/items.csv",
+    );
+
+    let output = coflow()
+        .args([
+            "data",
+            "create-file",
+            root.to_str().expect("utf8 path"),
+            "--file",
+            "data/items.csv",
+            "--type",
+            "Item",
+            "--provider",
+            "csv",
+        ])
+        .output()
+        .expect("run data create-file");
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).expect("create json");
+    assert_eq!(json["file"], "data/items.csv");
+    assert_eq!(json["provider"], "csv");
+    assert_eq!(json["headers"], json!(["id", "name", "price"]));
+    let text = std::fs::read_to_string(root.join("data").join("items.csv")).expect("read csv");
+    assert_eq!(text, "id,name,price\n");
+}
+
+#[test]
+fn data_sync_header_adds_and_removes_csv_columns_while_preserving_rows() {
+    let root = temp_project_dir("cli-data-sync-header-csv");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_table_project(
+        &root,
+        "                name: string;\n                rarity: string;",
+        "data/items.csv",
+    );
+    std::fs::write(
+        root.join("data").join("items.csv"),
+        "id,name,price\nsword,Sword,100\n",
+    )
+    .expect("write csv");
+
+    let output = coflow()
+        .args([
+            "data",
+            "sync-header",
+            root.to_str().expect("utf8 path"),
+            "--file",
+            "data/items.csv",
+            "--type",
+            "Item",
+        ])
+        .output()
+        .expect("run data sync-header");
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).expect("sync json");
+    assert_eq!(json["headers"], json!(["id", "name", "rarity"]));
+    assert_eq!(json["added"], json!(["rarity"]));
+    assert_eq!(json["removed"], json!(["price"]));
+    let text = std::fs::read_to_string(root.join("data").join("items.csv")).expect("read csv");
+    assert_eq!(text, "id,name,rarity\nsword,Sword,\n");
+}
+
+#[test]
+fn data_create_file_creates_empty_cfd_file() {
+    let root = temp_project_dir("cli-data-create-file-cfd");
+    let _cleanup = TempDirCleanup(root.clone());
+    write_project(&root);
+
+    let output = coflow()
+        .args([
+            "data",
+            "create-file",
+            root.to_str().expect("utf8 path"),
+            "--file",
+            "data/new_items.cfd",
+            "--provider",
+            "cfd",
+        ])
+        .output()
+        .expect("run data create-file cfd");
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).expect("create json");
+    assert_eq!(json["file"], "data/new_items.cfd");
+    assert_eq!(json["provider"], "cfd");
+    assert!(root.join("data").join("new_items.cfd").exists());
+    let text = std::fs::read_to_string(root.join("data").join("new_items.cfd")).expect("read cfd");
+    assert_eq!(text, "");
+}
+
+#[test]
+fn data_sync_header_updates_cfd_record_columns_without_creating_a_header() {
+    let root = temp_project_dir("cli-data-sync-header-cfd");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item {
+                name: string;
+                rarity: string?;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("items.cfd"),
+        "sword: Item {\n  name: \"Sword\",\n  price: 100,\n}\n",
+    )
+    .expect("write cfd");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+
+    let output = coflow()
+        .args([
+            "data",
+            "sync-header",
+            root.to_str().expect("utf8 path"),
+            "--file",
+            "data/items.cfd",
+            "--type",
+            "Item",
+        ])
+        .output()
+        .expect("run data sync-header cfd");
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).expect("sync json");
+    assert_eq!(json["headers"], json!(["id", "name", "rarity"]));
+    assert_eq!(json["added"], json!(["rarity"]));
+    assert_eq!(json["removed"], json!(["price"]));
+    let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
+    assert!(!text.lines().any(|line| line == "id,name,rarity"));
+    assert!(text.contains("name: \"Sword\""), "items.cfd:\n{text}");
+    assert!(text.contains("rarity: null"), "items.cfd:\n{text}");
+    assert!(!text.contains("price:"), "items.cfd:\n{text}");
 }

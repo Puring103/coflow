@@ -667,6 +667,7 @@ dependencies = [
 name = "coflow-engine"
 version = "0.1.0"
 dependencies = [
+ "calamine",
  "coflow-api",
  "coflow-cfd",
  "coflow-cft",
@@ -679,6 +680,7 @@ dependencies = [
  "serde",
  "serde_json",
  "ts-rs",
+ "umya-spreadsheet",
  "walkdir",
 ]
 

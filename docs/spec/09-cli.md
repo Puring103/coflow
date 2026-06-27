@@ -182,9 +182,10 @@ cargo run -- schema inspect examples/rpg --type Item
 cargo run -- schema inspect examples/rpg --type Item --include-derived
 ```
 
-`--type TYPE` 只输出指定类型。`--include-derived` 会同时输出可赋值给该类型的
-派生类型，适合需要了解多态可写值的 agent。注解信息会保留在 JSON 中；如果需要
-读取注释、check block 或原始 CFT 文本，使用 `schema files`。
+`--type TYPE` 只过滤 `types` 数组。`enums` 和 `consts` 仍完整输出，方便 agent
+在读取单个类型时解析字段枚举值和常量。`--include-derived` 会同时输出可赋值给
+该类型的派生类型，适合需要了解多态可写值的 agent。注解信息会保留在 JSON 中；
+如果需要读取注释、check block 或原始 CFT 文本，使用 `schema files`。
 
 ### `coflow schema files [CONFIG_OR_DIR] [--human]`
 
@@ -233,6 +234,35 @@ cargo run -- data get examples/rpg --type Item --limit 50
 或 `--all`，避免 agent 无意中 dump 整个项目。`CONFIG_OR_DIR` 省略时按通用项目
 参数规则从当前目录解析；如果只传一个带点的相对配置文件名，例如 `coflow.yaml`，
 它仍按项目配置路径处理。
+
+### `coflow data create-file [CONFIG_OR_DIR] --file FILE [--type TYPE] [--provider cfd|csv|excel] [--sheet SHEET] [--human]`
+
+创建本地数据文件。`--provider` 省略时按扩展名推断：`.cfd`、`.csv`、`.xlsx`。
+`.csv` 和 `.xlsx` 会按 `--type` 的最新 schema 字段创建表头；如果项目 source 的
+sheet 配置声明了 `key` 或 `columns`，表头会使用这些配置中的列名。`.cfd` 只创建
+空文件，不写表头。
+
+```powershell
+cargo run -- data create-file examples/rpg --file data/items.csv --type Item --provider csv
+cargo run -- data create-file examples/rpg --file data/items.cfd --provider cfd
+```
+
+命令拒绝覆盖已存在的文件。该命令只需要 schema，不会加载完整数据源，因此可以用于
+先创建缺失的数据文件。
+
+### `coflow data sync-header [CONFIG_OR_DIR] --file FILE --type TYPE [--provider cfd|csv|excel] [--sheet SHEET] [--human]`
+
+按最新 schema 同步本地数据文件的顶层列。`.csv` 和 `.xlsx` 会重写第一行表头，
+保留同名列的数据，新增列填空，删除 schema 中不存在的列。`.cfd` 没有表头行；
+该命令会重写匹配 `--type` 的记录顶层字段，保留仍存在字段的源码值，删除旧字段，
+新增字段写入 schema 默认值或类型默认值（nullable 为 `null`）。
+
+```powershell
+cargo run -- data sync-header examples/rpg --file data/items.csv --type Item
+cargo run -- data sync-header examples/rpg --file data/items.cfd --type Item
+```
+
+当前只支持本地 `.cfd`、`.csv` 和 `.xlsx` 文件，不操作远端飞书表格。
 
 ### `coflow data patch [CONFIG_OR_DIR] --patch PATCH_FILE [--human]`
 
@@ -296,6 +326,8 @@ patch value 支持普通 JSON 值，也支持特殊对象：
 - 单个写入或 patch value 校验失败时，当前 op 会进入 `failed`。无失败时
   `failed` 是空数组 `[]`。
 - `stop_on_write_error: true` 时，首个写入错误会停止后续 op。
+- batch patch 按顺序应用，已经成功的 op 不会因后续 op 失败自动回滚；调用方需要
+  通过 `applied` 和 `failed` 判断是否发生了部分落盘。
 - CFT `check {}` 不阻拦写入；命令会写完后重建项目并返回诊断，因此可能短暂留下
   有错误的数据。
 - CLI 在写入失败或最终诊断中存在 error severity 时返回非 `0`。

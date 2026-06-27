@@ -15,6 +15,7 @@
 )]
 #![allow(clippy::multiple_crate_versions)]
 
+mod data_files;
 mod data_patch;
 mod data_read;
 mod dimensions;
@@ -23,6 +24,10 @@ mod records;
 mod schema_inspect;
 mod writes;
 
+pub use data_files::{
+    create_data_file, sync_data_header, DataCreateFileOptions, DataFileReport,
+    DataSyncHeaderOptions,
+};
 pub use data_patch::{
     DataPatchAppliedOp, DataPatchFailedOp, DataPatchOp, DataPatchReport, DataPatchRequest,
     PatchPathSegment, PatchRecordSelector,
