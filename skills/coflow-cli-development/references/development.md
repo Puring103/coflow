@@ -2,12 +2,14 @@
 
 ## 新增命令步骤
 
-1. 在 `tests/cli_*.rs` 增加集成测试，先验证失败或缺失行为。
-2. 在 `src/main.rs` 增加 clap 参数和 subcommand。
-3. 在对应 `src/*_commands.rs` 增加 CLI 编排和输出。
-4. 共享逻辑放在 `crates/coflow-engine/src/`，必要时从 `lib.rs` 导出。
-5. 更新 `docs/spec/09-cli.md` 和 README 常用命令。
+1. 增加集成测试，先验证失败或缺失行为。
+2. 在根 CLI 入口增加 clap 参数和 subcommand。
+3. 在对应 commands 模块增加 CLI 编排和输出。
+4. 共享逻辑放在 engine 层，必要时从 engine 公共入口导出。
+5. 更新仓库内面向用户的 CLI 文档和常用命令说明；如果源码不可用，只按本 reference 的命令契约操作。
 6. 运行目标测试、fmt、clippy、workspace 检查。
+
+如果当前工作区正是 Coflow 源码仓库，先用文件搜索定位现有 CLI 入口、commands 模块、engine 层和集成测试；不要假设安装 skill 的环境能访问固定源码路径。
 
 ## Schema-only 命令
 
@@ -65,9 +67,9 @@
 
 ## 测试建议
 
-- CLI 参数和 JSON 输出用 `tests/cli_*.rs`。
-- engine 行为用 `crates/coflow-engine/tests/`。
-- provider writer 行为用对应 loader crate tests。
+- CLI 参数和 JSON 输出用 CLI 集成测试。
+- engine 行为用 engine 层测试。
+- provider writer 行为用对应 provider/loader 测试。
 - 数据文件命令至少覆盖 CSV 和 CFD 差异。
 - 写入命令覆盖 insert、set_field、delete_record。
 - 配置编辑相关功能覆盖 `coflow.yaml` 的 schema/source/output/dimensions 边界。

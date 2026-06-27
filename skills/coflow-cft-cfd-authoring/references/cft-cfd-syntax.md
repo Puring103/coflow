@@ -343,7 +343,7 @@ sealed type CurrencyReward : Reward {
 - 把 singleton type 当字段类型引用：singleton 只能作为数据集中唯一记录，通过显式引用访问。
 - 在 `check` 后继续声明字段：`check` 必须是 type 内最后一段。
 
-完整 CFT 语言细节见 `docs/spec/01-cft.md`。
+本文件是随 skill 携带的 CFT/CFD 速查；不要假设安装 skill 的环境还能读取 Coflow 源码仓库里的规格文档。
 
 ## CFD 记录
 
