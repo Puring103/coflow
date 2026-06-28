@@ -79,23 +79,10 @@ pub fn create_data_file(
 ) -> Result<DataFileReport, DiagnosticSet> {
     let provider = resolve_provider(options.provider.as_deref(), &options.file)?;
     let path = resolve_project_file(&session.project, &options.file);
-    if path.exists() {
-        return Err(one_data_file_error(
-            "DATA-FILE-EXISTS",
-            format!("file `{}` already exists", options.file),
-        ));
-    }
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|err| {
-            one_data_file_error(
-                "DATA-FILE-IO",
-                format!("failed to create `{}`: {err}", parent.display()),
-            )
-        })?;
-    }
 
     match provider {
         DataFileProvider::Cfd => {
+            ensure_new_data_file_path(&path, &options.file)?;
             fs::write(&path, "").map_err(|err| {
                 one_data_file_error(
                     "DATA-FILE-IO",
@@ -113,6 +100,7 @@ pub fn create_data_file(
             ))
         }
         DataFileProvider::Csv => {
+            ensure_new_data_file_path(&path, &options.file)?;
             let layout = table_layout(session, &options.file, options.actual_type, options.sheet)?;
             fs::write(
                 &path,
@@ -136,7 +124,12 @@ pub fn create_data_file(
         }
         DataFileProvider::Excel => {
             let layout = table_layout(session, &options.file, options.actual_type, options.sheet)?;
-            create_excel_file(&path, &layout.sheet, &layout.headers)?;
+            if path.exists() {
+                append_excel_sheet(&path, &layout.sheet, &layout.headers)?;
+            } else {
+                ensure_parent_dir(&path)?;
+                create_excel_file(&path, &layout.sheet, &layout.headers)?;
+            }
             Ok(report(
                 options.file,
                 provider,
@@ -224,10 +217,21 @@ pub fn sync_data_header(
             ))
         }
         DataFileProvider::Excel => {
-            let old_header = excel_header(&path, &layout.sheet)?;
+            let mut created_sheet = false;
+            let old_header = excel_header(&path, &layout.sheet).or_else(|diagnostics| {
+                if excel_sheet_missing(&diagnostics) {
+                    create_missing_excel_sheet(&path, &layout.sheet, &layout.headers)?;
+                    created_sheet = true;
+                    Ok(Vec::new())
+                } else {
+                    Err(diagnostics)
+                }
+            })?;
             let added = added_columns(&layout.headers, &old_header);
             let removed = removed_columns(&layout.headers, &old_header);
-            sync_excel_header(&path, &layout.sheet, &layout.headers)?;
+            if !created_sheet {
+                sync_excel_header(&path, &layout.sheet, &layout.headers)?;
+            }
             Ok(report(
                 options.file,
                 provider,
@@ -239,6 +243,28 @@ pub fn sync_data_header(
             ))
         }
     }
+}
+
+fn ensure_new_data_file_path(path: &Path, file: &str) -> Result<(), DiagnosticSet> {
+    if path.exists() {
+        return Err(one_data_file_error(
+            "DATA-FILE-EXISTS",
+            format!("file `{file}` already exists"),
+        ));
+    }
+    ensure_parent_dir(path)
+}
+
+fn ensure_parent_dir(path: &Path) -> Result<(), DiagnosticSet> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| {
+            one_data_file_error(
+                "DATA-FILE-IO",
+                format!("failed to create `{}`: {err}", parent.display()),
+            )
+        })?;
+    }
+    Ok(())
 }
 
 fn report(
@@ -787,6 +813,64 @@ fn create_excel_file(path: &Path, sheet: &str, headers: &[String]) -> Result<(),
     })
 }
 
+fn append_excel_sheet(path: &Path, sheet: &str, headers: &[String]) -> Result<(), DiagnosticSet> {
+    let mut book = umya_spreadsheet::reader::xlsx::read(path).map_err(|err| {
+        one_data_file_error(
+            "DATA-FILE-EXCEL",
+            format!("failed to read `{}`: {err:?}", path.display()),
+        )
+    })?;
+    if book.get_sheet_by_name(sheet).is_some() {
+        return Err(one_data_file_error(
+            "DATA-FILE-EXISTS",
+            format!("sheet `{sheet}` already exists in `{}`", path.display()),
+        ));
+    }
+    book.new_sheet(sheet).map_err(|err| {
+        one_data_file_error(
+            "DATA-FILE-EXCEL",
+            format!(
+                "failed to create sheet `{sheet}` in `{}`: {err}",
+                path.display()
+            ),
+        )
+    })?;
+    write_excel_headers(&mut book, sheet, headers)?;
+    umya_spreadsheet::writer::xlsx::write(&book, path).map_err(|err| {
+        one_data_file_error(
+            "DATA-FILE-IO",
+            format!("failed to write `{}`: {err:?}", path.display()),
+        )
+    })
+}
+
+fn create_missing_excel_sheet(
+    path: &Path,
+    sheet: &str,
+    headers: &[String],
+) -> Result<(), DiagnosticSet> {
+    append_excel_sheet(path, sheet, headers)
+}
+
+fn write_excel_headers(
+    book: &mut umya_spreadsheet::Spreadsheet,
+    sheet: &str,
+    headers: &[String],
+) -> Result<(), DiagnosticSet> {
+    let worksheet = book.get_sheet_by_name_mut(sheet).ok_or_else(|| {
+        one_data_file_error(
+            "DATA-FILE-EXCEL",
+            format!("sheet `{sheet}` not found after workbook update"),
+        )
+    })?;
+    for (index, header) in headers.iter().enumerate() {
+        let column = u32::try_from(index + 1)
+            .map_err(|_| one_data_file_error("DATA-FILE-EXCEL", "too many columns for Excel"))?;
+        worksheet.get_cell_mut((column, 1_u32)).set_value(header);
+    }
+    Ok(())
+}
+
 fn excel_header(path: &Path, sheet: &str) -> Result<Vec<String>, DiagnosticSet> {
     let mut workbook = calamine::open_workbook_auto(path).map_err(|err| {
         one_data_file_error(
@@ -805,6 +889,14 @@ fn excel_header(path: &Path, sheet: &str) -> Result<Vec<String>, DiagnosticSet> 
         .next()
         .map(|row| row.iter().map(excel_cell_to_text).collect())
         .unwrap_or_default())
+}
+
+fn excel_sheet_missing(diagnostics: &DiagnosticSet) -> bool {
+    diagnostics.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "DATA-FILE-EXCEL"
+            && diagnostic.message.contains("sheet `")
+            && diagnostic.message.contains("not found")
+    })
 }
 
 fn sync_excel_header(

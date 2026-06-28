@@ -13,7 +13,7 @@ use crate::editor::{EditorError, ProjectSnapshot, SessionStore};
 const PROJECT_CHANGED_EVENT: &str = "project_changed";
 const PROJECT_WATCH_ERROR_EVENT: &str = "project_watch_error";
 const DEBOUNCE: Duration = Duration::from_millis(350);
-const INTERNAL_WRITE_SUPPRESSION: Duration = Duration::from_secs(2);
+const INTERNAL_WRITE_SUPPRESSION: Duration = Duration::from_secs(4);
 
 #[derive(Debug, Default)]
 pub struct ProjectWatchRegistry {
@@ -97,6 +97,7 @@ impl ProjectWatchRegistry {
             return false;
         };
         if Instant::now() < until {
+            suppress_until.insert(session_id, Instant::now() + INTERNAL_WRITE_SUPPRESSION);
             return true;
         }
         suppress_until.remove(&session_id);
@@ -150,7 +151,18 @@ fn is_ignored_path(path: &Path) -> bool {
         let name = component.as_os_str().to_string_lossy();
         matches!(
             name.as_ref(),
-            ".git" | "node_modules" | "target" | "dist" | ".DS_Store"
+            ".git"
+                | ".idea"
+                | ".vscode"
+                | "node_modules"
+                | "target"
+                | "dist"
+                | "build"
+                | ".next"
+                | ".nuxt"
+                | ".svelte-kit"
+                | "coverage"
+                | ".DS_Store"
         )
     })
 }

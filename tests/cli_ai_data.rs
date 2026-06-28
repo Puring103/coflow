@@ -6,6 +6,7 @@
 )]
 
 mod common;
+use calamine::Reader;
 use common::*;
 use serde_json::json;
 use std::io::Write;
@@ -868,6 +869,230 @@ fn data_create_file_creates_csv_with_schema_header() {
     assert_eq!(json["headers"], json!(["id", "name", "price"]));
     let text = std::fs::read_to_string(root.join("data").join("items.csv")).expect("read csv");
     assert_eq!(text, "id,name,price\n");
+}
+
+#[test]
+fn data_create_file_appends_excel_sheet_to_existing_workbook() {
+    let root = temp_project_dir("cli-data-create-file-append-xlsx-sheet");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item {
+                name: string;
+                price: int;
+            }
+
+            type Skill {
+                name: string;
+                power: int;
+            }
+        ",
+    )
+    .expect("write schema");
+    let workbook_path = root.join("data").join("tables.xlsx");
+    let mut workbook = rust_xlsxwriter::Workbook::new();
+    let sheet = workbook.add_worksheet().set_name("Items").expect("sheet");
+    sheet.write_string(0, 0, "id").expect("write id");
+    sheet.write_string(0, 1, "name").expect("write name");
+    sheet.write_string(0, 2, "price").expect("write price");
+    workbook.save(&workbook_path).expect("write workbook");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/tables.xlsx\n    type: excel\n    sheets:\n      - sheet: Items\n        type: Item\n      - sheet: Skills\n        type: Skill\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+
+    let output = coflow()
+        .args([
+            "data",
+            "create-file",
+            root.to_str().expect("utf8 path"),
+            "--file",
+            "data/tables.xlsx",
+            "--type",
+            "Skill",
+            "--provider",
+            "excel",
+            "--sheet",
+            "Skills",
+        ])
+        .output()
+        .expect("run data create-file xlsx sheet");
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).expect("create json");
+    assert_eq!(json["file"], "data/tables.xlsx");
+    assert_eq!(json["provider"], "excel");
+    assert_eq!(json["sheet"], "Skills");
+    assert_eq!(json["headers"], json!(["id", "name", "power"]));
+
+    let output = coflow()
+        .args(["check", root.to_str().expect("utf8 path"), "--json"])
+        .output()
+        .expect("run check");
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn data_sync_header_creates_missing_excel_sheet_in_existing_workbook() {
+    let root = temp_project_dir("cli-data-sync-header-missing-xlsx-sheet");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item {
+                name: string;
+                price: int;
+            }
+
+            type Skill {
+                name: string;
+                power: int;
+            }
+        ",
+    )
+    .expect("write schema");
+    let workbook_path = root.join("data").join("tables.xlsx");
+    let mut workbook = rust_xlsxwriter::Workbook::new();
+    let sheet = workbook.add_worksheet().set_name("Items").expect("sheet");
+    sheet.write_string(0, 0, "id").expect("write id");
+    sheet.write_string(0, 1, "name").expect("write name");
+    sheet.write_string(0, 2, "price").expect("write price");
+    workbook.save(&workbook_path).expect("write workbook");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/tables.xlsx\n    type: excel\n    sheets:\n      - sheet: Items\n        type: Item\n      - sheet: Skills\n        type: Skill\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+
+    let output = coflow()
+        .args([
+            "data",
+            "sync-header",
+            root.to_str().expect("utf8 path"),
+            "--file",
+            "data/tables.xlsx",
+            "--type",
+            "Skill",
+            "--provider",
+            "excel",
+            "--sheet",
+            "Skills",
+        ])
+        .output()
+        .expect("run data sync-header xlsx sheet");
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).expect("sync json");
+    assert_eq!(json["sheet"], "Skills");
+    assert_eq!(json["headers"], json!(["id", "name", "power"]));
+    assert_eq!(json["added"], json!(["id", "name", "power"]));
+    assert_eq!(json["removed"], json!([]));
+
+    let output = coflow()
+        .args(["check", root.to_str().expect("utf8 path"), "--json"])
+        .output()
+        .expect("run check");
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn data_patch_insert_record_respects_explicit_sheet_when_type_uses_multiple_excel_sheets() {
+    let root = temp_project_dir("cli-data-patch-insert-xlsx-explicit-sheet");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Skill {
+                name: string;
+                power: int;
+            }
+        ",
+    )
+    .expect("write schema");
+    let workbook_path = root.join("data").join("tables.xlsx");
+    let mut workbook = rust_xlsxwriter::Workbook::new();
+    for sheet_name in ["ActiveSkills", "PassiveSkills"] {
+        let sheet = workbook
+            .add_worksheet()
+            .set_name(sheet_name)
+            .expect("sheet");
+        sheet.write_string(0, 0, "id").expect("id");
+        sheet.write_string(0, 1, "name").expect("name");
+        sheet.write_string(0, 2, "power").expect("power");
+    }
+    workbook.save(&workbook_path).expect("write workbook");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/tables.xlsx\n    type: excel\n    sheets:\n      - sheet: ActiveSkills\n        type: Skill\n      - sheet: PassiveSkills\n        type: Skill\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+
+    let json = apply_data_patch_command(
+        &root,
+        "insert-stealth.json",
+        &json!({
+            "ops": [{
+                "op": "insert_record",
+                "file": "data/tables.xlsx",
+                "sheet": "PassiveSkills",
+                "type": "Skill",
+                "key": "stealth",
+                "fields": { "name": "Stealth", "power": 3 }
+            }]
+        }),
+    );
+    assert_eq!(json["write_ok"], true);
+    assert_eq!(json["check_ok"], true);
+
+    let mut workbook = calamine::open_workbook_auto(&workbook_path).expect("read workbook");
+    let active = workbook
+        .worksheet_range("ActiveSkills")
+        .expect("active sheet");
+    let passive = workbook
+        .worksheet_range("PassiveSkills")
+        .expect("passive sheet");
+    assert_eq!(
+        active.height(),
+        1,
+        "record should not be written to ActiveSkills"
+    );
+    assert_eq!(
+        passive.get((1, 0)).map(ToString::to_string),
+        Some("stealth".to_string())
+    );
+    assert_eq!(
+        passive.get((1, 1)).map(ToString::to_string),
+        Some("Stealth".to_string())
+    );
+    assert!(matches!(
+        passive.get((1, 2)).map(ToString::to_string).as_deref(),
+        Some("3" | "3.0")
+    ));
 }
 
 #[test]

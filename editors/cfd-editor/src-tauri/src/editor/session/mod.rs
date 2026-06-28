@@ -382,6 +382,7 @@ impl SessionStore {
                 .insert_record(
                     registry.as_ref(),
                     file_path,
+                    None,
                     record_key,
                     actual_type,
                     &fields_map,

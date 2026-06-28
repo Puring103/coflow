@@ -198,12 +198,15 @@ impl ProjectSession {
         &mut self,
         registry: &ProviderRegistry,
         file: &str,
+        sheet: Option<&str>,
         record_key: &str,
         actual_type: &str,
         fields: &std::collections::BTreeMap<String, CfdValue>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let source = source_for_file(self, file)?;
-        let sheet = sheet_for_file_type(self, file, actual_type);
+        let sheet = sheet
+            .map(ToOwned::to_owned)
+            .or_else(|| sheet_for_file_type(self, file, actual_type));
         let writer = lookup_writer(registry, &source)?;
         let request = InsertRecordRequest {
             source: &source,

@@ -25,6 +25,8 @@ pub struct DataPatchRequest {
 pub enum DataPatchOp {
     InsertRecord {
         file: String,
+        #[serde(default)]
+        sheet: Option<String>,
         #[serde(rename = "type")]
         actual_type: String,
         key: String,
@@ -168,6 +170,7 @@ fn apply_one(
     match op {
         DataPatchOp::InsertRecord {
             file,
+            sheet,
             actual_type,
             key,
             fields,
@@ -177,7 +180,7 @@ fn apply_one(
             let values = coerce_insert_fields(session, actual_type, fields)
                 .map_err(PatchApplyError::Recoverable)?;
             let outcome = session
-                .insert_record(registry, file, key, actual_type, &values)
+                .insert_record(registry, file, sheet.as_deref(), key, actual_type, &values)
                 .map_err(PatchApplyError::Terminal)?;
             Ok(DataPatchAppliedOp {
                 index: 0,

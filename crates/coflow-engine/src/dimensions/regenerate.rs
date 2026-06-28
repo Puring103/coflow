@@ -277,6 +277,21 @@ fn read_existing_singleton(
 }
 
 fn write_file(path: &Path, body: String, config_path: &Path) -> DiagnosticSet {
+    match fs::read_to_string(path) {
+        Ok(existing) if existing == body => return DiagnosticSet::empty(),
+        Ok(_) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => {
+            return DiagnosticSet::one(dimension_diagnostic(
+                config_path,
+                "DIM-SOURCE-001",
+                format!(
+                    "failed to read dimension source `{}`: {err}",
+                    path.display()
+                ),
+            ));
+        }
+    }
     match fs::write(path, body) {
         Ok(()) => DiagnosticSet::empty(),
         Err(err) => DiagnosticSet::one(dimension_diagnostic(

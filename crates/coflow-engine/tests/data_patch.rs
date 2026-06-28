@@ -119,6 +119,7 @@ fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
                 ops: vec![
                     DataPatchOp::InsertRecord {
                         file: "data/items.cfd".to_string(),
+                        sheet: None,
                         actual_type: "Item".to_string(),
                         key: "bad_sword".to_string(),
                         fields: serde_json::from_value(json!({
@@ -227,6 +228,7 @@ fn patch_coerces_ref_inline_object_and_enum_key_dict_values() {
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::InsertRecord {
                     file: "data/items.cfd".to_string(),
+                    sheet: None,
                     actual_type: "Loot".to_string(),
                     key: "starter_loot".to_string(),
                     fields: serde_json::from_value(json!({
@@ -288,6 +290,7 @@ fn patch_rejects_dict_key_path_writes() {
                 stop_on_write_error: true,
                 ops: vec![DataPatchOp::InsertRecord {
                     file: "data/items.cfd".to_string(),
+                    sheet: None,
                     actual_type: "Loot".to_string(),
                     key: "starter_loot".to_string(),
                     fields: serde_json::from_value(json!({
@@ -429,6 +432,7 @@ fn patch_stops_on_terminal_writer_error_even_when_stop_disabled() {
                 ops: vec![
                     DataPatchOp::InsertRecord {
                         file: "data/items.cfd".to_string(),
+                        sheet: None,
                         actual_type: "Item".to_string(),
                         key: "sword".to_string(),
                         fields: serde_json::from_value(json!({

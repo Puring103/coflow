@@ -383,6 +383,84 @@ dimensions:
 }
 
 #[test]
+fn language_dimension_does_not_rewrite_unchanged_generated_files() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-engine-dim-no-unchanged-rewrite-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create dimensions dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        r#"
+        type Item {
+            @localized
+            name: string;
+        }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n").expect("write items");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+sources:
+  - path: data/items.csv
+    type: csv
+    sheets:
+      - sheet: items
+        type: Item
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+
+    let mut registry = coflow_api::ProviderRegistry::default();
+    registry
+        .register_loader(coflow_loader_csv::CsvLoader)
+        .expect("csv loader");
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let session = build_project_session(project, &registry).expect("build session");
+    assert!(
+        !session.has_diagnostics(),
+        "diagnostics: {:?}",
+        session.diagnostics.as_set()
+    );
+
+    let generated_path = root.join("data/dimensions/language/Item_name.csv");
+    let first_modified = std::fs::metadata(&generated_path)
+        .expect("metadata")
+        .modified()
+        .expect("modified time");
+    std::thread::sleep(std::time::Duration::from_millis(1200));
+
+    let project = Project::open_schema_only(Some(&root)).expect("reopen project");
+    let session = build_project_session(project, &registry).expect("rebuild session");
+    assert!(
+        !session.has_diagnostics(),
+        "diagnostics: {:?}",
+        session.diagnostics.as_set()
+    );
+    let second_modified = std::fs::metadata(&generated_path)
+        .expect("metadata")
+        .modified()
+        .expect("modified time");
+
+    assert_eq!(
+        first_modified, second_modified,
+        "unchanged generated dimension file should not be rewritten"
+    );
+
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
 fn language_dimension_uses_bucket_for_csv_file_names() {
     let root =
         std::env::temp_dir().join(format!("coflow-engine-dim-bucket-{}", std::process::id()));

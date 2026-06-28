@@ -575,6 +575,7 @@ dependencies = [
 name = "coflow"
 version = "0.2.0"
 dependencies = [
+ "calamine",
  "clap",
  "coflow-api",
  "coflow-builtins",
