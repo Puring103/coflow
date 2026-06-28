@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import type { CfdValue } from './bindings/CfdValue'
 import type { DeleteRecordOutcome } from './bindings/DeleteRecordOutcome'
@@ -13,6 +14,17 @@ import type { RecordCoordinate } from './bindings/RecordCoordinate'
 import { fromIpc, toIpc, type FieldPathSegment, type FieldValue } from './wire'
 
 export const isTauri = '__TAURI_INTERNALS__' in window
+
+export interface ProjectChangedEvent {
+  session_id: number
+  changed_paths: string[]
+  snapshot: ProjectSnapshot
+}
+
+export interface ProjectWatchErrorEvent {
+  session_id: number
+  message: string
+}
 
 export async function pickProjectYaml(): Promise<string | null> {
   if (!isTauri) {
@@ -120,6 +132,14 @@ export async function deleteRecord(
     sessionId,
     coordinate,
   })
+}
+
+export async function onProjectChanged(handler: (event: ProjectChangedEvent) => void): Promise<() => void> {
+  return listen<ProjectChangedEvent>('project_changed', event => handler(fromIpc(event.payload) as ProjectChangedEvent))
+}
+
+export async function onProjectWatchError(handler: (event: ProjectWatchErrorEvent) => void): Promise<() => void> {
+  return listen<ProjectWatchErrorEvent>('project_watch_error', event => handler(fromIpc(event.payload) as ProjectWatchErrorEvent))
 }
 
 async function invokeCommand<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {

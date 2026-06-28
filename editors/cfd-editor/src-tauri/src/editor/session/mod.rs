@@ -135,6 +135,34 @@ impl SessionStore {
         })
     }
 
+    pub fn reload_session(&self, id: u32) -> Result<ProjectSnapshot, EditorError> {
+        let entry = self.session(id)?;
+        let yaml_path = {
+            let session = entry
+                .state
+                .read()
+                .map_err(|_| EditorError::session("session poisoned"))?;
+            session.yaml_path.clone()
+        };
+        let registry = self.registry()?;
+        let (session, snapshot_partial) = build_session(&yaml_path, registry.as_ref())?;
+        let project_root = strip_unc_prefix(&session.project_root.display().to_string());
+        let diagnostics = session.diagnostics.flatten();
+        {
+            let mut state = entry
+                .state
+                .write()
+                .map_err(|_| EditorError::session("session poisoned"))?;
+            *state = session;
+        }
+        Ok(ProjectSnapshot {
+            session_id: id,
+            project_root,
+            file_tree: snapshot_partial.file_tree,
+            diagnostics,
+        })
+    }
+
     pub fn close_session(&self, id: u32) -> Result<(), EditorError> {
         self.inner
             .write()

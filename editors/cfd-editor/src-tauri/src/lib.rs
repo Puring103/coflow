@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 pub mod editor;
+mod watcher;
 
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_engine::RecordCoordinate;
@@ -10,15 +11,20 @@ use editor::{
     DeleteRecordOutcome, EditorError, FileRecords, GraphData, InsertRecordOutcome, ProjectSnapshot,
     RefTarget, RenameRecordOutcome, SessionStore, WriteFieldOutcome,
 };
-use tauri::{Manager, State};
+use tauri::{AppHandle, Manager, State};
+use watcher::ProjectWatchRegistry;
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
 fn load_project(
     yaml_path: String,
     store: State<'_, SessionStore>,
+    watchers: State<'_, ProjectWatchRegistry>,
+    app: AppHandle,
 ) -> Result<ProjectSnapshot, EditorError> {
-    store.load_project(&PathBuf::from(yaml_path))
+    let snapshot = store.load_project(&PathBuf::from(yaml_path))?;
+    watchers.watch_session(app, &snapshot)?;
+    Ok(snapshot)
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -26,13 +32,22 @@ fn load_project(
 fn init_project(
     dir: String,
     store: State<'_, SessionStore>,
+    watchers: State<'_, ProjectWatchRegistry>,
+    app: AppHandle,
 ) -> Result<ProjectSnapshot, EditorError> {
-    store.init_project(&PathBuf::from(dir))
+    let snapshot = store.init_project(&PathBuf::from(dir))?;
+    watchers.watch_session(app, &snapshot)?;
+    Ok(snapshot)
 }
 
 #[allow(clippy::needless_pass_by_value)]
 #[tauri::command]
-fn close_session(session_id: u32, store: State<'_, SessionStore>) -> Result<(), EditorError> {
+fn close_session(
+    session_id: u32,
+    store: State<'_, SessionStore>,
+    watchers: State<'_, ProjectWatchRegistry>,
+) -> Result<(), EditorError> {
+    watchers.unwatch_session(session_id);
     store.close_session(session_id)
 }
 
@@ -94,8 +109,14 @@ fn write_field(
     field_path: Vec<CfdPathSegment>,
     new_value: CfdValue,
     store: State<'_, SessionStore>,
+    watchers: State<'_, ProjectWatchRegistry>,
 ) -> Result<WriteFieldOutcome, EditorError> {
-    store.write_field(session_id, &coordinate, &field_path, &new_value)
+    watchers.suppress_internal_write_events(session_id);
+    let result = store.write_field(session_id, &coordinate, &field_path, &new_value);
+    if result.is_err() {
+        watchers.clear_internal_write_suppression(session_id);
+    }
+    result
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -107,8 +128,14 @@ fn insert_record(
     actual_type: String,
     fields: CfdValue,
     store: State<'_, SessionStore>,
+    watchers: State<'_, ProjectWatchRegistry>,
 ) -> Result<InsertRecordOutcome, EditorError> {
-    store.insert_record(session_id, &file_path, &record_key, &actual_type, fields)
+    watchers.suppress_internal_write_events(session_id);
+    let result = store.insert_record(session_id, &file_path, &record_key, &actual_type, fields);
+    if result.is_err() {
+        watchers.clear_internal_write_suppression(session_id);
+    }
+    result
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -118,8 +145,14 @@ fn rename_record_key(
     coordinate: RecordCoordinate,
     new_key: String,
     store: State<'_, SessionStore>,
+    watchers: State<'_, ProjectWatchRegistry>,
 ) -> Result<RenameRecordOutcome, EditorError> {
-    store.rename_record_key(session_id, &coordinate, &new_key)
+    watchers.suppress_internal_write_events(session_id);
+    let result = store.rename_record_key(session_id, &coordinate, &new_key);
+    if result.is_err() {
+        watchers.clear_internal_write_suppression(session_id);
+    }
+    result
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -128,8 +161,14 @@ fn delete_record(
     session_id: u32,
     coordinate: RecordCoordinate,
     store: State<'_, SessionStore>,
+    watchers: State<'_, ProjectWatchRegistry>,
 ) -> Result<DeleteRecordOutcome, EditorError> {
-    store.delete_record(session_id, &coordinate)
+    watchers.suppress_internal_write_events(session_id);
+    let result = store.delete_record(session_id, &coordinate);
+    if result.is_err() {
+        watchers.clear_internal_write_suppression(session_id);
+    }
+    result
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -144,6 +183,7 @@ pub fn run() -> tauri::Result<()> {
         .setup(|app| {
             let store = SessionStore::new().map_err(|err| err.to_string())?;
             app.manage(store);
+            app.manage(ProjectWatchRegistry::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

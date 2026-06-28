@@ -132,6 +132,75 @@ export default function App() {
     }
   }, [adoptSnapshot])
 
+  const refreshFromSnapshot = useCallback(
+    async (snapshot: ProjectSnapshot) => {
+      const current = router.current
+      const sourceFiles = collectSourceFiles(snapshot)
+      const keepFile = current && sourceFiles.includes(current.file)
+      const nextFile = keepFile ? current.file : sourceFiles[0]
+      setProject(snapshot)
+      setFileDataCache({})
+      setGraphCache({})
+      setUndoStack([])
+      setRedoStack([])
+      setHighlightField(null)
+      writeSeqRef.current += 1
+      if (!nextFile) {
+        return
+      }
+      try {
+        const fileRecords = api.isTauri
+          ? await api.getFileRecords(snapshot.session_id, nextFile)
+          : null
+        if (fileRecords) {
+          setFileDataCache({ [nextFile]: fileRecords })
+        }
+        if (current && keepFile) {
+          if (current.view === 'record') {
+            const stillExists = fileRecords?.records.some(r => sameCoordinate(r.coordinate, current.coordinate)) ?? false
+            router.replace(stillExists ? current : { view: 'table', file: nextFile })
+          } else {
+            router.replace(current)
+          }
+        } else {
+          router.push({ view: 'table', file: nextFile })
+        }
+      } catch (err) {
+        setErrorMsg(`刷新项目失败: ${errorMessage(err)}`)
+        router.push({ view: 'table', file: nextFile })
+      }
+    },
+    [router],
+  )
+
+  useEffect(() => {
+    if (!api.isTauri || !project) return
+    let disposed = false
+    let unlistenChanged: (() => void) | null = null
+    let unlistenError: (() => void) | null = null
+    api.onProjectChanged(event => {
+      if (event.session_id !== project.session_id) return
+      refreshFromSnapshot(event.snapshot).catch(err => {
+        setErrorMsg(`刷新项目失败: ${errorMessage(err)}`)
+      })
+    }).then(unlisten => {
+      if (disposed) unlisten()
+      else unlistenChanged = unlisten
+    }).catch(err => setErrorMsg(`监听项目变更失败: ${errorMessage(err)}`))
+    api.onProjectWatchError(event => {
+      if (event.session_id !== project.session_id) return
+      setErrorMsg(`监听项目变更失败: ${event.message}`)
+    }).then(unlisten => {
+      if (disposed) unlisten()
+      else unlistenError = unlisten
+    }).catch(err => setErrorMsg(`监听项目变更失败: ${errorMessage(err)}`))
+    return () => {
+      disposed = true
+      unlistenChanged?.()
+      unlistenError?.()
+    }
+  }, [project?.session_id, refreshFromSnapshot])
+
   // "新建工程": pick an empty directory, scaffold a minimal Coflow
   // project (mirrors `coflow init`), and open it. The same back-end call
   // refuses to clobber an existing `coflow.yaml` and that diagnostic
