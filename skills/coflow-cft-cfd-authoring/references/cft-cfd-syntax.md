@@ -130,6 +130,7 @@ enum Permission {
 - 顶层记录 key 在同一具体类型内唯一；如果按父类或 abstract type 引用，赋值兼容范围内的 key 也必须唯一。
 - 循环引用允许；引用解析在 data model build 阶段完成。
 - 字典 key 解析后必须唯一；重复 key 是错误，不是后写覆盖。
+- 对象字段默认同时接受记录引用和内联对象；字段上无参 `@ref` 强制引用，`@inline` 强制内联对象。
 
 ## nullable 与安全访问
 
@@ -286,12 +287,16 @@ type GameConfig {
 - 所有 singleton record key 在项目内全局不能撞名。
 - C# codegen 不生成 `Tb*` 表访问器，而是在入口类上生成以 record key 命名的属性。
 
-### `@display`、`@deprecated`、`@struct`、`@expand`
+### `@display`、`@deprecated`、`@struct`、`@expand`、`@ref`、`@inline`
 
 - `@display("文本")` 用于类型、字段、枚举、变体的可读名。
 - `@deprecated` 标记生成代码中的过时符号。
 - `@struct` 只能用在 `sealed type` 上，让 C# codegen 生成 struct。
 - `@expand` 只能用在具体 object 字段上，不能用于 primitive、enum、array、dict、nullable；让 Excel/CSV 相邻列展开为嵌套对象字段。
+- `@ref` 只能用在包含 object 的字段上，例如 `Item`、`Item?`、`[Item]`、`{string: Item}`；数据必须写记录引用或路径引用，拒绝内联对象。
+- `@inline` 只能用在包含 object 的字段上；数据必须写内联对象，拒绝 `&key`、`@Type.key` 和路径引用。
+- `@ref` 与 `@inline` 互斥；`@ref` 与 `@expand` 冲突；`@inline` 可以和 `@expand` 并用。
+- 集合字段上的 `@ref` / `@inline` 会约束数组元素或字典 value。
 
 注解目标速查：
 
@@ -300,6 +305,8 @@ type GameConfig {
 | `@struct` | type | 必须是 `sealed type` |
 | `@flag` | enum | 变体值必须是 2 的幂 |
 | `@expand` | field | 字段类型必须是具体 type |
+| `@ref` | field | 字段类型必须包含 object；无参数 |
+| `@inline` | field | 字段类型必须包含 object；无参数 |
 | `@idAsEnum(EnumName)` | type | 参数 enum 必须已声明且为空 |
 | `@display("text")` | type、enum、field、enum variant | 参数必须是字符串 |
 | `@deprecated` | type、enum、field、enum variant | 无参数 |
@@ -393,6 +400,7 @@ weight: @DropTable.default.weights[Fire]
 - `@Type.key` 是显式 typed record reference。
 - 路径引用必须从 `@Type.key` 开始。
 - 不要使用旧的 `@key`。
+- 字段带 `@ref` 时必须使用引用；字段带 `@inline` 时必须写内联对象。
 
 ## 数组、字典、对象
 
@@ -481,6 +489,13 @@ level: 5, stats: {hp: 100, attack: 50}
 ```text
 _, 3
 _, _, notice
+```
+
+表格 writer 会把对象单元格渲染成可回读的 `TypeName{field: value}` 形式；手写时也可以显式写实际类型：
+
+```text
+Stats{hp: 100, attack: 50}
+Reward{amount: 25, name: Coin}
 ```
 
 ### 数组

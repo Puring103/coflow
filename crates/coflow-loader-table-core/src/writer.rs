@@ -227,22 +227,24 @@ fn render_field_cells(
             value,
         }]);
     }
-    if let CfdValue::Object(record) = new_value {
-        let prefix = field_prefix(path)?;
-        let child_columns = direct_child_columns(field_columns, &prefix);
-        if !child_columns.is_empty() {
-            let mut cells = Vec::new();
-            for (field, value) in &record.fields {
-                let Some(column) = child_columns.get(field) else {
-                    return Err(unmapped_path_error(record_key, actual_type, path));
-                };
-                cells.push(TableSetCell {
-                    row,
-                    column: *column,
-                    value: render_cell_value(value).map_err(table_render_error)?,
-                });
+    if is_field_only_path(path) {
+        if let CfdValue::Object(record) = new_value {
+            let prefix = field_prefix(path)?;
+            let child_columns = direct_child_columns(field_columns, &prefix);
+            if !child_columns.is_empty() {
+                let mut cells = Vec::new();
+                for (field, value) in &record.fields {
+                    let Some(column) = child_columns.get(field) else {
+                        return Err(unmapped_path_error(record_key, actual_type, path));
+                    };
+                    cells.push(TableSetCell {
+                        row,
+                        column: *column,
+                        value: render_cell_value(value).map_err(table_render_error)?,
+                    });
+                }
+                return Ok(cells);
             }
-            return Ok(cells);
         }
     }
     let column_path = column_path(path);
@@ -390,6 +392,11 @@ fn field_prefix(path: &[WriteFieldPathSegment]) -> Result<Vec<String>, TableWrit
         out.push(field.clone());
     }
     Ok(out)
+}
+
+fn is_field_only_path(path: &[WriteFieldPathSegment]) -> bool {
+    path.iter()
+        .all(|segment| matches!(segment, WriteFieldPathSegment::Field(_)))
 }
 
 fn direct_child_columns(

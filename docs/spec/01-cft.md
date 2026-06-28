@@ -208,7 +208,7 @@ type Quest {
 
 字段类型为普通 `type` 时，可以填入该类型本身或任意子类实例。
 
-对象字段的数据可以是内联对象，也可以是数据源中的记录引用。Excel 单元格用 `@Type.key` 显式引用记录，用 `@Type.key.path[index]` 引用某条记录的字段或集合元素；`Type` 是引用查找的根类型，不一定等于当前字段类型。直接引用也可以写成 `&key` 简写，表示按当前字段期望类型查找同名记录；简写不支持路径。`Type` 必须是 CFT 类型名，`key` 必须是 string identifier record key。旧 CFT 字段注解 `@ref(Type)` 已移除，不再作为兼容语法。引用解析在 `CfdDataModel` build 阶段执行，并按字段的声明类型检查兼容性：子类记录可以赋给父类字段，父类记录不能赋给子类字段。
+对象字段的数据默认既可以是内联对象，也可以是数据源中的记录引用；需要强制形态时，在字段上使用无参注解 `@ref` 或 `@inline`。`@ref` 要求该字段、数组元素或字典值写成记录引用；`@inline` 要求写成内联对象。Excel 单元格用 `@Type.key` 显式引用记录，用 `@Type.key.path[index]` 引用某条记录的字段或集合元素；`Type` 是引用查找的根类型，不一定等于当前字段类型。直接引用也可以写成 `&key` 简写，表示按当前字段期望类型查找同名记录；简写不支持路径。`Type` 必须是 CFT 类型名，`key` 必须是 string identifier record key。旧 CFT 字段注解 `@ref(Type)` 已移除，不再作为兼容语法。引用解析在 `CfdDataModel` build 阶段执行，并按字段的声明类型检查兼容性：子类记录可以赋给父类字段，父类记录不能赋给子类字段。
 
 记录 key 在同一具体类型内必须唯一；如果引用目标是 `abstract type` 或有子类的普通 `type`，该类型赋值兼容范围内的 key 也必须唯一。允许循环引用，因为解析是两阶段完成的。
 
@@ -433,6 +433,8 @@ item is null              # null 判断
 | `@struct` | `type` | — | 必须是 `sealed type` | codegen 生成值类型（C# struct） |
 | `@flag` | `enum` | — | 变体值必须为 2 的幂（0 除外） | 位标志枚举（C# [Flags]） |
 | `@expand` | `field` | 具体 `type` | 字段不能是 primitive、enum、array、dict 或 nullable | Excel loader 将父字段及相邻列展开为嵌套对象 |
+| `@ref` | `field` | 包含对象的字段类型 | 无参数；不能与 `@inline` 或 `@expand` 并用 | 数据值必须写成记录引用；用于 array/dict 时约束元素或 value |
+| `@inline` | `field` | 包含对象的字段类型 | 无参数；不能与 `@ref` 并用；可与 `@expand` 并用 | 数据值必须写成内联对象；用于 array/dict 时约束元素或 value |
 | `@idAsEnum(EnumName)` | `type` | — | EnumName 必须是已声明且没有手写变体的 enum；同一 enum 只能绑定一个 type | build/codegen 按记录 key 填充该 enum，并把记录 `Id` 提升为该 enum |
 | `@display("text")` | `type`、`enum`、`field`、`enum variant` | 任意 | — | 可读名称，codegen 生成 XML 注释，用于编辑器显示 |
 | `@deprecated` | `type`、`enum`、`field`、`enum variant` | 任意 | — | 标记废弃，codegen 输出对应语言的废弃标记；子类不自动继承父类的 `@deprecated` |
@@ -693,7 +695,7 @@ pub enum CftConstValue {
 | `CFT-SCHEMA-022` | `AnnotationWithoutTarget` | 注解后没有可附加的 `type`、`enum` 或字段 |
 | `CFT-SCHEMA-023` | `InvalidAnnotationTarget` | 注解用在不支持的目标上 |
 | `CFT-SCHEMA-024` | `InvalidAnnotationArgument` | 注解参数数量或类型错误 |
-| `CFT-SCHEMA-025` | `InvalidAnnotatedFieldType` | `@expand` 字段类型不合法 |
+| `CFT-SCHEMA-025` | `InvalidAnnotatedFieldType` | `@expand`、`@ref` 或 `@inline` 字段类型或组合不合法 |
 | `CFT-SCHEMA-026` | `StructRequiresSealedType` | `@struct` 标注的 `type` 不是 `sealed type` |
 | `CFT-SCHEMA-027` | `IdAsEnumRequiresEmptyEnum` | `@idAsEnum` 参数不是已声明的空 enum |
 | `CFT-SCHEMA-028` | `EnumVariantOnNonEnum` | 默认值使用 `Name.Variant`，但 `Name` 不是 `enum` |
@@ -708,7 +710,7 @@ pub enum CftConstValue {
 | `CFT-SCHEMA-037` | `SingletonIdAsEnumConflict` | `@singleton` 与 `@idAsEnum` 同时使用 |
 | `CFT-SCHEMA-038` | `SingletonNotReferenceable` | `@singleton` type 被作为字段类型引用 |
 
-旧的字段级 `@id`、`@ref`、`@index`、`@IdAsEnum`、`@GenAsEnum` 不在当前注解白名单中，会以未知注解或非法目标报错。字段名 `id`、`Id`、`ID` 是保留名，会以 `ReservedIdentifier` 报错。
+旧的字段级 `@id`、`@ref(Type)`、`@index`、`@IdAsEnum`、`@GenAsEnum` 已移除，会以未知注解、非法目标或非法参数报错。当前 `@ref` 是新的无参字段形态注解。字段名 `id`、`Id`、`ID` 是保留名，会以 `ReservedIdentifier` 报错。
 
 #### TYPE
 

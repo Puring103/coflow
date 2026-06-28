@@ -15,12 +15,16 @@ pub(super) fn default_value_for_ty(
     schema: &CftContainer,
 ) -> CfdValue {
     if let Some(d) = declared_default {
-        return default_from_schema_default(d);
+        return default_from_schema_default(ty, d, schema);
     }
     default_zero_for_ty(ty, schema)
 }
 
-fn default_from_schema_default(d: &CftSchemaDefaultValue) -> CfdValue {
+fn default_from_schema_default(
+    ty: &CftSchemaTypeRef,
+    d: &CftSchemaDefaultValue,
+    schema: &CftContainer,
+) -> CfdValue {
     match d {
         CftSchemaDefaultValue::Null => CfdValue::Null,
         CftSchemaDefaultValue::Int(v) => CfdValue::Int(*v),
@@ -37,7 +41,19 @@ fn default_from_schema_default(d: &CftSchemaDefaultValue) -> CfdValue {
             value: *value,
         }),
         CftSchemaDefaultValue::EmptyArray => CfdValue::Array(Vec::new()),
-        CftSchemaDefaultValue::EmptyObject => CfdValue::Dict(Vec::new()),
+        CftSchemaDefaultValue::EmptyObject => match ty {
+            CftSchemaTypeRef::Nullable(inner) => default_from_schema_default(inner, d, schema),
+            CftSchemaTypeRef::Named(name) if schema.has_type(name) => {
+                CfdValue::Object(Box::new(CfdRecord {
+                    key: String::new(),
+                    actual_type: name.clone(),
+                    fields: BTreeMap::new(),
+                    origin: RecordOrigin::None,
+                    spread_field_sources: BTreeMap::new(),
+                }))
+            }
+            _ => CfdValue::Dict(Vec::new()),
+        },
     }
 }
 

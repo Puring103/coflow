@@ -211,6 +211,8 @@ level: 5, stats: {hp: 100, attack: 50}
 
 目标类型为 `string` 时，`@Item.sword_01` 和 `&sword_01` 都只是普通字符串。目标类型为对象时，裸 `sword_01` 会报错并提示写成 `@Type.sword_01` 或 `&sword_01`，避免字符串和引用混淆。JSON 和 MessagePack 导出引用时只输出纯 key 字符串，例如 `"sword_01"`，不会输出 `Type.key`。
 
+如果 CFT 字段带 `@ref`，该字段必须写记录引用，不能写内联对象；如果字段带 `@inline`，必须写内联对象，不能写 `@Type.key`、`@Type.key.path` 或 `&key`。`@ref` / `@inline` 写在 `[Item]` 或 `{string: Item}` 这类集合字段上时，会约束每个数组元素或字典 value。
+
 `#` 仍然是 CFT 注释符，不作为引用简写符号。
 
 ---
@@ -290,6 +292,8 @@ ItemReward{r2, &sword_01, 1}
 ```
 
 `TypeName{...}` 中的 `TypeName` 必须是目标类型的具体可赋值类型。`{...}` 内部仍然按对象 positional 或 named 规则解析。
+
+表格 writer 输出普通对象单元格时也会使用 `TypeName{field: value}` 形式，确保写出的文本可以被单元格 parser 再次读取。非多态字段也允许显式写实际类型标记，例如 `Stats{hp: 100, attack: 50}`。
 
 多态数组：
 

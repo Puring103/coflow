@@ -261,6 +261,8 @@ type Monster {
 - `@deprecated`：把生成的 C# symbol 标记为 obsolete。
 - `@struct`：让 sealed value-like type 生成 C# struct。
 - `@expand`：让 Excel 相邻列展开成嵌套 object 字段。
+- `@ref`：强制对象字段、数组元素或字典 value 写成记录引用。
+- `@inline`：强制对象字段、数组元素或字典 value 写成内联对象。
 
 ---
 
@@ -273,6 +275,8 @@ type Monster {
 - object 引用必须显式写为 typed ref，例如 `@Item.sword_01` 或
   `@DropTable.drop_01.rewards[0]`。
 - 同类型直接引用可写为 `&sword_01`。路径引用仍必须使用显式 `@Type.key` 根。
+- CFT 字段带 `@ref` 时只能写引用；带 `@inline` 时只能写内联对象。表格对象单元格
+  可写 `Stats{hp: 100, attack: 50}`，多态对象也用 `ConcreteType{...}`。
 - 裸字符串保持字符串语义。导出的 JSON 和 MessagePack 中，引用字段保存为
   `"sword_01"` 这类纯 key 字符串，而不是 `"Item.sword_01"`。
 

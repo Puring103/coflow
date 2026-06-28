@@ -140,6 +140,11 @@ RecordRow {
 }
 
 FieldCell { name: String, value: FieldValue }
+FieldAnnotation {
+    field_mode: Option<"ref" | "inline">, // CFT @ref/@inline 字段形态限制
+}
+FileRecords.field_modes: { [typeName]: { [fieldName]: "ref" | "inline" } }
+GraphData.field_modes: { [typeName]: { [fieldName]: "ref" | "inline" } }
 
 // #[serde(tag = "kind")]
 FieldValue:
@@ -286,6 +291,8 @@ AST span 覆盖：
 - 超过 **5 层**后强制 compact，不再递归展开
 - 字段名 + 值同行；object/array/dict 的 `▶ TypeName` 作折叠句柄
 - 可编辑：标量点击进入 inline edit，失焦或 Enter 触发 `write_field`
+- schema 字段带 `@ref` 时隐藏“内联”按钮；带 `@inline` 时隐藏“->Ref”按钮。嵌套对象根据
+  `field_modes` 按实际类型查找子字段限制，数组元素和字典 value 继承集合字段限制。
 
 ---
 

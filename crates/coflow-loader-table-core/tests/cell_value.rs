@@ -13,8 +13,7 @@ use coflow_data_model::{
     CfdRefPathSegment, CfdValue,
 };
 use coflow_loader_table_core::cell_value::{
-    parse_cell, render_cell_value, CellRenderError, CellValueDiagnostics, CellValueErrorCode,
-    ParsedCell,
+    parse_cell, render_cell_value, CellValueDiagnostics, CellValueErrorCode, ParsedCell,
 };
 use std::collections::BTreeSet;
 
@@ -984,11 +983,13 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
         r#"
             enum Rarity { Common = 0, Rare = 10, }
             type Item { name: string; }
+            type Stats { hp: int; attack: int; }
             type Drop {
-                names: [string];
-                item: Item;
-                weights: {string: int};
-                rarity: Rarity;
+                names: [string] = [];
+                item: Item? = null;
+                stats: Stats;
+                weights: {string: int} = {};
+                rarity: Rarity = Rarity.Common;
             }
         "#,
     )?;
@@ -1041,23 +1042,57 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
         render_cell_value(&enum_value).map_err(|err| err.to_string())?,
         "Rare"
     );
+
+    let stats = CfdValue::Object(Box::new(coflow_data_model::CfdRecord {
+        key: String::new(),
+        actual_type: "Stats".to_string(),
+        fields: std::collections::BTreeMap::from([
+            ("attack".to_string(), CfdValue::Int(20)),
+            ("hp".to_string(), CfdValue::Int(100)),
+        ]),
+        origin: coflow_data_model::RecordOrigin::None,
+        spread_field_sources: std::collections::BTreeMap::new(),
+    }));
+    let rendered_stats = render_cell_value(&stats).map_err(|err| err.to_string())?;
+    assert_eq!(rendered_stats, "Stats{attack: 20, hp: 100}");
+    let parsed_stats = parse_value(&schema, "Stats", &rendered_stats)?;
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("drop_1", "Drop", [("stats", parsed_stats)]);
+    let model = build_model(builder)?;
+    let drop = model
+        .lookup("Drop", "drop_1")
+        .and_then(|id| model.record(id))
+        .ok_or_else(|| "expected drop record".to_string())?;
+    let Some(CfdValue::Object(parsed)) = drop.field("stats") else {
+        return Err("expected parsed stats object".to_string());
+    };
+    assert_eq!(parsed.field("hp"), Some(&CfdValue::Int(100)));
+    assert_eq!(parsed.field("attack"), Some(&CfdValue::Int(20)));
     Ok(())
 }
 
 #[test]
-fn rejects_rendering_nested_object_values_to_single_cells() {
+fn renders_polymorphic_object_values_with_type_marker() -> TestResult {
     let nested = CfdValue::Object(Box::new(coflow_data_model::CfdRecord {
-        key: "item_1".to_string(),
-        actual_type: "Item".to_string(),
-        fields: std::collections::BTreeMap::new(),
+        key: String::new(),
+        actual_type: "ItemReward".to_string(),
+        fields: std::collections::BTreeMap::from([
+            ("count".to_string(), CfdValue::Int(1)),
+            (
+                "item".to_string(),
+                CfdValue::Ref {
+                    target_type: "Item".to_string(),
+                    target_key: "sword".to_string(),
+                },
+            ),
+        ]),
         origin: coflow_data_model::RecordOrigin::None,
         spread_field_sources: std::collections::BTreeMap::new(),
     }));
+    let rendered = render_cell_value(&nested).map_err(|err| err.to_string())?;
 
-    assert_eq!(
-        render_cell_value(&nested),
-        Err(CellRenderError::NestedObject)
-    );
+    assert_eq!(rendered, "ItemReward{count: 1, item: &sword}".to_string());
+    Ok(())
 }
 
 #[test]

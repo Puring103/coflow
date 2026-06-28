@@ -11,6 +11,7 @@ import {
   type DragEvent as ReactDragEvent,
 } from 'react'
 import type { FieldCell } from '../bindings/FieldCell'
+import type { FieldMode } from '../bindings/FieldMode'
 import type { RefTarget } from '../bindings/RefTarget'
 import type { SpreadInfo } from '../bindings/SpreadInfo'
 import type { DictKey, FieldPathSegment, FieldValue } from '../wire'
@@ -58,6 +59,7 @@ export function CardHeader({
 export const NODE_PEEK_FIELDS = 4
 const MAX_DEPTH = 5
 const INDENT_PX = 14
+export type FieldModeIndex = { [key in string]?: { [key in string]?: FieldMode } }
 
 function spreadHintText(info: SpreadInfo | undefined): string | undefined {
   if (!info) return undefined
@@ -246,6 +248,7 @@ function buildDiagCtx(diags: FieldDiagnostic[] | undefined): DiagCtxValue | null
 export interface ExpandedProps {
   fields: FieldCell[]
   actualType?: string
+  fieldModes?: FieldModeIndex
   depth?: number
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   pathPrefix?: string
@@ -258,6 +261,7 @@ export interface ExpandedProps {
 export function DataCardExpanded({
   fields,
   actualType,
+  fieldModes,
   depth = 0,
   onEdit,
   pathPrefix,
@@ -296,6 +300,7 @@ export function DataCardExpanded({
       {fields.map((fc) => {
         const fieldEdit = isDimensionDefaultField(actualType, fc.name) ? undefined : onEdit
         const spreadInfo = cellSpreadInfo(fc)
+        const fieldMode = fc.annotation?.field_mode ?? fieldModes?.[actualType ?? '']?.[fc.name] ?? null
         return (
           <FieldRow
             key={fc.name}
@@ -305,6 +310,8 @@ export function DataCardExpanded({
             onEdit={fieldEdit}
             isSpread={!!spreadInfo}
             spreadInfo={spreadInfo}
+            fieldMode={fieldMode}
+            fieldModes={fieldModes}
             fieldPath={[fieldPathField(fc.name)]}
             pathKey={pathPrefix ? `${pathPrefix}.${fc.name}` : fc.name}
             onRowToggle={onRowToggle}
@@ -341,6 +348,8 @@ function FieldRow({
   onEdit,
   isSpread,
   spreadInfo,
+  fieldMode,
+  fieldModes,
   fieldPath,
   pathKey,
   onRowToggle,
@@ -354,6 +363,8 @@ function FieldRow({
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   isSpread?: boolean
   spreadInfo?: SpreadInfo
+  fieldMode?: FieldMode | null
+  fieldModes?: FieldModeIndex
   fieldPath: FieldPathSegment[]
   pathKey?: string
   onRowToggle?: (path: string, expanded: boolean) => void
@@ -373,6 +384,8 @@ function FieldRow({
         onEdit={onEdit}
         isSpread={isSpread}
         spreadInfo={spreadInfo}
+        fieldMode={fieldMode}
+        fieldModes={fieldModes}
         fieldPath={fieldPath}
         pathKey={pathKey}
         onRowToggle={onRowToggle}
@@ -390,6 +403,7 @@ function FieldRow({
       onCommit={onEdit ? next => onEdit(fieldPath, next) : undefined}
       isSpread={isSpread}
       spreadInfo={spreadInfo}
+      fieldMode={fieldMode}
       pathKey={pathKey}
       leading={leading}
       trailing={trailing}
@@ -405,6 +419,7 @@ function ScalarFieldRow({
   onCommit,
   isSpread,
   spreadInfo,
+  fieldMode,
   pathKey,
   leading,
   trailing,
@@ -416,6 +431,7 @@ function ScalarFieldRow({
   onCommit?: (newValue: FieldValue) => void
   isSpread?: boolean
   spreadInfo?: SpreadInfo
+  fieldMode?: FieldMode | null
   pathKey?: string
   leading?: ReactNode
   trailing?: ReactNode
@@ -437,12 +453,12 @@ function ScalarFieldRow({
       <div className="dc-row-value">
         <div className="dc-row-value-inner">
           {canEdit ? (
-            <DirectEditor value={value} onCommit={onCommit!} />
+            <DirectEditor value={value} onCommit={onCommit!} fieldMode={fieldMode} />
           ) : (
             <ValueChip value={value} />
           )}
         </div>
-        {onCommit && value.kind === 'ref' && (
+        {onCommit && value.kind === 'ref' && fieldMode !== 'ref' && (
           <button
             className="btn-tiny dc-row-mode-btn"
             title={`将引用 "${value.value.target_key}" 转为内联对象（使用 schema 默认值）`}
@@ -462,9 +478,11 @@ function ScalarFieldRow({
 function DirectEditor({
   value,
   onCommit,
+  fieldMode,
 }: {
   value: FieldValue
   onCommit: (next: FieldValue) => void
+  fieldMode?: FieldMode | null
 }) {
   if (value.kind === 'bool') {
     return (
@@ -482,6 +500,7 @@ function DirectEditor({
     return <EnumDirectSelect value={value} onCommit={onCommit} />
   }
   if (value.kind === 'ref') {
+    if (fieldMode === 'inline') return <ValueChip value={value} />
     return <RefDirectSelect value={value} onCommit={onCommit} />
   }
   if (value.kind === 'int' || value.kind === 'float' || value.kind === 'string') {
@@ -838,6 +857,8 @@ function ExpandableRow({
   onEdit,
   isSpread,
   spreadInfo,
+  fieldMode,
+  fieldModes,
   fieldPath,
   pathKey,
   onRowToggle,
@@ -851,6 +872,8 @@ function ExpandableRow({
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   isSpread?: boolean
   spreadInfo?: SpreadInfo
+  fieldMode?: FieldMode | null
+  fieldModes?: FieldModeIndex
   fieldPath: FieldPathSegment[]
   pathKey?: string
   onRowToggle?: (path: string, expanded: boolean) => void
@@ -902,7 +925,7 @@ function ExpandableRow({
               {count !== null && <span className="vc-count">{count}</span>}
             </div>
           )}
-          {onEdit && value.kind === 'object' && !pickingRef && (
+          {onEdit && value.kind === 'object' && !pickingRef && fieldMode !== 'inline' && (
             <button
               className="btn-tiny dc-row-mode-btn"
               title="切换为引用（指向已有同类型记录）"
@@ -915,25 +938,34 @@ function ExpandableRow({
       {expanded && (
         <>
           {value.kind === 'object' &&
-            objectFields(value).map((fc) => (
+            objectFields(value).map((fc) => {
+                const childMode = fc.annotation?.field_mode
+                  ?? fieldModes?.[value.value.actual_type]?.[fc.name]
+                  ?? null
+                return (
               <FieldRow
                 key={fc.name}
                 label={fc.name}
                 value={fc.value}
                 depth={depth + 1}
                 onEdit={onEdit}
+                fieldMode={childMode}
+                fieldModes={fieldModes}
                 fieldPath={[...fieldPath, fieldPathField(fc.name)]}
                 pathKey={pathKey ? `${pathKey}.${fc.name}` : fc.name}
                 onRowToggle={onRowToggle}
               />
-            ))}
+                )
+              })}
           {value.kind === 'array' && (
             <ArrayItems
               container={value}
               depth={depth + 1}
+              fieldMode={fieldMode}
               fieldPath={fieldPath}
               pathKey={pathKey}
               onEdit={onEdit}
+              fieldModes={fieldModes}
               onRowToggle={onRowToggle}
             />
           )}
@@ -945,6 +977,8 @@ function ExpandableRow({
                 value={item}
                 depth={depth + 1}
                 onEdit={onEdit}
+                fieldMode={fieldMode}
+                fieldModes={fieldModes}
                 fieldPath={[...fieldPath, fieldPathDictKey(dictKeyPathText(key))]}
                 pathKey={pathKey ? `${pathKey}[${dictKeyText(key)}]` : `[${dictKeyText(key)}]`}
                 onRowToggle={onRowToggle}
@@ -1135,17 +1169,21 @@ function defaultLikeShape(sample: FieldValue): FieldValue {
 function ArrayItems({
   container,
   depth,
+  fieldMode,
   fieldPath,
   pathKey,
   onEdit,
   onRowToggle,
+  fieldModes,
 }: {
   container: FieldValue & { kind: 'array' }
   depth: number
+  fieldMode?: FieldMode | null
   fieldPath: FieldPathSegment[]
   pathKey?: string
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   onRowToggle?: (path: string, expanded: boolean) => void
+  fieldModes?: FieldModeIndex
 }) {
   const [dragIdx, setDragIdx] = useState<number | null>(null)
   const [overIdx, setOverIdx] = useState<number | null>(null)
@@ -1172,6 +1210,8 @@ function ArrayItems({
             value={item}
             depth={depth}
             onEdit={onEdit}
+            fieldMode={fieldMode}
+            fieldModes={fieldModes}
             fieldPath={[...fieldPath, fieldPathIndex(i)]}
             pathKey={pathKey ? `${pathKey}[${i}]` : `[${i}]`}
             onRowToggle={onRowToggle}
@@ -1449,6 +1489,7 @@ function plainText(v: FieldValue): string {
 export function DataCardNode({
   fields,
   actualType,
+  fieldModes,
   showAll,
   onToggle,
   onRowToggle,
@@ -1456,6 +1497,7 @@ export function DataCardNode({
 }: {
   fields: FieldCell[]
   actualType: string
+  fieldModes?: FieldModeIndex
   showAll: boolean
   onToggle: () => void
   onRowToggle?: (path: string, expanded: boolean) => void
@@ -1464,7 +1506,13 @@ export function DataCardNode({
   const visible = showAll ? fields : fields.slice(0, NODE_PEEK_FIELDS)
   return (
     <div className="dc-node-card">
-      <DataCardExpanded fields={visible} actualType={actualType} onRowToggle={onRowToggle} onEdit={onEdit} />
+      <DataCardExpanded
+        fields={visible}
+        actualType={actualType}
+        fieldModes={fieldModes}
+        onRowToggle={onRowToggle}
+        onEdit={onEdit}
+      />
       {fields.length > NODE_PEEK_FIELDS && (
         <button className="dc-node-more" onClick={onToggle}>
           {showAll ? '收起' : `显示全部 (+${fields.length - NODE_PEEK_FIELDS})`}

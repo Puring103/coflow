@@ -12,6 +12,7 @@ use coflow_api::{FlatDiagnostic, WriterCapabilities};
 use coflow_data_model::{CfdRecord, CfdValue};
 use coflow_engine::{FileTreeNode, RecordCoordinate};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
@@ -136,8 +137,15 @@ pub struct FileRecords {
     pub file_path: String,
     pub type_names: Vec<String>,
     pub records: Vec<RecordRow>,
+    pub field_modes: FieldModeIndex,
     pub capabilities: WriterCapabilities,
 }
+
+/// Schema-derived field shape restrictions keyed by actual type and field.
+///
+/// `DataCard` uses this side-channel when rendering nested objects, because
+/// core `CfdValue` intentionally does not carry editor annotations.
+pub type FieldModeIndex = BTreeMap<String, BTreeMap<String, FieldMode>>;
 
 /// One top-level record's view inside a file.
 ///
@@ -192,6 +200,8 @@ pub struct FieldAnnotation {
     pub spread_info: Option<SpreadInfo>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ref_target_file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_mode: Option<FieldMode>,
     #[serde(
         default,
         with = "coflow_data_model::serde_i64::option",
@@ -205,8 +215,21 @@ impl FieldAnnotation {
     pub const fn is_empty(&self) -> bool {
         self.spread_info.is_none()
             && self.ref_target_file.is_none()
+            && self.field_mode.is_none()
             && self.enum_int_value.is_none()
     }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+#[serde(rename_all = "snake_case")]
+pub enum FieldMode {
+    Ref,
+    Inline,
 }
 
 /// Source record coordinate of a spread-inherited cell, plus the field
@@ -299,6 +322,7 @@ pub struct DeletedRecordSnapshot {
 pub struct GraphData {
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
+    pub field_modes: FieldModeIndex,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

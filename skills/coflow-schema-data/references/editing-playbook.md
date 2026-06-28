@@ -110,6 +110,11 @@ dimensions:
 }
 ```
 
+对象字段默认既可写引用也可写内联对象；schema 字段带 `@ref` 时 patch 必须使用
+`{ "$ref": "Type.key" }`，带 `@inline` 时必须使用 inline object，例如
+`{ "$type": "ItemReward", ... }` 或普通对象字段 map。`@ref` / `@inline` 标在
+`[Item]` 或 `{string: Item}` 字段上时，会约束数组元素或字典 value。
+
 字段修改使用路径：
 
 ```json
@@ -143,6 +148,7 @@ dimensions:
 - 新建本地表格用 `data create-file`，字段变化用 `data sync-header`。
 - `data sync-header` 不支持远端 Lark；远端表格只通过 patch writer 做记录级写入。
 - 对用户指定文件或 sheet 的修改，patch 里尽量带 `file` guard。
+- 表格对象单元格可写 `TypeName{field: value}`；多态对象用 `ConcreteType{...}`。
 
 ## 收尾
 

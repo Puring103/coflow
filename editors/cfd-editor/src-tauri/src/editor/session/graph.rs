@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use coflow_data_model::{CfdDictKey, CfdRecord, CfdRecordId, CfdValue};
 use coflow_engine::RecordCoordinate;
 
-use crate::editor::convert::{record_to_row, WireContext};
+use crate::editor::convert::{field_mode_index, record_to_row, WireContext};
 use crate::editor::types::{GraphData, GraphEdge, GraphNode};
 
 use super::EditorSession;
@@ -91,6 +91,7 @@ pub(super) fn build_graph(session: &EditorSession, file_path: &str) -> GraphData
     GraphData {
         nodes: nodes.into_values().collect(),
         edges,
+        field_modes: field_mode_index(&session.engine),
     }
 }
 

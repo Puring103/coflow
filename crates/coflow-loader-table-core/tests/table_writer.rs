@@ -167,6 +167,86 @@ fn nested_dict_entry_edit_rewrites_owning_cell_value() {
 }
 
 #[test]
+fn replacing_ref_with_inline_object_inside_array_rewrites_owning_cell() {
+    let schema = compile_schema(
+        r"
+        type Reward {
+          name: string;
+          amount: int;
+        }
+
+        type Drop {
+          rewards: [Reward];
+        }
+        ",
+    );
+    let input = CfdInputRecord::new(
+        "drop_1",
+        "Drop",
+        [(
+            "rewards",
+            CfdInputValue::Array(vec![CfdInputValue::record_ref("Reward", "coin")]),
+        )],
+    )
+    .with_origin(table_origin(BTreeMap::from([(
+        vec!["rewards".to_string()],
+        2,
+    )])));
+    let source = CfdInputRecord::new(
+        "coin",
+        "Reward",
+        [
+            ("name", CfdInputValue::String("Coin".to_string())),
+            ("amount", CfdInputValue::Int(10)),
+        ],
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(source);
+    builder.add_input_record(input);
+    let model = builder.build().expect("model");
+    let origin = table_origin(BTreeMap::from([(vec!["rewards".to_string()], 2)]));
+    let new_value = CfdValue::Object(Box::new(coflow_data_model::CfdRecord {
+        key: String::new(),
+        actual_type: "Reward".to_string(),
+        fields: BTreeMap::from([
+            ("amount".to_string(), CfdValue::Int(25)),
+            ("name".to_string(), CfdValue::String("Coin".to_string())),
+        ]),
+        origin: RecordOrigin::None,
+        spread_field_sources: BTreeMap::new(),
+    }));
+    let path = vec![
+        WriteFieldPathSegment::Field("rewards".to_string()),
+        WriteFieldPathSegment::Index(0),
+    ];
+    let request = TableFieldWrite {
+        origin: &origin,
+        record_key: "drop_1",
+        actual_type: "Drop",
+        field_path: &path,
+        new_value: &new_value,
+        model: Some(&model),
+    };
+
+    let plan = plan_field_write(&request).expect("array cell rewrite should succeed");
+
+    assert_eq!(
+        plan,
+        TableWritePlan::SetCells {
+            document: SourceDocument::Local(PathBuf::from("data.xlsx")),
+            sheet: "Items".to_string(),
+            id_column: 1,
+            expected_key: "drop_1".to_string(),
+            cells: vec![TableSetCell {
+                row: 2,
+                column: 2,
+                value: "[Reward{amount: 25, name: Coin}]".to_string(),
+            }],
+        }
+    );
+}
+
+#[test]
 fn expanded_object_edit_writes_each_child_column() {
     let _schema = compile_schema(
         r"

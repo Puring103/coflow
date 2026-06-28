@@ -115,7 +115,7 @@ pub fn render_cell_value(value: &CfdValue) -> Result<String, CellRenderError> {
         CfdValue::Ref { target_key, .. } => Ok(format!("&{target_key}")),
         CfdValue::Array(items) => render_array(items),
         CfdValue::Dict(entries) => render_dict(entries),
-        CfdValue::Object(_) => Err(CellRenderError::NestedObject),
+        CfdValue::Object(record) => render_object(record),
     }
 }
 
@@ -261,6 +261,24 @@ fn render_dict_key(key: &CfdDictKey) -> Result<String, CellRenderError> {
         CfdDictKey::Int(value) => Ok(value.to_string()),
         CfdDictKey::Enum(value) => render_enum_value(value),
     }
+}
+
+fn render_object(record: &coflow_data_model::CfdRecord) -> Result<String, CellRenderError> {
+    let mut out = String::new();
+    if !record.actual_type.is_empty() {
+        out.push_str(&record.actual_type);
+    }
+    out.push('{');
+    for (idx, (field, value)) in record.fields.iter().enumerate() {
+        if idx > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(field);
+        out.push_str(": ");
+        out.push_str(&render_cell_value(value)?);
+    }
+    out.push('}');
+    Ok(out)
 }
 
 fn render_enum_value(value: &CfdEnumValue) -> Result<String, CellRenderError> {

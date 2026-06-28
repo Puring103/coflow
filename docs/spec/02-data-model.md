@@ -110,6 +110,8 @@ record key 必须是 string identifier。同一具体类型内 record key 必须
 
 路径引用 `PathRef { target_type, key, segments }` 先在 `target_type` 的赋值兼容范围内按 record key 找到根记录，再按字段访问和数组/字典索引访问定位值。路径结果仍必须与目标字段类型兼容。`&key` 简写不会生成 `PathRef`；路径引用必须带显式根类型。
 
+字段带 CFT `@ref` 时，DataModel 构建阶段拒绝该字段位置的内联对象；字段带 `@inline` 时，拒绝 `RecordRef` 和 `PathRef`。该限制会沿数组元素和字典 value 递归应用，`null` 仍由 nullable 类型规则单独处理。
+
 ---
 
 ## 多条数据来源的顺序

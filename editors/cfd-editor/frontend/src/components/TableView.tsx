@@ -380,6 +380,7 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
             <DataCardExpanded
               fields={selectedRecord.fields}
               actualType={recordActualType(selectedRecord)}
+              fieldModes={data.field_modes}
               onEdit={readOnly || !onWriteField ? undefined : (path, val) => { onWriteField(selectedRecord.coordinate, path, val) }}
               diagnostics={diagnostics ? diagnosticsForRecord(diagnostics, data.file_path, selectedRecord.coordinate) : []}
             />

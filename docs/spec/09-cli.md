@@ -379,6 +379,10 @@ patch value 支持普通 JSON 值，也支持特殊对象：
 非字符串 key 的 dict。第一版不支持 dict-key 路径写入，例如直接修改
 `["resistances", "Fire"]` 会被拒绝。
 
+patch value 仍受 schema 字段形态约束：普通对象字段默认可写 `$ref` 或 inline object；
+带 `@ref` 的字段、数组元素或字典 value 必须写 `$ref`，不能写 inline object；带
+`@inline` 的字段、数组元素或字典 value 必须写 inline object，不能写 `$ref`。
+
 写入语义：
 
 - 单个写入或 patch value 校验失败时，当前 op 会进入 `failed`。无失败时

@@ -31,7 +31,7 @@ use coflow_api::ProviderRegistry;
 use coflow_data_model::{CfdRecord, CfdValue};
 use coflow_engine::{ProjectSession, RecordCoordinate};
 
-use crate::editor::convert::{record_view_to_row, WireContext};
+use crate::editor::convert::{field_mode_index, record_view_to_row, WireContext};
 use crate::editor::types::{
     DeleteRecordOutcome, DeletedRecordSnapshot, EditorError, FileRecords, GraphData,
     InsertRecordOutcome, ProjectSnapshot, RefTarget, RenameRecordOutcome, WriteFieldOutcome,
@@ -192,11 +192,13 @@ impl SessionStore {
         }
         let capabilities =
             session_capabilities_for_file(&session, self.registry()?.as_ref(), file_path);
+        let field_modes = field_mode_index(&session.engine);
         drop(session);
         Ok(FileRecords {
             file_path: file_path.to_string(),
             type_names: type_seen,
             records,
+            field_modes,
             capabilities,
         })
     }

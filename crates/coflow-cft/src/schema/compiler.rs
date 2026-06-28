@@ -1,8 +1,9 @@
 use super::support::{
-    build_schema_type_ref, const_value, convert_annotations, convert_check_block, find_annotation,
-    format_type_ref, has_annotation, is_i64_power_of_two, is_reserved_identifier,
-    is_valid_dict_key, types_assignable, AnnotationSpec, AnnotationTarget, ConstInfo, EnumInfo,
-    FieldInfo, FieldOrigin, Symbol, SymbolKind, Ty, TypeInfo,
+    build_schema_type_ref, const_value, convert_annotations, convert_check_block,
+    field_type_contains_object, find_annotation, format_type_ref, has_annotation,
+    is_i64_power_of_two, is_reserved_identifier, is_valid_dict_key, types_assignable,
+    AnnotationSpec, AnnotationTarget, ConstInfo, EnumInfo, FieldInfo, FieldOrigin, Symbol,
+    SymbolKind, Ty, TypeInfo,
 };
 use super::type_checker::TypeChecker;
 use super::{
@@ -695,6 +696,16 @@ impl<'a> SchemaCompiler<'a> {
                 }
             }
         }
+        let ref_annotation = find_annotation(&field.annotations, "ref");
+        let inline_annotation = find_annotation(&field.annotations, "inline");
+        if let (Some(annotation), Some(_)) = (ref_annotation, inline_annotation) {
+            self.push_diag(
+                CftErrorCode::InvalidAnnotatedFieldType,
+                module,
+                annotation.span,
+                "@ref and @inline cannot be used on the same field",
+            );
+        }
         if let Some(annotation) = find_annotation(&field.annotations, "expand") {
             // @expand requires the field to reference a concrete `type`. Arrays,
             // dicts, primitives, enums, and nullable wrappers don't make sense
@@ -707,6 +718,24 @@ impl<'a> SchemaCompiler<'a> {
                     module,
                     annotation.span,
                     "@expand fields must reference a concrete type (no nullable, arrays, dicts, enums, or primitives)",
+                );
+            }
+            if let Some(annotation) = ref_annotation {
+                self.push_diag(
+                    CftErrorCode::InvalidAnnotatedFieldType,
+                    module,
+                    annotation.span,
+                    "@ref cannot be combined with @expand",
+                );
+            }
+        }
+        for annotation in [ref_annotation, inline_annotation].into_iter().flatten() {
+            if !field_type_contains_object(&self.resolve_field_type(&field.ty)) {
+                self.push_diag(
+                    CftErrorCode::InvalidAnnotatedFieldType,
+                    module,
+                    annotation.span,
+                    format!("@{} fields must contain an object type", annotation.name),
                 );
             }
         }

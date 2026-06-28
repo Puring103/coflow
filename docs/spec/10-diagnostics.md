@@ -151,10 +151,10 @@ annotation 语法错误、非法 check 语句或重复 check block。
 - module、type、field、enum variant 或 enum value 重复。
 - 未知命名类型。
 - 非法继承。
-- 非法使用 `@struct`、`@expand`、`@flag`、`@display`、`@deprecated` 或
+- 非法使用 `@struct`、`@expand`、`@ref`、`@inline`、`@flag`、`@display`、`@deprecated` 或
   `@idAsEnum`。
-- 旧字段级 `@id`、`@index`、`@ref`、`@IdAsEnum` 和 `@GenAsEnum` 已移除；
-  应改用字段的 CFT 类型以及 `@Type.key` 或 `&key` 单元格引用。
+- 旧字段级 `@id`、`@index`、`@ref(Type)`、`@IdAsEnum` 和 `@GenAsEnum` 已移除；
+  当前无参 `@ref` 只用于强制对象字段写记录引用。
 - 声明保留字段 `id`。
 - 默认值非法。
 - enum value 序列非法。

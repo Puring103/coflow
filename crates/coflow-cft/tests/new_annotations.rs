@@ -124,7 +124,6 @@ fn id_is_reserved_as_a_field_name() {
 fn old_record_annotations_are_rejected() {
     for source in [
         "type Skill { @id key: string; }",
-        "type Target { key: string; } type Holder { @ref(Target) target: string; }",
         "type Skill { @index name: string; }",
         "type Skill { @IdAsEnum(\"SkillKey\") key: string; }",
         "type Skill { @GenAsEnum(\"SkillKey\") key: string; }",
@@ -132,6 +131,11 @@ fn old_record_annotations_are_rejected() {
         let err = compile_one(source).expect_err(source);
         assert_has_code(&err, CftErrorCode::UnknownAnnotation);
     }
+
+    let old_ref =
+        compile_one("type Target { value: string; } type Holder { @ref(Target) target: Target; }")
+            .expect_err("old @ref(Target) syntax should be rejected");
+    assert_has_code(&old_ref, CftErrorCode::InvalidAnnotationArgument);
 }
 
 #[test]
@@ -161,4 +165,95 @@ fn expand_on_non_concrete_field_is_rejected() {
     .expect_err("@expand requires a concrete type");
 
     assert_has_code(&err, CftErrorCode::InvalidAnnotatedFieldType);
+}
+
+#[test]
+fn ref_and_inline_annotations_compile_on_object_shapes() {
+    let schema = compile_one(
+        r#"
+            type Item { name: string; }
+            type Holder {
+                @ref
+                item: Item;
+                @inline
+                maybe_item: Item?;
+                @ref
+                rewards: [Item];
+                @inline
+                by_name: {string: Item};
+                @inline
+                @expand
+                expanded: Item;
+            }
+        "#,
+    )
+    .expect("@ref/@inline should compile on object-bearing fields");
+
+    let holder = schema.resolve_type("Holder").expect("Holder type");
+    assert!(
+        holder.fields[0]
+            .annotations
+            .iter()
+            .any(|annotation| annotation.name == "ref"),
+        "item should carry @ref"
+    );
+    assert!(
+        holder.fields[1]
+            .annotations
+            .iter()
+            .any(|annotation| annotation.name == "inline"),
+        "maybe_item should carry @inline"
+    );
+}
+
+#[test]
+fn ref_and_inline_annotations_reject_invalid_targets_and_conflicts() {
+    let non_object = compile_one(
+        r#"
+            type Bad {
+                @ref
+                value: int;
+            }
+        "#,
+    )
+    .expect_err("@ref requires an object-bearing field");
+    assert_has_code(&non_object, CftErrorCode::InvalidAnnotatedFieldType);
+
+    let conflict = compile_one(
+        r#"
+            type Item { name: string; }
+            type Bad {
+                @ref
+                @inline
+                item: Item;
+            }
+        "#,
+    )
+    .expect_err("@ref and @inline are mutually exclusive");
+    assert_has_code(&conflict, CftErrorCode::InvalidAnnotatedFieldType);
+
+    let ref_expand = compile_one(
+        r#"
+            type Item { name: string; }
+            type Bad {
+                @ref
+                @expand
+                item: Item;
+            }
+        "#,
+    )
+    .expect_err("@ref conflicts with @expand");
+    assert_has_code(&ref_expand, CftErrorCode::InvalidAnnotatedFieldType);
+
+    let bad_args = compile_one(
+        r#"
+            type Item { name: string; }
+            type Bad {
+                @inline("yes")
+                item: Item;
+            }
+        "#,
+    )
+    .expect_err("@inline has no arguments");
+    assert_has_code(&bad_args, CftErrorCode::InvalidAnnotationArgument);
 }

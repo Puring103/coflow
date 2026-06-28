@@ -8,8 +8,11 @@
 
 use coflow_data_model::{CfdRecord, CfdRecordId, CfdValue};
 use coflow_engine::{ProjectSession, RecordCoordinate, RecordView};
+use std::collections::BTreeMap;
 
-use crate::editor::types::{FieldAnnotation, FieldCell, RecordRow, SpreadInfo};
+use crate::editor::types::{
+    FieldAnnotation, FieldCell, FieldMode, FieldModeIndex, RecordRow, SpreadInfo,
+};
 
 /// Lookup context the converter consults when annotating cells.
 pub struct WireContext<'a> {
@@ -26,7 +29,14 @@ pub fn record_view_to_row(view: &RecordView<'_>, ctx: &WireContext<'_>) -> Recor
         .map(|(name, value)| FieldCell {
             name: name.clone(),
             value: value.clone(),
-            annotation: build_annotation(view.record, name, value, ctx, &[]),
+            annotation: build_annotation(
+                view.record,
+                name,
+                value,
+                ctx,
+                &[],
+                &view.record.actual_type,
+            ),
         })
         .collect();
     RecordRow {
@@ -45,7 +55,7 @@ pub fn record_to_row(record: &CfdRecord, display_path: &str, ctx: &WireContext<'
         .map(|(name, value)| FieldCell {
             name: name.clone(),
             value: value.clone(),
-            annotation: build_annotation(record, name, value, ctx, &[]),
+            annotation: build_annotation(record, name, value, ctx, &[], &record.actual_type),
         })
         .collect();
     RecordRow {
@@ -61,16 +71,82 @@ fn build_annotation(
     value: &CfdValue,
     ctx: &WireContext<'_>,
     parent_path: &[String],
+    owner_type: &str,
 ) -> Option<FieldAnnotation> {
     let mut annotation = FieldAnnotation::default();
     if let Some(source_id) = host.spread_field_sources.get(field_name).copied() {
         annotation.spread_info = spread_info_for_source(ctx, source_id, parent_path, field_name);
     }
+    annotation.field_mode = field_mode_for_schema_field(ctx, owner_type, field_name);
     annotation_for_value(value, ctx, &mut annotation);
     if annotation.is_empty() {
         None
     } else {
         Some(annotation)
+    }
+}
+
+fn field_mode_for_schema_field(
+    ctx: &WireContext<'_>,
+    owner_type: &str,
+    field_name: &str,
+) -> Option<FieldMode> {
+    let field = ctx
+        .session
+        .schema
+        .resolve_type(owner_type)?
+        .all_fields
+        .iter()
+        .find(|field| field.name == field_name)?;
+    if field
+        .annotations
+        .iter()
+        .any(|annotation| annotation.name == "ref")
+    {
+        Some(FieldMode::Ref)
+    } else if field
+        .annotations
+        .iter()
+        .any(|annotation| annotation.name == "inline")
+    {
+        Some(FieldMode::Inline)
+    } else {
+        None
+    }
+}
+
+#[must_use]
+pub fn field_mode_index(session: &ProjectSession) -> FieldModeIndex {
+    session
+        .schema
+        .all_types()
+        .filter_map(|schema_type| {
+            let fields = schema_type
+                .all_fields
+                .iter()
+                .filter_map(|field| {
+                    field_mode_for_annotations(&field.annotations)
+                        .map(|mode| (field.name.clone(), mode))
+                })
+                .collect::<BTreeMap<_, _>>();
+            (!fields.is_empty()).then(|| (schema_type.name.clone(), fields))
+        })
+        .collect()
+}
+
+fn field_mode_for_annotations(annotations: &[coflow_cft::CftAnnotation]) -> Option<FieldMode> {
+    if annotations
+        .iter()
+        .any(|annotation| annotation.name == "ref")
+    {
+        Some(FieldMode::Ref)
+    } else if annotations
+        .iter()
+        .any(|annotation| annotation.name == "inline")
+    {
+        Some(FieldMode::Inline)
+    } else {
+        None
     }
 }
 

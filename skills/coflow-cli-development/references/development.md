@@ -75,6 +75,7 @@
 - 配置编辑相关功能覆盖 `coflow.yaml` 的 schema/source/output/dimensions 边界。
 - schema 写入命令覆盖 stdin 写入、dry-run、拒绝非 schema 文件和 check diagnostics。
 - CFD 文件写入命令覆盖 stdin 写入、dry-run、拒绝非 cfd、拒绝未配置 source 和 check diagnostics。
+- 字段形态或 schema 注解变更要同时覆盖 CFT 编译、data model 校验、provider writer、CLI/JSON patch 和编辑器 wire/前端行为。
 
 ## 收尾检查
 

@@ -97,7 +97,7 @@ impl AnnotationSpec {
                 targets: &[AnnotationTarget::Enum],
                 args: AnnotationArgs::None,
             },
-            "expand" => Self {
+            "expand" | "ref" | "inline" => Self {
                 targets: &[AnnotationTarget::Field],
                 args: AnnotationArgs::None,
             },
@@ -186,6 +186,24 @@ pub(super) fn unwrap_nullable(ty: &Ty) -> &Ty {
     match ty {
         Ty::Nullable(inner) => inner,
         other => other,
+    }
+}
+
+pub(super) fn field_type_contains_object(ty: &Ty) -> bool {
+    match ty {
+        Ty::Type(_) | Ty::Unknown => true,
+        Ty::Array(inner) | Ty::Nullable(inner) => field_type_contains_object(inner),
+        Ty::Dict(_, value) => field_type_contains_object(value),
+        Ty::Int
+        | Ty::Float
+        | Ty::Bool
+        | Ty::String
+        | Ty::Null
+        | Ty::Enum(_)
+        | Ty::EnumNamespace(_)
+        | Ty::Entry(_, _)
+        | Ty::EmptyArray
+        | Ty::EmptyObject => false,
     }
 }
 

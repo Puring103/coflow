@@ -130,6 +130,9 @@ coflow data write-file <project> --file data/items.cfd --stdin --dry-run
 ```
 
 `$ref` 写 record 引用；`$type` 写多态 inline object；`$dict` 写非字符串 key 的字典。
+普通对象字段默认可写 `$ref` 或 inline object；schema 字段带 `@ref` 时必须写 `$ref`，
+带 `@inline` 时必须写 inline object。`@ref` / `@inline` 写在数组或字典字段上时，
+同样约束数组元素或字典 value。
 
 ## 结束检查
 

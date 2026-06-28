@@ -106,6 +106,8 @@ weight: @DropTable.default.weights[Fire]
 
 引用最终在 DataModel 阶段检查合法性。类型不要求文本上完全一致，但必须满足 CFT 继承关系下的可赋值规则。例如 `@ItemReward.r1` 可以赋给 `Reward` 字段，但 `@Reward.r1` 不能赋给更窄的 `ItemReward` 字段。
 
+CFT 对象字段默认同时接受引用和内联对象；字段上无参注解 `@ref` 会强制 CFD 值使用 `&key`、`@Type.key` 或路径引用，拒绝内联对象；`@inline` 会强制 CFD 值使用 `{...}` 或 `ConcreteType{...}` 内联对象，拒绝记录引用和路径引用。`@ref` / `@inline` 标在 `[Item]` 或 `{string: Item}` 字段上时，会递归约束数组元素或字典 value。
+
 ---
 
 ## 4. 覆盖

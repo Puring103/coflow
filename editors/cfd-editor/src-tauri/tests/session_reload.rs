@@ -29,6 +29,88 @@ fn reload_session_rebuilds_from_changed_project_files() {
     assert_record_name(&store, snapshot.session_id, "Blade");
 }
 
+#[test]
+fn file_records_include_ref_inline_field_mode_annotations() {
+    let root = temp_project_dir("cfd-editor-field-mode");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item { name: string; }
+            type Holder {
+                @ref
+                item_ref: Item;
+                @inline
+                item_inline: Item;
+                nested: Nested;
+            }
+            type Nested {
+                @ref
+                nested_ref: Item;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("items.cfd"),
+        r#"
+            sword: Item { name: "Sword" }
+            holder: Holder {
+              item_ref: &sword,
+              item_inline: { name: "Inline" },
+              nested: { nested_ref: &sword },
+            }
+        "#,
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\n",
+    )
+    .expect("write config");
+
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    let records = store
+        .get_file_records(snapshot.session_id, "data/items.cfd")
+        .expect("get file records");
+    let holder = records
+        .records
+        .iter()
+        .find(|row| row.coordinate.actual_type == "Holder")
+        .expect("holder row");
+    let item_ref = holder
+        .fields
+        .iter()
+        .find(|field| field.name == "item_ref")
+        .expect("item_ref field");
+    let item_inline = holder
+        .fields
+        .iter()
+        .find(|field| field.name == "item_inline")
+        .expect("item_inline field");
+
+    assert_eq!(
+        item_ref.annotation.as_ref().and_then(|a| a.field_mode),
+        Some(cfd_editor_lib::editor::types::FieldMode::Ref)
+    );
+    assert_eq!(
+        item_inline.annotation.as_ref().and_then(|a| a.field_mode),
+        Some(cfd_editor_lib::editor::types::FieldMode::Inline)
+    );
+    assert_eq!(
+        records
+            .field_modes
+            .get("Nested")
+            .and_then(|fields| fields.get("nested_ref"))
+            .copied(),
+        Some(cfd_editor_lib::editor::types::FieldMode::Ref)
+    );
+}
+
 fn write_project(root: &std::path::Path, name: &str) {
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
     std::fs::write(

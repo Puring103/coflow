@@ -172,6 +172,88 @@ fn inline_objects_use_declared_type_when_not_polymorphic() {
 }
 
 #[test]
+fn ref_annotation_rejects_inline_objects() {
+    let schema = compile_schema(
+        r#"
+            type Item { name: string; }
+            type Holder {
+                @ref
+                item: Item;
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "holder",
+        "Holder",
+        [(
+            "item",
+            CfdInputValue::object_with_declared_type([("name", CfdInputValue::from("Sword"))]),
+        )],
+    );
+
+    let err = builder
+        .build()
+        .expect_err("@ref field should reject inline object");
+    assert_has_code(&err, CfdErrorCode::TypeMismatch);
+    assert!(
+        err.diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("@ref")),
+        "expected @ref diagnostic, got {err:?}"
+    );
+}
+
+#[test]
+fn inline_annotation_rejects_record_refs_in_nested_shapes() {
+    let schema = compile_schema(
+        r#"
+            type Item { name: string; }
+            type Holder {
+                @inline
+                item: Item;
+                @inline
+                items: [Item];
+                @inline
+                by_name: {string: Item};
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("sword", "Item", [("name", CfdInputValue::from("Sword"))]);
+    builder.add_record(
+        "holder",
+        "Holder",
+        [
+            ("item", CfdInputValue::record_ref("Item", "sword")),
+            (
+                "items",
+                CfdInputValue::Array(vec![CfdInputValue::record_ref("Item", "sword")]),
+            ),
+            (
+                "by_name",
+                CfdInputValue::dict([(
+                    CfdInputDictKey::from("main"),
+                    CfdInputValue::record_ref("Item", "sword"),
+                )]),
+            ),
+        ],
+    );
+
+    let err = builder
+        .build()
+        .expect_err("@inline fields should reject record refs");
+    let inline_errors = err
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.message.contains("@inline"))
+        .count();
+    assert_eq!(inline_errors, 3, "diagnostics: {err:?}");
+}
+
+#[test]
 fn object_spread_merges_path_refs_before_local_overrides() {
     let schema = compile_schema(
         r#"
