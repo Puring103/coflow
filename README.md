@@ -42,9 +42,10 @@ npx skills add Puring103/coflow -g --skill coflow-schema-data --copy -y
 也可以把下面这段话直接复制给 agent，让 agent 在本机完成安装：
 
 ```text
-请运行 `cargo install --git https://github.com/Puring103/coflow.git --tag v0.3.0 --force`
-安装 Coflow CLI，再运行 `npx skills add Puring103/coflow -g --skill "*" --copy -y`
-安装 Coflow 内置 skills。安装完成后运行 `coflow --help` 确认 CLI 可用。
+请运行 `cargo install --git https://github.com/Puring103/coflow.git` 安装coflow的命令行工具
+如果没有 cargo 工具链，请先安装cargo工具链
+然后运行 `npx skills add Puring103/coflow -g --skill "*" -y`
+安装 Coflow 自带的 skills。安装完成后运行 `coflow --help` 确认 CLI 可用。
 ```
 
 ---
