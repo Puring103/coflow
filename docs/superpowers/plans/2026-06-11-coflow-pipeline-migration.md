@@ -483,7 +483,7 @@ name = "coflow-pipeline"
 version = "0.1.0"
 edition = "2021"
 description = "Project execution pipeline for Coflow."
-license = "MIT OR Apache-2.0"
+license = "Apache-2.0"
 repository = "https://github.com/wtlll/ScriptForGame"
 publish = false
 

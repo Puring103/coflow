@@ -1,18 +1,101 @@
 # Coflow
 
-Coflow 是面向游戏配置数据的管线工具，用于把 CFT schema、Excel 配置表、
-数据校验、JSON/MessagePack 导出和 C# 运行时加载代码串成一个可重复执行的
-工作流。
+Coflow 面向游戏行业配表工具割裂、各项目重复自研、AI 难以深入策划工作流的
+现状，提供一套强类型、强校验、可编辑、可渐进本地化、AI 友好的现代化配置工作流。
+
+## 核心亮点
+
+- 统一配置工程链路：覆盖从配置建模到运行时交付的完整流程，减少每个项目重复维护导表脚本和配套工具。
+- 强类型建模：用明确的数据结构约束配置内容，减少隐式约定、字段漂移和跨表理解成本。
+- 强业务校验：将配置规则前置到构建流程中，提前发现错误，避免问题进入运行时或上线后暴露。
+- 多种数据源读写：覆盖本地表格、文本配置和在线协作表格，将不同来源的数据汇总到同一套编辑流程中。
+- 专用配置表达：表格适合批量数据，文本配置适合复杂结构，让不同类型的数据用最合适的方式维护。
+- AI 友好维护：提供结构化 CLI 命令，让 AI 能理解配置结构、定位数据、修改内容并根据校验结果持续修复，推动 AI 从辅助写文案进入真实配置生产流程。
+- 可视化编辑器：提供文件/数据源视图、表格视图、记录详情视图、关系图视图和诊断面板，方便策划和程序从不同角度查看、编辑和排查配置。
+- 精准诊断定位：配置错误能清楚定位到具体来源，方便编辑器展示、持续集成拦截和自动化修复。
+- 高效本地化：可以按字段逐步开启本地化，不必一次性改造整套配置；且不局限于文本，任意类型的配置值都可以纳入本地化流程。
+
+## 安装
+
+将 `<COFLOW_REPO_DIR>` 替换为本地 Coflow 仓库目录：
+
+```powershell
+cargo install --path <COFLOW_REPO_DIR> --force
+```
+
+安装后可直接使用 `coflow` 命令：
+
+```powershell
+coflow --help
+```
+
+如果需要让 AI agent 维护 Coflow 项目，安装仓库内置 skills：
+
+```powershell
+npx skills add <COFLOW_REPO_DIR> -g --skill "*" --copy -y
+```
+
+也可以只安装某一个 skill：
+
+```powershell
+npx skills add <COFLOW_REPO_DIR> -g --skill coflow-schema-data --copy -y
+```
+
+
 
 ---
 
 ## 能力概览
 
-- 编译 CFT schema 文件。
-- 按项目配置加载 Excel sheet 和 CFD 文本数据，构建类型化 data model。
-- 执行 schema 中的 `check {}` 规则。
+- 编译 CFT schema 文件并执行 `check {}` 规则。
+- 加载 Excel、CSV、CFD 文本数据和飞书/Lark 表格，构建类型化 data model。
+- 通过统一 writer/patch 机制写回支持编辑的数据源。
 - 导出 JSON 或 MessagePack 数据文件。
 - 生成适用于 .NET 和 Unity 风格项目的 C# 运行时加载代码。
+- 提供面向 AI agent 的 schema/data 读取、定位和修改命令。
+- 提供可视化编辑器和 LSP/VS Code 集成。
+
+---
+
+## 详细功能介绍
+
+### Schema 与校验
+
+Coflow 使用 CFT 描述配置结构和规则。CFT 支持类型、字段、枚举、默认值、继承、
+多态、nullable、数组、字典、记录引用和字段注解。业务规则可以直接写在 schema
+中，构建时统一执行，避免配置问题只在游戏运行期暴露。
+
+### 多数据源读取与编辑
+
+Coflow 可以从 Excel、CSV、CFD 文本配置和飞书/Lark 表格读取数据，并汇总成统一
+data model。表格适合批量配置，CFD 适合复杂嵌套结构、数组、字典、多态对象和
+覆盖模板。支持写回的数据源会通过统一 writer/patch 机制编辑，避免绕过工具手动
+改文件导致结构漂移。
+
+### AI 友好工作流
+
+Coflow 提供结构化 schema/data 命令，让 AI agent 可以读取 schema、查看数据源、
+列出记录、获取记录详情、创建文件、同步表头、写入 CFD 文件和批量 patch 数据。
+写入后返回结构化诊断，agent 可以根据错误位置继续修正，形成可验证的自动维护闭环。
+
+### 可视化编辑器与语言服务
+
+Coflow 编辑器围绕真实项目数据工作，提供文件/数据源视图、表格视图、记录详情视图、
+关系图视图和诊断面板。策划可以从表格或记录角度编辑，程序可以从引用关系和诊断
+角度排查问题。VS Code/LSP 集成提供 CFT/CFD 的诊断、补全、hover、跳转、符号和
+语义高亮能力。
+
+### 渐进式本地化
+
+Coflow 支持按字段逐步开启本地化，不要求一次性改造整套配置。被标记的字段会进入
+本地化流程，且不局限于字符串，任意类型的配置值都可以参与本地化。工具链可以生成
+和维护翻译表，并在多语言维度下继续执行配置校验。
+
+### 运行时产物
+
+Coflow 可以导出 JSON 或 MessagePack 数据，并生成适用于 .NET 与 Unity 风格项目的
+C# 加载代码。构建会先检查项目、数据和输出目录，成功后再写入产物，避免失败构建
+污染输出目录。
 
 ---
 
@@ -21,8 +104,8 @@ Coflow 是面向游戏配置数据的管线工具，用于把 CFT schema、Excel
 运行 RPG 示例：
 
 ```powershell
-cargo run -- check examples/rpg
-cargo run -- build examples/rpg
+coflow check examples/rpg
+coflow build examples/rpg
 ```
 
 生成文件写入 `examples/rpg/coflow.yaml` 声明的路径：
@@ -39,16 +122,16 @@ examples/rpg/generated/csharp
 单独运行各阶段：
 
 ```powershell
-cargo run -- cft check examples/rpg
-cargo run -- export json examples/rpg
-cargo run -- codegen csharp examples/rpg
+coflow cft check examples/rpg
+coflow export json examples/rpg
+coflow codegen csharp examples/rpg
 ```
 
 使用 MessagePack 时，把 `coflow.yaml` 中的 `outputs.data.type` 改为
 `messagepack`，再运行：
 
 ```powershell
-cargo run -- build examples/rpg
+coflow build examples/rpg
 ```
 
 ---
@@ -118,28 +201,28 @@ sources:
 ## 常用命令
 
 ```powershell
-cargo run -- init my-config
-cargo run -- check examples/rpg
-cargo run -- build examples/rpg
-cargo run -- export json examples/rpg --out generated/data
-cargo run -- export messagepack examples/rpg --out generated/data
-cargo run -- codegen csharp examples/rpg --out generated/csharp --namespace Game.Config
-cargo run -- lsp examples/rpg
+coflow init my-config
+coflow check examples/rpg
+coflow build examples/rpg
+coflow export json examples/rpg --out generated/data
+coflow export messagepack examples/rpg --out generated/data
+coflow codegen csharp examples/rpg --out generated/csharp --namespace Game.Config
+coflow lsp examples/rpg
 ```
 
 AI/data automation 命令默认输出 JSON：
 
 ```powershell
-cargo run -- schema inspect examples/rpg
-cargo run -- schema files examples/rpg
-cargo run -- schema write-file examples/rpg --file schema/main.cft --stdin --check
-cargo run -- data sources examples/rpg
-cargo run -- data list examples/rpg --type Item
-cargo run -- data get examples/rpg Item.sword
-cargo run -- data create-file examples/rpg --file data/items.csv --type Item --provider csv
-cargo run -- data sync-header examples/rpg --file data/items.csv --type Item
-cargo run -- data write-file examples/rpg --file data/items.cfd --stdin --check
-cargo run -- data patch examples/rpg --patch patch.json
+coflow schema inspect examples/rpg
+coflow schema files examples/rpg
+coflow schema write-file examples/rpg --file schema/main.cft --stdin --check
+coflow data sources examples/rpg
+coflow data list examples/rpg --type Item
+coflow data get examples/rpg Item.sword
+coflow data create-file examples/rpg --file data/items.csv --type Item --provider csv
+coflow data sync-header examples/rpg --file data/items.csv --type Item
+coflow data write-file examples/rpg --file data/items.cfd --stdin --check
+coflow data patch examples/rpg --patch patch.json
 ```
 
 `schema write-file` 只允许写入项目配置已包含的精确小写 `.cft` schema 文件；
@@ -168,19 +251,19 @@ cargo run -- data patch examples/rpg --patch patch.json
 从本仓库安装指定 skill：
 
 ```powershell
-npx skills add <owner>/<repo> -s coflow-schema-data -y
+npx skills add <COFLOW_REPO_DIR> -g --skill coflow-schema-data --copy -y
 ```
 
 安装全部 skill：
 
 ```powershell
-npx skills add <owner>/<repo> --all
+npx skills add <COFLOW_REPO_DIR> -g --skill "*" --copy -y
 ```
 
 本地开发时可先预览可安装的 skill：
 
 ```powershell
-npx skills add . -l
+npx skills add <COFLOW_REPO_DIR> -l
 ```
 
 ---
@@ -310,35 +393,3 @@ var maybeItem = tables.TbItem.Find("potion");
 生成 loader 面向受信 Coflow exporter 产物；不会生成自定义 `CftLoadException`。
 JSON 导出不会为无记录的表写空 `[]` 文件，C# JSON loader 会把缺失的空表文件
 视为空表。
-
----
-
-## 内部 crate 边界
-
-- `coflow-api` 只定义 provider trait、诊断、来源位置、产物和写入契约。
-- `coflow-project` 负责项目配置、路径解析、配置诊断、schema 文件发现和项目初始化。
-- `coflow-engine` 负责共享项目运行时：schema 编译、source resolve/load、data model、check、诊断和 source/record/file 索引。
-- `coflow-builtins` 负责默认 provider registry 注册，供 CLI、editor 和 LSP 装配使用。
-- 根 crate `coflow` 负责 CLI 命令编排、终端/JSON 输出、导出和 codegen 产物暂存与提交。
-- `editors/cfd-editor/src-tauri` 是 editor 的后端宿主，复用 `coflow-engine` 并只保留 editor wire DTO、graph/table 视图和写入命令桥接。
-- provider 共享算法分别位于 `coflow-loader-table-core` 和 `coflow-exporter-core`，不放在 `coflow-api`。
-
----
-
-## 规格文档
-
-详细文档统一位于 `docs/spec/`：
-
-- [CFT 语言规格](docs/spec/01-cft.md)
-- [数据模型](docs/spec/02-data-model.md)
-- [Schema API](docs/spec/02-schema-api.md)
-- [单元格值语法](docs/spec/03-cell-value.md)
-- [Excel 加载器规格](docs/spec/04-excel-loader.md)
-- [JSON 导出格式](docs/spec/05-json-export.md)
-- [C# 代码生成规格](docs/spec/06-csharp-codegen.md)
-- [项目管线规格](docs/spec/07-project-pipeline.md)
-- [MessagePack 导出格式](docs/spec/08-messagepack-export.md)
-- [CLI 命令规格](docs/spec/09-cli.md)
-- [诊断规格](docs/spec/10-diagnostics.md)
-- [项目介绍页](docs/spec/11-project-architecture.html)
-- [CFD 文本配置语法](docs/spec/12-cfd.md)

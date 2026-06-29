@@ -502,7 +502,7 @@ fn project_config_accepts_remote_url_source_with_provider_sheet_options() -> Tes
         r#"schema: schema/main.cft
 sources:
   - type: lark-sheet
-    url: https://fand3tbr90g.feishu.cn/wiki/K7M7wT1esizv6aklRy3cO4o6ntg
+    url: https://example.feishu.cn/wiki/wiki_token
     app_id: cli_test
     app_secret: secret_test
     sheets:
@@ -522,7 +522,7 @@ sources:
     assert_eq!(
         source.location,
         coflow_api::SourceLocationSpec::Uri(
-            "https://fand3tbr90g.feishu.cn/wiki/K7M7wT1esizv6aklRy3cO4o6ntg".to_string()
+            "https://example.feishu.cn/wiki/wiki_token".to_string()
         )
     );
     assert_eq!(source.options["app_id"], "cli_test");

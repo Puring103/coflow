@@ -32,7 +32,7 @@ fn loads_configured_wiki_sheet_as_table_source() -> TestResult {
     let source = LarkSheetSource::new(
         "cli_test",
         "secret_test",
-        LarkSheetLocator::Url("https://fand3tbr90g.feishu.cn/wiki/wiki_token".to_string()),
+        LarkSheetLocator::Url("https://example.feishu.cn/wiki/wiki_token".to_string()),
         vec![TableSheetConfig::new("物品表")
             .with_type("Item")
             .with_key("物品ID")
@@ -121,7 +121,7 @@ fn rejects_wiki_urls_that_do_not_point_to_a_sheet() -> TestResult {
     let source = LarkSheetSource::new(
         "cli_test",
         "secret_test",
-        LarkSheetLocator::Url("https://fand3tbr90g.feishu.cn/wiki/wiki_token".to_string()),
+        LarkSheetLocator::Url("https://example.feishu.cn/wiki/wiki_token".to_string()),
         Vec::new(),
     );
 
