@@ -193,9 +193,52 @@ jobs:
           name: editor-${{ matrix.name }}
           path: ${{ matrix.archive }}
 
+  windows-installer:
+    name: Build Windows Installer
+    needs: [build, editor]
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-x64
+          path: artifacts/cli
+
+      - name: Download editor artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: editor-windows-x64
+          path: artifacts/editor
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
+
+      - name: Prepare installer input
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/windows-installer/input
+          Expand-Archive artifacts/cli/coflow-windows-x64.zip dist/windows-installer/input -Force
+          Expand-Archive artifacts/editor/cfd-editor-windows-x64.zip dist/windows-installer/input -Force
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging/windows/coflow-tools.iss "/DAppVersion=$version"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/windows-installer/output/*.exe
+
   release:
     name: Create Release
-    needs: [build, vsix, editor]
+    needs: [build, vsix, editor, windows-installer]
     runs-on: ubuntu-latest
     permissions:
       contents: write
