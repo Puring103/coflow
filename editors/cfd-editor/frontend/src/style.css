@@ -1894,6 +1894,31 @@ select.dc-input-flat.dc-input-enum:focus {
 .graph-node.dim {
   opacity: 0.85;
 }
+.graph-node.compact {
+  display: flex;
+  align-items: stretch;
+  border-top-width: 4px;
+}
+.gn-compact-body {
+  min-height: 168px;
+  width: 100%;
+  display: grid;
+  place-items: center;
+  padding: 12px 14px;
+  background: var(--bg-3);
+}
+.gn-compact-key {
+  max-width: 100%;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1.08;
+  overflow: hidden;
+  text-align: center;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
 /* Imperative hover highlight — classes added/removed without React re-render */
 .graph-view-wrap.is-hovering .graph-node.hover-dim {
   opacity: 0.12;

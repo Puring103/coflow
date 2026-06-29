@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { ELK, ElkNode } from 'elkjs/lib/elk-api'
 import {
   ReactFlow, Background, Controls, MiniMap,
   Handle, Position, useUpdateNodeInternals, type NodeProps,
@@ -25,13 +26,22 @@ import { typeColor } from '../utils/typeColor'
 // ─── Constants (must match CSS / DataCard) ────────────────────────────────── (must match CSS / DataCard) ──────────────────────────────────
 
 const NODE_W     = 280
-const COL_GAP    = 200
-const ROW_GAP    = 60      // gap between nodes in same column
-const COMP_GAP   = 80      // vertical gap between connected components
+const COL_GAP    = 280
+const ROW_GAP    = 90      // gap between nodes in same column
+const COMP_GAP   = 120     // vertical gap between connected components
+const COMPACT_ZOOM_THRESHOLD = 0.65
 const HEADER_H   = 42
 const ROW_H      = 22
 const MORE_BTN_H = 28
 const PAD_V      = 12
+let elkPromise: Promise<ELK> | null = null
+
+async function getElk(): Promise<ELK> {
+  if (!elkPromise) {
+    elkPromise = import('elkjs/lib/elk.bundled.js').then(({ default: Elk }) => new Elk())
+  }
+  return elkPromise
+}
 
 // ─── Node data ───────────────────────────────────────────────────────────────
 
@@ -41,6 +51,7 @@ interface NodeData extends Record<string, unknown> {
   expanded: boolean
   /** Distinct edge field_paths whose source is this node (e.g. ["unlockGeneList[0]", "unlockGeneList[1]"]) */
   outgoingPaths: string[]
+  compact: boolean
   /** Stable signature of the per-row expanded set, so CfdNode can re-measure
    *  handle Y positions only when something that affects row geometry changes. */
   rowExpandKey: string
@@ -57,7 +68,7 @@ interface NodeData extends Record<string, unknown> {
 // header height variation, or sub-row expansion.
 
 function CfdNode({ id, data }: NodeProps) {
-  const { graphNode: gn, fieldModes, expanded, outgoingPaths, rowExpandKey, onToggleExpand, onRowToggle, onEdit, onCtrlClick } = data as NodeData
+  const { graphNode: gn, fieldModes, expanded, outgoingPaths, compact, rowExpandKey, onToggleExpand, onRowToggle, onEdit, onCtrlClick } = data as NodeData
   const rootRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLDivElement>(null)
   const updateNodeInternals = useUpdateNodeInternals()
@@ -109,7 +120,7 @@ function CfdNode({ id, data }: NodeProps) {
     })
     // Re-measure only when the set of outgoing paths, the node's expand
     // state, or any sub-row expand state changes — not on every render.
-  }, [outgoingKey, expanded, rowExpandKey])
+  }, [outgoingKey, expanded, compact, rowExpandKey])
 
   // Tell React Flow to recompute edge paths AFTER our handle Y values land
   // in the DOM (i.e. after the render that uses pathOffsets/headerCenterY).
@@ -120,7 +131,7 @@ function CfdNode({ id, data }: NodeProps) {
   return (
     <div
       ref={rootRef}
-      className={`graph-node${gn.in_focus_file ? ' focused' : ' dim'}`}
+      className={`graph-node${compact ? ' compact' : ''}${gn.in_focus_file ? ' focused' : ' dim'}`}
       data-nodeid={gn.id}
       style={{'--node-color': typeColor(gn.actual_type)} as React.CSSProperties}
       onClick={e => {
@@ -153,21 +164,29 @@ function CfdNode({ id, data }: NodeProps) {
         id="__out"
         style={{ top: headerCenterY }}
       />
-      <div ref={headerRef}>
-        <CardHeader recordKey={gn.key} actualType={gn.actual_type} filePath={gn.file_path} />
-      </div>
-      {gn.is_collapsed ? (
-        <div className="gn-collapsed">折叠（超出深度）</div>
+      {compact ? (
+        <div ref={headerRef} className="gn-compact-body">
+          <div className="gn-compact-key">{gn.key}</div>
+        </div>
       ) : (
-        <DataCardNode
-          fields={gn.fields}
-          actualType={gn.actual_type}
-          fieldModes={fieldModes}
-          showAll={expanded}
-          onToggle={onToggleExpand}
-          onRowToggle={onRowToggle}
-          onEdit={onEdit}
-        />
+        <>
+          <div ref={headerRef}>
+            <CardHeader recordKey={gn.key} actualType={gn.actual_type} filePath={gn.file_path} />
+          </div>
+          {gn.is_collapsed ? (
+            <div className="gn-collapsed">折叠（超出深度）</div>
+          ) : (
+            <DataCardNode
+              fields={gn.fields}
+              actualType={gn.actual_type}
+              fieldModes={fieldModes}
+              showAll={expanded}
+              onToggle={onToggleExpand}
+              onRowToggle={onRowToggle}
+              onEdit={onEdit}
+            />
+          )}
+        </>
       )}
     </div>
   )
@@ -193,11 +212,33 @@ function estimateNodeHeight(
   return HEADER_H + rows * ROW_H + (hasMore ? MORE_BTN_H : 0) + PAD_V
 }
 
+function isCompactGraphZoom(zoom: number): boolean {
+  return zoom < COMPACT_ZOOM_THRESHOLD
+}
+
 // ─── Field path → top-level field name ───────────────────────────────────────
 
 function topLevelField(path: string): string {
   const m = path.match(/^[^.[]+/)
   return m ? m[0] : path
+}
+
+function defaultEnabledFields(
+  graph: { nodes: GraphNodeView[]; edges: GraphEdgeView[] },
+  availableFields: string[],
+  activeType: string | undefined,
+): string[] {
+  if (!activeType) return availableFields
+  const nodeById = new Map(graph.nodes.map(n => [n.id, n]))
+  const fields = new Set<string>()
+  for (const e of graph.edges) {
+    const source = nodeById.get(e.source)
+    const target = nodeById.get(e.target)
+    if (source?.actual_type === activeType && target?.actual_type === activeType) {
+      fields.add(topLevelField(e.field_path))
+    }
+  }
+  return availableFields.filter(field => fields.has(field))
 }
 
 function graphEdgeId(kind: 'fwd' | 'back', edge: { source: string; target: string; field_path: string }): string {
@@ -263,170 +304,116 @@ function detectBackEdges(
   return backEdgeKeys
 }
 
-// ─── Longest-path layering ────────────────────────────────────────────────────
-
-function layerByLongestPath(
-  nodes: { id: string }[],
-  edges: { source: string; target: string }[],
-  forcedRoots: Set<string>,
-): Map<string, number> {
-  const incoming = new Map<string, string[]>()
-  for (const n of nodes) incoming.set(n.id, [])
-  for (const e of edges) incoming.get(e.target)?.push(e.source)
-
-  const layer = new Map<string, number>()
-  const inProg = new Set<string>()
-
-  function visit(id: string): number {
-    if (layer.has(id)) return layer.get(id)!
-    if (forcedRoots.has(id)) { layer.set(id, 0); return 0 }
-    if (inProg.has(id)) return 0
-    inProg.add(id)
-    let max = 0
-    for (const pred of incoming.get(id) ?? []) {
-      const l = visit(pred) + 1
-      if (l > max) max = l
-    }
-    inProg.delete(id)
-    layer.set(id, max)
-    return max
-  }
-  for (const n of nodes) visit(n.id)
-  return layer
-}
-
 // ─── Layout one connected component ──────────────────────────────────────────
 
-function layoutComponent(
+function sortedGraphNodes(nodes: GraphNodeView[]): GraphNodeView[] {
+  return [...nodes].sort((a, b) => {
+    if (a.in_focus_file !== b.in_focus_file) return a.in_focus_file ? -1 : 1
+    if (a.file_path !== b.file_path) return a.file_path.localeCompare(b.file_path)
+    if (a.key !== b.key) return a.key.localeCompare(b.key)
+    return a.id.localeCompare(b.id)
+  })
+}
+
+function sourcePortId(nodeId: string, fieldPath: string): string {
+  return `${nodeId}:out:${encodeURIComponent(fieldPath)}`
+}
+
+function targetPortId(nodeId: string): string {
+  return `${nodeId}:in`
+}
+
+function nodeH(
+  gn: GraphNodeView,
+  nodeExpandedMap: Map<string, boolean>,
+  nodeRowExpandedMap: Map<string, Set<string>>,
+) {
+  const exp = nodeExpandedMap.get(gn.id) ?? false
+  const rows = nodeRowExpandedMap.get(gn.id) ?? new Set<string>()
+  return estimateNodeHeight(gn, exp, rows)
+}
+
+async function layoutComponent(
   compNodes: GraphNodeView[],
   forwardEdges: GraphEdgeView[],
   forcedRoots: Set<string>,
   nodeExpandedMap: Map<string, boolean>,
   nodeRowExpandedMap: Map<string, Set<string>>,
-): Map<string, { x: number; y: number }> {
-  const layer = layerByLongestPath(compNodes, forwardEdges, forcedRoots)
-
-  const layerToNodes = new Map<number, GraphNodeView[]>()
-  for (const n of compNodes) {
-    const l = layer.get(n.id) ?? 0
-    if (!layerToNodes.has(l)) layerToNodes.set(l, [])
-    layerToNodes.get(l)!.push(n)
-  }
-  for (const [, list] of layerToNodes) {
-    list.sort((a, b) => {
-      if (a.in_focus_file !== b.in_focus_file) return a.in_focus_file ? -1 : 1
-      if (a.file_path !== b.file_path) return a.file_path.localeCompare(b.file_path)
-      return a.key.localeCompare(b.key)
-    })
+): Promise<Map<string, { x: number; y: number }>> {
+  const outgoingPaths = new Map<string, string[]>()
+  for (const edge of forwardEdges) {
+    const list = outgoingPaths.get(edge.source) ?? []
+    if (!list.includes(edge.field_path)) list.push(edge.field_path)
+    outgoingPaths.set(edge.source, list)
   }
 
-  const layers = Array.from(layerToNodes.keys()).sort((a, b) => a - b)
-
-  // Ordering pass: for each non-root layer, order nodes by walking parents
-  // (in their already-decided layer order) and emitting children in the order
-  // their source field appears on the parent card. This makes the visual
-  // arrangement match the field order users see, instead of relying on
-  // barycenter which optimizes for crossing reduction but ignores semantics.
-  //
-  // For each target node, record its "address" = (parentIndexInPrevLayer,
-  // fieldRowIndexInParent). Sort each layer by this address.
-  for (let li = 1; li < layers.length; li++) {
-    const cur = layers[li]
-    const prev = layers[li - 1]
-    const prevList = layerToNodes.get(prev)!
-    const prevIndex = new Map<string, number>()
-    prevList.forEach((n, i) => prevIndex.set(n.id, i))
-
-    // Field-row index inside parent: position of edge.field_path's top-level
-    // segment in parent.fields, then sub-position by full path string.
-    function rowIndex(parentId: string, fieldPath: string): [number, string] {
-      const parent = compNodes.find(n => n.id === parentId)
-      if (!parent) return [Number.MAX_SAFE_INTEGER, fieldPath]
-      const top = fieldPath.match(/^[^.[]+/)?.[0] ?? fieldPath
-      const idx = parent.fields.findIndex(f => f.name === top)
-      return [idx === -1 ? Number.MAX_SAFE_INTEGER : idx, fieldPath]
-    }
-
-    // Best (smallest) address among incoming edges from the previous layer
-    const addr = new Map<string, [number, number, string]>()
-    for (const n of layerToNodes.get(cur)!) {
-      let best: [number, number, string] | null = null
-      for (const e of forwardEdges) {
-        if (e.target !== n.id) continue
-        const pIdx = prevIndex.get(e.source)
-        if (pIdx === undefined) continue
-        const [rIdx, rPath] = rowIndex(e.source, e.field_path)
-        const cand: [number, number, string] = [pIdx, rIdx, rPath]
-        if (!best ||
-            cand[0] < best[0] ||
-            (cand[0] === best[0] && cand[1] < best[1]) ||
-            (cand[0] === best[0] && cand[1] === best[1] && cand[2] < best[2])) {
-          best = cand
-        }
-      }
-      addr.set(n.id, best ?? [Number.MAX_SAFE_INTEGER, 0, n.id])
-    }
-
-    layerToNodes.get(cur)!.sort((a, b) => {
-      const aa = addr.get(a.id)!; const bb = addr.get(b.id)!
-      if (aa[0] !== bb[0]) return aa[0] - bb[0]
-      if (aa[1] !== bb[1]) return aa[1] - bb[1]
-      return aa[2].localeCompare(bb[2])
-    })
-  }
-
-  const adjOut = new Map<string, string[]>()
-  const adjIn  = new Map<string, string[]>()
-  for (const e of forwardEdges) {
-    ;(adjOut.get(e.source) ?? (adjOut.set(e.source, []), adjOut.get(e.source)!)).push(e.target)
-    ;(adjIn.get(e.target)  ?? (adjIn.set(e.target,  []), adjIn.get(e.target)!)).push(e.source)
-  }
-
-  const positions = new Map<string, { x: number; y: number }>()
-
-  function nodeH(n: GraphNodeView) {
-    const exp = nodeExpandedMap.get(n.id) ?? false
-    const rows = nodeRowExpandedMap.get(n.id) ?? new Set<string>()
-    return estimateNodeHeight(n, exp, rows)
-  }
-
-  // Initial slot-based y
-  for (const l of layers) {
-    const list = layerToNodes.get(l)!
-    const colX = l * (NODE_W + COL_GAP)
-    const heights = list.map(n => nodeH(n))
-    const totalH = heights.reduce((s, h) => s + h, 0) + (list.length - 1) * ROW_GAP
-    let curY = -totalH / 2
-    list.forEach((n, i) => {
-      positions.set(n.id, { x: colX, y: curY })
-      curY += heights[i] + ROW_GAP
-    })
-  }
-
-  // Y-refinement: snap toward neighbour average
-  function refine() {
-    for (const l of layers) {
-      const list = layerToNodes.get(l)!
-      const heights = list.map(n => nodeH(n))
-      const desired = list.map(n => {
-        const ins  = (adjIn.get(n.id)  ?? []).map(id => positions.get(id)?.y).filter((y): y is number => y !== undefined)
-        const outs = (adjOut.get(n.id) ?? []).map(id => positions.get(id)?.y).filter((y): y is number => y !== undefined)
-        const all = [...ins, ...outs]
-        if (!all.length) return positions.get(n.id)!.y
-        return all.reduce((a, b) => a + b, 0) / all.length
+  const elkGraph: ElkNode = {
+    id: 'root',
+    layoutOptions: {
+      'elk.algorithm': 'layered',
+      'elk.direction': 'RIGHT',
+      'elk.spacing.nodeNode': `${ROW_GAP}`,
+      'elk.layered.spacing.nodeNodeBetweenLayers': `${COL_GAP}`,
+      'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+      'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
+      'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
+      'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+      'elk.portConstraints': 'FIXED_ORDER',
+      'elk.edgeRouting': 'SPLINES',
+    },
+    children: sortedGraphNodes(compNodes).map(n => {
+      const paths = (outgoingPaths.get(n.id) ?? []).sort((a, b) => {
+        const aTop = topLevelField(a)
+        const bTop = topLevelField(b)
+        const aIdx = n.fields.findIndex(f => f.name === aTop)
+        const bIdx = n.fields.findIndex(f => f.name === bTop)
+        if (aIdx !== bIdx) return (aIdx === -1 ? Number.MAX_SAFE_INTEGER : aIdx) - (bIdx === -1 ? Number.MAX_SAFE_INTEGER : bIdx)
+        return a.localeCompare(b)
       })
-      const sorted = list.map((n, i) => ({ n, want: desired[i], h: heights[i] }))
-        .sort((a, b) => a.want - b.want)
-      let prevBottom = -Infinity
-      for (const item of sorted) {
-        const y = Math.max(item.want, prevBottom + ROW_GAP)
-        positions.set(item.n.id, { x: positions.get(item.n.id)!.x, y })
-        prevBottom = y + item.h
+      return {
+        id: n.id,
+        width: NODE_W,
+        height: nodeH(n, nodeExpandedMap, nodeRowExpandedMap),
+        layoutOptions: {
+          ...(forcedRoots.has(n.id) ? { 'elk.layered.layering.layerConstraint': 'FIRST' } : {}),
+          'elk.portConstraints': 'FIXED_ORDER',
+        },
+        ports: [
+          {
+            id: targetPortId(n.id),
+            width: 1,
+            height: 1,
+            layoutOptions: {
+              'elk.port.side': 'WEST',
+              'elk.port.index': '0',
+            },
+          },
+          ...paths.map((path, i) => ({
+            id: sourcePortId(n.id, path),
+            width: 1,
+            height: 1,
+            layoutOptions: {
+              'elk.port.side': 'EAST',
+              'elk.port.index': `${i + 1}`,
+            },
+          })),
+        ],
       }
-    }
+    }),
+    edges: forwardEdges.map(e => ({
+      id: graphEdgeId('fwd', e),
+      sources: [sourcePortId(e.source, e.field_path)],
+      targets: [targetPortId(e.target)],
+    })),
   }
-  for (let i = 0; i < 3; i++) refine()
 
+  const elk = await getElk()
+  const laidOut = await elk.layout(elkGraph)
+  const minX = Math.min(...(laidOut.children ?? []).map(n => n.x ?? 0))
+  const positions = new Map<string, { x: number; y: number }>()
+  for (const n of laidOut.children ?? []) {
+    positions.set(n.id, { x: (n.x ?? 0) - minX, y: n.y ?? 0 })
+  }
   return positions
 }
 
@@ -439,13 +426,13 @@ interface LayoutResult {
   backEdges: GraphEdgeView[]
 }
 
-function layoutAll(
+async function layoutAll(
   graph: { nodes: GraphNodeView[]; edges: GraphEdgeView[] },
   enabledFields: Set<string>,
   activeType: string | undefined,
   nodeExpandedMap: Map<string, boolean>,
   nodeRowExpandedMap: Map<string, Set<string>>,
-): LayoutResult {
+): Promise<LayoutResult> {
   // Filter edges by toolbar
   let activeEdges = graph.edges.filter(e => enabledFields.has(topLevelField(e.field_path)))
 
@@ -477,24 +464,38 @@ function layoutAll(
 
   const visibleNodes = graph.nodes.filter(n => visibleSet.has(n.id))
 
-  const forcedRoots = new Set<string>(
-    activeType
-      ? visibleNodes
-          .filter(n => n.in_focus_file && n.actual_type === activeType)
-          .map(n => n.id)
-      : []
-  )
-
   // Detect back-edges (cycles)
   const backEdgeKeys = detectBackEdges(visibleNodes, activeEdges)
   const forwardEdges = activeEdges.filter(e => !backEdgeKeys.has(`${e.source}→${e.target}`))
   const backEdges    = activeEdges.filter(e =>  backEdgeKeys.has(`${e.source}→${e.target}`))
+  const nodeById = new Map(visibleNodes.map(n => [n.id, n]))
+
+  const forcedRoots = new Set<string>()
+  if (activeType) {
+    const sameTableTargets = new Set<string>()
+    for (const e of forwardEdges) {
+      const source = nodeById.get(e.source)
+      const target = nodeById.get(e.target)
+      if (
+        source?.in_focus_file &&
+        target?.in_focus_file &&
+        source.actual_type === activeType &&
+        target.actual_type === activeType
+      ) {
+        sameTableTargets.add(target.id)
+      }
+    }
+    for (const n of visibleNodes) {
+      if (n.in_focus_file && n.actual_type === activeType && !sameTableTargets.has(n.id)) {
+        forcedRoots.add(n.id)
+      }
+    }
+  }
 
   // Split into connected components using ALL edges (forward + back)
   const comps = connectedComponents(visibleNodes.map(n => n.id), activeEdges)
   const nodeToComp = new Map<string, number>()
   comps.forEach((comp, ci) => comp.forEach(id => nodeToComp.set(id, ci)))
-  const nodeById = new Map(visibleNodes.map(n => [n.id, n]))
 
   // Sort components: largest first, then by first node key
   comps.sort((a, b) => {
@@ -512,19 +513,22 @@ function layoutAll(
       nodeToComp.get(e.source) === nodeToComp.get(compNodes[0]?.id)
     )
     const compForcedRoots = new Set(comp.filter(id => forcedRoots.has(id)))
-    const localPos = layoutComponent(compNodes, compForward, compForcedRoots, nodeExpandedMap, nodeRowExpandedMap)
+    const localPos = await layoutComponent(compNodes, compForward, compForcedRoots, nodeExpandedMap, nodeRowExpandedMap)
 
     // Find y-extent of this component's layout
     let minY = Infinity, maxY = -Infinity
-    for (const { y } of localPos.values()) { if (y < minY) minY = y; if (y > maxY) maxY = y }
+    for (const [id, { y }] of localPos) {
+      const node = nodeById.get(id)
+      const h = node ? nodeH(node, nodeExpandedMap, nodeRowExpandedMap) : 0
+      if (y < minY) minY = y
+      if (y + h > maxY) maxY = y + h
+    }
     // Shift so component starts at yOffset (minY maps to yOffset)
     const shift = yOffset - minY
     for (const [id, pos] of localPos) {
       allPositions.set(id, { x: pos.x, y: pos.y + shift })
     }
-    // Advance yOffset past this component + gap
-    // maxY + shift = old maxY mapped to new coords; add max node height estimate + gap
-    const compHeight = maxY - minY + 300 // 300 is generous max node height
+    const compHeight = maxY - minY
     yOffset += compHeight + COMP_GAP
   }
 
@@ -544,6 +548,7 @@ interface Props {
 }
 
 export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecord, onWriteField }: Props) {
+  const [compactNodes, setCompactNodes] = useState(false)
   const graph = useMemo(
     () => ({
       nodes: graphData.nodes.map(graphNodeView),
@@ -589,14 +594,20 @@ export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecor
     return Array.from(set).sort()
   }, [graph, activeType])
 
-  const [enabledFields, setEnabledFields] = useState<Set<string>>(() => new Set(availableFields))
+  const [enabledFields, setEnabledFields] = useState<Set<string>>(
+    () => new Set(defaultEnabledFields(graph, availableFields, activeType)),
+  )
   useEffect(() => {
     setEnabledFields(prev => {
       const next = new Set<string>()
-      for (const f of availableFields) if (prev.has(f) || prev.size === 0) next.add(f)
+      if (prev.size === 0) {
+        for (const f of defaultEnabledFields(graph, availableFields, activeType)) next.add(f)
+      } else {
+        for (const f of availableFields) if (prev.has(f)) next.add(f)
+      }
       return next
     })
-  }, [availableFields])
+  }, [availableFields, graph, activeType])
 
   const [filterPanelOpen, setFilterPanelOpen] = useState(false)
 
@@ -624,10 +635,29 @@ export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecor
     })
   }, [])
 
-  const { positions, visibleNodes, forwardEdges, backEdges } = useMemo(
-    () => layoutAll(graph, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap),
-    [graph, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap]
-  )
+  const [layout, setLayout] = useState<LayoutResult>({
+    positions: new Map(),
+    visibleNodes: [],
+    forwardEdges: [],
+    backEdges: [],
+  })
+
+  useEffect(() => {
+    let cancelled = false
+    layoutAll(graph, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap)
+      .then(next => {
+        if (!cancelled) setLayout(next)
+      })
+      .catch(err => {
+        console.error('Failed to layout graph', err)
+        if (!cancelled) {
+          setLayout({ positions: new Map(), visibleNodes: [], forwardEdges: [], backEdges: [] })
+        }
+      })
+    return () => { cancelled = true }
+  }, [graph, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap])
+
+  const { positions, visibleNodes, forwardEdges, backEdges } = layout
 
   // Group outgoing edge paths by source node id (used to render per-path handles).
   const outgoingPathsByNode = useMemo(() => {
@@ -651,36 +681,39 @@ export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecor
   }
 
   const rfNodes: Node[] = useMemo(
-    () => visibleNodes.map(n => {
-      const capability = fileCapabilities?.[n.file_path]
-      const editable = !!onWriteField && (capability ? isEditableCapabilities(capability) : isEditableFile(n.file_path))
-      const rowExpanded = nodeRowExpandedMap.get(n.id)
-      return {
-        id: n.id,
-        type: 'cfd',
-        position: positions.get(n.id) ?? { x: 0, y: 0 },
-        data: {
-          graphNode: n,
-          fieldModes: graphData.field_modes,
-          expanded: nodeExpandedMap.get(n.id) ?? false,
-          outgoingPaths: outgoingPathsByNode.get(n.id) ?? [],
-          rowExpandKey: rowExpanded ? Array.from(rowExpanded).sort().join('|') : '',
-          onToggleExpand: () => toggleNodeExpanded(n.id),
-          onRowToggle: (path: string, exp: boolean) => handleRowToggle(n.id, path, exp),
-          onEdit: editable
-            ? (path: FieldPathSegment[], val: FieldValue) => { onWriteField!(n.file_path, n.coordinate, path, val) }
-            : undefined,
-          onCtrlClick: onOpenRecord ? () => onOpenRecord(n.file_path, n.coordinate) : undefined,
-        } satisfies NodeData,
-      }
-    }),
-    [visibleNodes, positions, nodeExpandedMap, nodeRowExpandedMap, outgoingPathsByNode, toggleNodeExpanded, handleRowToggle, onWriteField, onOpenRecord, fileCapabilities]
+    () => (
+      visibleNodes.map(n => {
+        const capability = fileCapabilities?.[n.file_path]
+        const editable = !!onWriteField && (capability ? isEditableCapabilities(capability) : isEditableFile(n.file_path))
+        const rowExpanded = nodeRowExpandedMap.get(n.id)
+        return {
+          id: n.id,
+          type: 'cfd',
+          position: positions.get(n.id) ?? { x: 0, y: 0 },
+          data: {
+            graphNode: n,
+            fieldModes: graphData.field_modes,
+            expanded: nodeExpandedMap.get(n.id) ?? false,
+            outgoingPaths: outgoingPathsByNode.get(n.id) ?? [],
+            compact: compactNodes,
+            rowExpandKey: rowExpanded ? Array.from(rowExpanded).sort().join('|') : '',
+            onToggleExpand: () => toggleNodeExpanded(n.id),
+            onRowToggle: (path: string, exp: boolean) => handleRowToggle(n.id, path, exp),
+            onEdit: editable
+              ? (path: FieldPathSegment[], val: FieldValue) => { onWriteField!(n.file_path, n.coordinate, path, val) }
+              : undefined,
+            onCtrlClick: onOpenRecord ? () => onOpenRecord(n.file_path, n.coordinate) : undefined,
+          } satisfies NodeData,
+        }
+      })
+    ),
+    [visibleNodes, positions, nodeExpandedMap, nodeRowExpandedMap, outgoingPathsByNode, compactNodes, toggleNodeExpanded, handleRowToggle, onWriteField, onOpenRecord, fileCapabilities]
   )
 
   const rfEdges: Edge[] = useMemo(() => {
     const fwdEdges: Edge[] = forwardEdges
       .filter(e => positions.has(e.source) && positions.has(e.target))
-      .map((e, i) => {
+      .map(e => {
         const { sourceHandle, targetHandle } = edgeHandleId(e.source, e.field_path)
         return {
           id: graphEdgeId('fwd', e),
@@ -688,7 +721,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecor
           target: e.target,
           sourceHandle,
           targetHandle,
-          label: e.field_path,
+          label: compactNodes ? undefined : e.field_path,
           type: 'bezier',
           animated: false,
           className: `rf-edge rf-edge-fwd rf-src-${e.source} rf-tgt-${e.target}`,
@@ -708,7 +741,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecor
         target: e.target,
         sourceHandle: `path-${e.field_path}`,
         targetHandle: '__in',
-        label: e.field_path,
+        label: compactNodes ? undefined : e.field_path,
         type: 'bezier',
         animated: false,
         className: `rf-edge rf-edge-bk rf-src-${e.source} rf-tgt-${e.target}`,
@@ -722,7 +755,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecor
 
     return [...fwdEdges, ...bkEdges]
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [forwardEdges, backEdges, positions, nodeExpandedMap, visibleNodes])
+  }, [forwardEdges, backEdges, positions, nodeExpandedMap, visibleNodes, compactNodes])
 
   // ── Imperative hover highlight (zero re-renders) ────────────────────────
   // We manipulate DOM classes directly to avoid the state→rerender→mouseleave
@@ -793,6 +826,10 @@ export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecor
   const allOn = enabledFields.size === availableFields.length
   const noneOn = enabledFields.size === 0
   const hiddenCount = availableFields.length - enabledFields.size
+  const handleViewportChange = useCallback((viewport: { zoom: number }) => {
+    const next = isCompactGraphZoom(viewport.zoom)
+    setCompactNodes(prev => prev === next ? prev : next)
+  }, [])
 
   return (
     <div className="graph-view-wrap" ref={wrapRef}>
@@ -807,6 +844,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecor
             nodeTypes={nodeTypes}
             onNodeMouseEnter={onNodeMouseEnter}
             onNodeMouseLeave={onNodeMouseLeave}
+            onViewportChange={handleViewportChange}
             fitView
             fitViewOptions={{ padding: 0.15, minZoom: 0.2, maxZoom: 1.2 }}
             proOptions={{ hideAttribution: true }}
