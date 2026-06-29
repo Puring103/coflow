@@ -169,12 +169,9 @@ jobs:
         run: npm ci
         working-directory: editors/cfd-editor/frontend
 
-      - name: Build editor frontend
-        run: npm run build
-        working-directory: editors/cfd-editor/frontend
-
-      - name: Build editor backend
-        run: cargo build --release --package cfd-editor --target ${{ matrix.target }}
+      - name: Build editor
+        run: node node_modules/@tauri-apps/cli/tauri.js build --target ${{ matrix.target }} --no-bundle
+        working-directory: editors/cfd-editor
 
       - name: Package editor (Windows)
         if: matrix.os == 'windows-latest'
