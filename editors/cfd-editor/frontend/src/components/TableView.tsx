@@ -25,15 +25,22 @@ import {
   type FieldPathSegment,
   type FieldValue,
 } from '../wire'
-import { DataCardCompact, DataCardExpanded, CardHeader, InlineEditor, summaryOf } from './DataCard'
+import { DataCardCompact, InlineEditor, summaryOf } from './DataCard'
 import { Icon } from './Icon'
-import { diagnosticsForRecord } from '../App'
 
 interface Props {
   data: FileRecords
   activeType: string
   readOnly?: boolean
   diagnostics?: DiagnosticItem[]
+  /** Currently selected coordinate (lifted to App so it can drive the
+   *  shared right-side inspector and survive a view switch). */
+  selectedCoordinate?: RecordCoordinate | null
+  /** Click on a row: select it (opens the inspector in the parent). */
+  onSelectRecord?: (coordinate: RecordCoordinate) => void
+  /** Click on blank space inside the table view: deselect / close inspector. */
+  onClearSelection?: () => void
+  /** Dbl-click / context-menu jump to the dedicated record view. */
   onOpenRecord: (coordinate: RecordCoordinate) => void
   onWriteField?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<RecordRow | void>
   onRenameRecord?: (coordinate: RecordCoordinate, newKey: string) => Promise<RecordRow | void>
@@ -49,12 +56,12 @@ interface Props {
 
 const ROW_H = 30
 
-export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onDeleteRecord, onMakeDefaultObject }: Props) {
+export function TableView({ data, activeType, readOnly, diagnostics, selectedCoordinate, onSelectRecord, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onDeleteRecord, onMakeDefaultObject }: Props) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: RecordRow } | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [newKey, setNewKey] = useState('')
   const [newType, setNewType] = useState<string>(activeType || data.type_names[0] || '')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const selectedId = selectedCoordinate ? coordinateId(selectedCoordinate) : null
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({})
   const [globalFilter, setGlobalFilter] = useState('')
@@ -63,7 +70,6 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
 
   // Reset transient UI state when active file/type changes.
   useEffect(() => {
-    setSelectedId(null)
     setSorting([])
     setGlobalFilter('')
   }, [data.file_path, activeType])
@@ -208,8 +214,6 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
   const padBefore = virtualRows.length > 0 ? virtualRows[0].start : 0
   const padAfter = virtualRows.length > 0 ? totalHeight - virtualRows[virtualRows.length - 1].end : 0
 
-  const selectedRecord = selectedId ? filtered.find(r => coordinateId(r.coordinate) === selectedId) ?? null : null
-
   // Close context menu on Escape.
   useEffect(() => {
     if (!contextMenu) return
@@ -219,8 +223,19 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
   }, [contextMenu])
 
   return (
-    <div className="table-view" onClick={() => setContextMenu(null)}>
-      <div className={`table-main${selectedRecord ? ' has-detail' : ''}`}>
+    <div
+      className="table-view"
+      onClick={e => {
+        setContextMenu(null)
+        // Clicks that didn't land on a row deselect the current row, which
+        // also closes the shared right-side inspector.
+        const target = e.target as HTMLElement
+        if (!target.closest('.table-row') && !target.closest('.context-menu')) {
+          onClearSelection?.()
+        }
+      }}
+    >
+      <div className="table-main">
         {(filtered.length > 8 || globalFilter) && (
           <div className="table-toolbar">
             <div className="table-search">
@@ -294,7 +309,10 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
                   <tr
                     key={row.id}
                     className={`table-row${selectedId === coordinateId(row.original.coordinate) ? ' selected' : ''}${rowSev ? ' table-row-' + rowSev : ''}`}
-                    onClick={() => setSelectedId(coordinateId(row.original.coordinate))}
+                    onClick={e => {
+                      e.stopPropagation()
+                      onSelectRecord?.(row.original.coordinate)
+                    }}
                     onContextMenu={e => {
                       e.preventDefault()
                       setContextMenu({ x: e.clientX, y: e.clientY, row: row.original })
@@ -368,26 +386,6 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
         </div>
       </div>
 
-      {selectedRecord && (
-        <aside className="table-detail">
-          <div className="table-detail-header">
-            <CardHeader recordKey={recordKey(selectedRecord)} actualType={recordActualType(selectedRecord)} filePath={data.file_path} />
-            <button className="btn btn-icon table-detail-close" onClick={() => setSelectedId(null)} title="关闭面板" aria-label="关闭详情面板">
-              <Icon name="close" size={13} />
-            </button>
-          </div>
-          <div className="table-detail-body">
-            <DataCardExpanded
-              fields={selectedRecord.fields}
-              actualType={recordActualType(selectedRecord)}
-              fieldModes={data.field_modes}
-              onEdit={readOnly || !onWriteField ? undefined : (path, val) => { onWriteField(selectedRecord.coordinate, path, val) }}
-              diagnostics={diagnostics ? diagnosticsForRecord(diagnostics, data.file_path, selectedRecord.coordinate) : []}
-            />
-          </div>
-        </aside>
-      )}
-
       {contextMenu && (
         <div
           className="context-menu"
@@ -418,7 +416,7 @@ export function TableView({ data, activeType, readOnly, diagnostics, onOpenRecor
               const coordinate = contextMenu.row.coordinate
               setContextMenu(null)
               if (!window.confirm(`确认删除记录 ${key}？此操作不可撤销。`)) return
-              if (selectedId === coordinateId(coordinate)) setSelectedId(null)
+              if (selectedId === coordinateId(coordinate)) onClearSelection?.()
               await onDeleteRecord(coordinate)
             }}>
               <Icon name="close" size={13} aria-hidden />

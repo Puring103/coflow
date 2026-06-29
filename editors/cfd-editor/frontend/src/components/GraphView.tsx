@@ -60,6 +60,8 @@ interface NodeData extends Record<string, unknown> {
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   /** Ctrl+click on a node body opens that record in the record view. */
   onCtrlClick?: () => void
+  /** Visually mark this node as the current inspector selection. */
+  selected?: boolean
 }
 
 // ─── CfdNode ─────────────────────────────────────────────────────────────────
@@ -68,7 +70,7 @@ interface NodeData extends Record<string, unknown> {
 // header height variation, or sub-row expansion.
 
 function CfdNode({ id, data }: NodeProps) {
-  const { graphNode: gn, fieldModes, expanded, outgoingPaths, compact, rowExpandKey, onToggleExpand, onRowToggle, onEdit, onCtrlClick } = data as NodeData
+  const { graphNode: gn, fieldModes, expanded, outgoingPaths, compact, rowExpandKey, onToggleExpand, onRowToggle, onEdit, onCtrlClick, selected } = data as NodeData
   const rootRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLDivElement>(null)
   const updateNodeInternals = useUpdateNodeInternals()
@@ -131,7 +133,7 @@ function CfdNode({ id, data }: NodeProps) {
   return (
     <div
       ref={rootRef}
-      className={`graph-node${compact ? ' compact' : ''}${gn.in_focus_file ? ' focused' : ' dim'}`}
+      className={`graph-node${compact ? ' compact' : ''}${gn.in_focus_file ? ' focused' : ' dim'}${selected ? ' selected' : ''}`}
       data-nodeid={gn.id}
       style={{'--node-color': typeColor(gn.actual_type)} as React.CSSProperties}
       onClick={e => {
@@ -542,12 +544,18 @@ interface Props {
   activeType?: string
   fileCapabilities?: Record<string, WriterCapabilities>
   onOpenRecord: (file: string, coordinate: RecordCoordinate) => void
+  /** Plain click on a node: open the side inspector for that record. */
+  onSelectRecord?: (file: string, coordinate: RecordCoordinate) => void
+  /** Click on empty pane: deselect / close inspector. */
+  onClearSelection?: () => void
+  /** Currently selected coordinate (used to highlight the node). */
+  selectedCoordinate?: { file: string; coordinate: RecordCoordinate } | null
   onWriteField?: (
     filePath: string, coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue
   ) => Promise<RecordRow | void>
 }
 
-export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecord, onWriteField }: Props) {
+export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField }: Props) {
   const [compactNodes, setCompactNodes] = useState(false)
   const graph = useMemo(
     () => ({
@@ -703,11 +711,15 @@ export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecor
               ? (path: FieldPathSegment[], val: FieldValue) => { onWriteField!(n.file_path, n.coordinate, path, val) }
               : undefined,
             onCtrlClick: onOpenRecord ? () => onOpenRecord(n.file_path, n.coordinate) : undefined,
+            selected: !!selectedCoordinate
+              && selectedCoordinate.file === n.file_path
+              && selectedCoordinate.coordinate.actual_type === n.coordinate.actual_type
+              && selectedCoordinate.coordinate.key === n.coordinate.key,
           } satisfies NodeData,
         }
       })
     ),
-    [visibleNodes, positions, nodeExpandedMap, nodeRowExpandedMap, outgoingPathsByNode, compactNodes, toggleNodeExpanded, handleRowToggle, onWriteField, onOpenRecord, fileCapabilities]
+    [visibleNodes, positions, nodeExpandedMap, nodeRowExpandedMap, outgoingPathsByNode, compactNodes, toggleNodeExpanded, handleRowToggle, onWriteField, onOpenRecord, fileCapabilities, selectedCoordinate]
   )
 
   const rfEdges: Edge[] = useMemo(() => {
@@ -844,6 +856,15 @@ export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecor
             nodeTypes={nodeTypes}
             onNodeMouseEnter={onNodeMouseEnter}
             onNodeMouseLeave={onNodeMouseLeave}
+            onNodeClick={(e, node) => {
+              // Ctrl/Cmd+click jumps to the record view (handled in CfdNode).
+              // Plain click opens the side inspector.
+              if (e.ctrlKey || e.metaKey) return
+              if (!onSelectRecord) return
+              const gn = (node.data as NodeData).graphNode
+              onSelectRecord(gn.file_path, gn.coordinate)
+            }}
+            onPaneClick={() => onClearSelection?.()}
             onViewportChange={handleViewportChange}
             fitView
             fitViewOptions={{ padding: 0.15, minZoom: 0.2, maxZoom: 1.2 }}
@@ -863,8 +884,8 @@ export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecor
               zoomable
             />
           </ReactFlow>
-          <div className="graph-hint" title="按住 Ctrl 点击节点可跳转到该记录视图">
-            Ctrl+点击节点打开记录
+          <div className="graph-hint" title="点击节点打开侧边面板，Ctrl+点击跳转到记录视图">
+            点击节点查看 · Ctrl+点击跳转
           </div>
           </>
         )}

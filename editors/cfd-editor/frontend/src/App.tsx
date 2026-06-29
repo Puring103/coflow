@@ -4,6 +4,7 @@ import { TableView } from './components/TableView'
 import { RecordView } from './components/RecordView'
 import { GraphView } from './components/GraphView'
 import { DiagnosticsPanel } from './components/DiagnosticsPanel'
+import { InspectorPanel } from './components/InspectorPanel'
 import { Icon } from './components/Icon'
 import { useRouter } from './hooks/useRouter'
 import { useTheme } from './hooks/useTheme'
@@ -72,6 +73,24 @@ export default function App() {
     return Number.isFinite(n) ? Math.min(480, Math.max(160, n)) : 220
   })
   const [splitterDragging, setSplitterDragging] = useState(false)
+
+  // Right-side inspector panel: shared between table and graph views. Selection
+  // lives here so switching views keeps the same record highlighted. Overlays
+  // content area without pushing it. Width persisted to localStorage.
+  const [inspectorCoord, setInspectorCoord] = useState<{ file: string; coordinate: RecordCoordinate } | null>(null)
+  const inspectorOpen = inspectorCoord !== null
+  const [inspectorW, setInspectorW] = useState<number>(() => {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('cfd-editor-inspector-w') : null
+    const n = raw ? parseInt(raw, 10) : NaN
+    return Number.isFinite(n) ? Math.min(720, Math.max(320, n)) : 420
+  })
+  useEffect(() => {
+    try { localStorage.setItem('cfd-editor-inspector-w', String(inspectorW)) } catch { /* quota */ }
+  }, [inspectorW])
+  const openInspector = useCallback((file: string, coordinate: RecordCoordinate) => {
+    setInspectorCoord({ file, coordinate })
+  }, [])
+  const closeInspector = useCallback(() => setInspectorCoord(null), [])
 
   // Auto-load mock data only when not running in Tauri (browser preview).
   useEffect(() => {
@@ -799,6 +818,7 @@ export default function App() {
           }}
         />
 
+        <div className="content-area-wrap">
         <div className="content-area">
           {currentRoute && activeFileData ? (
             <>
@@ -864,7 +884,7 @@ export default function App() {
 
               {/* View switcher */}
               <div className="view-tabs view-tabs-views" role="tablist" aria-label="视图">
-                {(['table', 'record', 'graph'] as const).map(v => (
+                {(['record', 'table', 'graph'] as const).map(v => (
                   <button
                     key={v}
                     className={`tab-btn tab-view${currentRoute.view === v ? ' active' : ''}`}
@@ -873,7 +893,7 @@ export default function App() {
                     tabIndex={currentRoute.view === v ? 0 : -1}
                     data-tab-id={v}
                     onClick={() => switchView(v)}
-                    onKeyDown={e => onTabListKeyDown(e, ['table', 'record', 'graph'], v => switchView(v as 'table' | 'record' | 'graph'))}
+                    onKeyDown={e => onTabListKeyDown(e, ['record', 'table', 'graph'], v => switchView(v as 'table' | 'record' | 'graph'))}
                   >
                     <Icon name={v === 'table' ? 'table' : v === 'record' ? 'record' : 'graph'} size={13} aria-hidden />
                     {v === 'table' ? '表格' : v === 'record' ? '记录' : '图谱'}
@@ -888,6 +908,13 @@ export default function App() {
                     activeType={activeType}
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
+                    selectedCoordinate={
+                      inspectorCoord && inspectorCoord.file === currentRoute.file
+                        ? inspectorCoord.coordinate
+                        : null
+                    }
+                    onSelectRecord={coordinate => openInspector(currentRoute.file, coordinate)}
+                    onClearSelection={closeInspector}
                     onOpenRecord={coordinate => openRecord(currentRoute.file, coordinate)}
                     onWriteField={(coordinate, path, val) => writeField(currentRoute.file, coordinate, path, val)}
                     onRenameRecord={(coordinate, newKey) => renameRecord(currentRoute.file, coordinate, newKey)}
@@ -917,6 +944,9 @@ export default function App() {
                       activeType={activeType}
                       fileCapabilities={fileCapabilities}
                       onOpenRecord={(file, coordinate) => openRecord(file, coordinate)}
+                      onSelectRecord={openInspector}
+                      onClearSelection={closeInspector}
+                      selectedCoordinate={inspectorCoord}
                       onWriteField={writeField}
                     />
                   ) : (
@@ -949,6 +979,18 @@ export default function App() {
               )}
             </div>
           )}
+        </div>
+        <InspectorPanel
+          open={inspectorOpen}
+          data={inspectorCoord ? fileDataCache[inspectorCoord.file] ?? null : null}
+          coordinate={inspectorCoord?.coordinate ?? null}
+          readOnly={inspectorCoord ? !isEditableFile(fileDataCache[inspectorCoord.file]) : true}
+          diagnostics={project?.diagnostics}
+          width={inspectorW}
+          onWidthChange={setInspectorW}
+          onClose={closeInspector}
+          onWriteField={writeField}
+        />
         </div>
       </div>
 
