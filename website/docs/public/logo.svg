@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Coflow</title>
+  <desc id="desc">Coflow logo</desc>
+  <rect width="64" height="64" rx="14" fill="#0f766e"/>
+  <path d="M17 22h17c7 0 13 5 13 12s-6 12-13 12H17v-8h17c3 0 5-2 5-4s-2-4-5-4H17v-8Z" fill="#fff"/>
+  <path d="M17 14h30v8H17z" fill="#9ff3e7"/>
+</svg>

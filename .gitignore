@@ -4,5 +4,8 @@ examples/*/generated/**
 !examples/*/generated/
 !examples/*/coflow.enum.lock.json
 node_modules/
+website/vitepress-dev*.log
+website/docs/.vitepress/dist/
+website/docs/.vitepress/cache/
 .claude/
 ~$*.xlsx
