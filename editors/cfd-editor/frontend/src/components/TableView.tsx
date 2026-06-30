@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, memo } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
@@ -25,7 +25,7 @@ import {
   type FieldPathSegment,
   type FieldValue,
 } from '../wire'
-import { DataCardCompact, InlineEditor, summaryOf } from './DataCard'
+import { DataCardCompact, EnumDirectSelect, RefDirectSelect, summaryOf } from './DataCard'
 import { Icon } from './Icon'
 
 interface Props {
@@ -33,6 +33,8 @@ interface Props {
   activeType: string
   readOnly?: boolean
   diagnostics?: DiagnosticItem[]
+  /** Pre-populate the search filter from the parent global search bar. */
+  searchQuery?: string
   /** Currently selected coordinate (lifted to App so it can drive the
    *  shared right-side inspector and survive a view switch). */
   selectedCoordinate?: RecordCoordinate | null
@@ -56,7 +58,7 @@ interface Props {
 
 const ROW_H = 30
 
-export function TableView({ data, activeType, readOnly, diagnostics, selectedCoordinate, onSelectRecord, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onDeleteRecord, onMakeDefaultObject }: Props) {
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selectedCoordinate, onSelectRecord, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onDeleteRecord, onMakeDefaultObject }: Props) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: RecordRow } | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [newKey, setNewKey] = useState('')
@@ -64,7 +66,7 @@ export function TableView({ data, activeType, readOnly, diagnostics, selectedCoo
   const selectedId = selectedCoordinate ? coordinateId(selectedCoordinate) : null
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({})
-  const [globalFilter, setGlobalFilter] = useState('')
+  const [globalFilter, setGlobalFilter] = useState(searchQuery ?? '')
 
   const tableScrollRef = useRef<HTMLDivElement>(null)
 
@@ -72,7 +74,13 @@ export function TableView({ data, activeType, readOnly, diagnostics, selectedCoo
   useEffect(() => {
     setSorting([])
     setGlobalFilter('')
+    setColumnSizing({})
   }, [data.file_path, activeType])
+
+  // Sync search from parent global search bar.
+  useEffect(() => {
+    setGlobalFilter(searchQuery ?? '')
+  }, [searchQuery])
 
   useEffect(() => {
     setNewType(activeType || data.type_names[0] || '')
@@ -125,6 +133,24 @@ export function TableView({ data, activeType, readOnly, diagnostics, selectedCoo
     [filtered]
   )
 
+  const columnSizeHints = useMemo(() => {
+    const hints: Record<string, number> = { key: 140 }
+    const CHAR_W = 7, MIN = 60, MAX = 300
+    for (const name of allFieldNames) {
+      let max = name.length * CHAR_W + 24
+      for (const row of filtered) {
+        const f = row.fields.find(f => f.name === name)
+        if (f) {
+          const s = summaryOf(f.value)
+          const w = s.length * CHAR_W + 24
+          if (w > max) max = w
+        }
+      }
+      hints[name] = Math.min(MAX, Math.max(MIN, max))
+    }
+    return hints
+  }, [filtered, allFieldNames])
+
   const canEdit = !readOnly && !!onWriteField
   const canRename = !readOnly && data.capabilities.can_edit_key && !!onRenameRecord
   const columns = useMemo(() => {
@@ -140,12 +166,13 @@ export function TableView({ data, activeType, readOnly, diagnostics, selectedCoo
             onCommit={canRename ? next => onRenameRecord!(info.row.original.coordinate, next) : undefined}
           />
         ),
-        size: 140,
+        size: columnSizeHints.key ?? 140,
       }),
       ...allFieldNames.map(name =>
         helper.display({
           id: name,
           header: name,
+          size: columnSizeHints[name] ?? 120,
           cell: ({ row }) => {
             const f = row.original.fields.find(f => f.name === name)
             const sev = cellDiagIndex.get(`${coordinateId(row.original.coordinate)}::${name}`)
@@ -168,7 +195,7 @@ export function TableView({ data, activeType, readOnly, diagnostics, selectedCoo
         }),
       ),
     ]
-  }, [allFieldNames, canEdit, canRename, onWriteField, onRenameRecord, cellDiagIndex, diagnostics, data.file_path])
+  }, [allFieldNames, columnSizeHints, canEdit, canRename, onWriteField, onRenameRecord, cellDiagIndex, diagnostics, data.file_path])
 
   // Global filter: match key or any scalar field value (via summaryOf).
   const globalFilterFn = useMemo(
@@ -198,7 +225,7 @@ export function TableView({ data, activeType, readOnly, diagnostics, selectedCoo
     getFilteredRowModel: getFilteredRowModel(),
     getRowId: row => coordinateId(row.coordinate),
     globalFilterFn,
-    columnResizeMode: 'onChange',
+    columnResizeMode: 'onEnd',
     enableColumnResizing: true,
   })
 
@@ -236,27 +263,11 @@ export function TableView({ data, activeType, readOnly, diagnostics, selectedCoo
       }}
     >
       <div className="table-main">
-        {(filtered.length > 8 || globalFilter) && (
-          <div className="table-toolbar">
-            <div className="table-search">
-              <Icon name="search" size={13} className="table-search-icon" aria-hidden />
-              <input
-                placeholder={`搜索 ${activeType}…`}
-                value={globalFilter}
-                onChange={e => setGlobalFilter(e.target.value)}
-                aria-label="搜索记录"
-              />
-              {globalFilter && (
-                <button className="rv-clear-search" onClick={() => setGlobalFilter('')} aria-label="清除搜索">
-                  <Icon name="close" size={13} aria-hidden />
-                </button>
-              )}
-            </div>
-            <span className="table-row-count">
-              {rows.length}{rows.length !== filtered.length ? ` / ${filtered.length}` : ''} 条
-            </span>
-          </div>
-        )}
+        <div className="table-toolbar">
+          <span className="table-row-count">
+            {rows.length}{rows.length !== filtered.length ? ` / ${filtered.length}` : ''} 条
+          </span>
+        </div>
 
         <div className="table-scroll" ref={tableScrollRef}>
           <table className="data-table" style={{ width: table.getTotalSize() }}>
@@ -309,7 +320,11 @@ export function TableView({ data, activeType, readOnly, diagnostics, selectedCoo
                   <tr
                     key={row.id}
                     className={`table-row${selectedId === coordinateId(row.original.coordinate) ? ' selected' : ''}${rowSev ? ' table-row-' + rowSev : ''}`}
-                    onClick={e => {
+                    onMouseDown={e => {
+                      // Use mousedown (fires before the browser opens the native
+                      // select dropdown) so the state update is committed before
+                      // the dropdown opens. stopPropagation prevents the table-view
+                      // onClick from calling onClearSelection.
                       e.stopPropagation()
                       onSelectRecord?.(row.original.coordinate)
                     }}
@@ -427,7 +442,7 @@ export function TableView({ data, activeType, readOnly, diagnostics, selectedCoo
       )}
     </div>
   )
-}
+})
 
 function isDimensionDefaultField(record: RecordRow, fieldName: string): boolean {
   return recordActualType(record).endsWith('Variants') && fieldName === 'default'
@@ -462,30 +477,100 @@ function EditableCell({
                 || value.kind === 'string' || value.kind === 'enum' || value.kind === 'ref'
   const canEdit = editable && isScalar && !!onCommit
 
+  // Bool: checkbox, always visible
+  if (canEdit && value.kind === 'bool') {
+    return (
+      <div className="cell-edit-wrap">
+        <input
+          type="checkbox"
+          className="dc-checkbox"
+          checked={value.value}
+          onChange={e => onCommit!({ kind: 'bool', value: e.target.checked })}
+        />
+      </div>
+    )
+  }
+
+  // Enum: shared EnumDirectSelect component, no click-to-edit gate
+  if (canEdit && value.kind === 'enum') {
+    return (
+      <div className="cell-edit-wrap">
+        <EnumDirectSelect value={value} onCommit={onCommit!} />
+      </div>
+    )
+  }
+
+  // Ref: shared RefDirectSelect component, flat=true skips the pill wrapper
+  if (canEdit && value.kind === 'ref') {
+    return (
+      <div className="cell-edit-wrap">
+        <RefDirectSelect value={value} onCommit={onCommit!} flat />
+      </div>
+    )
+  }
+
+  // String / int / float: click-to-edit
   if (editing && canEdit) {
     return (
-      <InlineEditor
-        value={value}
-        onCommit={next => { onCommit!(next); setEditing(false) }}
-        onCancel={() => setEditing(false)}
-      />
+      <div className="cell-edit-wrap" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+        <CellTextEditor
+          value={value as FieldValue & { kind: 'int' | 'float' | 'string' }}
+          onCommit={next => { onCommit!(next); setEditing(false) }}
+          onCancel={() => setEditing(false)}
+        />
+      </div>
     )
   }
   return (
     <div
       className={`cell-edit-wrap${canEdit ? ' editable' : ''}`}
       onClick={canEdit ? (e: React.MouseEvent) => {
-        // Single-click enters edit mode (matches RecordView's DirectEditor).
-        // stopPropagation so the row's selection handler doesn't also fire
-        // and steal focus away from the freshly-mounted input.
         e.stopPropagation()
         setEditing(true)
       } : undefined}
-      onDoubleClick={canEdit ? () => setEditing(true) : undefined}
       title={canEdit ? '点击编辑' : undefined}
     >
       <DataCardCompact value={value} />
     </div>
+  )
+}
+
+function CellTextEditor({
+  value, onCommit, onCancel,
+}: {
+  value: FieldValue & { kind: 'int' | 'float' | 'string' }
+  onCommit: (next: FieldValue) => void
+  onCancel: () => void
+}) {
+  const [text, setText] = useState(
+    value.kind === 'int' || value.kind === 'float' ? String(value.value) : value.value
+  )
+  function commit() {
+    if (value.kind === 'int') {
+      const n = parseInt(text, 10)
+      if (!isNaN(n)) onCommit({ kind: 'int', value: BigInt(n) })
+      else onCancel()
+    } else if (value.kind === 'float') {
+      const n = parseFloat(text)
+      if (!isNaN(n)) onCommit({ kind: 'float', value: n })
+      else onCancel()
+    } else {
+      onCommit({ kind: 'string', value: text })
+    }
+  }
+  return (
+    <input
+      className="dc-input dc-input-flat"
+      type={value.kind === 'int' || value.kind === 'float' ? 'number' : 'text'}
+      value={text}
+      autoFocus
+      onChange={e => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+        if (e.key === 'Escape') onCancel()
+      }}
+    />
   )
 }
 

@@ -23,6 +23,8 @@ interface Props {
   typeFilter?: string
   readOnly?: boolean
   diagnostics?: DiagnosticItem[]
+  /** Filters the sidebar record list (shared global search). */
+  recordSearch?: string
   highlightField?: string | null
   onHighlightConsumed?: () => void
   onOpenRecord: (coordinate: RecordCoordinate) => void
@@ -30,23 +32,35 @@ interface Props {
   onRenameRecord?: (coordinate: RecordCoordinate, newKey: string) => Promise<RecordRow | void>
 }
 
-export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, highlightField, onHighlightConsumed, onOpenRecord, onWriteField, onRenameRecord }: Props) {
+export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, highlightField, onHighlightConsumed, onOpenRecord, onWriteField, onRenameRecord }: Props) {
   const record = data.records.find(r => sameCoordinate(r.coordinate, coordinate))
-  const [search, setSearch] = useState('')
+  const [fieldSearch, setFieldSearch] = useState('')
+  const fieldSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
+
   const activeId = coordinateId(coordinate)
 
-  const sidebarRecords = typeFilter
+  const allSidebarRecords = typeFilter
     ? data.records.filter(r => recordActualType(r) === typeFilter)
     : data.records
+
+  const sidebarRecords = recordSearch
+    ? allSidebarRecords.filter(r => {
+        const q = recordSearch.toLowerCase()
+        if (recordKey(r).toLowerCase().includes(q)) return true
+        for (const f of r.fields) {
+          if (f.name.toLowerCase().includes(q)) return true
+        }
+        return false
+      })
+    : allSidebarRecords
 
   if (!record) {
     return <div className="record-view"><div className="empty-hint">记录 "{coordinate.actual_type}.{coordinate.key}" 未找到</div></div>
   }
 
-  const showSearch = record.fields.length > 6
-  const fields = search
-    ? record.fields.filter(f => f.name.toLowerCase().includes(search.toLowerCase()))
+  const fields = fieldSearch
+    ? record.fields.filter(f => f.name.toLowerCase().includes(fieldSearch.toLowerCase()))
     : record.fields
 
   const fieldDiags = diagnostics
@@ -122,38 +136,27 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
       </div>
 
       <div className="rv-main">
-        <CardHeader recordKey={recordKey(record)} actualType={recordActualType(record)} filePath={data.file_path} />
-        {canRename && (
-          <div className="record-actions">
-            <button
-              className="btn btn-outlined"
-              onClick={async () => {
-                const next = window.prompt('重命名 Key', recordKey(record))?.trim()
-                if (!next || next === recordKey(record)) return
-                await onRenameRecord!(record.coordinate, next)
-              }}
-            >
-              <Icon name="edit" size={13} />
-              重命名 Key
+        <CardHeader
+          recordKey={recordKey(record)}
+          actualType={recordActualType(record)}
+          filePath={data.file_path}
+          onRename={canRename ? async (next) => { await onRenameRecord!(record.coordinate, next) } : undefined}
+        />
+        <div className="rv-search-bar">
+          <Icon name="search" size={13} className="rv-search-icon" aria-hidden />
+          <input
+            ref={fieldSearchRef}
+            placeholder="搜索字段…"
+            value={fieldSearch}
+            onChange={e => setFieldSearch(e.target.value)}
+            aria-label="搜索字段"
+          />
+          {fieldSearch && (
+            <button className="rv-clear-search" onClick={() => setFieldSearch('')} aria-label="清除搜索">
+              <Icon name="close" size={13} aria-hidden />
             </button>
-          </div>
-        )}
-        {showSearch && (
-          <div className="rv-search-bar">
-            <Icon name="search" size={13} className="rv-search-icon" aria-hidden />
-            <input
-              placeholder="搜索字段"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              aria-label="搜索字段"
-            />
-            {search && (
-              <button className="rv-clear-search" onClick={() => setSearch('')} aria-label="清除搜索">
-                <Icon name="close" size={13} aria-hidden />
-              </button>
-            )}
-          </div>
-        )}
+          )}
+        </div>
         <DataCardExpanded
           fields={fields}
           actualType={recordActualType(record)}

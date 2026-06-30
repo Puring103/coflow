@@ -31,23 +31,56 @@ import {
   stringValue,
 } from '../wire'
 import { Icon } from './Icon'
-import { typeColor } from '../utils/typeColor'
+import { typeColor, enumColor } from '../utils/typeColor'
 import { loadEnumVariants, loadRefTargets, buildDefaultObject } from '../utils/editContext'
 
 export function CardHeader({
   recordKey,
   actualType,
   filePath,
+  onRename,
 }: {
   recordKey: string
   actualType: string
   filePath?: string
+  onRename?: (newKey: string) => void
 }) {
   const color = typeColor(actualType)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(recordKey)
+  useEffect(() => { if (!editing) setDraft(recordKey) }, [recordKey, editing])
+
+  const commit = () => {
+    const next = draft.trim()
+    setEditing(false)
+    if (next && next !== recordKey && onRename) onRename(next)
+  }
+
   return (
     <div className="gn-header" style={{ '--node-color': color } as CSSProperties}>
       <div className="gn-color-bar" />
-      <span className="gn-key">{recordKey}</span>
+      {editing ? (
+        <input
+          className="gn-key-editor"
+          value={draft}
+          autoFocus
+          onChange={e => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={e => {
+            if (e.key === 'Enter') commit()
+            if (e.key === 'Escape') { setEditing(false); setDraft(recordKey) }
+          }}
+          onClick={e => e.stopPropagation()}
+        />
+      ) : (
+        <span
+          className={`gn-key${onRename ? ' gn-key-renameable' : ''}`}
+          onDoubleClick={onRename ? () => setEditing(true) : undefined}
+          title={onRename ? '双击重命名' : undefined}
+        >
+          {recordKey}
+        </span>
+      )}
       <div className="gn-meta">
         <span className="gn-type">{actualType}</span>
         {filePath && <span className="gn-file">{filePath.split('/').pop()}</span>}
@@ -116,7 +149,7 @@ export function summaryOf(v: FieldValue): string {
     case 'bool': return v.value ? 'true' : 'false'
     case 'int': return String(v.value)
     case 'float': return String(v.value)
-    case 'string': return v.value.length > 32 ? `"${v.value.slice(0, 30)}..."` : `"${v.value}"`
+    case 'string': return v.value.length > 40 ? v.value.slice(0, 38) + '…' : v.value
     case 'enum': return enumVariantText(v)
     case 'ref': return v.value.target_key
     case 'object': return v.value.actual_type
@@ -169,7 +202,11 @@ function ValueChip({ value }: { value: FieldValue }) {
     case 'null':
       return <span className="vc vc-null">null</span>
     case 'bool':
-      return <span className={`vc vc-bool${value.value ? ' on' : ''}`}>{value.value ? 'true' : 'false'}</span>
+      return (
+        <span className={`vc vc-bool${value.value ? ' on' : ''}`}>
+          <input type="checkbox" className="dc-checkbox dc-checkbox-ro" checked={value.value} readOnly tabIndex={-1} />
+        </span>
+      )
     case 'int':
     case 'float':
       return <span className="vc vc-num">{String(value.value)}</span>
@@ -446,7 +483,7 @@ function ScalarFieldRow({
 
   return (
     <div className={`dc-row${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} title={rowTitle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
-      <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 8 }}>
+      <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 12 }}>
         {leading}
         <span className="dc-row-label-text">{label}</span>
       </div>
@@ -486,14 +523,12 @@ function DirectEditor({
 }) {
   if (value.kind === 'bool') {
     return (
-      <select
-        className="dc-input dc-input-flat"
-        value={value.value ? 'true' : 'false'}
-        onChange={e => onCommit(boolValue(e.target.value === 'true'))}
-      >
-        <option value="true">true</option>
-        <option value="false">false</option>
-      </select>
+      <input
+        type="checkbox"
+        className="dc-checkbox"
+        checked={value.value}
+        onChange={e => onCommit(boolValue(e.target.checked))}
+      />
     )
   }
   if (value.kind === 'enum') {
@@ -527,6 +562,30 @@ function TextDirectInput({
     else setText(initial)
   }
 
+  if (value.kind === 'string') {
+    return (
+      <textarea
+        className="dc-input dc-input-flat dc-input-textarea"
+        value={text}
+        rows={1}
+        onChange={e => {
+          setText(e.target.value)
+          const el = e.target as HTMLTextAreaElement
+          el.style.height = 'auto'
+          el.style.height = el.scrollHeight + 'px'
+        }}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            (e.target as HTMLTextAreaElement).blur()
+          }
+          if (e.key === 'Escape') { setText(initial); (e.target as HTMLTextAreaElement).blur() }
+        }}
+      />
+    )
+  }
+
   return (
     <input
       className="dc-input dc-input-flat"
@@ -542,7 +601,7 @@ function TextDirectInput({
   )
 }
 
-function EnumDirectSelect({
+export function EnumDirectSelect({
   value,
   onCommit,
 }: {
@@ -552,6 +611,7 @@ function EnumDirectSelect({
   const [variants, setVariants] = useState<string[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const current = enumVariantText(value)
+  const color = enumColor(value.value.enum_name)
   useEffect(() => {
     let alive = true
     setLoadError(null)
@@ -567,7 +627,8 @@ function EnumDirectSelect({
     return (
       <span className="dc-input-wrap">
         <input
-          className="dc-input dc-input-flat"
+          className="dc-input dc-input-flat dc-input-enum"
+          style={{ '--enum-color': color } as React.CSSProperties}
           defaultValue={current}
           aria-invalid={!!loadError}
           onBlur={e => {
@@ -583,6 +644,7 @@ function EnumDirectSelect({
   return (
     <select
       className="dc-input dc-input-flat dc-input-enum"
+      style={{ '--enum-color': color } as React.CSSProperties}
       value={current}
       onChange={e => onCommit(enumValue(value.value.enum_name, e.target.value, value.value.value))}
     >
@@ -592,14 +654,17 @@ function EnumDirectSelect({
   )
 }
 
-function RefDirectSelect({
+export function RefDirectSelect({
   value,
   onCommit,
   autoFocus = false,
+  flat = false,
 }: {
   value: FieldValue & { kind: 'ref' }
   onCommit: (next: FieldValue) => void
   autoFocus?: boolean
+  /** flat=true: skip the pill wrapper, render just the select (for table cells) */
+  flat?: boolean
 }) {
   const [targets, setTargets] = useState<RefTarget[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -621,24 +686,27 @@ function RefDirectSelect({
   }
 
   if (targets === null || targets.length === 0) {
+    const input = (
+      <input
+        className={`dc-input dc-input-flat dc-input-ref-select${flat ? ' dc-input-ref-select-flat' : ''}`}
+        defaultValue={value.value.target_key}
+        autoFocus={autoFocus}
+        aria-invalid={!!loadError}
+        placeholder={targets === null ? '加载中...' : 'key'}
+        title={value.value.target_type}
+        onBlur={e => commit(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+          if (e.key === 'Escape') (e.target as HTMLInputElement).blur()
+        }}
+      />
+    )
+    if (flat) return input
     return (
-      <span className="dc-input-ref">
+      <span className="dc-input-ref" title={value.value.target_type}>
         <span className="dc-input-ref-dot" />
-        <input
-          className="dc-input dc-input-flat"
-          defaultValue={value.value.target_key}
-          autoFocus={autoFocus}
-          aria-invalid={!!loadError}
-          placeholder={targets === null ? '加载中...' : `${value.value.target_type} key`}
-          onBlur={e => commit(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-            if (e.key === 'Escape') (e.target as HTMLInputElement).blur()
-          }}
-        />
-        {loadError
-          ? <span className="dc-load-error" title={loadError}>!</span>
-          : <span className="dc-input-ref-type">{value.value.target_type}</span>}
+        {input}
+        {loadError && <span className="dc-load-error" title={loadError}>!</span>}
       </span>
     )
   }
@@ -648,23 +716,29 @@ function RefDirectSelect({
     : ''
   const targetById = new Map(targets.map(t => [refTargetId(t), t]))
   const inList = currentId ? targetById.has(currentId) : false
+
+  const select = (
+    <select
+      className={`dc-input dc-input-flat dc-input-ref-select${flat ? ' dc-input-ref-select-flat' : ''}`}
+      value={currentId}
+      autoFocus={autoFocus}
+      onChange={e => {
+        const target = targetById.get(e.target.value)
+        if (target) onCommit(refValueFromTarget(target))
+      }}
+      title={value.value.target_type}
+    >
+      {!value.value.target_key && <option value="" disabled>选择...</option>}
+      {value.value.target_key && !inList && <option value={currentId}>{value.value.target_key}</option>}
+      {targets.map(t => <option key={refTargetId(t)} value={refTargetId(t)}>{refTargetLabel(t)}</option>)}
+    </select>
+  )
+
+  if (flat) return select
   return (
     <span className="dc-input-ref">
       <span className="dc-input-ref-dot" />
-      <select
-        className="dc-input dc-input-flat dc-input-ref-select"
-        value={currentId}
-        autoFocus={autoFocus}
-        onChange={e => {
-          const target = targetById.get(e.target.value)
-          if (target) onCommit(refValueFromTarget(target))
-        }}
-      >
-        {!value.value.target_key && <option value="" disabled>选择...</option>}
-        {value.value.target_key && !inList && <option value={currentId}>{value.value.target_type}.{value.value.target_key}</option>}
-        {targets.map(t => <option key={refTargetId(t)} value={refTargetId(t)}>{refTargetLabel(t)}</option>)}
-      </select>
-      <span className="dc-input-ref-type">{value.value.target_type}</span>
+      {select}
     </span>
   )
 }
@@ -674,7 +748,7 @@ function refTargetId(target: RefTarget): string {
 }
 
 function refTargetLabel(target: RefTarget): string {
-  return `${target.coordinate.actual_type}.${target.coordinate.key}`
+  return target.coordinate.key
 }
 
 export function InlineEditor({
@@ -697,17 +771,18 @@ export function InlineEditor({
 
   if (value.kind === 'bool') {
     return (
-      <select
-        className="dc-input"
-        value={editVal}
+      <input
+        type="checkbox"
+        className="dc-checkbox"
+        checked={editVal === 'true'}
         autoFocus
-        onChange={e => commit(e.target.value)}
-        onBlur={onCancel}
+        onChange={e => {
+          const next = e.target.checked ? 'true' : 'false'
+          setEditVal(next)
+          commit(next)
+        }}
         onKeyDown={e => { if (e.key === 'Escape') onCancel() }}
-      >
-        <option value="true">true</option>
-        <option value="false">false</option>
-      </select>
+      />
     )
   }
   if (value.kind === 'enum') {
@@ -722,6 +797,30 @@ export function InlineEditor({
   }
   if (value.kind === 'ref') {
     return <RefSelect value={value} onCommit={onCommit} onCancel={onCancel} />
+  }
+  if (value.kind === 'string') {
+    return (
+      <textarea
+        className="dc-input dc-input-textarea"
+        value={editVal}
+        autoFocus
+        rows={1}
+        onChange={e => {
+          setEditVal(e.target.value)
+          const el = e.target as HTMLTextAreaElement
+          el.style.height = 'auto'
+          el.style.height = el.scrollHeight + 'px'
+        }}
+        onBlur={() => commit(editVal)}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            commit(editVal)
+          }
+          if (e.key === 'Escape') onCancel()
+        }}
+      />
+    )
   }
   return (
     <input
@@ -780,7 +879,6 @@ function EnumSelect({
       defaultValue={current}
       autoFocus
       onChange={e => onCommit(e.target.value)}
-      onBlur={onCancel}
       onKeyDown={e => { if (e.key === 'Escape') onCancel() }}
     >
       {!variants.includes(current) && <option value={current}>{current}</option>}
@@ -815,38 +913,37 @@ function RefSelect({
     const inList = currentId ? targetById.has(currentId) : false
     return (
       <select
-        className="dc-input"
+        className="dc-input dc-input-ref-select"
         value={currentId}
         autoFocus
+        title={value.value.target_type}
         onChange={e => {
           const target = targetById.get(e.target.value)
           if (target) onCommit(refValueFromTarget(target))
         }}
-        onBlur={onCancel}
         onKeyDown={e => { if (e.key === 'Escape') onCancel() }}
       >
         {!value.value.target_key && <option value="" disabled>选择...</option>}
-        {value.value.target_key && !inList && <option value={currentId}>{value.value.target_type}.{value.value.target_key}</option>}
+        {value.value.target_key && !inList && <option value={currentId}>{value.value.target_key}</option>}
         {targets.map(t => <option key={refTargetId(t)} value={refTargetId(t)}>{refTargetLabel(t)}</option>)}
       </select>
     )
   }
 
   return (
-    <span className="dc-input-wrap">
-      <input
-        className="dc-input"
-        value={val}
-        autoFocus
-        placeholder={targets === null ? '加载中...' : `${value.value.target_type} key`}
-        onChange={e => setVal(e.target.value)}
-        onBlur={() => onCommit(refValue(value.value.target_type, val))}
-        onKeyDown={e => {
-          if (e.key === 'Enter') onCommit(refValue(value.value.target_type, val))
-          if (e.key === 'Escape') onCancel()
-        }}
-      />
-    </span>
+    <input
+      className="dc-input dc-input-ref-select"
+      value={val}
+      autoFocus
+      title={value.value.target_type}
+      placeholder={targets === null ? '加载中...' : 'key'}
+      onChange={e => setVal(e.target.value)}
+      onBlur={() => onCommit(refValue(value.value.target_type, val))}
+      onKeyDown={e => {
+        if (e.key === 'Enter') onCommit(refValue(value.value.target_type, val))
+        if (e.key === 'Escape') onCancel()
+      }}
+    />
   )
 }
 
@@ -898,7 +995,7 @@ function ExpandableRow({
   return (
     <>
       <div className={`dc-row dc-row-foldout${isSpread ? ' dc-row-spread' : ''}${diag.sev ? ' dc-row-diag dc-row-diag-' + diag.sev : ''}${dragProps?.extraClass ? ' ' + dragProps.extraClass : ''}`} data-depth={depth} data-field-name={depth === 0 ? label : undefined} data-field-path={pathKey} title={rowTitle} onClick={toggle} {...(dragProps && { onDragStart: dragProps.onDragStart, onDragOver: dragProps.onDragOver, onDragLeave: dragProps.onDragLeave, onDrop: dragProps.onDrop, onDragEnd: dragProps.onDragEnd, draggable: dragProps.draggable })}>
-        <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX }}>
+        <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 4 }}>
           {leading}
           <span className="dc-fold-arrow">
             <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={11} />
@@ -1012,7 +1109,7 @@ function ExpandableRow({
 function EmptyHint({ depth, text }: { depth: number; text: string }) {
   return (
     <div className="dc-row dc-row-empty">
-      <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 8 }} />
+      <div className="dc-row-label" style={{ paddingLeft: depth * INDENT_PX + 12 }} />
       <div className="dc-row-value">
         <span className="vc vc-null">{text}</span>
       </div>

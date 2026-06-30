@@ -18,3 +18,16 @@ export function typeColor(name: string): string {
     : document.documentElement.getAttribute('data-theme') !== 'light'
   return `hsl(${hue}, 55%, ${dark ? 62 : 42}%)`
 }
+
+/** Stable per-enum-name color. Uses the same hash algorithm as typeColor but
+ *  with slightly lower saturation so enum chips are visually distinct from
+ *  type badges while still having strong per-name identity. */
+export function enumColor(name: string): string {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0
+  const hue = hash % 360
+  const dark = typeof document === 'undefined'
+    ? true
+    : document.documentElement.getAttribute('data-theme') !== 'light'
+  return `hsl(${hue}, 45%, ${dark ? 58 : 38}%)`
+}

@@ -61,6 +61,9 @@ export default function App() {
   const router = useRouter()
   const { theme, toggle: toggleTheme } = useTheme()
   const [activeType, setActiveType] = useState<string>('')
+  const [globalSearch, setGlobalSearch] = useState('')
+  const globalSearchRef = useRef<HTMLInputElement>(null)
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
   // Field path to briefly highlight after a diagnostic jump. Cleared after
   // the RecordView applies the highlight so subsequent navigations don't
   // re-flash it.
@@ -88,7 +91,10 @@ export default function App() {
     try { localStorage.setItem('cfd-editor-inspector-w', String(inspectorW)) } catch { /* quota */ }
   }, [inspectorW])
   const openInspector = useCallback((file: string, coordinate: RecordCoordinate) => {
-    setInspectorCoord({ file, coordinate })
+    setInspectorCoord(prev => {
+      if (prev && prev.file === file && sameCoordinate(prev.coordinate, coordinate)) return prev
+      return { file, coordinate }
+    })
   }, [])
   const closeInspector = useCallback(() => setInspectorCoord(null), [])
 
@@ -270,8 +276,19 @@ export default function App() {
       .catch(err => setErrorMsg(`读取图谱失败: ${errorMessage(err)}`))
   }, [project, router.current, graphCache])
 
+  // Auto-collapse inspector when switching to record view; restore for table/graph.
+  useEffect(() => {
+    const view = router.current?.view
+    if (view === 'record') {
+      setInspectorCollapsed(true)
+    } else if (view === 'table' || view === 'graph') {
+      setInspectorCollapsed(false)
+    }
+  }, [router.current?.view])
+
   const openFile = useCallback(
     (filePath: string) => {
+      setGlobalSearch('')
       router.push({ view: 'table', file: filePath })
     },
     [router]
@@ -621,6 +638,11 @@ export default function App() {
       }
       if (e.altKey && e.key === 'ArrowLeft') router.back()
       if (e.altKey && e.key === 'ArrowRight') router.forward()
+      // Ctrl+F / Cmd+F focuses the record search bar.
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault()
+        globalSearchRef.current?.focus()
+      }
       // `?` only toggles help when not focused inside a text-editing control,
       // otherwise typing `?` into inputs/search boxes would steal focus.
       if (e.key === '?' && !isTextTarget(e.target)) setShowHelp(v => !v)
@@ -642,9 +664,53 @@ export default function App() {
     }
     return map
   }, [fileDataCache])
-  const fileDiagnostics = activeFile && project
-    ? project.diagnostics.filter(d => d.file_path === activeFile)
-    : []
+  const fileDiagnostics = useMemo(
+    () => activeFile && project ? project.diagnostics.filter(d => d.file_path === activeFile) : [],
+    [activeFile, project?.diagnostics],
+  )
+
+  // Stable callbacks for TableView so React.memo can bail out on re-renders
+  // caused by inspector panel state changes (collapsed, open, width).
+  const tableOnSelectRecord = useCallback(
+    (coordinate: RecordCoordinate) => {
+      if (currentRoute?.view === 'table') openInspector(currentRoute.file, coordinate)
+    },
+    [currentRoute?.view, currentRoute?.file, openInspector],
+  )
+  const tableOnOpenRecord = useCallback(
+    (coordinate: RecordCoordinate) => {
+      if (currentRoute?.view === 'table') openRecord(currentRoute.file, coordinate)
+    },
+    [currentRoute?.view, currentRoute?.file, openRecord],
+  )
+  const tableOnWriteField = useCallback(
+    (coordinate: RecordCoordinate, path: FieldPathSegment[], val: FieldValue): Promise<RecordRow | void> => {
+      if (currentRoute?.view === 'table') return writeField(currentRoute.file, coordinate, path, val)
+      return Promise.resolve()
+    },
+    [currentRoute?.view, currentRoute?.file, writeField],
+  )
+  const tableOnRenameRecord = useCallback(
+    (coordinate: RecordCoordinate, newKey: string): Promise<RecordRow | void> => {
+      if (currentRoute?.view === 'table') return renameRecord(currentRoute.file, coordinate, newKey)
+      return Promise.resolve()
+    },
+    [currentRoute?.view, currentRoute?.file, renameRecord],
+  )
+  const tableOnInsertRecord = useCallback(
+    (rk: string, type: string, fields: FieldValue): Promise<void> => {
+      if (currentRoute?.view === 'table') return insertRecord(currentRoute.file, rk, type, fields)
+      return Promise.resolve()
+    },
+    [currentRoute?.view, currentRoute?.file, insertRecord],
+  )
+  const tableOnDeleteRecord = useCallback(
+    (coordinate: RecordCoordinate): Promise<void> => {
+      if (currentRoute?.view === 'table') return deleteRecord(currentRoute.file, coordinate)
+      return Promise.resolve()
+    },
+    [currentRoute?.view, currentRoute?.file, deleteRecord],
+  )
 
   useEffect(() => {
     setActiveSession(project?.session_id ?? null)
@@ -901,6 +967,24 @@ export default function App() {
                 ))}
               </div>
 
+              {/* Record search bar — shared across all three views */}
+              <div className="global-search-bar">
+                <Icon name="search" size={13} className="table-search-icon" aria-hidden />
+                <input
+                  ref={globalSearchRef}
+                  placeholder="搜索记录… (Ctrl+F)"
+                  value={globalSearch}
+                  onChange={e => setGlobalSearch(e.target.value)}
+                  aria-label="搜索记录"
+                  role="searchbox"
+                />
+                {globalSearch && (
+                  <button className="rv-clear-search" onClick={() => setGlobalSearch('')} aria-label="清除搜索">
+                    <Icon name="close" size={13} aria-hidden />
+                  </button>
+                )}
+              </div>
+
               <div className="view-container">
                 {currentRoute.view === 'table' && (
                   <TableView
@@ -908,18 +992,19 @@ export default function App() {
                     activeType={activeType}
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
+                    searchQuery={globalSearch}
                     selectedCoordinate={
                       inspectorCoord && inspectorCoord.file === currentRoute.file
                         ? inspectorCoord.coordinate
                         : null
                     }
-                    onSelectRecord={coordinate => openInspector(currentRoute.file, coordinate)}
+                    onSelectRecord={tableOnSelectRecord}
                     onClearSelection={closeInspector}
-                    onOpenRecord={coordinate => openRecord(currentRoute.file, coordinate)}
-                    onWriteField={(coordinate, path, val) => writeField(currentRoute.file, coordinate, path, val)}
-                    onRenameRecord={(coordinate, newKey) => renameRecord(currentRoute.file, coordinate, newKey)}
-                    onInsertRecord={(rk, type, fields) => insertRecord(currentRoute.file, rk, type, fields)}
-                    onDeleteRecord={coordinate => deleteRecord(currentRoute.file, coordinate)}
+                    onOpenRecord={tableOnOpenRecord}
+                    onWriteField={tableOnWriteField}
+                    onRenameRecord={tableOnRenameRecord}
+                    onInsertRecord={tableOnInsertRecord}
+                    onDeleteRecord={tableOnDeleteRecord}
                     onMakeDefaultObject={async type => project ? api.makeDefaultObject(project.session_id, type) : null}
                   />
                 )}
@@ -930,6 +1015,7 @@ export default function App() {
                     typeFilter={activeType}
                     readOnly={readOnly}
                     diagnostics={fileDiagnostics}
+                    recordSearch={globalSearch}
                     highlightField={highlightField}
                     onHighlightConsumed={() => setHighlightField(null)}
                     onOpenRecord={coordinate => openRecord(currentRoute.file, coordinate)}
@@ -981,7 +1067,9 @@ export default function App() {
           )}
         </div>
         <InspectorPanel
-          open={inspectorOpen}
+          open={inspectorOpen || ((currentRoute?.view === 'table' || currentRoute?.view === 'graph') && !!activeFileData)}
+          collapsed={inspectorCollapsed}
+          onToggleCollapse={() => setInspectorCollapsed(v => !v)}
           data={inspectorCoord ? fileDataCache[inspectorCoord.file] ?? null : null}
           coordinate={inspectorCoord?.coordinate ?? null}
           readOnly={inspectorCoord ? !isEditableFile(fileDataCache[inspectorCoord.file]) : true}
@@ -990,6 +1078,7 @@ export default function App() {
           onWidthChange={setInspectorW}
           onClose={closeInspector}
           onWriteField={writeField}
+          onRenameRecord={renameRecord}
         />
         </div>
       </div>

@@ -1,0 +1,364 @@
+# ─── 常量 ─────────────────────────────────────────────────────────────────────
+
+const MAX_LEVEL: int = 60;
+const MAX_COST: int  = 10;
+const MAX_POWER: int = 999;
+
+# ─── 枚举 ─────────────────────────────────────────────────────────────────────
+
+enum Faction {
+  Neutral  = 0,
+  Alliance = 1,
+  Horde    = 2,
+  Shadow   = 3,
+}
+
+enum Rarity {
+  Common    = 0,
+  Rare      = 1,
+  Epic      = 2,
+  Legendary = 3,
+}
+
+enum CardType {
+  Minion  = 0,
+  Spell   = 1,
+  Weapon  = 2,
+  Secret  = 3,
+}
+
+enum TargetMode {
+  None     = 0,
+  Single   = 1,
+  All      = 2,
+  Random   = 3,
+  Friendly = 4,
+  Enemy    = 5,
+}
+
+enum TriggerEvent {
+  OnPlay        = 0,
+  OnDeath       = 1,
+  OnAttack      = 2,
+  OnDamaged     = 3,
+  OnTurnStart   = 4,
+  OnTurnEnd     = 5,
+  OnSpellCast   = 6,
+  OnMinionDeath = 7,
+}
+
+# @flag 枚举：卡牌关键字，可组合
+@flag
+enum Keyword {
+  None     = 0,
+  Taunt    = 1,
+  Charge   = 2,
+  DivineShield = 4,
+  Stealth  = 8,
+  Lifesteal = 16,
+  Windfury  = 32,
+  Poisonous = 64,
+  Rush      = 128,
+}
+
+# ─── 基础结构体 ───────────────────────────────────────────────────────────────
+
+# 攻击/生命值对，用于随从基础属性
+@struct
+sealed type StatLine {
+  attack: int;
+  health: int;
+
+  check {
+    attack >= 0;
+    health > 0;
+    attack <= MAX_POWER;
+    health <= MAX_POWER;
+  }
+}
+
+# 等级成长曲线节点
+@struct
+sealed type ScaleCurve {
+  level: int;
+  value: int;
+
+  check {
+    1 <= level <= MAX_LEVEL;
+    value >= 0;
+  }
+}
+
+# 数值范围（用于随机效果）
+@struct
+sealed type IntRange {
+  lo: int;
+  hi: int;
+
+  check {
+    0 <= lo;
+    lo <= hi;
+    hi <= MAX_POWER;
+  }
+}
+
+# ─── 本地化文本 ───────────────────────────────────────────────────────────────
+
+type CardText {
+  zh_cn: string;
+  en_us: string;
+  flavor: string = "";
+
+  check {
+    id != "";
+    zh_cn != "";
+    en_us != "";
+    id.matches("^txt_[a-z][a-z0-9_]*$");
+  }
+}
+
+# ─── 效果系统 ─────────────────────────────────────────────────────────────────
+
+# 抽象效果基类
+abstract type Effect {
+  check {
+    id != "";
+    id.matches("^eff_[a-z][a-z0-9_]*$");
+  }
+}
+
+# 造成伤害
+type DamageEffect : Effect {
+  damage: IntRange;
+  target: TargetMode;
+  pierce_divine: bool = false;
+
+  check {
+    target != TargetMode.None;
+    damage.hi > 0;
+
+    when pierce_divine {
+      target == TargetMode.Single || target == TargetMode.All;
+    }
+  }
+}
+
+# 治疗
+type HealEffect : Effect {
+  heal: IntRange;
+  target: TargetMode;
+
+  check {
+    target != TargetMode.None;
+    heal.hi > 0;
+    target == TargetMode.Single || target == TargetMode.Friendly;
+  }
+}
+
+# 召唤随从令牌
+type SummonEffect : Effect {
+  token: Card;
+  count: int = 1;
+
+  check {
+    token.card_type == CardType.Minion;
+    1 <= count <= 4;
+  }
+}
+
+# 抽牌
+type DrawEffect : Effect {
+  count: int = 1;
+  filter_cost: int? = null;
+
+  check {
+    1 <= count <= 3;
+
+    when filter_cost != null {
+      0 <= filter_cost <= MAX_COST;
+    }
+  }
+}
+
+# 给随从附加增益
+type BuffEffect : Effect {
+  stat_delta: StatLine;
+  target: TargetMode;
+  keywords_add: Keyword = Keyword.Taunt;
+
+  check {
+    target != TargetMode.None;
+    stat_delta.attack + stat_delta.health > 0;
+  }
+}
+
+# 变换（把随从替换成另一张牌）
+type TransformEffect : Effect {
+  into: Card;
+
+  check {
+    into.cost <= MAX_COST;
+  }
+}
+
+# ─── 触发器（Battlecry / Deathrattle / 被动监听）────────────────────────────
+
+sealed type Trigger {
+  event: TriggerEvent;
+  effect: Effect;
+  condition: string = "";   # 可选的条件描述（自由文本，供策划标注）
+
+  check {
+    effect.id != "";
+
+    when condition != "" {
+      condition.matches(".*\\S.*");
+    }
+  }
+}
+
+# ─── 卡牌 ─────────────────────────────────────────────────────────────────────
+
+type Card {
+  name_text: CardText;
+  card_type: CardType;
+  faction: Faction = Faction.Neutral;
+  rarity: Rarity   = Rarity.Common;
+  cost: int;
+
+  # 随从专属
+  base_stats: StatLine? = null;
+  keywords: Keyword     = Keyword.Taunt;
+
+  # 武器专属
+  durability: int = 0;
+
+  # 效果列表（battlecry/deathrattle/spell effect 等均放此处）
+  triggers: [Trigger] = [];
+
+  # 进化/升级链
+  evolved_form: Card? = null;
+
+  # 成本曲线（每个等级实际出牌消耗，用于平衡调整）
+  cost_curve: [ScaleCurve] = [];
+
+  # 禁用组合（此牌不能与这些牌同时出现在牌组中）
+  banned_with: [Card] = [];
+
+  # 数值标签（供策划备注任意 KV 数据，如概率调整系数）
+  designer_tags: {string: int} = {};
+
+  check {
+    id != "";
+    id.matches("^card_[a-z][a-z0-9_]*$");
+    name_text.id != "";
+    0 <= cost <= MAX_COST;
+    rarity >= Rarity.Common;
+
+    # 随从：必须有基础属性
+    when card_type == CardType.Minion {
+      base_stats != null;
+      base_stats.health > 0;
+    }
+
+    # 法术/奥秘：不能有随从属性
+    when card_type == CardType.Spell || card_type == CardType.Secret {
+      base_stats == null;
+      durability == 0;
+      (keywords & Keyword.Taunt)   == Keyword(0);
+      (keywords & Keyword.Charge)  == Keyword(0);
+    }
+
+    # 武器
+    when card_type == CardType.Weapon {
+      base_stats != null;
+      durability > 0;
+    }
+
+    # 突袭（Rush）不能与冲锋（Charge）共存
+    when (keywords & Keyword.Rush) != Keyword(0) {
+      (keywords & Keyword.Charge) == Keyword(0);
+    }
+
+    # 神圣护盾通常在 Rare+ 稀有度
+    when (keywords & Keyword.DivineShield) != Keyword(0) {
+      rarity >= Rarity.Rare;
+    }
+
+    # 武器耐久
+    when durability > 0 {
+      card_type == CardType.Weapon;
+      durability <= 10;
+    }
+
+    # 进化链不能自我引用
+    when evolved_form != null {
+      evolved_form.id != id;
+      evolved_form.cost >= cost;
+      evolved_form.rarity >= rarity;
+    }
+
+    # 成长曲线：等级递增
+    when cost_curve.len() > 0 {
+      cost_curve.len() <= MAX_LEVEL;
+    }
+
+    # 禁用组合数量合理
+    banned_with.len() <= 10;
+
+    # 触发器：同一事件类型的触发器建议不超过 3 个
+    triggers.len() <= 10;
+
+    all curve in cost_curve {
+      0 <= curve.value <= MAX_COST;
+    }
+
+    all banned in banned_with {
+      banned.id != id;
+    }
+
+    all entry in designer_tags {
+      entry.key != "";
+      entry.value >= 0;
+    }
+  }
+}
+
+# ─── 牌组 ─────────────────────────────────────────────────────────────────────
+
+sealed type DeckSlot {
+  card: Card;
+  count: int = 1;
+
+  check {
+    card.id != "";
+    1 <= count <= 2;
+
+    # 传说卡限一张
+    when card.rarity == Rarity.Legendary {
+      count == 1;
+    }
+  }
+}
+
+type Deck {
+  name: string;
+  faction: Faction;
+  slots: [DeckSlot];
+  description: string = "";
+
+  check {
+    id != "";
+    id.matches("^deck_[a-z][a-z0-9_]*$");
+    name != "";
+    slots.len() >= 1;
+
+    # 总张数 20~30
+    slots.len() <= 30;
+
+    all slot in slots {
+      slot.card.faction == faction || slot.card.faction == Faction.Neutral;
+      slot.count >= 1;
+    }
+  }
+}

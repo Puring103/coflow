@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, memo } from 'react'
 import type { ELK, ElkNode } from 'elkjs/lib/elk-api'
 import {
   ReactFlow, Background, Controls, MiniMap,
@@ -194,7 +194,8 @@ function CfdNode({ id, data }: NodeProps) {
   )
 }
 
-const nodeTypes = { cfd: CfdNode }
+const CfdNodeMemo = memo(CfdNode)
+const nodeTypes = { cfd: CfdNodeMemo }
 
 // ─── Height estimation ────────────────────────────────────────────────────────
 
@@ -537,6 +538,15 @@ async function layoutAll(
   return { positions: allPositions, visibleNodes, forwardEdges, backEdges }
 }
 
+// ─── Edge handle id (outside component, stable reference) ────────────────────
+
+function edgeHandleId(
+  _sourceId: string,
+  fieldPath: string,
+): { sourceHandle: string; targetHandle: string } {
+  return { sourceHandle: `path-${fieldPath}`, targetHandle: '__in' }
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 interface Props {
@@ -678,16 +688,6 @@ export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecor
     return m
   }, [forwardEdges, backEdges])
 
-  // Edge → handle id. Each edge gets its own per-path source handle on the
-  // source node (path-{field_path}). The matching <Handle> is rendered by the
-  // node's CfdNode after measuring the corresponding row.
-  function edgeHandleId(
-    _sourceId: string,
-    fieldPath: string,
-  ): { sourceHandle: string; targetHandle: string } {
-    return { sourceHandle: `path-${fieldPath}`, targetHandle: '__in' }
-  }
-
   const rfNodes: Node[] = useMemo(
     () => (
       visibleNodes.map(n => {
@@ -766,8 +766,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecor
       }))
 
     return [...fwdEdges, ...bkEdges]
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [forwardEdges, backEdges, positions, nodeExpandedMap, visibleNodes, compactNodes])
+  }, [forwardEdges, backEdges, positions, compactNodes])
 
   // ── Imperative hover highlight (zero re-renders) ────────────────────────
   // We manipulate DOM classes directly to avoid the state→rerender→mouseleave
