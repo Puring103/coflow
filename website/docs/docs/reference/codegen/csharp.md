@@ -15,6 +15,8 @@ outputs:
     type: csharp
     dir: generated/csharp
     namespace: Game.Config
+    int_32: false
+    float_32: false
 ```
 
 运行：
@@ -130,6 +132,8 @@ public sealed partial class ItemConfig
 | object type | 对应 C# 类型 |
 
 集合属性只读，loader 内部使用 `List<T>` 和 `Dictionary<K, V>` 构造。
+
+`outputs.code.int_32: true` 时，`int` 会生成 `int`；`outputs.code.float_32: true` 时，`float` 会生成 `float`。省略时分别使用 `long` 和 `double`。
 
 ## 类型与字段
 

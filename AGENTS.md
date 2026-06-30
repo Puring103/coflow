@@ -47,20 +47,21 @@ in this file or in `docs/`.
 - `editors/cfd-editor/src-tauri` is the editor backend host. It reuses `coflow-engine` and keeps only editor wire DTOs, graph/table views, and write command bridging.
 - Provider shared algorithms live in `coflow-loader-table-core` and `coflow-exporter-core`; they do not belong in `coflow-api`.
 
-### Specification Documents
+### Website Reference Documents
 
-Detailed specs live under `docs/spec/`:
+Public reference documentation lives under `website/docs/docs/reference/`:
 
-- `docs/spec/01-cft.md`: CFT language specification.
-- `docs/spec/02-data-model.md`: data model.
-- `docs/spec/02-schema-api.md`: schema API.
-- `docs/spec/03-cell-value.md`: cell value syntax.
-- `docs/spec/04-excel-loader.md`: Excel loader.
-- `docs/spec/05-json-export.md`: JSON export format.
-- `docs/spec/06-csharp-codegen.md`: C# code generation.
-- `docs/spec/07-project-pipeline.md`: project pipeline.
-- `docs/spec/08-messagepack-export.md`: MessagePack export format.
-- `docs/spec/09-cli.md`: CLI command behavior.
-- `docs/spec/10-diagnostics.md`: diagnostics.
-- `docs/spec/11-project-architecture.html`: project introduction page.
-- `docs/spec/12-cfd.md`: CFD text configuration syntax.
+- `website/docs/docs/reference/project-config.md`: `coflow.yaml`.
+- `website/docs/docs/reference/cft.md`: CFT language reference.
+- `website/docs/docs/reference/cfd.md`: CFD text configuration syntax.
+- `website/docs/docs/reference/cli.md`: CLI command behavior.
+- `website/docs/docs/reference/data-model.md`: data model.
+- `website/docs/docs/reference/schema-api.md`: schema API.
+- `website/docs/docs/reference/project-pipeline.md`: project pipeline.
+- `website/docs/docs/reference/sources/`: data sources, providers, and cell value syntax.
+- `website/docs/docs/reference/export/`: JSON and MessagePack export formats.
+- `website/docs/docs/reference/codegen/csharp.md`: C# code generation.
+- `website/docs/docs/reference/diagnostics.md`: diagnostics format and handling.
+- `website/docs/docs/reference/diagnostics/codes.md`: diagnostics error code index.
+- `website/docs/docs/reference/localization.md`: dimensions and localization.
+- `website/docs/docs/reference/architecture.md`: project architecture.

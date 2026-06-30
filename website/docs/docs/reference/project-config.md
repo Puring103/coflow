@@ -126,6 +126,8 @@ sources:
 sources:
   - type: lark-sheet
     url: lark:<spreadsheet_token>
+    app_id: cli_xxx
+    app_secret: xxx
 ```
 
 暂不支持飞书多维表格/Base。

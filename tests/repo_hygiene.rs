@@ -199,20 +199,20 @@ fn workspace_members_inherit_workspace_lints() {
 
 #[test]
 fn lsp_is_documented_as_schema_only_not_engine_runtime_host() {
-    let plan = std::fs::read_to_string("docs/spec/15-final-architecture-refactor-plan.md")
-        .expect("read final architecture plan");
+    let architecture = std::fs::read_to_string("website/docs/docs/reference/architecture.md")
+        .expect("read architecture reference");
 
     assert!(
-        !plan.contains("LSP --> Engine"),
-        "final dependency graph should not show coflow-lsp depending on coflow-engine while the LSP remains schema-only"
+        !architecture.contains("LSP --> Engine"),
+        "architecture reference should not show coflow-lsp depending on coflow-engine while the LSP remains schema-only"
     );
     assert!(
-        !plan.contains("LSP --> Builtins"),
-        "final dependency graph should not show coflow-lsp depending on builtins/provider registry while the LSP remains schema-only"
+        !architecture.contains("LSP --> Builtins"),
+        "architecture reference should not show coflow-lsp depending on builtins/provider registry while the LSP remains schema-only"
     );
     assert!(
-        plan.contains("schema-only"),
-        "final architecture plan should explicitly document why coflow-lsp does not depend on engine/builtins"
+        architecture.contains("schema-only"),
+        "architecture reference should explicitly document why coflow-lsp does not depend on engine/builtins"
     );
 }
 

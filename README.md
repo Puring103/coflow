@@ -229,7 +229,7 @@ coflow data patch examples/rpg --patch patch.json
 `data create-file` / `data sync-header` 是本地文件级命令，支持 `.cfd`、`.csv`
 和 `.xlsx`；表格文件同步表头，CFD 文件同步记录顶层字段而不写表头。
 
-完整命令行为见 [CLI 命令规格](docs/spec/09-cli.md)。
+完整命令行为见 [CLI 命令参考](website/docs/docs/reference/cli.md)。
 
 ---
 

@@ -1,0 +1,63 @@
+# 飞书/Lark Source
+
+飞书/Lark source 使用 `lark-sheet` Provider 读取远端电子表格。它与 Excel 共享表格语义：sheet、type、key、columns 和单元格值解析规则一致。
+
+## 配置示例
+
+```yaml
+sources:
+  - url: lark:sht_xxxxx
+    type: lark-sheet
+    app_id: cli_xxx
+    app_secret: xxx
+    sheets:
+      - sheet: Item
+        type: Item
+```
+
+`url` 支持三类格式：
+
+| 格式 | 说明 |
+| --- | --- |
+| `lark:<spreadsheet_token>` | 直接指定电子表格 token |
+| `https://.../sheets/<token>` | 从飞书/Lark 表格 URL 中提取电子表格 token |
+| `https://.../wiki/<token>` | 先解析 wiki 节点，再读取其指向的电子表格 |
+
+HTTPS URL 需要是包含 `feishu` 或 `larksuite` 的飞书/Lark 地址。`app_id` 和 `app_secret` 是必填 Provider options，用于获取 tenant access token。远端表格的 sheet 映射规则见 [表格 Source](./table.md)。
+
+已知电子表格 token 时，推荐直接使用 `lark:<spreadsheet_token>`：
+
+```yaml
+sources:
+  - type: lark-sheet
+    url: lark:sht_xxxxx
+    app_id: cli_xxx
+    app_secret: xxx
+```
+
+## 加载边界
+
+Lark Provider 负责：
+
+- 解析 Lark URL 或 token。
+- 获取 tenant access token。
+- 读取 wiki / spreadsheet / sheet 元数据。
+- 读取表格值。
+- 将远端表格值转换成共享表格模型。
+
+表头、key、column 和 cell 语义与 Excel/CSV 一致。远端 API、鉴权、URL 和 wiki 解析问题使用 `LARK-*` 诊断。
+
+## 写回
+
+Lark writer 面向远端表格写回。当前 writer 能力为：
+
+| 能力 | 支持 |
+| --- | --- |
+| 编辑字段 | 是 |
+| 修改 record key | 是 |
+| 插入记录 | 是 |
+| 删除记录 | 是 |
+| 写后完整刷新 | 是 |
+| 远端 source | 是 |
+
+自动化命令和编辑器会根据 writer 报告的能力和诊断返回结果。写回失败使用 `LARK-WRITE` 诊断。

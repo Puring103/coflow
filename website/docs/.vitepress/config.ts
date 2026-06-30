@@ -58,20 +58,29 @@ export default withMermaid(defineConfig({
           collapsed: false,
           items: [
             { text: '项目配置', link: '/docs/reference/project-config' },
-            { text: 'CFT 语法', link: '/docs/reference/cft' },
-            { text: 'CFD 语法', link: '/docs/reference/cfd' },
-            { text: 'CLI 命令', link: '/docs/reference/cli' },
-            { text: '数据模型', link: '/docs/reference/data-model' },
-            { text: 'Schema API', link: '/docs/reference/schema-api' },
             { text: '项目流水线', link: '/docs/reference/project-pipeline' },
+            {
+              text: '语言与语法',
+              collapsed: false,
+              items: [
+                { text: 'CFT Schema', link: '/docs/reference/cft' },
+                { text: 'CFD 文本数据', link: '/docs/reference/cfd' },
+                { text: '表格单元格值', link: '/docs/reference/sources/cell-value' }
+              ]
+            },
             {
               text: '数据源与 Provider',
               collapsed: false,
               items: [
                 { text: '概览', link: '/docs/reference/sources/' },
-                { text: '单元格值语法', link: '/docs/reference/sources/cell-value' }
+                { text: '表格 Source', link: '/docs/reference/sources/table' },
+                { text: 'Excel', link: '/docs/reference/sources/excel' },
+                { text: 'CSV', link: '/docs/reference/sources/csv' },
+                { text: '飞书/Lark', link: '/docs/reference/sources/lark' },
+                { text: 'Provider API', link: '/docs/reference/sources/provider-api' }
               ]
             },
+            { text: '数据模型', link: '/docs/reference/data-model' },
             {
               text: '导出',
               collapsed: false,
@@ -87,8 +96,17 @@ export default withMermaid(defineConfig({
                 { text: 'C#', link: '/docs/reference/codegen/csharp' }
               ]
             },
-            { text: '错误码', link: '/docs/reference/diagnostics' },
+            { text: 'CLI 命令', link: '/docs/reference/cli' },
+            {
+              text: '诊断',
+              collapsed: false,
+              items: [
+                { text: '诊断模型', link: '/docs/reference/diagnostics' },
+                { text: '错误码索引', link: '/docs/reference/diagnostics/codes' }
+              ]
+            },
             { text: '本地化与维度', link: '/docs/reference/localization' },
+            { text: 'Schema API', link: '/docs/reference/schema-api' },
             { text: '项目架构', link: '/docs/reference/architecture' }
           ]
         }

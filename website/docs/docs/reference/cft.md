@@ -430,7 +430,7 @@ check {
 | `@deprecated` | type、enum、field、enum variant | editor / codegen | 标记废弃，codegen 输出对应语言的废弃标记 |
 | `@flag` | enum | schema / codegen | 位标志枚举 |
 | `@struct` | type | codegen | C# codegen 生成 value-like struct；目标必须是 `sealed type` |
-| `@expand` | field | Excel loader | Excel 相邻列展开成嵌套对象 |
+| `@expand` | field | table loader | 表格相邻列展开成嵌套对象 |
 | `@ref` | field | data parsing / model build | 数据值必须写成记录引用 |
 | `@inline` | field | data parsing / model build | 数据值必须写成内联对象 |
 | `@idAsEnum(EnumName)` | type | build / codegen | 按 record key 填充空 enum，用于强类型 key |
@@ -502,6 +502,8 @@ type Item {
 ```
 
 项目中使用 `@localized` 时，需要在 `coflow.yaml` 配置 `dimensions.language`。详见 [本地化与维度](./localization.md)。
+
+`@localized` 只能用于顶层 type 字段，不能用于 `sealed type` 的内部对象字段。`@localized("bucket")` 的 bucket 必须是合法 CFT 标识符。
 
 ## 常量
 

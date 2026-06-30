@@ -1,7 +1,7 @@
 //! Reference implementation of the **CFT** type-definition language used by
 //! Coflow's data pipeline.
 //!
-//! See `docs/spec/01-cft.md` for the language specification. The crate exposes
+//! See `website/docs/docs/reference/cft.md` for the language reference. The crate exposes
 //! a [`CftContainer`] that hosts batch-registered modules and produces a
 //! schema after [`CftContainer::compile`] succeeds; loaders, code generators,
 //! and editors consume the resulting [`CftSchemaModule`] / [`CftSchemaType`] /
