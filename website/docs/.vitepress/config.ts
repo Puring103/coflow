@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
 
 const pagesBase = process.env.VITEPRESS_BASE ?? (process.env.GITHUB_ACTIONS ? '/coflow/' : '/')
-const projectUrl = 'https://github.com/wtlll/coflow'
+const projectUrl = 'https://github.com/Puring103/coflow'
 
 export default withMermaid(defineConfig({
   title: 'Coflow',
