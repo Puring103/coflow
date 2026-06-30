@@ -718,7 +718,7 @@ fn lsp_serves_editor_language_features() {
         14,
         &uri,
         &source,
-        position_after(&source, "@display(\"Monster"),
+        position_after(&source, "\"^[a-z"),
     );
     assert_no_completion(&string_completion);
 

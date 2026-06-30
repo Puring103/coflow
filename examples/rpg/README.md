@@ -31,12 +31,12 @@ The schema demonstrates:
 
 - typed constants and literal defaults;
 - plain enums and `@flag` enums;
-- `@display`, `@deprecated`, and `@struct`;
+- `@struct`, `@idAsEnum`, `@singleton`, and `@localized`;
 - sealed structs, abstract base types, multi-level inheritance, and polymorphic values;
 - record-key based references, nullable references, self/forward references, arrays, dictionaries, and nested objects;
 - `check` expressions with chained comparisons, arithmetic, bitwise and shift operators;
 - `when`, `all`, `any`, `none`, field/index access, `is`, and built-in functions such as
-  `len`, `contains`, `unique`, `min`, `max`, `sum`, `keys`, `values`, and `matches`.
+  `len`, `contains`, `isUnique`, `min`, `max`, `sum`, `keys`, `values`, and `matches`.
 
 Run schema-only validation:
 

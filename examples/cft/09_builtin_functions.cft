@@ -9,7 +9,7 @@ type ExampleBuiltinFunctions {
     id.matches("^[a-z][a-z0-9_]*$");
     numbers.len() >= 0;
     numbers.sum() >= 0;
-    names.unique();
+    names.isUnique();
     names.contains("default");
     scores.contains("default");
     scores.keys().len() == scores.values().len();

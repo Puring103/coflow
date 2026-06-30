@@ -462,6 +462,7 @@ impl<'s> Validator<'s> {
         if field.mode != FieldMode::Any {
             self.validate_field_mode(&field.ty, value, field.mode, record, path.clone())?;
         }
+        self.validate_singleton_ref_only(&field.ty, value, record, path.clone())?;
         self.validate_value(&field.ty, value, record, path)
     }
 
@@ -534,6 +535,82 @@ impl<'s> Validator<'s> {
             CfdDiagnostic::error(
                 CfdErrorCode::TypeMismatch,
                 format!("{annotation} field does not allow {rejected_shape}"),
+            )
+            .with_primary(record, path),
+        );
+    }
+
+    fn validate_singleton_ref_only(
+        &mut self,
+        ty: &CfdType,
+        value: &CfdInputValue,
+        record: Option<CfdRecordId>,
+        path: CfdPath,
+    ) -> Option<()> {
+        if !self.schema.type_contains_singleton(ty) {
+            return Some(());
+        }
+
+        match (non_nullable_type(ty), value) {
+            (_, CfdInputValue::Null) if ty.is_nullable() => Some(()),
+            (CfdType::Type(type_name), CfdInputValue::RecordRef { .. })
+                if self.schema.type_name_is_singleton(type_name) =>
+            {
+                Some(())
+            }
+            (CfdType::Type(type_name), CfdInputValue::PathRef { .. })
+                if self.schema.type_name_is_singleton(type_name) =>
+            {
+                Some(())
+            }
+            (
+                CfdType::Type(type_name),
+                CfdInputValue::Object { .. } | CfdInputValue::ObjectSpread { .. },
+            ) if self.schema.type_name_is_singleton(type_name) => {
+                self.push_singleton_ref_only_diagnostic(record, path);
+                None
+            }
+            (CfdType::Array(inner), CfdInputValue::Array(items)) => {
+                let mut ok = true;
+                for (index, item) in items.iter().enumerate() {
+                    if self
+                        .validate_singleton_ref_only(inner, item, record, path.clone().index(index))
+                        .is_none()
+                    {
+                        ok = false;
+                    }
+                }
+                ok.then_some(())
+            }
+            (
+                CfdType::Dict(_, value_ty),
+                CfdInputValue::Dict(entries) | CfdInputValue::DictSpread { entries, .. },
+            ) => {
+                let mut ok = true;
+                for (key, item) in entries {
+                    if self
+                        .validate_singleton_ref_only(
+                            value_ty,
+                            item,
+                            record,
+                            path.clone().dict_key_input(key),
+                        )
+                        .is_none()
+                    {
+                        ok = false;
+                    }
+                }
+                ok.then_some(())
+            }
+            _ => Some(()),
+        }
+    }
+
+    fn push_singleton_ref_only_diagnostic(&mut self, record: Option<CfdRecordId>, path: CfdPath) {
+        self.push(
+            CfdDiagnostic::error(
+                CfdErrorCode::TypeMismatch,
+                "singleton fields only allow record references",
             )
             .with_primary(record, path),
         );

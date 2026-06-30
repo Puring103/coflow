@@ -33,11 +33,9 @@ type Item {\n\
 #[test]
 fn hover_and_definition_cover_symbol_resolution_boundaries() {
     let source = "const LIMIT: int = 5;\n\
-@display(\"target\")\n\
 type Target { key: string; value: int; }\n\
 enum Kind { One = 1, Two = 2, }\n\
 type Item {\n\
-  @display(\"kind\")\n\
   kind: Kind = Kind.One;\n\
   target: Target;\n\
   count: int = LIMIT;\n\
@@ -52,10 +50,6 @@ type Item {\n\
     let document = first_document(&build);
 
     let hover_cases = [
-        (
-            position_inside(source, "@display(\"target\")", "@display", 1),
-            "display",
-        ),
         (position_inside(source, "type Target", "type", 1), "Define"),
         (
             position_inside(source, "Kind.Two", "Two", 1),
@@ -232,7 +226,7 @@ type Item {\n\
     assert!(!top_labels.contains(&"@index".to_string()));
 
     let type_labels = completion_labels(annotation_completion_items(CompletionScope::TypeBody));
-    assert!(type_labels.contains(&"@display".to_string()));
+    assert!(type_labels.is_empty());
     assert!(!type_labels.contains(&"@id".to_string()));
     assert!(!type_labels.contains(&"@ref".to_string()));
     assert!(!type_labels.contains(&"@index".to_string()));

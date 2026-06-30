@@ -110,7 +110,7 @@ fn type_checker_accepts_nullable_element_builtins() {
             type Holder {
                 nums: [int?] = [];
                 check {
-                    nums.unique();
+                    nums.isUnique();
                     nums.min() >= 0;
                     nums.max() >= 0;
                     nums.sum() >= 0;
@@ -223,8 +223,8 @@ fn type_checker_reports_bitwise_shift_and_function_edges() {
                 color | Color.Red != Color.Blue;
                 flags & 1 != Flags.A;
                 color << 1 == color;
-                floats.unique();
-                objects.unique();
+                floats.isUnique();
+                objects.isUnique();
                 texts.min() != "";
                 texts.sum() == 0;
                 numbers.contains("x");
@@ -389,7 +389,7 @@ fn type_checker_reports_builtin_arity_and_operator_edges() {
                 key[0] != "";
                 key.contains(1);
                 nums.contains();
-                key.unique(1);
+                key.isUnique(1);
                 key.min(1);
                 key.sum(1);
                 key.keys(1);
@@ -499,6 +499,21 @@ fn type_checker_suppresses_cascaded_operator_errors_when_operand_is_unknown() {
         0,
         "unknown values should not cascade into comparison diagnostics"
     );
+}
+
+#[test]
+fn type_checker_rejects_old_unique_name_without_compatibility_alias() {
+    let err = compile_one(
+        r#"
+            type Holder {
+                nums: [int] = [];
+                check { nums.unique(); }
+            }
+        "#,
+    )
+    .expect_err("old unique method name should be removed");
+
+    assert_has_code(&err, CftErrorCode::UnknownFunction);
 }
 
 #[test]

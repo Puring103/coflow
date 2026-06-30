@@ -248,13 +248,9 @@ fn spec_comprehensive_example_compiles() {
             speed >= MIN_SPEED;
           }
         }
-
-        @display("物品")
         @idAsEnum(ItemKey)
         type Item {
           key: string;
-
-          @display("名称")
           name: string;
 
           rarity: Rarity = Rarity.Common;
@@ -302,13 +298,9 @@ fn spec_comprehensive_example_compiles() {
             any reward in rewards { reward is CurrencyReward; }
           }
         }
-
-        @display("怪物")
         @idAsEnum(MonsterKey)
         type Monster {
           key: string;
-
-          @display("名称")
           name: string;
 
           rarity: Rarity;

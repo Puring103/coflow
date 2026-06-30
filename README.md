@@ -274,7 +274,6 @@ const MAX_LEVEL: int = 100;
 枚举：
 
 ```cft
-@display("物品稀有度")
 enum Rarity {
   Common = 0,
   Rare = 10,
@@ -285,7 +284,6 @@ enum Rarity {
 类型和字段：
 
 ```cft
-@display("物品")
 @idAsEnum(ItemId)
 type Item {
   name: string;
@@ -322,7 +320,7 @@ type Monster {
 
   check {
     level >= 1 && level <= MAX_LEVEL;
-    tags.unique();
+    tags.isUnique();
     all weight in drop_weights {
       weight > 0;
     }
@@ -333,12 +331,12 @@ type Monster {
 常用注解：
 
 - `@idAsEnum(Name)`：把加载到的 record key 填充进手动声明的空 enum，并用于生成强类型 C# key。
-- `@display("text")`：在支持的位置输出可读说明。
-- `@deprecated`：把生成的 C# symbol 标记为 obsolete。
 - `@struct`：让 sealed value-like type 生成 C# struct。
 - `@expand`：让 Excel 相邻列展开成嵌套 object 字段。
 - `@ref`：强制对象字段、数组元素或字典 value 写成记录引用。
 - `@inline`：强制对象字段、数组元素或字典 value 写成内联对象。
+- `@localized`：声明字段值按语言维度变化。
+- `@singleton`：声明数据集中该 type 有且仅有一条 record。
 
 ---
 
@@ -362,8 +360,8 @@ type Monster {
 生成输出目录。占位 enum 带 `@flag` 时，新变体按 `1, 2, 4, ...` 分配，
 不会自动生成 `None = 0`。
 
-check 中常用内建函数包括 `len`、`contains`、`unique`、`min`、`max`、`sum`、
-`keys`、`values` 和 `matches`。`unique` 支持可比较标量数组（`int`、`bool`、
+check 中常用内建函数包括 `len`、`contains`、`isUnique`、`min`、`max`、`sum`、
+`keys`、`values` 和 `matches`。`isUnique` 支持可比较标量数组（`int`、`bool`、
 `string`、`enum` 及其 nullable 形式），不支持对象数组。
 
 ---

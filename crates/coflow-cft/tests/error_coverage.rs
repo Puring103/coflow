@@ -132,8 +132,8 @@ fn cases() -> Vec<Case> {
         Case {
             name: "invalid annotation syntax",
             phase: Phase::AddModule,
-            source: "@display(,) type A {}",
-            adjacent_valid_source: r#"@display("A") type A {}"#,
+            source: "@localized(,) type A { name: string; }",
+            adjacent_valid_source: r#"type A { @localized("ui") name: string; }"#,
             codes: &[CftErrorCode::InvalidAnnotationSyntax],
         },
         Case {
@@ -280,21 +280,21 @@ fn cases() -> Vec<Case> {
             name: "unknown annotation",
             phase: Phase::Compile,
             source: "@editor type A {}",
-            adjacent_valid_source: r#"@display("A") type A {}"#,
+            adjacent_valid_source: "@struct sealed type A {}",
             codes: &[CftErrorCode::UnknownAnnotation],
         },
         Case {
             name: "duplicate annotation",
             phase: Phase::Compile,
-            source: "@deprecated @deprecated type A {}",
-            adjacent_valid_source: "@deprecated type A {}",
+            source: "@struct @struct sealed type A {}",
+            adjacent_valid_source: "@struct sealed type A {}",
             codes: &[CftErrorCode::DuplicateAnnotation],
         },
         Case {
             name: "annotation without target",
             phase: Phase::Compile,
-            source: "@deprecated",
-            adjacent_valid_source: "@deprecated type A {}",
+            source: "@struct",
+            adjacent_valid_source: "@struct sealed type A {}",
             codes: &[CftErrorCode::AnnotationWithoutTarget],
         },
         Case {
@@ -307,8 +307,8 @@ fn cases() -> Vec<Case> {
         Case {
             name: "invalid annotation argument",
             phase: Phase::Compile,
-            source: "@display(1) type A {}",
-            adjacent_valid_source: r#"@display("A") type A {}"#,
+            source: "@flag(1) enum E { A = 1, }",
+            adjacent_valid_source: "@flag enum E { A = 1, }",
             codes: &[CftErrorCode::InvalidAnnotationArgument],
         },
         Case {
@@ -387,13 +387,6 @@ fn cases() -> Vec<Case> {
             source: "@singleton @idAsEnum(AKey) type A {} enum AKey {}",
             adjacent_valid_source: "@idAsEnum(AKey) type A {} enum AKey {}",
             codes: &[CftErrorCode::SingletonIdAsEnumConflict],
-        },
-        Case {
-            name: "singleton not referenceable",
-            phase: Phase::Compile,
-            source: "@singleton type S {} type A { s: S; }",
-            adjacent_valid_source: "type S {} type A { s: S; }",
-            codes: &[CftErrorCode::SingletonNotReferenceable],
         },
         Case {
             name: "unknown value name",
@@ -507,8 +500,8 @@ fn cases() -> Vec<Case> {
         Case {
             name: "unique unsupported element type",
             phase: Phase::Compile,
-            source: "type A { items: [float]; check { items.unique(); } }",
-            adjacent_valid_source: "type A { items: [int]; check { items.unique(); } }",
+            source: "type A { items: [float]; check { items.isUnique(); } }",
+            adjacent_valid_source: "type A { items: [int]; check { items.isUnique(); } }",
             codes: &[CftErrorCode::UniqueUnsupportedElementType],
         },
         Case {
@@ -621,22 +614,22 @@ fn important_error_code_branches_emit_stable_codes() {
         Case {
             name: "annotation syntax unterminated args",
             phase: Phase::AddModule,
-            source: "@display(",
-            adjacent_valid_source: r#"@display("A") type A {}"#,
+            source: "@localized(",
+            adjacent_valid_source: r#"type A { @localized("ui") value: string; }"#,
             codes: &[CftErrorCode::InvalidAnnotationSyntax],
         },
         Case {
             name: "annotation without target in enum",
             phase: Phase::Compile,
-            source: "enum E { @display(\"dangling\") }",
-            adjacent_valid_source: r#"enum E { @display("A") A, }"#,
+            source: "enum E { @flag }",
+            adjacent_valid_source: "enum E { A, }",
             codes: &[CftErrorCode::AnnotationWithoutTarget],
         },
         Case {
             name: "annotation without target in type",
             phase: Phase::Compile,
-            source: "type A { @display(\"dangling\") }",
-            adjacent_valid_source: r#"type A { @display("value") value: int; }"#,
+            source: "type A { @localized }",
+            adjacent_valid_source: r#"type A { @localized("ui") value: string; }"#,
             codes: &[CftErrorCode::AnnotationWithoutTarget],
         },
         Case {

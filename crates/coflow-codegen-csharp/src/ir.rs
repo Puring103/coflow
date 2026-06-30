@@ -2,8 +2,7 @@ use crate::emit::{build_csharp_database, build_csharp_enum, build_csharp_type};
 use crate::model::{CsharpEnum, CsharpEnumVariant, CsharpProject};
 use crate::names::{
     annotation_name_arg, camel_case, csharp_ident_error, csharp_member_ident_error,
-    csharp_namespace_error, csharp_type_name, display_annotation, has_annotation, index_param_name,
-    pluralize,
+    csharp_namespace_error, csharp_type_name, has_annotation, index_param_name, pluralize,
 };
 use crate::schema_view::SchemaView;
 use crate::CsharpCodegenError;
@@ -389,11 +388,8 @@ fn build_id_as_enums(
             CsharpEnum {
                 name: name.clone(),
                 is_flags,
-                summary: schema_enum
-                    .and_then(|schema_enum| display_annotation(&schema_enum.annotations)),
-                obsolete: schema_enum.is_some_and(|schema_enum| {
-                    has_annotation(&schema_enum.annotations, "deprecated")
-                }),
+                summary: None,
+                obsolete: false,
                 variants: enum_variants,
             },
         );

@@ -5,10 +5,7 @@ sealed type ExampleVector2 {
   x: float;
   y: float;
 }
-
-@display("Example item")
 type ExampleItem {
-  @display("Display name")
   name: string;
 
   rarity: ExampleRarity = ExampleRarity.Common;

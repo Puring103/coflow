@@ -254,6 +254,92 @@ fn inline_annotation_rejects_record_refs_in_nested_shapes() {
 }
 
 #[test]
+fn singleton_fields_accept_refs_in_nested_shapes_and_reject_inline_objects() {
+    let schema = compile_schema(
+        r#"
+            @singleton
+            type GameConfig { value: int; }
+
+            type Holder {
+                config: GameConfig;
+                optional: GameConfig? = null;
+                configs: [GameConfig];
+                by_name: {string: GameConfig};
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "main",
+        "GameConfig",
+        [("value", CfdInputValue::from(1_i64))],
+    );
+    builder.add_record(
+        "holder",
+        "Holder",
+        [
+            ("config", CfdInputValue::record_ref("GameConfig", "main")),
+            ("optional", CfdInputValue::Null),
+            (
+                "configs",
+                CfdInputValue::Array(vec![CfdInputValue::record_ref("GameConfig", "main")]),
+            ),
+            (
+                "by_name",
+                CfdInputValue::dict([(
+                    CfdInputDictKey::from("default"),
+                    CfdInputValue::record_ref("GameConfig", "main"),
+                )]),
+            ),
+        ],
+    );
+
+    let model = builder
+        .build()
+        .expect("singleton refs should be valid in fields, arrays, and dicts");
+    let holder_id = model.lookup("Holder", "holder").expect("holder");
+    let holder = model.record(holder_id).expect("holder record");
+    assert!(matches!(
+        holder.field("config"),
+        Some(CfdValue::Ref {
+            target_type,
+            target_key,
+        }) if target_type == "GameConfig" && target_key == "main"
+    ));
+
+    let mut inline_builder = CfdDataModel::builder(&schema);
+    inline_builder.add_record(
+        "main",
+        "GameConfig",
+        [("value", CfdInputValue::from(1_i64))],
+    );
+    inline_builder.add_record(
+        "bad",
+        "Holder",
+        [
+            (
+                "config",
+                CfdInputValue::object_with_declared_type([("value", CfdInputValue::from(2_i64))]),
+            ),
+            ("configs", CfdInputValue::Array(Vec::new())),
+            ("by_name", CfdInputValue::dict(std::iter::empty())),
+        ],
+    );
+
+    let err = inline_builder
+        .build()
+        .expect_err("singleton fields should reject inline objects");
+    assert_has_code(&err, CfdErrorCode::TypeMismatch);
+    assert!(
+        err.diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("singleton")),
+        "expected singleton diagnostic, got {err:?}"
+    );
+}
+
+#[test]
 fn object_spread_merges_path_refs_before_local_overrides() {
     let schema = compile_schema(
         r#"

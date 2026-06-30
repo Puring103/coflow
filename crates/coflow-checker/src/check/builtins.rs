@@ -23,7 +23,7 @@ impl Builtin {
         match self {
             Self::Len => "len",
             Self::Contains => "contains",
-            Self::Unique => "unique",
+            Self::Unique => "isUnique",
             Self::Min => "min",
             Self::Max => "max",
             Self::Sum => "sum",
@@ -74,7 +74,7 @@ mod tests {
             vec![
                 ("len", 1),
                 ("contains", 2),
-                ("unique", 1),
+                ("isUnique", 1),
                 ("min", 1),
                 ("max", 1),
                 ("sum", 1),

@@ -105,24 +105,6 @@ impl AnnotationSpec {
                 targets: &[AnnotationTarget::Field],
                 args: AnnotationArgs::NoneOrOneString,
             },
-            "display" => Self {
-                targets: &[
-                    AnnotationTarget::Type,
-                    AnnotationTarget::Enum,
-                    AnnotationTarget::EnumVariant,
-                    AnnotationTarget::Field,
-                ],
-                args: AnnotationArgs::OneString,
-            },
-            "deprecated" => Self {
-                targets: &[
-                    AnnotationTarget::Type,
-                    AnnotationTarget::Enum,
-                    AnnotationTarget::EnumVariant,
-                    AnnotationTarget::Field,
-                ],
-                args: AnnotationArgs::None,
-            },
             _ => return None,
         })
     }
@@ -133,9 +115,6 @@ impl AnnotationSpec {
             AnnotationArgs::NoneOrOneString => {
                 annotation.args.is_empty()
                     || matches!(annotation.args.as_slice(), [AnnotationArg::String(_, _)])
-            }
-            AnnotationArgs::OneString => {
-                matches!(annotation.args.as_slice(), [AnnotationArg::String(_, _)])
             }
             AnnotationArgs::OneName => {
                 matches!(annotation.args.as_slice(), [AnnotationArg::Name(_)])
@@ -148,7 +127,6 @@ impl AnnotationSpec {
 enum AnnotationArgs {
     None,
     NoneOrOneString,
-    OneString,
     OneName,
 }
 

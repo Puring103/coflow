@@ -20,14 +20,12 @@
 ```cft
 const MAX_LEVEL: int = 100;
 
-@display("物品稀有度")
 enum Rarity {
   Common = 0,
   Rare = 10,
   Epic = 20,
 }
 
-@display("物品")
 @idAsEnum(ItemId)
 type Item {
   name: string;
@@ -48,9 +46,9 @@ enum ItemId {}
 - `.cft` 只写 `const`、`enum`、`type`，不写数据和导入语句。
 - `#` 是注释；字段用 `;` 分隔，enum 变体用 `,` 分隔，允许末尾分隔符。
 - 所有 schema 文件共享项目级全局命名空间；`const`、`enum`、`type` 名称不能重名，支持前向引用。
-- 注解写在目标前一行或前方，例如 `@display("Item") type Item {}`、字段内写 `@localized` 后再写字段声明。
+- 注解写在目标前一行或前方，例如 `@idAsEnum(ItemId) type Item {}`、字段内写 `@localized` 后再写字段声明。
 - 不要声明 `id`、`Id`、`ID` 字段；顶层 record key 是虚拟 `id`，只能在 `check` 里读取。
-- 保留名不能用作类型、字段、枚举变体、量词变量名，包括 `const`、`enum`、`type`、`check`、`when`、`all`、`any`、`none`、`in`、`is`、`true`、`false`、`null`、`int`、`float`、`bool`、`string`、`len`、`contains`、`unique`、`min`、`max`、`sum`、`keys`、`values`、`matches`、`_`。
+- 保留名不能用作类型、字段、枚举变体、量词变量名，包括 `const`、`enum`、`type`、`check`、`when`、`all`、`any`、`none`、`in`、`is`、`true`、`false`、`null`、`int`、`float`、`bool`、`string`、`len`、`contains`、`isUnique`、`min`、`max`、`sum`、`keys`、`values`、`matches`、`_`。
 
 ## 常量与默认值
 
@@ -108,7 +106,7 @@ enum Permission {
 - enum 不和 `int` 隐式互转；比较时两边必须是同一个 enum 类型。
 - `@flag` 变体值必须是 2 的幂；用 `&`、`|`、`^`、`~` 做位运算。
 - `Permission(0)` 表示该 enum 的零值；不要和裸 `0` 比较。
-- enum variant 只允许 `@display("text")` 和 `@deprecated`。
+- enum variant 当前不支持注解。
 
 ## 字段类型速查
 
@@ -169,7 +167,7 @@ type Monster {
     id.matches("^[a-z][a-z0-9_]*$");
     name != "";
     1 <= level <= MAX_LEVEL;
-    tags.unique();
+    tags.isUnique();
 
     when rewards.len() > 0 {
       any reward in rewards {
@@ -201,7 +199,7 @@ type Monster {
 - 算术：`+`、`-`、`*`、`/`、`//`、`%`、`**`。
 - 位运算：`&`、`|`、`^`、`~`，用于 `int` 或 `@flag` enum；`<<`、`>>` 只用于 `int`。
 - 类型判断：`reward is ItemReward`、`item is null`。
-- 集合：`col.len()`、`col.contains(x)`、`array.unique()`、`array.min()`、`array.max()`、`array.sum()`、`dict.keys()`、`dict.values()`。
+- 集合：`col.len()`、`col.contains(x)`、`array.isUnique()`、`array.min()`、`array.max()`、`array.sum()`、`dict.keys()`、`dict.values()`。
 - 字符串：`str.matches("^prefix")`，pattern 必须是字符串字面量。
 
 执行规则：
@@ -282,15 +280,15 @@ type GameConfig {
 规则：
 
 - 不能用于 `abstract type`，不能和 `@idAsEnum` 并用。
-- singleton type 不能作为任何字段类型被引用，包括 `[T]`、`T?`、`{K: V}` 内层。
+- singleton type 可以作为字段类型被引用，包括 `[T]`、`T?`、`{K: V}` 内层。
+- 引用 singleton 的字段值必须写成记录引用，不能写内联对象；`@ref` 可显式写也可省略。
+- `@inline` 不能用于包含 singleton type 的字段。
 - 该 type 必须有且仅有一条 record，record key 必须是合法 CFT 标识符。
 - 所有 singleton record key 在项目内全局不能撞名。
 - C# codegen 不生成 `Tb*` 表访问器，而是在入口类上生成以 record key 命名的属性。
 
-### `@display`、`@deprecated`、`@struct`、`@expand`、`@ref`、`@inline`
+### `@struct`、`@expand`、`@ref`、`@inline`
 
-- `@display("文本")` 用于类型、字段、枚举、变体的可读名。
-- `@deprecated` 标记生成代码中的过时符号。
 - `@struct` 只能用在 `sealed type` 上，让 C# codegen 生成 struct。
 - `@expand` 只能用在具体 object 字段上，不能用于 primitive、enum、array、dict、nullable；让 Excel/CSV 相邻列展开为嵌套对象字段。
 - `@ref` 只能用在包含 object 的字段上，例如 `Item`、`Item?`、`[Item]`、`{string: Item}`；数据必须写记录引用或路径引用，拒绝内联对象。
@@ -306,10 +304,8 @@ type GameConfig {
 | `@flag` | enum | 变体值必须是 2 的幂 |
 | `@expand` | field | 字段类型必须是具体 type |
 | `@ref` | field | 字段类型必须包含 object；无参数 |
-| `@inline` | field | 字段类型必须包含 object；无参数 |
+| `@inline` | field | 字段类型必须包含 object 且不能包含 singleton；无参数 |
 | `@idAsEnum(EnumName)` | type | 参数 enum 必须已声明且为空 |
-| `@display("text")` | type、enum、field、enum variant | 参数必须是字符串 |
-| `@deprecated` | type、enum、field、enum variant | 无参数 |
 | `@localized` / `@localized("bucket")` / `@localized(bucket = "bucket")` | field | bucket 必须是合法标识符 |
 | `@singleton` | type | 不能用于 abstract，不能和 `@idAsEnum` 并用 |
 

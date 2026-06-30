@@ -462,7 +462,7 @@ impl<'a> DimensionCheckAnalyzer<'a> {
         } else {
             match name {
                 "len" => CheckTy::Int,
-                "contains" | "unique" | "matches" => CheckTy::Bool,
+                "contains" | "isUnique" | "matches" => CheckTy::Bool,
                 "keys" => args.first().map_or(CheckTy::Unknown, |arg| {
                     match self.expr_usage(arg).ty.unwrap_nullable() {
                         CheckTy::Dict(key, _) => CheckTy::Array(key.clone()),
@@ -495,7 +495,7 @@ impl<'a> DimensionCheckAnalyzer<'a> {
         }
         let ty = match name {
             "len" => CheckTy::Int,
-            "contains" | "unique" | "matches" => CheckTy::Bool,
+            "contains" | "isUnique" | "matches" => CheckTy::Bool,
             "keys" => match receiver.ty.unwrap_nullable() {
                 CheckTy::Dict(key, _) => CheckTy::Array(key.clone()),
                 _ => CheckTy::Unknown,

@@ -12,7 +12,7 @@ type Text {
     context != "";
     id.matches("^[a-z][a-z0-9_.]*$");
     tags.len() > 0;
-    tags.unique();
+    tags.isUnique();
     max_length > 0;
 
     none tag in tags {

@@ -411,7 +411,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 }
                 Ty::Bool
             }
-            "unique" => {
+            "isUnique" => {
                 if self.expect_arity(args, 0, span).is_err() {
                     return Ty::Bool;
                 }
@@ -420,13 +420,13 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                     Ty::Array(_) => self.diag(
                         CftErrorCode::UniqueUnsupportedElementType,
                         receiver.span,
-                        "unique does not support this element type",
+                        "isUnique does not support this element type",
                     ),
                     Ty::Unknown => {}
                     _ => self.diag(
                         CftErrorCode::FunctionArgTypeMismatch,
                         receiver.span,
-                        "unique expects an array",
+                        "isUnique expects an array",
                     ),
                 }
                 Ty::Bool

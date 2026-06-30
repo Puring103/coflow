@@ -412,6 +412,61 @@ static void Expect(bool condition, string message)
 }
 
 #[test]
+fn codegen_csharp_reads_id_as_enum_lockfile_without_building_data() {
+    let root = temp_project_dir("codegen-id-as-enum-lockfile");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        r#"
+            @idAsEnum(ItemId)
+            type Item { name: string; }
+            enum ItemId {}
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+outputs:
+  data:
+    type: json
+    dir: generated/data
+  code:
+    type: csharp
+    dir: generated/csharp
+    namespace: Game.Config
+",
+    )
+    .expect("write config");
+    std::fs::write(
+        root.join("coflow.enum.lock.json"),
+        r#"{"ItemId":{"potion":0,"sword":1}}"#,
+    )
+    .expect("write lockfile");
+
+    let output = coflow()
+        .args(["codegen", "csharp", root.to_str().expect("utf8 path")])
+        .output()
+        .expect("run codegen");
+
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let item_id = std::fs::read_to_string(root.join("generated").join("csharp").join("ItemId.cs"))
+        .expect("read generated ItemId.cs");
+    assert!(item_id.contains("potion = 0"), "ItemId.cs:\n{item_id}");
+    assert!(item_id.contains("sword = 1"), "ItemId.cs:\n{item_id}");
+    assert_eq!(
+        std::fs::read_to_string(root.join("coflow.enum.lock.json")).expect("read lockfile"),
+        r#"{"ItemId":{"potion":0,"sword":1}}"#
+    );
+}
+
+#[test]
 fn generated_csharp_loads_cyclic_json_references() {
     if std::env::var_os("COFLOW_RUN_DOTNET_E2E").is_none() {
         eprintln!("skipping dotnet E2E test; set COFLOW_RUN_DOTNET_E2E=1 to run");

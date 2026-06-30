@@ -48,7 +48,7 @@
       "patterns": [
         {
           "name": "storage.modifier.annotation.cft",
-          "match": "@(struct|flag|expand|display|deprecated|idAsEnum)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
+          "match": "@(struct|flag|expand|ref|inline|idAsEnum|localized|singleton)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
         },
         {
           "name": "invalid.illegal.annotation.cft",
@@ -60,7 +60,7 @@
       "patterns": [
         {
           "name": "support.function.builtin.cft",
-          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(len|contains|unique|min|max|sum|keys|values|matches)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(?=\\s*\\()"
+          "match": "(?<![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(len|contains|isUnique|min|max|sum|keys|values|matches)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])(?=\\s*\\()"
         }
       ]
     },

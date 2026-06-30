@@ -42,7 +42,7 @@ fn schema_accepts_builtin_method_calls_and_rejects_global_builtins() {
                 key.matches("^[a-z]+$");
                 tags.len() > 0;
                 tags.contains("weapon");
-                tags.unique();
+                tags.isUnique();
                 attrs.keys().contains("power");
                 attrs.values().sum() >= 1;
             }
@@ -284,9 +284,15 @@ fn schema_accepts_zero_flag_value_and_rejects_negative_flag_values() {
 }
 
 #[test]
-fn schema_accepts_display_and_deprecated_on_enum_variants() {
-    let schema = compile_one(
+fn schema_rejects_removed_display_and_deprecated_annotations() {
+    let err = compile_one(
         r#"
+            @display("Item")
+            type Item {
+                @deprecated
+                name: string;
+            }
+
             enum Rarity {
                 @display("Common display")
                 Common,
@@ -295,11 +301,14 @@ fn schema_accepts_display_and_deprecated_on_enum_variants() {
             }
         "#,
     )
-    .expect("variant annotations should compile");
+    .expect_err("@display and @deprecated should no longer be valid annotations");
 
-    let rarity = schema.resolve_enum("Rarity").expect("enum");
-    assert_eq!(rarity.variants[0].annotations[0].name, "display");
-    assert_eq!(rarity.variants[1].annotations[0].name, "deprecated");
+    let unknown_count = err
+        .diagnostics
+        .iter()
+        .filter(|diag| diag.code == CftErrorCode::UnknownAnnotation)
+        .count();
+    assert_eq!(unknown_count, 4, "diagnostics: {err:?}");
 }
 
 #[test]
@@ -395,7 +404,7 @@ fn schema_rejects_duplicate_annotations_and_invalid_annotation_arguments() {
         type Holder {
             key: string;
 
-            @display
+            @localized(1)
             name: string;
         }
     "#;
@@ -453,7 +462,7 @@ fn schema_reports_enum_auto_numbering_overflow_only_when_next_variant_needs_valu
 fn schema_does_not_duplicate_unknown_field_type_diagnostic() {
     let cases = [
         "type T { x: Missing; }",
-        "type T { @display(\"x\") x: Missing; }",
+        "type T { @localized x: Missing; }",
         "const C = 1; type T { x: Missing = C; }",
     ];
     for source in cases {

@@ -53,7 +53,7 @@ pub fn is_cft_reserved_identifier(name: &str) -> bool {
             | "string"
             | "len"
             | "contains"
-            | "unique"
+            | "isUnique"
             | "min"
             | "max"
             | "sum"

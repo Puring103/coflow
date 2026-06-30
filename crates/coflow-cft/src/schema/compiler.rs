@@ -739,42 +739,31 @@ impl<'a> SchemaCompiler<'a> {
                 );
             }
         }
-        // Forbid referencing a singleton type from any field type position
-        // (top-level, array element, dict value/key, nullable inner).
-        self.check_no_singleton_reference(module, &field.ty);
+        if let Some(annotation) = inline_annotation {
+            if self.field_type_contains_singleton(&field.ty) {
+                self.push_diag(
+                    CftErrorCode::InvalidAnnotatedFieldType,
+                    module,
+                    annotation.span,
+                    "@inline cannot be used on fields containing singleton types",
+                );
+            }
+        }
     }
 
-    fn check_no_singleton_reference(&mut self, module: &ModuleId, ty: &TypeRef) {
+    fn field_type_contains_singleton(&self, ty: &TypeRef) -> bool {
         match &ty.kind {
-            TypeRefKind::Named(name) => {
-                if let Some(info) = self.types.get(name) {
-                    if has_annotation(&info.def.annotations, "singleton") {
-                        let owner_module = info.module.clone();
-                        let owner_span = info.def.name_span;
-                        self.diagnostics.push(
-                            CftDiagnostic::error(
-                                CftErrorCode::SingletonNotReferenceable,
-                                module.clone(),
-                                ty.span,
-                                format!("singleton type `{name}` cannot be used as a field type"),
-                            )
-                            .with_related(
-                                owner_module,
-                                owner_span,
-                                "singleton is defined here",
-                            ),
-                        );
-                    }
-                }
-            }
+            TypeRefKind::Named(name) => self
+                .types
+                .get(name)
+                .is_some_and(|info| has_annotation(&info.def.annotations, "singleton")),
             TypeRefKind::Array(inner) | TypeRefKind::Nullable(inner) => {
-                self.check_no_singleton_reference(module, inner);
+                self.field_type_contains_singleton(inner)
             }
             TypeRefKind::Dict(key, value) => {
-                self.check_no_singleton_reference(module, key);
-                self.check_no_singleton_reference(module, value);
+                self.field_type_contains_singleton(key) || self.field_type_contains_singleton(value)
             }
-            _ => {}
+            _ => false,
         }
     }
 

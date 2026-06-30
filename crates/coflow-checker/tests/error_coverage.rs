@@ -604,7 +604,7 @@ const fn scalar_false_schema() -> &'static str {
                 reward is CurrencyReward;
                 optional != null;
                 tags.contains("boss");
-                tags.unique();
+                tags.isUnique();
                 name.matches("^npc_");
             }
         }
@@ -906,7 +906,7 @@ fn adjacent_scalar_false_checks() {
                     reward is CurrencyReward;
                     optional != null;
                     tags.contains("boss");
-                    tags.unique();
+                    tags.isUnique();
                     name.matches("^npc_");
                 }
             }

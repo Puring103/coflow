@@ -15,14 +15,13 @@ fn write_project(root: &std::path::Path) {
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
     std::fs::write(
         root.join("schema.cft"),
-        r#"
-            @display("Item")
+        r"
             type Item {
                 name: string;
                 price: int;
                 check { price > 0; }
             }
-        "#,
+        ",
     )
     .expect("write schema");
     std::fs::write(
@@ -136,7 +135,7 @@ fn run_stdin_command(args: &[&str], stdin: &str) -> std::process::Output {
 }
 
 #[test]
-fn schema_inspect_outputs_json_by_default_and_includes_item_annotations() {
+fn schema_inspect_outputs_json_by_default_and_includes_item_type() {
     let root = temp_project_dir("cli-schema-inspect");
     let _cleanup = TempDirCleanup(root.clone());
     write_project(&root);
@@ -154,12 +153,11 @@ fn schema_inspect_outputs_json_by_default_and_includes_item_annotations() {
     );
     let json: Value = serde_json::from_slice(&output.stdout).expect("schema inspect json");
     assert!(
-        json["types"].as_array().expect("types").iter().any(|ty| {
-            ty["name"] == "Item"
-                && ty["annotations"]
-                    .as_array()
-                    .is_some_and(|items| items.iter().any(|a| a["name"] == "display"))
-        }),
+        json["types"]
+            .as_array()
+            .expect("types")
+            .iter()
+            .any(|ty| ty["name"] == "Item"),
         "schema inspect output: {json:?}"
     );
 }

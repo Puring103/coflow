@@ -16,27 +16,6 @@ pub fn annotation_name_arg(annotations: &[CftAnnotation], name: &str) -> Option<
         })
 }
 
-pub fn display_annotation(annotations: &[CftAnnotation]) -> Option<String> {
-    annotations
-        .iter()
-        .find(|annotation| annotation.name == "display")
-        .and_then(|annotation| annotation.args.first())
-        .and_then(|arg| match arg {
-            CftAnnotationValue::String(value) => Some(xml_doc_text(value)),
-            _ => None,
-        })
-}
-
-pub fn xml_doc_text(value: &str) -> String {
-    value
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
-
 pub fn csharp_ident_error(value: &str) -> Option<String> {
     if value.is_empty() {
         return Some("identifier is empty".to_string());

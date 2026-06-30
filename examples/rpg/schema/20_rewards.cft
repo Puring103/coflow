@@ -48,8 +48,6 @@ type SkillUnlockReward : Reward {
     1 <= required_level <= MAX_LEVEL;
   }
 }
-
-@deprecated
 type LegacyReward : Reward {
   legacy_code: string;
 

@@ -752,14 +752,16 @@ impl<'a> CheckEvaluator<'a> {
             )
             .with_actual(self.value_expr_actual(receiver))
             .with_expected(format!("包含 {}", render_expr(&args[0]))),
-            CftSchemaCheckExprKind::Call { name, args } if name == "unique" && args.len() == 1 => {
+            CftSchemaCheckExprKind::Call { name, args }
+                if name == "isUnique" && args.len() == 1 =>
+            {
                 self.unique_failed_explanation(&rendered, &args[0], value.path.clone())
             }
             CftSchemaCheckExprKind::MethodCall {
                 receiver,
                 name,
                 args,
-            } if name == "unique" && args.is_empty() => {
+            } if name == "isUnique" && args.is_empty() => {
                 self.unique_failed_explanation(&rendered, receiver, value.path.clone())
             }
             CftSchemaCheckExprKind::Call { name, args } if name == "matches" && args.len() == 2 => {
@@ -1289,7 +1291,7 @@ impl<'a> CheckEvaluator<'a> {
                         CfdErrorCode::CheckEvalTypeError,
                         arg_value.path,
                         format!(
-                            "unique 需要 array: 实际为 {}",
+                            "isUnique 需要 array: 实际为 {}",
                             format_value_for_message(&arg_kind)
                         ),
                     );
@@ -1302,7 +1304,7 @@ impl<'a> CheckEvaluator<'a> {
                             CfdErrorCode::CheckEvalTypeError,
                             arg_value.path.clone(),
                             format!(
-                                "unique 元素不可比较: 实际为 {}",
+                                "isUnique 元素不可比较: 实际为 {}",
                                 format_value_for_message(&item)
                             ),
                         );
@@ -1471,7 +1473,7 @@ impl<'a> CheckEvaluator<'a> {
                         CfdErrorCode::CheckEvalTypeError,
                         receiver_value.path,
                         format!(
-                            "unique 需要 array: 实际为 {}",
+                            "isUnique 需要 array: 实际为 {}",
                             format_value_for_message(&arg_kind)
                         ),
                     );
@@ -1484,7 +1486,7 @@ impl<'a> CheckEvaluator<'a> {
                             CfdErrorCode::CheckEvalTypeError,
                             receiver_value.path.clone(),
                             format!(
-                                "unique 元素不可比较: 实际为 {}",
+                                "isUnique 元素不可比较: 实际为 {}",
                                 format_value_for_message(&item)
                             ),
                         );

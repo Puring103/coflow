@@ -243,6 +243,91 @@ fn grouped_polymorphic_records_can_choose_concrete_types() -> TestResult {
 }
 
 #[test]
+fn cfd_enforces_ref_inline_modes_and_singleton_ref_only_values() -> TestResult {
+    let schema = compile_schema(
+        r#"
+            @singleton
+            type GameConfig { value: int; }
+
+            type Item { name: string; }
+
+            type Holder {
+                @ref
+                ref_item: Item;
+                @inline
+                inline_item: Item;
+                config: GameConfig;
+                configs: [GameConfig];
+            }
+        "#,
+    );
+
+    load_cfd_model(
+        &schema,
+        r#"
+            main: GameConfig { value: 1 }
+            sword: Item { name: "Sword" }
+            holder: Holder {
+                ref_item: &sword,
+                inline_item: { name: "Inline" },
+                config: @GameConfig.main,
+                configs: [@GameConfig.main],
+            }
+        "#,
+    )?;
+
+    let mode_err = load_cfd_model(
+        &schema,
+        r#"
+            main: GameConfig { value: 1 }
+            sword: Item { name: "Sword" }
+            holder: Holder {
+                ref_item: { name: "Bad" },
+                inline_item: &sword,
+                config: @GameConfig.main,
+                configs: [],
+            }
+        "#,
+    )
+    .expect_err("CFD should enforce @ref and @inline field modes");
+    let CfdTextLoadError::DataModel(mode_diags) = mode_err else {
+        panic!("expected data-model diagnostics, got {mode_err:?}");
+    };
+    assert!(mode_diags
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.message.contains("@ref")));
+    assert!(mode_diags
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.message.contains("@inline")));
+
+    let singleton_err = load_cfd_model(
+        &schema,
+        r#"
+            main: GameConfig { value: 1 }
+            sword: Item { name: "Sword" }
+            holder: Holder {
+                ref_item: &sword,
+                inline_item: { name: "Inline" },
+                config: { value: 2 },
+                configs: [],
+            }
+        "#,
+    )
+    .expect_err("CFD should reject inline singleton values");
+    let CfdTextLoadError::DataModel(singleton_diags) = singleton_err else {
+        panic!("expected data-model diagnostics, got {singleton_err:?}");
+    };
+    assert!(singleton_diags
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.message.contains("singleton")));
+
+    Ok(())
+}
+
+#[test]
 fn cfd_object_and_dict_spreads_merge_before_local_overrides() -> TestResult {
     let schema = compile_schema(
         r#"

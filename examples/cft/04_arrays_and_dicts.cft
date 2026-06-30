@@ -10,7 +10,7 @@ type ExampleLootTable {
   check {
     item_ids.len() == weights.len();
     weights.sum() >= 0;
-    item_ids.unique();
+    item_ids.isUnique();
     resistances.contains(ExampleDamageType.Fire);
 
     all entry in named_weights {

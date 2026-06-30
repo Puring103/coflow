@@ -5,8 +5,6 @@ const DEFAULT_REGION: string = "world";
 const DEFAULT_SOURCE: string = "system";
 const FEATURE_RAID_ENABLED: bool = true;
 const DEFAULT_REWARD_COUNT = 1;
-
-@display("Item rarity")
 enum Rarity {
   Common = 0,
   Rare = 10,
@@ -52,7 +50,6 @@ enum ShopKind {
 }
 
 @flag
-@display("Skill tags")
 enum SkillTag {
   Damage = 1,
   Control = 2,
@@ -62,7 +59,6 @@ enum SkillTag {
 }
 
 @struct
-@display("2D position")
 sealed type Vector2 {
   x: float;
   y: float;

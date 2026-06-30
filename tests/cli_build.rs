@@ -158,3 +158,68 @@ outputs:
     assert!(exported.contains("sword_01"), "exported: {exported}");
     assert!(exported.contains("铁剑"), "exported: {exported}");
 }
+
+#[test]
+fn build_rejects_outputs_that_overlap_input_directories_both_directions() {
+    let root = temp_project_dir("build-output-input-overlap");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::create_dir_all(root.join("data").join("generated")).expect("create nested source dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        "type Item { value: int; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("items.cfd"),
+        "item: Item { value: 1 }\n",
+    )
+    .expect("write data");
+
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - path: data
+outputs:
+  data:
+    type: json
+    dir: data/generated
+",
+    )
+    .expect("write nested output config");
+    let nested = coflow()
+        .args(["build", root.to_str().expect("utf8 path")])
+        .output()
+        .expect("run nested overlap build");
+    assert!(!nested.status.success());
+    let nested_stderr = String::from_utf8_lossy(&nested.stderr);
+    assert!(
+        nested_stderr.contains("overlaps data source"),
+        "stderr: {nested_stderr}"
+    );
+
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/
+sources:
+  - path: data/generated
+outputs:
+  data:
+    type: json
+    dir: data
+",
+    )
+    .expect("write containing output config");
+    let containing = coflow()
+        .args(["build", root.to_str().expect("utf8 path")])
+        .output()
+        .expect("run containing overlap build");
+    assert!(!containing.status.success());
+    let containing_stderr = String::from_utf8_lossy(&containing.stderr);
+    assert!(
+        containing_stderr.contains("overlaps data source"),
+        "stderr: {containing_stderr}"
+    );
+}

@@ -128,7 +128,7 @@ fn check_diagnostics_use_specific_codes_for_scalar_false_conditions() {
                     reward is CurrencyReward;
                     optional != null;
                     tags.contains("boss");
-                    tags.unique();
+                    tags.isUnique();
                     name.matches("^npc_");
                 }
             }
@@ -350,7 +350,7 @@ fn nullable_element_builtins_handle_nulls_and_empty_values() {
             type Holder {
                 nums: [int?] = [];
                 check {
-                    nums.unique();
+                    nums.isUnique();
                     nums.min() == 1;
                     nums.max() == 3;
                     nums.sum() == 4;

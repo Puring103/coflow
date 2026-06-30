@@ -51,7 +51,6 @@ fn parser_accepts_core_syntax() {
         @struct
         sealed type Position { x: float; y: float; }
 
-        @display("Item")
         @idAsEnum(BaseKey)
         abstract type Base {
             key: string;
@@ -195,13 +194,13 @@ fn parser_requires_check_to_be_last_and_unique() {
 
 #[test]
 fn parser_reports_unterminated_and_invalid_annotation_edges() {
-    let unterminated = add_source("@display(").unwrap_err();
+    let unterminated = add_source("@localized(").unwrap_err();
     assert_has_code(&unterminated, CftErrorCode::InvalidAnnotationSyntax);
 
-    let invalid_arg = add_source("@display([1]) type A {}").unwrap_err();
+    let invalid_arg = add_source("@localized([1]) type A { name: string; }").unwrap_err();
     assert_has_code(&invalid_arg, CftErrorCode::InvalidAnnotationSyntax);
 
-    let overflow_arg = add_source("@display(9223372036854775808) type A {}").unwrap_err();
+    let overflow_arg = add_source("@idAsEnum(9223372036854775808) type A {}").unwrap_err();
     assert_has_code(&overflow_arg, CftErrorCode::InvalidIntLiteral);
 }
 

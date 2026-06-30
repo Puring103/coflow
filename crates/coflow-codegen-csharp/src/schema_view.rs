@@ -1,8 +1,7 @@
 use crate::names::{annotation_name_arg, csharp_type_name, has_annotation};
 use crate::CsharpCodegenError;
 use coflow_cft::{
-    CftAnnotation, CftContainer, CftSchemaDefaultValue, CftSchemaField, CftSchemaType,
-    CftSchemaTypeRef,
+    CftContainer, CftSchemaDefaultValue, CftSchemaField, CftSchemaType, CftSchemaTypeRef,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -323,7 +322,6 @@ pub struct FieldMeta {
     pub name: String,
     pub ty: FieldType,
     pub default: Option<CftSchemaDefaultValue>,
-    pub annotations: Vec<CftAnnotation>,
     pub is_dimensional: bool,
 }
 
@@ -333,7 +331,6 @@ impl FieldMeta {
             name: field.name.clone(),
             ty: FieldType::from_schema(&field.ty_ref, enums),
             default: field.default.clone(),
-            annotations: field.annotations.clone(),
             is_dimensional: field.dimension.is_some(),
         }
     }

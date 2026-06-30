@@ -1,6 +1,4 @@
-@display("Item")
 type Item {
-  @display("Display name")
   name: string;
 
   rarity: Rarity = Rarity.Common;
@@ -17,9 +15,6 @@ type Item {
 
   upgrade_item: Item? = null;
   featured_stage: Stage? = null;
-
-  @deprecated
-  @display("Legacy combat score")
   legacy_power: int = 0;
 
   check {
@@ -32,7 +27,7 @@ type Item {
     stack_limit > 0;
     price >= 0;
     tags.len() > 0;
-    tags.unique();
+    tags.isUnique();
     none tag in tags { tag == ""; }
     attributes.len() > 0;
     attributes.values().min() >= 0;
@@ -60,8 +55,6 @@ type Item {
     }
   }
 }
-
-@display("Equipment")
 type Equipment : Item {
   name_text: Text;
 
@@ -76,7 +69,7 @@ type Equipment : Item {
     name_text.id != "";
     required_class != "";
     allowed_classes.contains(required_class);
-    allowed_classes.unique();
+    allowed_classes.isUnique();
     slot == ItemSlot.Weapon || slot == ItemSlot.Armor || slot == ItemSlot.Accessory;
     stat_bonus.hp > 0;
     stat_bonus.attack + stat_bonus.defense > 0;
@@ -99,8 +92,6 @@ type Equipment : Item {
     }
   }
 }
-
-@display("Skill")
 type Skill {
   name: string;
   element: Element;
@@ -127,8 +118,8 @@ type Skill {
     0 <= power <= MAX_POWER;
     cooldown >= 0.0;
     coefficient > 0.0;
-    costs.unique();
-    allowed_slots.unique();
+    costs.isUnique();
+    allowed_slots.isUnique();
     any cost in costs { cost == 0; }
     none cost in costs { cost < 0; }
     any slot in allowed_slots { slot != ItemSlot.None; }
@@ -158,8 +149,6 @@ type Skill {
     }
   }
 }
-
-@display("Buff")
 type Buff {
   name: string;
 

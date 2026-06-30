@@ -6,8 +6,7 @@ use crate::model::{
     CsharpTable, CsharpType,
 };
 use crate::names::{
-    camel_case, csharp_ident_error, display_annotation, escape_csharp_string, format_float,
-    has_annotation, pascal_case,
+    camel_case, csharp_ident_error, escape_csharp_string, format_float, has_annotation, pascal_case,
 };
 use crate::schema_view::{FieldMeta, FieldType, SchemaView};
 use crate::CsharpCodegenError;
@@ -18,16 +17,16 @@ pub fn build_csharp_enum(schema_enum: &CftSchemaEnum) -> CsharpEnum {
     CsharpEnum {
         name: csharp_public_type_name(&schema_enum.name),
         is_flags: has_annotation(&schema_enum.annotations, "flag"),
-        summary: display_annotation(&schema_enum.annotations),
-        obsolete: has_annotation(&schema_enum.annotations, "deprecated"),
+        summary: None,
+        obsolete: false,
         variants: schema_enum
             .variants
             .iter()
             .map(|variant| CsharpEnumVariant {
                 name: csharp_public_member_name(&variant.name),
                 value: variant.value,
-                summary: display_annotation(&variant.annotations),
-                obsolete: has_annotation(&variant.annotations, "deprecated"),
+                summary: None,
+                obsolete: false,
             })
             .collect(),
     }
@@ -112,8 +111,8 @@ pub fn build_csharp_type(
         } else {
             "public".to_string()
         },
-        summary: display_annotation(&schema_type.annotations),
-        obsolete: has_annotation(&schema_type.annotations, "deprecated"),
+        summary: None,
+        obsolete: false,
         properties,
         constructor_parameters,
         base_constructor_call: (!base_constructor_args.is_empty())
@@ -172,8 +171,8 @@ fn add_field_constructor_member(
         name: property_name.clone(),
         type_name: property_type,
         backing_field: backing_field.clone(),
-        summary: display_annotation(&field.annotations),
-        obsolete: has_annotation(&field.annotations, "deprecated"),
+        summary: None,
+        obsolete: false,
     });
     assignments.push(CsharpConstructorAssignment {
         target: backing_field.unwrap_or_else(|| property_name.clone()),

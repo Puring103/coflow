@@ -712,8 +712,8 @@ const BUILTIN_FUNCTIONS: &[(&str, &str)] = &[
         "value.contains(val): test array element or dict key presence.",
     ),
     (
-        "unique",
-        "value.unique(): true when supported scalar elements are unique.",
+        "isUnique",
+        "value.isUnique(): true when supported scalar elements are unique.",
     ),
     (
         "min",
@@ -750,18 +750,6 @@ const ANNOTATIONS: &[AnnotationCompletion] = &[
         insert_text: "@idAsEnum(${1:EnumName})",
         detail: "type annotation",
         documentation: "Fill an empty enum placeholder from this type's record keys.",
-    },
-    AnnotationCompletion {
-        label: "@display",
-        insert_text: "@display(\"${1:text}\")",
-        detail: "type, enum, or field annotation",
-        documentation: "Attach a human-readable display name.",
-    },
-    AnnotationCompletion {
-        label: "@deprecated",
-        insert_text: "@deprecated",
-        detail: "type, enum, or field annotation",
-        documentation: "Mark the target as deprecated for generated code.",
     },
 ];
 
@@ -1347,13 +1335,7 @@ fn annotation_completion_items(scope: CompletionScope) -> Vec<Value> {
 }
 
 fn annotation_applies_to_scope(label: &str, scope: CompletionScope) -> bool {
-    match label {
-        "@struct" | "@flag" | "@idAsEnum" => scope == CompletionScope::TopLevel,
-        "@display" | "@deprecated" => {
-            matches!(scope, CompletionScope::TopLevel | CompletionScope::TypeBody)
-        }
-        _ => true,
-    }
+    matches!(label, "@struct" | "@flag" | "@idAsEnum") && scope == CompletionScope::TopLevel
 }
 
 fn hover_at(build: &LspBuild, document: &LspDocument, position: &LspPosition) -> Option<Value> {

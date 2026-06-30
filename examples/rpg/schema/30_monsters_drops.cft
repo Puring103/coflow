@@ -42,7 +42,7 @@ sealed type MonsterPhase {
 
   check {
     0.0 < threshold_hp_pct <= 1.0;
-    buffs.unique();
+    buffs.isUnique();
 
     when added_skill != null {
       added_skill.power >= 0;
@@ -66,8 +66,6 @@ sealed type SpawnPoint {
     }
   }
 }
-
-@display("Monster")
 type Monster {
   name: string;
   level: int;
@@ -156,7 +154,7 @@ type DropTable {
     weights.sum() == 100;
     weights.min() > 0;
     weights.max() <= 100;
-    weights.unique();
+    weights.isUnique();
     any reward in rewards { reward is ItemReward; }
     any reward in rewards { reward is CurrencyReward; }
     none reward in rewards { reward is LegacyReward; }

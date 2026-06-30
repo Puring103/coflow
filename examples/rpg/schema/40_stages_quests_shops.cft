@@ -12,8 +12,6 @@ sealed type StageSpawn {
     weight > 0;
   }
 }
-
-@display("Stage")
 type Stage {
   name_text: Text;
 
@@ -129,7 +127,7 @@ type Quest {
     reward_item.name != "";
     reward_preview is Reward;
     objectives.len() > 0;
-    prerequisites.unique();
+    prerequisites.isUnique();
     availability.contains("start_day");
     availability.contains("end_day");
     availability["start_day"] >= 1;
@@ -198,8 +196,6 @@ sealed type ShopEntry {
     }
   }
 }
-
-@display("Shop")
 type Shop {
   name_text: Text;
 
@@ -219,7 +215,7 @@ type Shop {
     1 <= open_day <= close_day;
     entries.len() > 0;
     currencies.len() > 0;
-    currencies.unique();
+    currencies.isUnique();
     any entry in entries { entry.stock > 0; }
 
     when kind == ShopKind.Raid {

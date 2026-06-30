@@ -7,24 +7,19 @@ fn write_project(root: &std::path::Path) {
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
     std::fs::write(
         root.join("schema").join("main.cft"),
-        r#"
-            @display("Item type")
+        r"
             @idAsEnum(ItemId)
             type Item {
-                @display("Display name")
                 name: string;
                 rarity: Rarity = Rarity.Common;
             }
-
-            @display("Rarity enum")
             enum Rarity {
-                @display("Common rarity")
                 Common = 0,
                 Rare = 10,
             }
 
             enum ItemId {}
-        "#,
+        ",
     )
     .expect("write schema");
     std::fs::write(
@@ -60,7 +55,7 @@ fn write_large_i64_project(root: &std::path::Path) {
 }
 
 #[test]
-fn inspect_schema_preserves_annotations_fields_and_enums() {
+fn inspect_schema_preserves_id_as_enum_fields_and_enums() {
     let root = std::env::temp_dir().join(format!("coflow-schema-inspect-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     write_project(&root);
@@ -74,18 +69,12 @@ fn inspect_schema_preserves_annotations_fields_and_enums() {
         .iter()
         .find(|ty| ty.name == "Item")
         .expect("Item type");
-    assert!(item.annotations.iter().any(|a| a.name == "display"));
     assert!(item.annotations.iter().any(|a| a.name == "idAsEnum"));
-    assert!(item.fields.iter().any(|field| {
-        field.name == "name" && field.annotations.iter().any(|a| a.name == "display")
-    }));
-    assert!(report.enums.iter().any(|e| {
-        e.name == "Rarity"
-            && e.annotations.iter().any(|a| a.name == "display")
-            && e.variants
-                .iter()
-                .any(|v| v.name == "Common" && v.annotations.iter().any(|a| a.name == "display"))
-    }));
+    assert!(item.fields.iter().any(|field| field.name == "name"));
+    assert!(report
+        .enums
+        .iter()
+        .any(|e| e.name == "Rarity" && e.variants.iter().any(|v| v.name == "Common")));
 
     let _ = std::fs::remove_dir_all(root);
 }
