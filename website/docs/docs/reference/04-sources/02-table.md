@@ -1,6 +1,6 @@
 # 表格 Source
 
-Excel、CSV 和飞书/Lark 表格共享表格加载语义。表格 source 适合维护大量同构记录；复杂嵌套对象、数组、字典和覆盖模板通常更适合 [CFD](../cfd.md)。
+Excel、CSV 和飞书/Lark 表格共享表格加载语义。表格 source 适合维护大量同构记录；复杂嵌套对象、数组、字典和覆盖模板通常更适合 [CFD](../03-language/02-cfd.md)。
 
 ## 基本规则
 
@@ -11,7 +11,7 @@ Excel、CSV 和飞书/Lark 表格共享表格加载语义。表格 source 适合
 - sheet 名映射到 CFT type。
 - `id`、`Id` 或 `ID` 列作为 record key。
 - 表头文本映射到同名 CFT 字段。
-- 单元格内容按目标字段类型使用 [单元格值语法](./cell-value.md) 解析。
+- 单元格内容按目标字段类型使用 [单元格值语法](../03-language/03-cell-value.md) 解析。
 
 表格 source 的第一行必须是表头。空数据行会被跳过。某个 sheet 的表头无法可靠映射时，该 sheet 的数据行会被跳过，但其他 sheet 和其他 source 仍会继续收集诊断。
 

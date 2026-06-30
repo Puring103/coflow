@@ -16,5 +16,5 @@
 1. [安装](/docs/guide/install)
 2. [示例](/docs/guide/examples)
 3. [最佳工作流](/docs/guide/best-workflow)
-4. [CLI 命令参考](/docs/reference/cli)
-5. [项目架构](/docs/reference/architecture)
+4. [CLI 命令参考](/docs/reference/08-cli)
+5. [项目架构](/docs/reference/12-architecture)

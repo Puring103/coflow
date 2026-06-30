@@ -1,4 +1,4 @@
-# 本地化与维度
+# 维度与本地化
 
 Coflow 的维度/变体机制用于表达“同一个字段在不同上下文下取不同值”。本地化是当前内建的维度场景：`language` 维度表示语言，`zh`、`en`、`ja` 等是语言变体。
 
@@ -127,7 +127,7 @@ singleton type 的维度字段生成 CFD 文件，每个字段一条 record。
 - 已存在的变体列值会保留。
 - 删除源 record 或字段后，对应维度数据不再参与当前项目模型。
 
-维度 CSV 使用普通表格数据源语义。`default` 和变体列里的值按合成 type 字段类型解析，因此可以使用 [单元格值语法](./sources/cell-value.md)：
+维度 CSV 使用普通表格数据源语义。`default` 和变体列里的值按合成 type 字段类型解析，因此可以使用 [单元格值语法](./03-language/03-cell-value.md)：
 
 ```csv
 id,default,zh,en

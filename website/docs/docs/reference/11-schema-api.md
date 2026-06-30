@@ -2,7 +2,7 @@
 
 Schema API 是 `coflow-cft` 编译后的公开反射模型。它面向 codegen、loader、LSP、编辑器和其他宿主集成，不面向普通数据填写者。
 
-如果只是编写 `.cft`，请看 [CFT 语法参考](./cft.md)。如果要在 Provider 或工具中读取编译后的 schema，本页说明应依赖哪些稳定概念。
+如果只是编写 `.cft`，请看 [CFT 语法参考](./03-language/01-cft.md)。如果要在 Provider 或工具中读取编译后的 schema，本页说明应依赖哪些稳定概念。
 
 ## 范围
 

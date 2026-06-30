@@ -2,6 +2,25 @@
 
 项目流水线说明 Coflow 从 `coflow.yaml` 到校验、导出和代码生成的执行顺序。它是 CLI、编辑器、LSP、Provider 和自动化工具共享行为的总入口。
 
+```mermaid
+flowchart TD
+  input["CONFIG_OR_DIR"] --> config["读取 coflow.yaml"]
+  config --> schemaPaths["解析 schema 路径"]
+  schemaPaths --> compile["编译 CFT Schema"]
+  config --> sourceConfig["解析 sources"]
+  sourceConfig --> resolve["Provider resolve"]
+  resolve --> load["Provider load"]
+  compile --> model["构建 DataModel"]
+  load --> model
+  model --> check["执行 check"]
+  check --> session["ProjectSession"]
+  session --> cli["CLI / 编辑器 / LSP / AI 命令"]
+  session --> export["导出 JSON / MessagePack"]
+  compile --> codegen["生成 C# 代码"]
+  export --> artifacts["staging 后提交产物"]
+  codegen --> artifacts
+```
+
 ## 入口
 
 大多数命令接受可选 `CONFIG_OR_DIR`：

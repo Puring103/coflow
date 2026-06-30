@@ -163,8 +163,6 @@ object 字段会在加载时直接解析为最终对象，不生成 `xxxKey` 或
 
 | CFT 注解 | C# 输出 |
 | --- | --- |
-| `@display("text")` | XML summary |
-| `@deprecated` | `[Obsolete]` |
 | `@flag` | `[Flags]` enum |
 | `@struct` | value-like struct |
 | `@idAsEnum(EnumName)` | record key 使用强类型 enum |
@@ -234,7 +232,7 @@ var displayName = item.Name.Value;
 var englishName = item.Name.For("en");
 ```
 
-详见 [本地化与维度](../localization.md)。
+详见 [本地化与维度](../10-localization.md)。
 
 ## Loader 选择
 

@@ -23,7 +23,7 @@ sources:
 | `https://.../sheets/<token>` | 从飞书/Lark 表格 URL 中提取电子表格 token |
 | `https://.../wiki/<token>` | 先解析 wiki 节点，再读取其指向的电子表格 |
 
-HTTPS URL 需要是包含 `feishu` 或 `larksuite` 的飞书/Lark 地址。`app_id` 和 `app_secret` 是必填 Provider options，用于获取 tenant access token。远端表格的 sheet 映射规则见 [表格 Source](./table.md)。
+HTTPS URL 需要是包含 `feishu` 或 `larksuite` 的飞书/Lark 地址。`app_id` 和 `app_secret` 是必填 Provider options，用于获取 tenant access token。远端表格的 sheet 映射规则见 [表格 Source](./02-table.md)。
 
 已知电子表格 token 时，推荐直接使用 `lark:<spreadsheet_token>`：
 
