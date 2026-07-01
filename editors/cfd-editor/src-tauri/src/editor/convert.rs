@@ -63,14 +63,16 @@ fn build_annotation(
     parent_path: &[String],
 ) -> Option<FieldAnnotation> {
     let mut annotation = FieldAnnotation::default();
-    if let Some(source_id) = host.spread_field_sources.get(field_name).copied() {
-        annotation.spread_info = spread_info_for_source(ctx, source_id, parent_path, field_name);
-    }
     let host_id = ctx
         .session
         .records
         .id_for_coordinate(host.actual_type(), &host.key);
     let path = CfdPath::root().field(field_name.to_string());
+    if let Some(source_id) =
+        host_id.and_then(|host| ctx.session.model.spread_source_at_path(host, &path))
+    {
+        annotation.spread_info = spread_info_for_source(ctx, source_id, parent_path, field_name);
+    }
     annotation_for_value(value, ctx, host_id, &path, &mut annotation);
     if annotation.is_empty() {
         None
@@ -92,7 +94,7 @@ fn annotation_for_value(
                 .and_then(|host| {
                     ctx.session
                         .model
-                        .resolve_ref(&RefSite::new(host, path.clone()))
+                        .resolve_ref_effective(&RefSite::new(host, path.clone()))
                 })
                 .and_then(|target| ctx.session.model.record(target))
                 .and_then(|record| {

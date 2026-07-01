@@ -793,6 +793,98 @@ fn top_level_ref_targets_run_checks_once_by_identity() {
 }
 
 #[test]
+fn checks_can_access_ref_fields_inherited_from_spread() {
+    let schema = compile_schema(
+        r#"
+            type Item { price: int; }
+            type Holder {
+                item: &Item;
+                check { item.price > 0; }
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("sword", "Item", [("price", CfdInputValue::from(1_i64))]);
+    builder.add_record(
+        "base",
+        "Holder",
+        [("item", CfdInputValue::record_ref("sword"))],
+    );
+    builder.add_input_record(CfdInputRecord::with_spreads(
+        "copy",
+        "Holder",
+        [CfdInputValue::record_ref("base")],
+        std::iter::empty::<(&str, CfdInputValue)>(),
+    ));
+
+    let model = build_model(&schema, builder);
+    model
+        .run_checks(&schema)
+        .expect("spread-inherited ref should resolve in checks");
+
+    let nested_schema = compile_schema(
+        r#"
+            type Item { price: int; }
+            type Stats { item: &Item; }
+            type Holder {
+                stats: Stats;
+                check { stats.item.price > 0; }
+            }
+        "#,
+    );
+
+    let mut nested_builder = CfdDataModel::builder(&nested_schema);
+    nested_builder.add_record("sword", "Item", [("price", CfdInputValue::from(1_i64))]);
+    nested_builder.add_record(
+        "base_stats",
+        "Stats",
+        [("item", CfdInputValue::record_ref("sword"))],
+    );
+    nested_builder.add_record(
+        "holder",
+        "Holder",
+        [(
+            "stats",
+            CfdInputValue::object_spread(
+                [CfdInputValue::record_ref("base_stats")],
+                std::iter::empty::<(&str, CfdInputValue)>(),
+            ),
+        )],
+    );
+
+    let nested_model = build_model(&nested_schema, nested_builder);
+    nested_model
+        .run_checks(&nested_schema)
+        .expect("nested spread-inherited ref should resolve in checks");
+
+    let mut chained_builder = CfdDataModel::builder(&schema);
+    chained_builder.add_record("sword", "Item", [("price", CfdInputValue::from(1_i64))]);
+    chained_builder.add_record(
+        "base",
+        "Holder",
+        [("item", CfdInputValue::record_ref("sword"))],
+    );
+    chained_builder.add_input_record(CfdInputRecord::with_spreads(
+        "middle",
+        "Holder",
+        [CfdInputValue::record_ref("base")],
+        std::iter::empty::<(&str, CfdInputValue)>(),
+    ));
+    chained_builder.add_input_record(CfdInputRecord::with_spreads(
+        "copy",
+        "Holder",
+        [CfdInputValue::record_ref("middle")],
+        std::iter::empty::<(&str, CfdInputValue)>(),
+    ));
+
+    let chained_model = build_model(&schema, chained_builder);
+    chained_model
+        .run_checks(&schema)
+        .expect("chained spread-inherited ref should resolve in checks");
+}
+
+#[test]
 fn empty_sum_and_float_edge_semantics_are_preserved() {
     let empty_sum = compile_schema(
         r#"

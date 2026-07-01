@@ -58,7 +58,6 @@ fn cfd_value_round_trips_through_json() -> Result<(), Box<dyn std::error::Error>
         key: "potion".into(),
         object: CfdObject::new("Item", fields),
         origin: RecordOrigin::None,
-        spread_field_sources: BTreeMap::new(),
     };
 
     let json = serde_json::to_string(&record)?;

@@ -2,7 +2,7 @@ use crate::diagnostic::{CfdDiagnostic, CfdDiagnostics, CfdErrorCode, CfdPath};
 use crate::model::{
     CfdDataModel, CfdDictKey, CfdDomainId, CfdEnumValue, CfdInputDictKey, CfdInputRecord,
     CfdInputValue, CfdObject, CfdPolymorphicIndex, CfdRecord, CfdRecordId, CfdTable, CfdTypeId,
-    CfdValue, RefEdge, RefEdgeId, RefSite,
+    CfdValue, RefEdge, RefEdgeId, RefSite, SpreadEdge, SpreadEdgeId, SpreadSite,
 };
 use crate::origin::RecordOrigin;
 use crate::schema_view::{
@@ -102,11 +102,6 @@ impl ModelCompiler {
                 ) else {
                     continue;
                 };
-                let spread_field_sources = resolve_spread_sources(
-                    &self.schema,
-                    &draft.spread_field_sources,
-                    &indexes.record_by_domain_key,
-                );
                 records.push(CfdRecord {
                     key: draft.key.clone(),
                     object: CfdObject {
@@ -114,7 +109,6 @@ impl ModelCompiler {
                         fields,
                     },
                     origin: draft.origin.clone(),
-                    spread_field_sources,
                 });
             }
         }
@@ -123,7 +117,14 @@ impl ModelCompiler {
             return Err(CfdDiagnostics::new(self.diagnostics));
         }
 
-        let ref_indexes = build_ref_indexes(&records, &indexes.record_by_domain_key, &self.schema);
+        let spread_indexes =
+            build_spread_indexes(&drafts, &indexes.record_by_domain_key, &self.schema);
+        let ref_indexes = build_ref_indexes(
+            &records,
+            &indexes.record_by_domain_key,
+            &self.schema,
+            &spread_indexes.edges,
+        );
 
         Ok(CfdDataModel {
             tables: indexes.tables,
@@ -136,6 +137,9 @@ impl ModelCompiler {
             ref_by_site: ref_indexes.by_site,
             ref_by_host: ref_indexes.by_host,
             ref_by_target: ref_indexes.by_target,
+            spread_edges: spread_indexes.edges,
+            spread_by_site: spread_indexes.by_site,
+            spread_by_source: spread_indexes.by_source,
         })
     }
 
@@ -425,6 +429,7 @@ impl<'s> Validator<'s> {
         }
 
         let mut out = BTreeMap::new();
+        let mut spread_sources = Vec::new();
         let mut spread_field_sources = BTreeMap::new();
         for spread in input_spreads {
             let spread_origin = top_level_spread_source(actual_type, spread);
@@ -433,6 +438,9 @@ impl<'s> Validator<'s> {
             else {
                 continue;
             };
+            if let Some(origin) = &spread_origin {
+                spread_sources.push(origin.clone());
+            }
             for name in spread_fields.keys() {
                 if let Some(origin) = &spread_origin {
                     spread_field_sources.insert(name.clone(), origin.clone());
@@ -473,6 +481,7 @@ impl<'s> Validator<'s> {
                 actual_type: actual_type.to_string(),
                 fields: out,
                 origin: RecordOrigin::None,
+                spread_sources,
                 spread_field_sources,
             })
         } else {
@@ -1282,30 +1291,6 @@ fn top_level_spread_source(
     }
 }
 
-/// Resolve a draft's spread-field-source map (`name → SpreadFieldSource`,
-/// which holds the textual expected type+key) into the public-facing
-/// `name → CfdRecordId` map stored on `CfdRecord`. Sources that don't
-/// resolve are dropped silently — phase 1 already reported them as
-/// unresolved record refs if they were truly missing.
-fn resolve_spread_sources(
-    schema: &SchemaView,
-    sources: &BTreeMap<String, SpreadFieldSource>,
-    record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
-) -> BTreeMap<String, CfdRecordId> {
-    let mut out = BTreeMap::new();
-    for (field, source) in sources {
-        if let Some(id) = lookup_domain_ref(
-            schema,
-            record_by_domain_key,
-            &source.expected_type,
-            &source.key,
-        ) {
-            out.insert(field.clone(), id);
-        }
-    }
-    out
-}
-
 #[derive(Default)]
 struct RefIndexes {
     edges: Vec<RefEdge>,
@@ -1314,16 +1299,195 @@ struct RefIndexes {
     by_target: BTreeMap<CfdRecordId, Vec<RefEdgeId>>,
 }
 
+#[derive(Default)]
+struct SpreadIndexes {
+    edges: Vec<SpreadEdge>,
+    by_site: BTreeMap<SpreadSite, Vec<SpreadEdgeId>>,
+    by_source: BTreeMap<CfdRecordId, Vec<SpreadEdgeId>>,
+}
+
+fn build_spread_indexes(
+    drafts: &[RecordDraft],
+    record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
+    schema: &SchemaView,
+) -> SpreadIndexes {
+    let mut out = SpreadIndexes::default();
+    for (index, draft) in drafts.iter().enumerate() {
+        collect_spread_edges(
+            draft,
+            CfdRecordId::from_index(index),
+            &CfdPath::root(),
+            drafts,
+            record_by_domain_key,
+            schema,
+            &mut out,
+        );
+    }
+    out
+}
+
+fn collect_spread_edges(
+    draft: &RecordDraft,
+    host: CfdRecordId,
+    path: &CfdPath,
+    drafts: &[RecordDraft],
+    record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
+    schema: &SchemaView,
+    out: &mut SpreadIndexes,
+) {
+    let mut fields_by_source = draft
+        .spread_sources
+        .iter()
+        .cloned()
+        .map(|source| (source, BTreeSet::new()))
+        .collect::<BTreeMap<_, _>>();
+    for (field, source) in &draft.spread_field_sources {
+        fields_by_source
+            .entry(source.clone())
+            .or_default()
+            .insert(field.clone());
+    }
+
+    for (source, fields) in fields_by_source {
+        let Some(expected_type) = schema.type_id(&source.expected_type) else {
+            continue;
+        };
+        let Some(domain) = schema.type_domain_id(&source.expected_type) else {
+            continue;
+        };
+        let Some(source_id) = lookup_domain_ref(
+            schema,
+            record_by_domain_key,
+            &source.expected_type,
+            &source.key,
+        ) else {
+            continue;
+        };
+        let Some(source_draft) = drafts.get(source_id.index()) else {
+            continue;
+        };
+        let Some(source_type) = schema.type_id(&source_draft.actual_type) else {
+            continue;
+        };
+        let site = SpreadSite::new(host, path.clone());
+        let id = SpreadEdgeId::new(out.edges.len());
+        out.edges.push(SpreadEdge {
+            id,
+            site: site.clone(),
+            host,
+            path: path.clone(),
+            fields,
+            expected_type,
+            domain,
+            source_key: source.key,
+            source: source_id,
+            source_type,
+        });
+        out.by_site.entry(site).or_default().push(id);
+        out.by_source.entry(source_id).or_default().push(id);
+    }
+
+    for (field, value) in &draft.fields {
+        collect_nested_spread_edges(
+            value,
+            host,
+            &path.clone().field(field.clone()),
+            drafts,
+            record_by_domain_key,
+            schema,
+            out,
+        );
+    }
+}
+
+fn collect_nested_spread_edges(
+    value: &CfdValueDraft,
+    host: CfdRecordId,
+    path: &CfdPath,
+    drafts: &[RecordDraft],
+    record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
+    schema: &SchemaView,
+    out: &mut SpreadIndexes,
+) {
+    match value {
+        CfdValueDraft::Object(draft) => {
+            collect_spread_edges(draft, host, path, drafts, record_by_domain_key, schema, out);
+        }
+        CfdValueDraft::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                collect_nested_spread_edges(
+                    item,
+                    host,
+                    &path.clone().index(index),
+                    drafts,
+                    record_by_domain_key,
+                    schema,
+                    out,
+                );
+            }
+        }
+        CfdValueDraft::Dict(entries) => {
+            for (key, item) in entries {
+                collect_nested_spread_edges(
+                    item,
+                    host,
+                    &path.clone().dict_key_value(key),
+                    drafts,
+                    record_by_domain_key,
+                    schema,
+                    out,
+                );
+            }
+        }
+        CfdValueDraft::DictSpread { spreads, entries } => {
+            for item in spreads {
+                collect_nested_spread_edges(
+                    item,
+                    host,
+                    path,
+                    drafts,
+                    record_by_domain_key,
+                    schema,
+                    out,
+                );
+            }
+            for (key, item) in entries {
+                collect_nested_spread_edges(
+                    item,
+                    host,
+                    &path.clone().dict_key_value(key),
+                    drafts,
+                    record_by_domain_key,
+                    schema,
+                    out,
+                );
+            }
+        }
+        CfdValueDraft::Value(_)
+        | CfdValueDraft::PendingRef { .. }
+        | CfdValueDraft::PendingSpreadField { .. } => {}
+    }
+}
+
 fn build_ref_indexes(
     records: &[CfdRecord],
     record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
     schema: &SchemaView,
+    spread_edges: &[SpreadEdge],
 ) -> RefIndexes {
     let mut out = RefIndexes::default();
+    let mut spread_edges_by_host = BTreeMap::<CfdRecordId, Vec<&SpreadEdge>>::new();
+    for edge in spread_edges {
+        spread_edges_by_host
+            .entry(edge.host)
+            .or_default()
+            .push(edge);
+    }
     let context = RefEdgeBuildContext {
         records,
         record_by_domain_key,
         schema,
+        spread_edges_by_host,
     };
     for (index, record) in records.iter().enumerate() {
         let host = CfdRecordId::from_index(index);
@@ -1354,6 +1518,15 @@ struct RefEdgeBuildContext<'a> {
     records: &'a [CfdRecord],
     record_by_domain_key: &'a BTreeMap<(CfdDomainId, String), CfdRecordId>,
     schema: &'a SchemaView,
+    spread_edges_by_host: BTreeMap<CfdRecordId, Vec<&'a SpreadEdge>>,
+}
+
+impl RefEdgeBuildContext<'_> {
+    fn is_spread_inherited_path(&self, host: CfdRecordId, path: &CfdPath) -> bool {
+        self.spread_edges_by_host
+            .get(&host)
+            .is_some_and(|edges| edges.iter().any(|edge| edge.covers_path(path)))
+    }
 }
 
 fn collect_ref_edges(
@@ -1364,6 +1537,9 @@ fn collect_ref_edges(
     context: &RefEdgeBuildContext<'_>,
     out: &mut RefIndexes,
 ) {
+    if context.is_spread_inherited_path(host, &path) {
+        return;
+    }
     match (value, non_nullable_type(ty)) {
         (CfdValue::Ref(key), CfdType::Ref(expected_type)) => {
             let Some(expected_type_id) = context.schema.type_id(expected_type) else {

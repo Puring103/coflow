@@ -56,10 +56,10 @@ impl CheckValue {
                 path,
                 host: ref_host,
             }),
-            CfdValue::Ref { .. } => {
+            CfdValue::Ref(_) => {
                 let resolved = ref_host.and_then(|host| {
                     let site_path = path.clone().unwrap_or_else(CfdPath::root);
-                    model.resolve_ref(&RefSite::new(host, site_path))
+                    model.resolve_ref_effective(&RefSite::new(host, site_path))
                 });
                 resolved.map_or_else(
                     || Self::Record(CheckRecordRef::Unresolved),
