@@ -28,7 +28,6 @@ fn export_bindings() {
     t::RecordRow::export_all().expect("export RecordRow");
     t::FieldCell::export_all().expect("export FieldCell");
     t::FieldAnnotation::export_all().expect("export FieldAnnotation");
-    t::FieldMode::export_all().expect("export FieldMode");
     t::SpreadInfo::export_all().expect("export SpreadInfo");
     t::WriteFieldOutcome::export_all().expect("export WriteFieldOutcome");
     t::RenameRecordOutcome::export_all().expect("export RenameRecordOutcome");

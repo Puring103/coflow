@@ -258,7 +258,6 @@ pub(crate) struct FieldMeta {
     pub(crate) name: String,
     pub(crate) ty: CfdType,
     pub(crate) default: Option<CftSchemaDefaultValue>,
-    pub(crate) mode: FieldMode,
 }
 
 impl FieldMeta {
@@ -267,34 +266,6 @@ impl FieldMeta {
             name: field.name.clone(),
             ty: CfdType::from_schema(&field.ty_ref, schema),
             default: field.default.clone(),
-            mode: FieldMode::from_annotations(field),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FieldMode {
-    Any,
-    Ref,
-    Inline,
-}
-
-impl FieldMode {
-    fn from_annotations(field: &CftSchemaField) -> Self {
-        if field
-            .annotations
-            .iter()
-            .any(|annotation| annotation.name == "ref")
-        {
-            Self::Ref
-        } else if field
-            .annotations
-            .iter()
-            .any(|annotation| annotation.name == "inline")
-        {
-            Self::Inline
-        } else {
-            Self::Any
         }
     }
 }

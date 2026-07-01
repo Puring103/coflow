@@ -307,7 +307,7 @@ fn prepare_one(
             let write_file = effective_write_file_for_set_field(session, &record, &path)?;
             ensure_file_guard_for_file(&record, &write_file, file.as_deref())?;
             let path = cfd_path_to_write_path(&path)?;
-            let value = coerce_mutation_value(session, &expected.ty, expected.mode, value)?;
+            let value = coerce_mutation_value(session, &expected.ty, value)?;
             Ok(PreparedMutationOp::SetField {
                 record,
                 write_file,
@@ -594,58 +594,30 @@ fn default_minimal_for_field(
             ),
         )),
         CftSchemaTypeRef::Named(name) if schema.has_type(name) => {
-            let mode = field_mode(field);
-            if mode == FieldMode::Inline {
-                ensure_type_can_materialize(schema, name)?;
-                let fields = default_fields_for_type_inner(
-                    schema,
-                    name,
-                    DefaultMaterialization::Minimal,
-                    stack,
-                    None,
-                )?;
-                return Ok(Some(CfdValue::Object(Box::new(CfdRecord {
-                    key: String::new(),
-                    actual_type: name.clone(),
-                    fields,
-                    origin: RecordOrigin::None,
-                    spread_field_sources: BTreeMap::new(),
-                }))));
-            }
-            Err(one_mutation_error(
-                "MUTATION-DEFAULT",
-                format!(
-                    "field `{}` of type `{name}` has no schema default; provide an explicit value",
-                    field.name
-                ),
-            ))
+            ensure_type_can_materialize(schema, name)?;
+            let fields = default_fields_for_type_inner(
+                schema,
+                name,
+                DefaultMaterialization::Minimal,
+                stack,
+                None,
+            )?;
+            Ok(Some(CfdValue::Object(Box::new(CfdRecord {
+                key: String::new(),
+                actual_type: name.clone(),
+                fields,
+                origin: RecordOrigin::None,
+                spread_field_sources: BTreeMap::new(),
+            }))))
         }
+        CftSchemaTypeRef::Named(name) => Err(one_mutation_error(
+            "MUTATION-DEFAULT",
+            format!(
+                "field `{}` of type `{name}` has no schema default; provide an explicit value",
+                field.name
+            ),
+        )),
         _ => default_zero_for_ty(schema, &field.ty_ref).map(Some),
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FieldMode {
-    Any,
-    Ref,
-    Inline,
-}
-
-fn field_mode(field: &coflow_cft::CftSchemaField) -> FieldMode {
-    if field
-        .annotations
-        .iter()
-        .any(|annotation| annotation.name == "ref")
-    {
-        FieldMode::Ref
-    } else if field
-        .annotations
-        .iter()
-        .any(|annotation| annotation.name == "inline")
-    {
-        FieldMode::Inline
-    } else {
-        FieldMode::Any
     }
 }
 
@@ -793,14 +765,13 @@ fn ensure_type_can_materialize(
 fn coerce_mutation_value(
     session: &ProjectSession,
     expected: &CftSchemaTypeRef,
-    mode: FieldMode,
     value: MutationValue,
 ) -> Result<CfdValue, DiagnosticSet> {
     let value = match value {
         MutationValue::Json(value) => coerce_json_value(session, expected, &value),
         MutationValue::Cfd(value) => coerce_cfd_value(session, expected, value),
     }?;
-    validate_value_shape(session, expected, mode, &value)?;
+    validate_value_shape(session, expected, &value)?;
     Ok(value)
 }
 
@@ -810,7 +781,7 @@ fn coerce_json_field_value(
     value: &Value,
 ) -> Result<CfdValue, DiagnosticSet> {
     let value = coerce_json_value(session, &field.ty_ref, value)?;
-    validate_value_shape(session, &field.ty_ref, field_mode(field), &value)?;
+    validate_value_shape(session, &field.ty_ref, &value)?;
     Ok(value)
 }
 
@@ -820,7 +791,7 @@ fn coerce_cfd_field_value(
     value: CfdValue,
 ) -> Result<CfdValue, DiagnosticSet> {
     let value = coerce_cfd_value(session, &field.ty_ref, value)?;
-    validate_value_shape(session, &field.ty_ref, field_mode(field), &value)?;
+    validate_value_shape(session, &field.ty_ref, &value)?;
     Ok(value)
 }
 
@@ -946,20 +917,19 @@ fn coerce_cfd_object_fields(
 fn validate_value_shape(
     session: &ProjectSession,
     expected: &CftSchemaTypeRef,
-    mode: FieldMode,
     value: &CfdValue,
 ) -> Result<(), DiagnosticSet> {
     match (non_nullable(expected), value) {
         (_, CfdValue::Null) if matches!(expected, CftSchemaTypeRef::Nullable(_)) => Ok(()),
         (CftSchemaTypeRef::Array(inner), CfdValue::Array(items)) => {
             for item in items {
-                validate_value_shape(session, inner, mode, item)?;
+                validate_value_shape(session, inner, item)?;
             }
             Ok(())
         }
         (CftSchemaTypeRef::Dict(_, item), CfdValue::Dict(entries)) => {
             for (_, item_value) in entries {
-                validate_value_shape(session, item, mode, item_value)?;
+                validate_value_shape(session, item, item_value)?;
             }
             Ok(())
         }
@@ -984,9 +954,6 @@ fn validate_value_shape(
             Err(one_shape_error("reference fields only allow record refs"))
         }
         (CftSchemaTypeRef::Named(expected_type), CfdValue::Object(record)) => {
-            if mode == FieldMode::Ref {
-                return Err(one_shape_error("@ref field does not allow inline objects"));
-            }
             if type_is_singleton(&session.schema, expected_type) {
                 return Err(one_shape_error(
                     "singleton fields only allow record references",
@@ -994,7 +961,7 @@ fn validate_value_shape(
             }
             for (name, value) in &record.fields {
                 let field = schema_field(session, &record.actual_type, name)?;
-                validate_value_shape(session, &field.ty_ref, field_mode(field), value)?;
+                validate_value_shape(session, &field.ty_ref, value)?;
             }
             Ok(())
         }
@@ -1299,7 +1266,6 @@ fn parse_ref_key(value: &Value) -> Result<String, DiagnosticSet> {
 #[derive(Debug, Clone)]
 struct ExpectedValue {
     ty: CftSchemaTypeRef,
-    mode: FieldMode,
 }
 
 fn expected_value_for_path(
@@ -1312,13 +1278,11 @@ fn expected_value_for_path(
     }
 
     let mut current = CftSchemaTypeRef::Named(coordinate.actual_type.clone());
-    let mut mode = FieldMode::Any;
     for segment in path {
         match segment {
             CfdPathSegment::Field(field) => {
                 let schema_field = field_for_path_segment(session, &current, field)?;
                 current = schema_field.ty_ref.clone();
-                mode = field_mode(schema_field);
             }
             CfdPathSegment::Index(index) => {
                 current = array_item_type_for_path_segment(&current, *index)?;
@@ -1328,7 +1292,7 @@ fn expected_value_for_path(
             }
         }
     }
-    Ok(ExpectedValue { ty: current, mode })
+    Ok(ExpectedValue { ty: current })
 }
 
 fn field_for_path_segment<'a>(

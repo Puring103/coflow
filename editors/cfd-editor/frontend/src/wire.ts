@@ -10,7 +10,6 @@ import type { GraphEdge } from './bindings/GraphEdge'
 import type { GraphNode } from './bindings/GraphNode'
 import type { RecordCoordinate } from './bindings/RecordCoordinate'
 import type { RecordRow } from './bindings/RecordRow'
-import type { RefTarget } from './bindings/RefTarget'
 import type { SpreadInfo } from './bindings/SpreadInfo'
 
 export type FieldValue = CfdValue
@@ -130,12 +129,8 @@ export function enumValue(enumName: string, variant: string | null, value: bigin
   return { kind: 'enum', value: { enum_name: enumName, variant, value: BigInt(value) } }
 }
 
-export function refValue(targetType: string, targetKey: string): FieldValue {
-  return { kind: 'ref', value: { target_type: targetType, target_key: targetKey } }
-}
-
-export function refValueFromTarget(target: RefTarget): FieldValue {
-  return refValue(target.coordinate.actual_type, target.coordinate.key)
+export function refValue(targetKey: string): FieldValue {
+  return { kind: 'ref', value: targetKey }
 }
 
 export function graphNodeView(node: GraphNode): GraphNodeView {
@@ -316,10 +311,7 @@ export function cloneValue(value: FieldValue): FieldValue {
     case 'ref':
       return {
         kind: 'ref',
-        value: {
-          target_type: value.value.target_type,
-          target_key: value.value.target_key,
-        },
+        value: value.value,
       }
     case 'array':
       return { kind: 'array', value: value.value.map(cloneValue) }

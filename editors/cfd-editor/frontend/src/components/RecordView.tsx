@@ -160,7 +160,6 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
         <DataCardExpanded
           fields={fields}
           actualType={recordActualType(record)}
-          fieldModes={data.field_modes}
           onEdit={readOnly || !onWriteField ? undefined : (path, val) => { onWriteField(record.coordinate, path, val) }}
           diagnostics={fieldDiags}
           highlightField={highlightField}

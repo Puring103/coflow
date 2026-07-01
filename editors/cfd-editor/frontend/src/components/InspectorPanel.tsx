@@ -143,7 +143,6 @@ export function InspectorPanel({
               <DataCardExpanded
                 fields={record.fields}
                 actualType={recordActualType(record)}
-                fieldModes={data.field_modes}
                 onEdit={readOnly || !onWriteField
                   ? undefined
                   : (path, val) => { onWriteField(data.file_path, record.coordinate, path, val) }}

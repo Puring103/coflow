@@ -6,8 +6,8 @@ use crate::model::{
 };
 use crate::origin::RecordOrigin;
 use crate::schema_view::{
-    input_value_kind, type_accepts_default, CfdType, CfdValueDraft, FieldMeta, FieldMode,
-    RecordDraft, SchemaView, SpreadFieldSource,
+    input_value_kind, type_accepts_default, CfdType, CfdValueDraft, FieldMeta, RecordDraft,
+    SchemaView, SpreadFieldSource,
 };
 use coflow_cft::{is_cft_identifier, record_key_ident_error, CftContainer, CftSchemaDefaultValue};
 use std::collections::{BTreeMap, BTreeSet};
@@ -486,88 +486,8 @@ impl<'s> Validator<'s> {
         record: Option<CfdRecordId>,
         path: CfdPath,
     ) -> Option<CfdValueDraft> {
-        if field.mode != FieldMode::Any {
-            self.validate_field_mode(&field.ty, value, field.mode, record, path.clone())?;
-        }
         self.validate_singleton_ref_only(&field.ty, value, record, path.clone())?;
         self.validate_value(&field.ty, value, record, path)
-    }
-
-    fn validate_field_mode(
-        &mut self,
-        ty: &CfdType,
-        value: &CfdInputValue,
-        mode: FieldMode,
-        record: Option<CfdRecordId>,
-        path: CfdPath,
-    ) -> Option<()> {
-        match (non_nullable_type(ty), value) {
-            (CfdType::Type(_), CfdInputValue::RecordRef(_)) if mode == FieldMode::Inline => {
-                self.push_mode_diagnostic("@inline", "record refs", record, path);
-                None
-            }
-            (
-                CfdType::Ref(_),
-                CfdInputValue::Object { .. } | CfdInputValue::ObjectSpread { .. },
-            ) => {
-                self.push_mode_diagnostic("reference", "inline objects", record, path);
-                None
-            }
-            (
-                CfdType::Type(_),
-                CfdInputValue::Object { .. } | CfdInputValue::ObjectSpread { .. },
-            ) if mode == FieldMode::Ref => {
-                self.push_mode_diagnostic("@ref", "inline objects", record, path);
-                None
-            }
-            (CfdType::Array(inner), CfdInputValue::Array(items)) => {
-                let mut ok = true;
-                for (index, item) in items.iter().enumerate() {
-                    if self
-                        .validate_field_mode(inner, item, mode, record, path.clone().index(index))
-                        .is_none()
-                    {
-                        ok = false;
-                    }
-                }
-                ok.then_some(())
-            }
-            (CfdType::Dict(_, inner), CfdInputValue::Dict(entries)) => {
-                let mut ok = true;
-                for (key, item) in entries {
-                    if self
-                        .validate_field_mode(
-                            inner,
-                            item,
-                            mode,
-                            record,
-                            path.clone().dict_key_input(key),
-                        )
-                        .is_none()
-                    {
-                        ok = false;
-                    }
-                }
-                ok.then_some(())
-            }
-            _ => Some(()),
-        }
-    }
-
-    fn push_mode_diagnostic(
-        &mut self,
-        annotation: &str,
-        rejected_shape: &str,
-        record: Option<CfdRecordId>,
-        path: CfdPath,
-    ) {
-        self.push(
-            CfdDiagnostic::error(
-                CfdErrorCode::TypeMismatch,
-                format!("{annotation} field does not allow {rejected_shape}"),
-            )
-            .with_primary(record, path),
-        );
     }
 
     fn validate_singleton_ref_only(
