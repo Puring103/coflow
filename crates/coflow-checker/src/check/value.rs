@@ -144,7 +144,7 @@ pub(super) enum CheckRecordRef {
         path: Option<CfdPath>,
         /// The original top-level record this inline object lives inside.
         /// Needed so refs encountered inside `record.fields` can be resolved
-        /// against the model's `ref_index`, which is keyed by `(host, path)`
+        /// through the model's `RefSite` index, which is keyed by `(host, path)`
         /// relative to the top-level record.
         host: Option<CfdRecordId>,
     },
@@ -207,7 +207,7 @@ impl CheckRecordRef {
     /// Returns the top-level record id refs nested inside this object should
     /// resolve against. Top-level records carry their own id; inline objects
     /// (`...` inside another record) carry the host id of the originating
-    /// top-level record so the model's `ref_index` can look them up.
+    /// top-level record so the model's ref edge indexes can look them up.
     pub(super) fn ref_host(&self) -> Option<CfdRecordId> {
         match self {
             Self::Top(id) => Some(*id),

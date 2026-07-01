@@ -464,18 +464,15 @@ fn reference_update_actions(
     new_key: &str,
 ) -> Result<Vec<ReferenceUpdateAction>, DiagnosticSet> {
     let mut actions = Vec::new();
-    for (site, resolved_target) in session.model.ref_sites() {
-        if resolved_target != target_id {
-            continue;
-        }
-        let Some(host_ref) = session.records.get(site.host) else {
+    for edge in session.model.ref_edges_to_target(target_id) {
+        let Some(host_ref) = session.records.get(edge.host) else {
             continue;
         };
-        let Some(host_record) = session.model.record(site.host) else {
+        let Some(host_record) = session.model.record(edge.host) else {
             continue;
         };
         if !matches!(
-            value_at_path(host_record, &site.path),
+            value_at_path(host_record, &edge.path),
             Some(CfdValue::Ref(_))
         ) {
             continue;
@@ -488,7 +485,7 @@ fn reference_update_actions(
                 origin: host_ref.origin.clone(),
                 record_key: host_ref.coordinate.key.clone(),
                 actual_type: host_ref.coordinate.actual_type.clone(),
-                field_path: write_path_from_cfd_path(&site.path)?,
+                field_path: write_path_from_cfd_path(&edge.path)?,
                 new_value: CfdValue::Ref(new_key.to_string()),
                 source,
             },

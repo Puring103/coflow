@@ -20,10 +20,6 @@ pub struct CfdDataModel {
     pub(crate) ref_by_site: BTreeMap<RefSite, RefEdgeId>,
     pub(crate) ref_by_host: BTreeMap<CfdRecordId, Vec<RefEdgeId>>,
     pub(crate) ref_by_target: BTreeMap<CfdRecordId, Vec<RefEdgeId>>,
-    /// Compatibility cache for legacy callers that only need a site-to-target
-    /// lookup. Public APIs derive from `ref_edges`; this map is kept in sync
-    /// during index construction and should not gain new call sites.
-    pub(crate) ref_index: BTreeMap<RefSite, CfdRecordId>,
 }
 
 /// Logical address of a `CfdValue::Ref` instance inside the model: the host

@@ -134,7 +134,6 @@ impl ModelCompiler {
             ref_by_site: ref_indexes.by_site,
             ref_by_host: ref_indexes.by_host,
             ref_by_target: ref_indexes.by_target,
-            ref_index: ref_indexes.site_targets,
         })
     }
 
@@ -1319,7 +1318,6 @@ struct RefIndexes {
     by_site: BTreeMap<RefSite, RefEdgeId>,
     by_host: BTreeMap<CfdRecordId, Vec<RefEdgeId>>,
     by_target: BTreeMap<CfdRecordId, Vec<RefEdgeId>>,
-    site_targets: BTreeMap<RefSite, CfdRecordId>,
 }
 
 fn build_ref_indexes(
@@ -1407,10 +1405,9 @@ fn collect_ref_edges(
                 target,
                 target_type,
             });
-            out.by_site.insert(site.clone(), id);
+            out.by_site.insert(site, id);
             out.by_host.entry(host).or_default().push(id);
             out.by_target.entry(target).or_default().push(id);
-            out.site_targets.insert(site, target);
         }
         (CfdValue::Object(boxed), CfdType::Type(_)) => {
             for (name, inner) in &boxed.fields {
