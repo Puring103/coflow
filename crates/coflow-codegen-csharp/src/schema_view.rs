@@ -300,10 +300,12 @@ fn collect_ref_targets_in_type(
 ) {
     match ty {
         FieldType::Type(name) => {
-            out.insert(name.clone());
             if let Some(meta) = view.types.get(name) {
                 meta.collect_ref_targets(view, out, visited);
             }
+        }
+        FieldType::Ref(name) => {
+            out.insert(name.clone());
         }
         FieldType::Array(inner) | FieldType::Nullable(inner) => {
             collect_ref_targets_in_type(view, inner, out, visited);
@@ -343,6 +345,7 @@ pub enum FieldType {
     Bool,
     String,
     Type(String),
+    Ref(String),
     Enum(String),
     Array(Box<Self>),
     Dict(Box<Self>, Box<Self>),
@@ -357,7 +360,8 @@ impl FieldType {
             CftSchemaTypeRef::Bool => Self::Bool,
             CftSchemaTypeRef::String => Self::String,
             CftSchemaTypeRef::Named(name) if enums.contains(name) => Self::Enum(name.clone()),
-            CftSchemaTypeRef::Named(name) | CftSchemaTypeRef::Ref(name) => Self::Type(name.clone()),
+            CftSchemaTypeRef::Named(name) => Self::Type(name.clone()),
+            CftSchemaTypeRef::Ref(name) => Self::Ref(name.clone()),
             CftSchemaTypeRef::Array(inner) => {
                 Self::Array(Box::new(Self::from_schema(inner, enums)))
             }

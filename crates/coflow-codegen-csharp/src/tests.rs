@@ -302,7 +302,7 @@ fn codegen_emits_coflow_tables_accessor_api_without_load_exception_or_ref_placeh
 
             type Item {
                 display_name: string;
-                reward: Reward;
+                reward: &Reward;
                 tags: [string];
             }
         "#,
@@ -389,6 +389,47 @@ fn codegen_emits_coflow_tables_accessor_api_without_load_exception_or_ref_placeh
 }
 
 #[test]
+fn codegen_uses_schema_ref_type_to_choose_reference_or_inline_loader() -> Result<(), String> {
+    let schema = compile_schema(
+        r#"
+            type Reward {
+                amount: int;
+            }
+
+            type Item {
+                inline_reward: Reward;
+                ref_reward: &Reward;
+            }
+        "#,
+    )?;
+
+    let json_files = generate_json(&schema, &CsharpCodegenOptions::new("Game.Config"))
+        .map_err(|err| err.to_string())?;
+    let json_item = generated_file(&json_files, "Item.cs")?;
+    require_contains(
+        json_item,
+        "CoflowJson.ReadRequired(obj, \"inline_reward\", (token) => Reward.LoadInline(token, context))",
+    )?;
+    require_contains(
+        json_item,
+        "CoflowJson.ReadRequired(obj, \"ref_reward\", (token) => context.GetReward(CoflowJson.ReadString(token)))",
+    )?;
+    require_not_contains(json_item, "JTokenType.String ?")?;
+
+    let messagepack_files =
+        generate_messagepack(&schema, &CsharpCodegenOptions::new("Game.Config"))
+            .map_err(|err| err.to_string())?;
+    let messagepack_item = generated_file(&messagepack_files, "Item.cs")?;
+    require_contains(messagepack_item, "Reward.LoadInline(ref reader, context)")?;
+    require_contains(
+        messagepack_item,
+        "context.GetReward(CoflowMessagePack.ReadString(ref reader))",
+    )?;
+    require_not_contains(messagepack_item, "CoflowMessagePack.NextIsString")?;
+    Ok(())
+}
+
+#[test]
 fn codegen_uses_pascal_case_public_names_and_raw_source_names_for_loading() -> Result<(), String> {
     let schema = compile_schema(
         r#"
@@ -457,8 +498,8 @@ fn codegen_id_as_enum_generates_strongly_typed_ids_and_refs() -> Result<(), Stri
             enum GeneId {}
 
             type BioRemainsConfig {
-                gene: GeneConfig;
-                maybe_gene: GeneConfig?;
+                gene: &GeneConfig;
+                maybe_gene: &GeneConfig?;
             }
         "#,
     )?;
@@ -513,7 +554,7 @@ fn codegen_applies_nullable_and_missing_collection_rules() -> Result<(), String>
             type Target {}
 
             type Holder {
-                maybe_target: Target?;
+                maybe_target: &Target?;
                 tags: [string];
                 attrs: {string: int};
             }
@@ -670,11 +711,11 @@ fn codegen_json_loads_tables_without_reference_dependency_order() -> Result<(), 
             type Reward {}
 
             type DropTable {
-                reward: Reward;
+                reward: &Reward;
             }
 
             type Item {
-                drop_table: DropTable;
+                drop_table: &DropTable;
             }
         "#,
     )?;
@@ -730,7 +771,7 @@ fn codegen_json_allows_cyclic_table_references() -> Result<(), String> {
     let schema = compile_schema(
         r#"
             type Item {
-                next: Item;
+                next: &Item;
             }
         "#,
     )?;
@@ -769,7 +810,7 @@ fn codegen_messagepack_emits_coflow_tables_and_messagepack_loaders() -> Result<(
             }
 
             type Item {
-                reward: Reward;
+                reward: &Reward;
             }
         "#,
     )?;
@@ -788,8 +829,9 @@ fn codegen_messagepack_emits_coflow_tables_and_messagepack_loaders() -> Result<(
     require_contains(item, "internal static List<Item> LoadTable(")?;
     require_contains(
         item,
-        "CoflowMessagePack.NextIsString(ref reader) ? context.GetReward",
+        "context.GetReward(CoflowMessagePack.ReadString(ref reader))",
     )?;
+    require_not_contains(item, "CoflowMessagePack.NextIsString")?;
     Ok(())
 }
 

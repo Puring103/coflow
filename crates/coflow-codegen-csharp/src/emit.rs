@@ -477,7 +477,7 @@ fn collect_table_dependencies_for_field_type(
     out: &mut BTreeSet<String>,
 ) -> Result<(), CsharpCodegenError> {
     match ty {
-        FieldType::Type(name) => {
+        FieldType::Ref(name) => {
             let mut hit_table = false;
             for concrete in view.concrete_assignable_types(name)? {
                 if table_set.contains(&concrete) {
@@ -490,6 +490,13 @@ fn collect_table_dependencies_for_field_type(
                     for field in &meta.all_fields {
                         collect_table_dependencies_for_field_type(view, &field.ty, table_set, out)?;
                     }
+                }
+            }
+        }
+        FieldType::Type(name) => {
+            if let Ok(meta) = view.type_meta(name) {
+                for field in &meta.all_fields {
+                    collect_table_dependencies_for_field_type(view, &field.ty, table_set, out)?;
                 }
             }
         }
@@ -692,10 +699,8 @@ fn field_type_requires_context_inner(
     visited: &mut BTreeSet<String>,
 ) -> Result<bool, CsharpCodegenError> {
     match ty {
+        FieldType::Ref(name) => Ok(view.is_ref_target_loadable(name)),
         FieldType::Type(name) => {
-            if view.is_ref_target_loadable(name) {
-                return Ok(true);
-            }
             if !visited.insert(name.clone()) {
                 return Ok(false);
             }
@@ -839,6 +844,11 @@ fn read_token_expr(
             "CoflowJson.ReadStringEnum<{}>({token})",
             view.csharp_enum_name(name)
         )),
+        FieldType::Ref(name) => {
+            let csharp_name = view.csharp_type_name(name);
+            let key_reader = read_token_expr(&view.key_field_type(name), token, context, view)?;
+            Ok(format!("{context}.Get{csharp_name}({key_reader})"))
+        }
         FieldType::Type(name) => {
             let csharp_name = view.csharp_type_name(name);
             let inline_reader = if view.range_is_polymorphic(name) {
@@ -846,14 +856,7 @@ fn read_token_expr(
             } else {
                 format!("{csharp_name}.LoadInline({token}, {context})")
             };
-            if view.is_ref_target_loadable(name) {
-                let key_reader = read_token_expr(&view.key_field_type(name), token, context, view)?;
-                Ok(format!(
-                    "{token}.Type == JTokenType.String ? {context}.Get{csharp_name}({key_reader}) : {inline_reader}"
-                ))
-            } else {
-                Ok(inline_reader)
-            }
+            Ok(inline_reader)
         }
         FieldType::Array(inner) => Ok(format!(
             "CoflowJson.ReadArray({token}, (item) => {})",
@@ -921,6 +924,12 @@ fn read_messagepack_expr(
             "CoflowMessagePack.ReadStringEnum<{}>(ref {reader})",
             view.csharp_enum_name(name)
         )),
+        FieldType::Ref(name) => {
+            let csharp_name = view.csharp_type_name(name);
+            let key_reader =
+                read_messagepack_expr(&view.key_field_type(name), reader, context, view)?;
+            Ok(format!("{context}.Get{csharp_name}({key_reader})"))
+        }
         FieldType::Type(name) => {
             let csharp_name = view.csharp_type_name(name);
             let inline_reader = if view.range_is_polymorphic(name) {
@@ -928,15 +937,7 @@ fn read_messagepack_expr(
             } else {
                 format!("{csharp_name}.LoadInline(ref {reader}, {context})")
             };
-            if view.is_ref_target_loadable(name) {
-                let key_reader =
-                    read_messagepack_expr(&view.key_field_type(name), reader, context, view)?;
-                Ok(format!(
-                    "CoflowMessagePack.NextIsString(ref {reader}) ? {context}.Get{csharp_name}({key_reader}) : {inline_reader}"
-                ))
-            } else {
-                Ok(inline_reader)
-            }
+            Ok(inline_reader)
         }
         FieldType::Array(inner) => Ok(format!(
             "CoflowMessagePack.ReadArray(ref {reader}, {context}, static (ref MessagePackReader itemReader, CoflowTables.LoadContext context) => {})",
@@ -990,7 +991,9 @@ fn csharp_type(ty: &FieldType, view: &SchemaView) -> String {
         }
         FieldType::Bool => "bool".to_string(),
         FieldType::String => "string".to_string(),
-        FieldType::Type(name) | FieldType::Enum(name) => view.csharp_named_type(name),
+        FieldType::Type(name) | FieldType::Ref(name) | FieldType::Enum(name) => {
+            view.csharp_named_type(name)
+        }
         FieldType::Array(inner) => format!("List<{}>", csharp_type(inner, view)),
         FieldType::Dict(key, value) => {
             format!(
