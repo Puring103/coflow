@@ -51,14 +51,11 @@ interface Props {
   onInsertRecord?: (recordKey: string, actualType: string, fields: FieldValue) => Promise<void>
   /** Delete an existing record by key. */
   onDeleteRecord?: (coordinate: RecordCoordinate) => Promise<void>
-  /** Build a defaulted Object FieldValue for a given type — used to seed
-   *  the "new record" payload before sending it to the back-end. */
-  onMakeDefaultObject?: (typeName: string) => Promise<FieldValue | null>
 }
 
 const ROW_H = 30
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selectedCoordinate, onSelectRecord, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onDeleteRecord, onMakeDefaultObject }: Props) {
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selectedCoordinate, onSelectRecord, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onDeleteRecord }: Props) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: RecordRow } | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [newKey, setNewKey] = useState('')
@@ -385,10 +382,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 onClick={async () => {
                   const key = newKey.trim()
                   if (!key || !onInsertRecord) return
-                  const seedFields = onMakeDefaultObject
-                    ? await onMakeDefaultObject(newType)
-                    : null
-                  const fields: FieldValue = seedFields ?? makeObjectValue(newType)
+                  const fields: FieldValue = makeObjectValue(newType)
                   await onInsertRecord(key, newType, fields)
                   setShowNewRecord(false); setNewKey('')
                 }}

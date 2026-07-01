@@ -6,10 +6,10 @@
 //! `(source_text, CfdAst)` keyed by absolute file path so that repeated edits
 //! avoid re-reading and re-parsing the file.
 use coflow_api::{
-    CfdValue, DataWriter, DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest,
-    RecordOrigin, RenameRecordRequest, RewriteRecordReferencesRequest, SourceLocationSpec,
-    TextSpan, WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome,
-    WriterCapabilities, WriterDescriptor,
+    CfdValue, CftContainer, CftSchemaTypeRef, DataWriter, DeleteRecordRequest, Diagnostic,
+    DiagnosticSet, InsertRecordRequest, RecordOrigin, RenameRecordRequest,
+    RewriteRecordReferencesRequest, SourceLocationSpec, TextSpan, WriteCellRequest, WriteContext,
+    WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_cfd::ast::{
     CfdBlock, CfdBlockEntry, CfdRecord as AstRecord, CfdRefKind, CfdValue as AstValue,
@@ -346,7 +346,12 @@ fn apply_patch(
         )));
     };
 
-    match locate_target(record, request.field_path)? {
+    match locate_target(
+        request.schema,
+        request.actual_type,
+        record,
+        request.field_path,
+    )? {
         WriteTarget::Replace(span) => {
             if span.start > source.len() || span.end > source.len() || span.start > span.end {
                 return Err(DiagnosticSet::one(diag(
@@ -558,6 +563,8 @@ fn full_value_span(value: &AstValue) -> Span {
 /// should replace an existing span, append a brand-new top-level field, or
 /// insert a local override into a nested block (the spread case).
 fn locate_target(
+    schema: &CftContainer,
+    actual_type: &str,
     record: &AstRecord,
     path: &[WriteFieldPathSegment],
 ) -> Result<WriteTarget, DiagnosticSet> {
@@ -582,7 +589,13 @@ fn locate_target(
     if path.len() == 1 {
         return Ok(WriteTarget::Replace(full_value_span(&field.value)));
     }
-    locate_target_in_value(&field.value, &path[1..], 1)
+    let Some(next_type) = type_after_field_segment(schema, actual_type, name) else {
+        return Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            format!("field `{name}` not found on type `{actual_type}`"),
+        )));
+    };
+    locate_target_in_value(schema, &next_type, &field.value, &path[1..], 1)
 }
 
 fn find_field_in_record<'a>(record: &'a AstRecord, name: &str) -> Option<&'a coflow_cfd::CfdField> {
@@ -600,6 +613,8 @@ fn find_field_in_record<'a>(record: &'a AstRecord, name: &str) -> Option<&'a cof
 /// pick indentation for inserted overrides.
 #[allow(clippy::option_if_let_else)]
 fn locate_target_in_value(
+    schema: &CftContainer,
+    current_type: &CftSchemaTypeRef,
     value: &AstValue,
     path: &[WriteFieldPathSegment],
     depth: usize,
@@ -609,6 +624,13 @@ fn locate_target_in_value(
     }
     match (&path[0], value) {
         (WriteFieldPathSegment::Field(name), AstValue::Block(block)) => {
+            let Some(next_type) = type_after_field_segment_for_ref(schema, current_type, name)
+            else {
+                return Err(DiagnosticSet::one(diag(
+                    "CFD-WRITE",
+                    format!("field `{name}` cannot be selected from this value"),
+                )));
+            };
             let field = block.entries.iter().find_map(|e| match e {
                 CfdBlockEntry::Field(f) if &f.name == name => Some(f),
                 _ => None,
@@ -618,7 +640,13 @@ fn locate_target_in_value(
                     if path.len() == 1 {
                         Ok(WriteTarget::Replace(full_value_span(&field.value)))
                     } else {
-                        locate_target_in_value(&field.value, &path[1..], depth + 1)
+                        locate_target_in_value(
+                            schema,
+                            &next_type,
+                            &field.value,
+                            &path[1..],
+                            depth + 1,
+                        )
                     }
                 }
                 None => {
@@ -645,18 +673,34 @@ fn locate_target_in_value(
             }
         }
         (WriteFieldPathSegment::Index(i), AstValue::Array(items, _)) => {
+            let Some(next_type) = type_after_index_segment(current_type) else {
+                return Err(DiagnosticSet::one(diag(
+                    "CFD-WRITE",
+                    format!("array index `{i}` cannot be selected from this value"),
+                )));
+            };
             let item = items.get(*i).ok_or_else(|| {
                 DiagnosticSet::one(diag("CFD-WRITE", format!("index {i} out of bounds")))
             })?;
             if path.len() == 1 {
                 Ok(WriteTarget::Replace(full_value_span(item)))
             } else {
-                locate_target_in_value(item, &path[1..], depth + 1)
+                locate_target_in_value(schema, &next_type, item, &path[1..], depth + 1)
             }
         }
         (WriteFieldPathSegment::DictKey(key), AstValue::Block(block)) => {
+            let Some((key_type, next_type)) = type_after_dict_key_segment(current_type) else {
+                return Err(DiagnosticSet::one(diag(
+                    "CFD-WRITE",
+                    format!("dict key `{key}` cannot be selected from this value"),
+                )));
+            };
             let field = block.entries.iter().find_map(|entry| match entry {
-                CfdBlockEntry::Field(field) if field.name == *key => Some(field),
+                CfdBlockEntry::Field(field)
+                    if dict_key_path_matches(schema, &key_type, &field.name, key) =>
+                {
+                    Some(field)
+                }
                 _ => None,
             });
             let Some(field) = field else {
@@ -668,13 +712,90 @@ fn locate_target_in_value(
             if path.len() == 1 {
                 Ok(WriteTarget::Replace(full_value_span(&field.value)))
             } else {
-                locate_target_in_value(&field.value, &path[1..], depth + 1)
+                locate_target_in_value(schema, &next_type, &field.value, &path[1..], depth + 1)
             }
         }
         _ => Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
             format!("cannot navigate path segment {:?} in value", path[0]),
         ))),
+    }
+}
+
+fn type_after_field_segment(
+    schema: &CftContainer,
+    actual_type: &str,
+    field_name: &str,
+) -> Option<CftSchemaTypeRef> {
+    schema
+        .resolve_type(actual_type)?
+        .all_fields
+        .iter()
+        .find(|field| field.name == field_name)
+        .map(|field| field.ty_ref.clone())
+}
+
+fn type_after_field_segment_for_ref(
+    schema: &CftContainer,
+    current_type: &CftSchemaTypeRef,
+    field_name: &str,
+) -> Option<CftSchemaTypeRef> {
+    match non_nullable(current_type) {
+        CftSchemaTypeRef::Named(type_name) if schema.has_type(type_name) => {
+            type_after_field_segment(schema, type_name, field_name)
+        }
+        _ => None,
+    }
+}
+
+fn type_after_index_segment(current_type: &CftSchemaTypeRef) -> Option<CftSchemaTypeRef> {
+    match non_nullable(current_type) {
+        CftSchemaTypeRef::Array(inner) => Some((**inner).clone()),
+        _ => None,
+    }
+}
+
+fn type_after_dict_key_segment(
+    current_type: &CftSchemaTypeRef,
+) -> Option<(CftSchemaTypeRef, CftSchemaTypeRef)> {
+    match non_nullable(current_type) {
+        CftSchemaTypeRef::Dict(key, item) => Some(((**key).clone(), (**item).clone())),
+        _ => None,
+    }
+}
+
+fn dict_key_path_matches(
+    schema: &CftContainer,
+    key_type: &CftSchemaTypeRef,
+    source_key: &str,
+    path_key: &str,
+) -> bool {
+    if source_key == path_key {
+        return true;
+    }
+    match non_nullable(key_type) {
+        CftSchemaTypeRef::String => {
+            if path_key.starts_with('"') {
+                serde_json::from_str::<String>(path_key).is_ok_and(|decoded| decoded == source_key)
+            } else {
+                false
+            }
+        }
+        CftSchemaTypeRef::Named(enum_name) if schema.has_enum(enum_name) => path_key
+            .strip_prefix(enum_name)
+            .and_then(|rest| rest.strip_prefix('.'))
+            .is_some_and(|variant| variant == source_key),
+        CftSchemaTypeRef::Nullable(inner) => {
+            dict_key_path_matches(schema, inner, source_key, path_key)
+        }
+        _ => false,
+    }
+}
+
+fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
+    match ty {
+        CftSchemaTypeRef::Nullable(inner) => non_nullable(inner),
+        other => other,
     }
 }
 

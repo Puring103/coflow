@@ -531,8 +531,13 @@ patch 文件示例：
     {
       "op": "set_field",
       "record": { "type": "Item", "key": "steel_sword" },
-      "path": ["rarity"],
+      "path": [{ "kind": "field", "value": "rarity" }],
       "value": "Rare"
+    },
+    {
+      "op": "rename_record",
+      "record": { "type": "Item", "key": "steel_sword" },
+      "new_key": "steel_blade"
     }
   ]
 }
@@ -544,7 +549,19 @@ patch 文件示例：
 | --- | --- |
 | `insert_record` | 新增顶层记录，必须指定 `file` |
 | `set_field` | 修改字段路径，`file` 可作为来源 guard |
+| `rename_record` | 重命名记录 key，并同步引用 |
 | `delete_record` | 删除记录，`file` 可作为来源 guard |
+
+`set_field.path` 使用和编辑器相同的路径段：
+
+```json
+[
+  { "kind": "field", "value": "resistances" },
+  { "kind": "dict_key", "value": "Element.Fire" }
+]
+```
+
+数组下标使用 `{ "kind": "index", "value": 0 }`。`dict_key` 的 `value` 是运行时路径文本：字符串 key 带引号（如 `"north"`），整数 key 写数字文本（如 `1`），枚举 key 写 `Enum.Variant`（如 `Element.Fire`）。
 
 patch value 支持普通 JSON 值，也支持以下特殊对象：
 

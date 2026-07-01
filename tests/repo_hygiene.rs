@@ -154,6 +154,33 @@ fn engine_public_api_does_not_expose_checker_dependency_graph() {
 }
 
 #[test]
+fn engine_public_mutation_api_does_not_expose_prepared_ops() {
+    let engine =
+        std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");
+    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation.rs")
+        .expect("read mutation")
+        .replace("\r\n", "\n");
+
+    assert!(
+        !engine.contains("PreparedMutationOp"),
+        "prepared mutation ops are an engine-internal execution detail and must not be re-exported"
+    );
+    assert!(
+        !mutation.contains("pub enum PreparedMutationOp"),
+        "external callers must not be able to construct prepared ops that bypass mutation validation"
+    );
+    let prepared_struct = mutation
+        .split("pub struct PreparedMutation {")
+        .nth(1)
+        .and_then(|rest| rest.split("\n}").next())
+        .expect("PreparedMutation struct");
+    assert!(
+        !prepared_struct.contains("pub "),
+        "PreparedMutation should be opaque; found public field in `{prepared_struct}`"
+    );
+}
+
+#[test]
 fn loaders_do_not_depend_on_checker_runtime_directly() {
     let excel_manifest = std::fs::read_to_string("crates/coflow-loader-excel/Cargo.toml")
         .expect("read excel loader manifest");
@@ -199,7 +226,7 @@ fn workspace_members_inherit_workspace_lints() {
 
 #[test]
 fn lsp_is_documented_as_schema_only_not_engine_runtime_host() {
-    let architecture = std::fs::read_to_string("website/docs/docs/reference/architecture.md")
+    let architecture = std::fs::read_to_string("website/docs/docs/reference/12-architecture.md")
         .expect("read architecture reference");
 
     assert!(

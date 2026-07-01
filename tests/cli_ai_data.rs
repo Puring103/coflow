@@ -533,6 +533,88 @@ fn data_patch_returns_nonzero_when_check_after_write_is_false_but_errors_remain(
 }
 
 #[test]
+fn data_patch_cli_supports_rename_and_dict_key_paths() {
+    let root = temp_project_dir("cli-data-patch-rename-dict-key");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            enum Element { Fire = 1, Ice = 2 }
+            type Loot {
+                name: string;
+                resistances: {Element: int};
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data").join("loot.cfd"), "").expect("write cfd");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+
+    let json = apply_data_patch_command(
+        &root,
+        "rename-dict-key.json",
+        &json!({
+            "ops": [
+                {
+                    "op": "insert_record",
+                    "file": "data/loot.cfd",
+                    "type": "Loot",
+                    "key": "starter",
+                    "fields": {
+                        "name": "Starter",
+                        "resistances": { "$dict": [{ "key": "Fire", "value": 10 }] }
+                    }
+                },
+                {
+                    "op": "set_field",
+                    "record": { "type": "Loot", "key": "starter" },
+                    "path": [
+                        { "kind": "field", "value": "resistances" },
+                        { "kind": "dict_key", "value": "Element.Fire" }
+                    ],
+                    "value": 20
+                },
+                {
+                    "op": "rename_record",
+                    "record": { "type": "Loot", "key": "starter" },
+                    "new_key": "starter_renamed"
+                }
+            ]
+        }),
+    );
+
+    assert_eq!(json["write_ok"], true);
+    assert_eq!(json["check_ok"], true);
+    assert_eq!(json["applied"].as_array().expect("applied").len(), 3);
+    let text = std::fs::read_to_string(root.join("data").join("loot.cfd")).expect("read cfd");
+    assert!(text.contains("starter_renamed"));
+    assert!(text.contains("Fire: 20"));
+
+    let output = coflow()
+        .args([
+            "data",
+            "get",
+            root.to_str().expect("utf8 path"),
+            "Loot.starter_renamed",
+        ])
+        .output()
+        .expect("run data get");
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).expect("get json");
+    assert_eq!(json["records"][0]["record"]["key"], "starter_renamed");
+}
+
+#[test]
 fn data_write_file_writes_configured_cfd_file_from_stdin() {
     let root = temp_project_dir("cli-data-write-file");
     let _cleanup = TempDirCleanup(root.clone());
@@ -1162,7 +1244,7 @@ fn data_create_file_then_patch_updates_csv_record() {
                     "op": "set_field",
                     "record": { "type": "Item", "key": "potion" },
                     "file": "data/items.csv",
-                    "path": ["price"],
+                    "path": [{ "kind": "field", "value": "price" }],
                     "value": 40
                 }
             ]

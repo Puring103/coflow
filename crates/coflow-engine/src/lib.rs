@@ -20,6 +20,7 @@ mod data_patch;
 mod data_read;
 mod dimensions;
 mod files;
+mod mutation;
 mod records;
 mod schema_inspect;
 mod writes;
@@ -41,6 +42,10 @@ pub use dimensions::{
     resolved_display_name as dimension_resolved_display_name, DimensionFieldInfo, DimensionInfo,
 };
 pub use files::{DimensionGroup, FileTreeNode, FileTreeOptions};
+pub use mutation::{
+    DefaultMaterialization, MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
+    MutationReport, MutationRequest, MutationValue, PreparedMutation,
+};
 pub use records::{RecordTarget, RecordView, WriteOutcome};
 pub use schema_inspect::{
     inspect_schema, schema_files, SchemaAnnotation, SchemaAnnotationValueInfo, SchemaConstInfo,

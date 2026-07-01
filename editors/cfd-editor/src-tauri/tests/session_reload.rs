@@ -6,7 +6,8 @@
 )]
 
 use cfd_editor_lib::editor::SessionStore;
-use coflow_data_model::CfdValue;
+use coflow_data_model::{CfdRecord, CfdValue, RecordOrigin};
+use std::collections::BTreeMap;
 
 #[test]
 fn reload_session_rebuilds_from_changed_project_files() {
@@ -111,6 +112,102 @@ fn file_records_include_ref_inline_field_mode_annotations() {
     );
 }
 
+#[test]
+fn insert_record_uses_engine_minimal_materialization_for_empty_editor_payload() {
+    let root = temp_project_dir("cfd-editor-insert-minimal");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            enum Rarity { Common = 0, Rare = 1 }
+            type Item {
+                name: string;
+                price: int;
+                rarity: Rarity = Rarity.Common;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data").join("items.cfd"), "").expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\n",
+    )
+    .expect("write config");
+
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    let payload = object_value("Item", BTreeMap::new());
+    let outcome = store
+        .insert_record(
+            snapshot.session_id,
+            "data/items.cfd",
+            "potion",
+            "Item",
+            payload,
+        )
+        .expect("insert record");
+
+    assert!(outcome.diagnostics.is_empty());
+    let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read data");
+    assert!(text.contains("potion"));
+    assert!(text.contains("name"));
+    assert!(text.contains("price"));
+    assert!(!text.contains("rarity"));
+}
+
+#[test]
+fn insert_record_returns_mutation_diagnostics_for_missing_required_ref() {
+    let root = temp_project_dir("cfd-editor-insert-ref-diagnostic");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item { name: string; }
+            type Holder {
+                @ref
+                item: Item;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("items.cfd"),
+        r#"sword: Item { name: "Sword" }"#,
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\n",
+    )
+    .expect("write config");
+
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    let err = store
+        .insert_record(
+            snapshot.session_id,
+            "data/items.cfd",
+            "bad_holder",
+            "Holder",
+            object_value("Holder", BTreeMap::new()),
+        )
+        .expect_err("missing required ref should fail");
+
+    assert!(err
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "MUTATION-DEFAULT"));
+    let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read data");
+    assert!(!text.contains("bad_holder"));
+}
+
 fn write_project(root: &std::path::Path, name: &str) {
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
     std::fs::write(
@@ -132,6 +229,16 @@ fn write_project(root: &std::path::Path, name: &str) {
         "schema: schema.cft\nsources:\n  - path: data\n",
     )
     .expect("write config");
+}
+
+fn object_value(actual_type: &str, fields: BTreeMap<String, CfdValue>) -> CfdValue {
+    CfdValue::Object(Box::new(CfdRecord {
+        key: String::new(),
+        actual_type: actual_type.to_string(),
+        fields,
+        origin: RecordOrigin::None,
+        spread_field_sources: BTreeMap::new(),
+    }))
 }
 
 fn assert_record_name(store: &SessionStore, session_id: u32, expected: &str) {

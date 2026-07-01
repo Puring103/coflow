@@ -709,3 +709,62 @@ elite: Monster {
         "expected actionable diagnostic, got: {diag:?}"
     );
 }
+
+#[test]
+fn writes_enum_dict_key_path_using_qualified_display_text() {
+    let dir = temp_dir("enum-dict-key-path");
+    let file = dir.join("loot.cfd");
+    fs::write(
+        &file,
+        r"starter: Loot {
+  resistances: { Fire: 10 },
+}
+",
+    )
+    .expect("write seed");
+
+    let schema = compile_schema(
+        r"
+        enum Element { Fire = 1, Ice = 2 }
+
+        type Loot {
+          resistances: {Element: int};
+        }
+        ",
+    );
+    let model = load_cfd_model(&schema, &fs::read_to_string(&file).expect("read seed"))
+        .expect("load model");
+
+    let writer = CfdWriter::new();
+    let new_value = CfdValue::Int(20);
+    let segments = vec![
+        WriteFieldPathSegment::Field("resistances".to_string()),
+        WriteFieldPathSegment::DictKey("Element.Fire".to_string()),
+    ];
+    let source = empty_source(&file);
+    let origin = origin_for(&file);
+    writer
+        .write_field(
+            WriteContext {
+                project_root: &dir,
+                schema: &schema,
+                model: Some(&model),
+            },
+            &WriteCellRequest {
+                origin: &origin,
+                record_key: "starter",
+                actual_type: "Loot",
+                field_path: &segments,
+                new_value: &new_value,
+                schema: &schema,
+                source: &source,
+            },
+        )
+        .expect("write succeeds");
+
+    let after = fs::read_to_string(&file).expect("re-read");
+    assert!(
+        after.contains("Fire: 20"),
+        "expected enum dict entry to be updated: {after}"
+    );
+}

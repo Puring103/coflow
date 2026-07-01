@@ -1,7 +1,8 @@
 #![allow(clippy::expect_used, clippy::panic)]
 
 use coflow_engine::{
-    build_project_session, DataPatchOp, DataPatchRequest, PatchPathSegment, PatchRecordSelector,
+    build_project_session, DataPatchOp, DataPatchRequest, DefaultMaterialization, MutationOp,
+    MutationRequest, MutationValue, PatchPathSegment, PatchRecordSelector, RecordCoordinate,
 };
 use coflow_project::Project;
 use serde_json::json;
@@ -83,6 +84,42 @@ fn write_spread_project(root: &std::path::Path) {
     .expect("write config");
 }
 
+fn write_shape_annotation_project(root: &std::path::Path) {
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            @singleton
+            type GameConfig { value: int; }
+
+            type Item { name: string; }
+
+            type Holder {
+                @ref
+                owner: Item;
+
+                @inline
+                inline_item: Item;
+
+                configs: [GameConfig];
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("records.cfd"),
+        r#"sword: Item { name: "Sword" }
+main: GameConfig { value: 1 }
+"#,
+    )
+    .expect("write cfd");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+}
+
 fn registry() -> coflow_api::ProviderRegistry {
     let mut registry = coflow_api::ProviderRegistry::default();
     registry
@@ -122,6 +159,7 @@ fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
                         sheet: None,
                         actual_type: "Item".to_string(),
                         key: "bad_sword".to_string(),
+                        materialization: DefaultMaterialization::Minimal,
                         fields: serde_json::from_value(json!({
                             "name": "Bad Sword",
                             "price": -1
@@ -154,6 +192,524 @@ fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
     let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
     assert!(text.contains("bad_sword"));
     assert!(text.contains("Rare"));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn patch_insert_minimal_does_not_materialize_explicit_schema_defaults() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-minimal-default-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_project(&root);
+    let (mut session, registry) = session(&root);
+
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![DataPatchOp::InsertRecord {
+                    file: "data/items.cfd".to_string(),
+                    sheet: None,
+                    actual_type: "Item".to_string(),
+                    key: "defaulted".to_string(),
+                    materialization: DefaultMaterialization::Minimal,
+                    fields: serde_json::from_value(json!({
+                        "name": "Defaulted",
+                        "price": 1
+                    }))
+                    .expect("fields map"),
+                }],
+            },
+        )
+        .expect("patch should write");
+
+    assert!(report.write_ok);
+    assert!(report.check_ok);
+    let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
+    let inserted = text
+        .split("defaulted")
+        .nth(1)
+        .expect("inserted record text");
+    assert!(!inserted.contains("rarity"));
+
+    let view = session
+        .record_view("Item", "defaulted")
+        .expect("record view");
+    let Some(coflow_data_model::CfdValue::Enum(value)) = view.record.fields.get("rarity") else {
+        panic!("rarity should be defaulted enum");
+    };
+    assert_eq!(value.variant.as_deref(), Some("Common"));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn patch_insert_minimal_requires_explicit_values_for_required_ref_fields() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-minimal-ref-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item { name: string; }
+            type Loot {
+                @ref
+                owner: Item;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("items.cfd"),
+        r#"sword: Item { name: "Sword" }"#,
+    )
+    .expect("write cfd");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+    let (mut session, registry) = session(&root);
+
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![DataPatchOp::InsertRecord {
+                    file: "data/items.cfd".to_string(),
+                    sheet: None,
+                    actual_type: "Loot".to_string(),
+                    key: "starter_loot".to_string(),
+                    materialization: DefaultMaterialization::Minimal,
+                    fields: serde_json::from_value(json!({})).expect("fields map"),
+                }],
+            },
+        )
+        .expect("missing required field should be reported");
+
+    assert!(!report.write_ok);
+    assert!(!report.check_ok);
+    assert!(report.applied.is_empty());
+    assert_eq!(report.failed.len(), 1);
+    assert!(report.failed[0]
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "MUTATION-DEFAULT"));
+    let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
+    assert!(!text.contains("starter_loot"));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn patch_insert_minimal_accepts_explicit_required_ref_fields() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-minimal-explicit-ref-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item { name: string; }
+            type Loot {
+                @ref
+                owner: Item;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("items.cfd"),
+        r#"sword: Item { name: "Sword" }"#,
+    )
+    .expect("write cfd");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+    let (mut session, registry) = session(&root);
+
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![DataPatchOp::InsertRecord {
+                    file: "data/items.cfd".to_string(),
+                    sheet: None,
+                    actual_type: "Loot".to_string(),
+                    key: "starter_loot".to_string(),
+                    materialization: DefaultMaterialization::Minimal,
+                    fields: serde_json::from_value(json!({
+                        "owner": { "$ref": "Item.sword" }
+                    }))
+                    .expect("fields map"),
+                }],
+            },
+        )
+        .expect("explicit required ref should write");
+
+    assert!(report.write_ok);
+    assert!(report.check_ok);
+    let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
+    assert!(text.contains("starter_loot"));
+    assert!(text.contains("@Item.sword"));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn patch_rejects_explicit_values_that_violate_field_shape_annotations() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-shape-annotations-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_shape_annotation_project(&root);
+    let (mut session, registry) = session(&root);
+
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: false,
+                ops: vec![
+                    DataPatchOp::InsertRecord {
+                        file: "data/records.cfd".to_string(),
+                        sheet: None,
+                        actual_type: "Holder".to_string(),
+                        key: "bad_ref".to_string(),
+                        materialization: DefaultMaterialization::Minimal,
+                        fields: serde_json::from_value(json!({
+                            "owner": { "name": "Inline Owner" },
+                            "inline_item": { "name": "Inline" },
+                            "configs": [{ "$ref": "GameConfig.main" }]
+                        }))
+                        .expect("fields map"),
+                    },
+                    DataPatchOp::InsertRecord {
+                        file: "data/records.cfd".to_string(),
+                        sheet: None,
+                        actual_type: "Holder".to_string(),
+                        key: "bad_inline".to_string(),
+                        materialization: DefaultMaterialization::Minimal,
+                        fields: serde_json::from_value(json!({
+                            "owner": { "$ref": "Item.sword" },
+                            "inline_item": { "$ref": "Item.sword" },
+                            "configs": [{ "$ref": "GameConfig.main" }]
+                        }))
+                        .expect("fields map"),
+                    },
+                    DataPatchOp::InsertRecord {
+                        file: "data/records.cfd".to_string(),
+                        sheet: None,
+                        actual_type: "Holder".to_string(),
+                        key: "bad_singleton".to_string(),
+                        materialization: DefaultMaterialization::Minimal,
+                        fields: serde_json::from_value(json!({
+                            "owner": { "$ref": "Item.sword" },
+                            "inline_item": { "name": "Inline" },
+                            "configs": [{ "value": 2 }]
+                        }))
+                        .expect("fields map"),
+                    },
+                ],
+            },
+        )
+        .expect("shape errors should be reported");
+
+    assert!(!report.write_ok);
+    assert_eq!(report.applied.len(), 0);
+    assert_eq!(report.failed.len(), 3);
+    assert!(report.failed.iter().all(|failed| failed
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "MUTATION-SHAPE")));
+
+    let text = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read cfd");
+    assert!(!text.contains("bad_ref"));
+    assert!(!text.contains("bad_inline"));
+    assert!(!text.contains("bad_singleton"));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn patch_set_field_rejects_values_that_violate_field_shape_annotations() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-set-shape-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_shape_annotation_project(&root);
+    let (mut session, registry) = session(&root);
+
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![DataPatchOp::InsertRecord {
+                    file: "data/records.cfd".to_string(),
+                    sheet: None,
+                    actual_type: "Holder".to_string(),
+                    key: "holder".to_string(),
+                    materialization: DefaultMaterialization::Minimal,
+                    fields: serde_json::from_value(json!({
+                        "owner": { "$ref": "Item.sword" },
+                        "inline_item": { "name": "Inline" },
+                        "configs": [{ "$ref": "GameConfig.main" }]
+                    }))
+                    .expect("fields map"),
+                }],
+            },
+        )
+        .expect("valid holder should insert");
+    assert!(report.write_ok);
+
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: false,
+                ops: vec![
+                    DataPatchOp::SetField {
+                        record: PatchRecordSelector {
+                            actual_type: "Holder".to_string(),
+                            key: "holder".to_string(),
+                        },
+                        file: None,
+                        path: vec![PatchPathSegment::Field("owner".to_string())],
+                        value: json!({ "name": "Inline Owner" }),
+                    },
+                    DataPatchOp::SetField {
+                        record: PatchRecordSelector {
+                            actual_type: "Holder".to_string(),
+                            key: "holder".to_string(),
+                        },
+                        file: None,
+                        path: vec![PatchPathSegment::Field("inline_item".to_string())],
+                        value: json!({ "$ref": "Item.sword" }),
+                    },
+                    DataPatchOp::SetField {
+                        record: PatchRecordSelector {
+                            actual_type: "Holder".to_string(),
+                            key: "holder".to_string(),
+                        },
+                        file: None,
+                        path: vec![
+                            PatchPathSegment::Field("configs".to_string()),
+                            PatchPathSegment::Index(0),
+                        ],
+                        value: json!({ "value": 2 }),
+                    },
+                ],
+            },
+        )
+        .expect("shape errors should be reported");
+
+    assert!(!report.write_ok);
+    assert_eq!(report.applied.len(), 0);
+    assert_eq!(report.failed.len(), 3);
+    assert!(report.failed.iter().all(|failed| failed
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "MUTATION-SHAPE")));
+
+    let view = session.record_view("Holder", "holder").expect("holder");
+    assert!(matches!(
+        view.record.fields.get("owner"),
+        Some(coflow_data_model::CfdValue::Ref {
+            target_type,
+            target_key,
+        }) if target_type == "Item" && target_key == "sword"
+    ));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn editable_shape_does_not_recursively_expand_self_referential_types() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-editable-recursive-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        "type Node { label: string; child: Node; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data").join("nodes.cfd"), "").expect("write cfd");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+    let (session, _) = session(&root);
+
+    let value = session
+        .default_record_value("Node", DefaultMaterialization::EditableShape)
+        .expect("default value");
+    let coflow_data_model::CfdValue::Object(record) = value else {
+        panic!("default should be object");
+    };
+    let Some(coflow_data_model::CfdValue::Object(child)) = record.fields.get("child") else {
+        panic!("child should be object");
+    };
+    assert!(
+        !child.fields.contains_key("child"),
+        "recursive field should stop after one nested level"
+    );
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn patch_insert_minimal_rejects_recursive_required_inline_defaults() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-minimal-recursive-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Node {
+                label: string;
+                @inline
+                child: Node;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data").join("nodes.cfd"), "").expect("write cfd");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+    let (mut session, registry) = session(&root);
+
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![DataPatchOp::InsertRecord {
+                    file: "data/nodes.cfd".to_string(),
+                    sheet: None,
+                    actual_type: "Node".to_string(),
+                    key: "root".to_string(),
+                    materialization: DefaultMaterialization::Minimal,
+                    fields: serde_json::from_value(json!({ "label": "Root" })).expect("fields map"),
+                }],
+            },
+        )
+        .expect("recursive inline default should be reported");
+
+    assert!(!report.write_ok);
+    assert!(report.failed[0]
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "MUTATION-DEFAULT"));
+    let text = std::fs::read_to_string(root.join("data").join("nodes.cfd")).expect("read cfd");
+    assert!(!text.contains("root"));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn default_materialization_rejects_abstract_and_singleton_objects() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-unsafe-defaults-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            abstract type Reward {}
+            type ItemReward : Reward { count: int; }
+
+            @singleton
+            type GameConfig { max_level: int; }
+
+            type Holder {
+                reward: Reward;
+                config: GameConfig;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data").join("records.cfd"), "").expect("write cfd");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+    let (mut session, registry) = session(&root);
+
+    let abstract_default = session
+        .default_record_value("Reward", DefaultMaterialization::EditableShape)
+        .expect_err("abstract type should not be materialized");
+    assert!(abstract_default
+        .iter()
+        .any(|diagnostic| diagnostic.code == "MUTATION-DEFAULT"));
+
+    let singleton_default = session
+        .default_record_value("GameConfig", DefaultMaterialization::EditableShape)
+        .expect_err("singleton type should not be materialized");
+    assert!(singleton_default
+        .iter()
+        .any(|diagnostic| diagnostic.code == "MUTATION-DEFAULT"));
+
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![DataPatchOp::InsertRecord {
+                    file: "data/records.cfd".to_string(),
+                    sheet: None,
+                    actual_type: "Holder".to_string(),
+                    key: "bad_holder".to_string(),
+                    materialization: DefaultMaterialization::Minimal,
+                    fields: serde_json::from_value(json!({})).expect("fields map"),
+                }],
+            },
+        )
+        .expect("unsafe default should be reported");
+    assert!(!report.write_ok);
+    assert!(report.failed[0]
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "MUTATION-DEFAULT"));
+
+    let text = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read cfd");
+    assert!(!text.contains("bad_holder"));
 
     let _ = std::fs::remove_dir_all(root);
 }
@@ -204,7 +760,7 @@ fn patch_file_guard_stops_batch_with_failed_report() {
     assert!(failed
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "PATCH-FILE-GUARD"));
+        .any(|diagnostic| diagnostic.code == "MUTATION-FILE-GUARD"));
 
     let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
     assert!(!text.contains("Stopped"));
@@ -231,6 +787,7 @@ fn patch_coerces_ref_inline_object_and_enum_key_dict_values() {
                     sheet: None,
                     actual_type: "Loot".to_string(),
                     key: "starter_loot".to_string(),
+                    materialization: DefaultMaterialization::Minimal,
                     fields: serde_json::from_value(json!({
                         "owner": { "$ref": { "type": "Item", "key": "sword" } },
                         "rewards": [
@@ -273,7 +830,7 @@ fn patch_coerces_ref_inline_object_and_enum_key_dict_values() {
 }
 
 #[test]
-fn patch_rejects_dict_key_path_writes() {
+fn patch_supports_dict_key_path_writes() {
     let root = std::env::temp_dir().join(format!(
         "coflow-data-patch-dict-path-{}",
         std::process::id()
@@ -293,6 +850,7 @@ fn patch_rejects_dict_key_path_writes() {
                     sheet: None,
                     actual_type: "Loot".to_string(),
                     key: "starter_loot".to_string(),
+                    materialization: DefaultMaterialization::Minimal,
                     fields: serde_json::from_value(json!({
                         "rewards": [],
                         "resistances": { "$dict": [{ "key": "Fire", "value": 10 }] }
@@ -318,21 +876,179 @@ fn patch_rejects_dict_key_path_writes() {
                     file: None,
                     path: vec![
                         PatchPathSegment::Field("resistances".to_string()),
-                        PatchPathSegment::Field("Fire".to_string()),
+                        PatchPathSegment::DictKey("Fire".to_string()),
                     ],
                     value: json!(20),
                 }],
             },
         )
-        .expect("path error should be reported, not returned as Err");
+        .expect("dict-key path write");
+
+    assert!(report.write_ok);
+    assert!(report.failed.is_empty());
+    let view = session
+        .record_view("Loot", "starter_loot")
+        .expect("inserted loot");
+    let Some(coflow_data_model::CfdValue::Dict(entries)) = view.record.fields.get("resistances")
+    else {
+        panic!("resistances should be dict");
+    };
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].1, coflow_data_model::CfdValue::Int(20));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn mutation_cfd_value_accepts_null_for_nullable_fields() {
+    let root =
+        std::env::temp_dir().join(format!("coflow-data-patch-cfd-null-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    write_project(&root);
+    let (mut session, registry) = session(&root);
+
+    let report = session
+        .apply_mutation(
+            &registry,
+            MutationRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![MutationOp::SetField {
+                    record: RecordCoordinate::new("Loot", "starter_loot"),
+                    file: None,
+                    path: vec![PatchPathSegment::Field("owner".to_string())],
+                    value: MutationValue::Cfd(coflow_data_model::CfdValue::Null),
+                }],
+            },
+        )
+        .expect("mutation should produce report");
 
     assert!(!report.write_ok);
-    assert_eq!(report.failed.len(), 1);
-    let failed = report.failed.first().expect("failed op");
-    assert!(failed
+    assert!(report.failed[0]
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "PATCH-PATH"));
+        .any(|diagnostic| diagnostic.code == "MUTATION-PATH"));
+
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![DataPatchOp::InsertRecord {
+                    file: "data/items.cfd".to_string(),
+                    sheet: None,
+                    actual_type: "Loot".to_string(),
+                    key: "starter_loot".to_string(),
+                    materialization: DefaultMaterialization::Minimal,
+                    fields: serde_json::from_value(json!({ "rewards": [] })).expect("fields map"),
+                }],
+            },
+        )
+        .expect("insert loot");
+    assert!(report.write_ok);
+
+    let report = session
+        .apply_mutation(
+            &registry,
+            MutationRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![MutationOp::SetField {
+                    record: RecordCoordinate::new("Loot", "starter_loot"),
+                    file: None,
+                    path: vec![PatchPathSegment::Field("owner".to_string())],
+                    value: MutationValue::Cfd(coflow_data_model::CfdValue::Null),
+                }],
+            },
+        )
+        .expect("nullable null write");
+
+    assert!(report.write_ok);
+    assert!(report.failed.is_empty());
+    let view = session
+        .record_view("Loot", "starter_loot")
+        .expect("inserted loot");
+    assert_eq!(
+        view.record.fields.get("owner"),
+        Some(&coflow_data_model::CfdValue::Null)
+    );
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn mutation_cfd_value_rejects_nested_values_that_do_not_match_schema() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-cfd-nested-invalid-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_project(&root);
+    let (mut session, registry) = session(&root);
+
+    let bad_reward = coflow_data_model::CfdValue::Object(Box::new(coflow_data_model::CfdRecord {
+        key: String::new(),
+        actual_type: "ItemReward".to_string(),
+        fields: std::collections::BTreeMap::from([
+            (
+                "item".to_string(),
+                coflow_data_model::CfdValue::Ref {
+                    target_type: "Item".to_string(),
+                    target_key: "sword".to_string(),
+                },
+            ),
+            (
+                "count".to_string(),
+                coflow_data_model::CfdValue::String("bad".to_string()),
+            ),
+        ]),
+        origin: coflow_data_model::RecordOrigin::None,
+        spread_field_sources: std::collections::BTreeMap::new(),
+    }));
+
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![DataPatchOp::InsertRecord {
+                    file: "data/items.cfd".to_string(),
+                    sheet: None,
+                    actual_type: "Loot".to_string(),
+                    key: "starter_loot".to_string(),
+                    materialization: DefaultMaterialization::Minimal,
+                    fields: serde_json::from_value(json!({ "rewards": [] })).expect("fields map"),
+                }],
+            },
+        )
+        .expect("insert loot");
+    assert!(report.write_ok);
+
+    let report = session
+        .apply_mutation(
+            &registry,
+            MutationRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![MutationOp::SetField {
+                    record: RecordCoordinate::new("Loot", "starter_loot"),
+                    file: None,
+                    path: vec![PatchPathSegment::Field("rewards".to_string())],
+                    value: MutationValue::Cfd(coflow_data_model::CfdValue::Array(vec![bad_reward])),
+                }],
+            },
+        )
+        .expect("nested invalid value should be reported");
+
+    assert!(!report.write_ok);
+    assert!(report.failed[0]
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "MUTATION-VALUE"));
+    let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
+    assert!(!text.contains("bad"));
 
     let _ = std::fs::remove_dir_all(root);
 }
@@ -393,19 +1109,19 @@ fn patch_collects_validation_failures_when_stop_disabled() {
     assert!(report.failed[0]
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "PATCH-PATH"));
+        .any(|diagnostic| diagnostic.code == "MUTATION-PATH"));
     assert!(report.failed[1]
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "PATCH-VALUE"));
+        .any(|diagnostic| diagnostic.code == "MUTATION-VALUE"));
     assert!(report
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "PATCH-PATH"));
+        .any(|diagnostic| diagnostic.code == "MUTATION-PATH"));
     assert!(report
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "PATCH-VALUE"));
+        .any(|diagnostic| diagnostic.code == "MUTATION-VALUE"));
 
     let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
     assert!(text.contains("Continued"));
@@ -435,6 +1151,7 @@ fn patch_stops_on_terminal_writer_error_even_when_stop_disabled() {
                         sheet: None,
                         actual_type: "Item".to_string(),
                         key: "sword".to_string(),
+                        materialization: DefaultMaterialization::Minimal,
                         fields: serde_json::from_value(json!({
                             "name": "Duplicate Sword",
                             "price": 1
@@ -462,11 +1179,11 @@ fn patch_stops_on_terminal_writer_error_even_when_stop_disabled() {
     assert!(report.failed[0]
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "CFD-WRITE"));
+        .any(|diagnostic| diagnostic.code == "MUTATION-INSERT"));
     assert!(report
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "CFD-WRITE"));
+        .any(|diagnostic| diagnostic.code == "MUTATION-INSERT"));
 
     let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
     assert!(!text.contains("Should Not Run"));
@@ -537,7 +1254,7 @@ fn patch_set_field_file_guard_uses_spread_source_file() {
     assert!(report.failed[0]
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "PATCH-FILE-GUARD"));
+        .any(|diagnostic| diagnostic.code == "MUTATION-FILE-GUARD"));
 
     let source = std::fs::read_to_string(root.join("data").join("source.cfd")).expect("source");
     let host = std::fs::read_to_string(root.join("data").join("host.cfd")).expect("host");

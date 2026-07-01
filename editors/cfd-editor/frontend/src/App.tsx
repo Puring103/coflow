@@ -1005,7 +1005,6 @@ export default function App() {
                     onRenameRecord={tableOnRenameRecord}
                     onInsertRecord={tableOnInsertRecord}
                     onDeleteRecord={tableOnDeleteRecord}
-                    onMakeDefaultObject={async type => project ? api.makeDefaultObject(project.session_id, type) : null}
                   />
                 )}
                 {currentRoute.view === 'record' && (
