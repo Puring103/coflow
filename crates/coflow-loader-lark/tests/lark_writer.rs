@@ -15,7 +15,6 @@ use coflow_api::{
     WriteContext, WriteFieldPathSegment,
 };
 use coflow_api::{CftContainer, ModuleId};
-use coflow_data_model::{CfdDataModel, CfdInputRecord, CfdInputValue};
 use coflow_loader_lark::{LarkHttpClient, LarkSheetWriter};
 use serde_json::Value;
 use std::collections::{BTreeMap, VecDeque};
@@ -438,36 +437,23 @@ fn deletes_record_after_remote_key_guard() {
 }
 
 #[test]
-fn rewrites_only_records_from_requested_lark_source() {
-    let client = ScriptedClient::new([
-        ScriptedResponse::post(
-            "auth/v3/tenant_access_token/internal",
-            r#"{"code":0,"tenant_access_token":"tk","expire":7200}"#,
-        ),
-        ScriptedResponse::get(
-            "/sheets/v3/spreadsheets/sht_test/sheets/query",
-            r#"{"code":0,"data":{"sheets":[{"sheet_id":"shtid_items","title":"Items","grid_properties":{"row_count":3,"column_count":3}}]}}"#,
-        ),
-        ScriptedResponse::post(
-            "/sheets/v2/spreadsheets/sht_test/values_batch_update",
-            r#"{"code":0,"data":{}}"#,
-        ),
-    ]);
+fn rewrite_record_references_does_not_scan_lark_cells() {
+    let client = ScriptedClient::new([]);
     let writer = LarkSheetWriter::new(client.clone());
     let schema = item_schema();
-    let model = lark_rewrite_model(&schema);
     let source = lark_source();
+    let targets = [];
     let request = RewriteRecordReferencesRequest {
         source: &source,
         old_key: "sword",
         new_key: "blade",
-        rewrite_direct_refs: true,
+        targets: &targets,
         schema: &schema,
     };
     let ctx = WriteContext {
         project_root: std::path::Path::new("."),
         schema: &schema,
-        model: Some(&model),
+        model: None,
     };
 
     writer
@@ -475,55 +461,5 @@ fn rewrites_only_records_from_requested_lark_source() {
         .expect("rewrite lark source");
 
     assert_eq!(client.remaining(), 0);
-    let calls = client.calls();
-    let Some(body) = calls
-        .iter()
-        .find(|(_, url, _)| url.contains("values_batch_update"))
-        .and_then(|(_, _, body)| body.as_ref())
-    else {
-        panic!("values_batch_update body should be recorded");
-    };
-    assert_eq!(
-        body,
-        &serde_json::json!({
-            "valueRanges": [
-                {
-                    "range": "shtid_items!B2:B2",
-                    "values": [["&blade"]],
-                }
-            ]
-        })
-    );
-}
-
-fn lark_rewrite_model(schema: &CftContainer) -> CfdDataModel {
-    let mut builder = CfdDataModel::builder(schema);
-    builder.add_record(
-        "sword",
-        "Item",
-        [
-            ("name", CfdInputValue::from("Sword")),
-            ("power", CfdInputValue::from(7_i64)),
-        ],
-    );
-    builder.add_input_record(lark_rewrite_record("current", "lark:sht_test", 2, "sword"));
-    builder.add_input_record(lark_rewrite_record("other", "lark:sht_other", 3, "sword"));
-    builder.build().expect("rewrite model")
-}
-
-fn lark_rewrite_record(key: &str, document: &str, row: usize, item_key: &str) -> CfdInputRecord {
-    let mut field_columns = BTreeMap::new();
-    field_columns.insert(vec!["item".to_string()], 2);
-    CfdInputRecord::new(
-        key,
-        "Holder",
-        [("item", CfdInputValue::record_ref(item_key))],
-    )
-    .with_origin(RecordOrigin::Table {
-        document: SourceDocument::Remote(document.to_string()),
-        sheet: "Items".to_string(),
-        row,
-        id_column: 1,
-        field_columns,
-    })
+    assert!(client.calls().is_empty());
 }

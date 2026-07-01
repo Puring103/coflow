@@ -11,7 +11,7 @@ use std::sync::Arc;
 use coflow_api::{
     DataWriter, DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest,
     ProviderRegistry, RecordOrigin, RenameRecordRequest, ResolvedSource,
-    RewriteRecordReferencesRequest, Severity, WriteCellRequest, WriteContext,
+    RewriteRecordReferencesRequest, Severity, SpreadRewriteTarget, WriteCellRequest, WriteContext,
     WriteFieldPathSegment,
 };
 use coflow_data_model::{CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdValue};
@@ -439,7 +439,7 @@ struct OwnedRewriteRecordReferencesRequest {
     source: ResolvedSource,
     old_key: String,
     new_key: String,
-    rewrite_direct_refs: bool,
+    targets: Vec<SpreadRewriteTarget>,
 }
 
 impl OwnedRewriteRecordReferencesRequest {
@@ -451,7 +451,7 @@ impl OwnedRewriteRecordReferencesRequest {
             source: &self.source,
             old_key: &self.old_key,
             new_key: &self.new_key,
-            rewrite_direct_refs: self.rewrite_direct_refs,
+            targets: &self.targets,
             schema,
         }
     }
@@ -501,28 +501,39 @@ fn source_rewrite_actions(
     old_key: &str,
     new_key: &str,
 ) -> Result<Vec<SourceRewriteAction>, DiagnosticSet> {
-    let direct_ref_unique = direct_ref_key_is_unique(session, old_key, target_id);
-    let mut actions = Vec::new();
-    for entry in session.sources.entries() {
-        let writer = lookup_writer(registry, &entry.source)?;
-        actions.push(SourceRewriteAction {
-            writer,
-            request: OwnedRewriteRecordReferencesRequest {
-                source: entry.source.clone(),
-                old_key: old_key.to_string(),
-                new_key: new_key.to_string(),
-                rewrite_direct_refs: direct_ref_unique,
-            },
-        });
+    let mut by_file =
+        std::collections::BTreeMap::<String, (ResolvedSource, Vec<SpreadRewriteTarget>)>::new();
+    for edge in session.model.spread_edges_from_source(target_id) {
+        let Some(host_ref) = session.records.get(edge.host) else {
+            continue;
+        };
+        let source = source_for_file(session, &host_ref.display_path)?;
+        let target = SpreadRewriteTarget {
+            origin: host_ref.origin.clone(),
+            record_key: host_ref.coordinate.key.clone(),
+            actual_type: host_ref.coordinate.actual_type.clone(),
+            object_path: cfd_path_to_write_path(&edge.path),
+        };
+        by_file
+            .entry(host_ref.display_path.clone())
+            .and_modify(|(_, targets)| targets.push(target.clone()))
+            .or_insert_with(|| (source, vec![target]));
     }
-    Ok(actions)
-}
-
-fn direct_ref_key_is_unique(session: &ProjectSession, key: &str, target_id: CfdRecordId) -> bool {
-    session
-        .model
-        .records()
-        .all(|(id, record)| record.key != key || id == target_id)
+    by_file
+        .into_values()
+        .map(|(source, targets)| {
+            let writer = lookup_writer(registry, &source)?;
+            Ok(SourceRewriteAction {
+                writer,
+                request: OwnedRewriteRecordReferencesRequest {
+                    source,
+                    old_key: old_key.to_string(),
+                    new_key: new_key.to_string(),
+                    targets,
+                },
+            })
+        })
+        .collect()
 }
 
 fn write_path_from_cfd_path(path: &CfdPath) -> Result<Vec<WriteFieldPathSegment>, DiagnosticSet> {

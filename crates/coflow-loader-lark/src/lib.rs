@@ -27,8 +27,7 @@ use coflow_api::{
     SourceDocument, SourceLocation, SourceLocationSpec, SourceResolveContext, WriteCellRequest,
     WriteContext, WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
-use coflow_loader_table_core::cell_value::CellRenderError;
-use coflow_loader_table_core::cell_value::{render_cell_value, rewrite_record_reference_text};
+use coflow_loader_table_core::cell_value::{render_cell_value, CellRenderError};
 use coflow_loader_table_core::writer::{
     plan_insert_record, TableInsertRecord, TableWriteDiagnostics, TableWritePlan,
 };
@@ -1373,64 +1372,10 @@ where
 
     fn rewrite_record_references(
         &self,
-        ctx: WriteContext<'_>,
-        request: &RewriteRecordReferencesRequest<'_>,
+        _ctx: WriteContext<'_>,
+        _request: &RewriteRecordReferencesRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let SourceLocationSpec::Uri(_) = &request.source.location else {
-            return Ok(WriteOutcome::default());
-        };
-        let Some(model) = ctx.model else {
-            return Ok(WriteOutcome::default());
-        };
-        let spreadsheet_token = lark_spreadsheet_token_from_source(request.source)?;
-        let source_document = format!("lark:{spreadsheet_token}");
-        let mut updates = Vec::<(String, String)>::new();
-        for (_, record) in model.records() {
-            let RecordOrigin::Table {
-                document,
-                sheet,
-                row,
-                field_columns,
-                ..
-            } = &record.origin
-            else {
-                continue;
-            };
-            let SourceDocument::Remote(doc) = document else {
-                continue;
-            };
-            if doc != &source_document {
-                continue;
-            }
-            for (path, column) in field_columns {
-                let Some(value) = value_for_table_path(record, path) else {
-                    continue;
-                };
-                let rendered = render_cell_value(value).map_err(lark_render_error)?;
-                let Some(rewritten) = rewrite_record_reference_text(
-                    &rendered,
-                    request.old_key,
-                    request.new_key,
-                    request.rewrite_direct_refs,
-                ) else {
-                    continue;
-                };
-                updates.push((
-                    format!("{sheet}!{}{}", column_name(*column), row),
-                    rewritten,
-                ));
-            }
-        }
-        if updates.is_empty() {
-            return Ok(WriteOutcome::default());
-        }
-        self.write_lark_ranges(request.source, updates)?;
-        Ok(WriteOutcome {
-            touched_record_origins: Vec::new(),
-            inserted_record_origin: None,
-            deleted_record_origin: None,
-            diagnostics: DiagnosticSet::empty(),
-        })
+        Ok(WriteOutcome::default())
     }
 }
 
@@ -1666,50 +1611,6 @@ where
         parse_write_envelope(operation, &response)
     }
 
-    fn write_lark_ranges(
-        &self,
-        source: &ResolvedSource,
-        updates: Vec<(String, String)>,
-    ) -> Result<(), DiagnosticSet> {
-        let spreadsheet_token = lark_spreadsheet_token_from_source(source)?;
-        let app_id = required_option_string(&source.options, "app_id")?;
-        let app_secret = required_option_string(&source.options, "app_secret")?;
-        let token = self.cached_tenant_token(&app_id, &app_secret)?;
-        let mut ranges = Vec::new();
-        for (range, value) in updates {
-            let (sheet_title, cell) = range.split_once('!').ok_or_else(|| {
-                DiagnosticSet::one(diag("LARK-WRITE", format!("invalid lark range `{range}`")))
-            })?;
-            let sheet_id = self.cached_sheet_id(&spreadsheet_token, sheet_title, &token)?;
-            ranges.push(json!({
-                "range": format!("{sheet_id}!{cell}:{cell}"),
-                "values": [[value]],
-            }));
-        }
-        let endpoint = format!(
-            "{API_BASE}/sheets/v2/spreadsheets/{}/values_batch_update",
-            url_component(&spreadsheet_token)
-        );
-        let body = json!({ "valueRanges": ranges });
-        match self.send_values_batch_update(&endpoint, &body, &token) {
-            Ok(()) => Ok(()),
-            Err(LarkWriteFailure::TokenExpired(diag_set)) => {
-                self.invalidate_caches(Some(&app_id), None);
-                let fresh = self.cached_tenant_token(&app_id, &app_secret)?;
-                self.send_values_batch_update(&endpoint, &body, &fresh)
-                    .map_err(|err| match err {
-                        LarkWriteFailure::TokenExpired(d) | LarkWriteFailure::Other(d) => d,
-                    })
-                    .map_err(|d| {
-                        let mut combined = diag_set.clone();
-                        combined.extend(d);
-                        combined
-                    })
-            }
-            Err(LarkWriteFailure::Other(diag_set)) => Err(diag_set),
-        }
-    }
-
     fn send_values_batch_update(
         &self,
         endpoint: &str,
@@ -1843,22 +1744,6 @@ fn lark_spreadsheet_token_from_source(source: &ResolvedSource) -> Result<String,
             ),
         ))),
     }
-}
-
-fn value_for_table_path<'a>(
-    record: &'a coflow_api::CfdRecord,
-    path: &[String],
-) -> Option<&'a coflow_api::CfdValue> {
-    let mut segments = path.iter();
-    let first = segments.next()?;
-    let mut current = record.fields().get(first)?;
-    for segment in segments {
-        let coflow_api::CfdValue::Object(record) = current else {
-            return None;
-        };
-        current = record.fields().get(segment)?;
-    }
-    Some(current)
 }
 
 fn resolve_lark_column(

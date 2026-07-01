@@ -293,13 +293,38 @@ impl DataWriter for CfdWriter {
         };
         let (source, ast) = self.read_or_parse(path)?;
         let mut spans = Vec::new();
-        for record in &ast.records {
-            collect_ref_key_spans(
-                &record.entries,
-                request.old_key,
-                request.rewrite_direct_refs,
-                &mut spans,
-            );
+        for target in request.targets {
+            let RecordOrigin::File {
+                path: origin_path, ..
+            } = &target.origin
+            else {
+                continue;
+            };
+            if origin_path != path {
+                continue;
+            }
+            let record = ast
+                .records
+                .iter()
+                .find(|record| {
+                    record.key == target.record_key && record.type_name == target.actual_type
+                })
+                .ok_or_else(|| {
+                    DiagnosticSet::one(diag(
+                        "CFD-WRITE",
+                        format!(
+                            "record `{}.{}` not found in AST",
+                            target.actual_type, target.record_key
+                        ),
+                    ))
+                })?;
+            let entries = spread_entries_at_path(
+                request.schema,
+                &target.actual_type,
+                record,
+                &target.object_path,
+            )?;
+            collect_spread_ref_key_spans(entries, request.old_key, &mut spans);
         }
         if spans.is_empty() {
             return Ok(WriteOutcome::default());
@@ -965,58 +990,160 @@ fn diag(code: &'static str, message: impl Into<String>) -> Diagnostic {
     Diagnostic::error(code, "CFD", message)
 }
 
-fn collect_ref_key_spans(
-    entries: &[CfdBlockEntry],
-    old_key: &str,
-    rewrite_direct_refs: bool,
-    out: &mut Vec<Span>,
-) {
+fn spread_entries_at_path<'a>(
+    schema: &CftContainer,
+    actual_type: &str,
+    record: &'a AstRecord,
+    path: &[WriteFieldPathSegment],
+) -> Result<&'a [CfdBlockEntry], DiagnosticSet> {
+    if path.is_empty() {
+        return Ok(record.entries.as_slice());
+    }
+    let root_type = CftSchemaTypeRef::Named(actual_type.to_string());
+    let Some((value, value_type)) =
+        value_at_spread_path_segment(schema, record.entries.as_slice(), &root_type, &path[0])?
+    else {
+        return Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            "spread rewrite site was not found",
+        )));
+    };
+    block_entries_at_path(schema, value, &value_type, &path[1..])
+}
+
+fn block_entries_at_path<'a>(
+    schema: &CftContainer,
+    value: &'a AstValue,
+    ty: &CftSchemaTypeRef,
+    path: &[WriteFieldPathSegment],
+) -> Result<&'a [CfdBlockEntry], DiagnosticSet> {
+    if path.is_empty() {
+        let AstValue::Block(block) = value else {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                "spread rewrite site is not an object block",
+            )));
+        };
+        return Ok(block.entries.as_slice());
+    }
+    match value {
+        AstValue::Block(block) => {
+            let Some((next, next_type)) =
+                value_at_spread_path_segment(schema, block.entries.as_slice(), ty, &path[0])?
+            else {
+                return Err(DiagnosticSet::one(diag(
+                    "CFD-WRITE",
+                    "spread rewrite site was not found",
+                )));
+            };
+            block_entries_at_path(schema, next, &next_type, &path[1..])
+        }
+        AstValue::Array(items, _) => {
+            let WriteFieldPathSegment::Index(index) = path[0] else {
+                return Err(DiagnosticSet::one(diag(
+                    "CFD-WRITE",
+                    format!("cannot navigate path segment {:?} in array value", path[0]),
+                )));
+            };
+            let Some(item_type) = type_after_index_segment(ty) else {
+                return Err(DiagnosticSet::one(diag(
+                    "CFD-WRITE",
+                    "array index cannot be selected from this value",
+                )));
+            };
+            let Some(item) = items.get(index) else {
+                return Err(DiagnosticSet::one(diag(
+                    "CFD-WRITE",
+                    format!("index {index} out of bounds while locating spread rewrite site"),
+                )));
+            };
+            block_entries_at_path(schema, item, &item_type, &path[1..])
+        }
+        _ => Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            format!("cannot navigate path segment {:?} in value", path[0]),
+        ))),
+    }
+}
+
+fn value_at_spread_path_segment<'a>(
+    schema: &CftContainer,
+    entries: &'a [CfdBlockEntry],
+    current_type: &CftSchemaTypeRef,
+    segment: &WriteFieldPathSegment,
+) -> Result<Option<(&'a AstValue, CftSchemaTypeRef)>, DiagnosticSet> {
+    match segment {
+        WriteFieldPathSegment::Field(field_name) => {
+            let Some(next_type) =
+                type_after_field_segment_for_ref(schema, current_type, field_name)
+            else {
+                return Err(DiagnosticSet::one(diag(
+                    "CFD-WRITE",
+                    format!("field `{field_name}` cannot be selected from this value"),
+                )));
+            };
+            Ok(entries
+                .iter()
+                .find_map(|entry| match entry {
+                    CfdBlockEntry::Field(field) if field.name == *field_name => Some(&field.value),
+                    _ => None,
+                })
+                .map(|value| (value, next_type)))
+        }
+        WriteFieldPathSegment::DictKey(key) => {
+            let Some((key_type, next_type)) = type_after_dict_key_segment(current_type) else {
+                return Err(DiagnosticSet::one(diag(
+                    "CFD-WRITE",
+                    format!("dict key `{key}` cannot be selected from this value"),
+                )));
+            };
+            Ok(entries
+                .iter()
+                .find_map(|entry| match entry {
+                    CfdBlockEntry::Field(field)
+                        if dict_key_path_matches(schema, &key_type, &field.name, key) =>
+                    {
+                        Some(&field.value)
+                    }
+                    _ => None,
+                })
+                .map(|value| (value, next_type)))
+        }
+        WriteFieldPathSegment::Index(index) => Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            format!("array index `{index}` cannot be selected from an object block"),
+        ))),
+    }
+}
+
+fn collect_spread_ref_key_spans(entries: &[CfdBlockEntry], old_key: &str, out: &mut Vec<Span>) {
     for entry in entries {
-        match entry {
-            CfdBlockEntry::Field(field) => {
-                collect_ref_key_spans_in_value(&field.value, old_key, rewrite_direct_refs, out);
-            }
-            CfdBlockEntry::Spread(value, _) => {
-                collect_ref_key_spans_in_value(value, old_key, rewrite_direct_refs, out);
-            }
+        if let CfdBlockEntry::Spread(value, _) = entry {
+            collect_ref_key_spans_in_value(value, old_key, out);
         }
     }
 }
 
-fn collect_ref_key_spans_in_value(
-    value: &AstValue,
-    old_key: &str,
-    rewrite_direct_refs: bool,
-    out: &mut Vec<Span>,
-) {
+fn collect_ref_key_spans_in_value(value: &AstValue, old_key: &str, out: &mut Vec<Span>) {
     match value {
         AstValue::Ref(reference) => {
-            if rewrite_direct_refs && reference.key.0 == old_key {
+            if reference.key.0 == old_key {
                 out.push(reference.key.1);
             }
         }
-        AstValue::Block(block) => {
-            collect_ref_key_spans_in_block(block, old_key, rewrite_direct_refs, out);
-        }
         AstValue::Array(items, _) => {
             for item in items {
-                collect_ref_key_spans_in_value(item, old_key, rewrite_direct_refs, out);
+                collect_ref_key_spans_in_value(item, old_key, out);
             }
         }
         AstValue::Spread(inner, _) => {
-            collect_ref_key_spans_in_value(inner, old_key, rewrite_direct_refs, out);
+            collect_ref_key_spans_in_value(inner, old_key, out);
         }
-        AstValue::Scalar(_, _) | AstValue::QuotedString(_, _) | AstValue::Null(_) => {}
+        AstValue::Block(_)
+        | AstValue::Scalar(_, _)
+        | AstValue::QuotedString(_, _)
+        | AstValue::Null(_) => {}
     }
-}
-
-fn collect_ref_key_spans_in_block(
-    block: &CfdBlock,
-    old_key: &str,
-    rewrite_direct_refs: bool,
-    out: &mut Vec<Span>,
-) {
-    collect_ref_key_spans(&block.entries, old_key, rewrite_direct_refs, out);
 }
 
 fn replace_spans(source: &str, replacements: &[(Span, String)]) -> Result<String, DiagnosticSet> {
