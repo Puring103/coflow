@@ -181,6 +181,18 @@ async function main() {
     ],
     "CFT check expression path segments should keep a default semantic token color"
   );
+  const cftGrammar = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "..", "syntaxes", "cft.tmLanguage.json"), "utf8")
+  );
+  const annotationPattern = cftGrammar.repository.annotations.patterns[0].match;
+  assert(!annotationPattern.includes("ref"), "CFT TextMate grammar must not treat @ref as valid");
+  assert(!annotationPattern.includes("inline"), "CFT TextMate grammar must not treat @inline as valid");
+  assert(
+    cftGrammar.repository.references.patterns.every(
+      (pattern) => !String(pattern.name).includes("typed")
+    ),
+    "CFT TextMate grammar must not include old typed reference rules"
+  );
 
   const session = Object.create(extension.__test.CftLspSession.prototype);
   Object.assign(session, {
