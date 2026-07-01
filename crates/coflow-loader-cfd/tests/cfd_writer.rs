@@ -10,7 +10,8 @@
 
 use coflow_api::{
     CfdValue, DataWriter, DeleteRecordRequest, InsertRecordRequest, RecordOrigin, ResolvedSource,
-    SourceLocationSpec, TextSpan, WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    RewriteRecordReferencesRequest, SourceLocationSpec, SpreadRewriteTarget, TextSpan,
+    WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::CfdDataModel;
@@ -580,6 +581,185 @@ elite_monster: Monster {
     assert_eq!(
         elite.field("name"),
         Some(&CfdValue::String("Boss".to_string()))
+    );
+}
+
+#[test]
+fn rewrites_only_requested_spread_source_site() {
+    let dir = temp_dir("rewrite-spread-site");
+    let file = dir.join("records.cfd");
+    fs::write(
+        &file,
+        r#"base: Holder {
+  item: &sword,
+  label: "&base",
+}
+
+copy: Holder {
+  ...&base,
+}
+
+direct: Holder {
+  item: &base,
+  label: "&base",
+}
+
+base: OtherHolder {
+  item: &sword,
+  label: "other",
+}
+
+other_copy: OtherHolder {
+  ...&base,
+}
+"#,
+    )
+    .expect("write seed");
+    let schema = compile_schema(
+        r"
+        type Item {
+          name: string;
+        }
+
+        type Holder {
+          item: &Item;
+          label: string;
+        }
+
+        type OtherHolder {
+          item: &Item;
+          label: string;
+        }
+        ",
+    );
+    let writer = CfdWriter::new();
+    let source = empty_source(&file);
+    let origin = origin_for(&file);
+    let targets = [SpreadRewriteTarget {
+        origin,
+        record_key: "copy".to_string(),
+        actual_type: "Holder".to_string(),
+        object_path: Vec::new(),
+    }];
+    let request = RewriteRecordReferencesRequest {
+        source: &source,
+        old_key: "base",
+        new_key: "renamed",
+        targets: &targets,
+        schema: &schema,
+    };
+
+    writer
+        .rewrite_record_references(
+            WriteContext {
+                project_root: &dir,
+                schema: &schema,
+                model: None,
+            },
+            &request,
+        )
+        .expect("rewrite spread");
+
+    let after = fs::read_to_string(&file).expect("re-read");
+    assert!(
+        after.contains("copy: Holder {\n  ...&renamed"),
+        "requested spread should update: {after}"
+    );
+    assert!(
+        after.contains("direct: Holder {\n  item: &base"),
+        "direct ref should not be rewritten by spread rewrite: {after}"
+    );
+    assert!(
+        after.contains("label: \"&base\""),
+        "quoted string should not be rewritten: {after}"
+    );
+    assert!(
+        after.contains("other_copy: OtherHolder {\n  ...&base"),
+        "same-file unrelated same-key spread should not update: {after}"
+    );
+}
+
+#[test]
+fn rewrites_nested_array_and_dict_spread_source_sites() {
+    let dir = temp_dir("rewrite-nested-spread-site");
+    let file = dir.join("records.cfd");
+    fs::write(
+        &file,
+        r#"base: Stats {
+  hp: 1,
+}
+
+host: Loadout {
+  items: [
+    { ...&base },
+  ],
+  map: { "first": { ...&base } },
+}
+"#,
+    )
+    .expect("write seed");
+    let schema = compile_schema(
+        r"
+        type Stats {
+          hp: int;
+        }
+
+        type Loadout {
+          items: [Stats];
+          map: {string: Stats};
+        }
+        ",
+    );
+    let writer = CfdWriter::new();
+    let source = empty_source(&file);
+    let origin = origin_for(&file);
+    let targets = [
+        SpreadRewriteTarget {
+            origin: origin.clone(),
+            record_key: "host".to_string(),
+            actual_type: "Loadout".to_string(),
+            object_path: vec![
+                WriteFieldPathSegment::Field("items".to_string()),
+                WriteFieldPathSegment::Index(0),
+            ],
+        },
+        SpreadRewriteTarget {
+            origin,
+            record_key: "host".to_string(),
+            actual_type: "Loadout".to_string(),
+            object_path: vec![
+                WriteFieldPathSegment::Field("map".to_string()),
+                WriteFieldPathSegment::DictKey("\"first\"".to_string()),
+            ],
+        },
+    ];
+    let request = RewriteRecordReferencesRequest {
+        source: &source,
+        old_key: "base",
+        new_key: "renamed",
+        targets: &targets,
+        schema: &schema,
+    };
+
+    writer
+        .rewrite_record_references(
+            WriteContext {
+                project_root: &dir,
+                schema: &schema,
+                model: None,
+            },
+            &request,
+        )
+        .expect("rewrite nested spreads");
+
+    let after = fs::read_to_string(&file).expect("re-read");
+    assert!(
+        after.contains("{ ...&renamed }"),
+        "array spread should update: {after}"
+    );
+    assert!(
+        after.contains(r#""first": { ...&renamed }"#),
+        "dict spread should update: {after}"
     );
 }
 

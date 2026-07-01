@@ -11,7 +11,6 @@ use coflow_api::{
     RenameRecordRequest, RewriteRecordReferencesRequest, SourceDocument, SourceLocationSpec,
     WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
-use coflow_loader_table_core::cell_value::rewrite_record_reference_text;
 use coflow_loader_table_core::writer::{
     plan_delete_record, plan_field_write, plan_insert_record, TableAppendRow, TableDeleteRow,
     TableFieldWrite, TableInsertRecord, TableSetCell, TableWriteDiagnostics, TableWritePlan,
@@ -164,38 +163,9 @@ impl DataWriter for CsvWriter {
     fn rewrite_record_references(
         &self,
         _ctx: WriteContext<'_>,
-        request: &RewriteRecordReferencesRequest<'_>,
+        _request: &RewriteRecordReferencesRequest<'_>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location else {
-            return Ok(WriteOutcome::default());
-        };
-        let changed = mutate_csv(path, |rows| {
-            let mut changed = false;
-            for row in rows {
-                for cell in row {
-                    if let Some(updated) = rewrite_record_reference_text(
-                        cell,
-                        request.old_key,
-                        request.new_key,
-                        request.rewrite_direct_refs,
-                    ) {
-                        *cell = updated;
-                        changed = true;
-                    }
-                }
-            }
-            Ok((changed).then_some(RecordOrigin::None))
-        })?
-        .is_some();
-        if !changed {
-            return Ok(WriteOutcome::default());
-        }
-        Ok(WriteOutcome {
-            touched_record_origins: Vec::new(),
-            inserted_record_origin: None,
-            deleted_record_origin: None,
-            diagnostics: DiagnosticSet::empty(),
-        })
+        Ok(WriteOutcome::default())
     }
 }
 

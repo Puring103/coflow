@@ -946,3 +946,133 @@ fn assert_nested_spread_write_redirects(
         "host file should not receive chained spread edit:\n{host}"
     );
 }
+
+#[test]
+fn rename_record_updates_direct_refs_and_spread_sources_without_global_ref_scan() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-engine-rename-spread-source-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    write_rename_spread_project(&root);
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let mut registry = coflow_api::ProviderRegistry::default();
+    registry
+        .register_loader(coflow_loader_cfd::CfdLoader)
+        .expect("cfd loader");
+    registry
+        .register_writer(coflow_loader_cfd::CfdWriter::new())
+        .expect("cfd writer");
+    let mut session = build_project_session(project, &registry).expect("build session");
+
+    session
+        .rename_record_key(&registry, "Holder", "base_holder", "renamed_holder")
+        .expect("rename base holder");
+
+    let items = std::fs::read_to_string(root.join("data/items.cfd")).expect("read items");
+    let host = std::fs::read_to_string(root.join("data/host.cfd")).expect("read host");
+    let unrelated =
+        std::fs::read_to_string(root.join("data/unrelated.cfd")).expect("read unrelated");
+
+    assert!(
+        host.contains("renamed_holder: Holder"),
+        "host record renamed:\n{host}"
+    );
+    assert!(
+        items.contains("base: Item"),
+        "item source unchanged:\n{items}"
+    );
+    assert!(
+        host.contains("holder: &renamed_holder") && host.contains("...&renamed_holder"),
+        "direct Holder refs and selected spread source should update:\n{host}"
+    );
+    assert!(
+        host.contains(r#"label: "&base""#),
+        "string literal should not be rewritten:\n{host}"
+    );
+    assert!(
+        host.contains("same_file_unrelated: OtherHolder {\n    ...&base_holder"),
+        "same-file unrelated same-key spread should not be rewritten by a source scan:\n{host}"
+    );
+    assert!(
+        unrelated.contains("item: &other") && unrelated.contains(r#"label: "&base""#),
+        "unrelated source should not be globally scanned:\n{unrelated}"
+    );
+
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+fn write_rename_spread_project(root: &std::path::Path) {
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        r#"
+        type Item { name: string; }
+        type Holder { item: &Item; label: string; }
+        type Wrapper { holder: &Holder; label: string; }
+        type OtherHolder { item: &Item; label: string; }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data/items.cfd"),
+        r#"base: Item {
+    name: "Base",
+}
+other: Item {
+    name: "Other",
+}
+"#,
+    )
+    .expect("write items");
+    std::fs::write(root.join("data/host.cfd"), rename_spread_host_source()).expect("write host");
+    std::fs::write(
+        root.join("data/unrelated.cfd"),
+        r#"unrelated: Holder {
+    item: &other,
+    label: "&base",
+}
+"#,
+    )
+    .expect("write unrelated");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+sources:
+  - path: data/items.cfd
+  - path: data/host.cfd
+  - path: data/unrelated.cfd
+"#,
+    )
+    .expect("write config");
+}
+
+const fn rename_spread_host_source() -> &'static str {
+    r#"base_holder: Holder {
+    item: &base,
+    label: "&base",
+}
+direct: Holder {
+    item: &base,
+    label: "&base",
+}
+copy: Holder {
+    ...&base_holder,
+}
+direct_wrapper: Wrapper {
+    holder: &base_holder,
+    label: "&base_holder",
+}
+base_holder: OtherHolder {
+    item: &base,
+    label: "Other",
+}
+same_file_unrelated: OtherHolder {
+    ...&base_holder,
+}
+"#
+}

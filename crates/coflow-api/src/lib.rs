@@ -615,16 +615,24 @@ pub struct RenameRecordRequest<'a> {
 /// rename.
 ///
 /// Engines use this for source syntax that compiles away before the runtime
-/// model is built, such as provider-local spread entries. Direct `&old` tokens
-/// are only rewritten when the engine has determined that the key is unique
-/// enough for a source-level rewrite.
+/// model is built, such as provider-local spread entries. Direct refs are
+/// rewritten through [`DataWriter::write_field`] at the exact [`RefEdge`] site.
 #[derive(Debug, Clone)]
 pub struct RewriteRecordReferencesRequest<'a> {
     pub source: &'a ResolvedSource,
     pub old_key: &'a str,
     pub new_key: &'a str,
-    pub rewrite_direct_refs: bool,
+    pub targets: &'a [SpreadRewriteTarget],
     pub schema: &'a CftContainer,
+}
+
+/// A precise spread-source token to rewrite inside provider source syntax.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpreadRewriteTarget {
+    pub origin: RecordOrigin,
+    pub record_key: String,
+    pub actual_type: String,
+    pub object_path: Vec<WriteFieldPathSegment>,
 }
 
 /// Outcome of a writer call: which records were actually touched (so the

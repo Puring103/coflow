@@ -144,7 +144,7 @@ fn rename_record_key_updates_cross_source_references() {
 }
 
 #[test]
-fn rename_record_key_rewrites_remote_sources() {
+fn rename_record_key_does_not_scan_remote_sources_without_spread_provenance() {
     let root = common::temp_project_dir("engine-rename-remote-refs");
     let _cleanup = common::TempDirCleanup(root.clone());
     write_remote_rewrite_project(&root);
@@ -181,13 +181,8 @@ fn rename_record_key_rewrites_remote_sources() {
     );
     assert_eq!(
         rewrites,
-        vec![RemoteRewriteCall {
-            source: "fake-remote:bundle".to_string(),
-            old_key: "sword".to_string(),
-            new_key: "blade".to_string(),
-            rewrite_direct_refs: true,
-        }],
-        "remote source should receive source-level rewrite requests"
+        Vec::<RemoteRewriteCall>::new(),
+        "remote direct refs are rewritten structurally; sources without spread provenance are not scanned"
     );
 }
 
@@ -303,7 +298,7 @@ struct RemoteRewriteCall {
     source: String,
     old_key: String,
     new_key: String,
-    rewrite_direct_refs: bool,
+    target_count: usize,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -419,7 +414,7 @@ impl DataWriter for FakeRemoteWriter {
                 source: uri.clone(),
                 old_key: request.old_key.to_string(),
                 new_key: request.new_key.to_string(),
-                rewrite_direct_refs: request.rewrite_direct_refs,
+                target_count: request.targets.len(),
             });
         Ok(WriteOutcome::default())
     }
