@@ -515,7 +515,7 @@ alice: 10, bob: 20
 字段声明为父类或 abstract type 时，用 `ConcreteType{...}` 标记实际类型：
 
 ```text
-ItemReward{item: @Item.sword_01, count: 1}
+ItemReward{item: &sword_01, count: 1}
 CurrencyReward{amount: 100}
 CurrencyReward{amount: 100} | ItemReward{item: &sword_01, count: 1}
 ```
