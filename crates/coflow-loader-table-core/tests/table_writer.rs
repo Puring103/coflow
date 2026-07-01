@@ -257,16 +257,13 @@ fn expanded_object_edit_writes_each_child_column() {
         (vec!["stats".to_string(), "attack".to_string()], 3),
     ]);
     let origin = table_origin(field_columns);
-    let stats = CfdValue::Object(Box::new(coflow_data_model::CfdRecord {
-        key: String::new(),
-        actual_type: "Stats".to_string(),
-        fields: BTreeMap::from([
+    let stats = CfdValue::Object(Box::new(coflow_data_model::CfdObject::new(
+        "Stats",
+        BTreeMap::from([
             ("hp".to_string(), CfdValue::Int(100)),
             ("attack".to_string(), CfdValue::Int(9)),
         ]),
-        origin: RecordOrigin::None,
-        spread_field_sources: BTreeMap::new(),
-    }));
+    )));
     let path = field_path("stats");
     let request = TableFieldWrite {
         origin: &origin,

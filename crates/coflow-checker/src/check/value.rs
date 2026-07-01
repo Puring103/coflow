@@ -1,6 +1,7 @@
 use coflow_cft::{CftConstValue, CftSchemaTypeRef};
 use coflow_data_model::{
-    CfdDataModel, CfdDictKey, CfdEnumValue, CfdPath, CfdRecord, CfdRecordId, CfdValue, RefSite,
+    CfdDataModel, CfdDictKey, CfdEnumValue, CfdObject, CfdPath, CfdRecord, CfdRecordId, CfdValue,
+    RefSite,
 };
 use std::collections::BTreeMap;
 
@@ -51,7 +52,7 @@ impl CheckValue {
             CfdValue::String(value) => Self::String(value.clone()),
             CfdValue::Enum(value) => Self::Enum(value.clone()),
             CfdValue::Object(record) => Self::Record(CheckRecordRef::Inline {
-                record: Box::new(record.as_ref().clone()),
+                object: Box::new(record.as_ref().clone()),
                 path,
                 host: ref_host,
             }),
@@ -140,10 +141,10 @@ impl LocatedCheckValue {
 pub(super) enum CheckRecordRef {
     Top(CfdRecordId),
     Inline {
-        record: Box<CfdRecord>,
+        object: Box<CfdObject>,
         path: Option<CfdPath>,
         /// The original top-level record this inline object lives inside.
-        /// Needed so refs encountered inside `record.fields` can be resolved
+        /// Needed so refs encountered inside `object.fields` can be resolved
         /// through the model's `RefSite` index, which is keyed by `(host, path)`
         /// relative to the top-level record.
         host: Option<CfdRecordId>,
@@ -160,16 +161,16 @@ impl CheckRecordRef {
         model: &'a CfdDataModel,
     ) -> Option<&'a BTreeMap<String, CfdValue>> {
         match self {
-            Self::Top(id) => model.record(*id).map(|record| &record.fields),
-            Self::Inline { record, .. } => Some(&record.fields),
+            Self::Top(id) => model.record(*id).map(CfdRecord::fields),
+            Self::Inline { object, .. } => Some(object.fields()),
             Self::Unresolved => None,
         }
     }
 
     pub(super) fn actual_type<'a>(&'a self, model: &'a CfdDataModel) -> Option<&'a str> {
         match self {
-            Self::Top(id) => model.record(*id).map(|record| record.actual_type.as_str()),
-            Self::Inline { record, .. } => Some(&record.actual_type),
+            Self::Top(id) => model.record(*id).map(CfdRecord::actual_type),
+            Self::Inline { object, .. } => Some(object.actual_type()),
             Self::Unresolved => None,
         }
     }
@@ -177,7 +178,7 @@ impl CheckRecordRef {
     pub(super) fn key<'a>(&'a self, model: &'a CfdDataModel) -> Option<&'a str> {
         match self {
             Self::Top(id) => model.record(*id).map(CfdRecord::key),
-            Self::Inline { record, .. } => Some(record.key()),
+            Self::Inline { .. } => None,
             Self::Unresolved => None,
         }
     }

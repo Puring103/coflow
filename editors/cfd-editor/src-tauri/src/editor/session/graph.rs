@@ -38,7 +38,7 @@ pub(super) fn build_graph(session: &EditorSession, file_path: &str) -> GraphData
         let Some(record) = session.engine.model.record(id) else {
             continue;
         };
-        let coordinate = RecordCoordinate::new(record.actual_type.clone(), record.key.clone());
+        let coordinate = RecordCoordinate::new(record.actual_type(), record.key.clone());
         let host_file = session
             .engine
             .records
@@ -72,7 +72,7 @@ pub(super) fn build_graph(session: &EditorSession, file_path: &str) -> GraphData
                 continue;
             };
             let target_coord =
-                RecordCoordinate::new(target_record.actual_type.clone(), target_record.key.clone());
+                RecordCoordinate::new(target_record.actual_type(), target_record.key.clone());
             edges.push(GraphEdge {
                 source: coordinate.clone(),
                 target: target_coord,

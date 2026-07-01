@@ -1,4 +1,5 @@
 import type { CfdDictKey } from './bindings/CfdDictKey'
+import type { CfdObject } from './bindings/CfdObject'
 import type { CfdPathSegment } from './bindings/CfdPathSegment'
 import type { CfdRecord } from './bindings/CfdRecord'
 import type { CfdValue } from './bindings/CfdValue'
@@ -54,8 +55,8 @@ export function recordActualType(row: RecordRow): string {
   return row.coordinate.actual_type
 }
 
-export function recordFields(record: CfdRecord): FieldCell[] {
-  return Object.entries(record.fields)
+export function recordFields(object: CfdObject): FieldCell[] {
+  return Object.entries(object.fields)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([name, value]) => ({
       name,
@@ -88,13 +89,12 @@ export function fieldPathDictKey(value: string): FieldPathSegment {
   return { kind: 'dict_key', value }
 }
 
-export function makeObjectValue(actualType: string, fields: FieldCell[] = [], key = ''): FieldValue {
+export function makeObjectValue(actualType: string, fields: FieldCell[] = []): FieldValue {
   const fieldMap: { [key: string]: FieldValue | undefined } = {}
   for (const field of fields) fieldMap[field.name] = field.value
   return {
     kind: 'object',
     value: {
-      key,
       actual_type: actualType,
       fields: fieldMap,
     },
@@ -102,7 +102,7 @@ export function makeObjectValue(actualType: string, fields: FieldCell[] = [], ke
 }
 
 export function deletedSnapshotValue(snapshot: DeletedRecordSnapshot): FieldValue {
-  return { kind: 'object', value: snapshot.record }
+  return { kind: 'object', value: snapshot.record.object }
 }
 
 export function nullValue(): FieldValue {
@@ -303,7 +303,6 @@ export function cloneValue(value: FieldValue): FieldValue {
       return {
         kind: 'object',
         value: {
-          key: value.value.key,
           actual_type: value.value.actual_type,
           fields: cloneFieldMap(value.value.fields),
         },

@@ -157,8 +157,7 @@ fn inline_objects_use_declared_type_when_not_polymorphic() {
     else {
         panic!("expected stats object");
     };
-    assert_eq!(stats.actual_type, "Stats");
-    assert_eq!(stats.key(), "");
+    assert_eq!(stats.actual_type(), "Stats");
     assert_eq!(stats.field("speed"), Some(&CfdValue::Float(1.0)));
 }
 

@@ -6,7 +6,7 @@
 )]
 
 use cfd_editor_lib::editor::SessionStore;
-use coflow_data_model::{CfdRecord, CfdValue, RecordOrigin};
+use coflow_data_model::{CfdObject, CfdValue};
 use std::collections::BTreeMap;
 
 #[test]
@@ -223,13 +223,7 @@ fn write_project(root: &std::path::Path, name: &str) {
 }
 
 fn object_value(actual_type: &str, fields: BTreeMap<String, CfdValue>) -> CfdValue {
-    CfdValue::Object(Box::new(CfdRecord {
-        key: String::new(),
-        actual_type: actual_type.to_string(),
-        fields,
-        origin: RecordOrigin::None,
-        spread_field_sources: BTreeMap::new(),
-    }))
+    CfdValue::Object(Box::new(CfdObject::new(actual_type, fields)))
 }
 
 fn assert_record_name(store: &SessionStore, session_id: u32, expected: &str) {

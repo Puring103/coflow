@@ -413,13 +413,7 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
     )]);
     let fields = std::collections::BTreeMap::from([(
         "slot".to_string(),
-        CfdValue::Object(Box::new(coflow_api::CfdRecord {
-            key: String::new(),
-            actual_type: "Slot".to_string(),
-            fields: slot_fields,
-            origin: RecordOrigin::None,
-            spread_field_sources: std::collections::BTreeMap::new(),
-        })),
+        CfdValue::Object(Box::new(coflow_api::CfdObject::new("Slot", slot_fields))),
     )]);
 
     writer

@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use coflow_api::{Diagnostic, DiagnosticSet, FlatDiagnostic, ProviderRegistry, Severity};
 use coflow_cft::{CftContainer, CftSchemaDefaultValue, CftSchemaTypeRef};
 use coflow_data_model::{
-    CfdDictKey, CfdEnumValue, CfdPathSegment, CfdRecord, CfdValue, RecordOrigin,
+    CfdDictKey, CfdEnumValue, CfdObject, CfdPathSegment, CfdRecord, CfdValue, RecordOrigin,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -268,7 +268,7 @@ impl ProjectSession {
         materialization: DefaultMaterialization,
     ) -> Result<CfdValue, DiagnosticSet> {
         let record = default_record_for_type(&self.schema, type_name, materialization)?;
-        Ok(CfdValue::Object(Box::new(record)))
+        Ok(CfdValue::Object(Box::new(record.object)))
     }
 }
 
@@ -496,8 +496,7 @@ fn default_record_for_type(
         default_fields_for_type_inner(schema, type_name, materialization, &mut stack, None)?;
     Ok(CfdRecord {
         key: String::new(),
-        actual_type: type_name.to_string(),
-        fields,
+        object: CfdObject::new(type_name, fields),
         origin: RecordOrigin::None,
         spread_field_sources: BTreeMap::new(),
     })
@@ -602,13 +601,10 @@ fn default_minimal_for_field(
                 stack,
                 None,
             )?;
-            Ok(Some(CfdValue::Object(Box::new(CfdRecord {
-                key: String::new(),
-                actual_type: name.clone(),
+            Ok(Some(CfdValue::Object(Box::new(CfdObject::new(
+                name.clone(),
                 fields,
-                origin: RecordOrigin::None,
-                spread_field_sources: BTreeMap::new(),
-            }))))
+            )))))
         }
         CftSchemaTypeRef::Named(name) => Err(one_mutation_error(
             "MUTATION-DEFAULT",
@@ -661,13 +657,10 @@ fn default_from_schema_default(
             CftSchemaTypeRef::Named(name) if schema.has_type(name) => {
                 let fields =
                     default_fields_for_type_inner(schema, name, materialization, stack, None)?;
-                Ok(CfdValue::Object(Box::new(CfdRecord {
-                    key: String::new(),
-                    actual_type: name.clone(),
+                Ok(CfdValue::Object(Box::new(CfdObject::new(
+                    name.clone(),
                     fields,
-                    origin: RecordOrigin::None,
-                    spread_field_sources: BTreeMap::new(),
-                })))
+                ))))
             }
             CftSchemaTypeRef::Dict(_, _) => Ok(CfdValue::Dict(Vec::new())),
             _ => default_zero_for_ty_inner(schema, ty, stack),
@@ -726,13 +719,10 @@ fn default_zero_for_ty_inner(
                 stack,
                 None,
             )?;
-            Ok(CfdValue::Object(Box::new(CfdRecord {
-                key: String::new(),
-                actual_type: name.clone(),
+            Ok(CfdValue::Object(Box::new(CfdObject::new(
+                name.clone(),
                 fields,
-                origin: RecordOrigin::None,
-                spread_field_sources: BTreeMap::new(),
-            })))
+            ))))
         }
     }
 }
@@ -882,9 +872,14 @@ fn coerce_cfd_value(
             coerce_cfd_enum_value(session, name, enum_value).map(CfdValue::Enum)
         }
         (CftSchemaTypeRef::Named(expected_type), CfdValue::Object(record)) => {
-            ensure_object_type_assignable(session, expected_type, &record.actual_type)?;
+            ensure_object_type_assignable(session, expected_type, record.actual_type())?;
             let mut record = *record;
-            record.fields = coerce_cfd_object_fields(session, &record.actual_type, record.fields)?;
+            let actual_type = record.actual_type().to_string();
+            record.fields = coerce_cfd_object_fields(
+                session,
+                &actual_type,
+                std::mem::take(&mut record.fields),
+            )?;
             Ok(CfdValue::Object(Box::new(record)))
         }
         (CftSchemaTypeRef::Ref(_expected_type), CfdValue::Ref(target_key)) => {
@@ -959,8 +954,8 @@ fn validate_value_shape(
                     "singleton fields only allow record references",
                 ));
             }
-            for (name, value) in &record.fields {
-                let field = schema_field(session, &record.actual_type, name)?;
+            for (name, value) in record.fields() {
+                let field = schema_field(session, record.actual_type(), name)?;
                 validate_value_shape(session, &field.ty_ref, value)?;
             }
             Ok(())
@@ -1133,13 +1128,10 @@ fn coerce_json_named_value(
     let actual_type = actual_object_type(object, expected_type)?;
     ensure_object_type_assignable(session, expected_type, &actual_type)?;
     let fields = coerce_json_object_fields(session, &actual_type, object)?;
-    Ok(CfdValue::Object(Box::new(CfdRecord {
-        key: String::new(),
+    Ok(CfdValue::Object(Box::new(CfdObject::new(
         actual_type,
         fields,
-        origin: RecordOrigin::None,
-        spread_field_sources: BTreeMap::new(),
-    })))
+    ))))
 }
 
 fn actual_object_type(

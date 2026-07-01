@@ -1798,7 +1798,7 @@ where
             };
             (doc == &format!("lark:{}", request.spreadsheet_token)
                 && record_sheet == request.sheet
-                && record.actual_type == request.actual_type)
+                && record.actual_type() == request.actual_type)
                 .then_some(TableWriteLayout {
                     id_column: *id_column,
                     field_columns: field_columns.clone(),
@@ -1851,12 +1851,12 @@ fn value_for_table_path<'a>(
 ) -> Option<&'a coflow_api::CfdValue> {
     let mut segments = path.iter();
     let first = segments.next()?;
-    let mut current = record.fields.get(first)?;
+    let mut current = record.fields().get(first)?;
     for segment in segments {
         let coflow_api::CfdValue::Object(record) = current else {
             return None;
         };
-        current = record.fields.get(segment)?;
+        current = record.fields().get(segment)?;
     }
     Some(current)
 }

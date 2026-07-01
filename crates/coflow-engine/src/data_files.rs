@@ -2,7 +2,7 @@ use calamine::Reader;
 use coflow_api::{Diagnostic, DiagnosticSet, FlatDiagnostic, Severity};
 use coflow_cfd::{parse_cfd, CfdBlockEntry, CfdRecord as AstRecord};
 use coflow_cft::{CftContainer, CftSchemaDefaultValue, CftSchemaField, CftSchemaTypeRef, Span};
-use coflow_data_model::{CfdEnumValue, CfdRecord, CfdValue, RecordOrigin};
+use coflow_data_model::{CfdEnumValue, CfdObject, CfdValue};
 use coflow_loader_cfd::writer::serialize_value;
 use coflow_project::{path_to_slash, Project, SourceConfig};
 use serde::Serialize;
@@ -752,13 +752,7 @@ fn value_from_type_default(schema: &CftContainer, ty: &CftSchemaTypeRef) -> CfdV
                         .collect()
                 })
                 .unwrap_or_default();
-            CfdValue::Object(Box::new(CfdRecord {
-                key: String::new(),
-                actual_type: name.clone(),
-                fields,
-                origin: RecordOrigin::None,
-                spread_field_sources: BTreeMap::new(),
-            }))
+            CfdValue::Object(Box::new(CfdObject::new(name.clone(), fields)))
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::dimensions::DimensionField;
 use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation};
 use coflow_cfd::{parse_cfd, CfdBlockEntry};
-use coflow_data_model::{CfdDataModel, CfdDictKey, CfdEnumValue, CfdRecord, CfdValue};
+use coflow_data_model::{CfdDataModel, CfdDictKey, CfdEnumValue, CfdObject, CfdValue};
 use coflow_loader_csv as csv;
 use coflow_loader_table_core::cell_value::{render_cell_value, CellRenderError};
 use coflow_project::Project;
@@ -77,7 +77,7 @@ fn regenerate_csv_file(
     for (_, record) in model.records_of_type(&field.source_type) {
         let row = existing.entry(record.key().to_string()).or_default();
         row.default = record
-            .fields
+            .fields()
             .get(&field.source_field)
             .map_or_else(String::new, render_csv_value);
     }
@@ -124,7 +124,7 @@ fn regenerate_singleton_file(
         let row = existing.entry(field.source_field.clone()).or_default();
         row.actual_type.clone_from(&field.synthesized_type);
         row.default = record
-            .fields
+            .fields()
             .get(&field.source_field)
             .map_or_else(|| "null".to_string(), render_cfd_value);
     }
@@ -412,9 +412,9 @@ fn format_dict_key(key: &CfdDictKey) -> String {
     }
 }
 
-fn format_object(record: &CfdRecord) -> String {
+fn format_object(record: &CfdObject) -> String {
     let inner = record
-        .fields
+        .fields()
         .iter()
         .map(|(key, value)| format!("{key}: {}", render_value(value)))
         .collect::<Vec<_>>()
@@ -422,14 +422,14 @@ fn format_object(record: &CfdRecord) -> String {
     format!("{{{inner}}}")
 }
 
-fn format_cfd_object(record: &CfdRecord) -> String {
+fn format_cfd_object(record: &CfdObject) -> String {
     let inner = record
-        .fields
+        .fields()
         .iter()
         .map(|(key, value)| format!("{key}: {}", render_cfd_value(value)))
         .collect::<Vec<_>>()
         .join(", ");
-    format!("{} {{{inner}}}", record.actual_type)
+    format!("{} {{{inner}}}", record.actual_type())
 }
 
 fn format_cfd_dict_key(key: &CfdDictKey) -> String {

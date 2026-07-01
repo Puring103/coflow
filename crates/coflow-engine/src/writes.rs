@@ -388,7 +388,7 @@ fn ensure_rename_key_available(
             .lookup(&target_type, new_key)
             .is_some_and(|id| {
                 session.model.record(id).is_some_and(|record| {
-                    record.actual_type != actual_type || record.key != new_key
+                    record.actual_type() != actual_type || record.key != new_key
                 })
             })
         {
@@ -541,10 +541,12 @@ fn value_at_path<'a>(record: &'a CfdRecord, path: &CfdPath) -> Option<&'a CfdVal
     let CfdPathSegment::Field(field) = segments.next()? else {
         return None;
     };
-    let mut current = record.fields.get(field)?;
+    let mut current = record.fields().get(field)?;
     for segment in segments {
         current = match (segment, current) {
-            (CfdPathSegment::Field(field), CfdValue::Object(record)) => record.fields.get(field)?,
+            (CfdPathSegment::Field(field), CfdValue::Object(record)) => {
+                record.fields().get(field)?
+            }
             (CfdPathSegment::Index(index), CfdValue::Array(items)) => items.get(*index)?,
             (CfdPathSegment::DictKey(key), CfdValue::Dict(entries)) => entries
                 .iter()

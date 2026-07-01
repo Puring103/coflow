@@ -193,7 +193,7 @@ fn render_insert_value(
             return Ok(vec![(column, value)]);
         }
         let mut cells = Vec::new();
-        for (field, child_value) in &record.fields {
+        for (field, child_value) in record.fields() {
             let Some(column) = child_columns.get(field) else {
                 return Err(unmapped_path_error(record_key, actual_type, path));
             };
@@ -233,7 +233,7 @@ fn render_field_cells(
             let child_columns = direct_child_columns(field_columns, &prefix);
             if !child_columns.is_empty() {
                 let mut cells = Vec::new();
-                for (field, value) in &record.fields {
+                for (field, value) in record.fields() {
                     let Some(column) = child_columns.get(field) else {
                         return Err(unmapped_path_error(record_key, actual_type, path));
                     };
@@ -314,7 +314,7 @@ fn replace_subvalue(
         }
         (WriteFieldPathSegment::Field(field), CfdValue::Object(record)) => {
             let current =
-                record.fields.get(field).cloned().ok_or_else(|| {
+                record.fields().get(field).cloned().ok_or_else(|| {
                     one_error("TABLE-WRITE", format!("field `{field}` not found"))
                 })?;
             record.fields.insert(

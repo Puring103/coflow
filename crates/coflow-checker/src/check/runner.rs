@@ -77,7 +77,7 @@ impl<'a> CheckRunner<'a> {
             Some(record_id),
             path.clone(),
         );
-        self.run_nested_field_checks(Some(record_id), &record.fields, path);
+        self.run_nested_field_checks(Some(record_id), record.fields(), path);
     }
 
     fn into_result(self) -> Result<(), CfdDiagnostics> {
@@ -147,14 +147,14 @@ impl<'a> CheckRunner<'a> {
             CfdValue::Object(record) => {
                 self.run_record_checks(
                     CheckRecordRef::Inline {
-                        record: Box::new(record.as_ref().clone()),
+                        object: Box::new(record.as_ref().clone()),
                         path: Some(path.clone()),
                         host: root_record,
                     },
                     root_record,
                     path.clone(),
                 );
-                self.run_nested_field_checks(root_record, &record.fields, path);
+                self.run_nested_field_checks(root_record, record.fields(), path);
             }
             CfdValue::Array(items) => {
                 for (index, item) in items.iter().enumerate() {

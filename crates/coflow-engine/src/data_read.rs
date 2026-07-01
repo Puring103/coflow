@@ -149,7 +149,7 @@ pub fn data_get(
                 record: summary.record,
                 file: summary.file,
                 provider: summary.provider,
-                fields: view.record.fields.clone(),
+                fields: view.record.fields().clone(),
             })
         })
         .collect::<Result<Vec<_>, DiagnosticSet>>()?;

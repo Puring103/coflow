@@ -21,7 +21,7 @@ pub struct WireContext<'a> {
 pub fn record_view_to_row(view: &RecordView<'_>, ctx: &WireContext<'_>) -> RecordRow {
     let fields = view
         .record
-        .fields
+        .fields()
         .iter()
         .map(|(name, value)| FieldCell {
             name: name.clone(),
@@ -40,7 +40,7 @@ pub fn record_view_to_row(view: &RecordView<'_>, ctx: &WireContext<'_>) -> Recor
 #[must_use]
 pub fn record_to_row(record: &CfdRecord, display_path: &str, ctx: &WireContext<'_>) -> RecordRow {
     let fields = record
-        .fields
+        .fields()
         .iter()
         .map(|(name, value)| FieldCell {
             name: name.clone(),
@@ -49,7 +49,7 @@ pub fn record_to_row(record: &CfdRecord, display_path: &str, ctx: &WireContext<'
         })
         .collect();
     RecordRow {
-        coordinate: RecordCoordinate::new(record.actual_type.clone(), record.key.clone()),
+        coordinate: RecordCoordinate::new(record.actual_type(), record.key.clone()),
         display_path: display_path.to_string(),
         fields,
     }
@@ -69,7 +69,7 @@ fn build_annotation(
     let host_id = ctx
         .session
         .records
-        .id_for_coordinate(&host.actual_type, &host.key);
+        .id_for_coordinate(host.actual_type(), &host.key);
     let path = CfdPath::root().field(field_name.to_string());
     annotation_for_value(value, ctx, host_id, &path, &mut annotation);
     if annotation.is_empty() {
@@ -97,7 +97,7 @@ fn annotation_for_value(
                 .and_then(|target| ctx.session.model.record(target))
                 .and_then(|record| {
                     ctx.session
-                        .file_for_record(&record.actual_type, &record.key)
+                        .file_for_record(record.actual_type(), &record.key)
                         .map(str::to_string)
                 });
         }
@@ -119,10 +119,10 @@ fn spread_info_for_source(
     source_field_path.push(field_name.to_string());
     let source_record_file = ctx
         .session
-        .file_for_record(&source.actual_type, &source.key)
+        .file_for_record(source.actual_type(), &source.key)
         .map(str::to_string);
     Some(SpreadInfo {
-        source: RecordCoordinate::new(source.actual_type.clone(), source.key.clone()),
+        source: RecordCoordinate::new(source.actual_type(), source.key.clone()),
         source_record_file,
         source_field_path,
     })

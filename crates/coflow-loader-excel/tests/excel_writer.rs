@@ -184,17 +184,14 @@ fn write_terrain_workbook_with_expand(path: &PathBuf) -> Result<(), XlsxError> {
 }
 
 fn expanded_env_value(shc: f64, temperature: f64, diffusion: f64) -> CfdValue {
-    CfdValue::Object(Box::new(coflow_api::CfdRecord {
-        key: String::new(),
-        actual_type: "EnvCfg".to_string(),
-        fields: BTreeMap::from([
+    CfdValue::Object(Box::new(coflow_api::CfdObject::new(
+        "EnvCfg",
+        BTreeMap::from([
             ("shc".to_string(), CfdValue::Float(shc)),
             ("temperature".to_string(), CfdValue::Float(temperature)),
             ("diffusion".to_string(), CfdValue::Float(diffusion)),
         ]),
-        origin: RecordOrigin::None,
-        spread_field_sources: BTreeMap::new(),
-    }))
+    )))
 }
 
 #[test]

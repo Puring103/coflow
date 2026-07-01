@@ -562,7 +562,7 @@ impl RecordIndex {
             pending_by_coordinate.insert(pending.coordinate.clone(), pending);
         }
         for (id, record) in model.records() {
-            let coordinate = RecordCoordinate::new(record.actual_type.clone(), record.key.clone());
+            let coordinate = RecordCoordinate::new(record.actual_type(), record.key.clone());
             let Some(pending) = pending_by_coordinate.remove(&coordinate) else {
                 continue;
             };
@@ -1107,7 +1107,7 @@ fn run_project_checks(
         let logical_locations = logical_locations_from_cfd(&checks, |id| {
             model
                 .record(id)
-                .map(|record| RecordCoordinate::new(record.actual_type.clone(), record.key.clone()))
+                .map(|record| RecordCoordinate::new(record.actual_type(), record.key.clone()))
         });
         let diagnostics = map_diagnostics_with_origins(checks, origins);
         (diagnostics, logical_locations)
