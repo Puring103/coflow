@@ -53,6 +53,7 @@ pub enum CftSchemaTypeRef {
     Bool,
     String,
     Named(String),
+    Ref(String),
     Array(Box<CftSchemaTypeRef>),
     Dict(Box<CftSchemaTypeRef>, Box<CftSchemaTypeRef>),
     Nullable(Box<CftSchemaTypeRef>),

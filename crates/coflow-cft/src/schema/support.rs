@@ -97,7 +97,7 @@ impl AnnotationSpec {
                 targets: &[AnnotationTarget::Enum],
                 args: AnnotationArgs::None,
             },
-            "expand" | "ref" | "inline" => Self {
+            "expand" => Self {
                 targets: &[AnnotationTarget::Field],
                 args: AnnotationArgs::None,
             },
@@ -138,6 +138,7 @@ pub(super) enum Ty {
     String,
     Null,
     Type(String),
+    Ref(Box<Ty>),
     Enum(String),
     EnumNamespace(String),
     Array(Box<Ty>),
@@ -167,21 +168,10 @@ pub(super) fn unwrap_nullable(ty: &Ty) -> &Ty {
     }
 }
 
-pub(super) fn field_type_contains_object(ty: &Ty) -> bool {
+pub(super) fn unwrap_reference(ty: &Ty) -> &Ty {
     match ty {
-        Ty::Type(_) | Ty::Unknown => true,
-        Ty::Array(inner) | Ty::Nullable(inner) => field_type_contains_object(inner),
-        Ty::Dict(_, value) => field_type_contains_object(value),
-        Ty::Int
-        | Ty::Float
-        | Ty::Bool
-        | Ty::String
-        | Ty::Null
-        | Ty::Enum(_)
-        | Ty::EnumNamespace(_)
-        | Ty::Entry(_, _)
-        | Ty::EmptyArray
-        | Ty::EmptyObject => false,
+        Ty::Ref(inner) => inner,
+        other => other,
     }
 }
 
@@ -369,6 +359,7 @@ pub(super) fn format_type_ref(ty: &TypeRef) -> String {
         TypeRefKind::Bool => "bool".to_string(),
         TypeRefKind::String => "string".to_string(),
         TypeRefKind::Named(name) => name.clone(),
+        TypeRefKind::Ref(inner) => format!("&{}", format_type_ref(inner)),
         TypeRefKind::Array(inner) => format!("[{}]", format_type_ref(inner)),
         TypeRefKind::Dict(key, value) => {
             format!("{{{}: {}}}", format_type_ref(key), format_type_ref(value))
@@ -385,6 +376,10 @@ pub(super) fn build_schema_type_ref(ty: &TypeRef) -> super::CftSchemaTypeRef {
         TypeRefKind::Bool => CftSchemaTypeRef::Bool,
         TypeRefKind::String => CftSchemaTypeRef::String,
         TypeRefKind::Named(name) => CftSchemaTypeRef::Named(name.clone()),
+        TypeRefKind::Ref(inner) => match &inner.kind {
+            TypeRefKind::Named(name) => CftSchemaTypeRef::Ref(name.clone()),
+            _ => build_schema_type_ref(inner),
+        },
         TypeRefKind::Array(inner) => {
             CftSchemaTypeRef::Array(Box::new(build_schema_type_ref(inner)))
         }
@@ -409,6 +404,7 @@ pub(super) fn types_assignable(expected: &Ty, actual: &Ty) -> bool {
     match (expected, actual) {
         (Ty::Nullable(inner), Ty::Null) => !matches!(inner.as_ref(), Ty::Unknown),
         (Ty::Nullable(inner), other) => types_assignable(inner, other),
+        (Ty::Ref(left), Ty::Ref(right)) => types_assignable(left, right),
         (Ty::Array(_), Ty::EmptyArray) | (Ty::Dict(_, _) | Ty::Type(_), Ty::EmptyObject) => true,
         (Ty::Enum(left), Ty::Enum(right)) | (Ty::Type(left), Ty::Type(right)) => left == right,
         _ => expected == actual,
@@ -437,6 +433,7 @@ pub(super) fn types_comparable(left: &Ty, right: &Ty) -> bool {
         | (Ty::Bool, Ty::Bool)
         | (Ty::String, Ty::String) => true,
         (Ty::Enum(left), Ty::Enum(right)) | (Ty::Type(left), Ty::Type(right)) => left == right,
+        (Ty::Ref(left), Ty::Ref(right)) => types_comparable(left, right),
         _ => false,
     }
 }

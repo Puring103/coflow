@@ -134,7 +134,9 @@ impl SchemaView {
 
     pub(crate) fn type_contains_singleton(&self, ty: &CfdType) -> bool {
         match ty {
-            CfdType::Type(name) => self.types.get(name).is_some_and(|meta| meta.is_singleton),
+            CfdType::Type(name) | CfdType::Ref(name) => {
+                self.types.get(name).is_some_and(|meta| meta.is_singleton)
+            }
             CfdType::Array(inner) | CfdType::Nullable(inner) => self.type_contains_singleton(inner),
             CfdType::Dict(key, value) => {
                 self.type_contains_singleton(key) || self.type_contains_singleton(value)
@@ -247,6 +249,7 @@ pub(crate) enum CfdType {
     Bool,
     String,
     Type(String),
+    Ref(String),
     Enum(String),
     Array(Box<CfdType>),
     Dict(Box<CfdType>, Box<CfdType>),
@@ -262,6 +265,7 @@ impl CfdType {
             CftSchemaTypeRef::String => Self::String,
             CftSchemaTypeRef::Named(name) if schema.has_enum(name) => Self::Enum(name.clone()),
             CftSchemaTypeRef::Named(name) => Self::Type(name.clone()),
+            CftSchemaTypeRef::Ref(name) => Self::Ref(name.clone()),
             CftSchemaTypeRef::Array(inner) => {
                 Self::Array(Box::new(Self::from_schema(inner, schema)))
             }
@@ -286,6 +290,7 @@ impl CfdType {
             Self::Bool => "bool".to_string(),
             Self::String => "string".to_string(),
             Self::Type(name) | Self::Enum(name) => name.clone(),
+            Self::Ref(name) => format!("&{name}"),
             Self::Array(inner) => format!("[{}]", inner.display()),
             Self::Dict(key, value) => format!("{{{}: {}}}", key.display(), value.display()),
             Self::Nullable(inner) => format!("{}?", inner.display()),

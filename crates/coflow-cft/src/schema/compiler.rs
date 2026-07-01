@@ -1,9 +1,8 @@
 use super::support::{
-    build_schema_type_ref, const_value, convert_annotations, convert_check_block,
-    field_type_contains_object, find_annotation, format_type_ref, has_annotation,
-    is_i64_power_of_two, is_reserved_identifier, is_valid_dict_key, types_assignable,
-    AnnotationSpec, AnnotationTarget, ConstInfo, EnumInfo, FieldInfo, FieldOrigin, Symbol,
-    SymbolKind, Ty, TypeInfo,
+    build_schema_type_ref, const_value, convert_annotations, convert_check_block, find_annotation,
+    format_type_ref, has_annotation, is_i64_power_of_two, is_reserved_identifier,
+    is_valid_dict_key, types_assignable, AnnotationSpec, AnnotationTarget, ConstInfo, EnumInfo,
+    FieldInfo, FieldOrigin, Symbol, SymbolKind, Ty, TypeInfo,
 };
 use super::type_checker::TypeChecker;
 use super::{
@@ -696,73 +695,30 @@ impl<'a> SchemaCompiler<'a> {
                 }
             }
         }
-        let ref_annotation = find_annotation(&field.annotations, "ref");
-        let inline_annotation = find_annotation(&field.annotations, "inline");
-        if let (Some(annotation), Some(_)) = (ref_annotation, inline_annotation) {
-            self.push_diag(
-                CftErrorCode::InvalidAnnotatedFieldType,
-                module,
-                annotation.span,
-                "@ref and @inline cannot be used on the same field",
-            );
-        }
         if let Some(annotation) = find_annotation(&field.annotations, "expand") {
-            // @expand requires the field to reference a concrete `type`. Arrays,
-            // dicts, primitives, enums, and nullable wrappers don't make sense
-            // because the loader needs a known set of inner field names to
-            // consume across adjacent header columns.
+            // @expand requires an inline concrete object field. Arrays, dicts,
+            // primitives, enums, nullable wrappers, refs, abstract objects, and
+            // singleton objects don't make sense because the loader needs one
+            // known inline set of inner field names to consume from adjacent
+            // header columns.
             let resolved = self.resolve_field_type(&field.ty);
-            if !matches!(resolved, Ty::Type(_) | Ty::Unknown) {
+            if !self.expand_target_is_concrete_inline_object(&resolved) {
                 self.push_diag(
                     CftErrorCode::InvalidAnnotatedFieldType,
                     module,
                     annotation.span,
-                    "@expand fields must reference a concrete type (no nullable, arrays, dicts, enums, or primitives)",
-                );
-            }
-            if let Some(annotation) = ref_annotation {
-                self.push_diag(
-                    CftErrorCode::InvalidAnnotatedFieldType,
-                    module,
-                    annotation.span,
-                    "@ref cannot be combined with @expand",
-                );
-            }
-        }
-        for annotation in [ref_annotation, inline_annotation].into_iter().flatten() {
-            if !field_type_contains_object(&self.resolve_field_type(&field.ty)) {
-                self.push_diag(
-                    CftErrorCode::InvalidAnnotatedFieldType,
-                    module,
-                    annotation.span,
-                    format!("@{} fields must contain an object type", annotation.name),
-                );
-            }
-        }
-        if let Some(annotation) = inline_annotation {
-            if self.field_type_contains_singleton(&field.ty) {
-                self.push_diag(
-                    CftErrorCode::InvalidAnnotatedFieldType,
-                    module,
-                    annotation.span,
-                    "@inline cannot be used on fields containing singleton types",
+                    "@expand fields must reference an inline concrete type (no refs, abstract/singleton types, nullable, arrays, dicts, enums, or primitives)",
                 );
             }
         }
     }
 
-    fn field_type_contains_singleton(&self, ty: &TypeRef) -> bool {
-        match &ty.kind {
-            TypeRefKind::Named(name) => self
-                .types
-                .get(name)
-                .is_some_and(|info| has_annotation(&info.def.annotations, "singleton")),
-            TypeRefKind::Array(inner) | TypeRefKind::Nullable(inner) => {
-                self.field_type_contains_singleton(inner)
-            }
-            TypeRefKind::Dict(key, value) => {
-                self.field_type_contains_singleton(key) || self.field_type_contains_singleton(value)
-            }
+    fn expand_target_is_concrete_inline_object(&self, ty: &Ty) -> bool {
+        match ty {
+            Ty::Unknown => true,
+            Ty::Type(name) => self.types.get(name).is_some_and(|info| {
+                !info.def.is_abstract && !has_annotation(&info.def.annotations, "singleton")
+            }),
             _ => false,
         }
     }
@@ -1197,6 +1153,7 @@ impl<'a> SchemaCompiler<'a> {
                 Some(symbol) if symbol.kind == SymbolKind::Enum => Ty::Enum(name.clone()),
                 _ => Ty::Unknown,
             },
+            TypeRefKind::Ref(inner) => Ty::Ref(Box::new(self.resolve_field_type(inner))),
             TypeRefKind::Array(inner) => Ty::Array(Box::new(self.resolve_field_type(inner))),
             TypeRefKind::Dict(key, value) => Ty::Dict(
                 Box::new(self.resolve_field_type(key)),
@@ -1243,6 +1200,29 @@ impl<'a> SchemaCompiler<'a> {
                     Ty::Unknown
                 }
             },
+            TypeRefKind::Ref(inner) => {
+                let inner_ty = self.validate_field_type(module, inner);
+                match &inner_ty {
+                    Ty::Type(name) if self.type_is_singleton(name) => {
+                        self.push_diag(
+                            CftErrorCode::InvalidAnnotatedFieldType,
+                            module,
+                            inner.span,
+                            "reference target type must not be a singleton type",
+                        );
+                    }
+                    Ty::Type(_) | Ty::Unknown => {}
+                    _ => {
+                        self.push_diag(
+                            CftErrorCode::InvalidAnnotatedFieldType,
+                            module,
+                            inner.span,
+                            "reference target must be a non-singleton object type",
+                        );
+                    }
+                }
+                Ty::Ref(Box::new(inner_ty))
+            }
             TypeRefKind::Array(inner) => {
                 let inner = self.validate_field_type(module, inner);
                 Ty::Array(Box::new(inner))
@@ -1265,6 +1245,12 @@ impl<'a> SchemaCompiler<'a> {
                 Ty::Nullable(Box::new(inner))
             }
         }
+    }
+
+    fn type_is_singleton(&self, name: &str) -> bool {
+        self.types
+            .get(name)
+            .is_some_and(|info| has_annotation(&info.def.annotations, "singleton"))
     }
 
     fn collect_ancestor_fields(&self, parent_name: Option<&str>) -> BTreeMap<String, FieldOrigin> {

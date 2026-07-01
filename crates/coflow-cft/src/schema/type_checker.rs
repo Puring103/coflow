@@ -1,7 +1,7 @@
 use super::compiler::SchemaCompiler;
 use super::support::{
     is_reserved_identifier, min_max_supported, ordered_comparable, types_comparable,
-    unique_supported, unwrap_nullable, SymbolKind, Ty, TypeInfo,
+    unique_supported, unwrap_nullable, unwrap_reference, SymbolKind, Ty, TypeInfo,
 };
 use crate::ast::{
     BinOp, CheckExpr, CheckExprKind, CheckStmt, CmpOp, NameRef, TypePredicate, UnaryOp,
@@ -201,7 +201,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
         }
 
         let inner_ty = self.check_expr_value(inner);
-        match unwrap_nullable(&inner_ty) {
+        match unwrap_reference(unwrap_nullable(&inner_ty)) {
             Ty::Type(type_name) => {
                 if name.name == "id" {
                     return Ty::String;
@@ -308,7 +308,10 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                         return;
                     }
                 }
-                if !matches!(unwrap_nullable(lhs), Ty::Type(_) | Ty::Unknown) {
+                if !matches!(
+                    unwrap_reference(unwrap_nullable(lhs)),
+                    Ty::Type(_) | Ty::Unknown
+                ) {
                     self.diag(
                         CftErrorCode::OperatorTypeMismatch,
                         span,

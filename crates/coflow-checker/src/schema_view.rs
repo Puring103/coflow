@@ -518,6 +518,7 @@ fn type_ref_to_check_ty(ty: &CftSchemaTypeRef) -> CheckTy {
         CftSchemaTypeRef::Bool => CheckTy::Bool,
         CftSchemaTypeRef::String => CheckTy::String,
         CftSchemaTypeRef::Named(name) => CheckTy::Type(name.clone()),
+        CftSchemaTypeRef::Ref(name) => CheckTy::Type(name.clone()),
         CftSchemaTypeRef::Array(inner) => CheckTy::Array(Box::new(type_ref_to_check_ty(inner))),
         CftSchemaTypeRef::Dict(key, value) => CheckTy::Dict(
             Box::new(type_ref_to_check_ty(key)),

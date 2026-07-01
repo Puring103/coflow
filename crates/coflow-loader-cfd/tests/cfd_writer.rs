@@ -391,6 +391,80 @@ fn inserts_record_at_end_of_cfd_file() {
 }
 
 #[test]
+fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
+    let dir = temp_dir("insert-nested-ref");
+    let file = dir.join("loot.cfd");
+    fs::write(
+        &file,
+        r#"sword: Item {
+  name: "Sword",
+}
+"#,
+    )
+    .expect("write seed");
+    let schema = compile_schema(
+        r"
+        type Item {
+          name: string;
+        }
+
+        type Slot {
+          item: &Item;
+        }
+
+        type Loot {
+          slot: Slot;
+        }
+        ",
+    );
+    let source = empty_source(&file);
+    let writer = CfdWriter::new();
+    let slot_fields = std::collections::BTreeMap::from([(
+        "item".to_string(),
+        CfdValue::Ref {
+            target_type: "Item".to_string(),
+            target_key: "sword".to_string(),
+        },
+    )]);
+    let fields = std::collections::BTreeMap::from([(
+        "slot".to_string(),
+        CfdValue::Object(Box::new(coflow_api::CfdRecord {
+            key: String::new(),
+            actual_type: "Slot".to_string(),
+            fields: slot_fields,
+            origin: RecordOrigin::None,
+            spread_field_sources: std::collections::BTreeMap::new(),
+        })),
+    )]);
+
+    writer
+        .insert_record(
+            WriteContext {
+                project_root: &dir,
+                schema: &schema,
+                model: None,
+            },
+            &InsertRecordRequest {
+                source: &source,
+                sheet: None,
+                record_key: "starter",
+                actual_type: "Loot",
+                fields: &fields,
+                schema: &schema,
+            },
+        )
+        .expect("insert succeeds");
+
+    let after = fs::read_to_string(&file).expect("re-read");
+    assert!(
+        after.contains("item: &sword"),
+        "expected & ref syntax: {after}"
+    );
+    let model = load_cfd_model(&schema, &after).expect("reload");
+    assert!(model.lookup("Loot", "starter").is_some());
+}
+
+#[test]
 fn deletes_record_span_from_cfd_file() {
     let dir = temp_dir("delete-record");
     let file = dir.join("items.cfd");

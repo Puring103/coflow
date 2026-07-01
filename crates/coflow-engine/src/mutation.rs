@@ -586,6 +586,13 @@ fn default_minimal_for_field(
         return Ok(None);
     }
     match non_nullable(&field.ty_ref) {
+        CftSchemaTypeRef::Ref(name) => Err(one_mutation_error(
+            "MUTATION-DEFAULT",
+            format!(
+                "field `{}` of type `&{name}` has no schema default; provide an explicit value",
+                field.name
+            ),
+        )),
         CftSchemaTypeRef::Named(name) if schema.has_type(name) => {
             let mode = field_mode(field);
             if mode == FieldMode::Inline {
@@ -714,6 +721,7 @@ fn default_zero_for_ty_inner(
         CftSchemaTypeRef::Float => Ok(CfdValue::Float(0.0)),
         CftSchemaTypeRef::Bool => Ok(CfdValue::Bool(false)),
         CftSchemaTypeRef::String => Ok(CfdValue::String(String::new())),
+        CftSchemaTypeRef::Ref(_) => Ok(CfdValue::Null),
         CftSchemaTypeRef::Nullable(_) => Ok(CfdValue::Null),
         CftSchemaTypeRef::Array(_) => Ok(CfdValue::Array(Vec::new())),
         CftSchemaTypeRef::Dict(_, _) => Ok(CfdValue::Dict(Vec::new())),
@@ -852,6 +860,13 @@ fn coerce_json_value(
                 .map(CfdValue::Array)
         }
         CftSchemaTypeRef::Dict(key, item) => coerce_json_dict_value(session, key, item, value),
+        CftSchemaTypeRef::Ref(target_type) => value
+            .as_str()
+            .map(|key| CfdValue::Ref {
+                target_type: target_type.clone(),
+                target_key: key.to_string(),
+            })
+            .ok_or_else(|| one_value_error(format!("expected record key for `&{target_type}`"))),
         CftSchemaTypeRef::Named(name) if session.schema.has_enum(name) => {
             let variant = value
                 .as_str()
@@ -904,6 +919,31 @@ fn coerce_cfd_value(
             let mut record = *record;
             record.fields = coerce_cfd_object_fields(session, &record.actual_type, record.fields)?;
             Ok(CfdValue::Object(Box::new(record)))
+        }
+        (
+            CftSchemaTypeRef::Ref(expected_type),
+            CfdValue::Ref {
+                target_type,
+                target_key,
+            },
+        ) => {
+            if target_key.is_empty() {
+                return Err(one_ref_error("reference key must not be empty"));
+            }
+            if !session.schema.has_type(&target_type) {
+                return Err(one_ref_error(format!(
+                    "unknown reference type `{target_type}`"
+                )));
+            }
+            if !session.schema.is_assignable(&target_type, expected_type) {
+                return Err(one_ref_error(format!(
+                    "reference type `{target_type}` is not assignable to `{expected_type}`"
+                )));
+            }
+            Ok(CfdValue::Ref {
+                target_type,
+                target_key,
+            })
         }
         (
             CftSchemaTypeRef::Named(expected_type),
@@ -976,6 +1016,31 @@ fn validate_value_shape(
                 return Ok(());
             }
             Ok(())
+        }
+        (
+            CftSchemaTypeRef::Ref(expected_type),
+            CfdValue::Ref {
+                target_type,
+                target_key,
+            },
+        ) => {
+            if target_key.is_empty() {
+                return Err(one_ref_error("reference key must not be empty"));
+            }
+            if !session.schema.has_type(target_type) {
+                return Err(one_ref_error(format!(
+                    "unknown reference type `{target_type}`"
+                )));
+            }
+            if !session.schema.is_assignable(target_type, expected_type) {
+                return Err(one_ref_error(format!(
+                    "reference type `{target_type}` is not assignable to `{expected_type}`"
+                )));
+            }
+            Ok(())
+        }
+        (CftSchemaTypeRef::Ref(_), CfdValue::Object(_)) => {
+            Err(one_shape_error("reference fields only allow record refs"))
         }
         (CftSchemaTypeRef::Named(expected_type), CfdValue::Object(record)) => {
             if mode == FieldMode::Ref {

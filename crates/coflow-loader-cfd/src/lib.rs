@@ -600,6 +600,7 @@ impl<'a> Parser<'a> {
             CftSchemaTypeRef::String => self.parse_string_value(),
             CftSchemaTypeRef::Named(name) if self.schema.has_enum(name) => self.parse_enum(name),
             CftSchemaTypeRef::Named(name) => self.parse_object_value(name, ObjectRefMode::Allow),
+            CftSchemaTypeRef::Ref(name) => self.parse_ref_value(Some(name)),
             CftSchemaTypeRef::Array(inner) => self.parse_array(inner),
             CftSchemaTypeRef::Dict(key, value) => self.parse_dict(key, value),
             CftSchemaTypeRef::Nullable(inner) => self.parse_value(inner),
@@ -1359,7 +1360,8 @@ fn is_object_type(schema: &CftContainer, ty: &CftSchemaTypeRef) -> bool {
         | CftSchemaTypeRef::Bool
         | CftSchemaTypeRef::String
         | CftSchemaTypeRef::Array(_)
-        | CftSchemaTypeRef::Dict(_, _) => false,
+        | CftSchemaTypeRef::Dict(_, _)
+        | CftSchemaTypeRef::Ref(_) => false,
     }
 }
 
@@ -1372,6 +1374,7 @@ fn object_type_name(ty: &CftSchemaTypeRef) -> Option<&str> {
         | CftSchemaTypeRef::Bool
         | CftSchemaTypeRef::String
         | CftSchemaTypeRef::Array(_)
-        | CftSchemaTypeRef::Dict(_, _) => None,
+        | CftSchemaTypeRef::Dict(_, _)
+        | CftSchemaTypeRef::Ref(_) => None,
     }
 }

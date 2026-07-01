@@ -617,6 +617,7 @@ fn fmt_type_ref(ty: &CftSchemaTypeRef) -> String {
         CftSchemaTypeRef::Bool => "bool".to_string(),
         CftSchemaTypeRef::String => "string".to_string(),
         CftSchemaTypeRef::Named(name) => name.clone(),
+        CftSchemaTypeRef::Ref(name) => format!("&{name}"),
         CftSchemaTypeRef::Array(inner) => format!("[{}]", fmt_type_ref(inner)),
         CftSchemaTypeRef::Dict(k, v) => {
             format!("{{{}: {}}}", fmt_type_ref(k), fmt_type_ref(v))

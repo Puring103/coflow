@@ -85,6 +85,7 @@ pub enum SchemaTypeRefInfo {
     Bool,
     String,
     Named { name: String, target_kind: String },
+    Ref { target: String },
     Array { item: Box<Self> },
     Dict { key: Box<Self>, value: Box<Self> },
     Nullable { inner: Box<Self> },
@@ -267,6 +268,9 @@ fn type_ref_info(schema: &CftContainer, ty: &CftSchemaTypeRef) -> SchemaTypeRefI
                 target_kind: target_kind.to_string(),
             }
         }
+        CftSchemaTypeRef::Ref(target) => SchemaTypeRefInfo::Ref {
+            target: target.clone(),
+        },
         CftSchemaTypeRef::Array(inner) => SchemaTypeRefInfo::Array {
             item: Box::new(type_ref_info(schema, inner)),
         },

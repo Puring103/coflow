@@ -484,6 +484,13 @@ impl<'s> Validator<'s> {
                 None
             }
             (
+                CfdType::Ref(_),
+                CfdInputValue::Object { .. } | CfdInputValue::ObjectSpread { .. },
+            ) => {
+                self.push_mode_diagnostic("reference", "inline objects", record, path);
+                None
+            }
+            (
                 CfdType::Type(_),
                 CfdInputValue::Object { .. } | CfdInputValue::ObjectSpread { .. },
             ) if mode == FieldMode::Ref => {
@@ -558,6 +565,11 @@ impl<'s> Validator<'s> {
             {
                 Some(())
             }
+            (CfdType::Ref(type_name), CfdInputValue::RecordRef { .. })
+                if self.schema.type_name_is_singleton(type_name) =>
+            {
+                Some(())
+            }
             (CfdType::Type(type_name), CfdInputValue::PathRef { .. })
                 if self.schema.type_name_is_singleton(type_name) =>
             {
@@ -565,6 +577,13 @@ impl<'s> Validator<'s> {
             }
             (
                 CfdType::Type(type_name),
+                CfdInputValue::Object { .. } | CfdInputValue::ObjectSpread { .. },
+            ) if self.schema.type_name_is_singleton(type_name) => {
+                self.push_singleton_ref_only_diagnostic(record, path);
+                None
+            }
+            (
+                CfdType::Ref(type_name),
                 CfdInputValue::Object { .. } | CfdInputValue::ObjectSpread { .. },
             ) if self.schema.type_name_is_singleton(type_name) => {
                 self.push_singleton_ref_only_diagnostic(record, path);
@@ -669,6 +688,24 @@ impl<'s> Validator<'s> {
                 Some(CfdValueDraft::Value(CfdValue::Enum(enum_value)))
             }
             (CfdType::Type(expected), CfdInputValue::RecordRef { target_type, key }) => {
+                if !self.schema.is_assignable(target_type, expected) {
+                    self.push(
+                        CfdDiagnostic::error(
+                            CfdErrorCode::TypeMismatch,
+                            format!(
+                                "reference type `{target_type}` is not assignable to `{expected}`"
+                            ),
+                        )
+                        .with_primary(record, path),
+                    );
+                    return None;
+                }
+                Some(CfdValueDraft::PendingRef {
+                    target_type: target_type.clone(),
+                    key: key.clone(),
+                })
+            }
+            (CfdType::Ref(expected), CfdInputValue::RecordRef { target_type, key }) => {
                 if !self.schema.is_assignable(target_type, expected) {
                     self.push(
                         CfdDiagnostic::error(
