@@ -13,8 +13,8 @@
 #   数组：[Trigger] / [ScaleCurve] / [Card] / [DeckSlot]
 #   字典：{string:int} designer_tags
 #   & 直接引用（跨同类型）
-#   @ 路径引用（含数组下标 .triggers[0]）
-#   spread（...@ 对象字段覆盖）
+#   & 记录引用
+#   spread（...& 对象字段覆盖）
 #   多记录同类分组
 #   内联对象（Trigger 直接内嵌）
 
@@ -207,7 +207,7 @@ Card {
   # ── 中立随从：1费 ─────────────────────────────────────────────────────────
 
   card_wisp {
-    name_text: @CardText.txt_wisp,
+    name_text: &txt_wisp,
     card_type: Minion,
     faction: Neutral,
     rarity: Common,
@@ -225,7 +225,7 @@ Card {
   }
 
   card_stonetusk_boar {
-    name_text: @CardText.txt_stonetusk_boar,
+    name_text: &txt_stonetusk_boar,
     card_type: Minion,
     faction: Neutral,
     rarity: Common,
@@ -247,7 +247,7 @@ Card {
   # ── 中立随从：4费 ─────────────────────────────────────────────────────────
 
   card_chillwind_yeti {
-    name_text: @CardText.txt_chillwind_yeti23,
+    name_text: &txt_chillwind_yeti23,
     card_type: Minion,
     faction: Neutral,
     rarity: Common,
@@ -257,7 +257,7 @@ Card {
     durability: 0,
     triggers: [],
     # 进化链示例：升级为更高费的雪人长老
-    evolved_form: @Card.card_yeti_elder,
+    evolved_form: &card_yeti_elder,
     cost_curve: [
       { level: 1,  value: 4 },
       { level: 20, value: 3 },
@@ -269,7 +269,7 @@ Card {
   # ── 进化形态（cost 6 >= 4，rarity Common >= Common，符合约束）────────────
 
   card_yeti_elder {
-    name_text: @CardText.txt_acidic_swamp_ooze,
+    name_text: &txt_acidic_swamp_ooze,
     card_type: Minion,
     faction: Neutral,
     rarity: Common,
@@ -278,7 +278,7 @@ Card {
     keywords: Taunt,
     durability: 0,
     triggers: [
-      { event: OnTurnStart, effect: @HealEffect.eff_blessing_heal, condition: "" },
+      { event: OnTurnStart, effect: &eff_blessing_heal, condition: "" },
     ],
     evolved_form: null,
     cost_curve: [
@@ -292,7 +292,7 @@ Card {
   # ── 中立随从：2费（含 Battlecry Trigger）─────────────────────────────────
 
   card_acidic_swamp_ooze {
-    name_text: @CardText.txt_acidic_swamp_ooze,
+    name_text: &txt_acidic_swamp_ooze,
     card_type: Minion,
     faction: Neutral,
     rarity: Common,
@@ -304,7 +304,7 @@ Card {
     triggers: [
       {
         event: OnPlay,
-        effect: @BuffEffect.eff_blessed_champion_buff,
+        effect: &eff_blessed_champion_buff,
         condition: "target has weapon equipped",
       },
     ],
@@ -317,7 +317,7 @@ Card {
   # ── 联盟法术 ───────────────────────────────────────────────────────────────
 
   card_execute {
-    name_text: @CardText.txt_execute,
+    name_text: &txt_execute,
     card_type: Spell,
     faction: Alliance,
     rarity: Common,
@@ -326,7 +326,7 @@ Card {
     keywords: None,
     durability: 0,
     triggers: [
-      { event: OnPlay, effect: @DamageEffect.eff_execute_damage, condition: "target is damaged" },
+      { event: OnPlay, effect: &eff_execute_damage, condition: "target is damaged" },
     ],
     evolved_form: null,
     cost_curve: [
@@ -338,7 +338,7 @@ Card {
   }
 
   card_blessing_of_kings {
-    name_text: @CardText.txt_blessing_of_kings,
+    name_text: &txt_blessing_of_kings,
     card_type: Spell,
     faction: Alliance,
     rarity: Common,
@@ -347,7 +347,7 @@ Card {
     keywords: None,
     durability: 0,
     triggers: [
-      { event: OnPlay, effect: @BuffEffect.eff_blessing_of_kings_buff, condition: "" },
+      { event: OnPlay, effect: &eff_blessing_of_kings_buff, condition: "" },
     ],
     evolved_form: null,
     cost_curve: [],
@@ -356,7 +356,7 @@ Card {
   }
 
   card_divine_favor {
-    name_text: @CardText.txt_divine_favor,
+    name_text: &txt_divine_favor,
     card_type: Spell,
     faction: Alliance,
     rarity: Rare,
@@ -365,7 +365,7 @@ Card {
     keywords: None,
     durability: 0,
     triggers: [
-      { event: OnPlay, effect: @DrawEffect.eff_divine_favor_draw, condition: "opponent has more cards" },
+      { event: OnPlay, effect: &eff_divine_favor_draw, condition: "opponent has more cards" },
     ],
     evolved_form: null,
     cost_curve: [],
@@ -376,7 +376,7 @@ Card {
   # ── 联盟随从（含 Battlecry + Deathrattle 两个 Trigger）────────────────────
 
   card_blessed_champion {
-    name_text: @CardText.txt_blessed_champion,
+    name_text: &txt_blessed_champion,
     card_type: Minion,
     faction: Alliance,
     rarity: Rare,
@@ -385,10 +385,10 @@ Card {
     keywords: DivineShield,
     durability: 0,
     triggers: [
-      { event: OnPlay, effect: @BuffEffect.eff_blessed_champion_buff, condition: "" },
+      { event: OnPlay, effect: &eff_blessed_champion_buff, condition: "" },
       {
         event: OnDeath,
-        effect: @DrawEffect.eff_divine_favor_draw,
+        effect: &eff_divine_favor_draw,
         condition: "",
       },
     ],
@@ -403,7 +403,7 @@ Card {
   # ── 奥术法术（中立/法师）──────────────────────────────────────────────────
 
   card_fireball {
-    name_text: @CardText.txt_fireball,
+    name_text: &txt_fireball,
     card_type: Spell,
     faction: Neutral,
     rarity: Common,
@@ -412,7 +412,7 @@ Card {
     keywords: None,
     durability: 0,
     triggers: [
-      { event: OnPlay, effect: @DamageEffect.eff_fireball_damage, condition: "" },
+      { event: OnPlay, effect: &eff_fireball_damage, condition: "" },
     ],
     evolved_form: null,
     cost_curve: [
@@ -424,7 +424,7 @@ Card {
   }
 
   card_arcane_intellect {
-    name_text: @CardText.txt_arcane_intellect,
+    name_text: &txt_arcane_intellect,
     card_type: Spell,
     faction: Neutral,
     rarity: Common,
@@ -433,7 +433,7 @@ Card {
     keywords: None,
     durability: 0,
     triggers: [
-      { event: OnPlay, effect: @DrawEffect.eff_arcane_intellect_draw, condition: "" },
+      { event: OnPlay, effect: &eff_arcane_intellect_draw, condition: "" },
     ],
     evolved_form: null,
     cost_curve: [],
@@ -442,7 +442,7 @@ Card {
   }
 
   card_frost_nova {
-    name_text: @CardText.txt_frost_nova,
+    name_text: &txt_frost_nova,
     card_type: Spell,
     faction: Neutral,
     rarity: Common,
@@ -451,7 +451,7 @@ Card {
     keywords: None,
     durability: 0,
     triggers: [
-      { event: OnPlay, effect: @DamageEffect.eff_frost_nova_damage, condition: "" },
+      { event: OnPlay, effect: &eff_frost_nova_damage, condition: "" },
     ],
     evolved_form: null,
     cost_curve: [],
@@ -462,7 +462,7 @@ Card {
   # ── 令牌（by SummonEffect 召唤，本身不能放入牌组）────────────────────────
 
   card_silver_hand_recruit {
-    name_text: @CardText.txt_silver_hand_recruit,
+    name_text: &txt_silver_hand_recruit,
     card_type: Minion,
     faction: Alliance,
     rarity: Common,
@@ -477,10 +477,10 @@ Card {
     designer_tags: { is_token: 1 },
   }
 
-  # ── 传说随从（含 evolved_form 自引用链 / 多 Trigger / @路径引用触发效果）
+  # ── 传说随从（含 evolved_form 自引用链 / 多 Trigger / 记录引用触发效果）
 
   card_ysera {
-    name_text: @CardText.txt_ysera,
+    name_text: &txt_ysera,
     card_type: Minion,
     faction: Neutral,
     rarity: Legendary,
@@ -490,9 +490,9 @@ Card {
     durability: 0,
     triggers: [
       # OnTurnEnd：draw a dream card（用 DrawEffect 代替）
-      { event: OnTurnEnd, effect: @DrawEffect.eff_arcane_intellect_draw, condition: "at turn end" },
+      { event: OnTurnEnd, effect: &eff_arcane_intellect_draw, condition: "at turn end" },
       # OnDeath：awakens（TransformEffect 指向升级形态）
-      { event: OnDeath, effect: @TransformEffect.eff_ysera_transform, condition: "" },
+      { event: OnDeath, effect: &eff_ysera_transform, condition: "" },
     ],
     evolved_form: null,
     cost_curve: [
@@ -506,7 +506,7 @@ Card {
   # ── 进化形态（evolved_form 链的终点，cost 更高，无进一步进化）────────────
 
   card_ysera_awakens {
-    name_text: @CardText.txt_frost_nova,
+    name_text: &txt_frost_nova,
     card_type: Spell,
     faction: Neutral,
     rarity: Legendary,
@@ -515,7 +515,7 @@ Card {
     keywords: None,
     durability: 0,
     triggers: [
-      { event: OnPlay, effect: @DamageEffect.eff_ysera_awakens_damage, condition: "" },
+      { event: OnPlay, effect: &eff_ysera_awakens_damage, condition: "" },
     ],
     evolved_form: null,
     cost_curve: [],
@@ -535,28 +535,28 @@ Deck {
     faction: Alliance,
     description: "以神圣护盾和祝福法术为核心的控制套路，靠后期大随从赢得优势。",
     slots: [
-      { card: @Card.card_silver_hand_recruit, count: 2 },
-      { card: @Card.card_execute,             count: 2 },
-      { card: @Card.card_acidic_swamp_ooze,   count: 2 },
-      { card: @Card.card_blessing_of_kings,   count: 2 },
-      { card: @Card.card_blessed_champion,    count: 2 },
-      { card: @Card.card_divine_favor,        count: 1 },
-      { card: @Card.card_chillwind_yeti,      count: 2 },
-      { card: @Card.card_ysera,               count: 1 },
+      { card: &card_silver_hand_recruit, count: 2 },
+      { card: &card_execute,             count: 2 },
+      { card: &card_acidic_swamp_ooze,   count: 2 },
+      { card: &card_blessing_of_kings,   count: 2 },
+      { card: &card_blessed_champion,    count: 2 },
+      { card: &card_divine_favor,        count: 1 },
+      { card: &card_chillwind_yeti,      count: 2 },
+      { card: &card_ysera,               count: 1 },
     ],
   }
 
   # 中立快攻牌组（spread 继承 paladin_control 的基础配置，替换核心）
   deck_neutral_aggro {
-    ...@Deck.deck_paladin_control,
+    ...&deck_paladin_control,
     name: "中立快攻",
     faction: Neutral,
     description: "以低费随从快速推进的快攻套路。",
     slots: [
-      { card: @Card.card_wisp,              count: 2 },
-      { card: @Card.card_stonetusk_boar,    count: 2 },
-      { card: @Card.card_acidic_swamp_ooze, count: 2 },
-      { card: @Card.card_chillwind_yeti,    count: 2 },
+      { card: &card_wisp,              count: 2 },
+      { card: &card_stonetusk_boar,    count: 2 },
+      { card: &card_acidic_swamp_ooze, count: 2 },
+      { card: &card_chillwind_yeti,    count: 2 },
     ],
   }
 

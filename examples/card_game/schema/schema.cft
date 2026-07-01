@@ -157,7 +157,7 @@ type HealEffect : Effect {
 
 # 召唤随从令牌
 type SummonEffect : Effect {
-  token: Card;
+  token: &Card;
   count: int = 1;
 
   check {
@@ -194,7 +194,7 @@ type BuffEffect : Effect {
 
 # 变换（把随从替换成另一张牌）
 type TransformEffect : Effect {
-  into: Card;
+  into: &Card;
 
   check {
     into.cost <= MAX_COST;
@@ -205,7 +205,7 @@ type TransformEffect : Effect {
 
 sealed type Trigger {
   event: TriggerEvent;
-  effect: Effect;
+  effect: &Effect;
   condition: string = "";   # 可选的条件描述（自由文本，供策划标注）
 
   check {
@@ -220,7 +220,7 @@ sealed type Trigger {
 # ─── 卡牌 ─────────────────────────────────────────────────────────────────────
 
 type Card {
-  name_text: CardText;
+  name_text: &CardText;
   card_type: CardType;
   faction: Faction = Faction.Neutral;
   rarity: Rarity   = Rarity.Common;
@@ -237,13 +237,13 @@ type Card {
   triggers: [Trigger] = [];
 
   # 进化/升级链
-  evolved_form: Card? = null;
+  evolved_form: &Card? = null;
 
   # 成本曲线（每个等级实际出牌消耗，用于平衡调整）
   cost_curve: [ScaleCurve] = [];
 
   # 禁用组合（此牌不能与这些牌同时出现在牌组中）
-  banned_with: [Card] = [];
+  banned_with: [&Card] = [];
 
   # 数值标签（供策划备注任意 KV 数据，如概率调整系数）
   designer_tags: {string: int} = {};
@@ -327,7 +327,7 @@ type Card {
 # ─── 牌组 ─────────────────────────────────────────────────────────────────────
 
 sealed type DeckSlot {
-  card: Card;
+  card: &Card;
   count: int = 1;
 
   check {
