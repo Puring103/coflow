@@ -140,7 +140,7 @@ DataModel 统一处理：
 - 字段类型匹配。
 - 多态对象可赋值性。
 - dict key 唯一性。
-- record 引用和 path reference。
+- `&Type` 记录引用。
 - 继承索引。
 - `@singleton` 约束。
 

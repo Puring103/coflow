@@ -333,8 +333,6 @@ type Monster {
 - `@idAsEnum(Name)`：把加载到的 record key 填充进手动声明的空 enum，并用于生成强类型 C# key。
 - `@struct`：让 sealed value-like type 生成 C# struct。
 - `@expand`：让 Excel 相邻列展开成嵌套 object 字段。
-- `@ref`：强制对象字段、数组元素或字典 value 写成记录引用。
-- `@inline`：强制对象字段、数组元素或字典 value 写成内联对象。
 - `@localized`：声明字段值按语言维度变化。
 - `@singleton`：声明数据集中该 type 有且仅有一条 record。
 
@@ -346,11 +344,10 @@ type Monster {
 - record key 是 string identifier。
 - 名为 `#` 的表头是可选导入控制列；数据行中该列单元格为 `##` 时，整行在
   `id` 或字段解析前跳过。
-- object 引用必须显式写为 typed ref，例如 `@Item.sword_01` 或
-  `@DropTable.drop_01.rewards[0]`。
-- 同类型直接引用可写为 `&sword_01`。路径引用仍必须使用显式 `@Type.key` 根。
-- CFT 字段带 `@ref` 时只能写引用；带 `@inline` 时只能写内联对象。表格对象单元格
-  可写 `Stats{hp: 100, attack: 50}`，多态对象也用 `ConcreteType{...}`。
+- CFT 字段类型写成 `&Item`、`[&Item]` 或 `{string: &Item}` 时，表格单元格写
+  `&sword_01` 这类 key-only 记录引用。
+- 普通 object 字段类型写成 `Stats`、`Reward` 时表示内联对象。表格对象单元格可写
+  `Stats{hp: 100, attack: 50}`，多态对象也用 `ConcreteType{...}`。
 - 裸字符串保持字符串语义。导出的 JSON 和 MessagePack 中，引用字段保存为
   `"sword_01"` 这类纯 key 字符串，而不是 `"Item.sword_01"`。
 

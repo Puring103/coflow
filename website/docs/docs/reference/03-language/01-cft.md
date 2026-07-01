@@ -135,7 +135,7 @@ abstract type Reward {
 }
 
 sealed type ItemReward : Reward {
-  item: Item;
+  item: &Item;
   count: int = 1;
 }
 
@@ -168,21 +168,19 @@ type Item {
 }
 ```
 
-对象字段的数据默认既可以是内联对象，也可以是数据源中的记录引用。需要强制形态时使用：
-
-- `@ref`：必须写成记录引用。
-- `@inline`：必须写成内联对象。
-- 字段类型包含 `@singleton` type 时，无论是否显式写 `@ref`，数据值都必须写成记录引用，且不能写 `@inline`。
+对象字段的形态由字段类型直接决定：
 
 ```text
 type Drop {
-  @ref
-  item: Item;
+  item: &Item;
+  backup: &Item? = null;
 
-  @inline
   reward: Reward;
+  reward_pool: [&Reward] = [];
 }
 ```
+
+其中 `&Item` 表示记录引用，数据源中写 `&sword_fire` 这类 key-only 引用；普通 `Reward` 表示内联对象，数据源中写对象内容。`[&Reward]` 和 `{string: &Item}` 会把集合元素或字典 value 递归约束为记录引用。
 
 表格单元格和 CFD 中的具体引用写法见数据源与 CFD 参考。导出时，记录引用会保存为目标 record key。
 
@@ -190,7 +188,6 @@ type Drop {
 
 - 掉落奖励引用物品 record，例如 `Item.sword`。
 - 怪物引用掉落表 record，例如 `DropTable.goblin_drop`。
-- 路径引用定位到某条记录的字段或集合元素，例如 `DropTable.goblin_drop.rewards[0]`。
 
 ## nullable
 
@@ -200,8 +197,8 @@ nullable 用于表达字段可以没有值，但仍然要显式处理 `null`。
 
 ```text
 type Drop {
-  item: Item?;
-  backup: Item? = null;
+  item: &Item?;
+  backup: &Item? = null;
 }
 ```
 
@@ -430,8 +427,6 @@ check {
 | `@flag` | enum | schema / codegen | 位标志枚举 |
 | `@struct` | type | codegen | C# codegen 生成 value-like struct；目标必须是 `sealed type` |
 | `@expand` | field | table loader | 表格相邻列展开成嵌套对象 |
-| `@ref` | field | data parsing / model build | 数据值必须写成记录引用 |
-| `@inline` | field | data parsing / model build | 数据值必须写成内联对象 |
 | `@idAsEnum(EnumName)` | type | build / codegen | 按 record key 填充空 enum，用于强类型 key |
 | `@localized` / `@localized("bucket")` | field | dimensions / check / codegen | 字段值按语言维度变化 |
 | `@singleton` | type | data model / codegen | 数据集中该 type 只有一条 record |
@@ -478,9 +473,7 @@ type GameConfig {
 
 - 不能用于 `abstract type`。
 - 不能与 `@idAsEnum` 同时使用。
-- 可以被字段类型引用，包括数组、字典和 nullable 内层。
-- 引用 singleton 的字段值必须写成记录引用，不能写成内联对象。
-- `@inline` 不能用于包含 singleton type 的字段；`@ref` 可以显式写，也可以省略。
+- 不作为普通字段类型使用，也不能写成 `&SingletonType` 记录引用字段。
 - record key 仍由数据源提供。
 
 ### `@localized`
@@ -599,8 +592,7 @@ abstract type Reward {
 }
 
 sealed type ItemReward : Reward {
-  @ref
-  item: Item;
+  item: &Item;
   count: int = 1;
 
   check { count > 0; }
@@ -617,7 +609,7 @@ type Monster {
   level: int;
   stats: Stats;
   rewards: [Reward] = [];
-  boss_drop: Item? = null;
+  boss_drop: &Item? = null;
 
   check {
     name != "";

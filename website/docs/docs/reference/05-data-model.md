@@ -11,8 +11,10 @@ Coflow 的数据模型是所有数据源汇合后的统一运行时表示。Exce
 ```text
 CfdDataModel
   tables              # TypeName -> CfdTable
-  inheritance_index   # TypeName -> polymorphic key index
+  domain_index        # TypeName -> TypeId / DomainId
   records             # 所有顶层 records
+  ref_edges           # 直接 &Type 引用边
+  spread_edges        # ...&key spread 来源边
 
 CfdTable
   type_name
@@ -21,6 +23,9 @@ CfdTable
 
 CfdRecord
   key                 # record key
+  object              # 顶层 record 的对象值
+
+CfdObject
   actual_type          # 运行时实际类型
   fields               # FieldName -> CfdValue
 ```
@@ -40,7 +45,7 @@ CfdRecord
 | `String` | 字符串 |
 | `Enum` | 枚举值，携带 enum 名、底层整数值和可选 variant 名 |
 | `Object` | 内联对象，无独立 record identity |
-| `Ref` | 指向顶层 record 的引用，保留原始 key 和目标 `RecordId` |
+| `Ref` | 指向顶层 record 的引用，值本身只保留目标 key |
 | `Array` | 有序数组 |
 | `Dict` | 保持插入顺序的字典 |
 
@@ -50,14 +55,15 @@ CfdRecord
 
 `Object` 表示内联对象，只属于所在记录或字段值，不可被其他记录引用。
 
-`Ref` 表示对顶层 record 的共享引用。构建模型时，Coflow 会把来源中的 `@Type.key`、`&key` 或路径引用解析成目标记录；找不到目标或类型不兼容时报告引用诊断。
+`Ref` 表示对顶层 record 的共享引用。构建模型时，Coflow 会把字段类型为 `&Type` 的输入值 `&key` 解析成目标记录；找不到目标或类型不兼容时报告引用诊断。
 
-字段上的注解会约束输入形态：
+字段类型会约束输入形态：
 
-| 注解 | DataModel 行为 |
+| 字段类型 | DataModel 行为 |
 | --- | --- |
-| `@ref` | 该字段位置必须是记录引用，拒绝内联对象 |
-| `@inline` | 该字段位置必须是内联对象，拒绝记录引用和路径引用 |
+| `&Item` | 该字段位置必须是记录引用，拒绝内联对象 |
+| `Item` | 该字段位置必须是内联对象，拒绝记录引用 |
+| `[&Item]` / `{string: &Item}` | 集合元素或字典 value 必须是记录引用 |
 
 这些约束会沿数组元素和字典 value 递归应用。`null` 仍按 nullable 规则处理。
 
@@ -80,30 +86,32 @@ CfdRecord
 
 ## 继承与引用范围
 
-当字段声明为某个 type 时，引用查找会在该 type 的可赋值范围内进行：
+当字段声明为 `&Type` 时，引用查找会在该 type 所属继承命名域内进行：
 
-| 声明类型 | 可引用范围 |
+| 引用类型 | 可引用范围 |
 | --- | --- |
-| `abstract type` | 所有具体子类 |
-| 有子类的普通 `type` | 自身和所有子类 |
-| `sealed type` 或无子类普通 `type` | 仅自身 |
+| `&Reward`，其中 `Reward` 是 abstract type | 所有具体子类 |
+| `&Item`，其中 `Item` 有子类 | 自身和所有子类 |
+| `&Stats`，其中 `Stats` 是 sealed type 或无子类普通 type | 仅自身 |
 
-同一具体类型内 record key 必须唯一。同一多态索引范围内 key 也必须唯一，否则父类字段引用无法确定目标。
+同一继承连通分量内 record key 必须唯一。无继承关系的 type 仍可复用相同 key。
 
 子类 record 可以满足父类字段引用；父类 record 不能满足子类字段引用。
 
-## 路径引用
+## 引用索引
 
-路径引用先定位根记录，再继续访问字段、数组索引或字典 key：
+直接 `&Type` 引用会生成 `RefEdge`。`RefEdge` 记录 host record、字段路径、期望 type、继承命名域、目标 key 和目标 record id。
 
 ```text
-@Item.sword.rewards[0]
-@Quest.main.steps["intro"]
+RefSite(host_record, field_path) -> RefEdge
 ```
 
-路径引用结果仍必须能赋给目标字段类型。路径中的目标记录不存在、字段不存在、索引越界或字典 key 不存在时，都会在 DataModel / 引用阶段报告诊断。
+DataModel 同时维护：
 
-`&key` 只是当前期望对象类型下的简写，不支持路径访问。路径引用必须写显式根类型。
+- `ref_by_site`：按字段位置查目标。
+- `ref_by_host`：按 record 枚举直接出边，供图视图使用。
+- `ref_by_target`：按目标 record 枚举入边，供 rename 和删除检查使用。
+- `spread_by_site` / `spread_by_source`：独立描述 `...&key` 来源，不进入直接引用图。
 
 ## 数据源顺序
 
@@ -160,7 +168,7 @@ Provider 只负责把来源格式转成 input records，并提供来源定位：
 - 多态可赋值。
 - 字典 key 去重。
 - record key 唯一性。
-- 引用和路径引用解析。
+- `&Type` 记录引用解析。
 - `@singleton` 约束。
 
 这样不同来源可以互相引用，并且所有来源得到一致的校验结果。

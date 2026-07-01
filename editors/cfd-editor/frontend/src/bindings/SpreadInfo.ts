@@ -3,7 +3,6 @@ import type { RecordCoordinate } from "./RecordCoordinate";
 
 /**
  * Source record coordinate of a spread-inherited cell, plus the field
- * path within the source record so the UI can render
- * `@Source.Key.path.to.field`.
+ * path within the source record so the UI can render source attribution.
  */
 export type SpreadInfo = { source: RecordCoordinate, source_record_file: string | null, source_field_path: Array<string>, };

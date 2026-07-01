@@ -74,7 +74,7 @@ type Item {
 
 其中 `price` 列对应 `amount`，后续空表头列对应 `currency`。
 
-`@expand` 字段必须引用具体对象类型，不能用于 nullable、数组、字典、enum 或 primitive 字段，也不能和 `@ref` 同时使用。
+`@expand` 字段必须是具体内联对象类型，不能用于 `&Type` 引用、nullable、数组、字典、enum 或 primitive 字段。
 
 ## Source 顺序
 

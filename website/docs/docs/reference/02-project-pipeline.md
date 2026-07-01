@@ -142,7 +142,7 @@ DataModel 阶段统一处理：
 - 字典 key。
 - record key。
 - `@singleton`。
-- 引用和路径引用。
+- `&Type` 记录引用。
 
 Checker 阶段执行 CFT `check {}`，并生成 `CFD-CHECK-*` 诊断。
 
