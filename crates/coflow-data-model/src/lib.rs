@@ -39,9 +39,9 @@ pub use diagnostic::{
     CfdStage,
 };
 pub use model::{
-    CfdDataModel, CfdDictKey, CfdEnumValue, CfdInputDictKey, CfdInputRecord, CfdInputRefIndex,
-    CfdInputValue, CfdModelBuilder, CfdPolymorphicIndex, CfdRecord, CfdRecordId, CfdRefPathSegment,
-    CfdTable, CfdValue, RefSite,
+    CfdDataModel, CfdDictKey, CfdDomainId, CfdDomainIndex, CfdEnumValue, CfdInputDictKey,
+    CfdInputRecord, CfdInputRefIndex, CfdInputValue, CfdModelBuilder, CfdPolymorphicIndex,
+    CfdRecord, CfdRecordId, CfdRefPathSegment, CfdTable, CfdTypeId, CfdValue, RefSite,
 };
 pub use origin::{
     label_to_location, map_diagnostics, MappedDiagnostic, MappedLabel, RecordOrigin,
