@@ -19,7 +19,7 @@ import {
   type GraphNodeView,
 } from '../wire'
 import { isEditableCapabilities, isEditableFile } from '../utils/editable'
-import { DataCardNode, CardHeader, NODE_PEEK_FIELDS, countVisibleRows, type FieldModeIndex } from './DataCard'
+import { DataCardNode, CardHeader, NODE_PEEK_FIELDS, countVisibleRows } from './DataCard'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
 
@@ -47,7 +47,6 @@ async function getElk(): Promise<ELK> {
 
 interface NodeData extends Record<string, unknown> {
   graphNode: GraphNodeView
-  fieldModes: FieldModeIndex
   expanded: boolean
   /** Distinct edge field_paths whose source is this node (e.g. ["unlockGeneList[0]", "unlockGeneList[1]"]) */
   outgoingPaths: string[]
@@ -70,7 +69,7 @@ interface NodeData extends Record<string, unknown> {
 // header height variation, or sub-row expansion.
 
 function CfdNode({ id, data }: NodeProps) {
-  const { graphNode: gn, fieldModes, expanded, outgoingPaths, compact, rowExpandKey, onToggleExpand, onRowToggle, onEdit, onCtrlClick, selected } = data as NodeData
+  const { graphNode: gn, expanded, outgoingPaths, compact, rowExpandKey, onToggleExpand, onRowToggle, onEdit, onCtrlClick, selected } = data as NodeData
   const rootRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLDivElement>(null)
   const updateNodeInternals = useUpdateNodeInternals()
@@ -181,7 +180,6 @@ function CfdNode({ id, data }: NodeProps) {
             <DataCardNode
               fields={gn.fields}
               actualType={gn.actual_type}
-              fieldModes={fieldModes}
               showAll={expanded}
               onToggle={onToggleExpand}
               onRowToggle={onRowToggle}
@@ -700,7 +698,6 @@ export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecor
           position: positions.get(n.id) ?? { x: 0, y: 0 },
           data: {
             graphNode: n,
-            fieldModes: graphData.field_modes,
             expanded: nodeExpandedMap.get(n.id) ?? false,
             outgoingPaths: outgoingPathsByNode.get(n.id) ?? [],
             compact: compactNodes,

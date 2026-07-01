@@ -31,7 +31,7 @@ fn reload_session_rebuilds_from_changed_project_files() {
 }
 
 #[test]
-fn file_records_load_ref_type_fields_without_field_mode_annotations() {
+fn file_records_load_ref_type_fields_without_mode_wire_metadata() {
     let root = temp_project_dir("cfd-editor-field-mode");
     let _cleanup = TempDirCleanup(root.clone());
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
@@ -92,14 +92,16 @@ fn file_records_load_ref_type_fields_without_field_mode_annotations() {
         .expect("item_inline field");
 
     assert_eq!(
-        item_ref.annotation.as_ref().and_then(|a| a.field_mode),
-        None
+        item_ref
+            .annotation
+            .as_ref()
+            .and_then(|annotation| annotation.ref_target_file.as_deref()),
+        Some("data/items.cfd")
     );
-    assert_eq!(
-        item_inline.annotation.as_ref().and_then(|a| a.field_mode),
-        None
+    assert!(
+        item_inline.annotation.is_none(),
+        "inline fields should not carry ref or field-mode annotations"
     );
-    assert!(records.field_modes.is_empty());
 }
 
 #[test]

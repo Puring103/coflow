@@ -3,4 +3,4 @@ import type { CfdDictKey } from "./CfdDictKey";
 import type { CfdEnumValue } from "./CfdEnumValue";
 import type { CfdRecord } from "./CfdRecord";
 
-export type CfdValue = { "kind": "null" } | { "kind": "bool", "value": boolean } | { "kind": "int", "value": bigint } | { "kind": "float", "value": number } | { "kind": "string", "value": string } | { "kind": "enum", "value": CfdEnumValue } | { "kind": "object", "value": CfdRecord } | { "kind": "ref", "value": { target_type: string, target_key: string, } } | { "kind": "array", "value": Array<CfdValue> } | { "kind": "dict", "value": Array<[CfdDictKey, CfdValue]> };
+export type CfdValue = { "kind": "null" } | { "kind": "bool", "value": boolean } | { "kind": "int", "value": bigint } | { "kind": "float", "value": number } | { "kind": "string", "value": string } | { "kind": "enum", "value": CfdEnumValue } | { "kind": "object", "value": CfdRecord } | { "kind": "ref", "value": string } | { "kind": "array", "value": Array<CfdValue> } | { "kind": "dict", "value": Array<[CfdDictKey, CfdValue]> };

@@ -74,7 +74,6 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
   'data/item.cfd': {
     file_path: 'data/item.cfd',
     type_names: ['Item', 'Weapon'],
-    field_modes: {},
     capabilities: MOCK_CFD_CAPS,
     records: [
       row('Item', 'Item_001', [
@@ -104,21 +103,20 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
   'data/npc.cfd': {
     file_path: 'data/npc.cfd',
     type_names: ['Npc'],
-    field_modes: {},
     capabilities: MOCK_CFD_CAPS,
     records: [
       row('Npc', 'Npc_001', [
         { name: 'name', value: strVal('村民甲'), annotation: null },
         { name: 'level', value: intVal(1), annotation: null },
-        { name: 'reward_item', value: refVal('Item', 'ItemXxx'), annotation: null },
+        { name: 'reward_item', value: refVal(''), annotation: null },
         { name: 'faction', value: enumVal('Faction', 'Neutral', 0), annotation: null },
         {
           name: 'drops',
           value: {
             kind: 'array',
             value: [
-              refVal('Item', 'Item_001'),
-              refVal('Item', 'Item_002'),
+              refVal(''),
+              refVal(''),
             ],
           },
           annotation: null,
@@ -127,7 +125,7 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
       row('Npc', 'Npc_002', [
         { name: 'name', value: strVal('铁匠'), annotation: null },
         { name: 'level', value: intVal(5), annotation: null },
-        { name: 'reward_item', value: refVal('Item', 'Sword_001'), annotation: null },
+        { name: 'reward_item', value: refVal(''), annotation: null },
         { name: 'faction', value: enumVal('Faction', 'Friendly', 1), annotation: null },
         { name: 'drops', value: { kind: 'array', value: [] }, annotation: null },
       ]),
@@ -136,7 +134,6 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
 }
 
 export const MOCK_GRAPH: GraphData = {
-  field_modes: {},
   nodes: [
     mockGraphNode(MOCK_FILE_RECORDS['data/npc.cfd'].records[0], 'data/npc.cfd', true),
     mockGraphNode(MOCK_FILE_RECORDS['data/npc.cfd'].records[1], 'data/npc.cfd', true),

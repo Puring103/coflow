@@ -162,8 +162,8 @@ test('compact graph IDs are large and can wrap for readability', () => {
 test('lays out same-table references across successive columns', async () => {
   const graph = {
     nodes: [
-      graphNode('A', [{ name: 'next', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'B' } }, annotation: null }]),
-      graphNode('B', [{ name: 'next', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'C' } }, annotation: null }]),
+      graphNode('A', [{ name: 'next', value: { kind: 'ref', value: '' }, annotation: null }]),
+      graphNode('B', [{ name: 'next', value: { kind: 'ref', value: '' }, annotation: null }]),
       graphNode('C'),
     ],
     edges: [
@@ -185,8 +185,8 @@ test('shows cross-type relationships when their field is enabled', async () => {
   const graph = {
     nodes: [
       graphNode('A', [
-        { name: 'next', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'B' } }, annotation: null },
-        { name: 'quest', value: { kind: 'ref', value: { target_type: 'Quest', target_key: 'Q' } }, annotation: null },
+        { name: 'next', value: { kind: 'ref', value: '' }, annotation: null },
+        { name: 'quest', value: { kind: 'ref', value: '' }, annotation: null },
       ]),
       graphNode('B'),
       graphNode('Q', [], 'Quest'),
@@ -233,7 +233,7 @@ test('keeps records without same-type incoming edges in the leftmost column', as
     nodes: [
       graphNode('Child'),
       graphNode('Root', [
-        { name: 'child', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'Child' } }, annotation: null },
+        { name: 'child', value: { kind: 'ref', value: '' }, annotation: null },
       ]),
     ],
     edges: [
@@ -251,16 +251,16 @@ test('reduces crossings in dense adjacent layers', async () => {
   const graph = {
     nodes: [
       graphNode('A', [
-        { name: 'w', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'W' } }, annotation: null },
-        { name: 'y', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'Y' } }, annotation: null },
-        { name: 'z', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'Z' } }, annotation: null },
+        { name: 'w', value: { kind: 'ref', value: '' }, annotation: null },
+        { name: 'y', value: { kind: 'ref', value: '' }, annotation: null },
+        { name: 'z', value: { kind: 'ref', value: '' }, annotation: null },
       ]),
       graphNode('B', [
-        { name: 'w', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'W' } }, annotation: null },
-        { name: 'x', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'X' } }, annotation: null },
+        { name: 'w', value: { kind: 'ref', value: '' }, annotation: null },
+        { name: 'x', value: { kind: 'ref', value: '' }, annotation: null },
       ]),
       graphNode('C', [
-        { name: 'w', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'W' } }, annotation: null },
+        { name: 'w', value: { kind: 'ref', value: '' }, annotation: null },
       ]),
       graphNode('D'),
       graphNode('W'),
@@ -287,19 +287,19 @@ test('uses downstream relationships to reduce crossings across three layers', as
   const graph = {
     nodes: [
       graphNode('C', [
-        { name: 'm', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'M' } }, annotation: null },
-        { name: 'n', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'N' } }, annotation: null },
-        { name: 'o', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'O' } }, annotation: null },
+        { name: 'm', value: { kind: 'ref', value: '' }, annotation: null },
+        { name: 'n', value: { kind: 'ref', value: '' }, annotation: null },
+        { name: 'o', value: { kind: 'ref', value: '' }, annotation: null },
       ]),
       graphNode('M', [
-        { name: 'z', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'Z' } }, annotation: null },
+        { name: 'z', value: { kind: 'ref', value: '' }, annotation: null },
       ]),
       graphNode('N', [
-        { name: 'y', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'Y' } }, annotation: null },
+        { name: 'y', value: { kind: 'ref', value: '' }, annotation: null },
       ]),
       graphNode('O', [
-        { name: 'x', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'X' } }, annotation: null },
-        { name: 'z', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'Z' } }, annotation: null },
+        { name: 'x', value: { kind: 'ref', value: '' }, annotation: null },
+        { name: 'z', value: { kind: 'ref', value: '' }, annotation: null },
       ]),
       graphNode('X'),
       graphNode('Y'),
@@ -325,20 +325,20 @@ test('spreads middle-layer records by the occupied height of their downstream no
   const graph = {
     nodes: [
       graphNode('Root', [
-        { name: 'a', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'A' } }, annotation: null },
-        { name: 'b', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'B' } }, annotation: null },
+        { name: 'a', value: { kind: 'ref', value: '' }, annotation: null },
+        { name: 'b', value: { kind: 'ref', value: '' }, annotation: null },
       ]),
       graphNode('A', [
-        { name: 'a1', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'A1' } }, annotation: null },
-        { name: 'a2', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'A2' } }, annotation: null },
-        { name: 'a3', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'A3' } }, annotation: null },
-        { name: 'a4', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'A4' } }, annotation: null },
+        { name: 'a1', value: { kind: 'ref', value: '' }, annotation: null },
+        { name: 'a2', value: { kind: 'ref', value: '' }, annotation: null },
+        { name: 'a3', value: { kind: 'ref', value: '' }, annotation: null },
+        { name: 'a4', value: { kind: 'ref', value: '' }, annotation: null },
       ]),
       graphNode('B', [
-        { name: 'b1', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'B1' } }, annotation: null },
-        { name: 'b2', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'B2' } }, annotation: null },
-        { name: 'b3', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'B3' } }, annotation: null },
-        { name: 'b4', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'B4' } }, annotation: null },
+        { name: 'b1', value: { kind: 'ref', value: '' }, annotation: null },
+        { name: 'b2', value: { kind: 'ref', value: '' }, annotation: null },
+        { name: 'b3', value: { kind: 'ref', value: '' }, annotation: null },
+        { name: 'b4', value: { kind: 'ref', value: '' }, annotation: null },
       ]),
       graphNode('A1'),
       graphNode('A2'),
@@ -373,16 +373,16 @@ test('spreads roots by the occupied height of their downstream nodes', async () 
   const graph = {
     nodes: [
       graphNode('A', [
-        { name: 'm', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'M' } }, annotation: null },
+        { name: 'm', value: { kind: 'ref', value: '' }, annotation: null },
       ]),
       graphNode('B', [
-        { name: 'm', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'M' } }, annotation: null },
+        { name: 'm', value: { kind: 'ref', value: '' }, annotation: null },
       ]),
       graphNode('M', [
-        { name: 'l1', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'L1' } }, annotation: null },
-        { name: 'l2', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'L2' } }, annotation: null },
-        { name: 'l3', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'L3' } }, annotation: null },
-        { name: 'l4', value: { kind: 'ref', value: { target_type: 'Item', target_key: 'L4' } }, annotation: null },
+        { name: 'l1', value: { kind: 'ref', value: '' }, annotation: null },
+        { name: 'l2', value: { kind: 'ref', value: '' }, annotation: null },
+        { name: 'l3', value: { kind: 'ref', value: '' }, annotation: null },
+        { name: 'l4', value: { kind: 'ref', value: '' }, annotation: null },
       ]),
       graphNode('L1'),
       graphNode('L2'),

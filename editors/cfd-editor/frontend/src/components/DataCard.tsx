@@ -11,14 +11,11 @@ import {
   type DragEvent as ReactDragEvent,
 } from 'react'
 import type { FieldCell } from '../bindings/FieldCell'
-import type { FieldMode } from '../bindings/FieldMode'
-import type { RefTarget } from '../bindings/RefTarget'
 import type { SpreadInfo } from '../bindings/SpreadInfo'
 import type { DictKey, FieldPathSegment, FieldValue } from '../wire'
 import {
   boolValue,
   cellSpreadInfo,
-  coordinateId,
   enumValue,
   fieldPathDictKey,
   fieldPathField,
@@ -27,12 +24,11 @@ import {
   intValue,
   objectFields,
   refValue,
-  refValueFromTarget,
   stringValue,
 } from '../wire'
 import { Icon } from './Icon'
 import { typeColor, enumColor } from '../utils/typeColor'
-import { loadEnumVariants, loadRefTargets, buildDefaultObject } from '../utils/editContext'
+import { loadEnumVariants } from '../utils/editContext'
 
 export function CardHeader({
   recordKey,
@@ -92,7 +88,6 @@ export function CardHeader({
 export const NODE_PEEK_FIELDS = 4
 const MAX_DEPTH = 5
 const INDENT_PX = 14
-export type FieldModeIndex = { [key in string]?: { [key in string]?: FieldMode } }
 
 function spreadHintText(info: SpreadInfo | undefined): string | undefined {
   if (!info) return undefined
@@ -119,7 +114,7 @@ function valueKindLabel(v: FieldValue): string {
     case 'string': return 'string'
     case 'enum': return v.value.enum_name
     case 'object': return v.value.actual_type
-    case 'ref': return v.value.target_type
+    case 'ref': return '&'
     case 'array': return v.value[0] ? `${valueKindLabel(v.value[0])}[]` : '[]'
     case 'dict': return v.value[0]
       ? `{${dictKindLabel(v.value[0][0])}:${valueKindLabel(v.value[0][1])}}`
@@ -151,7 +146,7 @@ export function summaryOf(v: FieldValue): string {
     case 'float': return String(v.value)
     case 'string': return v.value.length > 40 ? v.value.slice(0, 38) + '…' : v.value
     case 'enum': return enumVariantText(v)
-    case 'ref': return v.value.target_key
+    case 'ref': return v.value
     case 'object': return v.value.actual_type
     case 'array': {
       if (v.value.length === 0) return '[]'
@@ -221,10 +216,9 @@ function ValueChip({ value }: { value: FieldValue }) {
       )
     case 'ref':
       return (
-        <span className="vc vc-ref" title={`${value.value.target_type}.${value.value.target_key}`}>
+        <span className="vc vc-ref" title={`&${value.value}`}>
           <Icon name="dot" size={9} />
-          <span className="vc-ref-key">{value.value.target_key}</span>
-          <span className="vc-ref-type">({value.value.target_type})</span>
+          <span className="vc-ref-key">{value.value}</span>
         </span>
       )
     case 'object':
@@ -285,7 +279,6 @@ function buildDiagCtx(diags: FieldDiagnostic[] | undefined): DiagCtxValue | null
 export interface ExpandedProps {
   fields: FieldCell[]
   actualType?: string
-  fieldModes?: FieldModeIndex
   depth?: number
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   pathPrefix?: string
@@ -298,7 +291,6 @@ export interface ExpandedProps {
 export function DataCardExpanded({
   fields,
   actualType,
-  fieldModes,
   depth = 0,
   onEdit,
   pathPrefix,
@@ -337,7 +329,6 @@ export function DataCardExpanded({
       {fields.map((fc) => {
         const fieldEdit = isDimensionDefaultField(actualType, fc.name) ? undefined : onEdit
         const spreadInfo = cellSpreadInfo(fc)
-        const fieldMode = fc.annotation?.field_mode ?? fieldModes?.[actualType ?? '']?.[fc.name] ?? null
         return (
           <FieldRow
             key={fc.name}
@@ -347,8 +338,6 @@ export function DataCardExpanded({
             onEdit={fieldEdit}
             isSpread={!!spreadInfo}
             spreadInfo={spreadInfo}
-            fieldMode={fieldMode}
-            fieldModes={fieldModes}
             fieldPath={[fieldPathField(fc.name)]}
             pathKey={pathPrefix ? `${pathPrefix}.${fc.name}` : fc.name}
             onRowToggle={onRowToggle}
@@ -385,8 +374,6 @@ function FieldRow({
   onEdit,
   isSpread,
   spreadInfo,
-  fieldMode,
-  fieldModes,
   fieldPath,
   pathKey,
   onRowToggle,
@@ -400,8 +387,6 @@ function FieldRow({
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   isSpread?: boolean
   spreadInfo?: SpreadInfo
-  fieldMode?: FieldMode | null
-  fieldModes?: FieldModeIndex
   fieldPath: FieldPathSegment[]
   pathKey?: string
   onRowToggle?: (path: string, expanded: boolean) => void
@@ -421,8 +406,6 @@ function FieldRow({
         onEdit={onEdit}
         isSpread={isSpread}
         spreadInfo={spreadInfo}
-        fieldMode={fieldMode}
-        fieldModes={fieldModes}
         fieldPath={fieldPath}
         pathKey={pathKey}
         onRowToggle={onRowToggle}
@@ -440,7 +423,6 @@ function FieldRow({
       onCommit={onEdit ? next => onEdit(fieldPath, next) : undefined}
       isSpread={isSpread}
       spreadInfo={spreadInfo}
-      fieldMode={fieldMode}
       pathKey={pathKey}
       leading={leading}
       trailing={trailing}
@@ -456,7 +438,6 @@ function ScalarFieldRow({
   onCommit,
   isSpread,
   spreadInfo,
-  fieldMode,
   pathKey,
   leading,
   trailing,
@@ -468,7 +449,6 @@ function ScalarFieldRow({
   onCommit?: (newValue: FieldValue) => void
   isSpread?: boolean
   spreadInfo?: SpreadInfo
-  fieldMode?: FieldMode | null
   pathKey?: string
   leading?: ReactNode
   trailing?: ReactNode
@@ -490,22 +470,11 @@ function ScalarFieldRow({
       <div className="dc-row-value">
         <div className="dc-row-value-inner">
           {canEdit ? (
-            <DirectEditor value={value} onCommit={onCommit!} fieldMode={fieldMode} />
+            <DirectEditor value={value} onCommit={onCommit!} />
           ) : (
             <ValueChip value={value} />
           )}
         </div>
-        {onCommit && value.kind === 'ref' && fieldMode !== 'ref' && (
-          <button
-            className="btn-tiny dc-row-mode-btn"
-            title={`将引用 "${value.value.target_key}" 转为内联对象（使用 schema 默认值）`}
-            onClick={async e => {
-              e.stopPropagation()
-              const obj = await buildDefaultObject(value.value.target_type)
-              if (obj) onCommit(obj)
-            }}
-          >内联</button>
-        )}
         {trailing}
       </div>
     </div>
@@ -515,11 +484,9 @@ function ScalarFieldRow({
 function DirectEditor({
   value,
   onCommit,
-  fieldMode,
 }: {
   value: FieldValue
   onCommit: (next: FieldValue) => void
-  fieldMode?: FieldMode | null
 }) {
   if (value.kind === 'bool') {
     return (
@@ -535,7 +502,6 @@ function DirectEditor({
     return <EnumDirectSelect value={value} onCommit={onCommit} />
   }
   if (value.kind === 'ref') {
-    if (fieldMode === 'inline') return <ValueChip value={value} />
     return <RefDirectSelect value={value} onCommit={onCommit} />
   }
   if (value.kind === 'int' || value.kind === 'float' || value.kind === 'string') {
@@ -666,89 +632,33 @@ export function RefDirectSelect({
   /** flat=true: skip the pill wrapper, render just the select (for table cells) */
   flat?: boolean
 }) {
-  const [targets, setTargets] = useState<RefTarget[] | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  useEffect(() => {
-    let alive = true
-    setLoadError(null)
-    loadRefTargets(value.value.target_type).then(r => {
-      if (!alive) return
-      if (r.ok) setTargets(r.targets)
-      else { setTargets([]); setLoadError(r.error) }
-    })
-    return () => { alive = false }
-  }, [value.value.target_type])
-
   function commit(key: string) {
-    if (key !== value.value.target_key) {
-      onCommit(refValue(value.value.target_type, key))
+    if (key !== value.value) {
+      onCommit(refValue(key))
     }
   }
 
-  if (targets === null || targets.length === 0) {
-    const input = (
-      <input
-        className={`dc-input dc-input-flat dc-input-ref-select${flat ? ' dc-input-ref-select-flat' : ''}`}
-        defaultValue={value.value.target_key}
-        autoFocus={autoFocus}
-        aria-invalid={!!loadError}
-        placeholder={targets === null ? '加载中...' : 'key'}
-        title={value.value.target_type}
-        onBlur={e => commit(e.target.value)}
-        onKeyDown={e => {
-          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-          if (e.key === 'Escape') (e.target as HTMLInputElement).blur()
-        }}
-      />
-    )
-    if (flat) return input
-    return (
-      <span className="dc-input-ref" title={value.value.target_type}>
-        <span className="dc-input-ref-dot" />
-        {input}
-        {loadError && <span className="dc-load-error" title={loadError}>!</span>}
-      </span>
-    )
-  }
-
-  const currentId = value.value.target_key
-    ? coordinateId({ actual_type: value.value.target_type, key: value.value.target_key })
-    : ''
-  const targetById = new Map(targets.map(t => [refTargetId(t), t]))
-  const inList = currentId ? targetById.has(currentId) : false
-
-  const select = (
-    <select
+  const input = (
+    <input
       className={`dc-input dc-input-flat dc-input-ref-select${flat ? ' dc-input-ref-select-flat' : ''}`}
-      value={currentId}
+      defaultValue={value.value}
       autoFocus={autoFocus}
-      onChange={e => {
-        const target = targetById.get(e.target.value)
-        if (target) onCommit(refValueFromTarget(target))
+      placeholder="key"
+      onBlur={e => commit(e.target.value)}
+      onKeyDown={e => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+        if (e.key === 'Escape') (e.target as HTMLInputElement).blur()
       }}
-      title={value.value.target_type}
-    >
-      {!value.value.target_key && <option value="" disabled>选择...</option>}
-      {value.value.target_key && !inList && <option value={currentId}>{value.value.target_key}</option>}
-      {targets.map(t => <option key={refTargetId(t)} value={refTargetId(t)}>{refTargetLabel(t)}</option>)}
-    </select>
+    />
   )
 
-  if (flat) return select
+  if (flat) return input
   return (
     <span className="dc-input-ref">
       <span className="dc-input-ref-dot" />
-      {select}
+      {input}
     </span>
   )
-}
-
-function refTargetId(target: RefTarget): string {
-  return coordinateId(target.coordinate)
-}
-
-function refTargetLabel(target: RefTarget): string {
-  return target.coordinate.key
 }
 
 export function InlineEditor({
@@ -896,51 +806,19 @@ function RefSelect({
   onCommit: (next: FieldValue) => void
   onCancel: () => void
 }) {
-  const [targets, setTargets] = useState<RefTarget[] | null>(null)
-  const [val, setVal] = useState(value.value.target_key)
-  useEffect(() => {
-    let alive = true
-    loadRefTargets(value.value.target_type).then(r => { if (alive) setTargets(r.ok ? r.targets : []) })
-    return () => { alive = false }
-  }, [value.value.target_type])
-  useEffect(() => { setVal(value.value.target_key) }, [value.value.target_key])
-
-  if (targets && targets.length > 0) {
-    const currentId = value.value.target_key
-      ? coordinateId({ actual_type: value.value.target_type, key: value.value.target_key })
-      : ''
-    const targetById = new Map(targets.map(t => [refTargetId(t), t]))
-    const inList = currentId ? targetById.has(currentId) : false
-    return (
-      <select
-        className="dc-input dc-input-ref-select"
-        value={currentId}
-        autoFocus
-        title={value.value.target_type}
-        onChange={e => {
-          const target = targetById.get(e.target.value)
-          if (target) onCommit(refValueFromTarget(target))
-        }}
-        onKeyDown={e => { if (e.key === 'Escape') onCancel() }}
-      >
-        {!value.value.target_key && <option value="" disabled>选择...</option>}
-        {value.value.target_key && !inList && <option value={currentId}>{value.value.target_key}</option>}
-        {targets.map(t => <option key={refTargetId(t)} value={refTargetId(t)}>{refTargetLabel(t)}</option>)}
-      </select>
-    )
-  }
+  const [val, setVal] = useState(value.value)
+  useEffect(() => { setVal(value.value) }, [value.value])
 
   return (
     <input
       className="dc-input dc-input-ref-select"
       value={val}
       autoFocus
-      title={value.value.target_type}
-      placeholder={targets === null ? '加载中...' : 'key'}
+      placeholder="key"
       onChange={e => setVal(e.target.value)}
-      onBlur={() => onCommit(refValue(value.value.target_type, val))}
+      onBlur={() => onCommit(refValue(val))}
       onKeyDown={e => {
-        if (e.key === 'Enter') onCommit(refValue(value.value.target_type, val))
+        if (e.key === 'Enter') onCommit(refValue(val))
         if (e.key === 'Escape') onCancel()
       }}
     />
@@ -954,8 +832,6 @@ function ExpandableRow({
   onEdit,
   isSpread,
   spreadInfo,
-  fieldMode,
-  fieldModes,
   fieldPath,
   pathKey,
   onRowToggle,
@@ -969,8 +845,6 @@ function ExpandableRow({
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   isSpread?: boolean
   spreadInfo?: SpreadInfo
-  fieldMode?: FieldMode | null
-  fieldModes?: FieldModeIndex
   fieldPath: FieldPathSegment[]
   pathKey?: string
   onRowToggle?: (path: string, expanded: boolean) => void
@@ -979,7 +853,6 @@ function ExpandableRow({
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
 }) {
   const [expanded, setExpanded] = useState(false)
-  const [pickingRef, setPickingRef] = useState(false)
   const summary = headerSummary(value)
   const count = childCount(value)
   const diag = rowDiagSeverity(pathKey)
@@ -1003,32 +876,10 @@ function ExpandableRow({
           <span className="dc-row-label-text">{label}</span>
         </div>
         <div className="dc-row-value">
-          {pickingRef && value.kind === 'object' ? (
-            <span className="dc-row-value-inner" onClick={e => e.stopPropagation()}>
-              <RefDirectSelect
-                value={refValue(value.value.actual_type, '') as FieldValue & { kind: 'ref' }}
-                autoFocus
-                onCommit={next => {
-                  setPickingRef(false)
-                  if (next.kind !== 'ref' || !next.value.target_key) return
-                  onEdit?.(fieldPath, next)
-                }}
-              />
-              <button className="btn-tiny" onClick={e => { e.stopPropagation(); setPickingRef(false) }}>x</button>
-            </span>
-          ) : (
-            <div className="dc-row-value-inner">
-              <span className="vc vc-type">{summary}</span>
-              {count !== null && <span className="vc-count">{count}</span>}
-            </div>
-          )}
-          {onEdit && value.kind === 'object' && !pickingRef && fieldMode !== 'inline' && (
-            <button
-              className="btn-tiny dc-row-mode-btn"
-              title="切换为引用（指向已有同类型记录）"
-              onClick={e => { e.stopPropagation(); setPickingRef(true) }}
-            >-&gt;Ref</button>
-          )}
+          <div className="dc-row-value-inner">
+            <span className="vc vc-type">{summary}</span>
+            {count !== null && <span className="vc-count">{count}</span>}
+          </div>
           {trailing}
         </div>
       </div>
@@ -1036,33 +887,26 @@ function ExpandableRow({
         <>
           {value.kind === 'object' &&
             objectFields(value).map((fc) => {
-                const childMode = fc.annotation?.field_mode
-                  ?? fieldModes?.[value.value.actual_type]?.[fc.name]
-                  ?? null
-                return (
+              return (
               <FieldRow
                 key={fc.name}
                 label={fc.name}
                 value={fc.value}
                 depth={depth + 1}
                 onEdit={onEdit}
-                fieldMode={childMode}
-                fieldModes={fieldModes}
                 fieldPath={[...fieldPath, fieldPathField(fc.name)]}
                 pathKey={pathKey ? `${pathKey}.${fc.name}` : fc.name}
                 onRowToggle={onRowToggle}
               />
-                )
-              })}
+              )
+            })}
           {value.kind === 'array' && (
             <ArrayItems
               container={value}
               depth={depth + 1}
-              fieldMode={fieldMode}
               fieldPath={fieldPath}
               pathKey={pathKey}
               onEdit={onEdit}
-              fieldModes={fieldModes}
               onRowToggle={onRowToggle}
             />
           )}
@@ -1074,8 +918,6 @@ function ExpandableRow({
                 value={item}
                 depth={depth + 1}
                 onEdit={onEdit}
-                fieldMode={fieldMode}
-                fieldModes={fieldModes}
                 fieldPath={[...fieldPath, fieldPathDictKey(dictKeyPathText(key))]}
                 pathKey={pathKey ? `${pathKey}[${dictKeyText(key)}]` : `[${dictKeyText(key)}]`}
                 onRowToggle={onRowToggle}
@@ -1249,7 +1091,7 @@ function defaultLikeShape(sample: FieldValue): FieldValue {
     case 'string': return stringValue('')
     case 'null': return stringValue('')
     case 'enum': return enumValue(sample.value.enum_name, sample.value.variant, sample.value.value)
-    case 'ref': return refValue(sample.value.target_type, '')
+    case 'ref': return refValue('')
     case 'object': return {
       kind: 'object',
       value: {
@@ -1266,21 +1108,17 @@ function defaultLikeShape(sample: FieldValue): FieldValue {
 function ArrayItems({
   container,
   depth,
-  fieldMode,
   fieldPath,
   pathKey,
   onEdit,
   onRowToggle,
-  fieldModes,
 }: {
   container: FieldValue & { kind: 'array' }
   depth: number
-  fieldMode?: FieldMode | null
   fieldPath: FieldPathSegment[]
   pathKey?: string
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   onRowToggle?: (path: string, expanded: boolean) => void
-  fieldModes?: FieldModeIndex
 }) {
   const [dragIdx, setDragIdx] = useState<number | null>(null)
   const [overIdx, setOverIdx] = useState<number | null>(null)
@@ -1307,8 +1145,6 @@ function ArrayItems({
             value={item}
             depth={depth}
             onEdit={onEdit}
-            fieldMode={fieldMode}
-            fieldModes={fieldModes}
             fieldPath={[...fieldPath, fieldPathIndex(i)]}
             pathKey={pathKey ? `${pathKey}[${i}]` : `[${i}]`}
             onRowToggle={onRowToggle}
@@ -1565,7 +1401,7 @@ function buildFieldValue(original: FieldValue, raw: string): FieldValue | null {
     case 'enum':
       return enumValue(original.value.enum_name, raw, original.value.value)
     case 'ref':
-      return refValue(original.value.target_type, raw)
+      return refValue(raw)
     default:
       return null
   }
@@ -1578,7 +1414,7 @@ function plainText(v: FieldValue): string {
     case 'float': return String(v.value)
     case 'string': return v.value
     case 'enum': return enumVariantText(v)
-    case 'ref': return v.value.target_key
+    case 'ref': return v.value
     default: return ''
   }
 }
@@ -1586,7 +1422,6 @@ function plainText(v: FieldValue): string {
 export function DataCardNode({
   fields,
   actualType,
-  fieldModes,
   showAll,
   onToggle,
   onRowToggle,
@@ -1594,7 +1429,6 @@ export function DataCardNode({
 }: {
   fields: FieldCell[]
   actualType: string
-  fieldModes?: FieldModeIndex
   showAll: boolean
   onToggle: () => void
   onRowToggle?: (path: string, expanded: boolean) => void
@@ -1606,7 +1440,6 @@ export function DataCardNode({
       <DataCardExpanded
         fields={visible}
         actualType={actualType}
-        fieldModes={fieldModes}
         onRowToggle={onRowToggle}
         onEdit={onEdit}
       />
