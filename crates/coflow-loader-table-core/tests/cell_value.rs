@@ -1039,16 +1039,13 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
         "Rare"
     );
 
-    let stats = CfdValue::Object(Box::new(coflow_data_model::CfdRecord {
-        key: String::new(),
-        actual_type: "Stats".to_string(),
-        fields: std::collections::BTreeMap::from([
+    let stats = CfdValue::Object(Box::new(coflow_data_model::CfdObject::new(
+        "Stats",
+        std::collections::BTreeMap::from([
             ("attack".to_string(), CfdValue::Int(20)),
             ("hp".to_string(), CfdValue::Int(100)),
         ]),
-        origin: coflow_data_model::RecordOrigin::None,
-        spread_field_sources: std::collections::BTreeMap::new(),
-    }));
+    )));
     let rendered_stats = render_cell_value(&stats).map_err(|err| err.to_string())?;
     assert_eq!(rendered_stats, "Stats{attack: 20, hp: 100}");
     let parsed_stats = parse_value(&schema, "Stats", &rendered_stats)?;
@@ -1069,16 +1066,13 @@ fn renders_runtime_values_as_parseable_table_cell_text() -> TestResult {
 
 #[test]
 fn renders_polymorphic_object_values_with_type_marker() -> TestResult {
-    let nested = CfdValue::Object(Box::new(coflow_data_model::CfdRecord {
-        key: String::new(),
-        actual_type: "ItemReward".to_string(),
-        fields: std::collections::BTreeMap::from([
+    let nested = CfdValue::Object(Box::new(coflow_data_model::CfdObject::new(
+        "ItemReward",
+        std::collections::BTreeMap::from([
             ("count".to_string(), CfdValue::Int(1)),
             ("item".to_string(), CfdValue::Ref("sword".to_string())),
         ]),
-        origin: coflow_data_model::RecordOrigin::None,
-        spread_field_sources: std::collections::BTreeMap::new(),
-    }));
+    )));
     let rendered = render_cell_value(&nested).map_err(|err| err.to_string())?;
 
     assert_eq!(rendered, "ItemReward{count: 1, item: &sword}".to_string());

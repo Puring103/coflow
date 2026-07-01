@@ -3,7 +3,7 @@
 //! shipped to external hosts (Tauri front-end, LSP, ...) without leaking
 //! internal indices.
 
-use coflow_data_model::{CfdDictKey, CfdEnumValue, CfdRecord, CfdValue, RecordOrigin};
+use coflow_data_model::{CfdDictKey, CfdEnumValue, CfdObject, CfdRecord, CfdValue, RecordOrigin};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 
@@ -51,19 +51,12 @@ fn cfd_value_round_trips_through_json() -> Result<(), Box<dyn std::error::Error>
     );
     fields.insert(
         "child".to_string(),
-        CfdValue::Object(Box::new(CfdRecord {
-            key: String::new(),
-            actual_type: "Item".into(),
-            fields: BTreeMap::new(),
-            origin: RecordOrigin::None,
-            spread_field_sources: BTreeMap::new(),
-        })),
+        CfdValue::Object(Box::new(CfdObject::new("Item", BTreeMap::new()))),
     );
 
     let record = CfdRecord {
         key: "potion".into(),
-        actual_type: "Item".into(),
-        fields,
+        object: CfdObject::new("Item", fields),
         origin: RecordOrigin::None,
         spread_field_sources: BTreeMap::new(),
     };

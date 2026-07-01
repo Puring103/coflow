@@ -1277,7 +1277,7 @@ function snapshotOldValue(
   if (!fr) return null
   const row = fr.records.find(r => sameCoordinate(r.coordinate, coordinate))
   if (!row) return null
-  const root: FieldValue = makeObjectValue(recordActualType(row), row.fields, recordKey(row))
+  const root: FieldValue = makeObjectValue(recordActualType(row), row.fields)
   return readFieldPath(root, fieldPath)
 }
 

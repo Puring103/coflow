@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use coflow_cft::{CftContainer, CftSchemaField, CftSchemaTypeRef};
-use coflow_data_model::{CfdDataModel, CfdDictKey, CfdRecord, CfdTable, CfdValue};
+use coflow_data_model::{CfdDataModel, CfdDictKey, CfdObject, CfdRecord, CfdTable, CfdValue};
 
 /// Constructs output values for a concrete export format.
 ///
@@ -185,28 +185,50 @@ where
                 self.encoder.string(record.key()).map_err(encoder_error)?,
             ));
         }
+        entries.extend(self.encode_object_entries(declared_type, &record.object, tag_mode)?);
+        self.encoder.map(entries).map_err(encoder_error)
+    }
+
+    fn encode_object(
+        &mut self,
+        declared_type: &str,
+        object: &CfdObject,
+        tag_mode: TypeTagMode,
+    ) -> Result<E::Value, ExportError> {
+        let entries = self.encode_object_entries(declared_type, object, tag_mode)?;
+        self.encoder.map(entries).map_err(encoder_error)
+    }
+
+    fn encode_object_entries(
+        &mut self,
+        declared_type: &str,
+        object: &CfdObject,
+        tag_mode: TypeTagMode,
+    ) -> Result<Vec<(String, E::Value)>, ExportError> {
+        let mut entries = Vec::new();
         if tag_mode == TypeTagMode::WhenPolymorphic
             && self.schema.range_is_polymorphic(declared_type)
         {
             entries.push((
                 "$type".to_string(),
                 self.encoder
-                    .string(&record.actual_type)
+                    .string(object.actual_type())
                     .map_err(encoder_error)?,
             ));
         }
 
-        for field in self.schema.full_fields(&record.actual_type)? {
-            let value = record.fields.get(&field.name).ok_or_else(|| {
+        for field in self.schema.full_fields(object.actual_type())? {
+            let value = object.fields().get(&field.name).ok_or_else(|| {
                 ExportError::new(format!(
                     "record `{}` is missing field `{}`",
-                    record.actual_type, field.name
+                    object.actual_type(),
+                    field.name
                 ))
             })?;
             let encoded = self.encode_field(&field, value)?;
             entries.push((field.name, encoded));
         }
-        self.encoder.map(entries).map_err(encoder_error)
+        Ok(entries)
     }
 
     fn encode_field(
@@ -242,7 +264,7 @@ where
             }
             CfdValue::String(value) => self.encoder.string(value).map_err(encoder_error),
             CfdValue::Enum(value) => self.encoder.int(value.value).map_err(encoder_error),
-            CfdValue::Object(record) => {
+            CfdValue::Object(object) => {
                 let type_name = match declared_type {
                     CftSchemaTypeRef::Named(type_name) => type_name,
                     other => {
@@ -252,7 +274,7 @@ where
                         )))
                     }
                 };
-                self.encode_record(type_name, record, TypeTagMode::WhenPolymorphic)
+                self.encode_object(type_name, object, TypeTagMode::WhenPolymorphic)
             }
             CfdValue::Ref(_) => self.encode_ref(value),
             CfdValue::Array(items) => {

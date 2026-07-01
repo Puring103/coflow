@@ -236,7 +236,7 @@ fn patch_insert_minimal_does_not_materialize_explicit_schema_defaults() {
     let view = session
         .record_view("Item", "defaulted")
         .expect("record view");
-    let Some(coflow_data_model::CfdValue::Enum(value)) = view.record.fields.get("rarity") else {
+    let Some(coflow_data_model::CfdValue::Enum(value)) = view.record.fields().get("rarity") else {
         panic!("rarity should be defaulted enum");
     };
     assert_eq!(value.variant.as_deref(), Some("Common"));
@@ -514,7 +514,7 @@ fn patch_set_field_rejects_values_that_violate_ref_shapes() {
 
     let view = session.record_view("Holder", "holder").expect("holder");
     assert!(matches!(
-        view.record.fields.get("owner"),
+        view.record.fields().get("owner"),
         Some(coflow_data_model::CfdValue::Ref(target_key)) if target_key == "sword"
     ));
 
@@ -792,9 +792,9 @@ fn patch_coerces_ref_inline_object_and_enum_key_dict_values() {
     let view = session
         .record_view("Loot", "starter_loot")
         .expect("inserted loot");
-    assert!(view.record.fields.contains_key("owner"));
-    assert!(view.record.fields.contains_key("rewards"));
-    assert!(view.record.fields.contains_key("resistances"));
+    assert!(view.record.fields().contains_key("owner"));
+    assert!(view.record.fields().contains_key("rewards"));
+    assert!(view.record.fields().contains_key("resistances"));
 
     let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
     assert!(text.contains("&sword"));
@@ -864,7 +864,7 @@ fn patch_supports_dict_key_path_writes() {
     let view = session
         .record_view("Loot", "starter_loot")
         .expect("inserted loot");
-    let Some(coflow_data_model::CfdValue::Dict(entries)) = view.record.fields.get("resistances")
+    let Some(coflow_data_model::CfdValue::Dict(entries)) = view.record.fields().get("resistances")
     else {
         panic!("resistances should be dict");
     };
@@ -945,7 +945,7 @@ fn mutation_cfd_value_accepts_null_for_nullable_fields() {
         .record_view("Loot", "starter_loot")
         .expect("inserted loot");
     assert_eq!(
-        view.record.fields.get("owner"),
+        view.record.fields().get("owner"),
         Some(&coflow_data_model::CfdValue::Null)
     );
 
@@ -962,22 +962,20 @@ fn mutation_cfd_value_rejects_nested_values_that_do_not_match_schema() {
     write_project(&root);
     let (mut session, registry) = session(&root);
 
-    let bad_reward = coflow_data_model::CfdValue::Object(Box::new(coflow_data_model::CfdRecord {
-        key: String::new(),
-        actual_type: "ItemReward".to_string(),
-        fields: std::collections::BTreeMap::from([
-            (
-                "item".to_string(),
-                coflow_data_model::CfdValue::Ref("sword".to_string()),
-            ),
-            (
-                "count".to_string(),
-                coflow_data_model::CfdValue::String("bad".to_string()),
-            ),
-        ]),
-        origin: coflow_data_model::RecordOrigin::None,
-        spread_field_sources: std::collections::BTreeMap::new(),
-    }));
+    let bad_reward =
+        coflow_data_model::CfdValue::Object(Box::new(coflow_data_model::CfdObject::new(
+            "ItemReward",
+            std::collections::BTreeMap::from([
+                (
+                    "item".to_string(),
+                    coflow_data_model::CfdValue::Ref("sword".to_string()),
+                ),
+                (
+                    "count".to_string(),
+                    coflow_data_model::CfdValue::String("bad".to_string()),
+                ),
+            ]),
+        )));
 
     let report = session
         .apply_data_patch(

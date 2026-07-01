@@ -95,7 +95,7 @@ impl CfdDataModel {
         if let Some(domain_id) = self.type_domain_id(type_name) {
             if let Some(record_id) = self.record_by_domain_key(domain_id, key) {
                 if self.record(record_id).is_some_and(|record| {
-                    self.type_is_assignable_by_name(&record.actual_type, type_name)
+                    self.type_is_assignable_by_name(record.actual_type(), type_name)
                 }) {
                     return Some(record_id);
                 }
@@ -421,8 +421,7 @@ impl CfdDomainIndex {
 )]
 pub struct CfdRecord {
     pub key: String,
-    pub actual_type: String,
-    pub fields: BTreeMap<String, CfdValue>,
+    pub object: CfdObject,
     /// Where this record came from in its original source. Used by writers to
     /// dispatch edits back to the right source and by diagnostics to map
     /// record-anchored labels to file/cell locations. Defaults to
@@ -454,8 +453,23 @@ impl CfdRecord {
     }
 
     #[must_use]
+    pub fn actual_type(&self) -> &str {
+        &self.object.actual_type
+    }
+
+    #[must_use]
+    pub fn fields(&self) -> &BTreeMap<String, CfdValue> {
+        &self.object.fields
+    }
+
+    #[must_use]
+    pub fn fields_mut(&mut self) -> &mut BTreeMap<String, CfdValue> {
+        &mut self.object.fields
+    }
+
+    #[must_use]
     pub fn field(&self, name: &str) -> Option<&CfdValue> {
-        self.fields.get(name)
+        self.object.field(name)
     }
 
     /// Effective origin used to write a top-level field. If the field was
@@ -465,6 +479,47 @@ impl CfdRecord {
     #[must_use]
     pub fn spread_source_for_field(&self, field: &str) -> Option<CfdRecordId> {
         self.spread_field_sources.get(field).copied()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct CfdObject {
+    pub actual_type: String,
+    pub fields: BTreeMap<String, CfdValue>,
+}
+
+impl CfdObject {
+    #[must_use]
+    pub fn new(actual_type: impl Into<String>, fields: BTreeMap<String, CfdValue>) -> Self {
+        Self {
+            actual_type: actual_type.into(),
+            fields,
+        }
+    }
+
+    #[must_use]
+    pub fn actual_type(&self) -> &str {
+        &self.actual_type
+    }
+
+    #[must_use]
+    pub fn fields(&self) -> &BTreeMap<String, CfdValue> {
+        &self.fields
+    }
+
+    #[must_use]
+    pub fn fields_mut(&mut self) -> &mut BTreeMap<String, CfdValue> {
+        &mut self.fields
+    }
+
+    #[must_use]
+    pub fn field(&self, name: &str) -> Option<&CfdValue> {
+        self.fields.get(name)
     }
 }
 
@@ -516,7 +571,7 @@ pub enum CfdValue {
     Float(f64),
     String(String),
     Enum(CfdEnumValue),
-    Object(Box<CfdRecord>),
+    Object(Box<CfdObject>),
     Ref(String),
     Array(Vec<CfdValue>),
     Dict(Vec<(CfdDictKey, CfdValue)>),

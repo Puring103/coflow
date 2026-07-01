@@ -230,13 +230,13 @@ fn render_dict_key(key: &CfdDictKey) -> Result<String, CellRenderError> {
     }
 }
 
-fn render_object(record: &coflow_data_model::CfdRecord) -> Result<String, CellRenderError> {
+fn render_object(record: &coflow_data_model::CfdObject) -> Result<String, CellRenderError> {
     let mut out = String::new();
-    if !record.actual_type.is_empty() {
-        out.push_str(&record.actual_type);
+    if !record.actual_type().is_empty() {
+        out.push_str(record.actual_type());
     }
     out.push('{');
-    for (idx, (field, value)) in record.fields.iter().enumerate() {
+    for (idx, (field, value)) in record.fields().iter().enumerate() {
         if idx > 0 {
             out.push_str(", ");
         }

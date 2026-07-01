@@ -783,10 +783,10 @@ dimensions:
     let view = session
         .record_view("Item_nameVariants", "potion")
         .expect("record view");
-    assert!(view.record.fields.contains_key("default"));
-    assert!(view.record.fields.contains_key("zh"));
-    assert!(view.record.fields.contains_key("en"));
-    assert!(!view.record.fields.contains_key("name"));
+    assert!(view.record.fields().contains_key("default"));
+    assert!(view.record.fields().contains_key("zh"));
+    assert!(view.record.fields().contains_key("en"));
+    assert!(!view.record.fields().contains_key("name"));
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }

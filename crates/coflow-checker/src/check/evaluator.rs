@@ -211,7 +211,7 @@ impl<'a> CheckEvaluator<'a> {
             );
             return Err(EvalAbort::Error);
         };
-        let Some(value) = variant_record.fields.get(&variant) else {
+        let Some(value) = variant_record.fields().get(&variant) else {
             self.diag_at(
                 CfdErrorCode::CheckEvalTypeError,
                 located.path.clone(),

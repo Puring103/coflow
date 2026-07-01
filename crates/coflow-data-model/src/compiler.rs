@@ -1,8 +1,8 @@
 use crate::diagnostic::{CfdDiagnostic, CfdDiagnostics, CfdErrorCode, CfdPath};
 use crate::model::{
     CfdDataModel, CfdDictKey, CfdDomainId, CfdEnumValue, CfdInputDictKey, CfdInputRecord,
-    CfdInputValue, CfdPolymorphicIndex, CfdRecord, CfdRecordId, CfdTable, CfdTypeId, CfdValue,
-    RefEdge, RefEdgeId, RefSite,
+    CfdInputValue, CfdObject, CfdPolymorphicIndex, CfdRecord, CfdRecordId, CfdTable, CfdTypeId,
+    CfdValue, RefEdge, RefEdgeId, RefSite,
 };
 use crate::origin::RecordOrigin;
 use crate::schema_view::{
@@ -109,8 +109,10 @@ impl ModelCompiler {
                 );
                 records.push(CfdRecord {
                     key: draft.key.clone(),
-                    actual_type: draft.actual_type.clone(),
-                    fields,
+                    object: CfdObject {
+                        actual_type: draft.actual_type.clone(),
+                        fields,
+                    },
                     origin: draft.origin.clone(),
                     spread_field_sources,
                 });
@@ -1010,17 +1012,9 @@ impl<'s> Validator<'s> {
                     drafts,
                     record_by_domain_key,
                 )?;
-                let spread_field_sources = resolve_spread_sources(
-                    self.schema,
-                    &record_draft.spread_field_sources,
-                    record_by_domain_key,
-                );
-                Some(CfdValue::Object(Box::new(CfdRecord {
-                    key: record_draft.key.clone(),
+                Some(CfdValue::Object(Box::new(CfdObject {
                     actual_type: record_draft.actual_type.clone(),
                     fields,
-                    origin: RecordOrigin::None,
-                    spread_field_sources,
                 })))
             }
             CfdValueDraft::Array(items) => {
@@ -1334,10 +1328,10 @@ fn build_ref_indexes(
     for (index, record) in records.iter().enumerate() {
         let host = CfdRecordId::from_index(index);
         let root = CfdPath::root();
-        for (name, value) in &record.fields {
+        for (name, value) in record.fields() {
             let Some(field) = context
                 .schema
-                .full_fields(&record.actual_type)
+                .full_fields(record.actual_type())
                 .iter()
                 .find(|field| field.name == *name)
             else {
@@ -1389,7 +1383,7 @@ fn collect_ref_edges(
             let Some(target_record) = context.records.get(target.index()) else {
                 return;
             };
-            let Some(target_type) = context.schema.type_id(&target_record.actual_type) else {
+            let Some(target_type) = context.schema.type_id(target_record.actual_type()) else {
                 return;
             };
             let site = RefSite::new(host, path.clone());

@@ -1095,7 +1095,6 @@ function defaultLikeShape(sample: FieldValue): FieldValue {
     case 'object': return {
       kind: 'object',
       value: {
-        key: '',
         actual_type: sample.value.actual_type,
         fields: Object.fromEntries(objectFields(sample).map(f => [f.name, defaultLikeShape(f.value)])),
       },

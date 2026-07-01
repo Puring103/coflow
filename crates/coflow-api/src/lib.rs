@@ -28,8 +28,8 @@ pub use coflow_cft::{
 };
 pub use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdDictKey, CfdInputRecord, CfdInputValue,
-    CfdLabel, CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdTable, CfdValue, RecordOrigin,
-    SourceDocument, TextSpan,
+    CfdLabel, CfdObject, CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdTable, CfdValue,
+    RecordOrigin, SourceDocument, TextSpan,
 };
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArtifactContentKind {
