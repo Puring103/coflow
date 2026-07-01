@@ -566,11 +566,13 @@ patch 文件示例：
 patch value 支持普通 JSON 值，也支持以下特殊对象：
 
 ```json
-{ "$ref": "Item.sword_01" }
-{ "$ref": { "type": "Item", "key": "sword_01" } }
-{ "$type": "ItemReward", "item": { "$ref": "Item.sword_01" }, "count": 1 }
+{ "$ref": "sword_01" }
+{ "$ref": { "key": "sword_01" } }
+{ "$type": "ItemReward", "item": { "$ref": "sword_01" }, "count": 1 }
 { "$dict": [{ "key": "Fire", "value": 10 }] }
 ```
+
+`$ref` 只写 record key，目标类型来自被写入字段的 CFT 类型（例如 `&Item`、`[&Item]` 或 `{string: &Item}`）。
 
 写入会走 provider writer 层，不绕过数据源。批量 patch 按顺序应用；已经成功的操作不会因为后续操作失败自动回滚，调用方需要读取输出中的 `applied` 和 `failed`。
 
