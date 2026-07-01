@@ -153,7 +153,7 @@ coflow check examples/rpg --json
 3. 解析数据源。
 4. 加载 Excel、CSV、CFD 或其他 Provider 数据。
 5. 构建 DataModel。
-6. 解析记录引用和路径引用。
+6. 解析 `&Type` 记录引用。
 7. 执行 CFT `check {}` 业务校验。
 
 建议在提交 schema 或数据变更前运行该命令。

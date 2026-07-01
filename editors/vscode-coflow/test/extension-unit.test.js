@@ -168,11 +168,18 @@ async function main() {
     ],
     "CFD record declarations should have a default semantic token color"
   );
-  assert(
+  assert.strictEqual(
     extensionPackage.contributes.configurationDefaults["editor.semanticTokenColorCustomizations"].rules[
       "property.reference.path.schema:cfd"
     ],
-    "CFD reference path segments should have a default semantic token color"
+    undefined,
+    "CFD field access path segments should not have positive metadata after ref simplification"
+  );
+  assert(
+    extensionPackage.contributes.configurationDefaults["editor.semanticTokenColorCustomizations"].rules[
+      "property.reference.path.schema:cft"
+    ],
+    "CFT check expression path segments should keep a default semantic token color"
   );
 
   const session = Object.create(extension.__test.CftLspSession.prototype);
@@ -271,7 +278,7 @@ async function main() {
     "diagnostics setting must suppress local language-server failure diagnostics"
   );
 
-  const completionSource = "type Item {}\ntype Holder {\n  item: Item;\n  @ref(\n}\n";
+  const completionSource = "type Item {}\ntype Holder {\n  item: &Item;\n}\n";
   const completionDocument = textDocument(path.join(os.tmpdir(), "completion.cft"), completionSource);
   const completionProvider = new extension.__test.CftCompletionProvider({
     request: async () => undefined

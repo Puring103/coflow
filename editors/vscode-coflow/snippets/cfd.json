@@ -19,11 +19,6 @@
     ],
     "description": "Grouped CFD records of the same type."
   },
-  "Typed reference": {
-    "prefix": "@ref",
-    "body": "@${1:TypeName}.${2:key}",
-    "description": "Typed record reference: @TypeName.key"
-  },
   "Direct reference": {
     "prefix": "&ref",
     "body": "&${1:key}",

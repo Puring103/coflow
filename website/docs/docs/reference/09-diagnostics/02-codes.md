@@ -68,7 +68,7 @@
 | `CFT-SCHEMA-022` | `AnnotationWithoutTarget` | 注解后没有可附加目标 |
 | `CFT-SCHEMA-023` | `InvalidAnnotationTarget` | 注解用在不支持的目标上 |
 | `CFT-SCHEMA-024` | `InvalidAnnotationArgument` | 注解参数数量或类型错误 |
-| `CFT-SCHEMA-025` | `InvalidAnnotatedFieldType` | `@expand`、`@ref` 或 `@inline` 字段类型或组合不合法 |
+| `CFT-SCHEMA-025` | `InvalidAnnotatedFieldType` | `@expand` 字段类型、`&Type` 引用类型或字段注解组合不合法 |
 | `CFT-SCHEMA-026` | `StructRequiresSealedType` | `@struct` 标注的 type 不是 `sealed type` |
 | `CFT-SCHEMA-027` | `IdAsEnumRequiresEmptyEnum` | `@idAsEnum` 参数不是已声明的空 enum |
 | `CFT-SCHEMA-028` | `EnumVariantOnNonEnum` | 默认值使用 `Name.Variant`，但 `Name` 不是 enum |
@@ -151,7 +151,7 @@
 | `CELL-InvalidEnumVariant` | `InvalidEnumVariant` | enum variant 不存在 |
 | `CELL-MixedObjectStyle` | `MixedObjectStyle` | 同一对象混用位置写法和字段名写法 |
 | `CELL-StringNeedsQuotes` | `StringNeedsQuotes` | 字符串内容需要加引号 |
-| `CELL-ReferenceNeedsMarker` | `ReferenceNeedsMarker` | 对象引用缺少 `@Type.key` 或 `&key` 标记 |
+| `CELL-ReferenceNeedsMarker` | `ReferenceNeedsMarker` | 对象引用缺少 `&key` 标记 |
 
 ## CFD 文本与写回
 
@@ -167,7 +167,7 @@
 | `CFD-TEXT-MissingObjectType` | `CFD` | 需要具体对象类型但未提供 |
 | `CFD-TEXT-TypeMismatch` | `CFD` | 值不能按目标类型解析 |
 | `CFD-TEXT-InvalidEnumVariant` | `CFD` | enum variant 不存在 |
-| `CFD-TEXT-ReferenceNeedsMarker` | `CFD` | 对象引用缺少 `@Type.key` 或 `&key` 标记 |
+| `CFD-TEXT-ReferenceNeedsMarker` | `CFD` | 对象引用缺少 `&key` 标记 |
 
 ## 飞书/Lark
 

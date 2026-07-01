@@ -210,8 +210,7 @@ impl FieldAnnotation {
 }
 
 /// Source record coordinate of a spread-inherited cell, plus the field
-/// path within the source record so the UI can render
-/// `@Source.Key.path.to.field`.
+/// path within the source record so the UI can render source attribution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 #[cfg_attr(

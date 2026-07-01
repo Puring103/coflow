@@ -2,7 +2,7 @@
 
 CFD（Coflow Data File，`.cfd`）是 coflow 的文本数据文件格式，用来编写 CFT schema 定义下的配置记录。
 
-它适合承载表格不容易表达的数据：嵌套对象、数组、字典、多态对象、路径引用和覆盖模板。Excel / CSV 更适合大量同构记录；CFD 更适合结构复杂、层级较深、需要手写维护的配置。两者最终都会进入同一个 DataModel，因此可以互相引用。
+它适合承载表格不容易表达的数据：嵌套对象、数组、字典、多态对象、记录引用和覆盖模板。Excel / CSV 更适合大量同构记录；CFD 更适合结构复杂、层级较深、需要手写维护的配置。两者最终都会进入同一个 DataModel，因此可以互相引用。
 
 下面是一个简单 CFD 文件：
 
@@ -154,11 +154,10 @@ element: Element.Fire
 tags: ["weapon", "melee"]
 ```
 
-对象数组可以包含内联对象、记录引用或多态对象：
+对象数组可以包含内联对象或多态对象；如果 CFT 元素类型是 `&Type`，数组元素写 `&key`：
 
 ```text
 rewards: [
-  @Reward.sword_reward,
   ItemReward { item: &sword_fire, count: 1 },
   CurrencyReward { amount: 10 },
 ]
@@ -199,18 +198,15 @@ weaknesses: {
 
 ## 引用
 
-引用用于让一条记录或对象指向另一条记录，也可以指向某条记录内部的字段、数组元素或字典条目。
+引用用于让一条记录或对象指向另一条顶层记录。CFT 字段类型必须写成 `&Type`、`&Type?`、`[&Type]` 或 `{key: &Type}`。
 
 ```text
 item: &sword_fire
-item: @Item.sword_fire
-first_reward: @DropTable.default_drops.rewards[0]
-weakness_hint: @Monster.basic_monster.weaknesses[Fire]
 ```
 
 ### `&key`
 
-`&key` 是直接记录引用简写：
+`&key` 是唯一的记录引用值语法：
 
 ```text
 featured_item: &sword_fire
@@ -218,42 +214,12 @@ featured_item: &sword_fire
 
 规则：
 
-- 只能用于对象字段。
+- 只能用于期望类型为 `&Type` 的位置。
 - 目标类型来自 CFT 字段类型。
 - 只能引用记录本身，不支持 `.field`、`[index]` 这类路径访问。
+- `&Reward` 可以引用实际类型为 `Reward` 或其子类的 record；不能引用父类、兄弟类型或无关 type。
 
-### `@Type.key`
-
-`@Type.key` 是显式 typed record reference：
-
-```text
-featured_item: @Item.sword_fire
-monster: @Monster.basic_monster
-```
-
-`Type` 是 CFT 类型名，`key` 是目标 record key。显式写法更适合跨类型、数组元素、字典值和容易产生歧义的场景。
-
-### 路径引用
-
-路径引用可以访问记录内部的字段、数组元素或字典条目：
-
-```text
-first_reward: @DropTable.default_drops.rewards[0]
-featured_item: @ItemReward.sword_reward.item
-weakness_hint: @Monster.basic_monster.weaknesses[Fire]
-label: @TextTable.main.labels["start"]
-```
-
-常见路径形式：
-
-| 写法 | 说明 |
-| --- | --- |
-| `.field` | 访问对象字段 |
-| `[0]` | 访问数组元素 |
-| `[Fire]` | 访问 enum key 字典条目 |
-| `["start"]` | 访问 string key 字典条目 |
-
-引用会在 DataModel 阶段解析和检查：目标必须存在，路径必须合法，最终值也必须能赋给目标字段类型。子类可以赋给父类字段，父类不能直接赋给更窄的子类字段。
+引用会在 DataModel 阶段解析和检查：目标必须存在，目标 record 的实际类型必须能赋给字段声明的引用类型。子类可以赋给父类字段，父类不能直接赋给更窄的子类字段。
 
 裸 record key 不会被当成对象引用：
 
@@ -263,46 +229,24 @@ featured_item: sword_fire
 
 # 正确
 featured_item: &sword_fire
-featured_item: @Item.sword_fire
 ```
 
-### `@ref` 与 `@inline`
-
-CFT 对象字段默认既可以写记录引用，也可以写内联对象。
+### 引用与内联对象
 
 ```text
 type Drop {
-  item: Item;
+  item: &Item;
   reward: Reward;
 }
 ```
 
-如果字段在 CFT 中标了 `@ref`，CFD 必须写引用：
+字段类型为 `&Item` 时，CFD 必须写引用：
 
 ```text
-@ref
-item: Item;
+item: &sword_fire
 ```
 
-```text
-item: @Item.sword_fire
-```
-
-如果字段在 CFT 中标了 `@inline`，CFD 必须写内联对象：
-
-```text
-@inline
-reward: Reward;
-```
-
-```text
-reward: ItemReward {
-  item: &sword_fire,
-  count: 1,
-}
-```
-
-`@ref` / `@inline` 用在数组或字典字段上时，会约束数组元素或字典 value。
+字段类型为 `Reward` 时，CFD 必须写内联对象。数组和字典会递归应用内层类型。
 
 ## 覆盖
 
@@ -310,16 +254,9 @@ CFD 支持 `...source` 覆盖语法，用于复用已有对象或字典，再局
 
 ```text
 elite_monster: Monster {
-  ...@Monster.basic_monster,
+  ...&basic_monster,
   name: "Elite Training Dummy",
-  stats: {
-    ...@Monster.basic_monster.stats,
-    hp: 250,
-  },
-  weaknesses: {
-    ...@Monster.basic_monster.weaknesses,
-    Ice: 1.5,
-  },
+  stats: { hp: 250, attack: 5 },
 }
 ```
 
@@ -328,17 +265,17 @@ elite_monster: Monster {
 - spread 按出现顺序合并。
 - 后面的 spread 覆盖前面的 spread。
 - 本地字段或本地字典条目覆盖所有 spread 来源。
-- 对象 spread 的来源必须是可赋值对象。
+- 对象 spread 的来源必须是可赋值对象，`...&key` 的目标类型来自外层对象上下文。
 - 字典 spread 的来源必须与目标字典类型一致。
-- spread 来源可以是内联对象、内联字典、`&key`、`@Type.key` 或路径引用。
+- spread source 写成 `...&key` 时，source record 的实际类型必须是外层期望类型本身或其子类。
 
-对象字段和字典都可以继续嵌套 spread：
+字典可以继续嵌套 spread：
 
 ```text
 elite_drop: DropTable {
-  ...@DropTable.base_drop,
+  ...&base_drop,
   weights: {
-    ...@DropTable.base_drop.weights,
+    ...{Ice: 5},
     Fire: 20,
   },
 }
@@ -352,10 +289,10 @@ CFD 只描述数据值，具体语义由 CFT 决定：
 - 字段名必须来自目标 type 或其父类。
 - 字段值会按照 CFT 字段类型解析。
 - 未填写字段会使用 CFT 默认值。
-- 对象引用会按照 CFT 继承关系检查可赋值性。
+- `&Type` 引用和 `...&key` spread source 会按照 CFT 继承关系检查可赋值性。
 - `check` 块会在对象构建、默认值填充和引用解析后执行。
 
-因此，修改 CFT 字段类型、默认值、继承关系或 `@ref` / `@inline` 注解，都可能影响 CFD 文件是否仍然通过检查。
+因此，修改 CFT 字段类型、默认值或继承关系，都可能影响 CFD 文件是否仍然通过检查。
 
 ## 和表格数据源的关系
 
@@ -363,7 +300,7 @@ Excel / CSV 的一行等价于 CFD 的一条顶层记录；表格里的 `id` 列
 
 ```text
 shop_01: Shop {
-  featured_item: @Item.sword_fire,
+  featured_item: &sword_fire,
 }
 ```
 
@@ -414,8 +351,8 @@ Reward {
 
 default_drops: DropTable {
   rewards: [
-    @Reward.sword_reward,
-    @Reward.coin_reward,
+    ItemReward { item: &sword_fire, count: 1 },
+    CurrencyReward { amount: 50 },
   ],
   weights: {
     Fire: 70,
@@ -424,23 +361,16 @@ default_drops: DropTable {
 }
 
 elite_monster: Monster {
-  ...@Monster.basic_monster,
+  ...&basic_monster,
   name: "Elite Training Dummy",
-  stats: {
-    ...@Monster.basic_monster.stats,
-    hp: 250,
-  },
-  weaknesses: {
-    ...@Monster.basic_monster.weaknesses,
-    Ice: 1.5,
-  },
+  stats: { hp: 250, attack: 5 },
+  weaknesses: { Fire: 1.25, Ice: 1.5 },
 }
 
 fire_encounter: Encounter {
   monster: &elite_monster,
-  first_reward: @DropTable.default_drops.rewards[0],
-  featured_item: @ItemReward.sword_reward.item,
-  weakness_hint: @Monster.elite_monster.weaknesses[Ice],
+  featured_item: &sword_fire,
+  weakness_hint: 1.5,
 }
 ```
 
@@ -450,9 +380,8 @@ fire_encounter: Encounter {
 | --- | --- | --- |
 | `sword_01 Item { ... }` | 记录 key 和类型之间缺少 `:` | 写 `sword_01: Item { ... }` |
 | 在顶层记录里写 `id: "sword_01"` | record key 已承担 `id` 语义 | 把 key 写在记录开头 |
-| `featured_item: sword_fire` | 裸 key 不会被解析为对象引用 | 写 `&sword_fire` 或 `@Item.sword_fire` |
+| `featured_item: sword_fire` | 裸 key 不会被解析为对象引用 | 写 `&sword_fire` |
 | `Reward { r1 { ... } }` 且 `Reward` 是抽象类型 | 抽象类型不能直接实例化 | 写 `r1: ItemReward { ... }` |
-| `@Monster.basic.stats[0]` | 路径访问方式和目标字段类型不匹配 | 按字段、数组、字典实际类型写路径 |
-| `...@Item.sword_fire` spread 到 `Stats` | spread 来源类型不能赋给目标对象类型 | 使用同类型或可赋值对象来源 |
+| `...&sword_fire` spread 到 `Stats` | spread 来源类型不能赋给目标对象类型 | 使用同类型或可赋值对象来源 |
 | `name: null` 且 `name` 不是 nullable | `null` 只能赋给 `T?` | 改字段类型为 `string?` 或提供字符串 |
 | `element: Flame` | enum variant 不存在 | 检查 CFT enum 定义并写正确 variant |

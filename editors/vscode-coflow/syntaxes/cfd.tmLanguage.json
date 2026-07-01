@@ -7,7 +7,6 @@
     { "include": "#comment-hash" },
     { "include": "#string" },
     { "include": "#spread" },
-    { "include": "#ref-typed" },
     { "include": "#ref-direct" },
     { "include": "#record-colon" },
     { "include": "#group-key" },
@@ -38,15 +37,6 @@
     "spread": {
       "name": "keyword.operator.spread.cfd",
       "match": "\\.\\.\\."
-    },
-    "ref-typed": {
-      "comment": "@TypeName.key  or  @TypeName.key.field[index] — @ merged into type capture",
-      "match": "(@[A-Za-z_][A-Za-z0-9_]*)(\\.)([A-Za-z0-9_.\\[\\]]*)",
-      "captures": {
-        "1": { "name": "entity.name.type.cfd" },
-        "2": { "name": "punctuation.accessor.cfd" },
-        "3": { "name": "variable.other.property.cfd" }
-      }
     },
     "ref-direct": {
       "comment": "&key — direct reference shorthand; & merged into variable capture",

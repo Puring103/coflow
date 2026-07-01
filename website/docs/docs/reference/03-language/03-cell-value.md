@@ -151,24 +151,15 @@ weaknesses: {Fire: 1.25, Ice: 1.0}
 
 ## 记录引用
 
-对象字段可以写记录引用：
+字段类型为 `&Type` 时，单元格写 key-only 记录引用：
 
 ```text
-@Item.sword_fire
 &sword_fire
-@DropTable.default.rewards[0]
-@Monster.slime.weaknesses[Fire]
 ```
 
-| 写法 | 说明 |
-| --- | --- |
-| `&key` | 当前目标对象类型下的直接记录引用 |
-| `@Type.key` | 显式 typed record reference |
-| `@Type.key.path[index]` | 路径引用，可访问字段、数组元素或字典条目 |
+目标类型来自 CFT 字段类型，例如 `item: &Item;`、`items: [&Item];` 或 `{string: &Item}`。`&key` 只引用顶层 record，不支持 `.field` 或 `[index]` 路径访问。
 
-`&key` 不支持路径。需要访问字段、数组或字典时，使用 `@Type.key.path[index]`。
-
-目标类型是 `string` 时，`@Item.sword_fire` 和 `&sword_fire` 都只是普通字符串。目标类型是对象时，裸 `sword_fire` 不会被当成引用，应写成 `&sword_fire` 或 `@Item.sword_fire`。
+目标类型是 `string` 时，`&sword_fire` 只是普通字符串。目标类型是 `&Type` 时，裸 `sword_fire` 不会被当成引用，应写成 `&sword_fire`。
 
 ## 多态对象
 
@@ -187,24 +178,9 @@ CurrencyReward{amount: 100} | ItemReward{item: &sword_fire, count: 1}
 
 `TypeName{...}` 中的 `TypeName` 必须能赋给目标字段类型。
 
-## `@ref` 与 `@inline`
+## 引用与内联对象
 
-CFT 对象字段默认既可以写记录引用，也可以写内联对象。
-
-字段标记 `@ref` 时，单元格必须写记录引用：
-
-```text
-@Item.sword_fire
-&sword_fire
-```
-
-字段标记 `@inline` 时，单元格必须写内联对象：
-
-```text
-ItemReward{item: &sword_fire, count: 1}
-```
-
-`@ref` / `@inline` 用在数组或字典字段上时，会约束数组元素或字典 value。
+CFT 字段类型决定单元格形态：`&Item` 必须写 `&sword_fire`，`Item` 必须写内联对象。数组和字典会递归应用内层类型，例如 `[&Item]` 的元素写 `&key`，`[Item]` 的元素写对象。
 
 ## 完整示例
 
@@ -217,7 +193,7 @@ ItemReward{item: &sword_fire, count: 1}
 | `{Element: float}` | `Fire: 1.25, Ice: 1.0` |
 | `Stats` | `hp: 100, attack: 20` |
 | `[Stats]` | `{hp: 100, attack: 20} | {hp: 200, attack: 40}` |
-| `Item` | `@Item.sword_fire` |
+| `&Item` | `&sword_fire` |
 | `Reward` | `ItemReward{item: &sword_fire, count: 1}` |
 
 ## 常见错误

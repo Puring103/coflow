@@ -98,7 +98,7 @@
       },
       {
         "id": "path",
-        "description": "A field or index segment inside a reference path."
+        "description": "A field or index segment inside a field access path."
       },
       {
         "id": "record",
@@ -122,9 +122,6 @@
           },
           "property.declaration.schema:cfd": {
             "foreground": "#DCDCAA"
-          },
-          "property.reference.path.schema:cfd": {
-            "foreground": "#C586C0"
           },
           "type.reference.schema:cfd": {
             "foreground": "#4EC9B0"
