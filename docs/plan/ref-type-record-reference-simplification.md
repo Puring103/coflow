@@ -21,7 +21,7 @@
 5. 移除 `@Type.key`。
 6. 完全移除路径引用，包括 `@Type.key.field`、`@Type.key[index]` 和 nested path spread。
 7. `check {}` 块继续支持路径访问和引用对象字段访问。
-8. spread 必须有外层期望类型，且 spread source 类型必须可赋给该期望类型。
+8. spread 必须有外层期望类型，且 spread source 的实际类型必须是期望类型本身或其子类。
 9. 同一个继承连通分量内，所有可实例化 type 的 record key 共享同一个命名域。
 10. 不做兼容迁移；旧语法直接报错。
 11. 借本次修改同步简化底层模型、编辑器元数据、writer 和 codegen 分支。
@@ -39,10 +39,11 @@
 关键规则：
 
 - `&Type` 只表示 record-level relationship。
+- `&T` 可以引用实际类型为 `T` 或 `T` 子类的 record；不能引用父类、兄弟类型或无继承关系的 record。
 - inline object 永远不是引用目标。
 - 数据输入中不存在“从某个 record 内部路径取值”的引用表达式。
 - 数据输入中不存在带显式类型的引用字面量，`&key` 的目标类型完全来自 schema 上下文。
-- 所有跨 record 依赖都必须出现在 `ref_index` 中。
+- 直接 `&T` 引用关系必须出现在 `ref_edges` 中；spread source 和 check 读依赖分别使用独立索引/图。
 - `check` 表达式的路径访问是校验期求值能力，不是数据引用语法。
 - 继承只应用于同一身份空间的实体族；不要用巨大 abstract base type 只为复用字段。
 
@@ -125,7 +126,7 @@ item: &sword
 @Type.key.dict[EnumValue]
 ```
 
-`&key` 只能出现在期望类型为 `&T` 的位置。解析时在 `T` 所属继承命名域中查找 `key`，再检查命中的 record 实际类型是否可赋给期望类型。
+`&key` 只能出现在期望类型为 `&T` 的位置。解析时在 `T` 所属继承命名域中查找 `key`，再检查命中的 record 实际类型是否为 `T` 或 `T` 的子类。
 
 ### 内联对象
 
@@ -191,7 +192,7 @@ elite: Monster {
 }
 ```
 
-这里 `elite` 的期望类型是 `Monster`，所以 `...&base` 在 `Monster` 的继承命名域中查找 `base`，且命中 record 必须可赋给 `Monster`。
+这里 `elite` 的期望类型是 `Monster`，所以 `...&base` 在 `Monster` 的继承命名域中查找 `base`，且命中 record 的实际类型必须是 `Monster` 或 `Monster` 的子类。
 
 移除 nested path spread：
 
@@ -236,14 +237,14 @@ pub enum CftSchemaTypeRef {
     Bool,
     String,
     Named(String),
-    Ref(Box<CftSchemaTypeRef>),
+    Ref(String),
     Array(Box<CftSchemaTypeRef>),
     Dict(Box<CftSchemaTypeRef>, Box<CftSchemaTypeRef>),
     Nullable(Box<CftSchemaTypeRef>),
 }
 ```
 
-也可以把 `Ref` 限制为 `Ref(String)`。如果使用 `Ref(Box<...>)`，编译校验阶段必须保证 `Ref` 内层最终是非 enum 的 CFT object type。
+AST 层可以保留更宽的 `Ref(Box<TypeRef>)` 以便给 `&int`、`&[Item]` 等非法输入报精确错误；编译后的 schema type 应收敛为 `Ref(String)`，直接表达“引用目标一定是 object type”这个不变量。编译校验阶段必须保证 `Ref` 指向非 enum、非 singleton 的 CFT object type。
 
 ### Input value
 
@@ -259,10 +260,10 @@ CfdInputValue::RecordRef {
 新输入引用：
 
 ```rust
-CfdInputValue::RecordRef {
-    key: String,
-}
+CfdInputValue::RecordRef(String)
 ```
+
+`RecordRef` 只承载输入里写出的 key。目标类型来自外层 schema 上下文，解析结果写入 `RefEdge`。
 
 删除：
 
@@ -286,18 +287,67 @@ CfdValue::Ref {
 新模型引用：
 
 ```rust
-CfdValue::Ref {
-    target_key: String,
+CfdValue::Ref(String)
+```
+
+`CfdValue::Ref` 只保留目标 key。引用的 host、field path、期望类型、domain、目标 record id 都由 `RefEdge` 承载。这样 value tree 保持轻量，所有关系语义集中在引用索引中。
+
+真实目标由 `ref_edges` 决定：
+
+```text
+RefSite(host_record, field_path) -> RefEdge
+
+RefEdge {
+  host: CfdRecordId,
+  path: CfdPath,
+  expected_type: TypeId,
+  domain: DomainId,
+  target_key: String,
+  target: CfdRecordId,
 }
 ```
 
-真实目标由 `ref_index` 决定：
+展示、跳转、导出和 codegen 需要目标实际类型时，从 `target_record_id` 读取 record 的 `actual_type`。
 
-```text
-RefSite(host_record, field_path) -> target_record_id
+inline object 不再复用完整 `CfdRecord`。建议拆成：
+
+```rust
+pub struct CfdRecord {
+    pub key: String,
+    pub object: CfdObject,
+    pub origin: RecordOrigin,
+}
+
+pub struct CfdObject {
+    pub actual_type: String,
+    pub fields: BTreeMap<String, CfdValue>,
+}
+
+pub enum CfdValue {
+    Object(Box<CfdObject>),
+    Ref(String),
+    // ...
+}
 ```
 
-展示、跳转、导出和 codegen 需要目标实际类型时，从 `target_record_id` 读取 record 的 `actual_type`。
+这样 record 表示有身份的顶层实体，inline object 只表示父值拥有的对象。字段容器暂时继续使用 `BTreeMap<String, CfdValue>`，不在本次计划中改成 `Vec<CfdValue>`。如果编辑器 wire JSON 仍需要 `{ "target_key": "sword" }` 这类具名形状，可以在 DTO / serde adapter 层转换，核心模型不为 wire 形状保留单字段 struct variant。
+
+spread 来源不再挂在 `CfdRecord` 或 `CfdObject` 上，统一由独立边索引承载：
+
+```text
+SpreadSite(host_record, object_path) -> SpreadEdge
+
+SpreadEdge {
+  host: CfdRecordId,
+  path: CfdPath,
+  expected_type: TypeId,
+  domain: DomainId,
+  source_key: String,
+  source: CfdRecordId,
+}
+```
+
+`path` 指向发生 spread 的 whole-record 或 inline object 位置，而不是 Graph 边。这样来源标注、rename 和写回可以共享同一结构，record/value tree 不需要携带 spread 专属元数据。
 
 ### Domain index
 
@@ -306,15 +356,26 @@ schema 编译后生成：
 ```rust
 TypeId
 DomainId
+type_id_by_name: name -> TypeId
+type_name: TypeId -> name
 type_domain: TypeId -> DomainId
 domain_members: DomainId -> Vec<TypeId>
+ancestors_by_type: TypeId -> Vec<TypeId>
 ```
 
 data model build 时生成：
 
 ```rust
 records_by_type: TypeId -> Vec<CfdRecordId>
+record_by_type_key: (TypeId, key) -> CfdRecordId
 record_by_domain_key: (DomainId, key) -> CfdRecordId
+ref_edges: Vec<RefEdge>
+ref_by_site: RefSite -> RefEdgeId
+ref_by_host: CfdRecordId -> Vec<RefEdgeId>
+ref_by_target: CfdRecordId -> Vec<RefEdgeId>
+spread_edges: Vec<SpreadEdge>
+spread_by_site: SpreadSite -> SpreadEdgeId
+spread_by_source: CfdRecordId -> Vec<SpreadEdgeId>
 ```
 
 引用解析：
@@ -323,10 +384,10 @@ record_by_domain_key: (DomainId, key) -> CfdRecordId
 expected type = &T
 domain = type_domain(T)
 candidate = record_by_domain_key(domain, key)
-candidate.actual_type must be assignable to T
+candidate.actual_type must be T or a subtype of T
 ```
 
-这可以替代大部分 per-base polymorphic key index。
+这可以替代 per-base polymorphic key index。`ref_by_host` 服务图视图和按 record 遍历出边；`ref_by_target` 服务 rename 和目标删除检查，避免全量扫描所有引用点。`spread_edges` 不参与图显示，只服务 whole-record/object spread 的写回、rename 和来源标注；`spread_by_site` 则让编辑器按对象位置 O(1) 取来源信息。
 
 ## 模块级影响
 
@@ -355,6 +416,9 @@ candidate.actual_type must be assignable to T
 - 引用值不再携带 target type。
 - draft 构建不再跨 record 取内部路径值。
 - 继承连通分量 key 唯一性成为硬约束。
+- 顶层 record 与 inline object 拆分，inline object 不再携带 key、origin 或 spread 写回元数据。
+- 引用解析时直接生成 `RefEdge`，并维护 `ref_by_site`、`ref_by_host`、`ref_by_target` 三个索引视图。
+- whole-record/object spread 生成独立 `SpreadEdge` / `spread_by_source`，但不进入直接引用图。
 
 删除：
 
@@ -373,12 +437,12 @@ flatten_dict_draft_entries 为 path ref 服务的分支
 
 | 期望类型 | 允许输入 |
 | --- | --- |
-| `&T` | `RecordRef { key }` |
+| `&T` | `RecordRef(key)` |
 | `T` object | inline object / object spread |
 | primitive / enum | 对应标量 |
 | array / dict / nullable | 递归按内层类型验证 |
 
-`ref_index` 应成为完整引用图，不存在任何不进入 `ref_index` 的跨 record 数据依赖。
+`ref_edges` 应成为直接 `&T` 关系图的唯一真相。其他跨 record 关系不混入直接引用图：`spread_edges` 只描述 spread 展开和写回来源，checker dependency graph 只描述 check 求值读依赖。
 
 ### `coflow-loader-cfd`
 
@@ -432,6 +496,7 @@ reference path field/index diagnostics
 - mutation 和 writer 调度不再维护 `FieldMode`。
 - 默认值和 shape materialization 直接由 `CftSchemaTypeRef` 判断。
 - 重命名引用只处理 `&key`。
+- rename 通过 `ref_by_target` 找到结构化引用点，通过 `spread_by_source` 找到 spread source rewrite 点，不再全量扫描值树或源文本。
 
 可删除或重写：
 
@@ -448,7 +513,7 @@ field_mode(...)
 
 ```text
 is_ref_type(ty)
-ref_target_type(ty)
+ref_expected_type_id(ty)
 is_inline_object_type(ty)
 ```
 
@@ -473,7 +538,7 @@ T  -> 只接受 object payload
 - `RewriteRecordReferencesRequest` 不再需要覆盖 `@Type.old.path` 或 `@Type.old`。
 - 只重写结构化引用点中的 `&old`。
 - `WriteCellRequest.new_value` 中 `CfdValue::Ref` 就是唯一引用形态。
-- 本地 provider 优先走 `ref_sites()` 精确写回；remote provider 可保留 source-level rewrite 兜底能力，但请求语义只包含 key 和引用点上下文。
+- 本地 provider 优先走 `ref_by_target` / `RefEdge` 精确写回引用点，并走 `spread_by_source` / `SpreadEdge` 精确写回 spread source；remote provider 可保留 source-level rewrite 兜底能力，但请求语义只包含 key 和结构化站点上下文。
 
 ### `coflow-checker`
 
@@ -481,7 +546,7 @@ T  -> 只接受 object payload
 
 需要确保：
 
-- `CfdValue::Ref` 在 check 中仍可通过 `ref_index` 解引用到目标 record。
+- `CfdValue::Ref` 在 check 中仍可通过 `ref_by_site` / `RefEdge` 解引用到目标 record。
 - inline object 仍按当前嵌套路径执行 check。
 - `&T?` 的 null access 规则不变。
 
@@ -561,7 +626,8 @@ T          -> inline object editor
 {K: T}     -> dict value inline editor
 ```
 
-Graph 视图只画 `ref_index` 中的真实 record edge。
+Graph 视图只画 `RefEdge` 中的真实 record edge。
+Graph 数据只消费直接引用索引（`ref_by_host` / `RefEdge`），不消费 `spread_edges`。`...&key` 只影响字段来源、写回和 rename，不在图中显示为边。
 
 ## 分阶段实施计划
 
@@ -616,8 +682,9 @@ type Drop {
 1. schema/runtime 层计算 `DomainId`。
 2. 同一继承连通分量内所有 concrete/plain/sealed records 的 key 必须唯一。
 3. `records_by_type` 保留按实际类型访问。
-4. 新增 `record_by_domain_key`。
-5. 替换或削减原有 polymorphic key index。
+4. 新增 `record_by_type_key` 和 `record_by_domain_key`。
+5. schema 层建立 `TypeId`、`DomainId`、`type_domain`、`domain_members`、`ancestors_by_type`。
+6. 替换原有 per-base polymorphic key index。
 
 阶段测试计划：
 
@@ -628,6 +695,8 @@ type Drop {
   - 多层继承链上重复 key 报错。
   - 同一 domain 中唯一 key 可通过 domain lookup 找到。
   - concrete `&Child` 期望类型命中 sibling record 时触发 assignability error。
+  - `record_by_type_key` 只按实际类型命中 record。
+  - `record_by_domain_key` 在继承连通分量内命中任一成员 record。
 - diagnostics tests：
   - duplicate key diagnostic 指出 domain root 或相关 type。
   - duplicate key diagnostic 标出冲突 record。
@@ -645,32 +714,43 @@ type Drop {
 1. `CfdInputValue::RecordRef` 删除 `target_type`。
 2. `CfdValue::Ref` 删除 `target_type`。
 3. `CfdInputValue::PathRef`、path segment、path index 全部删除。
-4. value validation：
-   - `&T` 只接受 `RecordRef { key }`。
+4. `CfdRecord` 与 `CfdObject` 拆分，inline object 使用 `CfdObject`。
+5. value validation：
+   - `&T` 只接受 `RecordRef(key)`。
    - `T` 只接受 inline object / object spread。
-5. ref resolution：
+6. ref resolution：
    - `expected &T + key -> domain lookup -> assignability check -> CfdRecordId`。
-6. `ref_index` 成为唯一引用真相。
+7. 解析时直接生成 `RefEdge`，包含 host、path、expected type、domain、target key 和 target id。
+8. 维护 `ref_by_site`、`ref_by_host`、`ref_by_target`。
+9. whole-record/object spread 维护独立 `SpreadEdge` / `spread_by_source`，不并入 `ref_edges`。
 
 阶段测试计划：
 
 - data model tests：
-  - `&Item` 字段接受 `RecordRef { key: "sword" }`。
+  - `&Item` 字段接受 `RecordRef("sword")`。
   - `&Item` 字段拒绝 inline object。
   - `Item` 字段接受 inline object。
   - `Item` 字段拒绝 record ref。
   - `&Reward` 可引用任一子类 record。
+  - `&Reward` 可引用 `Reward` 自身的可实例化 record。
   - `&ItemReward` 拒绝 `CurrencyReward` record。
+  - `&ItemReward` 拒绝父类 `Reward` record。
   - missing key 按 domain 报 `RefTargetNotFound`。
-  - `ref_index` 包含所有 `CfdValue::Ref`。
-  - 每个 `CfdValue::Ref` 都能通过 `RefSite` resolve 到 record id。
+  - `ref_edges` 包含所有 `CfdValue::Ref`。
+  - 每个 `CfdValue::Ref` 都能通过 `RefSite` resolve 到 `RefEdge`。
+  - `ref_by_host` 能列出一个 record 的全部直接出边。
+  - `ref_by_target` 能列出一个 record 的全部直接入边。
+  - core model 中 `CfdValue::Ref` 和 `CfdInputValue::RecordRef` 不再使用单字段 struct variant。
+  - wire/serde DTO 如需具名字段，由 adapter 层负责转换。
+  - inline object 不携带 key、origin 或 spread 写回元数据。
+  - spread source 进入 `spread_by_source`，但不进入 `ref_edges`。
 - checker smoke tests：
-  - check 中 `item.price` 可通过 `ref_index` 解引用。
+  - check 中 `item.price` 可通过 `ref_by_site` 解引用。
   - nullable reference 的 null access 规则不变。
 
 阶段验收：
 
-底层模型中不存在 typed record ref 和 path ref。所有引用点都通过 `ref_index` 解析。
+底层模型中不存在 typed record ref 和 path ref。所有直接引用点都通过 `RefEdge` 解析，spread 与 check 读依赖使用独立索引/图。
 
 ### 阶段 4：CFD loader 与 table cell parser
 
@@ -692,7 +772,10 @@ type Drop {
   - `item: @Item.sword.name` 报错。
   - `item: &sword` 在 inline `Item` 字段中报 type mismatch。
   - `stats: { ...&base_stats }` 在期望 `Stats` 上下文中通过。
+  - `reward: Reward { ...&item_reward }` 在期望 `Reward` 上下文中允许子类 spread source。
   - `stats: { ...&wrong_type }` 报 assignability error。
+  - `item_reward: ItemReward { ...&reward_base }` 在期望 `ItemReward` 上下文中拒绝父类 spread source。
+  - `item_reward: ItemReward { ...&currency_reward }` 在期望 `ItemReward` 上下文中拒绝兄弟类型 spread source。
   - 顶层或无期望类型位置的 `...&key` 报错。
 - table-core cell tests：
   - `&sword` 在 `&Item` 列中解析为 ref。
@@ -716,9 +799,11 @@ type Drop {
    - `&T` 不自动生成假引用。
    - `&T?` 默认可为 null。
    - inline object 仍可按 editable shape 生成 UI 草稿。
-4. record rename 只更新 `ref_index` 指向目标 record 的 `&old`。
+4. record rename 通过 `ref_by_target` 更新指向目标 record 的结构化 `&old`。
 5. provider writer 只写 `&key` 引用值。
 6. `RewriteRecordReferencesRequest` 语义从 typed/path refs 收敛到 key refs。
+7. record rename 通过 `spread_by_source` 更新 `...&old` spread source；这类关系不进入 Graph。
+8. object 来源标注通过 `spread_by_site` 从对象路径取 `SpreadEdge`，不再从 `CfdRecord` 上读取 `spread_field_sources`。
 
 阶段测试计划：
 
@@ -733,6 +818,8 @@ type Drop {
   - CFD writer 写出 `&new_key`。
   - CSV/Excel/table writer 写出 `&new_key` 或 provider 约定的 key ref 文本。
   - rename record 更新所有 model ref sites。
+  - rename record 更新所有 spread source sites。
+  - 编辑器来源标注可通过 `spread_by_site` 定位对象 spread 来源。
   - rename 不触碰同名普通 string。
   - rename 不需要处理 `@Type.old` 或 `@Type.old.path`。
 - remote writer tests：
@@ -741,7 +828,7 @@ type Drop {
 
 阶段验收：
 
-record rename 和 field writes 只处理结构化 `&key` 引用点，旧 typed/path rewrite 分支删除。
+record rename 和 field writes 只处理结构化 `&key` 引用点以及 whole-record/object spread source，旧 typed/path rewrite 分支删除。
 
 ### 阶段 6：Export 与 C# codegen
 
@@ -785,7 +872,7 @@ record rename 和 field writes 只处理结构化 `&key` 引用点，旧 typed/p
 
 1. Editor backend DTO 删除 `FieldMode`、`FieldModeIndex` 和 `field_modes`。
 2. 前端组件由 schema type 决定控件。
-3. Graph 只使用 `ref_index` 构图。
+3. Graph 只使用 `ref_by_host` / `RefEdge` 构图。
 4. LSP 更新 `&Type` type syntax。
 5. VSCode grammar/snippets 删除 `@ref`、`@inline`、`@Type.key` path semantics。
 6. CFD completion 只补 `&key`。
@@ -794,7 +881,8 @@ record rename 和 field writes 只处理结构化 `&key` 引用点，旧 typed/p
 
 - editor backend tests：
   - `FileRecords` / `GraphData` 不包含 field modes。
-  - graph edges 来自 `ref_index`。
+  - graph edges 来自 `ref_by_host` / `RefEdge`。
+  - graph 不显示 `...&key` spread source。
   - ref value 可定位 target file/type/key。
 - frontend tests 或 build checks：
   - `&T` 字段渲染 record picker。
@@ -858,7 +946,19 @@ resolve root record -> walk draft field/index/dict path -> resolve nested value 
 expected type -> domain id -> (domain, key) -> record id -> assignability check
 ```
 
-这更适合索引、缓存和批量解析。
+这更适合索引、缓存和批量解析。解析 `&key` 时直接生成 `RefEdge`，避免先 resolve 一次、再遍历整棵 value tree 构建引用索引。
+
+Graph 构建也从扫描 record value tree 变为：
+
+```text
+start record ids -> ref_by_host -> target record ids
+```
+
+rename 从扫描所有引用点变为：
+
+```text
+target/source record id -> ref_by_target / spread_by_source -> rewrite sites
+```
 
 ### 内存占用
 
@@ -874,7 +974,7 @@ per-base polymorphic key indexes
 FieldMode metadata
 ```
 
-大量类型名字符串可以逐步替换为 `TypeId` / `DomainId`。
+大量类型名字符串可以替换为 `TypeId` / `DomainId`。`CfdRecord` 与 `CfdObject` 拆分后，inline object 不再携带 record key、origin、spread metadata 等顶层 record 专属字段。
 
 ### 增量更新
 
@@ -883,11 +983,11 @@ FieldMode metadata
 新方案中：
 
 - 修改普通字段只影响所在 record。
-- 修改 record key 只影响 refs。
+- 修改 record key 影响直接 refs 和 spread source。
 - 修改 schema 继承关系重建 domain index 并检查 key collision。
-- 修改被引用 record 的普通字段不需要重算引用方。
+- 修改被引用 record 的普通字段不需要重算普通引用方；如果 check 读取了该 record，仍按 checker dependency graph 重算读方。
 
-增量 invalidation 可以按 record/domain 粒度实现，不需要 path-level dependency graph。
+增量 invalidation 可以按 record/domain 粒度实现，不需要数据输入层面的 path-ref dependency graph。直接引用、spread source 和 check 读依赖分别用 `ref_edges`、`spread_edges`、checker dependency graph 表达，避免一个索引承担多种语义。
 
 ### 编辑器性能
 
@@ -899,6 +999,8 @@ T  -> inline editor
 ```
 
 不需要根据当前值形态切换 UI，不需要 typed/path ref 补全、跳转和依赖分析。
+
+Graph 视图只消费 `ref_by_host` / `RefEdge`。它不扫描 `CfdValue`，也不显示 `...&key` spread source 或 check 读依赖。
 
 ### 代码生成性能
 
@@ -927,7 +1029,7 @@ T  -> inline editor
 
 ### Whole-record spread 是否保留
 
-保留 `...&key`，但必须有外层期望 object 类型，且 source 类型必须可赋给该类型。禁止 nested path spread。
+保留 `...&key`，但必须有外层期望 object 类型，且 source 实际类型必须是期望类型本身或其子类。禁止父类、兄弟类型、无继承关系类型和 nested path spread。
 
 ### Mixed inline/ref 是否未来支持
 
