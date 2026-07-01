@@ -7,7 +7,7 @@
 use coflow_api::WriteFieldPathSegment;
 use coflow_cft::{CftContainer, Dimension, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputRecord, CfdInputValue, CfdValue};
-use coflow_engine::build_project_session;
+use coflow_engine::{build_project_session, ProjectSession};
 use coflow_project::Project;
 
 fn schema_with_localized_string() -> CftContainer {
@@ -809,6 +809,9 @@ fn write_field_redirects_spread_fields_to_source_record() {
             name: string;
             power: int;
         }
+        type Holder {
+            stats: Item;
+        }
         "#,
     )
     .expect("write schema");
@@ -825,6 +828,16 @@ fn write_field_redirects_spread_fields_to_source_record() {
         root.join("data/host.cfd"),
         r#"child: Item {
     ...&base,
+}
+holder: Holder {
+    stats: {
+        ...&base,
+    },
+}
+chain: Holder {
+    stats: {
+        ...&child,
+    },
 }
 "#,
     )
@@ -875,5 +888,61 @@ sources:
         "host file should not receive spread edit:\n{host}"
     );
 
+    assert_nested_spread_write_redirects(&mut session, &registry, &root);
+
     std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+fn assert_nested_spread_write_redirects(
+    session: &mut ProjectSession,
+    registry: &coflow_api::ProviderRegistry,
+    root: &std::path::Path,
+) {
+    session
+        .write_field(
+            registry,
+            "Holder",
+            "holder",
+            &[
+                WriteFieldPathSegment::Field("stats".to_string()),
+                WriteFieldPathSegment::Field("name".to_string()),
+            ],
+            &CfdValue::String("Nested".to_string()),
+        )
+        .expect("nested spread field write");
+
+    let source = std::fs::read_to_string(root.join("data/source.cfd")).expect("read source");
+    let host = std::fs::read_to_string(root.join("data/host.cfd")).expect("read host");
+    assert!(
+        source.contains(r#"name: "Nested""#),
+        "source file should receive nested spread edit:\n{source}"
+    );
+    assert!(
+        host.contains("stats") && !host.contains("Nested"),
+        "host file should not receive nested spread edit:\n{host}"
+    );
+
+    session
+        .write_field(
+            registry,
+            "Holder",
+            "chain",
+            &[
+                WriteFieldPathSegment::Field("stats".to_string()),
+                WriteFieldPathSegment::Field("name".to_string()),
+            ],
+            &CfdValue::String("Chained".to_string()),
+        )
+        .expect("chained spread field write");
+
+    let source = std::fs::read_to_string(root.join("data/source.cfd")).expect("read source");
+    let host = std::fs::read_to_string(root.join("data/host.cfd")).expect("read host");
+    assert!(
+        source.contains(r#"name: "Chained""#),
+        "source file should receive chained spread edit:\n{source}"
+    );
+    assert!(
+        !host.contains("Chained"),
+        "host file should not receive chained spread edit:\n{host}"
+    );
 }

@@ -57,11 +57,11 @@ impl ProjectSession {
         let Some(record_ref) = self.records.get_by_coordinate(actual_type, key) else {
             return Err(DiagnosticSet::one(not_found(actual_type, key)));
         };
-        let Some(record) = self.model.record(record_ref.id) else {
+        let Some(_record) = self.model.record(record_ref.id) else {
             return Err(DiagnosticSet::one(not_found(actual_type, key)));
         };
         let coordinate = record_ref.coordinate.clone();
-        let target = write_target_for_path(self, record, record_ref, path)?;
+        let target = write_target_for_path(self, record_ref, path)?;
         let source = source_for_file(self, &target.display_path)?;
         let writer = lookup_writer(registry, &source)?;
         let yaml_path = self.project.config_path.clone();
@@ -70,7 +70,7 @@ impl ProjectSession {
             origin: &target.origin,
             record_key: &target.coordinate.key,
             actual_type: &target.coordinate.actual_type,
-            field_path: path,
+            field_path: &target.field_path,
             new_value,
             schema: &self.schema,
             source: &source,
@@ -607,11 +607,11 @@ struct WriteTarget {
     coordinate: RecordCoordinate,
     origin: RecordOrigin,
     display_path: String,
+    field_path: Vec<WriteFieldPathSegment>,
 }
 
 fn write_target_for_path(
     session: &ProjectSession,
-    host_record: &CfdRecord,
     host_ref: &super::RecordRef,
     path: &[WriteFieldPathSegment],
 ) -> Result<WriteTarget, DiagnosticSet> {
@@ -620,13 +620,17 @@ fn write_target_for_path(
             coordinate: host_ref.coordinate.clone(),
             origin: host_ref.origin.clone(),
             display_path: host_ref.display_path.clone(),
+            field_path: path.to_vec(),
         });
     };
-    let Some(source_id) = host_record.spread_source_for_field(top_field) else {
+    let path = cfd_path_from_write_path(path);
+    let Some((source_id, source_path)) = session.model.spread_source_path(host_ref.id, &path)
+    else {
         return Ok(WriteTarget {
             coordinate: host_ref.coordinate.clone(),
             origin: host_ref.origin.clone(),
             display_path: host_ref.display_path.clone(),
+            field_path: cfd_path_to_write_path(&path),
         });
     };
     let Some(source_ref) = session.records.get(source_id) else {
@@ -640,5 +644,26 @@ fn write_target_for_path(
         coordinate: source_ref.coordinate.clone(),
         origin: source_ref.origin.clone(),
         display_path: source_ref.display_path.clone(),
+        field_path: cfd_path_to_write_path(&source_path),
     })
+}
+
+fn cfd_path_from_write_path(path: &[WriteFieldPathSegment]) -> CfdPath {
+    path.iter()
+        .fold(CfdPath::root(), |path, segment| match segment {
+            WriteFieldPathSegment::Field(field) => path.field(field.clone()),
+            WriteFieldPathSegment::Index(index) => path.index(*index),
+            WriteFieldPathSegment::DictKey(key) => path.dict_key(key.clone()),
+        })
+}
+
+fn cfd_path_to_write_path(path: &CfdPath) -> Vec<WriteFieldPathSegment> {
+    path.segments
+        .iter()
+        .map(|segment| match segment {
+            CfdPathSegment::Field(field) => WriteFieldPathSegment::Field(field.clone()),
+            CfdPathSegment::Index(index) => WriteFieldPathSegment::Index(*index),
+            CfdPathSegment::DictKey(key) => WriteFieldPathSegment::DictKey(key.clone()),
+        })
+        .collect()
 }

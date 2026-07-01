@@ -1,10 +1,10 @@
-use crate::diagnostic::CfdPath;
+use crate::diagnostic::{CfdPath, CfdPathSegment};
 use crate::origin::RecordOrigin;
 use crate::{compiler::ModelCompiler, CfdDiagnostics};
 use coflow_cft::CftContainer;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
@@ -20,6 +20,9 @@ pub struct CfdDataModel {
     pub(crate) ref_by_site: BTreeMap<RefSite, RefEdgeId>,
     pub(crate) ref_by_host: BTreeMap<CfdRecordId, Vec<RefEdgeId>>,
     pub(crate) ref_by_target: BTreeMap<CfdRecordId, Vec<RefEdgeId>>,
+    pub(crate) spread_edges: Vec<SpreadEdge>,
+    pub(crate) spread_by_site: BTreeMap<SpreadSite, Vec<SpreadEdgeId>>,
+    pub(crate) spread_by_source: BTreeMap<CfdRecordId, Vec<SpreadEdgeId>>,
 }
 
 /// Logical address of a `CfdValue::Ref` instance inside the model: the host
@@ -63,6 +66,49 @@ pub struct RefEdge {
     pub key: String,
     pub target: CfdRecordId,
     pub target_type: CfdTypeId,
+}
+
+/// Logical address of a field value inherited through object/record spread.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SpreadSite {
+    pub host: CfdRecordId,
+    pub path: CfdPath,
+}
+
+impl SpreadSite {
+    #[must_use]
+    pub const fn new(host: CfdRecordId, path: CfdPath) -> Self {
+        Self { host, path }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct SpreadEdgeId(usize);
+
+impl SpreadEdgeId {
+    #[must_use]
+    pub(crate) const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    #[must_use]
+    pub fn index(self) -> usize {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpreadEdge {
+    pub id: SpreadEdgeId,
+    pub site: SpreadSite,
+    pub host: CfdRecordId,
+    pub path: CfdPath,
+    pub fields: BTreeSet<String>,
+    pub expected_type: CfdTypeId,
+    pub domain: CfdDomainId,
+    pub source_key: String,
+    pub source: CfdRecordId,
+    pub source_type: CfdTypeId,
 }
 
 impl CfdDataModel {
@@ -226,6 +272,22 @@ impl CfdDataModel {
         self.resolve_ref(&RefSite::new(host, path.clone()))
     }
 
+    /// Resolves a ref at `site`, following spread provenance when the value at
+    /// that site was inherited from another record.
+    #[must_use]
+    pub fn resolve_ref_effective(&self, site: &RefSite) -> Option<CfdRecordId> {
+        self.resolve_ref_effective_inner(site, &mut BTreeSet::new())
+    }
+
+    #[must_use]
+    pub fn resolve_ref_effective_at(
+        &self,
+        host: CfdRecordId,
+        path: &CfdPath,
+    ) -> Option<CfdRecordId> {
+        self.resolve_ref_effective(&RefSite::new(host, path.clone()))
+    }
+
     /// Iterate every resolved `CfdValue::Ref` site in the model.
     pub fn ref_sites(&self) -> impl Iterator<Item = (&RefSite, CfdRecordId)> {
         self.ref_edges.iter().map(|edge| (&edge.site, edge.target))
@@ -259,6 +321,131 @@ impl CfdDataModel {
             .into_iter()
             .flat_map(|ids| ids.iter())
             .filter_map(|id| self.ref_edge(*id))
+    }
+
+    #[must_use]
+    pub fn spread_edge(&self, id: SpreadEdgeId) -> Option<&SpreadEdge> {
+        self.spread_edges.get(id.index())
+    }
+
+    #[must_use]
+    pub fn spread_edge_at(&self, site: &SpreadSite) -> Option<SpreadEdgeId> {
+        self.spread_by_site
+            .get(site)
+            .and_then(|ids| ids.first())
+            .copied()
+    }
+
+    pub fn spread_edges_at(&self, site: &SpreadSite) -> impl Iterator<Item = &SpreadEdge> + '_ {
+        self.spread_by_site
+            .get(site)
+            .into_iter()
+            .flat_map(|ids| ids.iter())
+            .filter_map(|id| self.spread_edge(*id))
+    }
+
+    pub fn spread_edges(&self) -> impl Iterator<Item = &SpreadEdge> {
+        self.spread_edges.iter()
+    }
+
+    pub fn spread_edges_from_source(
+        &self,
+        source: CfdRecordId,
+    ) -> impl Iterator<Item = &SpreadEdge> + '_ {
+        self.spread_by_source
+            .get(&source)
+            .into_iter()
+            .flat_map(|ids| ids.iter())
+            .filter_map(|id| self.spread_edge(*id))
+    }
+
+    /// Returns the source record whose spread supplied the value at `site`.
+    #[must_use]
+    pub fn spread_source_at(&self, site: &SpreadSite) -> Option<CfdRecordId> {
+        self.spread_edge_at(site)
+            .and_then(|edge_id| self.spread_edge(edge_id))
+            .map(|edge| edge.source)
+    }
+
+    /// Returns the source record whose spread supplied the value at `path`.
+    ///
+    /// `SpreadEdge` sites are object-level. A field is inherited from a spread
+    /// when its path is at least one segment below the object site and the first
+    /// relative segment is one of that edge's inherited fields.
+    #[must_use]
+    pub fn spread_source_at_path(&self, host: CfdRecordId, path: &CfdPath) -> Option<CfdRecordId> {
+        self.spread_edge_at_path(host, path).map(|edge| edge.source)
+    }
+
+    #[must_use]
+    pub fn spread_edge_at_path(&self, host: CfdRecordId, path: &CfdPath) -> Option<&SpreadEdge> {
+        self.spread_edges
+            .iter()
+            .find(|edge| edge.host == host && edge.covers_path(path))
+    }
+
+    #[must_use]
+    pub fn spread_source_path(
+        &self,
+        host: CfdRecordId,
+        path: &CfdPath,
+    ) -> Option<(CfdRecordId, CfdPath)> {
+        self.spread_source_path_inner(host, path, &mut BTreeSet::new())
+    }
+
+    fn resolve_ref_effective_inner(
+        &self,
+        site: &RefSite,
+        visited: &mut BTreeSet<RefSite>,
+    ) -> Option<CfdRecordId> {
+        if !visited.insert(site.clone()) {
+            return None;
+        }
+        self.resolve_ref(site).or_else(|| {
+            let (source, source_path) =
+                self.spread_source_path_inner(site.host, &site.path, &mut BTreeSet::new())?;
+            self.resolve_ref_effective_inner(&RefSite::new(source, source_path), visited)
+        })
+    }
+
+    fn spread_source_path_inner(
+        &self,
+        host: CfdRecordId,
+        path: &CfdPath,
+        visited: &mut BTreeSet<(CfdRecordId, CfdPath)>,
+    ) -> Option<(CfdRecordId, CfdPath)> {
+        if !visited.insert((host, path.clone())) {
+            return None;
+        }
+        let edge = self.spread_edge_at_path(host, path)?;
+        let source_path = edge.source_path_for(path)?;
+        self.spread_source_path_inner(edge.source, &source_path, visited)
+            .or(Some((edge.source, source_path)))
+    }
+}
+
+impl SpreadEdge {
+    #[must_use]
+    pub fn covers_path(&self, path: &CfdPath) -> bool {
+        if !path.segments.starts_with(&self.path.segments) {
+            return false;
+        }
+        let relative = &path.segments[self.path.segments.len()..];
+        let Some(CfdPathSegment::Field(field)) = relative.first() else {
+            return false;
+        };
+        self.fields.contains(field)
+    }
+
+    #[must_use]
+    pub fn source_path_for(&self, host_path: &CfdPath) -> Option<CfdPath> {
+        if !self.covers_path(host_path) {
+            return None;
+        }
+        let relative = &host_path.segments[self.path.segments.len()..];
+        Some(CfdPath {
+            segments: relative.to_vec(),
+        })
     }
 }
 
@@ -432,18 +619,6 @@ pub struct CfdRecord {
     #[serde(skip)]
     #[cfg_attr(feature = "ts-export", ts(skip))]
     pub origin: RecordOrigin,
-    /// For top-level records only: maps a field name that was imported via a
-    /// `...spread` expansion to the source record id whose origin should be
-    /// used when writing the field back. Direct fields are not present in
-    /// this map.
-    ///
-    /// `#[serde(skip)]` because `CfdRecordId` is an internal index; wire
-    /// consumers receive `SpreadInfo` derived via [`crate::CfdDataModel`]
-    /// look-ups instead. Round-trip through serde leaves this empty, which
-    /// `model.build()` repopulates correctly.
-    #[serde(skip)]
-    #[cfg_attr(feature = "ts-export", ts(skip))]
-    pub spread_field_sources: BTreeMap<String, CfdRecordId>,
 }
 
 impl CfdRecord {
@@ -470,15 +645,6 @@ impl CfdRecord {
     #[must_use]
     pub fn field(&self, name: &str) -> Option<&CfdValue> {
         self.object.field(name)
-    }
-
-    /// Effective origin used to write a top-level field. If the field was
-    /// imported via `...spread`, returns the spread source's record id (the
-    /// caller resolves it to a real `RecordOrigin` via the model). Otherwise
-    /// returns `None` and the caller uses `self.origin`.
-    #[must_use]
-    pub fn spread_source_for_field(&self, field: &str) -> Option<CfdRecordId> {
-        self.spread_field_sources.get(field).copied()
     }
 }
 

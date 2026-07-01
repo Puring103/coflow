@@ -231,6 +231,10 @@ fn object_spread_source_is_not_a_direct_ref_edge() {
             type Stats {
                 hp: int;
                 item: &Item;
+                nested: Nested;
+            }
+            type Nested {
+                item: &Item;
             }
             type Item { name: string; }
         "#,
@@ -244,6 +248,13 @@ fn object_spread_source_is_not_a_direct_ref_edge() {
         [
             ("hp", CfdInputValue::from(10_i64)),
             ("item", CfdInputValue::record_ref("sword")),
+            (
+                "nested",
+                CfdInputValue::object_with_declared_type([(
+                    "item",
+                    CfdInputValue::record_ref("sword"),
+                )]),
+            ),
         ],
     );
     builder.add_input_record(CfdInputRecord::with_spreads(
@@ -258,9 +269,148 @@ fn object_spread_source_is_not_a_direct_ref_edge() {
     let base_id = model.lookup("Stats", "base").expect("base");
     let copy_id = model.lookup("Stats", "copy").expect("copy");
 
+    let inherited_item_site = RefSite::new(copy_id, CfdPath::root().field("item"));
+    let inherited_nested_item_site =
+        RefSite::new(copy_id, CfdPath::root().field("nested").field("item"));
+    let spread_site = SpreadSite::new(copy_id, CfdPath::root());
+
     assert!(model.ref_edges_to_target(base_id).next().is_none());
+    assert!(model.ref_edge_at(&inherited_item_site).is_none());
+    assert!(model.resolve_ref(&inherited_item_site).is_none());
+    assert!(model.ref_edge_at(&inherited_nested_item_site).is_none());
+    assert!(model.resolve_ref(&inherited_nested_item_site).is_none());
+
+    let spread_edge = model
+        .spread_edge_at(&spread_site)
+        .and_then(|id| model.spread_edge(id))
+        .expect("copy root spread edge");
+    assert_eq!(spread_edge.source, base_id);
+    assert!(spread_edge.fields.contains("item"));
+    assert!(spread_edge.fields.contains("nested"));
+    assert!(!spread_edge.fields.contains("hp"));
+    assert_eq!(model.spread_edges_from_source(base_id).count(), 1);
     assert_eq!(
-        model.resolve_ref_at(copy_id, &CfdPath::root().field("item")),
+        model.spread_source_at_path(copy_id, &CfdPath::root().field("item")),
+        Some(base_id)
+    );
+    assert_eq!(
+        model.spread_source_at_path(copy_id, &CfdPath::root().field("nested").field("item")),
+        Some(base_id)
+    );
+    assert_eq!(
+        model.spread_source_at_path(copy_id, &CfdPath::root().field("hp")),
+        None
+    );
+
+    assert_eq!(
+        model.resolve_ref_at(base_id, &CfdPath::root().field("item")),
         Some(item_id)
+    );
+    assert_eq!(
+        model.resolve_ref_at(base_id, &CfdPath::root().field("nested").field("item")),
+        Some(item_id)
+    );
+}
+
+#[test]
+fn fully_overridden_spread_still_records_object_level_edge() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                name: string;
+                power: int;
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "base",
+        "Item",
+        [
+            ("name", CfdInputValue::from("Base")),
+            ("power", CfdInputValue::from(1_i64)),
+        ],
+    );
+    builder.add_input_record(CfdInputRecord::with_spreads(
+        "copy",
+        "Item",
+        [CfdInputValue::record_ref("base")],
+        [
+            ("name", CfdInputValue::from("Copy")),
+            ("power", CfdInputValue::from(2_i64)),
+        ],
+    ));
+
+    let model = builder
+        .build()
+        .expect("fully overridden spread should build");
+    let base_id = model.lookup("Item", "base").expect("base");
+    let copy_id = model.lookup("Item", "copy").expect("copy");
+    let edge = model
+        .spread_edge_at(&SpreadSite::new(copy_id, CfdPath::root()))
+        .and_then(|id| model.spread_edge(id))
+        .expect("copy root spread edge");
+
+    assert_eq!(edge.source, base_id);
+    assert!(edge.fields.is_empty());
+    assert_eq!(model.spread_edges_from_source(base_id).count(), 1);
+    assert_eq!(
+        model.spread_source_at_path(copy_id, &CfdPath::root().field("name")),
+        None
+    );
+}
+
+#[test]
+fn multiple_spreads_at_same_object_site_keep_all_edges() {
+    let schema = compile_schema(
+        r#"
+            type Stats {
+                hp: int;
+                mp: int;
+            }
+        "#,
+    );
+
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "hp_base",
+        "Stats",
+        [
+            ("hp", CfdInputValue::from(10_i64)),
+            ("mp", CfdInputValue::from(0_i64)),
+        ],
+    );
+    builder.add_record(
+        "mp_base",
+        "Stats",
+        [
+            ("hp", CfdInputValue::from(0_i64)),
+            ("mp", CfdInputValue::from(20_i64)),
+        ],
+    );
+    builder.add_input_record(CfdInputRecord::with_spreads(
+        "copy",
+        "Stats",
+        [
+            CfdInputValue::record_ref("hp_base"),
+            CfdInputValue::record_ref("mp_base"),
+        ],
+        [("hp", CfdInputValue::from(30_i64))],
+    ));
+
+    let model = builder.build().expect("multi-spread should build");
+    let copy_id = model.lookup("Stats", "copy").expect("copy");
+    let hp_base_id = model.lookup("Stats", "hp_base").expect("hp base");
+    let mp_base_id = model.lookup("Stats", "mp_base").expect("mp base");
+    let site = SpreadSite::new(copy_id, CfdPath::root());
+    let edges = model.spread_edges_at(&site).collect::<Vec<_>>();
+
+    assert_eq!(edges.len(), 2);
+    assert!(edges.iter().any(|edge| edge.source == hp_base_id));
+    assert!(edges.iter().any(|edge| edge.source == mp_base_id));
+    assert_eq!(
+        model.spread_source_at_path(copy_id, &CfdPath::root().field("mp")),
+        Some(mp_base_id)
     );
 }

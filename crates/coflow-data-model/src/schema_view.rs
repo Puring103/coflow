@@ -14,6 +14,10 @@ pub(crate) struct RecordDraft {
     /// Origin moved from `CfdInputRecord`. For nested object drafts (created
     /// inside fields), defaults to `RecordOrigin::None`.
     pub(crate) origin: RecordOrigin,
+    /// Object-level spread occurrences at this record/object site. Kept even
+    /// when local fields override every imported field so source rewrites can
+    /// still target the spread token.
+    pub(crate) spread_sources: Vec<SpreadFieldSource>,
     /// Top-level only: which fields came from `...spread` references and
     /// where they came from (target type + key, since record id resolution
     /// happens later). Empty for nested objects.
@@ -22,7 +26,7 @@ pub(crate) struct RecordDraft {
 
 /// A spread origin captured during validation. The compiler resolves these to
 /// concrete `CfdRecordId` values once all drafts have been indexed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct SpreadFieldSource {
     pub(crate) expected_type: String,
     pub(crate) key: String,
