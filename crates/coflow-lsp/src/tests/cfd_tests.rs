@@ -206,7 +206,7 @@ fn cfd_definition_request_resolves_examples_cfd_basic_monster() {
 }
 
 #[test]
-fn cfd_definition_request_resolves_each_path_field_segment() {
+fn cfd_definition_request_returns_null_for_removed_path_refs() {
     let schema_source = "type Stats {\n  hp: int;\n}\n\
 type Monster {\n  key: string;\n  stats: Stats;\n}\n\
 type Holder {\n  key: string;\n  hp: int;\n}\n";
@@ -240,18 +240,14 @@ type Holder {\n  key: string;\n  hp: int;\n}\n";
     server.writer.clear();
 
     let stats = cfd_definition_result_at(&mut server, &source_uri, source, "stats");
-    assert_eq!(stats["range"]["start"]["line"], 5);
-    assert_eq!(stats["range"]["start"]["character"], 2);
-    assert_eq!(stats["range"]["end"]["character"], 7);
+    assert_eq!(stats, Value::Null);
 
     let hp = cfd_definition_result_at(&mut server, &source_uri, source, ".hp");
-    assert_eq!(hp["range"]["start"]["line"], 1);
-    assert_eq!(hp["range"]["start"]["character"], 2);
-    assert_eq!(hp["range"]["end"]["character"], 4);
+    assert_eq!(hp, Value::Null);
 }
 
 #[test]
-fn cfd_definition_request_resolves_path_segments_in_top_level_spread() {
+fn cfd_definition_request_returns_null_for_removed_spread_path_refs() {
     let schema_source = "type Stats {\n  hp: int;\n}\n\
 type Monster {\n  key: string;\n  stats: Stats;\n}\n";
     let (_cleanup, project) = test_project_with_config(
@@ -289,9 +285,7 @@ elite: Monster { ...@Monster.base.stats.hp }\n";
         "@Monster.base.stats.hp",
         "stats",
     );
-    assert_eq!(stats["range"]["start"]["line"], 5);
-    assert_eq!(stats["range"]["start"]["character"], 2);
-    assert_eq!(stats["range"]["end"]["character"], 7);
+    assert_eq!(stats, Value::Null);
 
     let hp = cfd_definition_result_at_context(
         &mut server,
@@ -300,9 +294,7 @@ elite: Monster { ...@Monster.base.stats.hp }\n";
         "@Monster.base.stats.hp",
         "hp",
     );
-    assert_eq!(hp["range"]["start"]["line"], 1);
-    assert_eq!(hp["range"]["start"]["character"], 2);
-    assert_eq!(hp["range"]["end"]["character"], 4);
+    assert_eq!(hp, Value::Null);
 }
 
 #[test]

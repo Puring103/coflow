@@ -122,9 +122,9 @@ type Holder {\n\
 }
 
 #[test]
-fn cfd_semantic_tokens_distinguish_record_refs_paths_and_schema_fields() {
+fn cfd_semantic_tokens_distinguish_record_refs_and_schema_fields() {
     let source = "base: Monster { stats: { hp: 10 } }\n\
-elite: Monster { target: @Monster.base.stats.hp }\n";
+elite: Monster { target: &base }\n";
     let (ast, _) = parse_cfd(source);
     let result = cfd::semantic_tokens(source, &ast);
     let tokens = decode_semantic_tokens(source, &result["data"]);
@@ -142,30 +142,20 @@ elite: Monster { target: @Monster.base.stats.hp }\n";
         token_type: SEM_PROPERTY,
         modifiers: MOD_DECLARATION | MOD_SCHEMA,
     }));
-    assert!(tokens.contains(&DecodedSemanticToken {
+    assert!(!tokens.contains(&DecodedSemanticToken {
         text: "@".to_string(),
         token_type: SEM_OPERATOR,
         modifiers: 0,
     }));
     assert!(tokens.contains(&DecodedSemanticToken {
-        text: "Monster".to_string(),
-        token_type: SEM_TYPE,
-        modifiers: MOD_REFERENCE | MOD_SCHEMA,
+        text: "&".to_string(),
+        token_type: SEM_OPERATOR,
+        modifiers: 0,
     }));
     assert!(tokens.contains(&DecodedSemanticToken {
         text: "base".to_string(),
         token_type: SEM_NAMESPACE,
         modifiers: MOD_REFERENCE | MOD_RECORD,
-    }));
-    assert!(tokens.contains(&DecodedSemanticToken {
-        text: "stats".to_string(),
-        token_type: SEM_PROPERTY,
-        modifiers: MOD_REFERENCE | MOD_PATH | MOD_SCHEMA,
-    }));
-    assert!(tokens.contains(&DecodedSemanticToken {
-        text: "hp".to_string(),
-        token_type: SEM_PROPERTY,
-        modifiers: MOD_REFERENCE | MOD_PATH | MOD_SCHEMA,
     }));
 }
 

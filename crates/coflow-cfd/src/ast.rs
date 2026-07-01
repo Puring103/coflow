@@ -69,24 +69,6 @@ pub enum CfdBlockEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CfdRef {
-    pub kind: CfdRefKind,
-    /// `@TypeName` — present for `@Type.key` references.
-    pub type_name: Option<(String, Span)>,
     pub key: (String, Span),
-    pub path: Vec<CfdPathSeg>,
     pub span: Span,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CfdRefKind {
-    /// `@Type.key`
-    Typed,
-    /// `&key`
-    Direct,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CfdPathSeg {
-    Field(String, Span),
-    Index(String, Span),
 }

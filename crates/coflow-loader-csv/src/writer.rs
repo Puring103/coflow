@@ -175,7 +175,6 @@ impl DataWriter for CsvWriter {
                 for cell in row {
                     if let Some(updated) = rewrite_record_reference_text(
                         cell,
-                        request.target_type_names,
                         request.old_key,
                         request.new_key,
                         request.rewrite_direct_refs,

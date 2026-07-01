@@ -1409,7 +1409,6 @@ where
                 let rendered = render_cell_value(value).map_err(lark_render_error)?;
                 let Some(rewritten) = rewrite_record_reference_text(
                     &rendered,
-                    request.target_type_names,
                     request.old_key,
                     request.new_key,
                     request.rewrite_direct_refs,

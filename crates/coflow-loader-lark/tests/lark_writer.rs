@@ -457,10 +457,8 @@ fn rewrites_only_records_from_requested_lark_source() {
     let schema = item_schema();
     let model = lark_rewrite_model(&schema);
     let source = lark_source();
-    let target_types = vec!["Item".to_string()];
     let request = RewriteRecordReferencesRequest {
         source: &source,
-        target_type_names: &target_types,
         old_key: "sword",
         new_key: "blade",
         rewrite_direct_refs: true,

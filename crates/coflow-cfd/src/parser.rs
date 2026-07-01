@@ -1,6 +1,4 @@
-use crate::ast::{
-    CfdAst, CfdBlock, CfdBlockEntry, CfdField, CfdPathSeg, CfdRecord, CfdRef, CfdRefKind, CfdValue,
-};
+use crate::ast::{CfdAst, CfdBlock, CfdBlockEntry, CfdField, CfdRecord, CfdRef, CfdValue};
 use crate::CfdSyntaxDiagnostic;
 use coflow_cft::Span;
 
@@ -216,7 +214,7 @@ impl<'a> Parser<'a> {
                 Ok(CfdValue::QuotedString(s, Span::new(start, self.pos)))
             }
             Some('[') => self.parse_array(),
-            Some('@') => self.parse_ref_typed(),
+            Some('@') => Err(self.error("typed references were removed; use `&key`")),
             Some('&') => self.parse_ref_direct(),
             _ => {
                 // Could be: null, scalar, or a block (with optional type marker).
@@ -284,80 +282,20 @@ impl<'a> Parser<'a> {
         Ok(CfdValue::Array(items, Span::new(start, self.pos)))
     }
 
-    fn parse_ref_typed(&mut self) -> Result<CfdValue, CfdSyntaxDiagnostic> {
-        let start = self.pos;
-        self.expect_char('@', "`@`")?;
-        let type_start = self.pos;
-        let type_name = self.parse_ref_name("reference type")?;
-        let type_span = Span::new(type_start, self.pos);
-        self.expect_char('.', "`.` after reference type")?;
-        let key_start = self.pos;
-        let key = self.parse_ref_name("reference key")?;
-        let key_span = Span::new(key_start, self.pos);
-        let path = self.parse_ref_path()?;
-        let span = Span::new(start, self.pos);
-        Ok(CfdValue::Ref(CfdRef {
-            kind: CfdRefKind::Typed,
-            type_name: Some((type_name, type_span)),
-            key: (key, key_span),
-            path,
-            span,
-        }))
-    }
-
     fn parse_ref_direct(&mut self) -> Result<CfdValue, CfdSyntaxDiagnostic> {
         let start = self.pos;
         self.expect_char('&', "`&`")?;
         let key_start = self.pos;
         let key = self.parse_ref_name("reference key")?;
         let key_span = Span::new(key_start, self.pos);
+        if matches!(self.peek_char(), Some('.' | '[')) {
+            return Err(self.error("reference paths were removed; use `&key`"));
+        }
         let span = Span::new(start, self.pos);
         Ok(CfdValue::Ref(CfdRef {
-            kind: CfdRefKind::Direct,
-            type_name: None,
             key: (key, key_span),
-            path: Vec::new(),
             span,
         }))
-    }
-
-    fn parse_ref_path(&mut self) -> Result<Vec<CfdPathSeg>, CfdSyntaxDiagnostic> {
-        let mut segs = Vec::new();
-        loop {
-            self.skip_ws_and_comments();
-            if self.eat_char('.') {
-                let start = self.pos;
-                let name = self.parse_ref_name("path field")?;
-                segs.push(CfdPathSeg::Field(name, Span::new(start, self.pos)));
-            } else if self.eat_char('[') {
-                let start = self.pos;
-                let index = self.parse_ref_index()?;
-                self.expect_char(']', "closing `]`")?;
-                segs.push(CfdPathSeg::Index(index, Span::new(start, self.pos)));
-            } else {
-                break;
-            }
-        }
-        Ok(segs)
-    }
-
-    fn parse_ref_index(&mut self) -> Result<String, CfdSyntaxDiagnostic> {
-        self.skip_ws_and_comments();
-        if self.peek_char() == Some('"') {
-            return self.parse_quoted_string();
-        }
-        let start = self.pos;
-        while let Some(ch) = self.peek_char() {
-            if ch == ']' {
-                break;
-            }
-            self.pos += ch.len_utf8();
-        }
-        let raw = self.source[start..self.pos].trim();
-        if raw.is_empty() {
-            return Err(self.error("empty reference index"));
-        }
-        Ok(raw.to_string())
     }
 
     // ── Token helpers ──────────────────────────────────────────────────────

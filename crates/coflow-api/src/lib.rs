@@ -615,11 +615,12 @@ pub struct RenameRecordRequest<'a> {
 /// rename.
 ///
 /// Engines use this for source syntax that compiles away before the runtime
-/// model is built, such as `@Type.old.path` path refs or `...spread` entries.
+/// model is built, such as provider-local spread entries. Direct `&old` tokens
+/// are only rewritten when the engine has determined that the key is unique
+/// enough for a source-level rewrite.
 #[derive(Debug, Clone)]
 pub struct RewriteRecordReferencesRequest<'a> {
     pub source: &'a ResolvedSource,
-    pub target_type_names: &'a [String],
     pub old_key: &'a str,
     pub new_key: &'a str,
     pub rewrite_direct_refs: bool,

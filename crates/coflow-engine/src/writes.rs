@@ -437,7 +437,6 @@ struct SourceRewriteAction {
 
 struct OwnedRewriteRecordReferencesRequest {
     source: ResolvedSource,
-    target_type_names: Vec<String>,
     old_key: String,
     new_key: String,
     rewrite_direct_refs: bool,
@@ -450,7 +449,6 @@ impl OwnedRewriteRecordReferencesRequest {
     ) -> RewriteRecordReferencesRequest<'a> {
         RewriteRecordReferencesRequest {
             source: &self.source,
-            target_type_names: &self.target_type_names,
             old_key: &self.old_key,
             new_key: &self.new_key,
             rewrite_direct_refs: self.rewrite_direct_refs,
@@ -506,12 +504,6 @@ fn source_rewrite_actions(
     old_key: &str,
     new_key: &str,
 ) -> Result<Vec<SourceRewriteAction>, DiagnosticSet> {
-    let Some(target_record) = session.model.record(target_id) else {
-        return Ok(Vec::new());
-    };
-    let target_type_names = session
-        .schema
-        .assignable_target_names(&target_record.actual_type);
     let direct_ref_unique = direct_ref_key_is_unique(session, old_key, target_id);
     let mut actions = Vec::new();
     for entry in session.sources.entries() {
@@ -520,7 +512,6 @@ fn source_rewrite_actions(
             writer,
             request: OwnedRewriteRecordReferencesRequest {
                 source: entry.source.clone(),
-                target_type_names: target_type_names.clone(),
                 old_key: old_key.to_string(),
                 new_key: new_key.to_string(),
                 rewrite_direct_refs: direct_ref_unique,

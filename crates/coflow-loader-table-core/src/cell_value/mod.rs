@@ -124,12 +124,10 @@ pub fn render_cell_value(value: &CfdValue) -> Result<String, CellRenderError> {
 #[must_use]
 pub fn rewrite_record_reference_text(
     text: &str,
-    target_type_names: &[String],
     old_key: &str,
     new_key: &str,
     rewrite_direct_refs: bool,
 ) -> Option<String> {
-    let _ = target_type_names;
     let mut replacements = Vec::<(usize, usize)>::new();
     let mut index = 0;
     let mut in_string = false;

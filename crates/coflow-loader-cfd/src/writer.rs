@@ -11,9 +11,7 @@ use coflow_api::{
     RewriteRecordReferencesRequest, SourceLocationSpec, TextSpan, WriteCellRequest, WriteContext,
     WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
-use coflow_cfd::ast::{
-    CfdBlock, CfdBlockEntry, CfdRecord as AstRecord, CfdRefKind, CfdValue as AstValue,
-};
+use coflow_cfd::ast::{CfdBlock, CfdBlockEntry, CfdRecord as AstRecord, CfdValue as AstValue};
 use coflow_cfd::{parse_cfd, CfdAst};
 use coflow_cft::Span;
 use std::collections::HashMap;
@@ -298,7 +296,6 @@ impl DataWriter for CfdWriter {
         for record in &ast.records {
             collect_ref_key_spans(
                 &record.entries,
-                request.target_type_names,
                 request.old_key,
                 request.rewrite_direct_refs,
                 &mut spans,
@@ -403,7 +400,7 @@ fn apply_patch(
             // Insert a local override field inside a nested block (object
             // or dict) right before its closing `}`. This is the spread
             // override path: the field's value used to be inherited from
-            // a `...@Source.path` spread, and editing it materialises a
+            // a `...&source` spread, and editing it materialises a
             // local override that takes precedence.
             let block_end = block_span.end.min(source.len());
             let insert_pos = find_closing_brace(source, block_end)?;
@@ -864,10 +861,9 @@ fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
 
 /// Serialize a `CfdValue` to CFD source text.
 ///
-/// `depth` controls indentation for nested object bodies. Refs are emitted
-/// as `&key` when the schema context is a CFT `&Type` field, and otherwise
-/// as fully-qualified `@Type.key` so polymorphic fields keep their concrete
-/// target type.
+/// `depth` controls indentation for nested object bodies. Refs are always
+/// emitted as `&key`; the target type is supplied by the surrounding schema
+/// context rather than by the value syntax.
 #[must_use]
 pub fn serialize_value(v: &CfdValue, depth: usize) -> String {
     serialize_value_for_type(v, None, None, depth)
@@ -971,7 +967,6 @@ fn diag(code: &'static str, message: impl Into<String>) -> Diagnostic {
 
 fn collect_ref_key_spans(
     entries: &[CfdBlockEntry],
-    target_type_names: &[String],
     old_key: &str,
     rewrite_direct_refs: bool,
     out: &mut Vec<Span>,
@@ -979,22 +974,10 @@ fn collect_ref_key_spans(
     for entry in entries {
         match entry {
             CfdBlockEntry::Field(field) => {
-                collect_ref_key_spans_in_value(
-                    &field.value,
-                    target_type_names,
-                    old_key,
-                    rewrite_direct_refs,
-                    out,
-                );
+                collect_ref_key_spans_in_value(&field.value, old_key, rewrite_direct_refs, out);
             }
             CfdBlockEntry::Spread(value, _) => {
-                collect_ref_key_spans_in_value(
-                    value,
-                    target_type_names,
-                    old_key,
-                    rewrite_direct_refs,
-                    out,
-                );
+                collect_ref_key_spans_in_value(value, old_key, rewrite_direct_refs, out);
             }
         }
     }
@@ -1002,68 +985,38 @@ fn collect_ref_key_spans(
 
 fn collect_ref_key_spans_in_value(
     value: &AstValue,
-    target_type_names: &[String],
     old_key: &str,
     rewrite_direct_refs: bool,
     out: &mut Vec<Span>,
 ) {
     match value {
         AstValue::Ref(reference) => {
-            let should_rewrite = reference.key.0 == old_key
-                && match reference.kind {
-                    CfdRefKind::Typed => reference
-                        .type_name
-                        .as_ref()
-                        .is_some_and(|(name, _)| target_type_names.iter().any(|ty| ty == name)),
-                    CfdRefKind::Direct => rewrite_direct_refs,
-                };
-            if should_rewrite {
+            if rewrite_direct_refs && reference.key.0 == old_key {
                 out.push(reference.key.1);
             }
         }
-        AstValue::Block(block) => collect_ref_key_spans_in_block(
-            block,
-            target_type_names,
-            old_key,
-            rewrite_direct_refs,
-            out,
-        ),
+        AstValue::Block(block) => {
+            collect_ref_key_spans_in_block(block, old_key, rewrite_direct_refs, out);
+        }
         AstValue::Array(items, _) => {
             for item in items {
-                collect_ref_key_spans_in_value(
-                    item,
-                    target_type_names,
-                    old_key,
-                    rewrite_direct_refs,
-                    out,
-                );
+                collect_ref_key_spans_in_value(item, old_key, rewrite_direct_refs, out);
             }
         }
-        AstValue::Spread(inner, _) => collect_ref_key_spans_in_value(
-            inner,
-            target_type_names,
-            old_key,
-            rewrite_direct_refs,
-            out,
-        ),
+        AstValue::Spread(inner, _) => {
+            collect_ref_key_spans_in_value(inner, old_key, rewrite_direct_refs, out);
+        }
         AstValue::Scalar(_, _) | AstValue::QuotedString(_, _) | AstValue::Null(_) => {}
     }
 }
 
 fn collect_ref_key_spans_in_block(
     block: &CfdBlock,
-    target_type_names: &[String],
     old_key: &str,
     rewrite_direct_refs: bool,
     out: &mut Vec<Span>,
 ) {
-    collect_ref_key_spans(
-        &block.entries,
-        target_type_names,
-        old_key,
-        rewrite_direct_refs,
-        out,
-    );
+    collect_ref_key_spans(&block.entries, old_key, rewrite_direct_refs, out);
 }
 
 fn replace_spans(source: &str, replacements: &[(Span, String)]) -> Result<String, DiagnosticSet> {

@@ -21,7 +21,6 @@ const SEM_OPERATOR: u32 = 11; // @ & ...
 
 const MOD_DECLARATION: u32 = 1 << 0;
 const MOD_REFERENCE: u32 = 1 << 1;
-const MOD_PATH: u32 = 1 << 2;
 const MOD_RECORD: u32 = 1 << 3;
 const MOD_SCHEMA: u32 = 1 << 4;
 
@@ -147,27 +146,8 @@ fn collect_value_tokens(value: &CfdValue, c: &mut TokenCollector<'_>) {
             }
         }
         CfdValue::Ref(r) => {
-            use coflow_cfd::{CfdPathSeg, CfdRefKind};
-            match r.kind {
-                CfdRefKind::Typed => {
-                    c.add_plain(Span::new(r.span.start, r.span.start + 1), SEM_OPERATOR);
-                    if let Some((_, type_span)) = &r.type_name {
-                        c.add(*type_span, SEM_TYPE, MOD_REFERENCE | MOD_SCHEMA);
-                    }
-                    c.add(r.key.1, SEM_NAMESPACE, MOD_REFERENCE | MOD_RECORD);
-                }
-                CfdRefKind::Direct => {
-                    c.add_plain(Span::new(r.span.start, r.span.start + 1), SEM_OPERATOR);
-                    c.add(r.key.1, SEM_NAMESPACE, MOD_REFERENCE | MOD_RECORD);
-                }
-            }
-            for seg in &r.path {
-                match seg {
-                    CfdPathSeg::Field(_, span) | CfdPathSeg::Index(_, span) => {
-                        c.add(*span, SEM_PROPERTY, MOD_REFERENCE | MOD_PATH | MOD_SCHEMA);
-                    }
-                }
-            }
+            c.add_plain(Span::new(r.span.start, r.span.start + 1), SEM_OPERATOR);
+            c.add(r.key.1, SEM_NAMESPACE, MOD_REFERENCE | MOD_RECORD);
         }
         CfdValue::Spread(inner, span) => {
             c.add_plain(Span::new(span.start, span.start + 3), SEM_OPERATOR); // ...
@@ -448,93 +428,6 @@ fn field_name_in_value<'a>(
             None
         }
         CfdValue::Spread(inner, _) => field_name_in_value(inner, schema, owner_type, offset),
-        _ => None,
-    }
-}
-
-/// Definition: return the owning type and field name for a field segment in a
-/// typed reference path such as `@Monster.base.stats.hp`.
-pub fn definition_ref_path_field(
-    ast: &CfdAst,
-    schema: Option<&CftContainer>,
-    offset: usize,
-) -> Option<(String, String)> {
-    let schema = schema?;
-    for record in &ast.records {
-        for entry in &record.entries {
-            if let Some(result) = ref_path_field_in_entry(entry, schema, offset) {
-                return Some(result);
-            }
-        }
-    }
-    None
-}
-
-fn ref_path_field_in_entry(
-    entry: &CfdBlockEntry,
-    schema: &CftContainer,
-    offset: usize,
-) -> Option<(String, String)> {
-    match entry {
-        CfdBlockEntry::Field(field) => ref_path_field_in_value(&field.value, schema, offset),
-        CfdBlockEntry::Spread(value, _) => ref_path_field_in_value(value, schema, offset),
-    }
-}
-
-fn ref_path_field_in_value(
-    value: &CfdValue,
-    schema: &CftContainer,
-    offset: usize,
-) -> Option<(String, String)> {
-    use coflow_cfd::{CfdBlockEntry, CfdPathSeg};
-    match value {
-        CfdValue::Ref(reference) => {
-            let (type_name, _) = reference.type_name.as_ref()?;
-            let mut current_type = type_name.as_str();
-            for segment in &reference.path {
-                match segment {
-                    CfdPathSeg::Field(field_name, span) => {
-                        let field_type = schema
-                            .resolve_type(current_type)
-                            .and_then(|ty| {
-                                ty.all_fields.iter().find(|field| field.name == *field_name)
-                            })
-                            .map(|field| &field.ty_ref)?;
-                        if span_contains(*span, offset) {
-                            return Some((current_type.to_string(), field_name.clone()));
-                        }
-                        current_type = named_type_name(field_type)?;
-                    }
-                    CfdPathSeg::Index(_, _) => {}
-                }
-            }
-            None
-        }
-        CfdValue::Block(block) => {
-            for entry in &block.entries {
-                let result = match entry {
-                    CfdBlockEntry::Field(field) => {
-                        ref_path_field_in_value(&field.value, schema, offset)
-                    }
-                    CfdBlockEntry::Spread(value, _) => {
-                        ref_path_field_in_value(value, schema, offset)
-                    }
-                };
-                if result.is_some() {
-                    return result;
-                }
-            }
-            None
-        }
-        CfdValue::Array(items, _) => {
-            for item in items {
-                if let Some(result) = ref_path_field_in_value(item, schema, offset) {
-                    return Some(result);
-                }
-            }
-            None
-        }
-        CfdValue::Spread(inner, _) => ref_path_field_in_value(inner, schema, offset),
         _ => None,
     }
 }
