@@ -8,7 +8,7 @@ currently exposed through the `coflow-cfd` crate rather than `coflow.yaml`.
 - `data/01-records.cfd`: basic records, same-type grouping, arrays, dictionaries,
   inline objects, and `&key` references.
 - `data/02-polymorphic-and-paths.cfd`: polymorphic grouping and
-  `@Type.key.path[index]` references.
+  key-only `&key` references.
 - `data/03-spread.cfd`: object and dictionary `...` spread with local overrides.
 
 The examples are loaded by `coflow-cfd` tests:

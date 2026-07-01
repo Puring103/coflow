@@ -1,11 +1,11 @@
 # Nullable fields use T?.
-# Object fields can hold inline objects, explicit @Type.key references, or direct &key shorthand in data files.
+# Record reference fields use &Type; data files write &key values.
 
 type ExampleQuestStep {
   title: string;
-  optional_target: ExampleItem? = null;
+  optional_target: &ExampleItem? = null;
 
-  required_item: ExampleItem;
+  required_item: &ExampleItem;
 
   check {
     title != "";
@@ -20,7 +20,7 @@ type ExampleQuestStep {
 type ExampleQuest {
   name: string;
   steps: [ExampleQuestStep] = [];
-  reward: ExampleReward;
+  reward: &ExampleReward;
 
   check {
     id != "";
