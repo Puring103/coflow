@@ -1,6 +1,4 @@
-use crate::model::{
-    CfdDictKey, CfdDomainId, CfdDomainIndex, CfdInputValue, CfdRefPathSegment, CfdTypeId, CfdValue,
-};
+use crate::model::{CfdDictKey, CfdDomainId, CfdDomainIndex, CfdInputValue, CfdTypeId, CfdValue};
 use crate::origin::RecordOrigin;
 use coflow_cft::{
     CftContainer, CftSchemaDefaultValue, CftSchemaEnum, CftSchemaField, CftSchemaType,
@@ -26,7 +24,7 @@ pub(crate) struct RecordDraft {
 /// concrete `CfdRecordId` values once all drafts have been indexed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SpreadFieldSource {
-    pub(crate) target_type: String,
+    pub(crate) expected_type: String,
     pub(crate) key: String,
 }
 
@@ -35,14 +33,13 @@ pub(crate) enum CfdValueDraft {
     Value(CfdValue),
     Object(Box<RecordDraft>),
     PendingRef {
-        target_type: String,
+        expected_type: String,
         key: String,
     },
-    PathRef {
-        expected_type: CfdType,
-        target_type: String,
+    PendingSpreadField {
+        source_type: String,
         key: String,
-        segments: Vec<CfdRefPathSegment>,
+        field: String,
     },
     Array(Vec<CfdValueDraft>),
     Dict(Vec<(CfdDictKey, CfdValueDraft)>),
@@ -392,8 +389,7 @@ pub(crate) fn input_value_kind(value: &CfdInputValue) -> &'static str {
         CfdInputValue::EnumVariant { .. } => "enum",
         CfdInputValue::Object { .. } => "object",
         CfdInputValue::ObjectSpread { .. } => "object spread",
-        CfdInputValue::RecordRef { .. } => "record ref",
-        CfdInputValue::PathRef { .. } => "path ref",
+        CfdInputValue::RecordRef(_) => "record ref",
         CfdInputValue::Array(_) => "array",
         CfdInputValue::Dict(_) => "dict",
         CfdInputValue::DictSpread { .. } => "dict spread",
