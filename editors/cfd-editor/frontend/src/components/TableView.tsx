@@ -260,12 +260,6 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       }}
     >
       <div className="table-main">
-        <div className="table-toolbar">
-          <span className="table-row-count">
-            {rows.length}{rows.length !== filtered.length ? ` / ${filtered.length}` : ''} 条
-          </span>
-        </div>
-
         <div className="table-scroll" ref={tableScrollRef}>
           <table className="data-table" style={{ width: table.getTotalSize() }}>
             <thead>

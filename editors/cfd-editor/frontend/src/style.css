@@ -503,6 +503,10 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   flex-shrink: 0;
   color: var(--text-mute);
 }
+.global-search-icon {
+  flex-shrink: 0;
+  color: var(--text-mute);
+}
 .global-search-bar input {
   flex: 1;
   background: transparent;
@@ -525,6 +529,15 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   border-radius: 3px;
 }
 .global-search-bar .rv-clear-search:hover { background: var(--bg-3); color: var(--text); }
+.global-search-count {
+  flex-shrink: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-mute);
+  white-space: nowrap;
+  padding-left: 6px;
+  border-left: 1px solid var(--border);
+  margin-left: 2px;
+}
 .type-tabs-inline {
   display: flex;
   flex: 1;
@@ -685,59 +698,6 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 .table-row { cursor: pointer; }
 .table-row:hover td { background: var(--bg-3) !important; }
 .table-row.selected td { background: var(--bg-4) !important; }
-
-.table-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-2);
-  flex-shrink: 0;
-  height: var(--h-toolbar);
-}
-.table-search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  position: relative;
-  flex: 1;
-  max-width: 360px;
-}
-.table-search input {
-  flex: 1;
-  height: var(--h-input);
-  padding: 0 26px 0 26px;
-  background: var(--bg-1);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-size: var(--fs-ui);
-  font-family: inherit;
-}
-.table-search input:focus { outline: none; border-color: var(--accent); }
-.table-search-icon {
-  position: absolute;
-  left: 7px;
-  color: var(--text-mute);
-  pointer-events: none;
-}
-.table-search .rv-clear-search {
-  position: absolute;
-  right: 4px;
-  background: transparent;
-  border: none;
-  padding: 4px;
-  cursor: pointer;
-  color: var(--text-mute);
-  border-radius: 3px;
-}
-.table-search .rv-clear-search:hover { color: var(--text); background: var(--bg-3); }
-.table-row-count {
-  font-size: var(--fs-sm);
-  color: var(--text-mute);
-  white-space: nowrap;
-}
 
 .table-scroll {
   flex: 1;

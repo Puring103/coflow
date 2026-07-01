@@ -33,6 +33,7 @@ import {
   type FieldPathSegment,
   type FieldValue,
 } from './wire'
+import { summaryOf } from './components/DataCard'
 import type { FieldDiagnostic } from './components/DataCard'
 import { typeColor } from './utils/typeColor'
 import { isEditableFile } from './utils/editable'
@@ -669,6 +670,30 @@ export default function App() {
     [activeFile, project?.diagnostics],
   )
 
+  // Record counts shown next to the search bar across all views. `typeCount`
+  // is the number of records of the active type in the current file;
+  // `matchedCount` additionally applies the global search filter (matches
+  // record key, field names, or field value summaries — the union of what
+  // Table and Record views each filter on so the count stays honest for
+  // both).
+  const { typeCount, matchedCount } = useMemo(() => {
+    if (!activeFileData) return { typeCount: 0, matchedCount: 0 }
+    const inType = activeType
+      ? activeFileData.records.filter(r => recordActualType(r) === activeType)
+      : activeFileData.records
+    const q = globalSearch.trim().toLowerCase()
+    if (!q) return { typeCount: inType.length, matchedCount: inType.length }
+    const matched = inType.filter(r => {
+      if (recordKey(r).toLowerCase().includes(q)) return true
+      for (const f of r.fields) {
+        if (f.name.toLowerCase().includes(q)) return true
+        if (summaryOf(f.value).toLowerCase().includes(q)) return true
+      }
+      return false
+    })
+    return { typeCount: inType.length, matchedCount: matched.length }
+  }, [activeFileData, activeType, globalSearch])
+
   // Stable callbacks for TableView so React.memo can bail out on re-renders
   // caused by inspector panel state changes (collapsed, open, width).
   const tableOnSelectRecord = useCallback(
@@ -969,7 +994,7 @@ export default function App() {
 
               {/* Record search bar — shared across all three views */}
               <div className="global-search-bar">
-                <Icon name="search" size={13} className="table-search-icon" aria-hidden />
+                <Icon name="search" size={13} className="global-search-icon" aria-hidden />
                 <input
                   ref={globalSearchRef}
                   placeholder="搜索记录… (Ctrl+F)"
@@ -983,6 +1008,12 @@ export default function App() {
                     <Icon name="close" size={13} aria-hidden />
                   </button>
                 )}
+                <span
+                  className="global-search-count"
+                  title={globalSearch ? `匹配 ${matchedCount} 条 / 共 ${typeCount} 条` : `共 ${typeCount} 条`}
+                >
+                  {globalSearch && matchedCount !== typeCount ? `${matchedCount} / ${typeCount}` : typeCount} 条
+                </span>
               </div>
 
               <div className="view-container">
