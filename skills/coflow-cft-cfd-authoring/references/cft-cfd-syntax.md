@@ -119,23 +119,24 @@ enum Permission {
 | `[T]` | 数组，元素可以是任意合法字段类型 |
 | `{K: V}` | 字典，`K` 只能是 `string`、`int` 或 enum 类型 |
 | `T?` | nullable，允许显式 `null` |
-| `TypeName` | 对 CFT type 的对象引用或内联对象 |
+| `TypeName` | 内联对象 |
+| `&TypeName` | 顶层 record 引用 |
 | `EnumName` | enum 值 |
 
 建模规则：
 
 - CFT type 是名义类型；字段相同的两个 type 也不能互相替代。
-- 顶层记录 key 在同一具体类型内唯一；如果按父类或 abstract type 引用，赋值兼容范围内的 key 也必须唯一。
+- 顶层记录 key 在同一继承连通分量内唯一；无继承关系的 type 可以复用 key。
 - 循环引用允许；引用解析在 data model build 阶段完成。
 - 字典 key 解析后必须唯一；重复 key 是错误，不是后写覆盖。
-- 对象字段默认同时接受记录引用和内联对象；字段上无参 `@ref` 强制引用，`@inline` 强制内联对象。
+- `&Type` 只接受记录引用；普通 `Type` 只接受内联对象。
 
 ## nullable 与安全访问
 
 ```cft
 type Drop {
-  item: Item?;          # 必须填写，可填 null
-  backup: Item? = null; # 可省略
+  item: &Item?;          # 必须填写，可填 null
+  backup: &Item? = null; # 可省略
 
   check {
     item == null || item.id != "";
@@ -280,21 +281,15 @@ type GameConfig {
 规则：
 
 - 不能用于 `abstract type`，不能和 `@idAsEnum` 并用。
-- singleton type 可以作为字段类型被引用，包括 `[T]`、`T?`、`{K: V}` 内层。
-- 引用 singleton 的字段值必须写成记录引用，不能写内联对象；`@ref` 可显式写也可省略。
-- `@inline` 不能用于包含 singleton type 的字段。
+- singleton type 不作为普通字段类型使用，也不能写成 `&SingletonType`。
 - 该 type 必须有且仅有一条 record，record key 必须是合法 CFT 标识符。
 - 所有 singleton record key 在项目内全局不能撞名。
 - C# codegen 不生成 `Tb*` 表访问器，而是在入口类上生成以 record key 命名的属性。
 
-### `@struct`、`@expand`、`@ref`、`@inline`
+### `@struct` 与 `@expand`
 
 - `@struct` 只能用在 `sealed type` 上，让 C# codegen 生成 struct。
-- `@expand` 只能用在具体 object 字段上，不能用于 primitive、enum、array、dict、nullable；让 Excel/CSV 相邻列展开为嵌套对象字段。
-- `@ref` 只能用在包含 object 的字段上，例如 `Item`、`Item?`、`[Item]`、`{string: Item}`；数据必须写记录引用或路径引用，拒绝内联对象。
-- `@inline` 只能用在包含 object 的字段上；数据必须写内联对象，拒绝 `&key`、`@Type.key` 和路径引用。
-- `@ref` 与 `@inline` 互斥；`@ref` 与 `@expand` 冲突；`@inline` 可以和 `@expand` 并用。
-- 集合字段上的 `@ref` / `@inline` 会约束数组元素或字典 value。
+- `@expand` 只能用在具体内联 object 字段上，不能用于 `&Type`、primitive、enum、array、dict、nullable；让 Excel/CSV 相邻列展开为嵌套对象字段。
 
 注解目标速查：
 
@@ -302,9 +297,7 @@ type GameConfig {
 | --- | --- | --- |
 | `@struct` | type | 必须是 `sealed type` |
 | `@flag` | enum | 变体值必须是 2 的幂 |
-| `@expand` | field | 字段类型必须是具体 type |
-| `@ref` | field | 字段类型必须包含 object；无参数 |
-| `@inline` | field | 字段类型必须包含 object 且不能包含 singleton；无参数 |
+| `@expand` | field | 字段类型必须是具体内联 type |
 | `@idAsEnum(EnumName)` | type | 参数 enum 必须已声明且为空 |
 | `@localized` / `@localized("bucket")` / `@localized(bucket = "bucket")` | field | bucket 必须是合法标识符 |
 | `@singleton` | type | 不能用于 abstract，不能和 `@idAsEnum` 并用 |
@@ -317,7 +310,7 @@ abstract type Reward {
 }
 
 sealed type ItemReward : Reward {
-  item: Item;
+  item: &Item;
   count: int = 1;
 }
 
@@ -387,16 +380,12 @@ Reward {
 
 ```cfd
 item: &sword_01
-item: @Item.sword_01
-label: @TextTable.main.labels["start"]
-weight: @DropTable.default.weights[Fire]
 ```
 
-- `&key` 是直接引用简写，只适合目标类型明确的对象字段。
-- `@Type.key` 是显式 typed record reference。
-- 路径引用必须从 `@Type.key` 开始。
-- 不要使用旧的 `@key`。
-- 字段带 `@ref` 时必须使用引用；字段带 `@inline` 时必须写内联对象。
+- `&key` 是唯一记录引用值语法，只能用于 CFT 期望类型为 `&Type` 的位置。
+- `&Reward` 可引用 `Reward` 或其子类 record；不能引用父类、兄弟类型或无关 type。
+- `&key` 不支持 `.field` 或 `[index]` 路径访问。
+- 普通 `Type` 字段必须写内联对象。
 
 ## 数组、字典、对象
 
@@ -421,9 +410,9 @@ base: Monster {
 }
 
 elite: Monster {
-  ...@Monster.base,
+  ...&base,
   name: "Elite",
-  stats: { ...@Monster.base.stats, hp: 180 },
+  stats: { hp: 180, attack: 20 },
 }
 ```
 
@@ -438,7 +427,7 @@ spread 按出现顺序合并；本地字段覆盖 spread 来源。
 
 ## 表格单元格语法
 
-表格单元格语法由字段的 CFT 类型决定。目标类型是 `string` 时，`true`、`123`、`@Item.sword` 都是字符串；目标类型是对象或 enum 时才按对象、引用或枚举解析。
+表格单元格语法由字段的 CFT 类型决定。目标类型是 `string` 时，`true`、`123`、`&sword` 都是字符串；目标类型是 `&Type`、对象或 enum 时才按引用、对象或枚举解析。
 
 ### 标量和字符串
 
@@ -452,17 +441,14 @@ spread 按出现顺序合并；本地字段覆盖 spread 来源。
 
 字符串转义使用 JSON 风格：`\"`、`\\`、`\n`、`\r`、`\t`。
 
-### 引用和路径
+### 引用
 
 ```text
-@Item.sword_01
-@DropTable.default.rewards[0]
 &sword_01
 ```
 
-- `@Type.key` 是显式记录引用；路径引用必须从它开始。
-- `&key` 是按目标字段类型推断的直接引用，不支持路径。
-- 目标类型是 string 时，`@Item.x` 和 `&x` 都只是字符串。
+- `&key` 是按目标字段类型解析的记录引用，不支持路径。
+- 目标类型是 string 时，`&x` 只是字符串。
 
 ### 对象
 

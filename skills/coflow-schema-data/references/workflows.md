@@ -123,16 +123,15 @@ coflow data write-file <project> --file data/items.cfd --stdin --dry-run
 ## 特殊值
 
 ```json
-{ "$ref": "Item.sword_01" }
-{ "$ref": { "type": "Item", "key": "sword_01" } }
-{ "$type": "ItemReward", "item": { "$ref": "Item.sword_01" }, "count": 1 }
+{ "$ref": "sword_01" }
+{ "$ref": { "key": "sword_01" } }
+{ "$type": "ItemReward", "item": { "$ref": "sword_01" }, "count": 1 }
 { "$dict": [{ "key": "Fire", "value": 10 }] }
 ```
 
 `$ref` 写 record 引用；`$type` 写多态 inline object；`$dict` 写非字符串 key 的字典。
-普通对象字段默认可写 `$ref` 或 inline object；schema 字段带 `@ref` 时必须写 `$ref`，
-带 `@inline` 时必须写 inline object。`@ref` / `@inline` 写在数组或字典字段上时，
-同样约束数组元素或字典 value。
+CFT 字段类型为 `&Type`、`[&Type]` 或 `{key: &Type}` 时 patch 使用 `$ref`；
+普通 `Type`、`[Type]` 或 `{key: Type}` 字段使用 inline object。
 
 ## 结束检查
 

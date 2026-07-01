@@ -48,7 +48,7 @@
       "patterns": [
         {
           "name": "storage.modifier.annotation.cft",
-          "match": "@(struct|flag|expand|ref|inline|idAsEnum|localized|singleton)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
+          "match": "@(struct|flag|expand|idAsEnum|localized|singleton)(?![_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}])"
         },
         {
           "name": "invalid.illegal.annotation.cft",
@@ -181,10 +181,6 @@
     },
     "references": {
       "patterns": [
-        {
-          "name": "constant.other.reference.typed.cft",
-          "match": "@[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*\\.[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*"
-        },
         {
           "name": "constant.other.reference.direct.cft",
           "match": "&[_\\p{L}\\p{Nl}][_\\p{L}\\p{Nl}\\p{Nd}\\p{Mn}\\p{Mc}\\p{Pc}]*"

@@ -100,9 +100,9 @@ dimensions:
         "rarity": "Rare",
         "tags": ["weapon", "fire"],
         "stats": { "attack": 30, "speed": 1.2 },
-        "owner": { "$ref": "Character.hero" },
+        "owner": { "$ref": "hero" },
         "weights": { "$dict": [{ "key": "Fire", "value": 10 }] },
-        "reward": { "$type": "ItemReward", "item": { "$ref": "Item.fire_sword" }, "count": 1 },
+        "reward": { "$type": "ItemReward", "item": { "$ref": "fire_sword" }, "count": 1 },
         "next": null
       }
     }
@@ -110,10 +110,10 @@ dimensions:
 }
 ```
 
-对象字段默认既可写引用也可写内联对象；schema 字段带 `@ref` 时 patch 必须使用
-`{ "$ref": "Type.key" }`，带 `@inline` 时必须使用 inline object，例如
-`{ "$type": "ItemReward", ... }` 或普通对象字段 map。`@ref` / `@inline` 标在
-`[Item]` 或 `{string: Item}` 字段上时，会约束数组元素或字典 value。
+CFT 字段类型为 `&Type` 时 patch 必须使用 `{ "$ref": "key" }` 这类 key-only
+record 引用；`[&Type]` 或 `{string: &Type}` 会递归约束数组元素或字典 value。
+普通 `Type` 字段必须使用 inline object，例如 `{ "$type": "ItemReward", ... }`
+或普通对象字段 map。
 
 字段修改使用路径：
 
