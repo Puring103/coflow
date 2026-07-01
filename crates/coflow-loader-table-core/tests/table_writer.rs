@@ -167,7 +167,7 @@ fn nested_dict_entry_edit_rewrites_owning_cell_value() {
 }
 
 #[test]
-fn replacing_ref_with_inline_object_inside_array_rewrites_owning_cell() {
+fn replacing_ref_inside_array_rewrites_owning_cell() {
     let schema = compile_schema(
         r"
         type Reward {
@@ -176,7 +176,7 @@ fn replacing_ref_with_inline_object_inside_array_rewrites_owning_cell() {
         }
 
         type Drop {
-          rewards: [Reward];
+          rewards: [&Reward];
         }
         ",
     );
@@ -185,7 +185,7 @@ fn replacing_ref_with_inline_object_inside_array_rewrites_owning_cell() {
         "Drop",
         [(
             "rewards",
-            CfdInputValue::Array(vec![CfdInputValue::record_ref("Reward", "coin")]),
+            CfdInputValue::Array(vec![CfdInputValue::record_ref("coin")]),
         )],
     )
     .with_origin(table_origin(BTreeMap::from([(
@@ -205,16 +205,7 @@ fn replacing_ref_with_inline_object_inside_array_rewrites_owning_cell() {
     builder.add_input_record(input);
     let model = builder.build().expect("model");
     let origin = table_origin(BTreeMap::from([(vec!["rewards".to_string()], 2)]));
-    let new_value = CfdValue::Object(Box::new(coflow_data_model::CfdRecord {
-        key: String::new(),
-        actual_type: "Reward".to_string(),
-        fields: BTreeMap::from([
-            ("amount".to_string(), CfdValue::Int(25)),
-            ("name".to_string(), CfdValue::String("Coin".to_string())),
-        ]),
-        origin: RecordOrigin::None,
-        spread_field_sources: BTreeMap::new(),
-    }));
+    let new_value = CfdValue::Ref("gem".to_string());
     let path = vec![
         WriteFieldPathSegment::Field("rewards".to_string()),
         WriteFieldPathSegment::Index(0),
@@ -240,7 +231,7 @@ fn replacing_ref_with_inline_object_inside_array_rewrites_owning_cell() {
             cells: vec![TableSetCell {
                 row: 2,
                 column: 2,
-                value: "[Reward{amount: 25, name: Coin}]".to_string(),
+                value: "[&gem]".to_string(),
             }],
         }
     );

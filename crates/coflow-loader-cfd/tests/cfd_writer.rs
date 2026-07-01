@@ -130,7 +130,7 @@ shield: Item {
 }
 
 #[test]
-fn writes_typed_ref_uses_qualified_form() {
+fn writes_ref_type_as_key_ref() {
     let dir = temp_dir("ref");
     let file = dir.join("data.cfd");
     fs::write(
@@ -144,7 +144,7 @@ target_b: Item {
 }
 
 picker: Holder {
-  current: @Item.target_a,
+  current: &target_a,
 }
 "#,
     )
@@ -157,7 +157,7 @@ picker: Holder {
         }
 
         type Holder {
-          current: Item;
+          current: &Item;
         }
         ",
     );
@@ -166,10 +166,7 @@ picker: Holder {
     let _ = model.lookup("Item", "target_b").expect("target_b id");
 
     let writer = CfdWriter::new();
-    let new_value = CfdValue::Ref {
-        target_type: "Item".to_string(),
-        target_key: "target_b".to_string(),
-    };
+    let new_value = CfdValue::Ref("target_b".to_string());
     let segments = vec![WriteFieldPathSegment::Field("current".to_string())];
     let source = empty_source(&file);
     let origin = origin_for(&file);
@@ -194,8 +191,8 @@ picker: Holder {
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
-        after.contains("@Item.target_b"),
-        "expected qualified ref form, got: {after}"
+        after.contains("&target_b"),
+        "expected key ref form, got: {after}"
     );
     // The new file must still re-parse with the same loader.
     let records = parse_cfd_input_records(&schema, &after).expect("re-parse");
@@ -220,7 +217,7 @@ fn ref_to_unknown_target_uses_short_form() {
 }
 
 picker: Holder {
-  current: @Item.target,
+  current: &target,
 }
 "#,
     )
@@ -233,19 +230,13 @@ picker: Holder {
         }
 
         type Holder {
-          current: Item;
+          current: &Item;
         }
         ",
     );
 
     let writer = CfdWriter::new();
-    // `CfdValue::Ref` is now pure data — it carries (target_type, target_key)
-    // without an id cache. The writer always emits the qualified form
-    // `@Type.key` because the value itself contains both halves.
-    let new_value = CfdValue::Ref {
-        target_type: "Item".to_string(),
-        target_key: "ghost".to_string(),
-    };
+    let new_value = CfdValue::Ref("ghost".to_string());
     let segments = vec![WriteFieldPathSegment::Field("current".to_string())];
     let source = empty_source(&file);
     let origin = origin_for(&file);
@@ -270,8 +261,8 @@ picker: Holder {
 
     let after = fs::read_to_string(&file).expect("re-read");
     assert!(
-        after.contains("@Item.ghost"),
-        "expected qualified ref form, got: {after}"
+        after.contains("&ghost"),
+        "expected key ref form, got: {after}"
     );
 }
 
@@ -282,7 +273,7 @@ fn rejects_empty_ref_key() {
     fs::write(
         &file,
         r"picker: Holder {
-  current: @Item.x,
+  current: &x,
 }
 ",
     )
@@ -295,16 +286,13 @@ fn rejects_empty_ref_key() {
         }
 
         type Holder {
-          current: Item;
+          current: &Item;
         }
         ",
     );
 
     let writer = CfdWriter::new();
-    let new_value = CfdValue::Ref {
-        target_type: "Item".to_string(),
-        target_key: String::new(),
-    };
+    let new_value = CfdValue::Ref(String::new());
     let segments = vec![WriteFieldPathSegment::Field("current".to_string())];
     let source = empty_source(&file);
     let origin = origin_for(&file);
@@ -421,10 +409,7 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
     let writer = CfdWriter::new();
     let slot_fields = std::collections::BTreeMap::from([(
         "item".to_string(),
-        CfdValue::Ref {
-            target_type: "Item".to_string(),
-            target_key: "sword".to_string(),
-        },
+        CfdValue::Ref("sword".to_string()),
     )]);
     let fields = std::collections::BTreeMap::from([(
         "slot".to_string(),
@@ -516,120 +501,9 @@ shield: Item {
 }
 
 #[test]
-fn writes_into_nested_spread_block_inserts_local_override() {
-    // The classic spread pattern: `elite_monster.stats` is built from a
-    // `...@Monster.basic_monster.stats` spread plus an explicit `hp: 250`
-    // override. Editing `elite_monster.stats.attack` should leave the
-    // spread intact and *insert* a local `attack:` line into that nested
-    // block, taking precedence on the next reload.
-    let dir = temp_dir("nested-spread");
-    let file = dir.join("monsters.cfd");
-    fs::write(
-        &file,
-        r#"basic_monster: Monster {
-  name: "Dummy",
-  stats: { hp: 100, attack: 5 },
-}
-
-elite_monster: Monster {
-  ...@Monster.basic_monster,
-  name: "Elite",
-  stats: {
-    ...@Monster.basic_monster.stats,
-    hp: 250,
-  },
-}
-"#,
-    )
-    .expect("write seed");
-
-    let schema = compile_schema(
-        r"
-        type Stats {
-          hp: int;
-          attack: int;
-        }
-
-        type Monster {
-          name: string;
-          stats: Stats;
-        }
-        ",
-    );
-    let model = load_cfd_model(&schema, &fs::read_to_string(&file).expect("read seed"))
-        .expect("load model");
-
-    let writer = CfdWriter::new();
-    let new_value = CfdValue::Int(99);
-    let segments = vec![
-        WriteFieldPathSegment::Field("stats".to_string()),
-        WriteFieldPathSegment::Field("attack".to_string()),
-    ];
-    let source = empty_source(&file);
-    let origin = origin_for(&file);
-    writer
-        .write_field(
-            WriteContext {
-                project_root: &dir,
-                schema: &schema,
-                model: Some(&model),
-            },
-            &WriteCellRequest {
-                origin: &origin,
-                record_key: "elite_monster",
-                actual_type: "Monster",
-                field_path: &segments,
-                new_value: &new_value,
-                schema: &schema,
-                source: &source,
-            },
-        )
-        .expect("write succeeds");
-
-    let after = fs::read_to_string(&file).expect("re-read");
-    // The spread line must still be there.
-    assert!(
-        after.contains("...@Monster.basic_monster.stats"),
-        "spread should be preserved: {after}"
-    );
-    // The new override is in the elite stats block.
-    assert!(
-        after.contains("attack: 99"),
-        "expected local override `attack: 99`: {after}"
-    );
-    // Re-parse and verify the model now has elite_monster.stats.attack = 99
-    // and basic_monster.stats.attack is still 5.
-    let model = load_cfd_model(&schema, &after).expect("re-load model");
-    let elite = model
-        .lookup("Monster", "elite_monster")
-        .and_then(|id| model.record(id))
-        .expect("elite_monster");
-    let CfdValue::Object(stats) = elite.field("stats").expect("stats") else {
-        panic!("elite_monster.stats should be an Object");
-    };
-    assert_eq!(
-        stats.field("attack"),
-        Some(&CfdValue::Int(99)),
-        "elite override took effect"
-    );
-    let basic = model
-        .lookup("Monster", "basic_monster")
-        .and_then(|id| model.record(id))
-        .expect("basic_monster");
-    let CfdValue::Object(basic_stats) = basic.field("stats").expect("stats") else {
-        panic!("basic_monster.stats should be an Object");
-    };
-    assert_eq!(
-        basic_stats.field("attack"),
-        Some(&CfdValue::Int(5)),
-        "basic_monster.stats.attack must NOT be mutated"
-    );
-}
-
-#[test]
 fn writes_into_top_level_spread_creates_local_override() {
     // Editing a top-level field that was inherited via a record-level
-    // `...@Source` spread (no local declaration) should also insert a
+    // `...&source` spread (no local declaration) should also insert a
     // local override on the elite record, not mutate the source.
     let dir = temp_dir("top-spread");
     let file = dir.join("monsters.cfd");
@@ -641,7 +515,7 @@ fn writes_into_top_level_spread_creates_local_override() {
 }
 
 elite_monster: Monster {
-  ...@Monster.basic_monster,
+  ...&basic_monster,
 }
 "#,
     )
@@ -690,7 +564,7 @@ elite_monster: Monster {
     let after = fs::read_to_string(&file).expect("re-read");
     // The spread should remain.
     assert!(
-        after.contains("...@Monster.basic_monster"),
+        after.contains("...&basic_monster"),
         "top-level spread should remain: {after}"
     );
     // basic_monster.name MUST stay "Dummy".
@@ -729,7 +603,7 @@ fn deep_drill_into_nonexistent_spread_field_errors_clearly() {
 }
 
 elite: Monster {
-  ...@Monster.basic,
+  ...&basic,
 }
 "#,
     )

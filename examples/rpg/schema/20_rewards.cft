@@ -19,7 +19,7 @@ abstract type StackableReward : Reward {
 }
 
 type ItemReward : StackableReward {
-  item: Item;
+  item: &Item;
 
   check {
     item.name != "";
@@ -39,7 +39,7 @@ type CurrencyReward : StackableReward {
 }
 
 type SkillUnlockReward : Reward {
-  skill: Skill;
+  skill: &Skill;
 
   required_level: int = 1;
 

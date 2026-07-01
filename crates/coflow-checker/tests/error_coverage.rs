@@ -173,7 +173,7 @@ fn cases() -> Vec<Case> {
         },
         Case {
             name: "missing ref target",
-            schema: "type Item { name: string; } type Drop { item: Item; }",
+            schema: "type Item { name: string; } type Drop { item: &Item; }",
             phase: Phase::Build(build_missing_ref_target),
             code: CfdErrorCode::RefTargetNotFound,
             adjacent: adjacent_existing_ref_target,
@@ -559,7 +559,7 @@ fn build_missing_ref_target(schema: &CftContainer) -> Result<CfdDataModel, CfdDi
         [one_record(
             "drop",
             "Drop",
-            [("item", CfdInputValue::record_ref("Item", "missing"))],
+            [("item", CfdInputValue::record_ref("missing"))],
         )],
     )
 }
@@ -592,7 +592,7 @@ const fn scalar_false_schema() -> &'static str {
             negated: bool;
             left: bool;
             right: bool;
-            reward: Reward;
+            reward: &Reward;
             optional: int? = null;
             tags: [string];
             name: string;
@@ -624,7 +624,7 @@ fn build_scalar_false_model(schema: &CftContainer) -> Result<CfdDataModel, CfdDi
                     ("negated", CfdInputValue::from(true)),
                     ("left", CfdInputValue::from(false)),
                     ("right", CfdInputValue::from(false)),
-                    ("reward", CfdInputValue::record_ref("Reward", "reward")),
+                    ("reward", CfdInputValue::record_ref("reward")),
                     (
                         "tags",
                         CfdInputValue::Array(vec![
@@ -861,13 +861,13 @@ fn adjacent_unique_polymorphic_ids() {
 
 fn adjacent_existing_ref_target() {
     assert_builds(
-        "type Item { name: string; } type Drop { item: Item; }",
+        "type Item { name: string; } type Drop { item: &Item; }",
         [
             one_record("sword", "Item", [("name", CfdInputValue::from("Sword"))]),
             one_record(
                 "drop",
                 "Drop",
-                [("item", CfdInputValue::record_ref("Item", "sword"))],
+                [("item", CfdInputValue::record_ref("sword"))],
             ),
         ],
     );
@@ -894,7 +894,7 @@ fn adjacent_scalar_false_checks() {
                 negated: bool;
                 left: bool;
                 right: bool;
-                reward: Reward;
+                reward: &Reward;
                 optional: int? = null;
                 tags: [string];
                 name: string;
@@ -921,7 +921,7 @@ fn adjacent_scalar_false_checks() {
                     ("negated", CfdInputValue::from(false)),
                     ("left", CfdInputValue::from(true)),
                     ("right", CfdInputValue::from(true)),
-                    ("reward", CfdInputValue::record_ref("Reward", "reward")),
+                    ("reward", CfdInputValue::record_ref("reward")),
                     ("optional", CfdInputValue::from(1_i64)),
                     (
                         "tags",

@@ -476,9 +476,12 @@ fn reference_update_actions(
         let Some(host_record) = session.model.record(site.host) else {
             continue;
         };
-        let Some(CfdValue::Ref { target_type, .. }) = value_at_path(host_record, &site.path) else {
+        if !matches!(
+            value_at_path(host_record, &site.path),
+            Some(CfdValue::Ref(_))
+        ) {
             continue;
-        };
+        }
         let source = source_for_file(session, &host_ref.display_path)?;
         let writer = lookup_writer(registry, &source)?;
         actions.push(ReferenceUpdateAction {
@@ -488,10 +491,7 @@ fn reference_update_actions(
                 record_key: host_ref.coordinate.key.clone(),
                 actual_type: host_ref.coordinate.actual_type.clone(),
                 field_path: write_path_from_cfd_path(&site.path)?,
-                new_value: CfdValue::Ref {
-                    target_type: target_type.clone(),
-                    target_key: new_key.to_string(),
-                },
+                new_value: CfdValue::Ref(new_key.to_string()),
                 source,
             },
         });

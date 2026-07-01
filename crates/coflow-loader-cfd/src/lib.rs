@@ -24,8 +24,7 @@ use coflow_api::{
 pub mod writer;
 use coflow_cft::{record_key_ident_error, CftContainer, CftSchemaField, CftSchemaTypeRef};
 use coflow_data_model::{
-    CfdDataModel, CfdDiagnostics, CfdInputDictKey, CfdInputRecord, CfdInputRefIndex, CfdInputValue,
-    CfdRefPathSegment,
+    CfdDataModel, CfdDiagnostics, CfdInputDictKey, CfdInputRecord, CfdInputValue,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
@@ -540,7 +539,7 @@ impl<'a> Parser<'a> {
         actual_type: &str,
     ) -> Result<ParsedObjectFields, CfdTextDiagnostics> {
         self.skip_ws_and_comments();
-        let value = self.parse_object_value(actual_type, ObjectRefMode::Disallow)?;
+        let value = self.parse_object_value(actual_type)?;
         match value {
             CfdInputValue::Object { fields, .. } => Ok(ParsedObjectFields {
                 spreads: Vec::new(),
@@ -567,30 +566,11 @@ impl<'a> Parser<'a> {
         if self.peek_keyword("null") {
             return Err(self.error(CfdTextErrorCode::TypeMismatch, "unexpected null value"));
         }
-        if matches!(self.peek_char(), Some('@' | '&')) {
-            let saved = self.pos;
-            if is_object_type(self.schema, ty) {
-                let expected_type = object_type_name(ty).ok_or_else(|| {
-                    self.error(
-                        CfdTextErrorCode::TypeMismatch,
-                        "record references require an object target type",
-                    )
-                })?;
-                return self.parse_ref_value(Some(expected_type));
-            }
-            if self.peek_char() == Some('@') {
-                let value = self.parse_ref_value(None)?;
-                if matches!(value, CfdInputValue::PathRef { .. }) {
-                    return Ok(value);
-                }
-                if !matches!(ty, CftSchemaTypeRef::String) {
-                    return Err(self.error(
-                        CfdTextErrorCode::TypeMismatch,
-                        "record references require an object target type",
-                    ));
-                }
-            }
-            self.pos = saved;
+        if self.peek_char() == Some('@') {
+            return Err(self.error(
+                CfdTextErrorCode::Syntax,
+                "typed and path references are no longer supported; use `&key`",
+            ));
         }
 
         match ty {
@@ -599,8 +579,8 @@ impl<'a> Parser<'a> {
             CftSchemaTypeRef::Bool => self.parse_bool(),
             CftSchemaTypeRef::String => self.parse_string_value(),
             CftSchemaTypeRef::Named(name) if self.schema.has_enum(name) => self.parse_enum(name),
-            CftSchemaTypeRef::Named(name) => self.parse_object_value(name, ObjectRefMode::Allow),
-            CftSchemaTypeRef::Ref(name) => self.parse_ref_value(Some(name)),
+            CftSchemaTypeRef::Named(name) => self.parse_object_value(name),
+            CftSchemaTypeRef::Ref(name) => self.parse_ref_value(name),
             CftSchemaTypeRef::Array(inner) => self.parse_array(inner),
             CftSchemaTypeRef::Dict(key, value) => self.parse_dict(key, value),
             CftSchemaTypeRef::Nullable(inner) => self.parse_value(inner),
@@ -730,7 +710,7 @@ impl<'a> Parser<'a> {
                 break;
             }
             if self.eat_spread() {
-                spreads.push(self.parse_value(&CftSchemaTypeRef::Dict(
+                spreads.push(self.parse_spread_value(&CftSchemaTypeRef::Dict(
                     Box::new(key.clone()),
                     Box::new(value.clone()),
                 ))?);
@@ -798,16 +778,18 @@ impl<'a> Parser<'a> {
     fn parse_object_value(
         &mut self,
         expected_type: &str,
-        ref_mode: ObjectRefMode,
     ) -> Result<CfdInputValue, CfdTextDiagnostics> {
         self.skip_ws_and_comments();
         if matches!(self.peek_char(), Some('@' | '&')) {
-            return if matches!(ref_mode, ObjectRefMode::Allow) {
-                self.parse_ref_value(Some(expected_type))
+            return if self.peek_char() == Some('@') {
+                Err(self.error(
+                    CfdTextErrorCode::Syntax,
+                    "typed and path references are no longer supported; use `&key`",
+                ))
             } else {
                 Err(self.error(
                     CfdTextErrorCode::TypeMismatch,
-                    "top-level record cannot be a reference",
+                    "inline object fields do not accept record references",
                 ))
             };
         }
@@ -892,7 +874,9 @@ impl<'a> Parser<'a> {
                 break;
             }
             if self.eat_spread() {
-                spreads.push(self.parse_value(&CftSchemaTypeRef::Named(type_name.to_string()))?);
+                spreads.push(
+                    self.parse_spread_value(&CftSchemaTypeRef::Named(type_name.to_string()))?,
+                );
                 self.skip_ws_and_comments();
                 if self.eat_char(',') {
                     self.skip_ws_and_comments();
@@ -959,108 +943,36 @@ impl<'a> Parser<'a> {
 
     fn parse_ref_value(
         &mut self,
-        expected_type: Option<&str>,
+        _expected_type: &str,
     ) -> Result<CfdInputValue, CfdTextDiagnostics> {
         self.skip_ws_and_comments();
         if self.eat_char('&') {
-            let expected_type = expected_type.ok_or_else(|| {
-                self.error(
-                    CfdTextErrorCode::TypeMismatch,
-                    "direct reference shorthand requires an object target type",
-                )
-            })?;
             let key = self.parse_ref_name("reference key")?;
             if self.peek_char().is_some_and(|ch| matches!(ch, '.' | '[')) {
                 return Err(self.error(
                     CfdTextErrorCode::Syntax,
-                    "direct reference shorthand does not support paths; use `@Type.key.path`",
+                    "record references do not support paths",
                 ));
             }
             self.validate_record_key(&key)?;
-            return Ok(CfdInputValue::record_ref(expected_type, key));
+            return Ok(CfdInputValue::record_ref(key));
         }
 
-        self.expect_char('@', "reference marker `@`")?;
-        let target_type = self.parse_ref_name("reference type")?;
-        if !self.eat_char('.') {
-            return Err(self.error(
-                CfdTextErrorCode::Syntax,
-                "typed reference must be written as `@Type.key`",
-            ));
-        }
-        if self.schema.resolve_type(&target_type).is_none() {
-            return Err(self.error(
-                CfdTextErrorCode::UnknownType,
-                format!("unknown reference type `{target_type}`"),
-            ));
-        }
-        let key = self.parse_ref_name("reference key")?;
-        self.validate_record_key(&key)?;
-        let mut segments = Vec::new();
-        loop {
-            self.skip_ws_and_comments();
-            if self.eat_char('.') {
-                segments.push(CfdRefPathSegment::Field(self.parse_ref_name("path field")?));
-                continue;
-            }
-            if self.eat_char('[') {
-                let index = self.parse_ref_index()?;
-                self.expect_char(']', "reference path index closing `]`")?;
-                segments.push(CfdRefPathSegment::Index(index));
-                continue;
-            }
-            break;
-        }
-        if segments.is_empty() {
-            Ok(CfdInputValue::record_ref(target_type, key))
-        } else {
-            Ok(CfdInputValue::path_ref(target_type, key, segments))
-        }
+        Err(self.error(
+            CfdTextErrorCode::Syntax,
+            "typed and path references are no longer supported; use `&key`",
+        ))
     }
 
-    fn parse_ref_index(&mut self) -> Result<CfdInputRefIndex, CfdTextDiagnostics> {
+    fn parse_spread_value(
+        &mut self,
+        ty: &CftSchemaTypeRef,
+    ) -> Result<CfdInputValue, CfdTextDiagnostics> {
         self.skip_ws_and_comments();
-        if self.peek_char() == Some('"') {
-            return self.parse_quoted_string().map(CfdInputRefIndex::String);
+        if self.peek_char() == Some('&') {
+            return self.parse_ref_value("");
         }
-        let start = self.pos;
-        while let Some(ch) = self.peek_char() {
-            if ch == ']' {
-                break;
-            }
-            self.pos += ch.len_utf8();
-        }
-        let raw = self.source[start..self.pos].trim();
-        if raw.is_empty() {
-            return Err(CfdTextDiagnostics::one(CfdTextDiagnostic::error(
-                CfdTextErrorCode::Syntax,
-                "reference path index is empty",
-                CfdTextSpan {
-                    start,
-                    end: self.pos,
-                },
-            )));
-        }
-        if let Ok(value) = raw.parse::<i64>() {
-            return Ok(CfdInputRefIndex::Int(value));
-        }
-        if let Some((enum_name, variant)) = raw.split_once('.') {
-            if enum_name.is_empty() || variant.is_empty() {
-                return Err(CfdTextDiagnostics::one(CfdTextDiagnostic::error(
-                    CfdTextErrorCode::Syntax,
-                    "invalid enum reference path index",
-                    CfdTextSpan {
-                        start,
-                        end: self.pos,
-                    },
-                )));
-            }
-            return Ok(CfdInputRefIndex::EnumVariant {
-                enum_name: enum_name.to_string(),
-                variant: variant.to_string(),
-            });
-        }
-        Ok(CfdInputRefIndex::Variant(raw.to_string()))
+        self.parse_value(ty)
     }
 
     fn parse_key(&mut self, label: &str) -> Result<String, CfdTextDiagnostics> {
@@ -1316,12 +1228,6 @@ impl<'a> Parser<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ObjectRefMode {
-    Allow,
-    Disallow,
-}
-
 fn full_fields(
     schema: &CftContainer,
     type_name: &str,
@@ -1349,32 +1255,4 @@ fn field_meta(field: &CftSchemaField) -> FieldMeta {
 
 fn is_value_boundary(ch: char) -> bool {
     ch.is_whitespace() || matches!(ch, ',' | ';' | '}' | ']' | '|' | ':')
-}
-
-fn is_object_type(schema: &CftContainer, ty: &CftSchemaTypeRef) -> bool {
-    match ty {
-        CftSchemaTypeRef::Named(name) => schema.has_type(name),
-        CftSchemaTypeRef::Nullable(inner) => is_object_type(schema, inner),
-        CftSchemaTypeRef::Int
-        | CftSchemaTypeRef::Float
-        | CftSchemaTypeRef::Bool
-        | CftSchemaTypeRef::String
-        | CftSchemaTypeRef::Array(_)
-        | CftSchemaTypeRef::Dict(_, _)
-        | CftSchemaTypeRef::Ref(_) => false,
-    }
-}
-
-fn object_type_name(ty: &CftSchemaTypeRef) -> Option<&str> {
-    match ty {
-        CftSchemaTypeRef::Named(name) => Some(name),
-        CftSchemaTypeRef::Nullable(inner) => object_type_name(inner),
-        CftSchemaTypeRef::Int
-        | CftSchemaTypeRef::Float
-        | CftSchemaTypeRef::Bool
-        | CftSchemaTypeRef::String
-        | CftSchemaTypeRef::Array(_)
-        | CftSchemaTypeRef::Dict(_, _)
-        | CftSchemaTypeRef::Ref(_) => None,
-    }
 }

@@ -1138,7 +1138,7 @@ fn resolves_direct_reference_shorthand_cells_by_field_type() -> TestResult {
                 name: string;
             }
             type Drop {
-                item: Item;
+                item: &Item;
             }
         "#,
     )?;
@@ -1203,10 +1203,7 @@ fn resolves_direct_reference_shorthand_cells_by_field_type() -> TestResult {
 
     assert_eq!(
         drop.field("item"),
-        Some(&CfdValue::Ref {
-            target_type: "Item".to_string(),
-            target_key: "sword_01".to_string(),
-        })
+        Some(&CfdValue::Ref("sword_01".to_string()))
     );
     let _ = item_id;
     Ok(())

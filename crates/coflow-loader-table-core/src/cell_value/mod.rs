@@ -16,10 +16,7 @@
 #![allow(clippy::missing_const_for_fn, clippy::similar_names, clippy::use_self)]
 
 use coflow_cft::{record_key_ident_error, CftContainer, CftSchemaField};
-use coflow_data_model::{
-    CfdDictKey, CfdEnumValue, CfdInputDictKey, CfdInputRefIndex, CfdInputValue, CfdRefPathSegment,
-    CfdValue,
-};
+use coflow_data_model::{CfdDictKey, CfdEnumValue, CfdInputDictKey, CfdInputValue, CfdValue};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use unicode_ident::{is_xid_continue, is_xid_start};
@@ -112,7 +109,7 @@ pub fn render_cell_value(value: &CfdValue) -> Result<String, CellRenderError> {
         CfdValue::Float(value) => Ok(value.to_string()),
         CfdValue::String(value) => Ok(render_string(value)),
         CfdValue::Enum(value) => render_enum_value(value),
-        CfdValue::Ref { target_key, .. } => Ok(format!("&{target_key}")),
+        CfdValue::Ref(target_key) => Ok(format!("&{target_key}")),
         CfdValue::Array(items) => render_array(items),
         CfdValue::Dict(entries) => render_dict(entries),
         CfdValue::Object(record) => render_object(record),
@@ -122,9 +119,8 @@ pub fn render_cell_value(value: &CfdValue) -> Result<String, CellRenderError> {
 /// Rewrites reference tokens inside one table-cell value string.
 ///
 /// This intentionally scans the cell grammar instead of doing a blind
-/// replace: quoted strings are skipped, and typed references only match
-/// complete `@Type.old` tokens so paths like `@Type.old.name` become
-/// `@Type.new.name` without touching unrelated text.
+/// replace: quoted strings are skipped, and direct references only match
+/// complete `&old` tokens without touching unrelated text.
 #[must_use]
 pub fn rewrite_record_reference_text(
     text: &str,
@@ -133,6 +129,7 @@ pub fn rewrite_record_reference_text(
     new_key: &str,
     rewrite_direct_refs: bool,
 ) -> Option<String> {
+    let _ = target_type_names;
     let mut replacements = Vec::<(usize, usize)>::new();
     let mut index = 0;
     let mut in_string = false;
@@ -158,15 +155,7 @@ pub fn rewrite_record_reference_text(
             index += ch.len_utf8();
             continue;
         }
-        if ch == '@' {
-            if let Some((key_start, key_end)) =
-                typed_ref_key_span(text, index, target_type_names, old_key)
-            {
-                replacements.push((key_start, key_end));
-                index = key_end;
-                continue;
-            }
-        } else if ch == '&' && rewrite_direct_refs {
+        if ch == '&' && rewrite_direct_refs {
             let key_start = index + ch.len_utf8();
             let key_end = scan_ref_name_end(text, key_start);
             if key_start < key_end && &text[key_start..key_end] == old_key {
@@ -188,26 +177,6 @@ pub fn rewrite_record_reference_text(
         out.replace_range(start..end, new_key);
     }
     Some(out)
-}
-
-fn typed_ref_key_span(
-    text: &str,
-    at_index: usize,
-    target_type_names: &[String],
-    old_key: &str,
-) -> Option<(usize, usize)> {
-    let type_start = at_index + '@'.len_utf8();
-    let type_end = scan_ref_name_end(text, type_start);
-    if type_start == type_end || text[type_end..].chars().next()? != '.' {
-        return None;
-    }
-    let target_type = &text[type_start..type_end];
-    if !target_type_names.iter().any(|name| name == target_type) {
-        return None;
-    }
-    let key_start = type_end + '.'.len_utf8();
-    let key_end = scan_ref_name_end(text, key_start);
-    (key_start < key_end && &text[key_start..key_end] == old_key).then_some((key_start, key_end))
 }
 
 fn scan_ref_name_end(text: &str, start: usize) -> usize {
@@ -316,6 +285,7 @@ enum CellType {
     Bool,
     String,
     Type(String),
+    Ref(String),
     Enum(String),
     Array(Box<CellType>),
     Dict(Box<CellType>, Box<CellType>),
@@ -341,6 +311,7 @@ impl CellType {
             Self::Bool => "bool".to_string(),
             Self::String => "string".to_string(),
             Self::Type(name) | Self::Enum(name) => name.clone(),
+            Self::Ref(name) => format!("&{name}"),
             Self::Array(inner) => format!("[{}]", inner.display()),
             Self::Dict(key, value) => format!("{{{}: {}}}", key.display(), value.display()),
             Self::Nullable(inner) => format!("{}?", inner.display()),
@@ -376,6 +347,20 @@ impl<'a> TypeParser<'a> {
 
     fn parse_primary(&mut self) -> Result<CellType, CellValueDiagnostics> {
         self.skip_ws();
+        if self.eat('&') {
+            let name = self.parse_name();
+            if name.is_empty() {
+                return Err(invalid_declared_type(
+                    "reference type is missing target type",
+                ));
+            }
+            if !self.schema.has_type(&name) {
+                return Err(invalid_declared_type(format!(
+                    "reference target `{name}` is not an object type"
+                )));
+            }
+            return Ok(CellType::Ref(name));
+        }
         if self.eat('[') {
             let inner = self.parse_type()?;
             self.skip_ws();
@@ -509,6 +494,7 @@ fn parse_value(
         },
         CellType::String => parse_string(text).map(CfdInputValue::String),
         CellType::Enum(enum_name) => parse_enum(schema, enum_name, text),
+        CellType::Ref(type_name) => parse_ref(type_name, text),
         CellType::Type(type_name) => parse_object(schema, type_name, text, context),
         CellType::Array(inner) => parse_array(schema, inner, text, context),
         CellType::Dict(key, value) => parse_dict(schema, key, value, text, context),
@@ -551,11 +537,13 @@ fn parse_object(
     context: ValueContext,
 ) -> Result<CfdInputValue, CellValueDiagnostics> {
     let expected_fields = full_fields(schema, expected_type)?;
-    if let Some(reference) = parse_ref_value(schema, text)? {
-        return Ok(reference);
+    if text.trim().starts_with('@') {
+        return Err(syntax(
+            "typed and path references are no longer supported; use `&key`",
+        ));
     }
-    if let Some(reference) = parse_direct_ref_shorthand(expected_type, text)? {
-        return Ok(reference);
+    if text.trim().starts_with('&') {
+        return Err(type_mismatch(expected_type));
     }
     if looks_like_bare_record_key(text) {
         return Err(reference_needs_marker(text));
@@ -613,30 +601,21 @@ fn parse_object(
     }
 }
 
-fn parse_ref_value(
-    schema: &CftContainer,
-    text: &str,
-) -> Result<Option<CfdInputValue>, CellValueDiagnostics> {
-    let text = text.trim();
-    let Some(rest) = text.strip_prefix('@') else {
-        return Ok(None);
-    };
-    let mut parser = RefParser::new(schema, rest);
-    Ok(Some(parser.parse()?))
-}
-
-fn parse_direct_ref_shorthand(
-    expected_type: &str,
-    text: &str,
-) -> Result<Option<CfdInputValue>, CellValueDiagnostics> {
+fn parse_ref(expected_type: &str, text: &str) -> Result<CfdInputValue, CellValueDiagnostics> {
     let text = text.trim();
     let Some(key) = text.strip_prefix('&') else {
-        return Ok(None);
+        if text.starts_with('@') {
+            return Err(syntax(
+                "typed and path references are no longer supported; use `&key`",
+            ));
+        }
+        if looks_like_bare_record_key(text) {
+            return Err(reference_needs_marker(text));
+        }
+        return Err(type_mismatch(&format!("&{expected_type}")));
     };
     if key.contains('.') || key.contains('[') || key.contains(']') {
-        return Err(syntax(
-            "direct reference shorthand does not support paths; use `@Type.key.path`",
-        ));
+        return Err(syntax("record references do not support paths"));
     }
     if key.trim() != key {
         return Err(syntax("direct reference key cannot contain whitespace"));
@@ -647,7 +626,7 @@ fn parse_direct_ref_shorthand(
     if let Some(reason) = record_key_ident_error(key) {
         return Err(syntax(format!("invalid reference key `{key}`: {reason}")));
     }
-    Ok(Some(CfdInputValue::record_ref(expected_type, key)))
+    Ok(CfdInputValue::record_ref(key))
 }
 
 fn looks_like_bare_record_key(text: &str) -> bool {
@@ -665,152 +644,6 @@ fn looks_like_bare_record_key(text: &str) -> bool {
         && !text.contains('[')
         && !text.contains(']')
         && text.chars().next().is_some_and(|ch| ch != '@')
-}
-
-struct RefParser<'a> {
-    schema: &'a CftContainer,
-    text: &'a str,
-    pos: usize,
-}
-
-impl<'a> RefParser<'a> {
-    fn new(schema: &'a CftContainer, text: &'a str) -> Self {
-        Self {
-            schema,
-            text,
-            pos: 0,
-        }
-    }
-
-    fn parse(&mut self) -> Result<CfdInputValue, CellValueDiagnostics> {
-        let target_type = self.parse_name("reference type")?;
-        if !self.eat('.') {
-            return Err(syntax("typed reference must be written as `@Type.key`"));
-        }
-        if self.schema.resolve_type(&target_type).is_none() {
-            return Err(CellValueDiagnostics {
-                diagnostics: vec![CellValueDiagnostic {
-                    code: CellValueErrorCode::UnknownType,
-                    message: format!(
-                        "unknown reference type `{target_type}`; typed references must be written as `@Type.key`"
-                    ),
-                }],
-            });
-        }
-        let key = self.parse_record_key()?;
-        let mut segments = Vec::new();
-        while !self.is_eof() {
-            if self.eat('.') {
-                segments.push(CfdRefPathSegment::Field(self.parse_name("path field")?));
-                continue;
-            }
-            if self.eat('[') {
-                let index = self.parse_index()?;
-                if !self.eat(']') {
-                    return Err(syntax("reference path index is missing `]`"));
-                }
-                segments.push(CfdRefPathSegment::Index(index));
-                continue;
-            }
-            return Err(syntax("invalid reference path syntax"));
-        }
-
-        if segments.is_empty() {
-            Ok(CfdInputValue::record_ref(target_type, key))
-        } else {
-            Ok(CfdInputValue::path_ref(target_type, key, segments))
-        }
-    }
-
-    fn parse_record_key(&mut self) -> Result<String, CellValueDiagnostics> {
-        let key = self.parse_name("reference key")?;
-        if let Some(reason) = record_key_ident_error(&key) {
-            return Err(syntax(format!("invalid reference key `{key}`: {reason}")));
-        }
-        Ok(key)
-    }
-
-    fn parse_name(&mut self, label: &str) -> Result<String, CellValueDiagnostics> {
-        let start = self.pos;
-        while let Some(ch) = self.peek() {
-            if matches!(ch, '.' | '[' | ']' | ' ' | '\t' | '\r' | '\n') {
-                break;
-            }
-            self.pos += ch.len_utf8();
-        }
-        if self.pos == start {
-            return Err(syntax(format!("{label} is missing")));
-        }
-        Ok(self.text[start..self.pos].to_string())
-    }
-
-    fn parse_index(&mut self) -> Result<CfdInputRefIndex, CellValueDiagnostics> {
-        let start = self.pos;
-        let mut in_string = false;
-        let mut escaped = false;
-        while let Some(ch) = self.peek() {
-            if in_string {
-                if escaped {
-                    escaped = false;
-                } else if ch == '\\' {
-                    escaped = true;
-                } else if ch == '"' {
-                    in_string = false;
-                }
-                self.pos += ch.len_utf8();
-                continue;
-            }
-            if ch == '"' {
-                in_string = true;
-                self.pos += ch.len_utf8();
-                continue;
-            }
-            if ch == ']' {
-                break;
-            }
-            self.pos += ch.len_utf8();
-        }
-        if in_string {
-            return Err(syntax("unterminated string"));
-        }
-        let raw = self.text[start..self.pos].trim();
-        if raw.is_empty() {
-            return Err(syntax("reference path index is empty"));
-        }
-        if raw.starts_with('"') {
-            return parse_string(raw).map(CfdInputRefIndex::String);
-        }
-        if let Ok(value) = raw.parse::<i64>() {
-            return Ok(CfdInputRefIndex::Int(value));
-        }
-        if let Some((enum_name, variant)) = raw.split_once('.') {
-            if enum_name.is_empty() || variant.is_empty() {
-                return Err(syntax("invalid enum reference path index"));
-            }
-            return Ok(CfdInputRefIndex::EnumVariant {
-                enum_name: enum_name.to_string(),
-                variant: variant.to_string(),
-            });
-        }
-        Ok(CfdInputRefIndex::Variant(raw.to_string()))
-    }
-
-    fn eat(&mut self, expected: char) -> bool {
-        if self.peek() == Some(expected) {
-            self.pos += expected.len_utf8();
-            true
-        } else {
-            false
-        }
-    }
-
-    fn peek(&self) -> Option<char> {
-        self.text[self.pos..].chars().next()
-    }
-
-    fn is_eof(&self) -> bool {
-        self.pos == self.text.len()
-    }
 }
 
 fn validate_actual_type(
@@ -1295,7 +1128,7 @@ fn reference_needs_marker(text: &str) -> CellValueDiagnostics {
         diagnostics: vec![CellValueDiagnostic {
             code: CellValueErrorCode::ReferenceNeedsMarker,
             message: format!(
-                "object reference `{text}` must be written as `@Type.{text}` or `&{text}`"
+                "record reference `{text}` must be written as `&{text}` in a reference-typed field"
             ),
         }],
     }

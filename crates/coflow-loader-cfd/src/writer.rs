@@ -456,7 +456,7 @@ enum WriteTarget {
 
 fn validate_value(v: &CfdValue) -> Result<(), DiagnosticSet> {
     match v {
-        CfdValue::Ref { target_key, .. } if target_key.is_empty() => Err(DiagnosticSet::one(diag(
+        CfdValue::Ref(target_key) if target_key.is_empty() => Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
             "cannot write empty reference; pick a target key first",
         ))),
@@ -641,7 +641,6 @@ fn find_field_in_record<'a>(record: &'a AstRecord, name: &str) -> Option<&'a cof
 /// replace an existing span or insert into the surrounding block. `depth`
 /// is the current nesting depth from the top-level record body, used to
 /// pick indentation for inserted overrides.
-#[allow(clippy::option_if_let_else)]
 fn locate_target_in_value(
     schema: &CftContainer,
     current_type: &CftSchemaTypeRef,
@@ -657,111 +656,125 @@ fn locate_target_in_value(
     }
     match (&path[0], value) {
         (WriteFieldPathSegment::Field(name), AstValue::Block(block)) => {
-            let Some(next_type) = type_after_field_segment_for_ref(schema, current_type, name)
-            else {
-                return Err(DiagnosticSet::one(diag(
-                    "CFD-WRITE",
-                    format!("field `{name}` cannot be selected from this value"),
-                )));
-            };
-            let field = block.entries.iter().find_map(|e| match e {
-                CfdBlockEntry::Field(f) if &f.name == name => Some(f),
-                _ => None,
-            });
-            match field {
-                Some(field) => {
-                    if path.len() == 1 {
-                        Ok(WriteTarget::Replace {
-                            span: full_value_span(&field.value),
-                            ty: next_type,
-                        })
-                    } else {
-                        locate_target_in_value(
-                            schema,
-                            &next_type,
-                            &field.value,
-                            &path[1..],
-                            depth + 1,
-                        )
-                    }
-                }
-                None => {
-                    // Field is missing from this block. If the path ends
-                    // here, the caller wants to set a value that was
-                    // inherited via a spread — insert a local override.
-                    // Otherwise, drilling deeper is impossible.
-                    if path.len() == 1 {
-                        Ok(WriteTarget::InsertNested {
-                            block_span: block.span,
-                            depth,
-                            field_name: name.clone(),
-                            ty: next_type,
-                        })
-                    } else {
-                        Err(DiagnosticSet::one(diag(
-                            "CFD-WRITE",
-                            format!(
-                                "field `{name}` is inherited from a `...spread` and the editor \
-                                 cannot drill further into it; edit the source record directly"
-                            ),
-                        )))
-                    }
-                }
-            }
+            locate_field_target(schema, current_type, block, name, path, depth)
         }
-        (WriteFieldPathSegment::Index(i), AstValue::Array(items, _)) => {
-            let Some(next_type) = type_after_index_segment(current_type) else {
-                return Err(DiagnosticSet::one(diag(
-                    "CFD-WRITE",
-                    format!("array index `{i}` cannot be selected from this value"),
-                )));
-            };
-            let item = items.get(*i).ok_or_else(|| {
-                DiagnosticSet::one(diag("CFD-WRITE", format!("index {i} out of bounds")))
-            })?;
-            if path.len() == 1 {
-                Ok(WriteTarget::Replace {
-                    span: full_value_span(item),
-                    ty: next_type,
-                })
-            } else {
-                locate_target_in_value(schema, &next_type, item, &path[1..], depth + 1)
-            }
+        (WriteFieldPathSegment::Index(index), AstValue::Array(items, _)) => {
+            locate_array_target(schema, current_type, items, *index, path, depth)
         }
         (WriteFieldPathSegment::DictKey(key), AstValue::Block(block)) => {
-            let Some((key_type, next_type)) = type_after_dict_key_segment(current_type) else {
-                return Err(DiagnosticSet::one(diag(
-                    "CFD-WRITE",
-                    format!("dict key `{key}` cannot be selected from this value"),
-                )));
-            };
-            let field = block.entries.iter().find_map(|entry| match entry {
-                CfdBlockEntry::Field(field)
-                    if dict_key_path_matches(schema, &key_type, &field.name, key) =>
-                {
-                    Some(field)
-                }
-                _ => None,
-            });
-            let Some(field) = field else {
-                return Err(DiagnosticSet::one(diag(
-                    "CFD-WRITE",
-                    format!("dict key `{key}` not found in source block"),
-                )));
-            };
-            if path.len() == 1 {
-                Ok(WriteTarget::Replace {
-                    span: full_value_span(&field.value),
-                    ty: next_type,
-                })
-            } else {
-                locate_target_in_value(schema, &next_type, &field.value, &path[1..], depth + 1)
-            }
+            locate_dict_target(schema, current_type, block, key, path, depth)
         }
         _ => Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
             format!("cannot navigate path segment {:?} in value", path[0]),
         ))),
+    }
+}
+
+#[allow(clippy::option_if_let_else)]
+fn locate_field_target(
+    schema: &CftContainer,
+    current_type: &CftSchemaTypeRef,
+    block: &CfdBlock,
+    name: &str,
+    path: &[WriteFieldPathSegment],
+    depth: usize,
+) -> Result<WriteTarget, DiagnosticSet> {
+    let Some(next_type) = type_after_field_segment_for_ref(schema, current_type, name) else {
+        return Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            format!("field `{name}` cannot be selected from this value"),
+        )));
+    };
+    let field = block.entries.iter().find_map(|entry| match entry {
+        CfdBlockEntry::Field(field) if field.name == name => Some(field),
+        _ => None,
+    });
+    match field {
+        Some(field) if path.len() == 1 => Ok(WriteTarget::Replace {
+            span: full_value_span(&field.value),
+            ty: next_type,
+        }),
+        Some(field) => {
+            locate_target_in_value(schema, &next_type, &field.value, &path[1..], depth + 1)
+        }
+        None if path.len() == 1 => Ok(WriteTarget::InsertNested {
+            block_span: block.span,
+            depth,
+            field_name: name.to_string(),
+            ty: next_type,
+        }),
+        None => Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            format!(
+                "field `{name}` is inherited from a `...spread` and the editor \
+                 cannot drill further into it; edit the source record directly"
+            ),
+        ))),
+    }
+}
+
+fn locate_array_target(
+    schema: &CftContainer,
+    current_type: &CftSchemaTypeRef,
+    items: &[AstValue],
+    index: usize,
+    path: &[WriteFieldPathSegment],
+    depth: usize,
+) -> Result<WriteTarget, DiagnosticSet> {
+    let Some(next_type) = type_after_index_segment(current_type) else {
+        return Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            format!("array index `{index}` cannot be selected from this value"),
+        )));
+    };
+    let item = items.get(index).ok_or_else(|| {
+        DiagnosticSet::one(diag("CFD-WRITE", format!("index {index} out of bounds")))
+    })?;
+    if path.len() == 1 {
+        Ok(WriteTarget::Replace {
+            span: full_value_span(item),
+            ty: next_type,
+        })
+    } else {
+        locate_target_in_value(schema, &next_type, item, &path[1..], depth + 1)
+    }
+}
+
+fn locate_dict_target(
+    schema: &CftContainer,
+    current_type: &CftSchemaTypeRef,
+    block: &CfdBlock,
+    key: &str,
+    path: &[WriteFieldPathSegment],
+    depth: usize,
+) -> Result<WriteTarget, DiagnosticSet> {
+    let Some((key_type, next_type)) = type_after_dict_key_segment(current_type) else {
+        return Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            format!("dict key `{key}` cannot be selected from this value"),
+        )));
+    };
+    let Some(field) = block.entries.iter().find_map(|entry| match entry {
+        CfdBlockEntry::Field(field)
+            if dict_key_path_matches(schema, &key_type, &field.name, key) =>
+        {
+            Some(field)
+        }
+        _ => None,
+    }) else {
+        return Err(DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            format!("dict key `{key}` not found in source block"),
+        )));
+    };
+    if path.len() == 1 {
+        Ok(WriteTarget::Replace {
+            span: full_value_span(&field.value),
+            ty: next_type,
+        })
+    } else {
+        locate_target_in_value(schema, &next_type, &field.value, &path[1..], depth + 1)
     }
 }
 
@@ -828,12 +841,8 @@ fn dict_key_path_matches(
         return true;
     }
     match non_nullable(key_type) {
-        CftSchemaTypeRef::String => {
-            if path_key.starts_with('"') {
-                serde_json::from_str::<String>(path_key).is_ok_and(|decoded| decoded == source_key)
-            } else {
-                false
-            }
+        CftSchemaTypeRef::String if path_key.starts_with('"') => {
+            serde_json::from_str::<String>(path_key).is_ok_and(|decoded| decoded == source_key)
         }
         CftSchemaTypeRef::Named(enum_name) if schema.has_enum(enum_name) => path_key
             .strip_prefix(enum_name)
@@ -889,15 +898,12 @@ fn serialize_value_for_type(
             .variant
             .clone()
             .unwrap_or_else(|| format!("{}({})", e.enum_name, e.value)),
-        CfdValue::Ref { target_key, .. }
+        CfdValue::Ref(target_key)
             if matches!(expected.map(non_nullable), Some(CftSchemaTypeRef::Ref(_))) =>
         {
             format!("&{target_key}")
         }
-        CfdValue::Ref {
-            target_type,
-            target_key,
-        } => format!("@{target_type}.{target_key}"),
+        CfdValue::Ref(target_key) => format!("&{target_key}"),
         CfdValue::Object(boxed) => {
             let body = boxed
                 .fields

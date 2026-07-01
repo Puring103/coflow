@@ -206,7 +206,7 @@ fn exports_refs_enums_and_dict_keys_as_exporter_scalars() -> TestResult {
             enum Rarity { Common = 0, Rare = 10, }
             type Item { name: string; }
             type Holder {
-                item: Item;
+                item: &Item;
                 rarity: Rarity;
                 by_int: {int: string};
             }
@@ -219,7 +219,7 @@ fn exports_refs_enums_and_dict_keys_as_exporter_scalars() -> TestResult {
         "holder_1",
         "Holder",
         [
-            ("item", CfdInputValue::record_ref("Item", "item_1")),
+            ("item", CfdInputValue::record_ref("item_1")),
             ("rarity", CfdInputValue::enum_variant("Rarity", "Rare")),
             (
                 "by_int",

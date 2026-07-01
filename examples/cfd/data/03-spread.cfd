@@ -1,28 +1,25 @@
 # Object and dictionary spread. Local fields and entries override spread sources.
 
 elite_monster: Monster {
-  ...@Monster.basic_monster,
+  ...&basic_monster,
   name: "Elite Training Dummy",
-  stats: {
-    ...@Monster.basic_monster.stats,
-    hp: 250,
-  },
-  weaknesses: {
-    ...@Monster.basic_monster.weaknesses,
-    Ice: 1.5,
-  },
+  stats: { hp: 250, attack: 5 },
+  weaknesses: { Fire: 1.25, Ice: 1.5 },
   drop: {
-    ...@Monster.basic_monster.drop,
+    rewards: [
+      ItemReward { item: &sword_fire, count: 1 },
+      CurrencyReward { amount: 10 },
+    ],
     weights: {
-      ...@Monster.basic_monster.drop.weights,
       Fire: 20,
+      Ice: 5,
     },
   },
 }
 
 elite_encounter: Encounter {
   monster: &elite_monster,
-  first_reward: @Monster.elite_monster.drop.rewards[0],
-  featured_item: @ItemReward.sword_reward.item,
-  weakness_hint: @Monster.elite_monster.weaknesses[Ice],
+  first_reward: &sword_reward,
+  featured_item: &sword_fire,
+  weakness_hint: 1.5,
 }
