@@ -172,13 +172,12 @@ fn inline_objects_use_declared_type_when_not_polymorphic() {
 }
 
 #[test]
-fn ref_annotation_rejects_inline_objects() {
+fn ref_type_rejects_inline_objects() {
     let schema = compile_schema(
         r#"
             type Item { name: string; }
             type Holder {
-                @ref
-                item: Item;
+                item: &Item;
             }
         "#,
     );
@@ -195,27 +194,24 @@ fn ref_annotation_rejects_inline_objects() {
 
     let err = builder
         .build()
-        .expect_err("@ref field should reject inline object");
+        .expect_err("ref type should reject inline object");
     assert_has_code(&err, CfdErrorCode::TypeMismatch);
     assert!(
         err.diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.message.contains("@ref")),
-        "expected @ref diagnostic, got {err:?}"
+            .any(|diagnostic| diagnostic.message.contains("&Item")),
+        "expected ref type diagnostic, got {err:?}"
     );
 }
 
 #[test]
-fn inline_annotation_rejects_record_refs_in_nested_shapes() {
+fn plain_object_fields_still_accept_record_refs_until_data_model_simplification() {
     let schema = compile_schema(
         r#"
             type Item { name: string; }
             type Holder {
-                @inline
                 item: Item;
-                @inline
                 items: [Item];
-                @inline
                 by_name: {string: Item};
             }
         "#,
@@ -242,15 +238,18 @@ fn inline_annotation_rejects_record_refs_in_nested_shapes() {
         ],
     );
 
-    let err = builder
+    let model = builder
         .build()
-        .expect_err("@inline fields should reject record refs");
-    let inline_errors = err
-        .diagnostics
-        .iter()
-        .filter(|diagnostic| diagnostic.message.contains("@inline"))
-        .count();
-    assert_eq!(inline_errors, 3, "diagnostics: {err:?}");
+        .expect("plain object fields still accept record refs before Phase 3");
+    let holder_id = model.lookup("Holder", "holder").expect("holder");
+    let holder = model.record(holder_id).expect("holder record");
+    assert!(matches!(
+        holder.field("item"),
+        Some(CfdValue::Ref {
+            target_type,
+            target_key,
+        }) if target_type == "Item" && target_key == "sword"
+    ));
 }
 
 #[test]

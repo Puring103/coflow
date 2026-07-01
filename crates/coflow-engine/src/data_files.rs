@@ -715,6 +715,7 @@ fn value_from_type_default(schema: &CftContainer, ty: &CftSchemaTypeRef) -> CfdV
         CftSchemaTypeRef::Float => CfdValue::Float(0.0),
         CftSchemaTypeRef::Bool => CfdValue::Bool(false),
         CftSchemaTypeRef::String => CfdValue::String(String::new()),
+        CftSchemaTypeRef::Ref(_) => CfdValue::Null,
         CftSchemaTypeRef::Nullable(_) => CfdValue::Null,
         CftSchemaTypeRef::Array(_) => CfdValue::Array(Vec::new()),
         CftSchemaTypeRef::Dict(_, _) => CfdValue::Dict(Vec::new()),

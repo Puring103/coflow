@@ -192,7 +192,12 @@ impl DataWriter for CfdWriter {
                 format!("record `{}` already exists", request.record_key),
             )));
         }
-        let fragment = serialize_record(request.record_key, request.actual_type, request.fields);
+        let fragment = serialize_record(
+            request.schema,
+            request.record_key,
+            request.actual_type,
+            request.fields,
+        );
         let new_source = append_record_source(&source, &fragment);
         self.write_source(path, new_source)?;
         Ok(WriteOutcome {
@@ -352,7 +357,7 @@ fn apply_patch(
         record,
         request.field_path,
     )? {
-        WriteTarget::Replace(span) => {
+        WriteTarget::Replace { span, ty } => {
             if span.start > source.len() || span.end > source.len() || span.start > span.end {
                 return Err(DiagnosticSet::one(diag(
                     "CFD-WRITE",
@@ -364,7 +369,8 @@ fn apply_patch(
                     ),
                 )));
             }
-            let fragment = serialize_value(request.new_value, 1);
+            let fragment =
+                serialize_value_for_type(request.new_value, Some(request.schema), Some(&ty), 1);
             Ok(format!(
                 "{}{}{}",
                 &source[..span.start],
@@ -372,14 +378,14 @@ fn apply_patch(
                 &source[span.end..]
             ))
         }
-        WriteTarget::InsertTopLevel => {
+        WriteTarget::InsertTopLevel { ty } => {
             // The record's block doesn't have this field yet. Insert at the
             // end of the record body, before the closing brace.
             let block_end = record.span.end.min(source.len());
             let insert_pos = find_closing_brace(source, block_end)?;
             let fragment = format!(
                 "  {top_field}: {},\n",
-                serialize_value(request.new_value, 2)
+                serialize_value_for_type(request.new_value, Some(request.schema), Some(&ty), 2)
             );
             Ok(format!(
                 "{}{}{}",
@@ -392,6 +398,7 @@ fn apply_patch(
             block_span,
             depth,
             field_name,
+            ty,
         } => {
             // Insert a local override field inside a nested block (object
             // or dict) right before its closing `}`. This is the spread
@@ -406,7 +413,12 @@ fn apply_patch(
             let outer = "  ".repeat(depth);
             let fragment = format!(
                 "{indent}{field_name}: {},\n{outer}",
-                serialize_value(request.new_value, depth + 2)
+                serialize_value_for_type(
+                    request.new_value,
+                    Some(request.schema),
+                    Some(&ty),
+                    depth + 2
+                )
             );
             Ok(format!(
                 "{}{}{}",
@@ -421,11 +433,11 @@ fn apply_patch(
 /// Where to apply the edit relative to the parsed source text.
 enum WriteTarget {
     /// Replace bytes `[start, end)` with the serialised new value.
-    Replace(Span),
+    Replace { span: Span, ty: CftSchemaTypeRef },
     /// The top-level field doesn't exist yet; insert it at the end of the
     /// record's block body. The default branch from the original `patch.rs`
     /// behaviour, kept so adding brand-new fields still works.
-    InsertTopLevel,
+    InsertTopLevel { ty: CftSchemaTypeRef },
     /// The field path drilled into a nested block (object or dict) but the
     /// final field isn't materialised — typically because it lives in a
     /// `...spread` that the loader expanded but the source text doesn't
@@ -437,6 +449,8 @@ enum WriteTarget {
         depth: usize,
         /// Name of the field to insert.
         field_name: String,
+        /// Schema type expected at the inserted field.
+        ty: CftSchemaTypeRef,
     },
 }
 
@@ -494,6 +508,7 @@ fn validate_record_key(key: &str) -> Result<(), DiagnosticSet> {
 }
 
 fn serialize_record(
+    schema: &CftContainer,
     key: &str,
     actual_type: &str,
     fields: &std::collections::BTreeMap<String, CfdValue>,
@@ -503,7 +518,13 @@ fn serialize_record(
         out.push_str("  ");
         out.push_str(name);
         out.push_str(": ");
-        out.push_str(&serialize_value(value, 2));
+        let ty = type_after_field_segment(schema, actual_type, name);
+        out.push_str(&serialize_value_for_type(
+            value,
+            Some(schema),
+            ty.as_ref(),
+            2,
+        ));
         out.push_str(",\n");
     }
     out.push_str("}\n");
@@ -584,17 +605,26 @@ fn locate_target(
                 format!("top-level field `{name}` not found in record"),
             )));
         }
-        return Ok(WriteTarget::InsertTopLevel);
+        let Some(ty) = type_after_field_segment(schema, actual_type, name) else {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                format!("field `{name}` not found on type `{actual_type}`"),
+            )));
+        };
+        return Ok(WriteTarget::InsertTopLevel { ty });
     };
-    if path.len() == 1 {
-        return Ok(WriteTarget::Replace(full_value_span(&field.value)));
-    }
     let Some(next_type) = type_after_field_segment(schema, actual_type, name) else {
         return Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
             format!("field `{name}` not found on type `{actual_type}`"),
         )));
     };
+    if path.len() == 1 {
+        return Ok(WriteTarget::Replace {
+            span: full_value_span(&field.value),
+            ty: next_type,
+        });
+    }
     locate_target_in_value(schema, &next_type, &field.value, &path[1..], 1)
 }
 
@@ -620,7 +650,10 @@ fn locate_target_in_value(
     depth: usize,
 ) -> Result<WriteTarget, DiagnosticSet> {
     if path.is_empty() {
-        return Ok(WriteTarget::Replace(full_value_span(value)));
+        return Ok(WriteTarget::Replace {
+            span: full_value_span(value),
+            ty: current_type.clone(),
+        });
     }
     match (&path[0], value) {
         (WriteFieldPathSegment::Field(name), AstValue::Block(block)) => {
@@ -638,7 +671,10 @@ fn locate_target_in_value(
             match field {
                 Some(field) => {
                     if path.len() == 1 {
-                        Ok(WriteTarget::Replace(full_value_span(&field.value)))
+                        Ok(WriteTarget::Replace {
+                            span: full_value_span(&field.value),
+                            ty: next_type,
+                        })
                     } else {
                         locate_target_in_value(
                             schema,
@@ -659,6 +695,7 @@ fn locate_target_in_value(
                             block_span: block.span,
                             depth,
                             field_name: name.clone(),
+                            ty: next_type,
                         })
                     } else {
                         Err(DiagnosticSet::one(diag(
@@ -683,7 +720,10 @@ fn locate_target_in_value(
                 DiagnosticSet::one(diag("CFD-WRITE", format!("index {i} out of bounds")))
             })?;
             if path.len() == 1 {
-                Ok(WriteTarget::Replace(full_value_span(item)))
+                Ok(WriteTarget::Replace {
+                    span: full_value_span(item),
+                    ty: next_type,
+                })
             } else {
                 locate_target_in_value(schema, &next_type, item, &path[1..], depth + 1)
             }
@@ -710,7 +750,10 @@ fn locate_target_in_value(
                 )));
             };
             if path.len() == 1 {
-                Ok(WriteTarget::Replace(full_value_span(&field.value)))
+                Ok(WriteTarget::Replace {
+                    span: full_value_span(&field.value),
+                    ty: next_type,
+                })
             } else {
                 locate_target_in_value(schema, &next_type, &field.value, &path[1..], depth + 1)
             }
@@ -745,6 +788,17 @@ fn type_after_field_segment_for_ref(
             type_after_field_segment(schema, type_name, field_name)
         }
         _ => None,
+    }
+}
+
+fn object_type_name<'a>(
+    expected: Option<&'a CftSchemaTypeRef>,
+    actual_type: &'a str,
+) -> Option<&'a str> {
+    match expected.map(non_nullable) {
+        Some(CftSchemaTypeRef::Named(type_name)) => Some(type_name.as_str()),
+        Some(CftSchemaTypeRef::Ref(_)) => None,
+        Some(_) | None => Some(actual_type),
     }
 }
 
@@ -802,10 +856,20 @@ fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
 /// Serialize a `CfdValue` to CFD source text.
 ///
 /// `depth` controls indentation for nested object bodies. Refs are emitted
+/// as `&key` when the schema context is a CFT `&Type` field, and otherwise
 /// as fully-qualified `@Type.key` so polymorphic fields keep their concrete
 /// target type.
 #[must_use]
 pub fn serialize_value(v: &CfdValue, depth: usize) -> String {
+    serialize_value_for_type(v, None, None, depth)
+}
+
+fn serialize_value_for_type(
+    v: &CfdValue,
+    schema: Option<&CftContainer>,
+    expected: Option<&CftSchemaTypeRef>,
+    depth: usize,
+) -> String {
     let indent = "  ".repeat(depth);
     let outer = "  ".repeat(depth.saturating_sub(1));
     match v {
@@ -825,6 +889,11 @@ pub fn serialize_value(v: &CfdValue, depth: usize) -> String {
             .variant
             .clone()
             .unwrap_or_else(|| format!("{}({})", e.enum_name, e.value)),
+        CfdValue::Ref { target_key, .. }
+            if matches!(expected.map(non_nullable), Some(CftSchemaTypeRef::Ref(_))) =>
+        {
+            format!("&{target_key}")
+        }
         CfdValue::Ref {
             target_type,
             target_key,
@@ -835,20 +904,39 @@ pub fn serialize_value(v: &CfdValue, depth: usize) -> String {
                 .iter()
                 .fold(String::new(), |mut acc, (name, value)| {
                     use std::fmt::Write;
+                    let field_type = schema
+                        .and_then(|schema| {
+                            object_type_name(expected, &boxed.actual_type)
+                                .map(|type_name| (schema, type_name))
+                        })
+                        .and_then(|(schema, type_name)| {
+                            type_after_field_segment(schema, type_name, name)
+                        });
                     let _ = writeln!(
                         acc,
                         "{indent}{name}: {},",
-                        serialize_value(value, depth + 1)
+                        serialize_value_for_type(value, schema, field_type.as_ref(), depth + 1)
                     );
                     acc
                 });
             format!("{} {{\n{body}{outer}}}", boxed.actual_type)
         }
         CfdValue::Array(items) => {
-            let elems: Vec<String> = items.iter().map(|i| serialize_value(i, depth)).collect();
+            let item_type = expected.and_then(|ty| match non_nullable(ty) {
+                CftSchemaTypeRef::Array(inner) => Some(inner.as_ref()),
+                _ => None,
+            });
+            let elems: Vec<String> = items
+                .iter()
+                .map(|i| serialize_value_for_type(i, schema, item_type, depth))
+                .collect();
             format!("[{}]", elems.join(", "))
         }
         CfdValue::Dict(entries) => {
+            let item_type = expected.and_then(|ty| match non_nullable(ty) {
+                CftSchemaTypeRef::Dict(_, item) => Some(item.as_ref()),
+                _ => None,
+            });
             let pairs: Vec<String> = entries
                 .iter()
                 .map(|(k, v)| {
@@ -860,7 +948,10 @@ pub fn serialize_value(v: &CfdValue, depth: usize) -> String {
                             .clone()
                             .unwrap_or_else(|| format!("{}({})", e.enum_name, e.value)),
                     };
-                    format!("{key}: {}", serialize_value(v, depth))
+                    format!(
+                        "{key}: {}",
+                        serialize_value_for_type(v, schema, item_type, depth)
+                    )
                 })
                 .collect();
             format!("{{{}}}", pairs.join(", "))

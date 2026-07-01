@@ -1115,6 +1115,7 @@ fn collect_default_items_for_type(build: &LspBuild, ty: &TypeRef, items: &mut Ve
             ));
             collect_default_items_for_type(build, inner, items);
         }
+        TypeRefKind::Ref(inner) => collect_default_items_for_type(build, inner, items),
     }
 }
 
@@ -1796,6 +1797,7 @@ fn add_type_ref_semantic(
         TypeRefKind::Array(inner) | TypeRefKind::Nullable(inner) => {
             add_type_ref_semantic(build, document, inner, tokens);
         }
+        TypeRefKind::Ref(inner) => add_type_ref_semantic(build, document, inner, tokens),
         TypeRefKind::Dict(key, value) => {
             add_type_ref_semantic(build, document, key, tokens);
             add_type_ref_semantic(build, document, value, tokens);

@@ -31,7 +31,7 @@ fn reload_session_rebuilds_from_changed_project_files() {
 }
 
 #[test]
-fn file_records_include_ref_inline_field_mode_annotations() {
+fn file_records_load_ref_type_fields_without_field_mode_annotations() {
     let root = temp_project_dir("cfd-editor-field-mode");
     let _cleanup = TempDirCleanup(root.clone());
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
@@ -40,15 +40,12 @@ fn file_records_include_ref_inline_field_mode_annotations() {
         r"
             type Item { name: string; }
             type Holder {
-                @ref
-                item_ref: Item;
-                @inline
+                item_ref: &Item;
                 item_inline: Item;
                 nested: Nested;
             }
             type Nested {
-                @ref
-                nested_ref: Item;
+                nested_ref: &Item;
             }
         ",
     )
@@ -96,20 +93,13 @@ fn file_records_include_ref_inline_field_mode_annotations() {
 
     assert_eq!(
         item_ref.annotation.as_ref().and_then(|a| a.field_mode),
-        Some(cfd_editor_lib::editor::types::FieldMode::Ref)
+        None
     );
     assert_eq!(
         item_inline.annotation.as_ref().and_then(|a| a.field_mode),
-        Some(cfd_editor_lib::editor::types::FieldMode::Inline)
+        None
     );
-    assert_eq!(
-        records
-            .field_modes
-            .get("Nested")
-            .and_then(|fields| fields.get("nested_ref"))
-            .copied(),
-        Some(cfd_editor_lib::editor::types::FieldMode::Ref)
-    );
+    assert!(records.field_modes.is_empty());
 }
 
 #[test]
@@ -169,8 +159,7 @@ fn insert_record_returns_mutation_diagnostics_for_missing_required_ref() {
         r"
             type Item { name: string; }
             type Holder {
-                @ref
-                item: Item;
+                item: &Item;
             }
         ",
     )

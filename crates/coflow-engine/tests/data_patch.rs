@@ -95,10 +95,7 @@ fn write_shape_annotation_project(root: &std::path::Path) {
             type Item { name: string; }
 
             type Holder {
-                @ref
-                owner: Item;
-
-                @inline
+                owner: &Item;
                 inline_item: Item;
 
                 configs: [GameConfig];
@@ -261,8 +258,7 @@ fn patch_insert_minimal_requires_explicit_values_for_required_ref_fields() {
         r"
             type Item { name: string; }
             type Loot {
-                @ref
-                owner: Item;
+                owner: &Item;
             }
         ",
     )
@@ -324,8 +320,7 @@ fn patch_insert_minimal_accepts_explicit_required_ref_fields() {
         r"
             type Item { name: string; }
             type Loot {
-                @ref
-                owner: Item;
+                owner: &Item;
             }
         ",
     )
@@ -355,7 +350,7 @@ fn patch_insert_minimal_accepts_explicit_required_ref_fields() {
                     key: "starter_loot".to_string(),
                     materialization: DefaultMaterialization::Minimal,
                     fields: serde_json::from_value(json!({
-                        "owner": { "$ref": "Item.sword" }
+                        "owner": "sword"
                     }))
                     .expect("fields map"),
                 }],
@@ -367,15 +362,15 @@ fn patch_insert_minimal_accepts_explicit_required_ref_fields() {
     assert!(report.check_ok);
     let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
     assert!(text.contains("starter_loot"));
-    assert!(text.contains("@Item.sword"));
+    assert!(text.contains("&sword"));
 
     let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
-fn patch_rejects_explicit_values_that_violate_field_shape_annotations() {
+fn patch_rejects_explicit_values_that_violate_ref_and_singleton_shapes() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-data-patch-shape-annotations-{}",
+        "coflow-data-patch-ref-singleton-shapes-{}",
         std::process::id()
     ));
     let _ = std::fs::remove_dir_all(&root);
@@ -406,19 +401,6 @@ fn patch_rejects_explicit_values_that_violate_field_shape_annotations() {
                         file: "data/records.cfd".to_string(),
                         sheet: None,
                         actual_type: "Holder".to_string(),
-                        key: "bad_inline".to_string(),
-                        materialization: DefaultMaterialization::Minimal,
-                        fields: serde_json::from_value(json!({
-                            "owner": { "$ref": "Item.sword" },
-                            "inline_item": { "$ref": "Item.sword" },
-                            "configs": [{ "$ref": "GameConfig.main" }]
-                        }))
-                        .expect("fields map"),
-                    },
-                    DataPatchOp::InsertRecord {
-                        file: "data/records.cfd".to_string(),
-                        sheet: None,
-                        actual_type: "Holder".to_string(),
                         key: "bad_singleton".to_string(),
                         materialization: DefaultMaterialization::Minimal,
                         fields: serde_json::from_value(json!({
@@ -435,24 +417,27 @@ fn patch_rejects_explicit_values_that_violate_field_shape_annotations() {
 
     assert!(!report.write_ok);
     assert_eq!(report.applied.len(), 0);
-    assert_eq!(report.failed.len(), 3);
-    assert!(report.failed.iter().all(|failed| failed
+    assert_eq!(report.failed.len(), 2);
+    assert!(report.failed[0]
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "MUTATION-SHAPE")));
+        .any(|diagnostic| diagnostic.code == "MUTATION-VALUE"));
+    assert!(report.failed[1]
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "MUTATION-SHAPE"));
 
     let text = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read cfd");
     assert!(!text.contains("bad_ref"));
-    assert!(!text.contains("bad_inline"));
     assert!(!text.contains("bad_singleton"));
 
     let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
-fn patch_set_field_rejects_values_that_violate_field_shape_annotations() {
+fn patch_set_field_rejects_values_that_violate_ref_and_singleton_shapes() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-data-patch-set-shape-{}",
+        "coflow-data-patch-set-ref-singleton-shapes-{}",
         std::process::id()
     ));
     let _ = std::fs::remove_dir_all(&root);
@@ -472,7 +457,7 @@ fn patch_set_field_rejects_values_that_violate_field_shape_annotations() {
                     key: "holder".to_string(),
                     materialization: DefaultMaterialization::Minimal,
                     fields: serde_json::from_value(json!({
-                        "owner": { "$ref": "Item.sword" },
+                        "owner": "sword",
                         "inline_item": { "name": "Inline" },
                         "configs": [{ "$ref": "GameConfig.main" }]
                     }))
@@ -505,15 +490,6 @@ fn patch_set_field_rejects_values_that_violate_field_shape_annotations() {
                             key: "holder".to_string(),
                         },
                         file: None,
-                        path: vec![PatchPathSegment::Field("inline_item".to_string())],
-                        value: json!({ "$ref": "Item.sword" }),
-                    },
-                    DataPatchOp::SetField {
-                        record: PatchRecordSelector {
-                            actual_type: "Holder".to_string(),
-                            key: "holder".to_string(),
-                        },
-                        file: None,
                         path: vec![
                             PatchPathSegment::Field("configs".to_string()),
                             PatchPathSegment::Index(0),
@@ -527,11 +503,15 @@ fn patch_set_field_rejects_values_that_violate_field_shape_annotations() {
 
     assert!(!report.write_ok);
     assert_eq!(report.applied.len(), 0);
-    assert_eq!(report.failed.len(), 3);
-    assert!(report.failed.iter().all(|failed| failed
+    assert_eq!(report.failed.len(), 2);
+    assert!(report.failed[0]
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "MUTATION-SHAPE")));
+        .any(|diagnostic| diagnostic.code == "MUTATION-VALUE"));
+    assert!(report.failed[1]
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "MUTATION-SHAPE"));
 
     let view = session.record_view("Holder", "holder").expect("holder");
     assert!(matches!(
@@ -596,7 +576,6 @@ fn patch_insert_minimal_rejects_recursive_required_inline_defaults() {
         r"
             type Node {
                 label: string;
-                @inline
                 child: Node;
             }
         ",

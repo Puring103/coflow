@@ -419,15 +419,33 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type_ref(&mut self) -> Result<TypeRef, CftDiagnostics> {
-        let mut ty = if let Some(start) = self.eat(&TokenKind::LBracket) {
+        let mut ty = self.parse_type_ref_primary()?;
+        if let Some(question) = self.eat(&TokenKind::Question) {
+            ty = TypeRef {
+                span: ty.span.join(question),
+                kind: TypeRefKind::Nullable(Box::new(ty)),
+            };
+        }
+        Ok(ty)
+    }
+
+    fn parse_type_ref_primary(&mut self) -> Result<TypeRef, CftDiagnostics> {
+        if let Some(start) = self.eat(&TokenKind::Amp) {
+            let inner = self.parse_type_ref_primary()?;
+            return Ok(TypeRef {
+                span: Span::new(start.start, inner.span.end),
+                kind: TypeRefKind::Ref(Box::new(inner)),
+            });
+        }
+        if let Some(start) = self.eat(&TokenKind::LBracket) {
             let inner = self.parse_type_ref()?;
             let end = self
                 .expect_simple(&TokenKind::RBracket, CftErrorCode::ExpectedToken)?
                 .end;
-            TypeRef {
+            Ok(TypeRef {
                 span: Span::new(start.start, end),
                 kind: TypeRefKind::Array(Box::new(inner)),
-            }
+            })
         } else if let Some(start) = self.eat(&TokenKind::LBrace) {
             let key = self.parse_type_ref()?;
             self.expect_simple(&TokenKind::Colon, CftErrorCode::ExpectedToken)?;
@@ -435,10 +453,10 @@ impl<'a> Parser<'a> {
             let end = self
                 .expect_simple(&TokenKind::RBrace, CftErrorCode::ExpectedToken)?
                 .end;
-            TypeRef {
+            Ok(TypeRef {
                 span: Span::new(start.start, end),
                 kind: TypeRefKind::Dict(Box::new(key), Box::new(value)),
-            }
+            })
         } else {
             let name = self.expect_ident()?;
             let kind = match name.name.as_str() {
@@ -448,18 +466,11 @@ impl<'a> Parser<'a> {
                 "string" => TypeRefKind::String,
                 _ => TypeRefKind::Named(name.name),
             };
-            TypeRef {
+            Ok(TypeRef {
                 kind,
                 span: name.span,
-            }
-        };
-        if let Some(question) = self.eat(&TokenKind::Question) {
-            ty = TypeRef {
-                span: ty.span.join(question),
-                kind: TypeRefKind::Nullable(Box::new(ty)),
-            };
+            })
         }
-        Ok(ty)
     }
 
     fn parse_default_expr(&mut self) -> Result<DefaultExpr, CftDiagnostics> {

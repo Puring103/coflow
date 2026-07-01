@@ -54,6 +54,31 @@ fn write_large_i64_project(root: &std::path::Path) {
     .expect("write config");
 }
 
+fn write_ref_project(root: &std::path::Path) {
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        r"
+            type Item {
+                name: string;
+            }
+
+            type Holder {
+                item: &Item;
+                backup: &Item? = null;
+                items: [&Item];
+                by_name: {string: &Item};
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema/\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+}
+
 #[test]
 fn inspect_schema_preserves_id_as_enum_fields_and_enums() {
     let root = std::env::temp_dir().join(format!("coflow-schema-inspect-{}", std::process::id()));
@@ -110,6 +135,57 @@ fn inspect_schema_serializes_large_i64_values_as_strings() {
         .find(|field| field["name"] == "rarity")
         .expect("rarity field");
     assert_eq!(rarity["default"]["value"]["value"], "9007199254740993");
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn inspect_schema_serializes_ref_type_shapes() {
+    let root =
+        std::env::temp_dir().join(format!("coflow-schema-inspect-ref-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    write_ref_project(&root);
+
+    let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
+    let session = build_project_schema_session(project).expect("schema session");
+    let json =
+        serde_json::to_value(inspect_schema(&session, Some("Holder"), false)).expect("json value");
+
+    let holder = json["types"][0].as_object().expect("Holder type object");
+    let fields = holder["fields"].as_array().expect("fields array");
+    let field_ty = |name: &str| {
+        fields
+            .iter()
+            .find(|field| field["name"] == name)
+            .unwrap_or_else(|| panic!("missing field {name}"))["ty"]
+            .clone()
+    };
+    assert_eq!(
+        field_ty("item"),
+        serde_json::json!({ "kind": "ref", "target": "Item" })
+    );
+    assert_eq!(
+        field_ty("backup"),
+        serde_json::json!({
+            "kind": "nullable",
+            "inner": { "kind": "ref", "target": "Item" },
+        })
+    );
+    assert_eq!(
+        field_ty("items"),
+        serde_json::json!({
+            "kind": "array",
+            "item": { "kind": "ref", "target": "Item" },
+        })
+    );
+    assert_eq!(
+        field_ty("by_name"),
+        serde_json::json!({
+            "kind": "dict",
+            "key": { "kind": "string" },
+            "value": { "kind": "ref", "target": "Item" },
+        })
+    );
 
     let _ = std::fs::remove_dir_all(root);
 }

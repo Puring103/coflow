@@ -146,6 +146,7 @@ pub enum TypeRefKind {
     Bool,
     String,
     Named(String),
+    Ref(Box<TypeRef>),
     Array(Box<TypeRef>),
     Dict(Box<TypeRef>, Box<TypeRef>),
     Nullable(Box<TypeRef>),
