@@ -65,8 +65,8 @@ fn object_typed_record_refs_resolve_by_expected_type() {
             type ItemReward : Reward { count: int; }
             type CurrencyReward : Reward { amount: int; }
             type Drop {
-                reward: Reward;
-                item_reward: ItemReward;
+                reward: &Reward;
+                item_reward: &ItemReward;
             }
         "#,
     );
@@ -81,14 +81,8 @@ fn object_typed_record_refs_resolve_by_expected_type() {
         "drop_1",
         "Drop",
         [
-            (
-                "reward",
-                CfdInputValue::record_ref("ItemReward", "reward_1"),
-            ),
-            (
-                "item_reward",
-                CfdInputValue::record_ref("ItemReward", "reward_1"),
-            ),
+            ("reward", CfdInputValue::record_ref("reward_1")),
+            ("item_reward", CfdInputValue::record_ref("reward_1")),
         ],
     );
     let model = builder.build().expect("data model should build");
@@ -108,10 +102,7 @@ fn object_typed_record_refs_resolve_by_expected_type() {
         model
             .record(drop_id)
             .and_then(|record| record.field("reward")),
-        Some(&CfdValue::Ref {
-            target_type: "ItemReward".to_string(),
-            target_key: "reward_1".to_string(),
-        })
+        Some(&CfdValue::Ref("reward_1".to_string()))
     );
     let _ = reward_id;
 }
@@ -122,7 +113,7 @@ fn parent_record_keys_do_not_satisfy_child_typed_refs() {
         r#"
             type Base { name: string; }
             type Child : Base { power: int; }
-            type Holder { child: Child; }
+            type Holder { child: &Child; }
         "#,
     );
 
@@ -131,7 +122,7 @@ fn parent_record_keys_do_not_satisfy_child_typed_refs() {
     builder.add_record(
         "holder_1",
         "Holder",
-        [("child", CfdInputValue::record_ref("Base", "base_1"))],
+        [("child", CfdInputValue::record_ref("base_1"))],
     );
 
     let err = builder
@@ -205,7 +196,7 @@ fn ref_type_rejects_inline_objects() {
 }
 
 #[test]
-fn plain_object_fields_still_accept_record_refs_until_data_model_simplification() {
+fn plain_object_fields_reject_record_refs() {
     let schema = compile_schema(
         r#"
             type Item { name: string; }
@@ -223,123 +214,29 @@ fn plain_object_fields_still_accept_record_refs_until_data_model_simplification(
         "holder",
         "Holder",
         [
-            ("item", CfdInputValue::record_ref("Item", "sword")),
+            ("item", CfdInputValue::record_ref("sword")),
             (
                 "items",
-                CfdInputValue::Array(vec![CfdInputValue::record_ref("Item", "sword")]),
+                CfdInputValue::Array(vec![CfdInputValue::record_ref("sword")]),
             ),
             (
                 "by_name",
                 CfdInputValue::dict([(
                     CfdInputDictKey::from("main"),
-                    CfdInputValue::record_ref("Item", "sword"),
+                    CfdInputValue::record_ref("sword"),
                 )]),
             ),
         ],
     );
 
-    let model = builder
+    let err = builder
         .build()
-        .expect("plain object fields still accept record refs before Phase 3");
-    let holder_id = model.lookup("Holder", "holder").expect("holder");
-    let holder = model.record(holder_id).expect("holder record");
-    assert!(matches!(
-        holder.field("item"),
-        Some(CfdValue::Ref {
-            target_type,
-            target_key,
-        }) if target_type == "Item" && target_key == "sword"
-    ));
-}
-
-#[test]
-fn singleton_fields_accept_refs_in_nested_shapes_and_reject_inline_objects() {
-    let schema = compile_schema(
-        r#"
-            @singleton
-            type GameConfig { value: int; }
-
-            type Holder {
-                config: GameConfig;
-                optional: GameConfig? = null;
-                configs: [GameConfig];
-                by_name: {string: GameConfig};
-            }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "main",
-        "GameConfig",
-        [("value", CfdInputValue::from(1_i64))],
-    );
-    builder.add_record(
-        "holder",
-        "Holder",
-        [
-            ("config", CfdInputValue::record_ref("GameConfig", "main")),
-            ("optional", CfdInputValue::Null),
-            (
-                "configs",
-                CfdInputValue::Array(vec![CfdInputValue::record_ref("GameConfig", "main")]),
-            ),
-            (
-                "by_name",
-                CfdInputValue::dict([(
-                    CfdInputDictKey::from("default"),
-                    CfdInputValue::record_ref("GameConfig", "main"),
-                )]),
-            ),
-        ],
-    );
-
-    let model = builder
-        .build()
-        .expect("singleton refs should be valid in fields, arrays, and dicts");
-    let holder_id = model.lookup("Holder", "holder").expect("holder");
-    let holder = model.record(holder_id).expect("holder record");
-    assert!(matches!(
-        holder.field("config"),
-        Some(CfdValue::Ref {
-            target_type,
-            target_key,
-        }) if target_type == "GameConfig" && target_key == "main"
-    ));
-
-    let mut inline_builder = CfdDataModel::builder(&schema);
-    inline_builder.add_record(
-        "main",
-        "GameConfig",
-        [("value", CfdInputValue::from(1_i64))],
-    );
-    inline_builder.add_record(
-        "bad",
-        "Holder",
-        [
-            (
-                "config",
-                CfdInputValue::object_with_declared_type([("value", CfdInputValue::from(2_i64))]),
-            ),
-            ("configs", CfdInputValue::Array(Vec::new())),
-            ("by_name", CfdInputValue::dict(std::iter::empty())),
-        ],
-    );
-
-    let err = inline_builder
-        .build()
-        .expect_err("singleton fields should reject inline objects");
+        .expect_err("plain object fields should reject record refs");
     assert_has_code(&err, CfdErrorCode::TypeMismatch);
-    assert!(
-        err.diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.message.contains("singleton")),
-        "expected singleton diagnostic, got {err:?}"
-    );
 }
 
 #[test]
-fn object_spread_merges_path_refs_before_local_overrides() {
+fn object_spread_merges_record_refs_before_local_overrides() {
     let schema = compile_schema(
         r#"
             type Stats { hp: int; attack: int; }
@@ -350,16 +247,10 @@ fn object_spread_merges_path_refs_before_local_overrides() {
     let mut builder = CfdDataModel::builder(&schema);
     builder.add_record(
         "base",
-        "Monster",
+        "Stats",
         [
-            ("name", CfdInputValue::from("Base")),
-            (
-                "stats",
-                CfdInputValue::object_with_declared_type([
-                    ("hp", CfdInputValue::from(100_i64)),
-                    ("attack", CfdInputValue::from(20_i64)),
-                ]),
-            ),
+            ("hp", CfdInputValue::from(100_i64)),
+            ("attack", CfdInputValue::from(20_i64)),
         ],
     );
     builder.add_record(
@@ -370,11 +261,7 @@ fn object_spread_merges_path_refs_before_local_overrides() {
             (
                 "stats",
                 CfdInputValue::object_spread(
-                    [CfdInputValue::path_ref(
-                        "Monster",
-                        "base",
-                        [CfdRefPathSegment::Field("stats".to_string())],
-                    )],
+                    [CfdInputValue::record_ref("base")],
                     [("hp", CfdInputValue::from(180_i64))],
                 ),
             ),
@@ -391,175 +278,6 @@ fn object_spread_merges_path_refs_before_local_overrides() {
     };
     assert_eq!(stats.field("hp"), Some(&CfdValue::Int(180)));
     assert_eq!(stats.field("attack"), Some(&CfdValue::Int(20)));
-}
-
-#[test]
-fn object_path_spread_source_must_be_assignable_to_destination_type() {
-    let schema = compile_schema(
-        r#"
-            type A { value: int; }
-            type B { value: int; }
-            type Wrapper { a: A; }
-            type Holder { b: B; }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "source",
-        "Wrapper",
-        [(
-            "a",
-            CfdInputValue::object_with_declared_type([("value", CfdInputValue::from(1_i64))]),
-        )],
-    );
-    builder.add_record(
-        "holder",
-        "Holder",
-        [(
-            "b",
-            CfdInputValue::object_spread(
-                [CfdInputValue::path_ref(
-                    "Wrapper",
-                    "source",
-                    [CfdRefPathSegment::Field("a".to_string())],
-                )],
-                std::iter::empty::<(&str, CfdInputValue)>(),
-            ),
-        )],
-    );
-
-    let err = builder
-        .build()
-        .expect_err("unrelated object type must not satisfy object spread");
-    assert_has_code(&err, CfdErrorCode::TypeMismatch);
-}
-
-#[test]
-fn dict_spread_merges_path_refs_before_local_overrides() {
-    let schema = compile_schema(
-        r#"
-            enum Element { Fire, Ice, }
-            type Table { weights: {Element: int}; }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "base",
-        "Table",
-        [(
-            "weights",
-            CfdInputValue::dict([
-                (
-                    CfdInputDictKey::enum_variant("Element", "Fire"),
-                    CfdInputValue::from(10_i64),
-                ),
-                (
-                    CfdInputDictKey::enum_variant("Element", "Ice"),
-                    CfdInputValue::from(5_i64),
-                ),
-            ]),
-        )],
-    );
-    builder.add_record(
-        "elite",
-        "Table",
-        [(
-            "weights",
-            CfdInputValue::dict_spread(
-                [CfdInputValue::path_ref(
-                    "Table",
-                    "base",
-                    [CfdRefPathSegment::Field("weights".to_string())],
-                )],
-                [(
-                    CfdInputDictKey::enum_variant("Element", "Fire"),
-                    CfdInputValue::from(20_i64),
-                )],
-            ),
-        )],
-    );
-
-    let model = builder.build().expect("dict spread should build");
-    let elite_id = record_id_at(&model, 1);
-    let Some(CfdValue::Dict(weights)) = model
-        .record(elite_id)
-        .and_then(|record| record.field("weights"))
-    else {
-        panic!("expected dict");
-    };
-    assert_eq!(weights.len(), 2);
-    assert!(weights.iter().any(|(_, value)| value == &CfdValue::Int(20)));
-    assert!(weights.iter().any(|(_, value)| value == &CfdValue::Int(5)));
-}
-
-#[test]
-fn path_refs_can_index_dict_spread_results_and_continue_to_object_fields() {
-    let schema = compile_schema(
-        r#"
-            type Item { name: string; }
-            type Table { by_name: {string: Item}; }
-            type Holder { label: string; }
-        "#,
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "base",
-        "Table",
-        [(
-            "by_name",
-            CfdInputValue::dict([(
-                CfdInputDictKey::from("main"),
-                CfdInputValue::object_with_declared_type([(
-                    "name",
-                    CfdInputValue::from("Base Sword"),
-                )]),
-            )]),
-        )],
-    );
-    builder.add_record(
-        "merged",
-        "Table",
-        [(
-            "by_name",
-            CfdInputValue::dict_spread(
-                [CfdInputValue::path_ref(
-                    "Table",
-                    "base",
-                    [CfdRefPathSegment::Field("by_name".to_string())],
-                )],
-                std::iter::empty::<(CfdInputDictKey, CfdInputValue)>(),
-            ),
-        )],
-    );
-    builder.add_record(
-        "holder",
-        "Holder",
-        [(
-            "label",
-            CfdInputValue::path_ref(
-                "Table",
-                "merged",
-                [
-                    CfdRefPathSegment::Field("by_name".to_string()),
-                    CfdRefPathSegment::Index(CfdInputRefIndex::String("main".to_string())),
-                    CfdRefPathSegment::Field("name".to_string()),
-                ],
-            ),
-        )],
-    );
-
-    let model = builder
-        .build()
-        .expect("path refs should traverse dict spread object values");
-    let holder_id = record_id_at(&model, 2);
-    let holder = model.record(holder_id).expect("holder record");
-    assert_eq!(
-        holder.field("label"),
-        Some(&CfdValue::String("Base Sword".to_string()))
-    );
 }
 
 #[test]

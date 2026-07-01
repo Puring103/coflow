@@ -15,7 +15,7 @@ fn record_keys_build_indexes_and_record_refs_resolve_by_expected_type() {
         r"
             abstract type Reward {}
             type ItemReward : Reward { count: int; }
-            type Drop { reward: Reward; }
+            type Drop { reward: &Reward; }
         ",
     );
 
@@ -28,7 +28,7 @@ fn record_keys_build_indexes_and_record_refs_resolve_by_expected_type() {
     builder.add_record(
         "drop_1",
         "Drop",
-        [("reward", CfdInputValue::record_ref("Reward", "reward_1"))],
+        [("reward", CfdInputValue::record_ref("reward_1"))],
     );
     let model = builder.build().expect("record-key refs should build");
     let reward_id = record_id_at(&model, 0);
@@ -44,10 +44,7 @@ fn record_keys_build_indexes_and_record_refs_resolve_by_expected_type() {
         model
             .record(drop_id)
             .and_then(|record| record.field("reward")),
-        Some(&CfdValue::Ref {
-            target_type: "Reward".to_string(),
-            target_key: "reward_1".to_string(),
-        })
+        Some(&CfdValue::Ref("reward_1".to_string()))
     );
     let _ = reward_id;
 }
@@ -58,7 +55,7 @@ fn parent_records_cannot_satisfy_child_typed_refs() {
         r"
             type Base { name: string; }
             type Child : Base { power: int; }
-            type Holder { child: Child; }
+            type Holder { child: &Child; }
         ",
     );
 
@@ -67,43 +64,12 @@ fn parent_records_cannot_satisfy_child_typed_refs() {
     builder.add_record(
         "holder_1",
         "Holder",
-        [("child", CfdInputValue::record_ref("Base", "base_1"))],
+        [("child", CfdInputValue::record_ref("base_1"))],
     );
 
     let err = builder
         .build()
         .expect_err("parent-typed ref should not satisfy child field");
-    assert_has_code(&err, CfdErrorCode::TypeMismatch);
-}
-
-#[test]
-fn child_fields_reject_parent_typed_reference_prefixes() {
-    let schema = compile_schema(
-        r"
-            abstract type Reward {}
-            type ItemReward : Reward { count: int; }
-            type Drop { item_reward: ItemReward; }
-        ",
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "reward_1",
-        "ItemReward",
-        [("count", CfdInputValue::from(3_i64))],
-    );
-    builder.add_record(
-        "drop_1",
-        "Drop",
-        [(
-            "item_reward",
-            CfdInputValue::record_ref("Reward", "reward_1"),
-        )],
-    );
-
-    let err = builder
-        .build()
-        .expect_err("wide prefix type must not satisfy narrower field");
     assert_has_code(&err, CfdErrorCode::TypeMismatch);
 }
 
@@ -128,124 +94,6 @@ fn object_typed_fields_do_not_accept_bare_string_refs() {
         .build()
         .expect_err("bare string should not satisfy object field");
     assert_has_code(&err, CfdErrorCode::TypeMismatch);
-}
-
-#[test]
-fn path_refs_resolve_fields_arrays_and_dict_keys() {
-    let schema = compile_schema(
-        r"
-            enum Element { Fire, Ice, }
-            type Skill { power: int; }
-            type DropTable {
-                rewards: [Skill];
-                resistances: {Element: float};
-            }
-            type Holder {
-                first_reward: Skill;
-                fire_resistance: float;
-            }
-        ",
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record(
-        "table_1",
-        "DropTable",
-        [
-            (
-                "rewards",
-                CfdInputValue::Array(vec![CfdInputValue::object_with_declared_type([(
-                    "power",
-                    CfdInputValue::from(7_i64),
-                )])]),
-            ),
-            (
-                "resistances",
-                CfdInputValue::dict([(
-                    CfdInputDictKey::enum_variant("Element", "Fire"),
-                    CfdInputValue::from(0.5_f64),
-                )]),
-            ),
-        ],
-    );
-    builder.add_record(
-        "holder_1",
-        "Holder",
-        [
-            (
-                "first_reward",
-                CfdInputValue::path_ref(
-                    "DropTable",
-                    "table_1",
-                    [
-                        CfdRefPathSegment::Field("rewards".to_string()),
-                        CfdRefPathSegment::Index(CfdInputRefIndex::Int(0)),
-                    ],
-                ),
-            ),
-            (
-                "fire_resistance",
-                CfdInputValue::path_ref(
-                    "DropTable",
-                    "table_1",
-                    [
-                        CfdRefPathSegment::Field("resistances".to_string()),
-                        CfdRefPathSegment::Index(CfdInputRefIndex::Variant("Fire".to_string())),
-                    ],
-                ),
-            ),
-        ],
-    );
-
-    let model = builder.build().expect("path refs should build");
-    let holder_id = record_id_at(&model, 1);
-    let holder = model.record(holder_id).expect("holder record");
-    assert!(matches!(
-        holder.field("first_reward"),
-        Some(CfdValue::Object(skill)) if skill.field("power") == Some(&CfdValue::Int(7))
-    ));
-    assert_eq!(holder.field("fire_resistance"), Some(&CfdValue::Float(0.5)));
-}
-
-#[test]
-fn path_refs_can_follow_record_refs_before_field_access() {
-    let schema = compile_schema(
-        r"
-            type Skill { power: int; }
-            type Loadout { primary: Skill; }
-            type Holder { copied_power: int; }
-        ",
-    );
-
-    let mut builder = CfdDataModel::builder(&schema);
-    builder.add_record("skill_1", "Skill", [("power", CfdInputValue::from(9_i64))]);
-    builder.add_record(
-        "loadout_1",
-        "Loadout",
-        [("primary", CfdInputValue::record_ref("Skill", "skill_1"))],
-    );
-    builder.add_record(
-        "holder_1",
-        "Holder",
-        [(
-            "copied_power",
-            CfdInputValue::path_ref(
-                "Loadout",
-                "loadout_1",
-                [
-                    CfdRefPathSegment::Field("primary".to_string()),
-                    CfdRefPathSegment::Field("power".to_string()),
-                ],
-            ),
-        )],
-    );
-
-    let model = builder
-        .build()
-        .expect("path refs should follow record refs");
-    let holder_id = record_id_at(&model, 2);
-    let holder = model.record(holder_id).expect("holder record");
-    assert_eq!(holder.field("copied_power"), Some(&CfdValue::Int(9)));
 }
 
 #[test]
@@ -540,7 +388,7 @@ fn concrete_ref_expected_type_rejects_sibling_and_parent_records_in_same_domain(
     sibling_builder.add_record(
         "holder",
         "Holder",
-        [("item", CfdInputValue::record_ref("ItemReward", "currency"))],
+        [("item", CfdInputValue::record_ref("currency"))],
     );
 
     let err = sibling_builder
@@ -553,7 +401,7 @@ fn concrete_ref_expected_type_rejects_sibling_and_parent_records_in_same_domain(
     parent_builder.add_record(
         "holder",
         "Holder",
-        [("item", CfdInputValue::record_ref("ItemReward", "base"))],
+        [("item", CfdInputValue::record_ref("base"))],
     );
 
     let err = parent_builder

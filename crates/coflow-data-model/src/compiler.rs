@@ -1,8 +1,8 @@
 use crate::diagnostic::{CfdDiagnostic, CfdDiagnostics, CfdErrorCode, CfdPath};
 use crate::model::{
     CfdDataModel, CfdDictKey, CfdDomainId, CfdEnumValue, CfdInputDictKey, CfdInputRecord,
-    CfdInputRefIndex, CfdInputValue, CfdPolymorphicIndex, CfdRecord, CfdRecordId,
-    CfdRefPathSegment, CfdTable, CfdTypeId, CfdValue, RefSite,
+    CfdInputValue, CfdPolymorphicIndex, CfdRecord, CfdRecordId, CfdTable, CfdTypeId, CfdValue,
+    RefEdge, RefEdgeId, RefSite,
 };
 use crate::origin::RecordOrigin;
 use crate::schema_view::{
@@ -23,6 +23,12 @@ struct ModelIndexes {
     inheritance_index: BTreeMap<String, CfdPolymorphicIndex>,
     record_by_type_key: BTreeMap<(CfdTypeId, String), CfdRecordId>,
     record_by_domain_key: BTreeMap<(CfdDomainId, String), CfdRecordId>,
+}
+
+struct SpreadFieldRef<'a> {
+    source_type: &'a str,
+    key: &'a str,
+    field: &'a str,
 }
 
 impl ModelCompiler {
@@ -92,7 +98,6 @@ impl ModelCompiler {
                     Some(record_id),
                     &CfdPath::root(),
                     &drafts,
-                    &indexes.tables,
                     &indexes.record_by_domain_key,
                 ) else {
                     continue;
@@ -116,7 +121,7 @@ impl ModelCompiler {
             return Err(CfdDiagnostics::new(self.diagnostics));
         }
 
-        let ref_index = build_ref_index(&records, &indexes.record_by_domain_key, &self.schema);
+        let ref_indexes = build_ref_indexes(&records, &indexes.record_by_domain_key, &self.schema);
 
         Ok(CfdDataModel {
             tables: indexes.tables,
@@ -125,7 +130,11 @@ impl ModelCompiler {
             record_by_type_key: indexes.record_by_type_key,
             record_by_domain_key: indexes.record_by_domain_key,
             records,
-            ref_index,
+            ref_edges: ref_indexes.edges,
+            ref_by_site: ref_indexes.by_site,
+            ref_by_host: ref_indexes.by_host,
+            ref_by_target: ref_indexes.by_target,
+            ref_index: ref_indexes.site_targets,
         })
     }
 
@@ -417,14 +426,7 @@ impl<'s> Validator<'s> {
         let mut out = BTreeMap::new();
         let mut spread_field_sources = BTreeMap::new();
         for spread in input_spreads {
-            // Track which fields came from this spread, regardless of nesting.
-            // RecordRef spreads carry a stable target record identity (type+key)
-            // — those become resolvable record ids in phase 3 and let writers
-            // dispatch edits back to the source. PathRef / inline-object
-            // spreads don't carry a stable record identity, so we don't track
-            // them: writers will refuse to edit through the spread and
-            // surface a diagnostic instead.
-            let spread_origin = top_level_spread_source(spread);
+            let spread_origin = top_level_spread_source(actual_type, spread);
             let Some(spread_fields) =
                 self.validate_object_spread(actual_type, spread, record, path.clone())
             else {
@@ -500,12 +502,8 @@ impl<'s> Validator<'s> {
         path: CfdPath,
     ) -> Option<()> {
         match (non_nullable_type(ty), value) {
-            (CfdType::Type(_), CfdInputValue::RecordRef { .. }) if mode == FieldMode::Inline => {
+            (CfdType::Type(_), CfdInputValue::RecordRef(_)) if mode == FieldMode::Inline => {
                 self.push_mode_diagnostic("@inline", "record refs", record, path);
-                None
-            }
-            (CfdType::Type(_), CfdInputValue::PathRef { .. }) if mode == FieldMode::Inline => {
-                self.push_mode_diagnostic("@inline", "path refs", record, path);
                 None
             }
             (
@@ -585,17 +583,12 @@ impl<'s> Validator<'s> {
 
         match (non_nullable_type(ty), value) {
             (_, CfdInputValue::Null) if ty.is_nullable() => Some(()),
-            (CfdType::Type(type_name), CfdInputValue::RecordRef { .. })
+            (CfdType::Type(type_name), CfdInputValue::RecordRef(_))
                 if self.schema.type_name_is_singleton(type_name) =>
             {
                 Some(())
             }
-            (CfdType::Ref(type_name), CfdInputValue::RecordRef { .. })
-                if self.schema.type_name_is_singleton(type_name) =>
-            {
-                Some(())
-            }
-            (CfdType::Type(type_name), CfdInputValue::PathRef { .. })
+            (CfdType::Ref(type_name), CfdInputValue::RecordRef(_))
                 if self.schema.type_name_is_singleton(type_name) =>
             {
                 Some(())
@@ -712,40 +705,12 @@ impl<'s> Validator<'s> {
                 let enum_value = self.resolve_enum_value(enum_name, variant, record, path)?;
                 Some(CfdValueDraft::Value(CfdValue::Enum(enum_value)))
             }
-            (
-                CfdType::Type(expected) | CfdType::Ref(expected),
-                CfdInputValue::RecordRef { target_type, key },
-            ) => {
-                if !self.schema.is_assignable(target_type, expected) {
-                    self.push(
-                        CfdDiagnostic::error(
-                            CfdErrorCode::TypeMismatch,
-                            format!(
-                                "reference type `{target_type}` is not assignable to `{expected}`"
-                            ),
-                        )
-                        .with_primary(record, path),
-                    );
-                    return None;
-                }
+            (CfdType::Ref(expected), CfdInputValue::RecordRef(key)) => {
                 Some(CfdValueDraft::PendingRef {
-                    target_type: target_type.clone(),
+                    expected_type: expected.clone(),
                     key: key.clone(),
                 })
             }
-            (
-                expected,
-                CfdInputValue::PathRef {
-                    target_type,
-                    key,
-                    segments,
-                },
-            ) => Some(CfdValueDraft::PathRef {
-                expected_type: expected.clone(),
-                target_type: target_type.clone(),
-                key: key.clone(),
-                segments: segments.clone(),
-            }),
             (
                 CfdType::Type(expected),
                 CfdInputValue::Object {
@@ -834,86 +799,22 @@ impl<'s> Validator<'s> {
         path: CfdPath,
     ) -> Option<BTreeMap<String, CfdValueDraft>> {
         match spread {
-            CfdInputValue::RecordRef { target_type, key } => {
-                if !self.schema.is_assignable(target_type, type_name) {
-                    self.push(
-                        CfdDiagnostic::error(
-                            CfdErrorCode::TypeMismatch,
-                            format!(
-                                "spread type `{target_type}` is not assignable to `{type_name}`"
-                            ),
+            CfdInputValue::RecordRef(key) => Some(
+                self.schema
+                    .full_fields(type_name)
+                    .iter()
+                    .map(|field| {
+                        (
+                            field.name.clone(),
+                            CfdValueDraft::PendingSpreadField {
+                                source_type: type_name.to_string(),
+                                key: key.clone(),
+                                field: field.name.clone(),
+                            },
                         )
-                        .with_primary(record, path),
-                    );
-                    return None;
-                }
-                Some(
-                    self.schema
-                        .full_fields(type_name)
-                        .iter()
-                        .map(|field| {
-                            (
-                                field.name.clone(),
-                                CfdValueDraft::PathRef {
-                                    expected_type: field.ty.clone(),
-                                    target_type: target_type.clone(),
-                                    key: key.clone(),
-                                    segments: vec![CfdRefPathSegment::Field(field.name.clone())],
-                                },
-                            )
-                        })
-                        .collect(),
-                )
-            }
-            CfdInputValue::PathRef {
-                target_type,
-                key,
-                segments,
-            } => {
-                let spread_type =
-                    self.path_ref_result_type(target_type, segments, record, path.clone())?;
-                let CfdType::Type(spread_type_name) = non_nullable_type(&spread_type) else {
-                    self.push(
-                        CfdDiagnostic::error(
-                            CfdErrorCode::TypeMismatch,
-                            "object spread requires an object value",
-                        )
-                        .with_primary(record, path),
-                    );
-                    return None;
-                };
-                if !self.schema.is_assignable(spread_type_name, type_name) {
-                    self.push(
-                        CfdDiagnostic::error(
-                            CfdErrorCode::TypeMismatch,
-                            format!(
-                                "spread type `{spread_type_name}` is not assignable to `{type_name}`"
-                            ),
-                        )
-                        .with_primary(record, path),
-                    );
-                    return None;
-                }
-                Some(
-                    self.schema
-                        .full_fields(type_name)
-                        .iter()
-                        .map(|field| {
-                            let mut field_segments = segments.clone();
-                            field_segments.push(CfdRefPathSegment::Field(field.name.clone()));
-                            (
-                                field.name.clone(),
-                                CfdValueDraft::PathRef {
-                                    expected_type: field.ty.clone(),
-                                    target_type: target_type.clone(),
-                                    key: key.clone(),
-                                    segments: field_segments,
-                                },
-                            )
-                        })
-                        .collect(),
-                )
-            }
+                    })
+                    .collect(),
+            ),
             CfdInputValue::Object { .. } | CfdInputValue::ObjectSpread { .. } => {
                 let draft = self.validate_value(
                     &CfdType::Type(type_name.to_string()),
@@ -937,109 +838,6 @@ impl<'s> Validator<'s> {
                 None
             }
         }
-    }
-
-    fn path_ref_result_type(
-        &mut self,
-        target_type: &str,
-        segments: &[CfdRefPathSegment],
-        record: Option<CfdRecordId>,
-        path: CfdPath,
-    ) -> Option<CfdType> {
-        let Some(meta) = self.schema.types.get(target_type) else {
-            self.push(
-                CfdDiagnostic::error(
-                    CfdErrorCode::UnknownType,
-                    format!("unknown type `{target_type}`"),
-                )
-                .with_primary(record, path),
-            );
-            return None;
-        };
-        if meta.is_abstract {
-            self.push(
-                CfdDiagnostic::error(
-                    CfdErrorCode::AbstractRecordType,
-                    format!("abstract type `{target_type}` cannot be used as path root type"),
-                )
-                .with_primary(record, path),
-            );
-            return None;
-        }
-
-        let mut current_ty = CfdType::Type(target_type.to_string());
-        let mut current_path = path;
-        for segment in segments {
-            match segment {
-                CfdRefPathSegment::Field(name) => {
-                    current_path = current_path.field(name.clone());
-                    let CfdType::Type(type_name) = non_nullable_type(&current_ty) else {
-                        self.push(
-                            CfdDiagnostic::error(
-                                CfdErrorCode::TypeMismatch,
-                                "path field access requires an object",
-                            )
-                            .with_primary(record, current_path),
-                        );
-                        return None;
-                    };
-                    let Some(field) = self
-                        .schema
-                        .full_fields(type_name)
-                        .iter()
-                        .find(|field| field.name == *name)
-                    else {
-                        self.push(
-                            CfdDiagnostic::error(
-                                CfdErrorCode::UnknownField,
-                                format!("path field `{name}` was not found"),
-                            )
-                            .with_primary(record, current_path),
-                        );
-                        return None;
-                    };
-                    current_ty = field.ty.clone();
-                }
-                CfdRefPathSegment::Index(index) => match non_nullable_type(&current_ty) {
-                    CfdType::Array(inner) => {
-                        current_path = match index {
-                            CfdInputRefIndex::Int(raw_index) => match usize::try_from(*raw_index) {
-                                Ok(i) => current_path.index(i),
-                                Err(_) => current_path.index(usize::MAX),
-                            },
-                            _ => current_path.dict_key(format_ref_index(index)),
-                        };
-                        if !matches!(index, CfdInputRefIndex::Int(_)) {
-                            self.push(
-                                CfdDiagnostic::error(
-                                    CfdErrorCode::TypeMismatch,
-                                    "array path index must be int",
-                                )
-                                .with_primary(record, current_path),
-                            );
-                            return None;
-                        }
-                        current_ty = *inner.clone();
-                    }
-                    CfdType::Dict(key_ty, value_ty) => {
-                        current_path = current_path.dict_key(format_ref_index(index));
-                        self.ref_index_to_dict_key(key_ty, index, record, current_path.clone())?;
-                        current_ty = *value_ty.clone();
-                    }
-                    _ => {
-                        self.push(
-                            CfdDiagnostic::error(
-                                CfdErrorCode::TypeMismatch,
-                                "path index access requires an array or dict",
-                            )
-                            .with_primary(record, current_path),
-                        );
-                        return None;
-                    }
-                },
-            }
-        }
-        Some(current_ty)
     }
 
     fn validate_dict_key(
@@ -1225,21 +1023,15 @@ impl<'s> Validator<'s> {
         record: Option<CfdRecordId>,
         path: &CfdPath,
         drafts: &[RecordDraft],
-        tables: &BTreeMap<String, CfdTable>,
         record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
     ) -> Option<BTreeMap<String, CfdValue>> {
         let diagnostic_start = self.diagnostics.len();
         let mut out = BTreeMap::new();
         for (name, value) in fields {
             let value_path = path.clone().field(name.clone());
-            let Some(value) = self.resolve_value(
-                value,
-                record,
-                value_path,
-                drafts,
-                tables,
-                record_by_domain_key,
-            ) else {
+            let Some(value) =
+                self.resolve_value(value, record, value_path, drafts, record_by_domain_key)
+            else {
                 continue;
             };
             out.insert(name.clone(), value);
@@ -1257,43 +1049,38 @@ impl<'s> Validator<'s> {
         record: Option<CfdRecordId>,
         path: CfdPath,
         drafts: &[RecordDraft],
-        tables: &BTreeMap<String, CfdTable>,
         record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
     ) -> Option<CfdValue> {
         match value {
             CfdValueDraft::Value(value) => Some(value.clone()),
-            CfdValueDraft::PendingRef { target_type, key } => {
+            CfdValueDraft::PendingRef { expected_type, key } => {
                 // Ref resolution still happens here so we surface
                 // RefTargetNotFound diagnostics during build, but the
-                // resolved id is stashed in the model's `ref_index` after
+                // resolved id is stashed in the model's ref edge indexes after
                 // all records are built rather than carried in the value.
                 let _ = self.resolve_ref_target(
-                    target_type,
+                    expected_type,
                     key,
                     drafts,
                     record_by_domain_key,
                     record,
                     &path,
                 )?;
-                Some(CfdValue::Ref {
-                    target_type: target_type.clone(),
-                    target_key: key.clone(),
-                })
+                Some(CfdValue::Ref(key.clone()))
             }
-            CfdValueDraft::PathRef {
-                expected_type,
-                target_type,
+            CfdValueDraft::PendingSpreadField {
+                source_type,
                 key,
-                segments,
-            } => self.resolve_path_ref(
-                expected_type,
-                target_type,
-                key,
-                segments,
+                field,
+            } => self.resolve_spread_field(
+                &SpreadFieldRef {
+                    source_type,
+                    key,
+                    field,
+                },
                 record,
                 path,
                 drafts,
-                tables,
                 record_by_domain_key,
             ),
             CfdValueDraft::Object(record_draft) => {
@@ -1302,7 +1089,6 @@ impl<'s> Validator<'s> {
                     record,
                     &path,
                     drafts,
-                    tables,
                     record_by_domain_key,
                 )?;
                 let spread_field_sources = resolve_spread_sources(
@@ -1326,7 +1112,6 @@ impl<'s> Validator<'s> {
                         record,
                         path.clone().index(index),
                         drafts,
-                        tables,
                         record_by_domain_key,
                     ) else {
                         continue;
@@ -1341,7 +1126,6 @@ impl<'s> Validator<'s> {
                     record,
                     &path,
                     drafts,
-                    tables,
                     record_by_domain_key,
                 )?;
                 Some(CfdValue::Dict(out))
@@ -1353,7 +1137,6 @@ impl<'s> Validator<'s> {
                     record,
                     &path,
                     drafts,
-                    tables,
                     record_by_domain_key,
                 )?;
                 Some(CfdValue::Dict(out))
@@ -1364,7 +1147,7 @@ impl<'s> Validator<'s> {
     #[allow(clippy::too_many_arguments)]
     fn resolve_ref_target(
         &mut self,
-        target_type: &str,
+        expected_type: &str,
         key: &str,
         drafts: &[RecordDraft],
         record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
@@ -1373,7 +1156,7 @@ impl<'s> Validator<'s> {
     ) -> Option<CfdRecordId> {
         let target = self
             .schema
-            .type_domain_id(target_type)
+            .type_domain_id(expected_type)
             .and_then(|domain_id| record_by_domain_key.get(&(domain_id, key.to_string())))
             .copied();
 
@@ -1381,7 +1164,7 @@ impl<'s> Validator<'s> {
             self.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::RefTargetNotFound,
-                    format!("ref target `{target_type}` with key `{key}` was not found"),
+                    format!("ref target `{expected_type}` with key `{key}` was not found"),
                 )
                 .with_primary(record, path.clone()),
             );
@@ -1391,13 +1174,13 @@ impl<'s> Validator<'s> {
         let target_draft = drafts.get(target.index())?;
         if !self
             .schema
-            .is_assignable(&target_draft.actual_type, target_type)
+            .is_assignable(&target_draft.actual_type, expected_type)
         {
             self.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::TypeMismatch,
                     format!(
-                        "ref target actual type `{}` is not assignable to `{target_type}`",
+                        "ref target actual type `{}` is not assignable to `{expected_type}`",
                         target_draft.actual_type
                     ),
                 )
@@ -1415,7 +1198,6 @@ impl<'s> Validator<'s> {
         record: Option<CfdRecordId>,
         path: &CfdPath,
         drafts: &[RecordDraft],
-        tables: &BTreeMap<String, CfdTable>,
         record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
     ) -> Option<Vec<(CfdDictKey, CfdValue)>> {
         let diagnostic_start = self.diagnostics.len();
@@ -1426,7 +1208,6 @@ impl<'s> Validator<'s> {
                 record,
                 path.clone().dict_key_value(key),
                 drafts,
-                tables,
                 record_by_domain_key,
             ) else {
                 continue;
@@ -1448,20 +1229,14 @@ impl<'s> Validator<'s> {
         record: Option<CfdRecordId>,
         path: &CfdPath,
         drafts: &[RecordDraft],
-        tables: &BTreeMap<String, CfdTable>,
         record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
     ) -> Option<Vec<(CfdDictKey, CfdValue)>> {
         let diagnostic_start = self.diagnostics.len();
         let mut merged = BTreeMap::<CfdDictKey, CfdValue>::new();
         for spread in spreads {
-            let Some(CfdValue::Dict(entries)) = self.resolve_value(
-                spread,
-                record,
-                path.clone(),
-                drafts,
-                tables,
-                record_by_domain_key,
-            ) else {
+            let Some(CfdValue::Dict(entries)) =
+                self.resolve_value(spread, record, path.clone(), drafts, record_by_domain_key)
+            else {
                 if self.diagnostics.len() == diagnostic_start {
                     self.push(
                         CfdDiagnostic::error(
@@ -1484,7 +1259,6 @@ impl<'s> Validator<'s> {
                 record,
                 path.clone().dict_key_value(key),
                 drafts,
-                tables,
                 record_by_domain_key,
             ) else {
                 continue;
@@ -1499,369 +1273,35 @@ impl<'s> Validator<'s> {
         }
     }
 
-    fn flatten_dict_draft_entries(
+    fn resolve_spread_field(
         &mut self,
-        value: &CfdValueDraft,
+        spread: &SpreadFieldRef<'_>,
         record: Option<CfdRecordId>,
         path: CfdPath,
         drafts: &[RecordDraft],
-        tables: &BTreeMap<String, CfdTable>,
-        record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
-    ) -> Option<Vec<(CfdDictKey, CfdValueDraft)>> {
-        match value {
-            CfdValueDraft::Dict(entries) => Some(entries.clone()),
-            CfdValueDraft::DictSpread { spreads, entries } => {
-                let diagnostic_start = self.diagnostics.len();
-                let mut merged = BTreeMap::<CfdDictKey, CfdValueDraft>::new();
-                for spread in spreads {
-                    let Some(spread_entries) = self.flatten_dict_draft_entries(
-                        spread,
-                        record,
-                        path.clone(),
-                        drafts,
-                        tables,
-                        record_by_domain_key,
-                    ) else {
-                        continue;
-                    };
-                    for (key, value) in spread_entries {
-                        merged.insert(key, value);
-                    }
-                }
-                for (key, value) in entries {
-                    merged.insert(key.clone(), value.clone());
-                }
-                if self.diagnostics.len() == diagnostic_start {
-                    Some(merged.into_iter().collect())
-                } else {
-                    None
-                }
-            }
-            CfdValueDraft::PathRef {
-                expected_type,
-                target_type,
-                key,
-                segments,
-            } => {
-                let CfdValue::Dict(entries) = self.resolve_path_ref(
-                    expected_type,
-                    target_type,
-                    key,
-                    segments,
-                    record,
-                    path,
-                    drafts,
-                    tables,
-                    record_by_domain_key,
-                )?
-                else {
-                    return None;
-                };
-                Some(
-                    entries
-                        .into_iter()
-                        .map(|(key, value)| (key, cfd_value_to_draft(value)))
-                        .collect(),
-                )
-            }
-            other => {
-                let CfdValue::Dict(entries) =
-                    self.resolve_value(other, record, path, drafts, tables, record_by_domain_key)?
-                else {
-                    return None;
-                };
-                Some(
-                    entries
-                        .into_iter()
-                        .map(|(key, value)| (key, cfd_value_to_draft(value)))
-                        .collect(),
-                )
-            }
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn resolve_path_ref(
-        &mut self,
-        expected_type: &CfdType,
-        target_type: &str,
-        key: &str,
-        segments: &[CfdRefPathSegment],
-        record: Option<CfdRecordId>,
-        path: CfdPath,
-        drafts: &[RecordDraft],
-        tables: &BTreeMap<String, CfdTable>,
         record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
     ) -> Option<CfdValue> {
-        let root_id = self.resolve_ref_target(
-            target_type,
-            key,
+        let source_id = self.resolve_ref_target(
+            spread.source_type,
+            spread.key,
             drafts,
             record_by_domain_key,
             record,
             &path,
         )?;
-        let root_draft = drafts.get(root_id.index())?;
-        let mut current_ty = CfdType::Type(root_draft.actual_type.clone());
-        let mut current_value = CfdValueDraft::Object(Box::new(root_draft.clone()));
-        let mut current_path = path.clone();
-
-        for segment in segments {
-            match segment {
-                CfdRefPathSegment::Field(name) => {
-                    current_path = current_path.field(name.clone());
-                    let CfdType::Type(_) = non_nullable_type(&current_ty) else {
-                        self.push(
-                            CfdDiagnostic::error(
-                                CfdErrorCode::TypeMismatch,
-                                "path field access requires an object",
-                            )
-                            .with_primary(record, current_path),
-                        );
-                        return None;
-                    };
-                    let record_draft = self.path_record_draft(
-                        &current_ty,
-                        &current_value,
-                        record,
-                        current_path.clone(),
-                        drafts,
-                        record_by_domain_key,
-                    )?;
-                    let Some(field) = self
-                        .schema
-                        .full_fields(&record_draft.actual_type)
-                        .iter()
-                        .find(|field| field.name == *name)
-                    else {
-                        self.push(
-                            CfdDiagnostic::error(
-                                CfdErrorCode::UnknownField,
-                                format!("path field `{name}` was not found"),
-                            )
-                            .with_primary(record, current_path),
-                        );
-                        return None;
-                    };
-                    let Some(next) = record_draft.fields.get(name).cloned() else {
-                        self.push(
-                            CfdDiagnostic::error(
-                                CfdErrorCode::UnknownField,
-                                format!("path field `{name}` was not found"),
-                            )
-                            .with_primary(record, current_path),
-                        );
-                        return None;
-                    };
-                    current_ty = field.ty.clone();
-                    current_value = next;
-                }
-                CfdRefPathSegment::Index(index) => match non_nullable_type(&current_ty) {
-                    CfdType::Array(inner) => {
-                        current_path = match index {
-                            CfdInputRefIndex::Int(raw_index) => match usize::try_from(*raw_index) {
-                                Ok(i) => current_path.index(i),
-                                Err(_) => current_path.index(usize::MAX),
-                            },
-                            _ => current_path.dict_key(format_ref_index(index)),
-                        };
-                        let CfdInputRefIndex::Int(raw_index) = index else {
-                            self.push(
-                                CfdDiagnostic::error(
-                                    CfdErrorCode::TypeMismatch,
-                                    "array path index must be int",
-                                )
-                                .with_primary(record, current_path),
-                            );
-                            return None;
-                        };
-                        let Ok(item_index) = usize::try_from(*raw_index) else {
-                            self.push(
-                                CfdDiagnostic::error(
-                                    CfdErrorCode::CheckIndexOutOfBounds,
-                                    "array path index is out of bounds",
-                                )
-                                .with_primary(record, current_path),
-                            );
-                            return None;
-                        };
-                        let CfdValueDraft::Array(items) = &current_value else {
-                            return None;
-                        };
-                        let Some(next) = items.get(item_index).cloned() else {
-                            self.push(
-                                CfdDiagnostic::error(
-                                    CfdErrorCode::CheckIndexOutOfBounds,
-                                    "array path index is out of bounds",
-                                )
-                                .with_primary(record, current_path),
-                            );
-                            return None;
-                        };
-                        current_ty = *inner.clone();
-                        current_value = next;
-                    }
-                    CfdType::Dict(key_ty, value_ty) => {
-                        current_path = current_path.dict_key(format_ref_index(index));
-                        let key = self.ref_index_to_dict_key(
-                            key_ty,
-                            index,
-                            record,
-                            current_path.clone(),
-                        )?;
-                        let entries = self.flatten_dict_draft_entries(
-                            &current_value,
-                            record,
-                            current_path.clone(),
-                            drafts,
-                            tables,
-                            record_by_domain_key,
-                        )?;
-                        let Some((_, next)) =
-                            entries.iter().find(|(entry_key, _)| entry_key == &key)
-                        else {
-                            self.push(
-                                CfdDiagnostic::error(
-                                    CfdErrorCode::CheckMissingDictKey,
-                                    "dict path key was not found",
-                                )
-                                .with_primary(record, current_path),
-                            );
-                            return None;
-                        };
-                        current_ty = *value_ty.clone();
-                        current_value = next.clone();
-                    }
-                    _ => {
-                        self.push(
-                            CfdDiagnostic::error(
-                                CfdErrorCode::TypeMismatch,
-                                "path index access requires an array or dict",
-                            )
-                            .with_primary(record, current_path),
-                        );
-                        return None;
-                    }
-                },
-            }
-        }
-
-        if !types_compatible(expected_type, &current_ty, self.schema) {
+        let source_draft = drafts.get(source_id.index())?;
+        let Some(value) = source_draft.fields.get(spread.field) else {
             self.push(
                 CfdDiagnostic::error(
-                    CfdErrorCode::TypeMismatch,
-                    "path ref result type does not match field type",
-                )
-                .with_primary(record, path),
-            );
-            return None;
-        }
-
-        self.resolve_value(
-            &current_value,
-            record,
-            path,
-            drafts,
-            tables,
-            record_by_domain_key,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn path_record_draft(
-        &mut self,
-        ty: &CfdType,
-        value: &CfdValueDraft,
-        record: Option<CfdRecordId>,
-        path: CfdPath,
-        drafts: &[RecordDraft],
-        record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
-    ) -> Option<RecordDraft> {
-        let CfdType::Type(_) = non_nullable_type(ty) else {
-            self.push(
-                CfdDiagnostic::error(
-                    CfdErrorCode::TypeMismatch,
-                    "path field access requires an object",
+                    CfdErrorCode::UnknownField,
+                    format!("spread field `{}` was not found", spread.field),
                 )
                 .with_primary(record, path),
             );
             return None;
         };
 
-        match value {
-            CfdValueDraft::Object(record_draft) => Some((**record_draft).clone()),
-            CfdValueDraft::PendingRef { target_type, key } => {
-                let target = self.resolve_ref_target(
-                    target_type,
-                    key,
-                    drafts,
-                    record_by_domain_key,
-                    record,
-                    &path,
-                )?;
-                drafts.get(target.index()).cloned()
-            }
-            CfdValueDraft::Value(CfdValue::Object(record)) => {
-                Some(record_value_to_draft(record.as_ref()))
-            }
-            CfdValueDraft::Value(CfdValue::Ref {
-                target_type,
-                target_key,
-            }) => {
-                let target = self.resolve_ref_target(
-                    target_type,
-                    target_key,
-                    drafts,
-                    record_by_domain_key,
-                    record,
-                    &path,
-                )?;
-                drafts.get(target.index()).cloned()
-            }
-            _ => {
-                self.push(
-                    CfdDiagnostic::error(
-                        CfdErrorCode::TypeMismatch,
-                        "path field access requires an object",
-                    )
-                    .with_primary(record, path),
-                );
-                None
-            }
-        }
-    }
-
-    fn ref_index_to_dict_key(
-        &mut self,
-        ty: &CfdType,
-        index: &CfdInputRefIndex,
-        record: Option<CfdRecordId>,
-        path: CfdPath,
-    ) -> Option<CfdDictKey> {
-        match (ty, index) {
-            (
-                CfdType::String,
-                CfdInputRefIndex::String(value) | CfdInputRefIndex::Variant(value),
-            ) => Some(CfdDictKey::String(value.clone())),
-            (CfdType::Int, CfdInputRefIndex::Int(value)) => Some(CfdDictKey::Int(*value)),
-            (CfdType::Enum(enum_name), CfdInputRefIndex::Variant(variant)) => {
-                let value = self.resolve_enum_value(enum_name, variant, record, path)?;
-                Some(CfdDictKey::Enum(value))
-            }
-            (CfdType::Enum(expected), CfdInputRefIndex::EnumVariant { enum_name, variant })
-                if enum_name == expected =>
-            {
-                let value = self.resolve_enum_value(enum_name, variant, record, path)?;
-                Some(CfdDictKey::Enum(value))
-            }
-            _ => {
-                self.push(
-                    CfdDiagnostic::error(CfdErrorCode::TypeMismatch, "dict path key type mismatch")
-                        .with_primary(record, path),
-                );
-                None
-            }
-        }
+        self.resolve_value(value, record, path, drafts, record_by_domain_key)
     }
 
     fn resolve_enum_value(
@@ -1916,60 +1356,13 @@ fn non_nullable_type(ty: &CfdType) -> &CfdType {
     }
 }
 
-fn types_compatible(expected: &CfdType, actual: &CfdType, schema: &SchemaView) -> bool {
-    match (expected, actual) {
-        (CfdType::Nullable(inner), other) | (other, CfdType::Nullable(inner)) => {
-            types_compatible(inner, other, schema)
-        }
-        (CfdType::Type(expected), CfdType::Type(actual)) => schema.is_assignable(actual, expected),
-        (CfdType::Array(left), CfdType::Array(right)) => types_compatible(left, right, schema),
-        (CfdType::Dict(left_key, left_value), CfdType::Dict(right_key, right_value)) => {
-            types_compatible(left_key, right_key, schema)
-                && types_compatible(left_value, right_value, schema)
-        }
-        _ => expected == actual,
-    }
-}
-
-fn cfd_value_to_draft(value: CfdValue) -> CfdValueDraft {
-    match value {
-        CfdValue::Object(record) => CfdValueDraft::Object(Box::new(record_value_to_draft(&record))),
-        CfdValue::Array(items) => {
-            CfdValueDraft::Array(items.into_iter().map(cfd_value_to_draft).collect())
-        }
-        CfdValue::Dict(entries) => CfdValueDraft::Dict(
-            entries
-                .into_iter()
-                .map(|(key, value)| (key, cfd_value_to_draft(value)))
-                .collect(),
-        ),
-        scalar_or_ref => CfdValueDraft::Value(scalar_or_ref),
-    }
-}
-
-fn record_value_to_draft(record: &CfdRecord) -> RecordDraft {
-    RecordDraft {
-        key: record.key.clone(),
-        actual_type: record.actual_type.clone(),
-        fields: record
-            .fields
-            .iter()
-            .map(|(name, value)| (name.clone(), cfd_value_to_draft(value.clone())))
-            .collect(),
-        origin: RecordOrigin::None,
-        spread_field_sources: BTreeMap::new(),
-    }
-}
-
-/// If a spread is a `RecordRef`, return its (`target_type`, key) so the
-/// compiler can mark fields imported via the spread as belonging to that
-/// source record. Path-refs and inline objects don't carry a stable record
-/// identity for write-back purposes and are not tracked — writers will
-/// surface a diagnostic when the user tries to edit through them.
-fn top_level_spread_source(spread: &CfdInputValue) -> Option<SpreadFieldSource> {
+fn top_level_spread_source(
+    expected_type: &str,
+    spread: &CfdInputValue,
+) -> Option<SpreadFieldSource> {
     match spread {
-        CfdInputValue::RecordRef { target_type, key } => Some(SpreadFieldSource {
-            target_type: target_type.clone(),
+        CfdInputValue::RecordRef(key) => Some(SpreadFieldSource {
+            expected_type: expected_type.to_string(),
             key: key.clone(),
         }),
         _ => None,
@@ -1977,7 +1370,7 @@ fn top_level_spread_source(spread: &CfdInputValue) -> Option<SpreadFieldSource> 
 }
 
 /// Resolve a draft's spread-field-source map (`name → SpreadFieldSource`,
-/// which holds the textual target type+key) into the public-facing
+/// which holds the textual expected type+key) into the public-facing
 /// `name → CfdRecordId` map stored on `CfdRecord`. Sources that don't
 /// resolve are dropped silently — phase 1 already reported them as
 /// unresolved record refs if they were truly missing.
@@ -1991,7 +1384,7 @@ fn resolve_spread_sources(
         if let Some(id) = lookup_domain_ref(
             schema,
             record_by_domain_key,
-            &source.target_type,
+            &source.expected_type,
             &source.key,
         ) {
             out.insert(field.clone(), id);
@@ -2000,27 +1393,44 @@ fn resolve_spread_sources(
     out
 }
 
-/// Walk every record's field tree and collect a `(host, path) -> target id`
-/// map for each `CfdValue::Ref` instance. Refs whose `(target_type,
-/// target_key)` no longer resolve at this point are silently skipped — the
-/// compiler already emitted a `RefTargetNotFound` diagnostic for them in
-/// phase 3 (the model only ships when there are no diagnostics).
-fn build_ref_index(
+#[derive(Default)]
+struct RefIndexes {
+    edges: Vec<RefEdge>,
+    by_site: BTreeMap<RefSite, RefEdgeId>,
+    by_host: BTreeMap<CfdRecordId, Vec<RefEdgeId>>,
+    by_target: BTreeMap<CfdRecordId, Vec<RefEdgeId>>,
+    site_targets: BTreeMap<RefSite, CfdRecordId>,
+}
+
+fn build_ref_indexes(
     records: &[CfdRecord],
     record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
     schema: &SchemaView,
-) -> BTreeMap<RefSite, CfdRecordId> {
-    let mut out = BTreeMap::new();
+) -> RefIndexes {
+    let mut out = RefIndexes::default();
+    let context = RefEdgeBuildContext {
+        records,
+        record_by_domain_key,
+        schema,
+    };
     for (index, record) in records.iter().enumerate() {
         let host = CfdRecordId::from_index(index);
         let root = CfdPath::root();
         for (name, value) in &record.fields {
-            collect_ref_sites(
+            let Some(field) = context
+                .schema
+                .full_fields(&record.actual_type)
+                .iter()
+                .find(|field| field.name == *name)
+            else {
+                continue;
+            };
+            collect_ref_edges(
                 value,
+                &field.ty,
                 host,
                 root.clone().field(name.clone()),
-                record_by_domain_key,
-                schema,
+                &context,
                 &mut out,
             );
         }
@@ -2028,67 +1438,105 @@ fn build_ref_index(
     out
 }
 
-fn collect_ref_sites(
+struct RefEdgeBuildContext<'a> {
+    records: &'a [CfdRecord],
+    record_by_domain_key: &'a BTreeMap<(CfdDomainId, String), CfdRecordId>,
+    schema: &'a SchemaView,
+}
+
+fn collect_ref_edges(
     value: &CfdValue,
+    ty: &CfdType,
     host: CfdRecordId,
     path: CfdPath,
-    record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
-    schema: &SchemaView,
-    out: &mut BTreeMap<RefSite, CfdRecordId>,
+    context: &RefEdgeBuildContext<'_>,
+    out: &mut RefIndexes,
 ) {
-    match value {
-        CfdValue::Ref {
-            target_type,
-            target_key,
-        } => {
-            if let Some(id) =
-                lookup_domain_ref(schema, record_by_domain_key, target_type, target_key)
-            {
-                out.insert(RefSite::new(host, path), id);
-            }
+    match (value, non_nullable_type(ty)) {
+        (CfdValue::Ref(key), CfdType::Ref(expected_type)) => {
+            let Some(expected_type_id) = context.schema.type_id(expected_type) else {
+                return;
+            };
+            let Some(domain) = context.schema.type_domain_id(expected_type) else {
+                return;
+            };
+            let Some(target) = lookup_domain_ref(
+                context.schema,
+                context.record_by_domain_key,
+                expected_type,
+                key,
+            ) else {
+                return;
+            };
+            let Some(target_record) = context.records.get(target.index()) else {
+                return;
+            };
+            let Some(target_type) = context.schema.type_id(&target_record.actual_type) else {
+                return;
+            };
+            let site = RefSite::new(host, path.clone());
+            let id = RefEdgeId::new(out.edges.len());
+            out.edges.push(RefEdge {
+                id,
+                site: site.clone(),
+                host,
+                path,
+                expected_type: expected_type_id,
+                domain,
+                key: key.clone(),
+                target,
+                target_type,
+            });
+            out.by_site.insert(site.clone(), id);
+            out.by_host.entry(host).or_default().push(id);
+            out.by_target.entry(target).or_default().push(id);
+            out.site_targets.insert(site, target);
         }
-        CfdValue::Object(boxed) => {
+        (CfdValue::Object(boxed), CfdType::Type(_)) => {
             for (name, inner) in &boxed.fields {
-                collect_ref_sites(
+                let Some(field) = context
+                    .schema
+                    .full_fields(&boxed.actual_type)
+                    .iter()
+                    .find(|field| field.name == *name)
+                else {
+                    continue;
+                };
+                collect_ref_edges(
                     inner,
+                    &field.ty,
                     host,
                     path.clone().field(name.clone()),
-                    record_by_domain_key,
-                    schema,
+                    context,
                     out,
                 );
             }
         }
-        CfdValue::Array(items) => {
+        (CfdValue::Array(items), CfdType::Array(inner_ty)) => {
             for (index, item) in items.iter().enumerate() {
-                collect_ref_sites(
+                collect_ref_edges(
                     item,
+                    inner_ty,
                     host,
                     path.clone().index(index),
-                    record_by_domain_key,
-                    schema,
+                    context,
                     out,
                 );
             }
         }
-        CfdValue::Dict(entries) => {
+        (CfdValue::Dict(entries), CfdType::Dict(_, value_ty)) => {
             for (key, item) in entries {
-                collect_ref_sites(
+                collect_ref_edges(
                     item,
+                    value_ty,
                     host,
                     path.clone().dict_key_value(key),
-                    record_by_domain_key,
-                    schema,
+                    context,
                     out,
                 );
             }
         }
-        CfdValue::Null
-        | CfdValue::Bool(_)
-        | CfdValue::Int(_)
-        | CfdValue::Float(_)
-        | CfdValue::String(_)
-        | CfdValue::Enum(_) => {}
+        _ => {}
     }
 }
 
@@ -2102,14 +1550,4 @@ fn lookup_domain_ref(
         .type_domain_id(target_type)
         .and_then(|domain_id| record_by_domain_key.get(&(domain_id, key.to_string())))
         .copied()
-}
-
-fn format_ref_index(index: &CfdInputRefIndex) -> String {
-    match index {
-        CfdInputRefIndex::Int(value) => value.to_string(),
-        CfdInputRefIndex::String(value) | CfdInputRefIndex::Variant(value) => value.clone(),
-        CfdInputRefIndex::EnumVariant { enum_name, variant } => {
-            format!("{enum_name}.{variant}")
-        }
-    }
 }

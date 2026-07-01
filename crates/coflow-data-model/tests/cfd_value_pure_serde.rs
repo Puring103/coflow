@@ -25,13 +25,7 @@ fn expect_eq<T: PartialEq + Debug + ?Sized>(
 fn cfd_value_round_trips_through_json() -> Result<(), Box<dyn std::error::Error>> {
     let mut fields = BTreeMap::new();
     fields.insert("hp".to_string(), CfdValue::Int(42));
-    fields.insert(
-        "next".to_string(),
-        CfdValue::Ref {
-            target_type: "Skill".to_string(),
-            target_key: "fireball".to_string(),
-        },
-    );
+    fields.insert("next".to_string(), CfdValue::Ref("fireball".to_string()));
     fields.insert(
         "tags".to_string(),
         CfdValue::Array(vec![

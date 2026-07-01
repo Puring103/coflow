@@ -16,9 +16,12 @@ pub struct CfdDataModel {
     pub(crate) record_by_type_key: BTreeMap<(CfdTypeId, String), CfdRecordId>,
     pub(crate) record_by_domain_key: BTreeMap<(CfdDomainId, String), CfdRecordId>,
     pub(crate) records: Vec<CfdRecord>,
-    /// Cache of resolved `CfdValue::Ref` sites in the model. Populated by the
-    /// compiler in `model.build()`. Look up the id of a ref's target via
-    /// [`CfdDataModel::resolve_ref`].
+    pub(crate) ref_edges: Vec<RefEdge>,
+    pub(crate) ref_by_site: BTreeMap<RefSite, RefEdgeId>,
+    pub(crate) ref_by_host: BTreeMap<CfdRecordId, Vec<RefEdgeId>>,
+    pub(crate) ref_by_target: BTreeMap<CfdRecordId, Vec<RefEdgeId>>,
+    /// Compatibility cache for callers that only need a site-to-target lookup.
+    /// Primary ref metadata lives in `ref_edges` and its secondary indexes.
     pub(crate) ref_index: BTreeMap<RefSite, CfdRecordId>,
 }
 
@@ -36,6 +39,34 @@ impl RefSite {
     pub const fn new(host: CfdRecordId, path: CfdPath) -> Self {
         Self { host, path }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct RefEdgeId(usize);
+
+impl RefEdgeId {
+    #[must_use]
+    pub(crate) const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    #[must_use]
+    pub fn index(self) -> usize {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RefEdge {
+    pub id: RefEdgeId,
+    pub site: RefSite,
+    pub host: CfdRecordId,
+    pub path: CfdPath,
+    pub expected_type: CfdTypeId,
+    pub domain: CfdDomainId,
+    pub key: String,
+    pub target: CfdRecordId,
+    pub target_type: CfdTypeId,
 }
 
 impl CfdDataModel {
@@ -188,7 +219,9 @@ impl CfdDataModel {
     /// not resolvable when the model was built.
     #[must_use]
     pub fn resolve_ref(&self, site: &RefSite) -> Option<CfdRecordId> {
-        self.ref_index.get(site).copied()
+        self.ref_edge_at(site)
+            .and_then(|edge_id| self.ref_edge(edge_id))
+            .map(|edge| edge.target)
     }
 
     /// Convenience for the common case "I have a host id and a path; tell me
@@ -204,6 +237,36 @@ impl CfdDataModel {
     /// Iterate every resolved `CfdValue::Ref` site in the model.
     pub fn ref_sites(&self) -> impl Iterator<Item = (&RefSite, CfdRecordId)> {
         self.ref_index.iter().map(|(site, target)| (site, *target))
+    }
+
+    #[must_use]
+    pub fn ref_edge(&self, id: RefEdgeId) -> Option<&RefEdge> {
+        self.ref_edges.get(id.index())
+    }
+
+    #[must_use]
+    pub fn ref_edge_at(&self, site: &RefSite) -> Option<RefEdgeId> {
+        self.ref_by_site.get(site).copied()
+    }
+
+    pub fn ref_edges(&self) -> impl Iterator<Item = &RefEdge> {
+        self.ref_edges.iter()
+    }
+
+    pub fn ref_edges_from_host(&self, host: CfdRecordId) -> impl Iterator<Item = &RefEdge> + '_ {
+        self.ref_by_host
+            .get(&host)
+            .into_iter()
+            .flat_map(|ids| ids.iter())
+            .filter_map(|id| self.ref_edge(*id))
+    }
+
+    pub fn ref_edges_to_target(&self, target: CfdRecordId) -> impl Iterator<Item = &RefEdge> + '_ {
+        self.ref_by_target
+            .get(&target)
+            .into_iter()
+            .flat_map(|ids| ids.iter())
+            .filter_map(|id| self.ref_edge(*id))
     }
 }
 
@@ -462,10 +525,7 @@ pub enum CfdValue {
     String(String),
     Enum(CfdEnumValue),
     Object(Box<CfdRecord>),
-    Ref {
-        target_type: String,
-        target_key: String,
-    },
+    Ref(String),
     Array(Vec<CfdValue>),
     Dict(Vec<(CfdDictKey, CfdValue)>),
 }
@@ -598,20 +658,6 @@ impl CfdInputRecord {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CfdRefPathSegment {
-    Field(String),
-    Index(CfdInputRefIndex),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CfdInputRefIndex {
-    Int(i64),
-    String(String),
-    Variant(String),
-    EnumVariant { enum_name: String, variant: String },
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum CfdInputValue {
     Null,
@@ -632,15 +678,7 @@ pub enum CfdInputValue {
         spreads: Vec<CfdInputValue>,
         fields: BTreeMap<String, CfdInputValue>,
     },
-    RecordRef {
-        target_type: String,
-        key: String,
-    },
-    PathRef {
-        target_type: String,
-        key: String,
-        segments: Vec<CfdRefPathSegment>,
-    },
+    RecordRef(String),
     Array(Vec<CfdInputValue>),
     Dict(Vec<(CfdInputDictKey, CfdInputValue)>),
     DictSpread {
@@ -733,24 +771,8 @@ impl CfdInputValue {
     }
 
     #[must_use]
-    pub fn record_ref(target_type: impl Into<String>, key: impl Into<String>) -> Self {
-        Self::RecordRef {
-            target_type: target_type.into(),
-            key: key.into(),
-        }
-    }
-
-    #[must_use]
-    pub fn path_ref(
-        target_type: impl Into<String>,
-        key: impl Into<String>,
-        segments: impl IntoIterator<Item = CfdRefPathSegment>,
-    ) -> Self {
-        Self::PathRef {
-            target_type: target_type.into(),
-            key: key.into(),
-            segments: segments.into_iter().collect(),
-        }
+    pub fn record_ref(key: impl Into<String>) -> Self {
+        Self::RecordRef(key.into())
     }
 }
 
