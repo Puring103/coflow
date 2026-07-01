@@ -422,7 +422,7 @@ const fn value_kind(value: &CfdValue) -> &'static str {
         CfdValue::String(_) => "string",
         CfdValue::Enum(_) => "enum",
         CfdValue::Object(_) => "object",
-        CfdValue::Ref { .. } => "ref",
+        CfdValue::Ref(_) => "ref",
         CfdValue::Array(_) => "array",
         CfdValue::Dict(_) => "dict",
     }
