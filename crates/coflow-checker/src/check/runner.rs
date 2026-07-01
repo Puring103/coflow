@@ -170,7 +170,7 @@ impl<'a> CheckRunner<'a> {
                     );
                 }
             }
-            CfdValue::Ref { .. }
+            CfdValue::Ref(_)
             | CfdValue::Null
             | CfdValue::Bool(_)
             | CfdValue::Int(_)
