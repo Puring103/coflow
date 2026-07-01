@@ -1,8 +1,8 @@
 use crate::diagnostic::{CfdDiagnostic, CfdDiagnostics, CfdErrorCode, CfdPath};
 use crate::model::{
-    CfdDataModel, CfdDictKey, CfdEnumValue, CfdInputDictKey, CfdInputRecord, CfdInputRefIndex,
-    CfdInputValue, CfdPolymorphicIndex, CfdRecord, CfdRecordId, CfdRefPathSegment, CfdTable,
-    CfdValue, RefSite,
+    CfdDataModel, CfdDictKey, CfdDomainId, CfdEnumValue, CfdInputDictKey, CfdInputRecord,
+    CfdInputRefIndex, CfdInputValue, CfdPolymorphicIndex, CfdRecord, CfdRecordId,
+    CfdRefPathSegment, CfdTable, CfdTypeId, CfdValue, RefSite,
 };
 use crate::origin::RecordOrigin;
 use crate::schema_view::{
@@ -16,6 +16,13 @@ pub(crate) struct ModelCompiler {
     schema: SchemaView,
     input: Vec<CfdInputRecord>,
     diagnostics: Vec<CfdDiagnostic>,
+}
+
+struct ModelIndexes {
+    tables: BTreeMap<String, CfdTable>,
+    inheritance_index: BTreeMap<String, CfdPolymorphicIndex>,
+    record_by_type_key: BTreeMap<(CfdTypeId, String), CfdRecordId>,
+    record_by_domain_key: BTreeMap<(CfdDomainId, String), CfdRecordId>,
 }
 
 impl ModelCompiler {
@@ -58,7 +65,7 @@ impl ModelCompiler {
         }
 
         // Phase 2: build primary / secondary / polymorphic indexes.
-        let (tables, inheritance_index) = self.build_indexes(&drafts);
+        let indexes = self.build_indexes(&drafts);
 
         // Phase 2b: singleton validation. We run this even when phase 2 has
         // already collected diagnostics so that singleton-specific codes
@@ -69,7 +76,7 @@ impl ModelCompiler {
         // the generic `InvalidRecordKey` path because `record_key_ident_error`
         // and `is_cft_identifier` currently use the same rule set; the spec
         // leaves `LocalizedRecordKeyInvalid` reserved for future divergence.
-        self.validate_singletons(&drafts, &tables);
+        self.validate_singletons(&drafts, &indexes.tables);
         if !self.diagnostics.is_empty() {
             return Err(CfdDiagnostics::new(self.diagnostics));
         }
@@ -85,16 +92,15 @@ impl ModelCompiler {
                     Some(record_id),
                     &CfdPath::root(),
                     &drafts,
-                    &tables,
-                    &inheritance_index,
+                    &indexes.tables,
+                    &indexes.record_by_domain_key,
                 ) else {
                     continue;
                 };
                 let spread_field_sources = resolve_spread_sources(
                     &self.schema,
                     &draft.spread_field_sources,
-                    &tables,
-                    &inheritance_index,
+                    &indexes.record_by_domain_key,
                 );
                 records.push(CfdRecord {
                     key: draft.key.clone(),
@@ -110,28 +116,33 @@ impl ModelCompiler {
             return Err(CfdDiagnostics::new(self.diagnostics));
         }
 
-        let ref_index = build_ref_index(&records, &tables, &inheritance_index, &self.schema);
+        let ref_index = build_ref_index(&records, &indexes.record_by_domain_key, &self.schema);
 
         Ok(CfdDataModel {
-            tables,
-            inheritance_index,
+            tables: indexes.tables,
+            inheritance_index: indexes.inheritance_index,
+            domain_index: self.schema.domain_index().clone(),
+            record_by_type_key: indexes.record_by_type_key,
+            record_by_domain_key: indexes.record_by_domain_key,
             records,
             ref_index,
         })
     }
 
-    fn build_indexes(
-        &mut self,
-        drafts: &[RecordDraft],
-    ) -> (
-        BTreeMap<String, CfdTable>,
-        BTreeMap<String, CfdPolymorphicIndex>,
-    ) {
+    fn build_indexes(&mut self, drafts: &[RecordDraft]) -> ModelIndexes {
         let mut tables = BTreeMap::<String, CfdTable>::new();
         let mut inheritance_index = BTreeMap::<String, CfdPolymorphicIndex>::new();
+        let mut record_by_type_key = BTreeMap::<(CfdTypeId, String), CfdRecordId>::new();
+        let mut record_by_domain_key = BTreeMap::<(CfdDomainId, String), CfdRecordId>::new();
 
         for (index, draft) in drafts.iter().enumerate() {
             let record_id = CfdRecordId::new(index);
+            let Some(type_id) = self.schema.type_id(&draft.actual_type) else {
+                continue;
+            };
+            let Some(domain_id) = self.schema.type_domain_id(&draft.actual_type) else {
+                continue;
+            };
             let table = tables
                 .entry(draft.actual_type.clone())
                 .or_insert_with(|| CfdTable {
@@ -176,6 +187,28 @@ impl ModelCompiler {
                     ),
                 );
             }
+            record_by_type_key.insert((type_id, draft.key.clone()), record_id);
+            if let Some(first) =
+                record_by_domain_key.insert((domain_id, draft.key.clone()), record_id)
+            {
+                let first_actual_type = drafts
+                    .get(first.index())
+                    .map_or("", |first_draft| first_draft.actual_type.as_str());
+                if first_actual_type != draft.actual_type {
+                    self.push(
+                        CfdDiagnostic::error(
+                            CfdErrorCode::DuplicatePolymorphicId,
+                            "duplicate key in inheritance domain",
+                        )
+                        .with_primary(Some(record_id), CfdPath::root().field("id"))
+                        .with_related(
+                            Some(first),
+                            CfdPath::root().field("id"),
+                            "first key is here",
+                        ),
+                    );
+                }
+            }
             self.add_polymorphic_ids(
                 &mut inheritance_index,
                 &draft.actual_type,
@@ -184,11 +217,16 @@ impl ModelCompiler {
             );
         }
 
-        (tables, inheritance_index)
+        ModelIndexes {
+            tables,
+            inheritance_index,
+            record_by_type_key,
+            record_by_domain_key,
+        }
     }
 
     fn add_polymorphic_ids(
-        &mut self,
+        &self,
         inheritance_index: &mut BTreeMap<String, CfdPolymorphicIndex>,
         actual_type: &str,
         key: &str,
@@ -203,20 +241,7 @@ impl ModelCompiler {
                 .or_insert_with(|| CfdPolymorphicIndex {
                     records: BTreeMap::new(),
                 });
-            if let Some(first) = index.records.insert(key.to_string(), record_id) {
-                self.push(
-                    CfdDiagnostic::error(
-                        CfdErrorCode::DuplicatePolymorphicId,
-                        format!("duplicate key in polymorphic range `{target_type}`"),
-                    )
-                    .with_primary(Some(record_id), CfdPath::root().field("id"))
-                    .with_related(
-                        Some(first),
-                        CfdPath::root().field("id"),
-                        "first key is here",
-                    ),
-                );
-            }
+            index.records.entry(key.to_string()).or_insert(record_id);
         }
     }
 
@@ -687,25 +712,10 @@ impl<'s> Validator<'s> {
                 let enum_value = self.resolve_enum_value(enum_name, variant, record, path)?;
                 Some(CfdValueDraft::Value(CfdValue::Enum(enum_value)))
             }
-            (CfdType::Type(expected), CfdInputValue::RecordRef { target_type, key }) => {
-                if !self.schema.is_assignable(target_type, expected) {
-                    self.push(
-                        CfdDiagnostic::error(
-                            CfdErrorCode::TypeMismatch,
-                            format!(
-                                "reference type `{target_type}` is not assignable to `{expected}`"
-                            ),
-                        )
-                        .with_primary(record, path),
-                    );
-                    return None;
-                }
-                Some(CfdValueDraft::PendingRef {
-                    target_type: target_type.clone(),
-                    key: key.clone(),
-                })
-            }
-            (CfdType::Ref(expected), CfdInputValue::RecordRef { target_type, key }) => {
+            (
+                CfdType::Type(expected) | CfdType::Ref(expected),
+                CfdInputValue::RecordRef { target_type, key },
+            ) => {
                 if !self.schema.is_assignable(target_type, expected) {
                     self.push(
                         CfdDiagnostic::error(
@@ -1216,15 +1226,20 @@ impl<'s> Validator<'s> {
         path: &CfdPath,
         drafts: &[RecordDraft],
         tables: &BTreeMap<String, CfdTable>,
-        inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
+        record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
     ) -> Option<BTreeMap<String, CfdValue>> {
         let diagnostic_start = self.diagnostics.len();
         let mut out = BTreeMap::new();
         for (name, value) in fields {
             let value_path = path.clone().field(name.clone());
-            let Some(value) =
-                self.resolve_value(value, record, value_path, drafts, tables, inheritance_index)
-            else {
+            let Some(value) = self.resolve_value(
+                value,
+                record,
+                value_path,
+                drafts,
+                tables,
+                record_by_domain_key,
+            ) else {
                 continue;
             };
             out.insert(name.clone(), value);
@@ -1243,7 +1258,7 @@ impl<'s> Validator<'s> {
         path: CfdPath,
         drafts: &[RecordDraft],
         tables: &BTreeMap<String, CfdTable>,
-        inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
+        record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
     ) -> Option<CfdValue> {
         match value {
             CfdValueDraft::Value(value) => Some(value.clone()),
@@ -1255,8 +1270,8 @@ impl<'s> Validator<'s> {
                 let _ = self.resolve_ref_target(
                     target_type,
                     key,
-                    tables,
-                    inheritance_index,
+                    drafts,
+                    record_by_domain_key,
                     record,
                     &path,
                 )?;
@@ -1279,7 +1294,7 @@ impl<'s> Validator<'s> {
                 path,
                 drafts,
                 tables,
-                inheritance_index,
+                record_by_domain_key,
             ),
             CfdValueDraft::Object(record_draft) => {
                 let fields = self.resolve_fields(
@@ -1288,13 +1303,12 @@ impl<'s> Validator<'s> {
                     &path,
                     drafts,
                     tables,
-                    inheritance_index,
+                    record_by_domain_key,
                 )?;
                 let spread_field_sources = resolve_spread_sources(
                     self.schema,
                     &record_draft.spread_field_sources,
-                    tables,
-                    inheritance_index,
+                    record_by_domain_key,
                 );
                 Some(CfdValue::Object(Box::new(CfdRecord {
                     key: record_draft.key.clone(),
@@ -1313,7 +1327,7 @@ impl<'s> Validator<'s> {
                         path.clone().index(index),
                         drafts,
                         tables,
-                        inheritance_index,
+                        record_by_domain_key,
                     ) else {
                         continue;
                     };
@@ -1328,7 +1342,7 @@ impl<'s> Validator<'s> {
                     &path,
                     drafts,
                     tables,
-                    inheritance_index,
+                    record_by_domain_key,
                 )?;
                 Some(CfdValue::Dict(out))
             }
@@ -1340,35 +1354,30 @@ impl<'s> Validator<'s> {
                     &path,
                     drafts,
                     tables,
-                    inheritance_index,
+                    record_by_domain_key,
                 )?;
                 Some(CfdValue::Dict(out))
             }
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn resolve_ref_target(
         &mut self,
         target_type: &str,
         key: &str,
-        tables: &BTreeMap<String, CfdTable>,
-        inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
+        drafts: &[RecordDraft],
+        record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
         record: Option<CfdRecordId>,
         path: &CfdPath,
     ) -> Option<CfdRecordId> {
-        let target = if self.schema.range_is_polymorphic(target_type) {
-            inheritance_index
-                .get(target_type)
-                .and_then(|index| index.records.get(key))
-                .copied()
-        } else {
-            tables
-                .get(target_type)
-                .and_then(|table| table.primary_index.get(key))
-                .copied()
-        };
+        let target = self
+            .schema
+            .type_domain_id(target_type)
+            .and_then(|domain_id| record_by_domain_key.get(&(domain_id, key.to_string())))
+            .copied();
 
-        if target.is_none() {
+        let Some(target) = target else {
             self.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::RefTargetNotFound,
@@ -1376,8 +1385,28 @@ impl<'s> Validator<'s> {
                 )
                 .with_primary(record, path.clone()),
             );
+            return None;
+        };
+
+        let target_draft = drafts.get(target.index())?;
+        if !self
+            .schema
+            .is_assignable(&target_draft.actual_type, target_type)
+        {
+            self.push(
+                CfdDiagnostic::error(
+                    CfdErrorCode::TypeMismatch,
+                    format!(
+                        "ref target actual type `{}` is not assignable to `{target_type}`",
+                        target_draft.actual_type
+                    ),
+                )
+                .with_primary(record, path.clone()),
+            );
+            return None;
         }
-        target
+
+        Some(target)
     }
 
     fn resolve_dict_entries(
@@ -1387,7 +1416,7 @@ impl<'s> Validator<'s> {
         path: &CfdPath,
         drafts: &[RecordDraft],
         tables: &BTreeMap<String, CfdTable>,
-        inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
+        record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
     ) -> Option<Vec<(CfdDictKey, CfdValue)>> {
         let diagnostic_start = self.diagnostics.len();
         let mut out = Vec::with_capacity(entries.len());
@@ -1398,7 +1427,7 @@ impl<'s> Validator<'s> {
                 path.clone().dict_key_value(key),
                 drafts,
                 tables,
-                inheritance_index,
+                record_by_domain_key,
             ) else {
                 continue;
             };
@@ -1420,7 +1449,7 @@ impl<'s> Validator<'s> {
         path: &CfdPath,
         drafts: &[RecordDraft],
         tables: &BTreeMap<String, CfdTable>,
-        inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
+        record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
     ) -> Option<Vec<(CfdDictKey, CfdValue)>> {
         let diagnostic_start = self.diagnostics.len();
         let mut merged = BTreeMap::<CfdDictKey, CfdValue>::new();
@@ -1431,7 +1460,7 @@ impl<'s> Validator<'s> {
                 path.clone(),
                 drafts,
                 tables,
-                inheritance_index,
+                record_by_domain_key,
             ) else {
                 if self.diagnostics.len() == diagnostic_start {
                     self.push(
@@ -1456,7 +1485,7 @@ impl<'s> Validator<'s> {
                 path.clone().dict_key_value(key),
                 drafts,
                 tables,
-                inheritance_index,
+                record_by_domain_key,
             ) else {
                 continue;
             };
@@ -1477,7 +1506,7 @@ impl<'s> Validator<'s> {
         path: CfdPath,
         drafts: &[RecordDraft],
         tables: &BTreeMap<String, CfdTable>,
-        inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
+        record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
     ) -> Option<Vec<(CfdDictKey, CfdValueDraft)>> {
         match value {
             CfdValueDraft::Dict(entries) => Some(entries.clone()),
@@ -1491,7 +1520,7 @@ impl<'s> Validator<'s> {
                         path.clone(),
                         drafts,
                         tables,
-                        inheritance_index,
+                        record_by_domain_key,
                     ) else {
                         continue;
                     };
@@ -1523,7 +1552,7 @@ impl<'s> Validator<'s> {
                     path,
                     drafts,
                     tables,
-                    inheritance_index,
+                    record_by_domain_key,
                 )?
                 else {
                     return None;
@@ -1537,7 +1566,7 @@ impl<'s> Validator<'s> {
             }
             other => {
                 let CfdValue::Dict(entries) =
-                    self.resolve_value(other, record, path, drafts, tables, inheritance_index)?
+                    self.resolve_value(other, record, path, drafts, tables, record_by_domain_key)?
                 else {
                     return None;
                 };
@@ -1562,10 +1591,16 @@ impl<'s> Validator<'s> {
         path: CfdPath,
         drafts: &[RecordDraft],
         tables: &BTreeMap<String, CfdTable>,
-        inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
+        record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
     ) -> Option<CfdValue> {
-        let root_id =
-            self.resolve_ref_target(target_type, key, tables, inheritance_index, record, &path)?;
+        let root_id = self.resolve_ref_target(
+            target_type,
+            key,
+            drafts,
+            record_by_domain_key,
+            record,
+            &path,
+        )?;
         let root_draft = drafts.get(root_id.index())?;
         let mut current_ty = CfdType::Type(root_draft.actual_type.clone());
         let mut current_value = CfdValueDraft::Object(Box::new(root_draft.clone()));
@@ -1591,8 +1626,7 @@ impl<'s> Validator<'s> {
                         record,
                         current_path.clone(),
                         drafts,
-                        tables,
-                        inheritance_index,
+                        record_by_domain_key,
                     )?;
                     let Some(field) = self
                         .schema
@@ -1681,7 +1715,7 @@ impl<'s> Validator<'s> {
                             current_path.clone(),
                             drafts,
                             tables,
-                            inheritance_index,
+                            record_by_domain_key,
                         )?;
                         let Some((_, next)) =
                             entries.iter().find(|(entry_key, _)| entry_key == &key)
@@ -1729,7 +1763,7 @@ impl<'s> Validator<'s> {
             path,
             drafts,
             tables,
-            inheritance_index,
+            record_by_domain_key,
         )
     }
 
@@ -1741,8 +1775,7 @@ impl<'s> Validator<'s> {
         record: Option<CfdRecordId>,
         path: CfdPath,
         drafts: &[RecordDraft],
-        tables: &BTreeMap<String, CfdTable>,
-        inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
+        record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
     ) -> Option<RecordDraft> {
         let CfdType::Type(_) = non_nullable_type(ty) else {
             self.push(
@@ -1761,8 +1794,8 @@ impl<'s> Validator<'s> {
                 let target = self.resolve_ref_target(
                     target_type,
                     key,
-                    tables,
-                    inheritance_index,
+                    drafts,
+                    record_by_domain_key,
                     record,
                     &path,
                 )?;
@@ -1778,8 +1811,8 @@ impl<'s> Validator<'s> {
                 let target = self.resolve_ref_target(
                     target_type,
                     target_key,
-                    tables,
-                    inheritance_index,
+                    drafts,
+                    record_by_domain_key,
                     record,
                     &path,
                 )?;
@@ -1951,23 +1984,16 @@ fn top_level_spread_source(spread: &CfdInputValue) -> Option<SpreadFieldSource> 
 fn resolve_spread_sources(
     schema: &SchemaView,
     sources: &BTreeMap<String, SpreadFieldSource>,
-    tables: &BTreeMap<String, CfdTable>,
-    inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
+    record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
 ) -> BTreeMap<String, CfdRecordId> {
     let mut out = BTreeMap::new();
     for (field, source) in sources {
-        let target = if schema.range_is_polymorphic(&source.target_type) {
-            inheritance_index
-                .get(&source.target_type)
-                .and_then(|idx| idx.records.get(&source.key))
-                .copied()
-        } else {
-            tables
-                .get(&source.target_type)
-                .and_then(|t| t.primary_index.get(&source.key))
-                .copied()
-        };
-        if let Some(id) = target {
+        if let Some(id) = lookup_domain_ref(
+            schema,
+            record_by_domain_key,
+            &source.target_type,
+            &source.key,
+        ) {
             out.insert(field.clone(), id);
         }
     }
@@ -1981,8 +2007,7 @@ fn resolve_spread_sources(
 /// phase 3 (the model only ships when there are no diagnostics).
 fn build_ref_index(
     records: &[CfdRecord],
-    tables: &BTreeMap<String, CfdTable>,
-    inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
+    record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
     schema: &SchemaView,
 ) -> BTreeMap<RefSite, CfdRecordId> {
     let mut out = BTreeMap::new();
@@ -1994,8 +2019,7 @@ fn build_ref_index(
                 value,
                 host,
                 root.clone().field(name.clone()),
-                tables,
-                inheritance_index,
+                record_by_domain_key,
                 schema,
                 &mut out,
             );
@@ -2008,8 +2032,7 @@ fn collect_ref_sites(
     value: &CfdValue,
     host: CfdRecordId,
     path: CfdPath,
-    tables: &BTreeMap<String, CfdTable>,
-    inheritance_index: &BTreeMap<String, CfdPolymorphicIndex>,
+    record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
     schema: &SchemaView,
     out: &mut BTreeMap<RefSite, CfdRecordId>,
 ) {
@@ -2018,18 +2041,9 @@ fn collect_ref_sites(
             target_type,
             target_key,
         } => {
-            let target = if schema.range_is_polymorphic(target_type) {
-                inheritance_index
-                    .get(target_type)
-                    .and_then(|index| index.records.get(target_key))
-                    .copied()
-            } else {
-                tables
-                    .get(target_type)
-                    .and_then(|table| table.primary_index.get(target_key))
-                    .copied()
-            };
-            if let Some(id) = target {
+            if let Some(id) =
+                lookup_domain_ref(schema, record_by_domain_key, target_type, target_key)
+            {
                 out.insert(RefSite::new(host, path), id);
             }
         }
@@ -2039,8 +2053,7 @@ fn collect_ref_sites(
                     inner,
                     host,
                     path.clone().field(name.clone()),
-                    tables,
-                    inheritance_index,
+                    record_by_domain_key,
                     schema,
                     out,
                 );
@@ -2052,8 +2065,7 @@ fn collect_ref_sites(
                     item,
                     host,
                     path.clone().index(index),
-                    tables,
-                    inheritance_index,
+                    record_by_domain_key,
                     schema,
                     out,
                 );
@@ -2065,8 +2077,7 @@ fn collect_ref_sites(
                     item,
                     host,
                     path.clone().dict_key_value(key),
-                    tables,
-                    inheritance_index,
+                    record_by_domain_key,
                     schema,
                     out,
                 );
@@ -2079,6 +2090,18 @@ fn collect_ref_sites(
         | CfdValue::String(_)
         | CfdValue::Enum(_) => {}
     }
+}
+
+fn lookup_domain_ref(
+    schema: &SchemaView,
+    record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
+    target_type: &str,
+    key: &str,
+) -> Option<CfdRecordId> {
+    schema
+        .type_domain_id(target_type)
+        .and_then(|domain_id| record_by_domain_key.get(&(domain_id, key.to_string())))
+        .copied()
 }
 
 fn format_ref_index(index: &CfdInputRefIndex) -> String {

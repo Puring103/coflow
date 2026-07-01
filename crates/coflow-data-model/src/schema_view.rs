@@ -1,4 +1,6 @@
-use crate::model::{CfdDictKey, CfdInputValue, CfdRefPathSegment, CfdValue};
+use crate::model::{
+    CfdDictKey, CfdDomainId, CfdDomainIndex, CfdInputValue, CfdRefPathSegment, CfdTypeId, CfdValue,
+};
 use crate::origin::RecordOrigin;
 use coflow_cft::{
     CftContainer, CftSchemaDefaultValue, CftSchemaEnum, CftSchemaField, CftSchemaType,
@@ -55,6 +57,7 @@ pub(crate) struct SchemaView {
     pub(crate) types: BTreeMap<String, TypeMeta>,
     pub(crate) enums: BTreeMap<String, EnumMeta>,
     children: BTreeMap<String, BTreeSet<String>>,
+    domain_index: CfdDomainIndex,
 }
 
 impl SchemaView {
@@ -77,11 +80,73 @@ impl SchemaView {
             types.insert(meta.name.clone(), meta);
         }
 
+        let domain_index = Self::build_domain_index(&types);
+
         Self {
             types,
             enums,
             children,
+            domain_index,
         }
+    }
+
+    fn build_domain_index(types: &BTreeMap<String, TypeMeta>) -> CfdDomainIndex {
+        let type_names = types.keys().cloned().collect::<Vec<_>>();
+        let type_id_by_name = type_names
+            .iter()
+            .enumerate()
+            .map(|(index, name)| (name.clone(), CfdTypeId::new(index)))
+            .collect::<BTreeMap<_, _>>();
+
+        let mut domain_id_by_root = BTreeMap::<String, CfdDomainId>::new();
+        let mut type_domain = vec![CfdDomainId::new(0); type_names.len()];
+        let mut domain_members = Vec::<Vec<CfdTypeId>>::new();
+        let mut ancestors_by_type = vec![Vec::new(); type_names.len()];
+
+        for (index, type_name) in type_names.iter().enumerate() {
+            let root = Self::domain_root_name(types, type_name);
+            let next_domain_id = CfdDomainId::new(domain_id_by_root.len());
+            let domain_id = *domain_id_by_root.entry(root).or_insert(next_domain_id);
+            if domain_members.len() <= domain_id.index() {
+                domain_members.push(Vec::new());
+            }
+            let type_id = CfdTypeId::new(index);
+            type_domain[index] = domain_id;
+            domain_members[domain_id.index()].push(type_id);
+            ancestors_by_type[index] = Self::ancestor_type_ids(types, &type_id_by_name, type_name);
+        }
+
+        CfdDomainIndex::new(
+            type_id_by_name,
+            type_names,
+            type_domain,
+            domain_members,
+            ancestors_by_type,
+        )
+    }
+
+    fn domain_root_name(types: &BTreeMap<String, TypeMeta>, type_name: &str) -> String {
+        let mut current = type_name;
+        while let Some(parent) = types.get(current).and_then(|meta| meta.parent.as_deref()) {
+            current = parent;
+        }
+        current.to_string()
+    }
+
+    fn ancestor_type_ids(
+        types: &BTreeMap<String, TypeMeta>,
+        type_id_by_name: &BTreeMap<String, CfdTypeId>,
+        type_name: &str,
+    ) -> Vec<CfdTypeId> {
+        let mut out = Vec::new();
+        let mut current = type_name;
+        while let Some(parent) = types.get(current).and_then(|meta| meta.parent.as_deref()) {
+            if let Some(type_id) = type_id_by_name.get(parent).copied() {
+                out.push(type_id);
+            }
+            current = parent;
+        }
+        out
     }
 
     pub(crate) fn full_fields(&self, type_name: &str) -> &[FieldMeta] {
@@ -151,6 +216,18 @@ impl SchemaView {
         self.types
             .get(type_name)
             .is_some_and(|meta| meta.is_singleton)
+    }
+
+    pub(crate) fn domain_index(&self) -> &CfdDomainIndex {
+        &self.domain_index
+    }
+
+    pub(crate) fn type_id(&self, type_name: &str) -> Option<CfdTypeId> {
+        self.domain_index.type_id(type_name)
+    }
+
+    pub(crate) fn type_domain_id(&self, type_name: &str) -> Option<CfdDomainId> {
+        self.domain_index.type_domain_by_name(type_name)
     }
 }
 

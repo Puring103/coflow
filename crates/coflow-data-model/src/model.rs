@@ -12,6 +12,9 @@ use std::hash::{Hash, Hasher};
 pub struct CfdDataModel {
     pub(crate) tables: BTreeMap<String, CfdTable>,
     pub(crate) inheritance_index: BTreeMap<String, CfdPolymorphicIndex>,
+    pub(crate) domain_index: CfdDomainIndex,
+    pub(crate) record_by_type_key: BTreeMap<(CfdTypeId, String), CfdRecordId>,
+    pub(crate) record_by_domain_key: BTreeMap<(CfdDomainId, String), CfdRecordId>,
     pub(crate) records: Vec<CfdRecord>,
     /// Cache of resolved `CfdValue::Ref` sites in the model. Populated by the
     /// compiler in `model.build()`. Look up the id of a ref's target via
@@ -62,8 +65,14 @@ impl CfdDataModel {
     /// Works for both concrete tables and polymorphic (abstract/inherited) ranges.
     #[must_use]
     pub fn lookup(&self, type_name: &str, key: &str) -> Option<CfdRecordId> {
-        if let Some(index) = self.inheritance_index.get(type_name) {
-            return index.records.get(key).copied();
+        if let Some(domain_id) = self.type_domain_id(type_name) {
+            if let Some(record_id) = self.record_by_domain_key(domain_id, key) {
+                if self.record(record_id).is_some_and(|record| {
+                    self.type_is_assignable_by_name(&record.actual_type, type_name)
+                }) {
+                    return Some(record_id);
+                }
+            }
         }
         self.tables
             .get(type_name)
@@ -75,6 +84,72 @@ impl CfdDataModel {
     #[must_use]
     pub fn polymorphic_index(&self, type_name: &str) -> Option<&CfdPolymorphicIndex> {
         self.inheritance_index.get(type_name)
+    }
+
+    /// Returns the stable runtime id for a schema object type name.
+    #[must_use]
+    pub fn type_id(&self, type_name: &str) -> Option<CfdTypeId> {
+        self.domain_index.type_id(type_name)
+    }
+
+    /// Returns the schema object type name for a runtime type id.
+    #[must_use]
+    pub fn type_name(&self, type_id: CfdTypeId) -> Option<&str> {
+        self.domain_index.type_name(type_id)
+    }
+
+    /// Returns the inheritance connected-component domain for a type id.
+    #[must_use]
+    pub fn type_domain(&self, type_id: CfdTypeId) -> Option<CfdDomainId> {
+        self.domain_index.type_domain(type_id)
+    }
+
+    /// Returns ancestors from nearest parent to root for a schema object type.
+    #[must_use]
+    pub fn type_ancestors(&self, type_id: CfdTypeId) -> Option<&[CfdTypeId]> {
+        self.domain_index.type_ancestors(type_id)
+    }
+
+    /// Returns the inheritance connected-component domain for a type name.
+    #[must_use]
+    pub fn type_domain_id(&self, type_name: &str) -> Option<CfdDomainId> {
+        self.domain_index.type_domain_by_name(type_name)
+    }
+
+    /// Returns all schema object types in an inheritance connected component.
+    #[must_use]
+    pub fn domain_members(&self, domain_id: CfdDomainId) -> Option<&[CfdTypeId]> {
+        self.domain_index.domain_members(domain_id)
+    }
+
+    /// Looks up a record by its actual type and key.
+    #[must_use]
+    pub fn record_by_type_key(&self, type_name: &str, key: &str) -> Option<CfdRecordId> {
+        let type_id = self.type_id(type_name)?;
+        self.record_by_type_key
+            .get(&(type_id, key.to_string()))
+            .copied()
+    }
+
+    /// Looks up a record by inheritance connected-component domain and key.
+    #[must_use]
+    pub fn record_by_domain_key(&self, domain_id: CfdDomainId, key: &str) -> Option<CfdRecordId> {
+        self.record_by_domain_key
+            .get(&(domain_id, key.to_string()))
+            .copied()
+    }
+
+    fn type_is_assignable_by_name(&self, actual_type: &str, expected_type: &str) -> bool {
+        let Some(actual_type_id) = self.type_id(actual_type) else {
+            return false;
+        };
+        let Some(expected_type_id) = self.type_id(expected_type) else {
+            return false;
+        };
+        actual_type_id == expected_type_id
+            || self
+                .type_ancestors(actual_type_id)
+                .is_some_and(|ancestors| ancestors.contains(&expected_type_id))
     }
 
     pub fn tables(&self) -> impl Iterator<Item = (&str, &CfdTable)> {
@@ -189,6 +264,98 @@ pub struct CfdTable {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CfdPolymorphicIndex {
     pub records: BTreeMap<String, CfdRecordId>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct CfdTypeId(usize);
+
+impl CfdTypeId {
+    #[must_use]
+    pub(crate) const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    #[must_use]
+    pub fn index(self) -> usize {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct CfdDomainId(usize);
+
+impl CfdDomainId {
+    #[must_use]
+    pub(crate) const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    #[must_use]
+    pub fn index(self) -> usize {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CfdDomainIndex {
+    pub(crate) type_id_by_name: BTreeMap<String, CfdTypeId>,
+    pub(crate) type_names: Vec<String>,
+    pub(crate) type_domain: Vec<CfdDomainId>,
+    pub(crate) domain_members: Vec<Vec<CfdTypeId>>,
+    pub(crate) ancestors_by_type: Vec<Vec<CfdTypeId>>,
+}
+
+impl CfdDomainIndex {
+    #[must_use]
+    pub(crate) fn new(
+        type_id_by_name: BTreeMap<String, CfdTypeId>,
+        type_names: Vec<String>,
+        type_domain: Vec<CfdDomainId>,
+        domain_members: Vec<Vec<CfdTypeId>>,
+        ancestors_by_type: Vec<Vec<CfdTypeId>>,
+    ) -> Self {
+        Self {
+            type_id_by_name,
+            type_names,
+            type_domain,
+            domain_members,
+            ancestors_by_type,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn type_id(&self, type_name: &str) -> Option<CfdTypeId> {
+        self.type_id_by_name.get(type_name).copied()
+    }
+
+    #[must_use]
+    pub(crate) fn type_name(&self, type_id: CfdTypeId) -> Option<&str> {
+        self.type_names.get(type_id.index()).map(String::as_str)
+    }
+
+    #[must_use]
+    pub(crate) fn type_domain(&self, type_id: CfdTypeId) -> Option<CfdDomainId> {
+        self.type_domain.get(type_id.index()).copied()
+    }
+
+    #[must_use]
+    pub(crate) fn type_domain_by_name(&self, type_name: &str) -> Option<CfdDomainId> {
+        self.type_domain(self.type_id(type_name)?)
+    }
+
+    #[must_use]
+    pub(crate) fn domain_members(&self, domain_id: CfdDomainId) -> Option<&[CfdTypeId]> {
+        self.domain_members
+            .get(domain_id.index())
+            .map(Vec::as_slice)
+    }
+
+    #[must_use]
+    pub(crate) fn type_ancestors(&self, type_id: CfdTypeId) -> Option<&[CfdTypeId]> {
+        self.ancestors_by_type
+            .get(type_id.index())
+            .map(Vec::as_slice)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
