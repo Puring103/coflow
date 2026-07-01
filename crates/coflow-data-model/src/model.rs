@@ -20,14 +20,14 @@ pub struct CfdDataModel {
     pub(crate) ref_by_site: BTreeMap<RefSite, RefEdgeId>,
     pub(crate) ref_by_host: BTreeMap<CfdRecordId, Vec<RefEdgeId>>,
     pub(crate) ref_by_target: BTreeMap<CfdRecordId, Vec<RefEdgeId>>,
-    /// Compatibility cache for callers that only need a site-to-target lookup.
-    /// Primary ref metadata lives in `ref_edges` and its secondary indexes.
+    /// Compatibility cache for legacy callers that only need a site-to-target
+    /// lookup. Public APIs derive from `ref_edges`; this map is kept in sync
+    /// during index construction and should not gain new call sites.
     pub(crate) ref_index: BTreeMap<RefSite, CfdRecordId>,
 }
 
 /// Logical address of a `CfdValue::Ref` instance inside the model: the host
-/// record and the `CfdPath` to the ref. Used as the key of the model's
-/// `ref_index`.
+/// record and the `CfdPath` to the ref.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RefSite {
     pub host: CfdRecordId,
@@ -214,9 +214,7 @@ impl CfdDataModel {
 
     /// Look up the resolved target id for the `CfdValue::Ref` at `site`.
     ///
-    /// Returns `None` when no ref lives at that path (the caller asked about
-    /// a non-ref field) or when the ref's `(target_type, target_key)` was
-    /// not resolvable when the model was built.
+    /// Returns `None` when no ref lives at that path.
     #[must_use]
     pub fn resolve_ref(&self, site: &RefSite) -> Option<CfdRecordId> {
         self.ref_edge_at(site)
@@ -229,14 +227,12 @@ impl CfdDataModel {
     /// [`CfdDataModel::resolve_ref`] with a freshly constructed `RefSite`.
     #[must_use]
     pub fn resolve_ref_at(&self, host: CfdRecordId, path: &CfdPath) -> Option<CfdRecordId> {
-        self.ref_index
-            .get(&RefSite::new(host, path.clone()))
-            .copied()
+        self.resolve_ref(&RefSite::new(host, path.clone()))
     }
 
     /// Iterate every resolved `CfdValue::Ref` site in the model.
     pub fn ref_sites(&self) -> impl Iterator<Item = (&RefSite, CfdRecordId)> {
-        self.ref_index.iter().map(|(site, target)| (site, *target))
+        self.ref_edges.iter().map(|edge| (&edge.site, edge.target))
     }
 
     #[must_use]

@@ -44,7 +44,7 @@ fn check_runner_accepts_virtual_ids_record_refs_and_quantifiers() {
             }
 
             type Drop {
-                item: Item;
+                item: &Item;
                 weights: [int];
                 resistances: {Rarity: float};
 
@@ -74,7 +74,7 @@ fn check_runner_accepts_virtual_ids_record_refs_and_quantifiers() {
         "drop_1",
         "Drop",
         [
-            ("item", CfdInputValue::record_ref("Item", "item_1")),
+            ("item", CfdInputValue::record_ref("item_1")),
             (
                 "weights",
                 CfdInputValue::Array(vec![
@@ -115,7 +115,7 @@ fn check_diagnostics_use_specific_codes_for_scalar_false_conditions() {
                 negated: bool;
                 left: bool;
                 right: bool;
-                reward: Reward;
+                reward: &Reward;
                 optional: int? = null;
                 tags: [string];
                 name: string;
@@ -150,7 +150,7 @@ fn check_diagnostics_use_specific_codes_for_scalar_false_conditions() {
             ("negated", CfdInputValue::from(true)),
             ("left", CfdInputValue::from(false)),
             ("right", CfdInputValue::from(false)),
-            ("reward", CfdInputValue::record_ref("Reward", "reward_1")),
+            ("reward", CfdInputValue::record_ref("reward_1")),
             (
                 "tags",
                 CfdInputValue::Array(vec![CfdInputValue::from("mob"), CfdInputValue::from("mob")]),
@@ -754,8 +754,8 @@ fn top_level_ref_targets_run_checks_once_by_identity() {
             }
 
             type Holder {
-                first: Target;
-                second: Target;
+                first: &Target;
+                second: &Target;
                 check { first.id == second.id; }
             }
         "#,
@@ -771,8 +771,8 @@ fn top_level_ref_targets_run_checks_once_by_identity() {
         "holder_1",
         "Holder",
         [
-            ("first", CfdInputValue::record_ref("Target", "target_1")),
-            ("second", CfdInputValue::record_ref("Target", "target_1")),
+            ("first", CfdInputValue::record_ref("target_1")),
+            ("second", CfdInputValue::record_ref("target_1")),
         ],
     );
     let model = build_model(&schema, builder);

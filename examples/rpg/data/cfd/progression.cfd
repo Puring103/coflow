@@ -2,10 +2,10 @@
 
 DropTable {
   drop_goblin_warrior {
-    monster: @Monster.goblin_warrior,
+    monster: &goblin_warrior,
     conditions: { min_level: 1, required_element: Physical, flags: Damage },
     rewards: [
-      ItemReward { key: reward_goblin_sword, item: @Equipment.iron_sword, count: 1 },
+      ItemReward { key: reward_goblin_sword, item: &iron_sword, count: 1 },
       CurrencyReward { key: reward_goblin_gold, count: 1, currency: gold, amount: 35 },
     ],
     weights: [70, 30],
@@ -21,38 +21,38 @@ DropTable {
   }
 
   drop_fire_mage {
-    monster: @Monster.fire_mage,
+    monster: &fire_mage,
     conditions: { min_level: 12, required_element: Fire, flags: Damage },
     rewards: [
-      ItemReward { key: reward_mage_staff, item: @Equipment.flame_staff, count: 1 },
+      ItemReward { key: reward_mage_staff, item: &flame_staff, count: 1 },
       CurrencyReward { key: reward_mage_gold, count: 1, currency: gold, amount: 120 },
-      SkillUnlockReward { key: reward_mage_skill, skill: @Skill.fireball, required_level: 12 },
+      SkillUnlockReward { key: reward_mage_skill, skill: &fireball, required_level: 12 },
     ],
     weights: [25, 65, 10],
     bonus_by_rarity: { Common: 0, Rare: 15, Epic: 30 },
     currency_curve: { 1: 25, 18: 90 },
     guaranteed_reward: ItemReward {
       key: guaranteed_mage_staff,
-      item: @Equipment.flame_staff,
+      item: &flame_staff,
       count: 1,
     },
     notes: ["caster", "fire"],
   }
 
   drop_ancient_dragon {
-    monster: @Monster.ancient_dragon,
+    monster: &ancient_dragon,
     conditions: { min_level: 45, required_element: Fire, flags: Ultimate },
     rewards: [
-      ItemReward { key: reward_dragon_feather, item: @Item.phoenix_feather, count: 2 },
+      ItemReward { key: reward_dragon_feather, item: &phoenix_feather, count: 2 },
       CurrencyReward { key: reward_dragon_gold, count: 1, currency: gold, amount: 1000 },
-      SkillUnlockReward { key: reward_dragon_meteor, skill: @Skill.meteor, required_level: 45 },
+      SkillUnlockReward { key: reward_dragon_meteor, skill: &meteor, required_level: 45 },
     ],
     weights: [40, 45, 15],
     bonus_by_rarity: { Common: 0, Rare: 30, Epic: 80, Legendary: 120 },
     currency_curve: { 1: 100, 50: 900 },
     guaranteed_reward: ItemReward {
       key: guaranteed_dragon_scale,
-      item: @Item.dragon_scale,
+      item: &dragon_scale,
       count: 1,
     },
     notes: ["raid", "dragon", "endgame"],
@@ -61,56 +61,56 @@ DropTable {
 
 Stage {
   stage_forest_road {
-    name_text: @Text.stage_forest_road_name,
+    name_text: &stage_forest_road_name,
     kind: Story,
     unlock_level: 1,
     recommended_power: 80,
     positions: [{ x: 9.0, y: 4.0 }],
     spawns: [
-      { monster: @Monster.goblin_warrior, count: 3, level_offset: 0, weight: 100 },
+      { monster: &goblin_warrior, count: 3, level_offset: 0, weight: 100 },
     ],
-    drop_table: @DropTable.drop_goblin_warrior,
+    drop_table: &drop_goblin_warrior,
     first_clear_reward: ItemReward {
       key: first_clear_forest_blade,
-      item: @Equipment.iron_sword,
+      item: &iron_sword,
       count: 1,
     },
     modifiers: { stamina: 6, time_limit: 300 },
   }
 
   stage_arcane_tower {
-    name_text: @Text.stage_arcane_tower_name,
+    name_text: &stage_arcane_tower_name,
     kind: Elite,
     unlock_level: 12,
     recommended_power: 260,
     positions: [{ x: 20.0, y: -7.0 }, { x: 25.0, y: -9.0 }],
     spawns: [
-      { monster: @Monster.fire_mage, count: 1, level_offset: 0, weight: 70 },
-      { monster: @Monster.goblin_warrior, count: 2, level_offset: 3, weight: 30 },
+      { monster: &fire_mage, count: 1, level_offset: 0, weight: 70 },
+      { monster: &goblin_warrior, count: 2, level_offset: 3, weight: 30 },
     ],
-    drop_table: @DropTable.drop_fire_mage,
+    drop_table: &drop_fire_mage,
     first_clear_reward: SkillUnlockReward {
       key: first_clear_fireball,
-      skill: @Skill.fireball,
+      skill: &fireball,
       required_level: 12,
     },
     modifiers: { stamina: 12, time_limit: 420 },
   }
 
   stage_dragon_peak {
-    name_text: @Text.stage_dragon_peak_name,
+    name_text: &stage_dragon_peak_name,
     kind: Raid,
     unlock_level: 45,
     recommended_power: 900,
     positions: [{ x: 61.0, y: 79.0 }, { x: 80.0, y: 90.0 }],
     spawns: [
-      { monster: @Monster.ancient_dragon, count: 1, level_offset: 0, weight: 100 },
-      { monster: @Monster.fire_mage, count: 2, level_offset: 5, weight: 20 },
+      { monster: &ancient_dragon, count: 1, level_offset: 0, weight: 100 },
+      { monster: &fire_mage, count: 2, level_offset: 5, weight: 20 },
     ],
-    drop_table: @DropTable.drop_ancient_dragon,
+    drop_table: &drop_ancient_dragon,
     first_clear_reward: ItemReward {
       key: first_clear_dragon_scale,
-      item: @Item.dragon_scale,
+      item: &dragon_scale,
       count: 1,
     },
     modifiers: { stamina: 30, time_limit: 900, raid_size: 4 },
@@ -120,19 +120,19 @@ Stage {
 Quest {
   quest_first_blade {
     kind: Story,
-    title_text: @Text.quest_first_blade_title,
+    title_text: &quest_first_blade_title,
     title: "First Blade",
     min_level: 1,
-    stage: @Stage.stage_forest_road,
-    target_monster: @Monster.goblin_warrior,
-    reward_item: @Equipment.iron_sword,
+    stage: &stage_forest_road,
+    target_monster: &goblin_warrior,
+    reward_item: &iron_sword,
     prerequisites: [],
     objectives: [
       { key: defeat_goblins, target_count: 3, counters: { kill: 3, collect: 0 } },
     ],
     reward_preview: ItemReward {
       key: preview_first_blade,
-      item: @Equipment.iron_sword,
+      item: &iron_sword,
       count: 1,
     },
     availability: { start_day: 1, end_day: 30 },
@@ -148,12 +148,12 @@ Quest {
 
   quest_mage_trial {
     kind: Side,
-    title_text: @Text.quest_mage_trial_title,
+    title_text: &quest_mage_trial_title,
     title: "Mage Trial",
     min_level: 12,
-    stage: @Stage.stage_arcane_tower,
-    target_monster: @Monster.fire_mage,
-    reward_item: @Equipment.flame_staff,
+    stage: &stage_arcane_tower,
+    target_monster: &fire_mage,
+    reward_item: &flame_staff,
     prerequisites: ["quest_first_blade"],
     objectives: [
       { key: defeat_mage, target_count: 1, counters: { kill: 1 } },
@@ -161,7 +161,7 @@ Quest {
     ],
     reward_preview: SkillUnlockReward {
       key: preview_mage_skill,
-      skill: @Skill.fireball,
+      skill: &fireball,
       required_level: 12,
     },
     availability: { start_day: 5, end_day: 45 },
@@ -174,12 +174,12 @@ Quest {
 
   quest_dragon_raid {
     kind: Raid,
-    title_text: @Text.quest_dragon_raid_title,
+    title_text: &quest_dragon_raid_title,
     title: "Dragon Raid",
     min_level: 45,
-    stage: @Stage.stage_dragon_peak,
-    target_monster: @Monster.ancient_dragon,
-    reward_item: @Item.dragon_scale,
+    stage: &stage_dragon_peak,
+    target_monster: &ancient_dragon,
+    reward_item: &dragon_scale,
     prerequisites: ["quest_first_blade", "quest_mage_trial"],
     objectives: [
       { key: break_wings, target_count: 2, counters: { kill: 1, collect: 2 } },
@@ -187,7 +187,7 @@ Quest {
     ],
     reward_preview: ItemReward {
       key: preview_dragon_scale,
-      item: @Item.dragon_scale,
+      item: &dragon_scale,
       count: 1,
     },
     availability: { start_day: 20, end_day: 90 },
@@ -208,14 +208,14 @@ Quest {
 
 Shop {
   shop_starter {
-    name_text: @Text.shop_starter_name,
+    name_text: &shop_starter_name,
     kind: General,
     open_day: 1,
     close_day: 60,
     stage_gate: null,
     entries: [
       {
-        item: @Item.healing_potion,
+        item: &healing_potion,
         price: 35,
         stock: 20,
         unlock_level: 1,
@@ -223,11 +223,11 @@ Shop {
         discount_by_day: { 1: 0, 7: 10 },
       },
       {
-        item: @Equipment.iron_sword,
+        item: &iron_sword,
         price: 120,
         stock: 1,
         unlock_level: 1,
-        required_quest: @Quest.quest_first_blade,
+        required_quest: &quest_first_blade,
         discount_by_day: { 1: 0 },
       },
     ],
@@ -235,26 +235,26 @@ Shop {
   }
 
   shop_arcane {
-    name_text: @Text.shop_arcane_name,
+    name_text: &shop_arcane_name,
     kind: Event,
     open_day: 5,
     close_day: 70,
-    stage_gate: @Stage.stage_arcane_tower,
+    stage_gate: &stage_arcane_tower,
     entries: [
       {
-        item: @Equipment.flame_staff,
+        item: &flame_staff,
         price: 760,
         stock: 1,
         unlock_level: 12,
-        required_quest: @Quest.quest_mage_trial,
+        required_quest: &quest_mage_trial,
         discount_by_day: { 1: 0, 14: 15 },
       },
       {
-        item: @Item.phoenix_feather,
+        item: &phoenix_feather,
         price: 1800,
         stock: 5,
         unlock_level: 18,
-        required_quest: @Quest.quest_mage_trial,
+        required_quest: &quest_mage_trial,
         discount_by_day: { 1: 0 },
       },
     ],
@@ -262,26 +262,26 @@ Shop {
   }
 
   shop_raid {
-    name_text: @Text.shop_raid_name,
+    name_text: &shop_raid_name,
     kind: Raid,
     open_day: 20,
     close_day: 100,
-    stage_gate: @Stage.stage_dragon_peak,
+    stage_gate: &stage_dragon_peak,
     entries: [
       {
-        item: @Item.dragon_scale,
+        item: &dragon_scale,
         price: 5200,
         stock: 4,
         unlock_level: 45,
-        required_quest: @Quest.quest_dragon_raid,
+        required_quest: &quest_dragon_raid,
         discount_by_day: { 1: 0 },
       },
       {
-        item: @Equipment.meteor_staff,
+        item: &meteor_staff,
         price: 2600,
         stock: 1,
         unlock_level: 45,
-        required_quest: @Quest.quest_dragon_raid,
+        required_quest: &quest_dragon_raid,
         discount_by_day: { 1: 0, 30: 20 },
       },
     ],

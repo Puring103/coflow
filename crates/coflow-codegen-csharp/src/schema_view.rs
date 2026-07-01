@@ -357,8 +357,7 @@ impl FieldType {
             CftSchemaTypeRef::Bool => Self::Bool,
             CftSchemaTypeRef::String => Self::String,
             CftSchemaTypeRef::Named(name) if enums.contains(name) => Self::Enum(name.clone()),
-            CftSchemaTypeRef::Named(name) => Self::Type(name.clone()),
-            CftSchemaTypeRef::Ref(name) => Self::Type(name.clone()),
+            CftSchemaTypeRef::Named(name) | CftSchemaTypeRef::Ref(name) => Self::Type(name.clone()),
             CftSchemaTypeRef::Array(inner) => {
                 Self::Array(Box::new(Self::from_schema(inner, enums)))
             }

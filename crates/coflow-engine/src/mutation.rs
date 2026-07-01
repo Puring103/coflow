@@ -721,8 +721,7 @@ fn default_zero_for_ty_inner(
         CftSchemaTypeRef::Float => Ok(CfdValue::Float(0.0)),
         CftSchemaTypeRef::Bool => Ok(CfdValue::Bool(false)),
         CftSchemaTypeRef::String => Ok(CfdValue::String(String::new())),
-        CftSchemaTypeRef::Ref(_) => Ok(CfdValue::Null),
-        CftSchemaTypeRef::Nullable(_) => Ok(CfdValue::Null),
+        CftSchemaTypeRef::Ref(_) | CftSchemaTypeRef::Nullable(_) => Ok(CfdValue::Null),
         CftSchemaTypeRef::Array(_) => Ok(CfdValue::Array(Vec::new())),
         CftSchemaTypeRef::Dict(_, _) => Ok(CfdValue::Dict(Vec::new())),
         CftSchemaTypeRef::Named(name) if schema.has_enum(name) => {
@@ -862,10 +861,7 @@ fn coerce_json_value(
         CftSchemaTypeRef::Dict(key, item) => coerce_json_dict_value(session, key, item, value),
         CftSchemaTypeRef::Ref(target_type) => value
             .as_str()
-            .map(|key| CfdValue::Ref {
-                target_type: target_type.clone(),
-                target_key: key.to_string(),
-            })
+            .map(|key| CfdValue::Ref(key.to_string()))
             .ok_or_else(|| one_value_error(format!("expected record key for `&{target_type}`"))),
         CftSchemaTypeRef::Named(name) if session.schema.has_enum(name) => {
             let variant = value
@@ -920,56 +916,15 @@ fn coerce_cfd_value(
             record.fields = coerce_cfd_object_fields(session, &record.actual_type, record.fields)?;
             Ok(CfdValue::Object(Box::new(record)))
         }
-        (
-            CftSchemaTypeRef::Ref(expected_type),
-            CfdValue::Ref {
-                target_type,
-                target_key,
-            },
-        ) => {
+        (CftSchemaTypeRef::Ref(_expected_type), CfdValue::Ref(target_key)) => {
             if target_key.is_empty() {
                 return Err(one_ref_error("reference key must not be empty"));
             }
-            if !session.schema.has_type(&target_type) {
-                return Err(one_ref_error(format!(
-                    "unknown reference type `{target_type}`"
-                )));
-            }
-            if !session.schema.is_assignable(&target_type, expected_type) {
-                return Err(one_ref_error(format!(
-                    "reference type `{target_type}` is not assignable to `{expected_type}`"
-                )));
-            }
-            Ok(CfdValue::Ref {
-                target_type,
-                target_key,
-            })
+            Ok(CfdValue::Ref(target_key))
         }
-        (
-            CftSchemaTypeRef::Named(expected_type),
-            CfdValue::Ref {
-                target_type,
-                target_key,
-            },
-        ) => {
-            if target_key.is_empty() {
-                return Err(one_ref_error("reference key must not be empty"));
-            }
-            if !session.schema.has_type(&target_type) {
-                return Err(one_ref_error(format!(
-                    "unknown reference type `{target_type}`"
-                )));
-            }
-            if !session.schema.is_assignable(&target_type, expected_type) {
-                return Err(one_ref_error(format!(
-                    "reference type `{target_type}` is not assignable to `{expected_type}`"
-                )));
-            }
-            Ok(CfdValue::Ref {
-                target_type,
-                target_key,
-            })
-        }
+        (CftSchemaTypeRef::Named(_), CfdValue::Ref(_)) => Err(one_value_error(
+            "inline object fields do not accept record refs",
+        )),
         _ => Err(one_value_error("value does not match expected schema type")),
     }
 }
@@ -1008,34 +963,20 @@ fn validate_value_shape(
             }
             Ok(())
         }
-        (CftSchemaTypeRef::Named(expected_type), CfdValue::Ref { .. }) => {
-            if mode == FieldMode::Inline {
-                return Err(one_shape_error("@inline field does not allow record refs"));
-            }
-            if type_is_singleton(&session.schema, expected_type) {
-                return Ok(());
-            }
-            Ok(())
-        }
-        (
-            CftSchemaTypeRef::Ref(expected_type),
-            CfdValue::Ref {
-                target_type,
-                target_key,
-            },
-        ) => {
+        (CftSchemaTypeRef::Named(expected_type), CfdValue::Ref(target_key))
+            if type_is_singleton(&session.schema, expected_type) =>
+        {
             if target_key.is_empty() {
                 return Err(one_ref_error("reference key must not be empty"));
             }
-            if !session.schema.has_type(target_type) {
-                return Err(one_ref_error(format!(
-                    "unknown reference type `{target_type}`"
-                )));
-            }
-            if !session.schema.is_assignable(target_type, expected_type) {
-                return Err(one_ref_error(format!(
-                    "reference type `{target_type}` is not assignable to `{expected_type}`"
-                )));
+            Ok(())
+        }
+        (CftSchemaTypeRef::Named(_), CfdValue::Ref(_)) => Err(one_shape_error(
+            "inline object fields do not accept record refs",
+        )),
+        (CftSchemaTypeRef::Ref(_expected_type), CfdValue::Ref(target_key)) => {
+            if target_key.is_empty() {
+                return Err(one_ref_error("reference key must not be empty"));
             }
             Ok(())
         }
@@ -1310,8 +1251,8 @@ fn coerce_json_object_fields(
 }
 
 fn coerce_json_ref_value(
-    session: &ProjectSession,
-    expected_type: &str,
+    _session: &ProjectSession,
+    _expected_type: &str,
     value: &Value,
 ) -> Result<Option<CfdValue>, DiagnosticSet> {
     let Some(object) = value.as_object() else {
@@ -1323,48 +1264,36 @@ fn coerce_json_ref_value(
     if object.len() != 1 {
         return Err(one_ref_error("`$ref` object cannot include other keys"));
     }
-    let (target_type, target_key) = parse_ref_target(raw_ref)?;
+    let target_key = parse_ref_key(raw_ref)?;
     if target_key.is_empty() {
         return Err(one_ref_error("reference key must not be empty"));
     }
-    if !session.schema.has_type(&target_type) {
-        return Err(one_ref_error(format!(
-            "unknown reference type `{target_type}`"
-        )));
-    }
-    if !session.schema.is_assignable(&target_type, expected_type) {
-        return Err(one_ref_error(format!(
-            "reference type `{target_type}` is not assignable to `{expected_type}`"
-        )));
-    }
-    Ok(Some(CfdValue::Ref {
-        target_type,
-        target_key,
-    }))
+    Ok(Some(CfdValue::Ref(target_key)))
 }
 
-fn parse_ref_target(value: &Value) -> Result<(String, String), DiagnosticSet> {
+fn parse_ref_key(value: &Value) -> Result<String, DiagnosticSet> {
     if let Some(text) = value.as_str() {
-        let Some((target_type, target_key)) = text.split_once('.') else {
-            return Err(one_ref_error("string `$ref` must be written as `Type.key`"));
-        };
-        if target_type.is_empty() || target_key.is_empty() {
-            return Err(one_ref_error("string `$ref` must be written as `Type.key`"));
+        if text.is_empty() {
+            return Err(one_ref_error("string `$ref` must not be empty"));
         }
-        return Ok((target_type.to_string(), target_key.to_string()));
+        if text.contains('.') {
+            return Err(one_ref_error(
+                "typed `$ref` strings are no longer supported; use `key`",
+            ));
+        }
+        return Ok(text.to_string());
     }
     let object = value
         .as_object()
         .ok_or_else(|| one_ref_error("`$ref` must be a string or object"))?;
-    let target_type = object
-        .get("type")
-        .and_then(Value::as_str)
-        .ok_or_else(|| one_ref_error("object `$ref` is missing string `type`"))?;
     let target_key = object
         .get("key")
         .and_then(Value::as_str)
         .ok_or_else(|| one_ref_error("object `$ref` is missing string `key`"))?;
-    Ok((target_type.to_string(), target_key.to_string()))
+    if object.len() != 1 {
+        return Err(one_ref_error("object `$ref` only supports string `key`"));
+    }
+    Ok(target_key.to_string())
 }
 
 #[derive(Debug, Clone)]

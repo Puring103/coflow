@@ -88,13 +88,13 @@ pub fn write_acyclic_csharp_project(root: &std::path::Path, data_format: &str) {
 
             type Item {
                 display_name: string;
-                reward: Reward;
+                reward: &Reward;
                 tags: [string] = [];
             }
 
             type Bundle {
-                item: Item;
-                maybe_reward: Reward?;
+                item: &Item;
+                maybe_reward: &Reward?;
             }
 
             type EmptyThing {

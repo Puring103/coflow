@@ -23,7 +23,7 @@ type Item {
 abstract type Reward {}
 
 type ItemReward : Reward {
-  item: Item;
+  item: &Item;
   count: int = 1;
 }
 
@@ -45,8 +45,8 @@ type Monster {
 }
 
 type Encounter {
-  monster: Monster;
-  first_reward: Reward;
-  featured_item: Item;
+  monster: &Monster;
+  first_reward: &Reward;
+  featured_item: &Item;
   weakness_hint: float;
 }

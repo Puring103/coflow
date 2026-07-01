@@ -12,7 +12,7 @@ use coflow_api::{
 };
 use coflow_cft::{CftContainer, ModuleId};
 use coflow_data_model::CfdDataModel;
-use coflow_data_model::{CfdInputRefIndex, CfdInputValue, CfdRefPathSegment, CfdValue};
+use coflow_data_model::{CfdInputValue, CfdValue};
 use coflow_loader_cfd::{
     load_cfd_model, parse_cfd_input_records, CfdLoader, CfdTextErrorCode, CfdTextLoadError,
     CFD_LOADER_DESCRIPTOR,
@@ -62,15 +62,12 @@ fn records_use_colon_blocks_and_do_not_emit_id_fields() -> TestResult {
 }
 
 #[test]
-fn typed_refs_and_direct_ref_shorthand_follow_latest_model() -> TestResult {
+fn ref_type_fields_parse_key_only_refs() -> TestResult {
     let schema = compile_schema(
         r#"
             type Item { name: string; }
-            type Reward { item: Item; count: int; }
-            type DropTable { rewards: [Reward]; }
             type Holder {
-                item: Item;
-                first_item: Item;
+                item: &Item;
             }
         "#,
     );
@@ -80,46 +77,23 @@ fn typed_refs_and_direct_ref_shorthand_follow_latest_model() -> TestResult {
         r#"
             sword: Item { name: "Iron Sword" }
 
-            drop_1: DropTable {
-                rewards: [
-                    { item: &sword, count: 2 },
-                ],
-            }
-
             holder: Holder {
                 item: &sword,
-                first_item: @DropTable.drop_1.rewards[0].item,
             }
         "#,
     )?;
 
     assert_eq!(
-        records[2].fields.get("item"),
-        Some(&CfdInputValue::record_ref("Item", "sword"))
-    );
-    assert_eq!(
-        records[2].fields.get("first_item"),
-        Some(&CfdInputValue::path_ref(
-            "DropTable",
-            "drop_1",
-            [
-                CfdRefPathSegment::Field("rewards".to_string()),
-                CfdRefPathSegment::Index(CfdInputRefIndex::Int(0)),
-                CfdRefPathSegment::Field("item".to_string()),
-            ],
-        ))
+        records[1].fields.get("item"),
+        Some(&CfdInputValue::record_ref("sword"))
     );
 
     let model = load_cfd_model(
         &schema,
         r#"
             sword: Item { name: "Iron Sword" }
-            drop_1: DropTable {
-                rewards: [{ item: &sword, count: 2 }],
-            }
             holder: Holder {
                 item: &sword,
-                first_item: @DropTable.drop_1.rewards[0].item,
             }
         "#,
     )?;
@@ -129,17 +103,7 @@ fn typed_refs_and_direct_ref_shorthand_follow_latest_model() -> TestResult {
     let holder = model.record(holder_id).expect("holder");
     assert_eq!(
         holder.field("item"),
-        Some(&CfdValue::Ref {
-            target_type: "Item".to_string(),
-            target_key: "sword".to_string(),
-        })
-    );
-    assert_eq!(
-        holder.field("first_item"),
-        Some(&CfdValue::Ref {
-            target_type: "Item".to_string(),
-            target_key: "sword".to_string(),
-        })
+        Some(&CfdValue::Ref("sword".to_string()))
     );
     Ok(())
 }
@@ -149,7 +113,7 @@ fn cfd_rejects_legacy_and_bare_object_references() {
     let schema = compile_schema(
         r#"
             type Item { name: string; }
-            type Holder { item: Item; }
+            type Holder { item: &Item; }
         "#,
     );
 
@@ -181,7 +145,7 @@ fn cfd_rejects_legacy_and_bare_object_references() {
         "#,
     )
     .expect_err("object references must use markers");
-    assert_has_text_code(&bare, CfdTextErrorCode::ReferenceNeedsMarker);
+    assert_has_text_code(&bare, CfdTextErrorCode::Syntax);
 }
 
 #[test]
@@ -217,7 +181,7 @@ fn grouped_polymorphic_records_can_choose_concrete_types() -> TestResult {
             type Item { name: string; }
             abstract type Reward {}
             type CurrencyReward : Reward { amount: int; }
-            type ItemReward : Reward { item: Item; count: int; }
+            type ItemReward : Reward { item: &Item; count: int; }
         "#,
     );
 
@@ -243,21 +207,14 @@ fn grouped_polymorphic_records_can_choose_concrete_types() -> TestResult {
 }
 
 #[test]
-fn cfd_enforces_ref_inline_modes_and_singleton_ref_only_values() -> TestResult {
+fn cfd_enforces_ref_and_inline_types() -> TestResult {
     let schema = compile_schema(
         r#"
-            @singleton
-            type GameConfig { value: int; }
-
             type Item { name: string; }
 
             type Holder {
-                @ref
-                ref_item: Item;
-                @inline
+                ref_item: &Item;
                 inline_item: Item;
-                config: GameConfig;
-                configs: [GameConfig];
             }
         "#,
     );
@@ -265,13 +222,10 @@ fn cfd_enforces_ref_inline_modes_and_singleton_ref_only_values() -> TestResult {
     load_cfd_model(
         &schema,
         r#"
-            main: GameConfig { value: 1 }
             sword: Item { name: "Sword" }
             holder: Holder {
                 ref_item: &sword,
                 inline_item: { name: "Inline" },
-                config: @GameConfig.main,
-                configs: [@GameConfig.main],
             }
         "#,
     )?;
@@ -279,50 +233,15 @@ fn cfd_enforces_ref_inline_modes_and_singleton_ref_only_values() -> TestResult {
     let mode_err = load_cfd_model(
         &schema,
         r#"
-            main: GameConfig { value: 1 }
             sword: Item { name: "Sword" }
             holder: Holder {
                 ref_item: { name: "Bad" },
-                inline_item: &sword,
-                config: @GameConfig.main,
-                configs: [],
-            }
-        "#,
-    )
-    .expect_err("CFD should enforce @ref and @inline field modes");
-    let CfdTextLoadError::DataModel(mode_diags) = mode_err else {
-        panic!("expected data-model diagnostics, got {mode_err:?}");
-    };
-    assert!(mode_diags
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.message.contains("@ref")));
-    assert!(mode_diags
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.message.contains("@inline")));
-
-    let singleton_err = load_cfd_model(
-        &schema,
-        r#"
-            main: GameConfig { value: 1 }
-            sword: Item { name: "Sword" }
-            holder: Holder {
-                ref_item: &sword,
                 inline_item: { name: "Inline" },
-                config: { value: 2 },
-                configs: [],
             }
         "#,
     )
-    .expect_err("CFD should reject inline singleton values");
-    let CfdTextLoadError::DataModel(singleton_diags) = singleton_err else {
-        panic!("expected data-model diagnostics, got {singleton_err:?}");
-    };
-    assert!(singleton_diags
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.message.contains("singleton")));
+    .expect_err("CFD should enforce schema ref/inline types");
+    assert_has_text_code(&mode_err, CfdTextErrorCode::Syntax);
 
     Ok(())
 }
@@ -351,10 +270,10 @@ fn cfd_object_and_dict_spreads_merge_before_local_overrides() -> TestResult {
             }
 
             elite: Monster {
-                ...@Monster.base,
+                ...&base,
                 name: "Elite",
-                stats: { ...@Monster.base.stats, hp: 180 },
-                weights: { ...@Monster.base.weights, Fire: 20 },
+                stats: { hp: 180, attack: 20 },
+                weights: { Fire: 20, Ice: 5 },
             }
         "#,
     )?;
@@ -409,7 +328,7 @@ fn cfd_allows_cyclic_record_references() -> TestResult {
         r#"
             type Node {
                 label: string;
-                next: Node? = null;
+                next: &Node? = null;
             }
         "#,
     );
@@ -426,23 +345,17 @@ fn cfd_allows_cyclic_record_references() -> TestResult {
     let b_id = model.lookup("Node", "b").expect("b record");
     assert_eq!(
         model.record(a_id).and_then(|record| record.field("next")),
-        Some(&CfdValue::Ref {
-            target_type: "Node".to_string(),
-            target_key: "b".to_string(),
-        })
+        Some(&CfdValue::Ref("b".to_string()))
     );
     assert_eq!(
         model.record(b_id).and_then(|record| record.field("next")),
-        Some(&CfdValue::Ref {
-            target_type: "Node".to_string(),
-            target_key: "a".to_string(),
-        })
+        Some(&CfdValue::Ref("a".to_string()))
     );
     Ok(())
 }
 
 #[test]
-fn cfd_path_refs_parse_string_and_enum_indexes() -> TestResult {
+fn cfd_rejects_typed_and_path_refs() {
     let schema = compile_schema(
         r#"
             enum Element { Fire, Ice, }
@@ -458,7 +371,7 @@ fn cfd_path_refs_parse_string_and_enum_indexes() -> TestResult {
         "#,
     );
 
-    let records = parse_cfd_input_records(
+    let err = parse_cfd_input_records(
         &schema,
         r#"
             tables: Tables {
@@ -470,38 +383,13 @@ fn cfd_path_refs_parse_string_and_enum_indexes() -> TestResult {
                 elemental: @Tables.tables.by_element[Element.Fire],
             }
         "#,
-    )?;
-
-    assert_eq!(
-        records[1].fields.get("named"),
-        Some(&CfdInputValue::path_ref(
-            "Tables",
-            "tables",
-            [
-                CfdRefPathSegment::Field("by_name".to_string()),
-                CfdRefPathSegment::Index(CfdInputRefIndex::String("main".to_string())),
-            ],
-        ))
-    );
-    assert_eq!(
-        records[1].fields.get("elemental"),
-        Some(&CfdInputValue::path_ref(
-            "Tables",
-            "tables",
-            [
-                CfdRefPathSegment::Field("by_element".to_string()),
-                CfdRefPathSegment::Index(CfdInputRefIndex::EnumVariant {
-                    enum_name: "Element".to_string(),
-                    variant: "Fire".to_string(),
-                }),
-            ],
-        ))
-    );
-    Ok(())
+    )
+    .expect_err("typed/path refs should be rejected");
+    assert_has_text_code(&err, CfdTextErrorCode::Syntax);
 }
 
 #[test]
-fn cfd_path_refs_can_target_scalar_fields() -> TestResult {
+fn cfd_path_refs_can_no_longer_target_scalar_fields() {
     let schema = compile_schema(
         r#"
             enum Element { Fire, Ice, }
@@ -527,39 +415,8 @@ fn cfd_path_refs_can_target_scalar_fields() -> TestResult {
         }
     "#;
 
-    let records = parse_cfd_input_records(&schema, source)?;
-    assert_eq!(
-        records[1].fields.get("fire_resistance"),
-        Some(&CfdInputValue::path_ref(
-            "Tables",
-            "tables",
-            [
-                CfdRefPathSegment::Field("resistances".to_string()),
-                CfdRefPathSegment::Index(CfdInputRefIndex::Variant("Fire".to_string())),
-            ],
-        ))
-    );
-    assert_eq!(
-        records[1].fields.get("label"),
-        Some(&CfdInputValue::path_ref(
-            "Tables",
-            "tables",
-            [
-                CfdRefPathSegment::Field("labels".to_string()),
-                CfdRefPathSegment::Index(CfdInputRefIndex::String("main".to_string())),
-            ],
-        ))
-    );
-
-    let model = load_cfd_model(&schema, source)?;
-    let holder_id = model.lookup("Holder", "holder").expect("holder record");
-    let holder = model.record(holder_id).expect("holder");
-    assert_eq!(holder.field("fire_resistance"), Some(&CfdValue::Float(0.5)));
-    assert_eq!(
-        holder.field("label"),
-        Some(&CfdValue::String("primary".to_string()))
-    );
-    Ok(())
+    let err = parse_cfd_input_records(&schema, source).expect_err("path refs should be rejected");
+    assert_has_text_code(&err, CfdTextErrorCode::Syntax);
 }
 
 #[test]
@@ -730,8 +587,8 @@ fn cfd_text_error_codes_have_negative_and_adjacent_valid_cases() {
             r#"sword: Item { rarity: Rarity.Rare }"#,
         ),
         (
-            CfdTextErrorCode::ReferenceNeedsMarker,
-            "type Item { name: string; } type Holder { item: Item; }",
+            CfdTextErrorCode::Syntax,
+            "type Item { name: string; } type Holder { item: &Item; }",
             r#"sword: Item { name: "Sword" } holder: Holder { item: sword }"#,
             r#"sword: Item { name: "Sword" } holder: Holder { item: &sword }"#,
         ),
@@ -790,7 +647,7 @@ fn examples_cfd_files_load_together() -> TestResult {
     );
     assert!(matches!(
         encounter.field("featured_item"),
-        Some(CfdValue::Ref { target_key, .. }) if target_key == "sword_fire"
+        Some(CfdValue::Ref(target_key)) if target_key == "sword_fire"
     ));
     Ok(())
 }

@@ -125,25 +125,22 @@ fn rename_record_key_updates_cross_source_references() {
     assert!(items.contains("blade: Item"), "items source:\n{items}");
     assert!(!items.contains("sword: Item"), "items source:\n{items}");
     assert!(
-        bundles.contains("starter,&blade,&blade,@Item.blade.name"),
+        bundles.contains("starter,&blade,&blade,sword name"),
         "csv refs should be updated:\n{bundles}"
     );
     assert!(
-        !bundles.contains("sword"),
+        !bundles.contains("&sword"),
         "csv refs should not keep old key:\n{bundles}"
     );
     assert!(
-        spread.contains("...@Bundle.base_bundle"),
+        spread.contains("...&base_bundle"),
         "unrelated spread should be preserved:\n{spread}"
     );
     assert!(
-        items.contains("@Item.blade") && items.contains("@Item.blade.name"),
-        "cfd refs and path refs should be updated:\n{items}"
+        items.contains("&blade"),
+        "cfd refs should be updated:\n{items}"
     );
-    assert!(
-        !items.contains("@Item.sword"),
-        "old typed refs remain:\n{items}"
-    );
+    assert!(!items.contains("&sword"), "old refs remain:\n{items}");
 }
 
 #[test]
@@ -206,8 +203,8 @@ fn write_rename_reference_project(root: &std::path::Path) {
         }
 
         type Bundle {
-            item: Item;
-            backup: Item;
+            item: &Item;
+            backup: &Item;
             path_name: string;
         }
         ",
@@ -220,22 +217,22 @@ fn write_rename_reference_project(root: &std::path::Path) {
 }
 
 base_bundle: Bundle {
-    item: @Item.sword,
-    backup: @Item.sword,
-    path_name: @Item.sword.name,
+    item: &sword,
+    backup: &sword,
+    path_name: "sword name",
 }
 "#,
     )
     .expect("write cfd source");
     std::fs::write(
         root.join("data/bundles.csv"),
-        "id,item,backup,path_name\nstarter,&sword,@Item.sword,@Item.sword.name\n",
+        "id,item,backup,path_name\nstarter,&sword,&sword,sword name\n",
     )
     .expect("write csv source");
     std::fs::write(
         root.join("data/spread.cfd"),
         r"spread_bundle: Bundle {
-    ...@Bundle.base_bundle,
+    ...&base_bundle,
 }
 ",
     )

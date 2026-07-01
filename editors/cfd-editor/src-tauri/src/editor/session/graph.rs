@@ -8,7 +8,7 @@
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
-use coflow_data_model::{CfdDictKey, CfdRecord, CfdRecordId, CfdValue};
+use coflow_data_model::{CfdPath, CfdPathSegment, CfdRecordId};
 use coflow_engine::RecordCoordinate;
 
 use crate::editor::convert::{field_mode_index, record_to_row, WireContext};
@@ -67,23 +67,20 @@ pub(super) fn build_graph(session: &EditorSession, file_path: &str) -> GraphData
             continue;
         }
 
-        for (path_str, target_type, target_key) in collect_refs_in_record(record) {
-            let Some(target_id) = session
-                .engine
-                .records
-                .id_for_coordinate(&target_type, &target_key)
-            else {
+        for edge in session.engine.model.ref_edges_from_host(id) {
+            let Some(target_record) = session.engine.model.record(edge.target) else {
                 continue;
             };
-            let target_coord = RecordCoordinate::new(target_type.clone(), target_key.clone());
+            let target_coord =
+                RecordCoordinate::new(target_record.actual_type.clone(), target_record.key.clone());
             edges.push(GraphEdge {
                 source: coordinate.clone(),
                 target: target_coord,
-                field_path: path_str,
+                field_path: format_path(&edge.path),
             });
-            if let std::collections::hash_map::Entry::Vacant(entry) = depths.entry(target_id) {
+            if let std::collections::hash_map::Entry::Vacant(entry) = depths.entry(edge.target) {
                 entry.insert(depth + 1);
-                queue.push_back((target_id, depth + 1));
+                queue.push_back((edge.target, depth + 1));
             }
         }
     }
@@ -110,55 +107,26 @@ impl NodeKey {
     }
 }
 
-fn collect_refs_in_record(record: &CfdRecord) -> Vec<(String, String, String)> {
-    let mut out = Vec::new();
-    for (name, value) in &record.fields {
-        match value {
-            CfdValue::Ref {
-                target_type,
-                target_key,
-            } => {
-                out.push((name.clone(), target_type.clone(), target_key.clone()));
-            }
-            CfdValue::Array(items) => {
-                for (i, item) in items.iter().enumerate() {
-                    if let CfdValue::Ref {
-                        target_type,
-                        target_key,
-                    } = item
-                    {
-                        out.push((
-                            format!("{name}[{i}]"),
-                            target_type.clone(),
-                            target_key.clone(),
-                        ));
-                    }
+fn format_path(path: &CfdPath) -> String {
+    let mut out = String::new();
+    for segment in &path.segments {
+        match segment {
+            CfdPathSegment::Field(name) => {
+                if !out.is_empty() {
+                    out.push('.');
                 }
+                out.push_str(name);
             }
-            CfdValue::Dict(entries) => {
-                for (k, v) in entries {
-                    if let CfdValue::Ref {
-                        target_type,
-                        target_key,
-                    } = v
-                    {
-                        let key_str = match k {
-                            CfdDictKey::String(s) => format!("\"{s}\""),
-                            CfdDictKey::Int(i) => i.to_string(),
-                            CfdDictKey::Enum(e) => e
-                                .variant
-                                .clone()
-                                .unwrap_or_else(|| format!("{}({})", e.enum_name, e.value)),
-                        };
-                        out.push((
-                            format!("{name}[{key_str}]"),
-                            target_type.clone(),
-                            target_key.clone(),
-                        ));
-                    }
-                }
+            CfdPathSegment::Index(index) => {
+                out.push('[');
+                out.push_str(&index.to_string());
+                out.push(']');
             }
-            _ => {}
+            CfdPathSegment::DictKey(key) => {
+                out.push('[');
+                out.push_str(key);
+                out.push(']');
+            }
         }
     }
     out

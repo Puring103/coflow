@@ -1,5 +1,5 @@
 sealed type StageSpawn {
-  monster: Monster;
+  monster: &Monster;
 
   count: int = 1;
   level_offset: int = 0;
@@ -13,7 +13,7 @@ sealed type StageSpawn {
   }
 }
 type Stage {
-  name_text: Text;
+  name_text: &Text;
 
   kind: StageKind = StageKind.Story;
   unlock_level: int = 1;
@@ -21,7 +21,7 @@ type Stage {
   positions: [Vector2] = [];
   spawns: [StageSpawn];
 
-  drop_table: DropTable;
+  drop_table: &DropTable;
 
   first_clear_reward: Reward;
   modifiers: {string: int} = {};
@@ -100,16 +100,16 @@ type DialogueNode {
 type Quest {
   kind: QuestKind;
 
-  title_text: Text;
+  title_text: &Text;
 
   title: string;
   min_level: int = 1;
 
-  stage: Stage;
+  stage: &Stage;
 
-  target_monster: Monster? = null;
+  target_monster: &Monster? = null;
 
-  reward_item: Item;
+  reward_item: &Item;
 
   prerequisites: [string] = [];
   objectives: [QuestObjective];
@@ -163,13 +163,13 @@ type Quest {
 }
 
 sealed type ShopEntry {
-  item: Item;
+  item: &Item;
 
   price: int;
   stock: int = 1;
   unlock_level: int = 1;
 
-  required_quest: Quest? = null;
+  required_quest: &Quest? = null;
 
   discount_by_day: {int: int} = {};
 
@@ -197,13 +197,13 @@ sealed type ShopEntry {
   }
 }
 type Shop {
-  name_text: Text;
+  name_text: &Text;
 
   kind: ShopKind = ShopKind.General;
   open_day: int = 1;
   close_day: int = 999;
 
-  stage_gate: Stage? = null;
+  stage_gate: &Stage? = null;
 
   entries: [ShopEntry];
   currencies: [string] = [];

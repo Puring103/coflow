@@ -824,7 +824,7 @@ fn write_field_redirects_spread_fields_to_source_record() {
     std::fs::write(
         root.join("data/host.cfd"),
         r#"child: Item {
-    ...@Item.base,
+    ...&base,
 }
 "#,
     )
@@ -871,7 +871,7 @@ sources:
         "source file should receive spread edit:\n{source}"
     );
     assert!(
-        host.contains("...@Item.base") && !host.contains("Edited"),
+        host.contains("...&base") && !host.contains("Edited"),
         "host file should not receive spread edit:\n{host}"
     );
 

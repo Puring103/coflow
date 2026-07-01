@@ -6,7 +6,7 @@
 //! collected into `FieldAnnotation` on the side. Conversion is a single
 //! walk of the record so the annotation tree mirrors the value tree.
 
-use coflow_data_model::{CfdRecord, CfdRecordId, CfdValue};
+use coflow_data_model::{CfdPath, CfdRecord, CfdRecordId, CfdValue, RefSite};
 use coflow_engine::{ProjectSession, RecordCoordinate, RecordView};
 use std::collections::BTreeMap;
 
@@ -78,7 +78,12 @@ fn build_annotation(
         annotation.spread_info = spread_info_for_source(ctx, source_id, parent_path, field_name);
     }
     annotation.field_mode = field_mode_for_schema_field(ctx, owner_type, field_name);
-    annotation_for_value(value, ctx, &mut annotation);
+    let host_id = ctx
+        .session
+        .records
+        .id_for_coordinate(&host.actual_type, &host.key);
+    let path = CfdPath::root().field(field_name.to_string());
+    annotation_for_value(value, ctx, host_id, &path, &mut annotation);
     if annotation.is_empty() {
         None
     } else {
@@ -150,16 +155,27 @@ fn field_mode_for_annotations(annotations: &[coflow_cft::CftAnnotation]) -> Opti
     }
 }
 
-fn annotation_for_value(value: &CfdValue, ctx: &WireContext<'_>, annotation: &mut FieldAnnotation) {
+fn annotation_for_value(
+    value: &CfdValue,
+    ctx: &WireContext<'_>,
+    host_id: Option<CfdRecordId>,
+    path: &CfdPath,
+    annotation: &mut FieldAnnotation,
+) {
     match value {
-        CfdValue::Ref {
-            target_type,
-            target_key,
-        } => {
-            annotation.ref_target_file = ctx
-                .session
-                .file_for_record(target_type, target_key)
-                .map(str::to_string);
+        CfdValue::Ref(_) => {
+            annotation.ref_target_file = host_id
+                .and_then(|host| {
+                    ctx.session
+                        .model
+                        .resolve_ref(&RefSite::new(host, path.clone()))
+                })
+                .and_then(|target| ctx.session.model.record(target))
+                .and_then(|record| {
+                    ctx.session
+                        .file_for_record(&record.actual_type, &record.key)
+                        .map(str::to_string)
+                });
         }
         CfdValue::Enum(enum_value) => {
             annotation.enum_int_value = Some(enum_value.value);

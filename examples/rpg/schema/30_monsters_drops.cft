@@ -17,7 +17,7 @@ sealed type DropCondition {
 }
 
 sealed type MonsterAbility {
-  skill: Skill;
+  skill: &Skill;
 
   priority: int = 1;
   chance: float = 1.0;
@@ -36,7 +36,7 @@ sealed type MonsterAbility {
 sealed type MonsterPhase {
   threshold_hp_pct: float;
 
-  added_skill: Skill? = null;
+  added_skill: &Skill? = null;
 
   buffs: [SkillTag] = [];
 
@@ -76,9 +76,9 @@ type Monster {
   position: Vector2;
   resistances: {Element: float};
 
-  skill: Skill;
+  skill: &Skill;
 
-  signature_item: Item? = null;
+  signature_item: &Item? = null;
 
   abilities: [MonsterAbility];
   phases: [MonsterPhase] = [];
@@ -135,7 +135,7 @@ type Monster {
 }
 
 type DropTable {
-  monster: Monster;
+  monster: &Monster;
 
   conditions: DropCondition;
   rewards: [Reward];

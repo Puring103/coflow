@@ -160,7 +160,7 @@ fn exports_refs_as_keys_and_polymorphic_objects_with_type_tags() -> TestResult {
             type Item { name: string; }
             abstract type Reward {}
             type ItemReward : Reward {
-                item: Item;
+                item: &Item;
                 count: int = 1;
             }
             type CurrencyReward : Reward {
@@ -189,7 +189,7 @@ fn exports_refs_as_keys_and_polymorphic_objects_with_type_tags() -> TestResult {
                     CfdInputValue::object(
                         "ItemReward",
                         [
-                            ("item", CfdInputValue::record_ref("Item", "iron_sword")),
+                            ("item", CfdInputValue::record_ref("iron_sword")),
                             ("count", CfdInputValue::from(2_i64)),
                         ],
                     ),

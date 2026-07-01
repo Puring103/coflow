@@ -23,14 +23,14 @@ fn write_project(root: &std::path::Path) {
             }
 
             type ItemReward {
-                item: Item;
+                item: &Item;
                 count: int;
             }
 
             type Loot {
                 rewards: [ItemReward];
                 resistances: {Element: int} = {};
-                owner: Item? = null;
+                owner: &Item? = null;
             }
         ",
     )
@@ -72,7 +72,7 @@ fn write_spread_project(root: &std::path::Path) {
     std::fs::write(
         root.join("data").join("host.cfd"),
         r"child: Item {
-    ...@Item.base,
+    ...&base,
 }
 ",
     )
@@ -89,7 +89,6 @@ fn write_shape_annotation_project(root: &std::path::Path) {
     std::fs::write(
         root.join("schema.cft"),
         r"
-            @singleton
             type GameConfig { value: int; }
 
             type Item { name: string; }
@@ -98,7 +97,7 @@ fn write_shape_annotation_project(root: &std::path::Path) {
                 owner: &Item;
                 inline_item: Item;
 
-                configs: [GameConfig];
+                configs: [&GameConfig];
             }
         ",
     )
@@ -368,9 +367,9 @@ fn patch_insert_minimal_accepts_explicit_required_ref_fields() {
 }
 
 #[test]
-fn patch_rejects_explicit_values_that_violate_ref_and_singleton_shapes() {
+fn patch_rejects_explicit_values_that_violate_ref_shapes() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-data-patch-ref-singleton-shapes-{}",
+        "coflow-data-patch-ref-shapes-{}",
         std::process::id()
     ));
     let _ = std::fs::remove_dir_all(&root);
@@ -393,7 +392,7 @@ fn patch_rejects_explicit_values_that_violate_ref_and_singleton_shapes() {
                         fields: serde_json::from_value(json!({
                             "owner": { "name": "Inline Owner" },
                             "inline_item": { "name": "Inline" },
-                            "configs": [{ "$ref": "GameConfig.main" }]
+                            "configs": ["main"]
                         }))
                         .expect("fields map"),
                     },
@@ -401,10 +400,10 @@ fn patch_rejects_explicit_values_that_violate_ref_and_singleton_shapes() {
                         file: "data/records.cfd".to_string(),
                         sheet: None,
                         actual_type: "Holder".to_string(),
-                        key: "bad_singleton".to_string(),
+                        key: "bad_config_ref".to_string(),
                         materialization: DefaultMaterialization::Minimal,
                         fields: serde_json::from_value(json!({
-                            "owner": { "$ref": "Item.sword" },
+                            "owner": "sword",
                             "inline_item": { "name": "Inline" },
                             "configs": [{ "value": 2 }]
                         }))
@@ -425,19 +424,19 @@ fn patch_rejects_explicit_values_that_violate_ref_and_singleton_shapes() {
     assert!(report.failed[1]
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "MUTATION-SHAPE"));
+        .any(|diagnostic| diagnostic.code == "MUTATION-VALUE"));
 
     let text = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read cfd");
     assert!(!text.contains("bad_ref"));
-    assert!(!text.contains("bad_singleton"));
+    assert!(!text.contains("bad_config_ref"));
 
     let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
-fn patch_set_field_rejects_values_that_violate_ref_and_singleton_shapes() {
+fn patch_set_field_rejects_values_that_violate_ref_shapes() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-data-patch-set-ref-singleton-shapes-{}",
+        "coflow-data-patch-set-ref-shapes-{}",
         std::process::id()
     ));
     let _ = std::fs::remove_dir_all(&root);
@@ -459,7 +458,7 @@ fn patch_set_field_rejects_values_that_violate_ref_and_singleton_shapes() {
                     fields: serde_json::from_value(json!({
                         "owner": "sword",
                         "inline_item": { "name": "Inline" },
-                        "configs": [{ "$ref": "GameConfig.main" }]
+                        "configs": ["main"]
                     }))
                     .expect("fields map"),
                 }],
@@ -511,15 +510,12 @@ fn patch_set_field_rejects_values_that_violate_ref_and_singleton_shapes() {
     assert!(report.failed[1]
         .diagnostics
         .iter()
-        .any(|diagnostic| diagnostic.code == "MUTATION-SHAPE"));
+        .any(|diagnostic| diagnostic.code == "MUTATION-VALUE"));
 
     let view = session.record_view("Holder", "holder").expect("holder");
     assert!(matches!(
         view.record.fields.get("owner"),
-        Some(coflow_data_model::CfdValue::Ref {
-            target_type,
-            target_key,
-        }) if target_type == "Item" && target_key == "sword"
+        Some(coflow_data_model::CfdValue::Ref(target_key)) if target_key == "sword"
     ));
 
     let _ = std::fs::remove_dir_all(root);
@@ -768,11 +764,11 @@ fn patch_coerces_ref_inline_object_and_enum_key_dict_values() {
                     key: "starter_loot".to_string(),
                     materialization: DefaultMaterialization::Minimal,
                     fields: serde_json::from_value(json!({
-                        "owner": { "$ref": { "type": "Item", "key": "sword" } },
+                        "owner": "sword",
                         "rewards": [
                             {
                                 "$type": "ItemReward",
-                                "item": { "$ref": "Item.sword" },
+                                "item": "sword",
                                 "count": 1
                             }
                         ],
@@ -801,7 +797,7 @@ fn patch_coerces_ref_inline_object_and_enum_key_dict_values() {
     assert!(view.record.fields.contains_key("resistances"));
 
     let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
-    assert!(text.contains("@Item.sword"));
+    assert!(text.contains("&sword"));
     assert!(text.contains("ItemReward"));
     assert!(text.contains("Fire"));
 
@@ -972,10 +968,7 @@ fn mutation_cfd_value_rejects_nested_values_that_do_not_match_schema() {
         fields: std::collections::BTreeMap::from([
             (
                 "item".to_string(),
-                coflow_data_model::CfdValue::Ref {
-                    target_type: "Item".to_string(),
-                    target_key: "sword".to_string(),
-                },
+                coflow_data_model::CfdValue::Ref("sword".to_string()),
             ),
             (
                 "count".to_string(),

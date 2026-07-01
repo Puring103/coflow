@@ -13,8 +13,8 @@ type Item {
   attributes: {string: int} = {};
   elemental_bonus: {Element: int} = {};
 
-  upgrade_item: Item? = null;
-  featured_stage: Stage? = null;
+  upgrade_item: &Item? = null;
+  featured_stage: &Stage? = null;
   legacy_power: int = 0;
 
   check {
@@ -56,14 +56,14 @@ type Item {
   }
 }
 type Equipment : Item {
-  name_text: Text;
+  name_text: &Text;
 
   required_class: string;
   stat_bonus: StatBlock;
   allowed_classes: [string] = [];
   upgrade_costs: {int: int} = {};
 
-  set_piece: Equipment? = null;
+  set_piece: &Equipment? = null;
 
   check {
     name_text.id != "";
@@ -102,9 +102,9 @@ type Skill {
 
   is_passive: bool = false;
 
-  follow_up: Skill? = null;
+  follow_up: &Skill? = null;
 
-  buff: Buff? = null;
+  buff: &Buff? = null;
 
   costs: [int] = [];
   allowed_slots: [ItemSlot] = [];
@@ -152,7 +152,7 @@ type Skill {
 type Buff {
   name: string;
 
-  name_text: Text;
+  name_text: &Text;
 
   tags: SkillTag = SkillTag.Damage;
   duration: float = 0.0;
@@ -163,7 +163,7 @@ type Buff {
   trigger_chances: {string: float} = {};
   required_element: Element? = null;
 
-  source_skill: Skill? = null;
+  source_skill: &Skill? = null;
 
   check {
     id != "";

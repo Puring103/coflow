@@ -306,7 +306,7 @@ fn item_schema() -> CftContainer {
     schema
         .add_module(
             ModuleId::from("main"),
-            "type Item { name: string; power: int; }",
+            "type Item { name: string; power: int; } type Holder { item: &Item; }",
         )
         .expect("schema parse");
     schema.compile().expect("schema compile");
@@ -491,7 +491,7 @@ fn rewrites_only_records_from_requested_lark_source() {
             "valueRanges": [
                 {
                     "range": "shtid_items!B2:B2",
-                    "values": [["@Item.blade.name"]],
+                    "values": [["&blade"]],
                 }
             ]
         })
@@ -508,32 +508,18 @@ fn lark_rewrite_model(schema: &CftContainer) -> CfdDataModel {
             ("power", CfdInputValue::from(7_i64)),
         ],
     );
-    builder.add_input_record(lark_rewrite_record(
-        "current",
-        "lark:sht_test",
-        2,
-        "@Item.sword.name",
-    ));
-    builder.add_input_record(lark_rewrite_record(
-        "other",
-        "lark:sht_other",
-        3,
-        "@Item.sword.name",
-    ));
+    builder.add_input_record(lark_rewrite_record("current", "lark:sht_test", 2, "sword"));
+    builder.add_input_record(lark_rewrite_record("other", "lark:sht_other", 3, "sword"));
     builder.build().expect("rewrite model")
 }
 
-fn lark_rewrite_record(key: &str, document: &str, row: usize, path_name: &str) -> CfdInputRecord {
+fn lark_rewrite_record(key: &str, document: &str, row: usize, item_key: &str) -> CfdInputRecord {
     let mut field_columns = BTreeMap::new();
-    field_columns.insert(vec!["name".to_string()], 2);
-    field_columns.insert(vec!["power".to_string()], 3);
+    field_columns.insert(vec!["item".to_string()], 2);
     CfdInputRecord::new(
         key,
-        "Item",
-        [
-            ("name", CfdInputValue::from(path_name)),
-            ("power", CfdInputValue::from(1_i64)),
-        ],
+        "Holder",
+        [("item", CfdInputValue::record_ref(item_key))],
     )
     .with_origin(RecordOrigin::Table {
         document: SourceDocument::Remote(document.to_string()),
