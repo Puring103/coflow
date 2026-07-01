@@ -183,7 +183,6 @@ impl DataWriter for ExcelWriter {
                         }
                         if let Some(updated) = rewrite_record_reference_text(
                             &value,
-                            request.target_type_names,
                             request.old_key,
                             request.new_key,
                             request.rewrite_direct_refs,

@@ -185,7 +185,6 @@ fn rename_record_key_rewrites_remote_sources() {
             source: "fake-remote:bundle".to_string(),
             old_key: "sword".to_string(),
             new_key: "blade".to_string(),
-            target_type_names: vec!["Item".to_string()],
             rewrite_direct_refs: true,
         }],
         "remote source should receive source-level rewrite requests"
@@ -304,7 +303,6 @@ struct RemoteRewriteCall {
     source: String,
     old_key: String,
     new_key: String,
-    target_type_names: Vec<String>,
     rewrite_direct_refs: bool,
 }
 
@@ -343,7 +341,7 @@ impl DataLoader for FakeRemoteLoader {
             records: vec![CfdInputRecord::new(
                 "remote_bundle",
                 "Bundle",
-                [("path_name", CfdInputValue::from("@Item.sword.name"))],
+                [("path_name", CfdInputValue::from("&sword"))],
             )
             .with_origin(RecordOrigin::Table {
                 document: SourceDocument::Remote("fake-remote:bundle".to_string()),
@@ -421,7 +419,6 @@ impl DataWriter for FakeRemoteWriter {
                 source: uri.clone(),
                 old_key: request.old_key.to_string(),
                 new_key: request.new_key.to_string(),
-                target_type_names: request.target_type_names.to_vec(),
                 rewrite_direct_refs: request.rewrite_direct_refs,
             });
         Ok(WriteOutcome::default())

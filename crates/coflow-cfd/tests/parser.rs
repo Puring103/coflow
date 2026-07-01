@@ -74,18 +74,6 @@ fn trailing_comma_in_array() {
 }
 
 #[test]
-fn typed_ref_value() {
-    let ast = parse_ok("r: T { target: @Monster.boss }");
-    match &ast.records[0].fields[0].value {
-        CfdValue::Ref(r) => {
-            assert_eq!(r.type_name.as_ref().unwrap().0, "Monster");
-            assert_eq!(r.key.0, "boss");
-        }
-        other => panic!("expected Ref, got {other:?}"),
-    }
-}
-
-#[test]
 fn direct_ref_value() {
     let ast = parse_ok("r: T { target: &boss }");
     match &ast.records[0].fields[0].value {
@@ -199,6 +187,26 @@ fn unterminated_string_produces_error() {
     parse_err(r#"r: T { name: "unterminated }"#);
 }
 
+#[test]
+fn typed_refs_are_rejected() {
+    let errors = parse_err("r: T { target: @Monster.boss }");
+    assert!(
+        errors.iter().any(|error| error.message.contains("`&key`")),
+        "expected typed ref rejection, got {errors:?}"
+    );
+}
+
+#[test]
+fn direct_ref_paths_are_rejected() {
+    let errors = parse_err("r: T { target: &boss.name }");
+    assert!(
+        errors
+            .iter()
+            .any(|error| error.message.contains("reference paths")),
+        "expected path ref rejection, got {errors:?}"
+    );
+}
+
 // ── Error recovery ────────────────────────────────────────────────────────────
 
 #[test]
@@ -218,7 +226,7 @@ fn error_recovery_continues_after_bad_record() {
 
 #[test]
 fn spread_in_block() {
-    let ast = parse_ok("r: T { ...@T.base, x: 1 }");
+    let ast = parse_ok("r: T { ...&base, x: 1 }");
     let r = &ast.records[0];
     assert_eq!(r.entries.len(), 2);
     assert!(matches!(r.entries[0], CfdBlockEntry::Spread(_, _)));

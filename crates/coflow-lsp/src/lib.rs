@@ -405,18 +405,6 @@ impl<W: Write> LspServer<W> {
                     }
                 }
             }
-            if let Some((type_name, field_name)) =
-                cfd::definition_ref_path_field(&ast, self.schema(), offset)
-            {
-                self.ensure_build()?;
-                if let Some(build) = &self.build {
-                    if let Some(location) =
-                        cfd_schema_field_definition_location(build, &type_name, &field_name)
-                    {
-                        return self.write_response(id, &json!(location));
-                    }
-                }
-            }
             if let Some(ref_key) = cfd::definition_ref_key(&ast, offset) {
                 let ref_key = ref_key.to_string();
                 if let Some(location) =

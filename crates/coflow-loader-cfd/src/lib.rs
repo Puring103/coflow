@@ -1213,7 +1213,7 @@ impl<'a> Parser<'a> {
     fn reference_needs_marker(&self, key: &str) -> CfdTextDiagnostics {
         self.error(
             CfdTextErrorCode::ReferenceNeedsMarker,
-            format!("object reference `{key}` must be written as `@Type.{key}` or `&{key}`"),
+            format!("object reference `{key}` must be written as `&{key}`"),
         )
     }
 
