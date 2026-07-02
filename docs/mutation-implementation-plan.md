@@ -51,7 +51,7 @@ Rules:
 - Fields with explicit schema defaults are omitted under `Minimal` unless the user explicitly provides a value.
 - Fields with no schema default are still required by the data model, including nullable, array, and dict fields. Under `Minimal`, materialize safe structural values (`null`, `[]`, `{}`) only when they are required to keep the record loadable.
 - Inline objects are omitted under `Minimal` unless they are schema-required and can be safely instantiated. Recursive required inline objects return mutation diagnostics for persisted edits; `EditableShape` truncates recursion by cycle detection for UI drafts.
-- Refs without a user value are not fabricated. Required `@ref`, abstract, singleton, or otherwise unsafe object fields return mutation diagnostics unless the caller provides an explicit value.
+- Refs without a user value are not fabricated. Required `&Type` fields, abstract inline objects, singleton objects, or otherwise unsafe object fields return mutation diagnostics unless the caller provides an explicit value.
 - For required scalar or enum fields with no schema default, materialize a safe type default or return diagnostics when no safe value exists. The first implementation uses safe defaults for scalar/enum/nullable/collection fields where required, but keeps explicit schema defaults unmaterialized.
 
 ## Implementation Strategy

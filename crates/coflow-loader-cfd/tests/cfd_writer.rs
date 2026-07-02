@@ -131,6 +131,67 @@ shield: Item {
 }
 
 #[test]
+fn writes_record_by_exact_type_when_unrelated_types_share_key() {
+    let dir = temp_dir("same-key-write");
+    let file = dir.join("records.cfd");
+    fs::write(
+        &file,
+        r#"shared: Item {
+  name: "Old Item",
+}
+
+shared: Skill {
+  name: "Old Skill",
+}
+"#,
+    )
+    .expect("write seed");
+
+    let schema = compile_schema(
+        r"
+        type Item { name: string; }
+        type Skill { name: string; }
+        ",
+    );
+    let writer = CfdWriter::new();
+    let request_value = CfdValue::String("New Skill".to_string());
+    let segments = vec![WriteFieldPathSegment::Field("name".to_string())];
+    let source = empty_source(&file);
+    let origin = origin_for(&file);
+    let model = load_cfd_model(&schema, &fs::read_to_string(&file).expect("read seed"))
+        .expect("load model");
+
+    writer
+        .write_field(
+            WriteContext {
+                project_root: &dir,
+                schema: &schema,
+                model: Some(&model),
+            },
+            &WriteCellRequest {
+                origin: &origin,
+                record_key: "shared",
+                actual_type: "Skill",
+                field_path: &segments,
+                new_value: &request_value,
+                schema: &schema,
+                source: &source,
+            },
+        )
+        .expect("write skill");
+
+    let after = fs::read_to_string(&file).expect("re-read");
+    assert!(
+        after.contains("shared: Item {\n  name: \"Old Item\""),
+        "item should be untouched: {after}"
+    );
+    assert!(
+        after.contains("shared: Skill {\n  name: \"New Skill\""),
+        "skill should be updated: {after}"
+    );
+}
+
+#[test]
 fn writes_ref_type_as_key_ref() {
     let dir = temp_dir("ref");
     let file = dir.join("data.cfd");
@@ -380,6 +441,61 @@ fn inserts_record_at_end_of_cfd_file() {
 }
 
 #[test]
+fn insert_record_allows_same_key_for_unrelated_types_in_same_file() {
+    let dir = temp_dir("same-key-insert");
+    let file = dir.join("records.cfd");
+    fs::write(
+        &file,
+        r#"shared: Item {
+  name: "Item",
+}
+"#,
+    )
+    .expect("write seed");
+    let schema = compile_schema(
+        r"
+        type Item { name: string; }
+        type Skill { name: string; }
+        ",
+    );
+    let source = empty_source(&file);
+    let writer = CfdWriter::new();
+    let fields = std::collections::BTreeMap::from([(
+        "name".to_string(),
+        CfdValue::String("Skill".to_string()),
+    )]);
+
+    writer
+        .insert_record(
+            WriteContext {
+                project_root: &dir,
+                schema: &schema,
+                model: None,
+            },
+            &InsertRecordRequest {
+                source: &source,
+                sheet: None,
+                record_key: "shared",
+                actual_type: "Skill",
+                fields: &fields,
+                schema: &schema,
+            },
+        )
+        .expect("insert unrelated same-key skill");
+
+    let after = fs::read_to_string(&file).expect("re-read");
+    assert!(
+        after.contains("shared: Item"),
+        "original item should remain: {after}"
+    );
+    assert!(
+        after.contains("shared: Skill"),
+        "same-key skill should be appended: {after}"
+    );
+    load_cfd_model(&schema, &after).expect("same-key unrelated domains should load");
+}
+
+#[test]
 fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
     let dir = temp_dir("insert-nested-ref");
     let file = dir.join("loot.cfd");
@@ -493,6 +609,59 @@ shield: Item {
     let model = load_cfd_model(&schema, &after).expect("reload");
     assert!(model.lookup("Item", "sword").is_none());
     assert!(model.lookup("Item", "shield").is_some());
+}
+
+#[test]
+fn delete_record_uses_exact_type_when_unrelated_types_share_key() {
+    let dir = temp_dir("same-key-delete");
+    let file = dir.join("records.cfd");
+    fs::write(
+        &file,
+        r#"shared: Item {
+  name: "Item",
+}
+
+shared: Skill {
+  name: "Skill",
+}
+"#,
+    )
+    .expect("write seed");
+    let schema = compile_schema(
+        r"
+        type Item { name: string; }
+        type Skill { name: string; }
+        ",
+    );
+    let source = empty_source(&file);
+    let origin = origin_for(&file);
+    let writer = CfdWriter::new();
+
+    writer
+        .delete_record(
+            WriteContext {
+                project_root: &dir,
+                schema: &schema,
+                model: None,
+            },
+            &DeleteRecordRequest {
+                origin: &origin,
+                record_key: "shared",
+                actual_type: "Skill",
+                source: &source,
+            },
+        )
+        .expect("delete skill");
+
+    let after = fs::read_to_string(&file).expect("re-read");
+    assert!(
+        after.contains("shared: Item"),
+        "item should remain after deleting skill: {after}"
+    );
+    assert!(
+        !after.contains("shared: Skill"),
+        "skill should be deleted: {after}"
+    );
 }
 
 #[test]

@@ -116,6 +116,31 @@ main: GameConfig { value: 1 }
     .expect("write config");
 }
 
+fn write_domain_key_project(root: &std::path::Path) {
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Reward { label: string; }
+            type ItemReward : Reward { count: int; }
+            type CurrencyReward : Reward { amount: int; }
+            type Skill { label: string; }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("records.cfd"),
+        r#"base: ItemReward { label: "Item", count: 1 }
+"#,
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+}
+
 fn registry() -> coflow_api::ProviderRegistry {
     let mut registry = coflow_api::ProviderRegistry::default();
     registry
@@ -522,6 +547,416 @@ fn patch_set_field_rejects_values_that_violate_ref_shapes() {
 }
 
 #[test]
+fn direct_write_field_rejects_values_that_violate_ref_shapes_before_file_write() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-direct-write-ref-shapes-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_shape_annotation_project(&root);
+    let (mut session, registry) = session(&root);
+
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![DataPatchOp::InsertRecord {
+                    file: "data/records.cfd".to_string(),
+                    sheet: None,
+                    actual_type: "Holder".to_string(),
+                    key: "holder".to_string(),
+                    materialization: DefaultMaterialization::Minimal,
+                    fields: serde_json::from_value(json!({
+                        "owner": "sword",
+                        "inline_item": { "name": "Inline" },
+                        "configs": ["main"]
+                    }))
+                    .expect("fields map"),
+                }],
+            },
+        )
+        .expect("valid holder should insert");
+    assert!(report.write_ok);
+
+    let before =
+        std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read before");
+    let err = session
+        .write_field(
+            &registry,
+            "Holder",
+            "holder",
+            &[coflow_api::WriteFieldPathSegment::Field(
+                "inline_item".to_string(),
+            )],
+            &coflow_data_model::CfdValue::Ref("sword".to_string()),
+        )
+        .expect_err("direct write should fail before writer mutation");
+    assert!(err
+        .iter()
+        .any(|diagnostic| diagnostic.code == "WRITE-SHAPE"));
+    let after = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read after");
+    assert_eq!(before, after);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn direct_write_field_rejects_missing_ref_target_before_file_write() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-direct-write-missing-ref-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_shape_annotation_project(&root);
+    let (mut session, registry) = session(&root);
+
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![DataPatchOp::InsertRecord {
+                    file: "data/records.cfd".to_string(),
+                    sheet: None,
+                    actual_type: "Holder".to_string(),
+                    key: "holder".to_string(),
+                    materialization: DefaultMaterialization::Minimal,
+                    fields: serde_json::from_value(json!({
+                        "owner": "sword",
+                        "inline_item": { "name": "Inline" },
+                        "configs": ["main"]
+                    }))
+                    .expect("fields map"),
+                }],
+            },
+        )
+        .expect("valid holder should insert");
+    assert!(report.write_ok);
+
+    let before =
+        std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read before");
+    let err = session
+        .write_field(
+            &registry,
+            "Holder",
+            "holder",
+            &[coflow_api::WriteFieldPathSegment::Field(
+                "owner".to_string(),
+            )],
+            &coflow_data_model::CfdValue::Ref("ghost".to_string()),
+        )
+        .expect_err("direct write should reject missing ref target before writer mutation");
+    assert!(err.iter().any(|diagnostic| {
+        diagnostic.code == "WRITE-SHAPE" && diagnostic.message.contains("was not found")
+    }));
+    let after = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read after");
+    assert_eq!(before, after);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn direct_write_field_rejects_ref_target_outside_expected_type_before_file_write() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-direct-write-ref-type-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Reward { label: string; }
+            type ItemReward : Reward { count: int; }
+            type CurrencyReward : Reward { amount: int; }
+            type Holder { item_reward: &ItemReward; }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("records.cfd"),
+        r#"item: ItemReward { label: "Item", count: 1 }
+currency: CurrencyReward { label: "Currency", amount: 10 }
+holder: Holder { item_reward: &item }
+"#,
+    )
+    .expect("write cfd");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+    let (mut session, registry) = session(&root);
+
+    let before =
+        std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read before");
+    let err = session
+        .write_field(
+            &registry,
+            "Holder",
+            "holder",
+            &[coflow_api::WriteFieldPathSegment::Field(
+                "item_reward".to_string(),
+            )],
+            &coflow_data_model::CfdValue::Ref("currency".to_string()),
+        )
+        .expect_err("direct write should reject sibling-type ref target before writer mutation");
+    assert!(err.iter().any(|diagnostic| {
+        diagnostic.code == "WRITE-SHAPE" && diagnostic.message.contains("not assignable")
+    }));
+    let after = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read after");
+    assert_eq!(before, after);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn direct_write_field_rejects_primitive_mismatch_before_file_write() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-direct-write-primitive-shape-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_project(&root);
+    let (mut session, registry) = session(&root);
+
+    let before = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read before");
+    let err = session
+        .write_field(
+            &registry,
+            "Item",
+            "sword",
+            &[coflow_api::WriteFieldPathSegment::Field(
+                "price".to_string(),
+            )],
+            &coflow_data_model::CfdValue::String("bad".to_string()),
+        )
+        .expect_err("direct write should reject primitive mismatch before writer mutation");
+    assert!(err.iter().any(|diagnostic| {
+        diagnostic.code == "WRITE-SHAPE" && diagnostic.message.contains("expected int")
+    }));
+    let after = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read after");
+    assert_eq!(before, after);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn insert_rejects_duplicate_key_in_same_inheritance_domain_before_file_write() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-domain-insert-reject-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_domain_key_project(&root);
+    let (mut session, registry) = session(&root);
+    let before =
+        std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read before");
+
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![DataPatchOp::InsertRecord {
+                    file: "data/records.cfd".to_string(),
+                    sheet: None,
+                    actual_type: "CurrencyReward".to_string(),
+                    key: "base".to_string(),
+                    materialization: DefaultMaterialization::Minimal,
+                    fields: serde_json::from_value(json!({
+                        "label": "Currency",
+                        "amount": 10
+                    }))
+                    .expect("fields map"),
+                }],
+            },
+        )
+        .expect("insert conflict should report");
+    assert!(!report.write_ok);
+    assert!(report.failed[0]
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "MUTATION-INSERT"));
+    let after = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read after");
+    assert_eq!(before, after);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn direct_insert_rejects_duplicate_key_in_same_inheritance_domain_before_file_write() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-domain-direct-insert-reject-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_domain_key_project(&root);
+    let (mut session, registry) = session(&root);
+    let before =
+        std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read before");
+    let fields = std::collections::BTreeMap::from([
+        (
+            "label".to_string(),
+            coflow_data_model::CfdValue::String("Currency".to_string()),
+        ),
+        ("amount".to_string(), coflow_data_model::CfdValue::Int(10)),
+    ]);
+
+    let err = session
+        .insert_record(
+            &registry,
+            "data/records.cfd",
+            None,
+            "base",
+            "CurrencyReward",
+            &fields,
+        )
+        .expect_err("direct insert should reject domain duplicate");
+    assert!(err
+        .iter()
+        .any(|diagnostic| diagnostic.code == "WRITE-INSERT"));
+    let after = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read after");
+    assert_eq!(before, after);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn direct_insert_rejects_missing_ref_target_before_file_write() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-direct-insert-missing-ref-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_shape_annotation_project(&root);
+    let (mut session, registry) = session(&root);
+    let before =
+        std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read before");
+    let fields = std::collections::BTreeMap::from([
+        (
+            "owner".to_string(),
+            coflow_data_model::CfdValue::Ref("ghost".to_string()),
+        ),
+        (
+            "inline_item".to_string(),
+            coflow_data_model::CfdValue::Object(Box::new(coflow_data_model::CfdObject::new(
+                "Item",
+                std::collections::BTreeMap::from([(
+                    "name".to_string(),
+                    coflow_data_model::CfdValue::String("Inline".to_string()),
+                )]),
+            ))),
+        ),
+        (
+            "configs".to_string(),
+            coflow_data_model::CfdValue::Array(vec![coflow_data_model::CfdValue::Ref(
+                "main".to_string(),
+            )]),
+        ),
+    ]);
+
+    let err = session
+        .insert_record(
+            &registry,
+            "data/records.cfd",
+            None,
+            "holder",
+            "Holder",
+            &fields,
+        )
+        .expect_err("direct insert should reject missing ref target");
+    assert!(err.iter().any(|diagnostic| {
+        diagnostic.code == "WRITE-SHAPE" && diagnostic.message.contains("was not found")
+    }));
+    let after = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read after");
+    assert_eq!(before, after);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn direct_insert_allows_self_references() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-direct-insert-self-ref-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Node {
+                parent: &Node? = null;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data").join("nodes.cfd"), "").expect("write cfd");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+    let (mut session, registry) = session(&root);
+    let fields = std::collections::BTreeMap::from([(
+        "parent".to_string(),
+        coflow_data_model::CfdValue::Ref("root".to_string()),
+    )]);
+
+    session
+        .insert_record(&registry, "data/nodes.cfd", None, "root", "Node", &fields)
+        .expect("self reference should be valid for inserted record");
+
+    let view = session.record_view("Node", "root").expect("inserted node");
+    assert_eq!(
+        view.record.fields().get("parent"),
+        Some(&coflow_data_model::CfdValue::Ref("root".to_string()))
+    );
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn insert_allows_same_key_for_unrelated_type() {
+    let root =
+        std::env::temp_dir().join(format!("coflow-domain-insert-allow-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    write_domain_key_project(&root);
+    let (mut session, registry) = session(&root);
+
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![DataPatchOp::InsertRecord {
+                    file: "data/records.cfd".to_string(),
+                    sheet: None,
+                    actual_type: "Skill".to_string(),
+                    key: "base".to_string(),
+                    materialization: DefaultMaterialization::Minimal,
+                    fields: serde_json::from_value(json!({
+                        "label": "Skill"
+                    }))
+                    .expect("fields map"),
+                }],
+            },
+        )
+        .expect("unrelated duplicate key should insert");
+    assert!(report.write_ok);
+    assert!(session.record_view("ItemReward", "base").is_some());
+    assert!(session.record_view("Skill", "base").is_some());
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn editable_shape_does_not_recursively_expand_self_referential_types() {
     let root = std::env::temp_dir().join(format!(
         "coflow-data-patch-editable-recursive-{}",
@@ -615,7 +1050,7 @@ fn patch_insert_minimal_rejects_recursive_required_inline_defaults() {
 }
 
 #[test]
-fn default_materialization_rejects_abstract_and_singleton_objects() {
+fn default_materialization_rejects_abstract_objects() {
     let root = std::env::temp_dir().join(format!(
         "coflow-data-patch-unsafe-defaults-{}",
         std::process::id()
@@ -628,12 +1063,8 @@ fn default_materialization_rejects_abstract_and_singleton_objects() {
             abstract type Reward {}
             type ItemReward : Reward { count: int; }
 
-            @singleton
-            type GameConfig { max_level: int; }
-
             type Holder {
                 reward: Reward;
-                config: GameConfig;
             }
         ",
     )
@@ -650,13 +1081,6 @@ fn default_materialization_rejects_abstract_and_singleton_objects() {
         .default_record_value("Reward", DefaultMaterialization::EditableShape)
         .expect_err("abstract type should not be materialized");
     assert!(abstract_default
-        .iter()
-        .any(|diagnostic| diagnostic.code == "MUTATION-DEFAULT"));
-
-    let singleton_default = session
-        .default_record_value("GameConfig", DefaultMaterialization::EditableShape)
-        .expect_err("singleton type should not be materialized");
-    assert!(singleton_default
         .iter()
         .any(|diagnostic| diagnostic.code == "MUTATION-DEFAULT"));
 
@@ -685,6 +1109,45 @@ fn default_materialization_rejects_abstract_and_singleton_objects() {
 
     let text = std::fs::read_to_string(root.join("data").join("records.cfd")).expect("read cfd");
     assert!(!text.contains("bad_holder"));
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn default_materialization_rejects_singleton_top_level_type() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-singleton-default-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            @singleton
+            type GameConfig { max_level: int; }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("records.cfd"),
+        r"GameConfig: GameConfig { max_level: 10 }
+",
+    )
+    .expect("write cfd");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\noutputs:\n  data:\n    type: json\n    dir: generated/data\n",
+    )
+    .expect("write config");
+    let (session, _) = session(&root);
+
+    let singleton_default = session
+        .default_record_value("GameConfig", DefaultMaterialization::EditableShape)
+        .expect_err("singleton type should not be materialized");
+    assert!(singleton_default
+        .iter()
+        .any(|diagnostic| diagnostic.code == "MUTATION-DEFAULT"));
 
     let _ = std::fs::remove_dir_all(root);
 }

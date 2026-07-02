@@ -23,6 +23,7 @@ mod files;
 mod mutation;
 mod records;
 mod schema_inspect;
+mod write_rules;
 mod writes;
 
 pub use data_files::{

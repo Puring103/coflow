@@ -198,27 +198,6 @@ impl SchemaView {
         self.types.values().filter(|meta| meta.is_singleton)
     }
 
-    pub(crate) fn type_contains_singleton(&self, ty: &CfdType) -> bool {
-        match ty {
-            CfdType::Type(name) | CfdType::Ref(name) => {
-                self.types.get(name).is_some_and(|meta| meta.is_singleton)
-            }
-            CfdType::Array(inner) | CfdType::Nullable(inner) => self.type_contains_singleton(inner),
-            CfdType::Dict(key, value) => {
-                self.type_contains_singleton(key) || self.type_contains_singleton(value)
-            }
-            CfdType::Int | CfdType::Float | CfdType::Bool | CfdType::String | CfdType::Enum(_) => {
-                false
-            }
-        }
-    }
-
-    pub(crate) fn type_name_is_singleton(&self, type_name: &str) -> bool {
-        self.types
-            .get(type_name)
-            .is_some_and(|meta| meta.is_singleton)
-    }
-
     pub(crate) fn domain_index(&self) -> &CfdDomainIndex {
         &self.domain_index
     }

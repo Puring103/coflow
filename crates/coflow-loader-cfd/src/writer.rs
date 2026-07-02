@@ -180,14 +180,15 @@ impl DataWriter for CfdWriter {
         validate_values(request.fields.values())?;
 
         let (source, ast) = self.read_or_parse(path)?;
-        if ast
-            .records
-            .iter()
-            .any(|record| record.key == request.record_key)
-        {
+        if ast.records.iter().any(|record| {
+            record.key == request.record_key && record.type_name == request.actual_type
+        }) {
             return Err(DiagnosticSet::one(diag(
                 "CFD-WRITE",
-                format!("record `{}` already exists", request.record_key),
+                format!(
+                    "record `{}.{}` already exists",
+                    request.actual_type, request.record_key
+                ),
             )));
         }
         let fragment = serialize_record(
@@ -226,14 +227,14 @@ impl DataWriter for CfdWriter {
             )));
         };
         let (source, ast) = self.read_or_parse(path)?;
-        let record = ast
-            .records
-            .iter()
-            .find(|record| record.key == request.record_key)
-            .ok_or_else(|| {
+        let record =
+            find_record(&ast, request.actual_type, request.record_key).ok_or_else(|| {
                 DiagnosticSet::one(diag(
                     "CFD-WRITE",
-                    format!("record `{}` not found in AST", request.record_key),
+                    format!(
+                        "record `{}.{}` not found in AST",
+                        request.actual_type, request.record_key
+                    ),
                 ))
             })?;
         let span = delete_record_span(&source, record.span);
@@ -260,19 +261,15 @@ impl DataWriter for CfdWriter {
         };
         validate_record_key(request.new_key)?;
         let (source, ast) = self.read_or_parse(path)?;
-        let record = ast
-            .records
-            .iter()
-            .find(|record| record.key == request.old_key && record.type_name == request.actual_type)
-            .ok_or_else(|| {
-                DiagnosticSet::one(diag(
-                    "CFD-WRITE",
-                    format!(
-                        "record `{}.{}` not found in AST",
-                        request.actual_type, request.old_key
-                    ),
-                ))
-            })?;
+        let record = find_record(&ast, request.actual_type, request.old_key).ok_or_else(|| {
+            DiagnosticSet::one(diag(
+                "CFD-WRITE",
+                format!(
+                    "record `{}.{}` not found in AST",
+                    request.actual_type, request.old_key
+                ),
+            ))
+        })?;
         let new_source = replace_spans(&source, &[(record.key_span, request.new_key.to_string())])?;
         self.write_source(path, new_source)?;
         Ok(WriteOutcome {
@@ -350,16 +347,15 @@ fn apply_patch(
     request: &WriteCellRequest<'_>,
 ) -> Result<String, DiagnosticSet> {
     validate_value(request.new_value)?;
-    let record = ast
-        .records
-        .iter()
-        .find(|r| r.key == request.record_key)
-        .ok_or_else(|| {
-            DiagnosticSet::one(diag(
-                "CFD-WRITE",
-                format!("record `{}` not found in AST", request.record_key),
-            ))
-        })?;
+    let record = find_record(ast, request.actual_type, request.record_key).ok_or_else(|| {
+        DiagnosticSet::one(diag(
+            "CFD-WRITE",
+            format!(
+                "record `{}.{}` not found in AST",
+                request.actual_type, request.record_key
+            ),
+        ))
+    })?;
     if request.field_path.is_empty() {
         return Err(DiagnosticSet::one(diag(
             "CFD-WRITE",
@@ -450,6 +446,12 @@ fn apply_patch(
             ))
         }
     }
+}
+
+fn find_record<'a>(ast: &'a CfdAst, actual_type: &str, key: &str) -> Option<&'a AstRecord> {
+    ast.records
+        .iter()
+        .find(|record| record.type_name == actual_type && record.key == key)
 }
 
 /// Where to apply the edit relative to the parsed source text.
@@ -932,10 +934,7 @@ fn serialize_value_for_type(
                 .fold(String::new(), |mut acc, (name, value)| {
                     use std::fmt::Write;
                     let field_type = schema
-                        .and_then(|schema| {
-                            object_type_name(expected, &boxed.actual_type)
-                                .map(|type_name| (schema, type_name))
-                        })
+                        .zip(object_type_name(expected, &boxed.actual_type))
                         .and_then(|(schema, type_name)| {
                             type_after_field_segment(schema, type_name, name)
                         });
