@@ -14,6 +14,22 @@ import { CardHeader, DataCardExpanded } from './DataCard'
 import { Icon } from './Icon'
 import { diagnosticsForRecord } from '../App'
 
+function severityForRecord(
+  diagnostics: DiagnosticItem[] | undefined,
+  filePath: string,
+  coordinate: RecordCoordinate,
+): 'error' | 'warning' | null {
+  if (!diagnostics) return null
+  let sev: 'error' | 'warning' | null = null
+  for (const d of diagnostics) {
+    if (d.file_path !== filePath || d.record_key !== coordinate.key) continue
+    if (d.actual_type !== null && d.actual_type !== coordinate.actual_type) continue
+    if (d.severity === 'error') return 'error'
+    if (d.severity === 'warning') sev = 'warning'
+  }
+  return sev
+}
+
 interface Props {
   open: boolean
   collapsed: boolean
@@ -36,6 +52,7 @@ interface Props {
     coordinate: RecordCoordinate,
     newKey: string,
   ) => Promise<RecordRow | void>
+  onDiagnosticBadgeClick?: (coordinate: RecordCoordinate, fieldPath: string | null) => void
 }
 
 const MIN_W = 280
@@ -54,6 +71,7 @@ export function InspectorPanel({
   onClose,
   onWriteField,
   onRenameRecord,
+  onDiagnosticBadgeClick,
 }: Props) {
   const [dragging, setDragging] = useState(false)
   const widthRef = useRef(width)
@@ -139,6 +157,10 @@ export function InspectorPanel({
                 onRename={canRename && onRenameRecord
                   ? async (next) => { await onRenameRecord(data.file_path, record.coordinate, next) }
                   : undefined}
+                diagSeverity={severityForRecord(diagnostics, data.file_path, record.coordinate)}
+                onDiagBadgeClick={onDiagnosticBadgeClick
+                  ? () => onDiagnosticBadgeClick(record.coordinate, null)
+                  : undefined}
               />
               <DataCardExpanded
                 fields={record.fields}
@@ -147,6 +169,9 @@ export function InspectorPanel({
                   ? undefined
                   : (path, val) => { onWriteField(data.file_path, record.coordinate, path, val) }}
                 diagnostics={fieldDiags}
+                onDiagnosticBadgeClick={onDiagnosticBadgeClick
+                  ? (topPath) => onDiagnosticBadgeClick(record.coordinate, topPath)
+                  : undefined}
               />
             </>
           ) : (

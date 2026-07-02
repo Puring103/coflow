@@ -29,6 +29,7 @@ import {
   type FieldValue,
 } from '../wire'
 import { DataCardCompact, EnumDirectSelect, RefDirectSelect, summaryOf } from './DataCard'
+import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
 
 interface Props {
@@ -54,11 +55,14 @@ interface Props {
   onInsertRecord?: (recordKey: string, actualType: string, fields: FieldValue) => Promise<void>
   /** Delete an existing record by key. */
   onDeleteRecord?: (coordinate: RecordCoordinate) => Promise<void>
+  /** Click on a corner badge on a row or cell. `fieldPath` is null for
+   *  record-level (the Key column badge), otherwise the column name. */
+  onDiagnosticBadgeClick?: (coordinate: RecordCoordinate, fieldPath: string | null) => void
 }
 
 const ROW_H = 30
 
-export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selectedCoordinate, onSelectRecord, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onDeleteRecord }: Props) {
+export const TableView = memo(function TableView({ data, activeType, readOnly, diagnostics, searchQuery, selectedCoordinate, onSelectRecord, onClearSelection, onOpenRecord, onWriteField, onRenameRecord, onInsertRecord, onDeleteRecord, onDiagnosticBadgeClick }: Props) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; row: RecordRow } | null>(null)
   const [showNewRecord, setShowNewRecord] = useState(false)
   const [newKey, setNewKey] = useState('')
@@ -118,15 +122,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     }
     return m
   }, [diagnostics, data.file_path, data.records])
-  const recordSeverity = (coordinate: RecordCoordinate): 'error' | 'warning' | null => {
-    let sev: 'error' | 'warning' | null = null
-    for (const d of diagnostics ?? []) {
-      if (d.file_path !== data.file_path || !diagnosticMatchesCoordinate(d, coordinate)) continue
-      if (d.severity === 'error') return 'error'
-      if (d.severity === 'warning') sev = 'warning'
-    }
-    return sev
-  }
+  const recordSeverity = (coordinate: RecordCoordinate): 'error' | 'warning' | null =>
+    severityForCoordinate(diagnostics, data.file_path, coordinate)
 
   const allFieldNames = useMemo(
     () => data.columns
@@ -164,13 +161,26 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       helper.accessor(row => recordKey(row), {
         id: 'key',
         header: 'Key',
-        cell: info => (
-          <EditableKeyCell
-            value={info.getValue()}
-            editable={canRename}
-            onCommit={canRename ? next => onRenameRecord!(info.row.original.coordinate, next) : undefined}
-          />
-        ),
+        cell: info => {
+          const rowSev = severityForCoordinate(diagnostics, data.file_path, info.row.original.coordinate)
+          return (
+            <span className={`cell-key-wrap${rowSev ? ' has-diag' : ''}`}>
+              <EditableKeyCell
+                value={info.getValue()}
+                editable={canRename}
+                onCommit={canRename ? next => onRenameRecord!(info.row.original.coordinate, next) : undefined}
+              />
+              {(rowSev === 'error' || rowSev === 'warning') && (
+                <DiagBadge
+                  severity={rowSev}
+                  onClick={onDiagnosticBadgeClick
+                    ? () => onDiagnosticBadgeClick(info.row.original.coordinate, null)
+                    : undefined}
+                />
+              )}
+            </span>
+          )
+        },
         size: columnSizeHints.key ?? 140,
       }),
       ...allFieldNames.map(name =>
@@ -181,7 +191,22 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
           cell: ({ row }) => {
             const f = fieldCell(row.original, name)
             const sev = cellDiagIndex.get(`${coordinateId(row.original.coordinate)}::${name}`)
-            if (!f) return <span className={`dc-null${sev ? ' dc-cell-diag dc-cell-diag-' + sev : ''}`}>—</span>
+            const cellBadge = (sev === 'error' || sev === 'warning') ? (
+              <DiagBadge
+                severity={sev}
+                onClick={onDiagnosticBadgeClick
+                  ? () => onDiagnosticBadgeClick(row.original.coordinate, name)
+                  : undefined}
+              />
+            ) : null
+            if (!f) {
+              return (
+                <span className={`dc-null-wrap${sev ? ' dc-cell-diag dc-cell-diag-' + sev : ''}`}>
+                  <span className="dc-null">—</span>
+                  {cellBadge}
+                </span>
+              )
+            }
             const isDimensionDefault = isDimensionDefaultField(row.original, f.name)
             const cellEditable = canEdit && !isDimensionDefault
             const title = isDimensionDefault
@@ -197,13 +222,14 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                   nullable={cellNullable(f)}
                   onCommit={cellEditable ? next => onWriteField!(row.original.coordinate, [fieldPathField(name)], next) : undefined}
                 />
+                {cellBadge}
               </span>
             )
           },
         }),
       ),
     ]
-  }, [allFieldNames, columnSizeHints, canEdit, canRename, onWriteField, onRenameRecord, cellDiagIndex, diagnostics, data.file_path])
+  }, [allFieldNames, columnSizeHints, canEdit, canRename, onWriteField, onRenameRecord, cellDiagIndex, diagnostics, data.file_path, diagnostics, onDiagnosticBadgeClick])
 
   // Global filter: match key or any scalar field value (via summaryOf).
   const globalFilterFn = useMemo(
@@ -469,6 +495,21 @@ function columnDropdownKind(
     if (cellEnumType(f)) return 'enum'
   }
   return null
+}
+
+function severityForCoordinate(
+  diagnostics: DiagnosticItem[] | undefined,
+  filePath: string,
+  coordinate: RecordCoordinate,
+): 'error' | 'warning' | null {
+  if (!diagnostics) return null
+  let sev: 'error' | 'warning' | null = null
+  for (const d of diagnostics) {
+    if (d.file_path !== filePath || !diagnosticMatchesCoordinate(d, coordinate)) continue
+    if (d.severity === 'error') return 'error'
+    if (d.severity === 'warning') sev = 'warning'
+  }
+  return sev
 }
 
 function findDiagMessage(

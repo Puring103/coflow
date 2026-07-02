@@ -203,6 +203,65 @@ export function diagnosticSeverity(severity: string): 'error' | 'warning' | 'inf
   return severity === 'error' || severity === 'warning' ? severity : 'info'
 }
 
+/** Stable identity for a diagnostic. Same anchor + code + message ⇒ same key,
+ *  so a focus request survives project snapshot refreshes even without an
+ *  explicit ID field on FlatDiagnostic. */
+export function diagnosticKey(diagnostic: DiagnosticItem): string {
+  return [
+    diagnostic.file_path ?? '',
+    diagnostic.actual_type ?? '',
+    diagnostic.record_key ?? '',
+    diagnostic.field_path ?? '',
+    diagnostic.severity,
+    diagnostic.code,
+    diagnostic.message,
+  ].join('')
+}
+
+/** Compare a diagnostic against a (record, field?) anchor. When `fieldPath`
+ *  is provided, matches only when the diagnostic sits at that path or shares
+ *  the same top-level segment (so a cell/row angle-badge whose column is the
+ *  top-level field lights up for any nested problem inside). */
+export function diagnosticMatchesAnchor(
+  diagnostic: DiagnosticItem,
+  filePath: string,
+  recordKey: string,
+  actualType: string | null,
+  fieldPath: string | null,
+): boolean {
+  if (diagnostic.file_path !== filePath) return false
+  if (diagnostic.record_key !== recordKey) return false
+  if (actualType !== null && diagnostic.actual_type !== null && diagnostic.actual_type !== actualType) {
+    return false
+  }
+  if (fieldPath === null) return true
+  if (!diagnostic.field_path) return false
+  if (diagnostic.field_path === fieldPath) return true
+  return topLevelSegment(diagnostic.field_path) === topLevelSegment(fieldPath)
+}
+
+function topLevelSegment(path: string): string {
+  const match = path.match(/^[^.[]+/)
+  return match ? match[0] : path
+}
+
+/** Enumerate every strict-prefix path of a nested field path. Used to decide
+ *  which foldouts must auto-expand when we highlight a diagnostic anchor
+ *  buried inside an object/array. */
+export function ancestorFieldPaths(fieldPath: string): string[] {
+  const out: string[] = []
+  let cur = fieldPath
+  while (true) {
+    const lastDot = cur.lastIndexOf('.')
+    const lastBracket = cur.lastIndexOf('[')
+    const cut = Math.max(lastDot, lastBracket)
+    if (cut <= 0) break
+    cur = cur.slice(0, cut)
+    out.push(cur)
+  }
+  return out
+}
+
 export function errorMessage(err: unknown): string {
   if (isEditorError(err)) return err.message
   if (err instanceof Error) return err.message

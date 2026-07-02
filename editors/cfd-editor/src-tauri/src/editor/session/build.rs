@@ -55,7 +55,7 @@ pub(super) fn build_session(
     let engine = build_project_session(project, registry)
         .map_err(|err| EditorError::project(format!("failed to build project: {err}")))?;
     let file_tree = engine.file_tree();
-    let diagnostics = diagnostics_from_store(&engine.diagnostics);
+    let diagnostics = diagnostics_from_store(&engine.diagnostics, &project_root);
 
     Ok((
         EditorSession {

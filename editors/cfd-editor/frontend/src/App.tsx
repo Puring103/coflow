@@ -19,6 +19,8 @@ import type { WriterCapabilities } from './bindings/WriterCapabilities'
 import {
   cloneValue,
   deletedSnapshotValue,
+  diagnosticKey,
+  diagnosticMatchesAnchor,
   diagnosticMatchesCoordinate,
   diagnosticSeverity,
   errorDiagnostics,
@@ -42,6 +44,10 @@ import './style.css'
 
 const GRAPH_DEPTH = 3
 const GRAPH_LIMIT = 1_000
+
+/** Passed as `highlightField` when a record-level (no field path) jump lands
+ *  on a record view — RecordView flashes the CardHeader instead of a row. */
+export const RECORD_HIGHLIGHT_SENTINEL = '__record__'
 
 function graphCacheKey(
   filePath: string,
@@ -95,6 +101,11 @@ export default function App() {
   // the RecordView applies the highlight so subsequent navigations don't
   // re-flash it.
   const [highlightField, setHighlightField] = useState<string | null>(null)
+  // Diagnostics panel focus: which item (by stable key) should be revealed
+  // and pulsed. Set from either the panel itself (self-scroll) or from a
+  // record/field corner badge click. Consumed by DiagnosticsPanel; we bump
+  // `diagFocusTick` so repeat clicks on the same badge re-flash the item.
+  const [diagFocus, setDiagFocus] = useState<{ key: string; tick: number } | null>(null)
 
   // Resizable sidebar width, persisted to localStorage.
   const [sidebarW, setSidebarW] = useState<number>(() => {
@@ -343,6 +354,36 @@ export default function App() {
       router.push({ view: 'record', file: filePath, coordinate })
     },
     [router]
+  )
+
+  // Click on a corner badge (on a record or field): reveal the first
+  // matching diagnostic in the bottom panel. Falls back to record-level
+  // (fieldPath = null) if there's no exact field-level match.
+  const focusDiagnosticForAnchor = useCallback(
+    (
+      filePath: string,
+      recordKeyValue: string,
+      actualType: string | null,
+      fieldPath: string | null,
+    ) => {
+      if (!project) return
+      const source = project.diagnostics
+      // Prefer field-level; only fall back to record-level when the caller
+      // asked for a field. When they asked for the whole record we take the
+      // first diagnostic on it regardless of field.
+      let hit = fieldPath
+        ? source.find(d => diagnosticMatchesAnchor(d, filePath, recordKeyValue, actualType, fieldPath))
+        : undefined
+      if (!hit) {
+        hit = source.find(d => diagnosticMatchesAnchor(d, filePath, recordKeyValue, actualType, null))
+      }
+      if (!hit) return
+      setDiagFocus(prev => ({
+        key: diagnosticKey(hit!),
+        tick: (prev?.tick ?? 0) + 1,
+      }))
+    },
+    [project],
   )
 
   const openRecordByKey = useCallback(
@@ -715,6 +756,14 @@ export default function App() {
     () => activeFile && project ? project.diagnostics.filter(d => d.file_path === activeFile) : [],
     [activeFile, project?.diagnostics],
   )
+  // Set of file paths that can be opened via the record/table views. Used by
+  // the diagnostics panel to decide whether "跳转" is available for a row —
+  // if the diagnostic's file isn't part of the source set, we hide the button
+  // instead of taking the user somewhere that will just say "记录未找到".
+  const sourceFileSet = useMemo(
+    () => project ? new Set(collectSourceFiles(project)) : new Set<string>(),
+    [project],
+  )
 
   // Record counts shown next to the search bar across all views. `typeCount`
   // is the number of records of the active type in the current file;
@@ -781,6 +830,13 @@ export default function App() {
       return Promise.resolve()
     },
     [currentRoute?.view, currentRoute?.file, deleteRecord],
+  )
+  const tableOnBadgeClick = useCallback(
+    (coordinate: RecordCoordinate, fieldPath: string | null) => {
+      if (currentRoute?.view !== 'table') return
+      focusDiagnosticForAnchor(currentRoute.file, coordinate.key, coordinate.actual_type, fieldPath)
+    },
+    [currentRoute?.view, currentRoute?.file, focusDiagnosticForAnchor],
   )
 
   useEffect(() => {
@@ -1082,6 +1138,7 @@ export default function App() {
                     onRenameRecord={tableOnRenameRecord}
                     onInsertRecord={tableOnInsertRecord}
                     onDeleteRecord={tableOnDeleteRecord}
+                    onDiagnosticBadgeClick={tableOnBadgeClick}
                   />
                 )}
                 {currentRoute.view === 'record' && (
@@ -1097,6 +1154,9 @@ export default function App() {
                     onOpenRecord={coordinate => openRecord(currentRoute.file, coordinate)}
                     onWriteField={(coordinate, path, val) => writeField(currentRoute.file, coordinate, path, val)}
                     onRenameRecord={(coordinate, newKey) => renameRecord(currentRoute.file, coordinate, newKey)}
+                    onDiagnosticBadgeClick={(coordinate, fieldPath) =>
+                      focusDiagnosticForAnchor(currentRoute.file, coordinate.key, coordinate.actual_type, fieldPath)
+                    }
                   />
                 )}
                 {currentRoute.view === 'graph' && (
@@ -1105,12 +1165,16 @@ export default function App() {
                       graphData={activeGraph}
                       activeType={activeType}
                       fileCapabilities={fileCapabilities}
+                      diagnostics={project?.diagnostics}
                       onEnabledFieldsChange={setGraphEnabledFieldsStable}
                       onOpenRecord={(file, coordinate) => openRecord(file, coordinate)}
                       onSelectRecord={openInspector}
                       onClearSelection={closeInspector}
                       selectedCoordinate={inspectorCoord}
                       onWriteField={writeField}
+                      onDiagnosticBadgeClick={(file, coordinate, fieldPath) =>
+                        focusDiagnosticForAnchor(file, coordinate.key, coordinate.actual_type, fieldPath)
+                      }
                     />
                   ) : (
                     <div className="empty-hint">加载图谱中…</div>
@@ -1156,6 +1220,10 @@ export default function App() {
           onClose={closeInspector}
           onWriteField={writeField}
           onRenameRecord={renameRecord}
+          onDiagnosticBadgeClick={(coordinate, fieldPath) => {
+            if (!inspectorCoord) return
+            focusDiagnosticForAnchor(inspectorCoord.file, coordinate.key, coordinate.actual_type, fieldPath)
+          }}
         />
         </div>
       </div>
@@ -1163,7 +1231,13 @@ export default function App() {
       {project && (
         <DiagnosticsPanel
           diagnostics={project.diagnostics}
-          onJumpToRecord={(file, key, actualType) => openRecordByKey(file, key, actualType)}
+          focus={diagFocus}
+          onFocusConsumed={() => setDiagFocus(null)}
+          isJumpable={(file) => sourceFileSet.has(file)}
+          onJumpToRecord={(file, key, actualType) => {
+            setHighlightField(RECORD_HIGHLIGHT_SENTINEL)
+            openRecordByKey(file, key, actualType)
+          }}
           onJumpToField={(file, key, actualType, fieldPath) => {
             setHighlightField(fieldPath)
             openRecordByKey(file, key, actualType)

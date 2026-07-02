@@ -38,6 +38,7 @@ import {
   stringValue,
 } from '../wire'
 import { Icon } from './Icon'
+import { DiagBadge } from './DiagBadge'
 import { typeColor, enumColor } from '../utils/typeColor'
 import { buildDefaultObject, loadEnumVariants, loadRefTargets } from '../utils/editContext'
 
@@ -46,11 +47,19 @@ export function CardHeader({
   actualType,
   filePath,
   onRename,
+  diagSeverity,
+  onDiagBadgeClick,
+  highlight,
 }: {
   recordKey: string
   actualType: string
   filePath?: string
   onRename?: (newKey: string) => void
+  /** Record-level severity: shows a corner badge that focuses the panel. */
+  diagSeverity?: 'error' | 'warning' | null
+  onDiagBadgeClick?: () => void
+  /** When true, the header briefly pulses (record-level diagnostic jump). */
+  highlight?: boolean
 }) {
   const color = typeColor(actualType)
   const [editing, setEditing] = useState(false)
@@ -64,7 +73,7 @@ export function CardHeader({
   }
 
   return (
-    <div className="gn-header" style={{ '--node-color': color } as CSSProperties}>
+    <div className={`gn-header${highlight ? ' gn-header-flash' : ''}`} style={{ '--node-color': color } as CSSProperties}>
       <div className="gn-color-bar" />
       {editing ? (
         <input
@@ -92,6 +101,9 @@ export function CardHeader({
         <span className="gn-type">{actualType}</span>
         {filePath && <span className="gn-file">{filePath.split('/').pop()}</span>}
       </div>
+      {(diagSeverity === 'error' || diagSeverity === 'warning') && (
+        <DiagBadge severity={diagSeverity} onClick={onDiagBadgeClick} />
+      )}
     </div>
   )
 }
@@ -276,8 +288,15 @@ export interface FieldDiagnostic {
 interface DiagCtxValue {
   byPath: Map<string, FieldDiagnostic[]>
   prefixes: Map<string, 'error' | 'warning'>
+  onBadgeClick?: (topLevelFieldPath: string) => void
 }
 const DiagCtx = createContext<DiagCtxValue | null>(null)
+
+/** Set of pathKeys whose ExpandableRow should auto-expand on mount / when
+ *  the set changes. Used when a diagnostic jump lands on a nested field so
+ *  the row is actually visible after scrollIntoView. Cleared by whoever set
+ *  it once the highlight has been consumed. */
+const AutoExpandCtx = createContext<ReadonlySet<string>>(new Set())
 
 function severityRank(s: 'error' | 'warning' | 'info'): number {
   return s === 'error' ? 3 : s === 'warning' ? 2 : 1
@@ -289,7 +308,10 @@ function strongest(a: FieldDiagnostic[]): 'error' | 'warning' | 'info' {
   return best
 }
 
-function buildDiagCtx(diags: FieldDiagnostic[] | undefined): DiagCtxValue | null {
+function buildDiagCtx(
+  diags: FieldDiagnostic[] | undefined,
+  onBadgeClick?: (topLevelFieldPath: string) => void,
+): DiagCtxValue | null {
   if (!diags || diags.length === 0) return null
   const byPath = new Map<string, FieldDiagnostic[]>()
   const prefixes = new Map<string, 'error' | 'warning'>()
@@ -310,7 +332,7 @@ function buildDiagCtx(diags: FieldDiagnostic[] | undefined): DiagCtxValue | null
       if (d.severity === 'error' || cur !== 'warning') prefixes.set(p, d.severity)
     }
   }
-  return { byPath, prefixes }
+  return { byPath, prefixes, onBadgeClick }
 }
 
 export interface ExpandedProps {
@@ -323,6 +345,14 @@ export interface ExpandedProps {
   diagnostics?: FieldDiagnostic[]
   highlightField?: string | null
   onHighlightConsumed?: () => void
+  /** Called when the user clicks the corner badge of a diagnostic row.
+   *  Argument is the top-level field name (so nested-row problems still
+   *  route the panel focus to the same anchor the table cell uses). */
+  onDiagnosticBadgeClick?: (topLevelFieldPath: string) => void
+  /** Automatically expand every prefix of this path once, so a diagnostic
+   *  jump into a deeply nested field can actually reach its target row.
+   *  Cleared via `onHighlightConsumed` alongside `highlightField`. */
+  expandAlongPath?: string | null
 }
 
 export function DataCardExpanded({
@@ -335,8 +365,13 @@ export function DataCardExpanded({
   diagnostics,
   highlightField,
   onHighlightConsumed,
+  onDiagnosticBadgeClick,
+  expandAlongPath,
 }: ExpandedProps) {
-  const ctx = useMemo(() => buildDiagCtx(diagnostics), [diagnostics])
+  const ctx = useMemo(
+    () => buildDiagCtx(diagnostics, onDiagnosticBadgeClick),
+    [diagnostics, onDiagnosticBadgeClick],
+  )
   const inspectorRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -358,8 +393,51 @@ export function DataCardExpanded({
       onHighlightConsumed?.()
       return () => clearTimeout(t)
     }
-    onHighlightConsumed?.()
+    // Target not yet in the DOM — auto-expand along the path is likely still
+    // rendering. Defer to a microtask; if it still isn't there, retry a few
+    // times before giving up so nested foldouts have a chance to mount.
+    let attempts = 0
+    let raf = 0
+    const retry = () => {
+      const nowRoot = inspectorRef.current
+      if (!nowRoot) return
+      const hit = nowRoot.querySelector<HTMLElement>(
+        `.dc-row[data-field-path="${CSS.escape(highlightField)}"]`,
+      ) ?? (top
+        ? nowRoot.querySelector<HTMLElement>(`.dc-row[data-field-name="${CSS.escape(top)}"]`)
+        : null)
+      if (hit) {
+        hit.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        hit.classList.add('dc-row-flash')
+        setTimeout(() => hit.classList.remove('dc-row-flash'), 1600)
+        onHighlightConsumed?.()
+        return
+      }
+      if (++attempts >= 6) {
+        onHighlightConsumed?.()
+        return
+      }
+      raf = requestAnimationFrame(retry)
+    }
+    raf = requestAnimationFrame(retry)
+    return () => cancelAnimationFrame(raf)
   }, [highlightField, onHighlightConsumed])
+
+  const autoExpandSet = useMemo(() => {
+    if (!expandAlongPath) return new Set<string>()
+    const set = new Set<string>()
+    let cur = expandAlongPath
+    set.add(cur)
+    while (true) {
+      const lastDot = cur.lastIndexOf('.')
+      const lastBracket = cur.lastIndexOf('[')
+      const cut = Math.max(lastDot, lastBracket)
+      if (cut <= 0) break
+      cur = cur.slice(0, cut)
+      set.add(cur)
+    }
+    return set
+  }, [expandAlongPath])
 
   const body = (
     <div className="dc-inspector" ref={inspectorRef} style={{ '--depth': depth } as CSSProperties}>
@@ -392,7 +470,10 @@ export function DataCardExpanded({
       })}
     </div>
   )
-  return ctx ? <DiagCtx.Provider value={ctx}>{body}</DiagCtx.Provider> : body
+  const wrapped = (
+    <AutoExpandCtx.Provider value={autoExpandSet}>{body}</AutoExpandCtx.Provider>
+  )
+  return ctx ? <DiagCtx.Provider value={ctx}>{wrapped}</DiagCtx.Provider> : wrapped
 }
 
 function isDimensionDefaultField(actualType: string | undefined, fieldName: string): boolean {
@@ -556,8 +637,26 @@ function ScalarFieldRow({
         </div>
         {trailing}
       </div>
+      <DiagCornerBadge severity={diag.sev} pathKey={pathKey} />
     </div>
   )
+}
+
+function DiagCornerBadge({ severity, pathKey }: {
+  severity: 'error' | 'warning' | 'info' | null
+  pathKey?: string
+}) {
+  const ctx = useContext(DiagCtx)
+  if (severity !== 'error' && severity !== 'warning') return null
+  const onClick = ctx?.onBadgeClick && pathKey
+    ? () => ctx.onBadgeClick!(topLevelSegmentOfPathKey(pathKey))
+    : undefined
+  return <DiagBadge severity={severity} onClick={onClick} />
+}
+
+function topLevelSegmentOfPathKey(pathKey: string): string {
+  const m = pathKey.match(/^[^.[]+/)
+  return m ? m[0] : pathKey
 }
 
 function DirectEditor({
@@ -1062,7 +1161,17 @@ function ExpandableRow({
   trailing?: ReactNode
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
 }) {
-  const [expanded, setExpanded] = useState(false)
+  const autoExpandPaths = useContext(AutoExpandCtx)
+  const shouldAutoExpand = !!pathKey && autoExpandPaths.has(pathKey)
+  const [expanded, setExpanded] = useState(shouldAutoExpand)
+  useEffect(() => {
+    if (shouldAutoExpand && !expanded) {
+      setExpanded(true)
+      if (pathKey) onRowToggle?.(pathKey, true)
+    }
+    // Only fire when the auto-expand set changes for this row. If the user
+    // then manually collapses it, we don't force it back open.
+  }, [shouldAutoExpand])
   const summary = headerSummary(value, declaredType)
   const count = childCount(value)
   const childAnnotation = (key: string | number) => annotationChild(valueAnnotation, key)
@@ -1093,6 +1202,7 @@ function ExpandableRow({
           </div>
           {trailing}
         </div>
+        <DiagCornerBadge severity={diag.sev} pathKey={pathKey} />
       </div>
       {expanded && (
         <>

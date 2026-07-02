@@ -1210,6 +1210,7 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   align-items: stretch;
   min-height: var(--h-row);
   border-bottom: 1px solid var(--border);
+  position: relative;
 }
 .dc-row:last-child { border-bottom: none; }
 .dc-row:hover { background: var(--bg-3); }
@@ -1435,6 +1436,75 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 .dc-row-flash {
   animation: dc-row-flash-pulse 1.6s ease-out;
   border-radius: var(--radius-sm);
+}
+
+/* Corner badge shown on any element with a record- or field-level diagnostic.
+ * The parent must be `position: relative` (dc-row-diag, gn-header, cell-key-wrap
+ * and dc-cell-diag* wrappers all set this). The badge is a tiny pill in the
+ * upper-right so it sits above the row's value column without pushing content. */
+.diag-corner-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  line-height: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--bg-0);
+  z-index: 3;
+  box-shadow: 0 0 0 1px var(--bg-0);
+  transition: transform 80ms ease, box-shadow 80ms ease;
+}
+.diag-corner-badge:hover {
+  transform: scale(1.12);
+}
+.diag-corner-badge:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.diag-corner-error   { background: var(--red); }
+.diag-corner-warning { background: var(--yellow); color: #221; }
+
+/* Cells / rows / headers that host a corner badge. `cell-key-wrap` and
+ * `dc-null-wrap` are added by TableView; the others are pre-existing. */
+.cell-key-wrap,
+.dc-null-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding-right: 12px;
+}
+.dc-cell-diag {
+  position: relative;
+}
+.dc-null-wrap.dc-cell-diag { padding: 1px 12px 1px 5px; }
+.dc-null-wrap .dc-null { flex: 0 1 auto; }
+
+/* Focused item in the diagnostics panel (post-click flash). */
+@keyframes diag-item-flash {
+  0%   { background: color-mix(in srgb, var(--accent) 32%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
+  100% { background: transparent; box-shadow: inset 3px 0 0 transparent; }
+}
+.diag-item.focused {
+  animation: diag-item-flash 1.6s ease-out;
+}
+
+/* Record-level jump: flash the CardHeader. */
+@keyframes gn-header-flash {
+  0%   { background: color-mix(in srgb, var(--accent) 32%, var(--bg-3)); }
+  100% { background: var(--bg-3); }
+}
+.gn-header-flash {
+  animation: gn-header-flash 1.6s ease-out;
 }
 
 /* TableView cell tinting */
@@ -2087,6 +2157,7 @@ input.dc-pill-select.dc-pill-select-enum:focus {
   place-items: center;
   padding: 12px 14px;
   background: var(--bg-3);
+  position: relative;
 }
 .gn-compact-key {
   max-width: 100%;

@@ -210,6 +210,21 @@ fn patch_inserts_and_edits_cfd_records_then_reports_check_diagnostics() {
         .iter()
         .any(|diagnostic| diagnostic.stage == "CHECK"));
 
+    let check_diag = report
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.stage == "CHECK")
+        .expect("check diagnostic");
+    assert_eq!(
+        check_diag.record_key.as_deref(),
+        Some("bad_sword"),
+        "flat diagnostic should carry the record key so editor jump works: {check_diag:?}",
+    );
+    assert!(
+        check_diag.field_path.is_some(),
+        "flat diagnostic should carry the offending field path: {check_diag:?}",
+    );
+
     let text = std::fs::read_to_string(root.join("data").join("items.cfd")).expect("read cfd");
     assert!(text.contains("bad_sword"));
     assert!(text.contains("Rare"));

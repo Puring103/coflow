@@ -1,20 +1,30 @@
-import { useState, useMemo } from 'react'
-import type { DiagnosticItem } from '../wire'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import { diagnosticKey, type DiagnosticItem } from '../wire'
 import { Icon } from './Icon'
 
 interface Props {
   diagnostics: DiagnosticItem[]
+  /** Focus request from outside (e.g. a record/field corner badge click).
+   *  When `tick` changes we scroll to and pulse the matching item; if the
+   *  panel is collapsed we auto-expand it first. */
+  focus?: { key: string; tick: number } | null
+  onFocusConsumed?: () => void
+  /** Predicate that decides whether a "跳转" button should be offered.
+   *  Defaults to "always available when the diagnostic carries a file". */
+  isJumpable?: (filePath: string) => boolean
   onJumpToRecord?: (file: string, key: string, actualType: string | null) => void
   onJumpToField?: (file: string, key: string, actualType: string | null, fieldPath: string) => void
 }
 
 type SevFilter = 'all' | 'error' | 'warning' | 'info'
 
-export function DiagnosticsPanel({ diagnostics, onJumpToRecord, onJumpToField }: Props) {
+export function DiagnosticsPanel({ diagnostics, focus, onFocusConsumed, isJumpable, onJumpToRecord, onJumpToField }: Props) {
   const [collapsed, setCollapsed] = useState(false)
   const [sevFilter, setSevFilter] = useState<SevFilter>('all')
   const [fileFilter, setFileFilter] = useState<string>('all')
   const [groupByFile, setGroupByFile] = useState(true)
+  const listRef = useRef<HTMLDivElement>(null)
+  const [flashKey, setFlashKey] = useState<string | null>(null)
 
   const errors   = diagnostics.filter(d => d.severity === 'error').length
   const warnings = diagnostics.filter(d => d.severity === 'warning').length
@@ -35,6 +45,38 @@ export function DiagnosticsPanel({ diagnostics, onJumpToRecord, onJumpToField }:
       return true
     })
   }, [diagnostics, sevFilter, fileFilter])
+
+  // Ensure a focused diagnostic passes the current filters. Otherwise the
+  // node exists in `diagnostics` but not in the rendered `filtered` list, so
+  // querySelector would return null. We only override filters when the
+  // focused item is currently hidden.
+  useEffect(() => {
+    if (!focus) return
+    const target = diagnostics.find(d => diagnosticKey(d) === focus.key)
+    if (!target) return
+    if (sevFilter !== 'all' && target.severity !== sevFilter) setSevFilter('all')
+    if (fileFilter !== 'all' && target.file_path !== fileFilter) setFileFilter('all')
+    setCollapsed(false)
+  }, [focus, diagnostics])
+
+  // Scroll to and pulse the focused item after the reveal effect above has
+  // (potentially) mutated filters/collapsed state and React re-rendered.
+  useEffect(() => {
+    if (!focus) return
+    const el = listRef.current?.querySelector<HTMLElement>(
+      `[data-diag-key="${cssEscape(focus.key)}"]`,
+    )
+    if (el) {
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      setFlashKey(focus.key)
+      const t = window.setTimeout(() => {
+        setFlashKey(prev => (prev === focus.key ? null : prev))
+      }, 1600)
+      onFocusConsumed?.()
+      return () => window.clearTimeout(t)
+    }
+    onFocusConsumed?.()
+  }, [focus, filtered, onFocusConsumed])
 
   // Group by file_path (null files bucketed under '(项目级)').
   const groups = useMemo(() => {
@@ -126,44 +168,55 @@ export function DiagnosticsPanel({ diagnostics, onJumpToRecord, onJumpToField }:
               按文件分组
             </label>
           </div>
-          <div className="diag-list" role="list">
+          <div className="diag-list" role="list" ref={listRef}>
             {(groupByFile ? groups : ([['', filtered]] as [string, DiagnosticItem[]][])).map(([gname, items]) => (
               <div key={gname} className="diag-group">
                 {groupByFile && items.length > 0 && (
                   <div className="diag-group-head">{gname} <span className="diag-group-count">{items.length}</span></div>
                 )}
-                {items.map((d, i) => (
-                  <div key={i} className={`diag-item ${d.severity}`} role="listitem">
-                    <span className="diag-icon">
-                      <Icon
-                        name={d.severity === 'error' ? 'error' : d.severity === 'warning' ? 'warning' : 'info'}
-                        size={14}
-                        aria-hidden
-                      />
-                    </span>
-                    <span className="diag-msg">{d.message}</span>
-                    {d.code && <span className="diag-code">{d.code}</span>}
-                    {d.field_path && d.file_path && d.record_key && onJumpToField ? (
-                      <button
-                        className="diag-jump"
-                        onClick={() => onJumpToField(d.file_path!, d.record_key!, d.actual_type, d.field_path!)}
-                        title={`跳转到字段 ${d.field_path}`}
-                      >
-                        <Icon name="jump" size={11} aria-hidden />
-                        {d.field_path}
-                      </button>
-                    ) : d.file_path && d.record_key && onJumpToRecord ? (
-                      <button
-                        className="diag-jump"
-                        onClick={() => onJumpToRecord(d.file_path!, d.record_key!, d.actual_type)}
-                        aria-label={`跳转到记录 ${d.record_key}`}
-                      >
-                        <Icon name="jump" size={11} aria-hidden />
-                        跳转
-                      </button>
-                    ) : null}
-                  </div>
-                ))}
+                {items.map((d, i) => {
+                  const key = diagnosticKey(d)
+                  const canJump = !!d.file_path && !!d.record_key && (!isJumpable || isJumpable(d.file_path))
+                  const showFieldJump = canJump && !!d.field_path && !!onJumpToField
+                  const showRecordJump = canJump && !showFieldJump && !!onJumpToRecord
+                  return (
+                    <div
+                      key={i}
+                      className={`diag-item ${d.severity}${flashKey === key ? ' focused' : ''}`}
+                      role="listitem"
+                      data-diag-key={key}
+                    >
+                      <span className="diag-icon">
+                        <Icon
+                          name={d.severity === 'error' ? 'error' : d.severity === 'warning' ? 'warning' : 'info'}
+                          size={14}
+                          aria-hidden
+                        />
+                      </span>
+                      <span className="diag-msg">{d.message}</span>
+                      {d.code && <span className="diag-code">{d.code}</span>}
+                      {showFieldJump ? (
+                        <button
+                          className="diag-jump"
+                          onClick={() => onJumpToField!(d.file_path!, d.record_key!, d.actual_type, d.field_path!)}
+                          title={`跳转到字段 ${d.field_path}`}
+                        >
+                          <Icon name="jump" size={11} aria-hidden />
+                          {d.field_path}
+                        </button>
+                      ) : showRecordJump ? (
+                        <button
+                          className="diag-jump"
+                          onClick={() => onJumpToRecord!(d.file_path!, d.record_key!, d.actual_type)}
+                          aria-label={`跳转到记录 ${d.record_key}`}
+                        >
+                          <Icon name="jump" size={11} aria-hidden />
+                          跳转
+                        </button>
+                      ) : null}
+                    </div>
+                  )
+                })}
               </div>
             ))}
             {filtered.length === 0 && (
@@ -174,4 +227,9 @@ export function DiagnosticsPanel({ diagnostics, onJumpToRecord, onJumpToField }:
       )}
     </div>
   )
+}
+
+function cssEscape(s: string): string {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(s)
+  return s.replace(/["\\]/g, '\\$&')
 }

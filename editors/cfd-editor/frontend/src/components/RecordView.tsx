@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { FileRecords } from '../bindings/FileRecords'
 import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
@@ -15,7 +15,7 @@ import {
 import { DataCardExpanded, CardHeader } from './DataCard'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
-import { diagnosticsForRecord } from '../App'
+import { diagnosticsForRecord, RECORD_HIGHLIGHT_SENTINEL } from '../App'
 
 interface Props {
   data: FileRecords
@@ -30,15 +30,27 @@ interface Props {
   onOpenRecord: (coordinate: RecordCoordinate) => void
   onWriteField?: (coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue) => Promise<RecordRow | void>
   onRenameRecord?: (coordinate: RecordCoordinate, newKey: string) => Promise<RecordRow | void>
+  /** Click on a corner badge — either the CardHeader (fieldPath = null) or
+   *  a field row (top-level fieldPath). Forwarded up to App so the
+   *  diagnostics panel can focus the matching item. */
+  onDiagnosticBadgeClick?: (coordinate: RecordCoordinate, fieldPath: string | null) => void
 }
 
-export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, highlightField, onHighlightConsumed, onOpenRecord, onWriteField, onRenameRecord }: Props) {
+export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics, recordSearch, highlightField, onHighlightConsumed, onOpenRecord, onWriteField, onRenameRecord, onDiagnosticBadgeClick }: Props) {
   const record = data.records.find(r => sameCoordinate(r.coordinate, coordinate))
   const [fieldSearch, setFieldSearch] = useState('')
   const fieldSearchRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
 
   const activeId = coordinateId(coordinate)
+
+  // Record-level highlight burns off after the header flashes — the child
+  // DataCardExpanded only clears the highlight for field-level jumps.
+  useEffect(() => {
+    if (highlightField !== RECORD_HIGHLIGHT_SENTINEL) return
+    const t = setTimeout(() => onHighlightConsumed?.(), 1600)
+    return () => clearTimeout(t)
+  }, [highlightField, onHighlightConsumed])
 
   const allSidebarRecords = typeFilter
     ? data.records.filter(r => recordActualType(r) === typeFilter)
@@ -141,6 +153,9 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
           actualType={recordActualType(record)}
           filePath={data.file_path}
           onRename={canRename ? async (next) => { await onRenameRecord!(record.coordinate, next) } : undefined}
+          diagSeverity={recordSeverity(record.coordinate)}
+          onDiagBadgeClick={onDiagnosticBadgeClick ? () => onDiagnosticBadgeClick(record.coordinate, null) : undefined}
+          highlight={highlightField === RECORD_HIGHLIGHT_SENTINEL}
         />
         <div className="rv-search-bar">
           <Icon name="search" size={13} className="rv-search-icon" aria-hidden />
@@ -162,8 +177,12 @@ export function RecordView({ data, coordinate, typeFilter, readOnly, diagnostics
           actualType={recordActualType(record)}
           onEdit={readOnly || !onWriteField ? undefined : (path, val) => { onWriteField(record.coordinate, path, val) }}
           diagnostics={fieldDiags}
-          highlightField={highlightField}
+          highlightField={highlightField === RECORD_HIGHLIGHT_SENTINEL ? null : highlightField}
+          expandAlongPath={highlightField && highlightField !== RECORD_HIGHLIGHT_SENTINEL ? highlightField : null}
           onHighlightConsumed={onHighlightConsumed}
+          onDiagnosticBadgeClick={onDiagnosticBadgeClick
+            ? (topPath) => onDiagnosticBadgeClick(record.coordinate, topPath)
+            : undefined}
         />
       </div>
     </div>

@@ -11,8 +11,10 @@ import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
 import type { WriterCapabilities } from '../bindings/WriterCapabilities'
 import {
+  diagnosticMatchesCoordinate,
   graphEdgeView,
   graphNodeView,
+  type DiagnosticItem,
   type FieldPathSegment,
   type FieldValue,
   type GraphEdgeView,
@@ -20,6 +22,7 @@ import {
 } from '../wire'
 import { isEditableCapabilities, isEditableFile } from '../utils/editable'
 import { DataCardNode, CardHeader, NODE_PEEK_FIELDS, countVisibleRows } from './DataCard'
+import { DiagBadge } from './DiagBadge'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
 import type { LayoutWorkerRequest, LayoutWorkerResponse } from './GraphView.layout.worker'
@@ -123,6 +126,9 @@ interface NodeData extends Record<string, unknown> {
   onCtrlClick?: () => void
   /** Visually mark this node as the current inspector selection. */
   selected?: boolean
+  /** Record-level severity, drives the corner badge on the graph node. */
+  diagSeverity?: 'error' | 'warning' | null
+  onDiagBadgeClick?: () => void
 }
 
 // ─── CfdNode ─────────────────────────────────────────────────────────────────
@@ -131,7 +137,7 @@ interface NodeData extends Record<string, unknown> {
 // threshold changes don't query every rendered node.
 
 function CfdNode({ id, data }: NodeProps) {
-  const { graphNode: gn, expanded, outgoingPaths, compact, measureHandles, rowExpandKey, onToggleExpand, onRowToggle, onEdit, onCtrlClick, selected } = data as NodeData
+  const { graphNode: gn, expanded, outgoingPaths, compact, measureHandles, rowExpandKey, onToggleExpand, onRowToggle, onEdit, onCtrlClick, selected, diagSeverity, onDiagBadgeClick } = data as NodeData
   const rootRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLDivElement>(null)
   const updateNodeInternals = useUpdateNodeInternals()
@@ -241,11 +247,20 @@ function CfdNode({ id, data }: NodeProps) {
       {compact ? (
         <div ref={headerRef} className="gn-compact-body">
           <div className="gn-compact-key">{gn.key}</div>
+          {(diagSeverity === 'error' || diagSeverity === 'warning') && (
+            <DiagBadge severity={diagSeverity} onClick={onDiagBadgeClick} />
+          )}
         </div>
       ) : (
         <>
           <div ref={headerRef}>
-            <CardHeader recordKey={gn.key} actualType={gn.actual_type} filePath={gn.file_path} />
+            <CardHeader
+              recordKey={gn.key}
+              actualType={gn.actual_type}
+              filePath={gn.file_path}
+              diagSeverity={diagSeverity}
+              onDiagBadgeClick={onDiagBadgeClick}
+            />
           </div>
           {gn.is_collapsed ? (
             <div className="gn-collapsed">折叠（超出深度）</div>
@@ -330,6 +345,21 @@ function isCompactGraphZoom(zoom: number): boolean {
 function topLevelField(path: string): string {
   const m = path.match(/^[^.[]+/)
   return m ? m[0] : path
+}
+
+function severityForGraphNode(
+  diagnostics: DiagnosticItem[] | undefined,
+  node: GraphNodeView,
+): 'error' | 'warning' | null {
+  if (!diagnostics) return null
+  let sev: 'error' | 'warning' | null = null
+  for (const d of diagnostics) {
+    if (d.file_path !== node.file_path) continue
+    if (!diagnosticMatchesCoordinate(d, node.coordinate)) continue
+    if (d.severity === 'error') return 'error'
+    if (d.severity === 'warning') sev = 'warning'
+  }
+  return sev
 }
 
 function defaultEnabledFields(
@@ -658,6 +688,9 @@ interface Props {
   graphData: GraphData
   activeType?: string
   fileCapabilities?: Record<string, WriterCapabilities>
+  /** Full diagnostics list (not pre-filtered by file) — nodes in the graph
+   *  can point at records that live outside the focus file. */
+  diagnostics?: DiagnosticItem[]
   onEnabledFieldsChange?: (fields: string[]) => void
   onOpenRecord: (file: string, coordinate: RecordCoordinate) => void
   /** Plain click on a node: open the side inspector for that record. */
@@ -669,9 +702,12 @@ interface Props {
   onWriteField?: (
     filePath: string, coordinate: RecordCoordinate, fieldPath: FieldPathSegment[], newValue: FieldValue
   ) => Promise<RecordRow | void>
+  onDiagnosticBadgeClick?: (
+    file: string, coordinate: RecordCoordinate, fieldPath: string | null,
+  ) => void
 }
 
-export function GraphView({ graphData, activeType, fileCapabilities, onEnabledFieldsChange, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField }: Props) {
+export function GraphView({ graphData, activeType, fileCapabilities, diagnostics, onEnabledFieldsChange, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField, onDiagnosticBadgeClick }: Props) {
   const [zoomCompactNodes, setZoomCompactNodes] = useState(false)
   const graph = useMemo(
     () => ({
@@ -799,6 +835,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, onEnabledFi
         const capability = fileCapabilities?.[n.file_path]
         const editable = !!onWriteField && (capability ? isEditableCapabilities(capability) : isEditableFile(n.file_path))
         const rowExpanded = nodeRowExpandedMap.get(n.id)
+        const nodeSev = severityForGraphNode(diagnostics, n)
         return {
           id: n.id,
           type: 'cfd',
@@ -820,11 +857,15 @@ export function GraphView({ graphData, activeType, fileCapabilities, onEnabledFi
               && selectedCoordinate.file === n.file_path
               && selectedCoordinate.coordinate.actual_type === n.coordinate.actual_type
               && selectedCoordinate.coordinate.key === n.coordinate.key,
+            diagSeverity: nodeSev,
+            onDiagBadgeClick: onDiagnosticBadgeClick
+              ? () => onDiagnosticBadgeClick(n.file_path, n.coordinate, null)
+              : undefined,
           } satisfies NodeData,
         }
       })
     ),
-    [visibleNodes, positions, nodeExpandedMap, nodeRowExpandedMap, outgoingPathsByNode, compactNodes, measureHandles, toggleNodeExpanded, handleRowToggle, onWriteField, onOpenRecord, fileCapabilities, selectedCoordinate]
+    [visibleNodes, positions, nodeExpandedMap, nodeRowExpandedMap, outgoingPathsByNode, compactNodes, measureHandles, toggleNodeExpanded, handleRowToggle, onWriteField, onOpenRecord, fileCapabilities, selectedCoordinate, diagnostics, onDiagnosticBadgeClick]
   )
 
   const rfEdges: Edge[] = useMemo(() => {

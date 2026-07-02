@@ -1423,7 +1423,20 @@ fn one_mutation_error(code: &'static str, message: impl Into<String>) -> Diagnos
 }
 
 fn session_flat_diagnostics(session: &ProjectSession) -> Vec<FlatDiagnostic> {
-    flat_diagnostics(session.diagnostics.as_set())
+    session
+        .diagnostics
+        .as_set()
+        .diagnostics
+        .iter()
+        .enumerate()
+        .map(|(index, diagnostic)| {
+            let location = session.diagnostics.logical_location(index);
+            let actual_type = location.and_then(|l| l.actual_type.clone());
+            let record_key = location.and_then(|l| l.record_key.clone());
+            let field_path = location.and_then(|l| l.field_path.clone());
+            diagnostic.flat_view(actual_type, record_key, field_path)
+        })
+        .collect()
 }
 
 fn flat_diagnostics(diagnostics: &DiagnosticSet) -> Vec<FlatDiagnostic> {
