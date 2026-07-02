@@ -8,4 +8,4 @@ import type { RecordCoordinate } from "./RecordCoordinate";
  * The record's stable identity is its `(actual_type, key)` coordinate.
  * `display_path` repeats the file path for hosts that already have a row.
  */
-export type RecordRow = { coordinate: RecordCoordinate, display_path: string, fields: Array<FieldCell>, field_index: Record<string, number>, field_summaries: Record<string, string>, };
+export type RecordRow = { coordinate: RecordCoordinate, display_path: string, fields: Array<FieldCell>, field_index: { [key in string]?: number }, field_summaries: { [key in string]?: string }, };

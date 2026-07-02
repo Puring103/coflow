@@ -551,6 +551,7 @@ interface Props {
   graphData: GraphData
   activeType?: string
   fileCapabilities?: Record<string, WriterCapabilities>
+  onEnabledFieldsChange?: (fields: string[]) => void
   onOpenRecord: (file: string, coordinate: RecordCoordinate) => void
   /** Plain click on a node: open the side inspector for that record. */
   onSelectRecord?: (file: string, coordinate: RecordCoordinate) => void
@@ -563,7 +564,7 @@ interface Props {
   ) => Promise<RecordRow | void>
 }
 
-export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField }: Props) {
+export function GraphView({ graphData, activeType, fileCapabilities, onEnabledFieldsChange, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField }: Props) {
   const [compactNodes, setCompactNodes] = useState(false)
   const graph = useMemo(
     () => ({
@@ -573,42 +574,10 @@ export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecor
     [graphData],
   )
 
-  // Fields that actually appear in the subgraph for the current activeType.
-  // Mirrors layoutAll's visibility logic but ignores field filtering itself,
-  // so toggling all chips off doesn't hide the chip list.
-  const availableFields = useMemo(() => {
-    const allEdges = graph.edges
-    let visibleSet: Set<string>
-    if (activeType) {
-      const touched = new Set<string>()
-      for (const e of allEdges) { touched.add(e.source); touched.add(e.target) }
-      const roots = graph.nodes
-        .filter(n => n.in_focus_file && n.actual_type === activeType && touched.has(n.id))
-        .map(n => n.id)
-      visibleSet = new Set(roots)
-      const out = new Map<string, string[]>()
-      for (const e of allEdges) {
-        ;(out.get(e.source) ?? (out.set(e.source, []), out.get(e.source)!)).push(e.target)
-      }
-      const q = [...roots]
-      while (q.length) {
-        const cur = q.shift()!
-        for (const nb of out.get(cur) ?? []) {
-          if (!visibleSet.has(nb)) { visibleSet.add(nb); q.push(nb) }
-        }
-      }
-    } else {
-      visibleSet = new Set<string>()
-      for (const e of allEdges) { visibleSet.add(e.source); visibleSet.add(e.target) }
-    }
-    const set = new Set<string>()
-    for (const e of allEdges) {
-      if (visibleSet.has(e.source) && visibleSet.has(e.target)) {
-        set.add(topLevelField(e.field_path))
-      }
-    }
-    return Array.from(set).sort()
-  }, [graph, activeType])
+  const availableFields = useMemo(
+    () => graphData.available_fields.slice().sort(),
+    [graphData.available_fields],
+  )
 
   const [enabledFields, setEnabledFields] = useState<Set<string>>(
     () => new Set(defaultEnabledFields(graph, availableFields, activeType)),
@@ -624,6 +593,10 @@ export function GraphView({ graphData, activeType, fileCapabilities, onOpenRecor
       return next
     })
   }, [availableFields, graph, activeType])
+  useEffect(() => {
+    if (availableFields.length === 0) return
+    onEnabledFieldsChange?.(Array.from(enabledFields).sort())
+  }, [availableFields.length, enabledFields, onEnabledFieldsChange])
 
   const [filterPanelOpen, setFilterPanelOpen] = useState(false)
 

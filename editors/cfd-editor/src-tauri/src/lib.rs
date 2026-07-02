@@ -8,8 +8,8 @@ mod watcher;
 use coflow_data_model::{CfdPathSegment, CfdValue};
 use coflow_engine::RecordCoordinate;
 use editor::{
-    DeleteRecordOutcome, EditorError, FileRecords, GraphData, InsertRecordOutcome, ProjectSnapshot,
-    RefTarget, RenameRecordOutcome, SessionStore, WriteFieldOutcome,
+    DeleteRecordOutcome, EditorError, FileRecords, GraphData, GraphQuery, InsertRecordOutcome,
+    ProjectSnapshot, RefTarget, RenameRecordOutcome, SessionStore, WriteFieldOutcome,
 };
 use tauri::{AppHandle, Manager, State};
 use watcher::ProjectWatchRegistry;
@@ -66,9 +66,22 @@ fn get_file_records(
 fn get_graph(
     session_id: u32,
     file_path: String,
+    active_type: Option<String>,
+    enabled_fields: Option<Vec<String>>,
+    depth: Option<usize>,
+    limit: Option<usize>,
     store: State<'_, SessionStore>,
 ) -> Result<GraphData, EditorError> {
-    store.get_graph(session_id, &file_path)
+    store.get_graph(
+        session_id,
+        &GraphQuery {
+            file_path,
+            active_type,
+            enabled_fields,
+            depth,
+            limit,
+        },
+    )
 }
 
 #[allow(clippy::needless_pass_by_value)]
