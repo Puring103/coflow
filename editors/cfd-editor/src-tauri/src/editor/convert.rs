@@ -12,6 +12,9 @@ use std::collections::BTreeMap;
 
 use crate::editor::types::{FieldAnnotation, FieldCell, RecordRow, SpreadInfo};
 
+const STRING_SUMMARY_TRUNCATE_AFTER_BYTES: usize = 40;
+const STRING_SUMMARY_PREFIX_BYTES: usize = 38;
+
 /// Lookup context the converter consults when annotating cells.
 pub struct WireContext<'a> {
     pub session: &'a ProjectSession,
@@ -73,8 +76,7 @@ fn value_summary(value: &CfdValue) -> String {
         CfdValue::Bool(value) => value.to_string(),
         CfdValue::Int(value) => value.to_string(),
         CfdValue::Float(value) => value.to_string(),
-        CfdValue::String(value) if value.len() > 40 => format!("{}...", &value[..38]),
-        CfdValue::String(value) => value.clone(),
+        CfdValue::String(value) => string_summary(value),
         CfdValue::Enum(value) => value
             .variant
             .clone()
@@ -101,6 +103,22 @@ fn value_summary(value: &CfdValue) -> String {
             }
         }
     }
+}
+
+fn string_summary(value: &str) -> String {
+    if value.len() <= STRING_SUMMARY_TRUNCATE_AFTER_BYTES {
+        return value.to_string();
+    }
+    let end = previous_char_boundary(value, STRING_SUMMARY_PREFIX_BYTES);
+    format!("{}...", &value[..end])
+}
+
+fn previous_char_boundary(value: &str, preferred_end: usize) -> usize {
+    let mut end = preferred_end.min(value.len());
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    end
 }
 
 const fn value_kind(value: &CfdValue) -> &'static str {
@@ -199,4 +217,28 @@ fn spread_info_for_source(
         source_record_file,
         source_field_path,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{string_summary, value_summary};
+    use coflow_data_model::CfdValue;
+
+    #[test]
+    fn string_summary_preserves_ascii_truncation_behavior() {
+        let value = "abcdefghijklmnopqrstuvwxyz0123456789ABCDE";
+
+        assert_eq!(
+            value_summary(&CfdValue::String(value.to_string())),
+            "abcdefghijklmnopqrstuvwxyz0123456789AB..."
+        );
+    }
+
+    #[test]
+    fn string_summary_truncates_at_utf8_boundary() {
+        let value = "婆".repeat(20);
+        let expected = format!("{}...", "婆".repeat(12));
+
+        assert_eq!(string_summary(&value), expected);
+    }
 }

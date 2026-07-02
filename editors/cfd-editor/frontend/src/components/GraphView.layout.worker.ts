@@ -1,7 +1,8 @@
 /// <reference lib="webworker" />
 
-import ELK from 'elkjs/lib/elk.bundled.js'
+import ELK from 'elkjs/lib/elk-api.js'
 import type { ElkNode } from 'elkjs/lib/elk-api'
+import elkWorkerUrl from 'elkjs/lib/elk-worker.min.js?url'
 
 export interface LayoutWorkerRequest {
   id: number
@@ -13,7 +14,7 @@ export type LayoutWorkerResponse =
   | { id: number; ok: false; error: string }
 
 const ctx = self as DedicatedWorkerGlobalScope
-const elk = new ELK()
+const elk = new ELK({ workerUrl: elkWorkerUrl })
 
 ctx.onmessage = async (event: MessageEvent<LayoutWorkerRequest>) => {
   const { id, graph } = event.data

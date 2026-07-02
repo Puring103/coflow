@@ -199,6 +199,65 @@ fn insert_record_returns_mutation_diagnostics_for_missing_required_ref() {
     assert!(!text.contains("bad_holder"));
 }
 
+#[test]
+fn graph_includes_table_array_reference_edges() {
+    let root = temp_project_dir("cfd-editor-table-array-graph");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema").join("main.cft"),
+        r#"
+            type MyEvent {
+                yesRes: [&MyEvent] = [];
+                noRes: [&MyEvent] = [];
+                content: string = "";
+            }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("Events.csv"),
+        "\
+id,yesRes,noRes,content
+root,&yes,&missing,Root
+yes,,,Yes
+missing,,,No
+",
+    )
+    .expect("write csv");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema:\n  - schema/main.cft\nsources:\n  - path: data/Events.csv\n    type: csv\n    sheets:\n      - sheet: Events\n        type: MyEvent\n        key: id\n",
+    )
+    .expect("write config");
+
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    let graph = store
+        .get_graph(
+            snapshot.session_id,
+            &cfd_editor_lib::editor::GraphQuery {
+                file_path: "data/Events.csv".to_string(),
+                active_type: Some("MyEvent".to_string()),
+                enabled_fields: None,
+                depth: Some(3),
+                limit: Some(100),
+            },
+        )
+        .expect("get graph");
+
+    assert_eq!(graph.available_fields, vec!["noRes", "yesRes"]);
+    assert!(graph.edges.iter().any(|edge| {
+        edge.source.key == "root" && edge.target.key == "yes" && edge.field_path == "yesRes[0]"
+    }));
+    assert!(graph.edges.iter().any(|edge| {
+        edge.source.key == "root" && edge.target.key == "missing" && edge.field_path == "noRes[0]"
+    }));
+}
+
 fn write_project(root: &std::path::Path, name: &str) {
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
     std::fs::write(

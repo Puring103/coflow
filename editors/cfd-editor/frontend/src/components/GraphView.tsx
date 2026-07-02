@@ -351,6 +351,12 @@ function defaultEnabledFields(
   return availableFields.filter(field => fields.has(field))
 }
 
+function sameStringSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false
+  for (const item of a) if (!b.has(item)) return false
+  return true
+}
+
 function graphEdgeId(kind: 'fwd' | 'back', edge: { source: string; target: string; field_path: string }): string {
   return `${kind}:${edge.source}->${edge.target}:${encodeURIComponent(edge.field_path)}`
 }
@@ -681,20 +687,34 @@ export function GraphView({ graphData, activeType, fileCapabilities, onEnabledFi
     [graphData.available_fields],
   )
 
-  const [enabledFields, setEnabledFields] = useState<Set<string>>(
-    () => new Set(defaultEnabledFields(graph, availableFields, activeType)),
+  const defaultFields = useMemo(
+    () => defaultEnabledFields(graph, availableFields, activeType),
+    [graph, availableFields, activeType],
   )
+
+  const focusFileKey = useMemo(
+    () => graphData.nodes.find(n => n.in_focus_file)?.file_path ?? '',
+    [graphData.nodes],
+  )
+  const [enabledFieldsOverride, setEnabledFieldsOverride] = useState<Set<string> | null>(null)
+  const enabledFields = useMemo(
+    () => enabledFieldsOverride ?? new Set(defaultFields),
+    [enabledFieldsOverride, defaultFields],
+  )
+
   useEffect(() => {
-    setEnabledFields(prev => {
+    setEnabledFieldsOverride(null)
+  }, [activeType, focusFileKey])
+
+  useEffect(() => {
+    setEnabledFieldsOverride(prev => {
+      if (prev === null) return null
       const next = new Set<string>()
-      if (prev.size === 0) {
-        for (const f of defaultEnabledFields(graph, availableFields, activeType)) next.add(f)
-      } else {
-        for (const f of availableFields) if (prev.has(f)) next.add(f)
-      }
-      return next
+      for (const f of availableFields) if (prev.has(f)) next.add(f)
+      return sameStringSet(prev, next) ? prev : next
     })
-  }, [availableFields, graph, activeType])
+  }, [availableFields])
+
   useEffect(() => {
     if (availableFields.length === 0) return
     onEnabledFieldsChange?.(Array.from(enabledFields).sort())
@@ -732,20 +752,31 @@ export function GraphView({ graphData, activeType, fileCapabilities, onEnabledFi
     forwardEdges: [],
     backEdges: [],
   })
+  const [layoutBusy, setLayoutBusy] = useState(false)
+  const [layoutError, setLayoutError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
+    setLayoutBusy(graph.nodes.length > 0 && enabledFields.size > 0)
+    setLayoutError(null)
     layoutAll(graph, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap)
       .then(next => {
-        if (!cancelled) setLayout(next)
+        if (!cancelled) {
+          setLayout(next)
+          setLayoutBusy(false)
+        }
       })
       .catch(err => {
         console.error('Failed to layout graph', err)
         if (!cancelled) {
           setLayout({ positions: new Map(), visibleNodes: [], forwardEdges: [], backEdges: [] })
+          setLayoutBusy(false)
+          setLayoutError(err instanceof Error ? err.message : String(err))
         }
       })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [graph, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap])
 
   const { positions, visibleNodes, forwardEdges, backEdges } = layout
@@ -903,8 +934,8 @@ export function GraphView({ graphData, activeType, fileCapabilities, onEnabledFi
   }, [])
 
   function toggleField(name: string) {
-    setEnabledFields(prev => {
-      const next = new Set(prev)
+    setEnabledFieldsOverride(prev => {
+      const next = new Set(prev ?? defaultFields)
       if (next.has(name)) next.delete(name); else next.add(name)
       return next
     })
@@ -922,7 +953,15 @@ export function GraphView({ graphData, activeType, fileCapabilities, onEnabledFi
     <div className="graph-view-wrap" ref={wrapRef}>
       <div className="graph-view">
         {rfNodes.length === 0 ? (
-          <div className="empty-hint">无可显示的引用关系</div>
+          <div className="empty-hint">
+            {layoutBusy
+              ? '布局图谱中…'
+              : layoutError
+                ? '图谱布局失败'
+                : availableFields.length > 0 && enabledFields.size === 0
+                  ? '未选择引用字段'
+                  : '无可显示的引用关系'}
+          </div>
         ) : (
           <>
             <ReactFlow
@@ -983,7 +1022,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, onEnabledFi
                   <span>字段过滤</span>
                   <button
                     className="btn btn-link"
-                    onClick={() => setEnabledFields(allOn ? new Set() : new Set(availableFields))}
+                    onClick={() => setEnabledFieldsOverride(allOn ? new Set() : new Set(availableFields))}
                   >
                     {allOn ? '全部隐藏' : noneOn ? '全部显示' : '反选'}
                   </button>
