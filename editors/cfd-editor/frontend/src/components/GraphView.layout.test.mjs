@@ -45,7 +45,7 @@ const layoutSource = [
   extractConst('PAD_V'),
   extractConst('COMPACT_ZOOM_THRESHOLD'),
   'async function getElk() { return globalThis.__elkForTest ??= new globalThis.__ELK() }',
-  'const NODE_PEEK_FIELDS = 4',
+  'const NODE_PEEK_FIELDS = 5',
   'function countVisibleRows(fields) { return fields.length }',
   extractInterface('LayoutResult'),
   extractFunction('estimateNodeHeight'),
@@ -143,7 +143,7 @@ test('compact mode keeps the same estimated card height', () => {
     { name: 'e', value: { kind: 'scalar', value: 5 }, annotation: null },
   ])
 
-  assert.equal(estimateNodeHeight(node, false, new Set()), 170)
+  assert.equal(estimateNodeHeight(node, false, new Set()), 164)
 })
 
 test('compact graph nodes keep the normal card width', () => {
