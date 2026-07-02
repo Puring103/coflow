@@ -45,6 +45,12 @@ const layoutSource = [
   extractConst('PAD_V'),
   extractConst('COMPACT_ZOOM_THRESHOLD'),
   'async function getElk() { return globalThis.__elkForTest ??= new globalThis.__ELK() }',
+  `async function runLayoutInWorker(graph) {
+    const laidOut = await (await getElk()).layout(graph)
+    const children = laidOut.children ?? []
+    const minX = children.length > 0 ? Math.min(...children.map(n => n.x ?? 0)) : 0
+    return new Map(children.map(n => [n.id, { x: (n.x ?? 0) - minX, y: n.y ?? 0 }]))
+  }`,
   'const NODE_PEEK_FIELDS = 5',
   'function countVisibleRows(fields) { return fields.length }',
   extractInterface('LayoutResult'),
