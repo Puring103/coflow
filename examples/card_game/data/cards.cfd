@@ -207,7 +207,7 @@ Card {
   # ── 中立随从：1费 ─────────────────────────────────────────────────────────
 
   card_wisp {
-    name_text: &txt_wisp,
+    name_text: &txt_ysera_awakens,
     card_type: Minion,
     faction: Neutral,
     rarity: Common,
@@ -217,11 +217,12 @@ Card {
     durability: 0,
     triggers: [],
     evolved_form: null,
-    cost_curve: [
-      { level: 1, value: 0 },
-    ],
+    cost_curve: [ScaleCurve {
+  level: 1,
+  value: 0,
+}],
     banned_with: [],
-    designer_tags: { balance_flag: 0 },
+    designer_tags: {"balance_flag": 0, "大幅度发": 0},
   }
 
   card_stonetusk_boar {
@@ -269,7 +270,7 @@ Card {
   # ── 进化形态（cost 6 >= 4，rarity Common >= Common，符合约束）────────────
 
   card_yeti_elder {
-    name_text: &txt_acidic_swamp_ooze,
+    name_text: &txt_wisp,
     card_type: Minion,
     faction: Neutral,
     rarity: Common,
@@ -277,9 +278,19 @@ Card {
     base_stats: { attack: 6, health: 8 },
     keywords: Taunt,
     durability: 0,
-    triggers: [
-      { event: OnTurnStart, effect: &eff_blessing_heal, condition: "" },
-    ],
+    triggers: [Trigger {
+  condition: "",
+  effect: &eff_blessing_heal,
+  event: OnTurnStart,
+}, Trigger {
+  condition: "",
+  effect: &eff_blessing_heal,
+  event: OnTurnStart,
+}, Trigger {
+  condition: "",
+  effect: &eff_blessing_heal,
+  event: OnTurnStart,
+}],
     evolved_form: null,
     cost_curve: [
       { level: 1,  value: 6 },
@@ -292,7 +303,7 @@ Card {
   # ── 中立随从：2费（含 Battlecry Trigger）─────────────────────────────────
 
   card_acidic_swamp_ooze {
-    name_text: &txt_acidic_swamp_ooze,
+    name_text: &txt_fireball,
     card_type: Minion,
     faction: Neutral,
     rarity: Common,
@@ -317,7 +328,7 @@ Card {
   # ── 联盟法术 ───────────────────────────────────────────────────────────────
 
   card_execute {
-    name_text: &txt_execute,
+    name_text: &txt_yeti_elder,
     card_type: Spell,
     faction: Alliance,
     rarity: Common,
@@ -356,7 +367,7 @@ Card {
   }
 
   card_divine_favor {
-    name_text: &txt_divine_favor,
+    name_text: &txt_fireball,
     card_type: Spell,
     faction: Alliance,
     rarity: Rare,
@@ -376,7 +387,7 @@ Card {
   # ── 联盟随从（含 Battlecry + Deathrattle 两个 Trigger）────────────────────
 
   card_blessed_champion {
-    name_text: &txt_blessed_champion,
+    name_text: &txt_divine_favor,
     card_type: Minion,
     faction: Alliance,
     rarity: Rare,
@@ -403,7 +414,7 @@ Card {
   # ── 奥术法术（中立/法师）──────────────────────────────────────────────────
 
   card_fireball {
-    name_text: &txt_fireball,
+    name_text: &txt_wisp,
     card_type: Spell,
     faction: Neutral,
     rarity: Common,
@@ -442,7 +453,7 @@ Card {
   }
 
   card_frost_nova {
-    name_text: &txt_frost_nova,
+    name_text: &txt_fireball,
     card_type: Spell,
     faction: Neutral,
     rarity: Common,
@@ -462,7 +473,7 @@ Card {
   # ── 令牌（by SummonEffect 召唤，本身不能放入牌组）────────────────────────
 
   card_silver_hand_recruit {
-    name_text: &txt_silver_hand_recruit,
+    name_text: &txt_execute,
     card_type: Minion,
     faction: Alliance,
     rarity: Common,
@@ -480,7 +491,7 @@ Card {
   # ── 传说随从（含 evolved_form 自引用链 / 多 Trigger / 记录引用触发效果）
 
   card_ysera {
-    name_text: &txt_ysera,
+    name_text: &txt_execute,
     card_type: Minion,
     faction: Neutral,
     rarity: Legendary,

@@ -137,15 +137,22 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
 
   const columnSizeHints = useMemo(() => {
     const hints: Record<string, number> = { key: 140 }
-    const CHAR_W = 7, MIN = 80, MAX = 420
+    const CHAR_W = 7.5, MIN = 80, MAX = 420
+    // Pill cells drop td padding but the pill itself owns 10+10 padding,
+    // 2px border and 22px chevron. Plain-text cells only need the td's
+    // horizontal padding.
+    const PILL_CHROME = 46
+    const PLAIN_CHROME = 24
     for (const column of data.columns) {
       if (!column.type_names.includes(activeType)) continue
-      const summary = column.max_summary_len * CHAR_W + 28
-      const header = column.name.length * CHAR_W + 32
+      const isPill = columnHasDropdown(data, column.name, activeType)
+      const chrome = isPill ? PILL_CHROME : PLAIN_CHROME
+      const summary = column.max_summary_len * CHAR_W + chrome
+      const header = column.name.length * CHAR_W + PLAIN_CHROME + 12 /* sort caret */
       hints[column.name] = Math.min(MAX, Math.max(MIN, Math.max(summary, header)))
     }
     return hints
-  }, [data.columns, activeType])
+  }, [data.columns, data.records, activeType])
 
   const canEdit = !readOnly && !!onWriteField
   const canRename = !readOnly && data.capabilities.can_edit_key && !!onRenameRecord
@@ -444,6 +451,17 @@ function fieldCell(record: RecordRow, fieldName: string) {
 
 
 
+function columnHasDropdown(data: FileRecords, fieldName: string, activeType: string): boolean {
+  for (const record of data.records) {
+    if (recordActualType(record) !== activeType) continue
+    const f = fieldCell(record, fieldName)
+    if (!f) continue
+    if (f.value.kind === 'ref' || f.value.kind === 'enum' || f.value.kind === 'bool') return true
+    if (cellRefTargetType(f) || cellEnumType(f)) return true
+  }
+  return false
+}
+
 function findDiagMessage(
   diags: DiagnosticItem[] | undefined,
   filePath: string,
@@ -531,6 +549,12 @@ function EditableCell({
         />
       </div>
     )
+  }
+  // Null cells that aren't editable (no enum/ref/bool schema hint) render
+  // blank in the table — the dc-inspector / graph card still show the
+  // explicit "null" chip via ValueChip.
+  if (value.kind === 'null') {
+    return <div className="cell-edit-wrap" />
   }
   return (
     <div

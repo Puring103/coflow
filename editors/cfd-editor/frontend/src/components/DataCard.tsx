@@ -790,9 +790,9 @@ export function RefDirectSelect({
         title={targetType}
         onChange={e => commit(e.target.value)}
       >
-        {nullable && <option value={NULL_SENTINEL}>(null)</option>}
+        {nullable && <option value={NULL_SENTINEL}></option>}
         {value.kind === 'ref' && !hasCurrent && value.value && <option value={value.value}>{value.value}</option>}
-        {value.kind === 'ref' && !value.value && <option value="">未选择</option>}
+        {value.kind === 'ref' && !value.value && <option value=""></option>}
         {targets.map(target => (
           <option key={target.label} value={target.key} title={target.label}>
             {target.key}
