@@ -85,7 +85,7 @@ export function CardHeader({
   )
 }
 
-export const NODE_PEEK_FIELDS = 4
+export const NODE_PEEK_FIELDS = 5
 const MAX_DEPTH = 5
 const INDENT_PX = 14
 
