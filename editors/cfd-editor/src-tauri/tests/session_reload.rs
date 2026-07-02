@@ -105,6 +105,21 @@ fn file_records_include_collection_declared_type_metadata() {
             .and_then(|annotation| annotation.ref_target_type.as_deref()),
         None
     );
+    let item_template = item_refs
+        .annotation
+        .as_ref()
+        .and_then(|annotation| annotation.item_annotation.as_deref())
+        .expect("collection element template");
+    assert_eq!(
+        item_template.declared_type.as_deref(),
+        Some("&Item"),
+        "collection annotator should include element declared_type so the editor doesn't parse strings",
+    );
+    assert_eq!(
+        item_template.ref_target_type.as_deref(),
+        Some("Item"),
+        "collection element template should surface the ref target type",
+    );
 }
 
 #[test]
@@ -259,6 +274,90 @@ missing,,,No
     assert!(graph.edges.iter().any(|edge| {
         edge.source.key == "root" && edge.target.key == "missing" && edge.field_path == "noRes[0]"
     }));
+}
+
+#[test]
+fn dimension_synth_default_field_carries_read_only_annotation() {
+    let root = temp_project_dir("cfd-editor-dim-read-only");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::create_dir_all(root.join("data/dimensions/language"))
+        .expect("create dimensions dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        r"
+            type Item {
+                @localized
+                name: string;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("items.cfd"),
+        r#"potion: Item { name: "Potion" }"#,
+    )
+    .expect("write items");
+    std::fs::write(
+        root.join("data/dimensions/language").join("Item_name.csv"),
+        "id,default,zh,en\npotion,Potion,药水,Potion\n",
+    )
+    .expect("write dimension csv");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/main.cft
+sources:
+  - path: data/items.cfd
+dimensions:
+  language:
+    variants: [zh, en]
+    out_dir: data/dimensions/language
+",
+    )
+    .expect("write config");
+
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    let records = store
+        .get_file_records(
+            snapshot.session_id,
+            "data/dimensions/language/Item_name.csv",
+        )
+        .expect("get dimension records");
+    let synth = records
+        .records
+        .iter()
+        .find(|row| row.coordinate.actual_type == "Item_nameVariants")
+        .expect("synth row");
+    let default_field = synth
+        .fields
+        .iter()
+        .find(|field| field.name == "default")
+        .expect("default field");
+    let default_annotation = default_field
+        .annotation
+        .as_ref()
+        .expect("default field annotation");
+    assert!(
+        default_annotation.read_only,
+        "dimension-synth `default` field should be flagged read-only so the editor \
+         steers writes to the source record; got annotation: {default_annotation:?}",
+    );
+    let variant_field = synth
+        .fields
+        .iter()
+        .find(|field| field.name == "zh")
+        .expect("zh field");
+    assert!(
+        !variant_field
+            .annotation
+            .as_ref()
+            .is_some_and(|annotation| annotation.read_only),
+        "variant slots stay editable",
+    );
 }
 
 fn write_project(root: &std::path::Path, name: &str) {

@@ -17,6 +17,7 @@ import {
   coordinateId,
   cellEnumType,
   cellNullable,
+  cellReadOnly,
   cellRefTargetType,
   diagnosticMatchesCoordinate,
   diagnosticSeverity,
@@ -207,9 +208,9 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 </span>
               )
             }
-            const isDimensionDefault = isDimensionDefaultField(row.original, f.name)
-            const cellEditable = canEdit && !isDimensionDefault
-            const title = isDimensionDefault
+            const readOnlyFromSchema = cellReadOnly(f)
+            const cellEditable = canEdit && !readOnlyFromSchema
+            const title = readOnlyFromSchema
               ? '由源记录决定，不可编辑'
               : sev ? findDiagMessage(diagnostics, data.file_path, row.original.coordinate, name) : undefined
             return (
@@ -467,10 +468,6 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     </div>
   )
 })
-
-function isDimensionDefaultField(record: RecordRow, fieldName: string): boolean {
-  return recordActualType(record).endsWith('Variants') && fieldName === 'default'
-}
 
 function fieldCell(record: RecordRow, fieldName: string) {
   const index = record.field_index[fieldName]

@@ -43,6 +43,9 @@ pub use dimensions::{
     resolved_display_name as dimension_resolved_display_name, DimensionFieldInfo, DimensionInfo,
 };
 pub use files::{DimensionGroup, FileTreeNode, FileTreeOptions};
+// Re-export helpers that hosts (tauri editor, CLI) call when translating
+// engine data to a wire format so they don't diverge in path formatting.
+pub use self::format_cfd_path as format_field_path;
 pub use mutation::{
     DefaultMaterialization, MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
     MutationReport, MutationRequest, MutationValue, PreparedMutation,
@@ -170,6 +173,18 @@ impl ProjectSession {
     pub fn dimensions(&self) -> Vec<DimensionInfo> {
         let fields = dimensions::language_dimension_fields(&self.schema);
         dimensions_for_project(&self.project, &fields)
+    }
+
+    /// Set of dimension-synthesized runtime type names (e.g.
+    /// `"Item_nameVariants"`). Hosts use this to mark synthesized
+    /// records so their `default` slot renders as read-only in editors,
+    /// without re-deriving the naming convention themselves.
+    #[must_use]
+    pub fn dimension_synthesized_types(&self) -> BTreeSet<String> {
+        dimensions::language_dimension_fields(&self.schema)
+            .into_iter()
+            .map(|field| field.synthesized_type)
+            .collect()
     }
 
     /// Lookup a single dimension by name.
@@ -1304,7 +1319,11 @@ fn logical_locations_from_cfd(
         .collect()
 }
 
-fn format_cfd_path(path: &CfdPath) -> String {
+/// Format a [`CfdPath`] as the dotted / bracketed string the editor uses
+/// as a stable key. Callers include the engine's own logical-location
+/// pipeline as well as tauri graph-edge labels — keep exactly one copy.
+#[must_use]
+pub fn format_cfd_path(path: &CfdPath) -> String {
     let mut out = String::new();
     for segment in &path.segments {
         match segment {

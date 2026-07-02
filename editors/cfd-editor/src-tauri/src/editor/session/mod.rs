@@ -186,9 +186,7 @@ impl SessionStore {
         let session = session_lock
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        let ctx = WireContext {
-            session: &session.engine,
-        };
+        let ctx = WireContext::new(&session.engine);
         let mut records = Vec::new();
         let mut columns = BTreeMap::<String, ColumnStats>::new();
         let mut type_seen = Vec::new();
@@ -353,9 +351,7 @@ impl SessionStore {
                     final_coordinate.actual_type, final_coordinate.key
                 ))
             })?;
-        let ctx = WireContext {
-            session: &session.engine,
-        };
+        let ctx = WireContext::new(&session.engine);
         let row = record_view_to_row(&view, &ctx);
         Ok(WriteFieldOutcome {
             row,
@@ -503,9 +499,7 @@ impl SessionStore {
                     renamed.actual_type, renamed.key
                 ))
             })?;
-        let ctx = WireContext {
-            session: &session.engine,
-        };
+        let ctx = WireContext::new(&session.engine);
         let row = record_view_to_row(&view, &ctx);
         Ok(RenameRecordOutcome {
             row,

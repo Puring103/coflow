@@ -18,12 +18,15 @@ import {
   annotationChild,
   annotationDeclaredType,
   annotationEnumType,
+  annotationItem,
   annotationNullable,
   annotationRefTargetType,
   boolValue,
   cellDeclaredType,
   cellEnumType,
+  cellItemAnnotation,
   cellNullable,
+  cellReadOnly,
   cellRefTargetType,
   cellSpreadInfo,
   enumValue,
@@ -149,26 +152,13 @@ function typeLabelForValue(v: FieldValue, declaredType?: string): string {
   return declaredType ?? valueKindLabel(v)
 }
 
+/** Strip trailing `?` off a declared type string. Kept for the rare cases
+ *  (null-collection detection, resolveDefaultElement scalar shorthand) that
+ *  still work on the wire-formatted type string. Other schema questions
+ *  should read `FieldAnnotation.item_annotation` / `.ref_target_type` /
+ *  `.enum_type` instead — the backend fills those directly. */
 function stripNullableType(declaredType?: string): string | undefined {
   return declaredType?.endsWith('?') ? declaredType.slice(0, -1) : declaredType
-}
-
-function arrayElementType(declaredType?: string): string | undefined {
-  const ty = stripNullableType(declaredType)
-  return ty?.startsWith('[') && ty.endsWith(']') ? ty.slice(1, -1) : undefined
-}
-
-function dictValueType(declaredType?: string): string | undefined {
-  const ty = stripNullableType(declaredType)
-  if (!ty?.startsWith('{') || !ty.endsWith('}')) return undefined
-  const inner = ty.slice(1, -1)
-  const sep = inner.indexOf(':')
-  return sep >= 0 ? inner.slice(sep + 1).trim() : undefined
-}
-
-function refTargetTypeFromDeclared(declaredType?: string): string | undefined {
-  const ty = stripNullableType(declaredType)
-  return ty?.startsWith('&') ? ty.slice(1) : undefined
 }
 
 function dictKindLabel(k: DictKey): string {
@@ -442,7 +432,7 @@ export function DataCardExpanded({
   const body = (
     <div className="dc-inspector" ref={inspectorRef} style={{ '--depth': depth } as CSSProperties}>
       {fields.map((fc) => {
-        const fieldEdit = isDimensionDefaultField(actualType, fc.name) ? undefined : onEdit
+        const fieldEdit = cellReadOnly(fc) ? undefined : onEdit
         const spreadInfo = cellSpreadInfo(fc)
         const declaredType = cellDeclaredType(fc)
         const refTargetType = cellRefTargetType(fc)
@@ -474,10 +464,6 @@ export function DataCardExpanded({
     <AutoExpandCtx.Provider value={autoExpandSet}>{body}</AutoExpandCtx.Provider>
   )
   return ctx ? <DiagCtx.Provider value={ctx}>{wrapped}</DiagCtx.Provider> : wrapped
-}
-
-function isDimensionDefaultField(actualType: string | undefined, fieldName: string): boolean {
-  return !!actualType && actualType.endsWith('Variants') && fieldName === 'default'
 }
 
 function rowDiagSeverity(pathKey: string | undefined): { sev: 'error' | 'warning' | 'info' | null; messages: string[] } {
@@ -614,7 +600,7 @@ function ScalarFieldRow({
 }) {
   const isScalar = value.kind === 'bool' || value.kind === 'int' || value.kind === 'float'
     || value.kind === 'string' || value.kind === 'enum' || value.kind === 'ref'
-  const resolvedRefTarget = refTargetType ?? refTargetTypeFromDeclared(declaredType)
+  const resolvedRefTarget = refTargetType
   const isNullDropdown = value.kind === 'null' && !!(enumType || resolvedRefTarget)
   const canEdit = (isScalar || isNullDropdown) && !!onCommit
   const diag = rowDiagSeverity(pathKey)
@@ -1235,7 +1221,7 @@ function ExpandableRow({
               pathKey={pathKey}
               onEdit={onEdit}
               onRowToggle={onRowToggle}
-              itemDeclaredType={arrayElementType(declaredType)}
+              itemTemplate={annotationItem(valueAnnotation)}
               itemAnnotations={valueAnnotation?.children}
             />
           )}
@@ -1243,6 +1229,8 @@ function ExpandableRow({
             value.value.map(([key, item]) => {
               const keyText = dictKeyPathText(key)
               const itemAnnotation = childAnnotation(keyText)
+              const itemTemplate = annotationItem(valueAnnotation)
+              const effectiveAnnotation = itemAnnotation ?? itemTemplate
               return (
               <FieldRow
                 key={dictKeyText(key)}
@@ -1253,11 +1241,11 @@ function ExpandableRow({
                 fieldPath={[...fieldPath, fieldPathDictKey(dictKeyPathText(key))]}
                 pathKey={pathKey ? `${pathKey}[${dictKeyText(key)}]` : `[${dictKeyText(key)}]`}
                 onRowToggle={onRowToggle}
-                declaredType={annotationDeclaredType(itemAnnotation) ?? dictValueType(declaredType)}
-                refTargetType={annotationRefTargetType(itemAnnotation) ?? refTargetTypeFromDeclared(dictValueType(declaredType))}
-                enumType={annotationEnumType(itemAnnotation)}
-                nullable={annotationNullable(itemAnnotation)}
-                valueAnnotation={itemAnnotation}
+                declaredType={annotationDeclaredType(effectiveAnnotation)}
+                refTargetType={annotationRefTargetType(effectiveAnnotation)}
+                enumType={annotationEnumType(effectiveAnnotation)}
+                nullable={annotationNullable(effectiveAnnotation)}
+                valueAnnotation={effectiveAnnotation}
                 trailing={onEdit ? (
                   <DeleteButton
                     title="删除"
@@ -1270,7 +1258,7 @@ function ExpandableRow({
             <CollectionAddRow
               container={value}
               depth={depth + 1}
-              itemDeclaredType={value.kind === 'array' ? arrayElementType(declaredType) : dictValueType(declaredType)}
+              itemTemplate={annotationItem(valueAnnotation)}
               onAdd={next => onEdit(fieldPath, next)}
             />
           )}
@@ -1419,7 +1407,7 @@ function replaceValueAtPath(
 /// valid seed exists (e.g. `[&Foo]` and there are zero `Foo` records).
 async function resolveDefaultElement(
   container: FieldValue & { kind: 'array' | 'dict' },
-  itemDeclaredType?: string,
+  itemTemplate?: FieldAnnotation,
 ): Promise<FieldValue | null> {
   // 1. Clone the last element (including null) — keeps the user's most
   //    recent choice; if they've been appending nulls, keep giving them
@@ -1427,33 +1415,43 @@ async function resolveDefaultElement(
   const sample = lastElement(container)
   if (sample) return cloneShape(sample)
 
-  if (!itemDeclaredType) return null
+  if (!itemTemplate) return null
 
-  const nullable = itemDeclaredType.endsWith('?')
-  const stripped = stripNullableType(itemDeclaredType) ?? itemDeclaredType
-  if (stripped.startsWith('&')) {
-    const targetType = stripped.slice(1)
-    const targets = await loadRefTargets(targetType)
+  const nullable = itemTemplate.nullable
+  const refTarget = itemTemplate.ref_target_type ?? undefined
+  if (refTarget) {
+    const targets = await loadRefTargets(refTarget)
     if (targets.ok && targets.targets.length > 0) {
       return refValue(targets.targets[0].coordinate.key)
     }
     return nullable ? nullValue() : null
   }
-  if (stripped === 'bool') return boolValue(false)
-  if (stripped === 'int') return intValue(0)
-  if (stripped === 'float') return floatValue(0)
-  if (stripped === 'string') return stringValue('')
-  if (stripped.startsWith('[') && stripped.endsWith(']')) return { kind: 'array', value: [] }
-  if (stripped.startsWith('{') && stripped.endsWith('}')) return { kind: 'dict', value: [] }
-  // Named type — try enum first; otherwise ask the backend to build a
-  // schema-valid default record instance for the named type (covers
-  // inline objects / polymorphic bases the front-end can't synthesize).
-  const enumResult = await loadEnumVariants(stripped)
-  if (enumResult.ok && enumResult.variants.length > 0) {
-    return enumValue(stripped, enumResult.variants[0], 0n)
+  const enumType = itemTemplate.enum_type ?? undefined
+  if (enumType) {
+    const enumResult = await loadEnumVariants(enumType)
+    if (enumResult.ok && enumResult.variants.length > 0) {
+      return enumValue(enumType, enumResult.variants[0], 0n)
+    }
+    return nullable ? nullValue() : null
   }
-  const objectDefault = await buildDefaultObject(stripped)
-  if (objectDefault) return objectDefault
+  const declared = itemTemplate.declared_type
+    ? stripNullableType(itemTemplate.declared_type) ?? itemTemplate.declared_type
+    : undefined
+  if (declared === 'bool') return boolValue(false)
+  if (declared === 'int') return intValue(0)
+  if (declared === 'float') return floatValue(0)
+  if (declared === 'string') return stringValue('')
+  // Nested collection element — item_annotation was pre-filled for those too,
+  // but structurally a fresh empty is the right seed.
+  if (itemTemplate.item_annotation) {
+    const isDict = declared?.startsWith('{') && declared.endsWith('}')
+    return isDict ? { kind: 'dict', value: [] } : { kind: 'array', value: [] }
+  }
+  // Named object type — ask the backend for a schema-valid default.
+  if (declared) {
+    const objectDefault = await buildDefaultObject(declared)
+    if (objectDefault) return objectDefault
+  }
   return nullable ? nullValue() : null
 }
 
@@ -1504,7 +1502,7 @@ function ArrayItems({
   pathKey,
   onEdit,
   onRowToggle,
-  itemDeclaredType,
+  itemTemplate,
   itemAnnotations,
 }: {
   container: FieldValue & { kind: 'array' }
@@ -1513,7 +1511,9 @@ function ArrayItems({
   pathKey?: string
   onEdit?: (fieldPath: FieldPathSegment[], newValue: FieldValue) => void
   onRowToggle?: (path: string, expanded: boolean) => void
-  itemDeclaredType?: string
+  /** Element-schema template supplied by the annotator. Prefer this over the
+   *  per-index children when the child hasn't accumulated its own metadata. */
+  itemTemplate?: FieldAnnotation
   itemAnnotations?: { [key: string]: FieldAnnotation | undefined }
 }) {
   const [dragIdx, setDragIdx] = useState<number | null>(null)
@@ -1530,7 +1530,7 @@ function ArrayItems({
   return (
     <>
       {container.value.map((item, i) => {
-        const itemAnnotation = itemAnnotations?.[String(i)]
+        const itemAnnotation = itemAnnotations?.[String(i)] ?? itemTemplate
         const dragHandle = onEdit ? <DragHandle rowIndex={i} dragArmedRef={dragArmedRef} /> : undefined
         const trailing = onEdit ? (
           <DeleteButton title="删除" onClick={() => onEdit(fieldPath, arrayRemove(container, i))} />
@@ -1545,8 +1545,8 @@ function ArrayItems({
             fieldPath={[...fieldPath, fieldPathIndex(i)]}
             pathKey={pathKey ? `${pathKey}[${i}]` : `[${i}]`}
             onRowToggle={onRowToggle}
-            declaredType={annotationDeclaredType(itemAnnotation) ?? itemDeclaredType}
-            refTargetType={annotationRefTargetType(itemAnnotation) ?? refTargetTypeFromDeclared(itemDeclaredType)}
+            declaredType={annotationDeclaredType(itemAnnotation)}
+            refTargetType={annotationRefTargetType(itemAnnotation)}
             enumType={annotationEnumType(itemAnnotation)}
             nullable={annotationNullable(itemAnnotation)}
             valueAnnotation={itemAnnotation}
@@ -1615,10 +1615,11 @@ function DeleteButton({ onClick, title }: { onClick: () => void; title: string }
   )
 }
 
-function CollectionAddRow({ container, depth, itemDeclaredType, onAdd }: {
+function CollectionAddRow({ container, depth, itemTemplate, onAdd }: {
   container: FieldValue & { kind: 'array' | 'dict' }
   depth: number
-  itemDeclaredType?: string
+  /** Backend-provided element schema for this collection. */
+  itemTemplate?: FieldAnnotation
   onAdd: (next: FieldValue) => void
 }) {
   const [adding, setAdding] = useState(false)
@@ -1629,7 +1630,7 @@ function CollectionAddRow({ container, depth, itemDeclaredType, onAdd }: {
   function reset() { setAdding(false); setDupError(null); setAddError(null) }
 
   async function resolveDefault(): Promise<FieldValue | null> {
-    return resolveDefaultElement(container, itemDeclaredType)
+    return resolveDefaultElement(container, itemTemplate)
   }
 
   if (container.kind === 'array') {

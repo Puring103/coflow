@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use coflow_data_model::{CfdPath, CfdPathSegment, CfdRecordId, RefEdge};
-use coflow_engine::RecordCoordinate;
+use coflow_engine::{format_field_path, RecordCoordinate};
 
 use crate::editor::convert::{record_to_row, WireContext};
 use crate::editor::types::{GraphData, GraphEdge, GraphNode, GraphQuery};
@@ -48,9 +48,7 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
         depths.insert(*id, 0);
     }
 
-    let ctx = WireContext {
-        session: &session.engine,
-    };
+    let ctx = WireContext::new(&session.engine);
 
     while let Some((id, depth)) = queue.pop_front() {
         let Some(record) = session.engine.model.record(id) else {
@@ -100,7 +98,7 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
             edges.push(GraphEdge {
                 source: coordinate.clone(),
                 target: target_coord,
-                field_path: format_path(&edge.path),
+                field_path: format_field_path(&edge.path),
             });
             if depth < max_depth && !depths.contains_key(&edge.target) {
                 depths.insert(edge.target, depth + 1);
@@ -205,27 +203,3 @@ impl NodeKey {
     }
 }
 
-fn format_path(path: &CfdPath) -> String {
-    let mut out = String::new();
-    for segment in &path.segments {
-        match segment {
-            CfdPathSegment::Field(name) => {
-                if !out.is_empty() {
-                    out.push('.');
-                }
-                out.push_str(name);
-            }
-            CfdPathSegment::Index(index) => {
-                out.push('[');
-                out.push_str(&index.to_string());
-                out.push(']');
-            }
-            CfdPathSegment::DictKey(key) => {
-                out.push('[');
-                out.push_str(key);
-                out.push(']');
-            }
-        }
-    }
-    out
-}

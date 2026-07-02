@@ -98,12 +98,28 @@ export function annotationNullable(annotation: FieldAnnotation | null | undefine
   return !!annotation?.nullable
 }
 
+export function annotationReadOnly(annotation: FieldAnnotation | null | undefined): boolean {
+  return !!annotation?.read_only
+}
+
+export function annotationItem(annotation: FieldAnnotation | null | undefined): FieldAnnotation | undefined {
+  return annotation?.item_annotation ?? undefined
+}
+
 export function cellEnumType(cell: FieldCell): string | undefined {
   return cell.annotation?.enum_type ?? undefined
 }
 
 export function cellNullable(cell: FieldCell): boolean {
   return !!cell.annotation?.nullable
+}
+
+export function cellReadOnly(cell: FieldCell): boolean {
+  return !!cell.annotation?.read_only
+}
+
+export function cellItemAnnotation(cell: FieldCell): FieldAnnotation | undefined {
+  return cell.annotation?.item_annotation ?? undefined
 }
 
 export function annotationChild(

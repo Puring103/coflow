@@ -8,7 +8,7 @@
 use coflow_cft::CftSchemaTypeRef;
 use coflow_data_model::{CfdDictKey, CfdPath, CfdRecord, CfdRecordId, CfdValue, RefSite};
 use coflow_engine::{ProjectSession, RecordCoordinate, RecordView};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::editor::types::{FieldAnnotation, FieldCell, RecordRow, SpreadInfo};
 
@@ -18,6 +18,23 @@ const STRING_SUMMARY_PREFIX_BYTES: usize = 38;
 /// Lookup context the converter consults when annotating cells.
 pub struct WireContext<'a> {
     pub session: &'a ProjectSession,
+    /// Set of dimension-synthesized type names (e.g. `Item_nameVariants`).
+    /// Passed in once per snapshot so the annotator can flag the derived
+    /// `default` slot as read-only without recomputing per record.
+    pub dimension_synth_types: BTreeSet<String>,
+}
+
+impl<'a> WireContext<'a> {
+    /// Build a `WireContext` and eagerly compute the dimension-synthesized
+    /// type set. Callers that build many rows in a row should reuse the
+    /// same context to avoid re-walking the dimension list.
+    #[must_use]
+    pub fn new(session: &'a ProjectSession) -> Self {
+        Self {
+            session,
+            dimension_synth_types: session.dimension_synthesized_types(),
+        }
+    }
 }
 
 /// Translate a [`RecordView`] into a wire [`RecordRow`].
@@ -163,6 +180,13 @@ fn build_annotation(
     {
         annotation.spread_info = spread_info_for_source(ctx, source_id, parent_path, field_name);
     }
+    // Synthesized dimension records expose a `default` slot that mirrors the
+    // source record's value. Writing into it isn't blocked at the engine
+    // layer, but the editor renders it as read-only to steer users to the
+    // source record instead.
+    if field_name == "default" && ctx.dimension_synth_types.contains(host.actual_type()) {
+        annotation.read_only = true;
+    }
     if annotation.is_empty() {
         None
     } else {
@@ -183,6 +207,13 @@ fn annotation_for_value(
         annotation.ref_target_type = ref_target_type(ty).map(str::to_string);
         annotation.enum_type = enum_type_name(ty, &ctx.session.schema).map(str::to_string);
         annotation.nullable = matches!(ty, CftSchemaTypeRef::Nullable(_));
+        // Preload the element template when the declared type is a
+        // collection. Filled here (not only in the Array/Dict arms below) so
+        // a nullable / empty collection still carries the template the
+        // editor needs to add its first element.
+        if let Some(item_ty) = array_item_type(Some(ty)).or_else(|| dict_item_type(Some(ty))) {
+            annotation.item_annotation = element_template(Some(item_ty), ctx);
+        }
     }
     match value {
         CfdValue::Ref(_) => {
@@ -244,6 +275,26 @@ fn annotation_for_value(
         _ => {}
     }
     annotation
+}
+
+/// Produce a minimal template `FieldAnnotation` describing the elements of
+/// a collection (array item / dict value). The editor consumes this when it
+/// needs the element's declared type / ref target / enum type to add a new
+/// entry into an empty or nullable collection.
+fn element_template(
+    item_type: Option<&CftSchemaTypeRef>,
+    ctx: &WireContext<'_>,
+) -> Option<Box<FieldAnnotation>> {
+    let item_type = item_type?;
+    let mut ann = FieldAnnotation::default();
+    ann.declared_type = Some(type_ref_label(item_type));
+    ann.ref_target_type = ref_target_type(item_type).map(str::to_string);
+    ann.enum_type = enum_type_name(item_type, &ctx.session.schema).map(str::to_string);
+    ann.nullable = matches!(item_type, CftSchemaTypeRef::Nullable(_));
+    if let Some(inner) = array_item_type(Some(item_type)).or_else(|| dict_item_type(Some(item_type))) {
+        ann.item_annotation = element_template(Some(inner), ctx);
+    }
+    Some(Box::new(ann))
 }
 
 fn declared_field_type<'a>(

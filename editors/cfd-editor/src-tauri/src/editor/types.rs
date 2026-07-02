@@ -233,6 +233,20 @@ pub struct FieldAnnotation {
     pub enum_type: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub nullable: bool,
+    /// True when the field's value is derived from another record (currently:
+    /// the synthesized `default` slot on a dimension variant type mirrors the
+    /// source record's field). Writing into it isn't blocked at the engine
+    /// layer, but the editor renders it as read-only to steer edits to the
+    /// source record instead.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub read_only: bool,
+    /// Template annotation for elements of an array/dict field. Carries the
+    /// declared element type (and derived ref/enum/nullable metadata) so the
+    /// editor doesn't have to re-parse `declared_type` strings when adding a
+    /// new element or when the collection is empty. `None` for non-collection
+    /// fields.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_annotation: Option<Box<Self>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub children: BTreeMap<String, Self>,
 }
@@ -247,6 +261,8 @@ impl FieldAnnotation {
             && self.ref_target_type.is_none()
             && self.enum_type.is_none()
             && !self.nullable
+            && !self.read_only
+            && self.item_annotation.is_none()
             && self.children.is_empty()
     }
 }

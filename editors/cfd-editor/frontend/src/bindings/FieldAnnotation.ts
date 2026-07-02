@@ -22,4 +22,20 @@ import type { SpreadInfo } from "./SpreadInfo";
  * - `children`: nested annotations for object fields, array items, or dict
  *   values. Keys are field names, zero-based array indexes, or dict-key text.
  */
-export type FieldAnnotation = { spread_info: SpreadInfo | null, ref_target_file: string | null, enum_int_value: bigint | null, declared_type: string | null, ref_target_type: string | null, enum_type: string | null, nullable: boolean, children: { [key in string]?: FieldAnnotation }, };
+export type FieldAnnotation = { spread_info: SpreadInfo | null, ref_target_file: string | null, enum_int_value: bigint | null, declared_type: string | null, ref_target_type: string | null, enum_type: string | null, nullable: boolean, 
+/**
+ * True when the field's value is derived from another record (currently:
+ * the synthesized `default` slot on a dimension variant type mirrors the
+ * source record's field). Writing into it isn't blocked at the engine
+ * layer, but the editor renders it as read-only to steer edits to the
+ * source record instead.
+ */
+read_only: boolean, 
+/**
+ * Template annotation for elements of an array/dict field. Carries the
+ * declared element type (and derived ref/enum/nullable metadata) so the
+ * editor doesn't have to re-parse `declared_type` strings when adding a
+ * new element or when the collection is empty. `None` for non-collection
+ * fields.
+ */
+item_annotation: FieldAnnotation | null, children: { [key in string]?: FieldAnnotation }, };
