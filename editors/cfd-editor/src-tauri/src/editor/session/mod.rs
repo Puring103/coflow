@@ -55,6 +55,7 @@ pub struct EditorSession {
     pub yaml_path: std::path::PathBuf,
     pub engine: ProjectSession,
     pub diagnostics: Diagnostics,
+    ref_target_cache: HashMap<String, Vec<RefTarget>>,
 }
 
 impl std::fmt::Debug for EditorSession {
@@ -260,33 +261,19 @@ impl SessionStore {
     ) -> Result<Vec<RefTarget>, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
-        let session = session_lock
-            .read()
-            .map_err(|_| EditorError::session("session poisoned"))?;
-        let mut targets: Vec<RefTarget> = session
-            .engine
-            .records
-            .by_id()
-            .values()
-            .filter(|record_ref| {
-                session
-                    .engine
-                    .schema
-                    .is_assignable(&record_ref.coordinate.actual_type, expected_type)
-            })
-            .map(|record_ref| RefTarget {
-                coordinate: record_ref.coordinate.clone(),
-                file_path: record_ref.display_path.clone(),
-            })
-            .collect();
-        drop(session);
-        targets.sort_by(|a, b| {
-            a.coordinate
-                .actual_type
-                .cmp(&b.coordinate.actual_type)
-                .then_with(|| a.coordinate.key.cmp(&b.coordinate.key))
-        });
-        targets.dedup_by(|a, b| a.coordinate == b.coordinate);
+        let targets = {
+            let mut session = session_lock
+                .write()
+                .map_err(|_| EditorError::session("session poisoned"))?;
+            if let Some(cached) = session.ref_target_cache.get(expected_type) {
+                return Ok(cached.clone());
+            }
+            let targets = build_ref_targets(&session, expected_type);
+            session
+                .ref_target_cache
+                .insert(expected_type.to_string(), targets.clone());
+            targets
+        };
         Ok(targets)
     }
 
@@ -349,6 +336,7 @@ impl SessionStore {
                 .renamed
                 .and_then(|(old, new)| (old == *coordinate).then_some(new));
             let final_coord = renamed.clone().unwrap_or_else(|| coordinate.clone());
+            session.ref_target_cache.clear();
             drop(session);
             (final_coord, renamed)
         };
@@ -442,6 +430,7 @@ impl SessionStore {
                 ));
             }
             session.diagnostics = Diagnostics::from_store(&session.engine.diagnostics);
+            session.ref_target_cache.clear();
         }
         let file_records = self.get_file_records(id, file_path)?;
         let session = session_lock
@@ -497,6 +486,7 @@ impl SessionStore {
                 .renamed
                 .and_then(|(old, new)| (old == *coordinate).then_some(new))
                 .ok_or_else(|| EditorError::write("rename did not produce a new coordinate"))?;
+            session.ref_target_cache.clear();
             drop(session);
             renamed
         };
@@ -574,6 +564,7 @@ impl SessionStore {
                 ));
             }
             session.diagnostics = Diagnostics::from_store(&session.engine.diagnostics);
+            session.ref_target_cache.clear();
         }
         let file_records = self.get_file_records(id, &file_path)?;
         let session = session_lock
@@ -605,6 +596,48 @@ impl SessionStore {
             .cloned()
             .ok_or_else(|| EditorError::not_found(format!("unknown session id {id}")))
     }
+}
+
+fn build_ref_targets(session: &EditorSession, expected_type: &str) -> Vec<RefTarget> {
+    let mut targets = Vec::new();
+    let Some(domain_id) = session.engine.model.type_domain_id(expected_type) else {
+        return targets;
+    };
+    let Some(members) = session.engine.model.domain_members(domain_id) else {
+        return targets;
+    };
+    for type_id in members {
+        let Some(type_name) = session.engine.model.type_name(*type_id) else {
+            continue;
+        };
+        if !session
+            .engine
+            .schema
+            .is_assignable(type_name, expected_type)
+        {
+            continue;
+        }
+        for (_, record) in session.engine.model.records_of_type(type_name) {
+            let Some(file_path) = session
+                .engine
+                .file_for_record(record.actual_type(), &record.key)
+            else {
+                continue;
+            };
+            targets.push(RefTarget {
+                coordinate: RecordCoordinate::new(record.actual_type(), record.key.clone()),
+                file_path: file_path.to_string(),
+            });
+        }
+    }
+    targets.sort_by(|a, b| {
+        a.coordinate
+            .actual_type
+            .cmp(&b.coordinate.actual_type)
+            .then_with(|| a.coordinate.key.cmp(&b.coordinate.key))
+    });
+    targets.dedup_by(|a, b| a.coordinate == b.coordinate);
+    targets
 }
 
 /// Capture the record as `(CfdRecord, display_path)` before the writer

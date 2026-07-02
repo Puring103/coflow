@@ -3,6 +3,7 @@
 use coflow_api::{ProviderRegistry, WriterCapabilities};
 use coflow_engine::{build_project_session, FileTreeNode};
 use coflow_project::Project;
+use std::collections::HashMap;
 
 use super::diagnostics::diagnostics_from_store;
 use super::EditorSession;
@@ -62,6 +63,7 @@ pub(super) fn build_session(
             yaml_path,
             engine,
             diagnostics,
+            ref_target_cache: HashMap::new(),
         },
         SessionSnapshotParts { file_tree },
     ))
