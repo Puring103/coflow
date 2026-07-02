@@ -198,7 +198,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       const r = row.original
       if (recordKey(r).toLowerCase().includes(q)) return true
       for (const summary of Object.values(r.field_summaries)) {
-        if (summary.toLowerCase().includes(q)) return true
+        if (summary?.toLowerCase().includes(q)) return true
       }
       return false
     },

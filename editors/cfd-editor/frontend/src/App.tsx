@@ -40,10 +40,30 @@ import { isEditableFile } from './utils/editable'
 import { setActiveSession } from './utils/editContext'
 import './style.css'
 
+const GRAPH_DEPTH = 3
+const GRAPH_LIMIT = 1_000
+
+function graphCacheKey(
+  filePath: string,
+  activeType: string | null | undefined,
+  enabledFields: string[] | null | undefined,
+  depth: number,
+  limit: number,
+): string {
+  const fields = enabledFields ? enabledFields.join(',') : '*'
+  return `${filePath}::${activeType || '*'}::${fields}::${depth}::${limit}`
+}
+
+function sameStringList(a: readonly string[] | null, b: readonly string[]): boolean {
+  if (!a || a.length !== b.length) return false
+  return a.every((item, index) => item === b[index])
+}
+
 export default function App() {
   const [project, setProject] = useState<ProjectSnapshot | null>(null)
   const [fileDataCache, setFileDataCache] = useState<Record<string, FileRecords>>({})
   const [graphCache, setGraphCache] = useState<Record<string, GraphData>>({})
+  const [graphEnabledFields, setGraphEnabledFields] = useState<string[] | null>(null)
   const [showHelp, setShowHelp] = useState(false)
   const helpBoxRef = useRef<HTMLDivElement>(null)
   const helpReturnRef = useRef<HTMLElement | null>(null)
@@ -65,6 +85,12 @@ export default function App() {
   const [globalSearch, setGlobalSearch] = useState('')
   const globalSearchRef = useRef<HTMLInputElement>(null)
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false)
+  const setGraphEnabledFieldsStable = useCallback((fields: string[]) => {
+    const next = Array.from(new Set(fields)).sort()
+    setGraphEnabledFields(prev => (
+      sameStringList(prev, next) ? prev : next
+    ))
+  }, [])
   // Field path to briefly highlight after a diagnostic jump. Cleared after
   // the RecordView applies the highlight so subsequent navigations don't
   // re-flash it.
@@ -104,7 +130,7 @@ export default function App() {
     if (!api.isTauri) {
       setProject(MOCK_PROJECT)
       setFileDataCache(MOCK_FILE_RECORDS)
-      setGraphCache({ 'data/npc.cfd': MOCK_GRAPH })
+      setGraphCache({ [graphCacheKey('data/npc.cfd', null, null, GRAPH_DEPTH, GRAPH_LIMIT)]: MOCK_GRAPH })
       const firstFile = MOCK_PROJECT.file_tree
         .flatMap(n => (n.is_dir ? n.children : [n]))
         .find(n => !n.is_dir && n.in_sources)
@@ -265,17 +291,34 @@ export default function App() {
       .finally(() => setLoadingFile(null))
   }, [project, router.current, fileDataCache])
 
+  useEffect(() => {
+    setGraphEnabledFields(null)
+  }, [router.current?.file, activeType])
+
   // Lazy-load graph when switching to graph view
   useEffect(() => {
     if (!project || router.current?.view !== 'graph') return
     const file = router.current.file
-    if (graphCache[file]) return
-    if (!api.isTauri) return
+    const key = graphCacheKey(file, activeType, graphEnabledFields, GRAPH_DEPTH, GRAPH_LIMIT)
+    if (graphCache[key]) return
+    if (!api.isTauri) {
+      setGraphCache(c => ({ ...c, [key]: MOCK_GRAPH }))
+      return
+    }
+    let cancelled = false
     api
-      .getGraph(project.session_id, file)
-      .then(g => setGraphCache(c => ({ ...c, [file]: g })))
+      .getGraph(project.session_id, file, {
+        activeType,
+        enabledFields: graphEnabledFields ?? undefined,
+        depth: GRAPH_DEPTH,
+        limit: GRAPH_LIMIT,
+      })
+      .then(g => {
+        if (!cancelled) setGraphCache(c => ({ ...c, [key]: g }))
+      })
       .catch(err => setErrorMsg(`读取图谱失败: ${errorMessage(err)}`))
-  }, [project, router.current, graphCache])
+    return () => { cancelled = true }
+  }, [project, router.current, graphCache, activeType, graphEnabledFields])
 
   // Auto-collapse inspector when switching to record view; restore for table/graph.
   useEffect(() => {
@@ -656,7 +699,10 @@ export default function App() {
   const currentRoute = router.current
   const activeFile = currentRoute?.file ?? null
   const activeFileData = activeFile ? fileDataCache[activeFile] : null
-  const activeGraph = activeFile ? graphCache[activeFile] : null
+  const activeGraphKey = activeFile
+    ? graphCacheKey(activeFile, activeType, graphEnabledFields, GRAPH_DEPTH, GRAPH_LIMIT)
+    : null
+  const activeGraph = activeGraphKey ? graphCache[activeGraphKey] : null
   const readOnly = !isEditableFile(activeFileData)
   const fileCapabilities = useMemo(() => {
     const map: Record<string, WriterCapabilities> = {}
@@ -1059,6 +1105,7 @@ export default function App() {
                       graphData={activeGraph}
                       activeType={activeType}
                       fileCapabilities={fileCapabilities}
+                      onEnabledFieldsChange={setGraphEnabledFieldsStable}
                       onOpenRecord={(file, coordinate) => openRecord(file, coordinate)}
                       onSelectRecord={openInspector}
                       onClearSelection={closeInspector}

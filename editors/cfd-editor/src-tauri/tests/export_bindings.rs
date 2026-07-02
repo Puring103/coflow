@@ -35,6 +35,7 @@ fn export_bindings() {
     t::DeleteRecordOutcome::export_all().expect("export DeleteRecordOutcome");
     t::DeletedRecordSnapshot::export_all().expect("export DeletedRecordSnapshot");
     t::GraphData::export_all().expect("export GraphData");
+    t::GraphQuery::export_all().expect("export GraphQuery");
     t::GraphNode::export_all().expect("export GraphNode");
     t::GraphEdge::export_all().expect("export GraphEdge");
     t::RefTarget::export_all().expect("export RefTarget");

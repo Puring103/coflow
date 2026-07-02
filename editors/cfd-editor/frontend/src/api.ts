@@ -62,8 +62,26 @@ export async function getFileRecords(sessionId: number, filePath: string): Promi
   return invokeCommand<FileRecords>('get_file_records', { sessionId, filePath })
 }
 
-export async function getGraph(sessionId: number, filePath: string): Promise<GraphData> {
-  return invokeCommand<GraphData>('get_graph', { sessionId, filePath })
+export interface GraphQueryOptions {
+  activeType?: string
+  enabledFields?: string[]
+  depth?: number
+  limit?: number
+}
+
+export async function getGraph(
+  sessionId: number,
+  filePath: string,
+  options: GraphQueryOptions = {},
+): Promise<GraphData> {
+  return invokeCommand<GraphData>('get_graph', {
+    sessionId,
+    filePath,
+    activeType: options.activeType || null,
+    enabledFields: options.enabledFields ?? null,
+    depth: options.depth ?? null,
+    limit: options.limit ?? null,
+  })
 }
 
 export async function closeSession(sessionId: number): Promise<void> {

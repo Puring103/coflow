@@ -2,4 +2,4 @@
 import type { GraphEdge } from "./GraphEdge";
 import type { GraphNode } from "./GraphNode";
 
-export type GraphData = { nodes: Array<GraphNode>, edges: Array<GraphEdge>, };
+export type GraphData = { nodes: Array<GraphNode>, edges: Array<GraphEdge>, available_fields: Array<string>, };

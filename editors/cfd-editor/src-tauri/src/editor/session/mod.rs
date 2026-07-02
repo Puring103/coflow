@@ -34,7 +34,7 @@ use coflow_engine::{
 
 use crate::editor::convert::{record_view_to_row, WireContext};
 use crate::editor::types::{
-    DeleteRecordOutcome, DeletedRecordSnapshot, EditorError, FileRecords, GraphData,
+    DeleteRecordOutcome, DeletedRecordSnapshot, EditorError, FileRecords, GraphData, GraphQuery,
     InsertRecordOutcome, ProjectSnapshot, RecordColumn, RefTarget, RenameRecordOutcome,
     WriteFieldOutcome,
 };
@@ -277,13 +277,13 @@ impl SessionStore {
         Ok(targets)
     }
 
-    pub fn get_graph(&self, id: u32, file_path: &str) -> Result<GraphData, EditorError> {
+    pub fn get_graph(&self, id: u32, query: &GraphQuery) -> Result<GraphData, EditorError> {
         let entry = self.session(id)?;
         let session_lock = &entry.state;
         let session = session_lock
             .read()
             .map_err(|_| EditorError::session("session poisoned"))?;
-        Ok(graph::build_graph(&session, file_path))
+        Ok(graph::build_graph(&session, query))
     }
 
     /// Persist a single field edit. Coordinate carries the host record's
