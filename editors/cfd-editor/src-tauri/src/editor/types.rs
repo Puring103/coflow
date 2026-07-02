@@ -346,7 +346,7 @@ pub struct GraphEdge {
 /// Wire-friendly handle on a record the editor can jump to (a `Ref`'s
 /// resolved target). Carries the coordinate + the file the record lives
 /// in so the front-end can navigate without a follow-up query.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 #[cfg_attr(
     feature = "ts-export",
