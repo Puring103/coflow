@@ -225,7 +225,9 @@ picker: Holder {
     );
     let model = load_cfd_model(&schema, &fs::read_to_string(&file).expect("read seed"))
         .expect("load model");
-    let _ = model.lookup("Item", "target_b").expect("target_b id");
+    let _ = model
+        .lookup_assignable("Item", "target_b")
+        .expect("target_b id");
 
     let writer = CfdWriter::new();
     let new_value = CfdValue::Ref("target_b".to_string());
@@ -437,7 +439,7 @@ fn inserts_record_at_end_of_cfd_file() {
     assert!(after.contains("name: \"Potion\""));
     assert!(after.contains("value: 3"));
     let model = load_cfd_model(&schema, &after).expect("reload");
-    assert!(model.lookup("Item", "potion").is_some());
+    assert!(model.lookup_assignable("Item", "potion").is_some());
 }
 
 #[test]
@@ -557,7 +559,7 @@ fn inserts_record_serializes_nested_ref_fields_with_ref_syntax() {
         "expected & ref syntax: {after}"
     );
     let model = load_cfd_model(&schema, &after).expect("reload");
-    assert!(model.lookup("Loot", "starter").is_some());
+    assert!(model.lookup_assignable("Loot", "starter").is_some());
 }
 
 #[test]
@@ -607,8 +609,8 @@ shield: Item {
     assert!(!after.contains("sword: Item"));
     assert!(after.contains("shield: Item"));
     let model = load_cfd_model(&schema, &after).expect("reload");
-    assert!(model.lookup("Item", "sword").is_none());
-    assert!(model.lookup("Item", "shield").is_some());
+    assert!(model.lookup_assignable("Item", "sword").is_none());
+    assert!(model.lookup_assignable("Item", "shield").is_some());
 }
 
 #[test]
@@ -744,7 +746,7 @@ elite_monster: Monster {
     // Verify the model picks up the override.
     let model = load_cfd_model(&schema, &after).expect("re-load");
     let elite = model
-        .lookup("Monster", "elite_monster")
+        .lookup_assignable("Monster", "elite_monster")
         .and_then(|id| model.record(id))
         .expect("elite");
     assert_eq!(

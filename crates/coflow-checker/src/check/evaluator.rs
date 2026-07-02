@@ -187,7 +187,9 @@ impl<'a> CheckEvaluator<'a> {
             );
             return Err(EvalAbort::Error);
         };
-        let Some(variant_record_id) = self.model.lookup(&field.synthesized_type, &record_key)
+        let Some(variant_record_id) = self
+            .model
+            .lookup_assignable(&field.synthesized_type, &record_key)
         else {
             self.diag_at(
                 CfdErrorCode::CheckEvalTypeError,

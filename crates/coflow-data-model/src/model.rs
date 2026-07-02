@@ -134,21 +134,25 @@ impl CfdDataModel {
         self.tables.get(type_name)
     }
 
-    /// Looks up a record by type name and record key.
-    /// Works for both concrete tables and polymorphic (abstract/inherited) ranges.
+    /// Looks up a record assignable to `expected_type` by key.
+    ///
+    /// This is intentionally not an exact `(actual_type, key)` lookup:
+    /// inherited ranges resolve through the type's domain and then verify
+    /// assignability. Use [`CfdDataModel::record_by_type_key`] when callers
+    /// need the record's actual type to match exactly.
     #[must_use]
-    pub fn lookup(&self, type_name: &str, key: &str) -> Option<CfdRecordId> {
-        if let Some(domain_id) = self.type_domain_id(type_name) {
+    pub fn lookup_assignable(&self, expected_type: &str, key: &str) -> Option<CfdRecordId> {
+        if let Some(domain_id) = self.type_domain_id(expected_type) {
             if let Some(record_id) = self.record_by_domain_key(domain_id, key) {
                 if self.record(record_id).is_some_and(|record| {
-                    self.type_is_assignable_by_name(record.actual_type(), type_name)
+                    self.type_is_assignable_by_name(record.actual_type(), expected_type)
                 }) {
                     return Some(record_id);
                 }
             }
         }
         self.tables
-            .get(type_name)
+            .get(expected_type)
             .and_then(|table| table.primary_index.get(key))
             .copied()
     }

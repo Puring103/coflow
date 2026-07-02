@@ -34,8 +34,14 @@ fn record_keys_build_indexes_and_record_refs_resolve_by_expected_type() {
     let reward_id = record_id_at(&model, 0);
     let drop_id = record_id_at(&model, 1);
 
-    assert_eq!(model.lookup("Reward", "reward_1"), Some(reward_id));
-    assert_eq!(model.lookup("ItemReward", "reward_1"), Some(reward_id));
+    assert_eq!(
+        model.lookup_assignable("Reward", "reward_1"),
+        Some(reward_id)
+    );
+    assert_eq!(
+        model.lookup_assignable("ItemReward", "reward_1"),
+        Some(reward_id)
+    );
     assert_eq!(
         model.record(reward_id).map(CfdRecord::key),
         Some("reward_1")
@@ -339,8 +345,8 @@ fn lookup_for_middle_type_does_not_return_ancestor_records() {
     let model = builder.build().expect("domain index should build");
     let item_id = record_id_at(&model, 1);
 
-    assert_eq!(model.lookup("Reward", "entity"), None);
-    assert_eq!(model.lookup("Reward", "item"), Some(item_id));
+    assert_eq!(model.lookup_assignable("Reward", "entity"), None);
+    assert_eq!(model.lookup_assignable("Reward", "item"), Some(item_id));
 }
 
 #[test]

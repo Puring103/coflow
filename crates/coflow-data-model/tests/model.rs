@@ -37,7 +37,7 @@ fn data_model_applies_defaults_and_builds_record_key_indexes_without_running_che
     let table = model.table("Item").expect("item table");
     assert_eq!(table.records, vec![item_id]);
     assert_eq!(table.primary_index.get("item_1"), Some(&item_id));
-    assert_eq!(model.lookup("Item", "item_1"), Some(item_id));
+    assert_eq!(model.lookup_assignable("Item", "item_1"), Some(item_id));
 
     let record = model.record(item_id).expect("record");
     assert_eq!(record.key(), "item_1");
@@ -89,7 +89,10 @@ fn object_typed_record_refs_resolve_by_expected_type() {
     let reward_id = record_id_at(&model, 0);
     let drop_id = record_id_at(&model, 1);
 
-    assert_eq!(model.lookup("Reward", "reward_1"), Some(reward_id));
+    assert_eq!(
+        model.lookup_assignable("Reward", "reward_1"),
+        Some(reward_id)
+    );
     assert_eq!(
         model
             .polymorphic_index("Reward")

@@ -276,7 +276,7 @@ fn root_value_for_path(
     path: &[WriteFieldPathSegment],
 ) -> Result<CfdValue, TableWriteDiagnostics> {
     let record = model
-        .lookup(actual_type, record_key)
+        .record_by_type_key(actual_type, record_key)
         .and_then(|id| model.record(id))
         .ok_or_else(|| {
             one_error(
