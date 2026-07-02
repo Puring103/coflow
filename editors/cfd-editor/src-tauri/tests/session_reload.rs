@@ -32,64 +32,11 @@ fn reload_session_rebuilds_from_changed_project_files() {
 
 #[test]
 fn file_records_load_ref_type_fields_without_mode_wire_metadata() {
-    let root = temp_project_dir("cfd-editor-field-mode");
-    let _cleanup = TempDirCleanup(root.clone());
-    std::fs::create_dir_all(root.join("data")).expect("create data dir");
-    std::fs::write(
-        root.join("schema.cft"),
-        r"
-            type Item { name: string; }
-            type Holder {
-                item_ref: &Item;
-                item_inline: Item;
-                nested: Nested;
-            }
-            type Nested {
-                nested_ref: &Item;
-            }
-        ",
-    )
-    .expect("write schema");
-    std::fs::write(
-        root.join("data").join("items.cfd"),
-        r#"
-            sword: Item { name: "Sword" }
-            holder: Holder {
-              item_ref: &sword,
-              item_inline: { name: "Inline" },
-              nested: { nested_ref: &sword },
-            }
-        "#,
-    )
-    .expect("write data");
-    std::fs::write(
-        root.join("coflow.yaml"),
-        "schema: schema.cft\nsources:\n  - path: data\n",
-    )
-    .expect("write config");
-
-    let store = SessionStore::new().expect("create session store");
-    let snapshot = store
-        .load_project(&root.join("coflow.yaml"))
-        .expect("load project");
-    let records = store
-        .get_file_records(snapshot.session_id, "data/items.cfd")
-        .expect("get file records");
-    let holder = records
-        .records
-        .iter()
-        .find(|row| row.coordinate.actual_type == "Holder")
-        .expect("holder row");
-    let item_ref = holder
-        .fields
-        .iter()
-        .find(|field| field.name == "item_ref")
-        .expect("item_ref field");
-    let item_inline = holder
-        .fields
-        .iter()
-        .find(|field| field.name == "item_inline")
-        .expect("item_inline field");
+    let (store, _cleanup, session_id) = load_ref_metadata_project();
+    let holder = holder_row(&store, session_id);
+    let item_ref = holder_field(&holder, "item_ref");
+    let item_inline = holder_field(&holder, "item_inline");
+    let nested = holder_field(&holder, "nested");
 
     assert_eq!(
         item_ref
@@ -98,9 +45,65 @@ fn file_records_load_ref_type_fields_without_mode_wire_metadata() {
             .and_then(|annotation| annotation.ref_target_file.as_deref()),
         Some("data/items.cfd")
     );
+    assert_eq!(
+        item_ref
+            .annotation
+            .as_ref()
+            .and_then(|annotation| annotation.declared_type.as_deref()),
+        Some("&Item")
+    );
+    assert_eq!(
+        item_ref
+            .annotation
+            .as_ref()
+            .and_then(|annotation| annotation.ref_target_type.as_deref()),
+        Some("Item")
+    );
     assert!(
-        item_inline.annotation.is_none(),
-        "inline fields should not carry ref or field-mode annotations"
+        item_inline
+            .annotation
+            .as_ref()
+            .is_some_and(|annotation| annotation.declared_type.as_deref() == Some("Item")),
+        "inline fields should carry schema display type annotations"
+    );
+    let nested_ref_annotation = nested
+        .annotation
+        .as_ref()
+        .and_then(|annotation| annotation.children.get("nested_ref"))
+        .expect("nested ref annotation");
+    assert_eq!(
+        nested_ref_annotation.declared_type.as_deref(),
+        Some("&Item")
+    );
+    assert_eq!(
+        nested_ref_annotation.ref_target_type.as_deref(),
+        Some("Item")
+    );
+    assert_eq!(
+        nested_ref_annotation.ref_target_file.as_deref(),
+        Some("data/items.cfd")
+    );
+}
+
+#[test]
+fn file_records_include_collection_declared_type_metadata() {
+    let (store, _cleanup, session_id) = load_ref_metadata_project();
+    let holder = holder_row(&store, session_id);
+    let item_refs = holder_field(&holder, "item_refs");
+
+    assert_eq!(
+        item_refs
+            .annotation
+            .as_ref()
+            .and_then(|annotation| annotation.declared_type.as_deref()),
+        Some("[&Item]")
+    );
+    assert_eq!(
+        item_refs
+            .annotation
+            .as_ref()
+            .and_then(|annotation| annotation.ref_target_type.as_deref()),
+        None
     );
 }
 
@@ -283,6 +286,74 @@ fn write_project(root: &std::path::Path, name: &str) {
 
 fn object_value(actual_type: &str, fields: BTreeMap<String, CfdValue>) -> CfdValue {
     CfdValue::Object(Box::new(CfdObject::new(actual_type, fields)))
+}
+
+fn load_ref_metadata_project() -> (SessionStore, TempDirCleanup, u32) {
+    let root = temp_project_dir("cfd-editor-field-mode");
+    let cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        r"
+            type Item { name: string; }
+            type Holder {
+                item_ref: &Item;
+                item_refs: [&Item] = [];
+                item_inline: Item;
+                nested: Nested;
+            }
+            type Nested {
+                nested_ref: &Item;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("items.cfd"),
+        r#"
+            sword: Item { name: "Sword" }
+            holder: Holder {
+              item_ref: &sword,
+              item_refs: [&sword],
+              item_inline: { name: "Inline" },
+              nested: { nested_ref: &sword },
+            }
+        "#,
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data\n",
+    )
+    .expect("write config");
+
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+    (store, cleanup, snapshot.session_id)
+}
+
+fn holder_row(store: &SessionStore, session_id: u32) -> cfd_editor_lib::editor::types::RecordRow {
+    let records = store
+        .get_file_records(session_id, "data/items.cfd")
+        .expect("get file records");
+    records
+        .records
+        .into_iter()
+        .find(|row| row.coordinate.actual_type == "Holder")
+        .expect("holder row")
+}
+
+fn holder_field<'a>(
+    holder: &'a cfd_editor_lib::editor::types::RecordRow,
+    field_name: &str,
+) -> &'a cfd_editor_lib::editor::types::FieldCell {
+    holder
+        .fields
+        .iter()
+        .find(|field| field.name == field_name)
+        .expect("holder field")
 }
 
 fn assert_record_name(store: &SessionStore, session_id: u32, expected: &str) {

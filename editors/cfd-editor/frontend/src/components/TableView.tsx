@@ -15,6 +15,7 @@ import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
 import {
   coordinateId,
+  cellRefTargetType,
   diagnosticMatchesCoordinate,
   diagnosticSeverity,
   fieldPathField,
@@ -180,6 +181,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                 <EditableCell
                   value={f.value}
                   editable={cellEditable}
+                  refTargetType={cellRefTargetType(f)}
                   onCommit={cellEditable ? next => onWriteField!(row.original.coordinate, [fieldPathField(name)], next) : undefined}
                 />
               </span>
@@ -454,10 +456,11 @@ function findDiagMessage(
 }
 
 function EditableCell({
-  value, editable, onCommit,
+  value, editable, refTargetType, onCommit,
 }: {
   value: FieldValue
   editable: boolean
+  refTargetType?: string
   onCommit?: (next: FieldValue) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -492,7 +495,7 @@ function EditableCell({
   if (canEdit && value.kind === 'ref') {
     return (
       <div className="cell-edit-wrap">
-        <RefDirectSelect value={value} onCommit={onCommit!} flat />
+        <RefDirectSelect value={value} onCommit={onCommit!} targetType={refTargetType} flat />
       </div>
     )
   }

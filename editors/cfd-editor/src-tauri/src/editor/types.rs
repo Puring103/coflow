@@ -198,6 +198,11 @@ pub struct FieldCell {
 /// - `enum_int_value`: integer backing the variant when `value` is a
 ///   `CfdValue::Enum`. The variant name lives on the value itself; the
 ///   integer is convenient for displays / filtering.
+/// - `declared_type`: the schema type declared for this field, formatted for
+///   display and for collection element type derivation in the UI.
+/// - `ref_target_type`: direct reference target type for scalar ref cells.
+/// - `children`: nested annotations for object fields, array items, or dict
+///   values. Keys are field names, zero-based array indexes, or dict-key text.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(TS))]
 #[cfg_attr(
@@ -215,14 +220,23 @@ pub struct FieldAnnotation {
         skip_serializing_if = "Option::is_none"
     )]
     pub enum_int_value: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declared_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ref_target_type: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub children: BTreeMap<String, Self>,
 }
 
 impl FieldAnnotation {
     #[must_use]
-    pub const fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.spread_info.is_none()
             && self.ref_target_file.is_none()
             && self.enum_int_value.is_none()
+            && self.declared_type.is_none()
+            && self.ref_target_type.is_none()
+            && self.children.is_empty()
     }
 }
 

@@ -3,10 +3,10 @@
 //! After spec 17, `FieldCell.value` is a `CfdValue` straight from the
 //! core model — no wire-only re-encoding. Editor-derived metadata
 //! (spread-source, ref target file hint, enum integer value) is
-//! collected into `FieldAnnotation` on the side. Conversion is a single
-//! walk of the record so the annotation tree mirrors the value tree.
+//! collected into `FieldAnnotation` on the side.
 
-use coflow_data_model::{CfdPath, CfdRecord, CfdRecordId, CfdValue, RefSite};
+use coflow_cft::CftSchemaTypeRef;
+use coflow_data_model::{CfdDictKey, CfdPath, CfdRecord, CfdRecordId, CfdValue, RefSite};
 use coflow_engine::{ProjectSession, RecordCoordinate, RecordView};
 use std::collections::BTreeMap;
 
@@ -136,11 +136,11 @@ const fn value_kind(value: &CfdValue) -> &'static str {
     }
 }
 
-const fn dict_key_kind(key: &coflow_data_model::CfdDictKey) -> &'static str {
+const fn dict_key_kind(key: &CfdDictKey) -> &'static str {
     match key {
-        coflow_data_model::CfdDictKey::String(_) => "string",
-        coflow_data_model::CfdDictKey::Int(_) => "int",
-        coflow_data_model::CfdDictKey::Enum(_) => "enum",
+        CfdDictKey::String(_) => "string",
+        CfdDictKey::Int(_) => "int",
+        CfdDictKey::Enum(_) => "enum",
     }
 }
 
@@ -151,18 +151,18 @@ fn build_annotation(
     ctx: &WireContext<'_>,
     parent_path: &[String],
 ) -> Option<FieldAnnotation> {
-    let mut annotation = FieldAnnotation::default();
     let host_id = ctx
         .session
         .records
         .id_for_coordinate(host.actual_type(), &host.key);
     let path = CfdPath::root().field(field_name.to_string());
+    let declared_type = declared_field_type(&ctx.session.schema, host.actual_type(), field_name);
+    let mut annotation = annotation_for_value(value, ctx, host_id, &path, declared_type);
     if let Some(source_id) =
         host_id.and_then(|host| ctx.session.model.spread_source_at_path(host, &path))
     {
         annotation.spread_info = spread_info_for_source(ctx, source_id, parent_path, field_name);
     }
-    annotation_for_value(value, ctx, host_id, &path, &mut annotation);
     if annotation.is_empty() {
         None
     } else {
@@ -175,8 +175,13 @@ fn annotation_for_value(
     ctx: &WireContext<'_>,
     host_id: Option<CfdRecordId>,
     path: &CfdPath,
-    annotation: &mut FieldAnnotation,
-) {
+    declared_type: Option<&CftSchemaTypeRef>,
+) -> FieldAnnotation {
+    let mut annotation = FieldAnnotation::default();
+    if let Some(ty) = declared_type {
+        annotation.declared_type = Some(type_ref_label(ty));
+        annotation.ref_target_type = ref_target_type(ty).map(str::to_string);
+    }
     match value {
         CfdValue::Ref(_) => {
             annotation.ref_target_file = host_id
@@ -195,7 +200,129 @@ fn annotation_for_value(
         CfdValue::Enum(enum_value) => {
             annotation.enum_int_value = Some(enum_value.value);
         }
+        CfdValue::Object(object) => {
+            let object_type = object_type_for_value(value, declared_type);
+            for (name, child) in object.fields() {
+                let child_type = object_type.and_then(|actual_type| {
+                    declared_field_type(&ctx.session.schema, actual_type, name)
+                });
+                let child_path = path.clone().field(name.clone());
+                let child_annotation =
+                    annotation_for_value(child, ctx, host_id, &child_path, child_type);
+                if !child_annotation.is_empty() {
+                    annotation.children.insert(name.clone(), child_annotation);
+                }
+            }
+        }
+        CfdValue::Array(items) => {
+            let item_type = array_item_type(declared_type);
+            for (idx, child) in items.iter().enumerate() {
+                let child_path = path.clone().index(idx);
+                let child_annotation =
+                    annotation_for_value(child, ctx, host_id, &child_path, item_type);
+                if !child_annotation.is_empty() {
+                    annotation
+                        .children
+                        .insert(idx.to_string(), child_annotation);
+                }
+            }
+        }
+        CfdValue::Dict(entries) => {
+            let item_type = dict_item_type(declared_type);
+            for (key, child) in entries {
+                let key_text = dict_key_text(key);
+                let child_path = path.clone().dict_key_value(key);
+                let child_annotation =
+                    annotation_for_value(child, ctx, host_id, &child_path, item_type);
+                if !child_annotation.is_empty() {
+                    annotation.children.insert(key_text, child_annotation);
+                }
+            }
+        }
         _ => {}
+    }
+    annotation
+}
+
+fn declared_field_type<'a>(
+    schema: &'a coflow_cft::CftContainer,
+    actual_type: &str,
+    field_name: &str,
+) -> Option<&'a CftSchemaTypeRef> {
+    schema
+        .resolve_type(actual_type)?
+        .all_fields
+        .iter()
+        .find(|field| field.name == field_name)
+        .map(|field| &field.ty_ref)
+}
+
+fn type_ref_label(ty: &CftSchemaTypeRef) -> String {
+    match ty {
+        CftSchemaTypeRef::Int => "int".to_string(),
+        CftSchemaTypeRef::Float => "float".to_string(),
+        CftSchemaTypeRef::Bool => "bool".to_string(),
+        CftSchemaTypeRef::String => "string".to_string(),
+        CftSchemaTypeRef::Named(name) => name.clone(),
+        CftSchemaTypeRef::Ref(name) => format!("&{name}"),
+        CftSchemaTypeRef::Array(inner) => format!("[{}]", type_ref_label(inner)),
+        CftSchemaTypeRef::Dict(key, value) => {
+            format!("{{{}: {}}}", type_ref_label(key), type_ref_label(value))
+        }
+        CftSchemaTypeRef::Nullable(inner) => format!("{}?", type_ref_label(inner)),
+    }
+}
+
+fn ref_target_type(ty: &CftSchemaTypeRef) -> Option<&str> {
+    match ty {
+        CftSchemaTypeRef::Ref(name) => Some(name),
+        CftSchemaTypeRef::Nullable(inner) => ref_target_type(inner),
+        _ => None,
+    }
+}
+
+fn object_type_for_value<'a>(
+    value: &'a CfdValue,
+    declared_type: Option<&'a CftSchemaTypeRef>,
+) -> Option<&'a str> {
+    if let CfdValue::Object(object) = value {
+        return Some(object.actual_type());
+    }
+    match non_nullable(declared_type?) {
+        CftSchemaTypeRef::Named(name) => Some(name),
+        _ => None,
+    }
+}
+
+fn array_item_type(ty: Option<&CftSchemaTypeRef>) -> Option<&CftSchemaTypeRef> {
+    match non_nullable(ty?) {
+        CftSchemaTypeRef::Array(inner) => Some(inner),
+        _ => None,
+    }
+}
+
+fn dict_item_type(ty: Option<&CftSchemaTypeRef>) -> Option<&CftSchemaTypeRef> {
+    match non_nullable(ty?) {
+        CftSchemaTypeRef::Dict(_, value) => Some(value),
+        _ => None,
+    }
+}
+
+fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
+    match ty {
+        CftSchemaTypeRef::Nullable(inner) => non_nullable(inner),
+        _ => ty,
+    }
+}
+
+fn dict_key_text(key: &CfdDictKey) -> String {
+    match key {
+        CfdDictKey::String(value) => format!("\"{value}\""),
+        CfdDictKey::Int(value) => value.to_string(),
+        CfdDictKey::Enum(value) => value.variant.as_deref().map_or_else(
+            || format!("{}({})", value.enum_name, value.value),
+            |variant| format!("{}.{}", value.enum_name, variant),
+        ),
     }
 }
 

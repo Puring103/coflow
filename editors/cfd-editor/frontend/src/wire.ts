@@ -6,6 +6,7 @@ import type { CfdValue } from './bindings/CfdValue'
 import type { DeletedRecordSnapshot } from './bindings/DeletedRecordSnapshot'
 import type { EditorError } from './bindings/EditorError'
 import type { FieldCell } from './bindings/FieldCell'
+import type { FieldAnnotation } from './bindings/FieldAnnotation'
 import type { FlatDiagnostic } from './bindings/FlatDiagnostic'
 import type { GraphEdge } from './bindings/GraphEdge'
 import type { GraphNode } from './bindings/GraphNode'
@@ -71,6 +72,29 @@ export function objectFields(value: FieldValue): FieldCell[] {
 
 export function cellSpreadInfo(cell: FieldCell): SpreadInfo | undefined {
   return cell.annotation?.spread_info ?? undefined
+}
+
+export function cellDeclaredType(cell: FieldCell): string | undefined {
+  return cell.annotation?.declared_type ?? undefined
+}
+
+export function cellRefTargetType(cell: FieldCell): string | undefined {
+  return cell.annotation?.ref_target_type ?? undefined
+}
+
+export function annotationDeclaredType(annotation: FieldAnnotation | null | undefined): string | undefined {
+  return annotation?.declared_type ?? undefined
+}
+
+export function annotationRefTargetType(annotation: FieldAnnotation | null | undefined): string | undefined {
+  return annotation?.ref_target_type ?? undefined
+}
+
+export function annotationChild(
+  annotation: FieldAnnotation | null | undefined,
+  key: string | number,
+): FieldAnnotation | undefined {
+  return annotation?.children?.[String(key)] ?? undefined
 }
 
 export function isSpreadCell(cell: FieldCell): boolean {

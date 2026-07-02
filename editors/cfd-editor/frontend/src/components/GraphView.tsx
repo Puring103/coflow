@@ -36,7 +36,6 @@ const ROW_H      = 22
 const MORE_BTN_H = 28
 const PAD_V      = 12
 const COMPACT_BODY_MIN_H = 168
-const COMPACT_NODE_COUNT_THRESHOLD = 140
 const MEASURE_HANDLE_NODE_LIMIT = 80
 const LAYOUT_WORKER_TIMEOUT_MS = 20_000
 
@@ -780,8 +779,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, onEnabledFi
   }, [graph, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap])
 
   const { positions, visibleNodes, forwardEdges, backEdges } = layout
-  const largeGraph = visibleNodes.length >= COMPACT_NODE_COUNT_THRESHOLD
-  const compactNodes = zoomCompactNodes || largeGraph
+  const compactNodes = zoomCompactNodes
   const measureHandles = !compactNodes && visibleNodes.length <= MEASURE_HANDLE_NODE_LIMIT
 
   // Group outgoing edge paths by source node id (used to render per-path handles).
@@ -988,17 +986,15 @@ export function GraphView({ graphData, activeType, fileCapabilities, onEnabledFi
           >
             <Background color="var(--graph-bg-grid)" gap={24} size={1} />
             <Controls showInteractive={false} />
-            {!largeGraph && (
-              <MiniMap
-                nodeColor={n => {
-                  const { graphNode } = n.data as NodeData
-                  return graphNode.in_focus_file ? '#8a93a3' : '#3a3f48'
-                }}
-                maskColor="var(--minimap-mask, rgba(14, 16, 20, 0.75))"
-                pannable
-                zoomable
-              />
-            )}
+            <MiniMap
+              nodeColor={n => {
+                const { graphNode } = n.data as NodeData
+                return graphNode.in_focus_file ? '#8a93a3' : '#3a3f48'
+              }}
+              maskColor="var(--minimap-mask, rgba(14, 16, 20, 0.75))"
+              pannable
+              zoomable
+            />
           </ReactFlow>
           <div className="graph-hint" title="点击节点打开侧边面板，Ctrl+点击跳转到记录视图">
             点击节点查看 · Ctrl+点击跳转

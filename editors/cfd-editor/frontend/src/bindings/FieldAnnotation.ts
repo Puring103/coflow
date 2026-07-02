@@ -11,5 +11,10 @@ import type { SpreadInfo } from "./SpreadInfo";
  * - `enum_int_value`: integer backing the variant when `value` is a
  *   `CfdValue::Enum`. The variant name lives on the value itself; the
  *   integer is convenient for displays / filtering.
+ * - `declared_type`: the schema type declared for this field, formatted for
+ *   display and for collection element type derivation in the UI.
+ * - `ref_target_type`: direct reference target type for scalar ref cells.
+ * - `children`: nested annotations for object fields, array items, or dict
+ *   values. Keys are field names, zero-based array indexes, or dict-key text.
  */
-export type FieldAnnotation = { spread_info: SpreadInfo | null, ref_target_file: string | null, enum_int_value: bigint | null, };
+export type FieldAnnotation = { spread_info: SpreadInfo | null, ref_target_file: string | null, enum_int_value: bigint | null, declared_type: string | null, ref_target_type: string | null, children: { [key in string]?: FieldAnnotation }, };
