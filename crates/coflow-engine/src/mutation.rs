@@ -8,6 +8,7 @@ use coflow_data_model::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::write_rules;
 use crate::{ProjectSession, RecordCoordinate, WriteOutcome};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -287,7 +288,7 @@ fn prepare_one(
         } => {
             ensure_source_file(session, &file)?;
             ensure_type_can_insert(session, &actual_type)?;
-            ensure_record_key_can_insert(session, &actual_type, &key)?;
+            ensure_record_key_can_insert(session, &actual_type, &key, None)?;
             let fields = prepare_insert_fields(session, &actual_type, fields, materialization)?;
             Ok(PreparedMutationOp::InsertRecord {
                 file,
@@ -761,7 +762,7 @@ fn coerce_mutation_value(
         MutationValue::Json(value) => coerce_json_value(session, expected, &value),
         MutationValue::Cfd(value) => coerce_cfd_value(session, expected, value),
     }?;
-    validate_value_shape(session, expected, &value)?;
+    validate_value_for_write(session, expected, &value)?;
     Ok(value)
 }
 
@@ -771,7 +772,7 @@ fn coerce_json_field_value(
     value: &Value,
 ) -> Result<CfdValue, DiagnosticSet> {
     let value = coerce_json_value(session, &field.ty_ref, value)?;
-    validate_value_shape(session, &field.ty_ref, &value)?;
+    validate_value_for_write(session, &field.ty_ref, &value)?;
     Ok(value)
 }
 
@@ -781,7 +782,7 @@ fn coerce_cfd_field_value(
     value: CfdValue,
 ) -> Result<CfdValue, DiagnosticSet> {
     let value = coerce_cfd_value(session, &field.ty_ref, value)?;
-    validate_value_shape(session, &field.ty_ref, &value)?;
+    validate_value_for_write(session, &field.ty_ref, &value)?;
     Ok(value)
 }
 
@@ -884,7 +885,7 @@ fn coerce_cfd_value(
         }
         (CftSchemaTypeRef::Ref(_expected_type), CfdValue::Ref(target_key)) => {
             if target_key.is_empty() {
-                return Err(one_ref_error("reference key must not be empty"));
+                return Err(one_value_error("reference key must not be empty"));
             }
             Ok(CfdValue::Ref(target_key))
         }
@@ -909,65 +910,12 @@ fn coerce_cfd_object_fields(
         .collect()
 }
 
-fn validate_value_shape(
+fn validate_value_for_write(
     session: &ProjectSession,
     expected: &CftSchemaTypeRef,
     value: &CfdValue,
 ) -> Result<(), DiagnosticSet> {
-    match (non_nullable(expected), value) {
-        (_, CfdValue::Null) if matches!(expected, CftSchemaTypeRef::Nullable(_)) => Ok(()),
-        (CftSchemaTypeRef::Array(inner), CfdValue::Array(items)) => {
-            for item in items {
-                validate_value_shape(session, inner, item)?;
-            }
-            Ok(())
-        }
-        (CftSchemaTypeRef::Dict(_, item), CfdValue::Dict(entries)) => {
-            for (_, item_value) in entries {
-                validate_value_shape(session, item, item_value)?;
-            }
-            Ok(())
-        }
-        (CftSchemaTypeRef::Named(expected_type), CfdValue::Ref(target_key))
-            if type_is_singleton(&session.schema, expected_type) =>
-        {
-            if target_key.is_empty() {
-                return Err(one_ref_error("reference key must not be empty"));
-            }
-            Ok(())
-        }
-        (CftSchemaTypeRef::Named(_), CfdValue::Ref(_)) => Err(one_shape_error(
-            "inline object fields do not accept record refs",
-        )),
-        (CftSchemaTypeRef::Ref(_expected_type), CfdValue::Ref(target_key)) => {
-            if target_key.is_empty() {
-                return Err(one_ref_error("reference key must not be empty"));
-            }
-            Ok(())
-        }
-        (CftSchemaTypeRef::Ref(_), CfdValue::Object(_)) => {
-            Err(one_shape_error("reference fields only allow record refs"))
-        }
-        (CftSchemaTypeRef::Named(expected_type), CfdValue::Object(record)) => {
-            if type_is_singleton(&session.schema, expected_type) {
-                return Err(one_shape_error(
-                    "singleton fields only allow record references",
-                ));
-            }
-            for (name, value) in record.fields() {
-                let field = schema_field(session, record.actual_type(), name)?;
-                validate_value_shape(session, &field.ty_ref, value)?;
-            }
-            Ok(())
-        }
-        _ => Ok(()),
-    }
-}
-
-fn type_is_singleton(schema: &CftContainer, ty: &str) -> bool {
-    schema
-        .resolve_type(ty)
-        .is_some_and(|schema_type| schema_type.is_singleton)
+    write_rules::validate_value_for_write(session, expected, value, "MUTATION-SHAPE", "MUTATION")
 }
 
 fn coerce_cfd_dict_key(
@@ -1119,12 +1067,9 @@ fn coerce_json_named_value(
     expected_type: &str,
     value: &Value,
 ) -> Result<CfdValue, DiagnosticSet> {
-    if let Some(reference) = coerce_json_ref_value(session, expected_type, value)? {
-        return Ok(reference);
-    }
-    let object = value.as_object().ok_or_else(|| {
-        one_value_error(format!("expected object or `$ref` for `{expected_type}`"))
-    })?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| one_value_error(format!("expected object for `{expected_type}`")))?;
     let actual_type = actual_object_type(object, expected_type)?;
     ensure_object_type_assignable(session, expected_type, &actual_type)?;
     let fields = coerce_json_object_fields(session, &actual_type, object)?;
@@ -1154,22 +1099,13 @@ fn ensure_object_type_assignable(
     expected_type: &str,
     actual_type: &str,
 ) -> Result<(), DiagnosticSet> {
-    let Some(schema_type) = session.schema.resolve_type(actual_type) else {
-        return Err(one_value_error(format!(
-            "unknown object type `{actual_type}`"
-        )));
-    };
-    if schema_type.is_abstract {
-        return Err(one_value_error(format!(
-            "abstract object type `{actual_type}` cannot be instantiated"
-        )));
-    }
-    if !session.schema.is_assignable(actual_type, expected_type) {
-        return Err(one_value_error(format!(
-            "type `{actual_type}` is not assignable to `{expected_type}`"
-        )));
-    }
-    Ok(())
+    write_rules::ensure_object_type_assignable(
+        &session.schema,
+        expected_type,
+        actual_type,
+        "MUTATION-VALUE",
+        "MUTATION",
+    )
 }
 
 fn coerce_json_object_fields(
@@ -1209,52 +1145,6 @@ fn coerce_json_object_fields(
     Ok(fields)
 }
 
-fn coerce_json_ref_value(
-    _session: &ProjectSession,
-    _expected_type: &str,
-    value: &Value,
-) -> Result<Option<CfdValue>, DiagnosticSet> {
-    let Some(object) = value.as_object() else {
-        return Ok(None);
-    };
-    let Some(raw_ref) = object.get("$ref") else {
-        return Ok(None);
-    };
-    if object.len() != 1 {
-        return Err(one_ref_error("`$ref` object cannot include other keys"));
-    }
-    let target_key = parse_ref_key(raw_ref)?;
-    if target_key.is_empty() {
-        return Err(one_ref_error("reference key must not be empty"));
-    }
-    Ok(Some(CfdValue::Ref(target_key)))
-}
-
-fn parse_ref_key(value: &Value) -> Result<String, DiagnosticSet> {
-    if let Some(text) = value.as_str() {
-        if text.is_empty() {
-            return Err(one_ref_error("string `$ref` must not be empty"));
-        }
-        if text.contains('.') {
-            return Err(one_ref_error(
-                "typed `$ref` strings are no longer supported; use `key`",
-            ));
-        }
-        return Ok(text.to_string());
-    }
-    let object = value
-        .as_object()
-        .ok_or_else(|| one_ref_error("`$ref` must be a string or object"))?;
-    let target_key = object
-        .get("key")
-        .and_then(Value::as_str)
-        .ok_or_else(|| one_ref_error("object `$ref` is missing string `key`"))?;
-    if object.len() != 1 {
-        return Err(one_ref_error("object `$ref` only supports string `key`"));
-    }
-    Ok(target_key.to_string())
-}
-
 #[derive(Debug, Clone)]
 struct ExpectedValue {
     ty: CftSchemaTypeRef,
@@ -1265,80 +1155,14 @@ fn expected_value_for_path(
     coordinate: &RecordCoordinate,
     path: &[CfdPathSegment],
 ) -> Result<ExpectedValue, DiagnosticSet> {
-    if path.is_empty() {
-        return Err(one_path_error("mutation path must not be empty"));
-    }
-
-    let mut current = CftSchemaTypeRef::Named(coordinate.actual_type.clone());
-    for segment in path {
-        match segment {
-            CfdPathSegment::Field(field) => {
-                let schema_field = field_for_path_segment(session, &current, field)?;
-                current = schema_field.ty_ref.clone();
-            }
-            CfdPathSegment::Index(index) => {
-                current = array_item_type_for_path_segment(&current, *index)?;
-            }
-            CfdPathSegment::DictKey(key) => {
-                current = dict_item_type_for_path_segment(&current, key)?;
-            }
-        }
-    }
+    let current = write_rules::expected_type_for_cfd_path(
+        &session.schema,
+        &coordinate.actual_type,
+        path,
+        "MUTATION-PATH",
+        "MUTATION",
+    )?;
     Ok(ExpectedValue { ty: current })
-}
-
-fn field_for_path_segment<'a>(
-    session: &'a ProjectSession,
-    current: &CftSchemaTypeRef,
-    field_name: &str,
-) -> Result<&'a coflow_cft::CftSchemaField, DiagnosticSet> {
-    match non_nullable(current) {
-        CftSchemaTypeRef::Named(type_name) if session.schema.has_type(type_name) => {
-            let schema_type = session
-                .schema
-                .resolve_type(type_name)
-                .ok_or_else(|| one_path_error(format!("unknown type `{type_name}`")))?;
-            schema_type
-                .all_fields
-                .iter()
-                .find(|field| field.name == field_name)
-                .ok_or_else(|| {
-                    one_path_error(format!(
-                        "unknown field `{field_name}` on type `{type_name}`"
-                    ))
-                })
-        }
-        CftSchemaTypeRef::Dict(_, _) => Err(one_path_error(
-            "field writes inside dict values require a dict-key segment first",
-        )),
-        _ => Err(one_path_error(format!(
-            "field `{field_name}` cannot be selected from this value"
-        ))),
-    }
-}
-
-fn array_item_type_for_path_segment(
-    current: &CftSchemaTypeRef,
-    index: usize,
-) -> Result<CftSchemaTypeRef, DiagnosticSet> {
-    match non_nullable(current) {
-        CftSchemaTypeRef::Array(inner) => Ok((**inner).clone()),
-        _ => Err(one_path_error(format!(
-            "array index `{index}` cannot be selected from this value"
-        ))),
-    }
-}
-
-fn dict_item_type_for_path_segment(
-    current: &CftSchemaTypeRef,
-    key: &str,
-) -> Result<CftSchemaTypeRef, DiagnosticSet> {
-    match non_nullable(current) {
-        CftSchemaTypeRef::Dict(_, item) => Ok((**item).clone()),
-        _ => Err(one_path_error(format!(
-            "dict key `{key}` cannot be selected from this value"
-        ))),
-    }
 }
 
 fn cfd_path_to_write_path(
@@ -1347,14 +1171,7 @@ fn cfd_path_to_write_path(
     if path.is_empty() {
         return Err(one_path_error("mutation path must not be empty"));
     }
-    Ok(path
-        .iter()
-        .map(|segment| match segment {
-            CfdPathSegment::Field(field) => coflow_api::WriteFieldPathSegment::Field(field.clone()),
-            CfdPathSegment::Index(index) => coflow_api::WriteFieldPathSegment::Index(*index),
-            CfdPathSegment::DictKey(key) => coflow_api::WriteFieldPathSegment::DictKey(key.clone()),
-        })
-        .collect())
+    Ok(write_rules::cfd_path_to_write_path(path))
 }
 
 fn effective_write_target_for_set_field(
@@ -1513,29 +1330,16 @@ fn ensure_record_key_can_insert(
     session: &ProjectSession,
     actual_type: &str,
     key: &str,
+    current_record: Option<coflow_data_model::CfdRecordId>,
 ) -> Result<(), DiagnosticSet> {
-    validate_record_key(key, "MUTATION-INSERT")?;
-    if session
-        .records
-        .get_by_coordinate(actual_type, key)
-        .is_some()
-    {
-        return Err(one_mutation_error(
-            "MUTATION-INSERT",
-            format!("record `{actual_type}.{key}` already exists"),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_record_key(key: &str, code: &'static str) -> Result<(), DiagnosticSet> {
-    if let Some(reason) = coflow_cft::record_key_ident_error(key) {
-        return Err(one_mutation_error(
-            code,
-            format!("record key `{key}` is invalid: {reason}"),
-        ));
-    }
-    Ok(())
+    write_rules::ensure_record_key_available(
+        session,
+        actual_type,
+        key,
+        current_record,
+        "MUTATION-INSERT",
+        "MUTATION",
+    )
 }
 
 fn enum_value(
@@ -1606,14 +1410,6 @@ fn one_path_error(message: impl Into<String>) -> DiagnosticSet {
 
 fn one_value_error(message: impl Into<String>) -> DiagnosticSet {
     one_mutation_error("MUTATION-VALUE", message)
-}
-
-fn one_ref_error(message: impl Into<String>) -> DiagnosticSet {
-    one_mutation_error("MUTATION-REF", message)
-}
-
-fn one_shape_error(message: impl Into<String>) -> DiagnosticSet {
-    one_mutation_error("MUTATION-SHAPE", message)
 }
 
 fn one_mutation_error(code: &'static str, message: impl Into<String>) -> DiagnosticSet {

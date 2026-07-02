@@ -1172,7 +1172,17 @@ impl<'a> SchemaCompiler<'a> {
             TypeRefKind::Bool => Ty::Bool,
             TypeRefKind::String => Ty::String,
             TypeRefKind::Named(name) => match self.symbols.get(name) {
-                Some(symbol) if symbol.kind == SymbolKind::Type => Ty::Type(name.clone()),
+                Some(symbol) if symbol.kind == SymbolKind::Type => {
+                    if self.type_is_singleton(name) {
+                        self.push_diag(
+                            CftErrorCode::InvalidAnnotatedFieldType,
+                            module,
+                            ty.span,
+                            "singleton type cannot be used as a field type",
+                        );
+                    }
+                    Ty::Type(name.clone())
+                }
                 Some(symbol) if symbol.kind == SymbolKind::Enum => Ty::Enum(name.clone()),
                 Some(symbol) => {
                     self.diagnostics.push(

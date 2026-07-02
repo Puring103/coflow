@@ -59,6 +59,10 @@ fn ref_type_rejects_non_object_collection_and_singleton_targets() {
         "type Item { name: string; } type Bad { value: &[Item]; }",
         "type Item { name: string; } type Bad { value: &{string: Item}; }",
         "@singleton type Settings { value: string; } type Bad { value: &Settings; }",
+        "@singleton type Settings { value: string; } type Bad { value: Settings; }",
+        "@singleton type Settings { value: string; } type Bad { value: Settings?; }",
+        "@singleton type Settings { value: string; } type Bad { value: [Settings]; }",
+        "@singleton type Settings { value: string; } type Bad { value: {string: Settings}; }",
     ] {
         let err = compile_one(source).expect_err(source);
         assert_has_code(&err, CftErrorCode::InvalidAnnotatedFieldType);

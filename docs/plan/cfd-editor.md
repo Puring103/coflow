@@ -1,5 +1,9 @@
 # CFD Editor — 实现计划
 
+> 历史归档：本文记录早期独立 CFD Editor 原型设计，其中仍出现旧的 `@ref/@inline`
+> 和 `field_modes` 元数据。当前实现以 schema 类型决定字段形态：`&Type` 表示 record
+> reference，数据中使用 `&key`；普通 `Type` 表示 inline object，不再传输 field mode。
+
 独立桌面编辑器，查看和编辑 Coflow 数据文件（CFD）。技术栈：Tauri 2 + React。一次性实现完整原型。
 
 ---
@@ -141,7 +145,8 @@ RecordRow {
 
 FieldCell { name: String, value: FieldValue }
 FieldAnnotation {
-    field_mode: Option<"ref" | "inline">, // CFT @ref/@inline 字段形态限制
+    // historical: CFT @ref/@inline 字段形态限制；当前由 &Type / Type 决定
+    field_mode: Option<"ref" | "inline">
 }
 FileRecords.field_modes: { [typeName]: { [fieldName]: "ref" | "inline" } }
 GraphData.field_modes: { [typeName]: { [fieldName]: "ref" | "inline" } }
@@ -291,8 +296,9 @@ AST span 覆盖：
 - 超过 **5 层**后强制 compact，不再递归展开
 - 字段名 + 值同行；object/array/dict 的 `▶ TypeName` 作折叠句柄
 - 可编辑：标量点击进入 inline edit，失焦或 Enter 触发 `write_field`
-- schema 字段带 `@ref` 时隐藏“内联”按钮；带 `@inline` 时隐藏“->Ref”按钮。嵌套对象根据
-  `field_modes` 按实际类型查找子字段限制，数组元素和字典 value 继承集合字段限制。
+- 历史方案中 schema 字段带 `@ref` 时隐藏“内联”按钮，带 `@inline` 时隐藏“->Ref”按钮，
+  并通过 `field_modes` 传输限制。当前语义下 UI 应直接由 schema type 决定：`&T` 渲染
+  record picker，`T` 渲染 inline object editor，数组和字典递归使用元素/value 类型。
 
 ---
 

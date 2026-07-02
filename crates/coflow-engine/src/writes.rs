@@ -17,6 +17,7 @@ use coflow_api::{
 use coflow_data_model::{CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdValue};
 
 use super::records::WriteOutcome;
+use super::write_rules;
 use super::{build_project_session, ProjectSession, RecordCoordinate};
 
 impl ProjectSession {
@@ -62,6 +63,14 @@ impl ProjectSession {
         };
         let coordinate = record_ref.coordinate.clone();
         let target = write_target_for_path(self, record_ref, path)?;
+        let expected = write_rules::expected_type_for_write_path(
+            &self.schema,
+            &target.coordinate.actual_type,
+            &target.field_path,
+            "WRITE-SHAPE",
+            "WRITE",
+        )?;
+        write_rules::validate_value_for_write(self, &expected, new_value, "WRITE-SHAPE", "WRITE")?;
         let source = source_for_file(self, &target.display_path)?;
         let writer = lookup_writer(registry, &source)?;
         let yaml_path = self.project.config_path.clone();
@@ -134,7 +143,7 @@ impl ProjectSession {
         if old_key == new_key {
             return Ok(WriteOutcome::touch(target_ref.coordinate.clone()));
         }
-        ensure_rename_key_available(self, actual_type, new_key)?;
+        ensure_rename_key_available(self, actual_type, new_key, target_ref.id)?;
 
         let target_id = target_ref.id;
         let old_coordinate = target_ref.coordinate.clone();
@@ -204,6 +213,9 @@ impl ProjectSession {
         fields: &std::collections::BTreeMap<String, CfdValue>,
     ) -> Result<WriteOutcome, DiagnosticSet> {
         let source = source_for_file(self, file)?;
+        ensure_insert_type_can_insert(self, actual_type)?;
+        ensure_insert_key_available(self, actual_type, record_key)?;
+        validate_insert_fields(self, actual_type, record_key, fields)?;
         let sheet = sheet
             .map(ToOwned::to_owned)
             .or_else(|| sheet_for_file_type(self, file, actual_type));
@@ -353,12 +365,86 @@ fn sheet_for_file_type(session: &ProjectSession, file: &str, actual_type: &str) 
 }
 
 fn validate_new_record_key(key: &str) -> Result<(), DiagnosticSet> {
-    if let Some(reason) = coflow_cft::record_key_ident_error(key) {
+    write_rules::validate_record_key(key, "WRITE-RENAME")
+}
+
+fn ensure_insert_key_available(
+    session: &ProjectSession,
+    actual_type: &str,
+    key: &str,
+) -> Result<(), DiagnosticSet> {
+    write_rules::ensure_record_key_available(
+        session,
+        actual_type,
+        key,
+        None,
+        "WRITE-INSERT",
+        "WRITE",
+    )
+}
+
+fn ensure_insert_type_can_insert(
+    session: &ProjectSession,
+    actual_type: &str,
+) -> Result<(), DiagnosticSet> {
+    let Some(schema_type) = session.schema.resolve_type(actual_type) else {
         return Err(DiagnosticSet::one(Diagnostic::error(
-            "WRITE-RENAME",
+            "WRITE-INSERT",
             "WRITE",
-            format!("record key `{key}` is invalid: {reason}"),
+            format!("unknown insert type `{actual_type}`"),
         )));
+    };
+    if schema_type.is_abstract {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "WRITE-INSERT",
+            "WRITE",
+            format!("abstract type `{actual_type}` cannot be inserted"),
+        )));
+    }
+    if schema_type.is_singleton {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "WRITE-INSERT",
+            "WRITE",
+            format!("singleton type `{actual_type}` cannot be inserted"),
+        )));
+    }
+    Ok(())
+}
+
+fn validate_insert_fields(
+    session: &ProjectSession,
+    actual_type: &str,
+    record_key: &str,
+    fields: &std::collections::BTreeMap<String, CfdValue>,
+) -> Result<(), DiagnosticSet> {
+    let Some(schema_type) = session.schema.resolve_type(actual_type) else {
+        return Err(DiagnosticSet::one(Diagnostic::error(
+            "WRITE-INSERT",
+            "WRITE",
+            format!("unknown insert type `{actual_type}`"),
+        )));
+    };
+    for (name, value) in fields {
+        let Some(field) = schema_type
+            .all_fields
+            .iter()
+            .find(|field| field.name == *name)
+        else {
+            return Err(DiagnosticSet::one(Diagnostic::error(
+                "WRITE-INSERT",
+                "WRITE",
+                format!("unknown field `{name}` on type `{actual_type}`"),
+            )));
+        };
+        write_rules::validate_value_for_insert(
+            session,
+            actual_type,
+            record_key,
+            &field.ty_ref,
+            value,
+            "WRITE-SHAPE",
+            "WRITE",
+        )?;
     }
     Ok(())
 }
@@ -367,39 +453,16 @@ fn ensure_rename_key_available(
     session: &ProjectSession,
     actual_type: &str,
     new_key: &str,
+    current_record: CfdRecordId,
 ) -> Result<(), DiagnosticSet> {
-    if session
-        .records
-        .get_by_coordinate(actual_type, new_key)
-        .is_some()
-    {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "WRITE-RENAME",
-            "WRITE",
-            format!("record `{actual_type}.{new_key}` already exists"),
-        )));
-    }
-    for target_type in session.schema.assignable_target_names(actual_type) {
-        if !session.schema.range_is_polymorphic(&target_type) {
-            continue;
-        }
-        if session
-            .model
-            .lookup(&target_type, new_key)
-            .is_some_and(|id| {
-                session.model.record(id).is_some_and(|record| {
-                    record.actual_type() != actual_type || record.key != new_key
-                })
-            })
-        {
-            return Err(DiagnosticSet::one(Diagnostic::error(
-                "WRITE-RENAME",
-                "WRITE",
-                format!("key `{new_key}` already exists in polymorphic range `{target_type}`"),
-            )));
-        }
-    }
-    Ok(())
+    write_rules::ensure_record_key_available(
+        session,
+        actual_type,
+        new_key,
+        Some(current_record),
+        "WRITE-RENAME",
+        "WRITE",
+    )
 }
 
 struct ReferenceUpdateAction {
