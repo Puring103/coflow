@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, memo } from 'react'
-import type { ELK, ElkNode } from 'elkjs/lib/elk-api'
+import type { ElkNode } from 'elkjs/lib/elk-api'
 import {
   ReactFlow, Background, Controls, MiniMap,
   Handle, Position, useUpdateNodeInternals, type NodeProps,
@@ -22,6 +22,7 @@ import { isEditableCapabilities, isEditableFile } from '../utils/editable'
 import { DataCardNode, CardHeader, NODE_PEEK_FIELDS, countVisibleRows } from './DataCard'
 import { Icon } from './Icon'
 import { typeColor } from '../utils/typeColor'
+import type { LayoutWorkerRequest, LayoutWorkerResponse } from './GraphView.layout.worker'
 
 // ─── Constants (must match CSS / DataCard) ────────────────────────────────── (must match CSS / DataCard) ──────────────────────────────────
 
@@ -37,13 +38,71 @@ const PAD_V      = 12
 const COMPACT_BODY_MIN_H = 168
 const COMPACT_NODE_COUNT_THRESHOLD = 140
 const MEASURE_HANDLE_NODE_LIMIT = 80
-let elkPromise: Promise<ELK> | null = null
+const LAYOUT_WORKER_TIMEOUT_MS = 20_000
 
-async function getElk(): Promise<ELK> {
-  if (!elkPromise) {
-    elkPromise = import('elkjs/lib/elk.bundled.js').then(({ default: Elk }) => new Elk())
+let layoutWorker: Worker | null = null
+let nextLayoutRequestId = 1
+const layoutRequests = new Map<number, {
+  resolve: (positions: Map<string, { x: number; y: number }>) => void
+  reject: (error: Error) => void
+  timeout: number
+}>()
+
+function rejectPendingLayoutRequests(error: Error) {
+  for (const [id, pending] of layoutRequests) {
+    clearTimeout(pending.timeout)
+    pending.reject(error)
+    layoutRequests.delete(id)
   }
-  return elkPromise
+}
+
+function resetLayoutWorker(error: Error) {
+  layoutWorker?.terminate()
+  layoutWorker = null
+  rejectPendingLayoutRequests(error)
+}
+
+function getLayoutWorker(): Worker {
+  if (!layoutWorker) {
+    layoutWorker = new Worker(new URL('./GraphView.layout.worker.ts', import.meta.url), { type: 'module' })
+    layoutWorker.onmessage = (event: MessageEvent<LayoutWorkerResponse>) => {
+      const response = event.data
+      const pending = layoutRequests.get(response.id)
+      if (!pending) return
+      clearTimeout(pending.timeout)
+      layoutRequests.delete(response.id)
+      if (response.ok) {
+        pending.resolve(new Map(response.positions))
+      } else {
+        pending.reject(new Error(response.error))
+      }
+    }
+    layoutWorker.onerror = event => {
+      resetLayoutWorker(new Error(event.message || 'Graph layout worker failed'))
+    }
+    layoutWorker.onmessageerror = () => {
+      resetLayoutWorker(new Error('Graph layout worker returned an unreadable response'))
+    }
+  }
+  return layoutWorker
+}
+
+async function runLayoutInWorker(graph: ElkNode): Promise<Map<string, { x: number; y: number }>> {
+  const id = nextLayoutRequestId++
+  const worker = getLayoutWorker()
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      resetLayoutWorker(new Error('Graph layout worker timed out'))
+    }, LAYOUT_WORKER_TIMEOUT_MS)
+    layoutRequests.set(id, { resolve, reject, timeout })
+    try {
+      worker.postMessage({ id, graph } satisfies LayoutWorkerRequest)
+    } catch (err) {
+      clearTimeout(timeout)
+      layoutRequests.delete(id)
+      reject(err instanceof Error ? err : new Error(String(err)))
+    }
+  })
 }
 
 // ─── Node data ───────────────────────────────────────────────────────────────
@@ -458,14 +517,7 @@ async function layoutComponent(
     })),
   }
 
-  const elk = await getElk()
-  const laidOut = await elk.layout(elkGraph)
-  const minX = Math.min(...(laidOut.children ?? []).map(n => n.x ?? 0))
-  const positions = new Map<string, { x: number; y: number }>()
-  for (const n of laidOut.children ?? []) {
-    positions.set(n.id, { x: (n.x ?? 0) - minX, y: n.y ?? 0 })
-  }
-  return positions
+  return runLayoutInWorker(elkGraph)
 }
 
 // ─── Full layout (all components, stacked vertically) ────────────────────────
