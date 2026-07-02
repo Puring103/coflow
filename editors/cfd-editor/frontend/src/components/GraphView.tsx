@@ -34,6 +34,9 @@ const HEADER_H   = 42
 const ROW_H      = 22
 const MORE_BTN_H = 28
 const PAD_V      = 12
+const COMPACT_BODY_MIN_H = 168
+const COMPACT_NODE_COUNT_THRESHOLD = 140
+const MEASURE_HANDLE_NODE_LIMIT = 80
 let elkPromise: Promise<ELK> | null = null
 
 async function getElk(): Promise<ELK> {
@@ -51,6 +54,7 @@ interface NodeData extends Record<string, unknown> {
   /** Distinct edge field_paths whose source is this node (e.g. ["unlockGeneList[0]", "unlockGeneList[1]"]) */
   outgoingPaths: string[]
   compact: boolean
+  measureHandles: boolean
   /** Stable signature of the per-row expanded set, so CfdNode can re-measure
    *  handle Y positions only when something that affects row geometry changes. */
   rowExpandKey: string
@@ -64,23 +68,34 @@ interface NodeData extends Record<string, unknown> {
 }
 
 // ─── CfdNode ─────────────────────────────────────────────────────────────────
-// Per-field source handles use useLayoutEffect to measure each row's actual
-// DOM offset, so handle Y positions are exact regardless of CSS padding,
-// header height variation, or sub-row expansion.
+// Per-field source handles measure exact DOM offsets only for small, expanded
+// card graphs. Compact and large graphs use deterministic estimates so zoom
+// threshold changes don't query every rendered node.
 
 function CfdNode({ id, data }: NodeProps) {
-  const { graphNode: gn, expanded, outgoingPaths, compact, rowExpandKey, onToggleExpand, onRowToggle, onEdit, onCtrlClick, selected } = data as NodeData
+  const { graphNode: gn, expanded, outgoingPaths, compact, measureHandles, rowExpandKey, onToggleExpand, onRowToggle, onEdit, onCtrlClick, selected } = data as NodeData
   const rootRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLDivElement>(null)
   const updateNodeInternals = useUpdateNodeInternals()
 
-  // Per-path Y offsets; default to 0 so handles exist on first render
-  // (React Flow needs the handle DOM to compute edge endpoints).
-  const [pathOffsets, setPathOffsets] = useState<Map<string, number>>(new Map())
-  const [headerCenterY, setHeaderCenterY] = useState(21)
-
   const outgoingKey = outgoingPaths.join('|')
+  const estimatedHandles = useMemo(
+    () => estimateHandleOffsets(gn, outgoingPaths, expanded, compact),
+    [gn, outgoingKey, expanded, compact],
+  )
+  // Per-path Y offsets; estimates exist on first render so React Flow can
+  // resolve handles before optional DOM measurement lands.
+  const [pathOffsets, setPathOffsets] = useState<Map<string, number>>(() => estimatedHandles.pathOffsets)
+  const [headerCenterY, setHeaderCenterY] = useState(() => estimatedHandles.headerCenterY)
+
   useLayoutEffect(() => {
+    if (measureHandles) return
+    setHeaderCenterY(prev => prev === estimatedHandles.headerCenterY ? prev : estimatedHandles.headerCenterY)
+    setPathOffsets(prev => sameOffsetMap(prev, estimatedHandles.pathOffsets) ? prev : estimatedHandles.pathOffsets)
+  }, [measureHandles, estimatedHandles])
+
+  useLayoutEffect(() => {
+    if (!measureHandles) return
     const root = rootRef.current
     if (!root) return
     // Use offsetTop/offsetHeight (CSS pixels relative to offsetParent =
@@ -121,7 +136,7 @@ function CfdNode({ id, data }: NodeProps) {
     })
     // Re-measure only when the set of outgoing paths, the node's expand
     // state, or any sub-row expand state changes — not on every render.
-  }, [outgoingKey, expanded, compact, rowExpandKey])
+  }, [measureHandles, outgoingKey, expanded, rowExpandKey])
 
   // Tell React Flow to recompute edge paths AFTER our handle Y values land
   // in the DOM (i.e. after the render that uses pathOffsets/headerCenterY).
@@ -211,6 +226,41 @@ function estimateNodeHeight(
   const rows = countVisibleRows(gn.fields, expandedRows)
   const hasMore = gn.fields.length > NODE_PEEK_FIELDS
   return HEADER_H + rows * ROW_H + (hasMore ? MORE_BTN_H : 0) + PAD_V
+}
+
+function estimateHandleOffsets(
+  gn: GraphNodeView,
+  outgoingPaths: string[],
+  expanded: boolean,
+  compact: boolean,
+): { headerCenterY: number; pathOffsets: Map<string, number> } {
+  const headerCenterY = compact ? COMPACT_BODY_MIN_H / 2 : HEADER_H / 2
+  const pathOffsets = new Map<string, number>()
+  for (const path of outgoingPaths) {
+    if (compact) {
+      pathOffsets.set(path, headerCenterY)
+      continue
+    }
+    pathOffsets.set(path, estimateTopLevelRowCenter(gn, topLevelField(path), expanded) ?? headerCenterY)
+  }
+  return { headerCenterY, pathOffsets }
+}
+
+function estimateTopLevelRowCenter(
+  gn: GraphNodeView,
+  fieldName: string,
+  expanded: boolean,
+): number | null {
+  if (gn.is_collapsed) return null
+  const maxRows = expanded ? gn.fields.length : Math.min(NODE_PEEK_FIELDS, gn.fields.length)
+  const index = gn.fields.slice(0, maxRows).findIndex(f => f.name === fieldName)
+  return index === -1 ? null : HEADER_H + index * ROW_H + ROW_H / 2
+}
+
+function sameOffsetMap(a: Map<string, number>, b: Map<string, number>): boolean {
+  if (a.size !== b.size) return false
+  for (const [key, value] of b) if (a.get(key) !== value) return false
+  return true
 }
 
 function isCompactGraphZoom(zoom: number): boolean {
@@ -565,7 +615,7 @@ interface Props {
 }
 
 export function GraphView({ graphData, activeType, fileCapabilities, onEnabledFieldsChange, onOpenRecord, onSelectRecord, onClearSelection, selectedCoordinate, onWriteField }: Props) {
-  const [compactNodes, setCompactNodes] = useState(false)
+  const [zoomCompactNodes, setZoomCompactNodes] = useState(false)
   const graph = useMemo(
     () => ({
       nodes: graphData.nodes.map(graphNodeView),
@@ -647,6 +697,9 @@ export function GraphView({ graphData, activeType, fileCapabilities, onEnabledFi
   }, [graph, enabledFields, activeType, nodeExpandedMap, nodeRowExpandedMap])
 
   const { positions, visibleNodes, forwardEdges, backEdges } = layout
+  const largeGraph = visibleNodes.length >= COMPACT_NODE_COUNT_THRESHOLD
+  const compactNodes = zoomCompactNodes || largeGraph
+  const measureHandles = !compactNodes && visibleNodes.length <= MEASURE_HANDLE_NODE_LIMIT
 
   // Group outgoing edge paths by source node id (used to render per-path handles).
   const outgoingPathsByNode = useMemo(() => {
@@ -674,6 +727,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, onEnabledFi
             expanded: nodeExpandedMap.get(n.id) ?? false,
             outgoingPaths: outgoingPathsByNode.get(n.id) ?? [],
             compact: compactNodes,
+            measureHandles,
             rowExpandKey: rowExpanded ? Array.from(rowExpanded).sort().join('|') : '',
             onToggleExpand: () => toggleNodeExpanded(n.id),
             onRowToggle: (path: string, exp: boolean) => handleRowToggle(n.id, path, exp),
@@ -689,7 +743,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, onEnabledFi
         }
       })
     ),
-    [visibleNodes, positions, nodeExpandedMap, nodeRowExpandedMap, outgoingPathsByNode, compactNodes, toggleNodeExpanded, handleRowToggle, onWriteField, onOpenRecord, fileCapabilities, selectedCoordinate]
+    [visibleNodes, positions, nodeExpandedMap, nodeRowExpandedMap, outgoingPathsByNode, compactNodes, measureHandles, toggleNodeExpanded, handleRowToggle, onWriteField, onOpenRecord, fileCapabilities, selectedCoordinate]
   )
 
   const rfEdges: Edge[] = useMemo(() => {
@@ -809,7 +863,7 @@ export function GraphView({ graphData, activeType, fileCapabilities, onEnabledFi
   const hiddenCount = availableFields.length - enabledFields.size
   const handleViewportChange = useCallback((viewport: { zoom: number }) => {
     const next = isCompactGraphZoom(viewport.zoom)
-    setCompactNodes(prev => prev === next ? prev : next)
+    setZoomCompactNodes(prev => prev === next ? prev : next)
   }, [])
 
   return (
@@ -843,15 +897,17 @@ export function GraphView({ graphData, activeType, fileCapabilities, onEnabledFi
           >
             <Background color="var(--graph-bg-grid)" gap={24} size={1} />
             <Controls showInteractive={false} />
-            <MiniMap
-              nodeColor={n => {
-                const { graphNode } = n.data as NodeData
-                return graphNode.in_focus_file ? '#8a93a3' : '#3a3f48'
-              }}
-              maskColor="var(--minimap-mask, rgba(14, 16, 20, 0.75))"
-              pannable
-              zoomable
-            />
+            {!largeGraph && (
+              <MiniMap
+                nodeColor={n => {
+                  const { graphNode } = n.data as NodeData
+                  return graphNode.in_focus_file ? '#8a93a3' : '#3a3f48'
+                }}
+                maskColor="var(--minimap-mask, rgba(14, 16, 20, 0.75))"
+                pannable
+                zoomable
+              />
+            )}
           </ReactFlow>
           <div className="graph-hint" title="点击节点打开侧边面板，Ctrl+点击跳转到记录视图">
             点击节点查看 · Ctrl+点击跳转
