@@ -15,6 +15,8 @@ import type { RecordCoordinate } from '../bindings/RecordCoordinate'
 import type { RecordRow } from '../bindings/RecordRow'
 import {
   coordinateId,
+  cellEnumType,
+  cellNullable,
   cellRefTargetType,
   diagnosticMatchesCoordinate,
   diagnosticSeverity,
@@ -135,12 +137,12 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
 
   const columnSizeHints = useMemo(() => {
     const hints: Record<string, number> = { key: 140 }
-    const CHAR_W = 7, MIN = 60, MAX = 300
+    const CHAR_W = 7, MIN = 80, MAX = 420
     for (const column of data.columns) {
       if (!column.type_names.includes(activeType)) continue
-      const maxSummary = column.max_summary_len * CHAR_W + 24
-      const max = Math.max(column.name.length * CHAR_W + 24, maxSummary)
-      hints[column.name] = Math.min(MAX, Math.max(MIN, max))
+      const summary = column.max_summary_len * CHAR_W + 28
+      const header = column.name.length * CHAR_W + 32
+      hints[column.name] = Math.min(MAX, Math.max(MIN, Math.max(summary, header)))
     }
     return hints
   }, [data.columns, activeType])
@@ -182,6 +184,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
                   value={f.value}
                   editable={cellEditable}
                   refTargetType={cellRefTargetType(f)}
+                  enumType={cellEnumType(f)}
+                  nullable={cellNullable(f)}
                   onCommit={cellEditable ? next => onWriteField!(row.original.coordinate, [fieldPathField(name)], next) : undefined}
                 />
               </span>
@@ -438,6 +442,8 @@ function fieldCell(record: RecordRow, fieldName: string) {
   return typeof index === 'number' ? record.fields[index] : undefined
 }
 
+
+
 function findDiagMessage(
   diags: DiagnosticItem[] | undefined,
   filePath: string,
@@ -456,17 +462,21 @@ function findDiagMessage(
 }
 
 function EditableCell({
-  value, editable, refTargetType, onCommit,
+  value, editable, refTargetType, enumType, nullable, onCommit,
 }: {
   value: FieldValue
   editable: boolean
   refTargetType?: string
+  enumType?: string
+  nullable?: boolean
   onCommit?: (next: FieldValue) => void
 }) {
   const [editing, setEditing] = useState(false)
   const isScalar = value.kind === 'bool' || value.kind === 'int' || value.kind === 'float'
                 || value.kind === 'string' || value.kind === 'enum' || value.kind === 'ref'
-  const canEdit = editable && isScalar && !!onCommit
+  // null cells become editable when the schema tells us they hold an enum/ref/bool
+  const isNullDropdown = value.kind === 'null' && !!(enumType || refTargetType)
+  const canEdit = editable && (isScalar || isNullDropdown) && !!onCommit
 
   // Bool: checkbox, always visible
   if (canEdit && value.kind === 'bool') {
@@ -482,20 +492,30 @@ function EditableCell({
     )
   }
 
-  // Enum: shared EnumDirectSelect component, no click-to-edit gate
-  if (canEdit && value.kind === 'enum') {
+  // Enum
+  if (canEdit && (value.kind === 'enum' || (value.kind === 'null' && enumType))) {
     return (
       <div className="cell-edit-wrap">
-        <EnumDirectSelect value={value} onCommit={onCommit!} />
+        <EnumDirectSelect
+          value={value as FieldValue & { kind: 'enum' | 'null' }}
+          enumType={enumType}
+          nullable={nullable}
+          onCommit={onCommit!}
+        />
       </div>
     )
   }
 
-  // Ref: shared RefDirectSelect component, flat=true skips the pill wrapper
-  if (canEdit && value.kind === 'ref') {
+  // Ref
+  if (canEdit && (value.kind === 'ref' || (value.kind === 'null' && refTargetType))) {
     return (
       <div className="cell-edit-wrap">
-        <RefDirectSelect value={value} onCommit={onCommit!} targetType={refTargetType} flat />
+        <RefDirectSelect
+          value={value as FieldValue & { kind: 'ref' | 'null' }}
+          onCommit={onCommit!}
+          targetType={refTargetType}
+          nullable={nullable}
+        />
       </div>
     )
   }

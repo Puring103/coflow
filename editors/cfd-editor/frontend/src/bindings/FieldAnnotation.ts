@@ -14,7 +14,12 @@ import type { SpreadInfo } from "./SpreadInfo";
  * - `declared_type`: the schema type declared for this field, formatted for
  *   display and for collection element type derivation in the UI.
  * - `ref_target_type`: direct reference target type for scalar ref cells.
+ * - `enum_type`: the enum type name when this field's declared type resolves
+ *   to an enum. Set regardless of value kind so the front-end can show an
+ *   enum dropdown even for `null` cells.
+ * - `nullable`: true when the declared type outer-wraps a `?`, so the UI
+ *   can offer a "clear to null" option in dropdowns.
  * - `children`: nested annotations for object fields, array items, or dict
  *   values. Keys are field names, zero-based array indexes, or dict-key text.
  */
-export type FieldAnnotation = { spread_info: SpreadInfo | null, ref_target_file: string | null, enum_int_value: bigint | null, declared_type: string | null, ref_target_type: string | null, children: { [key in string]?: FieldAnnotation }, };
+export type FieldAnnotation = { spread_info: SpreadInfo | null, ref_target_file: string | null, enum_int_value: bigint | null, declared_type: string | null, ref_target_type: string | null, enum_type: string | null, nullable: boolean, children: { [key in string]?: FieldAnnotation }, };

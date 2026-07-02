@@ -17,9 +17,13 @@ import type { DictKey, FieldPathSegment, FieldValue } from '../wire'
 import {
   annotationChild,
   annotationDeclaredType,
+  annotationEnumType,
+  annotationNullable,
   annotationRefTargetType,
   boolValue,
   cellDeclaredType,
+  cellEnumType,
+  cellNullable,
   cellRefTargetType,
   cellSpreadInfo,
   enumValue,
@@ -28,6 +32,7 @@ import {
   fieldPathIndex,
   floatValue,
   intValue,
+  nullValue,
   objectFields,
   refValue,
   stringValue,
@@ -363,6 +368,8 @@ export function DataCardExpanded({
         const spreadInfo = cellSpreadInfo(fc)
         const declaredType = cellDeclaredType(fc)
         const refTargetType = cellRefTargetType(fc)
+        const enumType = cellEnumType(fc)
+        const nullable = cellNullable(fc)
         return (
           <FieldRow
             key={fc.name}
@@ -374,6 +381,8 @@ export function DataCardExpanded({
             spreadInfo={spreadInfo}
             declaredType={declaredType}
             refTargetType={refTargetType}
+            enumType={enumType}
+            nullable={nullable}
             valueAnnotation={fc.annotation}
             fieldPath={[fieldPathField(fc.name)]}
             pathKey={pathPrefix ? `${pathPrefix}.${fc.name}` : fc.name}
@@ -413,6 +422,8 @@ function FieldRow({
   spreadInfo,
   declaredType,
   refTargetType,
+  enumType,
+  nullable,
   valueAnnotation,
   fieldPath,
   pathKey,
@@ -429,6 +440,8 @@ function FieldRow({
   spreadInfo?: SpreadInfo
   declaredType?: string
   refTargetType?: string
+  enumType?: string
+  nullable?: boolean
   valueAnnotation?: FieldAnnotation | null
   fieldPath: FieldPathSegment[]
   pathKey?: string
@@ -471,6 +484,8 @@ function FieldRow({
       spreadInfo={spreadInfo}
       declaredType={declaredType}
       refTargetType={refTargetType}
+      enumType={enumType}
+      nullable={nullable}
       pathKey={pathKey}
       leading={leading}
       trailing={trailing}
@@ -488,6 +503,8 @@ function ScalarFieldRow({
   spreadInfo,
   declaredType,
   refTargetType,
+  enumType,
+  nullable,
   pathKey,
   leading,
   trailing,
@@ -501,6 +518,8 @@ function ScalarFieldRow({
   spreadInfo?: SpreadInfo
   declaredType?: string
   refTargetType?: string
+  enumType?: string
+  nullable?: boolean
   pathKey?: string
   leading?: ReactNode
   trailing?: ReactNode
@@ -508,7 +527,9 @@ function ScalarFieldRow({
 }) {
   const isScalar = value.kind === 'bool' || value.kind === 'int' || value.kind === 'float'
     || value.kind === 'string' || value.kind === 'enum' || value.kind === 'ref'
-  const canEdit = isScalar && !!onCommit
+  const resolvedRefTarget = refTargetType ?? refTargetTypeFromDeclared(declaredType)
+  const isNullDropdown = value.kind === 'null' && !!(enumType || resolvedRefTarget)
+  const canEdit = (isScalar || isNullDropdown) && !!onCommit
   const diag = rowDiagSeverity(pathKey)
   const spreadHint = spreadHintText(spreadInfo)
   const rowTitle = spreadHint || (diag.messages.join('\n') || undefined)
@@ -522,7 +543,7 @@ function ScalarFieldRow({
       <div className="dc-row-value">
         <div className="dc-row-value-inner">
           {canEdit ? (
-            <DirectEditor value={value} onCommit={onCommit!} refTargetType={refTargetType ?? refTargetTypeFromDeclared(declaredType)} />
+            <DirectEditor value={value} onCommit={onCommit!} refTargetType={resolvedRefTarget} enumType={enumType} nullable={nullable} />
           ) : (
             <ValueChip value={value} />
           )}
@@ -537,10 +558,14 @@ function DirectEditor({
   value,
   onCommit,
   refTargetType,
+  enumType,
+  nullable,
 }: {
   value: FieldValue
   onCommit: (next: FieldValue) => void
   refTargetType?: string
+  enumType?: string
+  nullable?: boolean
 }) {
   if (value.kind === 'bool') {
     return (
@@ -552,11 +577,11 @@ function DirectEditor({
       />
     )
   }
-  if (value.kind === 'enum') {
-    return <EnumDirectSelect value={value} onCommit={onCommit} />
+  if (value.kind === 'enum' || (value.kind === 'null' && enumType)) {
+    return <EnumDirectSelect value={value as FieldValue & { kind: 'enum' | 'null' }} onCommit={onCommit} enumType={enumType} nullable={nullable} />
   }
-  if (value.kind === 'ref') {
-    return <RefDirectSelect value={value} onCommit={onCommit} targetType={refTargetType} />
+  if (value.kind === 'ref' || (value.kind === 'null' && refTargetType)) {
+    return <RefDirectSelect value={value as FieldValue & { kind: 'ref' | 'null' }} onCommit={onCommit} targetType={refTargetType} nullable={nullable} />
   }
   if (value.kind === 'int' || value.kind === 'float' || value.kind === 'string') {
     return <TextDirectInput value={value} onCommit={onCommit} />
@@ -624,37 +649,59 @@ function TextDirectInput({
 export function EnumDirectSelect({
   value,
   onCommit,
+  enumType,
+  nullable = false,
 }: {
-  value: FieldValue & { kind: 'enum' }
+  value: FieldValue & { kind: 'enum' | 'null' }
   onCommit: (next: FieldValue) => void
+  /** Required when `value.kind === 'null'`: the enum type this field expects. */
+  enumType?: string
+  /** When true, offer a "(null)" option so the field can be cleared. */
+  nullable?: boolean
 }) {
+  const enumName = value.kind === 'enum' ? value.value.enum_name : enumType
   const [variants, setVariants] = useState<string[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const current = enumVariantText(value)
-  const color = enumColor(value.value.enum_name)
+  const current = value.kind === 'enum' ? enumVariantText(value) : NULL_SENTINEL
+  const color = enumColor(enumName ?? '')
   useEffect(() => {
+    if (!enumName) { setVariants([]); return }
     let alive = true
     setLoadError(null)
-    loadEnumVariants(value.value.enum_name).then(r => {
+    loadEnumVariants(enumName).then(r => {
       if (!alive) return
       if (r.ok) setVariants(r.variants)
       else { setVariants([]); setLoadError(r.error) }
     })
     return () => { alive = false }
-  }, [value.value.enum_name])
+  }, [enumName])
+
+  function commit(next: string) {
+    if (next === NULL_SENTINEL) {
+      onCommit(nullValue())
+      return
+    }
+    if (!enumName) return
+    const backingInt = value.kind === 'enum' ? value.value.value : 0n
+    onCommit(enumValue(enumName, next, backingInt))
+  }
+
+  const pillClass = 'dc-pill-select dc-pill-select-enum'
 
   if (variants === null || variants.length === 0) {
+    // No known variants — free-text fallback (skip null hint here to keep it simple)
     return (
-      <span className="dc-input-wrap">
+      <span className="dc-pill-input-wrap">
         <input
-          className="dc-input dc-input-flat dc-input-enum"
+          className={pillClass}
           style={{ '--enum-color': color } as React.CSSProperties}
-          defaultValue={current}
+          defaultValue={value.kind === 'enum' ? enumVariantText(value) : ''}
           aria-invalid={!!loadError}
           onBlur={e => {
-            if (e.target.value !== current) {
-              onCommit(enumValue(value.value.enum_name, e.target.value, value.value.value))
-            }
+            const next = e.target.value
+            if (value.kind === 'enum' && next === enumVariantText(value)) return
+            if (value.kind === 'null' && next === '') return
+            commit(next || (nullable ? NULL_SENTINEL : ''))
           }}
         />
         {loadError && <span className="dc-load-error" title={loadError}>!</span>}
@@ -663,33 +710,38 @@ export function EnumDirectSelect({
   }
   return (
     <select
-      className="dc-input dc-input-flat dc-input-enum"
+      className={pillClass}
       style={{ '--enum-color': color } as React.CSSProperties}
       value={current}
-      onChange={e => onCommit(enumValue(value.value.enum_name, e.target.value, value.value.value))}
+      onChange={e => commit(e.target.value)}
     >
-      {!variants.includes(current) && <option value={current}>{current}</option>}
+      {nullable && <option value={NULL_SENTINEL}>(null)</option>}
+      {value.kind === 'enum' && !variants.includes(current) && <option value={current}>{current}</option>}
       {variants.map(v => <option key={v} value={v}>{v}</option>)}
     </select>
   )
 }
+
+const NULL_SENTINEL = '__cfd_null__'
 
 export function RefDirectSelect({
   value,
   onCommit,
   targetType,
   autoFocus = false,
-  flat = false,
+  nullable = false,
 }: {
-  value: FieldValue & { kind: 'ref' }
+  value: FieldValue & { kind: 'ref' | 'null' }
   onCommit: (next: FieldValue) => void
   targetType?: string
   autoFocus?: boolean
-  /** flat=true: skip the pill wrapper, render just the select (for table cells) */
-  flat?: boolean
+  /** When true, offer a "(null)" option so the field can be cleared. */
+  nullable?: boolean
 }) {
   const [targets, setTargets] = useState<{ key: string; label: string }[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const currentKey = value.kind === 'ref' ? value.value : ''
+  const selectedValue = value.kind === 'null' ? NULL_SENTINEL : currentKey
 
   useEffect(() => {
     if (!targetType) {
@@ -716,55 +768,54 @@ export function RefDirectSelect({
   }, [targetType])
 
   function commit(key: string) {
-    if (key !== value.value) {
+    if (key === NULL_SENTINEL) {
+      if (value.kind !== 'null') onCommit(nullValue())
+      return
+    }
+    if (key !== currentKey) {
       onCommit(refValue(key))
     }
   }
 
   if (targetType && targets !== null && targets.length > 0) {
-    const hasCurrent = targets.some(target => target.key === value.value)
-    const input = (
+    const hasCurrent = value.kind === 'ref' && !!value.value && targets.some(target => target.key === value.value)
+    // Show just the key when closed (matches enum-style compactness); the
+    // fully-qualified `TypeName.key` label lives on the option's title so
+    // users can hover to disambiguate polymorphic targets.
+    return (
       <select
-        className={`dc-input dc-input-flat dc-input-ref-select${flat ? ' dc-input-ref-select-flat' : ''}`}
-        value={value.value}
+        className="dc-pill-select dc-pill-select-ref"
+        value={selectedValue}
         autoFocus={autoFocus}
         title={targetType}
         onChange={e => commit(e.target.value)}
       >
-        {!hasCurrent && value.value && <option value={value.value}>{value.value}</option>}
-        {!value.value && <option value="">未选择</option>}
-        {targets.map(target => <option key={`${target.label}`} value={target.key}>{target.label}</option>)}
+        {nullable && <option value={NULL_SENTINEL}>(null)</option>}
+        {value.kind === 'ref' && !hasCurrent && value.value && <option value={value.value}>{value.value}</option>}
+        {value.kind === 'ref' && !value.value && <option value="">未选择</option>}
+        {targets.map(target => (
+          <option key={target.label} value={target.key} title={target.label}>
+            {target.key}
+          </option>
+        ))}
       </select>
-    )
-    if (flat) return input
-    return (
-      <span className="dc-input-ref">
-        <span className="dc-input-ref-dot" />
-        {input}
-      </span>
     )
   }
 
-  const input = (
-    <input
-      className={`dc-input dc-input-flat dc-input-ref-select${flat ? ' dc-input-ref-select-flat' : ''}`}
-      defaultValue={value.value}
-      autoFocus={autoFocus}
-      placeholder="key"
-      aria-invalid={!!loadError}
-      onBlur={e => commit(e.target.value)}
-      onKeyDown={e => {
-        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-        if (e.key === 'Escape') (e.target as HTMLInputElement).blur()
-      }}
-    />
-  )
-
-  if (flat) return input
   return (
-    <span className="dc-input-ref">
-      <span className="dc-input-ref-dot" />
-      {input}
+    <span className="dc-pill-input-wrap">
+      <input
+        className="dc-pill-select dc-pill-select-ref"
+        defaultValue={currentKey}
+        autoFocus={autoFocus}
+        placeholder="key"
+        aria-invalid={!!loadError}
+        onBlur={e => commit(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+          if (e.key === 'Escape') (e.target as HTMLInputElement).blur()
+        }}
+      />
       {loadError && <span className="dc-load-error" title={loadError}>!</span>}
     </span>
   )
@@ -1044,6 +1095,7 @@ function ExpandableRow({
         <>
           {value.kind === 'object' &&
             objectFields(value).map((fc) => {
+              const childAnn = childAnnotation(fc.name) ?? fc.annotation
               return (
               <FieldRow
                 key={fc.name}
@@ -1054,9 +1106,11 @@ function ExpandableRow({
                 fieldPath={[...fieldPath, fieldPathField(fc.name)]}
                 pathKey={pathKey ? `${pathKey}.${fc.name}` : fc.name}
                 onRowToggle={onRowToggle}
-                declaredType={annotationDeclaredType(childAnnotation(fc.name) ?? fc.annotation)}
-                refTargetType={annotationRefTargetType(childAnnotation(fc.name) ?? fc.annotation)}
-                valueAnnotation={childAnnotation(fc.name) ?? fc.annotation}
+                declaredType={annotationDeclaredType(childAnn)}
+                refTargetType={annotationRefTargetType(childAnn)}
+                enumType={annotationEnumType(childAnn)}
+                nullable={annotationNullable(childAnn)}
+                valueAnnotation={childAnn}
               />
               )
             })}
@@ -1088,6 +1142,8 @@ function ExpandableRow({
                 onRowToggle={onRowToggle}
                 declaredType={annotationDeclaredType(itemAnnotation) ?? dictValueType(declaredType)}
                 refTargetType={annotationRefTargetType(itemAnnotation) ?? refTargetTypeFromDeclared(dictValueType(declaredType))}
+                enumType={annotationEnumType(itemAnnotation)}
+                nullable={annotationNullable(itemAnnotation)}
                 valueAnnotation={itemAnnotation}
                 trailing={onEdit ? (
                   <DeleteButton
@@ -1252,6 +1308,42 @@ function defaultElementFor(container: FieldValue): FieldValue {
   return stringValue('')
 }
 
+/// Resolve a valid default value to append to `container`. Uses the
+/// declared element type as authoritative source of truth so the write
+/// validator accepts it — ref/enum fields are seeded with the first known
+/// target/variant when the type isn't nullable, or `null` when it is.
+async function resolveDefaultElement(
+  container: FieldValue & { kind: 'array' | 'dict' },
+  itemDeclaredType?: string,
+): Promise<FieldValue | null> {
+  if (itemDeclaredType) {
+    const nullable = itemDeclaredType.endsWith('?')
+    const stripped = stripNullableType(itemDeclaredType) ?? itemDeclaredType
+    if (nullable) return nullValue()
+    if (stripped.startsWith('&')) {
+      const targetType = stripped.slice(1)
+      const targets = await loadRefTargets(targetType)
+      if (targets.ok && targets.targets.length > 0) {
+        return refValue(targets.targets[0].coordinate.key)
+      }
+      return null
+    }
+    if (stripped === 'bool') return boolValue(false)
+    if (stripped === 'int') return intValue(0)
+    if (stripped === 'float') return floatValue(0)
+    if (stripped === 'string') return stringValue('')
+    if (stripped.startsWith('[') && stripped.endsWith(']')) return { kind: 'array', value: [] }
+    if (stripped.startsWith('{') && stripped.endsWith('}')) return { kind: 'dict', value: [] }
+    // named -> enum or object; try enum first, then let sample-based inference
+    // handle inline object shapes.
+    const enumResult = await loadEnumVariants(stripped)
+    if (enumResult.ok && enumResult.variants.length > 0) {
+      return enumValue(stripped, enumResult.variants[0], 0n)
+    }
+  }
+  return defaultElementFor(container)
+}
+
 function defaultLikeShape(sample: FieldValue): FieldValue {
   switch (sample.kind) {
     case 'bool': return boolValue(false)
@@ -1260,7 +1352,11 @@ function defaultLikeShape(sample: FieldValue): FieldValue {
     case 'string': return stringValue('')
     case 'null': return stringValue('')
     case 'enum': return enumValue(sample.value.enum_name, sample.value.variant, sample.value.value)
-    case 'ref': return refValue('')
+    // Reuse the existing entry's key so the write validator accepts it —
+    // an empty ref would fail schema validation ("reference key must not
+    // be empty"). Callers with a declared type should prefer
+    // `resolveDefaultElement` which picks the true first target.
+    case 'ref': return refValue(sample.value)
     case 'object': return {
       kind: 'object',
       value: {
@@ -1323,6 +1419,8 @@ function ArrayItems({
             onRowToggle={onRowToggle}
             declaredType={annotationDeclaredType(itemAnnotation) ?? itemDeclaredType}
             refTargetType={annotationRefTargetType(itemAnnotation) ?? refTargetTypeFromDeclared(itemDeclaredType)}
+            enumType={annotationEnumType(itemAnnotation)}
+            nullable={annotationNullable(itemAnnotation)}
             valueAnnotation={itemAnnotation}
             leading={dragHandle}
             trailing={trailing}
@@ -1397,54 +1495,57 @@ function CollectionAddRow({ container, depth, itemDeclaredType, onAdd }: {
 }) {
   const [adding, setAdding] = useState(false)
   const [dupError, setDupError] = useState<string | null>(null)
+  const [addError, setAddError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
-  function reset() { setAdding(false); setDupError(null) }
+  function reset() { setAdding(false); setDupError(null); setAddError(null) }
+
+  async function resolveDefault(): Promise<FieldValue | null> {
+    return resolveDefaultElement(container, itemDeclaredType)
+  }
 
   if (container.kind === 'array') {
-    const sample = container.value[0]
-    const needsPicker = sample && (sample.kind === 'enum' || sample.kind === 'ref' || sample.kind === 'bool')
-    if (!needsPicker) {
-      return (
-        <div className="dc-row dc-row-add" style={{ paddingLeft: depth * INDENT_PX + 8 }}>
-          <button
-            className="btn-add-item"
-            onClick={() => onAdd(arrayAppend(container, defaultElementFor(container)))}
-          >
-            <Icon name="plus" size={11} /> 添加元素
-          </button>
-        </div>
-      )
-    }
     return (
       <div className="dc-row dc-row-add" style={{ paddingLeft: depth * INDENT_PX + 8 }}>
-        {!adding ? (
-          <button className="btn-add-item" onClick={() => setAdding(true)}>
-            <Icon name="plus" size={11} /> 添加元素
-          </button>
-        ) : (
-          <span className="dc-add-form">
-            <InlineEditor
-              value={defaultLikeShape(sample!)}
-              onCommit={v => { onAdd(arrayAppend(container, v)); reset() }}
-              onCancel={reset}
-              targetType={refTargetTypeFromDeclared(itemDeclaredType)}
-            />
-            <button className="btn-tiny" onClick={reset}>x</button>
-          </span>
-        )}
+        <button
+          className="btn-add-item"
+          disabled={busy}
+          onClick={async () => {
+            setAddError(null)
+            setBusy(true)
+            try {
+              const def = await resolveDefault()
+              if (def === null) {
+                setAddError('该字段没有可选的默认值')
+                return
+              }
+              onAdd(arrayAppend(container, def))
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          <Icon name="plus" size={11} /> {busy ? '添加中…' : '添加元素'}
+        </button>
+        {addError && <span className="dc-inline-error" role="alert">{addError}</span>}
       </div>
     )
   }
 
   const sampleKey: DictKey = container.value[0]?.[0] ?? { kind: 'string', value: '' }
-  function tryAdd(key: DictKey) {
+  async function tryAdd(key: DictKey) {
     if (container.kind !== 'dict') return
     const dup = container.value.some(([entryKey]) => dictKeyEq(entryKey, key))
     if (dup) {
       setDupError(`键 "${dictKeyText(key)}" 已存在`)
       return
     }
-    onAdd(dictInsert(container, key, defaultElementFor(container)))
+    const def = await resolveDefault()
+    if (def === null) {
+      setDupError('该字段没有可选的默认值')
+      return
+    }
+    onAdd(dictInsert(container, key, def))
     reset()
   }
   return (

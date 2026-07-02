@@ -201,6 +201,11 @@ pub struct FieldCell {
 /// - `declared_type`: the schema type declared for this field, formatted for
 ///   display and for collection element type derivation in the UI.
 /// - `ref_target_type`: direct reference target type for scalar ref cells.
+/// - `enum_type`: the enum type name when this field's declared type resolves
+///   to an enum. Set regardless of value kind so the front-end can show an
+///   enum dropdown even for `null` cells.
+/// - `nullable`: true when the declared type outer-wraps a `?`, so the UI
+///   can offer a "clear to null" option in dropdowns.
 /// - `children`: nested annotations for object fields, array items, or dict
 ///   values. Keys are field names, zero-based array indexes, or dict-key text.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -224,6 +229,10 @@ pub struct FieldAnnotation {
     pub declared_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ref_target_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enum_type: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub nullable: bool,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub children: BTreeMap<String, Self>,
 }
@@ -236,6 +245,8 @@ impl FieldAnnotation {
             && self.enum_int_value.is_none()
             && self.declared_type.is_none()
             && self.ref_target_type.is_none()
+            && self.enum_type.is_none()
+            && !self.nullable
             && self.children.is_empty()
     }
 }

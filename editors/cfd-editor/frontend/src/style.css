@@ -710,6 +710,10 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   font-size: var(--fs-ui);
   width: max-content;
   min-width: 100%;
+  /* Fixed layout: <th>/<td> width becomes authoritative, so cells whose
+   * intrinsic min-content is larger (native <select> with long options)
+   * no longer stretch the column past the size hint. */
+  table-layout: fixed;
 }
 
 .data-table th {
@@ -767,7 +771,6 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
   padding: 0 12px;
   border-bottom: 1px solid var(--border);
   border-right: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-  max-width: 360px;
   color: var(--text);
   vertical-align: middle;
   white-space: nowrap;
@@ -1665,88 +1668,90 @@ select.dc-input {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 3.5l3 3 3-3' stroke='%234a5260' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
 
-/* Enum select: per-enum-name theme color via --enum-color CSS variable */
-select.dc-input-flat.dc-input-enum,
-input.dc-input-flat.dc-input-enum {
-  border-left: 2px solid var(--enum-color, var(--purple));
+/* Unified pill select — shared by ref/enum in table cells, inspector rows,
+ * and graph node cards. Base rule sets geometry; the -ref / -enum modifier
+ * layers the theme color (accent for refs, --enum-color for enums). The
+ * chevron is hidden by default and revealed on hover/focus of the same
+ * row/cell so idle cells look like plain labels. */
+select.dc-pill-select,
+input.dc-pill-select {
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+  width: 100%;
+  min-width: 0;
+  height: var(--h-input);
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  color: var(--text);
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
+  font-size: var(--fs-ui);
+  cursor: pointer;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+select.dc-pill-select {
+  /* Reserve chevron space so text never sits under the arrow, even when
+   * the arrow itself is invisible. */
+  padding-right: 22px;
+}
+
+/* Chevron shown only on hover/focus, or when the containing row is being
+ * hovered. Two SVGs (dark/light) so theming works cleanly. */
+select.dc-pill-select:hover,
+select.dc-pill-select:focus,
+.dc-row:hover select.dc-pill-select,
+.cell-edit-wrap:hover select.dc-pill-select,
+td:hover select.dc-pill-select,
+.dc-node-card:hover select.dc-pill-select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 3.5l3 3 3-3' stroke='%23969ba6' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+[data-theme="light"] select.dc-pill-select:hover,
+[data-theme="light"] select.dc-pill-select:focus,
+[data-theme="light"] .dc-row:hover select.dc-pill-select,
+[data-theme="light"] .cell-edit-wrap:hover select.dc-pill-select,
+[data-theme="light"] td:hover select.dc-pill-select,
+[data-theme="light"] .dc-node-card:hover select.dc-pill-select {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 3.5l3 3 3-3' stroke='%234a5260' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+
+.dc-pill-select-ref {
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+  background-color: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.dc-pill-select-ref:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background-color: color-mix(in srgb, var(--accent) 10%, var(--bg-1));
+}
+.dc-pill-select-ref:focus {
+  border-color: var(--accent);
+  background-color: color-mix(in srgb, var(--accent) 12%, var(--bg-1));
+}
+
+.dc-pill-select-enum {
+  border-color: color-mix(in srgb, var(--enum-color, var(--purple)) 25%, transparent);
   background-color: color-mix(in srgb, var(--enum-color, var(--purple)) 6%, transparent);
 }
-select.dc-input-flat.dc-input-enum:hover,
-input.dc-input-flat.dc-input-enum:hover {
+.dc-pill-select-enum:hover {
+  border-color: color-mix(in srgb, var(--enum-color, var(--purple)) 45%, transparent);
   background-color: color-mix(in srgb, var(--enum-color, var(--purple)) 10%, var(--bg-1));
 }
-select.dc-input-flat.dc-input-enum:focus,
-input.dc-input-flat.dc-input-enum:focus {
+.dc-pill-select-enum:focus {
   border-color: var(--enum-color, var(--purple));
   background-color: color-mix(in srgb, var(--enum-color, var(--purple)) 12%, var(--bg-1));
 }
 
-/* Ref select: same pattern as enum but with accent color */
-select.dc-input-flat.dc-input-ref-select,
-select.dc-input.dc-input-ref-select {
-  outline: none;
-  border-left: 2px solid var(--accent);
-  background-color: color-mix(in srgb, var(--accent) 6%, transparent);
-}
-select.dc-input-flat.dc-input-ref-select:focus,
-select.dc-input.dc-input-ref-select:focus {
-  border-color: var(--accent);
-  background-color: color-mix(in srgb, var(--accent) 10%, var(--bg-1));
-}
-input.dc-input-ref-select {
-  outline: none;
-  border-left: 2px solid var(--accent);
-  background-color: color-mix(in srgb, var(--accent) 6%, transparent);
-}
-input.dc-input-ref-select:focus {
-  border-color: var(--accent);
-  background-color: color-mix(in srgb, var(--accent) 10%, var(--bg-1));
-}
-
-/* Flat ref select for table cells — fills the cell, no pill wrapper */
-select.dc-input-ref-select-flat,
-input.dc-input-ref-select-flat {
-  width: 100%;
-  max-width: 100%;
-}
-
-/* Ref direct editor wrapper: colored pill containing dot + input + type */
-.dc-input-ref {
+.dc-pill-input-wrap {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  flex: 1 1 auto;
+  gap: 4px;
+  width: 100%;
   min-width: 0;
-  padding: 2px 8px;
-  border-radius: 3px;
-  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
-  background: color-mix(in srgb, var(--accent) 6%, transparent);
-}
-.dc-input-ref:has(input:focus),
-.dc-input-ref:has(select:focus) {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--bg-1));
-}
-.dc-input-ref .dc-input-flat {
-  background: transparent;
-  border: none;
-  margin: 0;
-  padding: 0;
-  flex: 1;
-}
-.dc-input-ref-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-  flex-shrink: 0;
-}
-.dc-input-ref-type {
-  color: var(--text-mute);
-  font-size: var(--fs-xs);
-  flex-shrink: 0;
-  padding-left: 4px;
-  border-left: 1px solid var(--border);
 }
 
 /* ─── Node mode (graph card) — inspector inside a node ─── */

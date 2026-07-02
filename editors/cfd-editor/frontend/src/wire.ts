@@ -90,6 +90,22 @@ export function annotationRefTargetType(annotation: FieldAnnotation | null | und
   return annotation?.ref_target_type ?? undefined
 }
 
+export function annotationEnumType(annotation: FieldAnnotation | null | undefined): string | undefined {
+  return annotation?.enum_type ?? undefined
+}
+
+export function annotationNullable(annotation: FieldAnnotation | null | undefined): boolean {
+  return !!annotation?.nullable
+}
+
+export function cellEnumType(cell: FieldCell): string | undefined {
+  return cell.annotation?.enum_type ?? undefined
+}
+
+export function cellNullable(cell: FieldCell): boolean {
+  return !!cell.annotation?.nullable
+}
+
 export function annotationChild(
   annotation: FieldAnnotation | null | undefined,
   key: string | number,

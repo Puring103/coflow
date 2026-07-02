@@ -181,6 +181,8 @@ fn annotation_for_value(
     if let Some(ty) = declared_type {
         annotation.declared_type = Some(type_ref_label(ty));
         annotation.ref_target_type = ref_target_type(ty).map(str::to_string);
+        annotation.enum_type = enum_type_name(ty, &ctx.session.schema).map(str::to_string);
+        annotation.nullable = matches!(ty, CftSchemaTypeRef::Nullable(_));
     }
     match value {
         CfdValue::Ref(_) => {
@@ -277,6 +279,17 @@ fn ref_target_type(ty: &CftSchemaTypeRef) -> Option<&str> {
     match ty {
         CftSchemaTypeRef::Ref(name) => Some(name),
         CftSchemaTypeRef::Nullable(inner) => ref_target_type(inner),
+        _ => None,
+    }
+}
+
+fn enum_type_name<'a>(
+    ty: &'a CftSchemaTypeRef,
+    schema: &coflow_cft::CftContainer,
+) -> Option<&'a str> {
+    match ty {
+        CftSchemaTypeRef::Named(name) if schema.has_enum(name) => Some(name),
+        CftSchemaTypeRef::Nullable(inner) => enum_type_name(inner, schema),
         _ => None,
     }
 }
