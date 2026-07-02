@@ -98,8 +98,12 @@ fn ref_type_fields_parse_key_only_refs() -> TestResult {
         "#,
     )?;
 
-    let _item_id = model.lookup("Item", "sword").expect("item record");
-    let holder_id = model.lookup("Holder", "holder").expect("holder record");
+    let _item_id = model
+        .lookup_assignable("Item", "sword")
+        .expect("item record");
+    let holder_id = model
+        .lookup_assignable("Holder", "holder")
+        .expect("holder record");
     let holder = model.record(holder_id).expect("holder");
     assert_eq!(
         holder.field("item"),
@@ -198,11 +202,13 @@ fn grouped_polymorphic_records_can_choose_concrete_types() -> TestResult {
     )?;
 
     let coin_id = model
-        .lookup("CurrencyReward", "coin")
+        .lookup_assignable("CurrencyReward", "coin")
         .expect("currency reward");
-    let item_id = model.lookup("ItemReward", "item").expect("item reward");
-    assert_eq!(model.lookup("Reward", "coin"), Some(coin_id));
-    assert_eq!(model.lookup("Reward", "item"), Some(item_id));
+    let item_id = model
+        .lookup_assignable("ItemReward", "item")
+        .expect("item reward");
+    assert_eq!(model.lookup_assignable("Reward", "coin"), Some(coin_id));
+    assert_eq!(model.lookup_assignable("Reward", "item"), Some(item_id));
     Ok(())
 }
 
@@ -278,7 +284,9 @@ fn cfd_object_and_dict_spreads_merge_before_local_overrides() -> TestResult {
         "#,
     )?;
 
-    let elite_id = model.lookup("Monster", "elite").expect("elite record");
+    let elite_id = model
+        .lookup_assignable("Monster", "elite")
+        .expect("elite record");
     let elite = model.record(elite_id).expect("elite");
     assert_eq!(
         elite.field("name"),
@@ -341,8 +349,8 @@ fn cfd_allows_cyclic_record_references() -> TestResult {
         "#,
     )?;
 
-    let a_id = model.lookup("Node", "a").expect("a record");
-    let b_id = model.lookup("Node", "b").expect("b record");
+    let a_id = model.lookup_assignable("Node", "a").expect("a record");
+    let b_id = model.lookup_assignable("Node", "b").expect("b record");
     assert_eq!(
         model.record(a_id).and_then(|record| record.field("next")),
         Some(&CfdValue::Ref("b".to_string()))
@@ -623,7 +631,7 @@ fn examples_cfd_files_load_together() -> TestResult {
     let model = load_cfd_model(&schema, &source)?;
 
     let elite_id = model
-        .lookup("Monster", "elite_monster")
+        .lookup_assignable("Monster", "elite_monster")
         .expect("elite monster");
     let elite = model.record(elite_id).expect("elite monster record");
     assert_eq!(
@@ -638,7 +646,7 @@ fn examples_cfd_files_load_together() -> TestResult {
     assert_eq!(stats.field("attack"), Some(&CfdValue::Int(5)));
 
     let encounter_id = model
-        .lookup("Encounter", "elite_encounter")
+        .lookup_assignable("Encounter", "elite_encounter")
         .expect("elite encounter");
     let encounter = model.record(encounter_id).expect("encounter record");
     assert_eq!(

@@ -428,9 +428,11 @@ fn dimension_dependency_graph_includes_variant_records() {
         run_checks_for_dimensions_with_deps(&schema, &model, &language_dimensions());
 
     result.expect("checks pass");
-    let source_id = model.lookup("Item", "potion").expect("source record");
+    let source_id = model
+        .lookup_assignable("Item", "potion")
+        .expect("source record");
     let variant_id = model
-        .lookup("Item_nameVariants", "potion")
+        .lookup_assignable("Item_nameVariants", "potion")
         .expect("variant record");
     assert!(
         graph

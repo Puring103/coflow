@@ -27,7 +27,7 @@ fn key_only_record_ref_helper_builds_ref_values_for_ref_fields() {
     );
 
     let model = builder.build().expect("key-only ref should build");
-    let holder_id = model.lookup("Holder", "holder").expect("holder");
+    let holder_id = model.lookup_assignable("Holder", "holder").expect("holder");
     let holder = model.record(holder_id).expect("holder record");
     assert_eq!(
         holder.field("item"),
@@ -195,8 +195,8 @@ fn direct_refs_populate_ref_edge_indexes() {
     );
 
     let model = builder.build().expect("refs should build");
-    let item_id = model.lookup("Item", "sword").expect("item");
-    let holder_id = model.lookup("Holder", "holder").expect("holder");
+    let item_id = model.lookup_assignable("Item", "sword").expect("item");
+    let holder_id = model.lookup_assignable("Holder", "holder").expect("holder");
     let item_site = RefSite::new(holder_id, CfdPath::root().field("item"));
     let array_site = RefSite::new(holder_id, CfdPath::root().field("items").index(0));
 
@@ -265,9 +265,9 @@ fn object_spread_source_is_not_a_direct_ref_edge() {
     ));
 
     let model = builder.build().expect("spread should build");
-    let item_id = model.lookup("Item", "sword").expect("item");
-    let base_id = model.lookup("Stats", "base").expect("base");
-    let copy_id = model.lookup("Stats", "copy").expect("copy");
+    let item_id = model.lookup_assignable("Item", "sword").expect("item");
+    let base_id = model.lookup_assignable("Stats", "base").expect("base");
+    let copy_id = model.lookup_assignable("Stats", "copy").expect("copy");
 
     let inherited_item_site = RefSite::new(copy_id, CfdPath::root().field("item"));
     let inherited_nested_item_site =
@@ -345,8 +345,8 @@ fn fully_overridden_spread_still_records_object_level_edge() {
     let model = builder
         .build()
         .expect("fully overridden spread should build");
-    let base_id = model.lookup("Item", "base").expect("base");
-    let copy_id = model.lookup("Item", "copy").expect("copy");
+    let base_id = model.lookup_assignable("Item", "base").expect("base");
+    let copy_id = model.lookup_assignable("Item", "copy").expect("copy");
     let edge = model
         .spread_edge_at(&SpreadSite::new(copy_id, CfdPath::root()))
         .and_then(|id| model.spread_edge(id))
@@ -400,9 +400,13 @@ fn multiple_spreads_at_same_object_site_keep_all_edges() {
     ));
 
     let model = builder.build().expect("multi-spread should build");
-    let copy_id = model.lookup("Stats", "copy").expect("copy");
-    let hp_base_id = model.lookup("Stats", "hp_base").expect("hp base");
-    let mp_base_id = model.lookup("Stats", "mp_base").expect("mp base");
+    let copy_id = model.lookup_assignable("Stats", "copy").expect("copy");
+    let hp_base_id = model
+        .lookup_assignable("Stats", "hp_base")
+        .expect("hp base");
+    let mp_base_id = model
+        .lookup_assignable("Stats", "mp_base")
+        .expect("mp base");
     let site = SpreadSite::new(copy_id, CfdPath::root());
     let edges = model.spread_edges_at(&site).collect::<Vec<_>>();
 
