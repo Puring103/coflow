@@ -33,6 +33,7 @@ mod model;
 mod origin;
 mod schema_view;
 pub mod serde_i64;
+mod value_semantics;
 
 pub use diagnostic::{
     CfdDiagnostic, CfdDiagnostics, CfdErrorCode, CfdLabel, CfdPath, CfdPathSegment, CfdSeverity,
@@ -47,4 +48,8 @@ pub use model::{
 pub use origin::{
     label_to_location, map_diagnostics, MappedDiagnostic, MappedLabel, RecordOrigin,
     SourceDocument, SourceLocation, TextSpan,
+};
+pub use value_semantics::{
+    validate_object_type_assignable, validate_value_for_schema, CfdValueSemanticContext,
+    CfdValueSemanticError, PendingInsertRef,
 };
