@@ -12,6 +12,7 @@ use coflow_api::{FlatDiagnostic, WriterCapabilities};
 use coflow_data_model::{CfdRecord, CfdValue};
 use coflow_engine::{FileTreeNode, RecordCoordinate};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[cfg(feature = "ts-export")]
 use ts_rs::TS;
@@ -135,8 +136,22 @@ pub struct ProjectSnapshot {
 pub struct FileRecords {
     pub file_path: String,
     pub type_names: Vec<String>,
+    pub columns: Vec<RecordColumn>,
     pub records: Vec<RecordRow>,
     pub capabilities: WriterCapabilities,
+}
+
+/// A top-level field column available in a file/type table.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../frontend/src/bindings/")
+)]
+pub struct RecordColumn {
+    pub name: String,
+    pub type_names: Vec<String>,
+    pub max_summary_len: usize,
 }
 
 /// One top-level record's view inside a file.
@@ -153,6 +168,8 @@ pub struct RecordRow {
     pub coordinate: RecordCoordinate,
     pub display_path: String,
     pub fields: Vec<FieldCell>,
+    pub field_index: BTreeMap<String, usize>,
+    pub field_summaries: BTreeMap<String, String>,
 }
 
 /// One cell in a record row.

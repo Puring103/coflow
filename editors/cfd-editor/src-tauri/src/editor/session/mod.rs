@@ -21,7 +21,7 @@ mod diagnostics;
 mod graph;
 mod path;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::Path as StdPath;
 use std::sync::{Arc, RwLock};
 
@@ -35,7 +35,8 @@ use coflow_engine::{
 use crate::editor::convert::{record_view_to_row, WireContext};
 use crate::editor::types::{
     DeleteRecordOutcome, DeletedRecordSnapshot, EditorError, FileRecords, GraphData,
-    InsertRecordOutcome, ProjectSnapshot, RefTarget, RenameRecordOutcome, WriteFieldOutcome,
+    InsertRecordOutcome, ProjectSnapshot, RecordColumn, RefTarget, RenameRecordOutcome,
+    WriteFieldOutcome,
 };
 
 pub use diagnostics::Diagnostics;
@@ -76,6 +77,12 @@ struct Inner {
     next_id: u32,
     sessions: HashMap<u32, Arc<SessionEntry>>,
     registry: Arc<ProviderRegistry>,
+}
+
+#[derive(Default)]
+struct ColumnStats {
+    type_names: BTreeSet<String>,
+    max_summary_len: usize,
 }
 
 impl Default for Inner {
@@ -182,20 +189,37 @@ impl SessionStore {
             session: &session.engine,
         };
         let mut records = Vec::new();
+        let mut columns = BTreeMap::<String, ColumnStats>::new();
         let mut type_seen = Vec::new();
         let mut type_set = HashSet::new();
         for view in session.engine.record_views_in_file(file_path) {
             if type_set.insert(view.coordinate.actual_type.clone()) {
                 type_seen.push(view.coordinate.actual_type.clone());
             }
-            records.push(record_view_to_row(&view, &ctx));
+            let row = record_view_to_row(&view, &ctx);
+            for field in &row.fields {
+                let stats = columns.entry(field.name.clone()).or_default();
+                stats.type_names.insert(row.coordinate.actual_type.clone());
+                let summary_len = row.field_summaries.get(&field.name).map_or(0, String::len);
+                stats.max_summary_len = stats.max_summary_len.max(summary_len);
+            }
+            records.push(row);
         }
+        let columns = columns
+            .into_iter()
+            .map(|(name, stats)| RecordColumn {
+                name,
+                type_names: stats.type_names.into_iter().collect(),
+                max_summary_len: stats.max_summary_len,
+            })
+            .collect();
         let capabilities =
             session_capabilities_for_file(&session, self.registry()?.as_ref(), file_path);
         drop(session);
         Ok(FileRecords {
             file_path: file_path.to_string(),
             type_names: type_seen,
+            columns,
             records,
             capabilities,
         })

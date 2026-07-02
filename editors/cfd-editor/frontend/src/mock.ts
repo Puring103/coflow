@@ -71,7 +71,7 @@ const refVal = refValue
 const boolVal = boolValue
 
 export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
-  'data/item.cfd': {
+  'data/item.cfd': withColumns({
     file_path: 'data/item.cfd',
     type_names: ['Item', 'Weapon'],
     capabilities: MOCK_CFD_CAPS,
@@ -99,8 +99,8 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
         { name: 'two_handed', value: boolVal(false), annotation: null },
       ]),
     ],
-  },
-  'data/npc.cfd': {
+  }),
+  'data/npc.cfd': withColumns({
     file_path: 'data/npc.cfd',
     type_names: ['Npc'],
     capabilities: MOCK_CFD_CAPS,
@@ -130,7 +130,7 @@ export const MOCK_FILE_RECORDS: Record<string, FileRecords> = {
         { name: 'drops', value: { kind: 'array', value: [] }, annotation: null },
       ]),
     ],
-  },
+  }),
 }
 
 export const MOCK_GRAPH: GraphData = {
@@ -163,10 +163,53 @@ export const MOCK_GRAPH: GraphData = {
 export const ALL_TYPE_NAMES = ['Item', 'Weapon', 'Npc']
 
 function row(actualType: string, key: string, fields: RecordRow['fields']): RecordRow {
+  const field_index: Record<string, number> = {}
+  const field_summaries: Record<string, string> = {}
+  fields.forEach((field, index) => {
+    field_index[field.name] = index
+    field_summaries[field.name] = mockSummary(field.value)
+  })
   return {
     coordinate: { actual_type: actualType, key },
     display_path: `${actualType}.${key}`,
     fields,
+    field_index,
+    field_summaries,
+  }
+}
+
+function withColumns(data: Omit<FileRecords, 'columns'>): FileRecords {
+  const columns = new Map<string, { name: string, type_names: Set<string>, max_summary_len: number }>()
+  for (const record of data.records) {
+    for (const field of record.fields) {
+      const column = columns.get(field.name) ?? { name: field.name, type_names: new Set<string>(), max_summary_len: 0 }
+      column.type_names.add(record.coordinate.actual_type)
+      column.max_summary_len = Math.max(column.max_summary_len, record.field_summaries[field.name]?.length ?? 0)
+      columns.set(field.name, column)
+    }
+  }
+  return {
+    ...data,
+    columns: Array.from(columns.values()).map(column => ({
+      name: column.name,
+      type_names: Array.from(column.type_names),
+      max_summary_len: column.max_summary_len,
+    })),
+  }
+}
+
+function mockSummary(value: FieldValue): string {
+  switch (value.kind) {
+    case 'null': return '-'
+    case 'bool': return value.value ? 'true' : 'false'
+    case 'int':
+    case 'float': return String(value.value)
+    case 'string': return value.value
+    case 'enum': return value.value.variant ?? String(value.value.value)
+    case 'ref': return value.value
+    case 'object': return value.value.actual_type
+    case 'array': return value.value.length ? `array[${value.value.length}]` : '[]'
+    case 'dict': return value.value.length ? `dict(${value.value.length})` : '{}'
   }
 }
 

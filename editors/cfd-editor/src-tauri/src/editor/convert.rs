@@ -8,6 +8,7 @@
 
 use coflow_data_model::{CfdPath, CfdRecord, CfdRecordId, CfdValue, RefSite};
 use coflow_engine::{ProjectSession, RecordCoordinate, RecordView};
+use std::collections::BTreeMap;
 
 use crate::editor::types::{FieldAnnotation, FieldCell, RecordRow, SpreadInfo};
 
@@ -19,27 +20,33 @@ pub struct WireContext<'a> {
 /// Translate a [`RecordView`] into a wire [`RecordRow`].
 #[must_use]
 pub fn record_view_to_row(view: &RecordView<'_>, ctx: &WireContext<'_>) -> RecordRow {
-    let fields = view
-        .record
-        .fields()
-        .iter()
-        .map(|(name, value)| FieldCell {
-            name: name.clone(),
-            value: value.clone(),
-            annotation: build_annotation(view.record, name, value, ctx, &[]),
-        })
-        .collect();
+    let fields = record_fields(view.record, ctx);
+    let (field_index, field_summaries) = field_indexes(&fields);
     RecordRow {
         coordinate: view.coordinate.clone(),
         display_path: view.display_path.to_string(),
         fields,
+        field_index,
+        field_summaries,
     }
 }
 
 /// Convenience: pull the [`RecordView`] from the session, then render it.
 #[must_use]
 pub fn record_to_row(record: &CfdRecord, display_path: &str, ctx: &WireContext<'_>) -> RecordRow {
-    let fields = record
+    let fields = record_fields(record, ctx);
+    let (field_index, field_summaries) = field_indexes(&fields);
+    RecordRow {
+        coordinate: RecordCoordinate::new(record.actual_type(), record.key.clone()),
+        display_path: display_path.to_string(),
+        fields,
+        field_index,
+        field_summaries,
+    }
+}
+
+fn record_fields(record: &CfdRecord, ctx: &WireContext<'_>) -> Vec<FieldCell> {
+    record
         .fields()
         .iter()
         .map(|(name, value)| FieldCell {
@@ -47,11 +54,75 @@ pub fn record_to_row(record: &CfdRecord, display_path: &str, ctx: &WireContext<'
             value: value.clone(),
             annotation: build_annotation(record, name, value, ctx, &[]),
         })
-        .collect();
-    RecordRow {
-        coordinate: RecordCoordinate::new(record.actual_type(), record.key.clone()),
-        display_path: display_path.to_string(),
-        fields,
+        .collect()
+}
+
+fn field_indexes(fields: &[FieldCell]) -> (BTreeMap<String, usize>, BTreeMap<String, String>) {
+    let mut index = BTreeMap::new();
+    let mut summaries = BTreeMap::new();
+    for (idx, field) in fields.iter().enumerate() {
+        index.insert(field.name.clone(), idx);
+        summaries.insert(field.name.clone(), value_summary(&field.value));
+    }
+    (index, summaries)
+}
+
+fn value_summary(value: &CfdValue) -> String {
+    match value {
+        CfdValue::Null => "-".to_string(),
+        CfdValue::Bool(value) => value.to_string(),
+        CfdValue::Int(value) => value.to_string(),
+        CfdValue::Float(value) => value.to_string(),
+        CfdValue::String(value) if value.len() > 40 => format!("{}...", &value[..38]),
+        CfdValue::String(value) => value.clone(),
+        CfdValue::Enum(value) => value
+            .variant
+            .clone()
+            .unwrap_or_else(|| value.value.to_string()),
+        CfdValue::Ref(target_key) => target_key.clone(),
+        CfdValue::Object(value) => value.actual_type().to_string(),
+        CfdValue::Array(items) => {
+            if items.is_empty() {
+                "[]".to_string()
+            } else {
+                format!("{}[{}]", value_kind(&items[0]), items.len())
+            }
+        }
+        CfdValue::Dict(entries) => {
+            if entries.is_empty() {
+                "{}".to_string()
+            } else {
+                format!(
+                    "{}->{}  ({})",
+                    dict_key_kind(&entries[0].0),
+                    value_kind(&entries[0].1),
+                    entries.len()
+                )
+            }
+        }
+    }
+}
+
+const fn value_kind(value: &CfdValue) -> &'static str {
+    match value {
+        CfdValue::Null => "null",
+        CfdValue::Bool(_) => "bool",
+        CfdValue::Int(_) => "int",
+        CfdValue::Float(_) => "float",
+        CfdValue::String(_) => "string",
+        CfdValue::Enum(_) => "enum",
+        CfdValue::Ref(_) => "&",
+        CfdValue::Object(_) => "object",
+        CfdValue::Array(_) => "[]",
+        CfdValue::Dict(_) => "{}",
+    }
+}
+
+const fn dict_key_kind(key: &coflow_data_model::CfdDictKey) -> &'static str {
+    match key {
+        coflow_data_model::CfdDictKey::String(_) => "string",
+        coflow_data_model::CfdDictKey::Int(_) => "int",
+        coflow_data_model::CfdDictKey::Enum(_) => "enum",
     }
 }
 

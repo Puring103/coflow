@@ -126,27 +126,23 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
   }
 
   const allFieldNames = useMemo(
-    () => Array.from(new Set(filtered.flatMap(r => r.fields.map(f => f.name)))),
-    [filtered]
+    () => data.columns
+      .filter(column => column.type_names.includes(activeType))
+      .map(column => column.name),
+    [data.columns, activeType]
   )
 
   const columnSizeHints = useMemo(() => {
     const hints: Record<string, number> = { key: 140 }
     const CHAR_W = 7, MIN = 60, MAX = 300
-    for (const name of allFieldNames) {
-      let max = name.length * CHAR_W + 24
-      for (const row of filtered) {
-        const f = row.fields.find(f => f.name === name)
-        if (f) {
-          const s = summaryOf(f.value)
-          const w = s.length * CHAR_W + 24
-          if (w > max) max = w
-        }
-      }
-      hints[name] = Math.min(MAX, Math.max(MIN, max))
+    for (const column of data.columns) {
+      if (!column.type_names.includes(activeType)) continue
+      const maxSummary = column.max_summary_len * CHAR_W + 24
+      const max = Math.max(column.name.length * CHAR_W + 24, maxSummary)
+      hints[column.name] = Math.min(MAX, Math.max(MIN, max))
     }
     return hints
-  }, [filtered, allFieldNames])
+  }, [data.columns, activeType])
 
   const canEdit = !readOnly && !!onWriteField
   const canRename = !readOnly && data.capabilities.can_edit_key && !!onRenameRecord
@@ -171,7 +167,7 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
           header: name,
           size: columnSizeHints[name] ?? 120,
           cell: ({ row }) => {
-            const f = row.original.fields.find(f => f.name === name)
+            const f = fieldCell(row.original, name)
             const sev = cellDiagIndex.get(`${coordinateId(row.original.coordinate)}::${name}`)
             if (!f) return <span className={`dc-null${sev ? ' dc-cell-diag dc-cell-diag-' + sev : ''}`}>—</span>
             const isDimensionDefault = isDimensionDefaultField(row.original, f.name)
@@ -201,9 +197,8 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
       if (!q) return true
       const r = row.original
       if (recordKey(r).toLowerCase().includes(q)) return true
-      for (const f of r.fields) {
-        const s = summaryOf(f.value).toLowerCase()
-        if (s.includes(q)) return true
+      for (const summary of Object.values(r.field_summaries)) {
+        if (summary.toLowerCase().includes(q)) return true
       }
       return false
     },
@@ -434,6 +429,11 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
 
 function isDimensionDefaultField(record: RecordRow, fieldName: string): boolean {
   return recordActualType(record).endsWith('Variants') && fieldName === 'default'
+}
+
+function fieldCell(record: RecordRow, fieldName: string) {
+  const index = record.field_index[fieldName]
+  return typeof index === 'number' ? record.fields[index] : undefined
 }
 
 function findDiagMessage(
