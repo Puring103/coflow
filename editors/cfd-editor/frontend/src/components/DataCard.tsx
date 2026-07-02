@@ -39,7 +39,7 @@ import {
 } from '../wire'
 import { Icon } from './Icon'
 import { typeColor, enumColor } from '../utils/typeColor'
-import { loadEnumVariants, loadRefTargets } from '../utils/editContext'
+import { buildDefaultObject, loadEnumVariants, loadRefTargets } from '../utils/editContext'
 
 export function CardHeader({
   recordKey,
@@ -451,13 +451,19 @@ function FieldRow({
   dragProps?: { extraClass?: string } & Omit<React.HTMLAttributes<HTMLDivElement>, 'className'> & { draggable?: boolean }
 }) {
   const isComplex = value.kind === 'object' || value.kind === 'array' || value.kind === 'dict'
-  const canExpand = isComplex && depth < MAX_DEPTH
+  // A `null` value on a field whose declared type is an array/dict/object
+  // should still be treated as expandable, so the user can just click
+  // "add element" instead of first coercing null → empty collection by
+  // hand. The materialization happens lazily when the user hits add.
+  const nullCollectionShape = value.kind === 'null' ? collectionShapeFromDeclared(declaredType) : null
+  const displayValue = nullCollectionShape ?? value
+  const canExpand = (isComplex || nullCollectionShape !== null) && depth < MAX_DEPTH
 
   if (canExpand) {
     return (
       <ExpandableRow
         label={label}
-        value={value}
+        value={displayValue}
         depth={depth}
         onEdit={onEdit}
         isSpread={isSpread}
@@ -715,7 +721,6 @@ export function EnumDirectSelect({
       value={current}
       onChange={e => commit(e.target.value)}
     >
-      {nullable && <option value={NULL_SENTINEL}>(null)</option>}
       {value.kind === 'enum' && !variants.includes(current) && <option value={current}>{current}</option>}
       {variants.map(v => <option key={v} value={v}>{v}</option>)}
     </select>
@@ -779,33 +784,31 @@ export function RefDirectSelect({
 
   if (targetType && targets !== null && targets.length > 0) {
     const hasCurrent = value.kind === 'ref' && !!value.value && targets.some(target => target.key === value.value)
-    // Show just the key when closed (matches enum-style compactness); the
-    // fully-qualified `TypeName.key` label lives on the option's title so
-    // users can hover to disambiguate polymorphic targets.
     return (
-      <select
-        className="dc-pill-select dc-pill-select-ref"
-        value={selectedValue}
-        autoFocus={autoFocus}
-        title={targetType}
-        onChange={e => commit(e.target.value)}
-      >
-        {nullable && <option value={NULL_SENTINEL}></option>}
-        {value.kind === 'ref' && !hasCurrent && value.value && <option value={value.value}>{value.value}</option>}
-        {value.kind === 'ref' && !value.value && <option value=""></option>}
-        {targets.map(target => (
-          <option key={target.label} value={target.key} title={target.label}>
-            {target.key}
-          </option>
-        ))}
-      </select>
+      <span className="dc-pill-wrap dc-pill-wrap-ref">
+        <select
+          className="dc-pill-select dc-pill-select-ref dc-pill-select-inwrap"
+          value={selectedValue}
+          autoFocus={autoFocus}
+          title={targetType}
+          onChange={e => commit(e.target.value)}
+        >
+          {value.kind === 'ref' && !hasCurrent && value.value && <option value={value.value}>{value.value}</option>}
+          {targets.map(target => (
+            <option key={target.label} value={target.key} title={target.label}>
+              {target.key}
+            </option>
+          ))}
+        </select>
+      </span>
     )
   }
 
   return (
-    <span className="dc-pill-input-wrap">
+    <span className="dc-pill-wrap dc-pill-wrap-ref">
+      <span className="dc-pill-prefix" aria-hidden>&amp;</span>
       <input
-        className="dc-pill-select dc-pill-select-ref"
+        className="dc-pill-select dc-pill-select-ref dc-pill-select-inwrap"
         defaultValue={currentKey}
         autoFocus={autoFocus}
         placeholder="key"
@@ -1295,79 +1298,94 @@ function replaceValueAtPath(
   return null
 }
 
-function defaultElementFor(container: FieldValue): FieldValue {
-  if (container.kind === 'array') {
-    const sample = container.value.find(i => i.kind !== 'null') ?? container.value[0]
-    if (sample) return defaultLikeShape(sample)
-  }
-  if (container.kind === 'dict') {
-    const sample = container.value.find(([, item]) => item.kind !== 'null')?.[1]
-      ?? container.value[0]?.[1]
-    if (sample) return defaultLikeShape(sample)
-  }
-  return stringValue('')
-}
-
-/// Resolve a valid default value to append to `container`. Uses the
-/// declared element type as authoritative source of truth so the write
-/// validator accepts it — ref/enum fields are seeded with the first known
-/// target/variant when the type isn't nullable, or `null` when it is.
+/// Resolve a valid default value to append to `container`. Preference order:
+///   1. Clone of the last existing non-null element (keeps ref/enum picks
+///      the user has already made, avoiding an "empty" placeholder that
+///      the write validator would reject).
+///   2. Element derived from the declared type — first ref target,
+///      first enum variant, scalar zero, empty sub-collection.
+///   3. `null` for nullable fields.
+/// Returns null only when the schema demands a non-null element but no
+/// valid seed exists (e.g. `[&Foo]` and there are zero `Foo` records).
 async function resolveDefaultElement(
   container: FieldValue & { kind: 'array' | 'dict' },
   itemDeclaredType?: string,
 ): Promise<FieldValue | null> {
-  if (itemDeclaredType) {
-    const nullable = itemDeclaredType.endsWith('?')
-    const stripped = stripNullableType(itemDeclaredType) ?? itemDeclaredType
-    if (nullable) return nullValue()
-    if (stripped.startsWith('&')) {
-      const targetType = stripped.slice(1)
-      const targets = await loadRefTargets(targetType)
-      if (targets.ok && targets.targets.length > 0) {
-        return refValue(targets.targets[0].coordinate.key)
-      }
-      return null
+  // 1. Clone the last element (including null) — keeps the user's most
+  //    recent choice; if they've been appending nulls, keep giving them
+  //    nulls to append.
+  const sample = lastElement(container)
+  if (sample) return cloneShape(sample)
+
+  if (!itemDeclaredType) return null
+
+  const nullable = itemDeclaredType.endsWith('?')
+  const stripped = stripNullableType(itemDeclaredType) ?? itemDeclaredType
+  if (stripped.startsWith('&')) {
+    const targetType = stripped.slice(1)
+    const targets = await loadRefTargets(targetType)
+    if (targets.ok && targets.targets.length > 0) {
+      return refValue(targets.targets[0].coordinate.key)
     }
-    if (stripped === 'bool') return boolValue(false)
-    if (stripped === 'int') return intValue(0)
-    if (stripped === 'float') return floatValue(0)
-    if (stripped === 'string') return stringValue('')
-    if (stripped.startsWith('[') && stripped.endsWith(']')) return { kind: 'array', value: [] }
-    if (stripped.startsWith('{') && stripped.endsWith('}')) return { kind: 'dict', value: [] }
-    // named -> enum or object; try enum first, then let sample-based inference
-    // handle inline object shapes.
-    const enumResult = await loadEnumVariants(stripped)
-    if (enumResult.ok && enumResult.variants.length > 0) {
-      return enumValue(stripped, enumResult.variants[0], 0n)
-    }
+    return nullable ? nullValue() : null
   }
-  return defaultElementFor(container)
+  if (stripped === 'bool') return boolValue(false)
+  if (stripped === 'int') return intValue(0)
+  if (stripped === 'float') return floatValue(0)
+  if (stripped === 'string') return stringValue('')
+  if (stripped.startsWith('[') && stripped.endsWith(']')) return { kind: 'array', value: [] }
+  if (stripped.startsWith('{') && stripped.endsWith('}')) return { kind: 'dict', value: [] }
+  // Named type — try enum first; otherwise ask the backend to build a
+  // schema-valid default record instance for the named type (covers
+  // inline objects / polymorphic bases the front-end can't synthesize).
+  const enumResult = await loadEnumVariants(stripped)
+  if (enumResult.ok && enumResult.variants.length > 0) {
+    return enumValue(stripped, enumResult.variants[0], 0n)
+  }
+  const objectDefault = await buildDefaultObject(stripped)
+  if (objectDefault) return objectDefault
+  return nullable ? nullValue() : null
 }
 
-function defaultLikeShape(sample: FieldValue): FieldValue {
+/** If `declaredType` describes an array/dict, return an empty collection
+ *  value the UI can render as if the null field were already materialized.
+ *  Object types are not covered — they would need per-field defaults. */
+function collectionShapeFromDeclared(declaredType?: string): FieldValue | null {
+  if (!declaredType) return null
+  const stripped = stripNullableType(declaredType) ?? declaredType
+  if (stripped.startsWith('[') && stripped.endsWith(']')) return { kind: 'array', value: [] }
+  if (stripped.startsWith('{') && stripped.endsWith('}')) return { kind: 'dict', value: [] }
+  return null
+}
+
+function lastElement(container: FieldValue & { kind: 'array' | 'dict' }): FieldValue | null {
+  if (container.kind === 'array') {
+    return container.value.length > 0 ? container.value[container.value.length - 1] : null
+  }
+  return container.value.length > 0 ? container.value[container.value.length - 1][1] : null
+}
+
+function cloneShape(sample: FieldValue): FieldValue {
   switch (sample.kind) {
-    case 'bool': return boolValue(false)
-    case 'int': return intValue(0)
-    case 'float': return floatValue(0)
-    case 'string': return stringValue('')
-    case 'null': return stringValue('')
+    case 'null': return nullValue()
+    case 'bool': return boolValue(sample.value)
+    case 'int': return intValue(sample.value)
+    case 'float': return floatValue(sample.value)
+    case 'string': return stringValue(sample.value)
     case 'enum': return enumValue(sample.value.enum_name, sample.value.variant, sample.value.value)
-    // Reuse the existing entry's key so the write validator accepts it —
-    // an empty ref would fail schema validation ("reference key must not
-    // be empty"). Callers with a declared type should prefer
-    // `resolveDefaultElement` which picks the true first target.
     case 'ref': return refValue(sample.value)
     case 'object': return {
       kind: 'object',
       value: {
         actual_type: sample.value.actual_type,
-        fields: Object.fromEntries(objectFields(sample).map(f => [f.name, defaultLikeShape(f.value)])),
+        fields: Object.fromEntries(objectFields(sample).map(f => [f.name, cloneShape(f.value)])),
       },
     }
-    case 'array': return { kind: 'array', value: [] }
-    case 'dict': return { kind: 'dict', value: [] }
+    case 'array': return { kind: 'array', value: sample.value.map(cloneShape) }
+    case 'dict': return { kind: 'dict', value: sample.value.map(([k, v]) => [k, cloneShape(v)]) }
   }
 }
+
 
 function ArrayItems({
   container,

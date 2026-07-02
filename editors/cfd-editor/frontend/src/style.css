@@ -2,6 +2,10 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root, [data-theme="dark"] {
+  /* Tell the UA to render native form controls (select popup, scrollbars,
+   * autofill) in dark-mode colors instead of the OS default white. */
+  color-scheme: dark;
+
   /* Surface levels — narrow contrast range, IDE-style */
   --bg-0: #16181d;            /* chrome / topbar / diag-panel */
   --bg-1: #1c1f25;            /* app background / content */
@@ -37,6 +41,7 @@
 }
 
 [data-theme="light"] {
+  color-scheme: light;
   --bg-0: #ffffff;
   --bg-1: #fafbfc;
   --bg-2: #f1f3f5;
@@ -809,7 +814,8 @@ code, .mono, .cell-key, .gn-key, .rv-key, .rv-item-key,
 }
 /* Ref / enum pill cells: drop the td padding so the pill fills the cell
  * edge-to-edge and the border reads as the column separator. */
-.data-table td:has(> .cell-edit-wrap > .dc-pill-select) {
+.data-table td:has(> .cell-edit-wrap > .dc-pill-select),
+.data-table td:has(> .cell-edit-wrap > .dc-pill-wrap) {
   padding: 0;
 }
 
@@ -1732,11 +1738,15 @@ td:hover select.dc-pill-select,
 }
 
 /* Ref pill — accent color. Element+two-class selectors keep specificity
- * above the base rules so the shorthand border/background here wins. */
+ * above the base rules so the shorthand border/background here wins.
+ * The background is deliberately fully opaque (mixed against --bg-2 rather
+ * than transparent) — Chromium picks the select's computed background as
+ * the native option-popup color, and a transparent stop makes the popup
+ * flash white when the pointer leaves the wrap. */
 select.dc-pill-select.dc-pill-select-ref,
 input.dc-pill-select.dc-pill-select-ref {
   border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
-  background-color: color-mix(in srgb, var(--accent) 4%, transparent);
+  background-color: color-mix(in srgb, var(--accent) 6%, var(--bg-2));
 }
 select.dc-pill-select.dc-pill-select-ref:hover,
 input.dc-pill-select.dc-pill-select-ref:hover,
@@ -1752,11 +1762,12 @@ input.dc-pill-select.dc-pill-select-ref:focus {
   background-color: color-mix(in srgb, var(--accent) 12%, var(--bg-1));
 }
 
-/* Enum pill — --enum-color themed. */
+/* Enum pill — --enum-color themed. Background is opaque for the same
+ * reason as the ref pill above (native popup color inheritance). */
 select.dc-pill-select.dc-pill-select-enum,
 input.dc-pill-select.dc-pill-select-enum {
   border: 1px solid color-mix(in srgb, var(--enum-color, var(--purple)) 18%, transparent);
-  background-color: color-mix(in srgb, var(--enum-color, var(--purple)) 4%, transparent);
+  background-color: color-mix(in srgb, var(--enum-color, var(--purple)) 6%, var(--bg-2));
 }
 select.dc-pill-select.dc-pill-select-enum:hover,
 input.dc-pill-select.dc-pill-select-enum:hover,
@@ -1766,6 +1777,83 @@ td:hover select.dc-pill-select.dc-pill-select-enum,
   border-color: color-mix(in srgb, var(--enum-color, var(--purple)) 45%, transparent);
   background-color: color-mix(in srgb, var(--enum-color, var(--purple)) 10%, var(--bg-1));
 }
+/* Ref pill wrapper — hosts the `&` prefix and owns the border/background so
+ * the prefix sits inside the pill's colored area. The inner select then
+ * strips its own border/background. */
+.dc-pill-wrap {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  height: var(--h-input);
+  border-radius: 3px;
+  border: 1px solid transparent;
+  background-color: transparent;
+  overflow: hidden;
+}
+/* Ref pill wrap uses `position: relative` + `::before` for the `&` prefix
+ * so the prefix visually sits inside the pill but doesn't take a sibling
+ * slot next to the select. Because the select consumes the full wrapper
+ * width, the native dropdown popup that Chromium opens matches the wrap
+ * width too — including the `&`. */
+.dc-pill-wrap-ref {
+  position: relative;
+  border-color: color-mix(in srgb, var(--accent) 18%, transparent);
+  background-color: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+.dc-pill-wrap-ref::before {
+  content: '&';
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--accent);
+  font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', ui-monospace, monospace;
+  font-size: var(--fs-ui);
+  font-weight: 600;
+  pointer-events: none;
+  user-select: none;
+  z-index: 1;
+}
+.dc-pill-wrap-ref:hover,
+.dc-row:hover .dc-pill-wrap-ref,
+td:hover .dc-pill-wrap-ref,
+.dc-node-card:hover .dc-pill-wrap-ref {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background-color: color-mix(in srgb, var(--accent) 10%, var(--bg-1));
+}
+.dc-pill-wrap-ref:focus-within {
+  border-color: var(--accent);
+  background-color: color-mix(in srgb, var(--accent) 12%, var(--bg-1));
+}
+
+/* Select nested in the ref wrapper — strip its own border, reserve room
+ * for the `&` prefix drawn by the wrapper's ::before. Background must
+ * remain fully opaque (see the ref-pill comment above): a transparent
+ * background makes Chromium fall back to white for the native option
+ * popup the instant the pointer leaves the wrapper. */
+select.dc-pill-select.dc-pill-select-inwrap,
+input.dc-pill-select.dc-pill-select-inwrap {
+  border: none;
+  background-color: color-mix(in srgb, var(--accent) 6%, var(--bg-2));
+  padding-left: 20px;
+  height: 100%;
+}
+select.dc-pill-select.dc-pill-select-inwrap:hover,
+input.dc-pill-select.dc-pill-select-inwrap:hover,
+.dc-pill-wrap-ref:hover select.dc-pill-select.dc-pill-select-inwrap,
+.dc-row:hover .dc-pill-wrap-ref select.dc-pill-select.dc-pill-select-inwrap,
+td:hover .dc-pill-wrap-ref select.dc-pill-select.dc-pill-select-inwrap,
+.dc-node-card:hover .dc-pill-wrap-ref select.dc-pill-select.dc-pill-select-inwrap {
+  background-color: color-mix(in srgb, var(--accent) 10%, var(--bg-1));
+  border: none;
+}
+select.dc-pill-select.dc-pill-select-inwrap:focus,
+input.dc-pill-select.dc-pill-select-inwrap:focus {
+  background-color: color-mix(in srgb, var(--accent) 12%, var(--bg-1));
+  border: none;
+}
+
 select.dc-pill-select.dc-pill-select-enum:focus,
 input.dc-pill-select.dc-pill-select-enum:focus {
   border-color: var(--enum-color, var(--purple));

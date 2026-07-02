@@ -941,7 +941,7 @@ fn coerce_cfd_dict_key(
 fn coerce_cfd_enum_value(
     session: &ProjectSession,
     enum_name: &str,
-    value: CfdEnumValue,
+    mut value: CfdEnumValue,
 ) -> Result<CfdEnumValue, DiagnosticSet> {
     if value.enum_name != enum_name {
         return Err(one_value_error(format!(
@@ -950,18 +950,17 @@ fn coerce_cfd_enum_value(
         )));
     }
     if let Some(variant) = value.variant.as_ref() {
+        // The variant name is authoritative — the backing int on the wire
+        // may be stale (e.g. the editor picks a new variant but reuses the
+        // previously-selected int). Re-derive the int from the schema
+        // instead of forcing callers to keep the two in sync.
         let expected_value = session
             .schema
             .enum_variant_value(enum_name, variant)
             .ok_or_else(|| {
                 one_value_error(format!("unknown enum variant `{enum_name}.{variant}`"))
             })?;
-        if expected_value != value.value {
-            return Err(one_value_error(format!(
-                "enum variant `{enum_name}.{variant}` has value `{expected_value}`, got `{}`",
-                value.value
-            )));
-        }
+        value.value = expected_value;
     }
     Ok(value)
 }

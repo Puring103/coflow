@@ -139,14 +139,16 @@ export const TableView = memo(function TableView({ data, activeType, readOnly, d
     const hints: Record<string, number> = { key: 140 }
     const CHAR_W = 7.5, MIN = 80, MAX = 420
     // Pill cells drop td padding but the pill itself owns 10+10 padding,
-    // 2px border and 22px chevron. Plain-text cells only need the td's
-    // horizontal padding.
+    // 2px border and 22px chevron. Ref pills also carry the "&" prefix
+    // (~14px). Plain-text cells only need the td's horizontal padding.
     const PILL_CHROME = 46
+    const REF_PREFIX = 14
     const PLAIN_CHROME = 24
     for (const column of data.columns) {
       if (!column.type_names.includes(activeType)) continue
-      const isPill = columnHasDropdown(data, column.name, activeType)
-      const chrome = isPill ? PILL_CHROME : PLAIN_CHROME
+      const kind = columnDropdownKind(data, column.name, activeType)
+      const isPill = kind !== null
+      const chrome = isPill ? PILL_CHROME + (kind === 'ref' ? REF_PREFIX : 0) : PLAIN_CHROME
       const summary = column.max_summary_len * CHAR_W + chrome
       const header = column.name.length * CHAR_W + PLAIN_CHROME + 12 /* sort caret */
       hints[column.name] = Math.min(MAX, Math.max(MIN, Math.max(summary, header)))
@@ -451,15 +453,22 @@ function fieldCell(record: RecordRow, fieldName: string) {
 
 
 
-function columnHasDropdown(data: FileRecords, fieldName: string, activeType: string): boolean {
+function columnDropdownKind(
+  data: FileRecords,
+  fieldName: string,
+  activeType: string,
+): 'ref' | 'enum' | 'bool' | null {
   for (const record of data.records) {
     if (recordActualType(record) !== activeType) continue
     const f = fieldCell(record, fieldName)
     if (!f) continue
-    if (f.value.kind === 'ref' || f.value.kind === 'enum' || f.value.kind === 'bool') return true
-    if (cellRefTargetType(f) || cellEnumType(f)) return true
+    if (f.value.kind === 'ref') return 'ref'
+    if (f.value.kind === 'enum') return 'enum'
+    if (f.value.kind === 'bool') return 'bool'
+    if (cellRefTargetType(f)) return 'ref'
+    if (cellEnumType(f)) return 'enum'
   }
-  return false
+  return null
 }
 
 function findDiagMessage(
@@ -549,12 +558,6 @@ function EditableCell({
         />
       </div>
     )
-  }
-  // Null cells that aren't editable (no enum/ref/bool schema hint) render
-  // blank in the table — the dc-inspector / graph card still show the
-  // explicit "null" chip via ValueChip.
-  if (value.kind === 'null') {
-    return <div className="cell-edit-wrap" />
   }
   return (
     <div
