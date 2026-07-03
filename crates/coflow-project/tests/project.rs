@@ -406,7 +406,7 @@ outputs:
 }
 
 #[test]
-fn project_config_rejects_old_source_fields_and_missing_env_options() -> TestResult {
+fn project_config_rejects_old_source_fields() -> TestResult {
     let root = temp_project_dir("coflow-project-reject-old-config-model");
     std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
     std::fs::write(root.join("schema/main.cft"), "type Item { value: string; }")
@@ -427,11 +427,6 @@ fn project_config_rejects_old_source_fields_and_missing_env_options() -> TestRes
             "old-lark-sheet",
             "schema: schema/main.cft\nsources:\n  - lark_sheet:\n      app_id: a\n      app_secret: b\n      spreadsheet_token: t\n",
             "unknown field `lark_sheet`",
-        ),
-        (
-            "missing-env",
-            "schema: schema/main.cft\nsources:\n  - path: data.xlsx\n    token: ${COFLOW_MISSING_ENV_FOR_TEST}\n",
-            "environment variable `COFLOW_MISSING_ENV_FOR_TEST` is not set",
         ),
     ] {
         let config = root.join(format!("{name}.yaml"));
@@ -455,6 +450,27 @@ fn project_config_rejects_old_source_fields_and_missing_env_options() -> TestRes
             "case {name} expected `{expected}`, got `{message}`"
         );
     }
+
+    std::fs::remove_dir_all(root).map_err(|err| err.to_string())
+}
+
+#[test]
+fn project_config_preserves_env_like_strings() -> TestResult {
+    let root = temp_project_dir("coflow-project-preserve-env-like-strings");
+    std::fs::create_dir_all(root.join("schema")).map_err(|err| err.to_string())?;
+    std::fs::write(root.join("schema/main.cft"), "type Item { value: string; }")
+        .map_err(|err| err.to_string())?;
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema/main.cft\nsources:\n  - path: data.xlsx\n    token: ${COFLOW_LITERAL_TOKEN}\n",
+    )
+    .map_err(|err| err.to_string())?;
+
+    let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
+    assert_eq!(
+        project.config.sources[0].options["token"],
+        "${COFLOW_LITERAL_TOKEN}"
+    );
 
     std::fs::remove_dir_all(root).map_err(|err| err.to_string())
 }

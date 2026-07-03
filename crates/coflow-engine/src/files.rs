@@ -11,6 +11,9 @@ use std::path::{Path, PathBuf};
 
 use coflow_project::path_to_slash;
 
+const REMOTE_SOURCE_GROUP_NAME: &str = "Remote";
+const REMOTE_SOURCE_GROUP_PATH: &str = "__remote_sources__";
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
@@ -93,6 +96,9 @@ pub fn build_file_tree(
     let mut roots: Vec<FileTreeNode> = Vec::new();
     for parts in files {
         insert_path(&mut roots, &parts, 0, "", in_sources);
+    }
+    for source in in_sources {
+        insert_virtual_source(&mut roots, source);
     }
     sort_tree(&mut roots);
     roots
@@ -246,6 +252,58 @@ fn insert_dimension_path(
     nodes.push(node);
 }
 
+fn insert_virtual_source(nodes: &mut Vec<FileTreeNode>, source: &str) {
+    if nodes.iter().any(|node| contains_path(node, source)) {
+        return;
+    }
+    if is_local_project_path(source) {
+        return;
+    }
+    let group_index = match nodes
+        .iter()
+        .position(|node| node.is_dir && node.path == REMOTE_SOURCE_GROUP_PATH)
+    {
+        Some(index) => index,
+        None => {
+            nodes.push(FileTreeNode {
+                name: REMOTE_SOURCE_GROUP_NAME.to_string(),
+                path: REMOTE_SOURCE_GROUP_PATH.to_string(),
+                is_dir: true,
+                in_sources: true,
+                children: Vec::new(),
+            });
+            nodes.len() - 1
+        }
+    };
+    nodes[group_index].children.push(FileTreeNode {
+        name: virtual_source_name(source),
+        path: source.to_string(),
+        is_dir: false,
+        in_sources: true,
+        children: Vec::new(),
+    });
+}
+
+fn contains_path(node: &FileTreeNode, path: &str) -> bool {
+    node.path == path || node.children.iter().any(|child| contains_path(child, path))
+}
+
+fn is_local_project_path(source: &str) -> bool {
+    !source.contains("://")
+}
+
+fn virtual_source_name(source: &str) -> String {
+    source
+        .split('?')
+        .next()
+        .unwrap_or(source)
+        .split(['/', '\\'])
+        .rev()
+        .find(|part| !part.is_empty())
+        .unwrap_or(source)
+        .to_string()
+}
+
 fn sort_tree(nodes: &mut Vec<FileTreeNode>) {
     nodes.sort_by(|a, b| match (a.is_dir, b.is_dir) {
         (true, false) => std::cmp::Ordering::Less,
@@ -256,5 +314,40 @@ fn sort_tree(nodes: &mut Vec<FileTreeNode>) {
         if !node.children.is_empty() {
             sort_tree(&mut node.children);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_tree_groups_remote_sources_as_virtual_files() {
+        let mut sources = BTreeSet::new();
+        let source =
+            "https://fand3tbr90g.feishu.cn/wiki/F2d0wfnQyizLTAkvuuyciMNqnUe?fromScene=spaceOverview";
+        sources.insert(source.to_string());
+
+        let tree = build_file_tree(
+            Path::new(env!("CARGO_MANIFEST_DIR")),
+            &sources,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+        );
+
+        let remote = tree
+            .iter()
+            .find(|node| node.path == REMOTE_SOURCE_GROUP_PATH)
+            .expect("remote source group is present in the file tree");
+        assert_eq!(remote.name, REMOTE_SOURCE_GROUP_NAME);
+        assert!(remote.is_dir);
+        assert!(remote.in_sources);
+        assert_eq!(remote.children.len(), 1);
+
+        let node = &remote.children[0];
+        assert_eq!(node.path, source);
+        assert_eq!(node.name, "F2d0wfnQyizLTAkvuuyciMNqnUe");
+        assert!(!node.is_dir);
+        assert!(node.in_sources);
     }
 }

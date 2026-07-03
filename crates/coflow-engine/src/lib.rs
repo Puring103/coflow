@@ -239,7 +239,7 @@ impl ProjectSession {
             in_sources: BTreeSet::new(),
         };
         for source in self.files.source_files() {
-            options.in_sources.insert(path_to_slash(Path::new(source)));
+            options.in_sources.insert(display_source_path(source));
         }
         for info in self.dimensions() {
             if let Some(out_dir) = info.out_dir.as_ref() {
@@ -1230,6 +1230,11 @@ fn configured_source(project: &Project, source: &SourceConfig) -> ResolvedSource
     }
 }
 
+#[must_use]
+pub fn configured_project_source(project: &Project, source: &SourceConfig) -> ResolvedSource {
+    configured_source(project, source)
+}
+
 fn display_path_for(project: &Project, source: &ResolvedSource) -> String {
     match &source.location {
         SourceLocationSpec::Path(path) => {
@@ -1239,6 +1244,14 @@ fn display_path_for(project: &Project, source: &ResolvedSource) -> String {
             path_to_slash(relative)
         }
         SourceLocationSpec::Uri(uri) => uri.clone(),
+    }
+}
+
+fn display_source_path(source: &str) -> String {
+    if source.contains("://") {
+        source.to_string()
+    } else {
+        path_to_slash(Path::new(source))
     }
 }
 

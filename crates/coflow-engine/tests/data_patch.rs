@@ -895,6 +895,100 @@ fn direct_insert_rejects_missing_ref_target_before_file_write() {
 }
 
 #[test]
+fn json_patch_insert_accepts_ref_object_form() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-json-ref-object-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema.cft"),
+        "type Item { name: string; } type Holder { item: &Item; }\n",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("records.cfd"),
+        "Item { sword { name: Sword } }\n",
+    )
+    .expect("write data");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema.cft\nsources:\n  - path: data/records.cfd\n",
+    )
+    .expect("write config");
+    let (mut session, registry) = session(&root);
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![DataPatchOp::InsertRecord {
+                    file: "data/records.cfd".to_string(),
+                    sheet: None,
+                    actual_type: "Holder".to_string(),
+                    key: "main".to_string(),
+                    materialization: DefaultMaterialization::Minimal,
+                    fields: serde_json::from_value(json!({
+                        "item": { "$ref": "sword" }
+                    }))
+                    .expect("fields map"),
+                }],
+            },
+        )
+        .expect("patch applies");
+    assert!(report.write_ok, "{report:?}");
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn data_patch_report_includes_remaining_ops_after_failure() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-patch-remaining-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_shape_annotation_project(&root);
+    let (mut session, registry) = session(&root);
+    let report = session
+        .apply_data_patch(
+            &registry,
+            DataPatchRequest {
+                check_after_write: true,
+                stop_on_write_error: true,
+                ops: vec![
+                    DataPatchOp::InsertRecord {
+                        file: "data/records.cfd".to_string(),
+                        sheet: None,
+                        actual_type: "Holder".to_string(),
+                        key: "bad".to_string(),
+                        materialization: DefaultMaterialization::Minimal,
+                        fields: serde_json::from_value(json!({ "owner": "ghost" }))
+                            .expect("fields map"),
+                    },
+                    DataPatchOp::InsertRecord {
+                        file: "data/records.cfd".to_string(),
+                        sheet: None,
+                        actual_type: "Item".to_string(),
+                        key: "later".to_string(),
+                        materialization: DefaultMaterialization::Minimal,
+                        fields: serde_json::from_value(json!({ "name": "Later" }))
+                            .expect("fields map"),
+                    },
+                ],
+            },
+        )
+        .expect("patch reports failure");
+
+    assert!(!report.write_ok);
+    assert_eq!(report.remaining_ops.len(), 2);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn direct_insert_allows_self_references() {
     let root = std::env::temp_dir().join(format!(
         "coflow-direct-insert-self-ref-{}",

@@ -155,6 +155,14 @@ fn run_data(command: &DataArgs) -> Result<bool, String> {
             args.sheet.clone(),
             args.human,
         ),
+        DataCommand::CreateTable(args) => data_commands::create_table(
+            args.config_or_dir.as_deref(),
+            args.source.clone(),
+            args.actual_type.clone(),
+            args.provider.clone(),
+            args.sheet.clone(),
+            args.human,
+        ),
         DataCommand::SyncHeader(args) => data_commands::sync_header(
             args.config_or_dir.as_deref(),
             args.file.clone(),
@@ -418,6 +426,8 @@ enum DataCommand {
     Patch(DataPatchArgs),
     /// Create a local data file, including table headers when applicable.
     CreateFile(DataCreateFileArgs),
+    /// Create a sheet/table in a table source and write its header.
+    CreateTable(DataCreateTableArgs),
     /// Synchronize local data file columns with the latest schema.
     SyncHeader(DataSyncHeaderArgs),
     /// Write a configured local CFD data file from stdin.
@@ -510,6 +520,27 @@ struct DataCreateFileArgs {
     #[arg(long, value_name = "PROVIDER")]
     provider: Option<String>,
     /// Sheet name for Excel/table sources.
+    #[arg(long, value_name = "SHEET")]
+    sheet: Option<String>,
+    /// Emit human-readable text instead of JSON.
+    #[arg(long)]
+    human: bool,
+}
+
+#[derive(Debug, Args)]
+struct DataCreateTableArgs {
+    #[arg(value_name = "CONFIG_OR_DIR")]
+    config_or_dir: Option<PathBuf>,
+    /// Project-relative Excel file or configured remote source URI.
+    #[arg(long, value_name = "SOURCE")]
+    source: String,
+    /// Concrete record type for table headers.
+    #[arg(long = "type", value_name = "TYPE")]
+    actual_type: Option<String>,
+    /// Table provider: excel or lark-sheet.
+    #[arg(long, value_name = "PROVIDER")]
+    provider: Option<String>,
+    /// Sheet name to create.
     #[arg(long, value_name = "SHEET")]
     sheet: Option<String>,
     /// Emit human-readable text instead of JSON.

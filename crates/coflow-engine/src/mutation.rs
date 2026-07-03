@@ -821,8 +821,7 @@ fn coerce_json_value(
                 .map(CfdValue::Array)
         }
         CftSchemaTypeRef::Dict(key, item) => coerce_json_dict_value(session, key, item, value),
-        CftSchemaTypeRef::Ref(target_type) => value
-            .as_str()
+        CftSchemaTypeRef::Ref(target_type) => json_ref_key(value)
             .map(|key| CfdValue::Ref(key.to_string()))
             .ok_or_else(|| one_value_error(format!("expected record key for `&{target_type}`"))),
         CftSchemaTypeRef::Named(name) if session.schema.has_enum(name) => {
@@ -833,6 +832,17 @@ fn coerce_json_value(
         }
         CftSchemaTypeRef::Named(name) => coerce_json_named_value(session, name, value),
     }
+}
+
+fn json_ref_key(value: &Value) -> Option<&str> {
+    if let Some(key) = value.as_str() {
+        return Some(key);
+    }
+    let object = value.as_object()?;
+    if object.len() != 1 {
+        return None;
+    }
+    object.get("$ref")?.as_str()
 }
 
 fn coerce_cfd_value(

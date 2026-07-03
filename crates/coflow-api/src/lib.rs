@@ -509,6 +509,7 @@ pub struct WriterCapabilities {
     pub can_edit_key: bool,
     pub can_insert_record: bool,
     pub can_delete_record: bool,
+    pub can_create_table: bool,
     pub requires_full_refresh_after_write: bool,
     pub is_remote: bool,
 }
@@ -522,6 +523,7 @@ impl WriterCapabilities {
             can_edit_key: false,
             can_insert_record: false,
             can_delete_record: false,
+            can_create_table: false,
             requires_full_refresh_after_write: false,
             is_remote: false,
         }
@@ -535,6 +537,7 @@ impl WriterCapabilities {
             can_edit_key: true,
             can_insert_record: true,
             can_delete_record: true,
+            can_create_table: true,
             requires_full_refresh_after_write: true,
             is_remote: false,
         }
@@ -548,6 +551,7 @@ impl WriterCapabilities {
             can_edit_key: true,
             can_insert_record: false,
             can_delete_record: false,
+            can_create_table: false,
             requires_full_refresh_after_write: true,
             is_remote: true,
         }
@@ -588,6 +592,16 @@ pub struct InsertRecordRequest<'a> {
     pub record_key: &'a str,
     pub actual_type: &'a str,
     pub fields: &'a BTreeMap<String, CfdValue>,
+    pub schema: &'a CftContainer,
+}
+
+/// Request describing a table/sheet creation with schema-derived headers.
+#[derive(Debug, Clone)]
+pub struct CreateTableRequest<'a> {
+    pub source: &'a ResolvedSource,
+    pub sheet: &'a str,
+    pub actual_type: &'a str,
+    pub headers: &'a [String],
     pub schema: &'a CftContainer,
 }
 
@@ -702,6 +716,24 @@ pub trait DataWriter: Send + Sync {
             "WRITE-UNSUPPORTED",
             "WRITE",
             "writer does not support inserting records",
+        )))
+    }
+
+    /// Create a table/sheet and write its header row.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the writer cannot create tables for this
+    /// source or when the provider rejects the requested sheet/header.
+    fn create_table(
+        &self,
+        _ctx: WriteContext<'_>,
+        _request: &CreateTableRequest<'_>,
+    ) -> Result<WriteOutcome, DiagnosticSet> {
+        Err(DiagnosticSet::one(Diagnostic::error(
+            "WRITE-UNSUPPORTED",
+            "WRITE",
+            "writer does not support creating tables",
         )))
     }
 

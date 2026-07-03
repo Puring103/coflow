@@ -69,6 +69,8 @@ pub struct DataPatchReport {
     pub check_ok: bool,
     pub applied: Vec<DataPatchAppliedOp>,
     pub failed: Vec<DataPatchFailedOp>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub remaining_ops: Vec<DataPatchOp>,
     pub diagnostics: Vec<FlatDiagnostic>,
 }
 
@@ -108,8 +110,10 @@ impl ProjectSession {
         registry: &ProviderRegistry,
         request: DataPatchRequest,
     ) -> Result<DataPatchReport, DiagnosticSet> {
-        let mutation_report = self.apply_mutation(registry, request.into_mutation_request())?;
-        Ok(mutation_report.into_data_patch_report())
+        let mutation_request = request.clone().into_mutation_request();
+        let mutation_report = self.apply_mutation(registry, mutation_request)?;
+        let remaining_ops = request.remaining_after_failure(&mutation_report);
+        Ok(mutation_report.into_data_patch_report(remaining_ops))
     }
 }
 
@@ -124,6 +128,18 @@ impl DataPatchRequest {
                 .map(DataPatchOp::into_mutation_op)
                 .collect(),
         }
+    }
+
+    fn remaining_after_failure(&self, report: &MutationReport) -> Vec<DataPatchOp> {
+        let Some(first_failed) = report.failed.first() else {
+            return Vec::new();
+        };
+        self.ops
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index >= first_failed.index)
+            .map(|(_, op)| op.clone())
+            .collect()
     }
 }
 
@@ -180,7 +196,7 @@ impl PatchRecordSelector {
 }
 
 impl MutationReport {
-    fn into_data_patch_report(self) -> DataPatchReport {
+    fn into_data_patch_report(self, remaining_ops: Vec<DataPatchOp>) -> DataPatchReport {
         DataPatchReport {
             write_ok: self.write_ok,
             check_ok: self.check_ok,
@@ -194,6 +210,7 @@ impl MutationReport {
                 .into_iter()
                 .map(MutationFailedOp::into_data_patch_failed)
                 .collect(),
+            remaining_ops,
             diagnostics: self.diagnostics,
         }
     }

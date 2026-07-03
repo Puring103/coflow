@@ -172,7 +172,6 @@ impl<'de> Deserialize<'de> for SourceConfig {
                 ))
             }
         };
-        expand_env_in_object(&mut fields).map_err(de::Error::custom)?;
         Ok(Self {
             source_type,
             location,
@@ -199,7 +198,6 @@ impl<'de> Deserialize<'de> for OutputConfig {
             .transpose()
             .map_err(de::Error::custom)?
             .ok_or_else(|| de::Error::custom("output must set `dir`"))?;
-        expand_env_in_object(&mut fields).map_err(de::Error::custom)?;
         Ok(Self {
             output_type,
             dir,
@@ -345,36 +343,6 @@ fn url_value(value: Value) -> Result<String, String> {
         return Err("source `url` must be a string".to_string());
     };
     Ok(value)
-}
-
-fn expand_env_in_object(fields: &mut Map<String, Value>) -> Result<(), String> {
-    for value in fields.values_mut() {
-        expand_env_in_value(value)?;
-    }
-    Ok(())
-}
-
-fn expand_env_in_value(value: &mut Value) -> Result<(), String> {
-    match value {
-        Value::String(text) => {
-            if let Some(env_name) = env_reference_name(text) {
-                *text = std::env::var(env_name)
-                    .map_err(|_| format!("environment variable `{env_name}` is not set"))?;
-            }
-        }
-        Value::Array(items) => {
-            for item in items {
-                expand_env_in_value(item)?;
-            }
-        }
-        Value::Object(object) => expand_env_in_object(object)?,
-        Value::Null | Value::Bool(_) | Value::Number(_) => {}
-    }
-    Ok(())
-}
-
-fn env_reference_name(value: &str) -> Option<&str> {
-    value.strip_prefix("${")?.strip_suffix('}')
 }
 
 #[derive(Debug, Clone)]

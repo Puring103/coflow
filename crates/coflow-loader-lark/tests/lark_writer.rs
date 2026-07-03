@@ -42,6 +42,13 @@ impl ScriptedResponse {
             body,
         }
     }
+    const fn put(url_contains: &'static str, body: &'static str) -> Self {
+        Self {
+            method: "PUT",
+            url_contains,
+            body,
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -125,6 +132,14 @@ impl LarkHttpClient for ScriptedClient {
     ) -> Result<String, String> {
         self.next_json("DELETE", url, body)
     }
+    fn put_json(
+        &self,
+        url: &str,
+        body: &Value,
+        _tenant_access_token: &str,
+    ) -> Result<String, String> {
+        self.next_json("PUT", url, body)
+    }
 }
 
 fn lark_origin() -> RecordOrigin {
@@ -148,6 +163,30 @@ fn lark_source() -> ResolvedSource {
             "app_secret": "secret_test"
         }),
         display_name: "lark:sht_test".to_string(),
+    }
+}
+
+fn lark_wiki_source() -> ResolvedSource {
+    ResolvedSource {
+        provider_id: "lark-sheet".to_string(),
+        location: SourceLocationSpec::Uri("https://example.feishu.cn/wiki/wiki_token".to_string()),
+        options: serde_json::json!({
+            "app_id": "cli_test",
+            "app_secret": "secret_test"
+        }),
+        display_name: "https://example.feishu.cn/wiki/wiki_token".to_string(),
+    }
+}
+
+fn lark_wiki_origin() -> RecordOrigin {
+    let mut field_columns = BTreeMap::new();
+    field_columns.insert(vec!["name".to_string()], 2);
+    RecordOrigin::Table {
+        document: SourceDocument::Remote("https://example.feishu.cn/wiki/wiki_token".to_string()),
+        sheet: "Items".to_string(),
+        row: 2,
+        id_column: 1,
+        field_columns,
     }
 }
 
@@ -205,6 +244,56 @@ fn writes_cell_with_full_handshake_then_caches() {
     assert!(calls[0].1.contains("tenant_access_token"));
     assert!(calls[1].1.contains("/sheets/query"));
     assert!(calls[2].1.contains("values_batch_update"));
+    assert!(calls[3].1.contains("values_batch_update"));
+}
+
+#[test]
+fn writes_cell_from_wiki_url_origin() {
+    let client = ScriptedClient::new([
+        ScriptedResponse::post(
+            "auth/v3/tenant_access_token/internal",
+            r#"{"code":0,"tenant_access_token":"tk","expire":7200}"#,
+        ),
+        ScriptedResponse::get(
+            "/wiki/v2/spaces/get_node?token=wiki_token",
+            r#"{"code":0,"data":{"node":{"obj_type":"sheet","obj_token":"sht_test"}}}"#,
+        ),
+        ScriptedResponse::get(
+            "/sheets/v3/spreadsheets/sht_test/sheets/query",
+            r#"{"code":0,"data":{"sheets":[{"sheet_id":"shtid_items","title":"Items","grid_properties":{"row_count":2,"column_count":3}}]}}"#,
+        ),
+        ScriptedResponse::post(
+            "/sheets/v2/spreadsheets/sht_test/values_batch_update",
+            r#"{"code":0,"data":{}}"#,
+        ),
+    ]);
+    let writer = LarkSheetWriter::new(client.clone());
+    let schema = CftContainer::new();
+    let source = lark_wiki_source();
+    let origin = lark_wiki_origin();
+    let new_value = CfdValue::String("New".to_string());
+    let segments = vec![WriteFieldPathSegment::Field("name".to_string())];
+    let request = WriteCellRequest {
+        origin: &origin,
+        record_key: "sword",
+        actual_type: "Item",
+        field_path: &segments,
+        new_value: &new_value,
+        schema: &schema,
+        source: &source,
+    };
+    let ctx = WriteContext {
+        project_root: std::path::Path::new("."),
+        schema: &schema,
+        model: None,
+    };
+
+    writer.write_field(ctx, &request).expect("write wiki row");
+
+    assert_eq!(client.remaining(), 0);
+    let calls = client.calls();
+    assert_eq!(calls.len(), 4);
+    assert!(calls[1].1.contains("/wiki/v2/spaces/get_node"));
     assert!(calls[3].1.contains("values_batch_update"));
 }
 
@@ -373,6 +462,115 @@ fn inserts_record_by_appending_lark_row() {
             }
         })
     );
+}
+
+#[test]
+fn inserts_record_from_wiki_url_source() {
+    let client = ScriptedClient::new([
+        ScriptedResponse::post(
+            "auth/v3/tenant_access_token/internal",
+            r#"{"code":0,"tenant_access_token":"tk","expire":7200}"#,
+        ),
+        ScriptedResponse::get(
+            "/wiki/v2/spaces/get_node?token=wiki_token",
+            r#"{"code":0,"data":{"node":{"obj_type":"sheet","obj_token":"sht_test"}}}"#,
+        ),
+        ScriptedResponse::get(
+            "/sheets/v3/spreadsheets/sht_test/sheets/query",
+            r#"{"code":0,"data":{"sheets":[{"sheet_id":"shtid_items","title":"Items","grid_properties":{"row_count":2,"column_count":3}}]}}"#,
+        ),
+        ScriptedResponse::get(
+            "/sheets/v2/spreadsheets/sht_test/values/shtid_items%21A1%3AIV1?valueRenderOption=ToString",
+            r#"{"code":0,"data":{"valueRange":{"values":[["id","name","power"]]}}}"#,
+        ),
+        ScriptedResponse::post(
+            "/sheets/v2/spreadsheets/sht_test/values_append",
+            r#"{"code":0,"data":{}}"#,
+        ),
+    ]);
+    let writer = LarkSheetWriter::new(client.clone());
+    let schema = item_schema();
+    let source = lark_wiki_source();
+    let fields = BTreeMap::from([
+        ("name".to_string(), CfdValue::String("Blade".to_string())),
+        ("power".to_string(), CfdValue::Int(7)),
+    ]);
+    let request = InsertRecordRequest {
+        source: &source,
+        sheet: Some("Items"),
+        record_key: "blade",
+        actual_type: "Item",
+        fields: &fields,
+        schema: &schema,
+    };
+    let ctx = WriteContext {
+        project_root: std::path::Path::new("."),
+        schema: &schema,
+        model: None,
+    };
+
+    writer.insert_record(ctx, &request).expect("insert row");
+
+    assert_eq!(client.remaining(), 0);
+}
+
+#[test]
+fn creates_lark_sheet_and_writes_header() {
+    let client = ScriptedClient::new([
+        ScriptedResponse::post(
+            "auth/v3/tenant_access_token/internal",
+            r#"{"code":0,"tenant_access_token":"tk","expire":7200}"#,
+        ),
+        ScriptedResponse::get(
+            "/sheets/v3/spreadsheets/sht_test/sheets/query",
+            r#"{"code":0,"data":{"sheets":[{"sheet_id":"shtid_other","title":"Other","grid_properties":{"row_count":1,"column_count":1}}]}}"#,
+        ),
+        ScriptedResponse::post(
+            "/sheets/v2/spreadsheets/sht_test/sheets_batch_update",
+            r#"{"code":0,"data":{}}"#,
+        ),
+        ScriptedResponse::get(
+            "/sheets/v3/spreadsheets/sht_test/sheets/query",
+            r#"{"code":0,"data":{"sheets":[{"sheet_id":"shtid_items","title":"Items","grid_properties":{"row_count":1,"column_count":3}}]}}"#,
+        ),
+        ScriptedResponse::put(
+            "/sheets/v2/spreadsheets/sht_test/values",
+            r#"{"code":0,"data":{}}"#,
+        ),
+    ]);
+    let writer = LarkSheetWriter::new(client.clone());
+    let schema = item_schema();
+    let source = lark_source();
+    let headers = vec!["id".to_string(), "name".to_string(), "power".to_string()];
+    let request = coflow_api::CreateTableRequest {
+        source: &source,
+        sheet: "Items",
+        actual_type: "Item",
+        headers: &headers,
+        schema: &schema,
+    };
+    let ctx = WriteContext {
+        project_root: std::path::Path::new("."),
+        schema: &schema,
+        model: None,
+    };
+
+    writer.create_table(ctx, &request).expect("create table");
+
+    let calls = client.calls();
+    let Some((_, _, Some(body))) = calls.iter().find(|(_, url, _)| url.contains("/values")) else {
+        panic!("values body should be recorded");
+    };
+    assert_eq!(
+        body,
+        &serde_json::json!({
+            "valueRange": {
+                "range": "shtid_items!A1:C1",
+                "values": [["id", "name", "power"]],
+            }
+        })
+    );
+    assert_eq!(client.remaining(), 0);
 }
 
 #[test]
