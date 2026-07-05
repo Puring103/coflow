@@ -673,25 +673,29 @@ impl<'a> SchemaCompiler<'a> {
         field: &FieldDef,
         owner_is_sealed: bool,
     ) {
+        let localized = find_annotation(&field.annotations, "localized");
+        let dimension = find_annotation(&field.annotations, "dimension");
         if owner_is_sealed {
-            if let Some(annotation) = find_annotation(&field.annotations, "localized") {
+            if let Some(annotation) = localized {
                 self.push_diag(
                     CftErrorCode::LocalizedOnInvalidTarget,
                     module,
                     annotation.span,
                     "@localized can only appear on top-level type fields, not inside sealed types",
                 );
+                return;
             }
-            if let Some(annotation) = find_annotation(&field.annotations, "dimension") {
+            if let Some(annotation) = dimension {
                 self.push_diag(
-                    CftErrorCode::LocalizedOnInvalidTarget,
+                    CftErrorCode::DimensionOnInvalidTarget,
                     module,
                     annotation.span,
                     "@dimension can only appear on top-level type fields, not inside sealed types",
                 );
+                return;
             }
         }
-        if let Some(annotation) = find_annotation(&field.annotations, "localized") {
+        if let Some(annotation) = localized {
             if let Some(AnnotationArg::String(bucket, span)) = annotation.args.first() {
                 if !crate::is_cft_identifier(bucket) {
                     self.push_diag(
@@ -703,22 +707,19 @@ impl<'a> SchemaCompiler<'a> {
                 }
             }
         }
-        if let Some(annotation) = find_annotation(&field.annotations, "dimension") {
-            if let Some(AnnotationArg::String(dimension, span)) = annotation.args.first() {
-                if !crate::is_cft_identifier(dimension) {
+        if let Some(annotation) = dimension {
+            if let Some(AnnotationArg::String(dim_name, span)) = annotation.args.first() {
+                if !crate::is_cft_identifier(dim_name) {
                     self.push_diag(
-                        CftErrorCode::LocalizedBucketNotIdentifier,
+                        CftErrorCode::DimensionNameNotIdentifier,
                         module,
                         *span,
-                        format!("@dimension name `{dimension}` is not a valid CFT identifier"),
+                        format!("@dimension name `{dim_name}` is not a valid CFT identifier"),
                     );
                 }
             }
         }
-        if let (Some(localized), Some(_dimension)) = (
-            find_annotation(&field.annotations, "localized"),
-            find_annotation(&field.annotations, "dimension"),
-        ) {
+        if let (Some(localized), Some(_dimension)) = (localized, dimension) {
             self.push_diag(
                 CftErrorCode::DuplicateAnnotation,
                 module,

@@ -1,6 +1,6 @@
 use crate::{
     CftConstValue, CftContainer, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
-    CftSchemaCheckStmt, CftSchemaEnum, CftSchemaType, CftSchemaTypeRef, Dimension, DimensionSpec,
+    CftSchemaCheckStmt, CftSchemaEnum, CftSchemaType, CftSchemaTypeRef,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -9,7 +9,6 @@ pub struct CftSchemaView {
     pub consts: BTreeMap<String, CftConstValue>,
     pub types: BTreeMap<String, CftTypeMeta>,
     pub enums: BTreeMap<String, CftEnumMeta>,
-    inheritance: BTreeMap<String, Option<String>>,
 }
 
 impl CftSchemaView {
@@ -32,11 +31,9 @@ impl CftSchemaView {
             })
             .collect::<BTreeMap<_, _>>();
 
-        let mut inheritance = BTreeMap::new();
         let types = schema
             .all_types()
             .map(|schema_type| {
-                inheritance.insert(schema_type.name.clone(), schema_type.parent.clone());
                 let meta = CftTypeMeta::from_schema(schema_type);
                 (meta.name.clone(), meta)
             })
@@ -46,7 +43,6 @@ impl CftSchemaView {
             consts,
             types,
             enums,
-            inheritance,
         };
         view.populate_dimension_checks();
         view
@@ -54,13 +50,43 @@ impl CftSchemaView {
 
     fn populate_dimension_checks(&mut self) {
         let names = self.types.keys().cloned().collect::<Vec<_>>();
-        let updates = names
-            .iter()
-            .map(|name| (name.clone(), self.dimension_checks_for_type(name)))
-            .collect::<Vec<_>>();
-        for (name, dimension_checks) in updates {
-            if let Some(meta) = self.types.get_mut(&name) {
-                meta.dimension_checks = dimension_checks;
+        for name in &names {
+            let checks = self.dimension_checks_for_type(name);
+            if let Some(meta) = self.types.get_mut(name) {
+                meta.dimension_checks = checks;
+            }
+        }
+        // Merge ancestor dimension checks downward so child types inherit them.
+        // Iterate in topological order (parents before children) by walking the
+        // ancestor chain; a simple pass over all names is sufficient because
+        // inheritance cycles are already rejected by the compiler.
+        for name in &names {
+            let mut chain: Vec<String> = Vec::new();
+            let mut current = self
+                .types
+                .get(name.as_str())
+                .and_then(|m| m.parent.clone());
+            while let Some(parent_name) = current {
+                chain.push(parent_name.clone());
+                current = self
+                    .types
+                    .get(parent_name.as_str())
+                    .and_then(|m| m.parent.clone());
+            }
+            // Collect parent dimension checks (outermost ancestor first).
+            chain.reverse();
+            let mut merged: BTreeMap<String, CftSchemaCheckBlock> = BTreeMap::new();
+            for ancestor in &chain {
+                if let Some(meta) = self.types.get(ancestor.as_str()) {
+                    for (dim, block) in &meta.dimension_checks {
+                        merged.entry(dim.clone()).or_insert_with(|| block.clone());
+                    }
+                }
+            }
+            if let Some(meta) = self.types.get_mut(name.as_str()) {
+                for (dim, block) in merged {
+                    meta.dimension_checks.entry(dim).or_insert(block);
+                }
             }
         }
     }
@@ -105,9 +131,9 @@ impl CftSchemaView {
                 return true;
             }
             current = self
-                .inheritance
+                .types
                 .get(name)
-                .and_then(|parent| parent.as_deref());
+                .and_then(|meta| meta.parent.as_deref());
         }
         false
     }
@@ -140,12 +166,19 @@ impl CftSchemaView {
         dimension: Option<&str>,
     ) -> Vec<CftSchemaCheckBlock> {
         if let Some(dimension) = dimension {
-            return self
-                .types
-                .get(actual_type)
-                .and_then(|meta| meta.dimension_checks.get(dimension))
-                .cloned()
+            let mut chain = Vec::new();
+            let mut current = Some(actual_type);
+            while let Some(name) = current {
+                let Some(meta) = self.types.get(name) else {
+                    break;
+                };
+                chain.push(meta);
+                current = meta.parent.as_deref();
+            }
+            chain.reverse();
+            return chain
                 .into_iter()
+                .filter_map(|meta| meta.dimension_checks.get(dimension).cloned())
                 .collect();
         }
         let mut chain = Vec::new();
@@ -201,10 +234,10 @@ pub struct CftDimensionFieldMeta {
 impl CftTypeMeta {
     fn from_schema(schema_type: &CftSchemaType) -> Self {
         let dimension_fields = schema_type
-            .fields
+            .all_fields
             .iter()
             .filter_map(|field| {
-                let dimension = dimension_name(field.dimension.as_ref())?;
+                let dimension = field.dimension.as_ref().map(|d| d.kind.name())?;
                 Some((
                     field.name.clone(),
                     CftDimensionFieldMeta {
@@ -464,9 +497,10 @@ impl<'a> DimensionCheckAnalyzer<'a> {
     }
 
     fn call_usage(&mut self, name: &str, args: &[CftSchemaCheckExpr]) -> ExprUsage {
+        let arg_usages: Vec<ExprUsage> = args.iter().map(|arg| self.expr_usage(arg)).collect();
         let mut dimensions = BTreeSet::new();
-        for arg in args {
-            dimensions.extend(self.expr_usage(arg).dimensions);
+        for usage in &arg_usages {
+            dimensions.extend(usage.dimensions.iter().cloned());
         }
         let ty = if self.schema.enums.contains_key(name) {
             CheckTy::Enum(name.to_string())
@@ -474,14 +508,14 @@ impl<'a> DimensionCheckAnalyzer<'a> {
             match name {
                 "len" => CheckTy::Int,
                 "contains" | "isUnique" | "matches" => CheckTy::Bool,
-                "keys" => args.first().map_or(CheckTy::Unknown, |arg| {
-                    match self.expr_usage(arg).ty.unwrap_nullable() {
+                "keys" => arg_usages.first().map_or(CheckTy::Unknown, |usage| {
+                    match usage.ty.unwrap_nullable() {
                         CheckTy::Dict(key, _) => CheckTy::Array(key.clone()),
                         _ => CheckTy::Unknown,
                     }
                 }),
-                "values" => args.first().map_or(CheckTy::Unknown, |arg| {
-                    match self.expr_usage(arg).ty.unwrap_nullable() {
+                "values" => arg_usages.first().map_or(CheckTy::Unknown, |usage| {
+                    match usage.ty.unwrap_nullable() {
                         CheckTy::Dict(_, value) => CheckTy::Array(value.clone()),
                         _ => CheckTy::Unknown,
                     }
@@ -544,12 +578,5 @@ fn const_to_check_ty(value: &CftConstValue) -> CheckTy {
         CftConstValue::Float(_) => CheckTy::Float,
         CftConstValue::Bool(_) => CheckTy::Bool,
         CftConstValue::String(_) => CheckTy::String,
-    }
-}
-
-fn dimension_name(dimension: Option<&DimensionSpec>) -> Option<&str> {
-    match &dimension?.kind {
-        Dimension::Localized => Some("language"),
-        Dimension::Custom(name) => Some(name.as_str()),
     }
 }

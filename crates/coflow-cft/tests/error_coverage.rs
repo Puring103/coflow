@@ -375,6 +375,20 @@ fn cases() -> Vec<Case> {
             codes: &[CftErrorCode::LocalizedBucketNotIdentifier],
         },
         Case {
+            name: "dimension on invalid target (sealed type field)",
+            phase: Phase::Compile,
+            source: "sealed type A { @dimension(\"platform\") name: string; }",
+            adjacent_valid_source: "type A { @dimension(\"platform\") name: string; }",
+            codes: &[CftErrorCode::DimensionOnInvalidTarget],
+        },
+        Case {
+            name: "dimension name must be identifier",
+            phase: Phase::Compile,
+            source: r#"type A { @dimension("bad-name") name: string; }"#,
+            adjacent_valid_source: r#"type A { @dimension("platform") name: string; }"#,
+            codes: &[CftErrorCode::DimensionNameNotIdentifier],
+        },
+        Case {
             name: "singleton on abstract type",
             phase: Phase::Compile,
             source: "@singleton abstract type A {}",

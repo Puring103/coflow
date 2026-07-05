@@ -65,6 +65,18 @@ pub enum Dimension {
     Custom(String),
 }
 
+impl Dimension {
+    /// Returns the canonical dimension name used as a key in variant maps and
+    /// synthesized type names.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Localized => "language",
+            Self::Custom(name) => name.as_str(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DimensionSpec {
     pub kind: Dimension,
