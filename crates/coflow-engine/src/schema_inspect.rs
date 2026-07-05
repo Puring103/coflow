@@ -336,10 +336,7 @@ fn const_value_info(value: &CftConstValue) -> SchemaConstValueInfo {
 }
 
 fn dimension_name(dimension: &Dimension) -> String {
-    match dimension {
-        Dimension::Localized => "localized".to_string(),
-        Dimension::Custom(name) => name.clone(),
-    }
+    dimension.name().to_string()
 }
 
 fn flat_schema_diagnostics(session: &ProjectSchemaSession) -> Vec<FlatDiagnostic> {

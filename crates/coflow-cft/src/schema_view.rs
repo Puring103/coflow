@@ -56,39 +56,6 @@ impl CftSchemaView {
                 meta.dimension_checks = checks;
             }
         }
-        // Merge ancestor dimension checks downward so child types inherit them.
-        // Iterate in topological order (parents before children) by walking the
-        // ancestor chain; a simple pass over all names is sufficient because
-        // inheritance cycles are already rejected by the compiler.
-        for name in &names {
-            let mut chain: Vec<String> = Vec::new();
-            let mut current = self
-                .types
-                .get(name.as_str())
-                .and_then(|m| m.parent.clone());
-            while let Some(parent_name) = current {
-                chain.push(parent_name.clone());
-                current = self
-                    .types
-                    .get(parent_name.as_str())
-                    .and_then(|m| m.parent.clone());
-            }
-            // Collect parent dimension checks (outermost ancestor first).
-            chain.reverse();
-            let mut merged: BTreeMap<String, CftSchemaCheckBlock> = BTreeMap::new();
-            for ancestor in &chain {
-                if let Some(meta) = self.types.get(ancestor.as_str()) {
-                    for (dim, block) in &meta.dimension_checks {
-                        merged.entry(dim.clone()).or_insert_with(|| block.clone());
-                    }
-                }
-            }
-            if let Some(meta) = self.types.get_mut(name.as_str()) {
-                for (dim, block) in merged {
-                    meta.dimension_checks.entry(dim).or_insert(block);
-                }
-            }
-        }
     }
 
     fn dimension_checks_for_type(&self, type_name: &str) -> BTreeMap<String, CftSchemaCheckBlock> {
@@ -166,19 +133,12 @@ impl CftSchemaView {
         dimension: Option<&str>,
     ) -> Vec<CftSchemaCheckBlock> {
         if let Some(dimension) = dimension {
-            let mut chain = Vec::new();
-            let mut current = Some(actual_type);
-            while let Some(name) = current {
-                let Some(meta) = self.types.get(name) else {
-                    break;
-                };
-                chain.push(meta);
-                current = meta.parent.as_deref();
-            }
-            chain.reverse();
-            return chain
+            return self
+                .types
+                .get(actual_type)
+                .and_then(|meta| meta.dimension_checks.get(dimension))
+                .cloned()
                 .into_iter()
-                .filter_map(|meta| meta.dimension_checks.get(dimension).cloned())
                 .collect();
         }
         let mut chain = Vec::new();

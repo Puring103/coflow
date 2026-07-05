@@ -126,7 +126,7 @@ DamageEffect {
 
   eff_execute_damage {
     damage: { lo: 999, hi: 999 },
-    target: Single,
+    target: Random,
     pierce_divine: false,
   }
 
@@ -138,7 +138,7 @@ DamageEffect {
 
   eff_ysera_awakens_damage {
     damage: { lo: 5, hi: 5 },
-    target: All,
+    target: Friendly,
     pierce_divine: false,
   }
 }

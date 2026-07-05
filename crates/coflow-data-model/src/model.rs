@@ -1,7 +1,7 @@
 use crate::diagnostic::{CfdPath, CfdPathSegment};
 use crate::origin::RecordOrigin;
 use crate::{compiler::ModelCompiler, CfdDiagnostics};
-use coflow_cft::{CftAnnotationValue, CftContainer, CftSchemaTypeRef, Dimension};
+use coflow_cft::{CftAnnotationValue, CftContainer, CftEnumValueMeta, CftSchemaTypeRef};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -303,7 +303,7 @@ impl CfdDataModel {
         let Some(field_dimension) = field.dimension.as_ref() else {
             return Err(DimensionFieldLookupError::NotDimensional);
         };
-        if dimension_name(&field_dimension.kind) != dimension {
+        if field_dimension.kind.name() != dimension {
             return Err(DimensionFieldLookupError::DimensionMismatch);
         }
         let storage_type = dimension_storage_type(schema, dimension, actual_type, field_name)
@@ -511,12 +511,6 @@ impl CfdDataModel {
     }
 }
 
-fn dimension_name(dimension: &Dimension) -> &str {
-    match dimension {
-        Dimension::Localized => "language",
-        Dimension::Custom(name) => name.as_str(),
-    }
-}
 
 fn dimension_storage_type<'a>(
     schema: &'a CftContainer,
@@ -930,6 +924,16 @@ impl Hash for CfdEnumValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.enum_name.hash(state);
         self.value.hash(state);
+    }
+}
+
+impl From<CftEnumValueMeta> for CfdEnumValue {
+    fn from(meta: CftEnumValueMeta) -> Self {
+        Self {
+            enum_name: meta.enum_name,
+            variant: meta.variant,
+            value: meta.value,
+        }
     }
 }
 

@@ -1,7 +1,7 @@
 use coflow_api::{ResolvedSource, SourceLocationSpec};
 use coflow_cft::{
     CftAnnotation, CftAnnotationValue, CftContainer, CftSchemaField, CftSchemaType,
-    CftSchemaTypeRef, Dimension, DimensionSpec, ModuleId, Span,
+    CftSchemaTypeRef, ModuleId, Span,
 };
 use coflow_project::{DimensionConfig, Project};
 use serde_json::{json, Value};
@@ -86,11 +86,11 @@ pub fn dimension_fields(schema: &CftContainer) -> Vec<DimensionField> {
     let mut fields = Vec::new();
     for schema_type in schema.all_types() {
         for field in &schema_type.fields {
-            let Some(dimension) = field.dimension.as_ref().map(dimension_name) else {
+            let Some(dimension) = field.dimension.as_ref() else {
                 continue;
             };
             fields.push(DimensionField {
-                dimension: dimension.to_string(),
+                dimension: dimension.kind.name().to_string(),
                 source_type: schema_type.name.clone(),
                 source_field: field.name.clone(),
                 bucket: field
@@ -104,13 +104,6 @@ pub fn dimension_fields(schema: &CftContainer) -> Vec<DimensionField> {
         }
     }
     fields
-}
-
-const fn dimension_name(dimension: &DimensionSpec) -> &str {
-    match &dimension.kind {
-        Dimension::Localized => "language",
-        Dimension::Custom(name) => name.as_str(),
-    }
 }
 
 fn synthesized_type(

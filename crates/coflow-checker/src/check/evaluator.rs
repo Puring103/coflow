@@ -1215,7 +1215,7 @@ impl<'a> CheckEvaluator<'a> {
                 return Err(EvalAbort::Error);
             };
             let enum_value = match self.schema.enum_value_from_int(name, value) {
-                Some(enum_value) => Self::cfd_enum_value(enum_value),
+                Some(enum_value) => enum_value.into(),
                 None => Self::anonymous_enum_value(name, value),
             };
             return Ok(LocatedCheckValue::value(CheckValue::Enum(enum_value)));
@@ -2147,16 +2147,8 @@ impl<'a> CheckEvaluator<'a> {
 
     fn enum_with_value(&self, enum_name: &str, value: i64) -> CfdEnumValue {
         match self.schema.enum_value_from_int(enum_name, value) {
-            Some(enum_value) => Self::cfd_enum_value(enum_value),
+            Some(enum_value) => enum_value.into(),
             None => Self::anonymous_enum_value(enum_name, value),
-        }
-    }
-
-    fn cfd_enum_value(enum_value: coflow_cft::CftEnumValueMeta) -> CfdEnumValue {
-        CfdEnumValue {
-            enum_name: enum_value.enum_name,
-            variant: enum_value.variant,
-            value: enum_value.value,
         }
     }
 
