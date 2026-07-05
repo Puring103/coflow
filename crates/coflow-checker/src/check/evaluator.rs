@@ -3,15 +3,15 @@ use super::value::{
     comparable_key, dict_key_from_check_value, format_check_key_for_path, values_equal, CheckValue,
     LocatedCheckValue,
 };
-use crate::schema_view::{DimensionFieldMeta, SchemaView};
 use crate::DimensionCheckContext;
 use coflow_cft::{
-    CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
+    CftContainer, CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
     CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind, CftSchemaTypePredicate,
-    CftSchemaTypeRef, CftSchemaUnaryOp,
+    CftSchemaTypeRef, CftSchemaUnaryOp, CftSchemaView,
 };
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdEnumValue, CfdErrorCode, CfdPath, CfdPathSegment, CfdRecordId,
+    DimensionFieldLookupError,
 };
 use regex::Regex;
 use std::collections::{BTreeMap, BTreeSet};
@@ -19,7 +19,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::value::CheckRecordRef;
 
 pub(super) struct CheckEvaluator<'a> {
-    schema: &'a SchemaView,
+    schema: &'a CftSchemaView,
+    source_schema: &'a CftContainer,
     model: &'a CfdDataModel,
     root_record: Option<CfdRecordId>,
     root_path: CfdPath,
@@ -107,7 +108,8 @@ impl CheckExplanation {
 
 impl<'a> CheckEvaluator<'a> {
     pub(super) fn new(
-        schema: &'a SchemaView,
+        schema: &'a CftSchemaView,
+        source_schema: &'a CftContainer,
         model: &'a CfdDataModel,
         root_record: Option<CfdRecordId>,
         root_path: CfdPath,
@@ -125,6 +127,7 @@ impl<'a> CheckEvaluator<'a> {
         }
         Self {
             schema,
+            source_schema,
             model,
             root_record,
             root_path,
@@ -178,59 +181,36 @@ impl<'a> CheckEvaluator<'a> {
         if field.dimension != context_dimension {
             return Ok(());
         }
-        let field = field.clone();
-        let Some(record_key) = dimension_record_key(self.model, record, &field) else {
-            self.diag_at(
-                CfdErrorCode::CheckEvalTypeError,
-                located.path.clone(),
-                format!("维度字段 `{actual_type}.{field_name}` 无法定位合成记录 key"),
-            );
-            return Err(EvalAbort::Error);
+        let CheckRecordRef::Top(source_record_id) = record else {
+            return Ok(());
         };
-        let Some(variant_record_id) = self
-            .model
-            .lookup_assignable(&field.synthesized_type, &record_key)
-        else {
-            self.diag_at(
-                CfdErrorCode::CheckEvalTypeError,
-                located.path.clone(),
-                format!(
-                    "维度字段 `{actual_type}.{field_name}` 缺少合成记录 `{}:{record_key}`",
-                    field.synthesized_type
-                ),
-            );
-            return Err(EvalAbort::Error);
+        let resolved = match self.model.dimension_field_value(
+            self.source_schema,
+            *source_record_id,
+            field_name,
+            &context_dimension,
+            &variant,
+        ) {
+            Ok(resolved) => resolved,
+            Err(err) => {
+                self.diag_at(
+                    CfdErrorCode::CheckEvalTypeError,
+                    located.path.clone(),
+                    dimension_lookup_error_message(actual_type, field_name, &variant, err),
+                );
+                return Err(EvalAbort::Error);
+            }
         };
-        self.note_read_from(variant_record_id);
-        let Some(variant_record) = self.model.record(variant_record_id) else {
-            self.diag_at(
-                CfdErrorCode::CheckEvalTypeError,
-                located.path.clone(),
-                format!(
-                    "维度字段 `{actual_type}.{field_name}` 的合成记录 `{}:{record_key}` 不存在",
-                    field.synthesized_type
-                ),
-            );
-            return Err(EvalAbort::Error);
-        };
-        let Some(value) = variant_record.fields().get(&variant) else {
-            self.diag_at(
-                CfdErrorCode::CheckEvalTypeError,
-                located.path.clone(),
-                format!(
-                    "维度字段 `{actual_type}.{field_name}` 的合成记录 `{}:{record_key}` 缺少 variant `{variant}`",
-                    field.synthesized_type
-                ),
-            );
-            return Err(EvalAbort::Error);
-        };
+        if let Some(record_id) = resolved.record {
+            self.note_read_from(record_id);
+        }
         let path = located.path.clone();
         located.value = CheckValue::from_cfd_value_with_path(
-            value,
-            self.schema.field_type(&field.synthesized_type, &variant),
+            resolved.value,
+            resolved.field_type.as_ref(),
             path.clone(),
             self.model,
-            Some(variant_record_id),
+            resolved.record,
         );
         if matches!(located.value, CheckValue::Null) {
             return Err(EvalAbort::Skipped);
@@ -1235,7 +1215,7 @@ impl<'a> CheckEvaluator<'a> {
                 return Err(EvalAbort::Error);
             };
             let enum_value = match self.schema.enum_value_from_int(name, value) {
-                Some(enum_value) => enum_value,
+                Some(enum_value) => Self::cfd_enum_value(enum_value),
                 None => Self::anonymous_enum_value(name, value),
             };
             return Ok(LocatedCheckValue::value(CheckValue::Enum(enum_value)));
@@ -2167,8 +2147,16 @@ impl<'a> CheckEvaluator<'a> {
 
     fn enum_with_value(&self, enum_name: &str, value: i64) -> CfdEnumValue {
         match self.schema.enum_value_from_int(enum_name, value) {
-            Some(enum_value) => enum_value,
+            Some(enum_value) => Self::cfd_enum_value(enum_value),
             None => Self::anonymous_enum_value(enum_name, value),
+        }
+    }
+
+    fn cfd_enum_value(enum_value: coflow_cft::CftEnumValueMeta) -> CfdEnumValue {
+        CfdEnumValue {
+            enum_name: enum_value.enum_name,
+            variant: enum_value.variant,
+            value: enum_value.value,
         }
     }
 
@@ -2201,15 +2189,25 @@ impl<'a> CheckEvaluator<'a> {
     }
 }
 
-fn dimension_record_key(
-    model: &CfdDataModel,
-    record: &CheckRecordRef,
-    field: &DimensionFieldMeta,
-) -> Option<String> {
-    if field.is_singleton {
-        Some(field.source_field.clone())
-    } else {
-        record.key(model).map(str::to_string)
+fn dimension_lookup_error_message(
+    actual_type: &str,
+    field_name: &str,
+    variant: &str,
+    err: DimensionFieldLookupError,
+) -> String {
+    match err {
+        DimensionFieldLookupError::NotDimensional => {
+            format!("字段 `{actual_type}.{field_name}` 不是维度字段")
+        }
+        DimensionFieldLookupError::DimensionMismatch => {
+            format!("字段 `{actual_type}.{field_name}` 不属于当前维度")
+        }
+        DimensionFieldLookupError::MissingStorageRecord => {
+            format!("维度字段 `{actual_type}.{field_name}` 缺少变体存储记录")
+        }
+        DimensionFieldLookupError::MissingVariantField => {
+            format!("维度字段 `{actual_type}.{field_name}` 缺少 variant `{variant}`")
+        }
     }
 }
 

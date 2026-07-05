@@ -31,7 +31,6 @@
 )]
 
 mod check;
-mod schema_view;
 
 use check::CheckRunner;
 use coflow_cft::CftContainer;
@@ -55,8 +54,7 @@ pub fn run_checks(schema: &CftContainer, model: &CfdDataModel) -> Result<(), Cfd
 }
 
 /// Runs `check` blocks for the default data plus every configured dimension
-/// variant. Variant rounds read dimensional field values from the synthesized
-/// `<Type>_<Field>Variants` records in the same model.
+/// variant.
 ///
 /// # Errors
 ///
@@ -71,14 +69,14 @@ pub fn run_checks_for_dimensions(
     if let Err(diagnostics) = run_checks(schema, model) {
         all.extend(diagnostics.diagnostics);
     }
-    if let Some(config) = dimensions.get("language") {
+    for (dimension, config) in dimensions {
         for variant in &config.variants {
             let context = DimensionCheckContext {
-                dimension: "language".to_string(),
+                dimension: dimension.clone(),
                 variant: Some(variant.clone()),
             };
             let runner = CheckRunner::with_dimension_context(schema, model, context);
-            push_dimension_diagnostics(&mut all, variant, runner.run());
+            push_dimension_diagnostics(&mut all, dimension, variant, runner.run());
         }
     }
     diagnostics_result(all)
@@ -101,16 +99,16 @@ pub fn run_checks_for_dimensions_with_deps(
     if let Err(diagnostics) = default_result {
         all.extend(diagnostics.diagnostics);
     }
-    if let Some(config) = dimensions.get("language") {
+    for (dimension, config) in dimensions {
         for variant in &config.variants {
             let context = DimensionCheckContext {
-                dimension: "language".to_string(),
+                dimension: dimension.clone(),
                 variant: Some(variant.clone()),
             };
             let runner = CheckRunner::with_dimension_context(schema, model, context);
             let (result, variant_graph) = runner.run_with_deps();
             merge_dependency_graph(&mut graph, variant_graph);
-            push_dimension_diagnostics(&mut all, variant, result);
+            push_dimension_diagnostics(&mut all, dimension, variant, result);
         }
     }
     (diagnostics_result(all), graph)
@@ -178,12 +176,13 @@ pub fn run_checks_with_deps(
 
 fn push_dimension_diagnostics(
     all: &mut Vec<coflow_data_model::CfdDiagnostic>,
+    dimension: &str,
     variant: &str,
     result: Result<(), CfdDiagnostics>,
 ) {
     if let Err(diagnostics) = result {
         for mut diagnostic in diagnostics.diagnostics {
-            diagnostic.message = format!("[language={variant}] {}", diagnostic.message);
+            diagnostic.message = format!("[{dimension}={variant}] {}", diagnostic.message);
             all.push(diagnostic);
         }
     }

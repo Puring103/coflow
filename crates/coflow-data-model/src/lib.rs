@@ -29,6 +29,7 @@
 
 mod compiler;
 mod diagnostic;
+mod edge_index;
 mod model;
 mod origin;
 mod schema_view;
@@ -42,8 +43,8 @@ pub use diagnostic::{
 pub use model::{
     CfdDataModel, CfdDictKey, CfdDomainId, CfdDomainIndex, CfdEnumValue, CfdInputDictKey,
     CfdInputRecord, CfdInputValue, CfdModelBuilder, CfdObject, CfdPolymorphicIndex, CfdRecord,
-    CfdRecordId, CfdTable, CfdTypeId, CfdValue, RefEdge, RefEdgeId, RefSite, SpreadEdge,
-    SpreadEdgeId, SpreadSite,
+    CfdRecordId, CfdTable, CfdTypeId, CfdValue, DimensionFieldLookupError, DimensionFieldValue,
+    RefEdge, RefEdgeId, RefSite, SpreadEdge, SpreadEdgeId, SpreadSite,
 };
 pub use origin::{
     label_to_location, map_diagnostics, MappedDiagnostic, MappedLabel, RecordOrigin,

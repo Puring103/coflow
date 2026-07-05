@@ -171,7 +171,7 @@ impl ProjectSession {
     /// Resolved dimension metadata for the project.
     #[must_use]
     pub fn dimensions(&self) -> Vec<DimensionInfo> {
-        let fields = dimensions::language_dimension_fields(&self.schema);
+        let fields = dimensions::dimension_fields(&self.schema);
         dimensions_for_project(&self.project, &fields)
     }
 
@@ -181,7 +181,7 @@ impl ProjectSession {
     /// without re-deriving the naming convention themselves.
     #[must_use]
     pub fn dimension_synthesized_types(&self) -> BTreeSet<String> {
-        dimensions::language_dimension_fields(&self.schema)
+        dimensions::dimension_fields(&self.schema)
             .into_iter()
             .map(|field| field.synthesized_type)
             .collect()
@@ -694,7 +694,7 @@ pub fn build_project_session(
     let mut sources = SourceIndex::default();
     let mut records = RecordIndex::default();
     let mut files = FileIndex::default();
-    let dimension_fields = dimensions::language_dimension_fields(&schema);
+    let dimension_fields = dimensions::dimension_fields(&schema);
     let (model, dependencies) = if diagnostics.is_empty() {
         match load_project_data(
             &project,
@@ -839,16 +839,14 @@ fn build_project_schema_with_diagnostics(
             Ok(mut schema) => {
                 diagnostics.extend(validate_dimension_schema_config(&project, &schema));
                 if diagnostics.is_empty() {
-                    if let Some(config) = project.config.dimensions.get("language") {
-                        if let Err(err) =
-                            dimensions::inject_language_dimension_types(&mut schema, config)
-                        {
-                            diagnostics.extend(diagnostic_set_from_cft(
-                                err.diagnostics,
-                                &BTreeMap::new(),
-                                &BTreeMap::new(),
-                            ));
-                        }
+                    if let Err(err) =
+                        dimensions::inject_dimension_types(&mut schema, &project.config.dimensions)
+                    {
+                        diagnostics.extend(diagnostic_set_from_cft(
+                            err.diagnostics,
+                            &BTreeMap::new(),
+                            &BTreeMap::new(),
+                        ));
                     }
                 }
                 schema
@@ -870,19 +868,29 @@ fn build_project_schema_with_diagnostics(
 
 fn validate_dimension_schema_config(project: &Project, schema: &CftContainer) -> DiagnosticSet {
     let mut diagnostics = DiagnosticSet::empty();
-    if !dimensions::language_dimension_fields(schema).is_empty()
-        && !project.config.dimensions.contains_key("language")
-    {
+    let mut required = BTreeSet::new();
+    for field in dimensions::dimension_fields(schema) {
+        required.insert(field.dimension);
+    }
+    for dimension in required {
+        if project.config.dimensions.contains_key(&dimension) {
+            continue;
+        }
+        let message = if dimension == "language" {
+            "schema contains @localized fields but dimensions.language is not configured"
+                .to_string()
+        } else {
+            format!("schema contains @dimension(\"{dimension}\") fields but dimensions.{dimension} is not configured")
+        };
         diagnostics.push(Diagnostic {
             code: "DIM-CONFIG-001".to_string(),
             stage: "PROJECT".to_string(),
             severity: Severity::Error,
-            message: "schema contains @localized fields but dimensions.language is not configured"
-                .to_string(),
+            message,
             primary: Some(Label {
                 location: SourceLocation::ProjectConfig {
                     path: project.config_path.clone(),
-                    key_path: vec!["dimensions".to_string(), "language".to_string()],
+                    key_path: vec!["dimensions".to_string(), dimension],
                 },
                 message: None,
             }),
@@ -954,8 +962,8 @@ fn load_project_data(
     }
 
     if options.include_implicit_dimension_sources {
-        let dimension_fields = dimensions::language_dimension_fields(schema);
-        for configured in dimensions::language_dimension_sources(project, &dimension_fields) {
+        let dimension_fields = dimensions::dimension_fields(schema);
+        for configured in dimensions::dimension_sources(project, &dimension_fields) {
             let resolved_sources =
                 match resolve_implicit_source(project, schema, registry, &configured) {
                     Ok(resolved_sources) => resolved_sources,
@@ -1333,8 +1341,10 @@ fn logical_locations_from_cfd(
 }
 
 /// Format a [`CfdPath`] as the dotted / bracketed string the editor uses
-/// as a stable key. Callers include the engine's own logical-location
-/// pipeline as well as tauri graph-edge labels — keep exactly one copy.
+/// as a stable key.
+///
+/// Callers include the engine's own logical-location pipeline as well as
+/// tauri graph-edge labels. Keep exactly one copy.
 #[must_use]
 pub fn format_cfd_path(path: &CfdPath) -> String {
     let mut out = String::new();

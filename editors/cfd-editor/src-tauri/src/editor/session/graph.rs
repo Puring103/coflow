@@ -83,7 +83,7 @@ pub(super) fn build_graph(session: &EditorSession, query: &GraphQuery) -> GraphD
             continue;
         }
 
-        for edge in session.engine.model.ref_edges_from_host(id) {
+        for edge in session.engine.model.direct_ref_edges_from_host(id) {
             if !edge_enabled(edge, enabled_fields.as_ref()) {
                 continue;
             }
@@ -134,7 +134,7 @@ fn start_records(
                 && session
                     .engine
                     .model
-                    .ref_edges_from_host(*id)
+                    .direct_ref_edges_from_host(*id)
                     .any(|edge| edge_enabled(edge, enabled_fields))
         })
         .collect()
@@ -160,7 +160,7 @@ fn collect_available_fields(
         if depth >= max_depth {
             continue;
         }
-        for edge in session.engine.model.ref_edges_from_host(id) {
+        for edge in session.engine.model.direct_ref_edges_from_host(id) {
             if let Some(field) = top_level_field(&edge.path) {
                 fields.insert(field.to_string());
             }
@@ -202,4 +202,3 @@ impl NodeKey {
         }
     }
 }
-

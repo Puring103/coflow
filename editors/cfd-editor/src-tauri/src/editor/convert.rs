@@ -221,7 +221,7 @@ fn annotation_for_value(
                 .and_then(|host| {
                     ctx.session
                         .model
-                        .resolve_ref_effective(&RefSite::new(host, path.clone()))
+                        .resolve_effective_ref(&RefSite::new(host, path.clone()))
                 })
                 .and_then(|target| ctx.session.model.record(target))
                 .and_then(|record| {
@@ -286,12 +286,16 @@ fn element_template(
     ctx: &WireContext<'_>,
 ) -> Option<Box<FieldAnnotation>> {
     let item_type = item_type?;
-    let mut ann = FieldAnnotation::default();
-    ann.declared_type = Some(type_ref_label(item_type));
-    ann.ref_target_type = ref_target_type(item_type).map(str::to_string);
-    ann.enum_type = enum_type_name(item_type, &ctx.session.schema).map(str::to_string);
-    ann.nullable = matches!(item_type, CftSchemaTypeRef::Nullable(_));
-    if let Some(inner) = array_item_type(Some(item_type)).or_else(|| dict_item_type(Some(item_type))) {
+    let mut ann = FieldAnnotation {
+        declared_type: Some(type_ref_label(item_type)),
+        ref_target_type: ref_target_type(item_type).map(str::to_string),
+        enum_type: enum_type_name(item_type, &ctx.session.schema).map(str::to_string),
+        nullable: matches!(item_type, CftSchemaTypeRef::Nullable(_)),
+        ..FieldAnnotation::default()
+    };
+    if let Some(inner) =
+        array_item_type(Some(item_type)).or_else(|| dict_item_type(Some(item_type)))
+    {
         ann.item_annotation = element_template(Some(inner), ctx);
     }
     Some(Box::new(ann))

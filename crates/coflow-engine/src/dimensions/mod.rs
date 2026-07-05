@@ -7,7 +7,4 @@ pub use info::{
     DimensionInfo,
 };
 pub use regenerate::regenerate_dimension_sources;
-pub use synthesize::{
-    inject_language_dimension_types, language_dimension_fields, language_dimension_sources,
-    DimensionField,
-};
+pub use synthesize::{dimension_fields, dimension_sources, inject_dimension_types, DimensionField};

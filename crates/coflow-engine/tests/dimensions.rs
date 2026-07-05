@@ -113,6 +113,64 @@ fn localized_schema_requires_language_dimension_config() {
 }
 
 #[test]
+fn custom_dimension_schema_requires_matching_dimension_config() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-engine-custom-dim-config-missing-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        r#"
+        type Item {
+            @dimension("platform")
+            name: string;
+        }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        "schema: schema/main.cft\nsources: []\n",
+    )
+    .expect("write config");
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let registry = coflow_api::ProviderRegistry::default();
+    let session = build_project_session(project, &registry).expect("build session");
+
+    assert!(
+        session
+            .diagnostics
+            .as_set()
+            .diagnostics
+            .iter()
+            .any(|diagnostic| {
+                diagnostic.code == "DIM-CONFIG-001"
+                    && diagnostic.message
+                        == "schema contains @dimension(\"platform\") fields but dimensions.platform is not configured"
+                    && diagnostic.primary.as_ref().is_some_and(|label| {
+                        matches!(
+                            &label.location,
+                            coflow_api::SourceLocation::ProjectConfig { key_path, .. }
+                                if key_path == &vec![
+                                    "dimensions".to_string(),
+                                    "platform".to_string()
+                                ]
+                        )
+                    })
+            }),
+        "diagnostics: {:?}",
+        session.diagnostics.as_set()
+    );
+
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
 fn language_dimension_injects_variant_type_and_implicit_sources() {
     let root = std::env::temp_dir().join(format!(
         "coflow-engine-dim-synthesis-{}",
@@ -193,6 +251,83 @@ dimensions:
         .files
         .source_files()
         .contains("data/dimensions/language/Item_name.csv"));
+
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
+fn custom_dimension_injects_variant_type_and_implicit_sources() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-engine-custom-dim-synthesis-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::create_dir_all(root.join("data/dimensions/platform")).expect("create dimensions dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        r#"
+        type Item {
+            @dimension("platform")
+            name: string;
+        }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n")
+        .expect("write source csv");
+    std::fs::write(
+        root.join("data/dimensions/platform/Item_name.csv"),
+        "id,default,pc,mobile\npotion,Potion,PC Potion,Mobile Potion\n",
+    )
+    .expect("write dimension csv");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+sources:
+  - path: data/items.csv
+    type: csv
+    sheets:
+      - sheet: items
+        type: Item
+dimensions:
+  platform:
+    variants: [pc, mobile]
+    out_dir: data/dimensions/platform
+"#,
+    )
+    .expect("write config");
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let mut registry = coflow_api::ProviderRegistry::default();
+    registry
+        .register_loader(coflow_loader_csv::CsvLoader)
+        .expect("csv loader");
+    let session = build_project_session(project, &registry).expect("build session");
+
+    let variants = session
+        .schema
+        .resolve_type("Item_nameVariants")
+        .expect("synthesized type");
+    assert_eq!(
+        variants
+            .all_fields
+            .iter()
+            .map(|field| field.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["default", "pc", "mobile"]
+    );
+    assert!(session
+        .files
+        .source_files()
+        .contains("data/dimensions/platform/Item_name.csv"));
+    assert!(session
+        .records
+        .get_by_coordinate("Item_nameVariants", "potion")
+        .is_some());
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }

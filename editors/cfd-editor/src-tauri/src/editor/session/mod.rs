@@ -329,7 +329,8 @@ impl SessionStore {
                 .first()
                 .map(|applied| applied.outcome.clone())
                 .ok_or_else(|| EditorError::write("write field did not apply"))?;
-            session.diagnostics = Diagnostics::from_store(&session.engine.diagnostics, &session.project_root);
+            session.diagnostics =
+                Diagnostics::from_store(&session.engine.diagnostics, &session.project_root);
             let renamed = outcome
                 .renamed
                 .and_then(|(old, new)| (old == *coordinate).then_some(new));
@@ -425,7 +426,8 @@ impl SessionStore {
                     &report,
                 ));
             }
-            session.diagnostics = Diagnostics::from_store(&session.engine.diagnostics, &session.project_root);
+            session.diagnostics =
+                Diagnostics::from_store(&session.engine.diagnostics, &session.project_root);
             session.ref_target_cache.clear();
         }
         let file_records = self.get_file_records(id, file_path)?;
@@ -477,7 +479,8 @@ impl SessionStore {
                 .first()
                 .map(|applied| applied.outcome.clone())
                 .ok_or_else(|| EditorError::write("rename did not apply"))?;
-            session.diagnostics = Diagnostics::from_store(&session.engine.diagnostics, &session.project_root);
+            session.diagnostics =
+                Diagnostics::from_store(&session.engine.diagnostics, &session.project_root);
             let renamed = outcome
                 .renamed
                 .and_then(|(old, new)| (old == *coordinate).then_some(new))
@@ -557,7 +560,8 @@ impl SessionStore {
                     &report,
                 ));
             }
-            session.diagnostics = Diagnostics::from_store(&session.engine.diagnostics, &session.project_root);
+            session.diagnostics =
+                Diagnostics::from_store(&session.engine.diagnostics, &session.project_root);
             session.ref_target_cache.clear();
         }
         let file_records = self.get_file_records(id, &file_path)?;

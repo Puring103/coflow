@@ -1,7 +1,7 @@
 use coflow_api::{ResolvedSource, SourceLocationSpec};
 use coflow_cft::{
-    CftContainer, CftSchemaField, CftSchemaType, CftSchemaTypeRef, Dimension, DimensionSpec,
-    ModuleId, Span,
+    CftAnnotation, CftAnnotationValue, CftContainer, CftSchemaField, CftSchemaType,
+    CftSchemaTypeRef, Dimension, DimensionSpec, ModuleId, Span,
 };
 use coflow_project::{DimensionConfig, Project};
 use serde_json::{json, Value};
@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DimensionField {
+    pub dimension: String,
     pub source_type: String,
     pub source_field: String,
     pub bucket: String,
@@ -17,12 +18,15 @@ pub struct DimensionField {
     pub is_singleton: bool,
 }
 
-pub fn inject_language_dimension_types(
+pub fn inject_dimension_types(
     schema: &mut CftContainer,
-    config: &DimensionConfig,
+    configs: &std::collections::BTreeMap<String, DimensionConfig>,
 ) -> Result<Vec<DimensionField>, coflow_cft::CftDiagnostics> {
-    let fields = language_dimension_fields(schema);
+    let fields = dimension_fields(schema);
     for field in &fields {
+        let Some(config) = configs.get(&field.dimension) else {
+            continue;
+        };
         let Some(source_type) = schema.resolve_type(&field.source_type) else {
             continue;
         };
@@ -35,6 +39,7 @@ pub fn inject_language_dimension_types(
         };
         let synthesized = synthesized_type(
             &field.synthesized_type,
+            field,
             &source_field.ty_ref,
             &config.variants,
         );
@@ -43,43 +48,49 @@ pub fn inject_language_dimension_types(
     Ok(fields)
 }
 
-pub fn language_dimension_sources(
-    project: &Project,
-    fields: &[DimensionField],
-) -> Vec<ResolvedSource> {
-    let Some(config) = project.config.dimensions.get("language") else {
-        return Vec::new();
-    };
-    let Some(out_dir) = config.out_dir.as_ref() else {
-        return Vec::new();
-    };
-    let dir = project.resolve_path(out_dir);
-    if !dir.exists() {
-        return Vec::new();
+pub fn dimension_sources(project: &Project, fields: &[DimensionField]) -> Vec<ResolvedSource> {
+    let mut sources = Vec::new();
+    for (dimension, config) in &project.config.dimensions {
+        let Some(out_dir) = config.out_dir.as_ref() else {
+            continue;
+        };
+        let fields = fields
+            .iter()
+            .filter(|field| field.dimension == *dimension)
+            .collect::<Vec<_>>();
+        if fields.is_empty() {
+            continue;
+        }
+        let dir = project.resolve_path(out_dir);
+        if !dir.exists() {
+            continue;
+        }
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        let mut entries = entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .collect::<Vec<_>>();
+        entries.sort();
+        sources.extend(
+            entries
+                .into_iter()
+                .filter_map(|path| source_for_dimension_file(project, &dir, &fields, path)),
+        );
     }
-
-    let Ok(entries) = fs::read_dir(&dir) else {
-        return Vec::new();
-    };
-    let mut entries = entries
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .collect::<Vec<_>>();
-    entries.sort();
-    entries
-        .into_iter()
-        .filter_map(|path| source_for_dimension_file(project, &dir, fields, path))
-        .collect()
+    sources
 }
 
-pub fn language_dimension_fields(schema: &CftContainer) -> Vec<DimensionField> {
+pub fn dimension_fields(schema: &CftContainer) -> Vec<DimensionField> {
     let mut fields = Vec::new();
     for schema_type in schema.all_types() {
         for field in &schema_type.fields {
-            if !is_language_dimension(field.dimension.as_ref()) {
+            let Some(dimension) = field.dimension.as_ref().map(dimension_name) else {
                 continue;
-            }
+            };
             fields.push(DimensionField {
+                dimension: dimension.to_string(),
                 source_type: schema_type.name.clone(),
                 source_field: field.name.clone(),
                 bucket: field
@@ -95,12 +106,16 @@ pub fn language_dimension_fields(schema: &CftContainer) -> Vec<DimensionField> {
     fields
 }
 
-fn is_language_dimension(dimension: Option<&DimensionSpec>) -> bool {
-    dimension.is_some_and(|dimension| matches!(dimension.kind, Dimension::Localized))
+const fn dimension_name(dimension: &DimensionSpec) -> &str {
+    match &dimension.kind {
+        Dimension::Localized => "language",
+        Dimension::Custom(name) => name.as_str(),
+    }
 }
 
 fn synthesized_type(
     name: &str,
+    field: &DimensionField,
     source_ty: &CftSchemaTypeRef,
     variants: &[String],
 ) -> CftSchemaType {
@@ -121,7 +136,14 @@ fn synthesized_type(
         fields: fields.clone(),
         all_fields: fields,
         check: None,
-        annotations: Vec::new(),
+        annotations: vec![CftAnnotation {
+            name: "__coflow_dimension_storage".to_string(),
+            args: vec![
+                CftAnnotationValue::String(field.dimension.clone()),
+                CftAnnotationValue::String(field.source_type.clone()),
+                CftAnnotationValue::String(field.source_field.clone()),
+            ],
+        }],
         span: Span::new(0, 0),
     }
 }
@@ -166,7 +188,7 @@ fn format_type_ref(ty: &CftSchemaTypeRef) -> String {
 fn source_for_dimension_file(
     project: &Project,
     dir: &Path,
-    fields: &[DimensionField],
+    fields: &[&DimensionField],
     path: PathBuf,
 ) -> Option<ResolvedSource> {
     let extension = path
@@ -197,11 +219,11 @@ fn source_for_dimension_file(
 }
 
 fn field_for_file_stem<'a>(
-    fields: &'a [DimensionField],
+    fields: &'a [&DimensionField],
     stem: &str,
     extension: &str,
 ) -> Option<&'a DimensionField> {
-    fields.iter().find(|field| {
+    fields.iter().copied().find(|field| {
         if extension == "cfd" && field.is_singleton {
             stem == field.source_type
         } else {

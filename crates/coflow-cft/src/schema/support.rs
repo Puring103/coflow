@@ -105,6 +105,14 @@ impl AnnotationSpec {
                 targets: &[AnnotationTarget::Field],
                 args: AnnotationArgs::NoneOrOneString,
             },
+            "dimension" => Self {
+                targets: &[AnnotationTarget::Field],
+                args: AnnotationArgs::OneString,
+            },
+            "__coflow_dimension_storage" => Self {
+                targets: &[AnnotationTarget::Type],
+                args: AnnotationArgs::ThreeStrings,
+            },
             _ => return None,
         })
     }
@@ -119,6 +127,17 @@ impl AnnotationSpec {
             AnnotationArgs::OneName => {
                 matches!(annotation.args.as_slice(), [AnnotationArg::Name(_)])
             }
+            AnnotationArgs::OneString => {
+                matches!(annotation.args.as_slice(), [AnnotationArg::String(_, _)])
+            }
+            AnnotationArgs::ThreeStrings => matches!(
+                annotation.args.as_slice(),
+                [
+                    AnnotationArg::String(_, _),
+                    AnnotationArg::String(_, _),
+                    AnnotationArg::String(_, _)
+                ]
+            ),
         }
     }
 }
@@ -128,6 +147,8 @@ enum AnnotationArgs {
     None,
     NoneOrOneString,
     OneName,
+    OneString,
+    ThreeStrings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,7 +1,7 @@
 //! Resolved dimension metadata exposed to hosts.
 //!
 //! Combines the `DimensionConfig` declared in `coflow.yaml` with the schema
-//! `@localized` fields discovered during model build.
+//! dimension fields discovered during model build.
 
 use coflow_project::{DimensionConfig, Project};
 use serde::{Deserialize, Serialize};
@@ -45,17 +45,14 @@ pub struct DimensionFieldInfo {
 }
 
 /// Resolve all configured dimensions into `DimensionInfo`. Synthetic fields
-/// passed in are typically the result of `language_dimension_fields(schema)`.
+/// passed in are typically the result of `dimension_fields(schema)`.
 #[must_use]
 pub fn dimensions_for_project(project: &Project, fields: &[DimensionField]) -> Vec<DimensionInfo> {
     let mut by_name: std::collections::BTreeMap<&str, Vec<&DimensionField>> =
         std::collections::BTreeMap::new();
-    // Today every `@localized` field lives in the `language` dimension. The
-    // bucket on `DimensionField` already names it, so future dimensions can
-    // partition the field list by `field.bucket` without touching callers.
     for field in fields {
         by_name
-            .entry(field.bucket.as_str())
+            .entry(field.dimension.as_str())
             .or_default()
             .push(field);
     }

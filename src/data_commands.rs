@@ -254,13 +254,12 @@ pub fn create_table(
     config_or_dir: Option<&Path>,
     source: String,
     actual_type: Option<String>,
-    provider: Option<String>,
+    provider: Option<&str>,
     sheet: Option<String>,
     human: bool,
 ) -> Result<bool, String> {
     let session = open_schema_session(config_or_dir)?;
     let provider_id = provider
-        .as_deref()
         .or_else(|| infer_table_provider(&source))
         .unwrap_or("excel");
     let result = if provider_id == "lark-sheet" || provider_id == "lark" {

@@ -49,6 +49,7 @@ fn dimension_schema() -> CftContainer {
                 check { name != ""; }
             }
 
+            @__coflow_dimension_storage("language", "Item", "name")
             type Item_nameVariants {
                 default: string?;
                 zh: string?;
@@ -112,9 +113,10 @@ fn missing_dimension_variant_record_is_an_eval_error_not_a_skip() {
         .expect_err("missing synthesized variant record should be reported");
 
     assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
-    assert!(err.diagnostics.iter().any(|diagnostic| diagnostic
-        .message
-        .contains("缺少合成记录 `Item_nameVariants:potion`")));
+    assert!(err
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.message.contains("缺少变体存储记录")));
 }
 
 #[test]
@@ -127,6 +129,7 @@ fn missing_dimension_variant_field_is_an_eval_error_not_a_skip() {
                 check { name != ""; }
             }
 
+            @__coflow_dimension_storage("language", "Item", "name")
             type Item_nameVariants {
                 default: string?;
                 zh: string?;
@@ -173,6 +176,7 @@ fn variant_rounds_only_run_checks_that_read_top_level_dimension_fields() {
                 }
             }
 
+            @__coflow_dimension_storage("language", "Item", "name")
             type Item_nameVariants {
                 default: string?;
                 zh: string?;
@@ -236,6 +240,7 @@ fn null_dimension_variant_skips_methods_and_operators_by_control_flow() {
                 }
             }
 
+            @__coflow_dimension_storage("language", "Item", "tags")
             type Item_tagsVariants {
                 default: [string]?;
                 zh: [string]?;
@@ -287,6 +292,7 @@ fn nested_dimension_fields_do_not_trigger_variant_round_checks() {
                 check { text.label != ""; }
             }
 
+            @__coflow_dimension_storage("language", "Text", "label")
             type Text_labelVariants {
                 default: string?;
                 zh: string?;
@@ -333,6 +339,7 @@ fn nested_inline_record_checks_do_not_run_in_variant_rounds() {
                 check { true; }
             }
 
+            @__coflow_dimension_storage("language", "Text", "label")
             type Text_labelVariants {
                 default: string?;
                 zh: string?;
@@ -384,6 +391,7 @@ fn inherited_dimension_fields_do_not_trigger_child_variant_round_checks() {
                 power: int;
             }
 
+            @__coflow_dimension_storage("language", "Base", "name")
             type Base_nameVariants {
                 default: string?;
                 zh: string?;
@@ -525,5 +533,65 @@ fn unknown_dimensions_are_accepted_but_do_not_run_extra_check_rounds() {
         !err.diagnostics[0].message.contains("[platform="),
         "unknown dimensions should not add variant diagnostics: {}",
         err.diagnostics[0].message
+    );
+}
+
+#[test]
+fn variant_rounds_run_for_every_configured_dimension() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                @dimension("platform")
+                name: string;
+                check { name != ""; }
+            }
+
+            @__coflow_dimension_storage("platform", "Item", "name")
+            type Item_nameVariants {
+                default: string?;
+                pc: string?;
+                mobile: string?;
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_input_record(CfdInputRecord::new(
+        "potion",
+        "Item",
+        [("name", CfdInputValue::from("Potion"))],
+    ));
+    builder.add_input_record(CfdInputRecord::new(
+        "potion",
+        "Item_nameVariants",
+        [
+            ("default", CfdInputValue::from("Potion")),
+            ("pc", CfdInputValue::from("")),
+            ("mobile", CfdInputValue::from("Potion")),
+        ],
+    ));
+    let model = builder.build().expect("model builds");
+    let dimensions = BTreeMap::from([(
+        "platform".to_string(),
+        DimensionConfig {
+            variants: vec!["pc".to_string(), "mobile".to_string()],
+            out_dir: None,
+            display_name: None,
+        },
+    )]);
+
+    let err = run_checks_for_dimensions(&schema, &model, &dimensions)
+        .expect_err("empty pc variant should fail check");
+
+    assert!(
+        err.diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("[platform=pc]")),
+        "expected platform variant diagnostic, got {err:?}"
+    );
+    assert!(
+        !err.diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("[language=")),
+        "configured platform dimension must not be reported as language: {err:?}"
     );
 }

@@ -16,47 +16,56 @@ pub fn regenerate_dimension_sources(
     model: &CfdDataModel,
     fields: &[DimensionField],
 ) -> DiagnosticSet {
-    let Some(config) = project.config.dimensions.get("language") else {
-        return DiagnosticSet::empty();
-    };
-    let Some(out_dir) = config.out_dir.as_ref() else {
-        return DiagnosticSet::one(dimension_diagnostic(
-            &project.config_path,
-            "DIM-CONFIG-003",
-            "dimensions.language.out_dir is required",
-        ));
-    };
-    let out_dir = project.resolve_path(out_dir);
     let mut diagnostics = DiagnosticSet::empty();
-    if let Err(err) = fs::create_dir_all(&out_dir) {
-        diagnostics.push(dimension_diagnostic(
-            &project.config_path,
-            "DIM-SOURCE-001",
-            format!(
-                "failed to create dimension out_dir `{}`: {err}",
-                out_dir.display()
-            ),
-        ));
-        return diagnostics;
-    }
+    for (dimension, config) in &project.config.dimensions {
+        let dimension_fields = fields
+            .iter()
+            .filter(|field| field.dimension == *dimension)
+            .collect::<Vec<_>>();
+        if dimension_fields.is_empty() {
+            continue;
+        }
+        let Some(out_dir) = config.out_dir.as_ref() else {
+            diagnostics.push(dimension_diagnostic(
+                &project.config_path,
+                dimension,
+                "DIM-CONFIG-003",
+                format!("dimensions.{dimension}.out_dir is required"),
+            ));
+            continue;
+        };
+        let out_dir = project.resolve_path(out_dir);
+        if let Err(err) = fs::create_dir_all(&out_dir) {
+            diagnostics.push(dimension_diagnostic(
+                &project.config_path,
+                dimension,
+                "DIM-SOURCE-001",
+                format!(
+                    "failed to create dimension out_dir `{}`: {err}",
+                    out_dir.display()
+                ),
+            ));
+            continue;
+        }
 
-    for field in fields {
-        if field.is_singleton {
-            diagnostics.extend(regenerate_singleton_file(
-                project,
-                model,
-                field,
-                &out_dir,
-                &config.variants,
-            ));
-        } else {
-            diagnostics.extend(regenerate_csv_file(
-                project,
-                model,
-                field,
-                &out_dir,
-                &config.variants,
-            ));
+        for field in dimension_fields {
+            if field.is_singleton {
+                diagnostics.extend(regenerate_singleton_file(
+                    project,
+                    model,
+                    field,
+                    &out_dir,
+                    &config.variants,
+                ));
+            } else {
+                diagnostics.extend(regenerate_csv_file(
+                    project,
+                    model,
+                    field,
+                    &out_dir,
+                    &config.variants,
+                ));
+            }
         }
     }
     diagnostics
@@ -70,10 +79,11 @@ fn regenerate_csv_file(
     variants: &[String],
 ) -> DiagnosticSet {
     let path = out_dir.join(format!("{}_{}.csv", field.bucket, field.source_field));
-    let mut existing = match read_existing_csv(&path, &project.config_path, variants) {
-        Ok(existing) => existing,
-        Err(diagnostics) => return diagnostics,
-    };
+    let mut existing =
+        match read_existing_csv(&path, &project.config_path, &field.dimension, variants) {
+            Ok(existing) => existing,
+            Err(diagnostics) => return diagnostics,
+        };
     for (_, record) in model.records_of_type(&field.source_type) {
         let row = existing.entry(record.key().to_string()).or_default();
         row.default = record
@@ -97,7 +107,12 @@ fn regenerate_csv_file(
         }
         rows.push(record);
     }
-    write_file(&path, csv::write(&rows), &project.config_path)
+    write_file(
+        &path,
+        csv::write(&rows),
+        &project.config_path,
+        &field.dimension,
+    )
 }
 
 fn csv_variant_cell(value: &str) -> String {
@@ -116,10 +131,11 @@ fn regenerate_singleton_file(
     variants: &[String],
 ) -> DiagnosticSet {
     let path = out_dir.join(format!("{}.cfd", field.source_type));
-    let mut existing = match read_existing_singleton(&path, &project.config_path, variants) {
-        Ok(existing) => existing,
-        Err(diagnostics) => return diagnostics,
-    };
+    let mut existing =
+        match read_existing_singleton(&path, &project.config_path, &field.dimension, variants) {
+            Ok(existing) => existing,
+            Err(diagnostics) => return diagnostics,
+        };
     if let Some((_, record)) = model.records_of_type(&field.source_type).next() {
         let row = existing.entry(field.source_field.clone()).or_default();
         row.actual_type.clone_from(&field.synthesized_type);
@@ -144,7 +160,7 @@ fn regenerate_singleton_file(
         }
         out.push_str("}\n\n");
     }
-    write_file(&path, out, &project.config_path)
+    write_file(&path, out, &project.config_path, &field.dimension)
 }
 
 #[derive(Debug, Clone, Default)]
@@ -157,6 +173,7 @@ struct DimensionRow {
 fn read_existing_csv(
     path: &Path,
     config_path: &Path,
+    dimension: &str,
     variants: &[String],
 ) -> Result<BTreeMap<String, DimensionRow>, DiagnosticSet> {
     let text = match fs::read_to_string(path) {
@@ -165,6 +182,7 @@ fn read_existing_csv(
         Err(err) => {
             return Err(DiagnosticSet::one(dimension_diagnostic(
                 config_path,
+                dimension,
                 "DIM-SOURCE-001",
                 format!(
                     "failed to read dimension source `{}`: {err}",
@@ -178,6 +196,7 @@ fn read_existing_csv(
         Err(err) => {
             return Err(DiagnosticSet::one(dimension_diagnostic(
                 config_path,
+                dimension,
                 "DIM-SOURCE-001",
                 format!(
                     "failed to parse dimension source `{}`: {err}",
@@ -224,6 +243,7 @@ fn read_existing_csv(
 fn read_existing_singleton(
     path: &Path,
     config_path: &Path,
+    dimension: &str,
     variants: &[String],
 ) -> Result<BTreeMap<String, DimensionRow>, DiagnosticSet> {
     let text = match fs::read_to_string(path) {
@@ -232,6 +252,7 @@ fn read_existing_singleton(
         Err(err) => {
             return Err(DiagnosticSet::one(dimension_diagnostic(
                 config_path,
+                dimension,
                 "DIM-SOURCE-001",
                 format!(
                     "failed to read dimension source `{}`: {err}",
@@ -245,6 +266,7 @@ fn read_existing_singleton(
     if let Some(diagnostic) = diagnostics.first() {
         return Err(DiagnosticSet::one(dimension_diagnostic(
             config_path,
+            dimension,
             "DIM-SOURCE-001",
             format!(
                 "failed to parse dimension source `{}`: {}",
@@ -276,7 +298,7 @@ fn read_existing_singleton(
     Ok(out)
 }
 
-fn write_file(path: &Path, body: String, config_path: &Path) -> DiagnosticSet {
+fn write_file(path: &Path, body: String, config_path: &Path, dimension: &str) -> DiagnosticSet {
     match fs::read_to_string(path) {
         Ok(existing) if existing == body => return DiagnosticSet::empty(),
         Ok(_) => {}
@@ -284,6 +306,7 @@ fn write_file(path: &Path, body: String, config_path: &Path) -> DiagnosticSet {
         Err(err) => {
             return DiagnosticSet::one(dimension_diagnostic(
                 config_path,
+                dimension,
                 "DIM-SOURCE-001",
                 format!(
                     "failed to read dimension source `{}`: {err}",
@@ -296,6 +319,7 @@ fn write_file(path: &Path, body: String, config_path: &Path) -> DiagnosticSet {
         Ok(()) => DiagnosticSet::empty(),
         Err(err) => DiagnosticSet::one(dimension_diagnostic(
             config_path,
+            dimension,
             "DIM-SOURCE-001",
             format!(
                 "failed to write dimension source `{}`: {err}",
@@ -443,7 +467,12 @@ fn format_cfd_dict_key(key: &CfdDictKey) -> String {
     }
 }
 
-fn dimension_diagnostic(config_path: &Path, code: &str, message: impl Into<String>) -> Diagnostic {
+fn dimension_diagnostic(
+    config_path: &Path,
+    dimension: &str,
+    code: &str,
+    message: impl Into<String>,
+) -> Diagnostic {
     Diagnostic {
         code: code.to_string(),
         stage: "PROJECT".to_string(),
@@ -452,7 +481,7 @@ fn dimension_diagnostic(config_path: &Path, code: &str, message: impl Into<Strin
         primary: Some(Label {
             location: SourceLocation::ProjectConfig {
                 path: config_path.to_path_buf(),
-                key_path: vec!["dimensions".to_string(), "language".to_string()],
+                key_path: vec!["dimensions".to_string(), dimension.to_string()],
             },
             message: None,
         }),

@@ -1,15 +1,15 @@
 use super::evaluator::CheckEvaluator;
 use super::value::{CheckRecordRef, CheckValue};
-use crate::schema_view::SchemaView;
 use crate::{DependencyGraph, DimensionCheckContext};
-use coflow_cft::CftContainer;
+use coflow_cft::{CftContainer, CftSchemaView};
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdPath, CfdRecordId, CfdValue,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) struct CheckRunner<'a> {
-    schema: SchemaView,
+    schema: CftSchemaView,
+    source_schema: &'a CftContainer,
     model: &'a CfdDataModel,
     diagnostics: Vec<CfdDiagnostic>,
     /// When `Some`, the runner records read-from edges for each top-level
@@ -21,7 +21,8 @@ pub(crate) struct CheckRunner<'a> {
 impl<'a> CheckRunner<'a> {
     pub(crate) fn new(schema: &'a CftContainer, model: &'a CfdDataModel) -> Self {
         Self {
-            schema: SchemaView::new(schema),
+            schema: CftSchemaView::new(schema),
+            source_schema: schema,
             model,
             diagnostics: Vec::new(),
             deps: None,
@@ -35,7 +36,8 @@ impl<'a> CheckRunner<'a> {
         dimension_context: DimensionCheckContext,
     ) -> Self {
         Self {
-            schema: SchemaView::new(schema),
+            schema: CftSchemaView::new(schema),
+            source_schema: schema,
             model,
             diagnostics: Vec::new(),
             deps: None,
@@ -104,8 +106,14 @@ impl<'a> CheckRunner<'a> {
                 .map(|context| context.dimension.as_str()),
         );
         let root = CheckValue::Record(record);
-        let mut evaluator =
-            CheckEvaluator::new(&self.schema, self.model, root_record, root_path, root);
+        let mut evaluator = CheckEvaluator::new(
+            &self.schema,
+            self.source_schema,
+            self.model,
+            root_record,
+            root_path,
+            root,
+        );
         evaluator.dep_collector_enabled = self.deps.is_some();
         evaluator
             .dimension_context

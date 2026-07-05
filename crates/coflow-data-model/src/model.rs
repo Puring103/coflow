@@ -1,7 +1,7 @@
 use crate::diagnostic::{CfdPath, CfdPathSegment};
 use crate::origin::RecordOrigin;
 use crate::{compiler::ModelCompiler, CfdDiagnostics};
-use coflow_cft::CftContainer;
+use coflow_cft::{CftAnnotationValue, CftContainer, CftSchemaTypeRef, Dimension};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -23,6 +23,21 @@ pub struct CfdDataModel {
     pub(crate) spread_edges: Vec<SpreadEdge>,
     pub(crate) spread_by_site: BTreeMap<SpreadSite, Vec<SpreadEdgeId>>,
     pub(crate) spread_by_source: BTreeMap<CfdRecordId, Vec<SpreadEdgeId>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DimensionFieldLookupError {
+    NotDimensional,
+    DimensionMismatch,
+    MissingStorageRecord,
+    MissingVariantField,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DimensionFieldValue<'a> {
+    pub value: &'a CfdValue,
+    pub record: Option<CfdRecordId>,
+    pub field_type: Option<CftSchemaTypeRef>,
 }
 
 /// Logical address of a `CfdValue::Ref` instance inside the model: the host
@@ -258,73 +273,141 @@ impl CfdDataModel {
             .filter_map(move |id| self.records.get(id.0).map(|record| (*id, record)))
     }
 
-    /// Look up the resolved target id for the `CfdValue::Ref` at `site`.
+    /// Looks up a dimension-specific value for a source record field.
     ///
-    /// Returns `None` when no ref lives at that path.
+    /// # Errors
+    ///
+    /// Returns an error when the source field is not dimensional, the caller
+    /// asks for a different dimension, the generated storage record is missing,
+    /// or the requested variant field is not present on that storage record.
+    pub fn dimension_field_value<'a>(
+        &'a self,
+        schema: &CftContainer,
+        source_record: CfdRecordId,
+        field_name: &str,
+        dimension: &str,
+        variant: &str,
+    ) -> Result<DimensionFieldValue<'a>, DimensionFieldLookupError> {
+        let record = self
+            .record(source_record)
+            .ok_or(DimensionFieldLookupError::MissingStorageRecord)?;
+        let actual_type = record.actual_type();
+        let source_type = schema
+            .resolve_type(actual_type)
+            .ok_or(DimensionFieldLookupError::NotDimensional)?;
+        let field = source_type
+            .fields
+            .iter()
+            .find(|field| field.name == field_name)
+            .ok_or(DimensionFieldLookupError::NotDimensional)?;
+        let Some(field_dimension) = field.dimension.as_ref() else {
+            return Err(DimensionFieldLookupError::NotDimensional);
+        };
+        if dimension_name(&field_dimension.kind) != dimension {
+            return Err(DimensionFieldLookupError::DimensionMismatch);
+        }
+        let storage_type = dimension_storage_type(schema, dimension, actual_type, field_name)
+            .ok_or(DimensionFieldLookupError::MissingStorageRecord)?;
+        let storage_key = if source_type.is_singleton {
+            field_name
+        } else {
+            record.key()
+        };
+        let storage_id = self
+            .lookup_assignable(storage_type, storage_key)
+            .ok_or(DimensionFieldLookupError::MissingStorageRecord)?;
+        let storage_record = self
+            .record(storage_id)
+            .ok_or(DimensionFieldLookupError::MissingStorageRecord)?;
+        let value = storage_record
+            .field(variant)
+            .ok_or(DimensionFieldLookupError::MissingVariantField)?;
+        let field_type = schema
+            .resolve_type(storage_type)
+            .and_then(|ty| ty.fields.iter().find(|field| field.name == variant))
+            .map(|field| field.ty_ref.clone());
+        Ok(DimensionFieldValue {
+            value,
+            record: Some(storage_id),
+            field_type,
+        })
+    }
+
+    /// Look up the direct target id for the `CfdValue::Ref` at `site`.
+    ///
+    /// Returns `None` when no direct ref lives at that path. This does not
+    /// follow spread provenance; use [`Self::resolve_effective_ref`] for that.
     #[must_use]
-    pub fn resolve_ref(&self, site: &RefSite) -> Option<CfdRecordId> {
-        self.ref_edge_at(site)
-            .and_then(|edge_id| self.ref_edge(edge_id))
+    pub fn resolve_direct_ref(&self, site: &RefSite) -> Option<CfdRecordId> {
+        self.direct_ref_edge_at(site)
+            .and_then(|edge_id| self.direct_ref_edge(edge_id))
             .map(|edge| edge.target)
     }
 
     /// Convenience for the common case "I have a host id and a path; tell me
-    /// where the Ref at that path resolves to". Equivalent to
-    /// [`CfdDataModel::resolve_ref`] with a freshly constructed `RefSite`.
+    /// where the direct Ref at that path resolves to". Equivalent to
+    /// [`CfdDataModel::resolve_direct_ref`] with a freshly constructed
+    /// `RefSite`.
     #[must_use]
-    pub fn resolve_ref_at(&self, host: CfdRecordId, path: &CfdPath) -> Option<CfdRecordId> {
-        self.resolve_ref(&RefSite::new(host, path.clone()))
+    pub fn resolve_direct_ref_at(&self, host: CfdRecordId, path: &CfdPath) -> Option<CfdRecordId> {
+        self.resolve_direct_ref(&RefSite::new(host, path.clone()))
     }
 
     /// Resolves a ref at `site`, following spread provenance when the value at
     /// that site was inherited from another record.
     #[must_use]
-    pub fn resolve_ref_effective(&self, site: &RefSite) -> Option<CfdRecordId> {
-        self.resolve_ref_effective_inner(site, &mut BTreeSet::new())
+    pub fn resolve_effective_ref(&self, site: &RefSite) -> Option<CfdRecordId> {
+        self.resolve_effective_ref_inner(site, &mut BTreeSet::new())
     }
 
     #[must_use]
-    pub fn resolve_ref_effective_at(
+    pub fn resolve_effective_ref_at(
         &self,
         host: CfdRecordId,
         path: &CfdPath,
     ) -> Option<CfdRecordId> {
-        self.resolve_ref_effective(&RefSite::new(host, path.clone()))
+        self.resolve_effective_ref(&RefSite::new(host, path.clone()))
     }
 
     /// Iterate every resolved `CfdValue::Ref` site in the model.
-    pub fn ref_sites(&self) -> impl Iterator<Item = (&RefSite, CfdRecordId)> {
+    pub fn direct_ref_sites(&self) -> impl Iterator<Item = (&RefSite, CfdRecordId)> {
         self.ref_edges.iter().map(|edge| (&edge.site, edge.target))
     }
 
     #[must_use]
-    pub fn ref_edge(&self, id: RefEdgeId) -> Option<&RefEdge> {
+    pub fn direct_ref_edge(&self, id: RefEdgeId) -> Option<&RefEdge> {
         self.ref_edges.get(id.index())
     }
 
     #[must_use]
-    pub fn ref_edge_at(&self, site: &RefSite) -> Option<RefEdgeId> {
+    pub fn direct_ref_edge_at(&self, site: &RefSite) -> Option<RefEdgeId> {
         self.ref_by_site.get(site).copied()
     }
 
-    pub fn ref_edges(&self) -> impl Iterator<Item = &RefEdge> {
+    pub fn direct_ref_edges(&self) -> impl Iterator<Item = &RefEdge> {
         self.ref_edges.iter()
     }
 
-    pub fn ref_edges_from_host(&self, host: CfdRecordId) -> impl Iterator<Item = &RefEdge> + '_ {
+    pub fn direct_ref_edges_from_host(
+        &self,
+        host: CfdRecordId,
+    ) -> impl Iterator<Item = &RefEdge> + '_ {
         self.ref_by_host
             .get(&host)
             .into_iter()
             .flat_map(|ids| ids.iter())
-            .filter_map(|id| self.ref_edge(*id))
+            .filter_map(|id| self.direct_ref_edge(*id))
     }
 
-    pub fn ref_edges_to_target(&self, target: CfdRecordId) -> impl Iterator<Item = &RefEdge> + '_ {
+    pub fn direct_ref_edges_to_target(
+        &self,
+        target: CfdRecordId,
+    ) -> impl Iterator<Item = &RefEdge> + '_ {
         self.ref_by_target
             .get(&target)
             .into_iter()
             .flat_map(|ids| ids.iter())
-            .filter_map(|id| self.ref_edge(*id))
+            .filter_map(|id| self.direct_ref_edge(*id))
     }
 
     #[must_use]
@@ -397,7 +480,7 @@ impl CfdDataModel {
         self.spread_source_path_inner(host, path, &mut BTreeSet::new())
     }
 
-    fn resolve_ref_effective_inner(
+    fn resolve_effective_ref_inner(
         &self,
         site: &RefSite,
         visited: &mut BTreeSet<RefSite>,
@@ -405,10 +488,10 @@ impl CfdDataModel {
         if !visited.insert(site.clone()) {
             return None;
         }
-        self.resolve_ref(site).or_else(|| {
+        self.resolve_direct_ref(site).or_else(|| {
             let (source, source_path) =
                 self.spread_source_path_inner(site.host, &site.path, &mut BTreeSet::new())?;
-            self.resolve_ref_effective_inner(&RefSite::new(source, source_path), visited)
+            self.resolve_effective_ref_inner(&RefSite::new(source, source_path), visited)
         })
     }
 
@@ -426,6 +509,40 @@ impl CfdDataModel {
         self.spread_source_path_inner(edge.source, &source_path, visited)
             .or(Some((edge.source, source_path)))
     }
+}
+
+fn dimension_name(dimension: &Dimension) -> &str {
+    match dimension {
+        Dimension::Localized => "language",
+        Dimension::Custom(name) => name.as_str(),
+    }
+}
+
+fn dimension_storage_type<'a>(
+    schema: &'a CftContainer,
+    dimension: &str,
+    source_type: &str,
+    source_field: &str,
+) -> Option<&'a str> {
+    schema.all_types().find_map(|schema_type| {
+        schema_type
+            .annotations
+            .iter()
+            .any(|annotation| {
+                annotation.name == "__coflow_dimension_storage"
+                    && matches!(
+                        annotation.args.as_slice(),
+                        [
+                            CftAnnotationValue::String(annotation_dimension),
+                            CftAnnotationValue::String(annotation_type),
+                            CftAnnotationValue::String(annotation_field),
+                        ] if annotation_dimension == dimension
+                            && annotation_type == source_type
+                            && annotation_field == source_field
+                    )
+            })
+            .then_some(schema_type.name.as_str())
+    })
 }
 
 impl SpreadEdge {

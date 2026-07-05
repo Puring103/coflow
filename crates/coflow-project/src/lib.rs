@@ -172,10 +172,11 @@ impl<'de> Deserialize<'de> for SourceConfig {
                 ))
             }
         };
+        let options = expand_env_references(Value::Object(fields));
         Ok(Self {
             source_type,
             location,
-            options: Value::Object(fields),
+            options,
         })
     }
 }
@@ -198,12 +199,39 @@ impl<'de> Deserialize<'de> for OutputConfig {
             .transpose()
             .map_err(de::Error::custom)?
             .ok_or_else(|| de::Error::custom("output must set `dir`"))?;
+        let options = expand_env_references(Value::Object(fields));
         Ok(Self {
             output_type,
             dir,
-            options: Value::Object(fields),
+            options,
         })
     }
+}
+
+fn expand_env_references(value: Value) -> Value {
+    match value {
+        Value::String(value) => {
+            expand_env_string(&value).map_or(Value::String(value), Value::String)
+        }
+        Value::Array(values) => {
+            Value::Array(values.into_iter().map(expand_env_references).collect())
+        }
+        Value::Object(fields) => Value::Object(
+            fields
+                .into_iter()
+                .map(|(key, value)| (key, expand_env_references(value)))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
+fn expand_env_string(value: &str) -> Option<String> {
+    let name = value.strip_prefix("${")?.strip_suffix('}')?;
+    if name.is_empty() {
+        return None;
+    }
+    std::env::var(name).ok()
 }
 
 fn no_duplicate_object<'de, D>(deserializer: D) -> Result<Map<String, Value>, D::Error>

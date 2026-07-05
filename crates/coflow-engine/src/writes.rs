@@ -527,7 +527,7 @@ fn reference_update_actions(
     new_key: &str,
 ) -> Result<Vec<ReferenceUpdateAction>, DiagnosticSet> {
     let mut actions = Vec::new();
-    for edge in session.model.ref_edges_to_target(target_id) {
+    for edge in session.model.direct_ref_edges_to_target(target_id) {
         let Some(host_ref) = session.records.get(edge.host) else {
             continue;
         };

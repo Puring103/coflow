@@ -380,6 +380,27 @@ fn schema_compiles_named_localized_bucket_to_dimension_spec() {
 }
 
 #[test]
+fn schema_compiles_custom_dimension_annotation_to_dimension_spec() {
+    let schema = compile_one(
+        r#"
+            type Item {
+                @dimension("platform")
+                name: string;
+            }
+        "#,
+    )
+    .expect("custom dimension field should compile");
+    let item = schema.resolve_type("Item").expect("Item type");
+    assert_eq!(
+        item.fields[0].dimension,
+        Some(coflow_cft::DimensionSpec {
+            kind: coflow_cft::Dimension::Custom("platform".to_string()),
+            bucket: Some("Item".to_string()),
+        })
+    );
+}
+
+#[test]
 fn schema_rejects_invalid_enum_variant_annotations() {
     let err = compile_one(
         r#"

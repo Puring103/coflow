@@ -282,8 +282,7 @@ fn dimension_synth_default_field_carries_read_only_annotation() {
     let _cleanup = TempDirCleanup(root.clone());
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
-    std::fs::create_dir_all(root.join("data/dimensions/language"))
-        .expect("create dimensions dir");
+    std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create dimensions dir");
     std::fs::write(
         root.join("schema/main.cft"),
         r"

@@ -58,6 +58,99 @@ fn data_model_applies_defaults_and_builds_record_key_indexes_without_running_che
 }
 
 #[test]
+fn dimension_field_lookup_reads_variant_storage_without_exposing_storage_to_callers() {
+    let schema = compile_schema(
+        r#"
+            type Item {
+                @dimension("platform")
+                name: string;
+            }
+
+            @__coflow_dimension_storage("platform", "Item", "name")
+            type Item_nameVariants {
+                default: string?;
+                pc: string?;
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record("potion", "Item", [("name", CfdInputValue::from("Potion"))]);
+    builder.add_record(
+        "potion",
+        "Item_nameVariants",
+        [
+            ("default", CfdInputValue::from("Potion")),
+            ("pc", CfdInputValue::from("PC Potion")),
+        ],
+    );
+    let model = builder.build().expect("data model should build");
+    let item_id = model.lookup_assignable("Item", "potion").expect("item");
+
+    let resolved = model
+        .dimension_field_value(&schema, item_id, "name", "platform", "pc")
+        .expect("variant lookup should resolve");
+
+    assert_eq!(
+        resolved.record,
+        model.lookup_assignable("Item_nameVariants", "potion")
+    );
+    assert_eq!(resolved.value, &CfdValue::String("PC Potion".to_string()));
+    assert_eq!(
+        resolved.field_type,
+        Some(coflow_cft::CftSchemaTypeRef::Nullable(Box::new(
+            coflow_cft::CftSchemaTypeRef::String
+        )))
+    );
+}
+
+#[test]
+fn dimension_field_lookup_uses_field_name_for_singleton_storage_records() {
+    let schema = compile_schema(
+        r#"
+            @singleton
+            type UiText {
+                @localized
+                welcome: string;
+            }
+
+            @__coflow_dimension_storage("language", "UiText", "welcome")
+            type UiText_welcomeVariants {
+                default: string?;
+                zh: string?;
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "UiText",
+        "UiText",
+        [("welcome", CfdInputValue::from("Welcome"))],
+    );
+    builder.add_record(
+        "welcome",
+        "UiText_welcomeVariants",
+        [
+            ("default", CfdInputValue::from("Welcome")),
+            ("zh", CfdInputValue::from("欢迎")),
+        ],
+    );
+    let model = builder.build().expect("data model should build");
+    let singleton_id = model
+        .lookup_assignable("UiText", "UiText")
+        .expect("singleton");
+
+    let resolved = model
+        .dimension_field_value(&schema, singleton_id, "welcome", "language", "zh")
+        .expect("singleton variant lookup should resolve by field name");
+
+    assert_eq!(
+        resolved.record,
+        model.lookup_assignable("UiText_welcomeVariants", "welcome")
+    );
+    assert_eq!(resolved.value, &CfdValue::String("欢迎".to_string()));
+}
+
+#[test]
 fn object_typed_record_refs_resolve_by_expected_type() {
     let schema = compile_schema(
         r#"

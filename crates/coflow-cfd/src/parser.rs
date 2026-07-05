@@ -127,6 +127,14 @@ impl<'a> Parser<'a> {
                 fields,
                 span,
             });
+
+            self.skip_ws_and_comments();
+            if self.eat_char(',') {
+                continue;
+            }
+            if self.peek_char() != Some('}') {
+                return Err(self.error("expected `,` or `}` after group record"));
+            }
         }
         Ok(records)
     }
@@ -171,9 +179,12 @@ impl<'a> Parser<'a> {
             }
 
             self.skip_ws_and_comments();
-            // Allow `,` or `;` as separators, but don't require them.
-            self.eat_char(',');
-            self.eat_char(';');
+            if self.eat_char(',') {
+                continue;
+            }
+            if self.peek_char() != Some('}') {
+                return Err(self.error("expected `,` or `}` after block entry"));
+            }
         }
 
         Ok(CfdBlock {
@@ -277,6 +288,10 @@ impl<'a> Parser<'a> {
                     self.pos += 1;
                     break;
                 }
+                continue;
+            }
+            if self.peek_char() != Some(']') {
+                return Err(self.error("expected `,` or `]` after array item"));
             }
         }
         Ok(CfdValue::Array(items, Span::new(start, self.pos)))
@@ -407,13 +422,6 @@ impl<'a> Parser<'a> {
         loop {
             while self.peek_char().is_some_and(char::is_whitespace) {
                 self.pos += self.peek_char().map_or(0, char::len_utf8);
-            }
-            if self.source[self.pos..].starts_with("//") {
-                self.pos += 2;
-                while self.peek_char().is_some_and(|ch| ch != '\n') {
-                    self.pos += self.peek_char().map_or(0, char::len_utf8);
-                }
-                continue;
             }
             if self.source[self.pos..].starts_with('#') {
                 self.pos += 1;

@@ -110,9 +110,11 @@ impl ProjectSession {
         registry: &ProviderRegistry,
         request: DataPatchRequest,
     ) -> Result<DataPatchReport, DiagnosticSet> {
-        let mutation_request = request.clone().into_mutation_request();
+        let original_ops = request.ops.clone();
+        let mutation_request = request.into_mutation_request();
         let mutation_report = self.apply_mutation(registry, mutation_request)?;
-        let remaining_ops = request.remaining_after_failure(&mutation_report);
+        let remaining_ops =
+            DataPatchRequest::remaining_after_failure(&original_ops, &mutation_report);
         Ok(mutation_report.into_data_patch_report(remaining_ops))
     }
 }
@@ -130,12 +132,11 @@ impl DataPatchRequest {
         }
     }
 
-    fn remaining_after_failure(&self, report: &MutationReport) -> Vec<DataPatchOp> {
+    fn remaining_after_failure(ops: &[DataPatchOp], report: &MutationReport) -> Vec<DataPatchOp> {
         let Some(first_failed) = report.failed.first() else {
             return Vec::new();
         };
-        self.ops
-            .iter()
+        ops.iter()
             .enumerate()
             .filter(|(index, _)| *index >= first_failed.index)
             .map(|(_, op)| op.clone())

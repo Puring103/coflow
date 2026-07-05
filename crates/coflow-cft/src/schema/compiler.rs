@@ -682,6 +682,14 @@ impl<'a> SchemaCompiler<'a> {
                     "@localized can only appear on top-level type fields, not inside sealed types",
                 );
             }
+            if let Some(annotation) = find_annotation(&field.annotations, "dimension") {
+                self.push_diag(
+                    CftErrorCode::LocalizedOnInvalidTarget,
+                    module,
+                    annotation.span,
+                    "@dimension can only appear on top-level type fields, not inside sealed types",
+                );
+            }
         }
         if let Some(annotation) = find_annotation(&field.annotations, "localized") {
             if let Some(AnnotationArg::String(bucket, span)) = annotation.args.first() {
@@ -694,6 +702,29 @@ impl<'a> SchemaCompiler<'a> {
                     );
                 }
             }
+        }
+        if let Some(annotation) = find_annotation(&field.annotations, "dimension") {
+            if let Some(AnnotationArg::String(dimension, span)) = annotation.args.first() {
+                if !crate::is_cft_identifier(dimension) {
+                    self.push_diag(
+                        CftErrorCode::LocalizedBucketNotIdentifier,
+                        module,
+                        *span,
+                        format!("@dimension name `{dimension}` is not a valid CFT identifier"),
+                    );
+                }
+            }
+        }
+        if let (Some(localized), Some(_dimension)) = (
+            find_annotation(&field.annotations, "localized"),
+            find_annotation(&field.annotations, "dimension"),
+        ) {
+            self.push_diag(
+                CftErrorCode::DuplicateAnnotation,
+                module,
+                localized.span,
+                "field can only declare one dimension annotation",
+            );
         }
         if let Some(annotation) = find_annotation(&field.annotations, "expand") {
             // @expand requires an inline concrete object field. Arrays, dicts,
@@ -1071,10 +1102,22 @@ impl<'a> SchemaCompiler<'a> {
 
     fn build_schema_field(&self, field: &FieldDef, owner_type: &str) -> CftSchemaField {
         let localized = find_annotation(&field.annotations, "localized");
-        let dimension = localized.map(|_| DimensionSpec {
-            kind: Dimension::Localized,
-            bucket: localized_bucket(field).or_else(|| Some(owner_type.to_string())),
-        });
+        let dimension_annotation = find_annotation(&field.annotations, "dimension");
+        let dimension = localized
+            .map(|_| DimensionSpec {
+                kind: Dimension::Localized,
+                bucket: localized_bucket(field).or_else(|| Some(owner_type.to_string())),
+            })
+            .or_else(|| {
+                let annotation = dimension_annotation?;
+                let Some(AnnotationArg::String(name, _)) = annotation.args.first() else {
+                    return None;
+                };
+                Some(DimensionSpec {
+                    kind: Dimension::Custom(name.clone()),
+                    bucket: Some(owner_type.to_string()),
+                })
+            });
         CftSchemaField {
             name: field.name.clone(),
             ty: format_type_ref(&field.ty),

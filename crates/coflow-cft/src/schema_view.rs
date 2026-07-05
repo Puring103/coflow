@@ -1,27 +1,20 @@
-use coflow_cft::{
+use crate::{
     CftConstValue, CftContainer, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
     CftSchemaCheckStmt, CftSchemaEnum, CftSchemaType, CftSchemaTypeRef, Dimension, DimensionSpec,
 };
-use coflow_data_model::CfdEnumValue;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Cached reflection used by check evaluation. The shape mirrors the data
-/// needed to resolve names, walk inheritance and look up enum variants;
-/// shared semantic helpers (`is_assignable`, `enum_variant_value`) live on
-/// [`CftContainer`] itself so this view and the data-model's cannot drift.
 #[derive(Debug, Clone)]
-pub(crate) struct SchemaView {
-    pub(crate) consts: BTreeMap<String, CftConstValue>,
-    pub(crate) types: BTreeMap<String, TypeMeta>,
-    pub(crate) enums: BTreeMap<String, EnumMeta>,
-    /// Snapshot of (type name, parent) for inheritance walks. Avoids holding
-    /// a `&CftContainer` borrow on the runner; shaped to match what
-    /// [`CftContainer::is_assignable`] expects so we can delegate to it.
+pub struct CftSchemaView {
+    pub consts: BTreeMap<String, CftConstValue>,
+    pub types: BTreeMap<String, CftTypeMeta>,
+    pub enums: BTreeMap<String, CftEnumMeta>,
     inheritance: BTreeMap<String, Option<String>>,
 }
 
-impl SchemaView {
-    pub(crate) fn new(schema: &CftContainer) -> Self {
+impl CftSchemaView {
+    #[must_use]
+    pub fn new(schema: &CftContainer) -> Self {
         let consts = schema
             .module_ids()
             .filter_map(|id| schema.schema(id))
@@ -31,7 +24,12 @@ impl SchemaView {
 
         let enums = schema
             .all_enums()
-            .map(|schema_enum| (schema_enum.name.clone(), EnumMeta::from_schema(schema_enum)))
+            .map(|schema_enum| {
+                (
+                    schema_enum.name.clone(),
+                    CftEnumMeta::from_schema(schema_enum),
+                )
+            })
             .collect::<BTreeMap<_, _>>();
 
         let mut inheritance = BTreeMap::new();
@@ -39,7 +37,7 @@ impl SchemaView {
             .all_types()
             .map(|schema_type| {
                 inheritance.insert(schema_type.name.clone(), schema_type.parent.clone());
-                let meta = TypeMeta::from_schema(schema_type);
+                let meta = CftTypeMeta::from_schema(schema_type);
                 (meta.name.clone(), meta)
             })
             .collect::<BTreeMap<_, _>>();
@@ -99,10 +97,8 @@ impl SchemaView {
             .collect()
     }
 
-    /// Walks inheritance the same way [`CftContainer::is_assignable`] does,
-    /// but against the cached snapshot so the runtime evaluator doesn't need
-    /// to keep a `&CftContainer` borrow alive for the lifetime of the run.
-    pub(crate) fn is_assignable(&self, actual_type: &str, expected_type: &str) -> bool {
+    #[must_use]
+    pub fn is_assignable(&self, actual_type: &str, expected_type: &str) -> bool {
         let mut current = Some(actual_type);
         while let Some(name) = current {
             if name == expected_type {
@@ -116,30 +112,29 @@ impl SchemaView {
         false
     }
 
-    pub(crate) fn enum_variant_value(&self, enum_name: &str, variant: &str) -> Option<i64> {
+    #[must_use]
+    pub fn enum_variant_value(&self, enum_name: &str, variant: &str) -> Option<i64> {
         self.enums
             .get(enum_name)
             .and_then(|meta| meta.variants.get(variant))
             .copied()
     }
 
-    /// Returns a fully-resolved enum value when `value` matches a single declared
-    /// variant. Returns `None` when no variant has exactly this value (typical
-    /// for `@flag` bitwise composites). Callers should fall back to a
-    /// variantless `CfdEnumValue` in that case.
-    pub(crate) fn enum_value_from_int(&self, enum_name: &str, value: i64) -> Option<CfdEnumValue> {
+    #[must_use]
+    pub fn enum_value_from_int(&self, enum_name: &str, value: i64) -> Option<CftEnumValueMeta> {
         let meta = self.enums.get(enum_name)?;
         meta.variants
             .iter()
             .find(|(_, variant_value)| **variant_value == value)
-            .map(|(variant, variant_value)| CfdEnumValue {
+            .map(|(variant, variant_value)| CftEnumValueMeta {
                 enum_name: enum_name.to_string(),
                 variant: Some(variant.clone()),
                 value: *variant_value,
             })
     }
 
-    pub(crate) fn checks_for_actual(
+    #[must_use]
+    pub fn checks_for_actual(
         &self,
         actual_type: &str,
         dimension: Option<&str>,
@@ -169,21 +164,19 @@ impl SchemaView {
             .collect()
     }
 
-    pub(crate) fn field_type(
-        &self,
-        actual_type: &str,
-        field_name: &str,
-    ) -> Option<&CftSchemaTypeRef> {
+    #[must_use]
+    pub fn field_type(&self, actual_type: &str, field_name: &str) -> Option<&CftSchemaTypeRef> {
         self.types
             .get(actual_type)
             .and_then(|meta| meta.fields.get(field_name))
     }
 
-    pub(crate) fn dimension_field(
+    #[must_use]
+    pub fn dimension_field(
         &self,
         actual_type: &str,
         field_name: &str,
-    ) -> Option<&DimensionFieldMeta> {
+    ) -> Option<&CftDimensionFieldMeta> {
         self.types
             .get(actual_type)
             .and_then(|meta| meta.dimension_fields.get(field_name))
@@ -191,24 +184,21 @@ impl SchemaView {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct TypeMeta {
-    name: String,
-    parent: Option<String>,
-    check: Option<CftSchemaCheckBlock>,
-    dimension_checks: BTreeMap<String, CftSchemaCheckBlock>,
-    fields: BTreeMap<String, CftSchemaTypeRef>,
-    dimension_fields: BTreeMap<String, DimensionFieldMeta>,
+pub struct CftTypeMeta {
+    pub name: String,
+    pub parent: Option<String>,
+    pub check: Option<CftSchemaCheckBlock>,
+    pub dimension_checks: BTreeMap<String, CftSchemaCheckBlock>,
+    pub fields: BTreeMap<String, CftSchemaTypeRef>,
+    pub dimension_fields: BTreeMap<String, CftDimensionFieldMeta>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DimensionFieldMeta {
-    pub(crate) dimension: String,
-    pub(crate) source_field: String,
-    pub(crate) synthesized_type: String,
-    pub(crate) is_singleton: bool,
+pub struct CftDimensionFieldMeta {
+    pub dimension: String,
 }
 
-impl TypeMeta {
+impl CftTypeMeta {
     fn from_schema(schema_type: &CftSchemaType) -> Self {
         let dimension_fields = schema_type
             .fields
@@ -217,11 +207,8 @@ impl TypeMeta {
                 let dimension = dimension_name(field.dimension.as_ref())?;
                 Some((
                     field.name.clone(),
-                    DimensionFieldMeta {
+                    CftDimensionFieldMeta {
                         dimension: dimension.to_string(),
-                        source_field: field.name.clone(),
-                        synthesized_type: format!("{}_{}Variants", schema_type.name, field.name),
-                        is_singleton: schema_type.is_singleton,
                     },
                 ))
             })
@@ -237,6 +224,30 @@ impl TypeMeta {
                 .map(|field| (field.name.clone(), field.ty_ref.clone()))
                 .collect(),
             dimension_fields,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CftEnumValueMeta {
+    pub enum_name: String,
+    pub variant: Option<String>,
+    pub value: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct CftEnumMeta {
+    pub variants: BTreeMap<String, i64>,
+}
+
+impl CftEnumMeta {
+    fn from_schema(schema_enum: &CftSchemaEnum) -> Self {
+        Self {
+            variants: schema_enum
+                .variants
+                .iter()
+                .map(|variant| (variant.name.clone(), variant.value))
+                .collect(),
         }
     }
 }
@@ -282,13 +293,13 @@ impl ExprUsage {
 }
 
 struct DimensionCheckAnalyzer<'a> {
-    schema: &'a SchemaView,
+    schema: &'a CftSchemaView,
     current_type: String,
     scopes: Vec<BTreeMap<String, CheckTy>>,
 }
 
 impl<'a> DimensionCheckAnalyzer<'a> {
-    fn new(schema: &'a SchemaView, current_type: &str) -> Self {
+    fn new(schema: &'a CftSchemaView, current_type: &str) -> Self {
         Self {
             schema,
             current_type: current_type.to_string(),
@@ -475,7 +486,6 @@ impl<'a> DimensionCheckAnalyzer<'a> {
                         _ => CheckTy::Unknown,
                     }
                 }),
-                "min" | "max" | "sum" => CheckTy::Unknown,
                 _ => CheckTy::Unknown,
             }
         };
@@ -504,7 +514,6 @@ impl<'a> DimensionCheckAnalyzer<'a> {
                 CheckTy::Dict(_, value) => CheckTy::Array(value.clone()),
                 _ => CheckTy::Unknown,
             },
-            "min" | "max" | "sum" => CheckTy::Unknown,
             _ => CheckTy::Unknown,
         };
         ExprUsage { ty, dimensions }
@@ -517,8 +526,7 @@ fn type_ref_to_check_ty(ty: &CftSchemaTypeRef) -> CheckTy {
         CftSchemaTypeRef::Float => CheckTy::Float,
         CftSchemaTypeRef::Bool => CheckTy::Bool,
         CftSchemaTypeRef::String => CheckTy::String,
-        CftSchemaTypeRef::Named(name) => CheckTy::Type(name.clone()),
-        CftSchemaTypeRef::Ref(name) => CheckTy::Type(name.clone()),
+        CftSchemaTypeRef::Named(name) | CftSchemaTypeRef::Ref(name) => CheckTy::Type(name.clone()),
         CftSchemaTypeRef::Array(inner) => CheckTy::Array(Box::new(type_ref_to_check_ty(inner))),
         CftSchemaTypeRef::Dict(key, value) => CheckTy::Dict(
             Box::new(type_ref_to_check_ty(key)),
@@ -543,22 +551,5 @@ fn dimension_name(dimension: Option<&DimensionSpec>) -> Option<&str> {
     match &dimension?.kind {
         Dimension::Localized => Some("language"),
         Dimension::Custom(name) => Some(name.as_str()),
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct EnumMeta {
-    variants: BTreeMap<String, i64>,
-}
-
-impl EnumMeta {
-    fn from_schema(schema_enum: &CftSchemaEnum) -> Self {
-        Self {
-            variants: schema_enum
-                .variants
-                .iter()
-                .map(|variant| (variant.name.clone(), variant.value))
-                .collect(),
-        }
     }
 }

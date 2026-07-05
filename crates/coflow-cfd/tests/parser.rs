@@ -18,7 +18,7 @@ fn parse_err(source: &str) -> Vec<coflow_cfd::CfdSyntaxDiagnostic> {
 
 #[test]
 fn simple_record_with_scalar_field() {
-    let ast = parse_ok("sword: Item { damage: 42 }");
+    let ast = parse_ok("sword: Item { damage: 42, }");
     assert_eq!(ast.records.len(), 1);
     let r = &ast.records[0];
     assert_eq!(r.key, "sword");
@@ -33,7 +33,7 @@ fn simple_record_with_scalar_field() {
 
 #[test]
 fn group_record_expands_to_multiple_records() {
-    let ast = parse_ok("Item { sword {} shield {} }");
+    let ast = parse_ok("Item { sword {}, shield {}, }");
     assert_eq!(ast.records.len(), 2);
     assert_eq!(ast.records[0].key, "sword");
     assert_eq!(ast.records[0].type_name, "Item");
@@ -43,7 +43,7 @@ fn group_record_expands_to_multiple_records() {
 
 #[test]
 fn nested_block_as_field_value() {
-    let ast = parse_ok("hero: Player { stats: Stats { hp: 100 } }");
+    let ast = parse_ok("hero: Player { stats: Stats { hp: 100, }, }");
     assert_eq!(ast.records.len(), 1);
     let field = &ast.records[0].fields[0];
     assert_eq!(field.name, "stats");
@@ -75,7 +75,7 @@ fn trailing_comma_in_array() {
 
 #[test]
 fn direct_ref_value() {
-    let ast = parse_ok("r: T { target: &boss }");
+    let ast = parse_ok("r: T { target: &boss, }");
     match &ast.records[0].fields[0].value {
         CfdValue::Ref(r) => assert_eq!(r.key.0, "boss"),
         other => panic!("expected Ref, got {other:?}"),
@@ -104,25 +104,24 @@ fn empty_input_produces_no_records() {
 
 #[test]
 fn comment_only_input_produces_no_records() {
-    let ast = parse_ok("// a comment\n# another comment\n");
+    let ast = parse_ok("# a comment\n# another comment\n");
     assert!(ast.records.is_empty());
 }
 
 #[test]
 fn quoted_record_key() {
-    let ast = parse_ok(r#""my key": Item { x: 1 }"#);
+    let ast = parse_ok(r#""my key": Item { x: 1, }"#);
     assert_eq!(ast.records[0].key, "my key");
 }
 
 #[test]
-fn semicolon_field_separator() {
-    let ast = parse_ok("r: T { a: 1; b: 2; }");
-    assert_eq!(ast.records[0].fields.len(), 2);
+fn semicolon_field_separator_is_rejected() {
+    parse_err("r: T { a: 1; b: 2; }");
 }
 
 #[test]
 fn null_literal() {
-    let ast = parse_ok("r: T { x: null }");
+    let ast = parse_ok("r: T { x: null, }");
     assert!(matches!(ast.records[0].fields[0].value, CfdValue::Null(_)));
 }
 
@@ -130,7 +129,7 @@ fn null_literal() {
 
 #[test]
 fn scalar_span_excludes_trailing_whitespace() {
-    let source = "r: T { x: 42   }";
+    let source = "r: T { x: 42   , }";
     let (ast, _) = parse_cfd(source);
     let span = match &ast.records[0].fields[0].value {
         CfdValue::Scalar(_, s) => *s,
@@ -142,7 +141,7 @@ fn scalar_span_excludes_trailing_whitespace() {
 
 #[test]
 fn block_type_marker_span_excludes_whitespace() {
-    let source = "r: T { sub: Sub   { } }";
+    let source = "r: T { sub: Sub   { }, }";
     let (ast, _) = parse_cfd(source);
     let marker_span = match &ast.records[0].fields[0].value {
         CfdValue::Block(b) => b.type_marker.as_ref().unwrap().1,
@@ -207,6 +206,21 @@ fn direct_ref_paths_are_rejected() {
     );
 }
 
+#[test]
+fn slash_slash_comments_are_rejected() {
+    parse_err("// a comment\n");
+}
+
+#[test]
+fn adjacent_fields_without_comma_are_rejected() {
+    parse_err("r: T { a: 1 b: 2 }");
+}
+
+#[test]
+fn adjacent_array_items_without_comma_are_rejected() {
+    parse_err("r: T { items: [1 2] }");
+}
+
 // ── Error recovery ────────────────────────────────────────────────────────────
 
 #[test]
@@ -226,7 +240,7 @@ fn error_recovery_continues_after_bad_record() {
 
 #[test]
 fn spread_in_block() {
-    let ast = parse_ok("r: T { ...&base, x: 1 }");
+    let ast = parse_ok("r: T { ...&base, x: 1, }");
     let r = &ast.records[0];
     assert_eq!(r.entries.len(), 2);
     assert!(matches!(r.entries[0], CfdBlockEntry::Spread(_, _)));

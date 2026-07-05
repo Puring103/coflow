@@ -603,7 +603,8 @@ where
         source: &LarkSheetSource,
     ) -> Result<TableSource, LarkDiagnostics> {
         let tenant_access_token = self.cached_loader_tenant_token(source)?;
-        let spreadsheet_token = self.cached_loader_spreadsheet_token(source, &tenant_access_token)?;
+        let spreadsheet_token =
+            self.cached_loader_spreadsheet_token(source, &tenant_access_token)?;
         let metadata = self.cached_loader_metadata(&spreadsheet_token, &tenant_access_token)?;
         let configs = configured_sheets(source, &metadata);
         let mut diagnostics = Vec::new();
@@ -630,7 +631,12 @@ where
             let rows = if sheet.row_count() == 0 || sheet.column_count() == 0 {
                 Vec::new()
             } else {
-                sheet_values(&self.client, &spreadsheet_token, sheet, &tenant_access_token)?
+                sheet_values(
+                    &self.client,
+                    &spreadsheet_token,
+                    sheet,
+                    &tenant_access_token,
+                )?
             };
             table_sheets.push(TableSheet::new(sheet.title.clone(), rows));
         }
@@ -2232,7 +2238,7 @@ mod tests {
     }
 
     #[test]
-    fn loader_reuses_remote_metadata_cache() {
+    fn loader_reuses_remote_metadata_cache() -> Result<(), String> {
         let client = SequenceClient::new([
             (
                 "POST",
@@ -2261,7 +2267,7 @@ mod tests {
             ),
         ]);
         let loader = LarkSheetLoader::new(client.clone());
-        let schema = item_schema();
+        let schema = item_schema()?;
         let source = ResolvedSource {
             provider_id: LARK_SHEET_LOADER_DESCRIPTOR.id.to_string(),
             location: SourceLocationSpec::Uri(
@@ -2279,10 +2285,18 @@ mod tests {
             schema: &schema,
         };
 
-        loader.load(ctx, &source).expect("first load");
-        loader.load(ctx, &source).expect("second load");
+        loader
+            .load(ctx, &source)
+            .map_err(|err| format!("first load: {err:?}"))?;
+        loader
+            .load(ctx, &source)
+            .map_err(|err| format!("second load: {err:?}"))?;
 
-        assert_eq!(client.remaining(), 0);
+        let remaining = client.remaining()?;
+        if remaining != 0 {
+            return Err(format!("expected no remaining responses, got {remaining}"));
+        }
+        Ok(())
     }
 
     struct NoopClient;
@@ -2315,7 +2329,9 @@ mod tests {
     }
 
     impl SequenceClient {
-        fn new(responses: impl IntoIterator<Item = (&'static str, &'static str, &'static str)>) -> Self {
+        fn new(
+            responses: impl IntoIterator<Item = (&'static str, &'static str, &'static str)>,
+        ) -> Self {
             Self(std::sync::Arc::new(std::sync::Mutex::new(
                 responses
                     .into_iter()
@@ -2329,10 +2345,15 @@ mod tests {
         }
 
         fn next(&self, method: &'static str, url: &str) -> Result<String, String> {
-            let mut queue = self.0.lock().expect("lock sequence client");
-            let response = queue
-                .pop_front()
-                .ok_or_else(|| format!("unexpected {method} {url}"))?;
+            let response = {
+                let mut queue = self
+                    .0
+                    .lock()
+                    .map_err(|_| "lock sequence client".to_string())?;
+                queue
+                    .pop_front()
+                    .ok_or_else(|| format!("unexpected {method} {url}"))?
+            };
             if response.method != method || !url.contains(response.url_contains) {
                 return Err(format!(
                     "expected {} *{}*, got {method} {url}",
@@ -2342,8 +2363,11 @@ mod tests {
             Ok(response.body.to_string())
         }
 
-        fn remaining(&self) -> usize {
-            self.0.lock().expect("lock sequence client").len()
+        fn remaining(&self) -> Result<usize, String> {
+            self.0
+                .lock()
+                .map(|queue| queue.len())
+                .map_err(|_| "lock sequence client".to_string())
         }
     }
 
@@ -2362,12 +2386,14 @@ mod tests {
         }
     }
 
-    fn item_schema() -> CftContainer {
+    fn item_schema() -> Result<CftContainer, String> {
         let mut schema = CftContainer::new();
         schema
             .add_module(ModuleId::from("main"), "type Item { name: string; }")
-            .expect("schema parse");
-        schema.compile().expect("schema compile");
+            .map_err(|err| format!("schema parse: {err:?}"))?;
         schema
+            .compile()
+            .map_err(|err| format!("schema compile: {err:?}"))?;
+        Ok(schema)
     }
 }

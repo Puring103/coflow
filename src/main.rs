@@ -159,7 +159,7 @@ fn run_data(command: &DataArgs) -> Result<bool, String> {
             args.config_or_dir.as_deref(),
             args.source.clone(),
             args.actual_type.clone(),
-            args.provider.clone(),
+            args.provider.as_deref(),
             args.sheet.clone(),
             args.human,
         ),

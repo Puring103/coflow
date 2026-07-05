@@ -259,12 +259,10 @@ fn insert_virtual_source(nodes: &mut Vec<FileTreeNode>, source: &str) {
     if is_local_project_path(source) {
         return;
     }
-    let group_index = match nodes
+    let group_index = nodes
         .iter()
         .position(|node| node.is_dir && node.path == REMOTE_SOURCE_GROUP_PATH)
-    {
-        Some(index) => index,
-        None => {
+        .unwrap_or_else(|| {
             nodes.push(FileTreeNode {
                 name: REMOTE_SOURCE_GROUP_NAME.to_string(),
                 path: REMOTE_SOURCE_GROUP_PATH.to_string(),
@@ -273,8 +271,7 @@ fn insert_virtual_source(nodes: &mut Vec<FileTreeNode>, source: &str) {
                 children: Vec::new(),
             });
             nodes.len() - 1
-        }
-    };
+        });
     nodes[group_index].children.push(FileTreeNode {
         name: virtual_source_name(source),
         path: source.to_string(),
@@ -337,8 +334,14 @@ mod tests {
 
         let remote = tree
             .iter()
-            .find(|node| node.path == REMOTE_SOURCE_GROUP_PATH)
-            .expect("remote source group is present in the file tree");
+            .find(|node| node.path == REMOTE_SOURCE_GROUP_PATH);
+        assert!(
+            remote.is_some(),
+            "remote source group is present in the file tree"
+        );
+        let Some(remote) = remote else {
+            return;
+        };
         assert_eq!(remote.name, REMOTE_SOURCE_GROUP_NAME);
         assert!(remote.is_dir);
         assert!(remote.in_sources);
