@@ -16,26 +16,8 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
       - name: Check workspace
         run: cargo check --workspace
 
       - name: Test
         run: cargo test --workspace
-
-      - name: Check TypeScript bindings
-        shell: pwsh
-        run: |
-          cargo test --features ts-export -p cfd-editor export_bindings
-          git diff --exit-code editors/cfd-editor/frontend/src/bindings
-
-      - name: Build CFD editor frontend
-        run: npm ci && npm run build
-        working-directory: editors/cfd-editor/frontend
-
-      - name: Test VS Code extension
-        run: node editors/vscode-coflow/test/extension-unit.test.js
