@@ -1,6 +1,6 @@
 use crate::{
-    CftConstValue, CftContainer, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
-    CftSchemaCheckStmt, CftSchemaEnum, CftSchemaType, CftSchemaTypeRef,
+    CftAnnotation, CftConstValue, CftContainer, CftSchemaCheckBlock, CftSchemaCheckExpr,
+    CftSchemaCheckExprKind, CftSchemaCheckStmt, CftSchemaEnum, CftSchemaType, CftSchemaTypeRef,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -178,9 +178,12 @@ pub struct CftTypeMeta {
     pub name: String,
     pub parent: Option<String>,
     pub is_abstract: bool,
+    pub is_sealed: bool,
     pub is_singleton: bool,
+    pub annotations: Vec<CftAnnotation>,
     pub check: Option<CftSchemaCheckBlock>,
     pub dimension_checks: BTreeMap<String, CftSchemaCheckBlock>,
+    pub own_fields: Vec<CftFieldMeta>,
     pub all_fields: Vec<CftFieldMeta>,
     pub fields: BTreeMap<String, CftSchemaTypeRef>,
     pub dimension_fields: BTreeMap<String, CftDimensionFieldMeta>,
@@ -191,6 +194,8 @@ pub struct CftFieldMeta {
     pub name: String,
     pub ty_ref: CftSchemaTypeRef,
     pub default: Option<crate::CftSchemaDefaultValue>,
+    pub annotations: Vec<CftAnnotation>,
+    pub is_dimensional: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -217,17 +222,20 @@ impl CftTypeMeta {
             name: schema_type.name.clone(),
             parent: schema_type.parent.clone(),
             is_abstract: schema_type.is_abstract,
+            is_sealed: schema_type.is_sealed,
             is_singleton: schema_type.is_singleton,
+            annotations: schema_type.annotations.clone(),
             check: schema_type.check.clone(),
             dimension_checks: BTreeMap::new(),
+            own_fields: schema_type
+                .fields
+                .iter()
+                .map(CftFieldMeta::from_schema)
+                .collect(),
             all_fields: schema_type
                 .all_fields
                 .iter()
-                .map(|field| CftFieldMeta {
-                    name: field.name.clone(),
-                    ty_ref: field.ty_ref.clone(),
-                    default: field.default.clone(),
-                })
+                .map(CftFieldMeta::from_schema)
                 .collect(),
             fields: schema_type
                 .all_fields
@@ -235,6 +243,18 @@ impl CftTypeMeta {
                 .map(|field| (field.name.clone(), field.ty_ref.clone()))
                 .collect(),
             dimension_fields,
+        }
+    }
+}
+
+impl CftFieldMeta {
+    fn from_schema(field: &crate::CftSchemaField) -> Self {
+        Self {
+            name: field.name.clone(),
+            ty_ref: field.ty_ref.clone(),
+            default: field.default.clone(),
+            annotations: field.annotations.clone(),
+            is_dimensional: field.dimension.is_some(),
         }
     }
 }
@@ -248,12 +268,33 @@ pub struct CftEnumValueMeta {
 
 #[derive(Debug, Clone)]
 pub struct CftEnumMeta {
+    pub name: String,
+    pub annotations: Vec<CftAnnotation>,
+    pub all_variants: Vec<CftEnumVariantMeta>,
     pub variants: BTreeMap<String, i64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CftEnumVariantMeta {
+    pub name: String,
+    pub value: i64,
+    pub annotations: Vec<CftAnnotation>,
 }
 
 impl CftEnumMeta {
     fn from_schema(schema_enum: &CftSchemaEnum) -> Self {
         Self {
+            name: schema_enum.name.clone(),
+            annotations: schema_enum.annotations.clone(),
+            all_variants: schema_enum
+                .variants
+                .iter()
+                .map(|variant| CftEnumVariantMeta {
+                    name: variant.name.clone(),
+                    value: variant.value,
+                    annotations: variant.annotations.clone(),
+                })
+                .collect(),
             variants: schema_enum
                 .variants
                 .iter()

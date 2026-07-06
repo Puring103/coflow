@@ -1,7 +1,8 @@
 use crate::names::{annotation_name_arg, csharp_type_name, has_annotation};
 use crate::CsharpCodegenError;
 use coflow_cft::{
-    CftContainer, CftSchemaDefaultValue, CftSchemaField, CftSchemaType, CftSchemaTypeRef,
+    CftContainer, CftEnumMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchemaView,
+    CftTypeMeta as CftTypeMeta,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -13,19 +14,18 @@ pub struct SchemaView {
     pub float_32: bool,
     pub loadable_tables: BTreeSet<String>,
     children: BTreeMap<String, BTreeSet<String>>,
+    pub cft: CftSchemaView,
     csharp_types: BTreeMap<String, String>,
     csharp_enums: BTreeMap<String, String>,
 }
 
 impl SchemaView {
     pub fn new(schema: &CftContainer) -> Self {
-        let enums = schema
-            .all_enums()
-            .map(|schema_enum| schema_enum.name.clone())
-            .collect::<BTreeSet<_>>();
+        let cft = CftSchemaView::new(schema);
+        let enums = cft.enums.keys().cloned().collect::<BTreeSet<_>>();
 
         let mut children = BTreeMap::<String, BTreeSet<String>>::new();
-        for schema_type in schema.all_types() {
+        for schema_type in cft.types.values() {
             if let Some(parent) = &schema_type.parent {
                 children
                     .entry(parent.clone())
@@ -34,32 +34,25 @@ impl SchemaView {
             }
         }
 
-        let types = schema
-            .all_types()
+        let types = cft
+            .types
+            .values()
             .map(|schema_type| {
                 (
                     schema_type.name.clone(),
-                    TypeMeta::from_schema(schema_type, &enums),
+                    TypeMeta::from_schema_view(schema_type, &enums),
                 )
             })
             .collect::<BTreeMap<_, _>>();
-        let csharp_types = schema
-            .all_types()
-            .map(|schema_type| {
-                (
-                    schema_type.name.clone(),
-                    csharp_type_name(&schema_type.name),
-                )
-            })
+        let csharp_types = cft
+            .types
+            .keys()
+            .map(|name| (name.clone(), csharp_type_name(name)))
             .collect::<BTreeMap<_, _>>();
-        let csharp_enums = schema
-            .all_enums()
-            .map(|schema_enum| {
-                (
-                    schema_enum.name.clone(),
-                    csharp_type_name(&schema_enum.name),
-                )
-            })
+        let csharp_enums = cft
+            .enums
+            .keys()
+            .map(|name| (name.clone(), csharp_type_name(name)))
             .collect::<BTreeMap<_, _>>();
 
         Self {
@@ -69,9 +62,35 @@ impl SchemaView {
             float_32: false,
             loadable_tables: BTreeSet::new(),
             children,
+            cft,
             csharp_types,
             csharp_enums,
         }
+    }
+
+    pub fn all_enums(&self) -> impl Iterator<Item = &CftEnumMeta> {
+        self.cft.enums.values()
+    }
+
+    pub fn all_types(&self) -> impl Iterator<Item = &TypeMeta> {
+        self.types.values()
+    }
+
+    pub fn cft_enum_meta(&self, name: &str) -> Option<&CftEnumMeta> {
+        self.cft.enums.get(name)
+    }
+
+    pub fn uses_localization(&self) -> bool {
+        self.types
+            .values()
+            .any(|ty| ty.all_fields.iter().any(|field| field.is_dimensional))
+    }
+
+    pub fn id_as_enum_names(&self) -> BTreeSet<String> {
+        self.types
+            .values()
+            .filter_map(|ty| ty.id_as_enum.clone())
+            .collect()
     }
 
     #[must_use]
@@ -245,25 +264,33 @@ pub struct TypeMeta {
     pub name: String,
     pub parent: Option<String>,
     pub is_abstract: bool,
+    pub is_sealed: bool,
     pub is_singleton: bool,
     pub is_struct: bool,
     pub id_as_enum: Option<String>,
+    pub own_fields: Vec<FieldMeta>,
     pub all_fields: Vec<FieldMeta>,
 }
 
 impl TypeMeta {
-    fn from_schema(schema_type: &CftSchemaType, enums: &BTreeSet<String>) -> Self {
+    fn from_schema_view(schema_type: &CftTypeMeta, enums: &BTreeSet<String>) -> Self {
         Self {
             name: schema_type.name.clone(),
             parent: schema_type.parent.clone(),
             is_abstract: schema_type.is_abstract,
+            is_sealed: schema_type.is_sealed,
             is_singleton: schema_type.is_singleton,
             is_struct: has_annotation(&schema_type.annotations, "struct"),
             id_as_enum: annotation_name_arg(&schema_type.annotations, "idAsEnum"),
+            own_fields: schema_type
+                .own_fields
+                .iter()
+                .map(|field| FieldMeta::from_schema_view(field, enums))
+                .collect(),
             all_fields: schema_type
                 .all_fields
                 .iter()
-                .map(|field| FieldMeta::from_schema(field, enums))
+                .map(|field| FieldMeta::from_schema_view(field, enums))
                 .collect(),
         }
     }
@@ -328,12 +355,12 @@ pub struct FieldMeta {
 }
 
 impl FieldMeta {
-    pub fn from_schema(field: &CftSchemaField, enums: &BTreeSet<String>) -> Self {
+    pub fn from_schema_view(field: &coflow_cft::CftFieldMeta, enums: &BTreeSet<String>) -> Self {
         Self {
             name: field.name.clone(),
             ty: FieldType::from_schema(&field.ty_ref, enums),
             default: field.default.clone(),
-            is_dimensional: field.dimension.is_some(),
+            is_dimensional: field.is_dimensional,
         }
     }
 }

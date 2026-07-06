@@ -1,8 +1,8 @@
 use crate::emit::{build_csharp_database, build_csharp_enum, build_csharp_type};
 use crate::model::{CsharpEnum, CsharpEnumVariant, CsharpProject};
 use crate::names::{
-    annotation_name_arg, camel_case, csharp_ident_error, csharp_member_ident_error,
-    csharp_namespace_error, csharp_type_name, has_annotation, index_param_name, pluralize,
+    camel_case, csharp_ident_error, csharp_member_ident_error, csharp_namespace_error,
+    csharp_type_name, has_annotation, index_param_name, pluralize,
 };
 use crate::schema_view::SchemaView;
 use crate::CsharpCodegenError;
@@ -77,7 +77,10 @@ pub fn build_project(
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&BTreeSet<String>>,
 ) -> Result<CsharpProject, CsharpCodegenError> {
-    let diagnostics = preflight_csharp_codegen(schema, options, &id_as_enum_variants);
+    let view = SchemaView::new(schema)
+        .with_int_32(options.int_32)
+        .with_float_32(options.float_32);
+    let diagnostics = preflight_csharp_codegen_with_view(&view, options, &id_as_enum_variants);
     if !diagnostics.is_empty() {
         return Err(CsharpCodegenError::new(
             diagnostics
@@ -87,9 +90,8 @@ pub fn build_project(
                 .join("\n"),
         ));
     }
-    let id_as_enum_names = id_as_enum_names(schema);
-    let probe = SchemaView::new(schema);
-    let tables: Vec<String> = probe
+    let id_as_enum_names = view.id_as_enum_names();
+    let tables: Vec<String> = view
         .table_names()
         .into_iter()
         .filter(|name| non_empty_tables.is_none_or(|set| set.contains(name)))
@@ -100,8 +102,8 @@ pub fn build_project(
         .with_float_32(options.float_32)
         .with_loadable_tables(loadable);
 
-    let mut id_as_enum_variants = build_id_as_enums(schema, &id_as_enum_names, id_as_enum_variants);
-    let enums = schema
+    let mut id_as_enum_variants = build_id_as_enums(&view, &id_as_enum_names, id_as_enum_variants);
+    let enums = view
         .all_enums()
         .map(|schema_enum| {
             id_as_enum_variants
@@ -110,17 +112,13 @@ pub fn build_project(
         })
         .collect::<Vec<_>>();
 
-    let types = schema
+    let types = view
         .all_types()
         .map(|schema_type| build_csharp_type(schema_type, &view))
         .collect::<Result<Vec<_>, _>>()?;
 
     let database = build_csharp_database(&view, &tables, &options.database_class, data_format)?;
     let singletons = build_csharp_singletons(&view);
-
-    let uses_localization = schema
-        .all_types()
-        .any(|t| t.all_fields.iter().any(|f| f.dimension.is_some()));
 
     Ok(CsharpProject {
         namespace: options.namespace.clone(),
@@ -131,7 +129,7 @@ pub fn build_project(
         },
         uses_json: data_format == CsharpDataFormat::Json,
         uses_messagepack: data_format == CsharpDataFormat::MessagePack,
-        uses_localization,
+        uses_localization: view.uses_localization(),
         int_type: if options.int_32 { "int" } else { "long" },
         float_type: if options.float_32 { "float" } else { "double" },
         enums,
@@ -162,15 +160,23 @@ pub fn preflight_csharp_codegen(
     options: &CsharpCodegenOptions,
     id_as_enum_variants: &BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
 ) -> Vec<CsharpCodegenDiagnostic> {
-    let mut diagnostics = Vec::new();
-    validate_options(options, &mut diagnostics);
-    validate_schema_names(schema, &mut diagnostics);
-    let id_as_enum_names = id_as_enum_names(schema);
-    validate_id_as_enum_variants(&id_as_enum_names, id_as_enum_variants, &mut diagnostics);
     let view = SchemaView::new(schema)
         .with_int_32(options.int_32)
         .with_float_32(options.float_32);
-    validate_generated_names(&view, options, &mut diagnostics);
+    preflight_csharp_codegen_with_view(&view, options, id_as_enum_variants)
+}
+
+fn preflight_csharp_codegen_with_view(
+    view: &SchemaView,
+    options: &CsharpCodegenOptions,
+    id_as_enum_variants: &BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
+) -> Vec<CsharpCodegenDiagnostic> {
+    let mut diagnostics = Vec::new();
+    validate_options(options, &mut diagnostics);
+    validate_schema_names(view, &mut diagnostics);
+    let id_as_enum_names = view.id_as_enum_names();
+    validate_id_as_enum_variants(&id_as_enum_names, id_as_enum_variants, &mut diagnostics);
+    validate_generated_names(view, options, &mut diagnostics);
     diagnostics
 }
 
@@ -210,12 +216,12 @@ fn validate_options(
     }
 }
 
-fn validate_schema_names(schema: &CftContainer, diagnostics: &mut Vec<CsharpCodegenDiagnostic>) {
-    for schema_enum in schema.all_enums() {
+fn validate_schema_names(view: &SchemaView, diagnostics: &mut Vec<CsharpCodegenDiagnostic>) {
+    for schema_enum in view.all_enums() {
         validate_ident("enum", &schema_enum.name, diagnostics);
         validate_ident("enum", &csharp_type_name(&schema_enum.name), diagnostics);
         let mut variants = BTreeMap::<String, String>::new();
-        for variant in &schema_enum.variants {
+        for variant in &schema_enum.all_variants {
             let csharp_variant = csharp_type_name(&variant.name);
             validate_ident("enum variant", &csharp_variant, diagnostics);
             insert_generated_enum_variant_name(
@@ -228,14 +234,14 @@ fn validate_schema_names(schema: &CftContainer, diagnostics: &mut Vec<CsharpCode
         }
     }
 
-    for schema_type in schema.all_types() {
+    for schema_type in view.all_types() {
         validate_ident("type", &schema_type.name, diagnostics);
         validate_ident("type", &csharp_type_name(&schema_type.name), diagnostics);
         if let Some(parent) = &schema_type.parent {
             validate_ident("parent type", parent, diagnostics);
             validate_ident("parent type", &csharp_type_name(parent), diagnostics);
         }
-        for field in &schema_type.fields {
+        for field in &schema_type.own_fields {
             let property_name = csharp_type_name(&field.name);
             validate_ident("field property", &property_name, diagnostics);
         }
@@ -317,16 +323,6 @@ fn validate_generated_file_names(
     }
 }
 
-fn id_as_enum_names(schema: &CftContainer) -> BTreeSet<String> {
-    let mut out = BTreeSet::new();
-    for schema_type in schema.all_types() {
-        if let Some(enum_name) = annotation_name_arg(&schema_type.annotations, "idAsEnum") {
-            out.insert(enum_name);
-        }
-    }
-    out
-}
-
 fn validate_id_as_enum_variants(
     declared: &BTreeSet<String>,
     variants: &BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
@@ -357,15 +353,15 @@ fn validate_id_as_enum_variants(
 }
 
 fn build_id_as_enums(
-    schema: &CftContainer,
+    view: &SchemaView,
     declared: &BTreeSet<String>,
     mut variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
 ) -> BTreeMap<String, CsharpEnum> {
     let mut out = BTreeMap::new();
     for name in declared {
-        let schema_enum = schema.resolve_enum(name);
-        let is_flags =
-            schema_enum.is_some_and(|schema_enum| has_annotation(&schema_enum.annotations, "flag"));
+        let is_flags = view
+            .cft_enum_meta(name)
+            .is_some_and(|schema_enum| has_annotation(&schema_enum.annotations, "flag"));
         let mut enum_variants = Vec::new();
         if is_flags {
             enum_variants.push(CsharpEnumVariant {

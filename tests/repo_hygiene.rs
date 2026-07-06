@@ -239,6 +239,34 @@ fn data_model_schema_projection_uses_cft_schema_view() {
 }
 
 #[test]
+fn csharp_codegen_schema_projection_uses_cft_schema_view() {
+    let schema_view = std::fs::read_to_string("crates/coflow-codegen-csharp/src/schema_view.rs")
+        .expect("read C# codegen schema view");
+    let ir =
+        std::fs::read_to_string("crates/coflow-codegen-csharp/src/ir.rs").expect("read C# IR");
+    let emit =
+        std::fs::read_to_string("crates/coflow-codegen-csharp/src/emit.rs").expect("read C# emit");
+    let codegen = format!("{schema_view}\n{ir}\n{emit}");
+
+    assert!(
+        schema_view.contains("CftSchemaView::new(schema)"),
+        "C# codegen schema projection should be built from coflow-cft CftSchemaView"
+    );
+    for forbidden in [
+        "schema.all_types()",
+        "schema.all_enums()",
+        "CftSchemaType,",
+        "CftSchemaEnum,",
+        "CftSchemaField,",
+    ] {
+        assert!(
+            !codegen.contains(forbidden),
+            "C# codegen should not rebuild schema projection from `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn engine_public_mutation_api_does_not_expose_prepared_ops() {
     let engine =
         std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");

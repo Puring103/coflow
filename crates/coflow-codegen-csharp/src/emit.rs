@@ -8,19 +8,19 @@ use crate::model::{
 use crate::names::{
     camel_case, csharp_ident_error, escape_csharp_string, format_float, has_annotation, pascal_case,
 };
-use crate::schema_view::{FieldMeta, FieldType, SchemaView};
+use crate::schema_view::{FieldMeta, FieldType, SchemaView, TypeMeta};
 use crate::CsharpCodegenError;
-use coflow_cft::{CftSchemaDefaultValue, CftSchemaEnum, CftSchemaType};
+use coflow_cft::{CftEnumMeta, CftSchemaDefaultValue};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-pub fn build_csharp_enum(schema_enum: &CftSchemaEnum) -> CsharpEnum {
+pub fn build_csharp_enum(schema_enum: &CftEnumMeta) -> CsharpEnum {
     CsharpEnum {
         name: csharp_public_type_name(&schema_enum.name),
         is_flags: has_annotation(&schema_enum.annotations, "flag"),
         summary: None,
         obsolete: false,
         variants: schema_enum
-            .variants
+            .all_variants
             .iter()
             .map(|variant| CsharpEnumVariant {
                 name: csharp_public_member_name(&variant.name),
@@ -33,10 +33,9 @@ pub fn build_csharp_enum(schema_enum: &CftSchemaEnum) -> CsharpEnum {
 }
 
 pub fn build_csharp_type(
-    schema_type: &CftSchemaType,
+    schema_type: &TypeMeta,
     view: &SchemaView,
 ) -> Result<CsharpType, CsharpCodegenError> {
-    let is_struct = has_annotation(&schema_type.annotations, "struct");
     let ty = view.type_meta(&schema_type.name)?;
     let mut constructor_parameters = Vec::new();
     let mut base_constructor_args = Vec::new();
@@ -56,7 +55,7 @@ pub fn build_csharp_type(
     }
 
     let own_field_names = schema_type
-        .fields
+        .own_fields
         .iter()
         .map(|field| field.name.clone())
         .collect::<BTreeSet<_>>();
@@ -68,7 +67,10 @@ pub fn build_csharp_type(
             ty: property_type.clone(),
             name: local_name.clone(),
         });
-        if !is_struct && schema_type.parent.is_some() && !own_field_names.contains(&field.name) {
+        if !schema_type.is_struct
+            && schema_type.parent.is_some()
+            && !own_field_names.contains(&field.name)
+        {
             base_constructor_args.push(local_name);
             continue;
         }
@@ -97,7 +99,7 @@ pub fn build_csharp_type(
             .collect();
         CsharpEquality {
             key_property: "Id".to_string(),
-            is_struct,
+            is_struct: schema_type.is_struct,
             by_fields: !is_table,
             fields: all_field_props,
         }
@@ -125,7 +127,7 @@ pub fn build_csharp_type(
 }
 
 fn add_id_constructor_member(
-    schema_type: &CftSchemaType,
+    schema_type: &TypeMeta,
     view: &SchemaView,
     constructor_parameters: &mut Vec<CsharpParameter>,
     base_constructor_args: &mut Vec<String>,
@@ -733,7 +735,7 @@ fn backing_field_name(property_name: &str, ty: &FieldType, view: &SchemaView) ->
         .map(|_| format!("_{}", camel_case(property_name)))
 }
 
-fn loader_reserved_local_names(ty: &crate::schema_view::TypeMeta) -> HashSet<String> {
+fn loader_reserved_local_names(ty: &TypeMeta) -> HashSet<String> {
     let mut out = ty
         .all_fields
         .iter()
@@ -1034,10 +1036,10 @@ fn csharp_property_type(ty: &FieldType, view: &SchemaView) -> String {
     }
 }
 
-fn type_declaration(schema_type: &CftSchemaType, view: &SchemaView) -> String {
+fn type_declaration(schema_type: &TypeMeta, view: &SchemaView) -> String {
     let prefix = if schema_type.is_abstract {
         "public abstract partial class"
-    } else if has_annotation(&schema_type.annotations, "struct") {
+    } else if schema_type.is_struct {
         "public partial struct"
     } else if schema_type.is_sealed || !view.type_has_descendants(&schema_type.name) {
         "public sealed partial class"
@@ -1049,7 +1051,7 @@ fn type_declaration(schema_type: &CftSchemaType, view: &SchemaView) -> String {
     if let Some(parent) = schema_type
         .parent
         .as_ref()
-        .filter(|_| !has_annotation(&schema_type.annotations, "struct"))
+        .filter(|_| !schema_type.is_struct)
     {
         interfaces.push(view.csharp_type_name(parent));
     }
