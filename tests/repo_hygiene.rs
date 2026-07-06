@@ -245,6 +245,28 @@ fn data_model_schema_projection_uses_cft_schema_view() {
 }
 
 #[test]
+fn data_model_value_semantics_uses_cft_schema_view() {
+    let value_semantics = std::fs::read_to_string("crates/coflow-data-model/src/value_semantics.rs")
+        .expect("read data-model value semantics");
+
+    assert!(
+        value_semantics.contains("CftSchemaView::new(schema)"),
+        "data-model value semantics should use coflow-cft CftSchemaView as its schema query"
+    );
+    for forbidden in [
+        ".resolve_type(",
+        ".has_enum(",
+        ".has_type(",
+        ".all_fields",
+    ] {
+        assert!(
+            !value_semantics.contains(forbidden),
+            "data-model value semantics should not use raw schema query `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn csharp_codegen_schema_projection_uses_cft_schema_view() {
     let schema_view = std::fs::read_to_string("crates/coflow-codegen-csharp/src/schema_view.rs")
         .expect("read C# codegen schema view");
