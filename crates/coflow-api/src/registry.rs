@@ -1,6 +1,6 @@
 use crate::{
     CodeGenerator, CodegenDescriptor, DataExporter, DataLoader, DataWriter, ExporterDescriptor,
-    LoaderDescriptor, ProjectSourceRef, WriterDescriptor,
+    LoaderDescriptor, ProjectSourceRef, TableManager, TableManagerDescriptor, WriterDescriptor,
 };
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
@@ -11,6 +11,7 @@ use std::sync::Arc;
 pub struct ProviderRegistry {
     loaders: BTreeMap<&'static str, Arc<dyn DataLoader>>,
     writers: BTreeMap<&'static str, Arc<dyn DataWriter>>,
+    table_managers: BTreeMap<&'static str, Arc<dyn TableManager>>,
     exporters: BTreeMap<&'static str, Arc<dyn DataExporter>>,
     codegens: BTreeMap<&'static str, Arc<dyn CodeGenerator>>,
 }
@@ -20,6 +21,10 @@ impl fmt::Debug for ProviderRegistry {
         f.debug_struct("ProviderRegistry")
             .field("loaders", &self.loaders.keys().collect::<Vec<_>>())
             .field("writers", &self.writers.keys().collect::<Vec<_>>())
+            .field(
+                "table_managers",
+                &self.table_managers.keys().collect::<Vec<_>>(),
+            )
             .field("exporters", &self.exporters.keys().collect::<Vec<_>>())
             .field("codegens", &self.codegens.keys().collect::<Vec<_>>())
             .finish()
@@ -60,6 +65,27 @@ impl ProviderRegistry {
             return Err(ProviderRegistrationError::duplicate("writer", id));
         }
         self.writers.insert(id, Arc::new(writer));
+        Ok(())
+    }
+
+    /// Registers a table manager provider.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when another table manager with the same provider id
+    /// has already been registered.
+    pub fn register_table_manager<T>(
+        &mut self,
+        manager: T,
+    ) -> Result<(), ProviderRegistrationError>
+    where
+        T: TableManager + 'static,
+    {
+        let id = manager.descriptor().id;
+        if self.table_managers.contains_key(id) {
+            return Err(ProviderRegistrationError::duplicate("table manager", id));
+        }
+        self.table_managers.insert(id, Arc::new(manager));
         Ok(())
     }
 
@@ -110,6 +136,11 @@ impl ProviderRegistry {
     }
 
     #[must_use]
+    pub fn table_manager(&self, id: &str) -> Option<Arc<dyn TableManager>> {
+        self.table_managers.get(id).cloned()
+    }
+
+    #[must_use]
     pub fn writers(&self) -> Vec<Arc<dyn DataWriter>> {
         self.writers.values().cloned().collect()
     }
@@ -119,6 +150,14 @@ impl ProviderRegistry {
         self.writers
             .values()
             .map(|writer| writer.descriptor())
+            .collect()
+    }
+
+    #[must_use]
+    pub fn table_manager_descriptors(&self) -> Vec<&'static TableManagerDescriptor> {
+        self.table_managers
+            .values()
+            .map(|manager| manager.descriptor())
             .collect()
     }
 

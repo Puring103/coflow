@@ -61,7 +61,40 @@ fn registry_rejects_duplicate_provider_ids() -> Result<(), String> {
         .ok_or_else(|| "duplicate codegen id should fail".to_string())?;
     ensure_eq(err.provider_kind(), "codegen", "duplicate codegen kind")?;
     ensure_eq(err.id(), "csharp", "duplicate codegen id")?;
+
+    registry
+        .register_table_manager(FakeTableManager)
+        .map_err(|err| err.to_string())?;
+    ensure(
+        registry.table_manager("fake-table").is_some(),
+        "missing fake table manager",
+    )?;
+    let err = registry
+        .register_table_manager(FakeTableManager)
+        .err()
+        .ok_or_else(|| "duplicate table manager id should fail".to_string())?;
+    ensure_eq(
+        err.provider_kind(),
+        "table manager",
+        "duplicate table manager kind",
+    )?;
+    ensure_eq(err.id(), "fake-table", "duplicate table manager id")?;
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FakeTableManager;
+
+static FAKE_TABLE_MANAGER_DESCRIPTOR: coflow_api::TableManagerDescriptor =
+    coflow_api::TableManagerDescriptor {
+        id: "fake-table",
+        display_name: "Fake table",
+    };
+
+impl coflow_api::TableManager for FakeTableManager {
+    fn descriptor(&self) -> &'static coflow_api::TableManagerDescriptor {
+        &FAKE_TABLE_MANAGER_DESCRIPTOR
+    }
 }
 
 fn ensure(condition: bool, message: &str) -> Result<(), String> {

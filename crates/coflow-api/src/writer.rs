@@ -1,5 +1,5 @@
 use crate::{CfdDataModel, CfdValue, CftContainer, Diagnostic, DiagnosticSet};
-use crate::{RecordOrigin, ResolvedSource};
+use crate::{CreateTableRequest, RecordOrigin, ResolvedSource};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -121,16 +121,6 @@ pub struct InsertRecordRequest<'a> {
     pub record_key: &'a str,
     pub actual_type: &'a str,
     pub fields: &'a BTreeMap<String, CfdValue>,
-    pub schema: &'a CftContainer,
-}
-
-/// Request describing a table/sheet creation with schema-derived headers.
-#[derive(Debug, Clone)]
-pub struct CreateTableRequest<'a> {
-    pub source: &'a ResolvedSource,
-    pub sheet: &'a str,
-    pub actual_type: &'a str,
-    pub headers: &'a [String],
     pub schema: &'a CftContainer,
 }
 

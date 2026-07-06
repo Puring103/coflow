@@ -19,6 +19,7 @@ pub mod artifacts;
 pub mod codegen;
 pub mod data_output;
 pub mod diagnostics;
+pub mod operations;
 pub mod provider;
 pub mod registry;
 pub mod writer;
@@ -30,13 +31,17 @@ pub use diagnostics::{
     map_diagnostics_with_origins, origins_of, Diagnostic, DiagnosticSet, FlatDiagnostic, Label,
     Severity, SourceLocation,
 };
+pub use operations::{
+    CreateTableRequest, SyncHeaderRequest, TableContext, TableManager, TableManagerDescriptor,
+    TableOperationResult,
+};
 pub use provider::{
     DataLoader, LoadContext, LoadedRecords, LoaderDescriptor, OutputSpec, ProbeConfidence,
     ProbeResult, ProjectSourceRef, ResolvedSource, SourceLocationSpec, SourceResolveContext,
 };
 pub use registry::{LoaderSelectionError, ProviderRegistrationError, ProviderRegistry};
 pub use writer::{
-    CreateTableRequest, DataWriter, DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest,
+    DataWriter, DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest,
     RewriteRecordReferencesRequest, SpreadRewriteTarget, WriteCellRequest, WriteContext,
     WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };

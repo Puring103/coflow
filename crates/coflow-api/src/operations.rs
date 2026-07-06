@@ -1,0 +1,80 @@
+use crate::{CftContainer, Diagnostic, DiagnosticSet, ResolvedSource};
+use std::path::Path;
+
+#[derive(Debug, Clone, Copy)]
+pub struct TableContext<'a> {
+    pub project_root: &'a Path,
+    pub schema: &'a CftContainer,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateTableRequest<'a> {
+    pub source: &'a ResolvedSource,
+    pub sheet: &'a str,
+    pub actual_type: &'a str,
+    pub headers: &'a [String],
+    pub schema: &'a CftContainer,
+}
+
+#[derive(Debug, Clone)]
+pub struct SyncHeaderRequest<'a> {
+    pub source: &'a ResolvedSource,
+    pub sheet: Option<&'a str>,
+    pub actual_type: &'a str,
+    pub headers: &'a [String],
+    pub schema: &'a CftContainer,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TableOperationResult {
+    pub headers: Vec<String>,
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+    pub diagnostics: DiagnosticSet,
+}
+
+pub trait TableManager: Send + Sync {
+    fn descriptor(&self) -> &'static TableManagerDescriptor;
+
+    /// Create a new table/sheet and write its header row.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the provider cannot create the target table or
+    /// the request is invalid for the source.
+    fn create_table(
+        &self,
+        _ctx: TableContext<'_>,
+        _request: &CreateTableRequest<'_>,
+    ) -> Result<TableOperationResult, DiagnosticSet> {
+        Err(unsupported_table_operation("creating tables"))
+    }
+
+    /// Synchronize a table/sheet header with a schema-derived header.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the provider cannot sync the target header or
+    /// the request is invalid for the source.
+    fn sync_header(
+        &self,
+        _ctx: TableContext<'_>,
+        _request: &SyncHeaderRequest<'_>,
+    ) -> Result<TableOperationResult, DiagnosticSet> {
+        Err(unsupported_table_operation("syncing headers"))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TableManagerDescriptor {
+    pub id: &'static str,
+    pub display_name: &'static str,
+}
+
+fn unsupported_table_operation(operation: &'static str) -> DiagnosticSet {
+    DiagnosticSet::one(Diagnostic::error(
+        "TABLE-UNSUPPORTED",
+        "TABLE",
+        format!("table manager does not support {operation}"),
+    ))
+}
