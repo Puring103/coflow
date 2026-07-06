@@ -65,6 +65,7 @@ use coflow_api::{
     SourceResolveContext,
 };
 use coflow_checker::run_checks_for_dimensions_with_deps;
+use coflow_cft::CftSchemaView;
 use coflow_data_model::{CfdDataModel, CfdDiagnostics, CfdPath, CfdPathSegment, CfdRecordId};
 use coflow_project::{
     compile_schema_project, dedupe_cft_diagnostics, diagnostic_set_from_cft, path_to_slash,
@@ -171,7 +172,8 @@ impl ProjectSession {
     /// Resolved dimension metadata for the project.
     #[must_use]
     pub fn dimensions(&self) -> Vec<DimensionInfo> {
-        let fields = dimensions::dimension_fields(&self.schema);
+        let view = CftSchemaView::new(&self.schema);
+        let fields = dimensions::dimension_fields(&view);
         dimensions_for_project(&self.project, &fields)
     }
 
@@ -181,7 +183,8 @@ impl ProjectSession {
     /// without re-deriving the naming convention themselves.
     #[must_use]
     pub fn dimension_synthesized_types(&self) -> BTreeSet<String> {
-        dimensions::dimension_fields(&self.schema)
+        let view = CftSchemaView::new(&self.schema);
+        dimensions::dimension_fields(&view)
             .into_iter()
             .map(|field| field.synthesized_type)
             .collect()
@@ -723,7 +726,8 @@ fn build_project_session_with_dimension_mode(
     let mut sources = SourceIndex::default();
     let mut records = RecordIndex::default();
     let mut files = FileIndex::default();
-    let dimension_fields = dimensions::dimension_fields(&schema);
+    let schema_view = CftSchemaView::new(&schema);
+    let dimension_fields = dimensions::dimension_fields(&schema_view);
     let (model, dependencies) = if diagnostics.is_empty() {
         match load_project_data(
             &project,
@@ -913,7 +917,8 @@ fn build_project_schema_with_diagnostics(
 fn validate_dimension_schema_config(project: &Project, schema: &CftContainer) -> DiagnosticSet {
     let mut diagnostics = DiagnosticSet::empty();
     let mut required = BTreeSet::new();
-    for field in dimensions::dimension_fields(schema) {
+    let view = CftSchemaView::new(schema);
+    for field in dimensions::dimension_fields(&view) {
         required.insert(field.dimension);
     }
     for dimension in required {
@@ -1006,7 +1011,8 @@ fn load_project_data(
     }
 
     if options.include_implicit_dimension_sources {
-        let dimension_fields = dimensions::dimension_fields(schema);
+        let view = CftSchemaView::new(schema);
+        let dimension_fields = dimensions::dimension_fields(&view);
         for configured in dimensions::dimension_sources(project, &dimension_fields) {
             let resolved_sources =
                 match resolve_implicit_source(project, schema, registry, &configured) {

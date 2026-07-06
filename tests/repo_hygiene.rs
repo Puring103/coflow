@@ -296,6 +296,23 @@ fn exporter_core_schema_projection_uses_cft_schema_view() {
 }
 
 #[test]
+fn engine_dimension_synthesis_uses_cft_schema_view() {
+    let synthesize = std::fs::read_to_string("crates/coflow-engine/src/dimensions/synthesize.rs")
+        .expect("read dimension synthesis");
+
+    assert!(
+        synthesize.contains("CftSchemaView::new(schema)"),
+        "dimension synthesis should derive schema metadata from coflow-cft CftSchemaView"
+    );
+    for forbidden in ["schema.all_types()", "schema.resolve_type("] {
+        assert!(
+            !synthesize.contains(forbidden),
+            "dimension synthesis should not rebuild schema traversal from `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn engine_public_mutation_api_does_not_expose_prepared_ops() {
     let engine =
         std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");

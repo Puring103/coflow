@@ -195,12 +195,13 @@ pub struct CftFieldMeta {
     pub ty_ref: CftSchemaTypeRef,
     pub default: Option<crate::CftSchemaDefaultValue>,
     pub annotations: Vec<CftAnnotation>,
-    pub is_dimensional: bool,
+    pub dimension: Option<CftDimensionFieldMeta>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CftDimensionFieldMeta {
     pub dimension: String,
+    pub bucket: Option<String>,
 }
 
 impl CftTypeMeta {
@@ -214,6 +215,7 @@ impl CftTypeMeta {
                     field.name.clone(),
                     CftDimensionFieldMeta {
                         dimension: dimension.to_string(),
+                        bucket: field.dimension.as_ref().and_then(|d| d.bucket.clone()),
                     },
                 ))
             })
@@ -254,7 +256,10 @@ impl CftFieldMeta {
             ty_ref: field.ty_ref.clone(),
             default: field.default.clone(),
             annotations: field.annotations.clone(),
-            is_dimensional: field.dimension.is_some(),
+            dimension: field.dimension.as_ref().map(|dimension| CftDimensionFieldMeta {
+                dimension: dimension.kind.name().to_string(),
+                bucket: dimension.bucket.clone(),
+            }),
         }
     }
 }

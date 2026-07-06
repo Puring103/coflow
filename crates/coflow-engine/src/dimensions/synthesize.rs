@@ -1,7 +1,7 @@
 use coflow_api::{ResolvedSource, SourceLocationSpec};
 use coflow_cft::{
     CftAnnotation, CftAnnotationValue, CftContainer, CftSchemaField, CftSchemaType,
-    CftSchemaTypeRef, ModuleId, Span,
+    CftSchemaTypeRef, CftSchemaView, ModuleId, Span,
 };
 use coflow_project::{DimensionConfig, Project};
 use serde_json::{json, Value};
@@ -22,16 +22,17 @@ pub fn inject_dimension_types(
     schema: &mut CftContainer,
     configs: &std::collections::BTreeMap<String, DimensionConfig>,
 ) -> Result<Vec<DimensionField>, coflow_cft::CftDiagnostics> {
-    let fields = dimension_fields(schema);
+    let view = CftSchemaView::new(schema);
+    let fields = dimension_fields(&view);
     for field in &fields {
         let Some(config) = configs.get(&field.dimension) else {
             continue;
         };
-        let Some(source_type) = schema.resolve_type(&field.source_type) else {
+        let Some(source_type) = view.types.get(&field.source_type) else {
             continue;
         };
         let Some(source_field) = source_type
-            .fields
+            .own_fields
             .iter()
             .find(|candidate| candidate.name == field.source_field)
         else {
@@ -82,21 +83,20 @@ pub fn dimension_sources(project: &Project, fields: &[DimensionField]) -> Vec<Re
     sources
 }
 
-pub fn dimension_fields(schema: &CftContainer) -> Vec<DimensionField> {
+pub fn dimension_fields(schema: &CftSchemaView) -> Vec<DimensionField> {
     let mut fields = Vec::new();
-    for schema_type in schema.all_types() {
-        for field in &schema_type.fields {
+    for schema_type in schema.types.values() {
+        for field in &schema_type.own_fields {
             let Some(dimension) = field.dimension.as_ref() else {
                 continue;
             };
             fields.push(DimensionField {
-                dimension: dimension.kind.name().to_string(),
+                dimension: dimension.dimension.clone(),
                 source_type: schema_type.name.clone(),
                 source_field: field.name.clone(),
-                bucket: field
-                    .dimension
-                    .as_ref()
-                    .and_then(|dimension| dimension.bucket.clone())
+                bucket: dimension
+                    .bucket
+                    .clone()
                     .unwrap_or_else(|| schema_type.name.clone()),
                 synthesized_type: format!("{}_{}Variants", schema_type.name, field.name),
                 is_singleton: schema_type.is_singleton,

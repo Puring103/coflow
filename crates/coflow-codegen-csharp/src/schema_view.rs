@@ -360,7 +360,7 @@ impl FieldMeta {
             name: field.name.clone(),
             ty: FieldType::from_schema(&field.ty_ref, enums),
             default: field.default.clone(),
-            is_dimensional: field.is_dimensional,
+            is_dimensional: field.dimension.is_some(),
         }
     }
 }
