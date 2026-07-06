@@ -831,7 +831,7 @@ fn coerce_json_value(
         CftSchemaTypeRef::Ref(target_type) => json_ref_key(value)
             .map(|key| CfdValue::Ref(key.to_string()))
             .ok_or_else(|| one_value_error(format!("expected record key for `&{target_type}`"))),
-        CftSchemaTypeRef::Named(name) if session.schema.has_enum(name) => {
+        CftSchemaTypeRef::Named(name) if is_schema_enum(session, name) => {
             let variant = value
                 .as_str()
                 .ok_or_else(|| one_value_error(format!("expected enum variant for `{name}`")))?;
@@ -885,7 +885,7 @@ fn coerce_cfd_value(
             .collect::<Result<Vec<_>, DiagnosticSet>>()
             .map(CfdValue::Dict),
         (CftSchemaTypeRef::Named(name), CfdValue::Enum(enum_value))
-            if session.schema.has_enum(name) =>
+            if is_schema_enum(session, name) =>
         {
             coerce_cfd_enum_value(session, name, enum_value).map(CfdValue::Enum)
         }
@@ -946,7 +946,7 @@ fn coerce_cfd_dict_key(
         (CftSchemaTypeRef::String, key @ CfdDictKey::String(_))
         | (CftSchemaTypeRef::Int, key @ CfdDictKey::Int(_)) => Ok(key),
         (CftSchemaTypeRef::Named(enum_name), CfdDictKey::Enum(value))
-            if session.schema.has_enum(enum_name) =>
+            if is_schema_enum(session, enum_name) =>
         {
             coerce_cfd_enum_value(session, enum_name, value).map(CfdDictKey::Enum)
         }
@@ -972,8 +972,8 @@ fn coerce_cfd_enum_value(
         // may be stale (e.g. the editor picks a new variant but reuses the
         // previously-selected int). Re-derive the int from the schema
         // instead of forcing callers to keep the two in sync.
-        let expected_value = session
-            .schema
+        let schema = CftSchemaView::new(&session.schema);
+        let expected_value = schema
             .enum_variant_value(enum_name, variant)
             .ok_or_else(|| {
                 one_value_error(format!("unknown enum variant `{enum_name}.{variant}`"))
@@ -1053,7 +1053,7 @@ fn coerce_dict_key(
             .map(|text| CfdDictKey::String(text.to_string()))
             .ok_or_else(|| one_value_error("expected string dict key")),
         CftSchemaTypeRef::Int => coerce_int_dict_key(value),
-        CftSchemaTypeRef::Named(enum_name) if session.schema.has_enum(enum_name) => {
+        CftSchemaTypeRef::Named(enum_name) if is_schema_enum(session, enum_name) => {
             let variant = value.as_str().ok_or_else(|| {
                 one_value_error(format!("expected enum dict key for `{enum_name}`"))
             })?;
@@ -1315,7 +1315,8 @@ fn ensure_type_can_insert(
     session: &ProjectSession,
     actual_type: &str,
 ) -> Result<(), DiagnosticSet> {
-    let Some(schema_type) = session.schema.resolve_type(actual_type) else {
+    let schema = CftSchemaView::new(&session.schema);
+    let Some(schema_type) = schema.types.get(actual_type) else {
         return Err(one_mutation_error(
             "MUTATION-TYPE",
             format!("unknown insert type `{actual_type}`"),
@@ -1361,8 +1362,8 @@ fn enum_value(
         .strip_prefix(enum_name)
         .and_then(|rest| rest.strip_prefix('.'))
         .unwrap_or(raw_variant);
-    let int_value = session
-        .schema
+    let schema = CftSchemaView::new(&session.schema);
+    let int_value = schema
         .enum_variant_value(enum_name, variant)
         .ok_or_else(|| one_value_error(format!("unknown enum variant `{enum_name}.{variant}`")))?;
     Ok(CfdEnumValue {
@@ -1370,6 +1371,10 @@ fn enum_value(
         variant: Some(variant.to_string()),
         value: int_value,
     })
+}
+
+fn is_schema_enum(session: &ProjectSession, name: &str) -> bool {
+    CftSchemaView::new(&session.schema).enums.contains_key(name)
 }
 
 fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
