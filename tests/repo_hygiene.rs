@@ -373,6 +373,40 @@ fn engine_write_rules_use_cft_schema_view_for_path_types() {
 }
 
 #[test]
+fn engine_data_file_headers_use_cft_schema_view() {
+    let data_files = std::fs::read_to_string("crates/coflow-engine/src/data_files.rs")
+        .expect("read engine data file commands");
+
+    assert!(
+        data_files.contains("CftSchemaView::new(&session.schema)"),
+        "data file header planning should use CftSchemaView for schema metadata"
+    );
+    for forbidden in [".resolve_type(", "session.schema.resolve_type"] {
+        assert!(
+            !data_files.contains(forbidden),
+            "data file commands should not use raw schema query `{forbidden}`"
+        );
+    }
+}
+
+#[test]
+fn engine_writes_use_cft_schema_view_for_insert_schema_checks() {
+    let writes = std::fs::read_to_string("crates/coflow-engine/src/writes.rs")
+        .expect("read engine writes");
+
+    assert!(
+        writes.contains("CftSchemaView::new(&session.schema)"),
+        "engine writes should use CftSchemaView for insert schema checks"
+    );
+    for forbidden in ["session.schema.resolve_type", ".all_fields"] {
+        assert!(
+            !writes.contains(forbidden),
+            "engine writes should not use raw schema query `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn engine_public_mutation_api_does_not_expose_prepared_ops() {
     let engine =
         std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");

@@ -14,6 +14,7 @@ use coflow_api::{
     RewriteRecordReferencesRequest, Severity, SpreadRewriteTarget, WriteCellRequest, WriteContext,
     WriteFieldPathSegment,
 };
+use coflow_cft::CftSchemaView;
 use coflow_data_model::{CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdValue};
 
 use super::records::WriteOutcome;
@@ -387,7 +388,8 @@ fn ensure_insert_type_can_insert(
     session: &ProjectSession,
     actual_type: &str,
 ) -> Result<(), DiagnosticSet> {
-    let Some(schema_type) = session.schema.resolve_type(actual_type) else {
+    let schema_view = CftSchemaView::new(&session.schema);
+    let Some(schema_type) = schema_view.types.get(actual_type) else {
         return Err(DiagnosticSet::one(Diagnostic::error(
             "WRITE-INSERT",
             "WRITE",
@@ -417,19 +419,16 @@ fn validate_insert_fields(
     record_key: &str,
     fields: &std::collections::BTreeMap<String, CfdValue>,
 ) -> Result<(), DiagnosticSet> {
-    let Some(schema_type) = session.schema.resolve_type(actual_type) else {
+    let schema_view = CftSchemaView::new(&session.schema);
+    if !schema_view.types.contains_key(actual_type) {
         return Err(DiagnosticSet::one(Diagnostic::error(
             "WRITE-INSERT",
             "WRITE",
             format!("unknown insert type `{actual_type}`"),
         )));
-    };
+    }
     for (name, value) in fields {
-        let Some(field) = schema_type
-            .all_fields
-            .iter()
-            .find(|field| field.name == *name)
-        else {
+        let Some(field_ty) = schema_view.field_type(actual_type, name) else {
             return Err(DiagnosticSet::one(Diagnostic::error(
                 "WRITE-INSERT",
                 "WRITE",
@@ -440,7 +439,7 @@ fn validate_insert_fields(
             session,
             actual_type,
             record_key,
-            &field.ty_ref,
+            field_ty,
             value,
             "WRITE-SHAPE",
             "WRITE",

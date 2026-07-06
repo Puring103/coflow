@@ -2,6 +2,7 @@ use coflow_api::{
     CreateTableRequest, Diagnostic, DiagnosticSet, FlatDiagnostic, ProviderRegistry,
     ResolvedSource, Severity, SourceLocationSpec, SyncHeaderRequest, TableContext,
 };
+use coflow_cft::CftSchemaView;
 use coflow_project::{path_to_slash, Project, SourceConfig};
 use serde::Serialize;
 use serde_json::Value;
@@ -238,7 +239,8 @@ fn table_layout(
                 format!("`--type` is required for table file `{file}`"),
             )
         })?;
-    let schema_type = session.schema.resolve_type(&actual_type).ok_or_else(|| {
+    let schema_view = CftSchemaView::new(&session.schema);
+    let schema_type = schema_view.types.get(&actual_type).ok_or_else(|| {
         one_data_file_error(
             "DATA-FILE-TYPE",
             format!("unknown CFT type `{actual_type}`"),
