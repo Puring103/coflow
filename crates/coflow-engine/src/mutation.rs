@@ -471,18 +471,19 @@ fn prepare_provided_insert_fields(
     fields: MutationFields,
 ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
     let mut out = BTreeMap::new();
+    let schema = CftSchemaView::new(&session.schema);
     match fields {
         MutationFields::Empty => {}
         MutationFields::Json(fields) => {
             for (name, value) in fields {
-                let field = schema_field(session, actual_type, &name)?;
-                out.insert(name, coerce_json_field_value(session, field, &value)?);
+                let field = schema_field(&schema, actual_type, &name)?;
+                out.insert(name, coerce_json_field_value(session, &field.ty_ref, &value)?);
             }
         }
         MutationFields::Cfd(fields) => {
             for (name, value) in fields {
-                let field = schema_field(session, actual_type, &name)?;
-                out.insert(name, coerce_cfd_field_value(session, field, value)?);
+                let field = schema_field(&schema, actual_type, &name)?;
+                out.insert(name, coerce_cfd_field_value(session, &field.ty_ref, value)?);
             }
         }
     }
@@ -774,21 +775,21 @@ fn coerce_mutation_value(
 
 fn coerce_json_field_value(
     session: &ProjectSession,
-    field: &coflow_cft::CftSchemaField,
+    field_ty: &CftSchemaTypeRef,
     value: &Value,
 ) -> Result<CfdValue, DiagnosticSet> {
-    let value = coerce_json_value(session, &field.ty_ref, value)?;
-    validate_value_for_write(session, &field.ty_ref, &value)?;
+    let value = coerce_json_value(session, field_ty, value)?;
+    validate_value_for_write(session, field_ty, &value)?;
     Ok(value)
 }
 
 fn coerce_cfd_field_value(
     session: &ProjectSession,
-    field: &coflow_cft::CftSchemaField,
+    field_ty: &CftSchemaTypeRef,
     value: CfdValue,
 ) -> Result<CfdValue, DiagnosticSet> {
-    let value = coerce_cfd_value(session, &field.ty_ref, value)?;
-    validate_value_for_write(session, &field.ty_ref, &value)?;
+    let value = coerce_cfd_value(session, field_ty, value)?;
+    validate_value_for_write(session, field_ty, &value)?;
     Ok(value)
 }
 
@@ -917,11 +918,12 @@ fn coerce_cfd_object_fields(
     actual_type: &str,
     fields: BTreeMap<String, CfdValue>,
 ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
+    let schema = CftSchemaView::new(&session.schema);
     fields
         .into_iter()
         .map(|(name, value)| {
-            let field = schema_field(session, actual_type, &name)?;
-            Ok((name, coerce_cfd_field_value(session, field, value)?))
+            let field = schema_field(&schema, actual_type, &name)?;
+            Ok((name, coerce_cfd_field_value(session, &field.ty_ref, value)?))
         })
         .collect()
 }
@@ -1128,11 +1130,12 @@ fn coerce_json_object_fields(
     actual_type: &str,
     object: &Map<String, Value>,
 ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
-    let Some(schema_type) = session.schema.resolve_type(actual_type) else {
+    let schema = CftSchemaView::new(&session.schema);
+    if !schema.types.contains_key(actual_type) {
         return Err(one_value_error(format!(
             "unknown object type `{actual_type}`"
         )));
-    };
+    }
     let mut fields = BTreeMap::new();
     for (field_name, field_value) in object {
         if field_name == "$type" {
@@ -1143,18 +1146,10 @@ fn coerce_json_object_fields(
                 "unsupported object form key `{field_name}`"
             )));
         }
-        let field = schema_type
-            .all_fields
-            .iter()
-            .find(|field| field.name == *field_name)
-            .ok_or_else(|| {
-                one_value_error(format!(
-                    "unknown field `{field_name}` on type `{actual_type}`"
-                ))
-            })?;
+        let field = schema_field(&schema, actual_type, field_name)?;
         fields.insert(
             field_name.clone(),
-            coerce_json_field_value(session, field, field_value)?,
+            coerce_json_field_value(session, &field.ty_ref, field_value)?,
         );
     }
     Ok(fields)
@@ -1236,11 +1231,11 @@ fn effective_write_target_for_set_field(
 }
 
 fn schema_field<'a>(
-    session: &'a ProjectSession,
+    schema: &'a CftSchemaView,
     actual_type: &str,
     field_name: &str,
-) -> Result<&'a coflow_cft::CftSchemaField, DiagnosticSet> {
-    let Some(schema_type) = session.schema.resolve_type(actual_type) else {
+) -> Result<&'a CftFieldMeta, DiagnosticSet> {
+    let Some(schema_type) = schema.types.get(actual_type) else {
         return Err(one_mutation_error(
             "MUTATION-TYPE",
             format!("unknown type `{actual_type}`"),

@@ -437,6 +437,35 @@ fn engine_mutation_defaults_use_cft_schema_view() {
 }
 
 #[test]
+fn engine_mutation_field_coercion_uses_cft_schema_view() {
+    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation.rs")
+        .expect("read mutation")
+        .replace("\r\n", "\n");
+
+    let field_coercion_section = mutation
+        .split("fn prepare_provided_insert_fields(")
+        .nth(1)
+        .and_then(|rest| rest.split("#[derive(Debug, Clone)]\nstruct ExpectedValue").next())
+        .expect("mutation field coercion section");
+
+    assert!(
+        field_coercion_section.contains("CftSchemaView::new(&session.schema)"),
+        "mutation field coercion should use coflow-cft CftSchemaView for field lookup"
+    );
+    for forbidden in [
+        "CftSchemaField",
+        "session.schema.resolve_type(",
+        ".resolve_type(actual_type)",
+        ".all_fields\n            .iter()",
+    ] {
+        assert!(
+            !field_coercion_section.contains(forbidden),
+            "mutation field coercion should not use raw schema query `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn engine_public_mutation_api_does_not_expose_prepared_ops() {
     let engine =
         std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");
