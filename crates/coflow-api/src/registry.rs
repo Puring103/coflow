@@ -1,6 +1,7 @@
 use crate::{
-    CodeGenerator, CodegenDescriptor, DataExporter, DataLoader, DataWriter, ExporterDescriptor,
-    LoaderDescriptor, ProjectSourceRef, TableManager, TableManagerDescriptor, WriterDescriptor,
+    CodeGenerator, CodegenDescriptor, DataExporter, DataLoader, DataWriter, DimensionSourceManager,
+    DimensionSourceManagerDescriptor, ExporterDescriptor, LoaderDescriptor, ProjectSourceRef,
+    TableManager, TableManagerDescriptor, WriterDescriptor,
 };
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
@@ -12,6 +13,7 @@ pub struct ProviderRegistry {
     loaders: BTreeMap<&'static str, Arc<dyn DataLoader>>,
     writers: BTreeMap<&'static str, Arc<dyn DataWriter>>,
     table_managers: BTreeMap<&'static str, Arc<dyn TableManager>>,
+    dimension_source_managers: BTreeMap<&'static str, Arc<dyn DimensionSourceManager>>,
     exporters: BTreeMap<&'static str, Arc<dyn DataExporter>>,
     codegens: BTreeMap<&'static str, Arc<dyn CodeGenerator>>,
 }
@@ -24,6 +26,10 @@ impl fmt::Debug for ProviderRegistry {
             .field(
                 "table_managers",
                 &self.table_managers.keys().collect::<Vec<_>>(),
+            )
+            .field(
+                "dimension_source_managers",
+                &self.dimension_source_managers.keys().collect::<Vec<_>>(),
             )
             .field("exporters", &self.exporters.keys().collect::<Vec<_>>())
             .field("codegens", &self.codegens.keys().collect::<Vec<_>>())
@@ -74,10 +80,7 @@ impl ProviderRegistry {
     ///
     /// Returns an error when another table manager with the same provider id
     /// has already been registered.
-    pub fn register_table_manager<T>(
-        &mut self,
-        manager: T,
-    ) -> Result<(), ProviderRegistrationError>
+    pub fn register_table_manager<T>(&mut self, manager: T) -> Result<(), ProviderRegistrationError>
     where
         T: TableManager + 'static,
     {
@@ -86,6 +89,30 @@ impl ProviderRegistry {
             return Err(ProviderRegistrationError::duplicate("table manager", id));
         }
         self.table_managers.insert(id, Arc::new(manager));
+        Ok(())
+    }
+
+    /// Registers a dimension source manager provider.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when another dimension source manager with the same
+    /// provider id has already been registered.
+    pub fn register_dimension_source_manager<D>(
+        &mut self,
+        manager: D,
+    ) -> Result<(), ProviderRegistrationError>
+    where
+        D: DimensionSourceManager + 'static,
+    {
+        let id = manager.descriptor().id;
+        if self.dimension_source_managers.contains_key(id) {
+            return Err(ProviderRegistrationError::duplicate(
+                "dimension source manager",
+                id,
+            ));
+        }
+        self.dimension_source_managers.insert(id, Arc::new(manager));
         Ok(())
     }
 
@@ -141,6 +168,11 @@ impl ProviderRegistry {
     }
 
     #[must_use]
+    pub fn dimension_source_manager(&self, id: &str) -> Option<Arc<dyn DimensionSourceManager>> {
+        self.dimension_source_managers.get(id).cloned()
+    }
+
+    #[must_use]
     pub fn writers(&self) -> Vec<Arc<dyn DataWriter>> {
         self.writers.values().cloned().collect()
     }
@@ -156,6 +188,16 @@ impl ProviderRegistry {
     #[must_use]
     pub fn table_manager_descriptors(&self) -> Vec<&'static TableManagerDescriptor> {
         self.table_managers
+            .values()
+            .map(|manager| manager.descriptor())
+            .collect()
+    }
+
+    #[must_use]
+    pub fn dimension_source_manager_descriptors(
+        &self,
+    ) -> Vec<&'static DimensionSourceManagerDescriptor> {
+        self.dimension_source_managers
             .values()
             .map(|manager| manager.descriptor())
             .collect()

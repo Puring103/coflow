@@ -1,10 +1,10 @@
-use crate::{CftContainer, Diagnostic, DiagnosticSet, ResolvedSource};
+use crate::{CfdValue, CftContainer, Diagnostic, DiagnosticSet, ResolvedSource};
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy)]
 pub struct TableContext<'a> {
     pub project_root: &'a Path,
-    pub schema: &'a CftContainer,
+    pub schema: Option<&'a CftContainer>,
 }
 
 #[derive(Debug, Clone)]
@@ -67,6 +67,50 @@ pub trait TableManager: Send + Sync {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TableManagerDescriptor {
+    pub id: &'static str,
+    pub display_name: &'static str,
+}
+
+#[derive(Debug, Clone)]
+pub struct DimensionSourceRequest<'a> {
+    pub source: &'a ResolvedSource,
+    pub entries: &'a [DimensionSourceEntry],
+    pub variants: &'a [String],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DimensionSourceEntry {
+    pub key: String,
+    pub actual_type: String,
+    pub default: CfdValue,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DimensionSourceResult {
+    pub changed: bool,
+}
+
+pub trait DimensionSourceManager: Send + Sync {
+    fn descriptor(&self) -> &'static DimensionSourceManagerDescriptor;
+
+    /// Synchronize a generated dimension source while preserving configured
+    /// player-authored variant values.
+    ///
+    /// # Errors
+    ///
+    /// Returns diagnostics when the provider cannot parse, render, or write
+    /// the backing source.
+    fn sync_dimension_source(
+        &self,
+        _ctx: TableContext<'_>,
+        _request: &DimensionSourceRequest<'_>,
+    ) -> Result<DimensionSourceResult, DiagnosticSet> {
+        Err(unsupported_table_operation("syncing dimension sources"))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DimensionSourceManagerDescriptor {
     pub id: &'static str,
     pub display_name: &'static str,
 }

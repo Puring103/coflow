@@ -676,7 +676,6 @@ dependencies = [
  "coflow-checker",
  "coflow-data-model",
  "coflow-loader-csv",
- "coflow-loader-table-core",
  "coflow-project",
  "serde",
  "serde_json",

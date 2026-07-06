@@ -155,8 +155,8 @@ fn engine_public_api_does_not_expose_checker_dependency_graph() {
 
 #[test]
 fn engine_runtime_does_not_depend_on_excel_implementation_crates() {
-    let manifest = std::fs::read_to_string("crates/coflow-engine/Cargo.toml")
-        .expect("read engine manifest");
+    let manifest =
+        std::fs::read_to_string("crates/coflow-engine/Cargo.toml").expect("read engine manifest");
     let data_files = std::fs::read_to_string("crates/coflow-engine/src/data_files.rs")
         .expect("read engine data file commands");
 
@@ -174,19 +174,43 @@ fn engine_runtime_does_not_depend_on_excel_implementation_crates() {
 
 #[test]
 fn engine_data_file_commands_do_not_depend_on_cfd_provider_writer() {
-    let manifest = std::fs::read_to_string("crates/coflow-engine/Cargo.toml")
-        .expect("read engine manifest");
+    let manifest =
+        std::fs::read_to_string("crates/coflow-engine/Cargo.toml").expect("read engine manifest");
+    let production_manifest = manifest
+        .split("[dev-dependencies]")
+        .next()
+        .expect("manifest has production dependency section");
     let data_files = std::fs::read_to_string("crates/coflow-engine/src/data_files.rs")
         .expect("read engine data file commands");
+    let dimension_regenerate =
+        std::fs::read_to_string("crates/coflow-engine/src/dimensions/regenerate.rs")
+            .expect("read engine dimension regeneration");
 
-    assert!(
-        !manifest.contains("coflow-loader-cfd"),
-        "coflow-engine should use provider table operations instead of depending on coflow-loader-cfd"
-    );
-    for forbidden in ["coflow_loader_cfd", "parse_cfd", "CfdBlockEntry"] {
+    for forbidden in [
+        "coflow-loader-cfd",
+        "coflow-loader-csv",
+        "coflow-loader-table-core",
+    ] {
+        assert!(
+            !production_manifest.contains(forbidden),
+            "coflow-engine should use provider operations instead of depending on {forbidden}"
+        );
+    }
+    for forbidden in [
+        "coflow_loader_cfd",
+        "coflow_loader_csv",
+        "coflow_loader_table_core",
+        "parse_cfd",
+        "CfdBlockEntry",
+        "render_cell_value",
+    ] {
         assert!(
             !data_files.contains(forbidden),
             "data file commands should not contain CFD provider implementation detail `{forbidden}`"
+        );
+        assert!(
+            !dimension_regenerate.contains(forbidden),
+            "dimension regeneration should use provider operations instead of `{forbidden}`"
         );
     }
 }

@@ -28,6 +28,14 @@ fn builtin_registry_contains_all_default_providers() -> Result<(), String> {
         registry.table_manager("cfd").is_some(),
         "missing cfd table manager",
     )?;
+    ensure(
+        registry.dimension_source_manager("csv").is_some(),
+        "missing csv dimension source manager",
+    )?;
+    ensure(
+        registry.dimension_source_manager("cfd").is_some(),
+        "missing cfd dimension source manager",
+    )?;
     ensure(registry.exporter("json").is_some(), "missing json exporter")?;
     ensure(
         registry.exporter("messagepack").is_some(),
@@ -91,6 +99,30 @@ fn registry_rejects_duplicate_provider_ids() -> Result<(), String> {
         "duplicate table manager kind",
     )?;
     ensure_eq(err.id(), "fake-table", "duplicate table manager id")?;
+
+    registry
+        .register_dimension_source_manager(FakeDimensionSourceManager)
+        .map_err(|err| err.to_string())?;
+    ensure(
+        registry
+            .dimension_source_manager("fake-dimension")
+            .is_some(),
+        "missing fake dimension source manager",
+    )?;
+    let err = registry
+        .register_dimension_source_manager(FakeDimensionSourceManager)
+        .err()
+        .ok_or_else(|| "duplicate dimension source manager id should fail".to_string())?;
+    ensure_eq(
+        err.provider_kind(),
+        "dimension source manager",
+        "duplicate dimension source manager kind",
+    )?;
+    ensure_eq(
+        err.id(),
+        "fake-dimension",
+        "duplicate dimension source manager id",
+    )?;
     Ok(())
 }
 
@@ -106,6 +138,21 @@ static FAKE_TABLE_MANAGER_DESCRIPTOR: coflow_api::TableManagerDescriptor =
 impl coflow_api::TableManager for FakeTableManager {
     fn descriptor(&self) -> &'static coflow_api::TableManagerDescriptor {
         &FAKE_TABLE_MANAGER_DESCRIPTOR
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FakeDimensionSourceManager;
+
+static FAKE_DIMENSION_SOURCE_MANAGER_DESCRIPTOR: coflow_api::DimensionSourceManagerDescriptor =
+    coflow_api::DimensionSourceManagerDescriptor {
+        id: "fake-dimension",
+        display_name: "Fake dimension",
+    };
+
+impl coflow_api::DimensionSourceManager for FakeDimensionSourceManager {
+    fn descriptor(&self) -> &'static coflow_api::DimensionSourceManagerDescriptor {
+        &FAKE_DIMENSION_SOURCE_MANAGER_DESCRIPTOR
     }
 }
 

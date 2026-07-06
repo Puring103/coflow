@@ -245,7 +245,7 @@ pub fn sync_data_header(
 fn table_context(session: &ProjectSchemaSession) -> TableContext<'_> {
     TableContext {
         project_root: &session.project.root_dir,
-        schema: &session.schema,
+        schema: Some(&session.schema),
     }
 }
 

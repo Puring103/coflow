@@ -32,8 +32,9 @@ pub use diagnostics::{
     Severity, SourceLocation,
 };
 pub use operations::{
-    CreateTableRequest, SyncHeaderRequest, TableContext, TableManager, TableManagerDescriptor,
-    TableOperationResult,
+    CreateTableRequest, DimensionSourceEntry, DimensionSourceManager,
+    DimensionSourceManagerDescriptor, DimensionSourceRequest, DimensionSourceResult,
+    SyncHeaderRequest, TableContext, TableManager, TableManagerDescriptor, TableOperationResult,
 };
 pub use provider::{
     DataLoader, LoadContext, LoadedRecords, LoaderDescriptor, OutputSpec, ProbeConfidence,

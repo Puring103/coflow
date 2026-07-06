@@ -10,6 +10,17 @@ use coflow_data_model::{CfdDataModel, CfdInputRecord, CfdInputValue, CfdValue};
 use coflow_engine::{build_project_session, build_project_session_read_only, ProjectSession};
 use coflow_project::Project;
 
+fn csv_dimension_registry() -> coflow_api::ProviderRegistry {
+    let mut registry = coflow_api::ProviderRegistry::default();
+    registry
+        .register_loader(coflow_loader_csv::CsvLoader)
+        .expect("csv loader");
+    registry
+        .register_dimension_source_manager(coflow_loader_csv::CsvWriter::new())
+        .expect("csv dimension source manager");
+    registry
+}
+
 fn schema_with_localized_string() -> CftContainer {
     let mut container = CftContainer::new();
     container
@@ -210,10 +221,7 @@ dimensions:
     .expect("write config");
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
-    let mut registry = coflow_api::ProviderRegistry::default();
-    registry
-        .register_loader(coflow_loader_csv::CsvLoader)
-        .expect("csv loader");
+    let registry = csv_dimension_registry();
     let session = build_project_session(project, &registry).expect("build session");
 
     let variants = session
@@ -302,10 +310,7 @@ dimensions:
     .expect("write config");
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
-    let mut registry = coflow_api::ProviderRegistry::default();
-    registry
-        .register_loader(coflow_loader_csv::CsvLoader)
-        .expect("csv loader");
+    let registry = csv_dimension_registry();
     let session = build_project_session(project, &registry).expect("build session");
 
     let variants = session
@@ -365,10 +370,7 @@ dimensions:
     .expect("write config");
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
-    let mut registry = coflow_api::ProviderRegistry::default();
-    registry
-        .register_loader(coflow_loader_csv::CsvLoader)
-        .expect("csv loader");
+    let registry = csv_dimension_registry();
     let session = build_project_session(project, &registry).expect("build session");
 
     let variants = session
@@ -420,10 +422,7 @@ dimensions:
     .expect("write config");
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
-    let mut registry = coflow_api::ProviderRegistry::default();
-    registry
-        .register_loader(coflow_loader_csv::CsvLoader)
-        .expect("csv loader");
+    let registry = csv_dimension_registry();
     let session = build_project_session_read_only(project, &registry).expect("build session");
 
     assert!(
@@ -488,10 +487,7 @@ dimensions:
     .expect("write config");
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
-    let mut registry = coflow_api::ProviderRegistry::default();
-    registry
-        .register_loader(coflow_loader_csv::CsvLoader)
-        .expect("csv loader");
+    let registry = csv_dimension_registry();
     let session = build_project_session(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),
@@ -557,10 +553,7 @@ dimensions:
     .expect("write config");
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
-    let mut registry = coflow_api::ProviderRegistry::default();
-    registry
-        .register_loader(coflow_loader_csv::CsvLoader)
-        .expect("csv loader");
+    let registry = csv_dimension_registry();
     let session = build_project_session(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),
@@ -620,10 +613,7 @@ dimensions:
     .expect("write config");
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
-    let mut registry = coflow_api::ProviderRegistry::default();
-    registry
-        .register_loader(coflow_loader_csv::CsvLoader)
-        .expect("csv loader");
+    let registry = csv_dimension_registry();
     let session = build_project_session(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),
@@ -686,10 +676,7 @@ dimensions:
     .expect("write config");
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
-    let mut registry = coflow_api::ProviderRegistry::default();
-    registry
-        .register_loader(coflow_loader_csv::CsvLoader)
-        .expect("csv loader");
+    let registry = csv_dimension_registry();
     let session = build_project_session(project, &registry).expect("build session");
     assert!(
         session.has_diagnostics(),
@@ -752,10 +739,7 @@ dimensions:
     )
     .expect("write config");
 
-    let mut registry = coflow_api::ProviderRegistry::default();
-    registry
-        .register_loader(coflow_loader_csv::CsvLoader)
-        .expect("csv loader");
+    let registry = csv_dimension_registry();
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let session = build_project_session(project, &registry).expect("build session");
     assert!(
@@ -829,10 +813,7 @@ dimensions:
     .expect("write config");
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
-    let mut registry = coflow_api::ProviderRegistry::default();
-    registry
-        .register_loader(coflow_loader_csv::CsvLoader)
-        .expect("csv loader");
+    let registry = csv_dimension_registry();
     let session = build_project_session(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),
@@ -1053,10 +1034,7 @@ dimensions:
     .expect("write config");
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
-    let mut registry = coflow_api::ProviderRegistry::default();
-    registry
-        .register_loader(coflow_loader_csv::CsvLoader)
-        .expect("csv loader");
+    let registry = csv_dimension_registry();
     let session = build_project_session(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),

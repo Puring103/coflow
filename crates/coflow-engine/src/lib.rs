@@ -747,6 +747,7 @@ fn build_project_session_with_dimension_mode(
                         &project,
                         &output.model,
                         &dimension_fields,
+                        registry,
                     );
                     diagnostics.extend(dimension_result.diagnostics);
                     if diagnostics.is_empty() && !dimension_result.transaction.is_empty() {
