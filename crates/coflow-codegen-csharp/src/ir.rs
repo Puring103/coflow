@@ -104,7 +104,9 @@ pub fn build_project(
 
     let mut id_as_enum_variants = build_id_as_enums(&view, &id_as_enum_names, id_as_enum_variants);
     let enums = view
-        .all_enums()
+        .cft
+        .enums
+        .values()
         .map(|schema_enum| {
             id_as_enum_variants
                 .remove(&schema_enum.name)
@@ -113,7 +115,8 @@ pub fn build_project(
         .collect::<Vec<_>>();
 
     let types = view
-        .all_types()
+        .types
+        .values()
         .map(|schema_type| build_csharp_type(schema_type, &view))
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -217,7 +220,7 @@ fn validate_options(
 }
 
 fn validate_schema_names(view: &SchemaView, diagnostics: &mut Vec<CsharpCodegenDiagnostic>) {
-    for schema_enum in view.all_enums() {
+    for schema_enum in view.cft.enums.values() {
         validate_ident("enum", &schema_enum.name, diagnostics);
         validate_ident("enum", &csharp_type_name(&schema_enum.name), diagnostics);
         let mut variants = BTreeMap::<String, String>::new();
@@ -234,7 +237,7 @@ fn validate_schema_names(view: &SchemaView, diagnostics: &mut Vec<CsharpCodegenD
         }
     }
 
-    for schema_type in view.all_types() {
+    for schema_type in view.types.values() {
         validate_ident("type", &schema_type.name, diagnostics);
         validate_ident("type", &csharp_type_name(&schema_type.name), diagnostics);
         if let Some(parent) = &schema_type.parent {
@@ -299,7 +302,7 @@ fn validate_generated_file_names(
     )));
 
     let mut file_sources = BTreeMap::<String, String>::new();
-    for enum_name in &view.enums {
+    for enum_name in view.enum_names() {
         let file_name = format!("{}.cs", view.csharp_enum_name(enum_name));
         insert_generated_file_name(
             &mut file_sources,

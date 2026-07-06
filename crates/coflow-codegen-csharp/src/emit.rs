@@ -838,7 +838,7 @@ fn read_token_expr(
             "CoflowJson.ReadStringEnum<{}>({token})",
             view.csharp_enum_name(name)
         )),
-        FieldType::Enum(name) if view.enums.contains(name) => Ok(format!(
+        FieldType::Enum(name) if view.is_schema_enum(name) => Ok(format!(
             "CoflowJson.ReadEnum<{}>({token})",
             view.csharp_enum_name(name)
         )),
@@ -918,7 +918,7 @@ fn read_messagepack_expr(
             "CoflowMessagePack.ReadStringEnum<{}>(ref {reader})",
             view.csharp_enum_name(name)
         )),
-        FieldType::Enum(name) if view.enums.contains(name) => Ok(format!(
+        FieldType::Enum(name) if view.is_schema_enum(name) => Ok(format!(
             "CoflowMessagePack.ReadEnum<{}>(ref {reader})",
             view.csharp_enum_name(name)
         )),

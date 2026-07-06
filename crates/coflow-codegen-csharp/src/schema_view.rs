@@ -9,7 +9,6 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Debug, Clone)]
 pub struct SchemaView {
     pub types: BTreeMap<String, TypeMeta>,
-    pub enums: BTreeSet<String>,
     pub int_32: bool,
     pub float_32: bool,
     pub loadable_tables: BTreeSet<String>,
@@ -22,7 +21,6 @@ pub struct SchemaView {
 impl SchemaView {
     pub fn new(schema: &CftContainer) -> Self {
         let cft = CftSchemaView::new(schema);
-        let enums = cft.enums.keys().cloned().collect::<BTreeSet<_>>();
 
         let mut children = BTreeMap::<String, BTreeSet<String>>::new();
         for schema_type in cft.types.values() {
@@ -40,7 +38,7 @@ impl SchemaView {
             .map(|schema_type| {
                 (
                     schema_type.name.clone(),
-                    TypeMeta::from_schema_view(schema_type, &enums),
+                    TypeMeta::from_schema_view(schema_type, &cft),
                 )
             })
             .collect::<BTreeMap<_, _>>();
@@ -57,7 +55,6 @@ impl SchemaView {
 
         Self {
             types,
-            enums,
             int_32: false,
             float_32: false,
             loadable_tables: BTreeSet::new(),
@@ -68,16 +65,16 @@ impl SchemaView {
         }
     }
 
-    pub fn all_enums(&self) -> impl Iterator<Item = &CftEnumMeta> {
-        self.cft.enums.values()
-    }
-
-    pub fn all_types(&self) -> impl Iterator<Item = &TypeMeta> {
-        self.types.values()
-    }
-
     pub fn cft_enum_meta(&self, name: &str) -> Option<&CftEnumMeta> {
         self.cft.enums.get(name)
+    }
+
+    pub fn enum_names(&self) -> impl Iterator<Item = &String> {
+        self.cft.enums.keys()
+    }
+
+    pub fn is_schema_enum(&self, name: &str) -> bool {
+        self.cft.enums.contains_key(name)
     }
 
     pub fn uses_localization(&self) -> bool {
@@ -178,7 +175,7 @@ impl SchemaView {
     }
 
     pub fn csharp_named_type(&self, name: &str) -> String {
-        if self.enums.contains(name) {
+        if self.is_schema_enum(name) {
             self.csharp_enum_name(name)
         } else {
             self.csharp_type_name(name)
@@ -273,7 +270,7 @@ pub struct TypeMeta {
 }
 
 impl TypeMeta {
-    fn from_schema_view(schema_type: &CftTypeMeta, enums: &BTreeSet<String>) -> Self {
+    fn from_schema_view(schema_type: &CftTypeMeta, schema: &CftSchemaView) -> Self {
         Self {
             name: schema_type.name.clone(),
             parent: schema_type.parent.clone(),
@@ -285,12 +282,12 @@ impl TypeMeta {
             own_fields: schema_type
                 .own_fields
                 .iter()
-                .map(|field| FieldMeta::from_schema_view(field, enums))
+                .map(|field| FieldMeta::from_schema_view(field, schema))
                 .collect(),
             all_fields: schema_type
                 .all_fields
                 .iter()
-                .map(|field| FieldMeta::from_schema_view(field, enums))
+                .map(|field| FieldMeta::from_schema_view(field, schema))
                 .collect(),
         }
     }
@@ -355,10 +352,10 @@ pub struct FieldMeta {
 }
 
 impl FieldMeta {
-    pub fn from_schema_view(field: &coflow_cft::CftFieldMeta, enums: &BTreeSet<String>) -> Self {
+    pub fn from_schema_view(field: &coflow_cft::CftFieldMeta, schema: &CftSchemaView) -> Self {
         Self {
             name: field.name.clone(),
-            ty: FieldType::from_schema(&field.ty_ref, enums),
+            ty: FieldType::from_schema(&field.ty_ref, schema),
             default: field.default.clone(),
             is_dimensional: field.dimension.is_some(),
         }
@@ -380,24 +377,26 @@ pub enum FieldType {
 }
 
 impl FieldType {
-    pub fn from_schema(ty: &CftSchemaTypeRef, enums: &BTreeSet<String>) -> Self {
+    pub fn from_schema(ty: &CftSchemaTypeRef, schema: &CftSchemaView) -> Self {
         match ty {
             CftSchemaTypeRef::Int => Self::Int,
             CftSchemaTypeRef::Float => Self::Float,
             CftSchemaTypeRef::Bool => Self::Bool,
             CftSchemaTypeRef::String => Self::String,
-            CftSchemaTypeRef::Named(name) if enums.contains(name) => Self::Enum(name.clone()),
+            CftSchemaTypeRef::Named(name) if schema.enums.contains_key(name) => {
+                Self::Enum(name.clone())
+            }
             CftSchemaTypeRef::Named(name) => Self::Type(name.clone()),
             CftSchemaTypeRef::Ref(name) => Self::Ref(name.clone()),
             CftSchemaTypeRef::Array(inner) => {
-                Self::Array(Box::new(Self::from_schema(inner, enums)))
+                Self::Array(Box::new(Self::from_schema(inner, schema)))
             }
             CftSchemaTypeRef::Dict(key, value) => Self::Dict(
-                Box::new(Self::from_schema(key, enums)),
-                Box::new(Self::from_schema(value, enums)),
+                Box::new(Self::from_schema(key, schema)),
+                Box::new(Self::from_schema(value, schema)),
             ),
             CftSchemaTypeRef::Nullable(inner) => {
-                Self::Nullable(Box::new(Self::from_schema(inner, enums)))
+                Self::Nullable(Box::new(Self::from_schema(inner, schema)))
             }
         }
     }

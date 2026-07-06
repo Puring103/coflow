@@ -283,6 +283,10 @@ fn csharp_codegen_schema_projection_uses_cft_schema_view() {
     for forbidden in [
         "schema.all_types()",
         "schema.all_enums()",
+        "pub fn all_types",
+        "pub fn all_enums",
+        "pub enums:",
+        "view.enums",
         "CftSchemaType,",
         "CftSchemaEnum,",
         "CftSchemaField,",
