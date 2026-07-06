@@ -359,8 +359,6 @@ outputs:
 "#,
     )
     .map_err(|err| err.to_string())?;
-    std::env::set_var("COFLOW_TEST_APP_ID", "env_app");
-
     let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
 
     assert!(project.schema_diagnostic_set().is_empty());
@@ -388,7 +386,7 @@ outputs:
     );
     assert_eq!(
         project.config.sources[1].options["app_id"],
-        serde_json::Value::String("env_app".to_string())
+        serde_json::Value::String("${COFLOW_TEST_APP_ID}".to_string())
     );
     assert_eq!(
         project
@@ -401,7 +399,6 @@ outputs:
         serde_json::Value::String("Game.Custom".to_string())
     );
 
-    std::env::remove_var("COFLOW_TEST_APP_ID");
     std::fs::remove_dir_all(root).map_err(|err| err.to_string())
 }
 
@@ -462,16 +459,55 @@ fn project_config_preserves_env_like_strings() -> TestResult {
         .map_err(|err| err.to_string())?;
     std::fs::write(
         root.join("coflow.yaml"),
-        "schema: schema/main.cft\nsources:\n  - path: data.xlsx\n    token: ${COFLOW_LITERAL_TOKEN}\n",
+        r#"schema: schema/main.cft
+sources:
+  - path: data.xlsx
+    token: ${COFLOW_LITERAL_TOKEN}
+    nested:
+      app_id: ${COFLOW_NESTED_APP_ID}
+      values:
+        - ${COFLOW_ARRAY_TOKEN}
+outputs:
+  data:
+    type: json
+    dir: generated/data
+    token: ${COFLOW_OUTPUT_TOKEN}
+"#,
     )
     .map_err(|err| err.to_string())?;
+    std::env::set_var("COFLOW_LITERAL_TOKEN", "expanded-token");
+    std::env::set_var("COFLOW_NESTED_APP_ID", "expanded-app");
+    std::env::set_var("COFLOW_ARRAY_TOKEN", "expanded-array");
+    std::env::set_var("COFLOW_OUTPUT_TOKEN", "expanded-output");
 
     let project = Project::open_schema_only(Some(&root)).map_err(|err| err.to_string())?;
     assert_eq!(
         project.config.sources[0].options["token"],
         "${COFLOW_LITERAL_TOKEN}"
     );
+    assert_eq!(
+        project.config.sources[0].options["nested"]["app_id"],
+        "${COFLOW_NESTED_APP_ID}"
+    );
+    assert_eq!(
+        project.config.sources[0].options["nested"]["values"][0],
+        "${COFLOW_ARRAY_TOKEN}"
+    );
+    assert_eq!(
+        project
+            .config
+            .outputs
+            .data
+            .as_ref()
+            .expect("data output")
+            .options["token"],
+        "${COFLOW_OUTPUT_TOKEN}"
+    );
 
+    std::env::remove_var("COFLOW_LITERAL_TOKEN");
+    std::env::remove_var("COFLOW_NESTED_APP_ID");
+    std::env::remove_var("COFLOW_ARRAY_TOKEN");
+    std::env::remove_var("COFLOW_OUTPUT_TOKEN");
     std::fs::remove_dir_all(root).map_err(|err| err.to_string())
 }
 

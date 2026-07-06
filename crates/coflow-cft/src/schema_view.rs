@@ -97,10 +97,7 @@ impl CftSchemaView {
             if name == expected_type {
                 return true;
             }
-            current = self
-                .types
-                .get(name)
-                .and_then(|meta| meta.parent.as_deref());
+            current = self.types.get(name).and_then(|meta| meta.parent.as_deref());
         }
         false
     }

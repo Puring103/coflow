@@ -511,7 +511,6 @@ impl CfdDataModel {
     }
 }
 
-
 fn dimension_storage_type<'a>(
     schema: &'a CftContainer,
     dimension: &str,
