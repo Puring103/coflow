@@ -17,10 +17,10 @@
     )
 )]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt;
 
-use coflow_cft::{CftContainer, CftSchemaField, CftSchemaTypeRef};
+use coflow_cft::{CftContainer, CftFieldMeta, CftSchemaTypeRef, CftSchemaView};
 use coflow_data_model::{CfdDataModel, CfdDictKey, CfdObject, CfdRecord, CfdTable, CfdValue};
 
 /// Constructs output values for a concrete export format.
@@ -124,7 +124,7 @@ where
 }
 
 struct Exporter<'a, E> {
-    schema: SchemaView<'a>,
+    schema: SchemaView,
     model: &'a CfdDataModel,
     encoder: &'a mut E,
 }
@@ -143,17 +143,22 @@ where
 
     fn export(mut self) -> Result<BTreeMap<String, E::Value>, ExportError> {
         let mut out = BTreeMap::new();
-        for schema_type in self.schema.schema.all_types() {
-            if schema_type.is_abstract {
-                continue;
-            }
-            let table = self.model.table(&schema_type.name);
+        let table_names = self
+            .schema
+            .cft
+            .types
+            .values()
+            .filter(|schema_type| !schema_type.is_abstract)
+            .map(|schema_type| schema_type.name.clone())
+            .collect::<Vec<_>>();
+        for table_name in table_names {
+            let table = self.model.table(&table_name);
             let value = if let Some(table) = table {
                 self.encode_table(table)?
             } else {
                 self.encoder.array(Vec::new()).map_err(encoder_error)?
             };
-            out.insert(schema_type.name.clone(), value);
+            out.insert(table_name, value);
         }
         Ok(out)
     }
@@ -217,7 +222,8 @@ where
             ));
         }
 
-        for field in self.schema.full_fields(object.actual_type())? {
+        let fields = self.schema.full_fields(object.actual_type())?.to_vec();
+        for field in &fields {
             let value = object.fields().get(&field.name).ok_or_else(|| {
                 ExportError::new(format!(
                     "record `{}` is missing field `{}`",
@@ -225,18 +231,18 @@ where
                     field.name
                 ))
             })?;
-            let encoded = self.encode_field(&field, value)?;
-            entries.push((field.name, encoded));
+            let encoded = self.encode_field(field, value)?;
+            entries.push((field.name.clone(), encoded));
         }
         Ok(entries)
     }
 
     fn encode_field(
         &mut self,
-        field: &FieldMeta,
+        field: &CftFieldMeta,
         value: &CfdValue,
     ) -> Result<E::Value, ExportError> {
-        self.encode_value(&field.ty, value)
+        self.encode_value(&field.ty_ref, value)
     }
 
     fn encode_value(
@@ -330,15 +336,16 @@ enum TypeTagMode {
     WhenPolymorphic,
 }
 
-struct SchemaView<'a> {
-    schema: &'a CftContainer,
+struct SchemaView {
+    cft: CftSchemaView,
     children_by_parent: BTreeMap<String, Vec<String>>,
 }
 
-impl<'a> SchemaView<'a> {
-    fn new(schema: &'a CftContainer) -> Self {
+impl SchemaView {
+    fn new(schema: &CftContainer) -> Self {
+        let cft = CftSchemaView::new(schema);
         let mut children_by_parent = BTreeMap::<String, Vec<String>>::new();
-        for schema_type in schema.all_types() {
+        for schema_type in cft.types.values() {
             if let Some(parent) = &schema_type.parent {
                 children_by_parent
                     .entry(parent.clone())
@@ -347,61 +354,30 @@ impl<'a> SchemaView<'a> {
             }
         }
         Self {
-            schema,
+            cft,
             children_by_parent,
         }
     }
 
-    fn full_fields(&self, type_name: &str) -> Result<Vec<FieldMeta>, ExportError> {
-        let mut out = Vec::new();
-        self.fill_fields(type_name, &mut out, &mut BTreeSet::new())?;
-        Ok(out)
-    }
-
-    fn fill_fields(
-        &self,
-        type_name: &str,
-        out: &mut Vec<FieldMeta>,
-        seen: &mut BTreeSet<String>,
-    ) -> Result<(), ExportError> {
-        if !seen.insert(type_name.to_string()) {
-            return Ok(());
-        }
-        let schema_type = self.schema.resolve_type(type_name).ok_or_else(|| {
-            ExportError::new(format!("unknown CFT type `{type_name}` during export"))
-        })?;
-        if let Some(parent) = &schema_type.parent {
-            self.fill_fields(parent, out, seen)?;
-        }
-        for field in &schema_type.fields {
-            out.push(FieldMeta::from_schema(field));
-        }
-        Ok(())
+    fn full_fields(&self, type_name: &str) -> Result<&[CftFieldMeta], ExportError> {
+        self.cft
+            .types
+            .get(type_name)
+            .map(|schema_type| schema_type.all_fields.as_slice())
+            .ok_or_else(|| ExportError::new(format!("unknown CFT type `{type_name}` during export")))
     }
 
     fn range_is_polymorphic(&self, type_name: &str) -> bool {
-        self.schema
-            .resolve_type(type_name)
-            .is_some_and(|schema_type| schema_type.is_abstract)
-            || self
-                .children_by_parent
-                .get(type_name)
-                .is_some_and(|children| !children.is_empty())
+        self.cft
+            .types
+            .get(type_name)
+            .is_some_and(|schema_type| schema_type.is_abstract || self.has_descendants(type_name))
     }
-}
 
-#[derive(Debug, Clone)]
-struct FieldMeta {
-    name: String,
-    ty: CftSchemaTypeRef,
-}
-
-impl FieldMeta {
-    fn from_schema(field: &CftSchemaField) -> Self {
-        Self {
-            name: field.name.clone(),
-            ty: field.ty_ref.clone(),
-        }
+    fn has_descendants(&self, type_name: &str) -> bool {
+        self.children_by_parent
+            .get(type_name)
+            .is_some_and(|children| !children.is_empty())
     }
 }
 

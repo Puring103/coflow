@@ -273,6 +273,29 @@ fn csharp_codegen_schema_projection_uses_cft_schema_view() {
 }
 
 #[test]
+fn exporter_core_schema_projection_uses_cft_schema_view() {
+    let exporter =
+        std::fs::read_to_string("crates/coflow-exporter-core/src/lib.rs").expect("read exporter");
+
+    assert!(
+        exporter.contains("CftSchemaView::new(schema)"),
+        "exporter core schema traversal should be built from coflow-cft CftSchemaView"
+    );
+    for forbidden in [
+        "schema.all_types()",
+        "schema.all_enums()",
+        "schema.resolve_type(",
+        "CftSchemaField",
+        "struct FieldMeta",
+    ] {
+        assert!(
+            !exporter.contains(forbidden),
+            "exporter core should not rebuild schema traversal from `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn engine_public_mutation_api_does_not_expose_prepared_ops() {
     let engine =
         std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");
