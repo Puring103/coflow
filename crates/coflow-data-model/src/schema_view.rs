@@ -1,9 +1,6 @@
 use crate::model::{CfdDictKey, CfdDomainId, CfdDomainIndex, CfdInputValue, CfdTypeId, CfdValue};
 use crate::origin::RecordOrigin;
-use coflow_cft::{
-    CftContainer, CftSchemaDefaultValue, CftSchemaEnum, CftSchemaField, CftSchemaType,
-    CftSchemaTypeRef,
-};
+use coflow_cft::{CftContainer, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchemaView};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -63,15 +60,24 @@ pub(crate) struct SchemaView {
 
 impl SchemaView {
     pub(crate) fn new(schema: &CftContainer) -> Self {
-        let enums = schema
-            .all_enums()
-            .map(|schema_enum| (schema_enum.name.clone(), EnumMeta::from_schema(schema_enum)))
+        let cft_view = CftSchemaView::new(schema);
+        let enums = cft_view
+            .enums
+            .iter()
+            .map(|(name, schema_enum)| {
+                (
+                    name.clone(),
+                    EnumMeta {
+                        variants: schema_enum.variants.clone(),
+                    },
+                )
+            })
             .collect::<BTreeMap<_, _>>();
 
         let mut types = BTreeMap::new();
         let mut children = BTreeMap::<String, BTreeSet<String>>::new();
-        for schema_type in schema.all_types() {
-            let meta = TypeMeta::from_schema(schema, schema_type);
+        for schema_type in cft_view.types.values() {
+            let meta = TypeMeta::from_schema_view(&cft_view, schema_type);
             if let Some(parent) = &meta.parent {
                 children
                     .entry(parent.clone())
@@ -221,7 +227,7 @@ pub(crate) struct TypeMeta {
 }
 
 impl TypeMeta {
-    fn from_schema(schema: &CftContainer, schema_type: &CftSchemaType) -> Self {
+    fn from_schema_view(schema: &CftSchemaView, schema_type: &coflow_cft::CftTypeMeta) -> Self {
         Self {
             name: schema_type.name.clone(),
             parent: schema_type.parent.clone(),
@@ -230,7 +236,7 @@ impl TypeMeta {
             fields: schema_type
                 .all_fields
                 .iter()
-                .map(|field| FieldMeta::from_schema(schema, field))
+                .map(|field| FieldMeta::from_schema_view(schema, field))
                 .collect(),
         }
     }
@@ -244,7 +250,7 @@ pub(crate) struct FieldMeta {
 }
 
 impl FieldMeta {
-    fn from_schema(schema: &CftContainer, field: &CftSchemaField) -> Self {
+    fn from_schema_view(schema: &CftSchemaView, field: &coflow_cft::CftFieldMeta) -> Self {
         Self {
             name: field.name.clone(),
             ty: CfdType::from_schema(&field.ty_ref, schema),
@@ -256,18 +262,6 @@ impl FieldMeta {
 #[derive(Debug, Clone)]
 pub(crate) struct EnumMeta {
     pub(crate) variants: BTreeMap<String, i64>,
-}
-
-impl EnumMeta {
-    fn from_schema(schema_enum: &CftSchemaEnum) -> Self {
-        Self {
-            variants: schema_enum
-                .variants
-                .iter()
-                .map(|variant| (variant.name.clone(), variant.value))
-                .collect(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -285,13 +279,15 @@ pub(crate) enum CfdType {
 }
 
 impl CfdType {
-    fn from_schema(ty: &CftSchemaTypeRef, schema: &CftContainer) -> Self {
+    fn from_schema(ty: &CftSchemaTypeRef, schema: &CftSchemaView) -> Self {
         match ty {
             CftSchemaTypeRef::Int => Self::Int,
             CftSchemaTypeRef::Float => Self::Float,
             CftSchemaTypeRef::Bool => Self::Bool,
             CftSchemaTypeRef::String => Self::String,
-            CftSchemaTypeRef::Named(name) if schema.has_enum(name) => Self::Enum(name.clone()),
+            CftSchemaTypeRef::Named(name) if schema.enums.contains_key(name) => {
+                Self::Enum(name.clone())
+            }
             CftSchemaTypeRef::Named(name) => Self::Type(name.clone()),
             CftSchemaTypeRef::Ref(name) => Self::Ref(name.clone()),
             CftSchemaTypeRef::Array(inner) => {

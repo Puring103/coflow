@@ -177,10 +177,20 @@ impl CftSchemaView {
 pub struct CftTypeMeta {
     pub name: String,
     pub parent: Option<String>,
+    pub is_abstract: bool,
+    pub is_singleton: bool,
     pub check: Option<CftSchemaCheckBlock>,
     pub dimension_checks: BTreeMap<String, CftSchemaCheckBlock>,
+    pub all_fields: Vec<CftFieldMeta>,
     pub fields: BTreeMap<String, CftSchemaTypeRef>,
     pub dimension_fields: BTreeMap<String, CftDimensionFieldMeta>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CftFieldMeta {
+    pub name: String,
+    pub ty_ref: CftSchemaTypeRef,
+    pub default: Option<crate::CftSchemaDefaultValue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -206,8 +216,19 @@ impl CftTypeMeta {
         Self {
             name: schema_type.name.clone(),
             parent: schema_type.parent.clone(),
+            is_abstract: schema_type.is_abstract,
+            is_singleton: schema_type.is_singleton,
             check: schema_type.check.clone(),
             dimension_checks: BTreeMap::new(),
+            all_fields: schema_type
+                .all_fields
+                .iter()
+                .map(|field| CftFieldMeta {
+                    name: field.name.clone(),
+                    ty_ref: field.ty_ref.clone(),
+                    default: field.default.clone(),
+                })
+                .collect(),
             fields: schema_type
                 .all_fields
                 .iter()

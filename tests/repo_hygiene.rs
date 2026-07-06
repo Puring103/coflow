@@ -216,6 +216,29 @@ fn engine_data_file_commands_do_not_depend_on_cfd_provider_writer() {
 }
 
 #[test]
+fn data_model_schema_projection_uses_cft_schema_view() {
+    let schema_view = std::fs::read_to_string("crates/coflow-data-model/src/schema_view.rs")
+        .expect("read data-model schema view");
+
+    assert!(
+        schema_view.contains("CftSchemaView::new(schema)"),
+        "data-model schema projection should be built from coflow-cft CftSchemaView"
+    );
+    for forbidden in [
+        "schema.all_types()",
+        "schema.all_enums()",
+        "CftSchemaType,",
+        "CftSchemaEnum,",
+        "CftSchemaField,",
+    ] {
+        assert!(
+            !schema_view.contains(forbidden),
+            "data-model schema view should not rebuild schema projection from `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn engine_public_mutation_api_does_not_expose_prepared_ops() {
     let engine =
         std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");

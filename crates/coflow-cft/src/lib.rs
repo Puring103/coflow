@@ -51,6 +51,6 @@ pub use schema::{
     CftSchemaUnaryOp, Dimension, DimensionSpec,
 };
 pub use schema_view::{
-    CftDimensionFieldMeta, CftEnumMeta, CftEnumValueMeta, CftSchemaView, CftTypeMeta,
+    CftDimensionFieldMeta, CftEnumMeta, CftEnumValueMeta, CftFieldMeta, CftSchemaView, CftTypeMeta,
 };
 pub use span::Span;
