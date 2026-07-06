@@ -154,6 +154,31 @@ fn engine_public_api_does_not_expose_checker_dependency_graph() {
 }
 
 #[test]
+fn engine_runtime_indexes_do_not_live_in_lib_rs() {
+    let engine =
+        std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");
+    let indexes = std::fs::read_to_string("crates/coflow-engine/src/indexes.rs")
+        .expect("read engine indexes source");
+
+    for expected in [
+        "pub struct DiagnosticsStore",
+        "pub struct SourceIndex",
+        "pub struct RecordIndex",
+        "pub struct FileIndex",
+        "pub struct DependencyIndex",
+    ] {
+        assert!(
+            indexes.contains(expected),
+            "engine runtime index type `{expected}` should live in indexes.rs"
+        );
+        assert!(
+            !engine.contains(expected),
+            "engine runtime index type `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn engine_runtime_does_not_depend_on_excel_implementation_crates() {
     let manifest =
         std::fs::read_to_string("crates/coflow-engine/Cargo.toml").expect("read engine manifest");
