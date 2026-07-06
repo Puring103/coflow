@@ -6,7 +6,8 @@
 //! `(source_text, CfdAst)` keyed by absolute file path so that repeated edits
 //! avoid re-reading and re-parsing the file.
 use coflow_api::{
-    CfdObject, CfdValue, CftContainer, CftSchemaField, CftSchemaTypeRef, DataWriter,
+    CfdObject, CfdValue, CftContainer, CftSchemaField, CftSchemaTypeRef, CreateTableRequest,
+    DataWriter,
     DeleteRecordRequest, Diagnostic, DiagnosticSet, DimensionSourceManager,
     DimensionSourceManagerDescriptor, DimensionSourceRequest, DimensionSourceResult,
     InsertRecordRequest, RecordOrigin, RenameRecordRequest, RewriteRecordReferencesRequest,
@@ -360,6 +361,40 @@ impl DataWriter for CfdWriter {
 impl TableManager for CfdWriter {
     fn descriptor(&self) -> &'static TableManagerDescriptor {
         &CFD_TABLE_MANAGER_DESCRIPTOR
+    }
+
+    fn create_table(
+        &self,
+        _ctx: TableContext<'_>,
+        request: &CreateTableRequest<'_>,
+    ) -> Result<TableOperationResult, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &request.source.location else {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-TABLE",
+                "cfd table manager requires a path source",
+            )));
+        };
+        if path.exists() {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-TABLE",
+                format!("file `{}` already exists", path.display()),
+            )));
+        }
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|err| {
+                DiagnosticSet::one(diag(
+                    "CFD-TABLE",
+                    format!("failed to create `{}`: {err}", parent.display()),
+                ))
+            })?;
+        }
+        self.write_source(path, String::new())?;
+        Ok(TableOperationResult {
+            headers: Vec::new(),
+            added: Vec::new(),
+            removed: Vec::new(),
+            diagnostics: DiagnosticSet::empty(),
+        })
     }
 
     fn sync_header(

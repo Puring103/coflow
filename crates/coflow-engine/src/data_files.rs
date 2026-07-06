@@ -6,7 +6,6 @@ use coflow_project::{path_to_slash, Project, SourceConfig};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::ProjectSchemaSession;
@@ -41,23 +40,6 @@ pub struct DataFileReport {
     pub diagnostics: Vec<FlatDiagnostic>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DataFileProvider {
-    Cfd,
-    Csv,
-    Excel,
-}
-
-impl DataFileProvider {
-    const fn id(self) -> &'static str {
-        match self {
-            Self::Cfd => "cfd",
-            Self::Csv => "csv",
-            Self::Excel => "excel",
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 struct TableLayout {
     actual_type: String,
@@ -76,75 +58,41 @@ pub fn create_data_file(
     registry: &ProviderRegistry,
     options: DataCreateFileOptions,
 ) -> Result<DataFileReport, DiagnosticSet> {
-    let provider = resolve_provider(options.provider.as_deref(), &options.file)?;
+    let provider_id = resolve_provider_id(options.provider.as_deref(), &options.file)?;
     let path = resolve_project_file(&session.project, &options.file);
-
-    match provider {
-        DataFileProvider::Cfd => {
-            ensure_new_data_file_path(&path, &options.file)?;
-            fs::write(&path, "").map_err(|err| {
-                one_data_file_error(
-                    "DATA-FILE-IO",
-                    format!("failed to write `{}`: {err}", path.display()),
-                )
-            })?;
-            Ok(report(
-                options.file,
-                provider,
-                None,
-                options.actual_type,
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            ))
-        }
-        DataFileProvider::Csv => {
-            let layout = table_layout(session, &options.file, options.actual_type, options.sheet)?;
-            let source = table_operation_source(&options.file, provider, path);
-            let result = table_manager(registry, provider)?.create_table(
-                table_context(session),
-                &CreateTableRequest {
-                    source: &source,
-                    sheet: &layout.sheet,
-                    actual_type: &layout.actual_type,
-                    headers: &layout.headers,
-                    schema: &session.schema,
-                },
-            )?;
-            Ok(report(
-                options.file,
-                provider,
-                Some(layout.sheet),
-                Some(layout.actual_type),
-                result.headers,
-                result.added,
-                result.removed,
-            ))
-        }
-        DataFileProvider::Excel => {
-            let layout = table_layout(session, &options.file, options.actual_type, options.sheet)?;
-            let source = table_operation_source(&options.file, provider, path);
-            let result = table_manager(registry, provider)?.create_table(
-                table_context(session),
-                &CreateTableRequest {
-                    source: &source,
-                    sheet: &layout.sheet,
-                    actual_type: &layout.actual_type,
-                    headers: &layout.headers,
-                    schema: &session.schema,
-                },
-            )?;
-            Ok(report(
-                options.file,
-                provider,
-                Some(layout.sheet),
-                Some(layout.actual_type),
-                result.headers,
-                result.added,
-                result.removed,
-            ))
-        }
-    }
+    let actual_type = options.actual_type;
+    let layout = (provider_id != "cfd")
+        .then(|| table_layout(session, &options.file, actual_type.clone(), options.sheet))
+        .transpose()?;
+    let source = table_operation_source(&options.file, &provider_id, path);
+    let result = table_manager(registry, &provider_id)?.create_table(
+        table_context(session),
+        &CreateTableRequest {
+            source: &source,
+            sheet: layout.as_ref().map_or("", |layout| layout.sheet.as_str()),
+            actual_type: layout
+                .as_ref()
+                .map_or(actual_type.as_deref().unwrap_or(""), |layout| {
+                    layout.actual_type.as_str()
+                }),
+            headers: layout
+                .as_ref()
+                .map_or_else(|| [].as_slice(), |layout| layout.headers.as_slice()),
+            schema: &session.schema,
+        },
+    )?;
+    Ok(report(
+        options.file,
+        provider_id,
+        layout.as_ref().map(|layout| layout.sheet.clone()),
+        layout
+            .as_ref()
+            .map(|layout| layout.actual_type.clone())
+            .or(actual_type),
+        result.headers,
+        result.added,
+        result.removed,
+    ))
 }
 
 /// Synchronizes a local data file's top-level columns with the latest schema.
@@ -158,7 +106,7 @@ pub fn sync_data_header(
     registry: &ProviderRegistry,
     options: DataSyncHeaderOptions,
 ) -> Result<DataFileReport, DiagnosticSet> {
-    let provider = resolve_provider(options.provider.as_deref(), &options.file)?;
+    let provider_id = resolve_provider_id(options.provider.as_deref(), &options.file)?;
     let path = resolve_project_file(&session.project, &options.file);
     if !path.exists() {
         return Err(one_data_file_error(
@@ -172,74 +120,26 @@ pub fn sync_data_header(
         Some(options.actual_type),
         options.sheet,
     )?;
-    match provider {
-        DataFileProvider::Cfd => {
-            let source = table_operation_source(&options.file, provider, path);
-            let result = table_manager(registry, provider)?.sync_header(
-                table_context(session),
-                &SyncHeaderRequest {
-                    source: &source,
-                    sheet: None,
-                    actual_type: &layout.actual_type,
-                    headers: &layout.headers,
-                    schema: &session.schema,
-                },
-            )?;
-            Ok(report(
-                options.file,
-                provider,
-                None,
-                Some(layout.actual_type),
-                result.headers,
-                result.added,
-                result.removed,
-            ))
-        }
-        DataFileProvider::Csv => {
-            let source = table_operation_source(&options.file, provider, path);
-            let result = table_manager(registry, provider)?.sync_header(
-                table_context(session),
-                &SyncHeaderRequest {
-                    source: &source,
-                    sheet: Some(&layout.sheet),
-                    actual_type: &layout.actual_type,
-                    headers: &layout.headers,
-                    schema: &session.schema,
-                },
-            )?;
-            Ok(report(
-                options.file,
-                provider,
-                Some(layout.sheet),
-                Some(layout.actual_type),
-                result.headers,
-                result.added,
-                result.removed,
-            ))
-        }
-        DataFileProvider::Excel => {
-            let source = table_operation_source(&options.file, provider, path);
-            let result = table_manager(registry, provider)?.sync_header(
-                table_context(session),
-                &SyncHeaderRequest {
-                    source: &source,
-                    sheet: Some(&layout.sheet),
-                    actual_type: &layout.actual_type,
-                    headers: &layout.headers,
-                    schema: &session.schema,
-                },
-            )?;
-            Ok(report(
-                options.file,
-                provider,
-                Some(layout.sheet),
-                Some(layout.actual_type),
-                result.headers,
-                result.added,
-                result.removed,
-            ))
-        }
-    }
+    let source = table_operation_source(&options.file, &provider_id, path);
+    let result = table_manager(registry, &provider_id)?.sync_header(
+        table_context(session),
+        &SyncHeaderRequest {
+            source: &source,
+            sheet: (provider_id != "cfd").then_some(layout.sheet.as_str()),
+            actual_type: &layout.actual_type,
+            headers: &layout.headers,
+            schema: &session.schema,
+        },
+    )?;
+    Ok(report(
+        options.file,
+        provider_id,
+        (source.provider_id != "cfd").then_some(layout.sheet),
+        Some(layout.actual_type),
+        result.headers,
+        result.added,
+        result.removed,
+    ))
 }
 
 fn table_context(session: &ProjectSchemaSession) -> TableContext<'_> {
@@ -251,11 +151,11 @@ fn table_context(session: &ProjectSchemaSession) -> TableContext<'_> {
 
 fn table_operation_source(
     file: &str,
-    provider: DataFileProvider,
+    provider_id: &str,
     path: PathBuf,
 ) -> ResolvedSource {
     ResolvedSource {
-        provider_id: provider.id().to_string(),
+        provider_id: provider_id.to_string(),
         location: SourceLocationSpec::Path(path),
         options: Value::Null,
         display_name: file.to_string(),
@@ -264,41 +164,19 @@ fn table_operation_source(
 
 fn table_manager(
     registry: &ProviderRegistry,
-    provider: DataFileProvider,
+    provider_id: &str,
 ) -> Result<std::sync::Arc<dyn coflow_api::TableManager>, DiagnosticSet> {
-    registry.table_manager(provider.id()).ok_or_else(|| {
+    registry.table_manager(provider_id).ok_or_else(|| {
         one_data_file_error(
             "DATA-FILE-PROVIDER",
-            format!("table manager `{}` is not registered", provider.id()),
+            format!("table manager `{provider_id}` is not registered"),
         )
     })
 }
 
-fn ensure_new_data_file_path(path: &Path, file: &str) -> Result<(), DiagnosticSet> {
-    if path.exists() {
-        return Err(one_data_file_error(
-            "DATA-FILE-EXISTS",
-            format!("file `{file}` already exists"),
-        ));
-    }
-    ensure_parent_dir(path)
-}
-
-fn ensure_parent_dir(path: &Path) -> Result<(), DiagnosticSet> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|err| {
-            one_data_file_error(
-                "DATA-FILE-IO",
-                format!("failed to create `{}`: {err}", parent.display()),
-            )
-        })?;
-    }
-    Ok(())
-}
-
 fn report(
     file: String,
-    provider: DataFileProvider,
+    provider_id: String,
     sheet: Option<String>,
     actual_type: Option<String>,
     headers: Vec<String>,
@@ -307,7 +185,7 @@ fn report(
 ) -> DataFileReport {
     DataFileReport {
         file,
-        provider: provider.id().to_string(),
+        provider: provider_id,
         sheet,
         actual_type,
         headers,
@@ -317,12 +195,11 @@ fn report(
     }
 }
 
-fn resolve_provider(raw: Option<&str>, file: &str) -> Result<DataFileProvider, DiagnosticSet> {
+fn resolve_provider_id(raw: Option<&str>, file: &str) -> Result<String, DiagnosticSet> {
     if let Some(provider) = raw {
         return match provider {
-            "cfd" => Ok(DataFileProvider::Cfd),
-            "csv" => Ok(DataFileProvider::Csv),
-            "excel" | "xlsx" => Ok(DataFileProvider::Excel),
+            "cfd" | "csv" | "excel" => Ok(provider.to_string()),
+            "xlsx" => Ok("excel".to_string()),
             other => Err(one_data_file_error(
                 "DATA-FILE-PROVIDER",
                 format!("unknown data file provider `{other}`"),
@@ -334,9 +211,8 @@ fn resolve_provider(raw: Option<&str>, file: &str) -> Result<DataFileProvider, D
         .and_then(|extension| extension.to_str())
         .unwrap_or_default();
     match extension {
-        "cfd" => Ok(DataFileProvider::Cfd),
-        "csv" => Ok(DataFileProvider::Csv),
-        "xlsx" => Ok(DataFileProvider::Excel),
+        "cfd" | "csv" => Ok(extension.to_string()),
+        "xlsx" => Ok("excel".to_string()),
         other => Err(one_data_file_error(
             "DATA-FILE-PROVIDER",
             format!("cannot infer provider from extension `{other}` for `{file}`"),

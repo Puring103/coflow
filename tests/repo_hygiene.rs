@@ -213,6 +213,12 @@ fn engine_data_file_commands_do_not_depend_on_cfd_provider_writer() {
             "dimension regeneration should use provider operations instead of `{forbidden}`"
         );
     }
+    for forbidden in ["DataFileProvider", "fs::write", "create_dir_all"] {
+        assert!(
+            !data_files.contains(forbidden),
+            "data file commands should use provider table operations instead of `{forbidden}`"
+        );
+    }
 }
 
 #[test]
