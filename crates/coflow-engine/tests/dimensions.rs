@@ -7,7 +7,7 @@
 use coflow_api::WriteFieldPathSegment;
 use coflow_cft::{CftContainer, Dimension, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputRecord, CfdInputValue, CfdValue};
-use coflow_engine::{build_project_session, ProjectSession};
+use coflow_engine::{build_project_session, build_project_session_read_only, ProjectSession};
 use coflow_project::Project;
 
 fn schema_with_localized_string() -> CftContainer {
@@ -377,6 +377,65 @@ dimensions:
         .expect("synthesized type");
     assert_eq!(variants.all_fields[0].ty, "string?");
     assert_eq!(variants.all_fields[1].ty, "string?");
+
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
+fn read_only_session_does_not_generate_dimension_sources() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-engine-dim-read-only-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        r#"
+        type Item {
+            @localized
+            name: string;
+        }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.csv"), "id,name\npotion,Potion\n")
+        .expect("write items");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+sources:
+  - path: data/items.csv
+    sheets:
+      - sheet: Item
+        type: Item
+dimensions:
+  language:
+    variants: [zh, en]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let mut registry = coflow_api::ProviderRegistry::default();
+    registry
+        .register_loader(coflow_loader_csv::CsvLoader)
+        .expect("csv loader");
+    let session = build_project_session_read_only(project, &registry).expect("build session");
+
+    assert!(
+        !session.has_diagnostics(),
+        "diagnostics: {:?}",
+        session.diagnostics.as_set()
+    );
+    assert!(
+        !root.join("data/dimensions/language/Item_name.csv").exists(),
+        "read-only session must not create dimension source files"
+    );
 
     std::fs::remove_dir_all(root).expect("remove temp dir");
 }

@@ -359,6 +359,52 @@ dimensions:
     );
 }
 
+#[test]
+fn load_project_does_not_generate_missing_dimension_sources() {
+    let root = temp_project_dir("cfd-editor-dim-no-generate");
+    let _cleanup = TempDirCleanup(root.clone());
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data")).expect("create data dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        r"
+            type Item {
+                @localized
+                name: string;
+            }
+        ",
+    )
+    .expect("write schema");
+    std::fs::write(
+        root.join("data").join("items.cfd"),
+        r#"potion: Item { name: "Potion" }"#,
+    )
+    .expect("write items");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r"schema: schema/main.cft
+sources:
+  - path: data/items.cfd
+dimensions:
+  language:
+    variants: [zh, en]
+    out_dir: data/dimensions/language
+",
+    )
+    .expect("write config");
+
+    let store = SessionStore::new().expect("create session store");
+    let snapshot = store
+        .load_project(&root.join("coflow.yaml"))
+        .expect("load project");
+
+    assert!(snapshot.diagnostics.is_empty(), "{:?}", snapshot.diagnostics);
+    assert!(
+        !root.join("data/dimensions/language/Item_name.csv").exists(),
+        "editor project load should not generate dimension files"
+    );
+}
+
 fn write_project(root: &std::path::Path, name: &str) {
     std::fs::create_dir_all(root.join("data")).expect("create data dir");
     std::fs::write(

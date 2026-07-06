@@ -682,6 +682,35 @@ pub fn build_project_session(
     project: Project,
     registry: &ProviderRegistry,
 ) -> Result<ProjectSession, String> {
+    build_project_session_with_dimension_mode(project, registry, DimensionBuildMode::Generate)
+}
+
+/// Opens, loads, and checks a project without writing generated dimension
+/// sources or other derived files.
+///
+/// # Errors
+///
+/// Returns unrecoverable project/config/schema I/O errors. User-fixable
+/// project, schema, loader, model, and check problems are captured in the
+/// returned session diagnostics.
+pub fn build_project_session_read_only(
+    project: Project,
+    registry: &ProviderRegistry,
+) -> Result<ProjectSession, String> {
+    build_project_session_with_dimension_mode(project, registry, DimensionBuildMode::ReadOnly)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DimensionBuildMode {
+    Generate,
+    ReadOnly,
+}
+
+fn build_project_session_with_dimension_mode(
+    project: Project,
+    registry: &ProviderRegistry,
+    dimension_mode: DimensionBuildMode,
+) -> Result<ProjectSession, String> {
     let mut initial_diagnostics = project.schema_diagnostic_set();
     initial_diagnostics.extend(project.data_diagnostic_set());
     let schema_session = build_project_schema_with_diagnostics(project, initial_diagnostics)?;
@@ -709,13 +738,18 @@ pub fn build_project_session(
             },
         ) {
             Ok(mut output) => {
-                let dimension_diags = dimensions::regenerate_dimension_sources(
-                    &project,
-                    &output.model,
-                    &dimension_fields,
-                );
-                diagnostics.extend(dimension_diags);
-                if diagnostics.is_empty() && !dimension_fields.is_empty() {
+                let has_dimension_fields = !dimension_fields.is_empty();
+                let should_generate_dimensions =
+                    dimension_mode == DimensionBuildMode::Generate && has_dimension_fields;
+                if should_generate_dimensions {
+                    let dimension_diags = dimensions::regenerate_dimension_sources(
+                        &project,
+                        &output.model,
+                        &dimension_fields,
+                    );
+                    diagnostics.extend(dimension_diags);
+                }
+                if diagnostics.is_empty() && has_dimension_fields {
                     sources = SourceIndex::default();
                     records = RecordIndex::default();
                     files = FileIndex::default();
