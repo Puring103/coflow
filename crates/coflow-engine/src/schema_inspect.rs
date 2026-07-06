@@ -1,7 +1,7 @@
 use coflow_api::FlatDiagnostic;
 use coflow_cft::{
     CftAnnotation, CftAnnotationValue, CftConstValue, CftContainer, CftSchemaDefaultValue,
-    CftSchemaTypeRef, Dimension, ModuleId,
+    CftSchemaTypeRef, CftSchemaView, ModuleId,
 };
 use serde::Serialize;
 
@@ -137,23 +137,19 @@ pub fn inspect_schema(
     type_filter: Option<&str>,
     include_derived: bool,
 ) -> SchemaInspectReport {
-    let mut type_names = session
-        .schema
-        .all_types()
-        .map(|ty| ty.name.clone())
-        .collect::<Vec<_>>();
+    let view = CftSchemaView::new(&session.schema);
+    let mut type_names = view.types.keys().cloned().collect::<Vec<_>>();
     type_names.sort();
     if let Some(filter) = type_filter {
-        type_names.retain(|name| {
-            name == filter || (include_derived && session.schema.is_assignable(name, filter))
-        });
+        type_names
+            .retain(|name| name == filter || (include_derived && view.is_assignable(name, filter)));
     }
 
     let types = type_names
         .into_iter()
-        .filter_map(|name| session.schema.resolve_type(&name))
+        .filter_map(|name| view.types.get(&name))
         .map(|ty| SchemaTypeInfo {
-            module: ty.module.to_string(),
+            module: ty.module.clone(),
             name: ty.name.clone(),
             parent: ty.parent.clone(),
             is_abstract: ty.is_abstract,
@@ -165,29 +161,29 @@ pub fn inspect_schema(
                 .iter()
                 .map(|field| SchemaFieldInfo {
                     name: field.name.clone(),
-                    ty: type_ref_info(&session.schema, &field.ty_ref),
-                    raw_type: field.ty.clone(),
+                    ty: type_ref_info(&view, &field.ty_ref),
+                    raw_type: field.raw_type.clone(),
                     has_default: field.has_default,
                     default: field.default.as_ref().map(default_value_info),
                     annotations: annotations(&field.annotations),
                     dimension: field
                         .dimension
                         .as_ref()
-                        .map(|dimension| dimension_name(&dimension.kind)),
+                        .map(|dimension| dimension.dimension.clone()),
                 })
                 .collect(),
         })
         .collect();
 
-    let mut enums = session
-        .schema
-        .all_enums()
+    let mut enums = view
+        .enums
+        .values()
         .map(|schema_enum| SchemaEnumInfo {
-            module: schema_enum.module.to_string(),
+            module: schema_enum.module.clone(),
             name: schema_enum.name.clone(),
             annotations: annotations(&schema_enum.annotations),
             variants: schema_enum
-                .variants
+                .all_variants
                 .iter()
                 .map(|variant| SchemaEnumVariantInfo {
                     name: variant.name.clone(),
@@ -249,16 +245,16 @@ fn append_module_consts(
     }));
 }
 
-fn type_ref_info(schema: &CftContainer, ty: &CftSchemaTypeRef) -> SchemaTypeRefInfo {
+fn type_ref_info(schema: &CftSchemaView, ty: &CftSchemaTypeRef) -> SchemaTypeRefInfo {
     match ty {
         CftSchemaTypeRef::Int => SchemaTypeRefInfo::Int,
         CftSchemaTypeRef::Float => SchemaTypeRefInfo::Float,
         CftSchemaTypeRef::Bool => SchemaTypeRefInfo::Bool,
         CftSchemaTypeRef::String => SchemaTypeRefInfo::String,
         CftSchemaTypeRef::Named(name) => {
-            let target_kind = if schema.has_enum(name) {
+            let target_kind = if schema.enums.contains_key(name) {
                 "enum"
-            } else if schema.has_type(name) {
+            } else if schema.types.contains_key(name) {
                 "type"
             } else {
                 "unknown"
@@ -333,10 +329,6 @@ fn const_value_info(value: &CftConstValue) -> SchemaConstValueInfo {
         CftConstValue::Bool(value) => SchemaConstValueInfo::Bool(*value),
         CftConstValue::String(value) => SchemaConstValueInfo::String(value.clone()),
     }
-}
-
-fn dimension_name(dimension: &Dimension) -> String {
-    dimension.name().to_string()
 }
 
 fn flat_schema_diagnostics(session: &ProjectSchemaSession) -> Vec<FlatDiagnostic> {

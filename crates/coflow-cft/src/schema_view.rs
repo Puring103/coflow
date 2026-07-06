@@ -175,6 +175,7 @@ impl CftSchemaView {
 
 #[derive(Debug, Clone)]
 pub struct CftTypeMeta {
+    pub module: String,
     pub name: String,
     pub parent: Option<String>,
     pub is_abstract: bool,
@@ -192,7 +193,9 @@ pub struct CftTypeMeta {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CftFieldMeta {
     pub name: String,
+    pub raw_type: String,
     pub ty_ref: CftSchemaTypeRef,
+    pub has_default: bool,
     pub default: Option<crate::CftSchemaDefaultValue>,
     pub annotations: Vec<CftAnnotation>,
     pub dimension: Option<CftDimensionFieldMeta>,
@@ -221,6 +224,7 @@ impl CftTypeMeta {
             })
             .collect();
         Self {
+            module: schema_type.module.to_string(),
             name: schema_type.name.clone(),
             parent: schema_type.parent.clone(),
             is_abstract: schema_type.is_abstract,
@@ -253,13 +257,18 @@ impl CftFieldMeta {
     fn from_schema(field: &crate::CftSchemaField) -> Self {
         Self {
             name: field.name.clone(),
+            raw_type: field.ty.clone(),
             ty_ref: field.ty_ref.clone(),
+            has_default: field.has_default,
             default: field.default.clone(),
             annotations: field.annotations.clone(),
-            dimension: field.dimension.as_ref().map(|dimension| CftDimensionFieldMeta {
-                dimension: dimension.kind.name().to_string(),
-                bucket: dimension.bucket.clone(),
-            }),
+            dimension: field
+                .dimension
+                .as_ref()
+                .map(|dimension| CftDimensionFieldMeta {
+                    dimension: dimension.kind.name().to_string(),
+                    bucket: dimension.bucket.clone(),
+                }),
         }
     }
 }
@@ -273,6 +282,7 @@ pub struct CftEnumValueMeta {
 
 #[derive(Debug, Clone)]
 pub struct CftEnumMeta {
+    pub module: String,
     pub name: String,
     pub annotations: Vec<CftAnnotation>,
     pub all_variants: Vec<CftEnumVariantMeta>,
@@ -289,6 +299,7 @@ pub struct CftEnumVariantMeta {
 impl CftEnumMeta {
     fn from_schema(schema_enum: &CftSchemaEnum) -> Self {
         Self {
+            module: schema_enum.module.to_string(),
             name: schema_enum.name.clone(),
             annotations: schema_enum.annotations.clone(),
             all_variants: schema_enum

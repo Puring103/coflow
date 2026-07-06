@@ -313,6 +313,27 @@ fn engine_dimension_synthesis_uses_cft_schema_view() {
 }
 
 #[test]
+fn engine_schema_inspect_uses_cft_schema_view_for_schema_traversal() {
+    let schema_inspect = std::fs::read_to_string("crates/coflow-engine/src/schema_inspect.rs")
+        .expect("read schema inspect");
+
+    assert!(
+        schema_inspect.contains("CftSchemaView::new(&session.schema)"),
+        "schema inspect should use coflow-cft CftSchemaView for schema traversal"
+    );
+    for forbidden in [
+        ".schema\n        .all_types()",
+        ".schema\n        .all_enums()",
+        ".schema.resolve_type(",
+    ] {
+        assert!(
+            !schema_inspect.contains(forbidden),
+            "schema inspect should not traverse raw schema via `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn engine_public_mutation_api_does_not_expose_prepared_ops() {
     let engine =
         std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");
