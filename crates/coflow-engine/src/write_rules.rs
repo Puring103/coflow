@@ -1,5 +1,5 @@
 use coflow_api::{Diagnostic, DiagnosticSet, Severity, WriteFieldPathSegment};
-use coflow_cft::{CftContainer, CftSchemaTypeRef};
+use coflow_cft::{CftContainer, CftSchemaTypeRef, CftSchemaView};
 use coflow_data_model::{
     CfdDomainId, CfdPath, CfdPathSegment, CfdRecordId, CfdValue, CfdValueSemanticContext,
     PendingInsertRef,
@@ -84,6 +84,17 @@ pub fn expected_type_for_cfd_path(
     code: &'static str,
     stage: &'static str,
 ) -> Result<CftSchemaTypeRef, DiagnosticSet> {
+    let view = CftSchemaView::new(schema);
+    expected_type_for_cfd_path_in_view(&view, actual_type, path, code, stage)
+}
+
+fn expected_type_for_cfd_path_in_view(
+    schema: &CftSchemaView,
+    actual_type: &str,
+    path: &[CfdPathSegment],
+    code: &'static str,
+    stage: &'static str,
+) -> Result<CftSchemaTypeRef, DiagnosticSet> {
     if path.is_empty() {
         return Err(one_error(code, stage, "field path must not be empty"));
     }
@@ -98,15 +109,13 @@ pub fn expected_type_for_cfd_path(
                         format!("field `{field}` cannot be selected from this value"),
                     ));
                 };
-                let schema_type = schema
-                    .resolve_type(type_name)
-                    .ok_or_else(|| one_error(code, stage, format!("unknown type `{type_name}`")))?;
-                schema_type
-                    .all_fields
-                    .iter()
-                    .find(|schema_field| schema_field.name == *field)
-                    .map(|schema_field| schema_field.ty_ref.clone())
+                schema
+                    .field_type(type_name, field)
+                    .cloned()
                     .ok_or_else(|| {
+                        if !schema.types.contains_key(type_name) {
+                            return one_error(code, stage, format!("unknown type `{type_name}`"));
+                        }
                         one_error(
                             code,
                             stage,

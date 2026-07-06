@@ -356,6 +356,23 @@ fn engine_schema_inspect_uses_cft_schema_view_for_schema_traversal() {
 }
 
 #[test]
+fn engine_write_rules_use_cft_schema_view_for_path_types() {
+    let write_rules = std::fs::read_to_string("crates/coflow-engine/src/write_rules.rs")
+        .expect("read engine write rules");
+
+    assert!(
+        write_rules.contains("CftSchemaView::new(schema)"),
+        "engine write rules should use coflow-cft CftSchemaView for schema path lookup"
+    );
+    for forbidden in [".resolve_type(", ".all_fields", ".has_enum(", ".has_type("] {
+        assert!(
+            !write_rules.contains(forbidden),
+            "engine write rules should not use raw schema query `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn engine_public_mutation_api_does_not_expose_prepared_ops() {
     let engine =
         std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");
