@@ -154,6 +154,25 @@ fn engine_public_api_does_not_expose_checker_dependency_graph() {
 }
 
 #[test]
+fn engine_runtime_does_not_depend_on_excel_implementation_crates() {
+    let manifest = std::fs::read_to_string("crates/coflow-engine/Cargo.toml")
+        .expect("read engine manifest");
+    let data_files = std::fs::read_to_string("crates/coflow-engine/src/data_files.rs")
+        .expect("read engine data file commands");
+
+    for forbidden in ["calamine", "umya-spreadsheet", "umya_spreadsheet"] {
+        assert!(
+            !manifest.contains(forbidden),
+            "coflow-engine should not depend on Excel implementation crate `{forbidden}`"
+        );
+        assert!(
+            !data_files.contains(forbidden),
+            "data file commands should use provider table operations instead of `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn engine_public_mutation_api_does_not_expose_prepared_ops() {
     let engine =
         std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");

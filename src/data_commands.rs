@@ -214,8 +214,10 @@ pub fn create_file(
     human: bool,
 ) -> Result<bool, String> {
     let session = open_schema_session(config_or_dir)?;
+    let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
     match create_data_file(
         &session,
+        &registry,
         DataCreateFileOptions {
             file,
             actual_type,
@@ -259,16 +261,16 @@ pub fn create_table(
     human: bool,
 ) -> Result<bool, String> {
     let session = open_schema_session(config_or_dir)?;
+    let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
     let provider_id = provider
         .or_else(|| infer_table_provider(&source))
         .unwrap_or("excel");
     let result = if provider_id == "lark-sheet" || provider_id == "lark" {
-        let registry =
-            coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
         create_lark_table(&session, &registry, &source, actual_type, sheet)
     } else {
         create_data_file(
             &session,
+            &registry,
             DataCreateFileOptions {
                 file: source,
                 actual_type,
@@ -314,8 +316,10 @@ pub fn sync_header(
     human: bool,
 ) -> Result<bool, String> {
     let session = open_schema_session(config_or_dir)?;
+    let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
     match sync_data_header(
         &session,
+        &registry,
         DataSyncHeaderOptions {
             file,
             actual_type,

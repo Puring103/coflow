@@ -1,5 +1,7 @@
-use calamine::Reader;
-use coflow_api::{Diagnostic, DiagnosticSet, FlatDiagnostic, Severity};
+use coflow_api::{
+    CreateTableRequest, Diagnostic, DiagnosticSet, FlatDiagnostic, ProviderRegistry,
+    ResolvedSource, Severity, SourceLocationSpec, SyncHeaderRequest, TableContext,
+};
 use coflow_cfd::{parse_cfd, CfdBlockEntry, CfdRecord as AstRecord};
 use coflow_cft::{CftContainer, CftSchemaDefaultValue, CftSchemaField, CftSchemaTypeRef, Span};
 use coflow_data_model::{CfdEnumValue, CfdObject, CfdValue};
@@ -75,6 +77,7 @@ struct TableLayout {
 /// invalid, or when the file cannot be created.
 pub fn create_data_file(
     session: &ProjectSchemaSession,
+    registry: &ProviderRegistry,
     options: DataCreateFileOptions,
 ) -> Result<DataFileReport, DiagnosticSet> {
     let provider = resolve_provider(options.provider.as_deref(), &options.file)?;
@@ -100,44 +103,49 @@ pub fn create_data_file(
             ))
         }
         DataFileProvider::Csv => {
-            ensure_new_data_file_path(&path, &options.file)?;
             let layout = table_layout(session, &options.file, options.actual_type, options.sheet)?;
-            fs::write(
-                &path,
-                coflow_loader_csv::write(std::slice::from_ref(&layout.headers)),
-            )
-            .map_err(|err| {
-                one_data_file_error(
-                    "DATA-FILE-IO",
-                    format!("failed to write `{}`: {err}", path.display()),
-                )
-            })?;
+            let source = table_operation_source(&options.file, provider, path);
+            let result = table_manager(registry, provider)?.create_table(
+                table_context(session),
+                &CreateTableRequest {
+                    source: &source,
+                    sheet: &layout.sheet,
+                    actual_type: &layout.actual_type,
+                    headers: &layout.headers,
+                    schema: &session.schema,
+                },
+            )?;
             Ok(report(
                 options.file,
                 provider,
                 Some(layout.sheet),
                 Some(layout.actual_type),
-                layout.headers,
-                Vec::new(),
-                Vec::new(),
+                result.headers,
+                result.added,
+                result.removed,
             ))
         }
         DataFileProvider::Excel => {
             let layout = table_layout(session, &options.file, options.actual_type, options.sheet)?;
-            if path.exists() {
-                append_excel_sheet(&path, &layout.sheet, &layout.headers)?;
-            } else {
-                ensure_parent_dir(&path)?;
-                create_excel_file(&path, &layout.sheet, &layout.headers)?;
-            }
+            let source = table_operation_source(&options.file, provider, path);
+            let result = table_manager(registry, provider)?.create_table(
+                table_context(session),
+                &CreateTableRequest {
+                    source: &source,
+                    sheet: &layout.sheet,
+                    actual_type: &layout.actual_type,
+                    headers: &layout.headers,
+                    schema: &session.schema,
+                },
+            )?;
             Ok(report(
                 options.file,
                 provider,
                 Some(layout.sheet),
                 Some(layout.actual_type),
-                layout.headers,
-                Vec::new(),
-                Vec::new(),
+                result.headers,
+                result.added,
+                result.removed,
             ))
         }
     }
@@ -151,6 +159,7 @@ pub fn create_data_file(
 /// invalid, or when the file cannot be updated.
 pub fn sync_data_header(
     session: &ProjectSchemaSession,
+    registry: &ProviderRegistry,
     options: DataSyncHeaderOptions,
 ) -> Result<DataFileReport, DiagnosticSet> {
     let provider = resolve_provider(options.provider.as_deref(), &options.file)?;
@@ -184,65 +193,82 @@ pub fn sync_data_header(
             ))
         }
         DataFileProvider::Csv => {
-            let text = fs::read_to_string(&path).map_err(|err| {
-                one_data_file_error(
-                    "DATA-FILE-IO",
-                    format!("failed to read `{}`: {err}", path.display()),
-                )
-            })?;
-            let mut rows = coflow_loader_csv::parse(&text).map_err(|err| {
-                one_data_file_error(
-                    "DATA-FILE-PARSE",
-                    format!("failed to parse `{}`: {err}", path.display()),
-                )
-            })?;
-            let old_header = rows.first().cloned().unwrap_or_default();
-            let added = added_columns(&layout.headers, &old_header);
-            let removed = removed_columns(&layout.headers, &old_header);
-            rows = sync_rows_to_header(rows, &layout.headers);
-            fs::write(&path, coflow_loader_csv::write(&rows)).map_err(|err| {
-                one_data_file_error(
-                    "DATA-FILE-IO",
-                    format!("failed to write `{}`: {err}", path.display()),
-                )
-            })?;
+            let source = table_operation_source(&options.file, provider, path);
+            let result = table_manager(registry, provider)?.sync_header(
+                table_context(session),
+                &SyncHeaderRequest {
+                    source: &source,
+                    sheet: Some(&layout.sheet),
+                    actual_type: &layout.actual_type,
+                    headers: &layout.headers,
+                    schema: &session.schema,
+                },
+            )?;
             Ok(report(
                 options.file,
                 provider,
                 Some(layout.sheet),
                 Some(layout.actual_type),
-                layout.headers,
-                added,
-                removed,
+                result.headers,
+                result.added,
+                result.removed,
             ))
         }
         DataFileProvider::Excel => {
-            let mut created_sheet = false;
-            let old_header = excel_header(&path, &layout.sheet).or_else(|diagnostics| {
-                if excel_sheet_missing(&diagnostics) {
-                    create_missing_excel_sheet(&path, &layout.sheet, &layout.headers)?;
-                    created_sheet = true;
-                    Ok(Vec::new())
-                } else {
-                    Err(diagnostics)
-                }
-            })?;
-            let added = added_columns(&layout.headers, &old_header);
-            let removed = removed_columns(&layout.headers, &old_header);
-            if !created_sheet {
-                sync_excel_header(&path, &layout.sheet, &layout.headers)?;
-            }
+            let source = table_operation_source(&options.file, provider, path);
+            let result = table_manager(registry, provider)?.sync_header(
+                table_context(session),
+                &SyncHeaderRequest {
+                    source: &source,
+                    sheet: Some(&layout.sheet),
+                    actual_type: &layout.actual_type,
+                    headers: &layout.headers,
+                    schema: &session.schema,
+                },
+            )?;
             Ok(report(
                 options.file,
                 provider,
                 Some(layout.sheet),
                 Some(layout.actual_type),
-                layout.headers,
-                added,
-                removed,
+                result.headers,
+                result.added,
+                result.removed,
             ))
         }
     }
+}
+
+fn table_context(session: &ProjectSchemaSession) -> TableContext<'_> {
+    TableContext {
+        project_root: &session.project.root_dir,
+        schema: &session.schema,
+    }
+}
+
+fn table_operation_source(
+    file: &str,
+    provider: DataFileProvider,
+    path: PathBuf,
+) -> ResolvedSource {
+    ResolvedSource {
+        provider_id: provider.id().to_string(),
+        location: SourceLocationSpec::Path(path),
+        options: Value::Null,
+        display_name: file.to_string(),
+    }
+}
+
+fn table_manager(
+    registry: &ProviderRegistry,
+    provider: DataFileProvider,
+) -> Result<std::sync::Arc<dyn coflow_api::TableManager>, DiagnosticSet> {
+    registry.table_manager(provider.id()).ok_or_else(|| {
+        one_data_file_error(
+            "DATA-FILE-PROVIDER",
+            format!("table manager `{}` is not registered", provider.id()),
+        )
+    })
 }
 
 fn ensure_new_data_file_path(path: &Path, file: &str) -> Result<(), DiagnosticSet> {
@@ -465,7 +491,7 @@ fn source_sheet_value(value: &Value, key: &str) -> Option<String> {
 }
 
 fn source_path_matches(project: &Project, source: &SourceConfig, file: &str) -> bool {
-    let coflow_api::SourceLocationSpec::Path(path) = source.location() else {
+    let SourceLocationSpec::Path(path) = source.location() else {
         return false;
     };
     let requested = path_to_slash(Path::new(file));
@@ -497,33 +523,6 @@ fn removed_columns(new_header: &[String], old_header: &[String]) -> Vec<String> 
         .filter(|header| !new.contains(header))
         .cloned()
         .collect()
-}
-
-fn sync_rows_to_header(mut rows: Vec<Vec<String>>, new_header: &[String]) -> Vec<Vec<String>> {
-    let Some(old_header) = rows.first().cloned() else {
-        return vec![new_header.to_vec()];
-    };
-    let old_index = old_header
-        .iter()
-        .enumerate()
-        .map(|(index, header)| (header.clone(), index))
-        .collect::<BTreeMap<_, _>>();
-    let mut out = vec![new_header.to_vec()];
-    for row in rows.drain(1..) {
-        out.push(
-            new_header
-                .iter()
-                .map(|header| {
-                    old_index
-                        .get(header)
-                        .and_then(|index| row.get(*index))
-                        .cloned()
-                        .unwrap_or_default()
-                })
-                .collect(),
-        );
-    }
-    out
 }
 
 fn cfd_top_level_fields(path: &Path, actual_type: &str) -> Result<Vec<String>, DiagnosticSet> {
@@ -778,199 +777,6 @@ fn replace_spans(source: &str, replacements: &[(Span, String)]) -> Result<String
         out.replace_range(span.start..span.end, &replacement);
     }
     Ok(out)
-}
-
-fn create_excel_file(path: &Path, sheet: &str, headers: &[String]) -> Result<(), DiagnosticSet> {
-    let mut book = umya_spreadsheet::new_file();
-    if sheet != "Sheet1" {
-        let existing = book.get_sheet_by_name_mut("Sheet1").ok_or_else(|| {
-            one_data_file_error("DATA-FILE-EXCEL", "default worksheet is missing")
-        })?;
-        existing.set_name(sheet);
-    }
-    let worksheet = book.get_sheet_by_name_mut(sheet).ok_or_else(|| {
-        one_data_file_error(
-            "DATA-FILE-EXCEL",
-            format!("sheet `{sheet}` not found after workbook creation"),
-        )
-    })?;
-    for (index, header) in headers.iter().enumerate() {
-        let column = u32::try_from(index + 1)
-            .map_err(|_| one_data_file_error("DATA-FILE-EXCEL", "too many columns for Excel"))?;
-        worksheet.get_cell_mut((column, 1_u32)).set_value(header);
-    }
-    umya_spreadsheet::writer::xlsx::write(&book, path).map_err(|err| {
-        one_data_file_error(
-            "DATA-FILE-IO",
-            format!("failed to write `{}`: {err:?}", path.display()),
-        )
-    })
-}
-
-fn append_excel_sheet(path: &Path, sheet: &str, headers: &[String]) -> Result<(), DiagnosticSet> {
-    let mut book = umya_spreadsheet::reader::xlsx::read(path).map_err(|err| {
-        one_data_file_error(
-            "DATA-FILE-EXCEL",
-            format!("failed to read `{}`: {err:?}", path.display()),
-        )
-    })?;
-    if book.get_sheet_by_name(sheet).is_some() {
-        return Err(one_data_file_error(
-            "DATA-FILE-EXISTS",
-            format!("sheet `{sheet}` already exists in `{}`", path.display()),
-        ));
-    }
-    book.new_sheet(sheet).map_err(|err| {
-        one_data_file_error(
-            "DATA-FILE-EXCEL",
-            format!(
-                "failed to create sheet `{sheet}` in `{}`: {err}",
-                path.display()
-            ),
-        )
-    })?;
-    write_excel_headers(&mut book, sheet, headers)?;
-    umya_spreadsheet::writer::xlsx::write(&book, path).map_err(|err| {
-        one_data_file_error(
-            "DATA-FILE-IO",
-            format!("failed to write `{}`: {err:?}", path.display()),
-        )
-    })
-}
-
-fn create_missing_excel_sheet(
-    path: &Path,
-    sheet: &str,
-    headers: &[String],
-) -> Result<(), DiagnosticSet> {
-    append_excel_sheet(path, sheet, headers)
-}
-
-fn write_excel_headers(
-    book: &mut umya_spreadsheet::Spreadsheet,
-    sheet: &str,
-    headers: &[String],
-) -> Result<(), DiagnosticSet> {
-    let worksheet = book.get_sheet_by_name_mut(sheet).ok_or_else(|| {
-        one_data_file_error(
-            "DATA-FILE-EXCEL",
-            format!("sheet `{sheet}` not found after workbook update"),
-        )
-    })?;
-    for (index, header) in headers.iter().enumerate() {
-        let column = u32::try_from(index + 1)
-            .map_err(|_| one_data_file_error("DATA-FILE-EXCEL", "too many columns for Excel"))?;
-        worksheet.get_cell_mut((column, 1_u32)).set_value(header);
-    }
-    Ok(())
-}
-
-fn excel_header(path: &Path, sheet: &str) -> Result<Vec<String>, DiagnosticSet> {
-    let mut workbook = calamine::open_workbook_auto(path).map_err(|err| {
-        one_data_file_error(
-            "DATA-FILE-EXCEL",
-            format!("failed to read `{}`: {err}", path.display()),
-        )
-    })?;
-    let range = workbook.worksheet_range(sheet).map_err(|err| {
-        one_data_file_error(
-            "DATA-FILE-EXCEL",
-            format!("sheet `{sheet}` not found in `{}`: {err}", path.display()),
-        )
-    })?;
-    Ok(range
-        .rows()
-        .next()
-        .map(|row| row.iter().map(excel_cell_to_text).collect())
-        .unwrap_or_default())
-}
-
-fn excel_sheet_missing(diagnostics: &DiagnosticSet) -> bool {
-    diagnostics.diagnostics.iter().any(|diagnostic| {
-        diagnostic.code == "DATA-FILE-EXCEL"
-            && diagnostic.message.contains("sheet `")
-            && diagnostic.message.contains("not found")
-    })
-}
-
-fn sync_excel_header(
-    path: &Path,
-    sheet_name: &str,
-    new_header: &[String],
-) -> Result<(), DiagnosticSet> {
-    let old_header = excel_header(path, sheet_name)?;
-    let mut old_index = BTreeMap::new();
-    for (index, header) in old_header.iter().enumerate() {
-        let column = u32::try_from(index + 1)
-            .map_err(|_| one_data_file_error("DATA-FILE-EXCEL", "too many columns for Excel"))?;
-        old_index.insert(header.clone(), column);
-    }
-    let mut book = umya_spreadsheet::reader::xlsx::read(path).map_err(|err| {
-        one_data_file_error(
-            "DATA-FILE-EXCEL",
-            format!("failed to read `{}`: {err:?}", path.display()),
-        )
-    })?;
-    let sheet = book.get_sheet_by_name_mut(sheet_name).ok_or_else(|| {
-        one_data_file_error(
-            "DATA-FILE-EXCEL",
-            format!("sheet `{sheet_name}` not found in `{}`", path.display()),
-        )
-    })?;
-    let (_max_column, max_row) = sheet.get_highest_column_and_row();
-    let mut rows = Vec::new();
-    for row in 2..=max_row {
-        let values = new_header
-            .iter()
-            .map(|header| {
-                old_index
-                    .get(header)
-                    .and_then(|column| sheet.get_cell((*column, row)))
-                    .map_or_else(String::new, |cell| cell.get_value().to_string())
-            })
-            .collect::<Vec<_>>();
-        rows.push(values);
-    }
-    if !old_header.is_empty() {
-        let count = u32::try_from(old_header.len())
-            .map_err(|_| one_data_file_error("DATA-FILE-EXCEL", "too many columns for Excel"))?;
-        sheet.remove_column_by_index(&1, &count);
-    }
-    for (index, header) in new_header.iter().enumerate() {
-        let column = u32::try_from(index + 1)
-            .map_err(|_| one_data_file_error("DATA-FILE-EXCEL", "too many columns for Excel"))?;
-        sheet.get_cell_mut((column, 1_u32)).set_value(header);
-    }
-    for (row_index, row) in rows.iter().enumerate() {
-        let excel_row = u32::try_from(row_index + 2)
-            .map_err(|_| one_data_file_error("DATA-FILE-EXCEL", "too many rows for Excel"))?;
-        for (column_index, value) in row.iter().enumerate() {
-            let excel_column = u32::try_from(column_index + 1).map_err(|_| {
-                one_data_file_error("DATA-FILE-EXCEL", "too many columns for Excel")
-            })?;
-            sheet
-                .get_cell_mut((excel_column, excel_row))
-                .set_value(value);
-        }
-    }
-    umya_spreadsheet::writer::xlsx::write(&book, path).map_err(|err| {
-        one_data_file_error(
-            "DATA-FILE-IO",
-            format!("failed to write `{}`: {err:?}", path.display()),
-        )
-    })
-}
-
-fn excel_cell_to_text(cell: &calamine::Data) -> String {
-    match cell {
-        calamine::Data::Empty => String::new(),
-        calamine::Data::String(value) => value.clone(),
-        calamine::Data::Float(value) if value.fract() == 0.0 => format!("{value:.0}"),
-        calamine::Data::Float(value) => value.to_string(),
-        calamine::Data::Int(value) => value.to_string(),
-        calamine::Data::Bool(value) => value.to_string(),
-        other => format!("{other}"),
-    }
 }
 
 fn one_data_file_error(code: &'static str, message: impl Into<String>) -> DiagnosticSet {

@@ -19,7 +19,6 @@ ts-export = [
 ]
 
 [dependencies]
-calamine = "0.35"
 coflow-api = { path = "../coflow-api" }
 coflow-cfd = { path = "../coflow-cfd" }
 coflow-cft = { path = "../coflow-cft" }
@@ -32,7 +31,6 @@ coflow-project = { path = "../coflow-project" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 ts-rs = { version = "10", optional = true }
-umya-spreadsheet = "2"
 walkdir = "2"
 
 [dev-dependencies]

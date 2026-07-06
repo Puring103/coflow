@@ -16,6 +16,14 @@ fn builtin_registry_contains_all_default_providers() -> Result<(), String> {
         "missing lark-sheet writer",
     )?;
     ensure(registry.writer("cfd").is_some(), "missing cfd writer")?;
+    ensure(
+        registry.table_manager("excel").is_some(),
+        "missing excel table manager",
+    )?;
+    ensure(
+        registry.table_manager("csv").is_some(),
+        "missing csv table manager",
+    )?;
     ensure(registry.exporter("json").is_some(), "missing json exporter")?;
     ensure(
         registry.exporter("messagepack").is_some(),
