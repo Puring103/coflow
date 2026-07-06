@@ -1,7 +1,8 @@
 use crate::diagnostic::{CfdPath, CfdPathSegment};
 use crate::origin::RecordOrigin;
+use crate::schema_view::SchemaView;
 use crate::{compiler::ModelCompiler, CfdDiagnostics};
-use coflow_cft::{CftAnnotationValue, CftContainer, CftEnumValueMeta, CftSchemaTypeRef};
+use coflow_cft::{CftContainer, CftEnumValueMeta, CftSchemaTypeRef};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -292,21 +293,22 @@ impl CfdDataModel {
             .record(source_record)
             .ok_or(DimensionFieldLookupError::MissingStorageRecord)?;
         let actual_type = record.actual_type();
-        let source_type = schema
-            .resolve_type(actual_type)
+        let schema_view = SchemaView::new(schema);
+        let source_type = schema_view
+            .types
+            .get(actual_type)
             .ok_or(DimensionFieldLookupError::NotDimensional)?;
-        let field = source_type
-            .fields
-            .iter()
-            .find(|field| field.name == field_name)
+        let field = schema_view
+            .field_meta(actual_type, field_name)
             .ok_or(DimensionFieldLookupError::NotDimensional)?;
-        let Some(field_dimension) = field.dimension.as_ref() else {
+        let Some(field_dimension) = field.dimension.as_deref() else {
             return Err(DimensionFieldLookupError::NotDimensional);
         };
-        if field_dimension.kind.name() != dimension {
+        if field_dimension != dimension {
             return Err(DimensionFieldLookupError::DimensionMismatch);
         }
-        let storage_type = dimension_storage_type(schema, dimension, actual_type, field_name)
+        let storage_type = schema_view
+            .dimension_storage_type(dimension, actual_type, field_name)
             .ok_or(DimensionFieldLookupError::MissingStorageRecord)?;
         let storage_key = if source_type.is_singleton {
             field_name
@@ -322,9 +324,8 @@ impl CfdDataModel {
         let value = storage_record
             .field(variant)
             .ok_or(DimensionFieldLookupError::MissingVariantField)?;
-        let field_type = schema
-            .resolve_type(storage_type)
-            .and_then(|ty| ty.fields.iter().find(|field| field.name == variant))
+        let field_type = schema_view
+            .field_meta(storage_type, variant)
             .map(|field| field.ty_ref.clone());
         Ok(DimensionFieldValue {
             value,
@@ -509,33 +510,6 @@ impl CfdDataModel {
         self.spread_source_path_inner(edge.source, &source_path, visited)
             .or(Some((edge.source, source_path)))
     }
-}
-
-fn dimension_storage_type<'a>(
-    schema: &'a CftContainer,
-    dimension: &str,
-    source_type: &str,
-    source_field: &str,
-) -> Option<&'a str> {
-    schema.all_types().find_map(|schema_type| {
-        schema_type
-            .annotations
-            .iter()
-            .any(|annotation| {
-                annotation.name == "__coflow_dimension_storage"
-                    && matches!(
-                        annotation.args.as_slice(),
-                        [
-                            CftAnnotationValue::String(annotation_dimension),
-                            CftAnnotationValue::String(annotation_type),
-                            CftAnnotationValue::String(annotation_field),
-                        ] if annotation_dimension == dimension
-                            && annotation_type == source_type
-                            && annotation_field == source_field
-                    )
-            })
-            .then_some(schema_type.name.as_str())
-    })
 }
 
 impl SpreadEdge {
