@@ -407,6 +407,36 @@ fn engine_writes_use_cft_schema_view_for_insert_schema_checks() {
 }
 
 #[test]
+fn engine_mutation_defaults_use_cft_schema_view() {
+    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation.rs")
+        .expect("read mutation")
+        .replace("\r\n", "\n");
+
+    let default_section = mutation
+        .split("fn default_record_for_type(")
+        .nth(1)
+        .and_then(|rest| rest.split("fn coerce_mutation_value(").next())
+        .expect("mutation default materialization section");
+
+    assert!(
+        default_section.contains("CftSchemaView::new(schema)"),
+        "mutation default materialization should use coflow-cft CftSchemaView"
+    );
+    for forbidden in [
+        ".resolve_type(",
+        ".resolve_enum(",
+        ".has_type(",
+        ".has_enum(",
+        "CftSchemaField",
+    ] {
+        assert!(
+            !default_section.contains(forbidden),
+            "mutation default materialization should not use raw schema query `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn engine_public_mutation_api_does_not_expose_prepared_ops() {
     let engine =
         std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");

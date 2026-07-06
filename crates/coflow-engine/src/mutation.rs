@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::{Diagnostic, DiagnosticSet, FlatDiagnostic, ProviderRegistry, Severity};
-use coflow_cft::{CftContainer, CftSchemaDefaultValue, CftSchemaTypeRef};
+use coflow_cft::{
+    CftContainer, CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchemaView,
+};
 use coflow_data_model::{
     CfdDictKey, CfdEnumValue, CfdObject, CfdPath, CfdPathSegment, CfdRecord, CfdValue, RecordOrigin,
 };
@@ -492,10 +494,11 @@ fn default_record_for_type(
     type_name: &str,
     materialization: DefaultMaterialization,
 ) -> Result<CfdRecord, DiagnosticSet> {
-    ensure_type_can_materialize(schema, type_name)?;
+    let schema = CftSchemaView::new(schema);
+    ensure_type_can_materialize(&schema, type_name)?;
     let mut stack = BTreeSet::new();
     let fields =
-        default_fields_for_type_inner(schema, type_name, materialization, &mut stack, None)?;
+        default_fields_for_type_inner(&schema, type_name, materialization, &mut stack, None)?;
     Ok(CfdRecord {
         key: String::new(),
         object: CfdObject::new(type_name, fields),
@@ -509,9 +512,10 @@ fn default_missing_fields_for_type(
     materialization: DefaultMaterialization,
     provided_names: &BTreeSet<String>,
 ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
+    let schema = CftSchemaView::new(schema);
     let mut stack = BTreeSet::new();
     default_fields_for_type_inner(
-        schema,
+        &schema,
         type_name,
         materialization,
         &mut stack,
@@ -520,13 +524,13 @@ fn default_missing_fields_for_type(
 }
 
 fn default_fields_for_type_inner(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     type_name: &str,
     materialization: DefaultMaterialization,
     stack: &mut BTreeSet<String>,
     skip_fields: Option<&BTreeSet<String>>,
 ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
-    let Some(schema_type) = schema.resolve_type(type_name) else {
+    let Some(schema_type) = schema.types.get(type_name) else {
         return Err(one_mutation_error(
             "MUTATION-TYPE",
             format!("unknown type `{type_name}`"),
@@ -578,8 +582,8 @@ fn default_fields_for_type_inner(
 }
 
 fn default_minimal_for_field(
-    schema: &CftContainer,
-    field: &coflow_cft::CftSchemaField,
+    schema: &CftSchemaView,
+    field: &CftFieldMeta,
     stack: &mut BTreeSet<String>,
 ) -> Result<Option<CfdValue>, DiagnosticSet> {
     if field.default.is_some() {
@@ -593,7 +597,7 @@ fn default_minimal_for_field(
                 field.name
             ),
         )),
-        CftSchemaTypeRef::Named(name) if schema.has_type(name) => {
+        CftSchemaTypeRef::Named(name) if schema.types.contains_key(name) => {
             ensure_type_can_materialize(schema, name)?;
             let fields = default_fields_for_type_inner(
                 schema,
@@ -614,12 +618,12 @@ fn default_minimal_for_field(
                 field.name
             ),
         )),
-        _ => default_zero_for_ty(schema, &field.ty_ref).map(Some),
+        _ => default_zero_for_ty_inner(schema, &field.ty_ref, stack).map(Some),
     }
 }
 
 fn default_value_for_ty(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     ty: &CftSchemaTypeRef,
     declared_default: Option<&CftSchemaDefaultValue>,
     materialization: DefaultMaterialization,
@@ -632,7 +636,7 @@ fn default_value_for_ty(
 }
 
 fn default_from_schema_default(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     ty: &CftSchemaTypeRef,
     default: &CftSchemaDefaultValue,
     materialization: DefaultMaterialization,
@@ -648,14 +652,23 @@ fn default_from_schema_default(
             enum_name,
             variant,
             value,
-        } => Ok(CfdValue::Enum(CfdEnumValue {
-            enum_name: enum_name.clone(),
-            variant: Some(variant.clone()),
-            value: *value,
-        })),
+        } => Ok(CfdValue::Enum(
+            schema
+                .enum_value_from_int(enum_name, *value)
+                .map(|value| CfdEnumValue {
+                    enum_name: value.enum_name,
+                    variant: value.variant,
+                    value: value.value,
+                })
+                .unwrap_or_else(|| CfdEnumValue {
+                    enum_name: enum_name.clone(),
+                    variant: Some(variant.clone()),
+                    value: *value,
+                }),
+        )),
         CftSchemaDefaultValue::EmptyArray => Ok(CfdValue::Array(Vec::new())),
         CftSchemaDefaultValue::EmptyObject => match non_nullable(ty) {
-            CftSchemaTypeRef::Named(name) if schema.has_type(name) => {
+            CftSchemaTypeRef::Named(name) if schema.types.contains_key(name) => {
                 let fields =
                     default_fields_for_type_inner(schema, name, materialization, stack, None)?;
                 Ok(CfdValue::Object(Box::new(CfdObject::new(
@@ -669,16 +682,8 @@ fn default_from_schema_default(
     }
 }
 
-fn default_zero_for_ty(
-    schema: &CftContainer,
-    ty: &CftSchemaTypeRef,
-) -> Result<CfdValue, DiagnosticSet> {
-    let mut stack = BTreeSet::new();
-    default_zero_for_ty_inner(schema, ty, &mut stack)
-}
-
 fn default_zero_for_ty_inner(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     ty: &CftSchemaTypeRef,
     stack: &mut BTreeSet<String>,
 ) -> Result<CfdValue, DiagnosticSet> {
@@ -690,10 +695,11 @@ fn default_zero_for_ty_inner(
         CftSchemaTypeRef::Ref(_) | CftSchemaTypeRef::Nullable(_) => Ok(CfdValue::Null),
         CftSchemaTypeRef::Array(_) => Ok(CfdValue::Array(Vec::new())),
         CftSchemaTypeRef::Dict(_, _) => Ok(CfdValue::Dict(Vec::new())),
-        CftSchemaTypeRef::Named(name) if schema.has_enum(name) => {
+        CftSchemaTypeRef::Named(name) if schema.enums.contains_key(name) => {
             let value = schema
-                .resolve_enum(name)
-                .and_then(|enm| enm.variants.first());
+                .enums
+                .get(name)
+                .and_then(|enm| enm.all_variants.first());
             Ok(value.map_or_else(
                 || {
                     CfdValue::Enum(CfdEnumValue {
@@ -729,10 +735,10 @@ fn default_zero_for_ty_inner(
 }
 
 fn ensure_type_can_materialize(
-    schema: &CftContainer,
+    schema: &CftSchemaView,
     type_name: &str,
 ) -> Result<(), DiagnosticSet> {
-    let Some(schema_type) = schema.resolve_type(type_name) else {
+    let Some(schema_type) = schema.types.get(type_name) else {
         return Err(one_mutation_error(
             "MUTATION-TYPE",
             format!("unknown type `{type_name}`"),
