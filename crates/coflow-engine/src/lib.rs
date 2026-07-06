@@ -741,13 +741,17 @@ fn build_project_session_with_dimension_mode(
                 let has_dimension_fields = !dimension_fields.is_empty();
                 let should_generate_dimensions =
                     dimension_mode == DimensionBuildMode::Generate && has_dimension_fields;
+                let mut dimension_transaction = None;
                 if should_generate_dimensions {
-                    let dimension_diags = dimensions::regenerate_dimension_sources(
+                    let dimension_result = dimensions::regenerate_dimension_sources(
                         &project,
                         &output.model,
                         &dimension_fields,
                     );
-                    diagnostics.extend(dimension_diags);
+                    diagnostics.extend(dimension_result.diagnostics);
+                    if diagnostics.is_empty() && !dimension_result.transaction.is_empty() {
+                        dimension_transaction = Some(dimension_result.transaction);
+                    }
                 }
                 if diagnostics.is_empty() && has_dimension_fields {
                     sources = SourceIndex::default();
@@ -778,6 +782,11 @@ fn build_project_session_with_dimension_mode(
                 records.finalize_with_model(&output.model);
                 diagnostics
                     .extend_with_logical_locations(output.diagnostics, output.logical_locations);
+                if !diagnostics.is_empty() {
+                    if let Some(transaction) = dimension_transaction.take() {
+                        diagnostics.extend(transaction.rollback(&project.config_path));
+                    }
+                }
                 (output.model, output.dependencies)
             }
             Err(load_diagnostics) => {

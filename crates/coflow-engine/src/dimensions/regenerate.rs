@@ -8,15 +8,16 @@ use coflow_project::Project;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[must_use]
 pub fn regenerate_dimension_sources(
     project: &Project,
     model: &CfdDataModel,
     fields: &[DimensionField],
-) -> DiagnosticSet {
+) -> DimensionGenerationResult {
     let mut diagnostics = DiagnosticSet::empty();
+    let mut transaction = DimensionGenerationTransaction::default();
     for (dimension, config) in &project.config.dimensions {
         let dimension_fields = fields
             .iter()
@@ -56,6 +57,7 @@ pub fn regenerate_dimension_sources(
                     field,
                     &out_dir,
                     &config.variants,
+                    &mut transaction,
                 ));
             } else {
                 diagnostics.extend(regenerate_csv_file(
@@ -64,11 +66,90 @@ pub fn regenerate_dimension_sources(
                     field,
                     &out_dir,
                     &config.variants,
+                    &mut transaction,
                 ));
             }
         }
     }
-    diagnostics
+    DimensionGenerationResult {
+        transaction,
+        diagnostics,
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct DimensionGenerationResult {
+    pub transaction: DimensionGenerationTransaction,
+    pub diagnostics: DiagnosticSet,
+}
+
+#[derive(Debug, Default)]
+pub struct DimensionGenerationTransaction {
+    snapshots: BTreeMap<PathBuf, FileSnapshot>,
+}
+
+impl DimensionGenerationTransaction {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.snapshots.is_empty()
+    }
+
+    pub fn rollback(self, config_path: &Path) -> DiagnosticSet {
+        let mut diagnostics = DiagnosticSet::empty();
+        for snapshot in self.snapshots.into_values().rev() {
+            if let Err(err) = snapshot.restore() {
+                diagnostics.push(dimension_diagnostic(
+                    config_path,
+                    &snapshot.dimension,
+                    "DIM-SOURCE-ROLLBACK-001",
+                    format!(
+                        "failed to roll back dimension source `{}`: {err}",
+                        snapshot.path.display()
+                    ),
+                ));
+            }
+        }
+        diagnostics
+    }
+
+    fn snapshot_file(&mut self, path: &Path, dimension: &str) {
+        if self.snapshots.contains_key(path) {
+            return;
+        }
+        let original = match fs::read_to_string(path) {
+            Ok(text) => Some(text),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+            Err(_) => None,
+        };
+        self.snapshots.insert(
+            path.to_path_buf(),
+            FileSnapshot {
+                path: path.to_path_buf(),
+                dimension: dimension.to_string(),
+                original,
+            },
+        );
+    }
+}
+
+#[derive(Debug)]
+struct FileSnapshot {
+    path: PathBuf,
+    dimension: String,
+    original: Option<String>,
+}
+
+impl FileSnapshot {
+    fn restore(&self) -> std::io::Result<()> {
+        match &self.original {
+            Some(text) => fs::write(&self.path, text),
+            None => match fs::remove_file(&self.path) {
+                Ok(()) => Ok(()),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(err) => Err(err),
+            },
+        }
+    }
 }
 
 fn regenerate_csv_file(
@@ -77,26 +158,29 @@ fn regenerate_csv_file(
     field: &DimensionField,
     out_dir: &Path,
     variants: &[String],
+    transaction: &mut DimensionGenerationTransaction,
 ) -> DiagnosticSet {
     let path = out_dir.join(format!("{}_{}.csv", field.bucket, field.source_field));
-    let mut existing =
-        match read_existing_csv(&path, &project.config_path, &field.dimension, variants) {
-            Ok(existing) => existing,
-            Err(diagnostics) => return diagnostics,
-        };
+    let existing = match read_existing_csv(&path, &project.config_path, &field.dimension, variants)
+    {
+        Ok(existing) => existing,
+        Err(diagnostics) => return diagnostics,
+    };
+    let mut generated = BTreeMap::new();
     for (_, record) in model.records_of_type(&field.source_type) {
-        let row = existing.entry(record.key().to_string()).or_default();
+        let mut row = existing.get(record.key()).cloned().unwrap_or_default();
         row.default = record
             .fields()
             .get(&field.source_field)
             .map_or_else(String::new, render_csv_value);
+        generated.insert(record.key().to_string(), row);
     }
 
     let mut rows = Vec::new();
     let mut header = vec!["id".to_string(), "default".to_string()];
     header.extend(variants.iter().cloned());
     rows.push(header);
-    for (id, row) in existing {
+    for (id, row) in generated {
         let mut record = vec![id, row.default];
         for variant in variants {
             record.push(
@@ -112,6 +196,7 @@ fn regenerate_csv_file(
         csv::write(&rows),
         &project.config_path,
         &field.dimension,
+        transaction,
     )
 }
 
@@ -129,6 +214,7 @@ fn regenerate_singleton_file(
     field: &DimensionField,
     out_dir: &Path,
     variants: &[String],
+    transaction: &mut DimensionGenerationTransaction,
 ) -> DiagnosticSet {
     let path = out_dir.join(format!("{}.cfd", field.source_type));
     let mut existing =
@@ -160,7 +246,13 @@ fn regenerate_singleton_file(
         }
         out.push_str("}\n\n");
     }
-    write_file(&path, out, &project.config_path, &field.dimension)
+    write_file(
+        &path,
+        out,
+        &project.config_path,
+        &field.dimension,
+        transaction,
+    )
 }
 
 #[derive(Debug, Clone, Default)]
@@ -298,7 +390,13 @@ fn read_existing_singleton(
     Ok(out)
 }
 
-fn write_file(path: &Path, body: String, config_path: &Path, dimension: &str) -> DiagnosticSet {
+fn write_file(
+    path: &Path,
+    body: String,
+    config_path: &Path,
+    dimension: &str,
+    transaction: &mut DimensionGenerationTransaction,
+) -> DiagnosticSet {
     match fs::read_to_string(path) {
         Ok(existing) if existing == body => return DiagnosticSet::empty(),
         Ok(_) => {}
@@ -315,6 +413,7 @@ fn write_file(path: &Path, body: String, config_path: &Path, dimension: &str) ->
             ));
         }
     }
+    transaction.snapshot_file(path, dimension);
     match fs::write(path, body) {
         Ok(()) => DiagnosticSet::empty(),
         Err(err) => DiagnosticSet::one(dimension_diagnostic(
