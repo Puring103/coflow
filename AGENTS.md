@@ -1,6 +1,15 @@
 # Agent Workflow
 
-Before pushing any branch, run all four checks from the repository root:
+For normal development commits, run the two required Rust checks from the repository root:
+
+```powershell
+cargo check --workspace
+cargo test --workspace
+```
+
+Do not commit or push normal development changes while either command fails.
+
+For release or packaging commits, run the full gate from the repository root:
 
 ```powershell
 cargo check --workspace
@@ -9,7 +18,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-Do not push while any of these commands fail.
+Do not package or release while any of these commands fail.
 
 When the user specifies a version to package or release, reinstall the local Cargo CLI after the checks pass:
 
