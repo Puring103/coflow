@@ -765,13 +765,7 @@ dimensions:
     .expect("write config");
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
-    let mut registry = coflow_api::ProviderRegistry::default();
-    registry
-        .register_loader(coflow_loader_cfd::CfdLoader)
-        .expect("cfd loader");
-    registry
-        .register_loader(coflow_loader_csv::CsvLoader)
-        .expect("csv loader");
+    let registry = coflow_builtins::default_provider_registry().expect("default provider registry");
     let session = build_project_session(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),
@@ -851,10 +845,7 @@ dimensions:
     .expect("write config");
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
-    let mut registry = coflow_api::ProviderRegistry::default();
-    registry
-        .register_loader(coflow_loader_cfd::CfdLoader)
-        .expect("cfd loader");
+    let registry = coflow_builtins::default_provider_registry().expect("default provider registry");
     let session = build_project_session(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),
@@ -1047,13 +1038,7 @@ sources:
     .expect("write config");
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
-    let mut registry = coflow_api::ProviderRegistry::default();
-    registry
-        .register_loader(coflow_loader_cfd::CfdLoader)
-        .expect("cfd loader");
-    registry
-        .register_writer(coflow_loader_cfd::CfdWriter::new())
-        .expect("cfd writer");
+    let registry = coflow_builtins::default_provider_registry().expect("default provider registry");
     let mut session = build_project_session(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),
@@ -1153,13 +1138,7 @@ fn rename_record_updates_direct_refs_and_spread_sources_without_global_ref_scan(
     write_rename_spread_project(&root);
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
-    let mut registry = coflow_api::ProviderRegistry::default();
-    registry
-        .register_loader(coflow_loader_cfd::CfdLoader)
-        .expect("cfd loader");
-    registry
-        .register_writer(coflow_loader_cfd::CfdWriter::new())
-        .expect("cfd writer");
+    let registry = coflow_builtins::default_provider_registry().expect("default provider registry");
     let mut session = build_project_session(project, &registry).expect("build session");
 
     session

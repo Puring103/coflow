@@ -24,6 +24,10 @@ fn builtin_registry_contains_all_default_providers() -> Result<(), String> {
         registry.table_manager("csv").is_some(),
         "missing csv table manager",
     )?;
+    ensure(
+        registry.table_manager("cfd").is_some(),
+        "missing cfd table manager",
+    )?;
     ensure(registry.exporter("json").is_some(), "missing json exporter")?;
     ensure(
         registry.exporter("messagepack").is_some(),

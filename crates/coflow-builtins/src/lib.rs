@@ -47,6 +47,7 @@ pub fn register_default_providers(
     registry.register_writer(coflow_loader_csv::CsvWriter::new())?;
     registry.register_table_manager(coflow_loader_excel::ExcelWriter::new())?;
     registry.register_table_manager(coflow_loader_csv::CsvWriter::new())?;
+    registry.register_table_manager(coflow_loader_cfd::CfdWriter::new())?;
     registry.register_exporter(coflow_exporter_json::JsonExporter)?;
     registry.register_exporter(coflow_exporter_messagepack::MessagePackExporter)?;
     registry.register_codegen(coflow_codegen_csharp::CsharpCodeGenerator)?;

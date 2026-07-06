@@ -6,15 +6,18 @@
 //! `(source_text, CfdAst)` keyed by absolute file path so that repeated edits
 //! avoid re-reading and re-parsing the file.
 use coflow_api::{
-    CfdValue, CftContainer, CftSchemaTypeRef, DataWriter, DeleteRecordRequest, Diagnostic,
-    DiagnosticSet, InsertRecordRequest, RecordOrigin, RenameRecordRequest,
-    RewriteRecordReferencesRequest, SourceLocationSpec, TextSpan, WriteCellRequest, WriteContext,
-    WriteFieldPathSegment, WriteOutcome, WriterCapabilities, WriterDescriptor,
+    CfdObject, CfdValue, CftContainer, CftSchemaField, CftSchemaTypeRef, DataWriter,
+    DeleteRecordRequest, Diagnostic, DiagnosticSet,
+    InsertRecordRequest, RecordOrigin, RenameRecordRequest, RewriteRecordReferencesRequest,
+    SourceLocationSpec, SyncHeaderRequest, TableContext, TableManager, TableManagerDescriptor,
+    TableOperationResult, TextSpan, WriteCellRequest, WriteContext, WriteFieldPathSegment,
+    WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_cfd::ast::{CfdBlock, CfdBlockEntry, CfdRecord as AstRecord, CfdValue as AstValue};
 use coflow_cfd::{parse_cfd, CfdAst};
-use coflow_cft::Span;
-use std::collections::HashMap;
+use coflow_cft::{CftSchemaDefaultValue, Span};
+use coflow_data_model::CfdEnumValue;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
@@ -31,6 +34,11 @@ pub static CFD_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
         requires_full_refresh_after_write: true,
         is_remote: false,
     },
+};
+
+pub static CFD_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManagerDescriptor {
+    id: "cfd",
+    display_name: "Coflow data text",
 };
 
 /// Writer for `.cfd` text sources. Holds a cache of source text + AST per
@@ -342,6 +350,237 @@ impl DataWriter for CfdWriter {
     }
 }
 
+impl TableManager for CfdWriter {
+    fn descriptor(&self) -> &'static TableManagerDescriptor {
+        &CFD_TABLE_MANAGER_DESCRIPTOR
+    }
+
+    fn sync_header(
+        &self,
+        _ctx: TableContext<'_>,
+        request: &SyncHeaderRequest<'_>,
+    ) -> Result<TableOperationResult, DiagnosticSet> {
+        let SourceLocationSpec::Path(path) = &request.source.location else {
+            return Err(DiagnosticSet::one(diag(
+                "CFD-TABLE",
+                "cfd table manager requires a path source",
+            )));
+        };
+        let (source, ast) = self.read_or_parse(path)?;
+        let old_fields = cfd_top_level_fields(&ast.records, request.actual_type);
+        let added = added_columns(request.headers, &old_fields);
+        let removed = removed_columns(request.headers, &old_fields);
+        let new_source =
+            rewrite_cfd_records(&source, &ast.records, request.actual_type, request.schema)?;
+        self.write_source(path, new_source)?;
+        Ok(TableOperationResult {
+            headers: request.headers.to_vec(),
+            added,
+            removed,
+            diagnostics: DiagnosticSet::empty(),
+        })
+    }
+}
+
+fn cfd_top_level_fields(records: &[AstRecord], actual_type: &str) -> Vec<String> {
+    let mut fields = BTreeSet::new();
+    for record in records
+        .iter()
+        .filter(|record| record.type_name == actual_type)
+    {
+        for field in &record.fields {
+            fields.insert(field.name.clone());
+        }
+    }
+    let mut out = vec!["id".to_string()];
+    out.extend(fields);
+    out
+}
+
+fn rewrite_cfd_records(
+    source: &str,
+    records: &[AstRecord],
+    actual_type: &str,
+    schema: &CftContainer,
+) -> Result<String, DiagnosticSet> {
+    let schema_type = schema.resolve_type(actual_type).ok_or_else(|| {
+        DiagnosticSet::one(diag(
+            "CFD-TABLE",
+            format!("unknown CFT type `{actual_type}`"),
+        ))
+    })?;
+    let fields = schema_type
+        .all_fields
+        .iter()
+        .map(|field| (field.name.clone(), field))
+        .collect::<BTreeMap<_, _>>();
+    let mut replacements = Vec::new();
+    for record in records
+        .iter()
+        .filter(|record| record.type_name == actual_type)
+    {
+        replacements.push((
+            record.span,
+            render_cfd_record(source, record, schema, &fields),
+        ));
+    }
+    replace_spans(source, &replacements)
+}
+
+fn render_cfd_record(
+    source: &str,
+    record: &AstRecord,
+    schema: &CftContainer,
+    fields: &BTreeMap<String, &CftSchemaField>,
+) -> String {
+    let existing = record
+        .fields
+        .iter()
+        .map(|field| (field.name.clone(), raw_span(source, field.value.span())))
+        .collect::<BTreeMap<_, _>>();
+    let mut out = format!(
+        "{}: {} {{\n",
+        format_record_key(&record.key),
+        record.type_name
+    );
+    for entry in &record.entries {
+        let CfdBlockEntry::Spread(_, span) = entry else {
+            continue;
+        };
+        out.push_str("  ");
+        out.push_str(raw_span(source, *span).trim());
+        out.push_str(",\n");
+    }
+    for (field_name, field) in fields {
+        let value = existing
+            .get(field_name)
+            .cloned()
+            .unwrap_or_else(|| default_cfd_value(schema, field));
+        out.push_str("  ");
+        out.push_str(field_name);
+        out.push_str(": ");
+        out.push_str(&value);
+        out.push_str(",\n");
+    }
+    out.push_str("}\n");
+    out
+}
+
+fn raw_span(source: &str, span: Span) -> String {
+    source
+        .get(span.start..span.end)
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn format_record_key(key: &str) -> String {
+    if coflow_cft::is_cft_identifier(key) {
+        key.to_string()
+    } else {
+        format!("{key:?}")
+    }
+}
+
+fn default_cfd_value(schema: &CftContainer, field: &CftSchemaField) -> String {
+    let value = field.default.as_ref().map_or_else(
+        || value_from_type_default(schema, &field.ty_ref),
+        |default| value_from_schema_default(schema, &field.ty_ref, default),
+    );
+    serialize_value_for_type(&value, Some(schema), Some(&field.ty_ref), 2)
+}
+
+fn value_from_schema_default(
+    schema: &CftContainer,
+    ty: &CftSchemaTypeRef,
+    default: &CftSchemaDefaultValue,
+) -> CfdValue {
+    match default {
+        CftSchemaDefaultValue::Null => CfdValue::Null,
+        CftSchemaDefaultValue::Int(value) => CfdValue::Int(*value),
+        CftSchemaDefaultValue::Float(value) => CfdValue::Float(*value),
+        CftSchemaDefaultValue::Bool(value) => CfdValue::Bool(*value),
+        CftSchemaDefaultValue::String(value) => CfdValue::String(value.clone()),
+        CftSchemaDefaultValue::Enum {
+            enum_name,
+            variant,
+            value,
+        } => CfdValue::Enum(CfdEnumValue {
+            enum_name: enum_name.clone(),
+            variant: Some(variant.clone()),
+            value: *value,
+        }),
+        CftSchemaDefaultValue::EmptyArray => CfdValue::Array(Vec::new()),
+        CftSchemaDefaultValue::EmptyObject => value_from_type_default(schema, ty),
+    }
+}
+
+fn value_from_type_default(schema: &CftContainer, ty: &CftSchemaTypeRef) -> CfdValue {
+    match ty {
+        CftSchemaTypeRef::Int => CfdValue::Int(0),
+        CftSchemaTypeRef::Float => CfdValue::Float(0.0),
+        CftSchemaTypeRef::Bool => CfdValue::Bool(false),
+        CftSchemaTypeRef::String => CfdValue::String(String::new()),
+        CftSchemaTypeRef::Ref(_) | CftSchemaTypeRef::Nullable(_) => CfdValue::Null,
+        CftSchemaTypeRef::Array(_) => CfdValue::Array(Vec::new()),
+        CftSchemaTypeRef::Dict(_, _) => CfdValue::Dict(Vec::new()),
+        CftSchemaTypeRef::Named(name) if schema.has_enum(name) => schema
+            .resolve_enum(name)
+            .and_then(|enm| enm.variants.first())
+            .map_or_else(
+                || {
+                    CfdValue::Enum(CfdEnumValue {
+                        enum_name: name.clone(),
+                        variant: None,
+                        value: 0,
+                    })
+                },
+                |variant| {
+                    CfdValue::Enum(CfdEnumValue {
+                        enum_name: name.clone(),
+                        variant: Some(variant.name.clone()),
+                        value: variant.value,
+                    })
+                },
+            ),
+        CftSchemaTypeRef::Named(name) => {
+            let fields = schema
+                .resolve_type(name)
+                .map(|ty| {
+                    ty.all_fields
+                        .iter()
+                        .map(|field| {
+                            (
+                                field.name.clone(),
+                                value_from_type_default(schema, &field.ty_ref),
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            CfdValue::Object(Box::new(CfdObject::new(name.clone(), fields)))
+        }
+    }
+}
+
+fn added_columns(new_header: &[String], old_header: &[String]) -> Vec<String> {
+    let old = old_header.iter().collect::<BTreeSet<_>>();
+    new_header
+        .iter()
+        .filter(|header| !old.contains(header))
+        .cloned()
+        .collect()
+}
+
+fn removed_columns(new_header: &[String], old_header: &[String]) -> Vec<String> {
+    let new = new_header.iter().collect::<BTreeSet<_>>();
+    old_header
+        .iter()
+        .filter(|header| !new.contains(header))
+        .cloned()
+        .collect()
+}
+
 fn apply_patch(
     source: &str,
     ast: &CfdAst,
@@ -536,7 +775,7 @@ fn serialize_record(
     schema: &CftContainer,
     key: &str,
     actual_type: &str,
-    fields: &std::collections::BTreeMap<String, CfdValue>,
+    fields: &BTreeMap<String, CfdValue>,
 ) -> String {
     let mut out = format!("{key}: {actual_type} {{\n");
     for (name, value) in fields {

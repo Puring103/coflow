@@ -2,14 +2,10 @@ use coflow_api::{
     CreateTableRequest, Diagnostic, DiagnosticSet, FlatDiagnostic, ProviderRegistry,
     ResolvedSource, Severity, SourceLocationSpec, SyncHeaderRequest, TableContext,
 };
-use coflow_cfd::{parse_cfd, CfdBlockEntry, CfdRecord as AstRecord};
-use coflow_cft::{CftContainer, CftSchemaDefaultValue, CftSchemaField, CftSchemaTypeRef, Span};
-use coflow_data_model::{CfdEnumValue, CfdObject, CfdValue};
-use coflow_loader_cfd::writer::serialize_value;
 use coflow_project::{path_to_slash, Project, SourceConfig};
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -178,18 +174,25 @@ pub fn sync_data_header(
     )?;
     match provider {
         DataFileProvider::Cfd => {
-            let old_fields = cfd_top_level_fields(&path, &layout.actual_type)?;
-            let added = added_columns(&layout.headers, &old_fields);
-            let removed = removed_columns(&layout.headers, &old_fields);
-            sync_cfd_columns(&path, &session.schema, &layout.actual_type)?;
+            let source = table_operation_source(&options.file, provider, path);
+            let result = table_manager(registry, provider)?.sync_header(
+                table_context(session),
+                &SyncHeaderRequest {
+                    source: &source,
+                    sheet: None,
+                    actual_type: &layout.actual_type,
+                    headers: &layout.headers,
+                    schema: &session.schema,
+                },
+            )?;
             Ok(report(
                 options.file,
                 provider,
                 None,
                 Some(layout.actual_type),
-                layout.headers,
-                added,
-                removed,
+                result.headers,
+                result.added,
+                result.removed,
             ))
         }
         DataFileProvider::Csv => {
@@ -505,278 +508,6 @@ fn source_path_matches(project: &Project, source: &SourceConfig, file: &str) -> 
         return requested_path.starts_with(path);
     }
     false
-}
-
-fn added_columns(new_header: &[String], old_header: &[String]) -> Vec<String> {
-    let old = old_header.iter().collect::<BTreeSet<_>>();
-    new_header
-        .iter()
-        .filter(|header| !old.contains(header))
-        .cloned()
-        .collect()
-}
-
-fn removed_columns(new_header: &[String], old_header: &[String]) -> Vec<String> {
-    let new = new_header.iter().collect::<BTreeSet<_>>();
-    old_header
-        .iter()
-        .filter(|header| !new.contains(header))
-        .cloned()
-        .collect()
-}
-
-fn cfd_top_level_fields(path: &Path, actual_type: &str) -> Result<Vec<String>, DiagnosticSet> {
-    let text = fs::read_to_string(path).map_err(|err| {
-        one_data_file_error(
-            "DATA-FILE-IO",
-            format!("failed to read `{}`: {err}", path.display()),
-        )
-    })?;
-    let (ast, diagnostics) = parse_cfd(&text);
-    if let Some(diagnostic) = diagnostics.first() {
-        return Err(one_data_file_error(
-            "DATA-FILE-PARSE",
-            format!(
-                "failed to parse `{}`: {}",
-                path.display(),
-                diagnostic.message
-            ),
-        ));
-    }
-    let mut fields = BTreeSet::new();
-    for record in ast
-        .records
-        .iter()
-        .filter(|record| record.type_name == actual_type)
-    {
-        for field in &record.fields {
-            fields.insert(field.name.clone());
-        }
-    }
-    let mut out = vec!["id".to_string()];
-    out.extend(fields);
-    Ok(out)
-}
-
-fn sync_cfd_columns(
-    path: &Path,
-    schema: &CftContainer,
-    actual_type: &str,
-) -> Result<(), DiagnosticSet> {
-    let text = fs::read_to_string(path).map_err(|err| {
-        one_data_file_error(
-            "DATA-FILE-IO",
-            format!("failed to read `{}`: {err}", path.display()),
-        )
-    })?;
-    let (ast, diagnostics) = parse_cfd(&text);
-    if let Some(diagnostic) = diagnostics.first() {
-        return Err(one_data_file_error(
-            "DATA-FILE-PARSE",
-            format!(
-                "failed to parse `{}`: {}",
-                path.display(),
-                diagnostic.message
-            ),
-        ));
-    }
-    let schema_type = schema.resolve_type(actual_type).ok_or_else(|| {
-        one_data_file_error(
-            "DATA-FILE-TYPE",
-            format!("unknown CFT type `{actual_type}`"),
-        )
-    })?;
-    let fields = schema_type
-        .all_fields
-        .iter()
-        .map(|field| (field.name.clone(), field))
-        .collect::<BTreeMap<_, _>>();
-    let new_text = rewrite_cfd_records(&text, &ast.records, actual_type, schema, &fields)?;
-    fs::write(path, new_text).map_err(|err| {
-        one_data_file_error(
-            "DATA-FILE-IO",
-            format!("failed to write `{}`: {err}", path.display()),
-        )
-    })
-}
-
-fn rewrite_cfd_records(
-    source: &str,
-    records: &[AstRecord],
-    actual_type: &str,
-    schema: &CftContainer,
-    fields: &BTreeMap<String, &CftSchemaField>,
-) -> Result<String, DiagnosticSet> {
-    let mut replacements = Vec::new();
-    for record in records
-        .iter()
-        .filter(|record| record.type_name == actual_type)
-    {
-        replacements.push((
-            record.span,
-            render_cfd_record(source, record, schema, fields),
-        ));
-    }
-    replace_spans(source, &replacements)
-}
-
-fn render_cfd_record(
-    source: &str,
-    record: &AstRecord,
-    schema: &CftContainer,
-    fields: &BTreeMap<String, &CftSchemaField>,
-) -> String {
-    let existing = record
-        .fields
-        .iter()
-        .map(|field| (field.name.clone(), raw_span(source, field.value.span())))
-        .collect::<BTreeMap<_, _>>();
-    let mut out = format!(
-        "{}: {} {{\n",
-        format_record_key(&record.key),
-        record.type_name
-    );
-    for entry in &record.entries {
-        let CfdBlockEntry::Spread(_, span) = entry else {
-            continue;
-        };
-        out.push_str("  ");
-        out.push_str(raw_span(source, *span).trim());
-        out.push_str(",\n");
-    }
-    for (field_name, field) in fields {
-        let value = existing
-            .get(field_name)
-            .cloned()
-            .unwrap_or_else(|| default_cfd_value(schema, field));
-        out.push_str("  ");
-        out.push_str(field_name);
-        out.push_str(": ");
-        out.push_str(&value);
-        out.push_str(",\n");
-    }
-    out.push_str("}\n");
-    out
-}
-
-fn raw_span(source: &str, span: Span) -> String {
-    source
-        .get(span.start..span.end)
-        .map(str::trim)
-        .unwrap_or_default()
-        .to_string()
-}
-
-fn format_record_key(key: &str) -> String {
-    if coflow_cft::is_cft_identifier(key) {
-        key.to_string()
-    } else {
-        format!("{key:?}")
-    }
-}
-
-fn default_cfd_value(schema: &CftContainer, field: &CftSchemaField) -> String {
-    let value = field.default.as_ref().map_or_else(
-        || value_from_type_default(schema, &field.ty_ref),
-        |default| value_from_schema_default(schema, &field.ty_ref, default),
-    );
-    serialize_value(&value, 2)
-}
-
-fn value_from_schema_default(
-    schema: &CftContainer,
-    ty: &CftSchemaTypeRef,
-    default: &CftSchemaDefaultValue,
-) -> CfdValue {
-    match default {
-        CftSchemaDefaultValue::Null => CfdValue::Null,
-        CftSchemaDefaultValue::Int(value) => CfdValue::Int(*value),
-        CftSchemaDefaultValue::Float(value) => CfdValue::Float(*value),
-        CftSchemaDefaultValue::Bool(value) => CfdValue::Bool(*value),
-        CftSchemaDefaultValue::String(value) => CfdValue::String(value.clone()),
-        CftSchemaDefaultValue::Enum {
-            enum_name,
-            variant,
-            value,
-        } => CfdValue::Enum(CfdEnumValue {
-            enum_name: enum_name.clone(),
-            variant: Some(variant.clone()),
-            value: *value,
-        }),
-        CftSchemaDefaultValue::EmptyArray => CfdValue::Array(Vec::new()),
-        CftSchemaDefaultValue::EmptyObject => value_from_type_default(schema, ty),
-    }
-}
-
-fn value_from_type_default(schema: &CftContainer, ty: &CftSchemaTypeRef) -> CfdValue {
-    match ty {
-        CftSchemaTypeRef::Int => CfdValue::Int(0),
-        CftSchemaTypeRef::Float => CfdValue::Float(0.0),
-        CftSchemaTypeRef::Bool => CfdValue::Bool(false),
-        CftSchemaTypeRef::String => CfdValue::String(String::new()),
-        CftSchemaTypeRef::Ref(_) | CftSchemaTypeRef::Nullable(_) => CfdValue::Null,
-        CftSchemaTypeRef::Array(_) => CfdValue::Array(Vec::new()),
-        CftSchemaTypeRef::Dict(_, _) => CfdValue::Dict(Vec::new()),
-        CftSchemaTypeRef::Named(name) if schema.has_enum(name) => schema
-            .resolve_enum(name)
-            .and_then(|enm| enm.variants.first())
-            .map_or_else(
-                || {
-                    CfdValue::Enum(CfdEnumValue {
-                        enum_name: name.clone(),
-                        variant: None,
-                        value: 0,
-                    })
-                },
-                |variant| {
-                    CfdValue::Enum(CfdEnumValue {
-                        enum_name: name.clone(),
-                        variant: Some(variant.name.clone()),
-                        value: variant.value,
-                    })
-                },
-            ),
-        CftSchemaTypeRef::Named(name) => {
-            let fields = schema
-                .resolve_type(name)
-                .map(|ty| {
-                    ty.all_fields
-                        .iter()
-                        .map(|field| {
-                            (
-                                field.name.clone(),
-                                value_from_type_default(schema, &field.ty_ref),
-                            )
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            CfdValue::Object(Box::new(CfdObject::new(name.clone(), fields)))
-        }
-    }
-}
-
-fn replace_spans(source: &str, replacements: &[(Span, String)]) -> Result<String, DiagnosticSet> {
-    let mut out = source.to_string();
-    let mut sorted = replacements.to_vec();
-    sorted.sort_by_key(|(span, _)| span.start);
-    for (span, _) in &sorted {
-        if span.start > source.len() || span.end > source.len() || span.start > span.end {
-            return Err(one_data_file_error(
-                "DATA-FILE-PARSE",
-                format!(
-                    "span [{}, {}) is out of bounds for source of length {}",
-                    span.start,
-                    span.end,
-                    source.len()
-                ),
-            ));
-        }
-    }
-    for (span, replacement) in sorted.into_iter().rev() {
-        out.replace_range(span.start..span.end, &replacement);
-    }
-    Ok(out)
 }
 
 fn one_data_file_error(code: &'static str, message: impl Into<String>) -> DiagnosticSet {

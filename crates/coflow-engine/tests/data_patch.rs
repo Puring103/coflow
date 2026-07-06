@@ -142,14 +142,7 @@ fn write_domain_key_project(root: &std::path::Path) {
 }
 
 fn registry() -> coflow_api::ProviderRegistry {
-    let mut registry = coflow_api::ProviderRegistry::default();
-    registry
-        .register_loader(coflow_loader_cfd::CfdLoader)
-        .expect("cfd loader");
-    registry
-        .register_writer(coflow_loader_cfd::CfdWriter::new())
-        .expect("cfd writer");
-    registry
+    coflow_builtins::default_provider_registry().expect("default provider registry")
 }
 
 fn session(

@@ -173,6 +173,25 @@ fn engine_runtime_does_not_depend_on_excel_implementation_crates() {
 }
 
 #[test]
+fn engine_data_file_commands_do_not_depend_on_cfd_provider_writer() {
+    let manifest = std::fs::read_to_string("crates/coflow-engine/Cargo.toml")
+        .expect("read engine manifest");
+    let data_files = std::fs::read_to_string("crates/coflow-engine/src/data_files.rs")
+        .expect("read engine data file commands");
+
+    assert!(
+        !manifest.contains("coflow-loader-cfd"),
+        "coflow-engine should use provider table operations instead of depending on coflow-loader-cfd"
+    );
+    for forbidden in ["coflow_loader_cfd", "parse_cfd", "CfdBlockEntry"] {
+        assert!(
+            !data_files.contains(forbidden),
+            "data file commands should not contain CFD provider implementation detail `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn engine_public_mutation_api_does_not_expose_prepared_ops() {
     let engine =
         std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");
