@@ -2115,6 +2115,35 @@ fn lark_loader_load_pipeline_does_not_live_in_lib_rs() {
 }
 
 #[test]
+fn lark_loader_writer_cache_does_not_live_in_lib_rs() {
+    let lib = std::fs::read_to_string("crates/coflow-loader-lark/src/lib.rs")
+        .expect("read lark loader lib");
+    let writer_cache = std::fs::read_to_string("crates/coflow-loader-lark/src/writer_cache.rs")
+        .expect("read lark writer cache");
+
+    for expected in [
+        "pub(crate) struct LarkWriterCache",
+        "struct CachedToken",
+        "pub(crate) struct LarkWriteAuth",
+        "pub(crate) fn cached_tenant_token",
+        "pub(crate) fn cached_sheet_id",
+        "pub(crate) fn invalidate_caches",
+        "pub(crate) fn lark_write_auth",
+        "fn lark_tenant_token_with_ttl",
+        "pub(crate) fn fetch_sheet_id_map",
+    ] {
+        assert!(
+            writer_cache.contains(expected),
+            "Lark writer cache helper `{expected}` should live in writer_cache.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "Lark writer cache helper `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn table_writers_use_shared_cell_renderer() {
     let excel = std::fs::read_to_string("crates/coflow-loader-excel/src/writer.rs")
         .expect("read excel writer");
