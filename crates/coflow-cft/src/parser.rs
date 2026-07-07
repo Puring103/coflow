@@ -1,11 +1,12 @@
+mod annotations;
 mod check;
 mod defaults;
 mod tokens;
 
 use self::tokens::{reserved_keyword_name, token_name};
 use crate::ast::{
-    Annotation, AnnotationArg, ConstDef, ConstLiteral, EnumDef, EnumVariant, FieldDef, Item,
-    ModuleAst, NameRef, SignedInt, TypeDef, TypeRef, TypeRefKind,
+    Annotation, ConstDef, ConstLiteral, EnumDef, EnumVariant, FieldDef, Item, ModuleAst, NameRef,
+    SignedInt, TypeDef, TypeRef, TypeRefKind,
 };
 use crate::container::ModuleId;
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
@@ -74,104 +75,6 @@ impl<'a> Parser<'a> {
             items,
             dangling_annotations: pending_annotations,
         })
-    }
-
-    fn parse_annotation(&mut self) -> Result<Annotation, CftDiagnostics> {
-        let start = self
-            .expect_simple(&TokenKind::At, CftErrorCode::InvalidAnnotationSyntax)?
-            .start;
-        let name = self.expect_ident_with_code(CftErrorCode::InvalidAnnotationSyntax)?;
-        let mut args = Vec::new();
-        let mut end = name.span.end;
-        if self.eat(&TokenKind::LParen).is_some() {
-            while !self.at(&TokenKind::RParen) {
-                if self.at(&TokenKind::Eof) {
-                    return self.err_at(
-                        CftErrorCode::InvalidAnnotationSyntax,
-                        Span::new(start, end),
-                        "unterminated annotation argument list",
-                    );
-                }
-                args.push(self.parse_annotation_arg_for(&name.name)?);
-                if self.eat(&TokenKind::Comma).is_none() {
-                    break;
-                }
-            }
-            end = self
-                .expect_simple(&TokenKind::RParen, CftErrorCode::InvalidAnnotationSyntax)?
-                .end;
-        }
-        Ok(Annotation {
-            name: name.name,
-            name_span: name.span,
-            args,
-            span: Span::new(start, end),
-        })
-    }
-
-    fn parse_annotation_arg(&mut self) -> Result<AnnotationArg, CftDiagnostics> {
-        let token = self.peek().clone();
-        match token.kind {
-            TokenKind::Ident(_) => self
-                .expect_ident_with_code(CftErrorCode::InvalidAnnotationSyntax)
-                .map(AnnotationArg::Name),
-            TokenKind::String(value) => {
-                self.bump();
-                Ok(AnnotationArg::String(value, token.span))
-            }
-            TokenKind::Int(value) => {
-                self.bump();
-                Ok(AnnotationArg::Int(value, token.span))
-            }
-            TokenKind::Float(value) => {
-                self.bump();
-                Ok(AnnotationArg::Float(value, token.span))
-            }
-            TokenKind::True => {
-                self.bump();
-                Ok(AnnotationArg::Bool(true, token.span))
-            }
-            TokenKind::False => {
-                self.bump();
-                Ok(AnnotationArg::Bool(false, token.span))
-            }
-            TokenKind::Null => {
-                self.bump();
-                Ok(AnnotationArg::Null(token.span))
-            }
-            TokenKind::UIntOverflow(_) => self.err(
-                CftErrorCode::InvalidIntLiteral,
-                "integer literal out of range",
-            ),
-            _ => self.err(
-                CftErrorCode::InvalidAnnotationSyntax,
-                "invalid annotation argument",
-            ),
-        }
-    }
-
-    fn parse_annotation_arg_for(
-        &mut self,
-        annotation_name: &str,
-    ) -> Result<AnnotationArg, CftDiagnostics> {
-        if annotation_name == "localized"
-            && self.peek_ident_is("bucket")
-            && self.next_at(&TokenKind::Equal)
-        {
-            let _bucket = self.expect_ident_with_code(CftErrorCode::InvalidAnnotationSyntax)?;
-            self.expect_simple(&TokenKind::Equal, CftErrorCode::InvalidAnnotationSyntax)?;
-            let token = self.peek().clone();
-            if let TokenKind::String(value) = token.kind {
-                self.bump();
-                return Ok(AnnotationArg::String(value, token.span));
-            }
-            return self.err_at(
-                CftErrorCode::InvalidAnnotationSyntax,
-                token.span,
-                "expected string literal for @localized bucket",
-            );
-        }
-        self.parse_annotation_arg()
     }
 
     fn parse_const(&mut self, annotations: Vec<Annotation>) -> Result<ConstDef, CftDiagnostics> {
@@ -527,7 +430,10 @@ impl<'a> Parser<'a> {
         self.expect_name(CftErrorCode::ExpectedIdentifier, true)
     }
 
-    fn expect_ident_with_code(&mut self, code: CftErrorCode) -> Result<NameRef, CftDiagnostics> {
+    pub(super) fn expect_ident_with_code(
+        &mut self,
+        code: CftErrorCode,
+    ) -> Result<NameRef, CftDiagnostics> {
         self.expect_name(code, false)
     }
 
@@ -584,13 +490,13 @@ impl<'a> Parser<'a> {
         std::mem::discriminant(&self.peek().kind) == std::mem::discriminant(kind)
     }
 
-    fn next_at(&self, kind: &TokenKind) -> bool {
+    pub(super) fn next_at(&self, kind: &TokenKind) -> bool {
         self.tokens.get(self.pos + 1).is_some_and(|token| {
             std::mem::discriminant(&token.kind) == std::mem::discriminant(kind)
         })
     }
 
-    fn peek_ident_is(&self, name: &str) -> bool {
+    pub(super) fn peek_ident_is(&self, name: &str) -> bool {
         matches!(&self.peek().kind, TokenKind::Ident(value) if value == name)
     }
 

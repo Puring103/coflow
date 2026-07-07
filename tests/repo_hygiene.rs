@@ -1137,6 +1137,8 @@ fn cft_type_checker_operator_rules_are_split_out() {
 fn cft_parser_check_expression_parser_is_split_out() {
     let parser =
         std::fs::read_to_string("crates/coflow-cft/src/parser.rs").expect("read CFT parser");
+    let annotations = std::fs::read_to_string("crates/coflow-cft/src/parser/annotations.rs")
+        .expect("read annotation parser");
     let check =
         std::fs::read_to_string("crates/coflow-cft/src/parser/check.rs").expect("read check parser");
     let defaults = std::fs::read_to_string("crates/coflow-cft/src/parser/defaults.rs")
@@ -1159,6 +1161,20 @@ fn cft_parser_check_expression_parser_is_split_out() {
         assert!(
             !parser.contains(expected),
             "CFT parser check helper `{expected}` should not live in parser.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn parse_annotation",
+        "fn parse_annotation_arg",
+        "fn parse_annotation_arg_for",
+    ] {
+        assert!(
+            annotations.contains(expected),
+            "CFT parser annotation helper `{expected}` should live in parser/annotations.rs"
+        );
+        assert!(
+            !parser.contains(expected),
+            "CFT parser annotation helper `{expected}` should not live in parser.rs"
         );
     }
     for expected in [
