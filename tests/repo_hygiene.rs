@@ -703,6 +703,70 @@ fn data_model_compiler_indexes_are_split_out() {
 }
 
 #[test]
+fn cft_schema_compiler_symbols_are_split_out() {
+    let compiler = std::fs::read_to_string("crates/coflow-cft/src/schema/compiler.rs")
+        .expect("read CFT schema compiler");
+    let symbols = std::fs::read_to_string("crates/coflow-cft/src/schema/compiler/symbols.rs")
+        .expect("read CFT schema compiler symbols");
+    let annotations =
+        std::fs::read_to_string("crates/coflow-cft/src/schema/compiler/annotations.rs")
+            .expect("read CFT schema compiler annotations");
+    let defaults = std::fs::read_to_string("crates/coflow-cft/src/schema/compiler/defaults.rs")
+        .expect("read CFT schema compiler defaults");
+
+    for expected in [
+        "pub(super) fn report_dangling_annotations",
+        "pub(super) fn collect_symbols",
+        "pub(super) fn validate_identifier",
+        "fn insert_symbol",
+        "pub(super) fn validate_enums",
+    ] {
+        assert!(
+            symbols.contains(expected),
+            "CFT schema compiler symbol helper `{expected}` should live in schema/compiler/symbols.rs"
+        );
+        assert!(
+            !compiler.contains(expected),
+            "CFT schema compiler symbol helper `{expected}` should not live in schema/compiler.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn validate_annotations",
+        "fn register_id_as_enum_name",
+        "fn validate_annotation_list",
+        "fn validate_field_annotations",
+        "fn validate_id_as_enum_name",
+    ] {
+        assert!(
+            annotations.contains(expected),
+            "CFT schema compiler annotation helper `{expected}` should live in schema/compiler/annotations.rs"
+        );
+        assert!(
+            !compiler.contains(expected),
+            "CFT schema compiler annotation helper `{expected}` should not live in schema/compiler.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn validate_defaults",
+        "fn default_expr_type",
+        "fn default_enum_variant_type",
+    ] {
+        assert!(
+            defaults.contains(expected),
+            "CFT schema compiler default helper `{expected}` should live in schema/compiler/defaults.rs"
+        );
+        assert!(
+            !compiler.contains(expected),
+            "CFT schema compiler default helper `{expected}` should not live in schema/compiler.rs"
+        );
+    }
+    assert!(
+        compiler.lines().count() < 800,
+        "coflow-cft schema/compiler.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
 fn csharp_codegen_schema_projection_uses_cft_schema_view() {
     let schema_view = std::fs::read_to_string("crates/coflow-codegen-csharp/src/schema_view.rs")
         .expect("read C# codegen schema view");
