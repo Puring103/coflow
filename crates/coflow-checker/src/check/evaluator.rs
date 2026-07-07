@@ -41,8 +41,26 @@ pub(super) struct CheckEvaluator<'a> {
 }
 
 impl ValueExprEvaluator for CheckEvaluator<'_> {
-    fn eval_value_expr(&mut self, expr: &CftSchemaCheckExpr) -> Option<LocatedCheckValue> {
-        self.eval_expr(expr).ok()
+    fn eval_value_expr(&mut self, expr: &CftSchemaCheckExpr) -> EvalResult<LocatedCheckValue> {
+        self.eval_expr(expr)
+    }
+
+    fn eval_unary_expr(
+        &mut self,
+        op: CftSchemaUnaryOp,
+        value: LocatedCheckValue,
+    ) -> EvalResult<LocatedCheckValue> {
+        self.eval_unary(op, value)
+    }
+
+    fn compare_values(
+        &mut self,
+        op: CftSchemaCmpOp,
+        lhs: &CheckValue,
+        rhs: &CheckValue,
+        rhs_path: Option<CfdPath>,
+    ) -> EvalResult<bool> {
+        self.from_ops(ops::compare(op, lhs, rhs, rhs_path))
     }
 }
 
@@ -54,12 +72,12 @@ pub(super) enum EvalFlow {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EvalAbort {
+pub(super) enum EvalAbort {
     Skipped,
     Error,
 }
 
-type EvalResult<T> = Result<T, EvalAbort>;
+pub(super) type EvalResult<T> = Result<T, EvalAbort>;
 
 impl<'a> CheckEvaluator<'a> {
     pub(super) fn new(
@@ -194,7 +212,7 @@ impl<'a> CheckEvaluator<'a> {
 
     fn eval_stmt(&mut self, stmt: &CftSchemaCheckStmt) -> EvalFlow {
         match stmt {
-            CftSchemaCheckStmt::Expr(expr) => match self.eval_expr_explained(expr) {
+            CftSchemaCheckStmt::Expr(expr) => match explanations::eval_expr_explained(self, expr) {
                 Ok((value, _)) if matches!(value.value, CheckValue::Bool(true)) => {
                     EvalFlow::Continue
                 }
@@ -399,87 +417,6 @@ impl<'a> CheckEvaluator<'a> {
             CftSchemaQuantifierKind::None => {}
         }
         EvalFlow::Continue
-    }
-
-    /// Evaluates a top-level check expression and, if it produced `false`,
-    /// returns a human-readable detail describing *why* it failed (which side
-    /// of a comparison was what value, etc). Returns `None` when the
-    /// expression isn't one of the shapes we know how to explain.
-    fn eval_expr_explained(
-        &mut self,
-        expr: &CftSchemaCheckExpr,
-    ) -> EvalResult<(LocatedCheckValue, Option<String>)> {
-        match &expr.kind {
-            CftSchemaCheckExprKind::CmpChain { first, rest } => {
-                // Re-implement CmpChain so we can capture the failing pair.
-                let mut lhs = self.eval_expr(first)?;
-                for (op, rhs_expr) in rest {
-                    let rhs = self.eval_expr(rhs_expr)?;
-                    let path = lhs.path.clone().or_else(|| rhs.path.clone());
-                    if !self.from_ops(ops::compare(
-                        *op,
-                        &lhs.value,
-                        &rhs.value,
-                        rhs.path.clone(),
-                    ))? {
-                        let detail = format!(
-                            "{} {} {}",
-                            format_value_for_message(&lhs.value),
-                            cmp_op_str(*op),
-                            format_value_for_message(&rhs.value),
-                        );
-                        return Ok((
-                            LocatedCheckValue::new(CheckValue::Bool(false), path),
-                            Some(detail),
-                        ));
-                    }
-                    lhs = rhs;
-                }
-                Ok((LocatedCheckValue::value(CheckValue::Bool(true)), None))
-            }
-            CftSchemaCheckExprKind::Unary {
-                op: CftSchemaUnaryOp::Not,
-                expr: inner,
-            } => {
-                let inner_val = self.eval_expr(inner)?;
-                if matches!(inner_val.value, CheckValue::Bool(true)) {
-                    let detail = format!(
-                        "期望 !{}，但内部表达式为 true",
-                        format_value_for_message(&inner_val.value),
-                    );
-                    return Ok((
-                        LocatedCheckValue::new(CheckValue::Bool(false), inner_val.path),
-                        Some(detail),
-                    ));
-                }
-                self.eval_unary(CftSchemaUnaryOp::Not, inner_val)
-                    .map(|v| (v, None))
-            }
-            CftSchemaCheckExprKind::BinOp {
-                op: CftSchemaBinOp::And,
-                lhs,
-                rhs,
-            } => {
-                // Short-circuit AND: report which conjunct failed.
-                let lv = self.eval_expr(lhs)?;
-                if matches!(lv.value, CheckValue::Bool(false)) {
-                    return Ok((
-                        LocatedCheckValue::new(CheckValue::Bool(false), lv.path),
-                        Some("左侧条件为 false".to_string()),
-                    ));
-                }
-                let rv = self.eval_expr(rhs)?;
-                if matches!(rv.value, CheckValue::Bool(false)) {
-                    return Ok((
-                        LocatedCheckValue::new(CheckValue::Bool(false), rv.path),
-                        Some("右侧条件为 false".to_string()),
-                    ));
-                }
-                let path = lv.path.or(rv.path);
-                Ok((LocatedCheckValue::new(CheckValue::Bool(true), path), None))
-            }
-            _ => self.eval_expr(expr).map(|v| (v, None)),
-        }
     }
 
     fn explain_false_expr(

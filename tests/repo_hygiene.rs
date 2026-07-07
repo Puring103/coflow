@@ -997,6 +997,30 @@ fn checker_value_explanation_helpers_do_not_live_in_evaluator_rs() {
 }
 
 #[test]
+fn checker_explained_eval_helpers_do_not_live_in_evaluator_rs() {
+    let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
+        .expect("read checker evaluator");
+    let explanations =
+        std::fs::read_to_string("crates/coflow-checker/src/check/explanations.rs")
+            .expect("read checker explanation helpers");
+
+    assert!(
+        explanations.contains("pub(super) fn eval_expr_explained"),
+        "checker explained expression evaluation should live in check/explanations.rs"
+    );
+    assert!(
+        !evaluator.contains("fn eval_expr_explained"),
+        "checker explained expression evaluation body should not live in evaluator.rs"
+    );
+    for forbidden in ["左侧条件为 false", "右侧条件为 false", "期望 !"] {
+        assert!(
+            !evaluator.contains(forbidden),
+            "checker evaluator should not own explained eval branch `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn checker_index_access_does_not_live_in_evaluator_rs() {
     let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
         .expect("read checker evaluator");

@@ -1,13 +1,99 @@
 use std::collections::BTreeMap;
 
-use coflow_cft::{CftSchemaCheckExpr, CftSchemaCheckExprKind};
+use coflow_cft::{
+    CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCmpOp, CftSchemaUnaryOp,
+};
 use coflow_data_model::{CfdErrorCode, CfdPath};
 
-use super::diagnostics::{format_value_for_message, render_expr, CheckExplanation};
+use super::diagnostics::{cmp_op_str, format_value_for_message, render_expr, CheckExplanation};
+use super::evaluator::EvalResult;
 use super::value::{comparable_key, CheckValue, LocatedCheckValue};
 
 pub(super) trait ValueExprEvaluator {
-    fn eval_value_expr(&mut self, expr: &CftSchemaCheckExpr) -> Option<LocatedCheckValue>;
+    fn eval_value_expr(&mut self, expr: &CftSchemaCheckExpr) -> EvalResult<LocatedCheckValue>;
+    fn eval_unary_expr(
+        &mut self,
+        op: CftSchemaUnaryOp,
+        value: LocatedCheckValue,
+    ) -> EvalResult<LocatedCheckValue>;
+    fn compare_values(
+        &mut self,
+        op: CftSchemaCmpOp,
+        lhs: &CheckValue,
+        rhs: &CheckValue,
+        rhs_path: Option<CfdPath>,
+    ) -> EvalResult<bool>;
+}
+
+pub(super) fn eval_expr_explained(
+    evaluator: &mut impl ValueExprEvaluator,
+    expr: &CftSchemaCheckExpr,
+) -> EvalResult<(LocatedCheckValue, Option<String>)> {
+    match &expr.kind {
+        CftSchemaCheckExprKind::CmpChain { first, rest } => {
+            let mut lhs = evaluator.eval_value_expr(first)?;
+            for (op, rhs_expr) in rest {
+                let rhs = evaluator.eval_value_expr(rhs_expr)?;
+                let path = lhs.path.clone().or_else(|| rhs.path.clone());
+                if !evaluator.compare_values(*op, &lhs.value, &rhs.value, rhs.path.clone())? {
+                    let detail = format!(
+                        "{} {} {}",
+                        format_value_for_message(&lhs.value),
+                        cmp_op_str(*op),
+                        format_value_for_message(&rhs.value),
+                    );
+                    return Ok((
+                        LocatedCheckValue::new(CheckValue::Bool(false), path),
+                        Some(detail),
+                    ));
+                }
+                lhs = rhs;
+            }
+            Ok((LocatedCheckValue::value(CheckValue::Bool(true)), None))
+        }
+        CftSchemaCheckExprKind::Unary {
+            op: CftSchemaUnaryOp::Not,
+            expr: inner,
+        } => {
+            let inner_val = evaluator.eval_value_expr(inner)?;
+            if matches!(inner_val.value, CheckValue::Bool(true)) {
+                let detail = format!(
+                    "期望 !{}，但内部表达式为 true",
+                    format_value_for_message(&inner_val.value),
+                );
+                return Ok((
+                    LocatedCheckValue::new(CheckValue::Bool(false), inner_val.path),
+                    Some(detail),
+                ));
+            }
+            evaluator
+                .eval_unary_expr(CftSchemaUnaryOp::Not, inner_val)
+                .map(|value| (value, None))
+        }
+        CftSchemaCheckExprKind::BinOp {
+            op: CftSchemaBinOp::And,
+            lhs,
+            rhs,
+        } => {
+            let lhs_value = evaluator.eval_value_expr(lhs)?;
+            if matches!(lhs_value.value, CheckValue::Bool(false)) {
+                return Ok((
+                    LocatedCheckValue::new(CheckValue::Bool(false), lhs_value.path),
+                    Some("左侧条件为 false".to_string()),
+                ));
+            }
+            let rhs_value = evaluator.eval_value_expr(rhs)?;
+            if matches!(rhs_value.value, CheckValue::Bool(false)) {
+                return Ok((
+                    LocatedCheckValue::new(CheckValue::Bool(false), rhs_value.path),
+                    Some("右侧条件为 false".to_string()),
+                ));
+            }
+            let path = lhs_value.path.or(rhs_value.path);
+            Ok((LocatedCheckValue::new(CheckValue::Bool(true), path), None))
+        }
+        _ => evaluator.eval_value_expr(expr).map(|value| (value, None)),
+    }
 }
 
 pub(super) fn explain_false_value_expr(
@@ -82,7 +168,7 @@ pub(super) fn value_expr_actual(
     expr: &CftSchemaCheckExpr,
 ) -> String {
     evaluator.eval_value_expr(expr).map_or_else(
-        || render_expr(expr),
+        |_| render_expr(expr),
         |value| {
             format!(
                 "{} = {}",
@@ -104,7 +190,7 @@ fn unique_failed_explanation(
             .with_actual(value_expr_actual(evaluator, collection))
             .with_expected("所有元素唯一");
 
-    if let Some(value) = evaluator.eval_value_expr(collection) {
+    if let Ok(value) = evaluator.eval_value_expr(collection) {
         if let CheckValue::Array { items, .. } = value.value {
             let mut seen = BTreeMap::new();
             for (index, item) in items.iter().enumerate() {
