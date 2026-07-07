@@ -2,6 +2,11 @@ use super::common::*;
 use super::*;
 use crate::diagnostics::lsp_range;
 use crate::document_symbols::document_symbols;
+use crate::semantic_tokens::{
+    encode_semantic_tokens, push_semantic_span, push_semantic_span_plain, RawSemanticToken,
+    MOD_DECLARATION, MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_NAMESPACE, SEM_OPERATOR,
+    SEM_PROPERTY, SEM_STRING, SEM_TYPE, SEM_VARIABLE,
+};
 use crate::uri::{hex_value, percent_decode};
 
 #[test]

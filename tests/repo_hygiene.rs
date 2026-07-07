@@ -1957,6 +1957,31 @@ fn lsp_documentation_catalog_does_not_live_in_lib_rs() {
 }
 
 #[test]
+fn lsp_semantic_token_helpers_do_not_live_in_lib_rs() {
+    let lib = std::fs::read_to_string("crates/coflow-lsp/src/lib.rs").expect("read lsp lib");
+    let semantic_tokens = std::fs::read_to_string("crates/coflow-lsp/src/semantic_tokens.rs")
+        .expect("read lsp semantic tokens");
+
+    for expected in [
+        "pub(crate) const SEMANTIC_TOKEN_TYPES",
+        "pub(crate) const SEMANTIC_TOKEN_MODIFIERS",
+        "pub(crate) struct RawSemanticToken",
+        "pub(crate) fn push_semantic_span",
+        "pub(crate) fn push_semantic_span_plain",
+        "pub(crate) fn encode_semantic_tokens",
+    ] {
+        assert!(
+            semantic_tokens.contains(expected),
+            "LSP semantic token helper `{expected}` should live in semantic_tokens.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "LSP semantic token helper `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn table_writers_use_shared_cell_renderer() {
     let excel = std::fs::read_to_string("crates/coflow-loader-excel/src/writer.rs")
         .expect("read excel writer");
