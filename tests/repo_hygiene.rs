@@ -862,6 +862,29 @@ fn checker_dependency_collection_does_not_live_in_evaluator_or_runner_rs() {
 }
 
 #[test]
+fn checker_index_access_does_not_live_in_evaluator_rs() {
+    let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
+        .expect("read checker evaluator");
+    let access =
+        std::fs::read_to_string("crates/coflow-checker/src/check/access.rs").expect("read access");
+
+    assert!(
+        access.contains("pub(super) fn index_value"),
+        "checker index access should live in check/access.rs"
+    );
+    assert!(
+        !evaluator.contains("pub(super) fn index_value"),
+        "checker index access should not live in evaluator.rs"
+    );
+    for forbidden in ["CheckMissingDictKey", "数组索引越界", "索引目标不是集合"] {
+        assert!(
+            !evaluator.contains(forbidden),
+            "checker evaluator should not own index access branch `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn loaders_do_not_depend_on_checker_runtime_directly() {
     let excel_manifest = std::fs::read_to_string("crates/coflow-loader-excel/Cargo.toml")
         .expect("read excel loader manifest");
