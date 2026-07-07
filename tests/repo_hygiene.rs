@@ -997,6 +997,8 @@ fn data_model_compiler_indexes_are_split_out() {
         .expect("read data-model compiler resolve");
     let defaults = std::fs::read_to_string("crates/coflow-data-model/src/compiler/defaults.rs")
         .expect("read data-model compiler defaults");
+    let validate = std::fs::read_to_string("crates/coflow-data-model/src/compiler/validate.rs")
+        .expect("read data-model compiler validation");
 
     for expected in [
         "pub(super) struct ModelIndexes",
@@ -1044,6 +1046,22 @@ fn data_model_compiler_indexes_are_split_out() {
         assert!(
             !compiler.contains(expected),
             "data-model compiler default helper `{expected}` should not live in compiler.rs"
+        );
+    }
+    for expected in [
+        "pub(super) struct Validator",
+        "pub(super) fn validate_record",
+        "fn validate_value",
+        "fn validate_dict_entries",
+        "fn top_level_spread_source",
+    ] {
+        assert!(
+            validate.contains(expected),
+            "data-model compiler validation helper `{expected}` should live in compiler/validate.rs"
+        );
+        assert!(
+            !compiler.contains(expected),
+            "data-model compiler validation helper `{expected}` should not live in compiler.rs"
         );
     }
     assert!(
