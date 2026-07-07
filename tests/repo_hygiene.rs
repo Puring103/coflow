@@ -1957,6 +1957,35 @@ fn lsp_documentation_catalog_does_not_live_in_lib_rs() {
 }
 
 #[test]
+fn lsp_completion_helpers_do_not_live_in_lib_rs() {
+    let lib = std::fs::read_to_string("crates/coflow-lsp/src/lib.rs").expect("read lsp lib");
+    let completion = std::fs::read_to_string("crates/coflow-lsp/src/completion.rs")
+        .expect("read lsp completion");
+
+    for expected in [
+        "pub(crate) fn completion_items",
+        "pub(crate) enum CompletionScope",
+        "pub(crate) fn completion_scope",
+        "fn completion_item",
+        "fn annotation_completion_item",
+        "pub(crate) fn annotation_completion_items",
+        "pub(crate) fn top_level_completion_items",
+        "pub(crate) fn check_expression_completion_items",
+        "pub(crate) fn dot_completion_items",
+        "fn const_value_assignable_to_type",
+    ] {
+        assert!(
+            completion.contains(expected),
+            "LSP completion helper `{expected}` should live in completion.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "LSP completion helper `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn lsp_semantic_token_helpers_do_not_live_in_lib_rs() {
     let lib = std::fs::read_to_string("crates/coflow-lsp/src/lib.rs").expect("read lsp lib");
     let semantic_tokens = std::fs::read_to_string("crates/coflow-lsp/src/semantic_tokens.rs")
