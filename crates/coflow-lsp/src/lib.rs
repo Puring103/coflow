@@ -885,63 +885,6 @@ fn collect_quantifier_bindings(stmts: &[CheckStmt], offset: usize, bindings: &mu
     }
 }
 
-pub(crate) fn is_annotation_completion_context(line_prefix: &str) -> bool {
-    let Some(index) = line_prefix.rfind('@') else {
-        return false;
-    };
-    line_prefix[index + 1..].chars().all(is_ident_continue)
-}
-
-pub(crate) fn is_type_predicate_context(line_prefix: &str) -> bool {
-    let trimmed = line_prefix.trim_end();
-    let Some(last_word) = last_ident(trimmed) else {
-        return false;
-    };
-    if last_word == "is" {
-        return true;
-    }
-    trimmed[..trimmed.len() - last_word.len()]
-        .trim_end()
-        .ends_with("is")
-}
-
-pub(crate) fn is_type_header_parent_context(line_prefix: &str) -> bool {
-    let Some(colon) = line_prefix.rfind(':') else {
-        return false;
-    };
-    let before_colon = &line_prefix[..colon];
-    before_colon.contains("type")
-}
-
-pub(crate) fn is_type_reference_context(line_prefix: &str) -> bool {
-    let trimmed = line_prefix.trim_end();
-    let Some(colon) = trimmed.rfind(':') else {
-        return false;
-    };
-    let after_colon = &trimmed[colon + 1..];
-    !after_colon.contains(';') && !after_colon.contains('=')
-}
-
-pub(crate) fn is_const_value_context(line_prefix: &str) -> bool {
-    let trimmed = line_prefix.trim_end();
-    trimmed.contains("const ") && trimmed.contains('=') && !trimmed.contains(';')
-}
-
-pub(crate) fn is_field_default_context(line_prefix: &str) -> bool {
-    let trimmed = line_prefix.trim_end();
-    let Some(equal) = trimmed.rfind('=') else {
-        return false;
-    };
-    let Some(colon) = trimmed.rfind(':') else {
-        return false;
-    };
-    colon < equal && !trimmed[equal + 1..].contains(';')
-}
-
-pub(crate) fn top_level_needs_type_keyword(line_prefix: &str) -> bool {
-    matches!(last_ident(line_prefix), Some("abstract" | "sealed"))
-}
-
 pub(crate) fn is_trivia_position(source: &str, offset: usize) -> bool {
     let line_prefix = line_prefix_at(source, offset);
     if is_after_line_comment(line_prefix) {
@@ -970,17 +913,7 @@ fn is_inside_string(source: &str, offset: usize) -> bool {
     in_string
 }
 
-pub(crate) fn receiver_chain_before_dot(line_prefix: &str) -> Option<Vec<String>> {
-    let dot = line_prefix.rfind('.')?;
-    let typed = line_prefix[dot + 1..].trim_start();
-    if !typed.chars().all(is_ident_continue) {
-        return None;
-    }
-    let receiver = trailing_dotted_ident_chain(&line_prefix[..dot])?;
-    parse_dotted_ident_chain(receiver)
-}
-
-fn parse_dotted_ident_chain(text: &str) -> Option<Vec<String>> {
+pub(crate) fn parse_dotted_ident_chain(text: &str) -> Option<Vec<String>> {
     let mut parts = Vec::new();
     for part in text.split('.') {
         let trimmed = part.trim();
@@ -990,40 +923,6 @@ fn parse_dotted_ident_chain(text: &str) -> Option<Vec<String>> {
         parts.push(trimmed.to_string());
     }
     (!parts.is_empty()).then_some(parts)
-}
-
-fn trailing_dotted_ident_chain(text: &str) -> Option<&str> {
-    let trimmed_end = text.trim_end().len();
-    let bytes = text.as_bytes();
-    let mut start = trimmed_end;
-    let mut saw_ident = false;
-    let mut allow_dot = false;
-
-    while start > 0 {
-        let (previous, ch) = previous_char(text, start)?;
-        if is_ident_continue(ch) {
-            saw_ident = true;
-            allow_dot = true;
-            start = previous;
-            continue;
-        }
-        if ch == '.' && allow_dot {
-            saw_ident = false;
-            allow_dot = false;
-            start = previous;
-            continue;
-        }
-        if ch.is_whitespace() && !saw_ident && previous + ch.len_utf8() == start {
-            start = previous;
-            continue;
-        }
-        break;
-    }
-
-    while start < trimmed_end && bytes[start].is_ascii_whitespace() {
-        start += 1;
-    }
-    (saw_ident && start < trimmed_end).then_some(&text[start..trimmed_end])
 }
 
 fn is_after_line_comment(line_prefix: &str) -> bool {
@@ -1118,15 +1017,15 @@ pub(crate) fn word_at(source: &str, offset: usize) -> Option<WordAt> {
     })
 }
 
-fn previous_char(source: &str, offset: usize) -> Option<(usize, char)> {
+pub(crate) fn previous_char(source: &str, offset: usize) -> Option<(usize, char)> {
     source[..offset].char_indices().next_back()
 }
 
-fn is_ident_continue(ch: char) -> bool {
+pub(crate) fn is_ident_continue(ch: char) -> bool {
     ch == '_' || ch.is_alphanumeric()
 }
 
-fn last_ident(text: &str) -> Option<&str> {
+pub(crate) fn last_ident(text: &str) -> Option<&str> {
     let end = text.trim_end().len();
     let mut start = end;
     while let Some((previous, ch)) = previous_char(text, start) {

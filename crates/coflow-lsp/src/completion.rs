@@ -7,11 +7,9 @@ use crate::documentation::{
 };
 use crate::position::{byte_offset_from_position, LspPosition};
 use crate::{
-    current_field_at, current_type_at, is_annotation_completion_context, is_const_value_context,
-    is_field_default_context, is_trivia_position, is_type_header_parent_context,
-    is_type_predicate_context, is_type_reference_context, line_prefix_at, quantifier_bindings_at,
-    receiver_chain_before_dot, top_level_needs_type_keyword, type_name_of_schema_ref,
-    type_of_chain, LspBuild, LspDocument,
+    current_field_at, current_type_at, is_ident_continue, is_trivia_position, last_ident,
+    line_prefix_at, parse_dotted_ident_chain, previous_char, quantifier_bindings_at,
+    type_name_of_schema_ref, type_of_chain, LspBuild, LspDocument,
 };
 
 const COMPLETION_KIND_FUNCTION: u8 = 3;
@@ -529,4 +527,105 @@ pub(crate) fn completion_scope(document: &LspDocument, offset: usize) -> Complet
 
 fn check_block_contains(check: Option<&coflow_cft::ast::CheckBlock>, offset: usize) -> bool {
     check.is_some_and(|check| check.span.start <= offset && offset <= check.span.end)
+}
+
+pub(crate) fn is_annotation_completion_context(line_prefix: &str) -> bool {
+    let Some(index) = line_prefix.rfind('@') else {
+        return false;
+    };
+    line_prefix[index + 1..].chars().all(is_ident_continue)
+}
+
+pub(crate) fn is_type_predicate_context(line_prefix: &str) -> bool {
+    let trimmed = line_prefix.trim_end();
+    let Some(last_word) = last_ident(trimmed) else {
+        return false;
+    };
+    if last_word == "is" {
+        return true;
+    }
+    trimmed[..trimmed.len() - last_word.len()]
+        .trim_end()
+        .ends_with("is")
+}
+
+pub(crate) fn is_type_header_parent_context(line_prefix: &str) -> bool {
+    let Some(colon) = line_prefix.rfind(':') else {
+        return false;
+    };
+    let before_colon = &line_prefix[..colon];
+    before_colon.contains("type")
+}
+
+pub(crate) fn is_type_reference_context(line_prefix: &str) -> bool {
+    let trimmed = line_prefix.trim_end();
+    let Some(colon) = trimmed.rfind(':') else {
+        return false;
+    };
+    let after_colon = &trimmed[colon + 1..];
+    !after_colon.contains(';') && !after_colon.contains('=')
+}
+
+pub(crate) fn is_const_value_context(line_prefix: &str) -> bool {
+    let trimmed = line_prefix.trim_end();
+    trimmed.contains("const ") && trimmed.contains('=') && !trimmed.contains(';')
+}
+
+pub(crate) fn is_field_default_context(line_prefix: &str) -> bool {
+    let trimmed = line_prefix.trim_end();
+    let Some(equal) = trimmed.rfind('=') else {
+        return false;
+    };
+    let Some(colon) = trimmed.rfind(':') else {
+        return false;
+    };
+    colon < equal && !trimmed[equal + 1..].contains(';')
+}
+
+pub(crate) fn top_level_needs_type_keyword(line_prefix: &str) -> bool {
+    matches!(last_ident(line_prefix), Some("abstract" | "sealed"))
+}
+
+pub(crate) fn receiver_chain_before_dot(line_prefix: &str) -> Option<Vec<String>> {
+    let dot = line_prefix.rfind('.')?;
+    let typed = line_prefix[dot + 1..].trim_start();
+    if !typed.chars().all(is_ident_continue) {
+        return None;
+    }
+    let receiver = trailing_dotted_ident_chain(&line_prefix[..dot])?;
+    parse_dotted_ident_chain(receiver)
+}
+
+fn trailing_dotted_ident_chain(text: &str) -> Option<&str> {
+    let trimmed_end = text.trim_end().len();
+    let bytes = text.as_bytes();
+    let mut start = trimmed_end;
+    let mut saw_ident = false;
+    let mut allow_dot = false;
+
+    while start > 0 {
+        let (previous, ch) = previous_char(text, start)?;
+        if is_ident_continue(ch) {
+            saw_ident = true;
+            allow_dot = true;
+            start = previous;
+            continue;
+        }
+        if ch == '.' && allow_dot {
+            saw_ident = false;
+            allow_dot = false;
+            start = previous;
+            continue;
+        }
+        if ch.is_whitespace() && !saw_ident && previous + ch.len_utf8() == start {
+            start = previous;
+            continue;
+        }
+        break;
+    }
+
+    while start < trimmed_end && bytes[start].is_ascii_whitespace() {
+        start += 1;
+    }
+    (saw_ident && start < trimmed_end).then_some(&text[start..trimmed_end])
 }

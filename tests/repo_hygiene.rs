@@ -1977,6 +1977,15 @@ fn lsp_completion_helpers_do_not_live_in_lib_rs() {
         "pub(crate) fn check_expression_completion_items",
         "pub(crate) fn dot_completion_items",
         "fn const_value_assignable_to_type",
+        "pub(crate) fn is_annotation_completion_context",
+        "pub(crate) fn is_type_predicate_context",
+        "pub(crate) fn is_type_header_parent_context",
+        "pub(crate) fn is_type_reference_context",
+        "pub(crate) fn is_const_value_context",
+        "pub(crate) fn is_field_default_context",
+        "pub(crate) fn top_level_needs_type_keyword",
+        "pub(crate) fn receiver_chain_before_dot",
+        "fn trailing_dotted_ident_chain",
     ] {
         assert!(
             completion.contains(expected),
