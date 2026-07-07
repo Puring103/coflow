@@ -105,6 +105,8 @@ fn cli_diagnostic_json_does_not_live_in_coflow_project() {
 fn root_cli_arguments_do_not_live_in_main_rs() {
     let main = std::fs::read_to_string("src/main.rs").expect("read root CLI main");
     let cli = std::fs::read_to_string("src/cli.rs").expect("read root CLI argument definitions");
+    let output =
+        std::fs::read_to_string("src/cli_output.rs").expect("read root CLI output helpers");
 
     for expected in [
         "pub(crate) struct Cli",
@@ -130,6 +132,22 @@ fn root_cli_arguments_do_not_live_in_main_rs() {
         cli.lines().count() < 800,
         "root CLI cli.rs should stay below the 800-line large-module threshold"
     );
+    for expected in [
+        "pub(crate) fn write_project_diagnostics",
+        "pub(crate) fn write_cli_error",
+        "fn write_diagnostic_block",
+        "pub(crate) fn relativize_message_paths",
+        "fn slash_path",
+    ] {
+        assert!(
+            output.contains(expected),
+            "root CLI output helper `{expected}` should live in cli_output.rs"
+        );
+        assert!(
+            !main.contains(expected),
+            "root CLI output helper `{expected}` should not live in main.rs"
+        );
+    }
 }
 
 #[test]
