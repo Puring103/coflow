@@ -20,13 +20,11 @@ impl SchemaView {
         let cft = CftSchemaView::new(schema);
 
         let csharp_types = cft
-            .types
-            .keys()
+            .type_names()
             .map(|name| (name.clone(), csharp_type_name(name)))
             .collect::<BTreeMap<_, _>>();
         let csharp_enums = cft
-            .enums
-            .keys()
+            .enum_names()
             .map(|name| (name.clone(), csharp_type_name(name)))
             .collect::<BTreeMap<_, _>>();
 
@@ -41,28 +39,34 @@ impl SchemaView {
     }
 
     pub fn cft_enum_meta(&self, name: &str) -> Option<&CftEnumMeta> {
-        self.cft.enums.get(name)
+        self.cft.enum_meta(name)
     }
 
     pub fn enum_names(&self) -> impl Iterator<Item = &String> {
-        self.cft.enums.keys()
+        self.cft.enum_names()
+    }
+
+    pub fn cft_enum_metas(&self) -> impl Iterator<Item = &CftEnumMeta> {
+        self.cft.enum_metas()
+    }
+
+    pub fn type_metas(&self) -> impl Iterator<Item = &TypeMeta> {
+        self.cft.type_metas()
     }
 
     pub fn is_schema_enum(&self, name: &str) -> bool {
-        self.cft.enums.contains_key(name)
+        self.cft.is_schema_enum(name)
     }
 
     pub fn uses_localization(&self) -> bool {
         self.cft
-            .types
-            .values()
+            .type_metas()
             .any(|ty| ty.all_fields.iter().any(|field| field.dimension.is_some()))
     }
 
     pub fn id_as_enum_names(&self) -> BTreeSet<String> {
         self.cft
-            .types
-            .values()
+            .type_metas()
             .filter_map(|ty| self.type_id_as_enum(ty))
             .collect()
     }
@@ -98,19 +102,17 @@ impl SchemaView {
 
     pub fn type_meta(&self, name: &str) -> Result<&TypeMeta, CsharpCodegenError> {
         self.cft
-            .types
-            .get(name)
+            .type_meta(name)
             .ok_or_else(|| CsharpCodegenError::new(format!("unknown CFT type `{name}`")))
     }
 
     pub fn all_type_names(&self) -> Vec<String> {
-        self.cft.types.keys().cloned().collect()
+        self.cft.type_names().cloned().collect()
     }
 
     pub fn table_names(&self) -> Vec<String> {
         self.cft
-            .types
-            .values()
+            .type_metas()
             .filter(|ty| !ty.is_abstract && !ty.is_singleton)
             .map(|ty| ty.name.clone())
             .collect()
@@ -119,8 +121,7 @@ impl SchemaView {
     /// Names of `@singleton` types, in declaration order.
     pub fn singleton_type_names(&self) -> Vec<String> {
         self.cft
-            .types
-            .values()
+            .type_metas()
             .filter(|ty| ty.is_singleton)
             .map(|ty| ty.name.clone())
             .collect()
@@ -128,8 +129,7 @@ impl SchemaView {
 
     pub fn polymorphic_type_names(&self) -> Vec<String> {
         self.cft
-            .types
-            .values()
+            .type_metas()
             .filter(|ty| self.range_is_polymorphic(&ty.name))
             .map(|ty| ty.name.clone())
             .collect()
@@ -164,7 +164,7 @@ impl SchemaView {
     pub fn id_as_enum(&self, type_name: &str) -> Option<String> {
         let mut current = Some(type_name);
         while let Some(name) = current {
-            let meta = self.cft.types.get(name)?;
+            let meta = self.cft.type_meta(name)?;
             if let Some(enum_name) = self.type_id_as_enum(meta) {
                 return Some(enum_name);
             }
@@ -175,8 +175,7 @@ impl SchemaView {
 
     pub fn is_id_as_enum(&self, enum_name: &str) -> bool {
         self.cft
-            .types
-            .values()
+            .type_metas()
             .any(|ty| self.type_id_as_enum(ty).as_deref() == Some(enum_name))
     }
 
@@ -200,7 +199,7 @@ impl SchemaView {
 
     pub fn ref_target_names(&self) -> Vec<String> {
         let mut out = BTreeSet::new();
-        for ty in self.cft.types.values() {
+        for ty in self.cft.type_metas() {
             let mut visited = BTreeSet::new();
             self.collect_ref_targets_for_type(ty, &mut out, &mut visited);
         }
@@ -247,7 +246,7 @@ impl SchemaView {
         match ty {
             CftSchemaTypeRef::Named(name) if self.is_schema_enum(name) => {}
             CftSchemaTypeRef::Named(name) => {
-                if let Some(meta) = self.cft.types.get(name) {
+                if let Some(meta) = self.cft.type_meta(name) {
                     self.collect_ref_targets_for_type(meta, out, visited);
                 }
             }

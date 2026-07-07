@@ -88,6 +88,18 @@ impl CftSchemaView {
         self.types.keys()
     }
 
+    pub fn type_metas(&self) -> impl Iterator<Item = &CftTypeMeta> {
+        self.types.values()
+    }
+
+    pub fn enum_names(&self) -> impl Iterator<Item = &String> {
+        self.enums.keys()
+    }
+
+    pub fn enum_metas(&self) -> impl Iterator<Item = &CftEnumMeta> {
+        self.enums.values()
+    }
+
     #[must_use]
     pub fn enum_meta(&self, enum_name: &str) -> Option<&CftEnumMeta> {
         self.enums.get(enum_name)

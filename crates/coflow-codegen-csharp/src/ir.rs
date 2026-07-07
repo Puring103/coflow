@@ -221,7 +221,7 @@ fn validate_options(
 }
 
 fn validate_schema_names(view: &SchemaView, diagnostics: &mut Vec<CsharpCodegenDiagnostic>) {
-    for schema_enum in view.cft.enums.values() {
+    for schema_enum in view.cft_enum_metas() {
         validate_ident("enum", &schema_enum.name, diagnostics);
         validate_ident("enum", &csharp_type_name(&schema_enum.name), diagnostics);
         let mut variants = BTreeMap::<String, String>::new();
@@ -238,7 +238,7 @@ fn validate_schema_names(view: &SchemaView, diagnostics: &mut Vec<CsharpCodegenD
         }
     }
 
-    for schema_type in view.cft.types.values() {
+    for schema_type in view.type_metas() {
         validate_ident("type", &schema_type.name, diagnostics);
         validate_ident("type", &csharp_type_name(&schema_type.name), diagnostics);
         if let Some(parent) = &schema_type.parent {
@@ -431,7 +431,7 @@ fn validate_generated_member_names(
     view: &SchemaView,
     diagnostics: &mut Vec<CsharpCodegenDiagnostic>,
 ) {
-    for ty in view.cft.types.values() {
+    for ty in view.type_metas() {
         let mut members = BTreeMap::<String, String>::new();
         for field in &ty.all_fields {
             let property_name = csharp_type_name(&field.name);

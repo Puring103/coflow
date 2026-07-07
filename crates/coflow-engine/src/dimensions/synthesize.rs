@@ -85,7 +85,7 @@ pub fn dimension_sources(project: &Project, fields: &[DimensionField]) -> Vec<Re
 
 pub fn dimension_fields(schema: &CftSchemaView) -> Vec<DimensionField> {
     let mut fields = Vec::new();
-    for schema_type in schema.types.values() {
+    for schema_type in schema.type_metas() {
         for field in &schema_type.own_fields {
             let Some(dimension) = field.dimension.as_ref() else {
                 continue;
