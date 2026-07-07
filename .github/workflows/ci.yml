@@ -6,7 +6,7 @@ on:
 
 jobs:
   rust:
-    name: Rust
+    name: Rust check and test
     runs-on: windows-latest
 
     steps:

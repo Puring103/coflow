@@ -8,6 +8,7 @@ cargo test --workspace
 ```
 
 Do not commit or push normal development changes while either command fails.
+The normal CI workflow mirrors this rule and should only run these two commands.
 
 For release or packaging commits, run the full gate from the repository root:
 
@@ -19,6 +20,7 @@ cargo test --workspace
 ```
 
 Do not package or release while any of these commands fail.
+Release and packaging workflows should keep this full gate.
 
 When the user specifies a version to package or release, reinstall the local Cargo CLI after the checks pass:
 
