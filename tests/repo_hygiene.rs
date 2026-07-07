@@ -102,6 +102,37 @@ fn cli_diagnostic_json_does_not_live_in_coflow_project() {
 }
 
 #[test]
+fn root_cli_arguments_do_not_live_in_main_rs() {
+    let main = std::fs::read_to_string("src/main.rs").expect("read root CLI main");
+    let cli = std::fs::read_to_string("src/cli.rs").expect("read root CLI argument definitions");
+
+    for expected in [
+        "pub(crate) struct Cli",
+        "pub(crate) enum Command",
+        "pub(crate) struct BuildArgs",
+        "pub(crate) enum DataCommand",
+        "pub(crate) struct DataWriteFileArgs",
+    ] {
+        assert!(
+            cli.contains(expected),
+            "root CLI argument item `{expected}` should live in cli.rs"
+        );
+        assert!(
+            !main.contains(expected),
+            "root CLI argument item `{expected}` should not live in main.rs"
+        );
+    }
+    assert!(
+        main.lines().count() < 800,
+        "root CLI main.rs should stay below the 800-line large-module threshold"
+    );
+    assert!(
+        cli.lines().count() < 800,
+        "root CLI cli.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
 fn project_config_deserialization_does_not_live_in_project_lib_rs() {
     let project =
         std::fs::read_to_string("crates/coflow-project/src/lib.rs").expect("read project lib");
