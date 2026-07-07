@@ -1,5 +1,6 @@
 use super::common::*;
 use super::*;
+use crate::definition::{cft_schema_field_definition_location, cft_type_definition_location};
 
 #[test]
 fn cfd_definition_request_returns_schema_field_location() {
@@ -463,7 +464,7 @@ fn cfd_schema_field_definition_location_finds_field_name_span() {
     let source = "type Item {\n  key: string;\n  damage: int;\n}\n";
     let (_cleanup, build) = test_lsp_build("cfd-schema-field-goto-def", source);
 
-    let result = cfd_schema_field_definition_location(&build, "Item", "damage")
+    let result = cft_schema_field_definition_location(&build, "Item", "damage")
         .expect("damage field definition");
 
     assert_eq!(result["range"]["start"]["line"], 2);
@@ -475,13 +476,13 @@ fn cfd_schema_field_definition_location_finds_field_name_span() {
 #[test]
 fn cfd_goto_def_continues_past_unparseable_document() {
     // Build an LspBuild with two modules; one has a syntax error.
-    // cfd_type_definition_location should still find the type in the good module.
+    // cft_type_definition_location should still find the type in the good module.
     let cft_source = "type GoodType { level: int; }\n";
     let (_cleanup, build) = test_lsp_build("cfd-goto-def", cft_source);
     // GoodType is defined — should find it.
-    let result = cfd_type_definition_location(&build, "GoodType");
+    let result = cft_type_definition_location(&build, "GoodType");
     assert!(result.is_some(), "should find GoodType definition");
     // Unknown type — should return None without panicking.
-    let result2 = cfd_type_definition_location(&build, "NonExistent");
+    let result2 = cft_type_definition_location(&build, "NonExistent");
     assert!(result2.is_none());
 }

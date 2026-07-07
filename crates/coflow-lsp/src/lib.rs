@@ -13,6 +13,7 @@
 )]
 
 mod cfd;
+mod definition;
 mod diagnostics;
 mod document_symbols;
 mod formatting;
@@ -36,6 +37,7 @@ use coflow_project::{
     compile_schema_project_with_overrides, dedupe_cft_diagnostics, diagnostic_set_from_cft,
     normalize_path, Project, SchemaBuild, SchemaSourceOverride,
 };
+use definition::{cft_schema_field_definition_location, cft_type_definition_location};
 use diagnostics::{
     label_uri, lsp_diagnostic, lsp_error_diagnostic, lsp_label_location, preferred_diagnostic_uri,
 };
@@ -401,7 +403,7 @@ impl<W: Write> LspServer<W> {
                 let type_name = type_name.to_string();
                 self.ensure_build()?;
                 if let Some(build) = &self.build {
-                    if let Some(location) = cfd_type_definition_location(build, &type_name) {
+                    if let Some(location) = cft_type_definition_location(build, &type_name) {
                         return self.write_response(id, &json!(location));
                     }
                 }
@@ -412,7 +414,7 @@ impl<W: Write> LspServer<W> {
                 self.ensure_build()?;
                 if let Some(build) = &self.build {
                     if let Some(location) =
-                        cfd_schema_field_definition_location(build, &type_name, field_name)
+                        cft_schema_field_definition_location(build, &type_name, field_name)
                     {
                         return self.write_response(id, &json!(location));
                     }
@@ -2776,48 +2778,6 @@ fn is_cfd_path(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
         .is_some_and(|e| e == "cfd")
-}
-
-/// Find the LSP location (uri + range) of a CFT type definition by name.
-fn cfd_type_definition_location(build: &LspBuild, type_name: &str) -> Option<Value> {
-    use coflow_cft::parser::parse_module;
-    use coflow_cft::ModuleId;
-
-    for (module_id, document) in &build.documents {
-        let Some(ast) = document
-            .ast
-            .clone()
-            .or_else(|| parse_module(&ModuleId::new(module_id.clone()), &document.source).ok())
-        else {
-            continue;
-        };
-
-        for item in &ast.items {
-            use coflow_cft::ast::Item;
-            let (name, name_span) = match item {
-                Item::Type(t) => (t.name.as_str(), t.name_span),
-                Item::Enum(e) => (e.name.as_str(), e.name_span),
-                Item::Const(_) => continue,
-            };
-            if name == type_name {
-                let range = byte_range(&document.source, name_span.start, name_span.end);
-                return Some(json!({
-                    "uri": document.uri,
-                    "range": range,
-                }));
-            }
-        }
-    }
-    None
-}
-
-/// Find the LSP location of a CFT field definition by owning type and field name.
-fn cfd_schema_field_definition_location(
-    build: &LspBuild,
-    type_name: &str,
-    field_name: &str,
-) -> Option<Value> {
-    field_location(build, type_name, field_name)
 }
 
 /// Find the LSP location (uri + range) of a CFD record definition by key.

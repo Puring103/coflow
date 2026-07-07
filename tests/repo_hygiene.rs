@@ -1904,6 +1904,27 @@ fn lsp_document_symbol_helpers_do_not_live_in_lib_rs() {
 }
 
 #[test]
+fn lsp_definition_helpers_do_not_live_in_lib_rs() {
+    let lib = std::fs::read_to_string("crates/coflow-lsp/src/lib.rs").expect("read lsp lib");
+    let definition =
+        std::fs::read_to_string("crates/coflow-lsp/src/definition.rs").expect("read definition");
+
+    for expected in [
+        "pub(crate) fn cft_type_definition_location",
+        "pub(crate) fn cft_schema_field_definition_location",
+    ] {
+        assert!(
+            definition.contains(expected),
+            "LSP definition helper `{expected}` should live in definition.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "LSP definition helper `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn table_writers_use_shared_cell_renderer() {
     let excel = std::fs::read_to_string("crates/coflow-loader-excel/src/writer.rs")
         .expect("read excel writer");
