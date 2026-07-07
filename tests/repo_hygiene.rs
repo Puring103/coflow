@@ -102,6 +102,31 @@ fn cli_diagnostic_json_does_not_live_in_coflow_project() {
 }
 
 #[test]
+fn project_config_deserialization_does_not_live_in_project_lib_rs() {
+    let project =
+        std::fs::read_to_string("crates/coflow-project/src/lib.rs").expect("read project lib");
+    let config =
+        std::fs::read_to_string("crates/coflow-project/src/config.rs").expect("read project config");
+
+    for expected in [
+        "pub struct ProjectConfig",
+        "pub struct SourceConfig",
+        "pub struct OutputConfig",
+        "struct NoDuplicateValue",
+        "impl<'de> Deserialize<'de> for ProjectConfig",
+    ] {
+        assert!(
+            config.contains(expected),
+            "project config item `{expected}` should live in config.rs"
+        );
+        assert!(
+            !project.contains(expected),
+            "project config item `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn table_provider_algorithms_are_not_reexported_by_excel_loader() {
     let excel = std::fs::read_to_string("crates/coflow-loader-excel/src/lib.rs")
         .expect("read excel loader");
