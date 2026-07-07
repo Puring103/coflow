@@ -75,6 +75,102 @@ fn provider_shared_algorithms_do_not_live_in_coflow_api() {
 }
 
 #[test]
+fn api_registry_is_split_by_responsibility() {
+    let registry =
+        std::fs::read_to_string("crates/coflow-api/src/registry.rs").expect("read API registry");
+    let selection = std::fs::read_to_string("crates/coflow-api/src/registry/selection.rs")
+        .expect("read API registry selection");
+    let errors = std::fs::read_to_string("crates/coflow-api/src/registry/errors.rs")
+        .expect("read API registry errors");
+
+    for expected in [
+        "pub fn select_loader",
+        "LoaderSelectionError::UnknownLoader",
+        "LoaderSelectionError::AmbiguousLoaders",
+    ] {
+        assert!(
+            selection.contains(expected),
+            "API registry selection item `{expected}` should live in registry/selection.rs"
+        );
+        assert!(
+            !registry.contains(expected),
+            "API registry selection item `{expected}` should not live in registry.rs"
+        );
+    }
+    for expected in [
+        "pub enum LoaderSelectionError",
+        "pub struct ProviderRegistrationError",
+        "impl std::error::Error for ProviderRegistrationError",
+    ] {
+        assert!(
+            errors.contains(expected),
+            "API registry error item `{expected}` should live in registry/errors.rs"
+        );
+        assert!(
+            !registry.contains(expected),
+            "API registry error item `{expected}` should not live in registry.rs"
+        );
+    }
+    assert!(
+        registry.lines().count() < 260,
+        "coflow-api registry.rs should stay focused on provider storage and lookup"
+    );
+}
+
+#[test]
+fn api_writer_contract_is_split_by_responsibility() {
+    let writer =
+        std::fs::read_to_string("crates/coflow-api/src/writer.rs").expect("read API writer");
+    let capabilities = std::fs::read_to_string("crates/coflow-api/src/writer/capabilities.rs")
+        .expect("read API writer capabilities");
+    let requests = std::fs::read_to_string("crates/coflow-api/src/writer/requests.rs")
+        .expect("read API writer requests");
+
+    for expected in [
+        "pub struct WriterDescriptor",
+        "pub struct WriterCapabilities",
+        "impl WriterCapabilities",
+    ] {
+        assert!(
+            capabilities.contains(expected),
+            "API writer capability item `{expected}` should live in writer/capabilities.rs"
+        );
+        assert!(
+            !writer.contains(expected),
+            "API writer capability item `{expected}` should not live in writer.rs"
+        );
+    }
+    for expected in [
+        "pub enum WriteFieldPathSegment",
+        "pub struct WriteCellRequest",
+        "pub struct InsertRecordRequest",
+        "pub struct DeleteRecordRequest",
+        "pub struct RenameRecordRequest",
+        "pub struct RewriteRecordReferencesRequest",
+        "pub struct SpreadRewriteTarget",
+        "pub struct WriteOutcome",
+        "pub struct WriteContext",
+    ] {
+        assert!(
+            requests.contains(expected),
+            "API writer request item `{expected}` should live in writer/requests.rs"
+        );
+        assert!(
+            !writer.contains(expected),
+            "API writer request item `{expected}` should not live in writer.rs"
+        );
+    }
+    assert!(
+        writer.contains("pub trait DataWriter"),
+        "API writer trait should remain in writer.rs"
+    );
+    assert!(
+        writer.lines().count() < 170,
+        "coflow-api writer.rs should stay focused on the DataWriter trait"
+    );
+}
+
+#[test]
 fn cli_diagnostic_json_does_not_live_in_coflow_project() {
     let project = std::fs::read_to_string("crates/coflow-project/src/lib.rs")
         .expect("read coflow-project source");

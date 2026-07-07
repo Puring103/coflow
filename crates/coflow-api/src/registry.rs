@@ -1,9 +1,13 @@
+mod errors;
+mod selection;
+
+pub use errors::{LoaderSelectionError, ProviderRegistrationError};
+
 use crate::{
     CodeGenerator, CodegenDescriptor, DataExporter, DataLoader, DataWriter, DimensionSourceManager,
-    DimensionSourceManagerDescriptor, ExporterDescriptor, LoaderDescriptor, ProjectSourceRef,
-    TableManager, TableManagerDescriptor, WriterDescriptor,
+    DimensionSourceManagerDescriptor, ExporterDescriptor, LoaderDescriptor, TableManager,
+    TableManagerDescriptor, WriterDescriptor,
 };
-use std::cmp::Reverse;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
@@ -242,90 +246,4 @@ impl ProviderRegistry {
             .collect()
     }
 
-    /// Selects a loader by explicit source type or by provider probe result.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when no provider matches, the explicit provider id is
-    /// unknown, or multiple providers report the same highest confidence.
-    pub fn select_loader(
-        &self,
-        source: &ProjectSourceRef<'_>,
-    ) -> Result<Arc<dyn DataLoader>, LoaderSelectionError> {
-        if let Some(source_type) = source.source_type {
-            return self
-                .loader(source_type)
-                .ok_or_else(|| LoaderSelectionError::UnknownLoader {
-                    id: source_type.to_string(),
-                });
-        }
-
-        let mut matches = self
-            .loaders
-            .values()
-            .filter_map(|loader| {
-                let probe = loader.probe(source);
-                probe.is_match().then(|| (probe.confidence, loader.clone()))
-            })
-            .collect::<Vec<_>>();
-        matches.sort_by_key(|(confidence, _)| Reverse(*confidence));
-
-        let Some((confidence, loader)) = matches.first().cloned() else {
-            return Err(LoaderSelectionError::NoLoader);
-        };
-        let tied = matches
-            .iter()
-            .filter(|(candidate_confidence, _)| *candidate_confidence == confidence)
-            .map(|(_, candidate)| candidate.descriptor().id.to_string())
-            .collect::<Vec<_>>();
-        if tied.len() > 1 {
-            return Err(LoaderSelectionError::AmbiguousLoaders { ids: tied });
-        }
-        Ok(loader)
-    }
 }
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LoaderSelectionError {
-    UnknownLoader { id: String },
-    NoLoader,
-    AmbiguousLoaders { ids: Vec<String> },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProviderRegistrationError {
-    provider_kind: &'static str,
-    id: String,
-}
-
-impl ProviderRegistrationError {
-    #[must_use]
-    pub fn duplicate(provider_kind: &'static str, id: impl Into<String>) -> Self {
-        Self {
-            provider_kind,
-            id: id.into(),
-        }
-    }
-
-    #[must_use]
-    pub const fn provider_kind(&self) -> &'static str {
-        self.provider_kind
-    }
-
-    #[must_use]
-    pub fn id(&self) -> &str {
-        &self.id
-    }
-}
-
-impl fmt::Display for ProviderRegistrationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "duplicate {} provider id `{}`",
-            self.provider_kind, self.id
-        )
-    }
-}
-
-impl std::error::Error for ProviderRegistrationError {}
