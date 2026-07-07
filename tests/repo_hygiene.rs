@@ -2727,6 +2727,8 @@ fn table_cell_value_is_split_by_responsibility() {
     let render =
         std::fs::read_to_string("crates/coflow-loader-table-core/src/cell_value/render.rs")
             .expect("read table core cell value renderer");
+    let scan = std::fs::read_to_string("crates/coflow-loader-table-core/src/cell_value/scan.rs")
+        .expect("read table core cell value scanner");
     let types = std::fs::read_to_string("crates/coflow-loader-table-core/src/cell_value/types.rs")
         .expect("read table core cell value type parser");
 
@@ -2760,6 +2762,22 @@ fn table_cell_value_is_split_by_responsibility() {
         assert!(
             !cell_value.contains(expected),
             "cell value render item `{expected}` should not live in cell_value/mod.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn split_top_level",
+        "pub(super) fn find_top_level_char",
+        "pub(super) fn strip_outer_pair",
+        "pub(super) fn find_marker_open_brace",
+        "struct ScanState",
+    ] {
+        assert!(
+            scan.contains(expected),
+            "cell value scanner item `{expected}` should live in cell_value/scan.rs"
+        );
+        assert!(
+            !cell_value.contains(expected),
+            "cell value scanner item `{expected}` should not live in cell_value/mod.rs"
         );
     }
     for expected in [
