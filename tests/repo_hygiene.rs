@@ -664,6 +664,31 @@ fn engine_mutation_coercion_does_not_live_in_mutation_mod_rs() {
 }
 
 #[test]
+fn checker_diagnostic_rendering_does_not_live_in_evaluator_rs() {
+    let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
+        .expect("read checker evaluator");
+    let diagnostics = std::fs::read_to_string("crates/coflow-checker/src/check/diagnostics.rs")
+        .expect("read checker diagnostics");
+
+    for expected in [
+        "pub(super) struct CheckExplanation",
+        "pub(super) fn render_stmt",
+        "pub(super) fn render_expr",
+        "pub(super) fn format_value_for_message",
+        "pub(super) fn dimension_lookup_error_message",
+    ] {
+        assert!(
+            diagnostics.contains(expected),
+            "checker diagnostic helper `{expected}` should live in check/diagnostics.rs"
+        );
+        assert!(
+            !evaluator.contains(expected),
+            "checker diagnostic helper `{expected}` should not live in evaluator.rs"
+        );
+    }
+}
+
+#[test]
 fn loaders_do_not_depend_on_checker_runtime_directly() {
     let excel_manifest = std::fs::read_to_string("crates/coflow-loader-excel/Cargo.toml")
         .expect("read excel loader manifest");

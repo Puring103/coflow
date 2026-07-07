@@ -1,17 +1,21 @@
 use super::builtins::Builtin;
+use super::diagnostics::{
+    bin_op_str, cmp_op_str, dimension_lookup_error_message, format_cfd_path_for_message,
+    format_value_for_message, one_line_message, render_expr, render_stmt, type_ref_is_float,
+    unary_op_str, CheckExplanation,
+};
 use super::value::{
     comparable_key, dict_key_from_check_value, format_check_key_for_path, values_equal, CheckValue,
     LocatedCheckValue,
 };
 use crate::DimensionCheckContext;
 use coflow_cft::{
-    CftContainer, CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
-    CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind, CftSchemaTypePredicate,
-    CftSchemaTypeRef, CftSchemaUnaryOp, CftSchemaView,
+    CftContainer, CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr,
+    CftSchemaCheckExprKind, CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind,
+    CftSchemaTypePredicate, CftSchemaTypeRef, CftSchemaUnaryOp, CftSchemaView,
 };
 use coflow_data_model::{
-    CfdDataModel, CfdDiagnostic, CfdEnumValue, CfdErrorCode, CfdPath, CfdPathSegment, CfdRecordId,
-    DimensionFieldLookupError,
+    CfdDataModel, CfdDiagnostic, CfdEnumValue, CfdErrorCode, CfdPath, CfdRecordId,
 };
 use regex::Regex;
 use std::collections::{BTreeMap, BTreeSet};
@@ -50,61 +54,6 @@ enum EvalAbort {
 }
 
 type EvalResult<T> = Result<T, EvalAbort>;
-
-#[derive(Debug)]
-struct CheckExplanation {
-    code: CfdErrorCode,
-    expression: String,
-    actual: Option<String>,
-    expected: Option<String>,
-    context: Vec<String>,
-    path: Option<CfdPath>,
-}
-
-impl CheckExplanation {
-    fn new(code: CfdErrorCode, expression: impl Into<String>, path: Option<CfdPath>) -> Self {
-        Self {
-            code,
-            expression: expression.into(),
-            actual: None,
-            expected: None,
-            context: Vec::new(),
-            path,
-        }
-    }
-
-    fn with_actual(mut self, actual: impl Into<String>) -> Self {
-        self.actual = Some(actual.into());
-        self
-    }
-
-    fn with_expected(mut self, expected: impl Into<String>) -> Self {
-        self.expected = Some(expected.into());
-        self
-    }
-
-    fn with_context(mut self, context: &[String]) -> Self {
-        self.context.extend(context.iter().cloned());
-        self
-    }
-
-    fn message(&self) -> String {
-        let mut out = format!("校验失败: {}", self.expression);
-        if let Some(actual) = &self.actual {
-            out.push_str("\n实际值: ");
-            out.push_str(actual);
-        }
-        if let Some(expected) = &self.expected {
-            out.push_str("\n期望: ");
-            out.push_str(expected);
-        }
-        for context in &self.context {
-            out.push_str("\n上下文: ");
-            out.push_str(context);
-        }
-        out
-    }
-}
 
 impl<'a> CheckEvaluator<'a> {
     pub(super) fn new(
@@ -2181,218 +2130,3 @@ impl<'a> CheckEvaluator<'a> {
     }
 }
 
-fn dimension_lookup_error_message(
-    actual_type: &str,
-    field_name: &str,
-    variant: &str,
-    err: DimensionFieldLookupError,
-) -> String {
-    match err {
-        DimensionFieldLookupError::NotDimensional => {
-            format!("字段 `{actual_type}.{field_name}` 不是维度字段")
-        }
-        DimensionFieldLookupError::DimensionMismatch => {
-            format!("字段 `{actual_type}.{field_name}` 不属于当前维度")
-        }
-        DimensionFieldLookupError::MissingStorageRecord => {
-            format!("维度字段 `{actual_type}.{field_name}` 缺少变体存储记录")
-        }
-        DimensionFieldLookupError::MissingVariantField => {
-            format!("维度字段 `{actual_type}.{field_name}` 缺少 variant `{variant}`")
-        }
-    }
-}
-
-fn unary_op_str(op: CftSchemaUnaryOp) -> &'static str {
-    match op {
-        CftSchemaUnaryOp::Not => "!",
-        CftSchemaUnaryOp::BitNot => "~",
-        CftSchemaUnaryOp::Neg => "-",
-    }
-}
-
-fn bin_op_str(op: CftSchemaBinOp) -> &'static str {
-    match op {
-        CftSchemaBinOp::Or => "||",
-        CftSchemaBinOp::And => "&&",
-        CftSchemaBinOp::BitOr => "|",
-        CftSchemaBinOp::BitXor => "^",
-        CftSchemaBinOp::BitAnd => "&",
-        CftSchemaBinOp::Add => "+",
-        CftSchemaBinOp::Sub => "-",
-        CftSchemaBinOp::Shl => "<<",
-        CftSchemaBinOp::Shr => ">>",
-        CftSchemaBinOp::Mul => "*",
-        CftSchemaBinOp::Div => "/",
-        CftSchemaBinOp::IntDiv => "//",
-        CftSchemaBinOp::Mod => "%",
-        CftSchemaBinOp::Pow => "**",
-    }
-}
-
-fn cmp_op_str(op: CftSchemaCmpOp) -> &'static str {
-    match op {
-        CftSchemaCmpOp::Eq => "==",
-        CftSchemaCmpOp::Ne => "!=",
-        CftSchemaCmpOp::Lt => "<",
-        CftSchemaCmpOp::Le => "<=",
-        CftSchemaCmpOp::Gt => ">",
-        CftSchemaCmpOp::Ge => ">=",
-    }
-}
-
-fn render_stmt(stmt: &CftSchemaCheckStmt) -> String {
-    match stmt {
-        CftSchemaCheckStmt::Expr(expr) => render_expr(expr),
-        CftSchemaCheckStmt::Quantifier {
-            kind,
-            binding,
-            collection,
-            body,
-            ..
-        } => {
-            let kind = match kind {
-                CftSchemaQuantifierKind::All => "all",
-                CftSchemaQuantifierKind::Any => "any",
-                CftSchemaQuantifierKind::None => "none",
-            };
-            let body = body.iter().map(render_stmt).collect::<Vec<_>>().join("; ");
-            format!(
-                "{kind} {binding} in {} {{ {body}; }}",
-                render_expr(collection)
-            )
-        }
-        CftSchemaCheckStmt::When {
-            condition, body, ..
-        } => {
-            let body = body.iter().map(render_stmt).collect::<Vec<_>>().join("; ");
-            format!("when {} {{ {body}; }}", render_expr(condition))
-        }
-    }
-}
-
-fn render_expr(expr: &CftSchemaCheckExpr) -> String {
-    match &expr.kind {
-        CftSchemaCheckExprKind::Int(value) => value.to_string(),
-        CftSchemaCheckExprKind::Float(value) => value.to_string(),
-        CftSchemaCheckExprKind::Bool(value) => value.to_string(),
-        CftSchemaCheckExprKind::Null => "null".to_string(),
-        CftSchemaCheckExprKind::String(value) => format!("\"{value}\""),
-        CftSchemaCheckExprKind::Name(name) => name.clone(),
-        CftSchemaCheckExprKind::Field { expr, name } => {
-            format!("{}.{}", render_expr(expr), name)
-        }
-        CftSchemaCheckExprKind::Index { expr, index } => {
-            format!("{}[{}]", render_expr(expr), render_expr(index))
-        }
-        CftSchemaCheckExprKind::Is { expr, predicate } => {
-            let predicate = match predicate {
-                CftSchemaTypePredicate::Type(name) => name.as_str(),
-                CftSchemaTypePredicate::Null => "null",
-            };
-            format!("{} is {predicate}", render_expr(expr))
-        }
-        CftSchemaCheckExprKind::Call { name, args } => {
-            let args = args.iter().map(render_expr).collect::<Vec<_>>().join(", ");
-            format!("{name}({args})")
-        }
-        CftSchemaCheckExprKind::MethodCall {
-            receiver,
-            name,
-            args,
-        } => {
-            let args = args.iter().map(render_expr).collect::<Vec<_>>().join(", ");
-            format!("{}.{name}({args})", render_expr(receiver))
-        }
-        CftSchemaCheckExprKind::BinOp { op, lhs, rhs } => {
-            format!(
-                "{} {} {}",
-                render_expr(lhs),
-                bin_op_str(*op),
-                render_expr(rhs)
-            )
-        }
-        CftSchemaCheckExprKind::Unary { op, expr } => {
-            format!("{}{}", unary_op_str(*op), render_expr(expr))
-        }
-        CftSchemaCheckExprKind::CmpChain { first, rest } => {
-            let mut out = render_expr(first);
-            for (op, expr) in rest {
-                out.push(' ');
-                out.push_str(cmp_op_str(*op));
-                out.push(' ');
-                out.push_str(&render_expr(expr));
-            }
-            out
-        }
-    }
-}
-
-fn format_cfd_path_for_message(path: &CfdPath) -> String {
-    let mut out = String::new();
-    for segment in &path.segments {
-        match segment {
-            CfdPathSegment::Field(name) => {
-                if !out.is_empty() {
-                    out.push('.');
-                }
-                out.push_str(name);
-            }
-            CfdPathSegment::Index(index) => {
-                out.push('[');
-                out.push_str(&index.to_string());
-                out.push(']');
-            }
-            CfdPathSegment::DictKey(key) => {
-                out.push('[');
-                out.push_str(key);
-                out.push(']');
-            }
-        }
-    }
-    if out.is_empty() {
-        ".".to_string()
-    } else {
-        out
-    }
-}
-
-fn one_line_message(message: &str) -> String {
-    message
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join("; ")
-}
-
-/// Render a `CheckValue` as a short token for inclusion in a diagnostic
-/// message — strings are quoted, collections summarize, records show their key.
-fn format_value_for_message(value: &CheckValue) -> String {
-    match value {
-        CheckValue::Null => "null".to_string(),
-        CheckValue::Bool(v) => v.to_string(),
-        CheckValue::Int(v) => v.to_string(),
-        CheckValue::Float(v) => v.to_string(),
-        CheckValue::String(s) => format!("\"{s}\""),
-        CheckValue::Enum(e) => match &e.variant {
-            Some(variant) => format!("{}.{}", e.enum_name, variant),
-            None => format!("{}({})", e.enum_name, e.value),
-        },
-        CheckValue::EnumNamespace(name) => name.clone(),
-        CheckValue::Record(_) => "<record>".to_string(),
-        CheckValue::Entry(entry) => {
-            format!("<entry key={}>", format_value_for_message(&entry.key))
-        }
-        CheckValue::Array { items, .. } => format!("<array len={}>", items.len()),
-        CheckValue::Dict { entries, .. } => format!("<dict len={}>", entries.len()),
-    }
-}
-
-fn type_ref_is_float(ty: Option<&CftSchemaTypeRef>) -> bool {
-    match ty {
-        Some(CftSchemaTypeRef::Float) => true,
-        Some(CftSchemaTypeRef::Nullable(inner)) => type_ref_is_float(Some(inner)),
-        _ => false,
-    }
-}

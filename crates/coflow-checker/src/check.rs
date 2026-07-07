@@ -1,4 +1,5 @@
 mod builtins;
+mod diagnostics;
 mod evaluator;
 mod runner;
 mod value;
