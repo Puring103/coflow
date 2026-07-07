@@ -559,6 +559,104 @@ fn data_model_value_semantics_uses_cft_schema_view() {
 }
 
 #[test]
+fn data_model_runtime_model_is_split_by_responsibility() {
+    let model =
+        std::fs::read_to_string("crates/coflow-data-model/src/model.rs").expect("read model");
+    let ids =
+        std::fs::read_to_string("crates/coflow-data-model/src/model/ids.rs").expect("read ids");
+    let domain = std::fs::read_to_string("crates/coflow-data-model/src/model/domain.rs")
+        .expect("read domain");
+    let edges = std::fs::read_to_string("crates/coflow-data-model/src/model/edges.rs")
+        .expect("read edges");
+    let tables = std::fs::read_to_string("crates/coflow-data-model/src/model/tables.rs")
+        .expect("read tables");
+    let value = std::fs::read_to_string("crates/coflow-data-model/src/model/value.rs")
+        .expect("read value");
+    let input = std::fs::read_to_string("crates/coflow-data-model/src/model/input.rs")
+        .expect("read input");
+
+    for expected in ["pub struct CfdTypeId", "pub struct CfdDomainId", "pub struct CfdRecordId"] {
+        assert!(
+            ids.contains(expected),
+            "data-model id type `{expected}` should live in model/ids.rs"
+        );
+        assert!(
+            !model.contains(expected),
+            "data-model id type `{expected}` should not live in model.rs"
+        );
+    }
+    for expected in ["pub struct CfdDomainIndex"] {
+        assert!(
+            domain.contains(expected),
+            "data-model domain type `{expected}` should live in model/domain.rs"
+        );
+        assert!(
+            !model.contains(expected),
+            "data-model domain type `{expected}` should not live in model.rs"
+        );
+    }
+    for expected in [
+        "pub struct RefSite",
+        "pub struct RefEdge",
+        "pub struct SpreadSite",
+        "pub struct SpreadEdge",
+    ] {
+        assert!(
+            edges.contains(expected),
+            "data-model edge type `{expected}` should live in model/edges.rs"
+        );
+        assert!(
+            !model.contains(expected),
+            "data-model edge type `{expected}` should not live in model.rs"
+        );
+    }
+    for expected in ["pub struct CfdTable", "pub struct CfdPolymorphicIndex"] {
+        assert!(
+            tables.contains(expected),
+            "data-model table type `{expected}` should live in model/tables.rs"
+        );
+        assert!(
+            !model.contains(expected),
+            "data-model table type `{expected}` should not live in model.rs"
+        );
+    }
+    for expected in [
+        "pub struct CfdRecord",
+        "pub struct CfdObject",
+        "pub enum CfdValue",
+        "pub enum CfdDictKey",
+        "pub struct CfdEnumValue",
+    ] {
+        assert!(
+            value.contains(expected),
+            "data-model value type `{expected}` should live in model/value.rs"
+        );
+        assert!(
+            !model.contains(expected),
+            "data-model value type `{expected}` should not live in model.rs"
+        );
+    }
+    for expected in [
+        "pub struct CfdInputRecord",
+        "pub enum CfdInputValue",
+        "pub enum CfdInputDictKey",
+    ] {
+        assert!(
+            input.contains(expected),
+            "data-model input type `{expected}` should live in model/input.rs"
+        );
+        assert!(
+            !model.contains(expected),
+            "data-model input type `{expected}` should not live in model.rs"
+        );
+    }
+    assert!(
+        model.lines().count() < 800,
+        "coflow-data-model model.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
 fn csharp_codegen_schema_projection_uses_cft_schema_view() {
     let schema_view = std::fs::read_to_string("crates/coflow-codegen-csharp/src/schema_view.rs")
         .expect("read C# codegen schema view");
