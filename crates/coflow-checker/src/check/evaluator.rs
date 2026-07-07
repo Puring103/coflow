@@ -12,12 +12,12 @@ use super::explanations::{self, ValueExprEvaluator};
 use super::fields;
 use super::ops::{self, OpsResult};
 use super::quantifiers;
+use super::type_predicates;
 use super::value::{CheckValue, LocatedCheckValue};
 use crate::DimensionCheckContext;
 use coflow_cft::{
     CftContainer, CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
-    CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind, CftSchemaTypePredicate,
-    CftSchemaUnaryOp, CftSchemaView,
+    CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind, CftSchemaUnaryOp, CftSchemaView,
 };
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdEnumValue, CfdErrorCode, CfdPath, CfdRecordId,
@@ -467,7 +467,12 @@ impl<'a> CheckEvaluator<'a> {
             } => {
                 let value = self.eval_expr(inner)?;
                 Ok(LocatedCheckValue::new(
-                    CheckValue::Bool(self.eval_is(&value.value, predicate)),
+                    CheckValue::Bool(type_predicates::value_matches_predicate(
+                        self.schema,
+                        self.model,
+                        &value.value,
+                        predicate,
+                    )),
                     value.path,
                 ))
             }
@@ -571,15 +576,6 @@ impl<'a> CheckEvaluator<'a> {
         index: LocatedCheckValue,
     ) -> EvalResult<LocatedCheckValue> {
         self.from_ops(access::index_value(target, index))
-    }
-
-    fn eval_is(&self, value: &CheckValue, predicate: &CftSchemaTypePredicate) -> bool {
-        match predicate {
-            CftSchemaTypePredicate::Null => matches!(value, CheckValue::Null),
-            CftSchemaTypePredicate::Type(type_name) => value
-                .actual_type(self.model)
-                .is_some_and(|actual| self.schema.is_assignable(actual, type_name)),
-        }
     }
 
     fn eval_call(
@@ -766,70 +762,22 @@ impl<'a> CheckEvaluator<'a> {
         match op {
             CftSchemaBinOp::Or => {
                 let lhs = self.eval_expr(lhs)?;
-                let lhs_path = lhs.path.clone();
-                let bad_lhs_value = lhs.value.clone();
-                let CheckValue::Bool(lhs) = lhs.value else {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        lhs_path,
-                        format!(
-                            "左操作数不是 bool: 实际为 {}",
-                            format_value_for_message(&bad_lhs_value)
-                        ),
-                    );
-                    return Err(EvalAbort::Error);
-                };
+                let (lhs, lhs_path) = self.from_ops(ops::expect_bool_operand(lhs, "左"))?;
                 if lhs {
                     return Ok(LocatedCheckValue::new(CheckValue::Bool(true), lhs_path));
                 }
                 let rhs = self.eval_expr(rhs)?;
-                let rhs_path = rhs.path.clone();
-                let bad_rhs_value = rhs.value.clone();
-                let CheckValue::Bool(rhs) = rhs.value else {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        rhs_path,
-                        format!(
-                            "右操作数不是 bool: 实际为 {}",
-                            format_value_for_message(&bad_rhs_value)
-                        ),
-                    );
-                    return Err(EvalAbort::Error);
-                };
+                let (rhs, rhs_path) = self.from_ops(ops::expect_bool_operand(rhs, "右"))?;
                 Ok(LocatedCheckValue::new(CheckValue::Bool(rhs), rhs_path))
             }
             CftSchemaBinOp::And => {
                 let lhs = self.eval_expr(lhs)?;
-                let lhs_path = lhs.path.clone();
-                let bad_lhs_value = lhs.value.clone();
-                let CheckValue::Bool(lhs) = lhs.value else {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        lhs_path,
-                        format!(
-                            "左操作数不是 bool: 实际为 {}",
-                            format_value_for_message(&bad_lhs_value)
-                        ),
-                    );
-                    return Err(EvalAbort::Error);
-                };
+                let (lhs, lhs_path) = self.from_ops(ops::expect_bool_operand(lhs, "左"))?;
                 if !lhs {
                     return Ok(LocatedCheckValue::new(CheckValue::Bool(false), lhs_path));
                 }
                 let rhs = self.eval_expr(rhs)?;
-                let rhs_path = rhs.path.clone();
-                let bad_rhs_value = rhs.value.clone();
-                let CheckValue::Bool(rhs) = rhs.value else {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        rhs_path,
-                        format!(
-                            "右操作数不是 bool: 实际为 {}",
-                            format_value_for_message(&bad_rhs_value)
-                        ),
-                    );
-                    return Err(EvalAbort::Error);
-                };
+                let (rhs, rhs_path) = self.from_ops(ops::expect_bool_operand(rhs, "右"))?;
                 Ok(LocatedCheckValue::new(CheckValue::Bool(rhs), rhs_path))
             }
             _ => {

@@ -798,6 +798,7 @@ fn checker_numeric_ops_do_not_live_in_evaluator_rs() {
         "pub(super) fn compare",
         "pub(super) fn compare_order",
         "pub(super) fn eager_bin_op",
+        "pub(super) fn expect_bool_operand",
     ] {
         assert!(
             ops.contains(expected),
@@ -813,6 +814,7 @@ fn checker_numeric_ops_do_not_live_in_evaluator_rs() {
         "不支持的一元运算",
         "整数加法溢出",
         "不支持的二元运算",
+        "操作数不是 bool",
     ] {
         assert!(
             !evaluator.contains(forbidden),
@@ -1052,6 +1054,28 @@ fn checker_false_explanation_helpers_do_not_live_in_evaluator_rs() {
             "checker evaluator should not own false explanation branch `{forbidden}`"
         );
     }
+}
+
+#[test]
+fn checker_type_predicate_helpers_do_not_live_in_evaluator_rs() {
+    let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
+        .expect("read checker evaluator");
+    let type_predicates =
+        std::fs::read_to_string("crates/coflow-checker/src/check/type_predicates.rs")
+            .expect("read checker type predicate helpers");
+
+    assert!(
+        type_predicates.contains("pub(super) fn value_matches_predicate"),
+        "checker type predicate helper should live in check/type_predicates.rs"
+    );
+    assert!(
+        !evaluator.contains("fn eval_is") && !evaluator.contains("fn value_matches_predicate"),
+        "checker type predicate helper should not live in evaluator.rs"
+    );
+    assert!(
+        !evaluator.contains("schema.is_assignable(actual, type_name)"),
+        "checker evaluator should not own type predicate assignability checks"
+    );
 }
 
 #[test]

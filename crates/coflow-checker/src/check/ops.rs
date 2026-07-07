@@ -64,6 +64,24 @@ pub(super) fn checked_shift(
     checked_int(op(lhs, rhs), path, message)
 }
 
+pub(super) fn expect_bool_operand(
+    value: LocatedCheckValue,
+    side: &str,
+) -> OpsResult<(bool, Option<CfdPath>)> {
+    let path = value.path.clone();
+    let bad_value = value.value.clone();
+    let CheckValue::Bool(value) = value.value else {
+        return Err(OpsError::eval_type(
+            path,
+            format!(
+                "{side}操作数不是 bool: 实际为 {}",
+                format_value_for_message(&bad_value)
+            ),
+        ));
+    };
+    Ok((value, path))
+}
+
 pub(super) fn compare(
     op: CftSchemaCmpOp,
     lhs: &CheckValue,

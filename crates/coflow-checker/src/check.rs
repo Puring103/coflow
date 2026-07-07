@@ -11,6 +11,7 @@ mod fields;
 mod ops;
 mod quantifiers;
 mod runner;
+mod type_predicates;
 mod value;
 
 pub(crate) use runner::CheckRunner;
