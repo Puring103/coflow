@@ -1,6 +1,8 @@
 use super::common::*;
 use super::*;
 use crate::completion::receiver_chain_before_dot;
+use coflow_cft::ast::Item;
+use coflow_cft::CftSchemaTypeRef;
 
 #[test]
 fn hover_and_definition_ignore_comment_and_string_words() {

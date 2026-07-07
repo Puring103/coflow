@@ -1834,6 +1834,37 @@ fn lsp_protocol_helpers_do_not_live_in_lib_rs() {
 }
 
 #[test]
+fn lsp_state_helpers_do_not_live_in_lib_rs() {
+    let lib = std::fs::read_to_string("crates/coflow-lsp/src/lib.rs").expect("read lsp lib");
+    let state =
+        std::fs::read_to_string("crates/coflow-lsp/src/state.rs").expect("read lsp state");
+
+    for expected in [
+        "pub(crate) struct LspBuild",
+        "pub(crate) struct LspDocument",
+        "pub(crate) fn current_type_at",
+        "pub(crate) fn current_field_at",
+        "pub(crate) fn type_of_chain",
+        "pub(crate) fn field_by_type",
+        "pub(crate) fn field_by_chain",
+        "pub(crate) fn enum_variant_by_chain",
+        "pub(crate) fn enum_name_exists",
+        "pub(crate) fn enum_variant_exists",
+        "pub(crate) fn quantifier_bindings_at",
+        "fn collect_quantifier_bindings",
+    ] {
+        assert!(
+            state.contains(expected),
+            "LSP state helper `{expected}` should live in state.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "LSP state helper `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn lsp_position_helpers_do_not_live_in_lib_rs() {
     let lib = std::fs::read_to_string("crates/coflow-lsp/src/lib.rs").expect("read lsp lib");
     let position =
