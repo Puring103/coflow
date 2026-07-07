@@ -3412,6 +3412,9 @@ fn table_cell_value_is_split_by_responsibility() {
     let cell_value =
         std::fs::read_to_string("crates/coflow-loader-table-core/src/cell_value/mod.rs")
             .expect("read table core cell value parser");
+    let collections =
+        std::fs::read_to_string("crates/coflow-loader-table-core/src/cell_value/collections.rs")
+            .expect("read table core cell value collections");
     let diagnostics =
         std::fs::read_to_string("crates/coflow-loader-table-core/src/cell_value/diagnostics.rs")
             .expect("read table core cell value diagnostics");
@@ -3550,6 +3553,21 @@ fn table_cell_value_is_split_by_responsibility() {
         assert!(
             !cell_value.contains(expected),
             "cell value object item `{expected}` should not live in cell_value/mod.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn parse_array",
+        "fn reject_comma_array_item",
+        "pub(super) fn parse_dict",
+        "fn parse_dict_key",
+    ] {
+        assert!(
+            collections.contains(expected),
+            "cell value collection item `{expected}` should live in cell_value/collections.rs"
+        );
+        assert!(
+            !cell_value.contains(expected),
+            "cell value collection item `{expected}` should not live in cell_value/mod.rs"
         );
     }
     assert!(
