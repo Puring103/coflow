@@ -1,5 +1,6 @@
 use super::common::*;
 use super::*;
+use crate::diagnostics::lsp_range;
 use crate::uri::{hex_value, percent_decode};
 
 #[test]

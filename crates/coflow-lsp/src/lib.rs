@@ -14,6 +14,7 @@
 
 mod cfd;
 mod diagnostics;
+mod position;
 mod protocol;
 mod uri;
 
@@ -34,12 +35,15 @@ use coflow_project::{
     normalize_path, Project, SchemaBuild, SchemaSourceOverride,
 };
 use diagnostics::{
-    label_uri, lsp_diagnostic, lsp_error_diagnostic, lsp_label_location, lsp_range,
-    preferred_diagnostic_uri,
+    label_uri, lsp_diagnostic, lsp_error_diagnostic, lsp_label_location, preferred_diagnostic_uri,
+};
+use position::{
+    byte_offset_from_position, byte_range, full_document_range, position_from_byte,
+    range_from_span, LspPosition,
 };
 use protocol::{
     did_change_document, did_open_document, did_save_document, read_message, text_document_uri,
-    LspPosition, TextRequest,
+    TextRequest,
 };
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -2908,59 +2912,6 @@ fn adjusted_indent(mut indent: usize, line: &str) -> usize {
         }
     }
     indent
-}
-
-fn full_document_range(source: &str) -> Value {
-    let end = position_from_byte(source, source.len());
-    lsp_range(0, 0, end.line, end.character)
-}
-
-fn byte_range(source: &str, start: usize, end: usize) -> Value {
-    let start = position_from_byte(source, start);
-    let end = position_from_byte(source, end);
-    lsp_range(start.line, start.character, end.line, end.character)
-}
-
-fn range_from_span(source: &str, span: Span) -> Value {
-    byte_range(source, span.start, span.end.max(span.start + 1))
-}
-
-fn byte_offset_from_position(source: &str, position: LspPosition) -> usize {
-    let mut line = 0;
-    let mut character = 0;
-    for (byte_index, ch) in source.char_indices() {
-        if line == position.line && character >= position.character {
-            return byte_index;
-        }
-        if ch == '\n' {
-            if line == position.line {
-                return byte_index;
-            }
-            line += 1;
-            character = 0;
-        } else {
-            character += ch.len_utf16();
-        }
-    }
-    source.len()
-}
-
-fn position_from_byte(source: &str, byte_offset: usize) -> LspPosition {
-    let target = byte_offset.min(source.len());
-    let mut line = 0;
-    let mut character = 0;
-    for (byte_index, ch) in source.char_indices() {
-        if byte_index >= target {
-            break;
-        }
-        if ch == '\n' {
-            line += 1;
-            character = 0;
-        } else {
-            character += ch.len_utf16();
-        }
-    }
-    LspPosition { line, character }
 }
 
 fn is_cfd_path(path: &Path) -> bool {

@@ -1817,7 +1817,6 @@ fn lsp_protocol_helpers_do_not_live_in_lib_rs() {
         std::fs::read_to_string("crates/coflow-lsp/src/protocol.rs").expect("read lsp protocol");
 
     for expected in [
-        "pub(crate) struct LspPosition",
         "pub(crate) struct TextRequest",
         "pub(crate) fn read_message",
         "pub(crate) fn did_open_document",
@@ -1830,6 +1829,31 @@ fn lsp_protocol_helpers_do_not_live_in_lib_rs() {
         assert!(
             !lib.contains(expected),
             "LSP protocol helper `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
+fn lsp_position_helpers_do_not_live_in_lib_rs() {
+    let lib = std::fs::read_to_string("crates/coflow-lsp/src/lib.rs").expect("read lsp lib");
+    let position =
+        std::fs::read_to_string("crates/coflow-lsp/src/position.rs").expect("read lsp position");
+
+    for expected in [
+        "pub(crate) struct LspPosition",
+        "pub(crate) fn full_document_range",
+        "pub(crate) fn byte_range",
+        "pub(crate) fn range_from_span",
+        "pub(crate) fn byte_offset_from_position",
+        "pub(crate) fn position_from_byte",
+    ] {
+        assert!(
+            position.contains(expected),
+            "LSP position helper `{expected}` should live in position.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "LSP position helper `{expected}` should not live in lib.rs"
         );
     }
 }

@@ -1,22 +1,7 @@
 use serde_json::Value;
 use std::io::BufRead;
 
-use crate::MAX_LSP_CONTENT_LENGTH;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct LspPosition {
-    pub(crate) line: usize,
-    pub(crate) character: usize,
-}
-
-impl LspPosition {
-    pub(crate) fn from_value(value: &Value) -> Option<Self> {
-        Some(Self {
-            line: usize::try_from(value.get("line")?.as_u64()?).ok()?,
-            character: usize::try_from(value.get("character")?.as_u64()?).ok()?,
-        })
-    }
-}
+use crate::{position::LspPosition, MAX_LSP_CONTENT_LENGTH};
 
 #[derive(Debug)]
 pub(crate) struct TextRequest {
