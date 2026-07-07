@@ -421,6 +421,8 @@ fn csv_dimension_source_sync_does_not_live_in_writer_rs() {
         std::fs::read_to_string("crates/coflow-loader-csv/src/writer.rs").expect("read csv writer");
     let dimensions = std::fs::read_to_string("crates/coflow-loader-csv/src/writer/dimensions.rs")
         .expect("read csv writer dimension source sync");
+    let plan = std::fs::read_to_string("crates/coflow-loader-csv/src/writer/plan.rs")
+        .expect("read csv writer plan helpers");
 
     for expected in [
         "impl DimensionSourceManager for CsvWriter",
@@ -435,6 +437,21 @@ fn csv_dimension_source_sync_does_not_live_in_writer_rs() {
         assert!(
             !writer.contains(expected),
             "CSV dimension source item `{expected}` should not live in writer.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn apply_plan",
+        "fn mutate_csv",
+        "fn set_csv_cell",
+        "fn ensure_expected_key",
+    ] {
+        assert!(
+            plan.contains(expected),
+            "CSV writer plan item `{expected}` should live in writer/plan.rs"
+        );
+        assert!(
+            !writer.contains(expected),
+            "CSV writer plan item `{expected}` should not live in writer.rs"
         );
     }
     assert!(
