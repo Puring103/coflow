@@ -226,6 +226,39 @@ fn root_cli_id_as_enum_lockfile_does_not_live_in_commands_rs() {
 }
 
 #[test]
+fn root_cli_artifact_staging_does_not_live_in_artifacts_rs() {
+    let artifacts = std::fs::read_to_string("src/artifacts.rs").expect("read root CLI artifacts");
+    let staging = std::fs::read_to_string("src/artifacts/staging.rs")
+        .expect("read root CLI artifact staging");
+
+    for expected in [
+        "pub struct StagedArtifactDir",
+        "pub struct StagedArtifactFile",
+        "pub(super) fn stage_artifact_set",
+        "pub fn commit_staged_dir_and_file",
+        "pub fn commit_staged_dirs_and_file",
+        "fn safe_artifact_path",
+        "fn replace_file_with_staging",
+        "fn replace_dir_with_staging",
+        "fn rollback_committed_dirs",
+        "fn unique_sidecar_path",
+    ] {
+        assert!(
+            staging.contains(expected),
+            "root CLI artifact staging item `{expected}` should live in artifacts/staging.rs"
+        );
+        assert!(
+            !artifacts.contains(expected),
+            "root CLI artifact staging item `{expected}` should not live in artifacts.rs"
+        );
+    }
+    assert!(
+        artifacts.lines().count() < 400,
+        "root CLI artifacts.rs should stay focused on artifact orchestration"
+    );
+}
+
+#[test]
 fn data_command_helpers_do_not_live_in_data_commands_rs() {
     let commands =
         std::fs::read_to_string("src/data_commands.rs").expect("read root CLI data commands");
