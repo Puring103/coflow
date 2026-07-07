@@ -1906,6 +1906,36 @@ fn engine_write_path_helpers_do_not_live_in_writes_rs() {
 }
 
 #[test]
+fn engine_write_reference_planning_does_not_live_in_writes_rs() {
+    let writes =
+        std::fs::read_to_string("crates/coflow-engine/src/writes.rs").expect("read engine writes");
+    let refs = std::fs::read_to_string("crates/coflow-engine/src/writes/refs.rs")
+        .expect("read engine write reference helpers");
+
+    for expected in [
+        "pub(super) struct ReferenceUpdateAction",
+        "pub(super) struct OwnedWriteCellRequest",
+        "pub(super) struct SourceRewriteAction",
+        "pub(super) struct OwnedRewriteRecordReferencesRequest",
+        "pub(super) fn reference_update_actions",
+        "pub(super) fn source_rewrite_actions",
+    ] {
+        assert!(
+            refs.contains(expected),
+            "engine write reference planning item `{expected}` should live in writes/refs.rs"
+        );
+        assert!(
+            !writes.contains(expected),
+            "engine write reference planning item `{expected}` should not live in writes.rs"
+        );
+    }
+    assert!(
+        writes.lines().count() < 560,
+        "coflow-engine writes.rs should stay below the 560-line focused-module threshold"
+    );
+}
+
+#[test]
 fn engine_mutation_defaults_use_cft_schema_view() {
     let defaults = std::fs::read_to_string("crates/coflow-engine/src/mutation/defaults.rs")
         .expect("read mutation defaults")
