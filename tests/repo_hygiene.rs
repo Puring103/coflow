@@ -1024,6 +1024,40 @@ fn engine_schema_build_pipeline_does_not_live_in_lib_rs() {
 }
 
 #[test]
+fn engine_load_pipeline_does_not_live_in_lib_rs() {
+    let engine =
+        std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");
+    let load =
+        std::fs::read_to_string("crates/coflow-engine/src/load.rs").expect("read engine load");
+
+    for expected in [
+        "pub(crate) struct ProjectLoadOutput",
+        "pub(crate) struct LoadDiagnostics",
+        "pub(crate) struct LoadProjectDataOptions",
+        "pub(crate) fn load_project_data",
+        "fn load_resolved_sources",
+        "fn resolve_implicit_source",
+        "fn run_project_checks",
+        "fn resolve_sources",
+        "fn logical_locations_from_cfd",
+        "pub fn format_cfd_path",
+    ] {
+        assert!(
+            load.contains(expected),
+            "engine load pipeline item `{expected}` should live in load.rs"
+        );
+        assert!(
+            !engine.contains(expected),
+            "engine load pipeline item `{expected}` should not live in lib.rs"
+        );
+    }
+    assert!(
+        engine.lines().count() < 300,
+        "coflow-engine lib.rs should stay below the 300-line orchestration threshold"
+    );
+}
+
+#[test]
 fn engine_runtime_does_not_depend_on_excel_implementation_crates() {
     let manifest =
         std::fs::read_to_string("crates/coflow-engine/Cargo.toml").expect("read engine manifest");
