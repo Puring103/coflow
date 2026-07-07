@@ -264,6 +264,8 @@ fn data_command_helpers_do_not_live_in_data_commands_rs() {
         std::fs::read_to_string("src/data_commands.rs").expect("read root CLI data commands");
     let lark = std::fs::read_to_string("src/data_commands/lark.rs")
         .expect("read data command lark helpers");
+    let files = std::fs::read_to_string("src/data_commands/files.rs")
+        .expect("read data command file helpers");
     let output = std::fs::read_to_string("src/data_commands/output.rs")
         .expect("read data command output helpers");
     let write_file = std::fs::read_to_string("src/data_commands/write_file.rs")
@@ -283,6 +285,20 @@ fn data_command_helpers_do_not_live_in_data_commands_rs() {
         assert!(
             !commands.contains(expected),
             "data command Lark helper `{expected}` should not live in data_commands.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn create_file_report",
+        "pub(super) fn create_table_report",
+        "pub(super) fn sync_header_report",
+    ] {
+        assert!(
+            files.contains(expected),
+            "data command file helper `{expected}` should live in data_commands/files.rs"
+        );
+        assert!(
+            !commands.contains(expected),
+            "data command file helper `{expected}` should not live in data_commands.rs"
         );
     }
     for expected in [

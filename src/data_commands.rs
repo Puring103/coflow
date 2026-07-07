@@ -1,19 +1,18 @@
 use coflow_api::{FlatDiagnostic, ProviderRegistry};
 use coflow_engine::{
-    build_project_schema_session, build_project_session, create_data_file, data_get, data_list,
-    data_sources, sync_data_header, DataCreateFileOptions, DataGetQuery, DataGetReport,
-    DataListQuery, DataPatchReport, DataPatchRequest, DataSyncHeaderOptions, ProjectSession,
-    RecordCoordinate,
+    build_project_schema_session, build_project_session, data_get, data_list, data_sources,
+    DataGetQuery, DataGetReport, DataListQuery, DataPatchReport, DataPatchRequest,
+    ProjectSession, RecordCoordinate,
 };
 use coflow_project::Project;
-use lark::{create_lark_table, infer_table_provider};
 use output::{
-    file_error_report, flat_diagnostics, write_data_write_file_human, write_file_report_human,
-    write_get_human, write_json, write_list_human, write_patch_human, write_sources_human,
+    flat_diagnostics, write_data_write_file_human, write_file_report_human, write_get_human,
+    write_json, write_list_human, write_patch_human, write_sources_human,
 };
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
+mod files;
 mod lark;
 mod output;
 mod write_file;
@@ -220,34 +219,14 @@ pub fn create_file(
 ) -> Result<bool, String> {
     let session = open_schema_session(config_or_dir)?;
     let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
-    match create_data_file(
-        &session,
-        &registry,
-        DataCreateFileOptions {
-            file,
-            actual_type,
-            provider,
-            sheet,
-        },
-    ) {
-        Ok(report) => {
-            if human {
-                write_file_report_human(&report)?;
-            } else {
-                write_json(&report)?;
-            }
-            Ok(report.diagnostics.is_empty())
-        }
-        Err(diagnostics) => {
-            let report = file_error_report(&diagnostics);
-            if human {
-                write_file_report_human(&report)?;
-            } else {
-                write_json(&report)?;
-            }
-            Ok(false)
-        }
+    let report = files::create_file_report(&session, &registry, file, actual_type, provider, sheet);
+    let ok = report.diagnostics.is_empty();
+    if human {
+        write_file_report_human(&report)?;
+    } else {
+        write_json(&report)?;
     }
+    Ok(ok)
 }
 
 /// Creates a sheet/table in an existing table source.
@@ -267,42 +246,15 @@ pub fn create_table(
 ) -> Result<bool, String> {
     let session = open_schema_session(config_or_dir)?;
     let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
-    let provider_id = provider
-        .or_else(|| infer_table_provider(&source))
-        .unwrap_or("excel");
-    let result = if provider_id == "lark-sheet" || provider_id == "lark" {
-        create_lark_table(&session, &registry, &source, actual_type, sheet)
+    let report =
+        files::create_table_report(&session, &registry, source, actual_type, provider, sheet);
+    let ok = report.diagnostics.is_empty();
+    if human {
+        write_file_report_human(&report)?;
     } else {
-        create_data_file(
-            &session,
-            &registry,
-            DataCreateFileOptions {
-                file: source,
-                actual_type,
-                provider: Some(provider_id.to_string()),
-                sheet,
-            },
-        )
-    };
-    match result {
-        Ok(report) => {
-            if human {
-                write_file_report_human(&report)?;
-            } else {
-                write_json(&report)?;
-            }
-            Ok(report.diagnostics.is_empty())
-        }
-        Err(diagnostics) => {
-            let report = file_error_report(&diagnostics);
-            if human {
-                write_file_report_human(&report)?;
-            } else {
-                write_json(&report)?;
-            }
-            Ok(false)
-        }
+        write_json(&report)?;
     }
+    Ok(ok)
 }
 
 /// Synchronizes a local data file's schema-controlled columns.
@@ -322,34 +274,14 @@ pub fn sync_header(
 ) -> Result<bool, String> {
     let session = open_schema_session(config_or_dir)?;
     let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
-    match sync_data_header(
-        &session,
-        &registry,
-        DataSyncHeaderOptions {
-            file,
-            actual_type,
-            provider,
-            sheet,
-        },
-    ) {
-        Ok(report) => {
-            if human {
-                write_file_report_human(&report)?;
-            } else {
-                write_json(&report)?;
-            }
-            Ok(report.diagnostics.is_empty())
-        }
-        Err(diagnostics) => {
-            let report = file_error_report(&diagnostics);
-            if human {
-                write_file_report_human(&report)?;
-            } else {
-                write_json(&report)?;
-            }
-            Ok(false)
-        }
+    let report = files::sync_header_report(&session, &registry, file, actual_type, provider, sheet);
+    let ok = report.diagnostics.is_empty();
+    if human {
+        write_file_report_human(&report)?;
+    } else {
+        write_json(&report)?;
     }
+    Ok(ok)
 }
 
 /// Writes a configured local CFD data file from stdin.
