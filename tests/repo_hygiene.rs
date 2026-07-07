@@ -287,6 +287,34 @@ fn project_path_helpers_do_not_live_in_project_lib_rs() {
 }
 
 #[test]
+fn project_diagnostic_conversion_does_not_live_in_project_lib_rs() {
+    let project =
+        std::fs::read_to_string("crates/coflow-project/src/lib.rs").expect("read project lib");
+    let diagnostics = std::fs::read_to_string("crates/coflow-project/src/diagnostics.rs")
+        .expect("read project diagnostics");
+
+    for expected in [
+        "pub fn dedupe_cft_diagnostics",
+        "fn cft_diagnostic_key",
+        "pub fn diagnostic_set_from_cft",
+        "fn diagnostic_from_cft",
+        "fn cft_label_range",
+        "fn byte_position",
+        "pub(super) fn project_diagnostics_to_set",
+        "pub(super) fn join_diagnostic_messages",
+    ] {
+        assert!(
+            diagnostics.contains(expected),
+            "project diagnostic helper `{expected}` should live in diagnostics.rs"
+        );
+        assert!(
+            !project.contains(expected),
+            "project diagnostic helper `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn table_provider_algorithms_are_not_reexported_by_excel_loader() {
     let excel = std::fs::read_to_string("crates/coflow-loader-excel/src/lib.rs")
         .expect("read excel loader");
