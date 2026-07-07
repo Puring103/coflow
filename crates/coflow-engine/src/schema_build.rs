@@ -94,7 +94,9 @@ fn validate_dimension_schema_config(project: &Project, schema: &CftContainer) ->
     diagnostics
 }
 
-fn compile_project_schema(project: &Project) -> Result<Result<CftContainer, DiagnosticSet>, String> {
+fn compile_project_schema(
+    project: &Project,
+) -> Result<Result<CftContainer, DiagnosticSet>, String> {
     let project_diagnostics = project.schema_diagnostic_set();
     if !project_diagnostics.is_empty() {
         return Ok(Err(project_diagnostics));

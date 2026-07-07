@@ -130,7 +130,11 @@ impl<'a> SchemaCompiler<'a> {
                         enum_name.span,
                         "enum variant default is used on a non-enum name",
                     )
-                    .with_related(symbol.module.clone(), symbol.span, "name is defined here"),
+                    .with_related(
+                        symbol.module.clone(),
+                        symbol.span,
+                        "name is defined here",
+                    ),
                 );
                 Ty::Unknown
             }

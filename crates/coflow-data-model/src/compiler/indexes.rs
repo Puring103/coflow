@@ -1,7 +1,5 @@
 use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
-use crate::model::{
-    CfdDomainId, CfdPolymorphicIndex, CfdRecordId, CfdTable, CfdTypeId,
-};
+use crate::model::{CfdDomainId, CfdPolymorphicIndex, CfdRecordId, CfdTable, CfdTypeId};
 use crate::schema_view::{RecordDraft, SchemaView};
 use coflow_cft::{is_cft_identifier, record_key_ident_error};
 use std::collections::BTreeMap;
@@ -68,7 +66,11 @@ pub(super) fn build_indexes(
                     format!("duplicate key in table `{}`", draft.actual_type),
                 )
                 .with_primary(Some(record_id), CfdPath::root().field("id"))
-                .with_related(Some(first), CfdPath::root().field("id"), "first key is here"),
+                .with_related(
+                    Some(first),
+                    CfdPath::root().field("id"),
+                    "first key is here",
+                ),
             );
         }
         record_by_type_key.insert((type_id, draft.key.clone()), record_id);
@@ -84,7 +86,11 @@ pub(super) fn build_indexes(
                         "duplicate key in inheritance domain",
                     )
                     .with_primary(Some(record_id), CfdPath::root().field("id"))
-                    .with_related(Some(first), CfdPath::root().field("id"), "first key is here"),
+                    .with_related(
+                        Some(first),
+                        CfdPath::root().field("id"),
+                        "first key is here",
+                    ),
                 );
             }
         }
@@ -154,9 +160,7 @@ pub(super) fn validate_singletons(
             diagnostics.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::SingletonRecordCountInvalid,
-                    format!(
-                        "singleton type `{type_name}` has {count} records (must be exactly 1)"
-                    ),
+                    format!("singleton type `{type_name}` has {count} records (must be exactly 1)"),
                 )
                 .with_primary(table.records.first().copied(), CfdPath::root()),
             );

@@ -1,4 +1,6 @@
-use coflow_api::{CfdObject, CfdValue, CftContainer, CftSchemaField, CftSchemaTypeRef, DiagnosticSet};
+use coflow_api::{
+    CfdObject, CfdValue, CftContainer, CftSchemaField, CftSchemaTypeRef, DiagnosticSet,
+};
 use coflow_cfd::ast::{CfdBlockEntry, CfdRecord as AstRecord};
 use coflow_cft::CftSchemaDefaultValue;
 use coflow_data_model::CfdEnumValue;

@@ -30,7 +30,11 @@ pub(super) fn current_field(
     if name == "id" {
         return virtual_id(model, root_record, root_path, record, record.path());
     }
-    record.field(model, field_type_for_record(schema, model, record, name), name)
+    record.field(
+        model,
+        field_type_for_record(schema, model, record, name),
+        name,
+    )
 }
 
 pub(super) fn field_value(
@@ -55,10 +59,12 @@ pub(super) fn field_value(
                     .ok_or_else(|| OpsError::eval_type(None, "记录没有虚拟 id"));
             }
             record
-                .field(model, field_type_for_record(schema, model, &record, name), name)
-                .ok_or_else(|| {
-                    OpsError::eval_type(target.path, format!("记录没有字段 `{name}`"))
-                })
+                .field(
+                    model,
+                    field_type_for_record(schema, model, &record, name),
+                    name,
+                )
+                .ok_or_else(|| OpsError::eval_type(target.path, format!("记录没有字段 `{name}`")))
         }
         CheckValue::Entry(entry) => match name {
             "key" => Ok(LocatedCheckValue::new(*entry.key, target.path)),

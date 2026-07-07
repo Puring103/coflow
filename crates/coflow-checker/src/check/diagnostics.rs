@@ -1,7 +1,6 @@
 use coflow_cft::{
-    CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt,
-    CftSchemaCmpOp, CftSchemaQuantifierKind, CftSchemaTypePredicate, CftSchemaTypeRef,
-    CftSchemaUnaryOp,
+    CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCheckStmt, CftSchemaCmpOp,
+    CftSchemaQuantifierKind, CftSchemaTypePredicate, CftSchemaTypeRef, CftSchemaUnaryOp,
 };
 use coflow_data_model::{CfdErrorCode, CfdPath, CfdPathSegment, DimensionFieldLookupError};
 

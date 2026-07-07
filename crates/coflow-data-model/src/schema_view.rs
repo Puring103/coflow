@@ -111,11 +111,8 @@ impl SchemaView {
                 if annotation.name != "__coflow_dimension_storage" {
                     continue;
                 }
-                if let [
-                    CftAnnotationValue::String(dimension),
-                    CftAnnotationValue::String(source_type),
-                    CftAnnotationValue::String(source_field),
-                ] = annotation.args.as_slice()
+                if let [CftAnnotationValue::String(dimension), CftAnnotationValue::String(source_type), CftAnnotationValue::String(source_field)] =
+                    annotation.args.as_slice()
                 {
                     out.insert(
                         DimensionStorageKey {

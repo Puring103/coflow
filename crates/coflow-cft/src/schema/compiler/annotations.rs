@@ -136,7 +136,11 @@ impl<'a> SchemaCompiler<'a> {
                         annotation.span,
                         format!("duplicate annotation `{}`", annotation.name),
                     )
-                    .with_related(module.clone(), *first, "first annotation is here"),
+                    .with_related(
+                        module.clone(),
+                        *first,
+                        "first annotation is here",
+                    ),
                 );
             } else {
                 seen.insert(&annotation.name, annotation.span);
@@ -289,7 +293,11 @@ impl<'a> SchemaCompiler<'a> {
                         enum_name_span,
                         format!("@idAsEnum argument `{enum_name}` must name an enum"),
                     )
-                    .with_related(symbol.module.clone(), symbol.span, "name is defined here"),
+                    .with_related(
+                        symbol.module.clone(),
+                        symbol.span,
+                        "name is defined here",
+                    ),
                 );
             }
             None => {

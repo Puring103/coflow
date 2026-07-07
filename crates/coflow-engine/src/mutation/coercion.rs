@@ -8,9 +8,7 @@ use serde_json::{Map, Value};
 use crate::write_rules;
 use crate::ProjectSession;
 
-use super::{
-    enum_value, is_schema_enum, one_value_error, schema_field, MutationValue,
-};
+use super::{enum_value, is_schema_enum, one_value_error, schema_field, MutationValue};
 
 pub(super) fn coerce_mutation_value(
     session: &ProjectSession,

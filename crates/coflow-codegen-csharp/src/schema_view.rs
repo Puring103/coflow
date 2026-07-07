@@ -1,8 +1,7 @@
 use crate::names::{annotation_name_arg, csharp_type_name, has_annotation};
 use crate::CsharpCodegenError;
 use coflow_cft::{
-    CftContainer, CftEnumMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchemaView,
-    CftTypeMeta as CftTypeMeta,
+    CftContainer, CftEnumMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchemaView, CftTypeMeta,
 };
 use std::collections::{BTreeMap, BTreeSet};
 

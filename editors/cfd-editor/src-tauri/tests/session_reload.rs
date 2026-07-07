@@ -398,7 +398,11 @@ dimensions:
         .load_project(&root.join("coflow.yaml"))
         .expect("load project");
 
-    assert!(snapshot.diagnostics.is_empty(), "{:?}", snapshot.diagnostics);
+    assert!(
+        snapshot.diagnostics.is_empty(),
+        "{:?}",
+        snapshot.diagnostics
+    );
     assert!(
         !root.join("data/dimensions/language/Item_name.csv").exists(),
         "editor project load should not generate dimension files"

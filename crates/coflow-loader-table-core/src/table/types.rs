@@ -1,6 +1,4 @@
-use coflow_data_model::{
-    CfdDiagnostic, CfdInputRecord, SourceDocument, SourceLocation,
-};
+use coflow_data_model::{CfdDiagnostic, CfdInputRecord, SourceDocument, SourceLocation};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 

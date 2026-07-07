@@ -38,10 +38,7 @@ impl CallSignature {
         })
     }
 
-    pub(super) fn resolve_method(
-        name: &str,
-        arg_count: usize,
-    ) -> Result<Self, CallSignatureError> {
+    pub(super) fn resolve_method(name: &str, arg_count: usize) -> Result<Self, CallSignatureError> {
         let Some(builtin) = Builtin::by_name(name) else {
             return Err(CallSignatureError::UnknownFunction {
                 name: name.to_string(),
@@ -61,9 +58,7 @@ pub(super) enum CallSignatureError {
     Arity { message: String },
 }
 
-pub(super) fn matches_pattern_arg(
-    arg: &CftSchemaCheckExpr,
-) -> Result<&str, CallSignatureError> {
+pub(super) fn matches_pattern_arg(arg: &CftSchemaCheckExpr) -> Result<&str, CallSignatureError> {
     let CftSchemaCheckExprKind::String(pattern) = &arg.kind else {
         return Err(CallSignatureError::Arity {
             message: "matches 的 pattern 必须是字符串字面量".to_string(),

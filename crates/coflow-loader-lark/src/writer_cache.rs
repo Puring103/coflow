@@ -8,9 +8,7 @@ use crate::dto::{ApiEnvelope, AuthResponse, SheetsQueryData};
 use crate::http::{LarkHttpClient, UreqLarkHttpClient};
 use crate::load::spreadsheet_token;
 use crate::source::lark_source_from_spec;
-use crate::{
-    api_error_message, url_component, LarkSheetWriter, API_BASE, AUTH_URL,
-};
+use crate::{api_error_message, url_component, LarkSheetWriter, API_BASE, AUTH_URL};
 
 #[derive(Debug, Default)]
 pub(crate) struct LarkWriterCache {
@@ -130,11 +128,7 @@ where
     /// Drop cached entries for an `app_id` / spreadsheet pair after a write
     /// fails with auth or sheet-not-found errors. Called by the writer's
     /// retry path.
-    pub(crate) fn invalidate_caches(
-        &self,
-        app_id: Option<&str>,
-        spreadsheet_token: Option<&str>,
-    ) {
+    pub(crate) fn invalidate_caches(&self, app_id: Option<&str>, spreadsheet_token: Option<&str>) {
         if let Ok(mut cache) = self.cache.lock() {
             if let Some(app) = app_id {
                 cache.tokens.remove(app);

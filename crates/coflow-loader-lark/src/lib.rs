@@ -128,11 +128,11 @@ mod tests {
     #![allow(clippy::panic)]
 
     use super::*;
+    use crate::source::lark_source_from_spec;
     use coflow_api::{
         CftContainer, DataLoader, LoadContext, ModuleId, ProbeResult, ProjectSourceRef,
         ResolvedSource, SourceLocationSpec, SourceResolveContext,
     };
-    use crate::source::lark_source_from_spec;
     use serde_json::{json, Value};
     use std::path::Path;
 

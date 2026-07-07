@@ -119,11 +119,7 @@ fn field_meta(field: &CftSchemaField) -> FieldMeta {
     }
 }
 
-fn error_at(
-    pos: usize,
-    code: CfdTextErrorCode,
-    message: impl Into<String>,
-) -> CfdTextDiagnostics {
+fn error_at(pos: usize, code: CfdTextErrorCode, message: impl Into<String>) -> CfdTextDiagnostics {
     CfdTextDiagnostics::one(CfdTextDiagnostic::error(
         code,
         message,

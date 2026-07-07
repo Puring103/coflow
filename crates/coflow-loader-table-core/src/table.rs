@@ -4,8 +4,8 @@
 //! values, then use this crate for schema-guided row, key, column, and cell
 //! parsing.
 
-mod diagnostics;
 mod columns;
+mod diagnostics;
 mod types;
 
 use coflow_cft::{record_key_ident_error, CftContainer};

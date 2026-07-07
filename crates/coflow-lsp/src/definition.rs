@@ -114,11 +114,7 @@ pub(crate) fn field_location_by_chain(
     field_location(build, type_name, field_name)
 }
 
-pub(crate) fn field_location(
-    build: &LspBuild,
-    type_name: &str,
-    field_name: &str,
-) -> Option<Value> {
+pub(crate) fn field_location(build: &LspBuild, type_name: &str, field_name: &str) -> Option<Value> {
     let (owner, field) = field_by_type(build, type_name, field_name)?;
     let document = build.document_by_module(&owner.module)?;
     let span = ast_field_name_span(document, &owner.name, field_name).unwrap_or(field.span);

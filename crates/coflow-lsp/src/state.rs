@@ -1,7 +1,6 @@
 use coflow_cft::ast::{CheckStmt, Item};
 use coflow_cft::{
-    CftSchemaEnum, CftSchemaEnumVariant, CftSchemaField, CftSchemaType, CftSchemaTypeRef,
-    ModuleId,
+    CftSchemaEnum, CftSchemaEnumVariant, CftSchemaField, CftSchemaType, CftSchemaTypeRef, ModuleId,
 };
 use coflow_project::{normalize_path, SchemaBuild};
 use std::collections::BTreeMap;
@@ -36,8 +35,8 @@ impl LspBuild {
                 .get(module_id)
                 .map_or_else(|| PathBuf::from(module_id), PathBuf::from);
             let uri = path_to_file_uri(&path);
-            let ast = coflow_cft::parser::parse_module(&ModuleId::new(module_id.clone()), source)
-                .ok();
+            let ast =
+                coflow_cft::parser::parse_module(&ModuleId::new(module_id.clone()), source).ok();
             module_by_uri.insert(uri.clone(), module_id.clone());
             module_by_path.insert(normalize_path(&path), module_id.clone());
             documents.insert(
@@ -202,11 +201,7 @@ pub(crate) fn enum_name_exists(build: &LspBuild, enum_name: &str) -> bool {
         || ast_enum_name_exists(build, enum_name)
 }
 
-pub(crate) fn enum_variant_exists(
-    build: &LspBuild,
-    enum_name: &str,
-    variant_name: &str,
-) -> bool {
+pub(crate) fn enum_variant_exists(build: &LspBuild, enum_name: &str, variant_name: &str) -> bool {
     enum_variant_by_chain(build, &[enum_name.to_string(), variant_name.to_string()]).is_some()
         || definition::ast_enum_variant_location(build, enum_name, variant_name).is_some()
 }

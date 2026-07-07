@@ -13,11 +13,11 @@ mod types;
 
 use coercion::{coerce_cfd_field_value, coerce_json_field_value, coerce_mutation_value};
 use defaults::{default_missing_fields_for_type, default_record_for_type};
+use types::PreparedMutationOp;
 pub use types::{
     DefaultMaterialization, MutationAppliedOp, MutationFailedOp, MutationFields, MutationOp,
     MutationReport, MutationRequest, MutationValue, PreparedMutation,
 };
-use types::PreparedMutationOp;
 
 impl ProjectSession {
     /// Prepare a mutation request for later execution.
@@ -350,7 +350,10 @@ fn prepare_provided_insert_fields(
         MutationFields::Json(fields) => {
             for (name, value) in fields {
                 let field = schema_field(&schema, actual_type, &name)?;
-                out.insert(name, coerce_json_field_value(session, &field.ty_ref, &value)?);
+                out.insert(
+                    name,
+                    coerce_json_field_value(session, &field.ty_ref, &value)?,
+                );
             }
         }
         MutationFields::Cfd(fields) => {

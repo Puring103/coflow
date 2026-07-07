@@ -32,17 +32,17 @@ use coflow_project::{
     compile_schema_project_with_overrides, dedupe_cft_diagnostics, diagnostic_set_from_cft,
     normalize_path, Project, SchemaSourceOverride,
 };
-use definition::{
-    cfd_record_definition_location, cft_schema_field_definition_location,
-    cft_type_definition_location, definitions_at,
-};
-#[cfg(test)]
-pub(crate) use definition::field_location_by_chain;
 use completion::completion_items;
 #[cfg(test)]
 pub(crate) use completion::{
     annotation_completion_items, check_expression_completion_items, completion_scope,
     dot_completion_items, top_level_completion_items, CompletionScope,
+};
+#[cfg(test)]
+pub(crate) use definition::field_location_by_chain;
+use definition::{
+    cfd_record_definition_location, cft_schema_field_definition_location,
+    cft_type_definition_location, definitions_at,
 };
 use diagnostics::{
     label_uri, lsp_diagnostic, lsp_error_diagnostic, lsp_label_location, preferred_diagnostic_uri,
@@ -58,23 +58,20 @@ use protocol::{
     did_change_document, did_open_document, did_save_document, read_message, text_document_uri,
     TextRequest,
 };
-use semantic_tokens::{
-    semantic_token_data,
-    SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES,
-};
+use semantic_tokens::{semantic_token_data, SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES};
+use serde_json::{json, Value};
 pub(crate) use state::{
     current_field_at, current_type_at, enum_name_exists, enum_variant_by_chain,
     enum_variant_exists, field_by_chain, field_by_type, quantifier_bindings_at,
     type_name_of_schema_ref, type_of_chain, LspBuild, LspDocument,
 };
+use std::collections::{BTreeMap, BTreeSet};
+use std::io::{self, BufReader, Write};
+use std::path::{Path, PathBuf};
 pub(crate) use text::{
     dotted_chain_at, is_ident_continue, is_trivia_position, last_ident, line_prefix_at,
     parse_dotted_ident_chain, previous_char, word_at,
 };
-use serde_json::{json, Value};
-use std::collections::{BTreeMap, BTreeSet};
-use std::io::{self, BufReader, Write};
-use std::path::{Path, PathBuf};
 use uri::path_from_file_uri;
 #[cfg(test)]
 pub(crate) use uri::path_to_file_uri;

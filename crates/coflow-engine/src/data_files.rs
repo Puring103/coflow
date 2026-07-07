@@ -150,11 +150,7 @@ fn table_context(session: &ProjectSchemaSession) -> TableContext<'_> {
     }
 }
 
-fn table_operation_source(
-    file: &str,
-    provider_id: &str,
-    path: PathBuf,
-) -> ResolvedSource {
+fn table_operation_source(file: &str, provider_id: &str, path: PathBuf) -> ResolvedSource {
     ResolvedSource {
         provider_id: provider_id.to_string(),
         location: SourceLocationSpec::Path(path),

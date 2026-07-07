@@ -275,11 +275,7 @@ pub(super) fn eager_bin_op(
         {
             let value = lhs.value | rhs.value;
             Ok(LocatedCheckValue::new(
-                CheckValue::Enum(enum_values::enum_with_value(
-                    schema,
-                    &lhs.enum_name,
-                    value,
-                )),
+                CheckValue::Enum(enum_values::enum_with_value(schema, &lhs.enum_name, value)),
                 path,
             ))
         }
@@ -288,11 +284,7 @@ pub(super) fn eager_bin_op(
         {
             let value = lhs.value ^ rhs.value;
             Ok(LocatedCheckValue::new(
-                CheckValue::Enum(enum_values::enum_with_value(
-                    schema,
-                    &lhs.enum_name,
-                    value,
-                )),
+                CheckValue::Enum(enum_values::enum_with_value(schema, &lhs.enum_name, value)),
                 path,
             ))
         }
@@ -301,11 +293,7 @@ pub(super) fn eager_bin_op(
         {
             let value = lhs.value & rhs.value;
             Ok(LocatedCheckValue::new(
-                CheckValue::Enum(enum_values::enum_with_value(
-                    schema,
-                    &lhs.enum_name,
-                    value,
-                )),
+                CheckValue::Enum(enum_values::enum_with_value(schema, &lhs.enum_name, value)),
                 path,
             ))
         }

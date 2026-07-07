@@ -153,10 +153,7 @@ pub(super) fn matches_value(
         ));
     };
     let regex = Regex::new(pattern).map_err(|err| {
-        OpsError::eval_type(
-            None,
-            format!("正则 pattern `{pattern}` 无法编译: {err}"),
-        )
+        OpsError::eval_type(None, format!("正则 pattern `{pattern}` 无法编译: {err}"))
     })?;
     Ok(LocatedCheckValue::new(
         CheckValue::Bool(regex.is_match(&text)),

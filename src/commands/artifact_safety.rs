@@ -1,6 +1,4 @@
-use coflow_api::{
-    Diagnostic, DiagnosticSet, Label, Severity, SourceLocation, SourceLocationSpec,
-};
+use coflow_api::{Diagnostic, DiagnosticSet, Label, Severity, SourceLocation, SourceLocationSpec};
 use coflow_project::Project;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -184,9 +182,6 @@ pub(super) fn artifact_diagnostic(path: &Path, message: impl Into<String>) -> Di
     }
 }
 
-pub(super) fn artifact_diagnostic_set(
-    path: &Path,
-    message: impl Into<String>,
-) -> DiagnosticSet {
+pub(super) fn artifact_diagnostic_set(path: &Path, message: impl Into<String>) -> DiagnosticSet {
     DiagnosticSet::one(artifact_diagnostic(path, message))
 }

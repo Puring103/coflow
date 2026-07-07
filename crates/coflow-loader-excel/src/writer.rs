@@ -309,9 +309,8 @@ fn write_excel_headers(
         ))
     })?;
     for (index, header) in headers.iter().enumerate() {
-        let column = u32::try_from(index + 1).map_err(|_| {
-            DiagnosticSet::one(diag("EXCEL-TABLE", "too many columns for Excel"))
-        })?;
+        let column = u32::try_from(index + 1)
+            .map_err(|_| DiagnosticSet::one(diag("EXCEL-TABLE", "too many columns for Excel")))?;
         worksheet.get_cell_mut((column, 1_u32)).set_value(header);
     }
     Ok(())
@@ -353,9 +352,8 @@ fn sync_excel_header(
     let old_header = excel_header(path, sheet_name)?;
     let mut old_index = BTreeMap::new();
     for (index, header) in old_header.iter().enumerate() {
-        let column = u32::try_from(index + 1).map_err(|_| {
-            DiagnosticSet::one(diag("EXCEL-TABLE", "too many columns for Excel"))
-        })?;
+        let column = u32::try_from(index + 1)
+            .map_err(|_| DiagnosticSet::one(diag("EXCEL-TABLE", "too many columns for Excel")))?;
         old_index.insert(header.clone(), column);
     }
     let mut book = umya_spreadsheet::reader::xlsx::read(path).map_err(|err| {
@@ -385,15 +383,13 @@ fn sync_excel_header(
         rows.push(values);
     }
     if !old_header.is_empty() {
-        let count = u32::try_from(old_header.len()).map_err(|_| {
-            DiagnosticSet::one(diag("EXCEL-TABLE", "too many columns for Excel"))
-        })?;
+        let count = u32::try_from(old_header.len())
+            .map_err(|_| DiagnosticSet::one(diag("EXCEL-TABLE", "too many columns for Excel")))?;
         sheet.remove_column_by_index(&1, &count);
     }
     for (index, header) in new_header.iter().enumerate() {
-        let column = u32::try_from(index + 1).map_err(|_| {
-            DiagnosticSet::one(diag("EXCEL-TABLE", "too many columns for Excel"))
-        })?;
+        let column = u32::try_from(index + 1)
+            .map_err(|_| DiagnosticSet::one(diag("EXCEL-TABLE", "too many columns for Excel")))?;
         sheet.get_cell_mut((column, 1_u32)).set_value(header);
     }
     for (row_index, row) in rows.iter().enumerate() {

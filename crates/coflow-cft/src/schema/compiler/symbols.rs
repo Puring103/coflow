@@ -180,7 +180,11 @@ impl<'a> SchemaCompiler<'a> {
                             variant.name_span,
                             format!("duplicate enum variant `{}`", variant.name),
                         )
-                        .with_related(first.0.clone(), first.1, "first variant is here"),
+                        .with_related(
+                            first.0.clone(),
+                            first.1,
+                            "first variant is here",
+                        ),
                     );
                 } else {
                     variant_names.insert(
@@ -213,7 +217,11 @@ impl<'a> SchemaCompiler<'a> {
                             variant.span,
                             format!("duplicate enum value `{value}`"),
                         )
-                        .with_related(first.1.clone(), first.2, "first value is here"),
+                        .with_related(
+                            first.1.clone(),
+                            first.2,
+                            "first value is here",
+                        ),
                     );
                 } else {
                     values.insert(

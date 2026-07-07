@@ -279,7 +279,12 @@ pub(super) fn explain_false_expr(
                 let actual = evaluator
                     .eval_value_expr(inner)
                     .ok()
-                    .and_then(|actual| actual.value.actual_type(evaluator.model()).map(str::to_string))
+                    .and_then(|actual| {
+                        actual
+                            .value
+                            .actual_type(evaluator.model())
+                            .map(str::to_string)
+                    })
                     .unwrap_or_else(|| "非对象".to_string());
                 Some(
                     CheckExplanation::new(
@@ -326,7 +331,11 @@ fn explain_failed_comparison(
             } else {
                 CfdErrorCode::CheckComparisonFailed
             };
-            let actual_expr = if lhs.path.is_some() { lhs_expr } else { rhs_expr };
+            let actual_expr = if lhs.path.is_some() {
+                lhs_expr
+            } else {
+                rhs_expr
+            };
             let actual_value = if lhs.path.is_some() {
                 &lhs.value
             } else {

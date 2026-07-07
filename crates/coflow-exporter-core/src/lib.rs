@@ -364,7 +364,9 @@ impl SchemaView {
             .types
             .get(type_name)
             .map(|schema_type| schema_type.all_fields.as_slice())
-            .ok_or_else(|| ExportError::new(format!("unknown CFT type `{type_name}` during export")))
+            .ok_or_else(|| {
+                ExportError::new(format!("unknown CFT type `{type_name}` during export"))
+            })
     }
 
     fn range_is_polymorphic(&self, type_name: &str) -> bool {

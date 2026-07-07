@@ -4,7 +4,7 @@ use coflow_api::{
 };
 use coflow_loader_table_core::{resolve_table_write_layout, TableWriteLayout};
 
-use crate::diagnostics::{table_diagnostics_to_api};
+use crate::diagnostics::table_diagnostics_to_api;
 use crate::http::LarkHttpClient;
 use crate::source::{lark_document_spreadsheet_token, sheet_config_from_options};
 use crate::LarkSheetWriter;

@@ -5,10 +5,10 @@ use crate::artifacts::{
     CodegenArtifactRequest,
 };
 use artifact_safety::{artifact_safety_diagnostics, ArtifactOutputPlan};
-use id_as_enum::{id_as_enum_variants_for_schema_only, stage_id_as_enum_lockfile_for_build};
 use coflow_api::{Diagnostic, DiagnosticSet, Label, ProviderRegistry, Severity, SourceLocation};
 use coflow_engine::{build_project_schema_session, build_project_session, ProjectSession};
 use coflow_project::{OutputConfig, Project};
+use id_as_enum::{id_as_enum_variants_for_schema_only, stage_id_as_enum_lockfile_for_build};
 use std::path::{Path, PathBuf};
 
 mod artifact_safety;
@@ -453,7 +453,10 @@ fn commit_build_artifacts(
             id_as_enum_variants: &id_as_enum_artifacts.variants,
         },
     )?;
-    commit_staged_dirs_and_file(vec![staged_data, staged_code], id_as_enum_artifacts.lockfile)?;
+    commit_staged_dirs_and_file(
+        vec![staged_data, staged_code],
+        id_as_enum_artifacts.lockfile,
+    )?;
     Ok(Some(CodegenReport {
         codegen_id: code.codegen_id.clone(),
         display_name: code.display_name.to_string(),
@@ -489,4 +492,3 @@ fn project_diagnostic(
         related: Vec::new(),
     }
 }
-

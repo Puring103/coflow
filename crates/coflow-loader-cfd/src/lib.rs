@@ -27,12 +27,12 @@ pub mod writer;
 use coflow_cft::CftContainer;
 use coflow_data_model::{CfdDataModel, CfdInputRecord};
 use diagnostics::{cfd_error_to_diagnostics, text_span};
-use parser::{ParsedCfdInputRecord, Parser};
-use std::fs;
-use std::path::Path;
 pub use diagnostics::{
     CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextLoadError, CfdTextSpan,
 };
+use parser::{ParsedCfdInputRecord, Parser};
+use std::fs;
+use std::path::Path;
 pub use writer::{CfdWriter, CFD_WRITER_DESCRIPTOR};
 
 /// Parses `.cfd` text into source-neutral input records.

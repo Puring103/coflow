@@ -1,12 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use coflow_api::{CftContainer, DiagnosticSet};
-use coflow_cft::{
-    CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchemaView,
-};
+use coflow_cft::{CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchemaView};
 use coflow_data_model::{CfdEnumValue, CfdObject, CfdRecord, CfdValue, RecordOrigin};
 
-use super::{one_mutation_error, non_nullable, DefaultMaterialization};
+use super::{non_nullable, one_mutation_error, DefaultMaterialization};
 
 pub(super) fn default_record_for_type(
     schema: &CftContainer,

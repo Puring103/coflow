@@ -263,9 +263,7 @@ fn validate_outputs_collecting(outputs: &OutputsConfig) -> Vec<ProjectDiagnostic
     diagnostics
 }
 
-pub(super) fn validate_for_codegen_collecting(
-    outputs: &OutputsConfig,
-) -> Vec<ProjectDiagnostic> {
+pub(super) fn validate_for_codegen_collecting(outputs: &OutputsConfig) -> Vec<ProjectDiagnostic> {
     let mut diagnostics = Vec::new();
     match outputs.code.as_ref() {
         Some(code) => {

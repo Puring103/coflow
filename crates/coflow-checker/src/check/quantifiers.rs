@@ -2,13 +2,9 @@ use coflow_data_model::CfdErrorCode;
 
 use super::diagnostics::format_value_for_message;
 use super::ops::{OpsError, OpsResult};
-use super::value::{
-    format_check_key_for_path, CheckValue, LocatedCheckValue,
-};
+use super::value::{format_check_key_for_path, CheckValue, LocatedCheckValue};
 
-pub(super) fn quantifier_items(
-    collection: LocatedCheckValue,
-) -> OpsResult<Vec<LocatedCheckValue>> {
+pub(super) fn quantifier_items(collection: LocatedCheckValue) -> OpsResult<Vec<LocatedCheckValue>> {
     match collection.value {
         CheckValue::Array { items, .. } => Ok(items
             .into_iter()

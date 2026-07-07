@@ -10,9 +10,7 @@ pub(super) fn eval_expr(
     expr: &CftSchemaCheckExpr,
 ) -> EvalResult<LocatedCheckValue> {
     match &expr.kind {
-        CftSchemaCheckExprKind::Int(value) => {
-            Ok(LocatedCheckValue::value(CheckValue::Int(*value)))
-        }
+        CftSchemaCheckExprKind::Int(value) => Ok(LocatedCheckValue::value(CheckValue::Int(*value))),
         CftSchemaCheckExprKind::Float(value) => {
             Ok(LocatedCheckValue::value(CheckValue::Float(*value)))
         }

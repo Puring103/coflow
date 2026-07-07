@@ -368,4 +368,3 @@ pub fn compile_schema_project_with_overrides(
         paths,
     })
 }
-

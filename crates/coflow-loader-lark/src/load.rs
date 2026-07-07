@@ -18,8 +18,8 @@ use crate::source::{
     LarkSheetSource,
 };
 use crate::{
-    api_error_message, column_name, json_cell_text, url_component, API_BASE, AUTH_URL,
-    LarkDiagnostic, LarkDiagnostics,
+    api_error_message, column_name, json_cell_text, url_component, LarkDiagnostic, LarkDiagnostics,
+    API_BASE, AUTH_URL,
 };
 
 /// Loads a Feishu/Lark spreadsheet into an Excel-like table source.
@@ -45,7 +45,13 @@ pub fn load_lark_table_source_with_client(
     let tenant_access_token = tenant_access_token(client, source)?;
     let spreadsheet_token = spreadsheet_token(client, source, &tenant_access_token)?;
     let metadata = spreadsheet_metadata(client, &spreadsheet_token, &tenant_access_token)?;
-    build_table_source(client, source, &spreadsheet_token, &tenant_access_token, &metadata)
+    build_table_source(
+        client,
+        source,
+        &spreadsheet_token,
+        &tenant_access_token,
+        &metadata,
+    )
 }
 
 fn build_table_source(
