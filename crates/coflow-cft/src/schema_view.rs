@@ -164,11 +164,41 @@ impl CftSchemaView {
             .is_some_and(|children| !children.is_empty())
     }
 
+    pub fn descendant_names(&self, type_name: &str) -> impl Iterator<Item = &String> {
+        self.children_by_parent
+            .get(type_name)
+            .into_iter()
+            .flatten()
+    }
+
     #[must_use]
     pub fn range_is_polymorphic(&self, type_name: &str) -> bool {
         self.types
             .get(type_name)
             .is_some_and(|meta| meta.is_abstract || self.has_descendants(type_name))
+    }
+
+    #[must_use]
+    pub fn concrete_assignable_types(&self, type_name: &str) -> Option<Vec<String>> {
+        let mut out = Vec::new();
+        let meta = self.types.get(type_name)?;
+        if !meta.is_abstract {
+            out.push(type_name.to_string());
+        }
+        self.collect_concrete_descendants(type_name, &mut out);
+        Some(out)
+    }
+
+    fn collect_concrete_descendants(&self, type_name: &str, out: &mut Vec<String>) {
+        for child in self.descendant_names(type_name) {
+            let Some(child_meta) = self.types.get(child) else {
+                continue;
+            };
+            if !child_meta.is_abstract {
+                out.push(child.clone());
+            }
+            self.collect_concrete_descendants(child, out);
+        }
     }
 
     #[must_use]

@@ -1875,6 +1875,8 @@ fn csharp_codegen_schema_projection_uses_cft_schema_view() {
         "pub struct TypeMeta",
         "pub struct FieldMeta",
         "pub enum FieldType",
+        "children:",
+        "fill_concrete_descendants",
         "pub enums:",
         "view.enums",
         "CftSchemaType,",

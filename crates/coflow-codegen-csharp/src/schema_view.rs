@@ -10,7 +10,6 @@ pub struct SchemaView {
     pub int_32: bool,
     pub float_32: bool,
     pub loadable_tables: BTreeSet<String>,
-    children: BTreeMap<String, BTreeSet<String>>,
     pub cft: CftSchemaView,
     csharp_types: BTreeMap<String, String>,
     csharp_enums: BTreeMap<String, String>,
@@ -19,16 +18,6 @@ pub struct SchemaView {
 impl SchemaView {
     pub fn new(schema: &CftContainer) -> Self {
         let cft = CftSchemaView::new(schema);
-
-        let mut children = BTreeMap::<String, BTreeSet<String>>::new();
-        for schema_type in cft.types.values() {
-            if let Some(parent) = &schema_type.parent {
-                children
-                    .entry(parent.clone())
-                    .or_default()
-                    .insert(schema_type.name.clone());
-            }
-        }
 
         let csharp_types = cft
             .types
@@ -45,7 +34,6 @@ impl SchemaView {
             int_32: false,
             float_32: false,
             loadable_tables: BTreeSet::new(),
-            children,
             cft,
             csharp_types,
             csharp_enums,
@@ -148,10 +136,7 @@ impl SchemaView {
     }
 
     pub fn range_is_polymorphic(&self, type_name: &str) -> bool {
-        self.cft
-            .types
-            .get(type_name)
-            .is_some_and(|ty| ty.is_abstract || self.has_descendants(type_name))
+        self.cft.range_is_polymorphic(type_name)
     }
 
     pub fn csharp_type_name(&self, type_name: &str) -> String {
@@ -200,45 +185,17 @@ impl SchemaView {
             .map_or_else(|| CftSchemaTypeRef::String, CftSchemaTypeRef::Named)
     }
 
-    fn has_descendants(&self, type_name: &str) -> bool {
-        self.children
-            .get(type_name)
-            .is_some_and(|children| !children.is_empty())
-    }
-
     pub fn type_has_descendants(&self, type_name: &str) -> bool {
-        self.has_descendants(type_name)
+        self.cft.has_descendants(type_name)
     }
 
     pub fn concrete_assignable_types(
         &self,
         type_name: &str,
     ) -> Result<Vec<String>, CsharpCodegenError> {
-        let mut out = Vec::new();
-        let ty = self.type_meta(type_name)?;
-        if !ty.is_abstract {
-            out.push(type_name.to_string());
-        }
-        self.fill_concrete_descendants(type_name, &mut out)?;
-        Ok(out)
-    }
-
-    fn fill_concrete_descendants(
-        &self,
-        type_name: &str,
-        out: &mut Vec<String>,
-    ) -> Result<(), CsharpCodegenError> {
-        let Some(children) = self.children.get(type_name) else {
-            return Ok(());
-        };
-        for child in children {
-            let child_meta = self.type_meta(child)?;
-            if !child_meta.is_abstract {
-                out.push(child.clone());
-            }
-            self.fill_concrete_descendants(child, out)?;
-        }
-        Ok(())
+        self.cft
+            .concrete_assignable_types(type_name)
+            .ok_or_else(|| CsharpCodegenError::new(format!("unknown CFT type `{type_name}`")))
     }
 
     pub fn ref_target_names(&self) -> Vec<String> {
