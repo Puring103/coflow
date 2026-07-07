@@ -491,6 +491,9 @@ fn csv_dimension_source_sync_does_not_live_in_writer_rs() {
         .expect("read csv writer dimension source sync");
     let plan = std::fs::read_to_string("crates/coflow-loader-csv/src/writer/plan.rs")
         .expect("read csv writer plan helpers");
+    let table_manager =
+        std::fs::read_to_string("crates/coflow-loader-csv/src/writer/table_manager.rs")
+            .expect("read csv writer table manager");
 
     for expected in [
         "impl DimensionSourceManager for CsvWriter",
@@ -522,9 +525,27 @@ fn csv_dimension_source_sync_does_not_live_in_writer_rs() {
             "CSV writer plan item `{expected}` should not live in writer.rs"
         );
     }
+    for expected in [
+        "impl TableManager for CsvWriter",
+        "pub static CSV_TABLE_MANAGER_DESCRIPTOR",
+        "fn create_table",
+        "fn sync_header",
+        "fn added_columns",
+        "fn removed_columns",
+        "fn sync_rows_to_header",
+    ] {
+        assert!(
+            table_manager.contains(expected),
+            "CSV table manager item `{expected}` should live in writer/table_manager.rs"
+        );
+        assert!(
+            !writer.contains(expected),
+            "CSV table manager item `{expected}` should not live in writer.rs"
+        );
+    }
     assert!(
-        writer.lines().count() < 800,
-        "coflow-loader-csv writer.rs should stay below the 800-line large-module threshold"
+        writer.lines().count() < 360,
+        "coflow-loader-csv writer.rs should stay below the 360-line focused-module threshold"
     );
 }
 

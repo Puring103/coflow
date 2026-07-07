@@ -8,13 +8,12 @@
 
 mod dimensions;
 mod plan;
+mod table_manager;
 
 use coflow_api::{
-    CreateTableRequest, DataWriter, DeleteRecordRequest, Diagnostic, DiagnosticSet,
-    InsertRecordRequest, RenameRecordRequest, RewriteRecordReferencesRequest, SourceDocument,
-    SourceLocationSpec, SyncHeaderRequest, TableContext, TableManager, TableManagerDescriptor,
-    TableOperationResult, WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities,
-    WriterDescriptor,
+    DataWriter, DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest,
+    RenameRecordRequest, RewriteRecordReferencesRequest, SourceDocument, SourceLocationSpec,
+    WriteCellRequest, WriteContext, WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_loader_table_core::writer::{
     plan_delete_record, plan_field_write, plan_insert_record, TableFieldWrite, TableInsertRecord,
@@ -26,7 +25,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use crate::{parse, write};
+use crate::parse;
 use plan::apply_plan;
 
 pub static CSV_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
@@ -42,11 +41,6 @@ pub static CSV_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
         requires_full_refresh_after_write: true,
         is_remote: false,
     },
-};
-
-pub static CSV_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManagerDescriptor {
-    id: "csv",
-    display_name: "CSV table",
 };
 
 /// Writer for local CSV files. Stateless: each call reads the file fresh and
@@ -178,138 +172,6 @@ impl DataWriter for CsvWriter {
     ) -> Result<WriteOutcome, DiagnosticSet> {
         Ok(WriteOutcome::default())
     }
-}
-
-impl TableManager for CsvWriter {
-    fn descriptor(&self) -> &'static TableManagerDescriptor {
-        &CSV_TABLE_MANAGER_DESCRIPTOR
-    }
-
-    fn create_table(
-        &self,
-        _ctx: TableContext<'_>,
-        request: &CreateTableRequest<'_>,
-    ) -> Result<TableOperationResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location else {
-            return Err(DiagnosticSet::one(diag(
-                "CSV-TABLE",
-                "csv table manager requires a local path source",
-            )));
-        };
-        if path.exists() {
-            return Err(DiagnosticSet::one(diag(
-                "CSV-TABLE",
-                format!("file `{}` already exists", path.display()),
-            )));
-        }
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|err| {
-                DiagnosticSet::one(diag(
-                    "CSV-TABLE",
-                    format!("failed to create `{}`: {err}", parent.display()),
-                ))
-            })?;
-        }
-        let rows = vec![request.headers.to_vec()];
-        fs::write(path, write(&rows)).map_err(|err| {
-            DiagnosticSet::one(diag(
-                "CSV-TABLE",
-                format!("failed to write `{}`: {err}", path.display()),
-            ))
-        })?;
-        Ok(TableOperationResult {
-            headers: request.headers.to_vec(),
-            added: Vec::new(),
-            removed: Vec::new(),
-            diagnostics: DiagnosticSet::empty(),
-        })
-    }
-
-    fn sync_header(
-        &self,
-        _ctx: TableContext<'_>,
-        request: &SyncHeaderRequest<'_>,
-    ) -> Result<TableOperationResult, DiagnosticSet> {
-        let SourceLocationSpec::Path(path) = &request.source.location else {
-            return Err(DiagnosticSet::one(diag(
-                "CSV-TABLE",
-                "csv table manager requires a local path source",
-            )));
-        };
-        let text = fs::read_to_string(path).map_err(|err| {
-            DiagnosticSet::one(diag(
-                "CSV-TABLE",
-                format!("failed to read `{}`: {err}", path.display()),
-            ))
-        })?;
-        let mut rows = parse(&text).map_err(|err| {
-            DiagnosticSet::one(diag(
-                "CSV-TABLE",
-                format!("failed to parse `{}`: {err}", path.display()),
-            ))
-        })?;
-        let old_header = rows.first().cloned().unwrap_or_default();
-        let added = added_columns(request.headers, &old_header);
-        let removed = removed_columns(request.headers, &old_header);
-        rows = sync_rows_to_header(rows, request.headers);
-        fs::write(path, write(&rows)).map_err(|err| {
-            DiagnosticSet::one(diag(
-                "CSV-TABLE",
-                format!("failed to write `{}`: {err}", path.display()),
-            ))
-        })?;
-        Ok(TableOperationResult {
-            headers: request.headers.to_vec(),
-            added,
-            removed,
-            diagnostics: DiagnosticSet::empty(),
-        })
-    }
-}
-
-fn added_columns(new_header: &[String], old_header: &[String]) -> Vec<String> {
-    let old = old_header.iter().collect::<std::collections::BTreeSet<_>>();
-    new_header
-        .iter()
-        .filter(|header| !old.contains(header))
-        .cloned()
-        .collect()
-}
-
-fn removed_columns(new_header: &[String], old_header: &[String]) -> Vec<String> {
-    let new = new_header.iter().collect::<std::collections::BTreeSet<_>>();
-    old_header
-        .iter()
-        .filter(|header| !new.contains(header))
-        .cloned()
-        .collect()
-}
-
-fn sync_rows_to_header(mut rows: Vec<Vec<String>>, new_header: &[String]) -> Vec<Vec<String>> {
-    let Some(old_header) = rows.first().cloned() else {
-        return vec![new_header.to_vec()];
-    };
-    let old_index = old_header
-        .iter()
-        .enumerate()
-        .map(|(index, header)| (header.clone(), index))
-        .collect::<BTreeMap<_, _>>();
-    let mut out = vec![new_header.to_vec()];
-    for row in rows.drain(1..) {
-        out.push(
-            new_header
-                .iter()
-                .map(|header| {
-                    old_index
-                        .get(header)
-                        .and_then(|index| row.get(*index))
-                        .cloned()
-                        .unwrap_or_default()
-                })
-                .collect(),
-        );
-    }
-    out
 }
 
 struct CsvLayout {
