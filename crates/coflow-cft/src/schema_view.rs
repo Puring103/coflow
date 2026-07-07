@@ -80,6 +80,16 @@ impl CftSchemaView {
     }
 
     #[must_use]
+    pub fn type_meta(&self, type_name: &str) -> Option<&CftTypeMeta> {
+        self.types.get(type_name)
+    }
+
+    #[must_use]
+    pub fn is_schema_enum(&self, name: &str) -> bool {
+        self.enums.contains_key(name)
+    }
+
+    #[must_use]
     pub fn is_assignable(&self, actual_type: &str, expected_type: &str) -> bool {
         let mut current = Some(actual_type);
         while let Some(name) = current {
@@ -165,10 +175,7 @@ impl CftSchemaView {
     }
 
     pub fn descendant_names(&self, type_name: &str) -> impl Iterator<Item = &String> {
-        self.children_by_parent
-            .get(type_name)
-            .into_iter()
-            .flatten()
+        self.children_by_parent.get(type_name).into_iter().flatten()
     }
 
     #[must_use]
@@ -176,6 +183,21 @@ impl CftSchemaView {
         self.types
             .get(type_name)
             .is_some_and(|meta| meta.is_abstract || self.has_descendants(type_name))
+    }
+
+    #[must_use]
+    pub fn assignable_target_names(&self, actual_type: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut current = Some(actual_type);
+        while let Some(name) = current {
+            out.push(name.to_string());
+            current = self.types.get(name).and_then(|meta| meta.parent.as_deref());
+        }
+        out
+    }
+
+    pub fn singleton_types(&self) -> impl Iterator<Item = &CftTypeMeta> {
+        self.types.values().filter(|meta| meta.is_singleton)
     }
 
     #[must_use]

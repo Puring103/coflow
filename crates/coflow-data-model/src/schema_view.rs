@@ -3,7 +3,7 @@ use crate::origin::RecordOrigin;
 use coflow_cft::{
     CftAnnotationValue, CftContainer, CftFieldMeta, CftSchemaTypeRef, CftSchemaView, CftTypeMeta,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RecordDraft {
@@ -54,10 +54,7 @@ pub(crate) enum CfdValueDraft {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SchemaView {
-    pub(crate) types: BTreeMap<String, CftTypeMeta>,
-    pub(crate) enums: BTreeMap<String, EnumMeta>,
-    fields: BTreeMap<String, Vec<CftFieldMeta>>,
-    children: BTreeMap<String, BTreeSet<String>>,
+    cft: CftSchemaView,
     dimension_storage_types: BTreeMap<DimensionStorageKey, String>,
     domain_index: CfdDomainIndex,
 }
@@ -65,40 +62,11 @@ pub(crate) struct SchemaView {
 impl SchemaView {
     pub(crate) fn new(schema: &CftContainer) -> Self {
         let cft_view = CftSchemaView::new(schema);
-        let enums = cft_view
-            .enums
-            .iter()
-            .map(|(name, schema_enum)| {
-                (
-                    name.clone(),
-                    EnumMeta {
-                        variants: schema_enum.variants.clone(),
-                    },
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
-
-        let types = cft_view.types.clone();
-        let mut fields = BTreeMap::new();
-        let mut children = BTreeMap::<String, BTreeSet<String>>::new();
-        for schema_type in cft_view.types.values() {
-            if let Some(parent) = &schema_type.parent {
-                children
-                    .entry(parent.clone())
-                    .or_default()
-                    .insert(schema_type.name.clone());
-            }
-            fields.insert(schema_type.name.clone(), schema_type.all_fields.clone());
-        }
-
-        let domain_index = Self::build_domain_index(&types);
+        let domain_index = Self::build_domain_index(&cft_view.types);
         let dimension_storage_types = Self::build_dimension_storage_index(&cft_view);
 
         Self {
-            types,
-            enums,
-            fields,
-            children,
+            cft: cft_view,
             dimension_storage_types,
             domain_index,
         }
@@ -146,9 +114,7 @@ impl SchemaView {
     }
 
     pub(crate) fn field_meta(&self, type_name: &str, field_name: &str) -> Option<&CftFieldMeta> {
-        self.fields
-            .get(type_name)?
-            .iter()
+        self.full_fields(type_name)
             .find(|field| field.name == field_name)
     }
 
@@ -211,56 +177,36 @@ impl SchemaView {
         out
     }
 
-    pub(crate) fn full_fields(&self, type_name: &str) -> &[CftFieldMeta] {
-        self.fields.get(type_name).map_or(&[], Vec::as_slice)
+    pub(crate) fn type_meta(&self, type_name: &str) -> Option<&CftTypeMeta> {
+        self.cft.type_meta(type_name)
+    }
+
+    pub(crate) fn full_fields(&self, type_name: &str) -> impl Iterator<Item = &CftFieldMeta> {
+        self.cft.full_fields(type_name).unwrap_or(&[]).iter()
     }
 
     pub(crate) fn is_assignable(&self, actual_type: &str, expected_type: &str) -> bool {
-        let mut current = Some(actual_type);
-        while let Some(name) = current {
-            if name == expected_type {
-                return true;
-            }
-            current = self.types.get(name).and_then(|meta| meta.parent.as_deref());
-        }
-        false
+        self.cft.is_assignable(actual_type, expected_type)
     }
 
     pub(crate) fn range_is_polymorphic(&self, type_name: &str) -> bool {
-        self.types
-            .get(type_name)
-            .is_some_and(|meta| meta.is_abstract || self.has_descendants(type_name))
-    }
-
-    fn has_descendants(&self, type_name: &str) -> bool {
-        self.children
-            .get(type_name)
-            .is_some_and(|children| !children.is_empty())
+        self.cft.range_is_polymorphic(type_name)
     }
 
     pub(crate) fn assignable_target_names(&self, actual_type: &str) -> Vec<String> {
-        let mut out = Vec::new();
-        let mut current = Some(actual_type);
-        while let Some(name) = current {
-            out.push(name.to_string());
-            current = self.types.get(name).and_then(|meta| meta.parent.as_deref());
-        }
-        out
+        self.cft.assignable_target_names(actual_type)
     }
 
     pub(crate) fn enum_variant_value(&self, enum_name: &str, variant: &str) -> Option<i64> {
-        self.enums
-            .get(enum_name)
-            .and_then(|meta| meta.variants.get(variant))
-            .copied()
+        self.cft.enum_variant_value(enum_name, variant)
     }
 
     pub(crate) fn is_schema_enum(&self, name: &str) -> bool {
-        self.enums.contains_key(name)
+        self.cft.is_schema_enum(name)
     }
 
     pub(crate) fn singleton_types(&self) -> impl Iterator<Item = &CftTypeMeta> {
-        self.types.values().filter(|meta| meta.is_singleton)
+        self.cft.singleton_types()
     }
 
     pub(crate) fn domain_index(&self) -> &CfdDomainIndex {
@@ -281,11 +227,6 @@ struct DimensionStorageKey {
     dimension: String,
     source_type: String,
     source_field: String,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct EnumMeta {
-    pub(crate) variants: BTreeMap<String, i64>,
 }
 
 pub(crate) fn type_accepts_default(expected: &CftSchemaTypeRef, actual: &CftSchemaTypeRef) -> bool {

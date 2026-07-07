@@ -13,8 +13,8 @@ use std::collections::{BTreeMap, BTreeSet};
 ///
 /// Separating `schema` (a copied `&'s SchemaView` reference) from
 /// `diagnostics` (a mutable borrow) lets every method call
-/// `schema.full_fields(type)` and obtain a `&'s [CftFieldMeta]` slice whose
-/// lifetime is tied to the outer `SchemaView`, **not** to `self`. The slice
+/// `schema.full_fields(type)` and obtain field references whose lifetime is
+/// tied to the outer `SchemaView`, **not** to `self`. The references
 /// can therefore be iterated while `&mut self` methods are called to emit
 /// diagnostics — something impossible when the schema is an owned field of
 /// the same struct.
@@ -49,7 +49,7 @@ impl<'s> Validator<'s> {
         let schema = self.schema;
         let diagnostic_start = self.diagnostics.len();
 
-        let Some(is_abstract) = schema.types.get(actual_type).map(|meta| meta.is_abstract) else {
+        let Some(is_abstract) = schema.type_meta(actual_type).map(|meta| meta.is_abstract) else {
             self.push(
                 CfdDiagnostic::error(
                     CfdErrorCode::UnknownType,
@@ -82,9 +82,9 @@ impl<'s> Validator<'s> {
             }
         }
 
-        // `fields` has lifetime 's — independent of `self` — so it can be
-        // held across calls to &mut self methods below.
-        let fields = schema.full_fields(actual_type);
+        // `fields` has lifetime 's, independent of `self`, so it can be held
+        // across calls to &mut self methods below.
+        let fields = schema.full_fields(actual_type).collect::<Vec<_>>();
         let known_fields = fields
             .iter()
             .map(|field| field.name.as_str())
@@ -327,7 +327,6 @@ impl<'s> Validator<'s> {
             CfdInputValue::RecordRef(key) => Some(
                 self.schema
                     .full_fields(type_name)
-                    .iter()
                     .map(|field| {
                         (
                             field.name.clone(),

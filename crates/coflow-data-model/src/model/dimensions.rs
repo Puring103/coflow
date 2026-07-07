@@ -39,8 +39,7 @@ impl CfdDataModel {
         let actual_type = record.actual_type();
         let schema_view = SchemaView::new(schema);
         let source_type = schema_view
-            .types
-            .get(actual_type)
+            .type_meta(actual_type)
             .ok_or(DimensionFieldLookupError::NotDimensional)?;
         let field = schema_view
             .field_meta(actual_type, field_name)

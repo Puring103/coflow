@@ -212,7 +212,6 @@ pub(crate) fn build_ref_indexes(
             let Some(field) = context
                 .schema
                 .full_fields(record.actual_type())
-                .iter()
                 .find(|field| field.name == *name)
             else {
                 continue;
@@ -300,7 +299,6 @@ fn collect_ref_edges(
                 let Some(field) = context
                     .schema
                     .full_fields(&boxed.actual_type)
-                    .iter()
                     .find(|field| field.name == *name)
                 else {
                     continue;
