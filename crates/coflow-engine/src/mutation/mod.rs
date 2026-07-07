@@ -446,7 +446,7 @@ pub(super) fn schema_field<'a>(
     actual_type: &str,
     field_name: &str,
 ) -> Result<&'a CftFieldMeta, DiagnosticSet> {
-    let Some(schema_type) = schema.types.get(actual_type) else {
+    let Some(schema_type) = schema.type_meta(actual_type) else {
         return Err(one_mutation_error(
             "MUTATION-TYPE",
             format!("unknown type `{actual_type}`"),
@@ -527,7 +527,7 @@ fn ensure_type_can_insert(
     actual_type: &str,
 ) -> Result<(), DiagnosticSet> {
     let schema = CftSchemaView::new(&session.schema);
-    let Some(schema_type) = schema.types.get(actual_type) else {
+    let Some(schema_type) = schema.type_meta(actual_type) else {
         return Err(one_mutation_error(
             "MUTATION-TYPE",
             format!("unknown insert type `{actual_type}`"),
@@ -585,7 +585,7 @@ pub(super) fn enum_value(
 }
 
 pub(super) fn is_schema_enum(session: &ProjectSession, name: &str) -> bool {
-    CftSchemaView::new(&session.schema).enums.contains_key(name)
+    CftSchemaView::new(&session.schema).is_schema_enum(name)
 }
 
 fn non_nullable(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {

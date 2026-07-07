@@ -252,9 +252,9 @@ fn type_ref_info(schema: &CftSchemaView, ty: &CftSchemaTypeRef) -> SchemaTypeRef
         CftSchemaTypeRef::Bool => SchemaTypeRefInfo::Bool,
         CftSchemaTypeRef::String => SchemaTypeRefInfo::String,
         CftSchemaTypeRef::Named(name) => {
-            let target_kind = if schema.enums.contains_key(name) {
+            let target_kind = if schema.is_schema_enum(name) {
                 "enum"
-            } else if schema.types.contains_key(name) {
+            } else if schema.has_type(name) {
                 "type"
             } else {
                 "unknown"

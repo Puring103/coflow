@@ -85,6 +85,16 @@ impl CftSchemaView {
     }
 
     #[must_use]
+    pub fn enum_meta(&self, enum_name: &str) -> Option<&CftEnumMeta> {
+        self.enums.get(enum_name)
+    }
+
+    #[must_use]
+    pub fn has_type(&self, type_name: &str) -> bool {
+        self.types.contains_key(type_name)
+    }
+
+    #[must_use]
     pub fn is_schema_enum(&self, name: &str) -> bool {
         self.enums.contains_key(name)
     }

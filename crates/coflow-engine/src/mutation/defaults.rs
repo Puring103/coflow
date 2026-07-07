@@ -47,7 +47,7 @@ fn default_fields_for_type_inner(
     stack: &mut BTreeSet<String>,
     skip_fields: Option<&BTreeSet<String>>,
 ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
-    let Some(schema_type) = schema.types.get(type_name) else {
+    let Some(schema_type) = schema.type_meta(type_name) else {
         return Err(one_mutation_error(
             "MUTATION-TYPE",
             format!("unknown type `{type_name}`"),
@@ -114,7 +114,7 @@ fn default_minimal_for_field(
                 field.name
             ),
         )),
-        CftSchemaTypeRef::Named(name) if schema.types.contains_key(name) => {
+        CftSchemaTypeRef::Named(name) if schema.has_type(name) => {
             ensure_type_can_materialize(schema, name)?;
             let fields = default_fields_for_type_inner(
                 schema,
@@ -185,7 +185,7 @@ fn default_from_schema_default(
         )),
         CftSchemaDefaultValue::EmptyArray => Ok(CfdValue::Array(Vec::new())),
         CftSchemaDefaultValue::EmptyObject => match non_nullable(ty) {
-            CftSchemaTypeRef::Named(name) if schema.types.contains_key(name) => {
+            CftSchemaTypeRef::Named(name) if schema.has_type(name) => {
                 let fields =
                     default_fields_for_type_inner(schema, name, materialization, stack, None)?;
                 Ok(CfdValue::Object(Box::new(CfdObject::new(
@@ -212,10 +212,9 @@ fn default_zero_for_ty_inner(
         CftSchemaTypeRef::Ref(_) | CftSchemaTypeRef::Nullable(_) => Ok(CfdValue::Null),
         CftSchemaTypeRef::Array(_) => Ok(CfdValue::Array(Vec::new())),
         CftSchemaTypeRef::Dict(_, _) => Ok(CfdValue::Dict(Vec::new())),
-        CftSchemaTypeRef::Named(name) if schema.enums.contains_key(name) => {
+        CftSchemaTypeRef::Named(name) if schema.is_schema_enum(name) => {
             let value = schema
-                .enums
-                .get(name)
+                .enum_meta(name)
                 .and_then(|enm| enm.all_variants.first());
             Ok(value.map_or_else(
                 || {
@@ -255,7 +254,7 @@ fn ensure_type_can_materialize(
     schema: &CftSchemaView,
     type_name: &str,
 ) -> Result<(), DiagnosticSet> {
-    let Some(schema_type) = schema.types.get(type_name) else {
+    let Some(schema_type) = schema.type_meta(type_name) else {
         return Err(one_mutation_error(
             "MUTATION-TYPE",
             format!("unknown type `{type_name}`"),

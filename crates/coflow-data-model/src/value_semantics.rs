@@ -70,7 +70,7 @@ fn validate_object_type_assignable_in_view(
     expected_type: &str,
     actual_type: &str,
 ) -> Result<(), CfdValueSemanticError> {
-    let Some(schema_type) = schema.types.get(actual_type) else {
+    let Some(schema_type) = schema.type_meta(actual_type) else {
         return Err(CfdValueSemanticError::new(format!(
             "unknown object type `{actual_type}`"
         )));
@@ -199,7 +199,7 @@ fn validate_named_value<C: CfdValueSemanticContext>(
     value: &CfdValue,
     pending_insert: Option<PendingInsertRef<'_>>,
 ) -> Result<(), CfdValueSemanticError> {
-    if schema.enums.contains_key(name) {
+    if schema.is_schema_enum(name) {
         return match value {
             CfdValue::Enum(enum_value) => validate_enum(schema, name, enum_value),
             _ => Err(type_mismatch(&format!("enum `{name}`"), value)),
@@ -245,7 +245,7 @@ fn validate_dict_key(
         (CftSchemaTypeRef::String, CfdDictKey::String(_))
         | (CftSchemaTypeRef::Int, CfdDictKey::Int(_)) => Ok(()),
         (CftSchemaTypeRef::Named(enum_name), CfdDictKey::Enum(enum_value))
-            if schema.enums.contains_key(enum_name) =>
+            if schema.is_schema_enum(enum_name) =>
         {
             validate_enum(schema, enum_name, enum_value)
         }

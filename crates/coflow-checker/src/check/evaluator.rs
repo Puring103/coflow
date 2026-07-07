@@ -186,7 +186,7 @@ impl<'a> CheckEvaluator<'a> {
         if let Some(value) = self.schema.consts.get(name) {
             return Ok(LocatedCheckValue::value(CheckValue::from_const(value)));
         }
-        if self.schema.enums.contains_key(name) {
+        if self.schema.is_schema_enum(name) {
             return Ok(LocatedCheckValue::value(CheckValue::EnumNamespace(
                 name.to_string(),
             )));
@@ -240,7 +240,7 @@ impl<'a> CheckEvaluator<'a> {
         let signature = self.resolve_call_signature(CallSignature::resolve_function(
             name,
             args.len(),
-            self.schema.enums.contains_key(name),
+            self.schema.is_schema_enum(name),
         ))?;
 
         match signature.target {

@@ -1304,7 +1304,13 @@ fn data_model_value_semantics_uses_cft_schema_view() {
         value_semantics.contains("CftSchemaView::new(schema)"),
         "data-model value semantics should use coflow-cft CftSchemaView as its schema query"
     );
-    for forbidden in [".resolve_type(", ".has_enum(", ".has_type(", ".all_fields"] {
+    for forbidden in [
+        ".resolve_type(",
+        ".has_enum(",
+        ".all_fields",
+        ".types.get(",
+        ".enums.contains_key(",
+    ] {
         assert!(
             !value_semantics.contains(forbidden),
             "data-model value semantics should not use raw schema query `{forbidden}`"
@@ -2236,8 +2242,10 @@ fn engine_mutation_defaults_use_cft_schema_view() {
     for forbidden in [
         ".resolve_type(",
         ".resolve_enum(",
-        ".has_type(",
         ".has_enum(",
+        ".types.get(",
+        ".types.contains_key(",
+        ".enums.contains_key(",
         "CftSchemaField",
     ] {
         assert!(
@@ -2286,8 +2294,10 @@ fn engine_mutation_uses_cft_schema_view_for_schema_queries() {
     for forbidden in [
         ".resolve_type(",
         ".resolve_enum(",
-        ".has_type(",
         ".has_enum(",
+        ".types.get(",
+        ".types.contains_key(",
+        ".enums.contains_key(",
         "CftSchemaField",
     ] {
         assert!(

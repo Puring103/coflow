@@ -379,7 +379,7 @@ fn coerce_json_object_fields(
     object: &Map<String, Value>,
 ) -> Result<BTreeMap<String, CfdValue>, DiagnosticSet> {
     let schema = CftSchemaView::new(&session.schema);
-    if !schema.types.contains_key(actual_type) {
+    if !schema.has_type(actual_type) {
         return Err(one_value_error(format!(
             "unknown object type `{actual_type}`"
         )));
