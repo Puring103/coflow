@@ -20,23 +20,22 @@
     clippy::struct_field_names
 )]
 
+mod diagnostics;
 mod dto;
 
 use coflow_api::{
     CreateTableRequest, DataLoader, DataWriter, DeleteRecordRequest, Diagnostic, DiagnosticSet,
-    InsertRecordRequest, Label, LoadContext, LoadedRecords, LoaderDescriptor, ProbeResult,
+    InsertRecordRequest, LoadContext, LoadedRecords, LoaderDescriptor, ProbeResult,
     ProjectSourceRef, RecordOrigin, RenameRecordRequest, ResolvedSource,
-    RewriteRecordReferencesRequest, SourceDocument, SourceLocation, SourceLocationSpec,
+    RewriteRecordReferencesRequest, SourceDocument, SourceLocationSpec,
     SourceResolveContext, WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome,
     WriterCapabilities, WriterDescriptor,
 };
-use coflow_loader_table_core::cell_value::{render_cell_value, CellRenderError};
-use coflow_loader_table_core::writer::{
-    plan_insert_record, TableInsertRecord, TableWriteDiagnostics, TableWritePlan,
-};
+use coflow_loader_table_core::cell_value::render_cell_value;
+use coflow_loader_table_core::writer::{plan_insert_record, TableInsertRecord, TableWritePlan};
 use coflow_loader_table_core::{
-    collect_table_input_records, resolve_table_write_layout, TableDiagnostic, TableDiagnostics,
-    TableLabel, TableSheet, TableSheetConfig, TableSource, TableWriteLayout,
+    collect_table_input_records, resolve_table_write_layout, TableSheet, TableSheetConfig,
+    TableSource, TableWriteLayout,
 };
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use serde::de::DeserializeOwned;
@@ -45,6 +44,12 @@ use serde_json::{json, Value};
 use dto::{
     ApiEnvelope, AuthResponse, LarkSheetMetadata, SheetsQueryData, ValuesData, WikiNodeData,
 };
+use diagnostics::{
+    diag, lark_diagnostics_to_api, lark_render_error, table_diagnostics_to_api,
+    table_write_diagnostics_to_api,
+};
+
+pub use diagnostics::{LarkDiagnostic, LarkDiagnostics};
 
 const AUTH_URL: &str = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal";
 const API_BASE: &str = "https://open.feishu.cn/open-apis";
@@ -100,53 +105,6 @@ impl LarkSheetSource {
 pub enum LarkSheetLocator {
     Url(String),
     SpreadsheetToken(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LarkDiagnostics {
-    pub diagnostics: Vec<LarkDiagnostic>,
-}
-
-impl LarkDiagnostics {
-    fn one(diagnostic: LarkDiagnostic) -> Self {
-        Self {
-            diagnostics: vec![diagnostic],
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LarkDiagnostic {
-    pub code: String,
-    pub stage: String,
-    pub message: String,
-    pub document: Option<String>,
-    pub sheet: Option<String>,
-}
-
-impl LarkDiagnostic {
-    #[must_use]
-    pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
-        Self {
-            code: code.into(),
-            stage: "LARK".to_string(),
-            message: message.into(),
-            document: None,
-            sheet: None,
-        }
-    }
-
-    #[must_use]
-    pub fn with_document(mut self, document: impl Into<String>) -> Self {
-        self.document = Some(document.into());
-        self
-    }
-
-    #[must_use]
-    pub fn with_sheet(mut self, sheet: impl Into<String>) -> Self {
-        self.sheet = Some(sheet.into());
-        self
-    }
 }
 
 pub trait LarkHttpClient {
@@ -1030,76 +988,6 @@ fn optional_string_field<'a>(
             format!("{label} must be a string"),
         ))
     })
-}
-
-fn lark_diagnostics_to_api(err: LarkDiagnostics) -> DiagnosticSet {
-    DiagnosticSet {
-        diagnostics: err
-            .diagnostics
-            .into_iter()
-            .map(lark_diagnostic_to_api)
-            .collect(),
-    }
-}
-
-fn lark_diagnostic_to_api(diagnostic: LarkDiagnostic) -> Diagnostic {
-    let document = diagnostic.document.clone().unwrap_or_default();
-    Diagnostic {
-        code: diagnostic.code,
-        stage: diagnostic.stage,
-        severity: coflow_api::Severity::Error,
-        message: diagnostic.message,
-        primary: Some(Label {
-            location: SourceLocation::RemoteCell {
-                document,
-                sheet: diagnostic.sheet,
-                row: 0,
-                column: 0,
-            },
-            message: None,
-        }),
-        related: Vec::new(),
-    }
-}
-
-fn table_diagnostics_to_api(err: TableDiagnostics) -> DiagnosticSet {
-    DiagnosticSet {
-        diagnostics: err
-            .diagnostics
-            .into_iter()
-            .map(table_diagnostic_to_api)
-            .collect(),
-    }
-}
-
-fn table_write_diagnostics_to_api(err: TableWriteDiagnostics) -> DiagnosticSet {
-    err.diagnostics
-        .into_iter()
-        .map(|diagnostic| diag("LARK-WRITE", diagnostic.message))
-        .collect::<Vec<_>>()
-        .into()
-}
-
-fn table_diagnostic_to_api(diagnostic: TableDiagnostic) -> Diagnostic {
-    Diagnostic {
-        code: diagnostic.code,
-        stage: diagnostic.stage,
-        severity: coflow_api::Severity::Error,
-        message: diagnostic.message,
-        primary: diagnostic.primary.map(table_label_to_api),
-        related: diagnostic
-            .related
-            .into_iter()
-            .map(table_label_to_api)
-            .collect(),
-    }
-}
-
-fn table_label_to_api(label: TableLabel) -> Label {
-    Label {
-        location: coflow_data_model::SourceLocation::from(label.location).into(),
-        message: label.message,
-    }
 }
 
 /// Writer descriptor for Lark sheets.
@@ -2066,22 +1954,6 @@ fn fetch_sheet_id_map(
         map.insert(sheet.sheet_id.clone(), sheet.sheet_id);
     }
     Ok(map)
-}
-
-fn diag(code: &'static str, message: impl Into<String>) -> Diagnostic {
-    Diagnostic::error(code, "LARK", message)
-}
-
-fn lark_render_error(err: CellRenderError) -> DiagnosticSet {
-    let message = match err {
-        CellRenderError::AnonymousEnum => {
-            "writing anonymous enum values into lark cells is not supported"
-        }
-        CellRenderError::NestedObject => {
-            "writing nested object values into lark cells is not supported"
-        }
-    };
-    DiagnosticSet::one(diag("LARK-WRITE", message))
 }
 
 #[cfg(test)]

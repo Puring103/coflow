@@ -2011,6 +2011,32 @@ fn lark_loader_dto_types_do_not_live_in_lib_rs() {
 }
 
 #[test]
+fn lark_loader_diagnostics_do_not_live_in_lib_rs() {
+    let lib = std::fs::read_to_string("crates/coflow-loader-lark/src/lib.rs")
+        .expect("read lark loader lib");
+    let diagnostics = std::fs::read_to_string("crates/coflow-loader-lark/src/diagnostics.rs")
+        .expect("read lark diagnostics");
+
+    for expected in [
+        "pub struct LarkDiagnostics",
+        "pub struct LarkDiagnostic",
+        "pub(crate) fn lark_diagnostics_to_api",
+        "pub(crate) fn table_diagnostics_to_api",
+        "pub(crate) fn table_write_diagnostics_to_api",
+        "pub(crate) fn lark_render_error",
+    ] {
+        assert!(
+            diagnostics.contains(expected),
+            "Lark diagnostics helper `{expected}` should live in diagnostics.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "Lark diagnostics helper `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn table_writers_use_shared_cell_renderer() {
     let excel = std::fs::read_to_string("crates/coflow-loader-excel/src/writer.rs")
         .expect("read excel writer");
@@ -2025,7 +2051,7 @@ fn table_writers_use_shared_cell_renderer() {
         "Excel writer should use the shared table-core writer and renderer"
     );
     assert!(
-        lark.contains("coflow_loader_table_core::cell_value::{render_cell_value"),
+        lark.contains("render_cell_value(request.new_value)"),
         "Lark writer should use the shared table-core cell renderer"
     );
     for forbidden in ["fn render_cell_value(value:", "fn render_lark_cell_value"] {
