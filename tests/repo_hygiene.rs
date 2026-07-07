@@ -1030,6 +1030,8 @@ fn cft_schema_compiler_symbols_are_split_out() {
     let annotations =
         std::fs::read_to_string("crates/coflow-cft/src/schema/compiler/annotations.rs")
             .expect("read CFT schema compiler annotations");
+    let build = std::fs::read_to_string("crates/coflow-cft/src/schema/compiler/build.rs")
+        .expect("read CFT schema compiler build projection");
     let defaults = std::fs::read_to_string("crates/coflow-cft/src/schema/compiler/defaults.rs")
         .expect("read CFT schema compiler defaults");
 
@@ -1063,6 +1065,23 @@ fn cft_schema_compiler_symbols_are_split_out() {
         assert!(
             !compiler.contains(expected),
             "CFT schema compiler annotation helper `{expected}` should not live in schema/compiler.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn build_schema",
+        "fn build_schema_field",
+        "fn collect_all_schema_fields",
+        "fn schema_default_value",
+        "fn enum_variant_value",
+        "fn localized_bucket",
+    ] {
+        assert!(
+            build.contains(expected),
+            "CFT schema compiler build helper `{expected}` should live in schema/compiler/build.rs"
+        );
+        assert!(
+            !compiler.contains(expected),
+            "CFT schema compiler build helper `{expected}` should not live in schema/compiler.rs"
         );
     }
     for expected in [
