@@ -1,7 +1,7 @@
+mod dicts;
+
 use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
-use crate::model::{
-    CfdDictKey, CfdEnumValue, CfdInputDictKey, CfdInputValue, CfdRecordId, CfdValue,
-};
+use crate::model::{CfdEnumValue, CfdInputValue, CfdRecordId, CfdValue};
 use crate::origin::RecordOrigin;
 use crate::schema_view::{
     input_value_kind, CfdType, CfdValueDraft, FieldMeta, RecordDraft, SchemaView, SpreadFieldSource,
@@ -171,7 +171,7 @@ impl<'s> Validator<'s> {
         self.validate_value(&field.ty, value, record, path)
     }
 
-    fn validate_value(
+    pub(super) fn validate_value(
         &mut self,
         ty: &CfdType,
         value: &CfdInputValue,
@@ -358,76 +358,7 @@ impl<'s> Validator<'s> {
         }
     }
 
-    fn validate_dict_key(
-        &mut self,
-        ty: &CfdType,
-        key: &CfdInputDictKey,
-        record: Option<CfdRecordId>,
-        path: CfdPath,
-    ) -> Option<CfdDictKey> {
-        match (ty, key) {
-            (CfdType::String, CfdInputDictKey::String(value)) => {
-                Some(CfdDictKey::String(value.clone()))
-            }
-            (CfdType::Int, CfdInputDictKey::Int(value)) => Some(CfdDictKey::Int(*value)),
-            (CfdType::Enum(expected), CfdInputDictKey::EnumVariant { enum_name, variant }) => {
-                if enum_name != expected {
-                    self.push(
-                        CfdDiagnostic::error(
-                            CfdErrorCode::TypeMismatch,
-                            format!("expected enum key `{expected}`, got `{enum_name}`"),
-                        )
-                        .with_primary(record, path),
-                    );
-                    return None;
-                }
-                let value = self.resolve_enum_value(enum_name, variant, record, path)?;
-                Some(CfdDictKey::Enum(value))
-            }
-            _ => {
-                self.push(
-                    CfdDiagnostic::error(CfdErrorCode::TypeMismatch, "dict key type mismatch")
-                        .with_primary(record, path),
-                );
-                None
-            }
-        }
-    }
-
-    fn validate_dict_entries(
-        &mut self,
-        key_ty: &CfdType,
-        value_ty: &CfdType,
-        entries: &[(CfdInputDictKey, CfdInputValue)],
-        record: Option<CfdRecordId>,
-        path: &CfdPath,
-    ) -> Vec<(CfdDictKey, CfdValueDraft)> {
-        let mut seen = BTreeMap::<CfdDictKey, CfdPath>::new();
-        let mut out = Vec::with_capacity(entries.len());
-        for (key, value) in entries {
-            let key_path = path.clone().dict_key_input(key);
-            let Some(key) = self.validate_dict_key(key_ty, key, record, key_path) else {
-                continue;
-            };
-            let value_path = path.clone().dict_key_value(&key);
-            if let Some(first) = seen.get(&key) {
-                self.push(
-                    CfdDiagnostic::error(CfdErrorCode::DuplicateDictKey, "duplicate dict key")
-                        .with_primary(record, value_path)
-                        .with_related(record, first.clone(), "first key is here"),
-                );
-                continue;
-            }
-            seen.insert(key.clone(), value_path.clone());
-            let Some(value) = self.validate_value(value_ty, value, record, value_path) else {
-                continue;
-            };
-            out.push((key, value));
-        }
-        out
-    }
-
-    fn resolve_enum_value(
+    pub(super) fn resolve_enum_value(
         &mut self,
         enum_name: &str,
         variant: &str,
