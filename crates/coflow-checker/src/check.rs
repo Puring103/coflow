@@ -1,5 +1,6 @@
 mod builtin_values;
 mod builtins;
+mod deps;
 mod diagnostics;
 mod evaluator;
 mod ops;

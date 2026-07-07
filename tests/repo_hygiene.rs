@@ -838,6 +838,30 @@ fn checker_builtin_value_helpers_do_not_live_in_evaluator_rs() {
 }
 
 #[test]
+fn checker_dependency_collection_does_not_live_in_evaluator_or_runner_rs() {
+    let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
+        .expect("read checker evaluator");
+    let runner =
+        std::fs::read_to_string("crates/coflow-checker/src/check/runner.rs").expect("read runner");
+    let deps =
+        std::fs::read_to_string("crates/coflow-checker/src/check/deps.rs").expect("read deps");
+
+    for expected in [
+        "pub(super) struct DependencyCollector",
+        "pub(super) struct DependencyGraphBuilder",
+    ] {
+        assert!(
+            deps.contains(expected),
+            "checker dependency helper `{expected}` should live in check/deps.rs"
+        );
+        assert!(
+            !evaluator.contains(expected) && !runner.contains(expected),
+            "checker dependency helper `{expected}` should not live in evaluator.rs or runner.rs"
+        );
+    }
+}
+
+#[test]
 fn loaders_do_not_depend_on_checker_runtime_directly() {
     let excel_manifest = std::fs::read_to_string("crates/coflow-loader-excel/Cargo.toml")
         .expect("read excel loader manifest");

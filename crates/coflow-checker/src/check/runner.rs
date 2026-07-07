@@ -1,3 +1,4 @@
+use super::deps::{DependencyCollector, DependencyGraphBuilder};
 use super::evaluator::CheckEvaluator;
 use super::value::{CheckRecordRef, CheckValue};
 use crate::{DependencyGraph, DimensionCheckContext};
@@ -5,7 +6,7 @@ use coflow_cft::{CftContainer, CftSchemaView};
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdDiagnostics, CfdPath, CfdRecordId, CfdValue,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 pub(crate) struct CheckRunner<'a> {
     schema: CftSchemaView,
@@ -14,7 +15,7 @@ pub(crate) struct CheckRunner<'a> {
     diagnostics: Vec<CfdDiagnostic>,
     /// When `Some`, the runner records read-from edges for each top-level
     /// record. The current root is the most recently pushed entry.
-    deps: Option<BTreeMap<CfdRecordId, BTreeSet<CfdRecordId>>>,
+    deps: Option<DependencyGraphBuilder>,
     dimension_context: Option<DimensionCheckContext>,
 }
 
@@ -62,13 +63,14 @@ impl<'a> CheckRunner<'a> {
     }
 
     pub(crate) fn run_with_deps(mut self) -> (Result<(), CfdDiagnostics>, DependencyGraph) {
-        self.deps = Some(BTreeMap::new());
+        self.deps = Some(DependencyGraphBuilder::new());
         for (record_id, record) in self.model.records() {
             self.run_one_record(record_id, record);
         }
-        let graph = DependencyGraph {
-            reads_from: self.deps.take().unwrap_or_default(),
-        };
+        let graph = self
+            .deps
+            .take()
+            .map_or_else(DependencyGraph::default, DependencyGraphBuilder::finish);
         (self.into_result(), graph)
     }
 
@@ -106,6 +108,13 @@ impl<'a> CheckRunner<'a> {
                 .map(|context| context.dimension.as_str()),
         );
         let root = CheckValue::Record(record);
+        let deps = self
+            .deps
+            .as_ref()
+            .map_or_else(
+                || DependencyCollector::disabled(root_record),
+                |deps| deps.collector_for(root_record),
+            );
         let mut evaluator = CheckEvaluator::new(
             &self.schema,
             self.source_schema,
@@ -113,21 +122,18 @@ impl<'a> CheckRunner<'a> {
             root_record,
             root_path,
             root,
+            deps,
         );
-        evaluator.dep_collector_enabled = self.deps.is_some();
         evaluator
             .dimension_context
             .clone_from(&self.dimension_context);
         for check in checks {
             let _ = evaluator.eval_check_block(&check);
         }
-        self.diagnostics.extend(evaluator.diagnostics);
-        if let (Some(deps), Some(root_id)) = (self.deps.as_mut(), root_record) {
-            if !evaluator.reads_from.is_empty() {
-                deps.entry(root_id)
-                    .or_default()
-                    .extend(evaluator.reads_from);
-            }
+        let (diagnostics, collector) = evaluator.into_outputs();
+        self.diagnostics.extend(diagnostics);
+        if let Some(deps) = self.deps.as_mut() {
+            deps.extend_root(root_record, collector);
         }
     }
 

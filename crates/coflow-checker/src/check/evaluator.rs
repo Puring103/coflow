@@ -1,5 +1,6 @@
 use super::builtin_values;
 use super::builtins::Builtin;
+use super::deps::DependencyCollector;
 use super::diagnostics::{
     bin_op_str, cmp_op_str, dimension_lookup_error_message, format_cfd_path_for_message,
     format_value_for_message, one_line_message, render_expr, render_stmt, unary_op_str,
@@ -19,7 +20,7 @@ use coflow_cft::{
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdEnumValue, CfdErrorCode, CfdPath, CfdRecordId,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use super::value::CheckRecordRef;
 
@@ -33,11 +34,7 @@ pub(super) struct CheckEvaluator<'a> {
     scopes: Vec<BTreeMap<String, LocatedCheckValue>>,
     contexts: Vec<String>,
     pub(super) diagnostics: Vec<CfdDiagnostic>,
-    /// When `true`, every traversal that resolves to a different top-level
-    /// record id records a `reads_from` edge from the current root. The
-    /// runner toggles this on for full check runs that produce a dep graph.
-    pub(super) dep_collector_enabled: bool,
-    pub(super) reads_from: BTreeSet<CfdRecordId>,
+    deps: DependencyCollector,
     pub(super) dimension_context: Option<DimensionCheckContext>,
 }
 
@@ -64,16 +61,14 @@ impl<'a> CheckEvaluator<'a> {
         root_record: Option<CfdRecordId>,
         root_path: CfdPath,
         current: CheckValue,
+        mut deps: DependencyCollector,
     ) -> Self {
-        let mut reads_from = BTreeSet::new();
         let initial_top = match &current {
             CheckValue::Record(CheckRecordRef::Top(id)) => Some(*id),
             _ => None,
         };
-        if let (Some(my), Some(other)) = (root_record, initial_top) {
-            if my != other {
-                reads_from.insert(other);
-            }
+        if let Some(record_id) = initial_top {
+            deps.note_read_from(record_id);
         }
         Self {
             schema,
@@ -85,25 +80,17 @@ impl<'a> CheckEvaluator<'a> {
             scopes: Vec::new(),
             contexts: Vec::new(),
             diagnostics: Vec::new(),
-            dep_collector_enabled: false,
-            reads_from,
+            deps,
             dimension_context: None,
         }
     }
 
-    /// Record a "this evaluator (rooted at `root_record`) read from another
-    /// top-level record" edge. Self-references are ignored. The dep graph is
-    /// built only when `dep_collector_enabled` is `true`.
+    pub(super) fn into_outputs(self) -> (Vec<CfdDiagnostic>, DependencyCollector) {
+        (self.diagnostics, self.deps)
+    }
+
     pub(super) fn note_read_from(&mut self, target: CfdRecordId) {
-        if !self.dep_collector_enabled {
-            return;
-        }
-        if let Some(my) = self.root_record {
-            if my == target {
-                return;
-            }
-        }
-        self.reads_from.insert(target);
+        self.deps.note_read_from(target);
     }
 
     fn from_ops<T>(&mut self, result: OpsResult<T>) -> EvalResult<T> {
