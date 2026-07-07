@@ -1235,6 +1235,36 @@ fn cft_type_checker_operator_rules_are_split_out() {
 }
 
 #[test]
+fn cft_schema_view_dimension_check_analysis_is_split_out() {
+    let schema_view =
+        std::fs::read_to_string("crates/coflow-cft/src/schema_view.rs").expect("read schema view");
+    let dimension_checks =
+        std::fs::read_to_string("crates/coflow-cft/src/schema_view/dimension_checks.rs")
+            .expect("read schema view dimension check analysis");
+
+    for expected in [
+        "pub(super) fn dimension_checks_for_type",
+        "struct DimensionCheckAnalyzer",
+        "fn stmt_dimensions",
+        "fn expr_usage",
+        "fn type_ref_to_check_ty",
+    ] {
+        assert!(
+            dimension_checks.contains(expected),
+            "CFT schema view dimension check helper `{expected}` should live in schema_view/dimension_checks.rs"
+        );
+        assert!(
+            !schema_view.contains(expected),
+            "CFT schema view dimension check helper `{expected}` should not live in schema_view.rs"
+        );
+    }
+    assert!(
+        schema_view.lines().count() < 500,
+        "coflow-cft schema_view.rs should stay focused on schema view metadata/query"
+    );
+}
+
+#[test]
 fn cft_parser_check_expression_parser_is_split_out() {
     let parser =
         std::fs::read_to_string("crates/coflow-cft/src/parser.rs").expect("read CFT parser");
