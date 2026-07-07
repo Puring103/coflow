@@ -277,8 +277,7 @@ fn cfd_loader_parser_and_diagnostics_do_not_live_in_lib_rs() {
     for expected in [
         "pub(super) struct Parser",
         "pub(super) struct ParsedCfdInputRecord",
-        "struct ParsedObjectFields",
-        "fn full_fields",
+        "fn parse_records_with_spans",
         "fn is_value_boundary",
     ] {
         assert!(
@@ -309,6 +308,36 @@ fn cfd_loader_parser_and_diagnostics_do_not_live_in_lib_rs() {
     assert!(
         lib.lines().count() < 800,
         "coflow-loader-cfd lib.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
+fn cfd_parser_schema_helpers_do_not_live_in_parser_rs() {
+    let parser = std::fs::read_to_string("crates/coflow-loader-cfd/src/parser.rs")
+        .expect("read cfd parser");
+    let schema = std::fs::read_to_string("crates/coflow-loader-cfd/src/parser/schema.rs")
+        .expect("read cfd parser schema helpers");
+
+    for expected in [
+        "pub(super) struct FieldMeta",
+        "pub(super) struct ParsedObjectFields",
+        "pub(super) fn validate_record_key",
+        "pub(super) fn validate_actual_type",
+        "pub(super) fn full_fields",
+        "fn field_meta",
+    ] {
+        assert!(
+            schema.contains(expected),
+            "CFD parser schema helper `{expected}` should live in parser/schema.rs"
+        );
+        assert!(
+            !parser.contains(expected),
+            "CFD parser schema helper `{expected}` should not live in parser.rs"
+        );
+    }
+    assert!(
+        parser.lines().count() < 800,
+        "coflow-loader-cfd parser.rs should stay below the 800-line large-module threshold"
     );
 }
 

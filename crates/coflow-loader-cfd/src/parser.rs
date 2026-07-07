@@ -1,20 +1,14 @@
-use coflow_cft::{record_key_ident_error, CftContainer, CftSchemaField, CftSchemaTypeRef};
+mod schema;
+
+use coflow_cft::{CftContainer, CftSchemaTypeRef};
 use coflow_data_model::{CfdInputDictKey, CfdInputRecord, CfdInputValue};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextSpan};
-
-#[derive(Debug, Clone)]
-struct FieldMeta {
-    name: String,
-    ty: CftSchemaTypeRef,
-}
-
-#[derive(Debug, Clone)]
-struct ParsedObjectFields {
-    spreads: Vec<CfdInputValue>,
-    fields: BTreeMap<String, CfdInputValue>,
-}
+use schema::{
+    full_fields, validate_actual_type, validate_group_type, validate_record_key,
+    validate_record_type, ParsedObjectFields,
+};
 
 pub(super) struct Parser<'a> {
     schema: &'a CftContainer,
@@ -78,29 +72,11 @@ impl<'a> Parser<'a> {
     }
 
     fn validate_group_type(&self, type_name: &str) -> Result<(), CfdTextDiagnostics> {
-        if self.schema.resolve_type(type_name).is_none() {
-            return Err(self.error(
-                CfdTextErrorCode::UnknownType,
-                format!("unknown type `{type_name}`"),
-            ));
-        }
-        Ok(())
+        validate_group_type(self.schema, type_name, self.pos)
     }
 
     fn validate_record_type(&self, actual_type: &str) -> Result<(), CfdTextDiagnostics> {
-        let Some(schema_type) = self.schema.resolve_type(actual_type) else {
-            return Err(self.error(
-                CfdTextErrorCode::UnknownType,
-                format!("unknown type `{actual_type}`"),
-            ));
-        };
-        if schema_type.is_abstract {
-            return Err(self.error(
-                CfdTextErrorCode::AbstractObjectType,
-                format!("abstract type `{actual_type}` cannot be instantiated"),
-            ));
-        }
-        Ok(())
+        validate_record_type(self.schema, actual_type, self.pos)
     }
 
     fn parse_group_records(
@@ -120,7 +96,7 @@ impl<'a> Parser<'a> {
             self.skip_ws_and_comments();
             let actual_type = if self.eat_char(':') {
                 let actual_type = self.parse_name("record type")?;
-                self.validate_actual_type(group_type, &actual_type)?;
+                validate_actual_type(self.schema, group_type, &actual_type, self.pos)?;
                 actual_type
             } else {
                 self.validate_record_type(group_type)?;
@@ -410,7 +386,7 @@ impl<'a> Parser<'a> {
             let marker = self.parse_name("object type or reference key")?;
             self.skip_ws_and_comments();
             if self.peek_char() == Some('{') {
-                self.validate_actual_type(expected_type, &marker)?;
+                validate_actual_type(self.schema, expected_type, &marker, self.pos)?;
                 Some(marker)
             } else {
                 self.pos = saved;
@@ -436,32 +412,6 @@ impl<'a> Parser<'a> {
         } else {
             CfdInputValue::object_spread(parsed.spreads, parsed.fields)
         })
-    }
-
-    fn validate_actual_type(
-        &self,
-        expected_type: &str,
-        actual_type: &str,
-    ) -> Result<(), CfdTextDiagnostics> {
-        let Some(schema_type) = self.schema.resolve_type(actual_type) else {
-            return Err(self.error(
-                CfdTextErrorCode::UnknownType,
-                format!("unknown type `{actual_type}`"),
-            ));
-        };
-        if schema_type.is_abstract {
-            return Err(self.error(
-                CfdTextErrorCode::AbstractObjectType,
-                format!("abstract type `{actual_type}` cannot be instantiated"),
-            ));
-        }
-        if !self.schema.is_assignable(actual_type, expected_type) {
-            return Err(self.error(
-                CfdTextErrorCode::ObjectTypeMismatch,
-                format!("type `{actual_type}` is not assignable to `{expected_type}`"),
-            ));
-        }
-        Ok(())
     }
 
     fn parse_object_fields(
@@ -827,38 +777,7 @@ impl<'a> Parser<'a> {
     }
 
     fn validate_record_key(&self, key: &str) -> Result<(), CfdTextDiagnostics> {
-        if let Some(reason) = record_key_ident_error(key) {
-            return Err(self.error(
-                CfdTextErrorCode::Syntax,
-                format!("invalid record key `{key}`: {reason}"),
-            ));
-        }
-        Ok(())
-    }
-}
-
-fn full_fields(
-    schema: &CftContainer,
-    type_name: &str,
-) -> Result<Vec<FieldMeta>, CfdTextDiagnostics> {
-    let Some(schema_type) = schema.resolve_type(type_name) else {
-        return Err(CfdTextDiagnostics::one(CfdTextDiagnostic::error(
-            CfdTextErrorCode::UnknownType,
-            format!("unknown type `{type_name}`"),
-            CfdTextSpan::default(),
-        )));
-    };
-    Ok(schema_type
-        .all_fields
-        .iter()
-        .map(field_meta)
-        .collect::<Vec<_>>())
-}
-
-fn field_meta(field: &CftSchemaField) -> FieldMeta {
-    FieldMeta {
-        name: field.name.clone(),
-        ty: field.ty_ref.clone(),
+        validate_record_key(key, self.pos)
     }
 }
 
