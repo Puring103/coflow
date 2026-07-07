@@ -1,3 +1,4 @@
+mod lexer;
 mod schema;
 
 use coflow_cft::{CftContainer, CftSchemaTypeRef};
@@ -5,6 +6,7 @@ use coflow_data_model::{CfdInputDictKey, CfdInputRecord, CfdInputValue};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextSpan};
+use lexer::{NameTokenKind, ScalarToken};
 use schema::{
     full_fields, validate_actual_type, validate_group_type, validate_record_key,
     validate_record_type, ParsedObjectFields,
@@ -543,154 +545,28 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_name(&mut self, label: &str) -> Result<String, CfdTextDiagnostics> {
-        self.skip_ws_and_comments();
-        let start = self.pos;
-        while let Some(ch) = self.peek_char() {
-            if ch.is_whitespace()
-                || matches!(
-                    ch,
-                    ':' | '=' | ';' | ',' | '{' | '}' | '[' | ']' | '(' | ')' | '@' | '&' | '"'
-                )
-            {
-                break;
-            }
-            self.pos += ch.len_utf8();
-        }
-        if self.pos == start {
-            return Err(CfdTextDiagnostics::one(CfdTextDiagnostic::error(
-                CfdTextErrorCode::Syntax,
-                format!("{label} is missing"),
-                CfdTextSpan {
-                    start,
-                    end: self.pos,
-                },
-            )));
-        }
-        Ok(self.source[start..self.pos].to_string())
+        lexer::parse_name(self.source, &mut self.pos, label, NameTokenKind::General)
     }
 
     fn parse_ref_name(&mut self, label: &str) -> Result<String, CfdTextDiagnostics> {
-        self.skip_ws_and_comments();
-        let start = self.pos;
-        while let Some(ch) = self.peek_char() {
-            if ch.is_whitespace()
-                || matches!(
-                    ch,
-                    '.' | '[' | ']' | ',' | ';' | '}' | ')' | ':' | '@' | '&'
-                )
-            {
-                break;
-            }
-            self.pos += ch.len_utf8();
-        }
-        if self.pos == start {
-            return Err(CfdTextDiagnostics::one(CfdTextDiagnostic::error(
-                CfdTextErrorCode::Syntax,
-                format!("{label} is missing"),
-                CfdTextSpan {
-                    start,
-                    end: self.pos,
-                },
-            )));
-        }
-        Ok(self.source[start..self.pos].to_string())
+        lexer::parse_name(self.source, &mut self.pos, label, NameTokenKind::Reference)
     }
 
     fn parse_scalar_token(
         &mut self,
         label: &str,
     ) -> Result<(String, CfdTextSpan), CfdTextDiagnostics> {
-        self.skip_ws_and_comments();
-        let start = self.pos;
-        while let Some(ch) = self.peek_char() {
-            if ch.is_whitespace() || matches!(ch, ':' | ',' | ';' | '}' | ']' | '|') {
-                break;
-            }
-            self.pos += ch.len_utf8();
-        }
-        if self.pos == start {
-            return Err(CfdTextDiagnostics::one(CfdTextDiagnostic::error(
-                CfdTextErrorCode::Syntax,
-                format!("{label} is missing"),
-                CfdTextSpan {
-                    start,
-                    end: self.pos,
-                },
-            )));
-        }
-        let span = CfdTextSpan {
-            start,
-            end: self.pos,
-        };
-        Ok((self.source[start..self.pos].to_string(), span))
+        let ScalarToken { text, span } =
+            lexer::parse_scalar_token(self.source, &mut self.pos, label)?;
+        Ok((text, span))
     }
 
     fn parse_quoted_string(&mut self) -> Result<String, CfdTextDiagnostics> {
-        self.skip_ws_and_comments();
-        let start = self.pos;
-        self.expect_char('"', "string opening quote")?;
-        let mut out = String::new();
-        let mut escaped = false;
-        while let Some(ch) = self.peek_char() {
-            self.pos += ch.len_utf8();
-            if escaped {
-                match ch {
-                    '"' => out.push('"'),
-                    '\\' => out.push('\\'),
-                    'n' => out.push('\n'),
-                    'r' => out.push('\r'),
-                    't' => out.push('\t'),
-                    other => {
-                        return Err(CfdTextDiagnostics::one(CfdTextDiagnostic::error(
-                            CfdTextErrorCode::Syntax,
-                            format!("unsupported string escape `\\{other}`"),
-                            CfdTextSpan {
-                                start,
-                                end: self.pos,
-                            },
-                        )));
-                    }
-                }
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == '"' {
-                return Ok(out);
-            } else {
-                out.push(ch);
-            }
-        }
-        Err(CfdTextDiagnostics::one(CfdTextDiagnostic::error(
-            CfdTextErrorCode::Syntax,
-            "unterminated string",
-            CfdTextSpan {
-                start,
-                end: self.pos,
-            },
-        )))
+        lexer::parse_quoted_string(self.source, &mut self.pos)
     }
 
     fn skip_ws_and_comments(&mut self) {
-        loop {
-            while self.peek_char().is_some_and(char::is_whitespace) {
-                self.pos += self.peek_char().map_or(0, char::len_utf8);
-            }
-            if self.source[self.pos..].starts_with("//") {
-                self.pos += 2;
-                while self.peek_char().is_some_and(|ch| ch != '\n') {
-                    self.pos += self.peek_char().map_or(0, char::len_utf8);
-                }
-                continue;
-            }
-            if self.source[self.pos..].starts_with('#') {
-                self.pos += 1;
-                while self.peek_char().is_some_and(|ch| ch != '\n') {
-                    self.pos += self.peek_char().map_or(0, char::len_utf8);
-                }
-                continue;
-            }
-            break;
-        }
+        lexer::skip_ws_and_comments(self.source, &mut self.pos);
     }
 
     fn expect_char(&mut self, expected: char, label: &str) -> Result<(), CfdTextDiagnostics> {
@@ -703,59 +579,31 @@ impl<'a> Parser<'a> {
     }
 
     fn eat_char(&mut self, expected: char) -> bool {
-        if self.peek_char() == Some(expected) {
-            self.pos += expected.len_utf8();
-            true
-        } else {
-            false
-        }
+        lexer::eat_char(self.source, &mut self.pos, expected)
     }
 
     fn eat_spread(&mut self) -> bool {
-        self.skip_ws_and_comments();
-        if self.source[self.pos..].starts_with("...") {
-            self.pos += 3;
-            true
-        } else {
-            false
-        }
+        lexer::eat_spread(self.source, &mut self.pos)
     }
 
     fn eat_keyword(&mut self, expected: &str) -> bool {
-        self.skip_ws_and_comments();
-        if !self.source[self.pos..].starts_with(expected) {
-            return false;
-        }
-        let end = self.pos + expected.len();
-        if self
-            .source
-            .get(end..)
-            .and_then(|rest| rest.chars().next())
-            .is_some_and(|ch| !is_value_boundary(ch))
-        {
-            return false;
-        }
-        self.pos = end;
-        true
+        lexer::eat_keyword(self.source, &mut self.pos, expected)
     }
 
     fn peek_keyword(&mut self, expected: &str) -> bool {
-        let saved = self.pos;
-        let result = self.eat_keyword(expected);
-        self.pos = saved;
-        result
+        lexer::peek_keyword(self.source, self.pos, expected)
     }
 
     fn peek_char(&self) -> Option<char> {
-        self.source[self.pos..].chars().next()
+        lexer::peek_char(self.source, self.pos)
     }
 
     fn previous_char(&self) -> Option<char> {
-        self.source[..self.pos].chars().next_back()
+        lexer::previous_char(self.source, self.pos)
     }
 
     fn is_eof(&self) -> bool {
-        self.pos >= self.source.len()
+        lexer::is_eof(self.source, self.pos)
     }
 
     fn error(&self, code: CfdTextErrorCode, message: impl Into<String>) -> CfdTextDiagnostics {
@@ -779,8 +627,4 @@ impl<'a> Parser<'a> {
     fn validate_record_key(&self, key: &str) -> Result<(), CfdTextDiagnostics> {
         validate_record_key(key, self.pos)
     }
-}
-
-fn is_value_boundary(ch: char) -> bool {
-    ch.is_whitespace() || matches!(ch, ',' | ';' | '}' | ']' | '|' | ':')
 }

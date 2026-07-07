@@ -472,7 +472,6 @@ fn cfd_loader_parser_and_diagnostics_do_not_live_in_lib_rs() {
         "pub(super) struct Parser",
         "pub(super) struct ParsedCfdInputRecord",
         "fn parse_records_with_spans",
-        "fn is_value_boundary",
     ] {
         assert!(
             parser.contains(expected),
@@ -527,6 +526,37 @@ fn cfd_parser_schema_helpers_do_not_live_in_parser_rs() {
         assert!(
             !parser.contains(expected),
             "CFD parser schema helper `{expected}` should not live in parser.rs"
+        );
+    }
+    assert!(
+        parser.lines().count() < 800,
+        "coflow-loader-cfd parser.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
+fn cfd_parser_lexer_helpers_do_not_live_in_parser_rs() {
+    let parser = std::fs::read_to_string("crates/coflow-loader-cfd/src/parser.rs")
+        .expect("read cfd parser");
+    let lexer = std::fs::read_to_string("crates/coflow-loader-cfd/src/parser/lexer.rs")
+        .expect("read cfd parser lexer helpers");
+
+    for expected in [
+        "pub(super) enum NameTokenKind",
+        "pub(super) struct ScalarToken",
+        "pub(super) fn parse_scalar_token",
+        "pub(super) fn parse_quoted_string",
+        "pub(super) fn skip_ws_and_comments",
+        "pub(super) fn eat_keyword",
+        "pub(super) fn is_value_boundary",
+    ] {
+        assert!(
+            lexer.contains(expected),
+            "CFD parser lexer helper `{expected}` should live in parser/lexer.rs"
+        );
+        assert!(
+            !parser.contains(expected),
+            "CFD parser lexer helper `{expected}` should not live in parser.rs"
         );
     }
     assert!(
