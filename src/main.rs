@@ -25,14 +25,15 @@ use coflow::commands::{
 };
 use coflow::diagnostics::DiagnosticJson;
 use coflow::{data_commands, schema_commands};
-use coflow_engine::RecordCoordinate;
 use coflow_project::{compile_schema_project, dedupe_cft_diagnostics, Project};
+use data_get_target::parse_data_get_target;
 use serde_json::Value;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 mod cli;
 mod cli_output;
+mod data_get_target;
 
 use cli::{
     BuildArgs, CftArgs, CftCheckArgs, CftCommand, Cli, CodegenArgs, CodegenCommand,
@@ -212,68 +213,6 @@ fn init_project(args: InitArgs) -> Result<bool, String> {
     let outcome = coflow_project::init_project(&dir)?;
     println!("created {}", outcome.config_path.display());
     Ok(true)
-}
-
-#[derive(Debug)]
-struct DataGetTarget {
-    config_or_dir: Option<PathBuf>,
-    selector: Option<RecordCoordinate>,
-}
-
-fn parse_data_get_target(values: &[String]) -> Result<DataGetTarget, String> {
-    match values {
-        [] => Ok(DataGetTarget {
-            config_or_dir: None,
-            selector: None,
-        }),
-        [only] if looks_like_config_path(only) => Ok(DataGetTarget {
-            config_or_dir: Some(PathBuf::from(only)),
-            selector: None,
-        }),
-        [only] if looks_like_record_selector(only) => Ok(DataGetTarget {
-            config_or_dir: None,
-            selector: Some(parse_record_selector(only)?),
-        }),
-        [only] => Ok(DataGetTarget {
-            config_or_dir: Some(PathBuf::from(only)),
-            selector: None,
-        }),
-        [config_or_dir, selector] => Ok(DataGetTarget {
-            config_or_dir: Some(PathBuf::from(config_or_dir)),
-            selector: Some(parse_record_selector(selector)?),
-        }),
-        _ => Err("data get accepts at most CONFIG_OR_DIR and TYPE.KEY".to_string()),
-    }
-}
-
-fn looks_like_record_selector(value: &str) -> bool {
-    value.split_once('.').is_some_and(|(actual_type, key)| {
-        !actual_type.is_empty() && !key.is_empty() && !value.contains('/') && !value.contains('\\')
-    })
-}
-
-fn looks_like_config_path(value: &str) -> bool {
-    let path = Path::new(value);
-    if path.exists() || value.contains('/') || value.contains('\\') {
-        return true;
-    }
-    path.extension().is_some_and(|extension| {
-        extension.eq_ignore_ascii_case("yaml") || extension.eq_ignore_ascii_case("yml")
-    })
-}
-
-fn parse_record_selector(value: &str) -> Result<RecordCoordinate, String> {
-    let Some((actual_type, key)) = value.split_once('.') else {
-        return Err(format!(
-            "record selector `{value}` must be written as TYPE.KEY"
-        ));
-    };
-    if actual_type.is_empty() || key.is_empty() {
-        return Err(format!(
-            "record selector `{value}` must be written as TYPE.KEY"
-        ));
-    }
-    Ok(RecordCoordinate::new(actual_type, key))
 }
 
 fn split_keys(keys: &[String]) -> Vec<String> {

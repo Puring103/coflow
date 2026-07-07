@@ -107,6 +107,8 @@ fn root_cli_arguments_do_not_live_in_main_rs() {
     let cli = std::fs::read_to_string("src/cli.rs").expect("read root CLI argument definitions");
     let output =
         std::fs::read_to_string("src/cli_output.rs").expect("read root CLI output helpers");
+    let data_get_target = std::fs::read_to_string("src/data_get_target.rs")
+        .expect("read root CLI data get target helpers");
 
     for expected in [
         "pub(crate) struct Cli",
@@ -146,6 +148,21 @@ fn root_cli_arguments_do_not_live_in_main_rs() {
         assert!(
             !main.contains(expected),
             "root CLI output helper `{expected}` should not live in main.rs"
+        );
+    }
+    for expected in [
+        "pub(crate) struct DataGetTarget",
+        "pub(crate) fn parse_data_get_target",
+        "fn looks_like_record_selector",
+        "fn parse_record_selector",
+    ] {
+        assert!(
+            data_get_target.contains(expected),
+            "root CLI data get target helper `{expected}` should live in data_get_target.rs"
+        );
+        assert!(
+            !main.contains(expected),
+            "root CLI data get target helper `{expected}` should not live in main.rs"
         );
     }
 }
