@@ -20,6 +20,8 @@
     clippy::struct_field_names
 )]
 
+mod dto;
+
 use coflow_api::{
     CreateTableRequest, DataLoader, DataWriter, DeleteRecordRequest, Diagnostic, DiagnosticSet,
     InsertRecordRequest, Label, LoadContext, LoadedRecords, LoaderDescriptor, ProbeResult,
@@ -38,8 +40,11 @@ use coflow_loader_table_core::{
 };
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use serde::de::DeserializeOwned;
-use serde::Deserialize;
 use serde_json::{json, Value};
+
+use dto::{
+    ApiEnvelope, AuthResponse, LarkSheetMetadata, SheetsQueryData, ValuesData, WikiNodeData,
+};
 
 const AUTH_URL: &str = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal";
 const API_BASE: &str = "https://open.feishu.cn/open-apis";
@@ -2077,90 +2082,6 @@ fn lark_render_error(err: CellRenderError) -> DiagnosticSet {
         }
     };
     DiagnosticSet::one(diag("LARK-WRITE", message))
-}
-
-#[derive(Debug, Deserialize)]
-struct AuthResponse {
-    code: i64,
-    msg: Option<String>,
-    tenant_access_token: Option<String>,
-    /// Server-declared TTL in seconds. Lark documents 7200 today; callers
-    /// nonetheless treat this as advisory and apply a safety margin before
-    /// reuse.
-    #[serde(default)]
-    expire: Option<u64>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ApiEnvelope<T> {
-    code: i64,
-    msg: Option<String>,
-    data: Option<T>,
-}
-
-#[derive(Debug, Deserialize)]
-struct WikiNodeData {
-    node: WikiNode,
-}
-
-#[derive(Debug, Deserialize)]
-struct WikiNode {
-    obj_type: String,
-    obj_token: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct SheetsQueryData {
-    sheets: Vec<LarkSheetMetadata>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct LarkSheetMetadata {
-    sheet_id: String,
-    title: String,
-    #[serde(default, flatten)]
-    grid: GridContainer,
-}
-
-impl LarkSheetMetadata {
-    fn row_count(&self) -> usize {
-        self.grid
-            .grid_properties
-            .as_ref()
-            .map_or(0, |grid| grid.row_count)
-    }
-
-    fn column_count(&self) -> usize {
-        self.grid
-            .grid_properties
-            .as_ref()
-            .map_or(0, |grid| grid.column_count)
-    }
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-struct GridContainer {
-    grid_properties: Option<GridProperties>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct GridProperties {
-    #[serde(default)]
-    row_count: usize,
-    #[serde(default)]
-    column_count: usize,
-}
-
-#[derive(Debug, Deserialize)]
-struct ValuesData {
-    #[serde(rename = "valueRange", alias = "value_range")]
-    value_range: ValueRange,
-}
-
-#[derive(Debug, Deserialize)]
-struct ValueRange {
-    #[serde(default)]
-    values: Vec<Vec<Value>>,
 }
 
 #[cfg(test)]

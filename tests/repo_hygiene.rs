@@ -1984,6 +1984,33 @@ fn lsp_semantic_token_helpers_do_not_live_in_lib_rs() {
 }
 
 #[test]
+fn lark_loader_dto_types_do_not_live_in_lib_rs() {
+    let lib = std::fs::read_to_string("crates/coflow-loader-lark/src/lib.rs")
+        .expect("read lark loader lib");
+    let dto =
+        std::fs::read_to_string("crates/coflow-loader-lark/src/dto.rs").expect("read lark dto");
+
+    for expected in [
+        "pub(crate) struct AuthResponse",
+        "pub(crate) struct ApiEnvelope",
+        "pub(crate) struct WikiNodeData",
+        "pub(crate) struct SheetsQueryData",
+        "pub(crate) struct LarkSheetMetadata",
+        "pub(crate) struct ValuesData",
+        "pub(crate) struct ValueRange",
+    ] {
+        assert!(
+            dto.contains(expected),
+            "Lark loader DTO `{expected}` should live in dto.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "Lark loader DTO `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn table_writers_use_shared_cell_renderer() {
     let excel = std::fs::read_to_string("crates/coflow-loader-excel/src/writer.rs")
         .expect("read excel writer");
