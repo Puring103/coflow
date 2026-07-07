@@ -1765,6 +1765,36 @@ fn csharp_codegen_emit_reader_helpers_do_not_live_in_emit_rs() {
 }
 
 #[test]
+fn csharp_codegen_emit_loader_helpers_do_not_live_in_emit_rs() {
+    let emit =
+        std::fs::read_to_string("crates/coflow-codegen-csharp/src/emit.rs").expect("read C# emit");
+    let loaders = std::fs::read_to_string("crates/coflow-codegen-csharp/src/emit/loaders.rs")
+        .expect("read C# emit loaders");
+
+    for expected in [
+        "pub(super) fn loader_method",
+        "pub(super) fn polymorphic_loader",
+        "fn polymorphic_cases",
+        "fn load_field",
+        "pub(super) fn field_type_requires_context",
+        "fn field_type_requires_context_inner",
+    ] {
+        assert!(
+            loaders.contains(expected),
+            "C# emit loader helper `{expected}` should live in emit/loaders.rs"
+        );
+        assert!(
+            !emit.contains(expected),
+            "C# emit loader helper `{expected}` should not live in emit.rs"
+        );
+    }
+    assert!(
+        emit.lines().count() < 320,
+        "coflow-codegen-csharp emit.rs should stay below the 320-line focused-module threshold"
+    );
+}
+
+#[test]
 fn exporter_core_schema_projection_uses_cft_schema_view() {
     let exporter =
         std::fs::read_to_string("crates/coflow-exporter-core/src/lib.rs").expect("read exporter");
