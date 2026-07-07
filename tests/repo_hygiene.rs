@@ -464,6 +464,8 @@ fn excel_loader_options_do_not_live_in_lib_rs() {
         .expect("read excel diagnostics");
     let options = std::fs::read_to_string("crates/coflow-loader-excel/src/options.rs")
         .expect("read excel options parser");
+    let source = std::fs::read_to_string("crates/coflow-loader-excel/src/source.rs")
+        .expect("read excel source");
 
     for expected in [
         "pub(super) fn excel_sheets_from_options",
@@ -498,9 +500,28 @@ fn excel_loader_options_do_not_live_in_lib_rs() {
             "Excel diagnostic item `{expected}` should not live in lib.rs"
         );
     }
+    for expected in [
+        "pub struct ExcelSource",
+        "pub struct ExcelSheet",
+        "pub struct ExcelInputRecords",
+        "pub fn collect_input_records",
+        "fn table_sources_from_excel",
+        "fn table_source_from_excel",
+        "fn cell_text",
+        "fn unsupported_cell_diagnostic",
+    ] {
+        assert!(
+            source.contains(expected),
+            "Excel source item `{expected}` should live in source.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "Excel source item `{expected}` should not live in lib.rs"
+        );
+    }
     assert!(
-        lib.lines().count() < 800,
-        "coflow-loader-excel lib.rs should stay below the 800-line large-module threshold"
+        lib.lines().count() < 360,
+        "coflow-loader-excel lib.rs should stay below the 360-line focused-module threshold"
     );
 }
 
