@@ -192,8 +192,8 @@ fn root_cli_id_as_enum_lockfile_does_not_live_in_commands_rs() {
 
 #[test]
 fn data_command_helpers_do_not_live_in_data_commands_rs() {
-    let commands = std::fs::read_to_string("src/data_commands.rs")
-        .expect("read root CLI data commands");
+    let commands =
+        std::fs::read_to_string("src/data_commands.rs").expect("read root CLI data commands");
     let lark = std::fs::read_to_string("src/data_commands/lark.rs")
         .expect("read data command lark helpers");
     let output = std::fs::read_to_string("src/data_commands/output.rs")
@@ -246,8 +246,8 @@ fn data_command_helpers_do_not_live_in_data_commands_rs() {
 fn project_config_deserialization_does_not_live_in_project_lib_rs() {
     let project =
         std::fs::read_to_string("crates/coflow-project/src/lib.rs").expect("read project lib");
-    let config =
-        std::fs::read_to_string("crates/coflow-project/src/config.rs").expect("read project config");
+    let config = std::fs::read_to_string("crates/coflow-project/src/config.rs")
+        .expect("read project config");
     let validation = std::fs::read_to_string("crates/coflow-project/src/validation.rs")
         .expect("read project validation");
 
@@ -445,8 +445,7 @@ fn csv_dimension_source_sync_does_not_live_in_writer_rs() {
 
 #[test]
 fn csv_loader_helpers_do_not_live_in_lib_rs() {
-    let lib =
-        std::fs::read_to_string("crates/coflow-loader-csv/src/lib.rs").expect("read csv lib");
+    let lib = std::fs::read_to_string("crates/coflow-loader-csv/src/lib.rs").expect("read csv lib");
     let format =
         std::fs::read_to_string("crates/coflow-loader-csv/src/format.rs").expect("read csv format");
     let options = std::fs::read_to_string("crates/coflow-loader-csv/src/options.rs")
@@ -494,6 +493,8 @@ fn cfd_writer_is_split_by_responsibility() {
         .expect("read cfd writer render helpers");
     let schema_nav = std::fs::read_to_string("crates/coflow-loader-cfd/src/writer/schema_nav.rs")
         .expect("read cfd writer schema navigation helpers");
+    let target = std::fs::read_to_string("crates/coflow-loader-cfd/src/writer/target.rs")
+        .expect("read cfd writer target locator helpers");
 
     for expected in [
         "impl DimensionSourceManager for CfdWriter",
@@ -513,7 +514,6 @@ fn cfd_writer_is_split_by_responsibility() {
     for expected in [
         "pub(super) fn apply_patch",
         "pub(super) fn find_record",
-        "pub(super) fn spread_entries_at_path",
         "pub(super) fn replace_spans",
     ] {
         assert!(
@@ -523,6 +523,21 @@ fn cfd_writer_is_split_by_responsibility() {
         assert!(
             !writer.contains(expected),
             "CFD patch item `{expected}` should not live in writer.rs"
+        );
+    }
+    for expected in [
+        "pub(super) enum WriteTarget",
+        "pub(super) fn locate_target",
+        "pub(super) fn spread_entries_at_path",
+        "fn block_entries_at_path",
+    ] {
+        assert!(
+            target.contains(expected),
+            "CFD target locator item `{expected}` should live in writer/target.rs"
+        );
+        assert!(
+            !patch.contains(expected) && !writer.contains(expected),
+            "CFD target locator item `{expected}` should not live in writer.rs or writer/patch.rs"
         );
     }
     for expected in [
@@ -555,8 +570,8 @@ fn cfd_writer_is_split_by_responsibility() {
 fn cfd_loader_parser_and_diagnostics_do_not_live_in_lib_rs() {
     let lib =
         std::fs::read_to_string("crates/coflow-loader-cfd/src/lib.rs").expect("read cfd loader");
-    let parser = std::fs::read_to_string("crates/coflow-loader-cfd/src/parser.rs")
-        .expect("read cfd parser");
+    let parser =
+        std::fs::read_to_string("crates/coflow-loader-cfd/src/parser.rs").expect("read cfd parser");
     let diagnostics = std::fs::read_to_string("crates/coflow-loader-cfd/src/diagnostics.rs")
         .expect("read cfd diagnostics");
 
@@ -598,8 +613,8 @@ fn cfd_loader_parser_and_diagnostics_do_not_live_in_lib_rs() {
 
 #[test]
 fn cfd_parser_schema_helpers_do_not_live_in_parser_rs() {
-    let parser = std::fs::read_to_string("crates/coflow-loader-cfd/src/parser.rs")
-        .expect("read cfd parser");
+    let parser =
+        std::fs::read_to_string("crates/coflow-loader-cfd/src/parser.rs").expect("read cfd parser");
     let schema = std::fs::read_to_string("crates/coflow-loader-cfd/src/parser/schema.rs")
         .expect("read cfd parser schema helpers");
 
@@ -628,8 +643,8 @@ fn cfd_parser_schema_helpers_do_not_live_in_parser_rs() {
 
 #[test]
 fn cfd_parser_lexer_helpers_do_not_live_in_parser_rs() {
-    let parser = std::fs::read_to_string("crates/coflow-loader-cfd/src/parser.rs")
-        .expect("read cfd parser");
+    let parser =
+        std::fs::read_to_string("crates/coflow-loader-cfd/src/parser.rs").expect("read cfd parser");
     let lexer = std::fs::read_to_string("crates/coflow-loader-cfd/src/parser/lexer.rs")
         .expect("read cfd parser lexer helpers");
 
@@ -854,19 +869,15 @@ fn data_model_schema_projection_uses_cft_schema_view() {
 
 #[test]
 fn data_model_value_semantics_uses_cft_schema_view() {
-    let value_semantics = std::fs::read_to_string("crates/coflow-data-model/src/value_semantics.rs")
-        .expect("read data-model value semantics");
+    let value_semantics =
+        std::fs::read_to_string("crates/coflow-data-model/src/value_semantics.rs")
+            .expect("read data-model value semantics");
 
     assert!(
         value_semantics.contains("CftSchemaView::new(schema)"),
         "data-model value semantics should use coflow-cft CftSchemaView as its schema query"
     );
-    for forbidden in [
-        ".resolve_type(",
-        ".has_enum(",
-        ".has_type(",
-        ".all_fields",
-    ] {
+    for forbidden in [".resolve_type(", ".has_enum(", ".has_type(", ".all_fields"] {
         assert!(
             !value_semantics.contains(forbidden),
             "data-model value semantics should not use raw schema query `{forbidden}`"
@@ -882,16 +893,20 @@ fn data_model_runtime_model_is_split_by_responsibility() {
         std::fs::read_to_string("crates/coflow-data-model/src/model/ids.rs").expect("read ids");
     let domain = std::fs::read_to_string("crates/coflow-data-model/src/model/domain.rs")
         .expect("read domain");
-    let edges = std::fs::read_to_string("crates/coflow-data-model/src/model/edges.rs")
-        .expect("read edges");
+    let edges =
+        std::fs::read_to_string("crates/coflow-data-model/src/model/edges.rs").expect("read edges");
     let tables = std::fs::read_to_string("crates/coflow-data-model/src/model/tables.rs")
         .expect("read tables");
-    let value = std::fs::read_to_string("crates/coflow-data-model/src/model/value.rs")
-        .expect("read value");
-    let input = std::fs::read_to_string("crates/coflow-data-model/src/model/input.rs")
-        .expect("read input");
+    let value =
+        std::fs::read_to_string("crates/coflow-data-model/src/model/value.rs").expect("read value");
+    let input =
+        std::fs::read_to_string("crates/coflow-data-model/src/model/input.rs").expect("read input");
 
-    for expected in ["pub struct CfdTypeId", "pub struct CfdDomainId", "pub struct CfdRecordId"] {
+    for expected in [
+        "pub struct CfdTypeId",
+        "pub struct CfdDomainId",
+        "pub struct CfdRecordId",
+    ] {
         assert!(
             ids.contains(expected),
             "data-model id type `{expected}` should live in model/ids.rs"
@@ -1155,12 +1170,12 @@ fn cft_parser_check_expression_parser_is_split_out() {
         std::fs::read_to_string("crates/coflow-cft/src/parser.rs").expect("read CFT parser");
     let annotations = std::fs::read_to_string("crates/coflow-cft/src/parser/annotations.rs")
         .expect("read annotation parser");
-    let check =
-        std::fs::read_to_string("crates/coflow-cft/src/parser/check.rs").expect("read check parser");
+    let check = std::fs::read_to_string("crates/coflow-cft/src/parser/check.rs")
+        .expect("read check parser");
     let defaults = std::fs::read_to_string("crates/coflow-cft/src/parser/defaults.rs")
         .expect("read default parser");
-    let tokens =
-        std::fs::read_to_string("crates/coflow-cft/src/parser/tokens.rs").expect("read parser tokens");
+    let tokens = std::fs::read_to_string("crates/coflow-cft/src/parser/tokens.rs")
+        .expect("read parser tokens");
 
     for expected in [
         "pub(super) fn parse_check_block",
@@ -1209,7 +1224,10 @@ fn cft_parser_check_expression_parser_is_split_out() {
             "CFT parser default helper `{expected}` should not live in parser.rs"
         );
     }
-    for expected in ["pub(super) fn token_name", "pub(super) fn reserved_keyword_name"] {
+    for expected in [
+        "pub(super) fn token_name",
+        "pub(super) fn reserved_keyword_name",
+    ] {
         assert!(
             tokens.contains(expected),
             "CFT parser token helper `{expected}` should live in parser/tokens.rs"
@@ -1229,8 +1247,7 @@ fn cft_parser_check_expression_parser_is_split_out() {
 fn csharp_codegen_schema_projection_uses_cft_schema_view() {
     let schema_view = std::fs::read_to_string("crates/coflow-codegen-csharp/src/schema_view.rs")
         .expect("read C# codegen schema view");
-    let ir =
-        std::fs::read_to_string("crates/coflow-codegen-csharp/src/ir.rs").expect("read C# IR");
+    let ir = std::fs::read_to_string("crates/coflow-codegen-csharp/src/ir.rs").expect("read C# IR");
     let emit =
         std::fs::read_to_string("crates/coflow-codegen-csharp/src/emit.rs").expect("read C# emit");
     let codegen = format!("{schema_view}\n{ir}\n{emit}");
@@ -1450,8 +1467,8 @@ fn engine_data_file_headers_use_cft_schema_view() {
 
 #[test]
 fn engine_writes_use_cft_schema_view_for_insert_schema_checks() {
-    let writes = std::fs::read_to_string("crates/coflow-engine/src/writes.rs")
-        .expect("read engine writes");
+    let writes =
+        std::fs::read_to_string("crates/coflow-engine/src/writes.rs").expect("read engine writes");
 
     assert!(
         writes.contains("CftSchemaView::new(&session.schema)"),
@@ -1467,8 +1484,8 @@ fn engine_writes_use_cft_schema_view_for_insert_schema_checks() {
 
 #[test]
 fn engine_write_path_helpers_do_not_live_in_writes_rs() {
-    let writes = std::fs::read_to_string("crates/coflow-engine/src/writes.rs")
-        .expect("read engine writes");
+    let writes =
+        std::fs::read_to_string("crates/coflow-engine/src/writes.rs").expect("read engine writes");
     let path = std::fs::read_to_string("crates/coflow-engine/src/writes/path.rs")
         .expect("read engine write path helpers");
 
@@ -1543,8 +1560,8 @@ fn engine_mutation_field_coercion_uses_cft_schema_view() {
 
 #[test]
 fn engine_mutation_uses_cft_schema_view_for_schema_queries() {
-    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation/mod.rs")
-        .expect("read mutation");
+    let mutation =
+        std::fs::read_to_string("crates/coflow-engine/src/mutation/mod.rs").expect("read mutation");
     let coercion = std::fs::read_to_string("crates/coflow-engine/src/mutation/coercion.rs")
         .expect("read mutation coercion");
 
@@ -1771,9 +1788,8 @@ fn checker_builtin_value_helpers_do_not_live_in_evaluator_rs() {
 fn checker_builtin_call_helpers_do_not_live_in_evaluator_rs() {
     let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
         .expect("read checker evaluator");
-    let builtin_calls =
-        std::fs::read_to_string("crates/coflow-checker/src/check/builtin_calls.rs")
-            .expect("read checker builtin call helpers");
+    let builtin_calls = std::fs::read_to_string("crates/coflow-checker/src/check/builtin_calls.rs")
+        .expect("read checker builtin call helpers");
 
     for expected in [
         "pub(super) struct CallSignature",
@@ -1791,7 +1807,10 @@ fn checker_builtin_call_helpers_do_not_live_in_evaluator_rs() {
             "checker builtin call helper `{expected}` should not live in evaluator.rs"
         );
     }
-    for forbidden in ["枚举构造函数需要 1 个参数", "matches 的 pattern 必须是字符串字面量"] {
+    for forbidden in [
+        "枚举构造函数需要 1 个参数",
+        "matches 的 pattern 必须是字符串字面量",
+    ] {
         assert!(
             !evaluator.contains(forbidden),
             "checker evaluator should not own builtin call validation branch `{forbidden}`"
@@ -1921,9 +1940,8 @@ fn checker_expression_dispatch_does_not_live_in_evaluator_rs() {
 fn checker_field_read_helpers_do_not_live_in_evaluator_rs() {
     let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
         .expect("read checker evaluator");
-    let fields =
-        std::fs::read_to_string("crates/coflow-checker/src/check/fields.rs")
-            .expect("read checker field helpers");
+    let fields = std::fs::read_to_string("crates/coflow-checker/src/check/fields.rs")
+        .expect("read checker field helpers");
 
     for expected in [
         "pub(super) fn field_type_for_record",
@@ -1957,9 +1975,8 @@ fn checker_field_read_helpers_do_not_live_in_evaluator_rs() {
 fn checker_value_explanation_helpers_do_not_live_in_evaluator_rs() {
     let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
         .expect("read checker evaluator");
-    let explanations =
-        std::fs::read_to_string("crates/coflow-checker/src/check/explanations.rs")
-            .expect("read checker explanation helpers");
+    let explanations = std::fs::read_to_string("crates/coflow-checker/src/check/explanations.rs")
+        .expect("read checker explanation helpers");
 
     for expected in [
         "pub(super) trait ValueExprEvaluator",
@@ -1988,9 +2005,8 @@ fn checker_value_explanation_helpers_do_not_live_in_evaluator_rs() {
 fn checker_explained_eval_helpers_do_not_live_in_evaluator_rs() {
     let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
         .expect("read checker evaluator");
-    let explanations =
-        std::fs::read_to_string("crates/coflow-checker/src/check/explanations.rs")
-            .expect("read checker explanation helpers");
+    let explanations = std::fs::read_to_string("crates/coflow-checker/src/check/explanations.rs")
+        .expect("read checker explanation helpers");
 
     assert!(
         explanations.contains("pub(super) fn eval_expr_explained"),
@@ -2012,9 +2028,8 @@ fn checker_explained_eval_helpers_do_not_live_in_evaluator_rs() {
 fn checker_false_explanation_helpers_do_not_live_in_evaluator_rs() {
     let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
         .expect("read checker evaluator");
-    let explanations =
-        std::fs::read_to_string("crates/coflow-checker/src/check/explanations.rs")
-            .expect("read checker explanation helpers");
+    let explanations = std::fs::read_to_string("crates/coflow-checker/src/check/explanations.rs")
+        .expect("read checker explanation helpers");
 
     for expected in [
         "pub(super) fn explain_false_expr",
@@ -2220,8 +2235,7 @@ fn lsp_protocol_helpers_do_not_live_in_lib_rs() {
 #[test]
 fn lsp_state_helpers_do_not_live_in_lib_rs() {
     let lib = std::fs::read_to_string("crates/coflow-lsp/src/lib.rs").expect("read lsp lib");
-    let state =
-        std::fs::read_to_string("crates/coflow-lsp/src/state.rs").expect("read lsp state");
+    let state = std::fs::read_to_string("crates/coflow-lsp/src/state.rs").expect("read lsp state");
 
     for expected in [
         "pub(crate) struct LspBuild",
@@ -2445,8 +2459,7 @@ fn lsp_completion_helpers_do_not_live_in_lib_rs() {
 #[test]
 fn lsp_hover_helpers_do_not_live_in_lib_rs() {
     let lib = std::fs::read_to_string("crates/coflow-lsp/src/lib.rs").expect("read lsp lib");
-    let hover =
-        std::fs::read_to_string("crates/coflow-lsp/src/hover.rs").expect("read lsp hover");
+    let hover = std::fs::read_to_string("crates/coflow-lsp/src/hover.rs").expect("read lsp hover");
 
     for expected in [
         "pub(crate) fn hover_at",
@@ -2819,14 +2832,12 @@ fn table_loader_core_table_rs_is_split_by_responsibility() {
 
 #[test]
 fn table_cell_value_is_split_by_responsibility() {
-    let cell_value = std::fs::read_to_string(
-        "crates/coflow-loader-table-core/src/cell_value/mod.rs",
-    )
-    .expect("read table core cell value parser");
-    let diagnostics = std::fs::read_to_string(
-        "crates/coflow-loader-table-core/src/cell_value/diagnostics.rs",
-    )
-    .expect("read table core cell value diagnostics");
+    let cell_value =
+        std::fs::read_to_string("crates/coflow-loader-table-core/src/cell_value/mod.rs")
+            .expect("read table core cell value parser");
+    let diagnostics =
+        std::fs::read_to_string("crates/coflow-loader-table-core/src/cell_value/diagnostics.rs")
+            .expect("read table core cell value diagnostics");
     let render =
         std::fs::read_to_string("crates/coflow-loader-table-core/src/cell_value/render.rs")
             .expect("read table core cell value renderer");

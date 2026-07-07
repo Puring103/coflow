@@ -9,6 +9,7 @@ mod dimensions;
 mod patch;
 mod render;
 mod schema_nav;
+mod target;
 
 use coflow_api::{
     CreateTableRequest, DataWriter, DeleteRecordRequest, Diagnostic, DiagnosticSet,
@@ -21,13 +22,13 @@ use coflow_cfd::{parse_cfd, CfdAst};
 use coflow_cft::Span;
 use patch::{
     append_record_source, apply_patch, collect_spread_ref_key_spans, delete_record_span,
-    find_record, replace_spans, serialize_record, spread_entries_at_path, validate_record_key,
-    validate_values,
+    find_record, replace_spans, serialize_record, validate_record_key, validate_values,
 };
 use render::{added_columns, cfd_top_level_fields, removed_columns, rewrite_cfd_records};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
+use target::spread_entries_at_path;
 
 pub static CFD_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
     id: "cfd",
