@@ -16,21 +16,24 @@
 #![allow(clippy::missing_const_for_fn, clippy::similar_names, clippy::use_self)]
 
 mod diagnostics;
+mod markers;
+mod refs;
 mod render;
 mod scan;
 mod strings;
 mod types;
 
-use coflow_cft::{record_key_ident_error, CftContainer};
+use coflow_cft::CftContainer;
 use coflow_data_model::{CfdInputDictKey, CfdInputValue};
 use diagnostics::{missing_boundary, reference_needs_marker, syntax, type_mismatch};
+use markers::{is_type_marker_name, looks_like_bare_record_key};
 pub use diagnostics::{CellValueDiagnostic, CellValueDiagnostics, CellValueErrorCode};
+use refs::parse_ref;
 pub use render::{render_cell_value, CellRenderError};
 use scan::{find_marker_open_brace, find_top_level_char, split_top_level, strip_outer_pair};
 use std::collections::{BTreeMap, BTreeSet};
 use strings::parse_string;
 use types::{full_fields, CellType, FieldMeta};
-use unicode_ident::{is_xid_continue, is_xid_start};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParsedCell {
@@ -211,51 +214,6 @@ fn parse_object(
     }
 }
 
-fn parse_ref(expected_type: &str, text: &str) -> Result<CfdInputValue, CellValueDiagnostics> {
-    let text = text.trim();
-    let Some(key) = text.strip_prefix('&') else {
-        if text.starts_with('@') {
-            return Err(syntax(
-                "typed and path references are no longer supported; use `&key`",
-            ));
-        }
-        if looks_like_bare_record_key(text) {
-            return Err(reference_needs_marker(text));
-        }
-        return Err(type_mismatch(&format!("&{expected_type}")));
-    };
-    if key.contains('.') || key.contains('[') || key.contains(']') {
-        return Err(syntax("record references do not support paths"));
-    }
-    if key.trim() != key {
-        return Err(syntax("direct reference key cannot contain whitespace"));
-    }
-    if key.is_empty() {
-        return Err(syntax("reference key is missing"));
-    }
-    if let Some(reason) = record_key_ident_error(key) {
-        return Err(syntax(format!("invalid reference key `{key}`: {reason}")));
-    }
-    Ok(CfdInputValue::record_ref(key))
-}
-
-fn looks_like_bare_record_key(text: &str) -> bool {
-    let text = text.trim();
-    !text.is_empty()
-        && !matches!(text, "_" | "null")
-        && is_type_marker_name(text)
-        && !text.starts_with('{')
-        && !text.starts_with('[')
-        && !text.starts_with('"')
-        && !text.contains(',')
-        && !text.contains(':')
-        && !text.contains('{')
-        && !text.contains('}')
-        && !text.contains('[')
-        && !text.contains(']')
-        && text.chars().next().is_some_and(|ch| ch != '@')
-}
-
 fn validate_actual_type(
     schema: &CftContainer,
     expected_type: &str,
@@ -410,14 +368,6 @@ fn object_content(text: &str) -> ObjectContent<'_> {
         content: text,
         has_boundary: false,
     }
-}
-
-fn is_type_marker_name(text: &str) -> bool {
-    let mut chars = text.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    (first == '_' || is_xid_start(first)) && chars.all(|ch| ch == '_' || is_xid_continue(ch))
 }
 
 fn parse_array(

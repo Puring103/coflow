@@ -3415,6 +3415,11 @@ fn table_cell_value_is_split_by_responsibility() {
     let diagnostics =
         std::fs::read_to_string("crates/coflow-loader-table-core/src/cell_value/diagnostics.rs")
             .expect("read table core cell value diagnostics");
+    let markers =
+        std::fs::read_to_string("crates/coflow-loader-table-core/src/cell_value/markers.rs")
+            .expect("read table core cell value markers");
+    let refs = std::fs::read_to_string("crates/coflow-loader-table-core/src/cell_value/refs.rs")
+        .expect("read table core cell value refs");
     let render =
         std::fs::read_to_string("crates/coflow-loader-table-core/src/cell_value/render.rs")
             .expect("read table core cell value renderer");
@@ -3501,6 +3506,29 @@ fn table_cell_value_is_split_by_responsibility() {
         assert!(
             !cell_value.contains(expected),
             "cell value string item `{expected}` should not live in cell_value/mod.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn looks_like_bare_record_key",
+        "pub(super) fn is_type_marker_name",
+    ] {
+        assert!(
+            markers.contains(expected),
+            "cell value marker item `{expected}` should live in cell_value/markers.rs"
+        );
+        assert!(
+            !cell_value.contains(expected),
+            "cell value marker item `{expected}` should not live in cell_value/mod.rs"
+        );
+    }
+    for expected in ["pub(super) fn parse_ref"] {
+        assert!(
+            refs.contains(expected),
+            "cell value ref item `{expected}` should live in cell_value/refs.rs"
+        );
+        assert!(
+            !cell_value.contains(expected),
+            "cell value ref item `{expected}` should not live in cell_value/mod.rs"
         );
     }
     assert!(
