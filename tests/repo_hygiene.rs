@@ -169,6 +169,34 @@ fn table_provider_algorithms_are_not_reexported_by_excel_loader() {
 }
 
 #[test]
+fn csv_dimension_source_sync_does_not_live_in_writer_rs() {
+    let writer =
+        std::fs::read_to_string("crates/coflow-loader-csv/src/writer.rs").expect("read csv writer");
+    let dimensions = std::fs::read_to_string("crates/coflow-loader-csv/src/writer/dimensions.rs")
+        .expect("read csv writer dimension source sync");
+
+    for expected in [
+        "impl DimensionSourceManager for CsvWriter",
+        "fn sync_dimension_source",
+        "struct DimensionCsvRow",
+        "fn render_dimension_csv_value",
+    ] {
+        assert!(
+            dimensions.contains(expected),
+            "CSV dimension source item `{expected}` should live in writer/dimensions.rs"
+        );
+        assert!(
+            !writer.contains(expected),
+            "CSV dimension source item `{expected}` should not live in writer.rs"
+        );
+    }
+    assert!(
+        writer.lines().count() < 800,
+        "coflow-loader-csv writer.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
 fn editor_backend_does_not_depend_on_checker_runtime_directly() {
     let manifest = std::fs::read_to_string("editors/cfd-editor/src-tauri/Cargo.toml")
         .expect("read editor backend manifest");
