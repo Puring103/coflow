@@ -236,6 +236,31 @@ fn project_config_deserialization_does_not_live_in_project_lib_rs() {
 }
 
 #[test]
+fn project_schema_discovery_does_not_live_in_project_lib_rs() {
+    let project =
+        std::fs::read_to_string("crates/coflow-project/src/lib.rs").expect("read project lib");
+    let schema_sources = std::fs::read_to_string("crates/coflow-project/src/schema_sources.rs")
+        .expect("read project schema sources");
+
+    for expected in [
+        "pub struct SchemaFile",
+        "pub(super) fn schema_files",
+        "fn push_schema_path",
+        "fn collect_cft_files",
+        "fn is_cft_path",
+    ] {
+        assert!(
+            schema_sources.contains(expected),
+            "project schema discovery item `{expected}` should live in schema_sources.rs"
+        );
+        assert!(
+            !project.contains(expected),
+            "project schema discovery item `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn table_provider_algorithms_are_not_reexported_by_excel_loader() {
     let excel = std::fs::read_to_string("crates/coflow-loader-excel/src/lib.rs")
         .expect("read excel loader");
