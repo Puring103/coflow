@@ -421,6 +421,29 @@ fn csv_dimension_source_sync_does_not_live_in_writer_rs() {
 }
 
 #[test]
+fn csv_format_parser_writer_do_not_live_in_lib_rs() {
+    let lib =
+        std::fs::read_to_string("crates/coflow-loader-csv/src/lib.rs").expect("read csv lib");
+    let format =
+        std::fs::read_to_string("crates/coflow-loader-csv/src/format.rs").expect("read csv format");
+
+    for expected in ["pub fn parse", "pub fn write", "fn write_cell"] {
+        assert!(
+            format.contains(expected),
+            "CSV format item `{expected}` should live in format.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "CSV format item `{expected}` should not live in lib.rs"
+        );
+    }
+    assert!(
+        lib.lines().count() < 800,
+        "coflow-loader-csv lib.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
 fn cfd_writer_is_split_by_responsibility() {
     let writer =
         std::fs::read_to_string("crates/coflow-loader-cfd/src/writer.rs").expect("read cfd writer");
