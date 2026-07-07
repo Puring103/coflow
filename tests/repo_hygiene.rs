@@ -266,6 +266,53 @@ fn cfd_writer_is_split_by_responsibility() {
 }
 
 #[test]
+fn cfd_loader_parser_and_diagnostics_do_not_live_in_lib_rs() {
+    let lib =
+        std::fs::read_to_string("crates/coflow-loader-cfd/src/lib.rs").expect("read cfd loader");
+    let parser = std::fs::read_to_string("crates/coflow-loader-cfd/src/parser.rs")
+        .expect("read cfd parser");
+    let diagnostics = std::fs::read_to_string("crates/coflow-loader-cfd/src/diagnostics.rs")
+        .expect("read cfd diagnostics");
+
+    for expected in [
+        "pub(super) struct Parser",
+        "pub(super) struct ParsedCfdInputRecord",
+        "struct ParsedObjectFields",
+        "fn full_fields",
+        "fn is_value_boundary",
+    ] {
+        assert!(
+            parser.contains(expected),
+            "CFD parser item `{expected}` should live in parser.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "CFD parser item `{expected}` should not live in lib.rs"
+        );
+    }
+    for expected in [
+        "pub enum CfdTextLoadError",
+        "pub struct CfdTextDiagnostics",
+        "pub struct CfdTextDiagnostic",
+        "pub enum CfdTextErrorCode",
+        "pub(super) fn cfd_error_to_diagnostics",
+    ] {
+        assert!(
+            diagnostics.contains(expected),
+            "CFD diagnostic item `{expected}` should live in diagnostics.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "CFD diagnostic item `{expected}` should not live in lib.rs"
+        );
+    }
+    assert!(
+        lib.lines().count() < 800,
+        "coflow-loader-cfd lib.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
 fn editor_backend_does_not_depend_on_checker_runtime_directly() {
     let manifest = std::fs::read_to_string("editors/cfd-editor/src-tauri/Cargo.toml")
         .expect("read editor backend manifest");
