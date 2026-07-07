@@ -1,8 +1,8 @@
 mod annotations;
 mod check;
 mod check_primary;
-mod definitions;
 mod defaults;
+mod definitions;
 mod literals;
 mod tokens;
 

@@ -1861,6 +1861,9 @@ fn csharp_codegen_schema_projection_uses_cft_schema_view() {
         "schema.all_enums()",
         "pub fn all_types",
         "pub fn all_enums",
+        "pub struct TypeMeta",
+        "pub struct FieldMeta",
+        "pub enum FieldType",
         "pub enums:",
         "view.enums",
         "CftSchemaType,",
@@ -1872,12 +1875,20 @@ fn csharp_codegen_schema_projection_uses_cft_schema_view() {
             "C# codegen should not rebuild schema projection from `{forbidden}`"
         );
     }
+    assert!(
+        schema_view.contains("pub type TypeMeta = CftTypeMeta;")
+            && schema_view.contains("pub type FieldMeta = CftFieldMeta;"),
+        "C# codegen should re-export coflow-cft type/field metadata instead of defining local copies"
+    );
+    assert!(
+        codegen.contains("CftSchemaTypeRef"),
+        "C# codegen emit path should consume coflow-cft type refs directly"
+    );
 }
 
 #[test]
 fn cft_lexer_tokens_are_split_out() {
-    let lexer = std::fs::read_to_string("crates/coflow-cft/src/lexer.rs")
-        .expect("read CFT lexer");
+    let lexer = std::fs::read_to_string("crates/coflow-cft/src/lexer.rs").expect("read CFT lexer");
     let tokens = std::fs::read_to_string("crates/coflow-cft/src/lexer/tokens.rs")
         .expect("read CFT lexer tokens");
 

@@ -15,8 +15,8 @@
 )]
 #![allow(clippy::missing_const_for_fn, clippy::similar_names, clippy::use_self)]
 
-mod diagnostics;
 mod collections;
+mod diagnostics;
 mod markers;
 mod objects;
 mod refs;

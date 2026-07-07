@@ -1,41 +1,39 @@
-use coflow_cft::CftSchemaDefaultValue;
+use coflow_cft::{CftSchemaDefaultValue, CftSchemaTypeRef};
 
 use crate::names::{escape_csharp_string, format_float};
-use crate::schema_view::{FieldMeta, FieldType, SchemaView};
+use crate::schema_view::{FieldMeta, SchemaView};
 use crate::CsharpCodegenError;
 
 use super::identifiers::csharp_public_member_name;
 
-pub(super) fn csharp_type(ty: &FieldType, view: &SchemaView) -> String {
+pub(super) fn csharp_type(ty: &CftSchemaTypeRef, view: &SchemaView) -> String {
     match ty {
-        FieldType::Int => {
+        CftSchemaTypeRef::Int => {
             if view.int_32 {
                 "int".to_string()
             } else {
                 "long".to_string()
             }
         }
-        FieldType::Float => {
+        CftSchemaTypeRef::Float => {
             if view.float_32 {
                 "float".to_string()
             } else {
                 "double".to_string()
             }
         }
-        FieldType::Bool => "bool".to_string(),
-        FieldType::String => "string".to_string(),
-        FieldType::Type(name) | FieldType::Ref(name) | FieldType::Enum(name) => {
-            view.csharp_named_type(name)
-        }
-        FieldType::Array(inner) => format!("List<{}>", csharp_type(inner, view)),
-        FieldType::Dict(key, value) => {
+        CftSchemaTypeRef::Bool => "bool".to_string(),
+        CftSchemaTypeRef::String => "string".to_string(),
+        CftSchemaTypeRef::Named(name) | CftSchemaTypeRef::Ref(name) => view.csharp_named_type(name),
+        CftSchemaTypeRef::Array(inner) => format!("List<{}>", csharp_type(inner, view)),
+        CftSchemaTypeRef::Dict(key, value) => {
             format!(
                 "Dictionary<{}, {}>",
                 csharp_type(key, view),
                 csharp_type(value, view)
             )
         }
-        FieldType::Nullable(inner) => format!("{}?", csharp_type(inner, view)),
+        CftSchemaTypeRef::Nullable(inner) => format!("{}?", csharp_type(inner, view)),
     }
 }
 
@@ -44,32 +42,32 @@ pub(super) fn csharp_type(ty: &FieldType, view: &SchemaView) -> String {
 /// normally receive (including `IReadOnlyList<T>` / `IReadOnlyDictionary<...>`
 /// for collection fields).
 pub(super) fn csharp_field_property_type(field: &FieldMeta, view: &SchemaView) -> String {
-    let inner = csharp_property_type(&field.ty, view);
-    if field.is_dimensional {
+    let inner = csharp_property_type(&field.ty_ref, view);
+    if field.dimension.is_some() {
         format!("Localized<{inner}>")
     } else {
         inner
     }
 }
 
-pub(super) fn csharp_property_type(ty: &FieldType, view: &SchemaView) -> String {
+pub(super) fn csharp_property_type(ty: &CftSchemaTypeRef, view: &SchemaView) -> String {
     match ty {
-        FieldType::Array(inner) => format!("IReadOnlyList<{}>", csharp_type(inner, view)),
-        FieldType::Dict(key, value) => {
+        CftSchemaTypeRef::Array(inner) => format!("IReadOnlyList<{}>", csharp_type(inner, view)),
+        CftSchemaTypeRef::Dict(key, value) => {
             format!(
                 "IReadOnlyDictionary<{}, {}>",
                 csharp_type(key, view),
                 csharp_type(value, view)
             )
         }
-        FieldType::Nullable(inner) => format!("{}?", csharp_property_type(inner, view)),
+        CftSchemaTypeRef::Nullable(inner) => format!("{}?", csharp_property_type(inner, view)),
         other => csharp_type(other, view),
     }
 }
 
 pub(super) fn default_value_expr(
     default: Option<&CftSchemaDefaultValue>,
-    ty: &FieldType,
+    ty: &CftSchemaTypeRef,
     view: &SchemaView,
 ) -> Result<Option<String>, CsharpCodegenError> {
     let Some(default) = default else {
@@ -106,9 +104,9 @@ pub(super) fn default_value_expr(
     }))
 }
 
-fn string_default_expr(value: &str, ty: &FieldType, view: &SchemaView) -> String {
+fn string_default_expr(value: &str, ty: &CftSchemaTypeRef, view: &SchemaView) -> String {
     match ty.non_nullable() {
-        FieldType::Enum(name) if view.is_id_as_enum(name) => {
+        CftSchemaTypeRef::Named(name) if view.is_id_as_enum(name) => {
             let enum_name = view.csharp_enum_name(name);
             let value = escape_csharp_string(value);
             format!("({enum_name})Enum.Parse(typeof({enum_name}), \"{value}\")")
@@ -118,12 +116,12 @@ fn string_default_expr(value: &str, ty: &FieldType, view: &SchemaView) -> String
 }
 
 pub(super) fn collection_default_expr(
-    ty: &FieldType,
+    ty: &CftSchemaTypeRef,
     view: &SchemaView,
 ) -> Result<String, CsharpCodegenError> {
     match ty {
-        FieldType::Array(inner) => Ok(format!("new List<{}>()", csharp_type(inner, view))),
-        FieldType::Dict(key, value) => Ok(format!(
+        CftSchemaTypeRef::Array(inner) => Ok(format!("new List<{}>()", csharp_type(inner, view))),
+        CftSchemaTypeRef::Dict(key, value) => Ok(format!(
             "new Dictionary<{}, {}>()",
             csharp_type(key, view),
             csharp_type(value, view)

@@ -68,7 +68,11 @@ impl<'a> SchemaCompiler<'a> {
                             field.name_span,
                             format!("duplicate field `{}`", field.name),
                         )
-                        .with_related(info.module.clone(), *first_span, "first field is here"),
+                        .with_related(
+                            info.module.clone(),
+                            *first_span,
+                            "first field is here",
+                        ),
                     );
                 } else {
                     fields.insert(field.name.clone(), field.name_span);
@@ -262,7 +266,11 @@ impl<'a> SchemaCompiler<'a> {
                             ty.span,
                             format!("field type `{name}` is not a type or enum"),
                         )
-                        .with_related(symbol.module.clone(), symbol.span, "name is defined here"),
+                        .with_related(
+                            symbol.module.clone(),
+                            symbol.span,
+                            "name is defined here",
+                        ),
                     );
                     Ty::Unknown
                 }

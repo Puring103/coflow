@@ -115,6 +115,7 @@ pub fn build_project(
         .collect::<Vec<_>>();
 
     let types = view
+        .cft
         .types
         .values()
         .map(|schema_type| build_csharp_type(schema_type, &view))
@@ -237,7 +238,7 @@ fn validate_schema_names(view: &SchemaView, diagnostics: &mut Vec<CsharpCodegenD
         }
     }
 
-    for schema_type in view.types.values() {
+    for schema_type in view.cft.types.values() {
         validate_ident("type", &schema_type.name, diagnostics);
         validate_ident("type", &csharp_type_name(&schema_type.name), diagnostics);
         if let Some(parent) = &schema_type.parent {
@@ -430,7 +431,7 @@ fn validate_generated_member_names(
     view: &SchemaView,
     diagnostics: &mut Vec<CsharpCodegenDiagnostic>,
 ) {
-    for ty in view.types.values() {
+    for ty in view.cft.types.values() {
         let mut members = BTreeMap::<String, String>::new();
         for field in &ty.all_fields {
             let property_name = csharp_type_name(&field.name);

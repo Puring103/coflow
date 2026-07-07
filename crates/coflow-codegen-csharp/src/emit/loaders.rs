@@ -13,8 +13,9 @@ use crate::emit::types::{
 };
 use crate::model::{CsharpLoadField, CsharpLoader, CsharpPolymorphicCase};
 use crate::names::escape_csharp_string;
-use crate::schema_view::{FieldMeta, FieldType, SchemaView};
+use crate::schema_view::{FieldMeta, SchemaView};
 use crate::CsharpCodegenError;
+use coflow_cft::CftSchemaTypeRef;
 
 pub(super) fn loader_method(
     type_name: &str,
@@ -65,7 +66,7 @@ pub(super) fn loader_method(
         key_messagepack_read_expr: read_messagepack_expr(&key_ty, "reader", "context", view)?,
         is_table,
         is_disk_loadable,
-        is_struct: ty.is_struct,
+        is_struct: view.type_is_struct(ty),
         requires_hydration,
         fields,
         polymorphic_cases,
@@ -90,7 +91,7 @@ pub(super) fn polymorphic_loader(
         key_messagepack_read_expr: String::new(),
         is_table,
         is_disk_loadable: is_table || is_singleton,
-        is_struct: view.type_meta(type_name)?.is_struct,
+        is_struct: view.type_is_struct(view.type_meta(type_name)?),
         requires_hydration: false,
         fields: Vec::new(),
         polymorphic_cases: polymorphic_cases(type_name, view)?,
@@ -121,19 +122,19 @@ fn load_field(
     view: &SchemaView,
 ) -> Result<CsharpLoadField, CsharpCodegenError> {
     let local_name = field_local_name(&field.name, used_local_names)?;
-    let default_expr = default_value_expr(field.default.as_ref(), &field.ty, view)?;
+    let default_expr = default_value_expr(field.default.as_ref(), &field.ty_ref, view)?;
     let missing_expr = default_expr.as_ref().map_or_else(
         || {
-            if field.ty.is_nullable() {
+            if field.ty_ref.is_nullable() {
                 None
             } else {
-                collection_default_expr(field.ty.non_nullable(), view).ok()
+                collection_default_expr(field.ty_ref.non_nullable(), view).ok()
             }
         },
         |default| Some(default.clone()),
     );
-    let inner_property_type = csharp_property_type(&field.ty, view);
-    let property_type = if field.is_dimensional {
+    let inner_property_type = csharp_property_type(&field.ty_ref, view);
+    let property_type = if field.dimension.is_some() {
         format!("Localized<{inner_property_type}>")
     } else {
         inner_property_type.clone()
@@ -141,7 +142,7 @@ fn load_field(
     let raw_read_expr = read_field_expr(field, "obj", "context", view, missing_expr.as_deref())?;
     let raw_msgpack_expr = read_messagepack_field_expr(field, "reader", "context", view)?;
     let (read_expr, messagepack_read_expr, inline_read_expr, inline_messagepack_read_expr) =
-        if field.is_dimensional {
+        if field.dimension.is_some() {
             let type_lit = escape_csharp_string(owner_type_name);
             let field_lit = escape_csharp_string(&field.name);
             let row_key_expr = if owner_is_singleton {
@@ -173,7 +174,7 @@ fn load_field(
         type_name: property_type,
         assignment_target: backing_field_name(
             &csharp_public_member_name(&field.name),
-            &field.ty,
+            &field.ty_ref,
             view,
         )
         .unwrap_or_else(|| csharp_public_member_name(&field.name)),
@@ -184,13 +185,13 @@ fn load_field(
         is_required: missing_expr.is_none(),
         default_expr,
         missing_expr,
-        requires_context: field_type_requires_context(&field.ty, view)?,
+        requires_context: field_type_requires_context(&field.ty_ref, view)?,
         has_name: format!("has{}", csharp_public_member_name(&field.name)),
     })
 }
 
 pub(super) fn field_type_requires_context(
-    ty: &FieldType,
+    ty: &CftSchemaTypeRef,
     view: &SchemaView,
 ) -> Result<bool, CsharpCodegenError> {
     let mut visited = BTreeSet::new();
@@ -198,35 +199,35 @@ pub(super) fn field_type_requires_context(
 }
 
 fn field_type_requires_context_inner(
-    ty: &FieldType,
+    ty: &CftSchemaTypeRef,
     view: &SchemaView,
     visited: &mut BTreeSet<String>,
 ) -> Result<bool, CsharpCodegenError> {
     match ty {
-        FieldType::Ref(name) => Ok(view.is_ref_target_loadable(name)),
-        FieldType::Type(name) => {
+        CftSchemaTypeRef::Ref(name) => Ok(view.is_ref_target_loadable(name)),
+        CftSchemaTypeRef::Named(name) if view.is_schema_enum(name) => Ok(false),
+        CftSchemaTypeRef::Named(name) => {
             if !visited.insert(name.clone()) {
                 return Ok(false);
             }
             for concrete in view.concrete_assignable_types(name)? {
                 let meta = view.type_meta(&concrete)?;
                 for field in &meta.all_fields {
-                    if field_type_requires_context_inner(&field.ty, view, visited)? {
+                    if field_type_requires_context_inner(&field.ty_ref, view, visited)? {
                         return Ok(true);
                     }
                 }
             }
             Ok(false)
         }
-        FieldType::Array(inner) | FieldType::Nullable(inner) => {
+        CftSchemaTypeRef::Array(inner) | CftSchemaTypeRef::Nullable(inner) => {
             field_type_requires_context_inner(inner, view, visited)
         }
-        FieldType::Dict(_, value) => field_type_requires_context_inner(value, view, visited),
-        FieldType::Int
-        | FieldType::Float
-        | FieldType::Bool
-        | FieldType::String
-        | FieldType::Enum(_) => Ok(false),
+        CftSchemaTypeRef::Dict(_, value) => field_type_requires_context_inner(value, view, visited),
+        CftSchemaTypeRef::Int
+        | CftSchemaTypeRef::Float
+        | CftSchemaTypeRef::Bool
+        | CftSchemaTypeRef::String => Ok(false),
     }
 }
 

@@ -9,9 +9,9 @@ use crate::model::{
     CsharpProperty, CsharpType,
 };
 use crate::names::{camel_case, has_annotation};
-use crate::schema_view::{FieldMeta, FieldType, SchemaView, TypeMeta};
+use crate::schema_view::{FieldMeta, SchemaView, TypeMeta};
 use crate::CsharpCodegenError;
-use coflow_cft::CftEnumMeta;
+use coflow_cft::{CftEnumMeta, CftSchemaTypeRef};
 use std::collections::{BTreeSet, HashSet};
 
 pub use database::build_csharp_database;
@@ -48,6 +48,7 @@ pub fn build_csharp_type(
     let mut assignments = Vec::new();
     let mut properties = Vec::new();
 
+    let is_struct = view.type_is_struct(schema_type);
     let is_table = !schema_type.is_abstract && type_is_table(&schema_type.name, view);
     if is_table {
         add_id_constructor_member(
@@ -73,10 +74,7 @@ pub fn build_csharp_type(
             ty: property_type.clone(),
             name: local_name.clone(),
         });
-        if !schema_type.is_struct
-            && schema_type.parent.is_some()
-            && !own_field_names.contains(&field.name)
-        {
+        if !is_struct && schema_type.parent.is_some() && !own_field_names.contains(&field.name) {
             base_constructor_args.push(local_name);
             continue;
         }
@@ -105,7 +103,7 @@ pub fn build_csharp_type(
             .collect();
         CsharpEquality {
             key_property: "Id".to_string(),
-            is_struct: schema_type.is_struct,
+            is_struct,
             by_fields: !is_table,
             fields: all_field_props,
         }
@@ -173,7 +171,7 @@ fn add_field_constructor_member(
     assignments: &mut Vec<CsharpConstructorAssignment>,
 ) {
     let property_name = csharp_public_member_name(&field.name);
-    let backing_field = backing_field_name(&property_name, &field.ty, view);
+    let backing_field = backing_field_name(&property_name, &field.ty_ref, view);
     properties.push(CsharpProperty {
         visibility: "public".to_string(),
         name: property_name.clone(),
@@ -212,7 +210,7 @@ fn has_concrete_parent(type_name: &str, view: &SchemaView) -> bool {
 
 pub(super) fn backing_field_name(
     property_name: &str,
-    ty: &FieldType,
+    ty: &CftSchemaTypeRef,
     view: &SchemaView,
 ) -> Option<String> {
     field_type_requires_context(ty, view)
@@ -224,7 +222,7 @@ pub(super) fn backing_field_name(
 fn type_declaration(schema_type: &TypeMeta, view: &SchemaView) -> String {
     let prefix = if schema_type.is_abstract {
         "public abstract partial class"
-    } else if schema_type.is_struct {
+    } else if view.type_is_struct(schema_type) {
         "public partial struct"
     } else if schema_type.is_sealed || !view.type_has_descendants(&schema_type.name) {
         "public sealed partial class"
@@ -236,7 +234,7 @@ fn type_declaration(schema_type: &TypeMeta, view: &SchemaView) -> String {
     if let Some(parent) = schema_type
         .parent
         .as_ref()
-        .filter(|_| !schema_type.is_struct)
+        .filter(|_| !view.type_is_struct(schema_type))
     {
         interfaces.push(view.csharp_type_name(parent));
     }

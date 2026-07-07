@@ -6,8 +6,9 @@ use crate::model::{
     CsharpDatabase, CsharpParameter, CsharpTable,
 };
 use crate::names::camel_case;
-use crate::schema_view::{FieldType, SchemaView};
+use crate::schema_view::SchemaView;
 use crate::CsharpCodegenError;
+use coflow_cft::CftSchemaTypeRef;
 
 use super::identifiers::{context_index_field_name, plural_records_var};
 use super::types::csharp_type;
@@ -275,19 +276,19 @@ fn collect_table_dependencies(
 ) -> Result<(), CsharpCodegenError> {
     let ty = view.type_meta(type_name)?;
     for field in &ty.all_fields {
-        collect_table_dependencies_for_field_type(view, &field.ty, table_set, out)?;
+        collect_table_dependencies_for_field_type(view, &field.ty_ref, table_set, out)?;
     }
     Ok(())
 }
 
 fn collect_table_dependencies_for_field_type(
     view: &SchemaView,
-    ty: &FieldType,
+    ty: &CftSchemaTypeRef,
     table_set: &BTreeSet<String>,
     out: &mut BTreeSet<String>,
 ) -> Result<(), CsharpCodegenError> {
     match ty {
-        FieldType::Ref(name) => {
+        CftSchemaTypeRef::Ref(name) => {
             let mut hit_table = false;
             for concrete in view.concrete_assignable_types(name)? {
                 if table_set.contains(&concrete) {
@@ -298,29 +299,34 @@ fn collect_table_dependencies_for_field_type(
             if !hit_table {
                 if let Ok(meta) = view.type_meta(name) {
                     for field in &meta.all_fields {
-                        collect_table_dependencies_for_field_type(view, &field.ty, table_set, out)?;
+                        collect_table_dependencies_for_field_type(
+                            view,
+                            &field.ty_ref,
+                            table_set,
+                            out,
+                        )?;
                     }
                 }
             }
         }
-        FieldType::Type(name) => {
+        CftSchemaTypeRef::Named(name) if view.is_schema_enum(name) => {}
+        CftSchemaTypeRef::Named(name) => {
             if let Ok(meta) = view.type_meta(name) {
                 for field in &meta.all_fields {
-                    collect_table_dependencies_for_field_type(view, &field.ty, table_set, out)?;
+                    collect_table_dependencies_for_field_type(view, &field.ty_ref, table_set, out)?;
                 }
             }
         }
-        FieldType::Array(inner) | FieldType::Nullable(inner) => {
+        CftSchemaTypeRef::Array(inner) | CftSchemaTypeRef::Nullable(inner) => {
             collect_table_dependencies_for_field_type(view, inner, table_set, out)?;
         }
-        FieldType::Dict(_, value) => {
+        CftSchemaTypeRef::Dict(_, value) => {
             collect_table_dependencies_for_field_type(view, value, table_set, out)?;
         }
-        FieldType::Int
-        | FieldType::Float
-        | FieldType::Bool
-        | FieldType::String
-        | FieldType::Enum(_) => {}
+        CftSchemaTypeRef::Int
+        | CftSchemaTypeRef::Float
+        | CftSchemaTypeRef::Bool
+        | CftSchemaTypeRef::String => {}
     }
     Ok(())
 }

@@ -3,9 +3,8 @@ mod requests;
 
 pub use capabilities::{WriterCapabilities, WriterDescriptor};
 pub use requests::{
-    DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest,
-    RewriteRecordReferencesRequest, SpreadRewriteTarget, WriteCellRequest, WriteContext,
-    WriteFieldPathSegment, WriteOutcome,
+    DeleteRecordRequest, InsertRecordRequest, RenameRecordRequest, RewriteRecordReferencesRequest,
+    SpreadRewriteTarget, WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome,
 };
 
 use crate::{CreateTableRequest, Diagnostic, DiagnosticSet};

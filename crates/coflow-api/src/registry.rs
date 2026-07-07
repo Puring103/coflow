@@ -245,5 +245,4 @@ impl ProviderRegistry {
             .map(|codegen| codegen.descriptor())
             .collect()
     }
-
 }

@@ -59,6 +59,21 @@ pub enum CftSchemaTypeRef {
     Nullable(Box<CftSchemaTypeRef>),
 }
 
+impl CftSchemaTypeRef {
+    #[must_use]
+    pub const fn is_nullable(&self) -> bool {
+        matches!(self, Self::Nullable(_))
+    }
+
+    #[must_use]
+    pub fn non_nullable(&self) -> &Self {
+        match self {
+            Self::Nullable(inner) => inner.non_nullable(),
+            other => other,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Dimension {
     Localized,

@@ -1,13 +1,12 @@
 use crate::names::{annotation_name_arg, csharp_type_name, has_annotation};
 use crate::CsharpCodegenError;
 use coflow_cft::{
-    CftContainer, CftEnumMeta, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchemaView, CftTypeMeta,
+    CftContainer, CftEnumMeta, CftFieldMeta, CftSchemaTypeRef, CftSchemaView, CftTypeMeta,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
 pub struct SchemaView {
-    pub types: BTreeMap<String, TypeMeta>,
     pub int_32: bool,
     pub float_32: bool,
     pub loadable_tables: BTreeSet<String>,
@@ -31,16 +30,6 @@ impl SchemaView {
             }
         }
 
-        let types = cft
-            .types
-            .values()
-            .map(|schema_type| {
-                (
-                    schema_type.name.clone(),
-                    TypeMeta::from_schema_view(schema_type, &cft),
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
         let csharp_types = cft
             .types
             .keys()
@@ -53,7 +42,6 @@ impl SchemaView {
             .collect::<BTreeMap<_, _>>();
 
         Self {
-            types,
             int_32: false,
             float_32: false,
             loadable_tables: BTreeSet::new(),
@@ -77,15 +65,17 @@ impl SchemaView {
     }
 
     pub fn uses_localization(&self) -> bool {
-        self.types
+        self.cft
+            .types
             .values()
-            .any(|ty| ty.all_fields.iter().any(|field| field.is_dimensional))
+            .any(|ty| ty.all_fields.iter().any(|field| field.dimension.is_some()))
     }
 
     pub fn id_as_enum_names(&self) -> BTreeSet<String> {
-        self.types
+        self.cft
+            .types
             .values()
-            .filter_map(|ty| ty.id_as_enum.clone())
+            .filter_map(|ty| self.type_id_as_enum(ty))
             .collect()
     }
 
@@ -119,17 +109,19 @@ impl SchemaView {
     }
 
     pub fn type_meta(&self, name: &str) -> Result<&TypeMeta, CsharpCodegenError> {
-        self.types
+        self.cft
+            .types
             .get(name)
             .ok_or_else(|| CsharpCodegenError::new(format!("unknown CFT type `{name}`")))
     }
 
     pub fn all_type_names(&self) -> Vec<String> {
-        self.types.keys().cloned().collect()
+        self.cft.types.keys().cloned().collect()
     }
 
     pub fn table_names(&self) -> Vec<String> {
-        self.types
+        self.cft
+            .types
             .values()
             .filter(|ty| !ty.is_abstract && !ty.is_singleton)
             .map(|ty| ty.name.clone())
@@ -138,7 +130,8 @@ impl SchemaView {
 
     /// Names of `@singleton` types, in declaration order.
     pub fn singleton_type_names(&self) -> Vec<String> {
-        self.types
+        self.cft
+            .types
             .values()
             .filter(|ty| ty.is_singleton)
             .map(|ty| ty.name.clone())
@@ -146,7 +139,8 @@ impl SchemaView {
     }
 
     pub fn polymorphic_type_names(&self) -> Vec<String> {
-        self.types
+        self.cft
+            .types
             .values()
             .filter(|ty| self.range_is_polymorphic(&ty.name))
             .map(|ty| ty.name.clone())
@@ -154,7 +148,8 @@ impl SchemaView {
     }
 
     pub fn range_is_polymorphic(&self, type_name: &str) -> bool {
-        self.types
+        self.cft
+            .types
             .get(type_name)
             .is_some_and(|ty| ty.is_abstract || self.has_descendants(type_name))
     }
@@ -184,9 +179,9 @@ impl SchemaView {
     pub fn id_as_enum(&self, type_name: &str) -> Option<String> {
         let mut current = Some(type_name);
         while let Some(name) = current {
-            let meta = self.types.get(name)?;
-            if let Some(enum_name) = &meta.id_as_enum {
-                return Some(enum_name.clone());
+            let meta = self.cft.types.get(name)?;
+            if let Some(enum_name) = self.type_id_as_enum(meta) {
+                return Some(enum_name);
             }
             current = meta.parent.as_deref();
         }
@@ -194,14 +189,15 @@ impl SchemaView {
     }
 
     pub fn is_id_as_enum(&self, enum_name: &str) -> bool {
-        self.types
+        self.cft
+            .types
             .values()
-            .any(|ty| ty.id_as_enum.as_deref() == Some(enum_name))
+            .any(|ty| self.type_id_as_enum(ty).as_deref() == Some(enum_name))
     }
 
-    pub fn key_field_type(&self, type_name: &str) -> FieldType {
+    pub fn key_field_type(&self, type_name: &str) -> CftSchemaTypeRef {
         self.id_as_enum(type_name)
-            .map_or(FieldType::String, FieldType::Enum)
+            .map_or_else(|| CftSchemaTypeRef::String, CftSchemaTypeRef::Named)
     }
 
     fn has_descendants(&self, type_name: &str) -> bool {
@@ -247,167 +243,73 @@ impl SchemaView {
 
     pub fn ref_target_names(&self) -> Vec<String> {
         let mut out = BTreeSet::new();
-        for ty in self.types.values() {
+        for ty in self.cft.types.values() {
             let mut visited = BTreeSet::new();
-            ty.collect_ref_targets(self, &mut out, &mut visited);
+            self.collect_ref_targets_for_type(ty, &mut out, &mut visited);
         }
         out.into_iter().collect()
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct TypeMeta {
-    pub name: String,
-    pub parent: Option<String>,
-    pub is_abstract: bool,
-    pub is_sealed: bool,
-    pub is_singleton: bool,
-    pub is_struct: bool,
-    pub id_as_enum: Option<String>,
-    pub own_fields: Vec<FieldMeta>,
-    pub all_fields: Vec<FieldMeta>,
-}
-
-impl TypeMeta {
-    fn from_schema_view(schema_type: &CftTypeMeta, schema: &CftSchemaView) -> Self {
-        Self {
-            name: schema_type.name.clone(),
-            parent: schema_type.parent.clone(),
-            is_abstract: schema_type.is_abstract,
-            is_sealed: schema_type.is_sealed,
-            is_singleton: schema_type.is_singleton,
-            is_struct: has_annotation(&schema_type.annotations, "struct"),
-            id_as_enum: annotation_name_arg(&schema_type.annotations, "idAsEnum"),
-            own_fields: schema_type
-                .own_fields
-                .iter()
-                .map(|field| FieldMeta::from_schema_view(field, schema))
-                .collect(),
-            all_fields: schema_type
-                .all_fields
-                .iter()
-                .map(|field| FieldMeta::from_schema_view(field, schema))
-                .collect(),
-        }
+    pub fn type_is_struct(&self, ty: &TypeMeta) -> bool {
+        has_annotation(&ty.annotations, "struct")
     }
 
-    fn collect_ref_targets(
+    fn type_id_as_enum(&self, ty: &TypeMeta) -> Option<String> {
+        annotation_name_arg(&ty.annotations, "idAsEnum")
+    }
+
+    fn collect_ref_targets_for_type(
         &self,
-        view: &SchemaView,
+        ty: &TypeMeta,
         out: &mut BTreeSet<String>,
         visited: &mut BTreeSet<String>,
     ) {
-        if !visited.insert(self.name.clone()) {
+        if !visited.insert(ty.name.clone()) {
             return;
         }
-        for field in &self.all_fields {
-            collect_ref_targets_in_field(view, field, out, visited);
+        for field in &ty.all_fields {
+            self.collect_ref_targets_in_field(field, out, visited);
         }
     }
-}
 
-fn collect_ref_targets_in_field(
-    view: &SchemaView,
-    field: &FieldMeta,
-    out: &mut BTreeSet<String>,
-    visited: &mut BTreeSet<String>,
-) {
-    collect_ref_targets_in_type(view, &field.ty, out, visited);
-}
-
-fn collect_ref_targets_in_type(
-    view: &SchemaView,
-    ty: &FieldType,
-    out: &mut BTreeSet<String>,
-    visited: &mut BTreeSet<String>,
-) {
-    match ty {
-        FieldType::Type(name) => {
-            if let Some(meta) = view.types.get(name) {
-                meta.collect_ref_targets(view, out, visited);
-            }
-        }
-        FieldType::Ref(name) => {
-            out.insert(name.clone());
-        }
-        FieldType::Array(inner) | FieldType::Nullable(inner) => {
-            collect_ref_targets_in_type(view, inner, out, visited);
-        }
-        FieldType::Dict(_, value) => collect_ref_targets_in_type(view, value, out, visited),
-        FieldType::Int
-        | FieldType::Float
-        | FieldType::Bool
-        | FieldType::String
-        | FieldType::Enum(_) => {}
+    fn collect_ref_targets_in_field(
+        &self,
+        field: &FieldMeta,
+        out: &mut BTreeSet<String>,
+        visited: &mut BTreeSet<String>,
+    ) {
+        self.collect_ref_targets_in_type(&field.ty_ref, out, visited);
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct FieldMeta {
-    pub name: String,
-    pub ty: FieldType,
-    pub default: Option<CftSchemaDefaultValue>,
-    pub is_dimensional: bool,
-}
-
-impl FieldMeta {
-    pub fn from_schema_view(field: &coflow_cft::CftFieldMeta, schema: &CftSchemaView) -> Self {
-        Self {
-            name: field.name.clone(),
-            ty: FieldType::from_schema(&field.ty_ref, schema),
-            default: field.default.clone(),
-            is_dimensional: field.dimension.is_some(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FieldType {
-    Int,
-    Float,
-    Bool,
-    String,
-    Type(String),
-    Ref(String),
-    Enum(String),
-    Array(Box<Self>),
-    Dict(Box<Self>, Box<Self>),
-    Nullable(Box<Self>),
-}
-
-impl FieldType {
-    pub fn from_schema(ty: &CftSchemaTypeRef, schema: &CftSchemaView) -> Self {
+    fn collect_ref_targets_in_type(
+        &self,
+        ty: &CftSchemaTypeRef,
+        out: &mut BTreeSet<String>,
+        visited: &mut BTreeSet<String>,
+    ) {
         match ty {
-            CftSchemaTypeRef::Int => Self::Int,
-            CftSchemaTypeRef::Float => Self::Float,
-            CftSchemaTypeRef::Bool => Self::Bool,
-            CftSchemaTypeRef::String => Self::String,
-            CftSchemaTypeRef::Named(name) if schema.enums.contains_key(name) => {
-                Self::Enum(name.clone())
+            CftSchemaTypeRef::Named(name) if self.is_schema_enum(name) => {}
+            CftSchemaTypeRef::Named(name) => {
+                if let Some(meta) = self.cft.types.get(name) {
+                    self.collect_ref_targets_for_type(meta, out, visited);
+                }
             }
-            CftSchemaTypeRef::Named(name) => Self::Type(name.clone()),
-            CftSchemaTypeRef::Ref(name) => Self::Ref(name.clone()),
-            CftSchemaTypeRef::Array(inner) => {
-                Self::Array(Box::new(Self::from_schema(inner, schema)))
+            CftSchemaTypeRef::Ref(name) => {
+                out.insert(name.clone());
             }
-            CftSchemaTypeRef::Dict(key, value) => Self::Dict(
-                Box::new(Self::from_schema(key, schema)),
-                Box::new(Self::from_schema(value, schema)),
-            ),
-            CftSchemaTypeRef::Nullable(inner) => {
-                Self::Nullable(Box::new(Self::from_schema(inner, schema)))
+            CftSchemaTypeRef::Array(inner) | CftSchemaTypeRef::Nullable(inner) => {
+                self.collect_ref_targets_in_type(inner, out, visited);
             }
-        }
-    }
-
-    pub const fn is_nullable(&self) -> bool {
-        matches!(self, Self::Nullable(_))
-    }
-
-    pub fn non_nullable(&self) -> &Self {
-        match self {
-            Self::Nullable(inner) => inner.non_nullable(),
-            other => other,
+            CftSchemaTypeRef::Dict(_, value) => {
+                self.collect_ref_targets_in_type(value, out, visited);
+            }
+            CftSchemaTypeRef::Int
+            | CftSchemaTypeRef::Float
+            | CftSchemaTypeRef::Bool
+            | CftSchemaTypeRef::String => {}
         }
     }
 }
+
+pub type TypeMeta = CftTypeMeta;
+pub type FieldMeta = CftFieldMeta;
