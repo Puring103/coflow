@@ -851,6 +851,38 @@ fn checker_builtin_value_helpers_do_not_live_in_evaluator_rs() {
 }
 
 #[test]
+fn checker_builtin_call_helpers_do_not_live_in_evaluator_rs() {
+    let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
+        .expect("read checker evaluator");
+    let builtin_calls =
+        std::fs::read_to_string("crates/coflow-checker/src/check/builtin_calls.rs")
+            .expect("read checker builtin call helpers");
+
+    for expected in [
+        "pub(super) struct CallSignature",
+        "pub(super) enum CallTarget",
+        "pub(super) enum CallSignatureError",
+        "pub(super) fn matches_pattern_arg",
+        "fn require_arity",
+    ] {
+        assert!(
+            builtin_calls.contains(expected),
+            "checker builtin call helper `{expected}` should live in check/builtin_calls.rs"
+        );
+        assert!(
+            !evaluator.contains(expected),
+            "checker builtin call helper `{expected}` should not live in evaluator.rs"
+        );
+    }
+    for forbidden in ["枚举构造函数需要 1 个参数", "matches 的 pattern 必须是字符串字面量"] {
+        assert!(
+            !evaluator.contains(forbidden),
+            "checker evaluator should not own builtin call validation branch `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn checker_dependency_collection_does_not_live_in_evaluator_or_runner_rs() {
     let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
         .expect("read checker evaluator");

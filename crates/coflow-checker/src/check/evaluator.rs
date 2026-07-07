@@ -1,4 +1,5 @@
 use super::access;
+use super::builtin_calls::{self, CallSignature, CallSignatureError, CallTarget};
 use super::builtin_values;
 use super::builtins::Builtin;
 use super::deps::DependencyCollector;
@@ -1065,35 +1066,41 @@ impl<'a> CheckEvaluator<'a> {
         name: &str,
         args: &[CftSchemaCheckExpr],
     ) -> EvalResult<LocatedCheckValue> {
-        if self.schema.enums.contains_key(name) {
-            let arg = self.exactly_one_arg(args, "枚举构造函数需要 1 个参数")?;
-            let arg_value = self.eval_expr(arg)?;
-            let arg_kind = arg_value.value.clone();
-            let CheckValue::Int(value) = arg_value.value else {
-                self.diag_at(
-                    CfdErrorCode::CheckEvalTypeError,
-                    arg_value.path,
-                    format!(
-                        "枚举构造函数参数不是 int: 实际为 {}",
-                        format_value_for_message(&arg_kind)
-                    ),
-                );
-                return Err(EvalAbort::Error);
-            };
-            return Ok(LocatedCheckValue::value(CheckValue::Enum(
-                enum_values::enum_with_value(self.schema, name, value),
-            )));
+        let signature = self.resolve_call_signature(CallSignature::resolve_function(
+            name,
+            args.len(),
+            self.schema.enums.contains_key(name),
+        ))?;
+
+        match signature.target {
+            CallTarget::EnumConstructor => {
+                let arg = &args[0];
+                let arg_value = self.eval_expr(arg)?;
+                let arg_kind = arg_value.value.clone();
+                let CheckValue::Int(value) = arg_value.value else {
+                    self.diag_at(
+                        CfdErrorCode::CheckEvalTypeError,
+                        arg_value.path,
+                        format!(
+                            "枚举构造函数参数不是 int: 实际为 {}",
+                            format_value_for_message(&arg_kind)
+                        ),
+                    );
+                    return Err(EvalAbort::Error);
+                };
+                Ok(LocatedCheckValue::value(CheckValue::Enum(
+                    enum_values::enum_with_value(self.schema, name, value),
+                )))
+            }
+            CallTarget::Builtin(builtin) => self.eval_builtin_call(builtin, args),
         }
+    }
 
-        let Some(builtin) = Builtin::by_name(name) else {
-            self.diag(
-                CfdErrorCode::CheckEvalTypeError,
-                format!("未知函数 `{name}`"),
-            );
-            return Err(EvalAbort::Error);
-        };
-        self.require_builtin_arity(builtin, args)?;
-
+    fn eval_builtin_call(
+        &mut self,
+        builtin: Builtin,
+        args: &[CftSchemaCheckExpr],
+    ) -> EvalResult<LocatedCheckValue> {
         match builtin {
             Builtin::Len => {
                 let arg = &args[0];
@@ -1129,13 +1136,8 @@ impl<'a> CheckEvaluator<'a> {
             }
             Builtin::Matches => {
                 let value = self.eval_expr(&args[0])?;
-                let CftSchemaCheckExprKind::String(pattern) = &args[1].kind else {
-                    self.diag(
-                        CfdErrorCode::CheckEvalTypeError,
-                        "matches 的 pattern 必须是字符串字面量",
-                    );
-                    return Err(EvalAbort::Error);
-                };
+                let pattern =
+                    self.resolve_call_signature(builtin_calls::matches_pattern_arg(&args[1]))?;
                 self.from_ops(builtin_values::matches_value(value, pattern))
             }
         }
@@ -1147,21 +1149,11 @@ impl<'a> CheckEvaluator<'a> {
         name: &str,
         args: &[CftSchemaCheckExpr],
     ) -> EvalResult<LocatedCheckValue> {
-        let Some(builtin) = Builtin::by_name(name) else {
-            self.diag(
-                CfdErrorCode::CheckEvalTypeError,
-                format!("未知函数 `{name}`"),
-            );
-            return Err(EvalAbort::Error);
+        let signature =
+            self.resolve_call_signature(CallSignature::resolve_method(name, args.len()))?;
+        let CallTarget::Builtin(builtin) = signature.target else {
+            unreachable!("method calls cannot resolve to enum constructors");
         };
-        let expected_args = builtin.arity().saturating_sub(1);
-        if args.len() != expected_args {
-            self.diag(
-                CfdErrorCode::CheckEvalTypeError,
-                format!("{} 需要 {} 个参数", builtin.name(), expected_args),
-            );
-            return Err(EvalAbort::Error);
-        }
 
         let receiver_value = self.eval_expr(receiver)?;
         match builtin {
@@ -1182,43 +1174,31 @@ impl<'a> CheckEvaluator<'a> {
             Builtin::Keys => self.from_ops(builtin_values::keys_value(receiver_value)),
             Builtin::Values => self.from_ops(builtin_values::values_value(receiver_value)),
             Builtin::Matches => {
-                let CftSchemaCheckExprKind::String(pattern) = &args[0].kind else {
-                    self.diag(
-                        CfdErrorCode::CheckEvalTypeError,
-                        "matches 的 pattern 必须是字符串字面量",
-                    );
-                    return Err(EvalAbort::Error);
-                };
+                let pattern =
+                    self.resolve_call_signature(builtin_calls::matches_pattern_arg(&args[0]))?;
                 self.from_ops(builtin_values::matches_value(receiver_value, pattern))
             }
         }
     }
 
-    fn require_builtin_arity(
+    fn resolve_call_signature<T>(
         &mut self,
-        builtin: Builtin,
-        args: &[CftSchemaCheckExpr],
-    ) -> EvalResult<()> {
-        if args.len() == builtin.arity() {
-            return Ok(());
+        result: Result<T, CallSignatureError>,
+    ) -> EvalResult<T> {
+        match result {
+            Ok(value) => Ok(value),
+            Err(CallSignatureError::UnknownFunction { name }) => {
+                self.diag(
+                    CfdErrorCode::CheckEvalTypeError,
+                    format!("未知函数 `{name}`"),
+                );
+                Err(EvalAbort::Error)
+            }
+            Err(CallSignatureError::Arity { message }) => {
+                self.diag(CfdErrorCode::CheckEvalTypeError, message);
+                Err(EvalAbort::Error)
+            }
         }
-        self.diag(
-            CfdErrorCode::CheckEvalTypeError,
-            format!("{} 需要 {} 个参数", builtin.name(), builtin.arity()),
-        );
-        Err(EvalAbort::Error)
-    }
-
-    fn exactly_one_arg<'b>(
-        &mut self,
-        args: &'b [CftSchemaCheckExpr],
-        message: &str,
-    ) -> EvalResult<&'b CftSchemaCheckExpr> {
-        let [arg] = args else {
-            self.diag(CfdErrorCode::CheckEvalTypeError, message);
-            return Err(EvalAbort::Error);
-        };
-        Ok(arg)
     }
 
     fn eval_min_max(
