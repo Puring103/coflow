@@ -1,17 +1,22 @@
-use coflow_api::{DiagnosticSet, FlatDiagnostic, ProviderRegistry, SourceLocationSpec};
+use coflow_api::{FlatDiagnostic, ProviderRegistry, SourceLocationSpec};
 use coflow_engine::{
     build_project_schema_session, build_project_session, create_data_file, data_get, data_list,
-    data_sources, sync_data_header, DataCreateFileOptions, DataFileReport, DataGetQuery,
-    DataGetReport, DataListQuery, DataPatchReport, DataPatchRequest, DataSourcesReport,
-    DataSyncHeaderOptions, ProjectSession, RecordCoordinate,
+    data_sources, sync_data_header, DataCreateFileOptions, DataGetQuery, DataGetReport,
+    DataListQuery, DataPatchReport, DataPatchRequest, DataSyncHeaderOptions, ProjectSession,
+    RecordCoordinate,
 };
-use lark::{create_lark_table, infer_table_provider};
 use coflow_project::Project;
+use lark::{create_lark_table, infer_table_provider};
+use output::{
+    file_error_report, flat_diagnostics, write_data_write_file_human, write_file_report_human,
+    write_get_human, write_json, write_list_human, write_patch_human, write_sources_human,
+};
 use serde::Serialize;
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 mod lark;
+mod output;
 
 #[derive(Debug)]
 pub struct DataGetOptions {
@@ -508,163 +513,4 @@ fn open_schema_session(
 ) -> Result<coflow_engine::ProjectSchemaSession, String> {
     let project = Project::open_schema_only(config_or_dir)?;
     build_project_schema_session(project)
-}
-
-fn write_json(value: &impl Serialize) -> Result<(), String> {
-    serde_json::to_writer(io::stdout().lock(), value)
-        .map_err(|err| format!("failed to write JSON: {err}"))?;
-    println!();
-    Ok(())
-}
-
-fn write_sources_human(report: &DataSourcesReport) -> Result<(), String> {
-    let mut stdout = io::stdout().lock();
-    for source in &report.sources {
-        writeln!(
-            stdout,
-            "{}\t{}\t{}",
-            source.file,
-            source.provider,
-            source.types.join(",")
-        )
-        .map_err(|err| format!("failed to write output: {err}"))?;
-    }
-    write_flat_diagnostics(&mut stdout, &report.diagnostics)
-}
-
-fn write_list_human(report: &coflow_engine::DataListReport) -> Result<(), String> {
-    let mut stdout = io::stdout().lock();
-    for record in &report.records {
-        writeln!(
-            stdout,
-            "{}.{}\t{}\t{}",
-            record.record.actual_type, record.record.key, record.file, record.provider
-        )
-        .map_err(|err| format!("failed to write output: {err}"))?;
-    }
-    write_flat_diagnostics(&mut stdout, &report.diagnostics)
-}
-
-fn write_get_human(report: &DataGetReport) -> Result<(), String> {
-    let mut stdout = io::stdout().lock();
-    for record in &report.records {
-        writeln!(
-            stdout,
-            "{}.{}\t{}\t{}",
-            record.record.actual_type, record.record.key, record.file, record.provider
-        )
-        .map_err(|err| format!("failed to write output: {err}"))?;
-        for (name, value) in &record.fields {
-            writeln!(stdout, "  {name}\t{value:?}")
-                .map_err(|err| format!("failed to write output: {err}"))?;
-        }
-    }
-    write_flat_diagnostics(&mut stdout, &report.diagnostics)
-}
-
-fn write_patch_human(report: &DataPatchReport) -> Result<(), String> {
-    let mut stdout = io::stdout().lock();
-    writeln!(
-        stdout,
-        "write_ok={}\tcheck_ok={}\tapplied={}\tfailed={}",
-        report.write_ok,
-        report.check_ok,
-        report.applied.len(),
-        report.failed.len()
-    )
-    .map_err(|err| format!("failed to write output: {err}"))?;
-    for applied in &report.applied {
-        let record = applied.record.as_ref().map_or_else(String::new, |record| {
-            format!("{}.{}", record.actual_type, record.key)
-        });
-        writeln!(
-            stdout,
-            "applied\t{}\t{}\t{}\t{}",
-            applied.index,
-            applied.op,
-            record,
-            applied.file.as_deref().unwrap_or("")
-        )
-        .map_err(|err| format!("failed to write output: {err}"))?;
-    }
-    for failed in &report.failed {
-        writeln!(stdout, "failed\t{}\t{}", failed.index, failed.op)
-            .map_err(|err| format!("failed to write output: {err}"))?;
-        write_flat_diagnostics(&mut stdout, &failed.diagnostics)?;
-    }
-    write_flat_diagnostics(&mut stdout, &report.diagnostics)
-}
-
-fn write_file_report_human(report: &DataFileReport) -> Result<(), String> {
-    let mut stdout = io::stdout().lock();
-    writeln!(
-        stdout,
-        "{}\t{}\t{}",
-        report.provider,
-        report.file,
-        report.headers.join(",")
-    )
-    .map_err(|err| format!("failed to write output: {err}"))?;
-    if !report.added.is_empty() {
-        writeln!(stdout, "added\t{}", report.added.join(","))
-            .map_err(|err| format!("failed to write output: {err}"))?;
-    }
-    if !report.removed.is_empty() {
-        writeln!(stdout, "removed\t{}", report.removed.join(","))
-            .map_err(|err| format!("failed to write output: {err}"))?;
-    }
-    write_flat_diagnostics(&mut stdout, &report.diagnostics)
-}
-
-fn write_data_write_file_human(report: &DataWriteFileReport) -> Result<(), String> {
-    let mut stdout = io::stdout().lock();
-    writeln!(
-        stdout,
-        "{}\twritten={}\tdry_run={}\tchanged={}\tcheck_ok={}",
-        report.file,
-        report.written,
-        report.dry_run,
-        report.changed,
-        report
-            .check_ok
-            .map_or_else(|| "skipped".to_string(), |ok| ok.to_string())
-    )
-    .map_err(|err| format!("failed to write output: {err}"))?;
-    write_flat_diagnostics(&mut stdout, &report.diagnostics)
-}
-
-fn write_flat_diagnostics(
-    stdout: &mut impl Write,
-    diagnostics: &[FlatDiagnostic],
-) -> Result<(), String> {
-    for diagnostic in diagnostics {
-        writeln!(
-            stdout,
-            "[{}] [{}] {}",
-            diagnostic.code, diagnostic.stage, diagnostic.message
-        )
-        .map_err(|err| format!("failed to write output: {err}"))?;
-    }
-    Ok(())
-}
-
-fn flat_diagnostics(diagnostics: &DiagnosticSet) -> Vec<FlatDiagnostic> {
-    diagnostics
-        .diagnostics
-        .iter()
-        .map(|diagnostic| diagnostic.flat_view(None, None, None))
-        .collect()
-}
-
-fn file_error_report(diagnostics: &DiagnosticSet) -> DataFileReport {
-    DataFileReport {
-        file: String::new(),
-        provider: String::new(),
-        sheet: None,
-        actual_type: None,
-        headers: Vec::new(),
-        added: Vec::new(),
-        removed: Vec::new(),
-        diagnostics: flat_diagnostics(diagnostics),
-    }
 }

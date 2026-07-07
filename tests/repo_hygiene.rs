@@ -191,11 +191,13 @@ fn root_cli_id_as_enum_lockfile_does_not_live_in_commands_rs() {
 }
 
 #[test]
-fn data_command_lark_table_helpers_do_not_live_in_data_commands_rs() {
+fn data_command_helpers_do_not_live_in_data_commands_rs() {
     let commands = std::fs::read_to_string("src/data_commands.rs")
         .expect("read root CLI data commands");
     let lark = std::fs::read_to_string("src/data_commands/lark.rs")
         .expect("read data command lark helpers");
+    let output = std::fs::read_to_string("src/data_commands/output.rs")
+        .expect("read data command output helpers");
 
     for expected in [
         "pub(super) fn infer_table_provider",
@@ -211,6 +213,27 @@ fn data_command_lark_table_helpers_do_not_live_in_data_commands_rs() {
         assert!(
             !commands.contains(expected),
             "data command Lark helper `{expected}` should not live in data_commands.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn write_json",
+        "pub(super) fn write_sources_human",
+        "pub(super) fn write_list_human",
+        "pub(super) fn write_get_human",
+        "pub(super) fn write_patch_human",
+        "pub(super) fn write_file_report_human",
+        "pub(super) fn write_data_write_file_human",
+        "fn write_flat_diagnostics",
+        "pub(super) fn flat_diagnostics",
+        "pub(super) fn file_error_report",
+    ] {
+        assert!(
+            output.contains(expected),
+            "data command output helper `{expected}` should live in data_commands/output.rs"
+        );
+        assert!(
+            !commands.contains(expected),
+            "data command output helper `{expected}` should not live in data_commands.rs"
         );
     }
     assert!(
