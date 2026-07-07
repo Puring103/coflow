@@ -203,6 +203,30 @@ fn engine_session_api_does_not_live_in_lib_rs() {
 }
 
 #[test]
+fn engine_schema_build_pipeline_does_not_live_in_lib_rs() {
+    let engine =
+        std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");
+    let schema_build = std::fs::read_to_string("crates/coflow-engine/src/schema_build.rs")
+        .expect("read engine schema build source");
+
+    for expected in [
+        "pub fn build_project_schema_session",
+        "fn validate_dimension_schema_config",
+        "fn compile_project_schema",
+        "fn diagnostics_from_schema_build",
+    ] {
+        assert!(
+            schema_build.contains(expected),
+            "engine schema build helper `{expected}` should live in schema_build.rs"
+        );
+        assert!(
+            !engine.contains(expected),
+            "engine schema build helper `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn engine_runtime_does_not_depend_on_excel_implementation_crates() {
     let manifest =
         std::fs::read_to_string("crates/coflow-engine/Cargo.toml").expect("read engine manifest");
