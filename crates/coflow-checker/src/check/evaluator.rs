@@ -7,6 +7,7 @@ use super::diagnostics::{
     format_value_for_message, one_line_message, render_expr, render_stmt, unary_op_str,
     CheckExplanation,
 };
+use super::enum_values;
 use super::ops::{self, OpsResult};
 use super::value::{
     comparable_key, format_check_key_for_path, CheckValue, LocatedCheckValue,
@@ -1080,11 +1081,9 @@ impl<'a> CheckEvaluator<'a> {
                 );
                 return Err(EvalAbort::Error);
             };
-            let enum_value = match self.schema.enum_value_from_int(name, value) {
-                Some(enum_value) => enum_value.into(),
-                None => Self::anonymous_enum_value(name, value),
-            };
-            return Ok(LocatedCheckValue::value(CheckValue::Enum(enum_value)));
+            return Ok(LocatedCheckValue::value(CheckValue::Enum(
+                enum_values::enum_with_value(self.schema, name, value),
+            )));
         }
 
         let Some(builtin) = Builtin::by_name(name) else {
@@ -1271,7 +1270,11 @@ impl<'a> CheckEvaluator<'a> {
                 Ok(LocatedCheckValue::new(CheckValue::Int(!value), path))
             }
             (CftSchemaUnaryOp::BitNot, CheckValue::Enum(value)) => Ok(LocatedCheckValue::new(
-                CheckValue::Enum(self.enum_with_value(&value.enum_name, !value.value)),
+                CheckValue::Enum(enum_values::enum_with_value(
+                    self.schema,
+                    &value.enum_name,
+                    !value.value,
+                )),
                 path,
             )),
             (op, value) => {
@@ -1492,7 +1495,11 @@ impl<'a> CheckEvaluator<'a> {
             {
                 let value = lhs.value | rhs.value;
                 Ok(LocatedCheckValue::new(
-                    CheckValue::Enum(self.enum_with_value(&lhs.enum_name, value)),
+                    CheckValue::Enum(enum_values::enum_with_value(
+                        self.schema,
+                        &lhs.enum_name,
+                        value,
+                    )),
                     path,
                 ))
             }
@@ -1501,7 +1508,11 @@ impl<'a> CheckEvaluator<'a> {
             {
                 let value = lhs.value ^ rhs.value;
                 Ok(LocatedCheckValue::new(
-                    CheckValue::Enum(self.enum_with_value(&lhs.enum_name, value)),
+                    CheckValue::Enum(enum_values::enum_with_value(
+                        self.schema,
+                        &lhs.enum_name,
+                        value,
+                    )),
                     path,
                 ))
             }
@@ -1510,7 +1521,11 @@ impl<'a> CheckEvaluator<'a> {
             {
                 let value = lhs.value & rhs.value;
                 Ok(LocatedCheckValue::new(
-                    CheckValue::Enum(self.enum_with_value(&lhs.enum_name, value)),
+                    CheckValue::Enum(enum_values::enum_with_value(
+                        self.schema,
+                        &lhs.enum_name,
+                        value,
+                    )),
                     path,
                 ))
             }
@@ -1527,21 +1542,6 @@ impl<'a> CheckEvaluator<'a> {
                 );
                 Err(EvalAbort::Error)
             }
-        }
-    }
-
-    fn enum_with_value(&self, enum_name: &str, value: i64) -> CfdEnumValue {
-        match self.schema.enum_value_from_int(enum_name, value) {
-            Some(enum_value) => enum_value.into(),
-            None => Self::anonymous_enum_value(enum_name, value),
-        }
-    }
-
-    fn anonymous_enum_value(enum_name: &str, value: i64) -> CfdEnumValue {
-        CfdEnumValue {
-            enum_name: enum_name.to_string(),
-            variant: None,
-            value,
         }
     }
 

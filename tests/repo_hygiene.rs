@@ -885,6 +885,28 @@ fn checker_index_access_does_not_live_in_evaluator_rs() {
 }
 
 #[test]
+fn checker_enum_value_helpers_do_not_live_in_evaluator_rs() {
+    let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
+        .expect("read checker evaluator");
+    let enum_values = std::fs::read_to_string("crates/coflow-checker/src/check/enum_values.rs")
+        .expect("read checker enum values");
+
+    for expected in [
+        "pub(super) fn enum_with_value",
+        "pub(super) fn anonymous_enum_value",
+    ] {
+        assert!(
+            enum_values.contains(expected),
+            "checker enum value helper `{expected}` should live in check/enum_values.rs"
+        );
+        assert!(
+            !evaluator.contains(expected),
+            "checker enum value helper `{expected}` should not live in evaluator.rs"
+        );
+    }
+}
+
+#[test]
 fn loaders_do_not_depend_on_checker_runtime_directly() {
     let excel_manifest = std::fs::read_to_string("crates/coflow-loader-excel/Cargo.toml")
         .expect("read excel loader manifest");
