@@ -266,6 +266,8 @@ fn data_command_helpers_do_not_live_in_data_commands_rs() {
         .expect("read data command lark helpers");
     let output = std::fs::read_to_string("src/data_commands/output.rs")
         .expect("read data command output helpers");
+    let write_file = std::fs::read_to_string("src/data_commands/write_file.rs")
+        .expect("read data command write-file helpers");
 
     for expected in [
         "pub(super) fn infer_table_provider",
@@ -302,6 +304,23 @@ fn data_command_helpers_do_not_live_in_data_commands_rs() {
         assert!(
             !commands.contains(expected),
             "data command output helper `{expected}` should not live in data_commands.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn run_write_file",
+        "struct DataWriteTarget",
+        "fn resolve_data_write_target",
+        "fn is_within_configured_local_data_source",
+        "fn read_stdin_source",
+        "fn check_project_after_data_write",
+    ] {
+        assert!(
+            write_file.contains(expected),
+            "data command write-file helper `{expected}` should live in data_commands/write_file.rs"
+        );
+        assert!(
+            !commands.contains(expected),
+            "data command write-file helper `{expected}` should not live in data_commands.rs"
         );
     }
     assert!(
