@@ -2064,6 +2064,30 @@ fn lark_loader_source_parsing_does_not_live_in_lib_rs() {
 }
 
 #[test]
+fn lark_loader_http_client_does_not_live_in_lib_rs() {
+    let lib = std::fs::read_to_string("crates/coflow-loader-lark/src/lib.rs")
+        .expect("read lark loader lib");
+    let http =
+        std::fs::read_to_string("crates/coflow-loader-lark/src/http.rs").expect("read lark http");
+
+    for expected in [
+        "pub trait LarkHttpClient",
+        "pub struct UreqLarkHttpClient",
+        "impl LarkHttpClient for UreqLarkHttpClient",
+        "fn ureq_error_message",
+    ] {
+        assert!(
+            http.contains(expected),
+            "Lark HTTP helper `{expected}` should live in http.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "Lark HTTP helper `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn table_writers_use_shared_cell_renderer() {
     let excel = std::fs::read_to_string("crates/coflow-loader-excel/src/writer.rs")
         .expect("read excel writer");
