@@ -822,6 +822,7 @@ fn checker_builtin_value_helpers_do_not_live_in_evaluator_rs() {
         "pub(super) fn unique_value",
         "pub(super) fn keys_value",
         "pub(super) fn values_value",
+        "pub(super) fn matches_value",
         "pub(super) fn min_max_value",
         "pub(super) fn sum_value",
     ] {

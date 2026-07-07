@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use coflow_data_model::CfdErrorCode;
+use regex::Regex;
 
 use super::builtins::Builtin;
 use super::diagnostics::{format_value_for_message, type_ref_is_float};
@@ -132,6 +133,33 @@ pub(super) fn values_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckVa
             items: entries.into_iter().map(|entry| entry.value).collect(),
             element_type: value_type,
         },
+        value.path,
+    ))
+}
+
+pub(super) fn matches_value(
+    value: LocatedCheckValue,
+    pattern: &str,
+) -> OpsResult<LocatedCheckValue> {
+    let path = value.path.clone();
+    let value_kind = value.value.clone();
+    let CheckValue::String(text) = value.value else {
+        return Err(OpsError::eval_type(
+            path,
+            format!(
+                "matches 的值不是 string: 实际为 {}",
+                format_value_for_message(&value_kind)
+            ),
+        ));
+    };
+    let regex = Regex::new(pattern).map_err(|err| {
+        OpsError::eval_type(
+            None,
+            format!("正则 pattern `{pattern}` 无法编译: {err}"),
+        )
+    })?;
+    Ok(LocatedCheckValue::new(
+        CheckValue::Bool(regex.is_match(&text)),
         value.path,
     ))
 }

@@ -19,7 +19,6 @@ use coflow_cft::{
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdEnumValue, CfdErrorCode, CfdPath, CfdRecordId,
 };
-use regex::Regex;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::value::CheckRecordRef;
@@ -1234,18 +1233,6 @@ impl<'a> CheckEvaluator<'a> {
             }
             Builtin::Matches => {
                 let value = self.eval_expr(&args[0])?;
-                let value_kind = value.value.clone();
-                let CheckValue::String(text) = value.value else {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        value.path,
-                        format!(
-                            "matches 的值不是 string: 实际为 {}",
-                            format_value_for_message(&value_kind)
-                        ),
-                    );
-                    return Err(EvalAbort::Error);
-                };
                 let CftSchemaCheckExprKind::String(pattern) = &args[1].kind else {
                     self.diag(
                         CfdErrorCode::CheckEvalTypeError,
@@ -1253,17 +1240,7 @@ impl<'a> CheckEvaluator<'a> {
                     );
                     return Err(EvalAbort::Error);
                 };
-                let regex = Regex::new(pattern).map_err(|err| {
-                    self.diag(
-                        CfdErrorCode::CheckEvalTypeError,
-                        format!("正则 pattern `{pattern}` 无法编译: {err}"),
-                    );
-                    EvalAbort::Error
-                })?;
-                Ok(LocatedCheckValue::new(
-                    CheckValue::Bool(regex.is_match(&text)),
-                    value.path,
-                ))
+                self.from_ops(builtin_values::matches_value(value, pattern))
             }
         }
     }
@@ -1309,18 +1286,6 @@ impl<'a> CheckEvaluator<'a> {
             Builtin::Keys => self.from_ops(builtin_values::keys_value(receiver_value)),
             Builtin::Values => self.from_ops(builtin_values::values_value(receiver_value)),
             Builtin::Matches => {
-                let value_kind = receiver_value.value.clone();
-                let CheckValue::String(text) = receiver_value.value else {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        receiver_value.path,
-                        format!(
-                            "matches 的值不是 string: 实际为 {}",
-                            format_value_for_message(&value_kind)
-                        ),
-                    );
-                    return Err(EvalAbort::Error);
-                };
                 let CftSchemaCheckExprKind::String(pattern) = &args[0].kind else {
                     self.diag(
                         CfdErrorCode::CheckEvalTypeError,
@@ -1328,17 +1293,7 @@ impl<'a> CheckEvaluator<'a> {
                     );
                     return Err(EvalAbort::Error);
                 };
-                let regex = Regex::new(pattern).map_err(|err| {
-                    self.diag(
-                        CfdErrorCode::CheckEvalTypeError,
-                        format!("正则 pattern `{pattern}` 无法编译: {err}"),
-                    );
-                    EvalAbort::Error
-                })?;
-                Ok(LocatedCheckValue::new(
-                    CheckValue::Bool(regex.is_match(&text)),
-                    receiver_value.path,
-                ))
+                self.from_ops(builtin_values::matches_value(receiver_value, pattern))
             }
         }
     }
