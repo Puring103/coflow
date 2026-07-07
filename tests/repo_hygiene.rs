@@ -1910,9 +1910,13 @@ fn lsp_definition_helpers_do_not_live_in_lib_rs() {
         std::fs::read_to_string("crates/coflow-lsp/src/definition.rs").expect("read definition");
 
     for expected in [
+        "pub(crate) fn definitions_at",
         "pub(crate) fn cft_type_definition_location",
         "pub(crate) fn cft_schema_field_definition_location",
         "pub(crate) fn cfd_record_definition_location",
+        "pub(crate) fn field_location_by_chain",
+        "pub(crate) fn field_location",
+        "pub(crate) fn ast_enum_variant_location",
         "fn cfd_record_definition_location_in_source",
         "fn cfd_project_sources",
         "fn cfd_sources_in_dir",

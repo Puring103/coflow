@@ -42,8 +42,10 @@ use coflow_project::{
 };
 use definition::{
     cfd_record_definition_location, cft_schema_field_definition_location,
-    cft_type_definition_location,
+    cft_type_definition_location, definitions_at,
 };
+#[cfg(test)]
+pub(crate) use definition::field_location_by_chain;
 use completion::completion_items;
 #[cfg(test)]
 pub(crate) use completion::{
@@ -54,7 +56,7 @@ use diagnostics::{
     label_uri, lsp_diagnostic, lsp_error_diagnostic, lsp_label_location, preferred_diagnostic_uri,
 };
 use document_symbols::document_symbols;
-use documentation::is_builtin_name;
+pub(crate) use documentation::is_builtin_name;
 use formatting::format_cft;
 use hover::hover_at;
 use position::{
@@ -711,49 +713,6 @@ pub(crate) struct WordAt {
     end: usize,
 }
 
-fn definitions_at(build: &LspBuild, document: &LspDocument, position: &LspPosition) -> Vec<Value> {
-    let offset = byte_offset_from_position(&document.source, *position);
-    if is_trivia_position(&document.source, offset) {
-        return Vec::new();
-    }
-    let Some(word) = word_at(&document.source, offset) else {
-        return Vec::new();
-    };
-    if is_builtin_name(&word.text) {
-        return Vec::new();
-    }
-
-    if let Some(chain) = dotted_chain_at(&document.source, &word) {
-        if chain.len() == 2 {
-            if let Some(location) = enum_variant_location_by_chain(build, &chain) {
-                return vec![location];
-            }
-            if let Some(location) = ast_enum_variant_location_by_chain(build, &chain) {
-                return vec![location];
-            }
-        }
-        if let Some(location) = field_location_by_chain(build, document, offset, &chain) {
-            return vec![location];
-        }
-    }
-
-    if let Some(location) = global_location(build, &word.text) {
-        return vec![location];
-    }
-
-    if let Some(location) = ast_global_location(build, &word.text) {
-        return vec![location];
-    }
-
-    if let Some(current_type) = current_type_at(build, document, offset) {
-        if let Some(location) = field_location(build, &current_type.name, &word.text) {
-            return vec![location];
-        }
-    }
-
-    Vec::new()
-}
-
 fn semantic_token_data(build: &LspBuild, document: &LspDocument) -> Vec<u32> {
     encode_semantic_tokens(semantic_raw_tokens(build, document))
 }
@@ -1299,7 +1258,7 @@ fn type_of_name(
     Some(field_receiver_type(field))
 }
 
-fn field_by_type<'a>(
+pub(crate) fn field_by_type<'a>(
     build: &'a LspBuild,
     type_name: &str,
     field_name: &str,
@@ -1343,41 +1302,6 @@ pub(crate) fn field_by_chain<'a>(
     Some((type_name.to_string(), field))
 }
 
-fn field_location_by_chain(
-    build: &LspBuild,
-    document: &LspDocument,
-    offset: usize,
-    chain: &[String],
-) -> Option<Value> {
-    let (field_name, receiver) = chain.split_last()?;
-    let receiver_type = type_of_chain(build, document, offset, receiver)?;
-    let type_name = type_name_of_schema_ref(&receiver_type)?;
-    field_location(build, type_name, field_name)
-}
-
-fn field_location(build: &LspBuild, type_name: &str, field_name: &str) -> Option<Value> {
-    let (owner, field) = field_by_type(build, type_name, field_name)?;
-    let document = build.document_by_module(&owner.module)?;
-    let span = ast_field_name_span(document, &owner.name, field_name).unwrap_or(field.span);
-    Some(location(document, span))
-}
-
-fn ast_field_name_span(document: &LspDocument, type_name: &str, field_name: &str) -> Option<Span> {
-    let ast = document.ast.as_ref()?;
-    for item in &ast.items {
-        if let Item::Type(ty) = item {
-            if ty.name == type_name {
-                return ty
-                    .fields
-                    .iter()
-                    .find(|field| field.name == field_name)
-                    .map(|field| field.name_span);
-            }
-        }
-    }
-    None
-}
-
 pub(crate) fn enum_variant_by_chain<'a>(
     build: &'a LspBuild,
     chain: &[String],
@@ -1393,55 +1317,6 @@ pub(crate) fn enum_variant_by_chain<'a>(
     Some((enum_def, variant))
 }
 
-fn enum_variant_location_by_chain(build: &LspBuild, chain: &[String]) -> Option<Value> {
-    let (enum_def, variant) = enum_variant_by_chain(build, chain)?;
-    let document = build.document_by_module(&enum_def.module)?;
-    let span =
-        ast_enum_variant_name_span(document, &enum_def.name, &variant.name).unwrap_or(variant.span);
-    Some(location(document, span))
-}
-
-fn ast_enum_variant_location_by_chain(build: &LspBuild, chain: &[String]) -> Option<Value> {
-    if chain.len() != 2 {
-        return None;
-    }
-    ast_enum_variant_location(build, &chain[0], &chain[1])
-}
-
-fn ast_enum_variant_location(
-    build: &LspBuild,
-    enum_name: &str,
-    variant_name: &str,
-) -> Option<Value> {
-    for document in build.documents.values() {
-        let Some(span) = ast_enum_variant_name_span(document, enum_name, variant_name) else {
-            continue;
-        };
-        return Some(location(document, span));
-    }
-    None
-}
-
-fn ast_enum_variant_name_span(
-    document: &LspDocument,
-    enum_name: &str,
-    variant_name: &str,
-) -> Option<Span> {
-    let ast = document.ast.as_ref()?;
-    for item in &ast.items {
-        if let Item::Enum(enum_def) = item {
-            if enum_def.name == enum_name {
-                return enum_def
-                    .variants
-                    .iter()
-                    .find(|variant| variant.name == variant_name)
-                    .map(|variant| variant.name_span);
-            }
-        }
-    }
-    None
-}
-
 fn enum_name_exists(build: &LspBuild, enum_name: &str) -> bool {
     build
         .container()
@@ -1451,7 +1326,7 @@ fn enum_name_exists(build: &LspBuild, enum_name: &str) -> bool {
 
 fn enum_variant_exists(build: &LspBuild, enum_name: &str, variant_name: &str) -> bool {
     enum_variant_by_chain(build, &[enum_name.to_string(), variant_name.to_string()]).is_some()
-        || ast_enum_variant_location(build, enum_name, variant_name).is_some()
+        || definition::ast_enum_variant_location(build, enum_name, variant_name).is_some()
 }
 
 fn ast_enum_name_exists(build: &LspBuild, enum_name: &str) -> bool {
@@ -1461,72 +1336,6 @@ fn ast_enum_name_exists(build: &LspBuild, enum_name: &str) -> bool {
                 .iter()
                 .any(|item| matches!(item, Item::Enum(enum_def) if enum_def.name == enum_name))
         })
-    })
-}
-
-fn global_location(build: &LspBuild, name: &str) -> Option<Value> {
-    let container = build.container()?;
-    if let Some(ty) = container.resolve_type(name) {
-        let document = build.document_by_module(&ty.module)?;
-        return Some(location(
-            document,
-            ast_top_level_name_span(document, name).unwrap_or(ty.span),
-        ));
-    }
-    if let Some(enum_def) = container.resolve_enum(name) {
-        let document = build.document_by_module(&enum_def.module)?;
-        return Some(location(
-            document,
-            ast_top_level_name_span(document, name).unwrap_or(enum_def.span),
-        ));
-    }
-    if let Some(constant) = container.resolve_const(name) {
-        let document = build.document_by_module(&constant.module)?;
-        return Some(location(
-            document,
-            ast_top_level_name_span(document, name).unwrap_or(constant.span),
-        ));
-    }
-    None
-}
-
-fn ast_global_location(build: &LspBuild, name: &str) -> Option<Value> {
-    for document in build.documents.values() {
-        let Some(ast) = &document.ast else {
-            continue;
-        };
-        for item in &ast.items {
-            match item {
-                Item::Const(constant) if constant.name == name => {
-                    return Some(location(document, constant.name_span));
-                }
-                Item::Enum(enum_def) if enum_def.name == name => {
-                    return Some(location(document, enum_def.name_span));
-                }
-                Item::Type(ty) if ty.name == name => {
-                    return Some(location(document, ty.name_span));
-                }
-                Item::Const(_) | Item::Enum(_) | Item::Type(_) => {}
-            }
-        }
-    }
-    None
-}
-
-fn ast_top_level_name_span(document: &LspDocument, name: &str) -> Option<Span> {
-    let ast = document.ast.as_ref()?;
-    ast.items.iter().find_map(|item| match item {
-        Item::Const(constant) if constant.name == name => Some(constant.name_span),
-        Item::Enum(enum_def) if enum_def.name == name => Some(enum_def.name_span),
-        Item::Type(ty) if ty.name == name => Some(ty.name_span),
-        _ => None,
-    })
-}
-
-fn location(document: &LspDocument, span: Span) -> Value {
-    json!({
-        "uri": document.uri,
-        "range": range_from_span(&document.source, span)
     })
 }
 
