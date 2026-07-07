@@ -1434,6 +1434,35 @@ fn engine_writes_use_cft_schema_view_for_insert_schema_checks() {
 }
 
 #[test]
+fn engine_write_path_helpers_do_not_live_in_writes_rs() {
+    let writes = std::fs::read_to_string("crates/coflow-engine/src/writes.rs")
+        .expect("read engine writes");
+    let path = std::fs::read_to_string("crates/coflow-engine/src/writes/path.rs")
+        .expect("read engine write path helpers");
+
+    for expected in [
+        "pub(super) fn write_path_from_cfd_path",
+        "pub(super) fn value_at_path",
+        "fn format_dict_key_for_path",
+        "pub(super) fn cfd_path_from_write_path",
+        "pub(super) fn cfd_path_to_write_path",
+    ] {
+        assert!(
+            path.contains(expected),
+            "engine write path helper `{expected}` should live in writes/path.rs"
+        );
+        assert!(
+            !writes.contains(expected),
+            "engine write path helper `{expected}` should not live in writes.rs"
+        );
+    }
+    assert!(
+        writes.lines().count() < 800,
+        "coflow-engine writes.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
 fn engine_mutation_defaults_use_cft_schema_view() {
     let defaults = std::fs::read_to_string("crates/coflow-engine/src/mutation/defaults.rs")
         .expect("read mutation defaults")

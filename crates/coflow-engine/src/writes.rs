@@ -6,6 +6,8 @@
 //! registered writer, then rebuilds itself in place so subsequent queries
 //! see the post-write state.
 
+mod path;
+
 use std::sync::Arc;
 
 use coflow_api::{
@@ -15,11 +17,14 @@ use coflow_api::{
     WriteFieldPathSegment,
 };
 use coflow_cft::CftSchemaView;
-use coflow_data_model::{CfdPath, CfdPathSegment, CfdRecord, CfdRecordId, CfdValue};
+use coflow_data_model::{CfdRecordId, CfdValue};
 
 use super::records::WriteOutcome;
 use super::write_rules;
 use super::{build_project_session, ProjectSession, RecordCoordinate};
+use path::{
+    cfd_path_from_write_path, cfd_path_to_write_path, value_at_path, write_path_from_cfd_path,
+};
 
 impl ProjectSession {
     /// Persist a single field edit and rebuild the session in place.
@@ -598,50 +603,6 @@ fn source_rewrite_actions(
         .collect()
 }
 
-fn write_path_from_cfd_path(path: &CfdPath) -> Result<Vec<WriteFieldPathSegment>, DiagnosticSet> {
-    path.segments
-        .iter()
-        .map(|segment| match segment {
-            CfdPathSegment::Field(name) => Ok(WriteFieldPathSegment::Field(name.clone())),
-            CfdPathSegment::Index(index) => Ok(WriteFieldPathSegment::Index(*index)),
-            CfdPathSegment::DictKey(key) => Ok(WriteFieldPathSegment::DictKey(key.clone())),
-        })
-        .collect()
-}
-
-fn value_at_path<'a>(record: &'a CfdRecord, path: &CfdPath) -> Option<&'a CfdValue> {
-    let mut segments = path.segments.iter();
-    let CfdPathSegment::Field(field) = segments.next()? else {
-        return None;
-    };
-    let mut current = record.fields().get(field)?;
-    for segment in segments {
-        current = match (segment, current) {
-            (CfdPathSegment::Field(field), CfdValue::Object(record)) => {
-                record.fields().get(field)?
-            }
-            (CfdPathSegment::Index(index), CfdValue::Array(items)) => items.get(*index)?,
-            (CfdPathSegment::DictKey(key), CfdValue::Dict(entries)) => entries
-                .iter()
-                .find(|(entry_key, _)| format_dict_key_for_path(entry_key) == *key)
-                .map(|(_, value)| value)?,
-            _ => return None,
-        };
-    }
-    Some(current)
-}
-
-fn format_dict_key_for_path(key: &coflow_data_model::CfdDictKey) -> String {
-    match key {
-        coflow_data_model::CfdDictKey::String(value) => format!("\"{value}\""),
-        coflow_data_model::CfdDictKey::Int(value) => value.to_string(),
-        coflow_data_model::CfdDictKey::Enum(value) => value.variant.as_deref().map_or_else(
-            || format!("{}({})", value.enum_name, value.value),
-            |variant| format!("{}.{}", value.enum_name, variant),
-        ),
-    }
-}
-
 /// Compute the post-write coordinate. Writers don't tell us the new key, so
 /// we walk the path: only a write at exactly `[Field("id")]` can rename the
 /// record. Everything else preserves the original coordinate.
@@ -719,24 +680,4 @@ fn write_target_for_path(
         display_path: source_ref.display_path.clone(),
         field_path: cfd_path_to_write_path(&source_path),
     })
-}
-
-fn cfd_path_from_write_path(path: &[WriteFieldPathSegment]) -> CfdPath {
-    path.iter()
-        .fold(CfdPath::root(), |path, segment| match segment {
-            WriteFieldPathSegment::Field(field) => path.field(field.clone()),
-            WriteFieldPathSegment::Index(index) => path.index(*index),
-            WriteFieldPathSegment::DictKey(key) => path.dict_key(key.clone()),
-        })
-}
-
-fn cfd_path_to_write_path(path: &CfdPath) -> Vec<WriteFieldPathSegment> {
-    path.segments
-        .iter()
-        .map(|segment| match segment {
-            CfdPathSegment::Field(field) => WriteFieldPathSegment::Field(field.clone()),
-            CfdPathSegment::Index(index) => WriteFieldPathSegment::Index(*index),
-            CfdPathSegment::DictKey(key) => WriteFieldPathSegment::DictKey(key.clone()),
-        })
-        .collect()
 }
