@@ -59,11 +59,11 @@ use protocol::{
     TextRequest,
 };
 use semantic_tokens::{
-    encode_semantic_tokens, push_semantic_span, push_semantic_span_plain, RawSemanticToken,
-    MOD_DECLARATION, MOD_PATH, MOD_REFERENCE, MOD_SCHEMA, SEM_COMMENT, SEM_DECORATOR, SEM_ENUM,
-    SEM_ENUM_MEMBER, SEM_FUNCTION, SEM_KEYWORD, SEM_NUMBER, SEM_OPERATOR, SEM_PARAMETER,
-    SEM_PROPERTY, SEM_STRING, SEM_TYPE, SEM_VARIABLE, SEMANTIC_TOKEN_MODIFIERS,
-    SEMANTIC_TOKEN_TYPES,
+    add_comment_semantic_tokens, encode_semantic_tokens, push_semantic_span,
+    push_semantic_span_plain, RawSemanticToken, MOD_DECLARATION, MOD_PATH, MOD_REFERENCE,
+    MOD_SCHEMA, SEM_DECORATOR, SEM_ENUM, SEM_ENUM_MEMBER, SEM_FUNCTION, SEM_KEYWORD, SEM_NUMBER,
+    SEM_OPERATOR, SEM_PARAMETER, SEM_PROPERTY, SEM_STRING, SEM_TYPE, SEM_VARIABLE,
+    SEMANTIC_TOKEN_MODIFIERS, SEMANTIC_TOKEN_TYPES,
 };
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -1813,39 +1813,6 @@ fn add_check_expr_semantic(
             }
         }
     }
-}
-
-fn add_comment_semantic_tokens(source: &str, tokens: &mut Vec<RawSemanticToken>) {
-    let mut line_start = 0;
-    for line in source.split_inclusive('\n') {
-        if let Some(comment_start) = comment_start_in_line(line) {
-            let start = line_start + comment_start;
-            let end = line_start + line.trim_end_matches(['\r', '\n']).len();
-            push_semantic_span_plain(source, Span::new(start, end), SEM_COMMENT, tokens);
-        }
-        line_start += line.len();
-    }
-}
-
-fn comment_start_in_line(line: &str) -> Option<usize> {
-    let mut in_string = false;
-    let mut escaped = false;
-    for (index, ch) in line.char_indices() {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == '"' {
-                in_string = false;
-            }
-        } else if ch == '"' {
-            in_string = true;
-        } else if ch == '#' {
-            return Some(index);
-        }
-    }
-    None
 }
 
 fn current_type_at<'a>(

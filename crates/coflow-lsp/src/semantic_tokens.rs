@@ -124,3 +124,36 @@ pub(crate) fn encode_semantic_tokens(mut tokens: Vec<RawSemanticToken>) -> Vec<u
 fn usize_to_u32_saturating(value: usize) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
 }
+
+pub(crate) fn add_comment_semantic_tokens(source: &str, tokens: &mut Vec<RawSemanticToken>) {
+    let mut line_start = 0;
+    for line in source.split_inclusive('\n') {
+        if let Some(comment_start) = comment_start_in_line(line) {
+            let start = line_start + comment_start;
+            let end = line_start + line.trim_end_matches(['\r', '\n']).len();
+            push_semantic_span_plain(source, Span::new(start, end), SEM_COMMENT, tokens);
+        }
+        line_start += line.len();
+    }
+}
+
+pub(crate) fn comment_start_in_line(line: &str) -> Option<usize> {
+    let mut in_string = false;
+    let mut escaped = false;
+    for (index, ch) in line.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+        } else if ch == '"' {
+            in_string = true;
+        } else if ch == '#' {
+            return Some(index);
+        }
+    }
+    None
+}

@@ -1969,6 +1969,8 @@ fn lsp_semantic_token_helpers_do_not_live_in_lib_rs() {
         "pub(crate) fn push_semantic_span",
         "pub(crate) fn push_semantic_span_plain",
         "pub(crate) fn encode_semantic_tokens",
+        "pub(crate) fn add_comment_semantic_tokens",
+        "pub(crate) fn comment_start_in_line",
     ] {
         assert!(
             semantic_tokens.contains(expected),
