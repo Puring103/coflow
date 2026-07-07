@@ -261,6 +261,32 @@ fn project_schema_discovery_does_not_live_in_project_lib_rs() {
 }
 
 #[test]
+fn project_path_helpers_do_not_live_in_project_lib_rs() {
+    let project =
+        std::fs::read_to_string("crates/coflow-project/src/lib.rs").expect("read project lib");
+    let paths =
+        std::fs::read_to_string("crates/coflow-project/src/paths.rs").expect("read project paths");
+
+    for expected in [
+        "pub fn resolve_config_path",
+        "pub(super) fn resolve_project_relative",
+        "fn find_default_config",
+        "fn is_yaml_path",
+        "pub fn path_to_slash",
+        "pub fn normalize_path",
+    ] {
+        assert!(
+            paths.contains(expected),
+            "project path helper `{expected}` should live in paths.rs"
+        );
+        assert!(
+            !project.contains(expected),
+            "project path helper `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn table_provider_algorithms_are_not_reexported_by_excel_loader() {
     let excel = std::fs::read_to_string("crates/coflow-loader-excel/src/lib.rs")
         .expect("read excel loader");
