@@ -966,6 +966,37 @@ fn checker_field_read_helpers_do_not_live_in_evaluator_rs() {
 }
 
 #[test]
+fn checker_value_explanation_helpers_do_not_live_in_evaluator_rs() {
+    let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
+        .expect("read checker evaluator");
+    let explanations =
+        std::fs::read_to_string("crates/coflow-checker/src/check/explanations.rs")
+            .expect("read checker explanation helpers");
+
+    for expected in [
+        "pub(super) trait ValueExprEvaluator",
+        "pub(super) fn explain_false_value_expr",
+        "pub(super) fn value_expr_actual",
+        "fn unique_failed_explanation",
+    ] {
+        assert!(
+            explanations.contains(expected),
+            "checker explanation helper `{expected}` should live in check/explanations.rs"
+        );
+        assert!(
+            !evaluator.contains(expected),
+            "checker explanation helper `{expected}` should not live in evaluator.rs"
+        );
+    }
+    for forbidden in ["所有元素唯一", "重复值", "包含 {}", "匹配 {}"] {
+        assert!(
+            !evaluator.contains(forbidden),
+            "checker evaluator should not own value explanation branch `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn checker_index_access_does_not_live_in_evaluator_rs() {
     let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
         .expect("read checker evaluator");

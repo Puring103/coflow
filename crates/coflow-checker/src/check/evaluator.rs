@@ -8,12 +8,11 @@ use super::diagnostics::{
     format_value_for_message, one_line_message, render_expr, render_stmt, CheckExplanation,
 };
 use super::enum_values;
+use super::explanations::{self, ValueExprEvaluator};
 use super::fields;
 use super::ops::{self, OpsResult};
 use super::quantifiers;
-use super::value::{
-    comparable_key, CheckValue, LocatedCheckValue,
-};
+use super::value::{CheckValue, LocatedCheckValue};
 use crate::DimensionCheckContext;
 use coflow_cft::{
     CftContainer, CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
@@ -39,6 +38,12 @@ pub(super) struct CheckEvaluator<'a> {
     pub(super) diagnostics: Vec<CfdDiagnostic>,
     deps: DependencyCollector,
     pub(super) dimension_context: Option<DimensionCheckContext>,
+}
+
+impl ValueExprEvaluator for CheckEvaluator<'_> {
+    fn eval_value_expr(&mut self, expr: &CftSchemaCheckExpr) -> Option<LocatedCheckValue> {
+        self.eval_expr(expr).ok()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -508,7 +513,9 @@ impl<'a> CheckEvaluator<'a> {
             | CftSchemaCheckExprKind::MethodCall { .. }
                 if matches!(value.value, CheckValue::Bool(false)) =>
             {
-                Some(self.explain_false_value_expr(expr, value, rendered))
+                Some(explanations::explain_false_value_expr(
+                    self, expr, value, rendered,
+                ))
             }
             CftSchemaCheckExprKind::Unary {
                 op: CftSchemaUnaryOp::Not,
@@ -616,77 +623,6 @@ impl<'a> CheckEvaluator<'a> {
         }
     }
 
-    fn explain_false_value_expr(
-        &mut self,
-        expr: &CftSchemaCheckExpr,
-        value: &LocatedCheckValue,
-        rendered: String,
-    ) -> CheckExplanation {
-        match &expr.kind {
-            CftSchemaCheckExprKind::Call { name, args }
-                if name == "contains" && args.len() == 2 =>
-            {
-                CheckExplanation::new(
-                    CfdErrorCode::CheckContainsFailed,
-                    rendered,
-                    value.path.clone(),
-                )
-                .with_actual(self.value_expr_actual(&args[0]))
-                .with_expected(format!("包含 {}", render_expr(&args[1])))
-            }
-            CftSchemaCheckExprKind::MethodCall {
-                receiver,
-                name,
-                args,
-            } if name == "contains" && args.len() == 1 => CheckExplanation::new(
-                CfdErrorCode::CheckContainsFailed,
-                rendered,
-                value.path.clone(),
-            )
-            .with_actual(self.value_expr_actual(receiver))
-            .with_expected(format!("包含 {}", render_expr(&args[0]))),
-            CftSchemaCheckExprKind::Call { name, args }
-                if name == "isUnique" && args.len() == 1 =>
-            {
-                self.unique_failed_explanation(&rendered, &args[0], value.path.clone())
-            }
-            CftSchemaCheckExprKind::MethodCall {
-                receiver,
-                name,
-                args,
-            } if name == "isUnique" && args.is_empty() => {
-                self.unique_failed_explanation(&rendered, receiver, value.path.clone())
-            }
-            CftSchemaCheckExprKind::Call { name, args } if name == "matches" && args.len() == 2 => {
-                CheckExplanation::new(
-                    CfdErrorCode::CheckMatchesFailed,
-                    rendered,
-                    value.path.clone(),
-                )
-                .with_actual(self.value_expr_actual(&args[0]))
-                .with_expected(format!("匹配 {}", render_expr(&args[1])))
-            }
-            CftSchemaCheckExprKind::MethodCall {
-                receiver,
-                name,
-                args,
-            } if name == "matches" && args.len() == 1 => CheckExplanation::new(
-                CfdErrorCode::CheckMatchesFailed,
-                rendered,
-                value.path.clone(),
-            )
-            .with_actual(self.value_expr_actual(receiver))
-            .with_expected(format!("匹配 {}", render_expr(&args[0]))),
-            _ => CheckExplanation::new(
-                CfdErrorCode::CheckBoolExpectedTrue,
-                rendered,
-                value.path.clone(),
-            )
-            .with_actual("false")
-            .with_expected("true"),
-        }
-    }
-
     fn explain_failed_comparison(
         &mut self,
         rendered: &str,
@@ -739,49 +675,6 @@ impl<'a> CheckEvaluator<'a> {
             lhs = rhs;
         }
         None
-    }
-
-    fn value_expr_actual(&mut self, expr: &CftSchemaCheckExpr) -> String {
-        self.eval_expr(expr).map_or_else(
-            |_| render_expr(expr),
-            |value| {
-                format!(
-                    "{} = {}",
-                    render_expr(expr),
-                    format_value_for_message(&value.value)
-                )
-            },
-        )
-    }
-
-    fn unique_failed_explanation(
-        &mut self,
-        rendered: &str,
-        collection: &CftSchemaCheckExpr,
-        path: Option<CfdPath>,
-    ) -> CheckExplanation {
-        let mut explanation =
-            CheckExplanation::new(CfdErrorCode::CheckUniqueFailed, rendered.to_string(), path)
-                .with_actual(self.value_expr_actual(collection))
-                .with_expected("所有元素唯一");
-
-        if let Ok(value) = self.eval_expr(collection) {
-            if let CheckValue::Array { items, .. } = value.value {
-                let mut seen = BTreeMap::new();
-                for (index, item) in items.iter().enumerate() {
-                    if let Some(key) = comparable_key(item) {
-                        if let Some(first_index) = seen.insert(key, index) {
-                            explanation = explanation.with_actual(format!(
-                                "重复值 {} 出现在索引 {first_index} 和 {index}",
-                                format_value_for_message(item)
-                            ));
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        explanation
     }
 
     #[allow(clippy::too_many_lines)]
