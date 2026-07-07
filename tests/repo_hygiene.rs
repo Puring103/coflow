@@ -1313,6 +1313,66 @@ fn table_writers_use_shared_cell_renderer() {
 }
 
 #[test]
+fn table_loader_core_table_rs_is_split_by_responsibility() {
+    let table = std::fs::read_to_string("crates/coflow-loader-table-core/src/table.rs")
+        .expect("read table core loader");
+    let types = std::fs::read_to_string("crates/coflow-loader-table-core/src/table/types.rs")
+        .expect("read table core types");
+    let diagnostics =
+        std::fs::read_to_string("crates/coflow-loader-table-core/src/table/diagnostics.rs")
+            .expect("read table core diagnostics");
+    let columns = std::fs::read_to_string("crates/coflow-loader-table-core/src/table/columns.rs")
+        .expect("read table core columns");
+
+    for expected in [
+        "pub struct TableSheetConfig",
+        "pub struct TableSource",
+        "pub struct TableDiagnostic",
+        "pub struct TableLocation",
+    ] {
+        assert!(
+            types.contains(expected),
+            "table type `{expected}` should live in table/types.rs"
+        );
+        assert!(
+            !table.contains(expected),
+            "table type `{expected}` should not live in table.rs"
+        );
+    }
+    for expected in [
+        "pub(super) enum TableLoadError",
+        "pub(super) fn table_load_error_diagnostics",
+    ] {
+        assert!(
+            diagnostics.contains(expected),
+            "table diagnostic item `{expected}` should live in table/diagnostics.rs"
+        );
+        assert!(
+            !table.contains(expected),
+            "table diagnostic item `{expected}` should not live in table.rs"
+        );
+    }
+    for expected in [
+        "struct ColumnResolution",
+        "pub(super) fn resolve_columns",
+        "pub(super) fn field_columns_from_resolved",
+    ] {
+        assert!(
+            columns.contains(expected),
+            "table column item `{expected}` should live in table/columns.rs"
+        );
+        assert!(
+            !table.contains(expected),
+            "table column item `{expected}` should not live in table.rs"
+        );
+    }
+    assert!(
+        table.lines().count() < 800,
+        "coflow-loader-table-core table.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
 fn editor_backend_entrypoints_do_not_use_crash_error_handling() {
     for path in [
         "editors/cfd-editor/src-tauri/src/lib.rs",
