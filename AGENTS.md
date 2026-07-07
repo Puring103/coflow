@@ -1,14 +1,14 @@
 # Agent Workflow
 
-For normal development commits, run the two required Rust checks from the repository root:
+For normal development commits and normal CI, run only the two required Rust checks from the repository root:
 
 ```powershell
 cargo check --workspace
 cargo test --workspace
 ```
 
-Do not commit or push normal development changes while either command fails.
-The normal CI workflow mirrors this rule and should only run these two commands.
+Do not commit or push normal development changes while either command fails. Normal development
+CI should not require `cargo fmt` or `cargo clippy`; those are release/packaging gates.
 
 For release or packaging commits, run the full gate from the repository root:
 

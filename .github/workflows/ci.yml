@@ -1,4 +1,4 @@
-name: CI
+name: Development CI
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
 
 jobs:
   rust:
-    name: Rust check and test
+    name: Rust check and test only
     runs-on: windows-latest
 
     steps:
