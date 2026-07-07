@@ -14,6 +14,7 @@
 
 mod cfd;
 mod diagnostics;
+mod formatting;
 mod position;
 mod protocol;
 mod uri;
@@ -37,6 +38,7 @@ use coflow_project::{
 use diagnostics::{
     label_uri, lsp_diagnostic, lsp_error_diagnostic, lsp_label_location, preferred_diagnostic_uri,
 };
+use formatting::format_cft;
 use position::{
     byte_offset_from_position, byte_range, full_document_range, position_from_byte,
     range_from_span, LspPosition,
@@ -2857,61 +2859,6 @@ fn last_ident(text: &str) -> Option<&str> {
 fn line_prefix_at(source: &str, offset: usize) -> &str {
     let start = source[..offset].rfind('\n').map_or(0, |index| index + 1);
     &source[start..offset]
-}
-
-fn format_cft(source: &str) -> String {
-    let mut output = String::new();
-    let mut indent = 0usize;
-    let ended_with_newline = source.ends_with('\n');
-
-    for raw_line in source.lines() {
-        let trimmed = raw_line.trim();
-        if trimmed.is_empty() {
-            output.push('\n');
-            continue;
-        }
-        if starts_with_closing_delimiter(trimmed) {
-            indent = indent.saturating_sub(1);
-        }
-        output.push_str(&"  ".repeat(indent));
-        output.push_str(trimmed);
-        output.push('\n');
-        indent = adjusted_indent(indent, trimmed);
-    }
-
-    if !ended_with_newline && output.ends_with('\n') {
-        output.pop();
-    }
-    output
-}
-
-fn starts_with_closing_delimiter(line: &str) -> bool {
-    line.starts_with('}') || line.starts_with(']')
-}
-
-fn adjusted_indent(mut indent: usize, line: &str) -> usize {
-    let mut in_string = false;
-    let mut escaped = false;
-    for ch in line.chars() {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == '"' {
-                in_string = false;
-            }
-            continue;
-        }
-        match ch {
-            '"' => in_string = true,
-            '#' => break,
-            '{' | '[' => indent += 1,
-            '}' | ']' => indent = indent.saturating_sub(1),
-            _ => {}
-        }
-    }
-    indent
 }
 
 fn is_cfd_path(path: &Path) -> bool {

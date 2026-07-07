@@ -1859,6 +1859,28 @@ fn lsp_position_helpers_do_not_live_in_lib_rs() {
 }
 
 #[test]
+fn lsp_formatting_helpers_do_not_live_in_lib_rs() {
+    let lib = std::fs::read_to_string("crates/coflow-lsp/src/lib.rs").expect("read lsp lib");
+    let formatting = std::fs::read_to_string("crates/coflow-lsp/src/formatting.rs")
+        .expect("read lsp formatting");
+
+    for expected in [
+        "pub(crate) fn format_cft",
+        "pub(crate) fn starts_with_closing_delimiter",
+        "pub(crate) fn adjusted_indent",
+    ] {
+        assert!(
+            formatting.contains(expected),
+            "LSP formatting helper `{expected}` should live in formatting.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "LSP formatting helper `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn table_writers_use_shared_cell_renderer() {
     let excel = std::fs::read_to_string("crates/coflow-loader-excel/src/writer.rs")
         .expect("read excel writer");
