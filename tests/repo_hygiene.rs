@@ -1040,6 +1040,35 @@ fn cft_schema_compiler_symbols_are_split_out() {
 }
 
 #[test]
+fn cft_type_checker_operator_rules_are_split_out() {
+    let type_checker = std::fs::read_to_string("crates/coflow-cft/src/schema/type_checker.rs")
+        .expect("read CFT type checker");
+    let ops = std::fs::read_to_string("crates/coflow-cft/src/schema/type_checker/ops.rs")
+        .expect("read CFT type checker operators");
+
+    for expected in [
+        "pub(super) fn check_unary",
+        "pub(super) fn check_binop",
+        "pub(super) fn check_comparison",
+        "fn operator_mismatch",
+        "fn is_flag_enum",
+    ] {
+        assert!(
+            ops.contains(expected),
+            "CFT type checker operator helper `{expected}` should live in schema/type_checker/ops.rs"
+        );
+        assert!(
+            !type_checker.contains(expected),
+            "CFT type checker operator helper `{expected}` should not live in schema/type_checker.rs"
+        );
+    }
+    assert!(
+        type_checker.lines().count() < 800,
+        "coflow-cft schema/type_checker.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
 fn cft_parser_check_expression_parser_is_split_out() {
     let parser =
         std::fs::read_to_string("crates/coflow-cft/src/parser.rs").expect("read CFT parser");
