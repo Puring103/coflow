@@ -3045,13 +3045,17 @@ fn table_writers_use_shared_cell_renderer() {
         .expect("read excel writer");
     let table_writer = std::fs::read_to_string("crates/coflow-loader-table-core/src/writer.rs")
         .expect("read table writer");
+    let table_writer_cells =
+        std::fs::read_to_string("crates/coflow-loader-table-core/src/writer/cells.rs")
+            .expect("read table writer cells");
     let lark = std::fs::read_to_string("crates/coflow-loader-lark/src/write.rs")
         .expect("read lark writer");
 
     assert!(
         excel.contains("coflow_loader_table_core::writer::{")
-            && table_writer.contains("use crate::cell_value::render_cell_value;")
-            && table_writer.contains("render_cell_value(value).map_err(table_render_error)"),
+            && table_writer.contains("mod cells;")
+            && table_writer_cells.contains("use crate::cell_value::render_cell_value;")
+            && table_writer_cells.contains("render_cell_value(value).map_err(table_render_error)"),
         "Excel writer should use the shared table-core writer and renderer"
     );
     assert!(
@@ -3074,6 +3078,8 @@ fn table_writers_use_shared_cell_renderer() {
 fn table_core_writer_diagnostics_do_not_live_in_writer_rs() {
     let writer = std::fs::read_to_string("crates/coflow-loader-table-core/src/writer.rs")
         .expect("read table core writer");
+    let cells = std::fs::read_to_string("crates/coflow-loader-table-core/src/writer/cells.rs")
+        .expect("read table core writer cell rendering");
     let diagnostics =
         std::fs::read_to_string("crates/coflow-loader-table-core/src/writer/diagnostics.rs")
             .expect("read table core writer diagnostics");
@@ -3094,9 +3100,27 @@ fn table_core_writer_diagnostics_do_not_live_in_writer_rs() {
         );
     }
     assert!(
-        writer.lines().count() < 450,
+        writer.lines().count() < 330,
         "coflow-loader-table-core writer.rs should stay below the 450-line focused-module threshold"
     );
+    for expected in [
+        "pub(super) fn render_insert_value",
+        "pub(super) fn render_field_cells",
+        "fn root_value_for_path",
+        "fn replace_subvalue",
+        "fn resolve_column",
+        "fn direct_child_columns",
+        "fn format_dict_key_for_path",
+    ] {
+        assert!(
+            cells.contains(expected),
+            "table writer cell item `{expected}` should live in writer/cells.rs"
+        );
+        assert!(
+            !writer.contains(expected),
+            "table writer cell item `{expected}` should not live in writer.rs"
+        );
+    }
 }
 
 #[test]
