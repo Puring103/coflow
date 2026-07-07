@@ -1,5 +1,6 @@
 mod annotations;
 mod check;
+mod check_primary;
 mod defaults;
 mod literals;
 mod tokens;

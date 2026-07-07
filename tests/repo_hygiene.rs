@@ -1531,6 +1531,8 @@ fn cft_parser_check_expression_parser_is_split_out() {
         .expect("read annotation parser");
     let check = std::fs::read_to_string("crates/coflow-cft/src/parser/check.rs")
         .expect("read check parser");
+    let check_primary = std::fs::read_to_string("crates/coflow-cft/src/parser/check_primary.rs")
+        .expect("read check primary parser");
     let defaults = std::fs::read_to_string("crates/coflow-cft/src/parser/defaults.rs")
         .expect("read default parser");
     let literals = std::fs::read_to_string("crates/coflow-cft/src/parser/literals.rs")
@@ -1542,7 +1544,6 @@ fn cft_parser_check_expression_parser_is_split_out() {
         "pub(super) fn parse_check_block",
         "fn parse_check_stmts",
         "fn parse_or_expr",
-        "fn parse_postfix_expr",
         "fn validate_cmp_chain",
         "enum CmpChainGroup",
     ] {
@@ -1553,6 +1554,24 @@ fn cft_parser_check_expression_parser_is_split_out() {
         assert!(
             !parser.contains(expected),
             "CFT parser check helper `{expected}` should not live in parser.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn parse_postfix_expr",
+        "fn parse_primary_expr",
+        "pub(super) fn parse_type_predicate",
+    ] {
+        assert!(
+            check_primary.contains(expected),
+            "CFT parser primary check helper `{expected}` should live in parser/check_primary.rs"
+        );
+        assert!(
+            !check.contains(expected),
+            "CFT parser primary check helper `{expected}` should not live in parser/check.rs"
+        );
+        assert!(
+            !parser.contains(expected),
+            "CFT parser primary check helper `{expected}` should not live in parser.rs"
         );
     }
     for expected in [
