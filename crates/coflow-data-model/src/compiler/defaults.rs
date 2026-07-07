@@ -1,32 +1,36 @@
 use super::Validator;
 use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::model::{CfdEnumValue, CfdRecordId, CfdValue};
-use crate::schema_view::{type_accepts_default, CfdType, CfdValueDraft, FieldMeta};
-use coflow_cft::CftSchemaDefaultValue;
+use crate::schema_view::{type_accepts_default, CfdValueDraft};
+use coflow_cft::{CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef};
 use std::collections::BTreeMap;
 
 impl<'s> Validator<'s> {
     pub(super) fn default_field_value(
         &mut self,
-        field: &FieldMeta,
+        field: &CftFieldMeta,
         value: &CftSchemaDefaultValue,
         record: Option<CfdRecordId>,
         path: CfdPath,
     ) -> Option<CfdValueDraft> {
-        self.default_value(&field.ty, value, record, path)
+        self.default_value(&field.ty_ref, value, record, path)
     }
 
     fn default_value(
         &mut self,
-        ty: &CfdType,
+        ty: &CftSchemaTypeRef,
         value: &CftSchemaDefaultValue,
         record: Option<CfdRecordId>,
         path: CfdPath,
     ) -> Option<CfdValueDraft> {
         if matches!(value, CftSchemaDefaultValue::EmptyObject) {
             return match non_nullable_type(ty) {
-                CfdType::Dict(_, _) => Some(CfdValueDraft::Value(CfdValue::Dict(Vec::new()))),
-                CfdType::Type(type_name) => self.default_object_value(type_name, record, path),
+                CftSchemaTypeRef::Dict(_, _) => {
+                    Some(CfdValueDraft::Value(CfdValue::Dict(Vec::new())))
+                }
+                CftSchemaTypeRef::Named(type_name) if !self.schema.is_schema_enum(type_name) => {
+                    self.default_object_value(type_name, record, path)
+                }
                 _ => {
                     self.push_default_type_mismatch(record, path);
                     None
@@ -36,10 +40,14 @@ impl<'s> Validator<'s> {
 
         let out = match value {
             CftSchemaDefaultValue::Null if ty.is_nullable() => CfdValue::Null,
-            CftSchemaDefaultValue::Int(value) if type_accepts_default(ty, &CfdType::Int) => {
+            CftSchemaDefaultValue::Int(value)
+                if type_accepts_default(ty, &CftSchemaTypeRef::Int) =>
+            {
                 CfdValue::Int(*value)
             }
-            CftSchemaDefaultValue::Float(value) if type_accepts_default(ty, &CfdType::Float) => {
+            CftSchemaDefaultValue::Float(value)
+                if type_accepts_default(ty, &CftSchemaTypeRef::Float) =>
+            {
                 if !value.is_finite() {
                     self.push(
                         CfdDiagnostic::error(
@@ -52,17 +60,21 @@ impl<'s> Validator<'s> {
                 }
                 CfdValue::Float(*value)
             }
-            CftSchemaDefaultValue::Bool(value) if type_accepts_default(ty, &CfdType::Bool) => {
+            CftSchemaDefaultValue::Bool(value)
+                if type_accepts_default(ty, &CftSchemaTypeRef::Bool) =>
+            {
                 CfdValue::Bool(*value)
             }
-            CftSchemaDefaultValue::String(value) if type_accepts_default(ty, &CfdType::String) => {
+            CftSchemaDefaultValue::String(value)
+                if type_accepts_default(ty, &CftSchemaTypeRef::String) =>
+            {
                 CfdValue::String(value.clone())
             }
             CftSchemaDefaultValue::Enum {
                 enum_name,
                 variant,
                 value,
-            } if matches!(non_nullable_type(ty), CfdType::Enum(name) if name == enum_name) => {
+            } if matches!(non_nullable_type(ty), CftSchemaTypeRef::Named(name) if name == enum_name && self.schema.is_schema_enum(name)) => {
                 CfdValue::Enum(CfdEnumValue {
                     enum_name: enum_name.clone(),
                     variant: Some(variant.clone()),
@@ -70,7 +82,7 @@ impl<'s> Validator<'s> {
                 })
             }
             CftSchemaDefaultValue::EmptyArray
-                if matches!(non_nullable_type(ty), CfdType::Array(_)) =>
+                if matches!(non_nullable_type(ty), CftSchemaTypeRef::Array(_)) =>
             {
                 CfdValue::Array(Vec::new())
             }
@@ -113,9 +125,9 @@ impl<'s> Validator<'s> {
     }
 }
 
-fn non_nullable_type(ty: &CfdType) -> &CfdType {
+fn non_nullable_type(ty: &CftSchemaTypeRef) -> &CftSchemaTypeRef {
     match ty {
-        CfdType::Nullable(inner) => non_nullable_type(inner),
+        CftSchemaTypeRef::Nullable(inner) => non_nullable_type(inner),
         _ => ty,
     }
 }

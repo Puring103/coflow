@@ -1269,10 +1269,16 @@ fn data_model_schema_projection_uses_cft_schema_view() {
         schema_view.contains("CftTypeMeta"),
         "data-model schema view should reuse coflow-cft type metadata instead of local type metadata"
     );
+    assert!(
+        schema_view.contains("CftFieldMeta") && schema_view.contains("CftSchemaTypeRef"),
+        "data-model schema view should reuse coflow-cft field metadata and type refs"
+    );
     for forbidden in [
         "schema.all_types()",
         "schema.all_enums()",
         "pub(crate) struct TypeMeta",
+        "pub(crate) struct FieldMeta",
+        "pub(crate) enum CfdType",
         "CftSchemaType,",
         "CftSchemaEnum,",
         "CftSchemaField,",

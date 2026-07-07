@@ -3,7 +3,8 @@ use crate::model::{
     CfdDomainId, CfdRecord, CfdRecordId, CfdValue, RefEdge, RefEdgeId, RefSite, SpreadEdge,
     SpreadEdgeId, SpreadSite,
 };
-use crate::schema_view::{CfdType, CfdValueDraft, RecordDraft, SchemaView};
+use crate::schema_view::{CfdValueDraft, RecordDraft, SchemaView};
+use coflow_cft::CftSchemaTypeRef;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Default)]
@@ -218,7 +219,7 @@ pub(crate) fn build_ref_indexes(
             };
             collect_ref_edges(
                 value,
-                &field.ty,
+                &field.ty_ref,
                 host,
                 root.clone().field(name.clone()),
                 &context,
@@ -246,7 +247,7 @@ impl RefEdgeBuildContext<'_> {
 
 fn collect_ref_edges(
     value: &CfdValue,
-    ty: &CfdType,
+    ty: &CftSchemaTypeRef,
     host: CfdRecordId,
     path: CfdPath,
     context: &RefEdgeBuildContext<'_>,
@@ -255,8 +256,8 @@ fn collect_ref_edges(
     if context.is_spread_inherited_path(host, &path) {
         return;
     }
-    match (value, non_nullable_type(ty)) {
-        (CfdValue::Ref(key), CfdType::Ref(expected_type)) => {
+    match (value, ty.non_nullable()) {
+        (CfdValue::Ref(key), CftSchemaTypeRef::Ref(expected_type)) => {
             let Some(expected_type_id) = context.schema.type_id(expected_type) else {
                 return;
             };
@@ -294,7 +295,7 @@ fn collect_ref_edges(
             out.by_host.entry(host).or_default().push(id);
             out.by_target.entry(target).or_default().push(id);
         }
-        (CfdValue::Object(boxed), CfdType::Type(_)) => {
+        (CfdValue::Object(boxed), CftSchemaTypeRef::Named(_)) => {
             for (name, inner) in &boxed.fields {
                 let Some(field) = context
                     .schema
@@ -306,7 +307,7 @@ fn collect_ref_edges(
                 };
                 collect_ref_edges(
                     inner,
-                    &field.ty,
+                    &field.ty_ref,
                     host,
                     path.clone().field(name.clone()),
                     context,
@@ -314,7 +315,7 @@ fn collect_ref_edges(
                 );
             }
         }
-        (CfdValue::Array(items), CfdType::Array(inner_ty)) => {
+        (CfdValue::Array(items), CftSchemaTypeRef::Array(inner_ty)) => {
             for (index, item) in items.iter().enumerate() {
                 collect_ref_edges(
                     item,
@@ -326,7 +327,7 @@ fn collect_ref_edges(
                 );
             }
         }
-        (CfdValue::Dict(entries), CfdType::Dict(_, value_ty)) => {
+        (CfdValue::Dict(entries), CftSchemaTypeRef::Dict(_, value_ty)) => {
             for (key, item) in entries {
                 collect_ref_edges(
                     item,
@@ -352,11 +353,4 @@ fn lookup_domain_ref(
         .type_domain_id(target_type)
         .and_then(|domain_id| record_by_domain_key.get(&(domain_id, key.to_string())))
         .copied()
-}
-
-fn non_nullable_type(ty: &CfdType) -> &CfdType {
-    match ty {
-        CfdType::Nullable(inner) => non_nullable_type(inner),
-        _ => ty,
-    }
 }

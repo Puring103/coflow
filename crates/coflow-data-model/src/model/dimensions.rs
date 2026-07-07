@@ -45,7 +45,11 @@ impl CfdDataModel {
         let field = schema_view
             .field_meta(actual_type, field_name)
             .ok_or(DimensionFieldLookupError::NotDimensional)?;
-        let Some(field_dimension) = field.dimension.as_deref() else {
+        let Some(field_dimension) = field
+            .dimension
+            .as_ref()
+            .map(|dimension| dimension.dimension.as_str())
+        else {
             return Err(DimensionFieldLookupError::NotDimensional);
         };
         if field_dimension != dimension {

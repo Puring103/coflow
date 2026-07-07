@@ -42,18 +42,18 @@ impl CftSchemaView {
             })
             .collect::<BTreeMap<_, _>>();
 
-        let children_by_parent =
-            types
-                .values()
-                .fold(BTreeMap::<String, BTreeSet<String>>::new(), |mut children, ty| {
-                    if let Some(parent) = &ty.parent {
-                        children
-                            .entry(parent.clone())
-                            .or_default()
-                            .insert(ty.name.clone());
-                    }
+        let children_by_parent = types.values().fold(
+            BTreeMap::<String, BTreeSet<String>>::new(),
+            |mut children, ty| {
+                if let Some(parent) = &ty.parent {
                     children
-                });
+                        .entry(parent.clone())
+                        .or_default()
+                        .insert(ty.name.clone());
+                }
+                children
+            },
+        );
 
         let mut view = Self {
             consts,

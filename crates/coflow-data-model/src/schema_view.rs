@@ -1,8 +1,7 @@
 use crate::model::{CfdDictKey, CfdDomainId, CfdDomainIndex, CfdInputValue, CfdTypeId, CfdValue};
 use crate::origin::RecordOrigin;
 use coflow_cft::{
-    CftAnnotationValue, CftContainer, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchemaView,
-    CftTypeMeta,
+    CftAnnotationValue, CftContainer, CftFieldMeta, CftSchemaTypeRef, CftSchemaView, CftTypeMeta,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -57,7 +56,7 @@ pub(crate) enum CfdValueDraft {
 pub(crate) struct SchemaView {
     pub(crate) types: BTreeMap<String, CftTypeMeta>,
     pub(crate) enums: BTreeMap<String, EnumMeta>,
-    fields: BTreeMap<String, Vec<FieldMeta>>,
+    fields: BTreeMap<String, Vec<CftFieldMeta>>,
     children: BTreeMap<String, BTreeSet<String>>,
     dimension_storage_types: BTreeMap<DimensionStorageKey, String>,
     domain_index: CfdDomainIndex,
@@ -89,14 +88,7 @@ impl SchemaView {
                     .or_default()
                     .insert(schema_type.name.clone());
             }
-            fields.insert(
-                schema_type.name.clone(),
-                schema_type
-                    .all_fields
-                    .iter()
-                    .map(|field| FieldMeta::from_schema_view(&cft_view, field))
-                    .collect(),
-            );
+            fields.insert(schema_type.name.clone(), schema_type.all_fields.clone());
         }
 
         let domain_index = Self::build_domain_index(&types);
@@ -153,7 +145,7 @@ impl SchemaView {
             .map(String::as_str)
     }
 
-    pub(crate) fn field_meta(&self, type_name: &str, field_name: &str) -> Option<&FieldMeta> {
+    pub(crate) fn field_meta(&self, type_name: &str, field_name: &str) -> Option<&CftFieldMeta> {
         self.fields
             .get(type_name)?
             .iter()
@@ -219,7 +211,7 @@ impl SchemaView {
         out
     }
 
-    pub(crate) fn full_fields(&self, type_name: &str) -> &[FieldMeta] {
+    pub(crate) fn full_fields(&self, type_name: &str) -> &[CftFieldMeta] {
         self.fields.get(type_name).map_or(&[], Vec::as_slice)
     }
 
@@ -263,6 +255,10 @@ impl SchemaView {
             .copied()
     }
 
+    pub(crate) fn is_schema_enum(&self, name: &str) -> bool {
+        self.enums.contains_key(name)
+    }
+
     pub(crate) fn singleton_types(&self) -> impl Iterator<Item = &CftTypeMeta> {
         self.types.values().filter(|meta| meta.is_singleton)
     }
@@ -288,93 +284,30 @@ struct DimensionStorageKey {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct FieldMeta {
-    pub(crate) name: String,
-    pub(crate) ty: CfdType,
-    pub(crate) ty_ref: CftSchemaTypeRef,
-    pub(crate) default: Option<CftSchemaDefaultValue>,
-    pub(crate) dimension: Option<String>,
-}
-
-impl FieldMeta {
-    fn from_schema_view(schema: &CftSchemaView, field: &coflow_cft::CftFieldMeta) -> Self {
-        Self {
-            name: field.name.clone(),
-            ty: CfdType::from_schema(&field.ty_ref, schema),
-            ty_ref: field.ty_ref.clone(),
-            default: field.default.clone(),
-            dimension: field.dimension.as_ref().map(|dimension| dimension.dimension.clone()),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
 pub(crate) struct EnumMeta {
     pub(crate) variants: BTreeMap<String, i64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum CfdType {
-    Int,
-    Float,
-    Bool,
-    String,
-    Type(String),
-    Ref(String),
-    Enum(String),
-    Array(Box<CfdType>),
-    Dict(Box<CfdType>, Box<CfdType>),
-    Nullable(Box<CfdType>),
-}
-
-impl CfdType {
-    fn from_schema(ty: &CftSchemaTypeRef, schema: &CftSchemaView) -> Self {
-        match ty {
-            CftSchemaTypeRef::Int => Self::Int,
-            CftSchemaTypeRef::Float => Self::Float,
-            CftSchemaTypeRef::Bool => Self::Bool,
-            CftSchemaTypeRef::String => Self::String,
-            CftSchemaTypeRef::Named(name) if schema.enums.contains_key(name) => {
-                Self::Enum(name.clone())
-            }
-            CftSchemaTypeRef::Named(name) => Self::Type(name.clone()),
-            CftSchemaTypeRef::Ref(name) => Self::Ref(name.clone()),
-            CftSchemaTypeRef::Array(inner) => {
-                Self::Array(Box::new(Self::from_schema(inner, schema)))
-            }
-            CftSchemaTypeRef::Dict(key, value) => Self::Dict(
-                Box::new(Self::from_schema(key, schema)),
-                Box::new(Self::from_schema(value, schema)),
-            ),
-            CftSchemaTypeRef::Nullable(inner) => {
-                Self::Nullable(Box::new(Self::from_schema(inner, schema)))
-            }
-        }
-    }
-
-    pub(crate) fn is_nullable(&self) -> bool {
-        matches!(self, Self::Nullable(_))
-    }
-
-    pub(crate) fn display(&self) -> String {
-        match self {
-            Self::Int => "int".to_string(),
-            Self::Float => "float".to_string(),
-            Self::Bool => "bool".to_string(),
-            Self::String => "string".to_string(),
-            Self::Type(name) | Self::Enum(name) => name.clone(),
-            Self::Ref(name) => format!("&{name}"),
-            Self::Array(inner) => format!("[{}]", inner.display()),
-            Self::Dict(key, value) => format!("{{{}: {}}}", key.display(), value.display()),
-            Self::Nullable(inner) => format!("{}?", inner.display()),
-        }
-    }
-}
-
-pub(crate) fn type_accepts_default(expected: &CfdType, actual: &CfdType) -> bool {
+pub(crate) fn type_accepts_default(expected: &CftSchemaTypeRef, actual: &CftSchemaTypeRef) -> bool {
     match expected {
-        CfdType::Nullable(inner) => type_accepts_default(inner, actual),
+        CftSchemaTypeRef::Nullable(inner) => type_accepts_default(inner, actual),
         _ => expected == actual,
+    }
+}
+
+pub(crate) fn display_type_ref(ty: &CftSchemaTypeRef) -> String {
+    match ty {
+        CftSchemaTypeRef::Int => "int".to_string(),
+        CftSchemaTypeRef::Float => "float".to_string(),
+        CftSchemaTypeRef::Bool => "bool".to_string(),
+        CftSchemaTypeRef::String => "string".to_string(),
+        CftSchemaTypeRef::Named(name) => name.clone(),
+        CftSchemaTypeRef::Ref(name) => format!("&{name}"),
+        CftSchemaTypeRef::Array(inner) => format!("[{}]", display_type_ref(inner)),
+        CftSchemaTypeRef::Dict(key, value) => {
+            format!("{{{}: {}}}", display_type_ref(key), display_type_ref(value))
+        }
+        CftSchemaTypeRef::Nullable(inner) => format!("{}?", display_type_ref(inner)),
     }
 }
 
