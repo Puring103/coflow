@@ -1,0 +1,72 @@
+use crate::span::Span;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TokenKind {
+    Ident(String),
+    Int(i64),
+    /// Magnitude that fits in `u64` but not in `i64` (i.e. `> i64::MAX`).
+    /// The parser only accepts this token when it follows a unary `-`, so
+    /// constructs like `enum E { X = -9223372036854775808, }` and
+    /// `const C = -9223372036854775808;` parse cleanly while a bare
+    /// `9223372036854775808` still raises `InvalidIntLiteral`.
+    UIntOverflow(u64),
+    Float(f64),
+    String(String),
+    Const,
+    Enum,
+    Type,
+    Abstract,
+    Sealed,
+    Check,
+    When,
+    All,
+    Any,
+    None,
+    In,
+    Is,
+    True,
+    False,
+    Null,
+    At,
+    LBrace,
+    RBrace,
+    LBracket,
+    RBracket,
+    LParen,
+    RParen,
+    Colon,
+    Semicolon,
+    Comma,
+    Dot,
+    Equal,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    SlashSlash,
+    Percent,
+    StarStar,
+    Less,
+    Greater,
+    Bang,
+    Question,
+    Tilde,
+    Amp,
+    Pipe,
+    Caret,
+    AmpAmp,
+    PipePipe,
+    LessEq,
+    GreaterEq,
+    LessLess,
+    GreaterGreater,
+    EqEq,
+    BangEq,
+    Eof,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Token {
+    pub kind: TokenKind,
+    pub span: Span,
+}

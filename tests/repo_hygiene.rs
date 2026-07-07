@@ -1738,6 +1738,29 @@ fn csharp_codegen_schema_projection_uses_cft_schema_view() {
 }
 
 #[test]
+fn cft_lexer_tokens_are_split_out() {
+    let lexer = std::fs::read_to_string("crates/coflow-cft/src/lexer.rs")
+        .expect("read CFT lexer");
+    let tokens = std::fs::read_to_string("crates/coflow-cft/src/lexer/tokens.rs")
+        .expect("read CFT lexer tokens");
+
+    for expected in ["pub enum TokenKind", "pub struct Token"] {
+        assert!(
+            tokens.contains(expected),
+            "CFT lexer token item `{expected}` should live in lexer/tokens.rs"
+        );
+        assert!(
+            !lexer.contains(expected),
+            "CFT lexer token item `{expected}` should not live in lexer.rs"
+        );
+    }
+    assert!(
+        lexer.lines().count() < 450,
+        "coflow-cft lexer.rs should stay below the 450-line focused-module threshold"
+    );
+}
+
+#[test]
 fn csharp_codegen_emit_type_helpers_do_not_live_in_emit_rs() {
     let emit =
         std::fs::read_to_string("crates/coflow-codegen-csharp/src/emit.rs").expect("read C# emit");
