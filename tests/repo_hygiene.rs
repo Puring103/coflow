@@ -107,6 +107,8 @@ fn project_config_deserialization_does_not_live_in_project_lib_rs() {
         std::fs::read_to_string("crates/coflow-project/src/lib.rs").expect("read project lib");
     let config =
         std::fs::read_to_string("crates/coflow-project/src/config.rs").expect("read project config");
+    let validation = std::fs::read_to_string("crates/coflow-project/src/validation.rs")
+        .expect("read project validation");
 
     for expected in [
         "pub struct ProjectConfig",
@@ -124,6 +126,25 @@ fn project_config_deserialization_does_not_live_in_project_lib_rs() {
             "project config item `{expected}` should not live in lib.rs"
         );
     }
+    for expected in [
+        "pub(super) struct ProjectDiagnostic",
+        "pub(super) fn validate_project_config_schema_only_collecting",
+        "pub(super) fn validate_sources_collecting",
+        "pub(super) fn validate_for_codegen_collecting",
+    ] {
+        assert!(
+            validation.contains(expected),
+            "project validation item `{expected}` should live in validation.rs"
+        );
+        assert!(
+            !project.contains(expected),
+            "project validation item `{expected}` should not live in lib.rs"
+        );
+    }
+    assert!(
+        project.lines().count() < 800,
+        "coflow-project lib.rs should stay below the 800-line large-module threshold"
+    );
 }
 
 #[test]
