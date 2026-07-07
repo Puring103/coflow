@@ -3029,7 +3029,8 @@ fn table_writers_use_shared_cell_renderer() {
 
     assert!(
         excel.contains("coflow_loader_table_core::writer::{")
-            && table_writer.contains("crate::cell_value::{render_cell_value"),
+            && table_writer.contains("use crate::cell_value::render_cell_value;")
+            && table_writer.contains("render_cell_value(value).map_err(table_render_error)"),
         "Excel writer should use the shared table-core writer and renderer"
     );
     assert!(
@@ -3046,6 +3047,35 @@ fn table_writers_use_shared_cell_renderer() {
             "Lark writer should not duplicate shared renderer `{forbidden}`"
         );
     }
+}
+
+#[test]
+fn table_core_writer_diagnostics_do_not_live_in_writer_rs() {
+    let writer = std::fs::read_to_string("crates/coflow-loader-table-core/src/writer.rs")
+        .expect("read table core writer");
+    let diagnostics =
+        std::fs::read_to_string("crates/coflow-loader-table-core/src/writer/diagnostics.rs")
+            .expect("read table core writer diagnostics");
+
+    for expected in [
+        "pub struct TableWriteDiagnostics",
+        "pub struct TableWriteDiagnostic",
+        "pub(super) fn one_error",
+        "pub(super) fn table_render_error",
+    ] {
+        assert!(
+            diagnostics.contains(expected),
+            "table writer diagnostic item `{expected}` should live in writer/diagnostics.rs"
+        );
+        assert!(
+            !writer.contains(expected),
+            "table writer diagnostic item `{expected}` should not live in writer.rs"
+        );
+    }
+    assert!(
+        writer.lines().count() < 450,
+        "coflow-loader-table-core writer.rs should stay below the 450-line focused-module threshold"
+    );
 }
 
 #[test]
