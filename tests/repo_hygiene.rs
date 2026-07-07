@@ -1265,6 +1265,36 @@ fn cft_type_checker_operator_rules_are_split_out() {
 }
 
 #[test]
+fn cft_type_checker_function_rules_are_split_out() {
+    let type_checker = std::fs::read_to_string("crates/coflow-cft/src/schema/type_checker.rs")
+        .expect("read CFT type checker");
+    let functions =
+        std::fs::read_to_string("crates/coflow-cft/src/schema/type_checker/functions.rs")
+            .expect("read CFT type checker function rules");
+
+    for expected in [
+        "pub(super) fn check_call",
+        "pub(super) fn check_method_call",
+        "fn check_contains_method",
+        "fn check_matches_method",
+        "fn expect_arity",
+    ] {
+        assert!(
+            functions.contains(expected),
+            "CFT type checker function helper `{expected}` should live in schema/type_checker/functions.rs"
+        );
+        assert!(
+            !type_checker.contains(expected),
+            "CFT type checker function helper `{expected}` should not live in schema/type_checker.rs"
+        );
+    }
+    assert!(
+        type_checker.lines().count() < 500,
+        "coflow-cft schema/type_checker.rs should stay focused on check expression dispatch"
+    );
+}
+
+#[test]
 fn cft_schema_view_dimension_check_analysis_is_split_out() {
     let schema_view =
         std::fs::read_to_string("crates/coflow-cft/src/schema_view.rs").expect("read schema view");
