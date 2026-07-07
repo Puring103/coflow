@@ -161,6 +161,36 @@ fn root_cli_artifact_safety_does_not_live_in_commands_rs() {
 }
 
 #[test]
+fn root_cli_id_as_enum_lockfile_does_not_live_in_commands_rs() {
+    let commands = std::fs::read_to_string("src/commands.rs").expect("read root CLI commands");
+    let id_as_enum = std::fs::read_to_string("src/commands/id_as_enum.rs")
+        .expect("read root CLI id-as-enum helpers");
+
+    for expected in [
+        "pub(super) fn id_as_enum_variants_for_schema_only",
+        "pub(super) fn stage_id_as_enum_lockfile_for_build",
+        "fn merge_id_as_enum_lockfile",
+        "fn allocate_id_as_enum_value",
+        "fn read_id_as_enum_lockfile",
+        "fn lockfile_to_variants",
+        "fn annotation_name_arg",
+    ] {
+        assert!(
+            id_as_enum.contains(expected),
+            "root CLI @idAsEnum item `{expected}` should live in commands/id_as_enum.rs"
+        );
+        assert!(
+            !commands.contains(expected),
+            "root CLI @idAsEnum item `{expected}` should not live in commands.rs"
+        );
+    }
+    assert!(
+        commands.lines().count() < 800,
+        "root CLI commands.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
 fn data_command_lark_table_helpers_do_not_live_in_data_commands_rs() {
     let commands = std::fs::read_to_string("src/data_commands.rs")
         .expect("read root CLI data commands");
