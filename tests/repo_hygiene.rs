@@ -161,6 +161,35 @@ fn root_cli_artifact_safety_does_not_live_in_commands_rs() {
 }
 
 #[test]
+fn data_command_lark_table_helpers_do_not_live_in_data_commands_rs() {
+    let commands = std::fs::read_to_string("src/data_commands.rs")
+        .expect("read root CLI data commands");
+    let lark = std::fs::read_to_string("src/data_commands/lark.rs")
+        .expect("read data command lark helpers");
+
+    for expected in [
+        "pub(super) fn infer_table_provider",
+        "pub(super) fn create_lark_table",
+        "struct CliTableLayout",
+        "fn lark_table_layout",
+        "fn matching_lark_sheet_config",
+    ] {
+        assert!(
+            lark.contains(expected),
+            "data command Lark helper `{expected}` should live in data_commands/lark.rs"
+        );
+        assert!(
+            !commands.contains(expected),
+            "data command Lark helper `{expected}` should not live in data_commands.rs"
+        );
+    }
+    assert!(
+        commands.lines().count() < 800,
+        "root CLI data_commands.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
 fn project_config_deserialization_does_not_live_in_project_lib_rs() {
     let project =
         std::fs::read_to_string("crates/coflow-project/src/lib.rs").expect("read project lib");
