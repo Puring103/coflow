@@ -1604,6 +1604,8 @@ fn cft_parser_check_expression_parser_is_split_out() {
         .expect("read check primary parser");
     let defaults = std::fs::read_to_string("crates/coflow-cft/src/parser/defaults.rs")
         .expect("read default parser");
+    let definitions = std::fs::read_to_string("crates/coflow-cft/src/parser/definitions.rs")
+        .expect("read definition parser");
     let literals = std::fs::read_to_string("crates/coflow-cft/src/parser/literals.rs")
         .expect("read literal parser");
     let tokens = std::fs::read_to_string("crates/coflow-cft/src/parser/tokens.rs")
@@ -1674,6 +1676,23 @@ fn cft_parser_check_expression_parser_is_split_out() {
         );
     }
     for expected in [
+        "pub(super) fn parse_const",
+        "pub(super) fn parse_enum",
+        "pub(super) fn parse_type",
+        "fn parse_field",
+        "pub(super) fn parse_type_ref",
+        "fn parse_type_ref_primary",
+    ] {
+        assert!(
+            definitions.contains(expected),
+            "CFT parser definition helper `{expected}` should live in parser/definitions.rs"
+        );
+        assert!(
+            !parser.contains(expected),
+            "CFT parser definition helper `{expected}` should not live in parser.rs"
+        );
+    }
+    for expected in [
         "pub(super) fn parse_const_literal",
         "fn parse_negative_const_literal",
         "pub(super) fn parse_signed_int",
@@ -1701,8 +1720,8 @@ fn cft_parser_check_expression_parser_is_split_out() {
         );
     }
     assert!(
-        parser.lines().count() < 800,
-        "coflow-cft parser.rs should stay below the 800-line large-module threshold"
+        parser.lines().count() < 220,
+        "coflow-cft parser.rs should stay focused on entrypoint and token cursor utilities"
     );
 }
 
