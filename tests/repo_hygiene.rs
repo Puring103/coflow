@@ -2149,10 +2149,26 @@ fn lark_loader_write_operations_do_not_live_in_lib_rs() {
         .expect("read lark loader lib");
     let write =
         std::fs::read_to_string("crates/coflow-loader-lark/src/write.rs").expect("read lark write");
+    let write_http = std::fs::read_to_string("crates/coflow-loader-lark/src/write_http.rs")
+        .expect("read lark write http");
+    let write_layout = std::fs::read_to_string("crates/coflow-loader-lark/src/write_layout.rs")
+        .expect("read lark write layout");
 
     for expected in [
         "impl<C> DataWriter for LarkSheetWriter<C>",
         "pub static LARK_SHEET_WRITER_DESCRIPTOR",
+    ] {
+        assert!(
+            write.contains(expected),
+            "Lark writer operation `{expected}` should live in write.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "Lark writer operation `{expected}` should not live in lib.rs"
+        );
+    }
+
+    for expected in [
         "fn append_lark_row",
         "fn create_lark_sheet",
         "fn write_lark_header",
@@ -2164,17 +2180,29 @@ fn lark_loader_write_operations_do_not_live_in_lib_rs() {
         "fn parse_write_envelope",
         "enum LarkWriteFailure",
         "enum LarkHttpMethod",
+    ] {
+        assert!(
+            write_http.contains(expected),
+            "Lark HTTP write helper `{expected}` should live in write_http.rs"
+        );
+        assert!(
+            !lib.contains(expected) && !write.contains(expected),
+            "Lark HTTP write helper `{expected}` should not live in lib.rs or write.rs"
+        );
+    }
+
+    for expected in [
         "struct LarkInsertLayoutRequest",
         "fn lark_insert_layout",
         "fn resolve_lark_column",
     ] {
         assert!(
-            write.contains(expected),
-            "Lark writer helper `{expected}` should live in write.rs"
+            write_layout.contains(expected),
+            "Lark write layout helper `{expected}` should live in write_layout.rs"
         );
         assert!(
-            !lib.contains(expected),
-            "Lark writer helper `{expected}` should not live in lib.rs"
+            !lib.contains(expected) && !write.contains(expected),
+            "Lark write layout helper `{expected}` should not live in lib.rs or write.rs"
         );
     }
 }
