@@ -138,7 +138,7 @@ pub fn inspect_schema(
     include_derived: bool,
 ) -> SchemaInspectReport {
     let view = CftSchemaView::new(&session.schema);
-    let mut type_names = view.types.keys().cloned().collect::<Vec<_>>();
+    let mut type_names = view.type_names().cloned().collect::<Vec<_>>();
     type_names.sort();
     if let Some(filter) = type_filter {
         type_names
@@ -147,7 +147,7 @@ pub fn inspect_schema(
 
     let types = type_names
         .into_iter()
-        .filter_map(|name| view.types.get(&name))
+        .filter_map(|name| view.type_meta(&name))
         .map(|ty| SchemaTypeInfo {
             module: ty.module.clone(),
             name: ty.name.clone(),

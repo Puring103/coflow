@@ -2090,7 +2090,7 @@ fn engine_dimension_synthesis_uses_cft_schema_view() {
         synthesize.contains("CftSchemaView::new(schema)"),
         "dimension synthesis should derive schema metadata from coflow-cft CftSchemaView"
     );
-    for forbidden in ["schema.all_types()", "schema.resolve_type("] {
+    for forbidden in ["schema.all_types()", "schema.resolve_type(", ".types.get("] {
         assert!(
             !synthesize.contains(forbidden),
             "dimension synthesis should not rebuild schema traversal from `{forbidden}`"
@@ -2111,6 +2111,7 @@ fn engine_schema_inspect_uses_cft_schema_view_for_schema_traversal() {
         ".schema\n        .all_types()",
         ".schema\n        .all_enums()",
         ".schema.resolve_type(",
+        ".types.get(",
     ] {
         assert!(
             !schema_inspect.contains(forbidden),
@@ -2128,7 +2129,13 @@ fn engine_write_rules_use_cft_schema_view_for_path_types() {
         write_rules.contains("CftSchemaView::new(schema)"),
         "engine write rules should use coflow-cft CftSchemaView for schema path lookup"
     );
-    for forbidden in [".resolve_type(", ".all_fields", ".has_enum(", ".has_type("] {
+    for forbidden in [
+        ".resolve_type(",
+        ".all_fields",
+        ".has_enum(",
+        ".types.get(",
+        ".types.contains_key(",
+    ] {
         assert!(
             !write_rules.contains(forbidden),
             "engine write rules should not use raw schema query `{forbidden}`"
@@ -2145,7 +2152,11 @@ fn engine_data_file_headers_use_cft_schema_view() {
         data_files.contains("CftSchemaView::new(&session.schema)"),
         "data file header planning should use CftSchemaView for schema metadata"
     );
-    for forbidden in [".resolve_type(", "session.schema.resolve_type"] {
+    for forbidden in [
+        ".resolve_type(",
+        "session.schema.resolve_type",
+        ".types.get(",
+    ] {
         assert!(
             !data_files.contains(forbidden),
             "data file commands should not use raw schema query `{forbidden}`"
@@ -2162,7 +2173,12 @@ fn engine_writes_use_cft_schema_view_for_insert_schema_checks() {
         writes.contains("CftSchemaView::new(&session.schema)"),
         "engine writes should use CftSchemaView for insert schema checks"
     );
-    for forbidden in ["session.schema.resolve_type", ".all_fields"] {
+    for forbidden in [
+        "session.schema.resolve_type",
+        ".all_fields",
+        ".types.get(",
+        ".types.contains_key(",
+    ] {
         assert!(
             !writes.contains(forbidden),
             "engine writes should not use raw schema query `{forbidden}`"

@@ -28,7 +28,7 @@ pub fn inject_dimension_types(
         let Some(config) = configs.get(&field.dimension) else {
             continue;
         };
-        let Some(source_type) = view.types.get(&field.source_type) else {
+        let Some(source_type) = view.type_meta(&field.source_type) else {
             continue;
         };
         let Some(source_field) = source_type

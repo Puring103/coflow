@@ -236,7 +236,7 @@ fn table_layout(
             )
         })?;
     let schema_view = CftSchemaView::new(&session.schema);
-    let schema_type = schema_view.types.get(&actual_type).ok_or_else(|| {
+    let schema_type = schema_view.type_meta(&actual_type).ok_or_else(|| {
         one_data_file_error(
             "DATA-FILE-TYPE",
             format!("unknown CFT type `{actual_type}`"),

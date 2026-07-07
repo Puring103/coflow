@@ -393,7 +393,7 @@ fn ensure_insert_type_can_insert(
     actual_type: &str,
 ) -> Result<(), DiagnosticSet> {
     let schema_view = CftSchemaView::new(&session.schema);
-    let Some(schema_type) = schema_view.types.get(actual_type) else {
+    let Some(schema_type) = schema_view.type_meta(actual_type) else {
         return Err(DiagnosticSet::one(Diagnostic::error(
             "WRITE-INSERT",
             "WRITE",
@@ -424,7 +424,7 @@ fn validate_insert_fields(
     fields: &std::collections::BTreeMap<String, CfdValue>,
 ) -> Result<(), DiagnosticSet> {
     let schema_view = CftSchemaView::new(&session.schema);
-    if !schema_view.types.contains_key(actual_type) {
+    if !schema_view.has_type(actual_type) {
         return Err(DiagnosticSet::one(Diagnostic::error(
             "WRITE-INSERT",
             "WRITE",

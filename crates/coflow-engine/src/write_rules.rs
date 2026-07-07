@@ -113,7 +113,7 @@ fn expected_type_for_cfd_path_in_view(
                     .field_type(type_name, field)
                     .cloned()
                     .ok_or_else(|| {
-                        if !schema.types.contains_key(type_name) {
+                        if !schema.has_type(type_name) {
                             return one_error(code, stage, format!("unknown type `{type_name}`"));
                         }
                         one_error(
