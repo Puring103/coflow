@@ -755,6 +755,36 @@ fn cfd_parser_value_helpers_do_not_live_in_parser_rs() {
 }
 
 #[test]
+fn cfd_syntax_parser_token_helpers_are_split_out() {
+    let parser =
+        std::fs::read_to_string("crates/coflow-cfd/src/parser.rs").expect("read CFD syntax parser");
+    let tokens = std::fs::read_to_string("crates/coflow-cfd/src/parser/tokens.rs")
+        .expect("read CFD syntax parser token helpers");
+
+    for expected in [
+        "pub(super) struct Token",
+        "pub(super) fn parse_key",
+        "fn parse_name_token",
+        "pub(super) fn parse_quoted_string",
+        "pub(super) fn skip_ws_and_comments",
+        "fn is_value_boundary",
+    ] {
+        assert!(
+            tokens.contains(expected),
+            "CFD syntax parser token helper `{expected}` should live in parser/tokens.rs"
+        );
+        assert!(
+            !parser.contains(expected),
+            "CFD syntax parser token helper `{expected}` should not live in parser.rs"
+        );
+    }
+    assert!(
+        parser.lines().count() < 400,
+        "coflow-cfd parser.rs should stay focused on CFD AST structure parsing"
+    );
+}
+
+#[test]
 fn editor_backend_does_not_depend_on_checker_runtime_directly() {
     let manifest = std::fs::read_to_string("editors/cfd-editor/src-tauri/Cargo.toml")
         .expect("read editor backend manifest");
