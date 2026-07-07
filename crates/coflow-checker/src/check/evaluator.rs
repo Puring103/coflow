@@ -4,8 +4,7 @@ use super::builtins::Builtin;
 use super::deps::DependencyCollector;
 use super::diagnostics::{
     cmp_op_str, dimension_lookup_error_message, format_cfd_path_for_message,
-    format_value_for_message, one_line_message, render_expr, render_stmt, unary_op_str,
-    CheckExplanation,
+    format_value_for_message, one_line_message, render_expr, render_stmt, CheckExplanation,
 };
 use super::enum_values;
 use super::ops::{self, OpsResult};
@@ -1253,43 +1252,7 @@ impl<'a> CheckEvaluator<'a> {
         op: CftSchemaUnaryOp,
         value: LocatedCheckValue,
     ) -> EvalResult<LocatedCheckValue> {
-        let path = value.path;
-        match (op, value.value) {
-            (CftSchemaUnaryOp::Not, CheckValue::Bool(value)) => {
-                Ok(LocatedCheckValue::new(CheckValue::Bool(!value), path))
-            }
-            (CftSchemaUnaryOp::Neg, CheckValue::Int(value)) => self.from_ops(ops::checked_int(
-                value.checked_neg(),
-                path,
-                format!("整数取负溢出: -({value})"),
-            )),
-            (CftSchemaUnaryOp::Neg, CheckValue::Float(value)) => {
-                Ok(LocatedCheckValue::new(CheckValue::Float(-value), path))
-            }
-            (CftSchemaUnaryOp::BitNot, CheckValue::Int(value)) => {
-                Ok(LocatedCheckValue::new(CheckValue::Int(!value), path))
-            }
-            (CftSchemaUnaryOp::BitNot, CheckValue::Enum(value)) => Ok(LocatedCheckValue::new(
-                CheckValue::Enum(enum_values::enum_with_value(
-                    self.schema,
-                    &value.enum_name,
-                    !value.value,
-                )),
-                path,
-            )),
-            (op, value) => {
-                self.diag_at(
-                    CfdErrorCode::CheckEvalTypeError,
-                    path,
-                    format!(
-                        "不支持的一元运算: {} 作用于 {}",
-                        unary_op_str(op),
-                        format_value_for_message(&value)
-                    ),
-                );
-                Err(EvalAbort::Error)
-            }
-        }
+        self.from_ops(ops::unary_op(self.schema, op, value))
     }
 
     #[allow(clippy::similar_names)]

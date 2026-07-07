@@ -1,9 +1,9 @@
 use std::cmp::Ordering;
 
-use coflow_cft::{CftSchemaBinOp, CftSchemaCmpOp, CftSchemaView};
+use coflow_cft::{CftSchemaBinOp, CftSchemaCmpOp, CftSchemaUnaryOp, CftSchemaView};
 use coflow_data_model::{CfdErrorCode, CfdPath};
 
-use super::diagnostics::{bin_op_str, format_value_for_message};
+use super::diagnostics::{bin_op_str, format_value_for_message, unary_op_str};
 use super::enum_values;
 use super::value::{values_equal, CheckValue, LocatedCheckValue};
 
@@ -115,6 +115,46 @@ pub(super) fn compare_order(
                 "值不可做有序比较: {} cmp {}",
                 format_value_for_message(lhs),
                 format_value_for_message(rhs)
+            ),
+        )),
+    }
+}
+
+pub(super) fn unary_op(
+    schema: &CftSchemaView,
+    op: CftSchemaUnaryOp,
+    value: LocatedCheckValue,
+) -> OpsResult<LocatedCheckValue> {
+    let path = value.path;
+    match (op, value.value) {
+        (CftSchemaUnaryOp::Not, CheckValue::Bool(value)) => {
+            Ok(LocatedCheckValue::new(CheckValue::Bool(!value), path))
+        }
+        (CftSchemaUnaryOp::Neg, CheckValue::Int(value)) => checked_int(
+            value.checked_neg(),
+            path,
+            format!("整数取负溢出: -({value})"),
+        ),
+        (CftSchemaUnaryOp::Neg, CheckValue::Float(value)) => {
+            Ok(LocatedCheckValue::new(CheckValue::Float(-value), path))
+        }
+        (CftSchemaUnaryOp::BitNot, CheckValue::Int(value)) => {
+            Ok(LocatedCheckValue::new(CheckValue::Int(!value), path))
+        }
+        (CftSchemaUnaryOp::BitNot, CheckValue::Enum(value)) => Ok(LocatedCheckValue::new(
+            CheckValue::Enum(enum_values::enum_with_value(
+                schema,
+                &value.enum_name,
+                !value.value,
+            )),
+            path,
+        )),
+        (op, value) => Err(OpsError::eval_type(
+            path,
+            format!(
+                "不支持的一元运算: {} 作用于 {}",
+                unary_op_str(op),
+                format_value_for_message(&value)
             ),
         )),
     }

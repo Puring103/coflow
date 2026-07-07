@@ -794,6 +794,7 @@ fn checker_numeric_ops_do_not_live_in_evaluator_rs() {
     for expected in [
         "pub(super) fn checked_int",
         "pub(super) fn checked_shift",
+        "pub(super) fn unary_op",
         "pub(super) fn compare",
         "pub(super) fn compare_order",
         "pub(super) fn eager_bin_op",
@@ -807,7 +808,12 @@ fn checker_numeric_ops_do_not_live_in_evaluator_rs() {
             "checker operation helper `{expected}` should not live in evaluator.rs"
         );
     }
-    for forbidden in ["整数加法溢出", "不支持的二元运算"] {
+    for forbidden in [
+        "整数取负溢出",
+        "不支持的一元运算",
+        "整数加法溢出",
+        "不支持的二元运算",
+    ] {
         assert!(
             !evaluator.contains(forbidden),
             "checker evaluator should not own eager binary op branch `{forbidden}`"
