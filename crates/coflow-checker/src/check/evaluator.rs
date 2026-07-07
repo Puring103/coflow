@@ -9,8 +9,9 @@ use super::diagnostics::{
 };
 use super::enum_values;
 use super::ops::{self, OpsResult};
+use super::quantifiers;
 use super::value::{
-    comparable_key, format_check_key_for_path, CheckValue, LocatedCheckValue,
+    comparable_key, CheckValue, LocatedCheckValue,
 };
 use crate::DimensionCheckContext;
 use coflow_cft::{
@@ -256,8 +257,10 @@ impl<'a> CheckEvaluator<'a> {
                     Err(EvalAbort::Skipped) => return EvalFlow::Skipped,
                     Err(EvalAbort::Error) => return EvalFlow::HardStop,
                 };
-                let Some(items) = self.quantifier_items(collection_value) else {
-                    return EvalFlow::HardStop;
+                let items = match self.from_ops(quantifiers::quantifier_items(collection_value)) {
+                    Ok(items) => items,
+                    Err(EvalAbort::Skipped) => return EvalFlow::Skipped,
+                    Err(EvalAbort::Error) => return EvalFlow::HardStop,
                 };
                 self.eval_quantifier(*kind, binding, &items, body, collection_expr, stmt)
             }
@@ -390,50 +393,6 @@ impl<'a> CheckEvaluator<'a> {
             CftSchemaQuantifierKind::None => {}
         }
         EvalFlow::Continue
-    }
-
-    fn quantifier_items(
-        &mut self,
-        collection: LocatedCheckValue,
-    ) -> Option<Vec<LocatedCheckValue>> {
-        match collection.value {
-            CheckValue::Array { items, .. } => Some(
-                items
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, item)| {
-                        LocatedCheckValue::new(
-                            item,
-                            collection.path.clone().map(|path| path.index(index)),
-                        )
-                    })
-                    .collect(),
-            ),
-            CheckValue::Dict { entries, .. } => Some(
-                entries
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, entry)| {
-                        let key_label = match format_check_key_for_path(&entry.key) {
-                            Some(label) => label,
-                            None => index.to_string(),
-                        };
-                        let path = collection.path.clone().map(|path| path.dict_key(key_label));
-                        LocatedCheckValue::new(CheckValue::Entry(Box::new(entry)), path)
-                    })
-                    .collect(),
-            ),
-            other => {
-                self.diag(
-                    CfdErrorCode::CheckEvalTypeError,
-                    format!(
-                        "量词目标不是集合: 实际为 {}",
-                        format_value_for_message(&other)
-                    ),
-                );
-                None
-            }
-        }
     }
 
     /// Evaluates a top-level check expression and, if it produced `false`,

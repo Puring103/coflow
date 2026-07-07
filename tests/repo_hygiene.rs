@@ -907,6 +907,29 @@ fn checker_dependency_collection_does_not_live_in_evaluator_or_runner_rs() {
 }
 
 #[test]
+fn checker_quantifier_item_expansion_does_not_live_in_evaluator_rs() {
+    let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
+        .expect("read checker evaluator");
+    let quantifiers = std::fs::read_to_string("crates/coflow-checker/src/check/quantifiers.rs")
+        .expect("read checker quantifier helpers");
+
+    assert!(
+        quantifiers.contains("pub(super) fn quantifier_items"),
+        "checker quantifier item expansion should live in check/quantifiers.rs"
+    );
+    assert!(
+        !evaluator.contains("fn quantifier_items"),
+        "checker quantifier item expansion should not live in evaluator.rs"
+    );
+    for forbidden in ["量词目标不是集合", "format_check_key_for_path"] {
+        assert!(
+            !evaluator.contains(forbidden),
+            "checker evaluator should not own quantifier item expansion branch `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn checker_index_access_does_not_live_in_evaluator_rs() {
     let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
         .expect("read checker evaluator");
