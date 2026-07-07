@@ -1021,6 +1021,40 @@ fn checker_explained_eval_helpers_do_not_live_in_evaluator_rs() {
 }
 
 #[test]
+fn checker_false_explanation_helpers_do_not_live_in_evaluator_rs() {
+    let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
+        .expect("read checker evaluator");
+    let explanations =
+        std::fs::read_to_string("crates/coflow-checker/src/check/explanations.rs")
+            .expect("read checker explanation helpers");
+
+    for expected in [
+        "pub(super) fn explain_false_expr",
+        "fn explain_failed_comparison",
+    ] {
+        assert!(
+            explanations.contains(expected),
+            "checker false explanation helper `{expected}` should live in check/explanations.rs"
+        );
+        assert!(
+            !evaluator.contains(expected),
+            "checker false explanation helper `{expected}` should not live in evaluator.rs"
+        );
+    }
+    for forbidden in [
+        "至少一个操作数为 false",
+        "两侧都为 true",
+        "至少一侧为 true",
+        "实际类型 =",
+    ] {
+        assert!(
+            !evaluator.contains(forbidden),
+            "checker evaluator should not own false explanation branch `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn checker_index_access_does_not_live_in_evaluator_rs() {
     let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
         .expect("read checker evaluator");

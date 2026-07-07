@@ -4,8 +4,8 @@ use super::builtin_values;
 use super::builtins::Builtin;
 use super::deps::DependencyCollector;
 use super::diagnostics::{
-    cmp_op_str, dimension_lookup_error_message, format_cfd_path_for_message,
-    format_value_for_message, one_line_message, render_expr, render_stmt, CheckExplanation,
+    dimension_lookup_error_message, format_cfd_path_for_message, format_value_for_message,
+    one_line_message, render_expr, render_stmt, CheckExplanation,
 };
 use super::enum_values;
 use super::explanations::{self, ValueExprEvaluator};
@@ -41,6 +41,10 @@ pub(super) struct CheckEvaluator<'a> {
 }
 
 impl ValueExprEvaluator for CheckEvaluator<'_> {
+    fn model(&self) -> &CfdDataModel {
+        self.model
+    }
+
     fn eval_value_expr(&mut self, expr: &CftSchemaCheckExpr) -> EvalResult<LocatedCheckValue> {
         self.eval_expr(expr)
     }
@@ -217,8 +221,7 @@ impl<'a> CheckEvaluator<'a> {
                     EvalFlow::Continue
                 }
                 Ok((value, explanation)) if matches!(value.value, CheckValue::Bool(false)) => {
-                    let explanation = self
-                        .explain_false_expr(expr, &value)
+                    let explanation = explanations::explain_false_expr(self, expr, &value)
                         .unwrap_or_else(|| {
                             let mut fallback = CheckExplanation::new(
                                 CfdErrorCode::CheckFailed,
@@ -417,201 +420,6 @@ impl<'a> CheckEvaluator<'a> {
             CftSchemaQuantifierKind::None => {}
         }
         EvalFlow::Continue
-    }
-
-    fn explain_false_expr(
-        &mut self,
-        expr: &CftSchemaCheckExpr,
-        value: &LocatedCheckValue,
-    ) -> Option<CheckExplanation> {
-        let rendered = render_expr(expr);
-        match &expr.kind {
-            CftSchemaCheckExprKind::Name(name) => Some(
-                CheckExplanation::new(
-                    CfdErrorCode::CheckBoolExpectedTrue,
-                    rendered,
-                    value.path.clone(),
-                )
-                .with_actual(format!("{name} = false"))
-                .with_expected("true"),
-            ),
-            CftSchemaCheckExprKind::Bool(false) => Some(
-                CheckExplanation::new(
-                    CfdErrorCode::CheckBoolExpectedTrue,
-                    rendered,
-                    value.path.clone(),
-                )
-                .with_actual("false")
-                .with_expected("true"),
-            ),
-            CftSchemaCheckExprKind::Field { .. }
-            | CftSchemaCheckExprKind::Index { .. }
-            | CftSchemaCheckExprKind::Call { .. }
-            | CftSchemaCheckExprKind::MethodCall { .. }
-                if matches!(value.value, CheckValue::Bool(false)) =>
-            {
-                Some(explanations::explain_false_value_expr(
-                    self, expr, value, rendered,
-                ))
-            }
-            CftSchemaCheckExprKind::Unary {
-                op: CftSchemaUnaryOp::Not,
-                expr: inner,
-            } => Some(
-                CheckExplanation::new(
-                    CfdErrorCode::CheckNegationFailed,
-                    rendered,
-                    value.path.clone(),
-                )
-                .with_actual(format!("{} = true", render_expr(inner)))
-                .with_expected("false"),
-            ),
-            CftSchemaCheckExprKind::BinOp {
-                op: CftSchemaBinOp::And,
-                lhs,
-                rhs,
-            } => {
-                let left = self.eval_expr(lhs).ok();
-                let right = self.eval_expr(rhs).ok();
-                let failed = match (&left, &right) {
-                    (Some(left), Some(right))
-                        if matches!(left.value, CheckValue::Bool(false))
-                            && matches!(right.value, CheckValue::Bool(false)) =>
-                    {
-                        format!("{} = false, {} = false", render_expr(lhs), render_expr(rhs))
-                    }
-                    (Some(left), _) if matches!(left.value, CheckValue::Bool(false)) => {
-                        format!("{} = false", render_expr(lhs))
-                    }
-                    (_, Some(right)) if matches!(right.value, CheckValue::Bool(false)) => {
-                        format!("{} = false", render_expr(rhs))
-                    }
-                    _ => "至少一个操作数为 false".to_string(),
-                };
-                Some(
-                    CheckExplanation::new(
-                        CfdErrorCode::CheckAndFailed,
-                        rendered,
-                        value.path.clone(),
-                    )
-                    .with_actual(failed)
-                    .with_expected("两侧都为 true"),
-                )
-            }
-            CftSchemaCheckExprKind::BinOp {
-                op: CftSchemaBinOp::Or,
-                lhs,
-                rhs,
-            } => Some(
-                CheckExplanation::new(CfdErrorCode::CheckOrFailed, rendered, value.path.clone())
-                    .with_actual(format!(
-                        "{} = false, {} = false",
-                        render_expr(lhs),
-                        render_expr(rhs)
-                    ))
-                    .with_expected("至少一侧为 true"),
-            ),
-            CftSchemaCheckExprKind::Is {
-                expr: inner,
-                predicate,
-            } => match predicate {
-                CftSchemaTypePredicate::Null => {
-                    let actual = self.eval_expr(inner).ok().map_or_else(
-                        || format!("{} 不是 null", render_expr(inner)),
-                        |actual| {
-                            format!(
-                                "{} = {}",
-                                render_expr(inner),
-                                format_value_for_message(&actual.value)
-                            )
-                        },
-                    );
-                    Some(
-                        CheckExplanation::new(
-                            CfdErrorCode::CheckNullPredicateFailed,
-                            rendered,
-                            value.path.clone(),
-                        )
-                        .with_actual(actual)
-                        .with_expected("null"),
-                    )
-                }
-                CftSchemaTypePredicate::Type(type_name) => {
-                    let actual = self
-                        .eval_expr(inner)
-                        .ok()
-                        .and_then(|actual| actual.value.actual_type(self.model).map(str::to_string))
-                        .unwrap_or_else(|| "非对象".to_string());
-                    Some(
-                        CheckExplanation::new(
-                            CfdErrorCode::CheckTypePredicateFailed,
-                            rendered,
-                            value.path.clone(),
-                        )
-                        .with_actual(format!("实际类型 = {actual}"))
-                        .with_expected(format!("类型为 {type_name}")),
-                    )
-                }
-            },
-            CftSchemaCheckExprKind::CmpChain { first, rest } => {
-                self.explain_failed_comparison(&rendered, first, rest, value.path.clone())
-            }
-            _ => None,
-        }
-    }
-
-    fn explain_failed_comparison(
-        &mut self,
-        rendered: &str,
-        first: &CftSchemaCheckExpr,
-        rest: &[(CftSchemaCmpOp, CftSchemaCheckExpr)],
-        fallback_path: Option<CfdPath>,
-    ) -> Option<CheckExplanation> {
-        let mut lhs_expr = first;
-        let mut lhs = self.eval_expr(first).ok()?;
-        for (op, rhs_expr) in rest {
-            let rhs = self.eval_expr(rhs_expr).ok()?;
-            let path = lhs
-                .path
-                .clone()
-                .or_else(|| rhs.path.clone())
-                .or_else(|| fallback_path.clone());
-            if !self
-                .from_ops(ops::compare(*op, &lhs.value, &rhs.value, rhs.path.clone()))
-                .ok()?
-            {
-                let null_predicate =
-                    matches!(lhs.value, CheckValue::Null) || matches!(rhs.value, CheckValue::Null);
-                let code =
-                    if null_predicate && matches!(op, CftSchemaCmpOp::Eq | CftSchemaCmpOp::Ne) {
-                        CfdErrorCode::CheckNullPredicateFailed
-                    } else {
-                        CfdErrorCode::CheckComparisonFailed
-                    };
-                let actual_expr = if lhs.path.is_some() {
-                    lhs_expr
-                } else {
-                    rhs_expr
-                };
-                let actual_value = if lhs.path.is_some() {
-                    &lhs.value
-                } else {
-                    &rhs.value
-                };
-                return Some(
-                    CheckExplanation::new(code, rendered.to_string(), path)
-                        .with_actual(format!(
-                            "{} = {}",
-                            render_expr(actual_expr),
-                            format_value_for_message(actual_value)
-                        ))
-                        .with_expected(format!("{} {}", cmp_op_str(*op), render_expr(rhs_expr))),
-                );
-            }
-            lhs_expr = rhs_expr;
-            lhs = rhs;
-        }
-        None
     }
 
     #[allow(clippy::too_many_lines)]
