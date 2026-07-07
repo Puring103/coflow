@@ -485,18 +485,12 @@ fn engine_writes_use_cft_schema_view_for_insert_schema_checks() {
 
 #[test]
 fn engine_mutation_defaults_use_cft_schema_view() {
-    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation.rs")
-        .expect("read mutation")
+    let defaults = std::fs::read_to_string("crates/coflow-engine/src/mutation/defaults.rs")
+        .expect("read mutation defaults")
         .replace("\r\n", "\n");
 
-    let default_section = mutation
-        .split("fn default_record_for_type(")
-        .nth(1)
-        .and_then(|rest| rest.split("fn coerce_mutation_value(").next())
-        .expect("mutation default materialization section");
-
     assert!(
-        default_section.contains("CftSchemaView::new(schema)"),
+        defaults.contains("CftSchemaView::new(schema)"),
         "mutation default materialization should use coflow-cft CftSchemaView"
     );
     for forbidden in [
@@ -507,7 +501,7 @@ fn engine_mutation_defaults_use_cft_schema_view() {
         "CftSchemaField",
     ] {
         assert!(
-            !default_section.contains(forbidden),
+            !defaults.contains(forbidden),
             "mutation default materialization should not use raw schema query `{forbidden}`"
         );
     }
@@ -515,7 +509,7 @@ fn engine_mutation_defaults_use_cft_schema_view() {
 
 #[test]
 fn engine_mutation_field_coercion_uses_cft_schema_view() {
-    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation.rs")
+    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation/mod.rs")
         .expect("read mutation")
         .replace("\r\n", "\n");
 
@@ -544,7 +538,7 @@ fn engine_mutation_field_coercion_uses_cft_schema_view() {
 
 #[test]
 fn engine_mutation_uses_cft_schema_view_for_schema_queries() {
-    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation.rs")
+    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation/mod.rs")
         .expect("read mutation");
 
     assert!(
@@ -570,8 +564,8 @@ fn engine_mutation_uses_cft_schema_view_for_schema_queries() {
 fn engine_public_mutation_api_does_not_expose_prepared_ops() {
     let engine =
         std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");
-    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation.rs")
-        .expect("read mutation")
+    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation/types.rs")
+        .expect("read mutation types")
         .replace("\r\n", "\n");
 
     assert!(
@@ -591,6 +585,55 @@ fn engine_public_mutation_api_does_not_expose_prepared_ops() {
         !prepared_struct.contains("pub "),
         "PreparedMutation should be opaque; found public field in `{prepared_struct}`"
     );
+}
+
+#[test]
+fn engine_mutation_wire_types_do_not_live_in_mutation_mod_rs() {
+    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation/mod.rs")
+        .expect("read mutation module");
+    let types = std::fs::read_to_string("crates/coflow-engine/src/mutation/types.rs")
+        .expect("read mutation types module");
+
+    for expected in [
+        "pub struct MutationRequest",
+        "pub enum MutationOp",
+        "pub enum MutationValue",
+        "pub enum MutationFields",
+        "pub struct MutationReport",
+    ] {
+        assert!(
+            types.contains(expected),
+            "mutation wire type `{expected}` should live in mutation/types.rs"
+        );
+        assert!(
+            !mutation.contains(expected),
+            "mutation wire type `{expected}` should not live in mutation/mod.rs"
+        );
+    }
+}
+
+#[test]
+fn engine_mutation_defaults_do_not_live_in_mutation_mod_rs() {
+    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation/mod.rs")
+        .expect("read mutation module");
+    let defaults = std::fs::read_to_string("crates/coflow-engine/src/mutation/defaults.rs")
+        .expect("read mutation defaults module");
+
+    for expected in [
+        "fn default_record_for_type",
+        "fn default_missing_fields_for_type",
+        "fn default_fields_for_type_inner",
+        "fn default_from_schema_default",
+    ] {
+        assert!(
+            defaults.contains(expected),
+            "mutation default helper `{expected}` should live in mutation/defaults.rs"
+        );
+        assert!(
+            !mutation.contains(expected),
+            "mutation default helper `{expected}` should not live in mutation/mod.rs"
+        );
+    }
 }
 
 #[test]
