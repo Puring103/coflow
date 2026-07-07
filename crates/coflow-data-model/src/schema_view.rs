@@ -62,7 +62,7 @@ pub(crate) struct SchemaView {
 impl SchemaView {
     pub(crate) fn new(schema: &CftContainer) -> Self {
         let cft_view = CftSchemaView::new(schema);
-        let domain_index = Self::build_domain_index(&cft_view.types);
+        let domain_index = Self::build_domain_index(&cft_view);
         let dimension_storage_types = Self::build_dimension_storage_index(&cft_view);
 
         Self {
@@ -76,7 +76,7 @@ impl SchemaView {
         cft_view: &CftSchemaView,
     ) -> BTreeMap<DimensionStorageKey, String> {
         let mut out = BTreeMap::new();
-        for schema_type in cft_view.types.values() {
+        for schema_type in cft_view.type_metas() {
             for annotation in &schema_type.annotations {
                 if annotation.name != "__coflow_dimension_storage" {
                     continue;
@@ -118,8 +118,8 @@ impl SchemaView {
             .find(|field| field.name == field_name)
     }
 
-    fn build_domain_index(types: &BTreeMap<String, CftTypeMeta>) -> CfdDomainIndex {
-        let type_names = types.keys().cloned().collect::<Vec<_>>();
+    fn build_domain_index(cft_view: &CftSchemaView) -> CfdDomainIndex {
+        let type_names = cft_view.type_names().cloned().collect::<Vec<_>>();
         let type_id_by_name = type_names
             .iter()
             .enumerate()
@@ -132,7 +132,7 @@ impl SchemaView {
         let mut ancestors_by_type = vec![Vec::new(); type_names.len()];
 
         for (index, type_name) in type_names.iter().enumerate() {
-            let root = Self::domain_root_name(types, type_name);
+            let root = Self::domain_root_name(cft_view, type_name);
             let next_domain_id = CfdDomainId::new(domain_id_by_root.len());
             let domain_id = *domain_id_by_root.entry(root).or_insert(next_domain_id);
             if domain_members.len() <= domain_id.index() {
@@ -141,7 +141,8 @@ impl SchemaView {
             let type_id = CfdTypeId::new(index);
             type_domain[index] = domain_id;
             domain_members[domain_id.index()].push(type_id);
-            ancestors_by_type[index] = Self::ancestor_type_ids(types, &type_id_by_name, type_name);
+            ancestors_by_type[index] =
+                Self::ancestor_type_ids(cft_view, &type_id_by_name, type_name);
         }
 
         CfdDomainIndex::new(
@@ -153,22 +154,28 @@ impl SchemaView {
         )
     }
 
-    fn domain_root_name(types: &BTreeMap<String, CftTypeMeta>, type_name: &str) -> String {
+    fn domain_root_name(cft_view: &CftSchemaView, type_name: &str) -> String {
         let mut current = type_name;
-        while let Some(parent) = types.get(current).and_then(|meta| meta.parent.as_deref()) {
+        while let Some(parent) = cft_view
+            .type_meta(current)
+            .and_then(|meta| meta.parent.as_deref())
+        {
             current = parent;
         }
         current.to_string()
     }
 
     fn ancestor_type_ids(
-        types: &BTreeMap<String, CftTypeMeta>,
+        cft_view: &CftSchemaView,
         type_id_by_name: &BTreeMap<String, CfdTypeId>,
         type_name: &str,
     ) -> Vec<CfdTypeId> {
         let mut out = Vec::new();
         let mut current = type_name;
-        while let Some(parent) = types.get(current).and_then(|meta| meta.parent.as_deref()) {
+        while let Some(parent) = cft_view
+            .type_meta(current)
+            .and_then(|meta| meta.parent.as_deref())
+        {
             if let Some(type_id) = type_id_by_name.get(parent).copied() {
                 out.push(type_id);
             }
