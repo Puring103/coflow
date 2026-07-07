@@ -1912,6 +1912,11 @@ fn lsp_definition_helpers_do_not_live_in_lib_rs() {
     for expected in [
         "pub(crate) fn cft_type_definition_location",
         "pub(crate) fn cft_schema_field_definition_location",
+        "pub(crate) fn cfd_record_definition_location",
+        "fn cfd_record_definition_location_in_source",
+        "fn cfd_project_sources",
+        "fn cfd_sources_in_dir",
+        "fn cfd_source_from_path",
     ] {
         assert!(
             definition.contains(expected),
