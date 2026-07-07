@@ -24,6 +24,7 @@ mod indexes;
 mod mutation;
 mod records;
 mod schema_inspect;
+mod session;
 mod write_rules;
 mod writes;
 
@@ -62,6 +63,7 @@ pub use schema_inspect::{
     SchemaFieldInfo, SchemaFileInfo, SchemaFilesReport, SchemaInspectReport, SchemaTypeInfo,
     SchemaTypeRefInfo,
 };
+pub use session::{ProjectSchemaSession, ProjectSession, RecordCoordinate};
 
 use coflow_api::{
     map_diagnostics_with_origins, origins_of, CfdInputRecord, CftContainer, Diagnostic,
@@ -76,7 +78,6 @@ use coflow_project::{
     compile_schema_project, dedupe_cft_diagnostics, diagnostic_set_from_cft, path_to_slash,
     Project, SchemaBuild, SourceConfig,
 };
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -85,238 +86,7 @@ use std::sync::Arc;
 
 use indexes::{dependency_index_from_checker_graph, PendingRecordRef};
 
-/// Stable, wire-friendly coordinate of a top-level record.
-///
-/// Top-level records always have an `(actual_type, key)` pair that uniquely
-/// identifies them inside a model build, even when synthetic dimension
-/// records share keys with their source records.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../frontend/src/bindings/")
-)]
-pub struct RecordCoordinate {
-    pub actual_type: String,
-    pub key: String,
-}
-
-impl RecordCoordinate {
-    #[must_use]
-    pub fn new(actual_type: impl Into<String>, key: impl Into<String>) -> Self {
-        Self {
-            actual_type: actual_type.into(),
-            key: key.into(),
-        }
-    }
-}
-
 type ResolvedLoaderSource = (Arc<dyn coflow_api::DataLoader>, ResolvedSource);
-
-#[derive(Debug)]
-pub struct ProjectSession {
-    pub project: Project,
-    pub schema: CftContainer,
-    pub model: CfdDataModel,
-    pub diagnostics: DiagnosticsStore,
-    pub sources: SourceIndex,
-    pub records: RecordIndex,
-    pub files: FileIndex,
-    pub dependencies: DependencyIndex,
-    loader_extensions: BTreeSet<String>,
-}
-
-impl ProjectSession {
-    #[must_use]
-    pub fn has_diagnostics(&self) -> bool {
-        !self.diagnostics.is_empty()
-    }
-
-    /// Resolve a wire `(actual_type, key)` coordinate to its internal model
-    /// id. Returns `None` when no record matches — callers surface an
-    /// `EditorError::NotFound` rather than panic.
-    #[must_use]
-    pub fn id_for_coordinate(&self, actual_type: &str, key: &str) -> Option<CfdRecordId> {
-        self.records.id_for_coordinate(actual_type, key)
-    }
-
-    /// Inverse of [`Self::id_for_coordinate`]: given an internal record id,
-    /// return the wire coordinate. Lives here so model id leakage stays
-    /// confined to the engine boundary.
-    #[must_use]
-    pub fn coordinate_of(&self, id: CfdRecordId) -> Option<RecordCoordinate> {
-        self.records.get(id).map(|r| r.coordinate.clone())
-    }
-
-    /// Look up the project-relative file that backs a record, addressed by
-    /// its wire coordinate.
-    #[must_use]
-    pub fn file_for_record(&self, actual_type: &str, key: &str) -> Option<&str> {
-        self.records.file_for_coordinate(actual_type, key)
-    }
-
-    /// Iterate the coordinates of every top-level record in `file`. Used by
-    /// hosts that render per-file record lists without exposing internal ids.
-    pub fn coordinates_in_file<'a>(
-        &'a self,
-        file: &str,
-    ) -> impl Iterator<Item = &'a RecordCoordinate> + 'a {
-        self.records.coordinates_in_file(file)
-    }
-
-    /// Integer value of an enum variant declared in the project schema.
-    /// Returns `None` for unknown enum names or variants.
-    #[must_use]
-    pub fn enum_int_value(&self, enum_name: &str, variant: &str) -> Option<i64> {
-        let resolved = self.schema.resolve_enum(enum_name)?;
-        resolved
-            .variants
-            .iter()
-            .find(|v| v.name == variant)
-            .map(|v| v.value)
-    }
-
-    /// Resolved dimension metadata for the project.
-    #[must_use]
-    pub fn dimensions(&self) -> Vec<DimensionInfo> {
-        let view = CftSchemaView::new(&self.schema);
-        let fields = dimensions::dimension_fields(&view);
-        dimensions_for_project(&self.project, &fields)
-    }
-
-    /// Set of dimension-synthesized runtime type names (e.g.
-    /// `"Item_nameVariants"`). Hosts use this to mark synthesized
-    /// records so their `default` slot renders as read-only in editors,
-    /// without re-deriving the naming convention themselves.
-    #[must_use]
-    pub fn dimension_synthesized_types(&self) -> BTreeSet<String> {
-        let view = CftSchemaView::new(&self.schema);
-        dimensions::dimension_fields(&view)
-            .into_iter()
-            .map(|field| field.synthesized_type)
-            .collect()
-    }
-
-    /// Lookup a single dimension by name.
-    #[must_use]
-    pub fn dimension(&self, name: &str) -> Option<DimensionInfo> {
-        self.dimensions().into_iter().find(|d| d.name == name)
-    }
-
-    /// Compose a read-only [`RecordView`] for a coordinate. Returns `None`
-    /// when no record matches — typically a stale coordinate after a rename.
-    #[must_use]
-    pub fn record_view(&self, actual_type: &str, key: &str) -> Option<RecordView<'_>> {
-        let record_ref = self.records.get_by_coordinate(actual_type, key)?;
-        let record = self.model.record(record_ref.id)?;
-        Some(RecordView {
-            coordinate: record_ref.coordinate.clone(),
-            display_path: record_ref.display_path.as_str(),
-            record,
-            origin: &record_ref.origin,
-            source_id: record_ref.source_id,
-            provider_id: record_ref.provider_id.as_str(),
-        })
-    }
-
-    /// Iterate read-only views of every record backed by `file`.
-    pub fn record_views_in_file<'a>(
-        &'a self,
-        file: &str,
-    ) -> impl Iterator<Item = RecordView<'a>> + 'a {
-        self.records.ids_in_file(file).iter().filter_map(move |id| {
-            let record_ref = self.records.get(*id)?;
-            let record = self.model.record(*id)?;
-            Some(RecordView {
-                coordinate: record_ref.coordinate.clone(),
-                display_path: record_ref.display_path.as_str(),
-                record,
-                origin: &record_ref.origin,
-                source_id: record_ref.source_id,
-                provider_id: record_ref.provider_id.as_str(),
-            })
-        })
-    }
-
-    /// File-tree view of the project using default options (every
-    /// loader-registered extension is walked, dimension `out_dirs` become
-    /// virtual subtrees).
-    #[must_use]
-    pub fn file_tree(&self) -> Vec<FileTreeNode> {
-        let mut options = FileTreeOptions {
-            extra_extensions: self.loader_extensions.iter().cloned().collect(),
-            dimension_groups: Vec::new(),
-            in_sources: BTreeSet::new(),
-        };
-        for source in self.files.source_files() {
-            options.in_sources.insert(display_source_path(source));
-        }
-        for info in self.dimensions() {
-            if let Some(out_dir) = info.out_dir.as_ref() {
-                let absolute = self.project.resolve_path(Path::new(out_dir));
-                options.dimension_groups.push(DimensionGroup {
-                    display_name: info.display_name.clone(),
-                    dir: absolute,
-                });
-            }
-        }
-        self.file_tree_with(options)
-    }
-
-    /// File-tree view using caller-supplied options. The options carry the
-    /// extension whitelist and any dimension groups that should be lifted to
-    /// the top of the tree.
-    #[must_use]
-    pub fn file_tree_with(&self, options: FileTreeOptions) -> Vec<FileTreeNode> {
-        let ext_whitelist: BTreeSet<String> = options.extra_extensions.into_iter().collect();
-        let mut skip: BTreeSet<String> = BTreeSet::new();
-        for group in &options.dimension_groups {
-            if let Ok(rel) = group.dir.strip_prefix(&self.project.root_dir) {
-                let slash = path_to_slash(rel);
-                if !slash.is_empty() {
-                    skip.insert(slash);
-                }
-            }
-        }
-        let mut tree = files::build_file_tree(
-            &self.project.root_dir,
-            &options.in_sources,
-            &ext_whitelist,
-            &skip,
-        );
-        for group in options.dimension_groups.iter().rev() {
-            if let Some(node) = files::build_dimension_subtree(
-                &self.project.root_dir,
-                group.display_name.clone(),
-                &group.dir,
-                &options.in_sources,
-                &ext_whitelist,
-            ) {
-                tree.insert(0, node);
-            }
-        }
-        tree
-    }
-
-    #[must_use]
-    pub const fn loader_extensions(&self) -> &BTreeSet<String> {
-        &self.loader_extensions
-    }
-}
-
-#[derive(Debug)]
-pub struct ProjectSchemaSession {
-    pub project: Project,
-    pub schema: CftContainer,
-    pub diagnostics: DiagnosticsStore,
-}
-
-impl ProjectSchemaSession {
-    #[must_use]
-    pub fn has_diagnostics(&self) -> bool {
-        !self.diagnostics.is_empty()
-    }
-}
 
 /// Opens, loads, builds, and checks a project into a reusable runtime session.
 ///
@@ -946,14 +716,6 @@ fn display_path_for(project: &Project, source: &ResolvedSource) -> String {
             path_to_slash(relative)
         }
         SourceLocationSpec::Uri(uri) => uri.clone(),
-    }
-}
-
-fn display_source_path(source: &str) -> String {
-    if source.contains("://") {
-        source.to_string()
-    } else {
-        path_to_slash(Path::new(source))
     }
 }
 
