@@ -1865,6 +1865,35 @@ fn lsp_state_helpers_do_not_live_in_lib_rs() {
 }
 
 #[test]
+fn lsp_text_helpers_do_not_live_in_lib_rs() {
+    let lib = std::fs::read_to_string("crates/coflow-lsp/src/lib.rs").expect("read lsp lib");
+    let text = std::fs::read_to_string("crates/coflow-lsp/src/text.rs").expect("read lsp text");
+
+    for expected in [
+        "pub(crate) struct WordAt",
+        "pub(crate) fn is_trivia_position",
+        "pub(crate) fn is_inside_string",
+        "pub(crate) fn dotted_chain_at",
+        "pub(crate) fn word_at",
+        "pub(crate) fn parse_dotted_ident_chain",
+        "pub(crate) fn previous_char",
+        "pub(crate) fn is_ident_continue",
+        "pub(crate) fn last_ident",
+        "pub(crate) fn line_prefix_at",
+        "pub(crate) fn is_after_line_comment",
+    ] {
+        assert!(
+            text.contains(expected),
+            "LSP text helper `{expected}` should live in text.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "LSP text helper `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn lsp_position_helpers_do_not_live_in_lib_rs() {
     let lib = std::fs::read_to_string("crates/coflow-lsp/src/lib.rs").expect("read lsp lib");
     let position =

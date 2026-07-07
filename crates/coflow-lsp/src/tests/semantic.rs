@@ -8,6 +8,7 @@ use crate::semantic_tokens::{
     MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_NAMESPACE, SEM_OPERATOR, SEM_PROPERTY, SEM_STRING,
     SEM_TYPE, SEM_VARIABLE,
 };
+use crate::text::{is_after_line_comment, is_inside_string};
 use crate::uri::{hex_value, percent_decode};
 use coflow_cft::Span;
 
