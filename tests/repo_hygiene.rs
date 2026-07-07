@@ -725,6 +725,36 @@ fn cfd_parser_lexer_helpers_do_not_live_in_parser_rs() {
 }
 
 #[test]
+fn cfd_parser_value_helpers_do_not_live_in_parser_rs() {
+    let parser =
+        std::fs::read_to_string("crates/coflow-loader-cfd/src/parser.rs").expect("read cfd parser");
+    let value = std::fs::read_to_string("crates/coflow-loader-cfd/src/parser/value.rs")
+        .expect("read cfd parser value helpers");
+
+    for expected in [
+        "pub(super) fn parse_value",
+        "fn parse_int",
+        "fn parse_dict_key",
+        "pub(super) fn parse_object_value",
+        "fn parse_ref_value",
+        "fn parse_spread_value",
+    ] {
+        assert!(
+            value.contains(expected),
+            "CFD parser value helper `{expected}` should live in parser/value.rs"
+        );
+        assert!(
+            !parser.contains(expected),
+            "CFD parser value helper `{expected}` should not live in parser.rs"
+        );
+    }
+    assert!(
+        parser.lines().count() < 500,
+        "coflow-loader-cfd parser.rs should stay focused on record-level parsing"
+    );
+}
+
+#[test]
 fn editor_backend_does_not_depend_on_checker_runtime_directly() {
     let manifest = std::fs::read_to_string("editors/cfd-editor/src-tauri/Cargo.toml")
         .expect("read editor backend manifest");
