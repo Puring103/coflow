@@ -1534,6 +1534,45 @@ fn checker_quantifier_item_expansion_does_not_live_in_evaluator_rs() {
 }
 
 #[test]
+fn checker_statement_execution_does_not_live_in_evaluator_rs() {
+    let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
+        .expect("read checker evaluator");
+    let statements = std::fs::read_to_string("crates/coflow-checker/src/check/statements.rs")
+        .expect("read checker statements");
+
+    for expected in [
+        "pub(super) fn eval_check_block",
+        "fn eval_stmts",
+        "fn eval_stmt",
+        "fn eval_quantifier_stmt",
+        "fn rewrite_all_failures",
+        "fn emit_any_failure",
+        "fn emit_none_failures",
+    ] {
+        assert!(
+            statements.contains(expected),
+            "checker statement helper `{expected}` should live in check/statements.rs"
+        );
+        assert!(
+            !evaluator.contains(expected),
+            "checker statement helper `{expected}` should not live in evaluator.rs"
+        );
+    }
+    for forbidden in [
+        "check 表达式没有求值为 bool",
+        "when 条件没有求值为 bool",
+        "CheckAllQuantifierFailed",
+        "CheckAnyQuantifierFailed",
+        "CheckNoneQuantifierFailed",
+    ] {
+        assert!(
+            !evaluator.contains(forbidden),
+            "checker evaluator should not own statement execution branch `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn checker_field_read_helpers_do_not_live_in_evaluator_rs() {
     let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
         .expect("read checker evaluator");

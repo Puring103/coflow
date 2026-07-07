@@ -1,5 +1,6 @@
 use super::deps::{DependencyCollector, DependencyGraphBuilder};
 use super::evaluator::CheckEvaluator;
+use super::statements;
 use super::value::{CheckRecordRef, CheckValue};
 use crate::{DependencyGraph, DimensionCheckContext};
 use coflow_cft::{CftContainer, CftSchemaView};
@@ -108,13 +109,10 @@ impl<'a> CheckRunner<'a> {
                 .map(|context| context.dimension.as_str()),
         );
         let root = CheckValue::Record(record);
-        let deps = self
-            .deps
-            .as_ref()
-            .map_or_else(
-                || DependencyCollector::disabled(root_record),
-                |deps| deps.collector_for(root_record),
-            );
+        let deps = self.deps.as_ref().map_or_else(
+            || DependencyCollector::disabled(root_record),
+            |deps| deps.collector_for(root_record),
+        );
         let mut evaluator = CheckEvaluator::new(
             &self.schema,
             self.source_schema,
@@ -128,7 +126,7 @@ impl<'a> CheckRunner<'a> {
             .dimension_context
             .clone_from(&self.dimension_context);
         for check in checks {
-            let _ = evaluator.eval_check_block(&check);
+            let _ = statements::eval_check_block(&mut evaluator, &check);
         }
         let (diagnostics, collector) = evaluator.into_outputs();
         self.diagnostics.extend(diagnostics);

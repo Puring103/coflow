@@ -3,22 +3,18 @@ use super::builtin_calls::{self, CallSignature, CallSignatureError, CallTarget};
 use super::builtin_values;
 use super::builtins::Builtin;
 use super::deps::DependencyCollector;
-use super::diagnostics::{
-    format_cfd_path_for_message, format_value_for_message, one_line_message, render_expr,
-    render_stmt, CheckExplanation,
-};
+use super::diagnostics::format_value_for_message;
 use super::dimensions::{self, DimensionVariantAbort};
 use super::enum_values;
-use super::explanations::{self, ValueExprEvaluator};
+use super::explanations::ValueExprEvaluator;
 use super::fields;
 use super::ops::{self, OpsResult};
-use super::quantifiers;
 use super::type_predicates;
 use super::value::{CheckValue, LocatedCheckValue};
 use crate::DimensionCheckContext;
 use coflow_cft::{
-    CftContainer, CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
-    CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind, CftSchemaUnaryOp, CftSchemaView,
+    CftContainer, CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCmpOp,
+    CftSchemaUnaryOp, CftSchemaView,
 };
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdEnumValue, CfdErrorCode, CfdPath, CfdRecordId,
@@ -28,14 +24,14 @@ use std::collections::BTreeMap;
 use super::value::CheckRecordRef;
 
 pub(super) struct CheckEvaluator<'a> {
-    schema: &'a CftSchemaView,
-    source_schema: &'a CftContainer,
-    model: &'a CfdDataModel,
-    root_record: Option<CfdRecordId>,
-    root_path: CfdPath,
-    current: CheckValue,
-    scopes: Vec<BTreeMap<String, LocatedCheckValue>>,
-    contexts: Vec<String>,
+    pub(super) schema: &'a CftSchemaView,
+    pub(super) source_schema: &'a CftContainer,
+    pub(super) model: &'a CfdDataModel,
+    pub(super) root_record: Option<CfdRecordId>,
+    pub(super) root_path: CfdPath,
+    pub(super) current: CheckValue,
+    pub(super) scopes: Vec<BTreeMap<String, LocatedCheckValue>>,
+    pub(super) contexts: Vec<String>,
     pub(super) diagnostics: Vec<CfdDiagnostic>,
     deps: DependencyCollector,
     pub(super) dimension_context: Option<DimensionCheckContext>,
@@ -124,7 +120,7 @@ impl<'a> CheckEvaluator<'a> {
         self.deps.note_read_from(target);
     }
 
-    fn from_ops<T>(&mut self, result: OpsResult<T>) -> EvalResult<T> {
+    pub(super) fn from_ops<T>(&mut self, result: OpsResult<T>) -> EvalResult<T> {
         result.map_err(|err| {
             let (code, path, message) = err.into_parts();
             self.diag_at(code, path, message);
@@ -164,236 +160,8 @@ impl<'a> CheckEvaluator<'a> {
         }
     }
 
-    pub(super) fn eval_check_block(&mut self, check: &CftSchemaCheckBlock) -> EvalFlow {
-        self.eval_stmts(&check.stmts)
-    }
-
-    fn eval_stmts(&mut self, stmts: &[CftSchemaCheckStmt]) -> EvalFlow {
-        let mut skipped = false;
-        for stmt in stmts {
-            match self.eval_stmt(stmt) {
-                EvalFlow::Continue => {}
-                EvalFlow::Skipped => skipped = true,
-                EvalFlow::HardStop => return EvalFlow::HardStop,
-            }
-        }
-        if skipped {
-            EvalFlow::Skipped
-        } else {
-            EvalFlow::Continue
-        }
-    }
-
-    fn eval_stmt(&mut self, stmt: &CftSchemaCheckStmt) -> EvalFlow {
-        match stmt {
-            CftSchemaCheckStmt::Expr(expr) => match explanations::eval_expr_explained(self, expr) {
-                Ok((value, _)) if matches!(value.value, CheckValue::Bool(true)) => {
-                    EvalFlow::Continue
-                }
-                Ok((value, explanation)) if matches!(value.value, CheckValue::Bool(false)) => {
-                    let explanation = explanations::explain_false_expr(self, expr, &value)
-                        .unwrap_or_else(|| {
-                            let mut fallback = CheckExplanation::new(
-                                CfdErrorCode::CheckFailed,
-                                render_expr(expr),
-                                value.path.clone(),
-                            );
-                            if let Some(detail) = explanation {
-                                fallback = fallback.with_actual(detail);
-                            }
-                            fallback
-                        })
-                        .with_context(&self.contexts);
-                    let message = explanation.message();
-                    self.diag_at(explanation.code, explanation.path, message);
-                    EvalFlow::Continue
-                }
-                Ok((value, _)) => {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        value.path,
-                        "check 表达式没有求值为 bool",
-                    );
-                    EvalFlow::HardStop
-                }
-                Err(EvalAbort::Skipped) => EvalFlow::Skipped,
-                Err(EvalAbort::Error) => EvalFlow::HardStop,
-            },
-            CftSchemaCheckStmt::When {
-                condition, body, ..
-            } => match self.eval_expr(condition) {
-                Ok(value) if matches!(value.value, CheckValue::Bool(true)) => {
-                    self.contexts
-                        .push(format!("在 when {} 内", render_expr(condition)));
-                    let flow = self.eval_stmts(body);
-                    let _ = self.contexts.pop();
-                    flow
-                }
-                Ok(value) if matches!(value.value, CheckValue::Bool(false)) => EvalFlow::Continue,
-                Ok(value) => {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        value.path,
-                        "when 条件没有求值为 bool",
-                    );
-                    EvalFlow::HardStop
-                }
-                Err(EvalAbort::Skipped) => EvalFlow::Skipped,
-                Err(EvalAbort::Error) => EvalFlow::HardStop,
-            },
-            CftSchemaCheckStmt::Quantifier {
-                kind,
-                binding,
-                collection,
-                body,
-                ..
-            } => {
-                let collection_expr = collection;
-                let collection_value = match self.eval_expr(collection_expr) {
-                    Ok(value) => value,
-                    Err(EvalAbort::Skipped) => return EvalFlow::Skipped,
-                    Err(EvalAbort::Error) => return EvalFlow::HardStop,
-                };
-                let items = match self.from_ops(quantifiers::quantifier_items(collection_value)) {
-                    Ok(items) => items,
-                    Err(EvalAbort::Skipped) => return EvalFlow::Skipped,
-                    Err(EvalAbort::Error) => return EvalFlow::HardStop,
-                };
-                self.eval_quantifier(*kind, binding, &items, body, collection_expr, stmt)
-            }
-        }
-    }
-
-    fn eval_quantifier(
-        &mut self,
-        kind: CftSchemaQuantifierKind,
-        binding: &str,
-        items: &[LocatedCheckValue],
-        body: &[CftSchemaCheckStmt],
-        collection: &CftSchemaCheckExpr,
-        stmt: &CftSchemaCheckStmt,
-    ) -> EvalFlow {
-        let quantifier_diagnostic_start = self.diagnostics.len();
-        let mut matched = 0_usize;
-        let mut any_failures = Vec::new();
-        let mut none_match_paths = Vec::new();
-        for item in items {
-            let diagnostic_start = self.diagnostics.len();
-            let mut scope = BTreeMap::new();
-            scope.insert(binding.to_string(), item.clone());
-            self.scopes.push(scope);
-            let item_context = format!(
-                "绑定 {binding} 位于 {}",
-                item.path
-                    .as_ref()
-                    .map_or_else(|| render_expr(collection), format_cfd_path_for_message)
-            );
-            self.contexts.push(item_context);
-            let flow = self.eval_stmts(body);
-            let passed = flow == EvalFlow::Continue && self.diagnostics.len() == diagnostic_start;
-            let _ = self.contexts.pop();
-            let _ = self.scopes.pop();
-
-            match flow {
-                EvalFlow::Continue => {}
-                EvalFlow::Skipped => {
-                    self.diagnostics.truncate(diagnostic_start);
-                    continue;
-                }
-                EvalFlow::HardStop => return EvalFlow::HardStop,
-            }
-
-            match kind {
-                CftSchemaQuantifierKind::All => {}
-                CftSchemaQuantifierKind::Any => {
-                    let trial_failures = self.diagnostics.split_off(diagnostic_start);
-                    if !passed {
-                        any_failures.extend(trial_failures);
-                    }
-                }
-                CftSchemaQuantifierKind::None => {
-                    self.diagnostics.truncate(diagnostic_start);
-                    if passed {
-                        none_match_paths.push(item.path.clone());
-                    }
-                }
-            }
-
-            if passed {
-                matched += 1;
-            }
-        }
-
-        match kind {
-            CftSchemaQuantifierKind::All => {
-                for diagnostic in &mut self.diagnostics[quantifier_diagnostic_start..] {
-                    if diagnostic.code != CfdErrorCode::CheckBoolExpectedTrue
-                        && diagnostic.code != CfdErrorCode::CheckComparisonFailed
-                        && diagnostic.code != CfdErrorCode::CheckNegationFailed
-                        && diagnostic.code != CfdErrorCode::CheckAndFailed
-                        && diagnostic.code != CfdErrorCode::CheckOrFailed
-                        && diagnostic.code != CfdErrorCode::CheckTypePredicateFailed
-                        && diagnostic.code != CfdErrorCode::CheckNullPredicateFailed
-                        && diagnostic.code != CfdErrorCode::CheckContainsFailed
-                        && diagnostic.code != CfdErrorCode::CheckUniqueFailed
-                        && diagnostic.code != CfdErrorCode::CheckMatchesFailed
-                        && diagnostic.code != CfdErrorCode::CheckFailed
-                    {
-                        continue;
-                    }
-                    diagnostic.code = CfdErrorCode::CheckAllQuantifierFailed;
-                    diagnostic.message =
-                        format!("校验失败: {}\n{}", render_stmt(stmt), diagnostic.message);
-                }
-            }
-            CftSchemaQuantifierKind::Any if matched == 0 => {
-                let mut context = self.contexts.clone();
-                if let Some(diagnostic) = any_failures.first() {
-                    context.push(format!(
-                        "失败样例: {}",
-                        one_line_message(&diagnostic.message)
-                    ));
-                }
-                let explanation = CheckExplanation::new(
-                    CfdErrorCode::CheckAnyQuantifierFailed,
-                    render_stmt(stmt),
-                    items.first().and_then(|item| item.path.clone()),
-                )
-                .with_actual(format!("0 / {} 个元素匹配", items.len()))
-                .with_expected("至少 1 个元素满足")
-                .with_context(&context);
-                self.diag_at(
-                    explanation.code,
-                    explanation.path.clone(),
-                    explanation.message(),
-                );
-            }
-            CftSchemaQuantifierKind::Any => {}
-            CftSchemaQuantifierKind::None if matched > 0 => {
-                for path in none_match_paths {
-                    let explanation = CheckExplanation::new(
-                        CfdErrorCode::CheckNoneQuantifierFailed,
-                        render_stmt(stmt),
-                        path.clone(),
-                    )
-                    .with_actual(format!(
-                        "{} 已匹配",
-                        path.as_ref()
-                            .map_or_else(|| render_expr(collection), format_cfd_path_for_message)
-                    ))
-                    .with_expected("没有元素满足")
-                    .with_context(&self.contexts);
-                    let message = explanation.message();
-                    self.diag_at(explanation.code, explanation.path, message);
-                }
-            }
-            CftSchemaQuantifierKind::None => {}
-        }
-        EvalFlow::Continue
-    }
-
     #[allow(clippy::too_many_lines)]
-    fn eval_expr(&mut self, expr: &CftSchemaCheckExpr) -> EvalResult<LocatedCheckValue> {
+    pub(super) fn eval_expr(&mut self, expr: &CftSchemaCheckExpr) -> EvalResult<LocatedCheckValue> {
         match &expr.kind {
             CftSchemaCheckExprKind::Int(value) => {
                 Ok(LocatedCheckValue::value(CheckValue::Int(*value)))
@@ -765,11 +533,16 @@ impl<'a> CheckEvaluator<'a> {
         }
     }
 
-    fn diag(&mut self, code: CfdErrorCode, message: impl Into<String>) {
+    pub(super) fn diag(&mut self, code: CfdErrorCode, message: impl Into<String>) {
         self.diag_at(code, None, message);
     }
 
-    fn diag_at(&mut self, code: CfdErrorCode, path: Option<CfdPath>, message: impl Into<String>) {
+    pub(super) fn diag_at(
+        &mut self,
+        code: CfdErrorCode,
+        path: Option<CfdPath>,
+        message: impl Into<String>,
+    ) {
         let path = match path {
             Some(path) => path,
             None => self.root_path.clone(),
