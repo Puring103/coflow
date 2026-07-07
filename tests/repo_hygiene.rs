@@ -888,6 +888,8 @@ fn data_model_compiler_indexes_are_split_out() {
         .expect("read data-model compiler indexes");
     let resolve = std::fs::read_to_string("crates/coflow-data-model/src/compiler/resolve.rs")
         .expect("read data-model compiler resolve");
+    let defaults = std::fs::read_to_string("crates/coflow-data-model/src/compiler/defaults.rs")
+        .expect("read data-model compiler defaults");
 
     for expected in [
         "pub(super) struct ModelIndexes",
@@ -918,6 +920,23 @@ fn data_model_compiler_indexes_are_split_out() {
         assert!(
             !compiler.contains(expected),
             "data-model compiler resolve helper `{expected}` should not live in compiler.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn default_field_value",
+        "fn default_value",
+        "fn default_object_value",
+        "fn push_default_type_mismatch",
+        "fn non_nullable_type",
+        "CftSchemaDefaultValue",
+    ] {
+        assert!(
+            defaults.contains(expected),
+            "data-model compiler default helper `{expected}` should live in compiler/defaults.rs"
+        );
+        assert!(
+            !compiler.contains(expected),
+            "data-model compiler default helper `{expected}` should not live in compiler.rs"
         );
     }
     assert!(
