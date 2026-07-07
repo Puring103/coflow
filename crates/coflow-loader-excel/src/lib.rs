@@ -20,23 +20,26 @@
 
 use calamine::{open_workbook_auto, Data, Reader};
 use coflow_api::{
-    DataLoader, Diagnostic, DiagnosticSet, Label, LoadContext, LoadedRecords, LoaderDescriptor,
-    ProbeResult, ProjectSourceRef, RecordOrigin, ResolvedSource, SourceLocation,
-    SourceLocationSpec, SourceResolveContext,
+    DataLoader, Diagnostic, DiagnosticSet, LoadContext, LoadedRecords, LoaderDescriptor,
+    ProbeResult, ProjectSourceRef, ResolvedSource, SourceLocationSpec, SourceResolveContext,
 };
 use coflow_cft::CftContainer;
-use coflow_data_model::{CfdDiagnostic, CfdInputRecord};
+use coflow_data_model::CfdInputRecord;
 use coflow_loader_table_core::{
-    collect_table_input_records as collect_shared_table_input_records, map_label_to_table,
-    TableDiagnostic, TableDiagnostics, TableLabel, TableLocation, TableSheet, TableSheetConfig,
-    TableSource,
+    collect_table_input_records as collect_shared_table_input_records, TableSheet,
+    TableSheetConfig, TableSource,
 };
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod diagnostics;
 mod options;
 pub mod writer;
+use diagnostics::excel_diagnostics_to_api;
+pub use diagnostics::{
+    map_label_with_record_offset, ExcelDiagnostic, ExcelDiagnostics, ExcelLabel, ExcelLocation,
+};
 use options::excel_sheets_from_options;
 pub use writer::{ExcelWriter, EXCEL_WRITER_DESCRIPTOR};
 
@@ -128,171 +131,9 @@ impl From<ExcelSheet> for TableSheetConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExcelDiagnostics {
-    pub diagnostics: Vec<ExcelDiagnostic>,
-}
-
-impl From<TableDiagnostics> for ExcelDiagnostics {
-    fn from(diagnostics: TableDiagnostics) -> Self {
-        Self {
-            diagnostics: diagnostics
-                .diagnostics
-                .into_iter()
-                .map(ExcelDiagnostic::from)
-                .collect(),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct ExcelInputRecords {
     pub records: Vec<CfdInputRecord>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExcelDiagnostic {
-    pub code: String,
-    pub stage: String,
-    pub message: String,
-    pub source: Option<CfdDiagnostic>,
-    pub primary: Option<ExcelLabel>,
-    pub related: Vec<ExcelLabel>,
-}
-
-impl ExcelDiagnostic {
-    #[must_use]
-    pub fn excel(
-        code: impl Into<String>,
-        stage: impl Into<String>,
-        message: impl Into<String>,
-        location: ExcelLocation,
-    ) -> Self {
-        Self {
-            code: code.into(),
-            stage: stage.into(),
-            message: message.into(),
-            source: None,
-            primary: Some(ExcelLabel {
-                location,
-                message: None,
-            }),
-            related: Vec::new(),
-        }
-    }
-}
-
-impl From<TableDiagnostic> for ExcelDiagnostic {
-    fn from(diagnostic: TableDiagnostic) -> Self {
-        Self {
-            code: table_code_to_excel(&diagnostic.code),
-            stage: table_stage_to_excel(&diagnostic.stage),
-            message: table_message_to_excel(&diagnostic.message),
-            source: diagnostic.source,
-            primary: diagnostic.primary.map(ExcelLabel::from),
-            related: diagnostic
-                .related
-                .into_iter()
-                .map(ExcelLabel::from)
-                .collect(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExcelLabel {
-    pub location: ExcelLocation,
-    pub message: Option<String>,
-}
-
-impl From<TableLabel> for ExcelLabel {
-    fn from(label: TableLabel) -> Self {
-        Self {
-            location: ExcelLocation::from(label.location),
-            message: label.message,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExcelLocation {
-    pub file: PathBuf,
-    pub sheet: Option<String>,
-    pub row: Option<usize>,
-    pub column: Option<usize>,
-}
-
-impl ExcelLocation {
-    #[must_use]
-    pub fn new(file: impl Into<PathBuf>) -> Self {
-        Self {
-            file: file.into(),
-            sheet: None,
-            row: None,
-            column: None,
-        }
-    }
-
-    #[must_use]
-    pub fn sheet(mut self, sheet: impl Into<String>) -> Self {
-        self.sheet = Some(sheet.into());
-        self
-    }
-
-    #[must_use]
-    pub fn cell(mut self, row: usize, column: usize) -> Self {
-        self.row = Some(row);
-        self.column = Some(column);
-        self
-    }
-
-    #[must_use]
-    pub fn with_row(mut self, row: usize) -> Self {
-        self.row = Some(row);
-        self
-    }
-
-    #[must_use]
-    pub fn with_column(mut self, column: Option<usize>) -> Self {
-        self.column = column;
-        self
-    }
-}
-
-impl From<TableLocation> for ExcelLocation {
-    fn from(location: TableLocation) -> Self {
-        Self {
-            file: location.file,
-            sheet: location.sheet,
-            row: location.row,
-            column: location.column,
-        }
-    }
-}
-
-/// Map a single CFD label (anchored on a record id) to an `ExcelLabel` using
-/// a slice of record origins extracted from input records.
-#[must_use]
-pub fn map_label_with_record_offset(
-    label: &coflow_data_model::CfdLabel,
-    origins: &[RecordOrigin],
-    record_offset: usize,
-) -> Option<ExcelLabel> {
-    let record = label.record?;
-    let local_record = record.index().checked_sub(record_offset)?;
-    let shifted = label_shifted(label, local_record);
-    map_label_to_table(&shifted, origins).map(ExcelLabel::from)
-}
-
-fn label_shifted(
-    label: &coflow_data_model::CfdLabel,
-    new_index: usize,
-) -> coflow_data_model::CfdLabel {
-    coflow_data_model::CfdLabel {
-        record: Some(coflow_data_model::CfdRecordId::from_index(new_index)),
-        path: label.path.clone(),
-        message: label.message.clone(),
-    }
 }
 
 /// Loads configured Excel sources into input records without building a data model.
@@ -479,35 +320,6 @@ fn unsupported_cell_diagnostic(location: ExcelLocation, kind: &str) -> ExcelDiag
     )
 }
 
-fn table_code_to_excel(code: &str) -> String {
-    code.strip_prefix("TABLE-").map_or_else(
-        || code.to_string(),
-        |suffix| match suffix {
-            "TYPE" => "EXCEL-TYPE".to_string(),
-            "ID" => "EXCEL-ID".to_string(),
-            "SHEET" => "EXCEL-SHEET".to_string(),
-            "COLUMN" => "EXCEL-COLUMN".to_string(),
-            other => format!("EXCEL-{other}"),
-        },
-    )
-}
-
-fn table_stage_to_excel(stage: &str) -> String {
-    if stage == "TABLE" {
-        "EXCEL".to_string()
-    } else {
-        stage.to_string()
-    }
-}
-
-fn table_message_to_excel(message: &str) -> String {
-    if message == "record key cell is empty" {
-        "empty id cell".to_string()
-    } else {
-        message.to_string()
-    }
-}
-
 fn is_whole_float(value: f64) -> bool {
     value.is_finite() && value.fract().abs() < f64::EPSILON
 }
@@ -642,43 +454,6 @@ fn is_excel_path(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| EXCEL_LOADER_DESCRIPTOR.extensions.contains(&ext))
-}
-
-fn excel_diagnostics_to_api(err: ExcelDiagnostics) -> DiagnosticSet {
-    DiagnosticSet {
-        diagnostics: err
-            .diagnostics
-            .into_iter()
-            .map(excel_diagnostic_to_api)
-            .collect(),
-    }
-}
-
-fn excel_diagnostic_to_api(diagnostic: ExcelDiagnostic) -> Diagnostic {
-    Diagnostic {
-        code: diagnostic.code,
-        stage: diagnostic.stage,
-        severity: coflow_api::Severity::Error,
-        message: diagnostic.message,
-        primary: diagnostic.primary.map(excel_label_to_api),
-        related: diagnostic
-            .related
-            .into_iter()
-            .map(excel_label_to_api)
-            .collect(),
-    }
-}
-
-fn excel_label_to_api(label: ExcelLabel) -> Label {
-    Label {
-        location: SourceLocation::TableCell {
-            path: label.location.file,
-            sheet: label.location.sheet,
-            row: label.location.row.unwrap_or(1),
-            column: label.location.column.unwrap_or(1),
-        },
-        message: label.message,
-    }
 }
 
 #[cfg(test)]

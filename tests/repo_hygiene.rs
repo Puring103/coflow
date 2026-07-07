@@ -460,6 +460,8 @@ fn table_provider_algorithms_are_not_reexported_by_excel_loader() {
 fn excel_loader_options_do_not_live_in_lib_rs() {
     let lib =
         std::fs::read_to_string("crates/coflow-loader-excel/src/lib.rs").expect("read excel lib");
+    let diagnostics = std::fs::read_to_string("crates/coflow-loader-excel/src/diagnostics.rs")
+        .expect("read excel diagnostics");
     let options = std::fs::read_to_string("crates/coflow-loader-excel/src/options.rs")
         .expect("read excel options parser");
 
@@ -475,6 +477,25 @@ fn excel_loader_options_do_not_live_in_lib_rs() {
         assert!(
             !lib.contains(expected),
             "Excel option parser item `{expected}` should not live in lib.rs"
+        );
+    }
+    for expected in [
+        "pub struct ExcelDiagnostics",
+        "pub struct ExcelDiagnostic",
+        "pub struct ExcelLabel",
+        "pub struct ExcelLocation",
+        "pub fn map_label_with_record_offset",
+        "pub(crate) fn excel_diagnostics_to_api",
+        "fn table_code_to_excel",
+        "fn excel_label_to_api",
+    ] {
+        assert!(
+            diagnostics.contains(expected),
+            "Excel diagnostic item `{expected}` should live in diagnostics.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "Excel diagnostic item `{expected}` should not live in lib.rs"
         );
     }
     assert!(
