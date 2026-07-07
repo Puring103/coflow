@@ -124,7 +124,7 @@ where
 }
 
 struct Exporter<'a, E> {
-    schema: SchemaView,
+    schema: CftSchemaView,
     model: &'a CfdDataModel,
     encoder: &'a mut E,
 }
@@ -135,7 +135,7 @@ where
 {
     fn new(schema: &'a CftContainer, model: &'a CfdDataModel, encoder: &'a mut E) -> Self {
         Self {
-            schema: SchemaView::new(schema),
+            schema: CftSchemaView::new(schema),
             model,
             encoder,
         }
@@ -145,7 +145,6 @@ where
         let mut out = BTreeMap::new();
         let table_names = self
             .schema
-            .cft
             .types
             .values()
             .filter(|schema_type| !schema_type.is_abstract)
@@ -222,7 +221,16 @@ where
             ));
         }
 
-        let fields = self.schema.full_fields(object.actual_type())?.to_vec();
+        let fields = self
+            .schema
+            .full_fields(object.actual_type())
+            .ok_or_else(|| {
+                ExportError::new(format!(
+                    "unknown CFT type `{}` during export",
+                    object.actual_type()
+                ))
+            })?
+            .to_vec();
         for field in &fields {
             let value = object.fields().get(&field.name).ok_or_else(|| {
                 ExportError::new(format!(
@@ -334,53 +342,6 @@ where
 enum TypeTagMode {
     Never,
     WhenPolymorphic,
-}
-
-struct SchemaView {
-    cft: CftSchemaView,
-    children_by_parent: BTreeMap<String, Vec<String>>,
-}
-
-impl SchemaView {
-    fn new(schema: &CftContainer) -> Self {
-        let cft = CftSchemaView::new(schema);
-        let mut children_by_parent = BTreeMap::<String, Vec<String>>::new();
-        for schema_type in cft.types.values() {
-            if let Some(parent) = &schema_type.parent {
-                children_by_parent
-                    .entry(parent.clone())
-                    .or_default()
-                    .push(schema_type.name.clone());
-            }
-        }
-        Self {
-            cft,
-            children_by_parent,
-        }
-    }
-
-    fn full_fields(&self, type_name: &str) -> Result<&[CftFieldMeta], ExportError> {
-        self.cft
-            .types
-            .get(type_name)
-            .map(|schema_type| schema_type.all_fields.as_slice())
-            .ok_or_else(|| {
-                ExportError::new(format!("unknown CFT type `{type_name}` during export"))
-            })
-    }
-
-    fn range_is_polymorphic(&self, type_name: &str) -> bool {
-        self.cft
-            .types
-            .get(type_name)
-            .is_some_and(|schema_type| schema_type.is_abstract || self.has_descendants(type_name))
-    }
-
-    fn has_descendants(&self, type_name: &str) -> bool {
-        self.children_by_parent
-            .get(type_name)
-            .is_some_and(|children| !children.is_empty())
-    }
 }
 
 fn dict_key_string(key: &CfdDictKey) -> String {

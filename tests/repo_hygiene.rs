@@ -2049,6 +2049,7 @@ fn exporter_core_schema_projection_uses_cft_schema_view() {
         "schema.resolve_type(",
         "CftSchemaField",
         "struct FieldMeta",
+        "struct SchemaView",
     ] {
         assert!(
             !exporter.contains(forbidden),

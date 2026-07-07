@@ -4,13 +4,14 @@ use crate::{
     CftAnnotation, CftConstValue, CftContainer, CftSchemaCheckBlock, CftSchemaEnum, CftSchemaType,
     CftSchemaTypeRef,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
 pub struct CftSchemaView {
     pub consts: BTreeMap<String, CftConstValue>,
     pub types: BTreeMap<String, CftTypeMeta>,
     pub enums: BTreeMap<String, CftEnumMeta>,
+    children_by_parent: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl CftSchemaView {
@@ -41,10 +42,24 @@ impl CftSchemaView {
             })
             .collect::<BTreeMap<_, _>>();
 
+        let children_by_parent =
+            types
+                .values()
+                .fold(BTreeMap::<String, BTreeSet<String>>::new(), |mut children, ty| {
+                    if let Some(parent) = &ty.parent {
+                        children
+                            .entry(parent.clone())
+                            .or_default()
+                            .insert(ty.name.clone());
+                    }
+                    children
+                });
+
         let mut view = Self {
             consts,
             types,
             enums,
+            children_by_parent,
         };
         view.populate_dimension_checks();
         view
@@ -133,6 +148,27 @@ impl CftSchemaView {
         self.types
             .get(actual_type)
             .and_then(|meta| meta.fields.get(field_name))
+    }
+
+    #[must_use]
+    pub fn full_fields(&self, type_name: &str) -> Option<&[CftFieldMeta]> {
+        self.types
+            .get(type_name)
+            .map(|meta| meta.all_fields.as_slice())
+    }
+
+    #[must_use]
+    pub fn has_descendants(&self, type_name: &str) -> bool {
+        self.children_by_parent
+            .get(type_name)
+            .is_some_and(|children| !children.is_empty())
+    }
+
+    #[must_use]
+    pub fn range_is_polymorphic(&self, type_name: &str) -> bool {
+        self.types
+            .get(type_name)
+            .is_some_and(|meta| meta.is_abstract || self.has_descendants(type_name))
     }
 
     #[must_use]
