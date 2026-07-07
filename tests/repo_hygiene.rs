@@ -257,6 +257,33 @@ fn table_provider_algorithms_are_not_reexported_by_excel_loader() {
 }
 
 #[test]
+fn excel_loader_options_do_not_live_in_lib_rs() {
+    let lib =
+        std::fs::read_to_string("crates/coflow-loader-excel/src/lib.rs").expect("read excel lib");
+    let options = std::fs::read_to_string("crates/coflow-loader-excel/src/options.rs")
+        .expect("read excel options parser");
+
+    for expected in [
+        "pub(super) fn excel_sheets_from_options",
+        "fn excel_sheet_from_value",
+        "fn optional_string_field",
+    ] {
+        assert!(
+            options.contains(expected),
+            "Excel option parser item `{expected}` should live in options.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "Excel option parser item `{expected}` should not live in lib.rs"
+        );
+    }
+    assert!(
+        lib.lines().count() < 800,
+        "coflow-loader-excel lib.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
 fn csv_dimension_source_sync_does_not_live_in_writer_rs() {
     let writer =
         std::fs::read_to_string("crates/coflow-loader-csv/src/writer.rs").expect("read csv writer");
