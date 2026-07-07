@@ -1986,6 +1986,30 @@ fn lsp_completion_helpers_do_not_live_in_lib_rs() {
 }
 
 #[test]
+fn lsp_hover_helpers_do_not_live_in_lib_rs() {
+    let lib = std::fs::read_to_string("crates/coflow-lsp/src/lib.rs").expect("read lsp lib");
+    let hover =
+        std::fs::read_to_string("crates/coflow-lsp/src/hover.rs").expect("read lsp hover");
+
+    for expected in [
+        "pub(crate) fn hover_at",
+        "fn type_hover_text",
+        "fn const_value_to_string",
+        "fn hover_response",
+        "fn annotation_at",
+    ] {
+        assert!(
+            hover.contains(expected),
+            "LSP hover helper `{expected}` should live in hover.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "LSP hover helper `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn lsp_semantic_token_helpers_do_not_live_in_lib_rs() {
     let lib = std::fs::read_to_string("crates/coflow-lsp/src/lib.rs").expect("read lsp lib");
     let semantic_tokens = std::fs::read_to_string("crates/coflow-lsp/src/semantic_tokens.rs")
