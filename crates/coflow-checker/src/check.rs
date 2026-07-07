@@ -4,6 +4,7 @@ mod builtin_values;
 mod builtins;
 mod deps;
 mod diagnostics;
+mod dimensions;
 mod enum_values;
 mod evaluator;
 mod explanations;

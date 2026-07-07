@@ -1079,6 +1079,28 @@ fn checker_type_predicate_helpers_do_not_live_in_evaluator_rs() {
 }
 
 #[test]
+fn checker_dimension_variant_helpers_do_not_live_in_evaluator_rs() {
+    let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
+        .expect("read checker evaluator");
+    let dimensions = std::fs::read_to_string("crates/coflow-checker/src/check/dimensions.rs")
+        .expect("read checker dimension helpers");
+
+    assert!(
+        dimensions.contains("pub(super) fn apply_dimension_variant"),
+        "checker dimension variant helper should live in check/dimensions.rs"
+    );
+    assert!(
+        !evaluator.contains("dimension_field_value(")
+            && !evaluator.contains("dimension_lookup_error_message"),
+        "checker evaluator should not own dimension variant lookup details"
+    );
+    assert!(
+        evaluator.lines().count() < 800,
+        "checker evaluator.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
 fn checker_index_access_does_not_live_in_evaluator_rs() {
     let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
         .expect("read checker evaluator");

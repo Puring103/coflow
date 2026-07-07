@@ -4,9 +4,10 @@ use super::builtin_values;
 use super::builtins::Builtin;
 use super::deps::DependencyCollector;
 use super::diagnostics::{
-    dimension_lookup_error_message, format_cfd_path_for_message, format_value_for_message,
-    one_line_message, render_expr, render_stmt, CheckExplanation,
+    format_cfd_path_for_message, format_value_for_message, one_line_message, render_expr,
+    render_stmt, CheckExplanation,
 };
+use super::dimensions::{self, DimensionVariantAbort};
 use super::enum_values;
 use super::explanations::{self, ValueExprEvaluator};
 use super::fields;
@@ -137,61 +138,30 @@ impl<'a> CheckEvaluator<'a> {
         field_name: &str,
         located: &mut LocatedCheckValue,
     ) -> EvalResult<()> {
-        let Some(context) = self.dimension_context.as_ref() else {
-            return Ok(());
-        };
-        if !matches!(record, CheckRecordRef::Top(_)) {
-            return Ok(());
-        }
-        let context_dimension = context.dimension.clone();
-        let Some(variant) = context.variant.clone() else {
-            return Ok(());
-        };
-        let Some(actual_type) = record.actual_type(self.model) else {
-            return Ok(());
-        };
-        let Some(field) = self.schema.dimension_field(actual_type, field_name) else {
-            return Ok(());
-        };
-        if field.dimension != context_dimension {
-            return Ok(());
-        }
-        let CheckRecordRef::Top(source_record_id) = record else {
-            return Ok(());
-        };
-        let resolved = match self.model.dimension_field_value(
+        match dimensions::apply_dimension_variant(
+            self.schema,
             self.source_schema,
-            *source_record_id,
-            field_name,
-            &context_dimension,
-            &variant,
-        ) {
-            Ok(resolved) => resolved,
-            Err(err) => {
-                self.diag_at(
-                    CfdErrorCode::CheckEvalTypeError,
-                    located.path.clone(),
-                    dimension_lookup_error_message(actual_type, field_name, &variant, err),
-                );
-                return Err(EvalAbort::Error);
-            }
-        };
-        if let Some(record_id) = resolved.record {
-            self.note_read_from(record_id);
-        }
-        let path = located.path.clone();
-        located.value = CheckValue::from_cfd_value_with_path(
-            resolved.value,
-            resolved.field_type.as_ref(),
-            path.clone(),
             self.model,
-            resolved.record,
-        );
-        if matches!(located.value, CheckValue::Null) {
-            return Err(EvalAbort::Skipped);
+            self.dimension_context.as_ref(),
+            record,
+            field_name,
+            located,
+        ) {
+            Ok(Some(record_id)) => {
+                self.note_read_from(record_id);
+                Ok(())
+            }
+            Ok(None) => Ok(()),
+            Err(DimensionVariantAbort::Skipped) => Err(EvalAbort::Skipped),
+            Err(DimensionVariantAbort::Error {
+                code,
+                path,
+                message,
+            }) => {
+                self.diag_at(code, path, message);
+                Err(EvalAbort::Error)
+            }
         }
-        located.path = path;
-        Ok(())
     }
 
     pub(super) fn eval_check_block(&mut self, check: &CftSchemaCheckBlock) -> EvalFlow {
