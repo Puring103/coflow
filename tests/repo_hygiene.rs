@@ -1433,6 +1433,8 @@ fn cft_schema_compiler_symbols_are_split_out() {
         .expect("read CFT schema compiler build projection");
     let defaults = std::fs::read_to_string("crates/coflow-cft/src/schema/compiler/defaults.rs")
         .expect("read CFT schema compiler defaults");
+    let types = std::fs::read_to_string("crates/coflow-cft/src/schema/compiler/types.rs")
+        .expect("read CFT schema compiler type validation");
 
     for expected in [
         "pub(super) fn report_dangling_annotations",
@@ -1497,9 +1499,29 @@ fn cft_schema_compiler_symbols_are_split_out() {
             "CFT schema compiler default helper `{expected}` should not live in schema/compiler.rs"
         );
     }
+    for expected in [
+        "pub(super) fn validate_type_headers",
+        "pub(super) fn validate_field_shapes",
+        "pub(super) fn validate_inheritance",
+        "fn detect_cycle",
+        "pub(super) fn build_full_fields",
+        "pub(super) fn ancestry_chain",
+        "pub(super) fn resolve_field_type",
+        "fn validate_field_type",
+        "pub(super) fn collect_ancestor_fields",
+    ] {
+        assert!(
+            types.contains(expected),
+            "CFT schema compiler type helper `{expected}` should live in schema/compiler/types.rs"
+        );
+        assert!(
+            !compiler.contains(expected),
+            "CFT schema compiler type helper `{expected}` should not live in schema/compiler.rs"
+        );
+    }
     assert!(
-        compiler.lines().count() < 800,
-        "coflow-cft schema/compiler.rs should stay below the 800-line large-module threshold"
+        compiler.lines().count() < 260,
+        "coflow-cft schema/compiler.rs should stay focused on phase orchestration and shared utilities"
     );
 }
 
