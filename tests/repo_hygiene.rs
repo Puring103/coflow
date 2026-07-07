@@ -1573,6 +1573,38 @@ fn checker_statement_execution_does_not_live_in_evaluator_rs() {
 }
 
 #[test]
+fn checker_expression_dispatch_does_not_live_in_evaluator_rs() {
+    let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
+        .expect("read checker evaluator");
+    let expressions = std::fs::read_to_string("crates/coflow-checker/src/check/expressions.rs")
+        .expect("read checker expressions");
+
+    for expected in [
+        "pub(super) fn eval_expr",
+        "fn eval_field_expr",
+        "fn eval_index_expr",
+        "fn eval_is_expr",
+        "fn eval_cmp_chain_expr",
+    ] {
+        assert!(
+            expressions.contains(expected),
+            "checker expression helper `{expected}` should live in check/expressions.rs"
+        );
+    }
+    for forbidden in [
+        "CftSchemaCheckExprKind::Int",
+        "CftSchemaCheckExprKind::Field",
+        "CftSchemaCheckExprKind::Index",
+        "CftSchemaCheckExprKind::CmpChain",
+    ] {
+        assert!(
+            !evaluator.contains(forbidden),
+            "checker evaluator should not own expression dispatch branch `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn checker_field_read_helpers_do_not_live_in_evaluator_rs() {
     let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
         .expect("read checker evaluator");

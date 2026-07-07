@@ -9,16 +9,13 @@ use super::enum_values;
 use super::explanations::ValueExprEvaluator;
 use super::fields;
 use super::ops::{self, OpsResult};
-use super::type_predicates;
 use super::value::{CheckValue, LocatedCheckValue};
 use crate::DimensionCheckContext;
 use coflow_cft::{
-    CftContainer, CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCheckExprKind, CftSchemaCmpOp,
-    CftSchemaUnaryOp, CftSchemaView,
+    CftContainer, CftSchemaBinOp, CftSchemaCheckExpr, CftSchemaCmpOp, CftSchemaUnaryOp,
+    CftSchemaView,
 };
-use coflow_data_model::{
-    CfdDataModel, CfdDiagnostic, CfdEnumValue, CfdErrorCode, CfdPath, CfdRecordId,
-};
+use coflow_data_model::{CfdDataModel, CfdDiagnostic, CfdErrorCode, CfdPath, CfdRecordId};
 use std::collections::BTreeMap;
 
 use super::value::CheckRecordRef;
@@ -128,7 +125,7 @@ impl<'a> CheckEvaluator<'a> {
         })
     }
 
-    fn apply_dimension_variant(
+    pub(super) fn apply_dimension_variant(
         &mut self,
         record: &CheckRecordRef,
         field_name: &str,
@@ -160,92 +157,11 @@ impl<'a> CheckEvaluator<'a> {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
     pub(super) fn eval_expr(&mut self, expr: &CftSchemaCheckExpr) -> EvalResult<LocatedCheckValue> {
-        match &expr.kind {
-            CftSchemaCheckExprKind::Int(value) => {
-                Ok(LocatedCheckValue::value(CheckValue::Int(*value)))
-            }
-            CftSchemaCheckExprKind::Float(value) => {
-                Ok(LocatedCheckValue::value(CheckValue::Float(*value)))
-            }
-            CftSchemaCheckExprKind::Bool(value) => {
-                Ok(LocatedCheckValue::value(CheckValue::Bool(*value)))
-            }
-            CftSchemaCheckExprKind::Null => Ok(LocatedCheckValue::value(CheckValue::Null)),
-            CftSchemaCheckExprKind::String(value) => {
-                Ok(LocatedCheckValue::value(CheckValue::String(value.clone())))
-            }
-            CftSchemaCheckExprKind::Name(name) => self.eval_name(name),
-            CftSchemaCheckExprKind::Field { expr: inner, name } => {
-                if let CftSchemaCheckExprKind::Name(enum_name) = &inner.kind {
-                    if let Some(enum_value) = self.schema.enum_variant_value(enum_name, name) {
-                        return Ok(LocatedCheckValue::value(CheckValue::Enum(CfdEnumValue {
-                            enum_name: enum_name.clone(),
-                            variant: Some(name.clone()),
-                            value: enum_value,
-                        })));
-                    }
-                }
-                let target = self.eval_expr(inner)?;
-                self.eval_field(target, name)
-            }
-            CftSchemaCheckExprKind::Index { expr: inner, index } => {
-                let target = self.eval_expr(inner)?;
-                let index = self.eval_expr(index)?;
-                let result = self.eval_index(target, index)?;
-                if let CheckValue::Record(CheckRecordRef::Top(id)) = &result.value {
-                    self.note_read_from(*id);
-                }
-                Ok(result)
-            }
-            CftSchemaCheckExprKind::Is {
-                expr: inner,
-                predicate,
-            } => {
-                let value = self.eval_expr(inner)?;
-                Ok(LocatedCheckValue::new(
-                    CheckValue::Bool(type_predicates::value_matches_predicate(
-                        self.schema,
-                        self.model,
-                        &value.value,
-                        predicate,
-                    )),
-                    value.path,
-                ))
-            }
-            CftSchemaCheckExprKind::Call { name, args } => self.eval_call(name, args),
-            CftSchemaCheckExprKind::MethodCall {
-                receiver,
-                name,
-                args,
-            } => self.eval_method_call(receiver, name, args),
-            CftSchemaCheckExprKind::BinOp { op, lhs, rhs } => self.eval_bin_op(*op, lhs, rhs),
-            CftSchemaCheckExprKind::Unary { op, expr: inner } => {
-                let value = self.eval_expr(inner)?;
-                self.eval_unary(*op, value)
-            }
-            CftSchemaCheckExprKind::CmpChain { first, rest } => {
-                let mut lhs = self.eval_expr(first)?;
-                for (op, rhs_expr) in rest {
-                    let rhs = self.eval_expr(rhs_expr)?;
-                    let path = lhs.path.clone().or_else(|| rhs.path.clone());
-                    if !self.from_ops(ops::compare(
-                        *op,
-                        &lhs.value,
-                        &rhs.value,
-                        rhs.path.clone(),
-                    ))? {
-                        return Ok(LocatedCheckValue::new(CheckValue::Bool(false), path));
-                    }
-                    lhs = rhs;
-                }
-                Ok(LocatedCheckValue::value(CheckValue::Bool(true)))
-            }
-        }
+        super::expressions::eval_expr(self, expr)
     }
 
-    fn eval_name(&mut self, name: &str) -> EvalResult<LocatedCheckValue> {
+    pub(super) fn eval_name(&mut self, name: &str) -> EvalResult<LocatedCheckValue> {
         for scope in self.scopes.iter().rev() {
             if let Some(value) = scope.get(name) {
                 return Ok(value.clone());
@@ -282,7 +198,7 @@ impl<'a> CheckEvaluator<'a> {
         Err(EvalAbort::Error)
     }
 
-    fn eval_field(
+    pub(super) fn eval_field(
         &mut self,
         target: LocatedCheckValue,
         name: &str,
@@ -308,7 +224,7 @@ impl<'a> CheckEvaluator<'a> {
         Ok(result)
     }
 
-    fn eval_index(
+    pub(super) fn eval_index(
         &mut self,
         target: LocatedCheckValue,
         index: LocatedCheckValue,
@@ -316,7 +232,7 @@ impl<'a> CheckEvaluator<'a> {
         self.from_ops(access::index_value(target, index))
     }
 
-    fn eval_call(
+    pub(super) fn eval_call(
         &mut self,
         name: &str,
         args: &[CftSchemaCheckExpr],
@@ -351,7 +267,7 @@ impl<'a> CheckEvaluator<'a> {
         }
     }
 
-    fn eval_builtin_call(
+    pub(super) fn eval_builtin_call(
         &mut self,
         builtin: Builtin,
         args: &[CftSchemaCheckExpr],
@@ -398,7 +314,7 @@ impl<'a> CheckEvaluator<'a> {
         }
     }
 
-    fn eval_method_call(
+    pub(super) fn eval_method_call(
         &mut self,
         receiver: &CftSchemaCheckExpr,
         name: &str,
@@ -436,7 +352,7 @@ impl<'a> CheckEvaluator<'a> {
         }
     }
 
-    fn resolve_call_signature<T>(
+    pub(super) fn resolve_call_signature<T>(
         &mut self,
         result: Result<T, CallSignatureError>,
     ) -> EvalResult<T> {
@@ -456,7 +372,7 @@ impl<'a> CheckEvaluator<'a> {
         }
     }
 
-    fn eval_min_max(
+    pub(super) fn eval_min_max(
         &mut self,
         builtin: Builtin,
         args: &[CftSchemaCheckExpr],
@@ -465,7 +381,7 @@ impl<'a> CheckEvaluator<'a> {
         self.eval_min_max_value(builtin, arg_value)
     }
 
-    fn eval_min_max_value(
+    pub(super) fn eval_min_max_value(
         &mut self,
         builtin: Builtin,
         arg_value: LocatedCheckValue,
@@ -473,16 +389,22 @@ impl<'a> CheckEvaluator<'a> {
         self.from_ops(builtin_values::min_max_value(builtin, arg_value))
     }
 
-    fn eval_sum(&mut self, args: &[CftSchemaCheckExpr]) -> EvalResult<LocatedCheckValue> {
+    pub(super) fn eval_sum(
+        &mut self,
+        args: &[CftSchemaCheckExpr],
+    ) -> EvalResult<LocatedCheckValue> {
         let arg_value = self.eval_expr(&args[0])?;
         self.eval_sum_value(arg_value)
     }
 
-    fn eval_sum_value(&mut self, arg_value: LocatedCheckValue) -> EvalResult<LocatedCheckValue> {
+    pub(super) fn eval_sum_value(
+        &mut self,
+        arg_value: LocatedCheckValue,
+    ) -> EvalResult<LocatedCheckValue> {
         self.from_ops(builtin_values::sum_value(arg_value))
     }
 
-    fn eval_unary(
+    pub(super) fn eval_unary(
         &mut self,
         op: CftSchemaUnaryOp,
         value: LocatedCheckValue,
@@ -491,7 +413,7 @@ impl<'a> CheckEvaluator<'a> {
     }
 
     #[allow(clippy::similar_names)]
-    fn eval_bin_op(
+    pub(super) fn eval_bin_op(
         &mut self,
         op: CftSchemaBinOp,
         lhs: &CftSchemaCheckExpr,
