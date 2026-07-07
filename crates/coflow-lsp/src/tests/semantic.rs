@@ -4,10 +4,12 @@ use crate::diagnostics::lsp_range;
 use crate::document_symbols::document_symbols;
 use crate::semantic_tokens::{
     comment_start_in_line, encode_semantic_tokens, push_semantic_span, push_semantic_span_plain,
-    RawSemanticToken, MOD_DECLARATION, MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_NAMESPACE,
-    SEM_OPERATOR, SEM_PROPERTY, SEM_STRING, SEM_TYPE, SEM_VARIABLE,
+    semantic_raw_tokens, semantic_token_data, RawSemanticToken, MOD_DECLARATION, MOD_PATH,
+    MOD_RECORD, MOD_REFERENCE, MOD_SCHEMA, SEM_NAMESPACE, SEM_OPERATOR, SEM_PROPERTY, SEM_STRING,
+    SEM_TYPE, SEM_VARIABLE,
 };
 use crate::uri::{hex_value, percent_decode};
+use coflow_cft::Span;
 
 #[test]
 fn semantic_range_helpers_ignore_empty_multiline_and_overlapping_tokens() {

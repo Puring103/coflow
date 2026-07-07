@@ -2028,6 +2028,16 @@ fn lsp_semantic_token_helpers_do_not_live_in_lib_rs() {
         "pub(crate) fn encode_semantic_tokens",
         "pub(crate) fn add_comment_semantic_tokens",
         "pub(crate) fn comment_start_in_line",
+        "pub(crate) fn semantic_token_data",
+        "fn semantic_raw_tokens",
+        "fn add_lex_semantic_token",
+        "fn add_ast_semantic_tokens",
+        "fn add_annotation_semantic",
+        "fn add_type_ref_semantic",
+        "fn add_const_literal_semantic",
+        "fn add_default_expr_semantic",
+        "fn add_check_stmt_semantic",
+        "fn add_check_expr_semantic",
     ] {
         assert!(
             semantic_tokens.contains(expected),
