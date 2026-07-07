@@ -2,6 +2,7 @@ use crate::model::{CfdDictKey, CfdDomainId, CfdDomainIndex, CfdInputValue, CfdTy
 use crate::origin::RecordOrigin;
 use coflow_cft::{
     CftAnnotationValue, CftContainer, CftSchemaDefaultValue, CftSchemaTypeRef, CftSchemaView,
+    CftTypeMeta,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -54,8 +55,9 @@ pub(crate) enum CfdValueDraft {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SchemaView {
-    pub(crate) types: BTreeMap<String, TypeMeta>,
+    pub(crate) types: BTreeMap<String, CftTypeMeta>,
     pub(crate) enums: BTreeMap<String, EnumMeta>,
+    fields: BTreeMap<String, Vec<FieldMeta>>,
     children: BTreeMap<String, BTreeSet<String>>,
     dimension_storage_types: BTreeMap<DimensionStorageKey, String>,
     domain_index: CfdDomainIndex,
@@ -77,17 +79,24 @@ impl SchemaView {
             })
             .collect::<BTreeMap<_, _>>();
 
-        let mut types = BTreeMap::new();
+        let types = cft_view.types.clone();
+        let mut fields = BTreeMap::new();
         let mut children = BTreeMap::<String, BTreeSet<String>>::new();
         for schema_type in cft_view.types.values() {
-            let meta = TypeMeta::from_schema_view(&cft_view, schema_type);
-            if let Some(parent) = &meta.parent {
+            if let Some(parent) = &schema_type.parent {
                 children
                     .entry(parent.clone())
                     .or_default()
-                    .insert(meta.name.clone());
+                    .insert(schema_type.name.clone());
             }
-            types.insert(meta.name.clone(), meta);
+            fields.insert(
+                schema_type.name.clone(),
+                schema_type
+                    .all_fields
+                    .iter()
+                    .map(|field| FieldMeta::from_schema_view(&cft_view, field))
+                    .collect(),
+            );
         }
 
         let domain_index = Self::build_domain_index(&types);
@@ -96,6 +105,7 @@ impl SchemaView {
         Self {
             types,
             enums,
+            fields,
             children,
             dimension_storage_types,
             domain_index,
@@ -144,14 +154,13 @@ impl SchemaView {
     }
 
     pub(crate) fn field_meta(&self, type_name: &str, field_name: &str) -> Option<&FieldMeta> {
-        self.types
+        self.fields
             .get(type_name)?
-            .fields
             .iter()
             .find(|field| field.name == field_name)
     }
 
-    fn build_domain_index(types: &BTreeMap<String, TypeMeta>) -> CfdDomainIndex {
+    fn build_domain_index(types: &BTreeMap<String, CftTypeMeta>) -> CfdDomainIndex {
         let type_names = types.keys().cloned().collect::<Vec<_>>();
         let type_id_by_name = type_names
             .iter()
@@ -186,7 +195,7 @@ impl SchemaView {
         )
     }
 
-    fn domain_root_name(types: &BTreeMap<String, TypeMeta>, type_name: &str) -> String {
+    fn domain_root_name(types: &BTreeMap<String, CftTypeMeta>, type_name: &str) -> String {
         let mut current = type_name;
         while let Some(parent) = types.get(current).and_then(|meta| meta.parent.as_deref()) {
             current = parent;
@@ -195,7 +204,7 @@ impl SchemaView {
     }
 
     fn ancestor_type_ids(
-        types: &BTreeMap<String, TypeMeta>,
+        types: &BTreeMap<String, CftTypeMeta>,
         type_id_by_name: &BTreeMap<String, CfdTypeId>,
         type_name: &str,
     ) -> Vec<CfdTypeId> {
@@ -211,7 +220,7 @@ impl SchemaView {
     }
 
     pub(crate) fn full_fields(&self, type_name: &str) -> &[FieldMeta] {
-        self.types.get(type_name).map_or(&[], |meta| &meta.fields)
+        self.fields.get(type_name).map_or(&[], Vec::as_slice)
     }
 
     pub(crate) fn is_assignable(&self, actual_type: &str, expected_type: &str) -> bool {
@@ -254,7 +263,7 @@ impl SchemaView {
             .copied()
     }
 
-    pub(crate) fn singleton_types(&self) -> impl Iterator<Item = &TypeMeta> {
+    pub(crate) fn singleton_types(&self) -> impl Iterator<Item = &CftTypeMeta> {
         self.types.values().filter(|meta| meta.is_singleton)
     }
 
@@ -279,40 +288,6 @@ struct DimensionStorageKey {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct TypeMeta {
-    pub(crate) name: String,
-    pub(crate) parent: Option<String>,
-    pub(crate) is_abstract: bool,
-    pub(crate) is_singleton: bool,
-    fields: Vec<FieldMeta>,
-}
-
-impl TypeMeta {
-    fn from_schema_view(schema: &CftSchemaView, schema_type: &coflow_cft::CftTypeMeta) -> Self {
-        Self {
-            name: schema_type.name.clone(),
-            parent: schema_type.parent.clone(),
-            is_abstract: schema_type.is_abstract,
-            is_singleton: schema_type.is_singleton,
-            fields: schema_type
-                .all_fields
-                .iter()
-                .map(|field| {
-                    FieldMeta::from_schema_view(
-                        schema,
-                        field,
-                        schema_type
-                            .dimension_fields
-                            .get(&field.name)
-                            .map(|dimension| dimension.dimension.clone()),
-                    )
-                })
-                .collect(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
 pub(crate) struct FieldMeta {
     pub(crate) name: String,
     pub(crate) ty: CfdType,
@@ -322,17 +297,13 @@ pub(crate) struct FieldMeta {
 }
 
 impl FieldMeta {
-    fn from_schema_view(
-        schema: &CftSchemaView,
-        field: &coflow_cft::CftFieldMeta,
-        dimension: Option<String>,
-    ) -> Self {
+    fn from_schema_view(schema: &CftSchemaView, field: &coflow_cft::CftFieldMeta) -> Self {
         Self {
             name: field.name.clone(),
             ty: CfdType::from_schema(&field.ty_ref, schema),
             ty_ref: field.ty_ref.clone(),
             default: field.default.clone(),
-            dimension,
+            dimension: field.dimension.as_ref().map(|dimension| dimension.dimension.clone()),
         }
     }
 }

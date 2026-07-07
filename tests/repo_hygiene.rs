@@ -1265,9 +1265,14 @@ fn data_model_schema_projection_uses_cft_schema_view() {
         schema_view.contains("CftSchemaView::new(schema)"),
         "data-model schema projection should be built from coflow-cft CftSchemaView"
     );
+    assert!(
+        schema_view.contains("CftTypeMeta"),
+        "data-model schema view should reuse coflow-cft type metadata instead of local type metadata"
+    );
     for forbidden in [
         "schema.all_types()",
         "schema.all_enums()",
+        "pub(crate) struct TypeMeta",
         "CftSchemaType,",
         "CftSchemaEnum,",
         "CftSchemaField,",
