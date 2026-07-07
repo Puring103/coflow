@@ -4,15 +4,16 @@ use super::diagnostics::{
     format_value_for_message, one_line_message, render_expr, render_stmt, type_ref_is_float,
     unary_op_str, CheckExplanation,
 };
+use super::ops::{self, OpsResult};
 use super::value::{
     comparable_key, dict_key_from_check_value, format_check_key_for_path, values_equal, CheckValue,
     LocatedCheckValue,
 };
 use crate::DimensionCheckContext;
 use coflow_cft::{
-    CftContainer, CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr,
-    CftSchemaCheckExprKind, CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind,
-    CftSchemaTypePredicate, CftSchemaTypeRef, CftSchemaUnaryOp, CftSchemaView,
+    CftContainer, CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
+    CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind, CftSchemaTypePredicate,
+    CftSchemaTypeRef, CftSchemaUnaryOp, CftSchemaView,
 };
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdEnumValue, CfdErrorCode, CfdPath, CfdRecordId,
@@ -103,6 +104,14 @@ impl<'a> CheckEvaluator<'a> {
             }
         }
         self.reads_from.insert(target);
+    }
+
+    fn from_ops<T>(&mut self, result: OpsResult<T>) -> EvalResult<T> {
+        result.map_err(|err| {
+            let (code, path, message) = err.into_parts();
+            self.diag_at(code, path, message);
+            EvalAbort::Error
+        })
     }
 
     fn apply_dimension_variant(
@@ -454,7 +463,12 @@ impl<'a> CheckEvaluator<'a> {
                 for (op, rhs_expr) in rest {
                     let rhs = self.eval_expr(rhs_expr)?;
                     let path = lhs.path.clone().or_else(|| rhs.path.clone());
-                    if !self.compare(*op, &lhs.value, &rhs.value, rhs.path.clone())? {
+                    if !self.from_ops(ops::compare(
+                        *op,
+                        &lhs.value,
+                        &rhs.value,
+                        rhs.path.clone(),
+                    ))? {
                         let detail = format!(
                             "{} {} {}",
                             format_value_for_message(&lhs.value),
@@ -742,7 +756,7 @@ impl<'a> CheckEvaluator<'a> {
                 .or_else(|| rhs.path.clone())
                 .or_else(|| fallback_path.clone());
             if !self
-                .compare(*op, &lhs.value, &rhs.value, rhs.path.clone())
+                .from_ops(ops::compare(*op, &lhs.value, &rhs.value, rhs.path.clone()))
                 .ok()?
             {
                 let null_predicate =
@@ -887,7 +901,12 @@ impl<'a> CheckEvaluator<'a> {
                 for (op, rhs_expr) in rest {
                     let rhs = self.eval_expr(rhs_expr)?;
                     let path = lhs.path.clone().or_else(|| rhs.path.clone());
-                    if !self.compare(*op, &lhs.value, &rhs.value, rhs.path.clone())? {
+                    if !self.from_ops(ops::compare(
+                        *op,
+                        &lhs.value,
+                        &rhs.value,
+                        rhs.path.clone(),
+                    ))? {
                         return Ok(LocatedCheckValue::new(CheckValue::Bool(false), path));
                     }
                     lhs = rhs;
@@ -1600,7 +1619,7 @@ impl<'a> CheckEvaluator<'a> {
             return Err(EvalAbort::Error);
         };
         for item in non_null_items {
-            let ord = self.compare_order(&out, item, arg_value.path.clone())?;
+            let ord = self.from_ops(ops::compare_order(&out, item, arg_value.path.clone()))?;
             if (builtin == Builtin::Min && ord.is_gt()) || (builtin == Builtin::Max && ord.is_lt())
             {
                 out = item.clone();
@@ -1737,11 +1756,11 @@ impl<'a> CheckEvaluator<'a> {
             (CftSchemaUnaryOp::Not, CheckValue::Bool(value)) => {
                 Ok(LocatedCheckValue::new(CheckValue::Bool(!value), path))
             }
-            (CftSchemaUnaryOp::Neg, CheckValue::Int(value)) => self.checked_int(
+            (CftSchemaUnaryOp::Neg, CheckValue::Int(value)) => self.from_ops(ops::checked_int(
                 value.checked_neg(),
                 path,
                 format!("整数取负溢出: -({value})"),
-            ),
+            )),
             (CftSchemaUnaryOp::Neg, CheckValue::Float(value)) => {
                 Ok(LocatedCheckValue::new(CheckValue::Float(-value), path))
             }
@@ -1873,66 +1892,74 @@ impl<'a> CheckEvaluator<'a> {
             return Err(EvalAbort::Error);
         }
         match (op, lhs, rhs) {
-            (CftSchemaBinOp::Add, CheckValue::Int(lhs), CheckValue::Int(rhs)) => self.checked_int(
-                lhs.checked_add(rhs),
-                path,
-                format!("整数加法溢出: {lhs} + {rhs}"),
-            ),
-            (CftSchemaBinOp::Sub, CheckValue::Int(lhs), CheckValue::Int(rhs)) => self.checked_int(
-                lhs.checked_sub(rhs),
-                path,
-                format!("整数减法溢出: {lhs} - {rhs}"),
-            ),
-            (CftSchemaBinOp::Mul, CheckValue::Int(lhs), CheckValue::Int(rhs)) => self.checked_int(
-                lhs.checked_mul(rhs),
-                path,
-                format!("整数乘法溢出: {lhs} * {rhs}"),
-            ),
-            (CftSchemaBinOp::Div, CheckValue::Int(lhs), CheckValue::Int(rhs)) => self.checked_int(
-                lhs.checked_div(rhs),
-                path,
-                format!("整数除法失败: {lhs} / {rhs}"),
-            ),
-            (CftSchemaBinOp::IntDiv, CheckValue::Int(lhs), CheckValue::Int(rhs)) => self
-                .checked_int(
+            (CftSchemaBinOp::Add, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
+                self.from_ops(ops::checked_int(
+                    lhs.checked_add(rhs),
+                    path,
+                    format!("整数加法溢出: {lhs} + {rhs}"),
+                ))
+            }
+            (CftSchemaBinOp::Sub, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
+                self.from_ops(ops::checked_int(
+                    lhs.checked_sub(rhs),
+                    path,
+                    format!("整数减法溢出: {lhs} - {rhs}"),
+                ))
+            }
+            (CftSchemaBinOp::Mul, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
+                self.from_ops(ops::checked_int(
+                    lhs.checked_mul(rhs),
+                    path,
+                    format!("整数乘法溢出: {lhs} * {rhs}"),
+                ))
+            }
+            (CftSchemaBinOp::Div, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
+                self.from_ops(ops::checked_int(
+                    lhs.checked_div(rhs),
+                    path,
+                    format!("整数除法失败: {lhs} / {rhs}"),
+                ))
+            }
+            (CftSchemaBinOp::IntDiv, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
+                self.from_ops(ops::checked_int(
                     lhs.checked_div(rhs),
                     path,
                     format!("整数整除失败: {lhs} // {rhs}"),
-                ),
-            (CftSchemaBinOp::Mod, CheckValue::Int(lhs), CheckValue::Int(rhs)) => self.checked_int(
-                lhs.checked_rem(rhs),
-                path,
-                format!("整数取模失败: {lhs} % {rhs}"),
-            ),
-            (CftSchemaBinOp::Pow, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
-                match rhs.try_into().ok().and_then(|rhs| lhs.checked_pow(rhs)) {
-                    Some(value) => Ok(LocatedCheckValue::new(CheckValue::Int(value), path)),
-                    None => {
-                        self.diag_at(
-                            CfdErrorCode::CheckEvalTypeError,
-                            path,
-                            format!("整数幂运算失败: {lhs} ** {rhs}"),
-                        );
-                        Err(EvalAbort::Error)
-                    }
-                }
+                ))
             }
-            (CftSchemaBinOp::Shl, CheckValue::Int(lhs), CheckValue::Int(rhs)) => self
-                .checked_shift(
+            (CftSchemaBinOp::Mod, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
+                self.from_ops(ops::checked_int(
+                    lhs.checked_rem(rhs),
+                    path,
+                    format!("整数取模失败: {lhs} % {rhs}"),
+                ))
+            }
+            (CftSchemaBinOp::Pow, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
+                let value = rhs.try_into().ok().and_then(|rhs| lhs.checked_pow(rhs));
+                self.from_ops(ops::checked_int(
+                    value,
+                    path,
+                    format!("整数幂运算失败: {lhs} ** {rhs}"),
+                ))
+            }
+            (CftSchemaBinOp::Shl, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
+                self.from_ops(ops::checked_shift(
                     i64::checked_shl,
                     lhs,
                     rhs,
                     path,
                     format!("整数左移失败: {lhs} << {rhs}"),
-                ),
-            (CftSchemaBinOp::Shr, CheckValue::Int(lhs), CheckValue::Int(rhs)) => self
-                .checked_shift(
+                ))
+            }
+            (CftSchemaBinOp::Shr, CheckValue::Int(lhs), CheckValue::Int(rhs)) => {
+                self.from_ops(ops::checked_shift(
                     i64::checked_shr,
                     lhs,
                     rhs,
                     path,
                     format!("整数右移失败: {lhs} >> {rhs}"),
-                ),
+                ))
+            }
             (CftSchemaBinOp::Add, CheckValue::Float(lhs), CheckValue::Float(rhs)) => {
                 Ok(LocatedCheckValue::new(CheckValue::Float(lhs + rhs), path))
             }
@@ -2000,100 +2027,6 @@ impl<'a> CheckEvaluator<'a> {
         }
     }
 
-    fn checked_int(
-        &mut self,
-        value: Option<i64>,
-        path: Option<CfdPath>,
-        message: impl Into<String>,
-    ) -> EvalResult<LocatedCheckValue> {
-        value
-            .map(|value| LocatedCheckValue::new(CheckValue::Int(value), path.clone()))
-            .ok_or_else(|| {
-                self.diag_at(CfdErrorCode::CheckEvalTypeError, path, message);
-                EvalAbort::Error
-            })
-    }
-
-    fn checked_shift(
-        &mut self,
-        op: fn(i64, u32) -> Option<i64>,
-        lhs: i64,
-        rhs: i64,
-        path: Option<CfdPath>,
-        message: impl Into<String>,
-    ) -> EvalResult<LocatedCheckValue> {
-        let Some(rhs) = rhs.try_into().ok() else {
-            self.diag_at(CfdErrorCode::CheckEvalTypeError, path, message);
-            return Err(EvalAbort::Error);
-        };
-        self.checked_int(op(lhs, rhs), path, message)
-    }
-
-    fn compare(
-        &mut self,
-        op: CftSchemaCmpOp,
-        lhs: &CheckValue,
-        rhs: &CheckValue,
-        path: Option<CfdPath>,
-    ) -> EvalResult<bool> {
-        Ok(match op {
-            CftSchemaCmpOp::Eq => values_equal(lhs, rhs),
-            CftSchemaCmpOp::Ne => !values_equal(lhs, rhs),
-            CftSchemaCmpOp::Lt => self.compare_order(lhs, rhs, path)?.is_lt(),
-            CftSchemaCmpOp::Le => !self.compare_order(lhs, rhs, path)?.is_gt(),
-            CftSchemaCmpOp::Gt => self.compare_order(lhs, rhs, path)?.is_gt(),
-            CftSchemaCmpOp::Ge => !self.compare_order(lhs, rhs, path)?.is_lt(),
-        })
-    }
-
-    fn compare_order(
-        &mut self,
-        lhs: &CheckValue,
-        rhs: &CheckValue,
-        path: Option<CfdPath>,
-    ) -> EvalResult<std::cmp::Ordering> {
-        if matches!(lhs, CheckValue::Null) || matches!(rhs, CheckValue::Null) {
-            self.diag_at(
-                CfdErrorCode::CheckNullAccess,
-                path,
-                format!(
-                    "不能对 null 做有序比较: {} cmp {}",
-                    format_value_for_message(lhs),
-                    format_value_for_message(rhs)
-                ),
-            );
-            return Err(EvalAbort::Error);
-        }
-        match (lhs, rhs) {
-            (CheckValue::Int(lhs), CheckValue::Int(rhs)) => Ok(lhs.cmp(rhs)),
-            (CheckValue::Float(lhs), CheckValue::Float(rhs)) => {
-                lhs.partial_cmp(rhs).ok_or_else(|| {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        path,
-                        format!("float 比较失败: {lhs} cmp {rhs}"),
-                    );
-                    EvalAbort::Error
-                })
-            }
-            (CheckValue::Enum(lhs), CheckValue::Enum(rhs)) if lhs.enum_name == rhs.enum_name => {
-                Ok(lhs.value.cmp(&rhs.value))
-            }
-            _ => {
-                self.diag_at(
-                    CfdErrorCode::CheckEvalTypeError,
-                    path,
-                    format!(
-                        "值不可做有序比较: {} cmp {}",
-                        format_value_for_message(lhs),
-                        format_value_for_message(rhs)
-                    ),
-                );
-                Err(EvalAbort::Error)
-            }
-        }
-    }
-
     fn enum_with_value(&self, enum_name: &str, value: i64) -> CfdEnumValue {
         match self.schema.enum_value_from_int(enum_name, value) {
             Some(enum_value) => enum_value.into(),
@@ -2129,4 +2062,3 @@ impl<'a> CheckEvaluator<'a> {
             .push(CfdDiagnostic::error(code, message).with_primary(self.root_record, path));
     }
 }
-

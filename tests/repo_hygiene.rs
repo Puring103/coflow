@@ -689,6 +689,30 @@ fn checker_diagnostic_rendering_does_not_live_in_evaluator_rs() {
 }
 
 #[test]
+fn checker_numeric_ops_do_not_live_in_evaluator_rs() {
+    let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
+        .expect("read checker evaluator");
+    let ops = std::fs::read_to_string("crates/coflow-checker/src/check/ops.rs")
+        .expect("read checker ops");
+
+    for expected in [
+        "pub(super) fn checked_int",
+        "pub(super) fn checked_shift",
+        "pub(super) fn compare",
+        "pub(super) fn compare_order",
+    ] {
+        assert!(
+            ops.contains(expected),
+            "checker operation helper `{expected}` should live in check/ops.rs"
+        );
+        assert!(
+            !evaluator.contains(expected),
+            "checker operation helper `{expected}` should not live in evaluator.rs"
+        );
+    }
+}
+
+#[test]
 fn loaders_do_not_depend_on_checker_runtime_directly() {
     let excel_manifest = std::fs::read_to_string("crates/coflow-loader-excel/Cargo.toml")
         .expect("read excel loader manifest");
