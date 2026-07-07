@@ -372,6 +372,49 @@ fn csharp_codegen_schema_projection_uses_cft_schema_view() {
 }
 
 #[test]
+fn csharp_codegen_emit_type_helpers_do_not_live_in_emit_rs() {
+    let emit =
+        std::fs::read_to_string("crates/coflow-codegen-csharp/src/emit.rs").expect("read C# emit");
+    let identifiers =
+        std::fs::read_to_string("crates/coflow-codegen-csharp/src/emit/identifiers.rs")
+            .expect("read C# emit identifiers");
+    let types = std::fs::read_to_string("crates/coflow-codegen-csharp/src/emit/types.rs")
+        .expect("read C# emit types");
+
+    for expected in [
+        "pub(super) fn field_local_name",
+        "pub(super) fn loader_reserved_local_names",
+        "pub(super) fn plural_records_var",
+        "pub(super) fn context_index_field_name",
+    ] {
+        assert!(
+            identifiers.contains(expected),
+            "C# emit identifier helper `{expected}` should live in emit/identifiers.rs"
+        );
+        assert!(
+            !emit.contains(expected),
+            "C# emit identifier helper `{expected}` should not live in emit.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn csharp_type",
+        "pub(super) fn csharp_field_property_type",
+        "pub(super) fn csharp_property_type",
+        "pub(super) fn default_value_expr",
+        "pub(super) fn collection_default_expr",
+    ] {
+        assert!(
+            types.contains(expected),
+            "C# emit type helper `{expected}` should live in emit/types.rs"
+        );
+        assert!(
+            !emit.contains(expected),
+            "C# emit type helper `{expected}` should not live in emit.rs"
+        );
+    }
+}
+
+#[test]
 fn exporter_core_schema_projection_uses_cft_schema_view() {
     let exporter =
         std::fs::read_to_string("crates/coflow-exporter-core/src/lib.rs").expect("read exporter");

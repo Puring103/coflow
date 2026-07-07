@@ -1,3 +1,6 @@
+mod identifiers;
+mod types;
+
 use crate::ir::CsharpDataFormat;
 use crate::model::{
     CsharpConstructorAssignment, CsharpContextAssignment, CsharpContextField, CsharpContextLookup,
@@ -5,13 +8,20 @@ use crate::model::{
     CsharpLoadField, CsharpLoader, CsharpParameter, CsharpPolymorphicCase, CsharpProperty,
     CsharpTable, CsharpType,
 };
-use crate::names::{
-    camel_case, csharp_ident_error, escape_csharp_string, format_float, has_annotation, pascal_case,
-};
+use crate::names::{camel_case, escape_csharp_string, has_annotation};
 use crate::schema_view::{FieldMeta, FieldType, SchemaView, TypeMeta};
 use crate::CsharpCodegenError;
-use coflow_cft::{CftEnumMeta, CftSchemaDefaultValue};
+use coflow_cft::CftEnumMeta;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+
+use identifiers::{
+    context_index_field_name, csharp_public_member_name, csharp_public_type_name, field_local_name,
+    loader_reserved_local_names, plural_records_var,
+};
+use types::{
+    collection_default_expr, csharp_field_property_type, csharp_property_type, csharp_type,
+    default_value_expr,
+};
 
 pub fn build_csharp_enum(schema_enum: &CftEnumMeta) -> CsharpEnum {
     CsharpEnum {
@@ -735,68 +745,6 @@ fn backing_field_name(property_name: &str, ty: &FieldType, view: &SchemaView) ->
         .map(|_| format!("_{}", camel_case(property_name)))
 }
 
-fn loader_reserved_local_names(ty: &TypeMeta) -> HashSet<String> {
-    let mut out = ty
-        .all_fields
-        .iter()
-        .map(|field| format!("has{}", csharp_public_member_name(&field.name)))
-        .collect::<HashSet<_>>();
-    out.insert("isTable".to_string());
-    out.insert("context".to_string());
-    out
-}
-
-fn field_local_name(
-    field_name: &str,
-    used_names: &mut HashSet<String>,
-) -> Result<String, CsharpCodegenError> {
-    let candidate = camel_case(&pascal_case(field_name));
-    let base_name = if csharp_ident_error(&candidate)
-        .is_some_and(|reason| reason == "identifier is a C# keyword")
-        || is_reserved_loader_local_name(&candidate)
-    {
-        format!("{candidate}Value")
-    } else {
-        candidate
-    };
-    let mut local_name = base_name.clone();
-    let mut suffix = 2;
-    while used_names.contains(&local_name) {
-        local_name = format!("{base_name}{suffix}");
-        suffix += 1;
-    }
-
-    if let Some(reason) = csharp_ident_error(&local_name) {
-        return Err(CsharpCodegenError::new(format!(
-            "invalid C# field local variable name `{local_name}`: {reason}"
-        )));
-    }
-
-    used_names.insert(local_name.clone());
-    Ok(local_name)
-}
-
-fn is_reserved_loader_local_name(value: &str) -> bool {
-    matches!(
-        value,
-        "count"
-            | "context"
-            | "fieldPath"
-            | "i"
-            | "index"
-            | "item"
-            | "key"
-            | "keyPath"
-            | "obj"
-            | "reader"
-            | "result"
-            | "token"
-            | "typeName"
-            | "value"
-            | "valuePath"
-    )
-}
-
 fn read_field_expr(
     field: &FieldMeta,
     obj: &str,
@@ -975,67 +923,6 @@ fn read_messagepack_dict_key_expr(
     }
 }
 
-fn csharp_type(ty: &FieldType, view: &SchemaView) -> String {
-    match ty {
-        FieldType::Int => {
-            if view.int_32 {
-                "int".to_string()
-            } else {
-                "long".to_string()
-            }
-        }
-        FieldType::Float => {
-            if view.float_32 {
-                "float".to_string()
-            } else {
-                "double".to_string()
-            }
-        }
-        FieldType::Bool => "bool".to_string(),
-        FieldType::String => "string".to_string(),
-        FieldType::Type(name) | FieldType::Ref(name) | FieldType::Enum(name) => {
-            view.csharp_named_type(name)
-        }
-        FieldType::Array(inner) => format!("List<{}>", csharp_type(inner, view)),
-        FieldType::Dict(key, value) => {
-            format!(
-                "Dictionary<{}, {}>",
-                csharp_type(key, view),
-                csharp_type(value, view)
-            )
-        }
-        FieldType::Nullable(inner) => format!("{}?", csharp_type(inner, view)),
-    }
-}
-
-/// Property type for a field, with `Localized<T>` wrapping when the field is
-/// `@localized`. The wrapping is applied around the same type the field would
-/// normally receive (including `IReadOnlyList<T>` / `IReadOnlyDictionary<...>`
-/// for collection fields).
-fn csharp_field_property_type(field: &FieldMeta, view: &SchemaView) -> String {
-    let inner = csharp_property_type(&field.ty, view);
-    if field.is_dimensional {
-        format!("Localized<{inner}>")
-    } else {
-        inner
-    }
-}
-
-fn csharp_property_type(ty: &FieldType, view: &SchemaView) -> String {
-    match ty {
-        FieldType::Array(inner) => format!("IReadOnlyList<{}>", csharp_type(inner, view)),
-        FieldType::Dict(key, value) => {
-            format!(
-                "IReadOnlyDictionary<{}, {}>",
-                csharp_type(key, view),
-                csharp_type(value, view)
-            )
-        }
-        FieldType::Nullable(inner) => format!("{}?", csharp_property_type(inner, view)),
-        other => csharp_type(other, view),
-    }
-}
-
 fn type_declaration(schema_type: &TypeMeta, view: &SchemaView) -> String {
     let prefix = if schema_type.is_abstract {
         "public abstract partial class"
@@ -1071,92 +958,4 @@ fn type_declaration(schema_type: &TypeMeta, view: &SchemaView) -> String {
         "{prefix} {}{suffix}",
         view.csharp_type_name(&schema_type.name)
     )
-}
-
-fn default_value_expr(
-    default: Option<&CftSchemaDefaultValue>,
-    ty: &FieldType,
-    view: &SchemaView,
-) -> Result<Option<String>, CsharpCodegenError> {
-    let Some(default) = default else {
-        return Ok(None);
-    };
-    Ok(Some(match default {
-        CftSchemaDefaultValue::Null => "null".to_string(),
-        CftSchemaDefaultValue::Int(value) => {
-            if view.int_32 {
-                value.to_string()
-            } else {
-                format!("{value}L")
-            }
-        }
-        CftSchemaDefaultValue::Float(value) => {
-            let mut text = format_float(*value);
-            if view.float_32 {
-                text.push('f');
-            }
-            text
-        }
-        CftSchemaDefaultValue::Bool(value) => value.to_string(),
-        CftSchemaDefaultValue::String(value) => string_default_expr(value, ty, view),
-        CftSchemaDefaultValue::Enum {
-            enum_name, variant, ..
-        } => format!(
-            "{}.{}",
-            view.csharp_enum_name(enum_name),
-            csharp_public_member_name(variant)
-        ),
-        CftSchemaDefaultValue::EmptyArray | CftSchemaDefaultValue::EmptyObject => {
-            collection_default_expr(ty.non_nullable(), view)?
-        }
-    }))
-}
-
-fn string_default_expr(value: &str, ty: &FieldType, view: &SchemaView) -> String {
-    match ty.non_nullable() {
-        FieldType::Enum(name) if view.is_id_as_enum(name) => {
-            let enum_name = view.csharp_enum_name(name);
-            let value = escape_csharp_string(value);
-            format!("({enum_name})Enum.Parse(typeof({enum_name}), \"{value}\")")
-        }
-        _ => format!("\"{}\"", escape_csharp_string(value)),
-    }
-}
-
-fn collection_default_expr(
-    ty: &FieldType,
-    view: &SchemaView,
-) -> Result<String, CsharpCodegenError> {
-    match ty {
-        FieldType::Array(inner) => Ok(format!("new List<{}>()", csharp_type(inner, view))),
-        FieldType::Dict(key, value) => Ok(format!(
-            "new Dictionary<{}, {}>()",
-            csharp_type(key, view),
-            csharp_type(value, view)
-        )),
-        _ => Err(CsharpCodegenError::new(
-            "collection default requires array or dict type",
-        )),
-    }
-}
-
-fn csharp_public_type_name(name: &str) -> String {
-    pascal_case(name)
-}
-
-fn csharp_public_member_name(name: &str) -> String {
-    pascal_case(name)
-}
-
-fn plural_records_var(table_name: &str) -> String {
-    let base = camel_case(&pascal_case(table_name));
-    if base.ends_with('s') {
-        format!("{base}Rows")
-    } else {
-        format!("{base}s")
-    }
-}
-
-fn context_index_field_name(type_name: &str) -> String {
-    format!("{type_name}Index")
 }
