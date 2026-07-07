@@ -1,29 +1,24 @@
+mod indexes;
+mod resolve;
+
 use crate::diagnostic::{CfdDiagnostic, CfdDiagnostics, CfdErrorCode, CfdPath};
 use crate::edge_index::{build_ref_indexes, build_spread_indexes};
 use crate::model::{
-    CfdDataModel, CfdDictKey, CfdDomainId, CfdEnumValue, CfdInputDictKey, CfdInputRecord,
-    CfdInputValue, CfdObject, CfdPolymorphicIndex, CfdRecord, CfdRecordId, CfdTable, CfdTypeId,
-    CfdValue,
+    CfdDataModel, CfdDictKey, CfdEnumValue, CfdInputDictKey, CfdInputRecord, CfdInputValue,
+    CfdObject, CfdRecord, CfdRecordId, CfdValue,
 };
 use crate::origin::RecordOrigin;
 use crate::schema_view::{
     input_value_kind, type_accepts_default, CfdType, CfdValueDraft, FieldMeta, RecordDraft,
     SchemaView, SpreadFieldSource,
 };
-use coflow_cft::{is_cft_identifier, record_key_ident_error, CftContainer, CftSchemaDefaultValue};
+use coflow_cft::{CftContainer, CftSchemaDefaultValue};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) struct ModelCompiler {
     schema: SchemaView,
     input: Vec<CfdInputRecord>,
     diagnostics: Vec<CfdDiagnostic>,
-}
-
-struct ModelIndexes {
-    tables: BTreeMap<String, CfdTable>,
-    inheritance_index: BTreeMap<String, CfdPolymorphicIndex>,
-    record_by_type_key: BTreeMap<(CfdTypeId, String), CfdRecordId>,
-    record_by_domain_key: BTreeMap<(CfdDomainId, String), CfdRecordId>,
 }
 
 struct SpreadFieldRef<'a> {
@@ -72,7 +67,7 @@ impl ModelCompiler {
         }
 
         // Phase 2: build primary / secondary / polymorphic indexes.
-        let indexes = self.build_indexes(&drafts);
+        let indexes = indexes::build_indexes(&self.schema, &drafts, &mut self.diagnostics);
 
         // Phase 2b: singleton validation. We run this even when phase 2 has
         // already collected diagnostics so that singleton-specific codes
@@ -83,7 +78,12 @@ impl ModelCompiler {
         // the generic `InvalidRecordKey` path because `record_key_ident_error`
         // and `is_cft_identifier` currently use the same rule set; the spec
         // leaves `LocalizedRecordKeyInvalid` reserved for future divergence.
-        self.validate_singletons(&drafts, &indexes.tables);
+        indexes::validate_singletons(
+            &self.schema,
+            &drafts,
+            &indexes.tables,
+            &mut self.diagnostics,
+        );
         if !self.diagnostics.is_empty() {
             return Err(CfdDiagnostics::new(self.diagnostics));
         }
@@ -142,198 +142,6 @@ impl ModelCompiler {
             spread_by_site: spread_indexes.by_site,
             spread_by_source: spread_indexes.by_source,
         })
-    }
-
-    fn build_indexes(&mut self, drafts: &[RecordDraft]) -> ModelIndexes {
-        let mut tables = BTreeMap::<String, CfdTable>::new();
-        let mut inheritance_index = BTreeMap::<String, CfdPolymorphicIndex>::new();
-        let mut record_by_type_key = BTreeMap::<(CfdTypeId, String), CfdRecordId>::new();
-        let mut record_by_domain_key = BTreeMap::<(CfdDomainId, String), CfdRecordId>::new();
-
-        for (index, draft) in drafts.iter().enumerate() {
-            let record_id = CfdRecordId::new(index);
-            let Some(type_id) = self.schema.type_id(&draft.actual_type) else {
-                continue;
-            };
-            let Some(domain_id) = self.schema.type_domain_id(&draft.actual_type) else {
-                continue;
-            };
-            let table = tables
-                .entry(draft.actual_type.clone())
-                .or_insert_with(|| CfdTable {
-                    type_name: draft.actual_type.clone(),
-                    records: Vec::new(),
-                    primary_index: BTreeMap::new(),
-                });
-            table.records.push(record_id);
-
-            if draft.key.is_empty() {
-                self.push(
-                    CfdDiagnostic::error(
-                        CfdErrorCode::MissingIdField,
-                        format!("record `{}` has an empty key", draft.actual_type),
-                    )
-                    .with_primary(Some(record_id), CfdPath::root().field("id")),
-                );
-                continue;
-            }
-            if let Some(reason) = record_key_ident_error(&draft.key) {
-                self.push(
-                    CfdDiagnostic::error(
-                        CfdErrorCode::InvalidRecordKey,
-                        format!("invalid record key `{}`: {reason}", draft.key),
-                    )
-                    .with_primary(Some(record_id), CfdPath::root().field("id")),
-                );
-                continue;
-            }
-
-            if let Some(first) = table.primary_index.insert(draft.key.clone(), record_id) {
-                self.push(
-                    CfdDiagnostic::error(
-                        CfdErrorCode::DuplicateId,
-                        format!("duplicate key in table `{}`", draft.actual_type),
-                    )
-                    .with_primary(Some(record_id), CfdPath::root().field("id"))
-                    .with_related(
-                        Some(first),
-                        CfdPath::root().field("id"),
-                        "first key is here",
-                    ),
-                );
-            }
-            record_by_type_key.insert((type_id, draft.key.clone()), record_id);
-            if let Some(first) =
-                record_by_domain_key.insert((domain_id, draft.key.clone()), record_id)
-            {
-                let first_actual_type = drafts
-                    .get(first.index())
-                    .map_or("", |first_draft| first_draft.actual_type.as_str());
-                if first_actual_type != draft.actual_type {
-                    self.push(
-                        CfdDiagnostic::error(
-                            CfdErrorCode::DuplicatePolymorphicId,
-                            "duplicate key in inheritance domain",
-                        )
-                        .with_primary(Some(record_id), CfdPath::root().field("id"))
-                        .with_related(
-                            Some(first),
-                            CfdPath::root().field("id"),
-                            "first key is here",
-                        ),
-                    );
-                }
-            }
-            self.add_polymorphic_ids(
-                &mut inheritance_index,
-                &draft.actual_type,
-                &draft.key,
-                record_id,
-            );
-        }
-
-        ModelIndexes {
-            tables,
-            inheritance_index,
-            record_by_type_key,
-            record_by_domain_key,
-        }
-    }
-
-    fn add_polymorphic_ids(
-        &self,
-        inheritance_index: &mut BTreeMap<String, CfdPolymorphicIndex>,
-        actual_type: &str,
-        key: &str,
-        record_id: CfdRecordId,
-    ) {
-        for target_type in self.schema.assignable_target_names(actual_type) {
-            if !self.schema.range_is_polymorphic(&target_type) {
-                continue;
-            }
-            let index = inheritance_index
-                .entry(target_type.clone())
-                .or_insert_with(|| CfdPolymorphicIndex {
-                    records: BTreeMap::new(),
-                });
-            index.records.entry(key.to_string()).or_insert(record_id);
-        }
-    }
-
-    fn push(&mut self, diagnostic: CfdDiagnostic) {
-        self.diagnostics.push(diagnostic);
-    }
-
-    fn validate_singletons(&mut self, drafts: &[RecordDraft], tables: &BTreeMap<String, CfdTable>) {
-        let singleton_names: Vec<String> = self
-            .schema
-            .singleton_types()
-            .map(|meta| meta.name.clone())
-            .collect();
-
-        let mut seen_keys: BTreeMap<String, (String, CfdRecordId)> = BTreeMap::new();
-
-        for type_name in &singleton_names {
-            let Some(table) = tables.get(type_name) else {
-                self.push(
-                    CfdDiagnostic::error(
-                        CfdErrorCode::SingletonRecordCountInvalid,
-                        format!("singleton type `{type_name}` has 0 records (must be exactly 1)"),
-                    )
-                    .with_primary(None, CfdPath::root()),
-                );
-                continue;
-            };
-            if table.records.len() != 1 {
-                let count = table.records.len();
-                self.push(
-                    CfdDiagnostic::error(
-                        CfdErrorCode::SingletonRecordCountInvalid,
-                        format!(
-                            "singleton type `{type_name}` has {count} records (must be exactly 1)"
-                        ),
-                    )
-                    .with_primary(table.records.first().copied(), CfdPath::root()),
-                );
-                continue;
-            }
-            let record_id = table.records[0];
-            let Some(draft) = drafts.get(record_id.index()) else {
-                continue;
-            };
-            if draft.key.is_empty() || !is_cft_identifier(&draft.key) {
-                self.push(
-                    CfdDiagnostic::error(
-                        CfdErrorCode::SingletonKeyMissingOrInvalid,
-                        format!(
-                            "singleton type `{type_name}` record key `{}` is missing or not a valid CFT identifier",
-                            draft.key
-                        ),
-                    )
-                    .with_primary(Some(record_id), CfdPath::root().field("id")),
-                );
-                continue;
-            }
-            if let Some((other_type, first_id)) = seen_keys.get(&draft.key) {
-                self.push(
-                    CfdDiagnostic::error(
-                        CfdErrorCode::SingletonKeyCollision,
-                        format!(
-                            "singleton record key `{}` collides between `{type_name}` and `{other_type}`",
-                            draft.key
-                        ),
-                    )
-                    .with_primary(Some(record_id), CfdPath::root().field("id"))
-                    .with_related(
-                        Some(*first_id),
-                        CfdPath::root().field("id"),
-                        "first occurrence is here",
-                    ),
-                );
-            } else {
-                seen_keys.insert(draft.key.clone(), (type_name.clone(), record_id));
-            }
-        }
     }
 }
 
@@ -862,285 +670,6 @@ impl<'s> Validator<'s> {
             /*top_level=*/ false,
         )?;
         Some(CfdValueDraft::Object(Box::new(draft)))
-    }
-
-    fn resolve_fields(
-        &mut self,
-        fields: &BTreeMap<String, CfdValueDraft>,
-        record: Option<CfdRecordId>,
-        path: &CfdPath,
-        drafts: &[RecordDraft],
-        record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
-    ) -> Option<BTreeMap<String, CfdValue>> {
-        let diagnostic_start = self.diagnostics.len();
-        let mut out = BTreeMap::new();
-        for (name, value) in fields {
-            let value_path = path.clone().field(name.clone());
-            let Some(value) =
-                self.resolve_value(value, record, value_path, drafts, record_by_domain_key)
-            else {
-                continue;
-            };
-            out.insert(name.clone(), value);
-        }
-        if self.diagnostics.len() == diagnostic_start {
-            Some(out)
-        } else {
-            None
-        }
-    }
-
-    fn resolve_value(
-        &mut self,
-        value: &CfdValueDraft,
-        record: Option<CfdRecordId>,
-        path: CfdPath,
-        drafts: &[RecordDraft],
-        record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
-    ) -> Option<CfdValue> {
-        match value {
-            CfdValueDraft::Value(value) => Some(value.clone()),
-            CfdValueDraft::PendingRef { expected_type, key } => {
-                // Ref resolution still happens here so we surface
-                // RefTargetNotFound diagnostics during build, but the
-                // resolved id is stashed in the model's ref edge indexes after
-                // all records are built rather than carried in the value.
-                let _ = self.resolve_ref_target(
-                    expected_type,
-                    key,
-                    drafts,
-                    record_by_domain_key,
-                    record,
-                    &path,
-                )?;
-                Some(CfdValue::Ref(key.clone()))
-            }
-            CfdValueDraft::PendingSpreadField {
-                source_type,
-                key,
-                field,
-            } => self.resolve_spread_field(
-                &SpreadFieldRef {
-                    source_type,
-                    key,
-                    field,
-                },
-                record,
-                path,
-                drafts,
-                record_by_domain_key,
-            ),
-            CfdValueDraft::Object(record_draft) => {
-                let fields = self.resolve_fields(
-                    &record_draft.fields,
-                    record,
-                    &path,
-                    drafts,
-                    record_by_domain_key,
-                )?;
-                Some(CfdValue::Object(Box::new(CfdObject {
-                    actual_type: record_draft.actual_type.clone(),
-                    fields,
-                })))
-            }
-            CfdValueDraft::Array(items) => {
-                let mut out = Vec::with_capacity(items.len());
-                for (index, item) in items.iter().enumerate() {
-                    let Some(value) = self.resolve_value(
-                        item,
-                        record,
-                        path.clone().index(index),
-                        drafts,
-                        record_by_domain_key,
-                    ) else {
-                        continue;
-                    };
-                    out.push(value);
-                }
-                Some(CfdValue::Array(out))
-            }
-            CfdValueDraft::Dict(entries) => {
-                let out = self.resolve_dict_entries(
-                    entries,
-                    record,
-                    &path,
-                    drafts,
-                    record_by_domain_key,
-                )?;
-                Some(CfdValue::Dict(out))
-            }
-            CfdValueDraft::DictSpread { spreads, entries } => {
-                let out = self.resolve_dict_spread(
-                    spreads,
-                    entries,
-                    record,
-                    &path,
-                    drafts,
-                    record_by_domain_key,
-                )?;
-                Some(CfdValue::Dict(out))
-            }
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn resolve_ref_target(
-        &mut self,
-        expected_type: &str,
-        key: &str,
-        drafts: &[RecordDraft],
-        record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
-        record: Option<CfdRecordId>,
-        path: &CfdPath,
-    ) -> Option<CfdRecordId> {
-        let target = self
-            .schema
-            .type_domain_id(expected_type)
-            .and_then(|domain_id| record_by_domain_key.get(&(domain_id, key.to_string())))
-            .copied();
-
-        let Some(target) = target else {
-            self.push(
-                CfdDiagnostic::error(
-                    CfdErrorCode::RefTargetNotFound,
-                    format!("ref target `{expected_type}` with key `{key}` was not found"),
-                )
-                .with_primary(record, path.clone()),
-            );
-            return None;
-        };
-
-        let target_draft = drafts.get(target.index())?;
-        if !self
-            .schema
-            .is_assignable(&target_draft.actual_type, expected_type)
-        {
-            self.push(
-                CfdDiagnostic::error(
-                    CfdErrorCode::TypeMismatch,
-                    format!(
-                        "ref target actual type `{}` is not assignable to `{expected_type}`",
-                        target_draft.actual_type
-                    ),
-                )
-                .with_primary(record, path.clone()),
-            );
-            return None;
-        }
-
-        Some(target)
-    }
-
-    fn resolve_dict_entries(
-        &mut self,
-        entries: &[(CfdDictKey, CfdValueDraft)],
-        record: Option<CfdRecordId>,
-        path: &CfdPath,
-        drafts: &[RecordDraft],
-        record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
-    ) -> Option<Vec<(CfdDictKey, CfdValue)>> {
-        let diagnostic_start = self.diagnostics.len();
-        let mut out = Vec::with_capacity(entries.len());
-        for (key, value) in entries {
-            let Some(value) = self.resolve_value(
-                value,
-                record,
-                path.clone().dict_key_value(key),
-                drafts,
-                record_by_domain_key,
-            ) else {
-                continue;
-            };
-            out.push((key.clone(), value));
-        }
-        if self.diagnostics.len() == diagnostic_start {
-            Some(out)
-        } else {
-            None
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn resolve_dict_spread(
-        &mut self,
-        spreads: &[CfdValueDraft],
-        entries: &[(CfdDictKey, CfdValueDraft)],
-        record: Option<CfdRecordId>,
-        path: &CfdPath,
-        drafts: &[RecordDraft],
-        record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
-    ) -> Option<Vec<(CfdDictKey, CfdValue)>> {
-        let diagnostic_start = self.diagnostics.len();
-        let mut merged = BTreeMap::<CfdDictKey, CfdValue>::new();
-        for spread in spreads {
-            let Some(CfdValue::Dict(entries)) =
-                self.resolve_value(spread, record, path.clone(), drafts, record_by_domain_key)
-            else {
-                if self.diagnostics.len() == diagnostic_start {
-                    self.push(
-                        CfdDiagnostic::error(
-                            CfdErrorCode::TypeMismatch,
-                            "dict spread requires a dict value",
-                        )
-                        .with_primary(record, path.clone()),
-                    );
-                }
-                continue;
-            };
-            for (key, value) in entries {
-                merged.insert(key, value);
-            }
-        }
-
-        for (key, value) in entries {
-            let Some(value) = self.resolve_value(
-                value,
-                record,
-                path.clone().dict_key_value(key),
-                drafts,
-                record_by_domain_key,
-            ) else {
-                continue;
-            };
-            merged.insert(key.clone(), value);
-        }
-
-        if self.diagnostics.len() == diagnostic_start {
-            Some(merged.into_iter().collect())
-        } else {
-            None
-        }
-    }
-
-    fn resolve_spread_field(
-        &mut self,
-        spread: &SpreadFieldRef<'_>,
-        record: Option<CfdRecordId>,
-        path: CfdPath,
-        drafts: &[RecordDraft],
-        record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
-    ) -> Option<CfdValue> {
-        let source_id = self.resolve_ref_target(
-            spread.source_type,
-            spread.key,
-            drafts,
-            record_by_domain_key,
-            record,
-            &path,
-        )?;
-        let source_draft = drafts.get(source_id.index())?;
-        let Some(value) = source_draft.fields.get(spread.field) else {
-            self.push(
-                CfdDiagnostic::error(
-                    CfdErrorCode::UnknownField,
-                    format!("spread field `{}` was not found", spread.field),
-                )
-                .with_primary(record, path),
-            );
-            return None;
-        };
-
-        self.resolve_value(value, record, path, drafts, record_by_domain_key)
     }
 
     fn resolve_enum_value(

@@ -657,6 +657,52 @@ fn data_model_runtime_model_is_split_by_responsibility() {
 }
 
 #[test]
+fn data_model_compiler_indexes_are_split_out() {
+    let compiler = std::fs::read_to_string("crates/coflow-data-model/src/compiler.rs")
+        .expect("read data-model compiler");
+    let indexes = std::fs::read_to_string("crates/coflow-data-model/src/compiler/indexes.rs")
+        .expect("read data-model compiler indexes");
+    let resolve = std::fs::read_to_string("crates/coflow-data-model/src/compiler/resolve.rs")
+        .expect("read data-model compiler resolve");
+
+    for expected in [
+        "pub(super) struct ModelIndexes",
+        "pub(super) fn build_indexes",
+        "fn add_polymorphic_ids",
+        "pub(super) fn validate_singletons",
+    ] {
+        assert!(
+            indexes.contains(expected),
+            "data-model compiler index helper `{expected}` should live in compiler/indexes.rs"
+        );
+        assert!(
+            !compiler.contains(expected),
+            "data-model compiler index helper `{expected}` should not live in compiler.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn resolve_fields",
+        "fn resolve_value",
+        "fn resolve_ref_target",
+        "fn resolve_dict_spread",
+        "fn resolve_spread_field",
+    ] {
+        assert!(
+            resolve.contains(expected),
+            "data-model compiler resolve helper `{expected}` should live in compiler/resolve.rs"
+        );
+        assert!(
+            !compiler.contains(expected),
+            "data-model compiler resolve helper `{expected}` should not live in compiler.rs"
+        );
+    }
+    assert!(
+        compiler.lines().count() < 800,
+        "coflow-data-model compiler.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
 fn csharp_codegen_schema_projection_uses_cft_schema_view() {
     let schema_view = std::fs::read_to_string("crates/coflow-codegen-csharp/src/schema_view.rs")
         .expect("read C# codegen schema view");
