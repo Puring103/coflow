@@ -1,6 +1,7 @@
 use super::common::*;
 use super::*;
 use crate::diagnostics::lsp_range;
+use crate::document_symbols::document_symbols;
 use crate::uri::{hex_value, percent_decode};
 
 #[test]
