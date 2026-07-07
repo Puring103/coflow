@@ -442,6 +442,32 @@ fn csharp_codegen_emit_database_helpers_do_not_live_in_emit_rs() {
 }
 
 #[test]
+fn csharp_codegen_emit_reader_helpers_do_not_live_in_emit_rs() {
+    let emit =
+        std::fs::read_to_string("crates/coflow-codegen-csharp/src/emit.rs").expect("read C# emit");
+    let readers = std::fs::read_to_string("crates/coflow-codegen-csharp/src/emit/readers.rs")
+        .expect("read C# emit readers");
+
+    for expected in [
+        "pub(super) fn read_field_expr",
+        "pub(super) fn read_token_expr",
+        "pub(super) fn read_messagepack_field_expr",
+        "pub(super) fn read_messagepack_expr",
+        "fn read_dict_key_expr",
+        "fn read_messagepack_dict_key_expr",
+    ] {
+        assert!(
+            readers.contains(expected),
+            "C# emit reader helper `{expected}` should live in emit/readers.rs"
+        );
+        assert!(
+            !emit.contains(expected),
+            "C# emit reader helper `{expected}` should not live in emit.rs"
+        );
+    }
+}
+
+#[test]
 fn exporter_core_schema_projection_uses_cft_schema_view() {
     let exporter =
         std::fs::read_to_string("crates/coflow-exporter-core/src/lib.rs").expect("read exporter");
