@@ -767,6 +767,66 @@ fn cft_schema_compiler_symbols_are_split_out() {
 }
 
 #[test]
+fn cft_parser_check_expression_parser_is_split_out() {
+    let parser =
+        std::fs::read_to_string("crates/coflow-cft/src/parser.rs").expect("read CFT parser");
+    let check =
+        std::fs::read_to_string("crates/coflow-cft/src/parser/check.rs").expect("read check parser");
+    let defaults = std::fs::read_to_string("crates/coflow-cft/src/parser/defaults.rs")
+        .expect("read default parser");
+    let tokens =
+        std::fs::read_to_string("crates/coflow-cft/src/parser/tokens.rs").expect("read parser tokens");
+
+    for expected in [
+        "pub(super) fn parse_check_block",
+        "fn parse_check_stmts",
+        "fn parse_or_expr",
+        "fn parse_postfix_expr",
+        "fn validate_cmp_chain",
+        "enum CmpChainGroup",
+    ] {
+        assert!(
+            check.contains(expected),
+            "CFT parser check helper `{expected}` should live in parser/check.rs"
+        );
+        assert!(
+            !parser.contains(expected),
+            "CFT parser check helper `{expected}` should not live in parser.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn parse_default_expr",
+        "fn parse_negative_default",
+        "fn parse_name_or_enum_default",
+        "fn parse_array_default",
+        "fn parse_object_default",
+    ] {
+        assert!(
+            defaults.contains(expected),
+            "CFT parser default helper `{expected}` should live in parser/defaults.rs"
+        );
+        assert!(
+            !parser.contains(expected),
+            "CFT parser default helper `{expected}` should not live in parser.rs"
+        );
+    }
+    for expected in ["pub(super) fn token_name", "pub(super) fn reserved_keyword_name"] {
+        assert!(
+            tokens.contains(expected),
+            "CFT parser token helper `{expected}` should live in parser/tokens.rs"
+        );
+        assert!(
+            !parser.contains(expected),
+            "CFT parser token helper `{expected}` should not live in parser.rs"
+        );
+    }
+    assert!(
+        parser.lines().count() < 800,
+        "coflow-cft parser.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
 fn csharp_codegen_schema_projection_uses_cft_schema_view() {
     let schema_view = std::fs::read_to_string("crates/coflow-codegen-csharp/src/schema_view.rs")
         .expect("read C# codegen schema view");
