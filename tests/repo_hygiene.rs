@@ -1174,6 +1174,8 @@ fn data_model_runtime_model_is_split_by_responsibility() {
         std::fs::read_to_string("crates/coflow-data-model/src/model/ids.rs").expect("read ids");
     let domain = std::fs::read_to_string("crates/coflow-data-model/src/model/domain.rs")
         .expect("read domain");
+    let dimensions = std::fs::read_to_string("crates/coflow-data-model/src/model/dimensions.rs")
+        .expect("read dimensions");
     let edges =
         std::fs::read_to_string("crates/coflow-data-model/src/model/edges.rs").expect("read edges");
     let tables = std::fs::read_to_string("crates/coflow-data-model/src/model/tables.rs")
@@ -1205,6 +1207,20 @@ fn data_model_runtime_model_is_split_by_responsibility() {
         assert!(
             !model.contains(expected),
             "data-model domain type `{expected}` should not live in model.rs"
+        );
+    }
+    for expected in [
+        "pub enum DimensionFieldLookupError",
+        "pub struct DimensionFieldValue",
+        "pub fn dimension_field_value",
+    ] {
+        assert!(
+            dimensions.contains(expected),
+            "data-model dimension helper `{expected}` should live in model/dimensions.rs"
+        );
+        assert!(
+            !model.contains(expected),
+            "data-model dimension helper `{expected}` should not live in model.rs"
         );
     }
     for expected in [
