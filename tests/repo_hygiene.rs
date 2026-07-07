@@ -1930,6 +1930,33 @@ fn lsp_definition_helpers_do_not_live_in_lib_rs() {
 }
 
 #[test]
+fn lsp_documentation_catalog_does_not_live_in_lib_rs() {
+    let lib = std::fs::read_to_string("crates/coflow-lsp/src/lib.rs").expect("read lsp lib");
+    let documentation = std::fs::read_to_string("crates/coflow-lsp/src/documentation.rs")
+        .expect("read lsp documentation");
+
+    for expected in [
+        "pub(crate) const KEYWORDS",
+        "pub(crate) const PRIMITIVE_TYPES",
+        "pub(crate) const LITERALS",
+        "pub(crate) const BUILTIN_FUNCTIONS",
+        "pub(crate) const ANNOTATIONS",
+        "pub(crate) struct AnnotationCompletion",
+        "pub(crate) fn static_documentation",
+        "pub(crate) fn is_builtin_name",
+    ] {
+        assert!(
+            documentation.contains(expected),
+            "LSP documentation catalog `{expected}` should live in documentation.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "LSP documentation catalog `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn table_writers_use_shared_cell_renderer() {
     let excel = std::fs::read_to_string("crates/coflow-loader-excel/src/writer.rs")
         .expect("read excel writer");
