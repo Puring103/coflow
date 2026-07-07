@@ -8,7 +8,8 @@ cargo test --workspace
 ```
 
 Do not commit or push normal development changes while either command fails. Normal development
-CI should not require `cargo fmt` or `cargo clippy`; those are release/packaging gates.
+commits and normal CI must not require `cargo fmt` or `cargo clippy`; those are release/packaging
+gates only.
 
 For release or packaging commits, run the full gate from the repository root:
 

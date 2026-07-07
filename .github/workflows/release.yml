@@ -8,7 +8,7 @@ on:
 
 jobs:
   ci:
-    name: CI
+    name: Release gate
     runs-on: windows-latest
     steps:
       - name: Checkout
