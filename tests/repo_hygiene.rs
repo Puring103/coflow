@@ -197,6 +197,75 @@ fn csv_dimension_source_sync_does_not_live_in_writer_rs() {
 }
 
 #[test]
+fn cfd_writer_is_split_by_responsibility() {
+    let writer =
+        std::fs::read_to_string("crates/coflow-loader-cfd/src/writer.rs").expect("read cfd writer");
+    let dimensions = std::fs::read_to_string("crates/coflow-loader-cfd/src/writer/dimensions.rs")
+        .expect("read cfd writer dimension source sync");
+    let patch = std::fs::read_to_string("crates/coflow-loader-cfd/src/writer/patch.rs")
+        .expect("read cfd writer patch helpers");
+    let render = std::fs::read_to_string("crates/coflow-loader-cfd/src/writer/render.rs")
+        .expect("read cfd writer render helpers");
+    let schema_nav = std::fs::read_to_string("crates/coflow-loader-cfd/src/writer/schema_nav.rs")
+        .expect("read cfd writer schema navigation helpers");
+
+    for expected in [
+        "impl DimensionSourceManager for CfdWriter",
+        "fn sync_dimension_source",
+        "struct DimensionCfdRow",
+        "fn read_existing_dimension_cfd",
+    ] {
+        assert!(
+            dimensions.contains(expected),
+            "CFD dimension source item `{expected}` should live in writer/dimensions.rs"
+        );
+        assert!(
+            !writer.contains(expected),
+            "CFD dimension source item `{expected}` should not live in writer.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn apply_patch",
+        "pub(super) fn find_record",
+        "pub(super) fn spread_entries_at_path",
+        "pub(super) fn replace_spans",
+    ] {
+        assert!(
+            patch.contains(expected),
+            "CFD patch item `{expected}` should live in writer/patch.rs"
+        );
+        assert!(
+            !writer.contains(expected),
+            "CFD patch item `{expected}` should not live in writer.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn cfd_top_level_fields",
+        "pub(super) fn rewrite_cfd_records",
+        "pub(super) fn serialize_value",
+        "pub(super) fn serialize_value_for_type",
+    ] {
+        assert!(
+            render.contains(expected),
+            "CFD render item `{expected}` should live in writer/render.rs"
+        );
+        assert!(
+            !writer.contains(expected),
+            "CFD render item `{expected}` should not live in writer.rs"
+        );
+    }
+    assert!(
+        schema_nav.contains("pub(super) fn type_after_field_segment")
+            && schema_nav.contains("pub(super) fn dict_key_path_matches"),
+        "CFD writer schema navigation helpers should live in writer/schema_nav.rs"
+    );
+    assert!(
+        writer.lines().count() < 800,
+        "coflow-loader-cfd writer.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
 fn editor_backend_does_not_depend_on_checker_runtime_directly() {
     let manifest = std::fs::read_to_string("editors/cfd-editor/src-tauri/Cargo.toml")
         .expect("read editor backend manifest");
