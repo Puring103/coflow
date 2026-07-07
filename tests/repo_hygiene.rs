@@ -1489,6 +1489,76 @@ fn table_loader_core_table_rs_is_split_by_responsibility() {
 }
 
 #[test]
+fn table_cell_value_is_split_by_responsibility() {
+    let cell_value = std::fs::read_to_string(
+        "crates/coflow-loader-table-core/src/cell_value/mod.rs",
+    )
+    .expect("read table core cell value parser");
+    let diagnostics = std::fs::read_to_string(
+        "crates/coflow-loader-table-core/src/cell_value/diagnostics.rs",
+    )
+    .expect("read table core cell value diagnostics");
+    let render =
+        std::fs::read_to_string("crates/coflow-loader-table-core/src/cell_value/render.rs")
+            .expect("read table core cell value renderer");
+    let types = std::fs::read_to_string("crates/coflow-loader-table-core/src/cell_value/types.rs")
+        .expect("read table core cell value type parser");
+
+    for expected in [
+        "pub struct CellValueDiagnostics",
+        "pub struct CellValueDiagnostic",
+        "pub enum CellValueErrorCode",
+        "pub(super) fn syntax",
+        "pub(super) fn type_mismatch",
+    ] {
+        assert!(
+            diagnostics.contains(expected),
+            "cell value diagnostic item `{expected}` should live in cell_value/diagnostics.rs"
+        );
+        assert!(
+            !cell_value.contains(expected),
+            "cell value diagnostic item `{expected}` should not live in cell_value/mod.rs"
+        );
+    }
+    for expected in [
+        "pub enum CellRenderError",
+        "pub fn render_cell_value",
+        "fn render_array",
+        "fn render_dict",
+        "pub(super) fn render_string",
+    ] {
+        assert!(
+            render.contains(expected),
+            "cell value render item `{expected}` should live in cell_value/render.rs"
+        );
+        assert!(
+            !cell_value.contains(expected),
+            "cell value render item `{expected}` should not live in cell_value/mod.rs"
+        );
+    }
+    for expected in [
+        "pub(super) enum CellType",
+        "struct TypeParser",
+        "pub(super) struct FieldMeta",
+        "pub(super) fn full_fields",
+        "fn field_meta",
+    ] {
+        assert!(
+            types.contains(expected),
+            "cell value type item `{expected}` should live in cell_value/types.rs"
+        );
+        assert!(
+            !cell_value.contains(expected),
+            "cell value type item `{expected}` should not live in cell_value/mod.rs"
+        );
+    }
+    assert!(
+        cell_value.lines().count() < 800,
+        "coflow-loader-table-core cell_value/mod.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
 fn editor_backend_entrypoints_do_not_use_crash_error_handling() {
     for path in [
         "editors/cfd-editor/src-tauri/src/lib.rs",

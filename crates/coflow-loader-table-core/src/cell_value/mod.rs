@@ -15,65 +15,25 @@
 )]
 #![allow(clippy::missing_const_for_fn, clippy::similar_names, clippy::use_self)]
 
-use coflow_cft::{record_key_ident_error, CftContainer, CftSchemaField};
-use coflow_data_model::{CfdDictKey, CfdEnumValue, CfdInputDictKey, CfdInputValue, CfdValue};
+mod diagnostics;
+mod render;
+mod types;
+
+use coflow_cft::{record_key_ident_error, CftContainer};
+use coflow_data_model::{CfdInputDictKey, CfdInputValue};
+use diagnostics::{missing_boundary, reference_needs_marker, syntax, type_mismatch};
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
+pub use diagnostics::{
+    CellValueDiagnostic, CellValueDiagnostics, CellValueErrorCode,
+};
+pub use render::{render_cell_value, CellRenderError};
+use types::{full_fields, CellType, FieldMeta};
 use unicode_ident::{is_xid_continue, is_xid_start};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParsedCell {
     Omitted,
     Value(CfdInputValue),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CellRenderError {
-    AnonymousEnum,
-    NestedObject,
-}
-
-impl fmt::Display for CellRenderError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::AnonymousEnum => {
-                write!(f, "anonymous enum values cannot be rendered as table cells")
-            }
-            Self::NestedObject => {
-                write!(f, "nested object values cannot be rendered as table cells")
-            }
-        }
-    }
-}
-
-impl std::error::Error for CellRenderError {}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CellValueDiagnostics {
-    pub diagnostics: Vec<CellValueDiagnostic>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CellValueDiagnostic {
-    pub code: CellValueErrorCode,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum CellValueErrorCode {
-    Syntax,
-    InvalidDeclaredType,
-    UnknownType,
-    UnknownField,
-    DuplicateField,
-    MissingBoundary,
-    TypeMismatch,
-    ObjectTypeMismatch,
-    AbstractObjectType,
-    InvalidEnumVariant,
-    MixedObjectStyle,
-    StringNeedsQuotes,
-    ReferenceNeedsMarker,
 }
 
 /// Parses one cell value using a CFT declared type as context.
@@ -94,275 +54,6 @@ pub fn parse_cell(
     parse_value(schema, &declared_type, text, ValueContext::Root).map(ParsedCell::Value)
 }
 
-/// Renders a runtime value into the same table-cell text grammar accepted by
-/// [`parse_cell`].
-///
-/// # Errors
-///
-/// Returns an error when the runtime value cannot be represented without
-/// schema context.
-pub fn render_cell_value(value: &CfdValue) -> Result<String, CellRenderError> {
-    match value {
-        CfdValue::Null => Ok(String::new()),
-        CfdValue::Bool(value) => Ok(value.to_string()),
-        CfdValue::Int(value) => Ok(value.to_string()),
-        CfdValue::Float(value) => Ok(value.to_string()),
-        CfdValue::String(value) => Ok(render_string(value)),
-        CfdValue::Enum(value) => render_enum_value(value),
-        CfdValue::Ref(target_key) => Ok(format!("&{target_key}")),
-        CfdValue::Array(items) => render_array(items),
-        CfdValue::Dict(entries) => render_dict(entries),
-        CfdValue::Object(record) => render_object(record),
-    }
-}
-
-fn render_array(items: &[CfdValue]) -> Result<String, CellRenderError> {
-    let mut out = String::from("[");
-    for (idx, item) in items.iter().enumerate() {
-        if idx > 0 {
-            out.push_str(" | ");
-        }
-        out.push_str(&render_cell_value(item)?);
-    }
-    out.push(']');
-    Ok(out)
-}
-
-fn render_dict(entries: &[(CfdDictKey, CfdValue)]) -> Result<String, CellRenderError> {
-    let mut out = String::from("{");
-    for (idx, (key, value)) in entries.iter().enumerate() {
-        if idx > 0 {
-            out.push_str(", ");
-        }
-        out.push_str(&render_dict_key(key)?);
-        out.push_str(": ");
-        out.push_str(&render_cell_value(value)?);
-    }
-    out.push('}');
-    Ok(out)
-}
-
-fn render_dict_key(key: &CfdDictKey) -> Result<String, CellRenderError> {
-    match key {
-        CfdDictKey::String(value) => Ok(render_string(value)),
-        CfdDictKey::Int(value) => Ok(value.to_string()),
-        CfdDictKey::Enum(value) => render_enum_value(value),
-    }
-}
-
-fn render_object(record: &coflow_data_model::CfdObject) -> Result<String, CellRenderError> {
-    let mut out = String::new();
-    if !record.actual_type().is_empty() {
-        out.push_str(record.actual_type());
-    }
-    out.push('{');
-    for (idx, (field, value)) in record.fields().iter().enumerate() {
-        if idx > 0 {
-            out.push_str(", ");
-        }
-        out.push_str(field);
-        out.push_str(": ");
-        out.push_str(&render_cell_value(value)?);
-    }
-    out.push('}');
-    Ok(out)
-}
-
-fn render_enum_value(value: &CfdEnumValue) -> Result<String, CellRenderError> {
-    value.variant.clone().ok_or(CellRenderError::AnonymousEnum)
-}
-
-fn render_string(value: &str) -> String {
-    if string_needs_quotes(value) || value.contains('"') || value.contains('\\') {
-        quote_string(value)
-    } else {
-        value.to_string()
-    }
-}
-
-fn quote_string(value: &str) -> String {
-    let mut out = String::from("\"");
-    for ch in value.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            other => out.push(other),
-        }
-    }
-    out.push('"');
-    out
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum CellType {
-    Int,
-    Float,
-    Bool,
-    String,
-    Type(String),
-    Ref(String),
-    Enum(String),
-    Array(Box<CellType>),
-    Dict(Box<CellType>, Box<CellType>),
-    Nullable(Box<CellType>),
-}
-
-impl CellType {
-    fn parse(schema: &CftContainer, text: &str) -> Result<Self, CellValueDiagnostics> {
-        let mut parser = TypeParser::new(schema, text);
-        let ty = parser.parse_type()?;
-        parser.skip_ws();
-        if parser.is_eof() {
-            Ok(ty)
-        } else {
-            Err(invalid_declared_type("unexpected text after type"))
-        }
-    }
-
-    fn display(&self) -> String {
-        match self {
-            Self::Int => "int".to_string(),
-            Self::Float => "float".to_string(),
-            Self::Bool => "bool".to_string(),
-            Self::String => "string".to_string(),
-            Self::Type(name) | Self::Enum(name) => name.clone(),
-            Self::Ref(name) => format!("&{name}"),
-            Self::Array(inner) => format!("[{}]", inner.display()),
-            Self::Dict(key, value) => format!("{{{}: {}}}", key.display(), value.display()),
-            Self::Nullable(inner) => format!("{}?", inner.display()),
-        }
-    }
-}
-
-struct TypeParser<'a> {
-    schema: &'a CftContainer,
-    text: &'a str,
-    pos: usize,
-}
-
-impl<'a> TypeParser<'a> {
-    fn new(schema: &'a CftContainer, text: &'a str) -> Self {
-        Self {
-            schema,
-            text,
-            pos: 0,
-        }
-    }
-
-    fn parse_type(&mut self) -> Result<CellType, CellValueDiagnostics> {
-        self.skip_ws();
-        let mut ty = self.parse_primary()?;
-        self.skip_ws();
-        while self.eat('?') {
-            ty = CellType::Nullable(Box::new(ty));
-            self.skip_ws();
-        }
-        Ok(ty)
-    }
-
-    fn parse_primary(&mut self) -> Result<CellType, CellValueDiagnostics> {
-        self.skip_ws();
-        if self.eat('&') {
-            let name = self.parse_name();
-            if name.is_empty() {
-                return Err(invalid_declared_type(
-                    "reference type is missing target type",
-                ));
-            }
-            if !self.schema.has_type(&name) {
-                return Err(invalid_declared_type(format!(
-                    "reference target `{name}` is not an object type"
-                )));
-            }
-            return Ok(CellType::Ref(name));
-        }
-        if self.eat('[') {
-            let inner = self.parse_type()?;
-            self.skip_ws();
-            if !self.eat(']') {
-                return Err(invalid_declared_type("array type is missing `]`"));
-            }
-            return Ok(CellType::Array(Box::new(inner)));
-        }
-        if self.eat('{') {
-            let key = self.parse_type()?;
-            self.skip_ws();
-            if !self.eat(':') {
-                return Err(invalid_declared_type("dict type is missing `:`"));
-            }
-            let value = self.parse_type()?;
-            self.skip_ws();
-            if !self.eat('}') {
-                return Err(invalid_declared_type("dict type is missing `}`"));
-            }
-            return Ok(CellType::Dict(Box::new(key), Box::new(value)));
-        }
-
-        let name = self.parse_name();
-        if name.is_empty() {
-            return Err(invalid_declared_type("expected type name"));
-        }
-        Ok(match name.as_str() {
-            "int" => CellType::Int,
-            "float" => CellType::Float,
-            "bool" => CellType::Bool,
-            "string" => CellType::String,
-            other if self.schema.has_enum(other) => CellType::Enum(other.to_string()),
-            other => CellType::Type(other.to_string()),
-        })
-    }
-
-    fn parse_name(&mut self) -> String {
-        self.skip_ws();
-        let start = self.pos;
-        while let Some(ch) = self.peek() {
-            if matches!(
-                ch,
-                '[' | ']' | '{' | '}' | ':' | '?' | ' ' | '\t' | '\r' | '\n'
-            ) {
-                break;
-            }
-            self.pos += ch.len_utf8();
-        }
-        self.text[start..self.pos].to_string()
-    }
-
-    fn skip_ws(&mut self) {
-        while let Some(ch) = self.peek() {
-            if ch.is_whitespace() {
-                self.pos += ch.len_utf8();
-            } else {
-                break;
-            }
-        }
-    }
-
-    fn eat(&mut self, expected: char) -> bool {
-        if self.peek() == Some(expected) {
-            self.pos += expected.len_utf8();
-            true
-        } else {
-            false
-        }
-    }
-
-    fn peek(&self) -> Option<char> {
-        self.text[self.pos..].chars().next()
-    }
-
-    fn is_eof(&self) -> bool {
-        self.pos == self.text.len()
-    }
-}
-
-#[derive(Debug, Clone)]
-struct FieldMeta {
-    name: String,
-    ty: CellType,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ValueContext {
@@ -870,35 +561,6 @@ fn string_needs_quotes(text: &str) -> bool {
             .any(|ch| matches!(ch, ',' | '|' | ':' | '{' | '}' | '[' | ']'))
 }
 
-fn full_fields(
-    schema: &CftContainer,
-    type_name: &str,
-) -> Result<Vec<FieldMeta>, CellValueDiagnostics> {
-    let Some(schema_type) = schema.resolve_type(type_name) else {
-        return Err(CellValueDiagnostics {
-            diagnostics: vec![CellValueDiagnostic {
-                code: CellValueErrorCode::UnknownType,
-                message: format!("unknown type `{type_name}`"),
-            }],
-        });
-    };
-    schema_type
-        .all_fields
-        .iter()
-        .map(|field| field_meta(schema, field))
-        .collect()
-}
-
-fn field_meta(
-    schema: &CftContainer,
-    field: &CftSchemaField,
-) -> Result<FieldMeta, CellValueDiagnostics> {
-    Ok(FieldMeta {
-        name: field.name.clone(),
-        ty: CellType::parse(schema, &field.ty)?,
-    })
-}
-
 fn split_top_level(input: &str, delimiter: char) -> Result<Vec<&str>, CellValueDiagnostics> {
     let mut parts = Vec::new();
     let mut start = 0;
@@ -1002,52 +664,5 @@ impl ScanState {
             return Err(syntax("unclosed brackets"));
         }
         Ok(())
-    }
-}
-
-fn syntax(message: impl Into<String>) -> CellValueDiagnostics {
-    CellValueDiagnostics {
-        diagnostics: vec![CellValueDiagnostic {
-            code: CellValueErrorCode::Syntax,
-            message: message.into(),
-        }],
-    }
-}
-
-fn invalid_declared_type(message: impl Into<String>) -> CellValueDiagnostics {
-    CellValueDiagnostics {
-        diagnostics: vec![CellValueDiagnostic {
-            code: CellValueErrorCode::InvalidDeclaredType,
-            message: message.into(),
-        }],
-    }
-}
-
-fn missing_boundary(message: impl Into<String>) -> CellValueDiagnostics {
-    CellValueDiagnostics {
-        diagnostics: vec![CellValueDiagnostic {
-            code: CellValueErrorCode::MissingBoundary,
-            message: message.into(),
-        }],
-    }
-}
-
-fn type_mismatch(expected: &str) -> CellValueDiagnostics {
-    CellValueDiagnostics {
-        diagnostics: vec![CellValueDiagnostic {
-            code: CellValueErrorCode::TypeMismatch,
-            message: format!("expected {expected}"),
-        }],
-    }
-}
-
-fn reference_needs_marker(text: &str) -> CellValueDiagnostics {
-    CellValueDiagnostics {
-        diagnostics: vec![CellValueDiagnostic {
-            code: CellValueErrorCode::ReferenceNeedsMarker,
-            message: format!(
-                "record reference `{text}` must be written as `&{text}` in a reference-typed field"
-            ),
-        }],
     }
 }

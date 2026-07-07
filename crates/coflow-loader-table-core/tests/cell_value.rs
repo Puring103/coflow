@@ -225,7 +225,7 @@ fn every_cell_value_error_code_has_negative_and_adjacent_valid_coverage() -> Tes
 }
 
 fn declared_error_code_names() -> BTreeSet<String> {
-    let source = include_str!("../src/cell_value/mod.rs");
+    let source = include_str!("../src/cell_value/diagnostics.rs");
     let enum_body = source
         .split("pub enum CellValueErrorCode {")
         .nth(1)
