@@ -504,6 +504,8 @@ fn csv_loader_helpers_do_not_live_in_lib_rs() {
         .expect("read csv diagnostics");
     let options = std::fs::read_to_string("crates/coflow-loader-csv/src/options.rs")
         .expect("read csv options");
+    let source =
+        std::fs::read_to_string("crates/coflow-loader-csv/src/source.rs").expect("read csv source");
 
     for expected in ["pub fn parse", "pub fn write", "fn write_cell"] {
         assert!(
@@ -544,6 +546,24 @@ fn csv_loader_helpers_do_not_live_in_lib_rs() {
         assert!(
             !lib.contains(expected),
             "CSV diagnostic item `{expected}` should not live in lib.rs"
+        );
+    }
+    for expected in [
+        "pub struct CsvSource",
+        "pub struct CsvSheet",
+        "pub struct CsvInputRecords",
+        "pub fn collect_input_records",
+        "fn table_sources_from_csv",
+        "fn table_source_from_csv",
+        "fn default_sheet_name",
+    ] {
+        assert!(
+            source.contains(expected),
+            "CSV source item `{expected}` should live in source.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "CSV source item `{expected}` should not live in lib.rs"
         );
     }
     assert!(
