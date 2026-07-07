@@ -509,18 +509,12 @@ fn engine_mutation_defaults_use_cft_schema_view() {
 
 #[test]
 fn engine_mutation_field_coercion_uses_cft_schema_view() {
-    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation/mod.rs")
-        .expect("read mutation")
+    let coercion = std::fs::read_to_string("crates/coflow-engine/src/mutation/coercion.rs")
+        .expect("read mutation coercion")
         .replace("\r\n", "\n");
 
-    let field_coercion_section = mutation
-        .split("fn prepare_provided_insert_fields(")
-        .nth(1)
-        .and_then(|rest| rest.split("#[derive(Debug, Clone)]\nstruct ExpectedValue").next())
-        .expect("mutation field coercion section");
-
     assert!(
-        field_coercion_section.contains("CftSchemaView::new(&session.schema)"),
+        coercion.contains("CftSchemaView::new(&session.schema)"),
         "mutation field coercion should use coflow-cft CftSchemaView for field lookup"
     );
     for forbidden in [
@@ -530,7 +524,7 @@ fn engine_mutation_field_coercion_uses_cft_schema_view() {
         ".all_fields\n            .iter()",
     ] {
         assert!(
-            !field_coercion_section.contains(forbidden),
+            !coercion.contains(forbidden),
             "mutation field coercion should not use raw schema query `{forbidden}`"
         );
     }
@@ -540,10 +534,13 @@ fn engine_mutation_field_coercion_uses_cft_schema_view() {
 fn engine_mutation_uses_cft_schema_view_for_schema_queries() {
     let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation/mod.rs")
         .expect("read mutation");
+    let coercion = std::fs::read_to_string("crates/coflow-engine/src/mutation/coercion.rs")
+        .expect("read mutation coercion");
 
     assert!(
         mutation.contains("CftSchemaView::new(&session.schema)")
-            || mutation.contains("CftSchemaView::new(schema)"),
+            || mutation.contains("CftSchemaView::new(schema)")
+            || coercion.contains("CftSchemaView::new(&session.schema)"),
         "mutation schema queries should go through coflow-cft CftSchemaView"
     );
     for forbidden in [
@@ -556,6 +553,10 @@ fn engine_mutation_uses_cft_schema_view_for_schema_queries() {
         assert!(
             !mutation.contains(forbidden),
             "mutation should not use raw schema query `{forbidden}`"
+        );
+        assert!(
+            !coercion.contains(forbidden),
+            "mutation coercion should not use raw schema query `{forbidden}`"
         );
     }
 }
@@ -632,6 +633,32 @@ fn engine_mutation_defaults_do_not_live_in_mutation_mod_rs() {
         assert!(
             !mutation.contains(expected),
             "mutation default helper `{expected}` should not live in mutation/mod.rs"
+        );
+    }
+}
+
+#[test]
+fn engine_mutation_coercion_does_not_live_in_mutation_mod_rs() {
+    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation/mod.rs")
+        .expect("read mutation module");
+    let coercion = std::fs::read_to_string("crates/coflow-engine/src/mutation/coercion.rs")
+        .expect("read mutation coercion module");
+
+    for expected in [
+        "fn coerce_mutation_value",
+        "fn coerce_json_field_value",
+        "fn coerce_cfd_field_value",
+        "fn coerce_json_value",
+        "fn coerce_cfd_value",
+        "fn validate_value_for_write",
+    ] {
+        assert!(
+            coercion.contains(expected),
+            "mutation coercion helper `{expected}` should live in mutation/coercion.rs"
+        );
+        assert!(
+            !mutation.contains(expected),
+            "mutation coercion helper `{expected}` should not live in mutation/mod.rs"
         );
     }
 }
