@@ -1811,6 +1811,30 @@ fn lsp_is_documented_as_schema_only_not_engine_runtime_host() {
 }
 
 #[test]
+fn lsp_protocol_helpers_do_not_live_in_lib_rs() {
+    let lib = std::fs::read_to_string("crates/coflow-lsp/src/lib.rs").expect("read lsp lib");
+    let protocol =
+        std::fs::read_to_string("crates/coflow-lsp/src/protocol.rs").expect("read lsp protocol");
+
+    for expected in [
+        "pub(crate) struct LspPosition",
+        "pub(crate) struct TextRequest",
+        "pub(crate) fn read_message",
+        "pub(crate) fn did_open_document",
+        "pub(crate) fn text_document_uri",
+    ] {
+        assert!(
+            protocol.contains(expected),
+            "LSP protocol helper `{expected}` should live in protocol.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "LSP protocol helper `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn table_writers_use_shared_cell_renderer() {
     let excel = std::fs::read_to_string("crates/coflow-loader-excel/src/writer.rs")
         .expect("read excel writer");

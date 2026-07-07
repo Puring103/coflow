@@ -14,6 +14,7 @@
 
 mod cfd;
 mod diagnostics;
+mod protocol;
 mod uri;
 
 use coflow_api::SourceLocationSpec;
@@ -36,10 +37,14 @@ use diagnostics::{
     label_uri, lsp_diagnostic, lsp_error_diagnostic, lsp_label_location, lsp_range,
     preferred_diagnostic_uri,
 };
+use protocol::{
+    did_change_document, did_open_document, did_save_document, read_message, text_document_uri,
+    LspPosition, TextRequest,
+};
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufReader, Write};
 use std::path::{Path, PathBuf};
 use uri::{path_from_file_uri, path_to_file_uri};
 
@@ -811,35 +816,6 @@ impl LspBuild {
 
     fn document_by_module(&self, module_id: &ModuleId) -> Option<&LspDocument> {
         self.documents.get(module_id.as_str())
-    }
-}
-
-struct TextRequest {
-    uri: String,
-    position: LspPosition,
-}
-
-impl TextRequest {
-    fn from_params(params: &Value) -> Option<Self> {
-        Some(Self {
-            uri: text_document_uri(params)?,
-            position: LspPosition::from_value(params.get("position")?)?,
-        })
-    }
-}
-
-#[derive(Clone, Copy)]
-struct LspPosition {
-    line: usize,
-    character: usize,
-}
-
-impl LspPosition {
-    fn from_value(value: &Value) -> Option<Self> {
-        Some(Self {
-            line: value.get("line")?.as_u64()?.try_into().ok()?,
-            character: value.get("character")?.as_u64()?.try_into().ok()?,
-        })
     }
 }
 
@@ -2985,94 +2961,6 @@ fn position_from_byte(source: &str, byte_offset: usize) -> LspPosition {
         }
     }
     LspPosition { line, character }
-}
-
-fn read_message<R: BufRead>(reader: &mut R) -> Result<Option<Vec<u8>>, String> {
-    let mut content_length = None;
-    let mut saw_header = false;
-
-    loop {
-        let mut line = String::new();
-        let bytes = reader
-            .read_line(&mut line)
-            .map_err(|err| format!("failed to read LSP header: {err}"))?;
-
-        if bytes == 0 {
-            return if saw_header {
-                Err("unexpected EOF while reading LSP headers".to_string())
-            } else {
-                Ok(None)
-            };
-        }
-
-        let trimmed = line.trim_end_matches(['\r', '\n']);
-        if trimmed.is_empty() {
-            break;
-        }
-
-        saw_header = true;
-        if let Some((name, value)) = trimmed.split_once(':') {
-            if name.eq_ignore_ascii_case("content-length") {
-                content_length = Some(
-                    value
-                        .trim()
-                        .parse::<usize>()
-                        .map_err(|err| format!("invalid LSP Content-Length: {err}"))?,
-                );
-            }
-        }
-    }
-
-    let content_length =
-        content_length.ok_or_else(|| "missing LSP Content-Length header".to_string())?;
-    if content_length > MAX_LSP_CONTENT_LENGTH {
-        return Err(format!(
-            "LSP Content-Length {content_length} exceeds maximum {MAX_LSP_CONTENT_LENGTH}"
-        ));
-    }
-    let mut body = vec![0; content_length];
-    reader
-        .read_exact(&mut body)
-        .map_err(|err| format!("failed to read LSP body: {err}"))?;
-    Ok(Some(body))
-}
-
-fn did_open_document(params: &Value) -> Option<(String, String)> {
-    let document = params.get("textDocument")?;
-    Some((
-        document.get("uri")?.as_str()?.to_string(),
-        document.get("text")?.as_str()?.to_string(),
-    ))
-}
-
-fn did_change_document(params: &Value) -> Option<(String, String)> {
-    let uri = text_document_uri(params)?;
-    let text = params
-        .get("contentChanges")?
-        .as_array()?
-        .iter()
-        .rev()
-        .find_map(|change| change.get("text").and_then(Value::as_str))?
-        .to_string();
-    Some((uri, text))
-}
-
-fn did_save_document(params: &Value) -> Option<(String, Option<String>)> {
-    Some((
-        text_document_uri(params)?,
-        params
-            .get("text")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-    ))
-}
-
-fn text_document_uri(params: &Value) -> Option<String> {
-    params
-        .get("textDocument")?
-        .get("uri")?
-        .as_str()
-        .map(str::to_string)
 }
 
 fn is_cfd_path(path: &Path) -> bool {
