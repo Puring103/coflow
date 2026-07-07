@@ -1,12 +1,13 @@
+use super::builtin_values;
 use super::builtins::Builtin;
 use super::diagnostics::{
     bin_op_str, cmp_op_str, dimension_lookup_error_message, format_cfd_path_for_message,
-    format_value_for_message, one_line_message, render_expr, render_stmt, type_ref_is_float,
-    unary_op_str, CheckExplanation,
+    format_value_for_message, one_line_message, render_expr, render_stmt, unary_op_str,
+    CheckExplanation,
 };
 use super::ops::{self, OpsResult};
 use super::value::{
-    comparable_key, dict_key_from_check_value, format_check_key_for_path, values_equal, CheckValue,
+    comparable_key, dict_key_from_check_value, format_check_key_for_path, CheckValue,
     LocatedCheckValue,
 };
 use crate::DimensionCheckContext;
@@ -1202,131 +1203,34 @@ impl<'a> CheckEvaluator<'a> {
             Builtin::Len => {
                 let arg = &args[0];
                 let arg_value = self.eval_expr(arg)?;
-                match arg_value.value {
-                    CheckValue::Array { items, .. } => Ok(LocatedCheckValue::new(
-                        CheckValue::Int(items.len() as i64),
-                        arg_value.path,
-                    )),
-                    CheckValue::Dict { entries, .. } => Ok(LocatedCheckValue::new(
-                        CheckValue::Int(entries.len() as i64),
-                        arg_value.path,
-                    )),
-                    other => {
-                        self.diag_at(
-                            CfdErrorCode::CheckEvalTypeError,
-                            arg_value.path,
-                            format!(
-                                "len 需要 array 或 dict: 实际为 {}",
-                                format_value_for_message(&other)
-                            ),
-                        );
-                        Err(EvalAbort::Error)
-                    }
-                }
+                self.from_ops(builtin_values::len_value(arg_value))
             }
             Builtin::Contains => {
                 let collection = self.eval_expr(&args[0])?;
                 let value = self.eval_expr(&args[1])?;
                 Ok(LocatedCheckValue::new(
-                    CheckValue::Bool(self.contains_value(&collection, &value.value)?),
+                    CheckValue::Bool(
+                        self.from_ops(builtin_values::contains_value(&collection, &value.value))?,
+                    ),
                     collection.path.clone(),
                 ))
             }
             Builtin::Unique => {
                 let arg = &args[0];
                 let arg_value = self.eval_expr(arg)?;
-                let arg_kind = arg_value.value.clone();
-                let CheckValue::Array { items, .. } = arg_value.value else {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        arg_value.path,
-                        format!(
-                            "isUnique 需要 array: 实际为 {}",
-                            format_value_for_message(&arg_kind)
-                        ),
-                    );
-                    return Err(EvalAbort::Error);
-                };
-                let mut seen = BTreeSet::new();
-                for item in items {
-                    let Some(key) = comparable_key(&item) else {
-                        self.diag_at(
-                            CfdErrorCode::CheckEvalTypeError,
-                            arg_value.path.clone(),
-                            format!(
-                                "isUnique 元素不可比较: 实际为 {}",
-                                format_value_for_message(&item)
-                            ),
-                        );
-                        return Err(EvalAbort::Error);
-                    };
-                    if !seen.insert(key) {
-                        return Ok(LocatedCheckValue::new(
-                            CheckValue::Bool(false),
-                            arg_value.path,
-                        ));
-                    }
-                }
-                Ok(LocatedCheckValue::new(
-                    CheckValue::Bool(true),
-                    arg_value.path,
-                ))
+                self.from_ops(builtin_values::unique_value(arg_value))
             }
             Builtin::Min | Builtin::Max => self.eval_min_max(builtin, args),
             Builtin::Sum => self.eval_sum(args),
             Builtin::Keys => {
                 let arg = &args[0];
                 let arg_value = self.eval_expr(arg)?;
-                let arg_kind = arg_value.value.clone();
-                let CheckValue::Dict {
-                    entries, key_type, ..
-                } = arg_value.value
-                else {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        arg_value.path,
-                        format!(
-                            "keys 需要 dict: 实际为 {}",
-                            format_value_for_message(&arg_kind)
-                        ),
-                    );
-                    return Err(EvalAbort::Error);
-                };
-                Ok(LocatedCheckValue::new(
-                    CheckValue::Array {
-                        items: entries.into_iter().map(|entry| *entry.key).collect(),
-                        element_type: key_type,
-                    },
-                    arg_value.path,
-                ))
+                self.from_ops(builtin_values::keys_value(arg_value))
             }
             Builtin::Values => {
                 let arg = &args[0];
                 let arg_value = self.eval_expr(arg)?;
-                let arg_kind = arg_value.value.clone();
-                let CheckValue::Dict {
-                    entries,
-                    value_type,
-                    ..
-                } = arg_value.value
-                else {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        arg_value.path,
-                        format!(
-                            "values 需要 dict: 实际为 {}",
-                            format_value_for_message(&arg_kind)
-                        ),
-                    );
-                    return Err(EvalAbort::Error);
-                };
-                Ok(LocatedCheckValue::new(
-                    CheckValue::Array {
-                        items: entries.into_iter().map(|entry| entry.value).collect(),
-                        element_type: value_type,
-                    },
-                    arg_value.path,
-                ))
+                self.from_ops(builtin_values::values_value(arg_value))
             }
             Builtin::Matches => {
                 let value = self.eval_expr(&args[0])?;
@@ -1388,124 +1292,22 @@ impl<'a> CheckEvaluator<'a> {
 
         let receiver_value = self.eval_expr(receiver)?;
         match builtin {
-            Builtin::Len => match receiver_value.value {
-                CheckValue::Array { items, .. } => Ok(LocatedCheckValue::new(
-                    CheckValue::Int(items.len() as i64),
-                    receiver_value.path,
-                )),
-                CheckValue::Dict { entries, .. } => Ok(LocatedCheckValue::new(
-                    CheckValue::Int(entries.len() as i64),
-                    receiver_value.path,
-                )),
-                other => {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        receiver_value.path,
-                        format!(
-                            "len 需要 array 或 dict: 实际为 {}",
-                            format_value_for_message(&other)
-                        ),
-                    );
-                    Err(EvalAbort::Error)
-                }
-            },
+            Builtin::Len => self.from_ops(builtin_values::len_value(receiver_value)),
             Builtin::Contains => {
                 let value = self.eval_expr(&args[0])?;
                 Ok(LocatedCheckValue::new(
-                    CheckValue::Bool(self.contains_value(&receiver_value, &value.value)?),
+                    CheckValue::Bool(self.from_ops(builtin_values::contains_value(
+                        &receiver_value,
+                        &value.value,
+                    ))?),
                     receiver_value.path.clone(),
                 ))
             }
-            Builtin::Unique => {
-                let arg_kind = receiver_value.value.clone();
-                let CheckValue::Array { items, .. } = receiver_value.value else {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        receiver_value.path,
-                        format!(
-                            "isUnique 需要 array: 实际为 {}",
-                            format_value_for_message(&arg_kind)
-                        ),
-                    );
-                    return Err(EvalAbort::Error);
-                };
-                let mut seen = BTreeSet::new();
-                for item in items {
-                    let Some(key) = comparable_key(&item) else {
-                        self.diag_at(
-                            CfdErrorCode::CheckEvalTypeError,
-                            receiver_value.path.clone(),
-                            format!(
-                                "isUnique 元素不可比较: 实际为 {}",
-                                format_value_for_message(&item)
-                            ),
-                        );
-                        return Err(EvalAbort::Error);
-                    };
-                    if !seen.insert(key) {
-                        return Ok(LocatedCheckValue::new(
-                            CheckValue::Bool(false),
-                            receiver_value.path,
-                        ));
-                    }
-                }
-                Ok(LocatedCheckValue::new(
-                    CheckValue::Bool(true),
-                    receiver_value.path,
-                ))
-            }
+            Builtin::Unique => self.from_ops(builtin_values::unique_value(receiver_value)),
             Builtin::Min | Builtin::Max => self.eval_min_max_value(builtin, receiver_value),
             Builtin::Sum => self.eval_sum_value(receiver_value),
-            Builtin::Keys => {
-                let arg_kind = receiver_value.value.clone();
-                let CheckValue::Dict {
-                    entries, key_type, ..
-                } = receiver_value.value
-                else {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        receiver_value.path,
-                        format!(
-                            "keys 需要 dict: 实际为 {}",
-                            format_value_for_message(&arg_kind)
-                        ),
-                    );
-                    return Err(EvalAbort::Error);
-                };
-                Ok(LocatedCheckValue::new(
-                    CheckValue::Array {
-                        items: entries.into_iter().map(|entry| *entry.key).collect(),
-                        element_type: key_type,
-                    },
-                    receiver_value.path,
-                ))
-            }
-            Builtin::Values => {
-                let arg_kind = receiver_value.value.clone();
-                let CheckValue::Dict {
-                    entries,
-                    value_type,
-                    ..
-                } = receiver_value.value
-                else {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        receiver_value.path,
-                        format!(
-                            "values 需要 dict: 实际为 {}",
-                            format_value_for_message(&arg_kind)
-                        ),
-                    );
-                    return Err(EvalAbort::Error);
-                };
-                Ok(LocatedCheckValue::new(
-                    CheckValue::Array {
-                        items: entries.into_iter().map(|entry| entry.value).collect(),
-                        element_type: value_type,
-                    },
-                    receiver_value.path,
-                ))
-            }
+            Builtin::Keys => self.from_ops(builtin_values::keys_value(receiver_value)),
+            Builtin::Values => self.from_ops(builtin_values::values_value(receiver_value)),
             Builtin::Matches => {
                 let value_kind = receiver_value.value.clone();
                 let CheckValue::String(text) = receiver_value.value else {
@@ -1582,50 +1384,7 @@ impl<'a> CheckEvaluator<'a> {
         builtin: Builtin,
         arg_value: LocatedCheckValue,
     ) -> EvalResult<LocatedCheckValue> {
-        let arg_kind = arg_value.value.clone();
-        let CheckValue::Array { items, .. } = arg_value.value else {
-            self.diag_at(
-                CfdErrorCode::CheckEvalTypeError,
-                arg_value.path,
-                format!(
-                    "{} 需要 array: 实际为 {}",
-                    builtin.name(),
-                    format_value_for_message(&arg_kind)
-                ),
-            );
-            return Err(EvalAbort::Error);
-        };
-        if items.is_empty() {
-            self.diag_at(
-                CfdErrorCode::CheckEmptyMinMax,
-                arg_value.path,
-                format!("{} 不能作用于空数组", builtin.name()),
-            );
-            return Err(EvalAbort::Error);
-        }
-        let mut non_null_items = items
-            .iter()
-            .filter(|item| !matches!(item, CheckValue::Null));
-        let Some(mut out) = non_null_items.next().cloned() else {
-            self.diag_at(
-                CfdErrorCode::CheckEmptyMinMax,
-                arg_value.path,
-                format!(
-                    "{} 不能作用于全 null 数组，长度为 {}",
-                    builtin.name(),
-                    items.len()
-                ),
-            );
-            return Err(EvalAbort::Error);
-        };
-        for item in non_null_items {
-            let ord = self.from_ops(ops::compare_order(&out, item, arg_value.path.clone()))?;
-            if (builtin == Builtin::Min && ord.is_gt()) || (builtin == Builtin::Max && ord.is_lt())
-            {
-                out = item.clone();
-            }
-        }
-        Ok(LocatedCheckValue::new(out, arg_value.path))
+        self.from_ops(builtin_values::min_max_value(builtin, arg_value))
     }
 
     fn eval_sum(&mut self, args: &[CftSchemaCheckExpr]) -> EvalResult<LocatedCheckValue> {
@@ -1634,116 +1393,7 @@ impl<'a> CheckEvaluator<'a> {
     }
 
     fn eval_sum_value(&mut self, arg_value: LocatedCheckValue) -> EvalResult<LocatedCheckValue> {
-        let arg_kind = arg_value.value.clone();
-        let CheckValue::Array {
-            items,
-            element_type,
-        } = arg_value.value
-        else {
-            self.diag_at(
-                CfdErrorCode::CheckEvalTypeError,
-                arg_value.path,
-                format!(
-                    "sum 需要 array: 实际为 {}",
-                    format_value_for_message(&arg_kind)
-                ),
-            );
-            return Err(EvalAbort::Error);
-        };
-        let mut int_sum = 0_i64;
-        let mut float_sum = 0.0_f64;
-        let mut saw_float = false;
-        let mut saw_numeric = false;
-        for item in items {
-            match item {
-                CheckValue::Int(value) if !saw_float => {
-                    saw_numeric = true;
-                    let Some(next) = int_sum.checked_add(value) else {
-                        self.diag_at(
-                            CfdErrorCode::CheckEvalTypeError,
-                            arg_value.path.clone(),
-                            format!("整数求和溢出: {int_sum} + {value}"),
-                        );
-                        return Err(EvalAbort::Error);
-                    };
-                    int_sum = next;
-                }
-                CheckValue::Int(value) => {
-                    saw_numeric = true;
-                    float_sum += value as f64;
-                }
-                CheckValue::Float(value) => {
-                    saw_numeric = true;
-                    if !saw_float {
-                        saw_float = true;
-                        float_sum = int_sum as f64;
-                    }
-                    float_sum += value;
-                }
-                CheckValue::Null => {}
-                other => {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        arg_value.path.clone(),
-                        format!(
-                            "sum 元素不是数值: 实际为 {}",
-                            format_value_for_message(&other)
-                        ),
-                    );
-                    return Err(EvalAbort::Error);
-                }
-            }
-        }
-        if saw_float || (!saw_numeric && type_ref_is_float(element_type.as_ref())) {
-            Ok(LocatedCheckValue::new(
-                CheckValue::Float(float_sum),
-                arg_value.path,
-            ))
-        } else {
-            Ok(LocatedCheckValue::new(
-                CheckValue::Int(int_sum),
-                arg_value.path,
-            ))
-        }
-    }
-
-    fn contains_value(
-        &mut self,
-        collection: &LocatedCheckValue,
-        value: &CheckValue,
-    ) -> EvalResult<bool> {
-        match &collection.value {
-            CheckValue::Array { items, .. } => {
-                Ok(items.iter().any(|item| values_equal(item, value)))
-            }
-            CheckValue::Dict { entries, .. } => {
-                let Some(key) = dict_key_from_check_value(value) else {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        collection.path.clone(),
-                        format!(
-                            "contains 的 dict key 无效: 实际为 {}",
-                            format_value_for_message(value)
-                        ),
-                    );
-                    return Err(EvalAbort::Error);
-                };
-                Ok(entries
-                    .iter()
-                    .any(|entry| entry.key_key() == Some(key.clone())))
-            }
-            other => {
-                self.diag_at(
-                    CfdErrorCode::CheckEvalTypeError,
-                    collection.path.clone(),
-                    format!(
-                        "contains 需要 array 或 dict: 实际为 {}",
-                        format_value_for_message(other)
-                    ),
-                );
-                Err(EvalAbort::Error)
-            }
-        }
+        self.from_ops(builtin_values::sum_value(arg_value))
     }
 
     fn eval_unary(

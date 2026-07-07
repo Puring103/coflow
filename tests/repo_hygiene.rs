@@ -809,6 +809,34 @@ fn checker_numeric_ops_do_not_live_in_evaluator_rs() {
 }
 
 #[test]
+fn checker_builtin_value_helpers_do_not_live_in_evaluator_rs() {
+    let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
+        .expect("read checker evaluator");
+    let builtin_values =
+        std::fs::read_to_string("crates/coflow-checker/src/check/builtin_values.rs")
+            .expect("read checker builtin values");
+
+    for expected in [
+        "pub(super) fn len_value",
+        "pub(super) fn contains_value",
+        "pub(super) fn unique_value",
+        "pub(super) fn keys_value",
+        "pub(super) fn values_value",
+        "pub(super) fn min_max_value",
+        "pub(super) fn sum_value",
+    ] {
+        assert!(
+            builtin_values.contains(expected),
+            "checker builtin value helper `{expected}` should live in check/builtin_values.rs"
+        );
+        assert!(
+            !evaluator.contains(expected),
+            "checker builtin value helper `{expected}` should not live in evaluator.rs"
+        );
+    }
+}
+
+#[test]
 fn loaders_do_not_depend_on_checker_runtime_directly() {
     let excel_manifest = std::fs::read_to_string("crates/coflow-loader-excel/Cargo.toml")
         .expect("read excel loader manifest");

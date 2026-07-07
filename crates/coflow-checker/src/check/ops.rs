@@ -13,12 +13,20 @@ pub(super) struct OpsError {
 }
 
 impl OpsError {
-    fn new(code: CfdErrorCode, path: Option<CfdPath>, message: impl Into<String>) -> Self {
+    pub(super) fn new(
+        code: CfdErrorCode,
+        path: Option<CfdPath>,
+        message: impl Into<String>,
+    ) -> Self {
         Self {
             code,
             path,
             message: message.into(),
         }
+    }
+
+    pub(super) fn eval_type(path: Option<CfdPath>, message: impl Into<String>) -> Self {
+        Self::new(CfdErrorCode::CheckEvalTypeError, path, message)
     }
 
     pub(super) fn into_parts(self) -> (CfdErrorCode, Option<CfdPath>, String) {
