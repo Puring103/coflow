@@ -8,6 +8,7 @@ use super::diagnostics::{
     format_value_for_message, one_line_message, render_expr, render_stmt, CheckExplanation,
 };
 use super::enum_values;
+use super::fields;
 use super::ops::{self, OpsResult};
 use super::quantifiers;
 use super::value::{
@@ -17,7 +18,7 @@ use crate::DimensionCheckContext;
 use coflow_cft::{
     CftContainer, CftSchemaBinOp, CftSchemaCheckBlock, CftSchemaCheckExpr, CftSchemaCheckExprKind,
     CftSchemaCheckStmt, CftSchemaCmpOp, CftSchemaQuantifierKind, CftSchemaTypePredicate,
-    CftSchemaTypeRef, CftSchemaUnaryOp, CftSchemaView,
+    CftSchemaUnaryOp, CftSchemaView,
 };
 use coflow_data_model::{
     CfdDataModel, CfdDiagnostic, CfdEnumValue, CfdErrorCode, CfdPath, CfdRecordId,
@@ -869,7 +870,20 @@ impl<'a> CheckEvaluator<'a> {
                 return Ok(value.clone());
             }
         }
-        if let Some(value) = self.current_field(name)? {
+        if let Some(mut value) = fields::current_field(
+            self.schema,
+            self.model,
+            self.root_record,
+            &self.root_path,
+            &self.current,
+            name,
+        ) {
+            if let CheckValue::Record(CheckRecordRef::Top(id)) = &value.value {
+                self.note_read_from(*id);
+            }
+            if let CheckValue::Record(record) = self.current.clone() {
+                self.apply_dimension_variant(&record, name, &mut value)?;
+            }
             return Ok(value);
         }
         if let Some(value) = self.schema.consts.get(name) {
@@ -887,120 +901,30 @@ impl<'a> CheckEvaluator<'a> {
         Err(EvalAbort::Error)
     }
 
-    fn current_field(&mut self, name: &str) -> EvalResult<Option<LocatedCheckValue>> {
-        let record = match &self.current {
-            CheckValue::Record(record) => record.clone(),
-            _ => return Ok(None),
-        };
-        if name == "id" {
-            return Ok(self.virtual_id(&record, record.path()));
-        }
-        let field_type = self.field_type_for_record(&record, name);
-        let mut result = record.field(self.model, field_type, name);
-        if let Some(located) = &result {
-            if let CheckValue::Record(CheckRecordRef::Top(id)) = &located.value {
-                self.note_read_from(*id);
-            }
-        }
-        if let Some(located) = result.as_mut() {
-            self.apply_dimension_variant(&record, name, located)?;
-        }
-        Ok(result)
-    }
-
-    fn field_type_for_record(
-        &self,
-        record: &CheckRecordRef,
-        name: &str,
-    ) -> Option<&CftSchemaTypeRef> {
-        record
-            .actual_type(self.model)
-            .and_then(|actual_type| self.schema.field_type(actual_type, name))
-    }
-
     fn eval_field(
         &mut self,
         target: LocatedCheckValue,
         name: &str,
     ) -> EvalResult<LocatedCheckValue> {
-        if matches!(target.value, CheckValue::Null) {
-            self.diag_at(
-                CfdErrorCode::CheckNullAccess,
-                target.path,
-                format!("不能访问 null 的字段: 尝试在 null 上读取 `.{name}`"),
-            );
-            return Err(EvalAbort::Error);
+        let target_record = match &target.value {
+            CheckValue::Record(record) => Some(record.clone()),
+            _ => None,
+        };
+        let mut result = self.from_ops(fields::field_value(
+            self.schema,
+            self.model,
+            self.root_record,
+            &self.root_path,
+            target,
+            name,
+        ))?;
+        if let CheckValue::Record(CheckRecordRef::Top(id)) = &result.value {
+            self.note_read_from(*id);
         }
-        match target.value {
-            CheckValue::Record(record) => {
-                if name == "id" {
-                    return self.virtual_id(&record, target.path).ok_or_else(|| {
-                        self.diag_at(CfdErrorCode::CheckEvalTypeError, None, "记录没有虚拟 id");
-                        EvalAbort::Error
-                    });
-                }
-                let field_type = self.field_type_for_record(&record, name);
-                let mut result = record.field(self.model, field_type, name).ok_or_else(|| {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        target.path,
-                        format!("记录没有字段 `{name}`"),
-                    );
-                    EvalAbort::Error
-                });
-                if let Ok(located) = &result {
-                    if let CheckValue::Record(CheckRecordRef::Top(id)) = &located.value {
-                        self.note_read_from(*id);
-                    }
-                }
-                if let Ok(located) = result.as_mut() {
-                    self.apply_dimension_variant(&record, name, located)?;
-                }
-                result
-            }
-            CheckValue::Entry(entry) => match name {
-                "key" => Ok(LocatedCheckValue::new(*entry.key, target.path)),
-                "value" => Ok(LocatedCheckValue::new(entry.value, target.path)),
-                _ => {
-                    self.diag_at(
-                        CfdErrorCode::CheckEvalTypeError,
-                        target.path,
-                        format!("dict entry 没有字段 `{name}`，只有 `key` 和 `value`"),
-                    );
-                    Err(EvalAbort::Error)
-                }
-            },
-            other => {
-                self.diag_at(
-                    CfdErrorCode::CheckEvalTypeError,
-                    target.path,
-                    format!(
-                        "字段访问目标不是对象: 读取 `.{name}` 时实际为 {}",
-                        format_value_for_message(&other)
-                    ),
-                );
-                Err(EvalAbort::Error)
-            }
+        if let Some(record) = target_record {
+            self.apply_dimension_variant(&record, name, &mut result)?;
         }
-    }
-
-    fn virtual_id(
-        &self,
-        record: &CheckRecordRef,
-        path: Option<CfdPath>,
-    ) -> Option<LocatedCheckValue> {
-        let key = record
-            .key(self.model)
-            .filter(|key| !key.is_empty())
-            .or_else(|| {
-                self.root_record
-                    .and_then(|id| self.model.record(id).map(coflow_data_model::CfdRecord::key))
-            })?;
-        let key = key.to_string();
-        let path = path
-            .map(|path| path.field("id"))
-            .or_else(|| Some(self.root_path.clone().field("id")));
-        Some(LocatedCheckValue::new(CheckValue::String(key), path))
+        Ok(result)
     }
 
     fn eval_index(

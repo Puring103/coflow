@@ -930,6 +930,42 @@ fn checker_quantifier_item_expansion_does_not_live_in_evaluator_rs() {
 }
 
 #[test]
+fn checker_field_read_helpers_do_not_live_in_evaluator_rs() {
+    let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
+        .expect("read checker evaluator");
+    let fields =
+        std::fs::read_to_string("crates/coflow-checker/src/check/fields.rs")
+            .expect("read checker field helpers");
+
+    for expected in [
+        "pub(super) fn field_type_for_record",
+        "pub(super) fn current_field",
+        "pub(super) fn field_value",
+        "pub(super) fn virtual_id",
+    ] {
+        assert!(
+            fields.contains(expected),
+            "checker field helper `{expected}` should live in check/fields.rs"
+        );
+        assert!(
+            !evaluator.contains(expected),
+            "checker field helper `{expected}` should not live in evaluator.rs"
+        );
+    }
+    for forbidden in [
+        "不能访问 null 的字段",
+        "记录没有字段",
+        "字段访问目标不是对象",
+        "dict entry 没有字段",
+    ] {
+        assert!(
+            !evaluator.contains(forbidden),
+            "checker evaluator should not own field read branch `{forbidden}`"
+        );
+    }
+}
+
+#[test]
 fn checker_index_access_does_not_live_in_evaluator_rs() {
     let evaluator = std::fs::read_to_string("crates/coflow-checker/src/check/evaluator.rs")
         .expect("read checker evaluator");
