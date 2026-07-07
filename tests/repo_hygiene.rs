@@ -133,6 +133,34 @@ fn root_cli_arguments_do_not_live_in_main_rs() {
 }
 
 #[test]
+fn root_cli_artifact_safety_does_not_live_in_commands_rs() {
+    let commands = std::fs::read_to_string("src/commands.rs").expect("read root CLI commands");
+    let artifact_safety = std::fs::read_to_string("src/commands/artifact_safety.rs")
+        .expect("read root CLI artifact safety helpers");
+
+    for expected in [
+        "pub(super) struct ArtifactOutputPlan",
+        "pub(super) fn artifact_safety_diagnostics",
+        "fn output_scope_diagnostics",
+        "fn overlapping_output_diagnostics",
+        "fn configured_source_paths",
+    ] {
+        assert!(
+            artifact_safety.contains(expected),
+            "root CLI artifact safety item `{expected}` should live in commands/artifact_safety.rs"
+        );
+        assert!(
+            !commands.contains(expected),
+            "root CLI artifact safety item `{expected}` should not live in commands.rs"
+        );
+    }
+    assert!(
+        commands.lines().count() < 800,
+        "root CLI commands.rs should stay below the 800-line large-module threshold"
+    );
+}
+
+#[test]
 fn project_config_deserialization_does_not_live_in_project_lib_rs() {
     let project =
         std::fs::read_to_string("crates/coflow-project/src/lib.rs").expect("read project lib");
