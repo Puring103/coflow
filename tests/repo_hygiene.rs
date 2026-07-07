@@ -2144,13 +2144,49 @@ fn lark_loader_writer_cache_does_not_live_in_lib_rs() {
 }
 
 #[test]
+fn lark_loader_write_operations_do_not_live_in_lib_rs() {
+    let lib = std::fs::read_to_string("crates/coflow-loader-lark/src/lib.rs")
+        .expect("read lark loader lib");
+    let write =
+        std::fs::read_to_string("crates/coflow-loader-lark/src/write.rs").expect("read lark write");
+
+    for expected in [
+        "impl<C> DataWriter for LarkSheetWriter<C>",
+        "pub static LARK_SHEET_WRITER_DESCRIPTOR",
+        "fn append_lark_row",
+        "fn create_lark_sheet",
+        "fn write_lark_header",
+        "fn delete_lark_row",
+        "fn read_lark_cell",
+        "fn read_lark_header",
+        "fn send_lark_write",
+        "fn send_values_batch_update",
+        "fn parse_write_envelope",
+        "enum LarkWriteFailure",
+        "enum LarkHttpMethod",
+        "struct LarkInsertLayoutRequest",
+        "fn lark_insert_layout",
+        "fn resolve_lark_column",
+    ] {
+        assert!(
+            write.contains(expected),
+            "Lark writer helper `{expected}` should live in write.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "Lark writer helper `{expected}` should not live in lib.rs"
+        );
+    }
+}
+
+#[test]
 fn table_writers_use_shared_cell_renderer() {
     let excel = std::fs::read_to_string("crates/coflow-loader-excel/src/writer.rs")
         .expect("read excel writer");
     let table_writer = std::fs::read_to_string("crates/coflow-loader-table-core/src/writer.rs")
         .expect("read table writer");
-    let lark =
-        std::fs::read_to_string("crates/coflow-loader-lark/src/lib.rs").expect("read lark loader");
+    let lark = std::fs::read_to_string("crates/coflow-loader-lark/src/write.rs")
+        .expect("read lark writer");
 
     assert!(
         excel.contains("coflow_loader_table_core::writer::{")
