@@ -3369,6 +3369,9 @@ fn table_cell_value_is_split_by_responsibility() {
             .expect("read table core cell value renderer");
     let scan = std::fs::read_to_string("crates/coflow-loader-table-core/src/cell_value/scan.rs")
         .expect("read table core cell value scanner");
+    let strings =
+        std::fs::read_to_string("crates/coflow-loader-table-core/src/cell_value/strings.rs")
+            .expect("read table core cell value strings");
     let types = std::fs::read_to_string("crates/coflow-loader-table-core/src/cell_value/types.rs")
         .expect("read table core cell value type parser");
 
@@ -3434,6 +3437,19 @@ fn table_cell_value_is_split_by_responsibility() {
         assert!(
             !cell_value.contains(expected),
             "cell value type item `{expected}` should not live in cell_value/mod.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn parse_string",
+        "pub(super) fn string_needs_quotes",
+    ] {
+        assert!(
+            strings.contains(expected),
+            "cell value string item `{expected}` should live in cell_value/strings.rs"
+        );
+        assert!(
+            !cell_value.contains(expected),
+            "cell value string item `{expected}` should not live in cell_value/mod.rs"
         );
     }
     assert!(

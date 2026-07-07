@@ -19,10 +19,7 @@ pub(super) enum CellType {
 }
 
 impl CellType {
-    pub(super) fn parse(
-        schema: &CftContainer,
-        text: &str,
-    ) -> Result<Self, CellValueDiagnostics> {
+    pub(super) fn parse(schema: &CftContainer, text: &str) -> Result<Self, CellValueDiagnostics> {
         let mut parser = TypeParser::new(schema, text);
         let ty = parser.parse_type()?;
         parser.skip_ws();

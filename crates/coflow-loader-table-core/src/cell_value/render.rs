@@ -1,7 +1,7 @@
 use coflow_data_model::{CfdDictKey, CfdEnumValue, CfdValue};
 use std::fmt;
 
-use super::string_needs_quotes;
+use super::strings::string_needs_quotes;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CellRenderError {

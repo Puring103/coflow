@@ -18,6 +18,7 @@
 mod diagnostics;
 mod render;
 mod scan;
+mod strings;
 mod types;
 
 use coflow_cft::{record_key_ident_error, CftContainer};
@@ -27,6 +28,7 @@ pub use diagnostics::{CellValueDiagnostic, CellValueDiagnostics, CellValueErrorC
 pub use render::{render_cell_value, CellRenderError};
 use scan::{find_marker_open_brace, find_top_level_char, split_top_level, strip_outer_pair};
 use std::collections::{BTreeMap, BTreeSet};
+use strings::parse_string;
 use types::{full_fields, CellType, FieldMeta};
 use unicode_ident::{is_xid_continue, is_xid_start};
 
@@ -505,57 +507,4 @@ fn parse_dict_key(
         CellType::Nullable(inner) => parse_dict_key(schema, inner, text),
         other => Err(type_mismatch(&format!("dict key {}", other.display()))),
     }
-}
-
-fn parse_string(text: &str) -> Result<String, CellValueDiagnostics> {
-    let text = text.trim();
-    if !text.starts_with('"') {
-        if string_needs_quotes(text) {
-            return Err(CellValueDiagnostics {
-                diagnostics: vec![CellValueDiagnostic {
-                    code: CellValueErrorCode::StringNeedsQuotes,
-                    message: "string value must be quoted".to_string(),
-                }],
-            });
-        }
-        return Ok(text.to_string());
-    }
-    if !text.ends_with('"') || text.len() == 1 {
-        return Err(syntax("unterminated string"));
-    }
-    let mut out = String::new();
-    let mut escaped = false;
-    for ch in text[1..text.len() - 1].chars() {
-        if escaped {
-            match ch {
-                '"' => out.push('"'),
-                '\\' => out.push('\\'),
-                'n' => out.push('\n'),
-                'r' => out.push('\r'),
-                't' => out.push('\t'),
-                other => {
-                    return Err(syntax(format!("unsupported string escape `\\{other}`")));
-                }
-            }
-            escaped = false;
-        } else if ch == '\\' {
-            escaped = true;
-        } else if ch == '"' {
-            return Err(syntax("unescaped quote in string"));
-        } else {
-            out.push(ch);
-        }
-    }
-    if escaped {
-        return Err(syntax("unterminated string escape"));
-    }
-    Ok(out)
-}
-
-fn string_needs_quotes(text: &str) -> bool {
-    text.is_empty()
-        || matches!(text, "_" | "null")
-        || text
-            .chars()
-            .any(|ch| matches!(ch, ',' | '|' | ':' | '{' | '}' | '[' | ']'))
 }
