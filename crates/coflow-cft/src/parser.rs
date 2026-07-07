@@ -1,12 +1,13 @@
 mod annotations;
 mod check;
 mod defaults;
+mod literals;
 mod tokens;
 
 use self::tokens::{reserved_keyword_name, token_name};
 use crate::ast::{
-    Annotation, ConstDef, ConstLiteral, EnumDef, EnumVariant, FieldDef, Item, ModuleAst, NameRef,
-    SignedInt, TypeDef, TypeRef, TypeRefKind,
+    Annotation, ConstDef, EnumDef, EnumVariant, FieldDef, Item, ModuleAst, NameRef, TypeDef,
+    TypeRef, TypeRefKind,
 };
 use crate::container::ModuleId;
 use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
@@ -100,74 +101,6 @@ impl<'a> Parser<'a> {
             annotations,
             span: Span::new(start, end),
         })
-    }
-
-    fn parse_const_literal(&mut self) -> Result<ConstLiteral, CftDiagnostics> {
-        let token = self.peek().clone();
-        match token.kind {
-            TokenKind::Int(value) => {
-                self.bump();
-                Ok(ConstLiteral::Int(value, token.span))
-            }
-            TokenKind::Float(value) => {
-                self.bump();
-                Ok(ConstLiteral::Float(value, token.span))
-            }
-            TokenKind::True => {
-                self.bump();
-                Ok(ConstLiteral::Bool(true, token.span))
-            }
-            TokenKind::False => {
-                self.bump();
-                Ok(ConstLiteral::Bool(false, token.span))
-            }
-            TokenKind::String(value) => {
-                self.bump();
-                Ok(ConstLiteral::String(value, token.span))
-            }
-            TokenKind::Minus => {
-                self.bump();
-                let next = self.peek().clone();
-                let span = Span::new(token.span.start, next.span.end);
-                match next.kind {
-                    TokenKind::Int(value) => {
-                        self.bump();
-                        let Some(negated) = value.checked_neg() else {
-                            return self.err_at(
-                                CftErrorCode::InvalidIntLiteral,
-                                span,
-                                "negated integer literal overflowed",
-                            );
-                        };
-                        Ok(ConstLiteral::Int(negated, span))
-                    }
-                    TokenKind::UIntOverflow(value) => {
-                        self.bump();
-                        let Some(negated) = negate_u64_to_i64(value) else {
-                            return self.err_at(
-                                CftErrorCode::InvalidIntLiteral,
-                                span,
-                                "integer literal out of range",
-                            );
-                        };
-                        Ok(ConstLiteral::Int(negated, span))
-                    }
-                    TokenKind::Float(value) => {
-                        self.bump();
-                        Ok(ConstLiteral::Float(-value, span))
-                    }
-                    _ => self.err(CftErrorCode::InvalidConstValue, "expected numeric literal"),
-                }
-            }
-            TokenKind::UIntOverflow(_) => self.err(
-                CftErrorCode::InvalidIntLiteral,
-                "integer literal out of range",
-            ),
-            _ => self.err(
-                CftErrorCode::InvalidConstValue,
-                "const value must be an int, float, bool, or string literal",
-            ),
-        }
     }
 
     fn parse_enum(&mut self, annotations: Vec<Annotation>) -> Result<EnumDef, CftDiagnostics> {
@@ -379,53 +312,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_signed_int(&mut self) -> Result<SignedInt, CftDiagnostics> {
-        let sign_span = self.eat(&TokenKind::Minus);
-        let token = self.peek().clone();
-        let span = sign_span.map_or(token.span, |span| span.join(token.span));
-        match token.kind {
-            TokenKind::Int(value) => {
-                self.bump();
-                let value = if sign_span.is_some() {
-                    let Some(negated) = value.checked_neg() else {
-                        return self.err_at(
-                            CftErrorCode::InvalidIntLiteral,
-                            span,
-                            "negated integer literal overflowed",
-                        );
-                    };
-                    negated
-                } else {
-                    value
-                };
-                Ok(SignedInt { value, span })
-            }
-            TokenKind::UIntOverflow(value) => {
-                self.bump();
-                if sign_span.is_some() {
-                    let Some(negated) = negate_u64_to_i64(value) else {
-                        return self.err_at(
-                            CftErrorCode::InvalidIntLiteral,
-                            span,
-                            "integer literal out of range",
-                        );
-                    };
-                    Ok(SignedInt {
-                        value: negated,
-                        span,
-                    })
-                } else {
-                    self.err_at(
-                        CftErrorCode::InvalidIntLiteral,
-                        span,
-                        "integer literal out of range",
-                    )
-                }
-            }
-            _ => self.err(CftErrorCode::ExpectedToken, "expected integer literal"),
-        }
-    }
-
     pub(super) fn expect_ident(&mut self) -> Result<NameRef, CftDiagnostics> {
         self.expect_name(CftErrorCode::ExpectedIdentifier, true)
     }
@@ -540,7 +426,7 @@ impl<'a> Parser<'a> {
 /// Folds `-magnitude` where `magnitude > i64::MAX` into the equivalent `i64`.
 /// Only `2^63` (i.e. `i64::MIN.unsigned_abs()`) is representable; any larger
 /// magnitude is out of range and returns `None`.
-fn negate_u64_to_i64(magnitude: u64) -> Option<i64> {
+pub(super) fn negate_u64_to_i64(magnitude: u64) -> Option<i64> {
     const I64_MIN_MAGNITUDE: u64 = i64::MIN.unsigned_abs();
     if magnitude == I64_MIN_MAGNITUDE {
         Some(i64::MIN)

@@ -1334,6 +1334,8 @@ fn cft_parser_check_expression_parser_is_split_out() {
         .expect("read check parser");
     let defaults = std::fs::read_to_string("crates/coflow-cft/src/parser/defaults.rs")
         .expect("read default parser");
+    let literals = std::fs::read_to_string("crates/coflow-cft/src/parser/literals.rs")
+        .expect("read literal parser");
     let tokens = std::fs::read_to_string("crates/coflow-cft/src/parser/tokens.rs")
         .expect("read parser tokens");
 
@@ -1382,6 +1384,20 @@ fn cft_parser_check_expression_parser_is_split_out() {
         assert!(
             !parser.contains(expected),
             "CFT parser default helper `{expected}` should not live in parser.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn parse_const_literal",
+        "fn parse_negative_const_literal",
+        "pub(super) fn parse_signed_int",
+    ] {
+        assert!(
+            literals.contains(expected),
+            "CFT parser literal helper `{expected}` should live in parser/literals.rs"
+        );
+        assert!(
+            !parser.contains(expected),
+            "CFT parser literal helper `{expected}` should not live in parser.rs"
         );
     }
     for expected in [
