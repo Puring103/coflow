@@ -444,11 +444,13 @@ fn csv_dimension_source_sync_does_not_live_in_writer_rs() {
 }
 
 #[test]
-fn csv_format_parser_writer_do_not_live_in_lib_rs() {
+fn csv_loader_helpers_do_not_live_in_lib_rs() {
     let lib =
         std::fs::read_to_string("crates/coflow-loader-csv/src/lib.rs").expect("read csv lib");
     let format =
         std::fs::read_to_string("crates/coflow-loader-csv/src/format.rs").expect("read csv format");
+    let options = std::fs::read_to_string("crates/coflow-loader-csv/src/options.rs")
+        .expect("read csv options");
 
     for expected in ["pub fn parse", "pub fn write", "fn write_cell"] {
         assert!(
@@ -458,6 +460,20 @@ fn csv_format_parser_writer_do_not_live_in_lib_rs() {
         assert!(
             !lib.contains(expected),
             "CSV format item `{expected}` should not live in lib.rs"
+        );
+    }
+    for expected in [
+        "pub(super) fn csv_sheets_from_options",
+        "fn csv_sheet_from_value",
+        "fn optional_string_field",
+    ] {
+        assert!(
+            options.contains(expected),
+            "CSV option parser item `{expected}` should live in options.rs"
+        );
+        assert!(
+            !lib.contains(expected),
+            "CSV option parser item `{expected}` should not live in lib.rs"
         );
     }
     assert!(

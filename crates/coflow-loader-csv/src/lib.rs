@@ -18,8 +18,9 @@
 )]
 #![allow(clippy::missing_const_for_fn)]
 
-pub mod writer;
 mod format;
+mod options;
+pub mod writer;
 pub use format::{parse, write};
 pub use writer::CsvWriter;
 
@@ -34,7 +35,7 @@ use coflow_loader_table_core::{
     collect_table_input_records as collect_shared_table_input_records, TableDiagnostic,
     TableDiagnostics, TableLabel, TableLocation, TableSheet, TableSheetConfig, TableSource,
 };
-use serde_json::Value;
+use options::csv_sheets_from_options;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -432,104 +433,6 @@ impl DataLoader for CsvLoader {
     }
 }
 
-fn csv_sheets_from_options(options: &Value) -> Result<Vec<CsvSheet>, DiagnosticSet> {
-    let Some(sheets) = options.get("sheets") else {
-        return Ok(Vec::new());
-    };
-    let Some(sheets) = sheets.as_array() else {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "CSV-SOURCE",
-            "CSV",
-            "csv source option `sheets` must be an array",
-        )));
-    };
-    sheets
-        .iter()
-        .map(csv_sheet_from_value)
-        .collect::<Result<Vec<_>, _>>()
-}
-
-fn csv_sheet_from_value(value: &Value) -> Result<CsvSheet, DiagnosticSet> {
-    let Some(object) = value.as_object() else {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "CSV-SOURCE",
-            "CSV",
-            "csv source sheet config must be an object",
-        )));
-    };
-    let Some(sheet_name) = object.get("sheet").and_then(Value::as_str) else {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "CSV-SOURCE",
-            "CSV",
-            "csv source sheet config requires `sheet`",
-        )));
-    };
-    if sheet_name.trim().is_empty() {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "CSV-SOURCE",
-            "CSV",
-            "csv source sheet `sheet` is empty",
-        )));
-    }
-    let mut sheet = CsvSheet::new(sheet_name);
-    if let Some(type_name) = optional_string_field(object, "type", "csv source sheet `type`")? {
-        if type_name.trim().is_empty() {
-            return Err(DiagnosticSet::one(Diagnostic::error(
-                "CSV-SOURCE",
-                "CSV",
-                "csv source sheet `type` is empty",
-            )));
-        }
-        sheet = sheet.with_type(type_name);
-    }
-    if let Some(key) = optional_string_field(object, "key", "csv source sheet `key`")? {
-        if key.trim().is_empty() {
-            return Err(DiagnosticSet::one(Diagnostic::error(
-                "CSV-SOURCE",
-                "CSV",
-                "csv source sheet `key` is empty",
-            )));
-        }
-        sheet = sheet.with_key(key);
-    }
-    if let Some(columns) = object.get("columns") {
-        let Some(columns) = columns.as_object() else {
-            return Err(DiagnosticSet::one(Diagnostic::error(
-                "CSV-SOURCE",
-                "CSV",
-                "csv source sheet `columns` must be an object",
-            )));
-        };
-        let mut parsed_columns = Vec::new();
-        for (source, field) in columns {
-            let Some(field) = field.as_str() else {
-                return Err(DiagnosticSet::one(Diagnostic::error(
-                    "CSV-SOURCE",
-                    "CSV",
-                    format!("csv source sheet column `{source}` must map to a string field"),
-                )));
-            };
-            if source.trim().is_empty() {
-                return Err(DiagnosticSet::one(Diagnostic::error(
-                    "CSV-SOURCE",
-                    "CSV",
-                    "csv source sheet column name is empty",
-                )));
-            }
-            if field.trim().is_empty() {
-                return Err(DiagnosticSet::one(Diagnostic::error(
-                    "CSV-SOURCE",
-                    "CSV",
-                    format!("csv source sheet column `{source}` maps to an empty field"),
-                )));
-            }
-            parsed_columns.push((source.as_str(), field));
-        }
-        sheet = sheet.with_columns(parsed_columns);
-    }
-    Ok(sheet)
-}
-
 fn collect_csv_sources(
     dir: &Path,
     source: &ResolvedSource,
@@ -573,23 +476,6 @@ fn is_csv_path(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| CSV_LOADER_DESCRIPTOR.extensions.contains(&ext))
-}
-
-fn optional_string_field<'a>(
-    object: &'a serde_json::Map<String, Value>,
-    key: &str,
-    label: &str,
-) -> Result<Option<&'a str>, DiagnosticSet> {
-    let Some(value) = object.get(key) else {
-        return Ok(None);
-    };
-    value.as_str().map(Some).ok_or_else(|| {
-        DiagnosticSet::one(Diagnostic::error(
-            "CSV-SOURCE",
-            "CSV",
-            format!("{label} must be a string"),
-        ))
-    })
 }
 
 fn csv_diagnostics_to_api(err: CsvDiagnostics) -> DiagnosticSet {
