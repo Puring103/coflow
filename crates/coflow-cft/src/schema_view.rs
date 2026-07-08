@@ -1,4 +1,5 @@
 mod dimension_checks;
+mod queries;
 
 use crate::{
     CftAnnotation, CftConstValue, CftContainer, CftSchemaCheckBlock, CftSchemaEnum, CftSchemaType,

@@ -1,19 +1,8 @@
-use coflow_cft::{CftAnnotation, CftAnnotationValue};
+use coflow_cft::CftAnnotation;
 use unicode_ident::{is_xid_continue, is_xid_start};
 
 pub fn has_annotation(annotations: &[CftAnnotation], name: &str) -> bool {
     annotations.iter().any(|annotation| annotation.name == name)
-}
-
-pub fn annotation_name_arg(annotations: &[CftAnnotation], name: &str) -> Option<String> {
-    annotations
-        .iter()
-        .find(|annotation| annotation.name == name)
-        .and_then(|annotation| annotation.args.first())
-        .and_then(|arg| match arg {
-            CftAnnotationValue::Name(value) => Some(value.clone()),
-            _ => None,
-        })
 }
 
 pub fn csharp_ident_error(value: &str) -> Option<String> {

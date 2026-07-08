@@ -1767,6 +1767,8 @@ fn cft_schema_view_dimension_check_analysis_is_split_out() {
     let dimension_checks =
         std::fs::read_to_string("crates/coflow-cft/src/schema_view/dimension_checks.rs")
             .expect("read schema view dimension check analysis");
+    let queries = std::fs::read_to_string("crates/coflow-cft/src/schema_view/queries.rs")
+        .expect("read schema view query helpers");
 
     for expected in [
         "pub(super) fn dimension_checks_for_type",
@@ -1788,6 +1790,25 @@ fn cft_schema_view_dimension_check_analysis_is_split_out() {
         schema_view.lines().count() < 500,
         "coflow-cft schema_view.rs should stay focused on schema view metadata/query"
     );
+    for expected in [
+        "pub fn type_is_struct",
+        "pub fn type_id_as_enum",
+        "pub fn inherited_id_as_enum",
+        "pub fn is_id_as_enum",
+        "pub fn id_as_enum_names",
+        "pub fn ref_target_names",
+        "fn collect_ref_targets_for_type",
+        "fn annotation_name_arg",
+    ] {
+        assert!(
+            queries.contains(expected),
+            "CFT schema query helper `{expected}` should live in schema_view/queries.rs"
+        );
+        assert!(
+            !schema_view.contains(expected),
+            "CFT schema query helper `{expected}` should not bloat schema_view.rs"
+        );
+    }
 }
 
 #[test]
@@ -1969,6 +1990,30 @@ fn csharp_codegen_schema_projection_uses_cft_schema_view() {
             && schema_view.contains("pub type FieldMeta = CftFieldMeta;"),
         "C# codegen should re-export coflow-cft type/field metadata instead of defining local copies"
     );
+    for expected in [
+        "self.cft.id_as_enum_names()",
+        "self.cft.inherited_id_as_enum(type_name)",
+        "self.cft.ref_target_names()",
+        "self.cft.type_is_struct(&ty.name)",
+    ] {
+        assert!(
+            schema_view.contains(expected),
+            "C# codegen schema facade should delegate `{expected}` to coflow-cft"
+        );
+    }
+    for forbidden in [
+        "fn type_id_as_enum",
+        "fn collect_ref_targets_for_type",
+        "fn collect_ref_targets_in_field",
+        "fn collect_ref_targets_in_type",
+        "annotation_name_arg(&ty.annotations",
+        "has_annotation(&ty.annotations",
+    ] {
+        assert!(
+            !schema_view.contains(forbidden),
+            "C# codegen schema facade should not keep local schema semantic helper `{forbidden}`"
+        );
+    }
     assert!(
         codegen.contains("CftSchemaTypeRef"),
         "C# codegen emit path should consume coflow-cft type refs directly"
