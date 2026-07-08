@@ -333,44 +333,6 @@ impl FileIndex {
     }
 }
 
-/// Engine-owned dependency view captured during a full check run.
-///
-/// `reads_from[a]` is the set of records `a` reads while evaluating its own
-/// check blocks. The session can invert this graph to compute which records'
-/// checks may need to re-run after edits without exposing checker internals to
-/// hosts.
-#[derive(Debug, Clone, Default)]
-pub struct DependencyIndex {
-    reads_from: BTreeMap<CfdRecordId, BTreeSet<CfdRecordId>>,
-}
-
-impl DependencyIndex {
-    #[must_use]
-    pub const fn reads_from(&self) -> &BTreeMap<CfdRecordId, BTreeSet<CfdRecordId>> {
-        &self.reads_from
-    }
-
-    #[must_use]
-    pub fn affected_by(&self, changed: &[CfdRecordId]) -> Vec<CfdRecordId> {
-        let mut out: BTreeSet<CfdRecordId> = changed.iter().copied().collect();
-        let changed_set: BTreeSet<CfdRecordId> = changed.iter().copied().collect();
-        for (reader, reads) in &self.reads_from {
-            if reads.iter().any(|id| changed_set.contains(id)) {
-                out.insert(*reader);
-            }
-        }
-        out.into_iter().collect()
-    }
-}
-
-pub(crate) fn dependency_index_from_checker_graph(
-    graph: coflow_checker::DependencyGraph,
-) -> DependencyIndex {
-    DependencyIndex {
-        reads_from: graph.reads_from,
-    }
-}
-
 fn source_location_display_path(location: &SourceLocation) -> String {
     match location {
         SourceLocation::FileSpan { path, .. }

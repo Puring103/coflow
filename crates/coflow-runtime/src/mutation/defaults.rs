@@ -76,7 +76,7 @@ fn default_fields_for_type_inner(
         };
     }
     let mut fields = BTreeMap::new();
-    for field in &schema_type.all_fields {
+    for field in schema.full_fields(&schema_type.name).unwrap_or(&[]) {
         if skip_fields.is_some_and(|skip_fields| skip_fields.contains(&field.name)) {
             continue;
         }

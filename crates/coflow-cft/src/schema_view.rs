@@ -182,9 +182,17 @@ impl CftSchemaView {
 
     #[must_use]
     pub fn field_type(&self, actual_type: &str, field_name: &str) -> Option<&CftSchemaTypeRef> {
+        self.field_meta(actual_type, field_name)
+            .map(|field| &field.ty_ref)
+    }
+
+    #[must_use]
+    pub fn field_meta(&self, actual_type: &str, field_name: &str) -> Option<&CftFieldMeta> {
         self.types
-            .get(actual_type)
-            .and_then(|meta| meta.fields.get(field_name))
+            .get(actual_type)?
+            .all_fields
+            .iter()
+            .find(|field| field.name == field_name)
     }
 
     #[must_use]

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::dimensions::{self, dimensions_for_project, DimensionInfo};
 use crate::files::{self, DimensionGroup, FileTreeNode, FileTreeOptions};
-use crate::indexes::{DependencyIndex, DiagnosticsStore, FileIndex, RecordIndex, SourceIndex};
+use crate::indexes::{DiagnosticsStore, FileIndex, RecordIndex, SourceIndex};
 use crate::records::RecordView;
 
 /// Stable, wire-friendly coordinate of a top-level record.
@@ -47,7 +47,6 @@ pub struct ProjectSession {
     pub sources: SourceIndex,
     pub records: RecordIndex,
     pub files: FileIndex,
-    pub dependencies: DependencyIndex,
     pub(crate) loader_extensions: BTreeSet<String>,
 }
 

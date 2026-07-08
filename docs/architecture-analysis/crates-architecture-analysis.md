@@ -123,7 +123,7 @@
    `build_project_session_for_build` 默认 `DimensionBuildMode::Generate`，会写入 generated dimension sources，再 reload；`open_project_session_read_only` 才是无写入口。用户已经确认普通 build 包含维度 build 是合理的，所以这不是 CLI 需求偏差。上一轮“名称没有显式表达”的问题已修复；剩余风险是第三方 host 仍可直接调用较宽的 runtime API，需要继续通过 public surface 收窄和测试约束防止误用。
 
 2. **语义 view 和类型解释仍在多处重复。**
-   `coflow-cft::CftSchemaView`、`coflow-data-model::compiler_context`、`coflow-codegen-csharp::schema_context`、runtime 写入/默认值/mutation、checker value/type 逻辑、LSP completion/hover/semantic tokens 都在解释 schema/type/value。data-model 和 C# codegen 已经不再定义本地 `TypeMeta`/`FieldMeta` wrapper，C# codegen 也改用更准确的 `CsharpSchemaContext` 命名；但还没有形成一个所有消费者共用的 schema query/type facade。语义变化仍可能导致 build/check/export/codegen/LSP 行为不一致。
+   `coflow-cft::CftSchemaView`、`coflow-data-model::compiler_context`、`coflow-codegen-csharp::schema_context`、runtime 写入/默认值/mutation、checker value/type 逻辑、LSP completion/hover/semantic tokens 都在解释 schema/type/value。data-model 和 C# codegen 已经不再定义本地 `TypeMeta`/`FieldMeta` wrapper，C# codegen 也改用更准确的 `CsharpSchemaContext` 命名；runtime mutation 的字段查询已下沉到 `CftSchemaView::field_meta`。但还没有形成一个所有消费者共用的 schema query/type facade。语义变化仍可能导致 build/check/export/codegen/LSP 行为不一致。
 
 3. **`coflow-api` 仍是宽接口层，不是低耦合 provider ABI。**
    API 模块已经拆分，但 provider trait 仍直接暴露 `CftContainer`、`CfdDataModel`、`CfdValue`、`RecordOrigin` 等内部模型。这样 provider 与语言/数据模型版本强绑定。当前作为同仓库 crate 可以接受，但如果要长期支持独立 provider 或稳定扩展点，仍会成为主要变更热点。
@@ -139,8 +139,8 @@
 6. **`coflow-runtime` public surface 仍然偏宽。**
    现在已经删除薄 facade，`coflow-runtime` 是实际实现 crate。但它仍暴露大部分 runtime 内部报告、索引、mutation、write 类型，没有表达 read-only/build/write 三类更窄 session 入口的差异。短期命名已经准确，长期需要继续收窄 public API。
 
-7. **runtime 已 provider-neutral，但若干 provider id 策略仍硬编码在 host/runtime 边缘。**
-   `data_files.rs::resolve_provider_id` 仍硬编码 `cfd/csv/excel/xlsx`，因为这是“创建本地数据文件”的 CLI/runtime 便利逻辑。它不再直接调用具体 writer，但 provider 推断仍不是 registry-driven，新增本地 table provider 需要扩展这段逻辑。
+7. **runtime 已 provider-neutral，但 provider 能力模型仍需要继续校准。**
+   `data_files.rs::resolve_provider_id` 已从硬编码 `cfd/csv/excel/xlsx` 改为根据 registry 中的 source provider extension 与 table manager 注册情况推断 provider。旧“新增本地 table provider 必须改 runtime 分支”的问题已缓解；剩余风险是 `TableManagerDescriptor` 自身还没有表达 extension/alias 等能力，推断仍依赖同 id source provider descriptor。
 
 8. **Table/dimension manager 与 writer 是平行接口，能力模型需要持续校准。**
    `SourceWriter` 处理 record/field 写入，`TableManager` 处理 create/sync header，`DimensionSourceManager` 处理 generated dimension source。拆分比单个巨型 writer 更清晰，但同一 provider 往往要实现三组接口；capability、diagnostic code、source option parsing、cache invalidation 需要保持一致。
@@ -377,7 +377,7 @@
 
 核心类型：
 
-- session/index：`ProjectSession`, `ProjectSchemaSession`, `RecordCoordinate`, `DiagnosticsStore`, `SourceIndex`, `ResolvedSourceEntry`, `SourceId`, `RecordIndex`, `RecordRef`, `FileIndex`, `DependencyIndex`。
+- session/index：`ProjectSession`, `ProjectSchemaSession`, `RecordCoordinate`, `DiagnosticsStore`, `SourceIndex`, `ResolvedSourceEntry`, `SourceId`, `RecordIndex`, `RecordRef`, `FileIndex`。
 - read/schema reports：`DataSourcesReport`, `DataListQuery`, `DataListReport`, `DataGetQuery`, `DataGetReport`, `SchemaInspectReport`, `SchemaFilesReport`, `SchemaTypeInfo`, `SchemaFieldInfo`。
 - writes/mutation：`RecordView`, `RecordTarget`, runtime `WriteOutcome`, `MutationRequest`, `MutationOp`, `MutationValue`, `PreparedMutation`, `MutationReport`, `DataPatchRequest`, `DataPatchOp`。
 - data files/dimensions：`DataCreateFileOptions`, `DataSyncHeaderOptions`, `DataFileReport`, `DimensionInfo`, `DimensionField`, `DimensionFieldInfo`, `DimensionGenerationTransaction`。
@@ -397,7 +397,8 @@
 
 - runtime 已经比上一轮模块化很多，生产依赖也 provider-neutral。
 - `build_project_session_for_build` 的写副作用仍需在 public API 命名或 options 层更显式表达。
-- `data_files.rs` 仍硬编码本地 provider id 推断，虽然实际操作已经走 registry。
+- `data_files.rs` 的本地 provider 推断已改为 registry-driven，不再硬编码 `cfd/csv/excel/xlsx` 分支；但 `TableManagerDescriptor` 仍缺少自己的 extension/alias 能力描述。
+- runtime 已移除无消费者的 checker dependency index 存储，不再把 `DependencyIndex` 作为 session/public surface 的一部分。
 - runtime 内部仍大量直接创建 `CftSchemaView`，说明统一 schema facade 还未完全下沉。
 
 ### 3.9 `coflow-exporter-core`

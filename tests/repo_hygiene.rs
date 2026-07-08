@@ -1199,8 +1199,10 @@ fn engine_public_api_does_not_expose_checker_dependency_graph() {
         "ProjectSession should not expose the checker crate dependency graph type directly"
     );
     assert!(
-        !engine.contains("impl From<coflow_checker::DependencyGraph> for DependencyIndex"),
-        "checker dependency graph conversion should stay as an engine-internal helper, not a public From impl"
+        !engine.contains("DependencyIndex")
+            && !engine.contains("dependencies:")
+            && !engine.contains("run_checks_for_dimensions_with_deps"),
+        "coflow-runtime should not store or expose checker dependency indexes until an incremental-check consumer exists"
     );
 }
 
@@ -1216,7 +1218,6 @@ fn engine_runtime_indexes_do_not_live_in_lib_rs() {
         "pub struct SourceIndex",
         "pub struct RecordIndex",
         "pub struct FileIndex",
-        "pub struct DependencyIndex",
     ] {
         assert!(
             indexes.contains(expected),
@@ -2391,6 +2392,9 @@ fn engine_data_file_headers_use_cft_compiler_context() {
         ".resolve_type(",
         "session.schema.resolve_type",
         ".types.get(",
+        "\"xlsx\" => Ok(\"excel\"",
+        "\"cfd\" | \"csv\"",
+        "\"cfd\" | \"csv\" | \"excel\"",
     ] {
         assert!(
             !data_files.contains(forbidden),

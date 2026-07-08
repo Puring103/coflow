@@ -5,7 +5,7 @@ use coflow_api::{
     SourceProviderSelectionError, SourceResolveContext,
 };
 use coflow_cft::CftSchemaView;
-use coflow_checker::run_checks_for_dimensions_with_deps;
+use coflow_checker::run_checks_for_dimensions;
 use coflow_data_model::{CfdDataModel, CfdDiagnostics, CfdPath, CfdPathSegment, CfdRecordId};
 use coflow_project::{path_to_slash, Project, SourceConfig};
 use serde_json::Value;
@@ -16,8 +16,7 @@ use std::sync::Arc;
 
 use crate::dimensions;
 use crate::indexes::{
-    dependency_index_from_checker_graph, DependencyIndex, DiagnosticLogicalLocation, FileIndex,
-    PendingRecordRef, RecordIndex, SourceId, SourceIndex,
+    DiagnosticLogicalLocation, FileIndex, PendingRecordRef, RecordIndex, SourceId, SourceIndex,
 };
 use crate::session::RecordCoordinate;
 
@@ -26,14 +25,12 @@ type ResolvedLoaderSource = (Arc<dyn coflow_api::SourceProvider>, ResolvedSource
 #[derive(Debug, Clone)]
 pub(crate) struct ProjectLoadOutput {
     pub(crate) model: CfdDataModel,
-    pub(crate) dependencies: DependencyIndex,
     pub(crate) diagnostics: DiagnosticSet,
     pub(crate) logical_locations: BTreeMap<usize, DiagnosticLogicalLocation>,
 }
 
 #[derive(Debug)]
 struct CheckOutput {
-    dependencies: DependencyIndex,
     diagnostics: DiagnosticSet,
     logical_locations: BTreeMap<usize, DiagnosticLogicalLocation>,
 }
@@ -53,7 +50,6 @@ pub(crate) struct LoadProjectDataOptions {
 pub(crate) fn empty_load_output() -> Result<ProjectLoadOutput, String> {
     Ok(ProjectLoadOutput {
         model: empty_model()?,
-        dependencies: DependencyIndex::default(),
         diagnostics: DiagnosticSet::empty(),
         logical_locations: BTreeMap::new(),
     })
@@ -149,14 +145,12 @@ pub(crate) fn load_project_data(
         run_project_checks(project, schema, &model, &origins)
     } else {
         CheckOutput {
-            dependencies: DependencyIndex::default(),
             diagnostics: DiagnosticSet::empty(),
             logical_locations: BTreeMap::new(),
         }
     };
     Ok(ProjectLoadOutput {
         model,
-        dependencies: check.dependencies,
         diagnostics: check.diagnostics,
         logical_locations: check.logical_locations,
     })
@@ -258,8 +252,7 @@ fn run_project_checks(
     model: &CfdDataModel,
     origins: &[RecordOrigin],
 ) -> CheckOutput {
-    let (check_result, dependencies) =
-        run_checks_for_dimensions_with_deps(schema, model, &project.config.dimensions);
+    let check_result = run_checks_for_dimensions(schema, model, &project.config.dimensions);
     let (diagnostics, logical_locations) = if let Err(checks) = check_result {
         let logical_locations = logical_locations_from_cfd(&checks, |id| {
             model
@@ -272,7 +265,6 @@ fn run_project_checks(
         (DiagnosticSet::empty(), BTreeMap::new())
     };
     CheckOutput {
-        dependencies: dependency_index_from_checker_graph(dependencies),
         diagnostics,
         logical_locations,
     }

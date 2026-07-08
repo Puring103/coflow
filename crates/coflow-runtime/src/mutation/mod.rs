@@ -20,21 +20,17 @@ pub(super) fn schema_field<'a>(
     actual_type: &str,
     field_name: &str,
 ) -> Result<&'a CftFieldMeta, DiagnosticSet> {
-    let Some(schema_type) = schema.type_meta(actual_type) else {
+    if !schema.has_type(actual_type) {
         return Err(one_mutation_error(
             "MUTATION-TYPE",
             format!("unknown type `{actual_type}`"),
         ));
-    };
-    schema_type
-        .all_fields
-        .iter()
-        .find(|field| field.name == field_name)
-        .ok_or_else(|| {
-            one_path_error(format!(
-                "unknown field `{field_name}` on type `{actual_type}`"
-            ))
-        })
+    }
+    schema.field_meta(actual_type, field_name).ok_or_else(|| {
+        one_path_error(format!(
+            "unknown field `{field_name}` on type `{actual_type}`"
+        ))
+    })
 }
 
 pub(super) fn enum_value(

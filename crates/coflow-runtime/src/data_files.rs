@@ -59,7 +59,7 @@ pub fn create_data_file(
     registry: &ProviderRegistry,
     options: DataCreateFileOptions,
 ) -> Result<DataFileReport, DiagnosticSet> {
-    let provider_id = resolve_provider_id(options.provider.as_deref(), &options.file)?;
+    let provider_id = resolve_provider_id(registry, options.provider.as_deref(), &options.file)?;
     let path = resolve_project_file(&session.project, &options.file);
     let actual_type = options.actual_type;
     let layout = (provider_id != "cfd")
@@ -106,7 +106,7 @@ pub fn sync_data_header(
     registry: &ProviderRegistry,
     options: DataSyncHeaderOptions,
 ) -> Result<DataFileReport, DiagnosticSet> {
-    let provider_id = resolve_provider_id(options.provider.as_deref(), &options.file)?;
+    let provider_id = resolve_provider_id(registry, options.provider.as_deref(), &options.file)?;
     let path = resolve_project_file(&session.project, &options.file);
     if !path.exists() {
         return Err(one_data_file_error(
@@ -191,27 +191,49 @@ const fn report(
     }
 }
 
-fn resolve_provider_id(raw: Option<&str>, file: &str) -> Result<String, DiagnosticSet> {
+fn resolve_provider_id(
+    registry: &ProviderRegistry,
+    raw: Option<&str>,
+    file: &str,
+) -> Result<String, DiagnosticSet> {
     if let Some(provider) = raw {
-        return match provider {
-            "cfd" | "csv" | "excel" => Ok(provider.to_string()),
-            "xlsx" => Ok("excel".to_string()),
-            other => Err(one_data_file_error(
+        return if registry.table_manager(provider).is_some() {
+            Ok(provider.to_string())
+        } else {
+            Err(one_data_file_error(
                 "DATA-FILE-PROVIDER",
-                format!("unknown data file provider `{other}`"),
-            )),
+                format!("unknown data file provider `{provider}`"),
+            ))
         };
     }
     let extension = Path::new(file)
         .extension()
         .and_then(|extension| extension.to_str())
         .unwrap_or_default();
-    match extension {
-        "cfd" | "csv" => Ok(extension.to_string()),
-        "xlsx" => Ok("excel".to_string()),
-        other => Err(one_data_file_error(
+    let candidates = registry
+        .source_provider_descriptors()
+        .into_iter()
+        .filter(|descriptor| {
+            registry.table_manager(descriptor.id).is_some()
+                && descriptor
+                    .extensions
+                    .iter()
+                    .any(|candidate| *candidate == extension)
+        })
+        .map(|descriptor| descriptor.id)
+        .collect::<Vec<_>>();
+    match candidates.as_slice() {
+        [provider] => Ok((*provider).to_string()),
+        [] => Err(one_data_file_error(
             "DATA-FILE-PROVIDER",
-            format!("cannot infer provider from extension `{other}` for `{file}`"),
+            format!("cannot infer provider from extension `{extension}` for `{file}`"),
+        )),
+        _ => Err(one_data_file_error(
+            "DATA-FILE-PROVIDER",
+            format!(
+                "extension `{extension}` for `{file}` matches multiple providers {}; pass --provider",
+                candidates.join(", ")
+            ),
         )),
     }
 }

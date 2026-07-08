@@ -7,7 +7,7 @@ use coflow_project::Project;
 
 use crate::dimensions;
 use crate::dimensions::{DimensionField, DimensionGenerationTransaction};
-use crate::indexes::{DependencyIndex, DiagnosticsStore, FileIndex, RecordIndex, SourceIndex};
+use crate::indexes::{DiagnosticsStore, FileIndex, RecordIndex, SourceIndex};
 use crate::load::{
     empty_load_output, empty_model, load_project_data, LoadDiagnostics, LoadProjectDataOptions,
     ProjectLoadOutput,
@@ -76,23 +76,13 @@ fn build_project_session_with_mode(
         dimension_fields,
     };
 
-    let LoadedSessionData {
-        model,
-        dependencies,
-        indexes,
-    } = if diagnostics.is_empty() {
+    let LoadedSessionData { model, indexes } = if diagnostics.is_empty() {
         build_data_pipeline(&ctx, &mut diagnostics)?
     } else {
         LoadedSessionData::empty()?
     };
 
-    Ok(assemble_session(
-        ctx,
-        model,
-        dependencies,
-        diagnostics,
-        indexes,
-    ))
+    Ok(assemble_session(ctx, model, diagnostics, indexes))
 }
 
 fn build_schema_session(project: Project) -> Result<ProjectSchemaSession, String> {
@@ -128,7 +118,6 @@ struct SessionIndexes {
 
 struct LoadedSessionData {
     model: CfdDataModel,
-    dependencies: DependencyIndex,
     indexes: SessionIndexes,
 }
 
@@ -136,7 +125,6 @@ impl LoadedSessionData {
     fn empty() -> Result<Self, String> {
         Ok(Self {
             model: empty_model()?,
-            dependencies: DependencyIndex::default(),
             indexes: SessionIndexes::default(),
         })
     }
@@ -168,7 +156,6 @@ fn build_data_pipeline(
 
     Ok(LoadedSessionData {
         model: output.model,
-        dependencies: output.dependencies,
         indexes,
     })
 }
@@ -255,7 +242,6 @@ fn rollback_dimensions_after_failed_pipeline(
 fn assemble_session(
     ctx: SessionBuildContext<'_>,
     model: CfdDataModel,
-    dependencies: DependencyIndex,
     diagnostics: DiagnosticsStore,
     indexes: SessionIndexes,
 ) -> ProjectSession {
@@ -267,7 +253,6 @@ fn assemble_session(
         sources: indexes.sources,
         records: indexes.records,
         files: indexes.files,
-        dependencies,
         loader_extensions: loader_extensions(ctx.registry),
     }
 }
