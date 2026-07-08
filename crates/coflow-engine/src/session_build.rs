@@ -227,7 +227,7 @@ fn commit_dimensions_if_needed(
         ctx.registry,
     );
     diagnostics.extend(dimension_result.diagnostics);
-    if diagnostics.is_empty() && !dimension_result.transaction.is_empty() {
+    if !dimension_result.transaction.is_empty() {
         Some(dimension_result.transaction)
     } else {
         None

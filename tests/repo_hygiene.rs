@@ -1192,6 +1192,13 @@ fn engine_load_pipeline_does_not_live_in_lib_rs() {
         "pub fn build_project_session",
         "pub fn build_project_session_read_only",
         "fn build_project_session_with_dimension_mode",
+        "fn build_schema_session",
+        "fn build_data_pipeline",
+        "fn load_base_data",
+        "fn commit_dimensions_if_needed",
+        "fn reload_with_dimensions",
+        "fn rollback_dimensions_after_failed_pipeline",
+        "fn assemble_session",
         "fn loader_extensions",
     ] {
         assert!(
@@ -1201,6 +1208,12 @@ fn engine_load_pipeline_does_not_live_in_lib_rs() {
         assert!(
             !engine.contains(expected),
             "engine session build item `{expected}` should not live in lib.rs"
+        );
+    }
+    for forbidden in ["load_project_data(", "regenerate_dimension_sources("] {
+        assert!(
+            !engine.contains(forbidden),
+            "engine lib.rs should not directly orchestrate `{forbidden}`"
         );
     }
 }
@@ -1237,6 +1250,32 @@ fn engine_data_file_commands_do_not_depend_on_cfd_provider_writer() {
     let dimension_regenerate =
         std::fs::read_to_string("crates/coflow-engine/src/dimensions/regenerate.rs")
             .expect("read engine dimension regeneration");
+    let session_build = std::fs::read_to_string("crates/coflow-engine/src/session_build.rs")
+        .expect("read engine session build pipeline");
+
+    for expected in [
+        "pub(crate) fn plan_dimension_generation",
+        "pub(crate) fn commit_dimension_generation",
+        "pub struct DimensionGenerationResult",
+        "pub struct DimensionGenerationTransaction",
+        "fn dimension_source_path",
+        "fn dimension_entries",
+    ] {
+        assert!(
+            dimension_regenerate.contains(expected),
+            "dimension generation item `{expected}` should live in dimensions/regenerate.rs"
+        );
+    }
+    for expected in [
+        "commit_dimensions_if_needed",
+        "reload_with_dimensions",
+        "rollback_dimensions_after_failed_pipeline",
+    ] {
+        assert!(
+            session_build.contains(expected),
+            "session build should explicitly orchestrate dimension pipeline step `{expected}`"
+        );
+    }
 
     for forbidden in [
         "coflow-loader-cfd",

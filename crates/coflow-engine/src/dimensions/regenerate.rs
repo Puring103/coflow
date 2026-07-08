@@ -17,8 +17,22 @@ pub fn regenerate_dimension_sources(
     fields: &[DimensionField],
     registry: &ProviderRegistry,
 ) -> DimensionGenerationResult {
+    let plan_result = plan_dimension_generation(project, model, fields);
+    let mut result = commit_dimension_generation(project, plan_result.plan, registry);
+    let mut diagnostics = plan_result.diagnostics;
+    diagnostics.extend(result.diagnostics);
+    result.diagnostics = diagnostics;
+    result
+}
+
+#[must_use]
+pub(crate) fn plan_dimension_generation(
+    project: &Project,
+    model: &CfdDataModel,
+    fields: &[DimensionField],
+) -> DimensionGenerationPlanResult {
     let mut diagnostics = DiagnosticSet::empty();
-    let mut transaction = DimensionGenerationTransaction::default();
+    let mut operations = Vec::new();
     for (dimension, config) in &project.config.dimensions {
         let dimension_fields = fields
             .iter()
@@ -40,39 +54,89 @@ pub fn regenerate_dimension_sources(
 
         for field in dimension_fields {
             let provider_id = if field.is_singleton { "cfd" } else { "csv" };
-            let Some(manager) = registry.dimension_source_manager(provider_id) else {
-                diagnostics.push(dimension_diagnostic(
-                    &project.config_path,
-                    dimension,
-                    "DIM-SOURCE-002",
-                    format!("dimension source provider `{provider_id}` is not registered"),
-                ));
-                continue;
-            };
             let path = dimension_source_path(&out_dir, field);
-            transaction.snapshot_file(&path, dimension);
-            let source = dimension_resolved_source(project, field, &path, provider_id);
-            let entries = dimension_entries(model, field);
-            let result = manager.sync_dimension_source(
-                TableContext {
-                    project_root: &project.root_dir,
-                    schema: None,
-                },
-                &DimensionSourceRequest {
-                    source: &source,
-                    entries: &entries,
-                    variants: &config.variants,
-                },
-            );
-            if let Err(err) = result {
-                diagnostics.extend(err);
-            }
+            operations.push(DimensionGenerationOperation {
+                dimension: dimension.clone(),
+                provider_id: provider_id.to_string(),
+                path: path.clone(),
+                source: dimension_resolved_source(project, field, &path, provider_id),
+                entries: dimension_entries(model, field),
+                variants: config.variants.clone(),
+            });
         }
     }
+
+    DimensionGenerationPlanResult {
+        plan: DimensionGenerationPlan { operations },
+        diagnostics,
+    }
+}
+
+#[must_use]
+pub(crate) fn commit_dimension_generation(
+    project: &Project,
+    plan: DimensionGenerationPlan,
+    registry: &ProviderRegistry,
+) -> DimensionGenerationResult {
+    let mut diagnostics = DiagnosticSet::empty();
+    let mut transaction = DimensionGenerationTransaction::default();
+
+    for operation in plan.operations {
+        let Some(manager) = registry.dimension_source_manager(&operation.provider_id) else {
+            diagnostics.push(dimension_diagnostic(
+                &project.config_path,
+                &operation.dimension,
+                "DIM-SOURCE-002",
+                format!(
+                    "dimension source provider `{}` is not registered",
+                    operation.provider_id
+                ),
+            ));
+            continue;
+        };
+
+        transaction.snapshot_file(&operation.path, &operation.dimension);
+        let result = manager.sync_dimension_source(
+            TableContext {
+                project_root: &project.root_dir,
+                schema: None,
+            },
+            &DimensionSourceRequest {
+                source: &operation.source,
+                entries: &operation.entries,
+                variants: &operation.variants,
+            },
+        );
+        if let Err(err) = result {
+            diagnostics.extend(err);
+        }
+    }
+
     DimensionGenerationResult {
         transaction,
         diagnostics,
     }
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct DimensionGenerationPlanResult {
+    pub plan: DimensionGenerationPlan,
+    pub diagnostics: DiagnosticSet,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct DimensionGenerationPlan {
+    operations: Vec<DimensionGenerationOperation>,
+}
+
+#[derive(Debug)]
+struct DimensionGenerationOperation {
+    dimension: String,
+    provider_id: String,
+    path: PathBuf,
+    source: ResolvedSource,
+    entries: Vec<DimensionSourceEntry>,
+    variants: Vec<String>,
 }
 
 #[derive(Debug, Default)]
