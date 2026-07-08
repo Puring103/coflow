@@ -1160,6 +1160,8 @@ fn engine_load_pipeline_does_not_live_in_lib_rs() {
         std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");
     let load =
         std::fs::read_to_string("crates/coflow-engine/src/load.rs").expect("read engine load");
+    let session_build = std::fs::read_to_string("crates/coflow-engine/src/session_build.rs")
+        .expect("read engine session build pipeline");
 
     for expected in [
         "pub(crate) struct ProjectLoadOutput",
@@ -1186,6 +1188,21 @@ fn engine_load_pipeline_does_not_live_in_lib_rs() {
         engine.lines().count() < 300,
         "coflow-engine lib.rs should stay below the 300-line orchestration threshold"
     );
+    for expected in [
+        "pub fn build_project_session",
+        "pub fn build_project_session_read_only",
+        "fn build_project_session_with_dimension_mode",
+        "fn loader_extensions",
+    ] {
+        assert!(
+            session_build.contains(expected),
+            "engine session build item `{expected}` should live in session_build.rs"
+        );
+        assert!(
+            !engine.contains(expected),
+            "engine session build item `{expected}` should not live in lib.rs"
+        );
+    }
 }
 
 #[test]
