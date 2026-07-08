@@ -2392,12 +2392,18 @@ fn engine_data_file_headers_use_cft_compiler_context() {
         data_files.contains(".table_manager_descriptors()"),
         "data file provider inference should use table manager descriptors"
     );
+    assert!(
+        data_files.contains("TableAddressing::Sheet"),
+        "data file table layout decisions should use table manager addressing capability"
+    );
     for forbidden in [
         ".resolve_type(",
         "session.schema.resolve_type",
         ".types.get(",
         ".all_fields",
         ".source_provider_descriptors()",
+        "provider_id != \"cfd\"",
+        "source.provider_id != \"cfd\"",
         "\"xlsx\" => Ok(\"excel\"",
         "\"cfd\" | \"csv\"",
         "\"cfd\" | \"csv\" | \"excel\"",
@@ -2407,6 +2413,43 @@ fn engine_data_file_headers_use_cft_compiler_context() {
             "data file commands should not use raw schema query `{forbidden}`"
         );
     }
+}
+
+#[test]
+fn engine_dimension_generation_uses_provider_source_options() {
+    let dimensions = std::fs::read_to_string("crates/coflow-runtime/src/dimensions/regenerate.rs")
+        .expect("read engine dimension regeneration");
+
+    assert!(
+        dimensions.contains(".source_options(&DimensionSourceOptionsRequest"),
+        "dimension source options should be delegated to dimension source managers"
+    );
+    for forbidden in ["provider_id == \"csv\"", "\"sheets\": [{"] {
+        assert!(
+            !dimensions.contains(forbidden),
+            "dimension generation should not hardcode provider option shape `{forbidden}`"
+        );
+    }
+}
+
+#[test]
+fn engine_record_index_keeps_rejected_source_rows() {
+    let indexes = std::fs::read_to_string("crates/coflow-runtime/src/indexes.rs")
+        .expect("read engine indexes");
+    let load = std::fs::read_to_string("crates/coflow-runtime/src/load.rs").expect("read load");
+
+    assert!(
+        indexes.contains("pub struct RejectedRecordRef"),
+        "record index should expose rejected source record metadata"
+    );
+    assert!(
+        load.contains("records_index.finalize_rejected_pending()"),
+        "model-build diagnostics should preserve pending rejected source rows"
+    );
+    assert!(
+        !indexes.contains("are silently dropped"),
+        "rejected source records should not be documented as silently dropped"
+    );
 }
 
 #[test]

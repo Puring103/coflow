@@ -1,11 +1,11 @@
 use crate::dimensions::DimensionField;
 use coflow_api::{
-    Diagnostic, DiagnosticSet, DimensionSourceEntry, DimensionSourceRequest, Label,
-    ProviderRegistry, ResolvedSource, Severity, SourceLocation, SourceLocationSpec, TableContext,
+    Diagnostic, DiagnosticSet, DimensionSourceEntry, DimensionSourceOptionsRequest,
+    DimensionSourceRequest, Label, ProviderRegistry, ResolvedSource, Severity, SourceLocation,
+    SourceLocationSpec, TableContext,
 };
 use coflow_data_model::{CfdDataModel, CfdValue};
 use coflow_project::Project;
-use serde_json::json;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -59,7 +59,9 @@ pub(crate) fn plan_dimension_generation(
                 dimension: dimension.clone(),
                 provider_id: provider_id.to_string(),
                 path: path.clone(),
-                source: dimension_resolved_source(project, field, &path, provider_id),
+                source: dimension_resolved_source(project, &path, provider_id),
+                sheet: format!("{}_{}", field.bucket, field.source_field),
+                actual_type: field.synthesized_type.clone(),
                 entries: dimension_entries(model, field),
                 variants: config.variants.clone(),
             });
@@ -81,7 +83,7 @@ pub(crate) fn commit_dimension_generation(
     let mut diagnostics = DiagnosticSet::empty();
     let mut transaction = DimensionGenerationTransaction::default();
 
-    for operation in plan.operations {
+    for mut operation in plan.operations {
         let Some(manager) = registry.dimension_source_manager(&operation.provider_id) else {
             diagnostics.push(dimension_diagnostic(
                 &project.config_path,
@@ -95,6 +97,10 @@ pub(crate) fn commit_dimension_generation(
             continue;
         };
 
+        operation.source.options = manager.source_options(&DimensionSourceOptionsRequest {
+            sheet: &operation.sheet,
+            actual_type: &operation.actual_type,
+        });
         transaction.snapshot_file(&operation.path, &operation.dimension);
         let result = manager.sync_dimension_source(
             TableContext {
@@ -135,6 +141,8 @@ struct DimensionGenerationOperation {
     provider_id: String,
     path: PathBuf,
     source: ResolvedSource,
+    sheet: String,
+    actual_type: String,
     entries: Vec<DimensionSourceEntry>,
     variants: Vec<String>,
 }
@@ -222,12 +230,7 @@ fn dimension_source_path(out_dir: &Path, field: &DimensionField) -> PathBuf {
     }
 }
 
-fn dimension_resolved_source(
-    project: &Project,
-    field: &DimensionField,
-    path: &Path,
-    provider_id: &str,
-) -> ResolvedSource {
+fn dimension_resolved_source(project: &Project, path: &Path, provider_id: &str) -> ResolvedSource {
     let display_name = path.strip_prefix(&project.root_dir).map_or_else(
         |_| path.display().to_string(),
         coflow_project::path_to_slash,
@@ -235,16 +238,7 @@ fn dimension_resolved_source(
     ResolvedSource {
         provider_id: provider_id.to_string(),
         location: SourceLocationSpec::Path(path.to_path_buf()),
-        options: if provider_id == "csv" {
-            json!({
-                "sheets": [{
-                    "sheet": format!("{}_{}", field.bucket, field.source_field),
-                    "type": field.synthesized_type,
-                }]
-            })
-        } else {
-            serde_json::Value::Object(serde_json::Map::new())
-        },
+        options: serde_json::Value::Object(serde_json::Map::new()),
         display_name,
     }
 }

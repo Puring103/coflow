@@ -1,6 +1,8 @@
 use crate::names::csharp_type_name;
 use crate::CsharpCodegenError;
-use coflow_cft::{CftContainer, CftEnumMeta, CftSchemaTypeRef, CftSchemaView, CftTypeMeta};
+use coflow_cft::{
+    CftContainer, CftEnumMeta, CftFieldMeta, CftSchemaTypeRef, CftSchemaView, CftTypeMeta,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
@@ -57,9 +59,7 @@ impl CsharpSchemaContext {
     }
 
     pub fn uses_localization(&self) -> bool {
-        self.cft
-            .type_metas()
-            .any(|ty| ty.all_fields.iter().any(|field| field.dimension.is_some()))
+        self.cft.has_dimension_fields()
     }
 
     pub fn id_as_enum_names(&self) -> BTreeSet<String> {
@@ -98,6 +98,15 @@ impl CsharpSchemaContext {
     pub fn type_meta(&self, name: &str) -> Result<&CftTypeMeta, CsharpCodegenError> {
         self.cft
             .type_meta(name)
+            .ok_or_else(|| CsharpCodegenError::new(format!("unknown CFT type `{name}`")))
+    }
+
+    pub fn fields(
+        &self,
+        name: &str,
+    ) -> Result<impl Iterator<Item = &CftFieldMeta>, CsharpCodegenError> {
+        self.cft
+            .fields(name)
             .ok_or_else(|| CsharpCodegenError::new(format!("unknown CFT type `{name}`")))
     }
 

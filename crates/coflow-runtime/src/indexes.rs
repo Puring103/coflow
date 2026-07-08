@@ -187,6 +187,9 @@ pub struct RecordIndex {
     by_id: BTreeMap<CfdRecordId, RecordRef>,
     by_coordinate: BTreeMap<RecordCoordinate, CfdRecordId>,
     files: BTreeMap<String, Vec<CfdRecordId>>,
+    rejected: Vec<RejectedRecordRef>,
+    rejected_files: BTreeMap<String, Vec<usize>>,
+    rejected_by_coordinate: BTreeMap<RecordCoordinate, Vec<usize>>,
     pending: Vec<PendingRecordRef>,
 }
 
@@ -255,31 +258,68 @@ impl RecordIndex {
         &self.files
     }
 
+    #[must_use]
+    pub fn rejected(&self) -> &[RejectedRecordRef] {
+        &self.rejected
+    }
+
+    #[must_use]
+    pub fn rejected_in_file(&self, file: &str) -> impl Iterator<Item = &RejectedRecordRef> {
+        self.rejected_files
+            .get(file)
+            .into_iter()
+            .flatten()
+            .filter_map(|index| self.rejected.get(*index))
+    }
+
+    #[must_use]
+    pub fn rejected_by_coordinate(
+        &self,
+        actual_type: &str,
+        key: &str,
+    ) -> impl Iterator<Item = &RejectedRecordRef> {
+        self.rejected_by_coordinate
+            .get(&RecordCoordinate::new(actual_type, key))
+            .into_iter()
+            .flatten()
+            .filter_map(|index| self.rejected.get(*index))
+    }
+
     pub(crate) fn push_pending(&mut self, pending: PendingRecordRef) {
         self.pending.push(pending);
     }
 
     /// After `model.build()` succeeds, match each model record back to a
-    /// pending entry by `(actual_type, key)`. Pending entries that don't
-    /// match a model record (because the loader produced a record that was
-    /// rejected during model build) are silently dropped.
+    /// pending entry by `(actual_type, key)`. Pending entries that do not
+    /// match a model record are kept as rejected source rows so hosts can
+    /// still show invalid input alongside diagnostics.
     pub(crate) fn finalize_with_model(&mut self, model: &CfdDataModel) {
         self.by_id.clear();
         self.by_coordinate.clear();
         self.files.clear();
+        self.rejected.clear();
+        self.rejected_files.clear();
+        self.rejected_by_coordinate.clear();
         // Index pending by coordinate, popping each entry as it's matched so
         // duplicate loader output (theoretically impossible since model
         // build rejects duplicates) doesn't reuse the same metadata twice.
-        let mut pending_by_coordinate: BTreeMap<RecordCoordinate, PendingRecordRef> =
+        let mut pending_by_coordinate: BTreeMap<RecordCoordinate, Vec<PendingRecordRef>> =
             BTreeMap::new();
         for pending in std::mem::take(&mut self.pending) {
-            pending_by_coordinate.insert(pending.coordinate.clone(), pending);
+            pending_by_coordinate
+                .entry(pending.coordinate.clone())
+                .or_default()
+                .push(pending);
         }
         for (id, record) in model.records() {
             let coordinate = RecordCoordinate::new(record.actual_type(), record.key.clone());
-            let Some(pending) = pending_by_coordinate.remove(&coordinate) else {
+            let Some(mut candidates) = pending_by_coordinate.remove(&coordinate) else {
                 continue;
             };
+            let pending = candidates.remove(0);
+            for duplicate in candidates {
+                self.push_rejected(duplicate);
+            }
             self.files
                 .entry(pending.display_path.clone())
                 .or_default()
@@ -297,12 +337,55 @@ impl RecordIndex {
                 },
             );
         }
+        for pending in pending_by_coordinate.into_values().flatten() {
+            self.push_rejected(pending);
+        }
+    }
+
+    pub(crate) fn finalize_rejected_pending(&mut self) {
+        self.by_id.clear();
+        self.by_coordinate.clear();
+        self.files.clear();
+        self.rejected.clear();
+        self.rejected_files.clear();
+        self.rejected_by_coordinate.clear();
+        for pending in std::mem::take(&mut self.pending) {
+            self.push_rejected(pending);
+        }
+    }
+
+    fn push_rejected(&mut self, pending: PendingRecordRef) {
+        let index = self.rejected.len();
+        self.rejected_files
+            .entry(pending.display_path.clone())
+            .or_default()
+            .push(index);
+        self.rejected_by_coordinate
+            .entry(pending.coordinate.clone())
+            .or_default()
+            .push(index);
+        self.rejected.push(RejectedRecordRef {
+            coordinate: pending.coordinate,
+            origin: pending.origin,
+            source_id: pending.source_id,
+            provider_id: pending.provider_id,
+            display_path: pending.display_path,
+        });
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordRef {
     pub id: CfdRecordId,
+    pub coordinate: RecordCoordinate,
+    pub origin: RecordOrigin,
+    pub source_id: SourceId,
+    pub provider_id: String,
+    pub display_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RejectedRecordRef {
     pub coordinate: RecordCoordinate,
     pub origin: RecordOrigin,
     pub source_id: SourceId,

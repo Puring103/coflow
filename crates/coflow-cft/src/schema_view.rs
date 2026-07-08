@@ -188,18 +188,35 @@ impl CftSchemaView {
 
     #[must_use]
     pub fn field_meta(&self, actual_type: &str, field_name: &str) -> Option<&CftFieldMeta> {
-        self.types
-            .get(actual_type)?
-            .all_fields
-            .iter()
+        self.fields(actual_type)?
             .find(|field| field.name == field_name)
     }
 
     #[must_use]
     pub fn full_fields(&self, type_name: &str) -> Option<&[CftFieldMeta]> {
+        self.fields_slice(type_name)
+    }
+
+    #[must_use]
+    pub fn fields_slice(&self, type_name: &str) -> Option<&[CftFieldMeta]> {
         self.types
             .get(type_name)
             .map(|meta| meta.all_fields.as_slice())
+    }
+
+    pub fn fields(&self, type_name: &str) -> Option<impl Iterator<Item = &CftFieldMeta>> {
+        self.fields_slice(type_name).map(|fields| fields.iter())
+    }
+
+    #[must_use]
+    pub fn field_count(&self, type_name: &str) -> Option<usize> {
+        self.fields_slice(type_name).map(<[_]>::len)
+    }
+
+    #[must_use]
+    pub fn has_dimension_fields(&self) -> bool {
+        self.type_metas()
+            .any(|ty| ty.all_fields.iter().any(|field| field.dimension.is_some()))
     }
 
     #[must_use]

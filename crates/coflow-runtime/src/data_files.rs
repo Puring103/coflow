@@ -1,6 +1,7 @@
 use coflow_api::{
     CreateTableRequest, Diagnostic, DiagnosticSet, FlatDiagnostic, ProviderRegistry,
-    ResolvedSource, Severity, SourceLocationSpec, SyncHeaderRequest, TableContext,
+    ResolvedSource, Severity, SourceLocationSpec, SyncHeaderRequest, TableAddressing, TableContext,
+    TableManagerDescriptor,
 };
 use coflow_cft::CftSchemaView;
 use coflow_project::{path_to_slash, Project, SourceConfig};
@@ -60,9 +61,11 @@ pub fn create_data_file(
     options: DataCreateFileOptions,
 ) -> Result<DataFileReport, DiagnosticSet> {
     let provider_id = resolve_provider_id(registry, options.provider.as_deref(), &options.file)?;
+    let descriptor = table_manager_descriptor(registry, &provider_id)?;
     let path = resolve_project_file(&session.project, &options.file);
     let actual_type = options.actual_type;
-    let layout = (provider_id != "cfd")
+    let layout = descriptor
+        .requires_table_layout()
         .then(|| table_layout(session, &options.file, actual_type.clone(), options.sheet))
         .transpose()?;
     let source = table_operation_source(&options.file, &provider_id, path);
@@ -107,6 +110,7 @@ pub fn sync_data_header(
     options: DataSyncHeaderOptions,
 ) -> Result<DataFileReport, DiagnosticSet> {
     let provider_id = resolve_provider_id(registry, options.provider.as_deref(), &options.file)?;
+    let descriptor = table_manager_descriptor(registry, &provider_id)?;
     let path = resolve_project_file(&session.project, &options.file);
     if !path.exists() {
         return Err(one_data_file_error(
@@ -125,7 +129,9 @@ pub fn sync_data_header(
         table_context(session),
         &SyncHeaderRequest {
             source: &source,
-            sheet: (provider_id != "cfd").then_some(layout.sheet.as_str()),
+            sheet: descriptor
+                .requires_table_layout()
+                .then_some(layout.sheet.as_str()),
             actual_type: &layout.actual_type,
             headers: &layout.headers,
             schema: &session.schema,
@@ -134,7 +140,7 @@ pub fn sync_data_header(
     Ok(report(
         options.file,
         provider_id,
-        (source.provider_id != "cfd").then_some(layout.sheet),
+        descriptor.requires_table_layout().then_some(layout.sheet),
         Some(layout.actual_type),
         result.headers,
         result.added,
@@ -158,6 +164,16 @@ fn table_operation_source(file: &str, provider_id: &str, path: PathBuf) -> Resol
     }
 }
 
+trait TableManagerDescriptorExt {
+    fn requires_table_layout(&self) -> bool;
+}
+
+impl TableManagerDescriptorExt for TableManagerDescriptor {
+    fn requires_table_layout(&self) -> bool {
+        self.addressing == TableAddressing::Sheet
+    }
+}
+
 fn table_manager(
     registry: &ProviderRegistry,
     provider_id: &str,
@@ -168,6 +184,22 @@ fn table_manager(
             format!("table manager `{provider_id}` is not registered"),
         )
     })
+}
+
+fn table_manager_descriptor(
+    registry: &ProviderRegistry,
+    provider_id: &str,
+) -> Result<&'static TableManagerDescriptor, DiagnosticSet> {
+    registry
+        .table_manager_descriptors()
+        .into_iter()
+        .find(|descriptor| descriptor.id == provider_id)
+        .ok_or_else(|| {
+            one_data_file_error(
+                "DATA-FILE-PROVIDER",
+                format!("table manager `{provider_id}` is not registered"),
+            )
+        })
 }
 
 const fn report(

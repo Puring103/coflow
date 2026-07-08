@@ -122,8 +122,8 @@
 1. **普通 session build 仍有写副作用，但 public 入口已经显式。**
    `build_project_session_for_build` 默认 `DimensionBuildMode::Generate`，会写入 generated dimension sources，再 reload；`open_project_session_read_only` 才是无写入口。用户已经确认普通 build 包含维度 build 是合理的，所以这不是 CLI 需求偏差。上一轮“名称没有显式表达”的问题已修复；剩余风险是第三方 host 仍可直接调用较宽的 runtime API，需要继续通过 public surface 收窄和测试约束防止误用。
 
-2. **语义 view 和类型解释仍在多处重复。**
-   `coflow-cft::CftSchemaView`、`coflow-data-model::compiler_context`、`coflow-codegen-csharp::schema_context`、runtime 写入/默认值/mutation、checker value/type 逻辑、LSP completion/hover/semantic tokens 都在解释 schema/type/value。data-model 和 C# codegen 已经不再定义本地 `TypeMeta`/`FieldMeta` wrapper，C# codegen 也改用更准确的 `CsharpSchemaContext` 命名；runtime mutation 的字段查询已下沉到 `CftSchemaView::field_meta`。但还没有形成一个所有消费者共用的 schema query/type facade。语义变化仍可能导致 build/check/export/codegen/LSP 行为不一致。
+2. **schema field 查询已进一步统一，但完整语义 facade 仍未完成。**
+   `CftSchemaView` 现在提供 `fields` / `fields_slice` / `field_count` / `has_dimension_fields` 等查询，runtime、exporter-core、loader-cfd、loader-table-core、C# codegen 的核心路径已避免直接依赖 `CftTypeMeta::all_fields`。data-model 和 C# codegen 也不再定义本地 `TypeMeta`/`FieldMeta` wrapper。剩余问题更窄：checker runtime、LSP 语义功能、部分 codegen 命名上下文仍有自己的语义组织方式，尚未形成一个跨所有消费者的完整 schema/type/value facade。
 
 3. **`coflow-api` 仍是宽接口层，不是低耦合 provider ABI。**
    API 模块已经拆分，但 provider trait 仍直接暴露 `CftContainer`、`CfdDataModel`、`CfdValue`、`RecordOrigin` 等内部模型。这样 provider 与语言/数据模型版本强绑定。当前作为同仓库 crate 可以接受，但如果要长期支持独立 provider 或稳定扩展点，仍会成为主要变更热点。
@@ -139,14 +139,14 @@
 6. **`coflow-runtime` public surface 仍然偏宽。**
    现在已经删除薄 facade，`coflow-runtime` 是实际实现 crate。但它仍暴露大部分 runtime 内部报告、索引、mutation、write 类型，没有表达 read-only/build/write 三类更窄 session 入口的差异。短期命名已经准确，长期需要继续收窄 public API。
 
-7. **runtime 已 provider-neutral，provider 能力模型从 source descriptor 进一步下沉到 table manager。**
-   `data_files.rs::resolve_provider_id` 已改为根据 `registry.table_manager_descriptors()` 读取 `TableManagerDescriptor::file_extensions` / `aliases`。旧“新增本地 table provider 必须改 runtime 分支”和“table create/sync 推断依赖同 id source provider descriptor”的问题已修复。剩余风险是同一 provider 的 source provider、writer、table manager、dimension source manager 四组 descriptor 仍需人工保持一致。
+7. **runtime 已 provider-neutral，table/dimension 特性继续下沉到 provider capability。**
+   `data_files.rs::resolve_provider_id` 已根据 `registry.table_manager_descriptors()` 读取 `TableManagerDescriptor::file_extensions` / `aliases`，并用 `TableAddressing` 区分 document/sheet table layout，不再用 `provider_id != "cfd"`。维度 source options 也改为 `DimensionSourceManager::source_options`，不再在 runtime 硬编码 CSV `sheets` options。剩余风险是同一 provider 的 source provider、writer、table manager、dimension source manager 四组 descriptor/capability 仍需保持一致。
 
 8. **Table/dimension manager 与 writer 是平行接口，能力模型需要持续校准。**
    `SourceWriter` 处理 record/field 写入，`TableManager` 处理 create/sync header，`DimensionSourceManager` 处理 generated dimension source。拆分比单个巨型 writer 更清晰，但同一 provider 往往要实现三组接口；capability、diagnostic code、source option parsing、cache invalidation 需要保持一致。
 
-9. **duplicate diagnostics 的定位已确认，rejected row 查询能力仍弱。**
-   新增 runtime baseline 确认 duplicate record diagnostic 能保留 source file span、logical record location，并进入 diagnostics file/record index。旧“duplicate 完全丢 source identity”的判断不成立。残留问题更窄：`RecordIndex::finalize_with_model` 仍只索引成功进入 model 的 records，rejected rows 不会作为独立 record/source entry 出现在普通 data query/file record list 中，只能通过 diagnostics 观察。
+9. **rejected/duplicate source rows 已进入 runtime record index。**
+   runtime baseline 确认 duplicate record diagnostic 能保留 source file span、logical record location，并进入 diagnostics file/record index。`RecordIndex` 现在还保留 model-build 失败时的 pending source rows，提供 `RejectedRecordRef`、`rejected_in_file`、`rejected_by_coordinate` 查询。旧“duplicate/rejected 输入只能通过 diagnostics 间接观察”的判断已修复。剩余问题是 UI/CLI 是否要把 rejected rows 暴露到普通 data list 视图，这是产品层展示选择。
 
 10. **checker 运行期数值策略已有 baseline，但仍需文档化为语言语义。**
     checker 已有测试固定 empty int sum、float infinity 传播，以及 NaN 比较必须报 `CheckEvalTypeError` 而不是降级成 false comparison。残留风险从“行为未确认”变为“语言参考与跨消费者语义仍需同步”。
@@ -590,23 +590,24 @@
 
 ### 4.2 Provider-neutral runtime
 
-当前状态：大部分修复。
+当前状态：已修复核心 runtime/provider 耦合，剩余是能力一致性治理。
 
 - runtime 生产依赖不再包含具体 provider crates。
 - create/sync/dimension source 通过 registry provider operation。
 - provider id/extension/alias 推断已下沉到 `TableManagerDescriptor`，`data_files.rs` 不再枚举具体 provider。
+- table layout 使用 `TableAddressing`，维度 source options 由 `DimensionSourceManager::source_options` 生成，已移除 runtime 对 CFD/CSV 的行为分支。
 - 残留耦合主要是 data file 命令天然面向本地文件语义，远程 table manager 不应被扩展名推断路径误用。
 
-建议优先级：低到中。下一步不是继续移动代码，而是统一各 provider descriptor 的 capability/preflight 约定，并补 alias/extension 冲突测试。
+建议优先级：低到中。下一步不是继续移动代码，而是统一各 provider descriptor 的 capability/preflight/diagnostic code 约定，并补 alias/extension 冲突测试。
 
 ### 4.3 Duplicate data structures and semantic projections
 
-当前状态：仍成立，是当前最核心残留问题。
+当前状态：核心 field 查询已收敛，完整语义 facade 仍是后续项。
 
-- 已统合：table provider 共享结构在 `coflow-loader-table-core`；API operations 统一了 table/dimension source manager；runtime mutation/writes 已拆分。
-- 未统合：schema view/type/value 解释仍分散在 CFT、data-model、exporter-core、codegen、checker、runtime、LSP。
+- 已统合：table provider 共享结构在 `coflow-loader-table-core`；API operations 统一了 table/dimension source manager；runtime mutation/writes 已拆分；常见 field 查询统一走 `CftSchemaView`。
+- 未完全统合：checker runtime、LSP 语义功能、部分 codegen 上下文仍有局部语义组织；value coercion/cell parsing 仍保留各自面向输入格式的轻量投影。
 
-建议优先级：高。建立一个窄的 schema query/type facade，并用 conformance tests 驱动替换各 crate 私有 view。
+建议优先级：中到高。继续用 `CftSchemaView` 扩展更窄的 schema query/type facade，并用 conformance tests 约束 checker/LSP/codegen 行为。
 
 ### 4.4 Config purity
 
@@ -619,13 +620,13 @@
 
 ### 4.5 Record/source index completeness
 
-当前状态：duplicate diagnostics 已确认，rejected row 查询能力仍需补强。
+当前状态：已补强。
 
 - data model 能产生 duplicate/rejected diagnostics。
 - duplicate record diagnostic 已有 runtime baseline，确认 source file span、logical record location、diagnostics file/record index 都可用。
-- runtime record index 仍偏向成功 model 记录，rejected rows 在后续 data query/file record list 里的可见性弱。
+- runtime record index 现在保留 rejected source rows，可按 file 和 logical coordinate 查询。
 
-建议优先级：中。若编辑器需要展示无效行，应补 rejected source entry index；否则可维持“通过 diagnostics 暴露 rejected rows”的较窄能力。
+建议优先级：低。后续只需决定 UI/CLI 是否把 rejected rows 纳入普通 data list，而不是继续修 source identity 丢失问题。
 
 ### 4.6 Remote writer robustness
 
@@ -641,13 +642,13 @@
 ### Phase 1: Consolidate current refactor gains
 
 1. 收窄 `coflow-runtime` public API：显式区分 build-with-generation、read-only session、write session，避免 host 直接误用有副作用的入口。
-2. 统一 provider descriptor capability/preflight 约定，给 table manager extension/alias 冲突补测试。
+2. 统一 provider descriptor capability/preflight/diagnostic code 约定，给 table manager extension/alias 冲突补测试。
 3. 给 `build_project_session_for_build` 维度生成路径继续补充事务/失败路径测试，确保 provider manager 的所有写入都可 rollback 或至少失败前置。
-4. 继续补 rejected source row 可追踪测试；duplicate source diagnostic baseline 已补。
+4. rejected/duplicate source row 可追踪测试已补；后续只需决定 UI/CLI 展示策略。
 
 ### Phase 2: Reduce semantic duplication
 
-1. 建立共享 schema query/type facade，优先覆盖 data-model、runtime mutation/write_rules、exporter-core、codegen 的重复 view。
+1. 继续扩展共享 schema query/type facade，优先覆盖 checker runtime 与 LSP 语义功能的重复解释。
 2. 将 CFT type checker 与 checker runtime 的 operator/builtin signature 规则对齐，用 shared table 或 conformance test 固定。
 3. 固定并文档化 checker numeric semantics，包括 integer/float division、`powf`、非有限 float 的诊断策略；NaN comparison baseline 已补。
 4. 建跨 crate conformance tests：schema view、cell value、dimension default preservation、export/codegen fixture。
@@ -655,7 +656,7 @@
 ### Phase 3: Strengthen provider contracts
 
 1. 统一 `SourceWriter`、`TableManager`、`DimensionSourceManager` 的 capability/preflight/diagnostic code 约定。
-2. 给 table/dimension managers 增加 descriptor metadata：支持的 location kind、extensions、remote/local、can sync header、can preserve variants。
+2. 继续补 table/dimension manager descriptor metadata：支持的 location kind、remote/local、can sync header、can preserve variants。
 3. 保持 JSON/MessagePack/C# 现有输出语义，只补 golden/roundtrip/interop 测试，不增加未要求的 manifest/version contract。
 
 ### Phase 4: Deferred deeper work

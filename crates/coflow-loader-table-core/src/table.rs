@@ -8,7 +8,7 @@ mod columns;
 mod diagnostics;
 mod types;
 
-use coflow_cft::{record_key_ident_error, CftContainer};
+use coflow_cft::{record_key_ident_error, CftContainer, CftSchemaView};
 use coflow_data_model::{
     CfdDiagnostics, CfdInputRecord, CfdInputValue, CfdLabel, CfdPath, CfdPathSegment, RecordOrigin,
     SourceDocument,
@@ -382,14 +382,12 @@ fn build_expanded_object(
 }
 
 fn full_field_types(schema: &CftContainer, type_name: &str) -> Option<BTreeMap<String, String>> {
-    let schema_type = schema.resolve_type(type_name)?;
-    Some(
-        schema_type
-            .all_fields
-            .iter()
-            .map(|field| (field.name.clone(), field.ty.clone()))
-            .collect(),
-    )
+    let view = CftSchemaView::new(schema);
+    let fields = view
+        .fields(type_name)?
+        .map(|field| (field.name.clone(), field.raw_type.clone()))
+        .collect();
+    Some(fields)
 }
 
 fn root_field(path: &CfdPath) -> Option<&str> {

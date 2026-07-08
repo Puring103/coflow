@@ -1,15 +1,13 @@
 use coflow_api::{CftContainer, CftSchemaTypeRef};
+use coflow_cft::CftSchemaView;
 
 pub(super) fn type_after_field_segment(
     schema: &CftContainer,
     actual_type: &str,
     field_name: &str,
 ) -> Option<CftSchemaTypeRef> {
-    schema
-        .resolve_type(actual_type)?
-        .all_fields
-        .iter()
-        .find(|field| field.name == field_name)
+    CftSchemaView::new(schema)
+        .field_meta(actual_type, field_name)
         .map(|field| field.ty_ref.clone())
 }
 

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::names::{camel_case, csharp_ident_error, pascal_case};
 use crate::CsharpCodegenError;
-use coflow_cft::CftTypeMeta;
+use coflow_cft::CftFieldMeta;
 
 pub(super) fn csharp_public_type_name(name: &str) -> String {
     pascal_case(name)
@@ -25,10 +25,10 @@ pub(super) fn context_index_field_name(type_name: &str) -> String {
     format!("{type_name}Index")
 }
 
-pub(super) fn loader_reserved_local_names(ty: &CftTypeMeta) -> HashSet<String> {
-    let mut out = ty
-        .all_fields
-        .iter()
+pub(super) fn loader_reserved_local_names<'a>(
+    fields: impl Iterator<Item = &'a CftFieldMeta>,
+) -> HashSet<String> {
+    let mut out = fields
         .map(|field| format!("has{}", csharp_public_member_name(&field.name)))
         .collect::<HashSet<_>>();
     out.insert("isTable".to_string());

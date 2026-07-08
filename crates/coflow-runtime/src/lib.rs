@@ -50,7 +50,7 @@ pub use dimensions::{
 pub use files::{DimensionGroup, FileTreeNode, FileTreeOptions};
 pub use indexes::{
     DiagnosticLogicalLocation, DiagnosticsStore, FileIndex, RecordIndex, RecordRef,
-    ResolvedSourceEntry, SourceId, SourceIndex,
+    RejectedRecordRef, ResolvedSourceEntry, SourceId, SourceIndex,
 };
 // Re-export helpers that hosts (tauri editor, CLI) call when translating
 // engine data to a wire format so they don't diverge in path formatting.

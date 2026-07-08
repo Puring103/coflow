@@ -1,4 +1,4 @@
-use coflow_cft::CftContainer;
+use coflow_cft::{CftContainer, CftSchemaView};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -405,10 +405,11 @@ fn expand_field_index(
     type_name: &str,
 ) -> BTreeMap<String, BTreeMap<String, String>> {
     let mut out = BTreeMap::new();
-    let Some(schema_type) = schema.resolve_type(type_name) else {
+    let view = CftSchemaView::new(schema);
+    let Some(fields) = view.fields(type_name) else {
         return out;
     };
-    for field in &schema_type.all_fields {
+    for field in fields {
         if !field
             .annotations
             .iter()
@@ -416,13 +417,11 @@ fn expand_field_index(
         {
             continue;
         }
-        let Some(inner_type) = schema.resolve_type(&field.ty) else {
+        let Some(inner_fields) = view.fields(&field.raw_type) else {
             continue;
         };
-        let inner_fields = inner_type
-            .all_fields
-            .iter()
-            .map(|inner| (inner.name.clone(), inner.ty.clone()))
+        let inner_fields = inner_fields
+            .map(|inner| (inner.name.clone(), inner.raw_type.clone()))
             .collect();
         out.insert(field.name.clone(), inner_fields);
     }
@@ -434,10 +433,11 @@ fn expand_field_order_index(
     type_name: &str,
 ) -> BTreeMap<String, Vec<String>> {
     let mut out = BTreeMap::new();
-    let Some(schema_type) = schema.resolve_type(type_name) else {
+    let view = CftSchemaView::new(schema);
+    let Some(fields) = view.fields(type_name) else {
         return out;
     };
-    for field in &schema_type.all_fields {
+    for field in fields {
         if !field
             .annotations
             .iter()
@@ -445,14 +445,10 @@ fn expand_field_order_index(
         {
             continue;
         }
-        let Some(inner_type) = schema.resolve_type(&field.ty) else {
+        let Some(inner_fields) = view.fields(&field.raw_type) else {
             continue;
         };
-        let order = inner_type
-            .all_fields
-            .iter()
-            .map(|inner| inner.name.clone())
-            .collect();
+        let order = inner_fields.map(|inner| inner.name.clone()).collect();
         out.insert(field.name.clone(), order);
     }
     out

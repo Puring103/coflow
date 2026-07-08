@@ -68,7 +68,7 @@ pub fn build_csharp_type(
         .map(|field| field.name.clone())
         .collect::<BTreeSet<_>>();
 
-    for field in &ty.all_fields {
+    for field in view.fields(&ty.name)? {
         let local_name = field_local_name(&field.name, &mut HashSet::new())?;
         let property_type = csharp_field_property_type(field, view);
         constructor_parameters.push(CsharpParameter {
@@ -96,12 +96,11 @@ pub fn build_csharp_type(
         Some(loader_method(&schema_type.name, view)?)
     };
 
-    let equality = (!schema_type.is_abstract).then(|| {
-        let all_field_props: Vec<String> = ty
-            .all_fields
-            .iter()
-            .map(|f| csharp_public_member_name(&f.name))
-            .collect();
+    let all_field_props = view
+        .fields(&ty.name)?
+        .map(|f| csharp_public_member_name(&f.name))
+        .collect::<Vec<_>>();
+    let equality = (!schema_type.is_abstract).then_some({
         CsharpEquality {
             key_property: "Id".to_string(),
             is_struct,

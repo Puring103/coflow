@@ -1,4 +1,5 @@
 use crate::{CfdValue, CftContainer, Diagnostic, DiagnosticSet, ResolvedSource};
+use serde_json::Value;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy)]
@@ -71,6 +72,13 @@ pub struct TableManagerDescriptor {
     pub display_name: &'static str,
     pub file_extensions: &'static [&'static str],
     pub aliases: &'static [&'static str],
+    pub addressing: TableAddressing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableAddressing {
+    Document,
+    Sheet,
 }
 
 #[derive(Debug, Clone)]
@@ -95,6 +103,10 @@ pub struct DimensionSourceResult {
 pub trait DimensionSourceManager: Send + Sync {
     fn descriptor(&self) -> &'static DimensionSourceManagerDescriptor;
 
+    fn source_options(&self, _request: &DimensionSourceOptionsRequest<'_>) -> Value {
+        Value::Object(serde_json::Map::new())
+    }
+
     /// Synchronize a generated dimension source while preserving configured
     /// player-authored variant values.
     ///
@@ -109,6 +121,12 @@ pub trait DimensionSourceManager: Send + Sync {
     ) -> Result<DimensionSourceResult, DiagnosticSet> {
         Err(unsupported_table_operation("syncing dimension sources"))
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct DimensionSourceOptionsRequest<'a> {
+    pub sheet: &'a str,
+    pub actual_type: &'a str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

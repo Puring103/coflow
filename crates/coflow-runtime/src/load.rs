@@ -132,6 +132,7 @@ pub(crate) fn load_project_data(
     let model = match builder.build() {
         Ok(model) => model,
         Err(err) => {
+            records_index.finalize_rejected_pending();
             let logical_locations =
                 logical_locations_from_cfd(&err, |id| record_coordinates.get(id.index()).cloned());
             let diagnostics = map_diagnostics_with_origins(err, &origins);

@@ -1,4 +1,6 @@
-use coflow_cft::{record_key_ident_error, CftContainer, CftSchemaField, CftSchemaTypeRef};
+use coflow_cft::{
+    record_key_ident_error, CftContainer, CftFieldMeta, CftSchemaTypeRef, CftSchemaView,
+};
 use coflow_data_model::CfdInputValue;
 use std::collections::BTreeMap;
 
@@ -98,21 +100,18 @@ pub(super) fn full_fields(
     schema: &CftContainer,
     type_name: &str,
 ) -> Result<Vec<FieldMeta>, CfdTextDiagnostics> {
-    let Some(schema_type) = schema.resolve_type(type_name) else {
+    let view = CftSchemaView::new(schema);
+    let Some(fields) = view.fields(type_name) else {
         return Err(CfdTextDiagnostics::one(CfdTextDiagnostic::error(
             CfdTextErrorCode::UnknownType,
             format!("unknown type `{type_name}`"),
             CfdTextSpan::default(),
         )));
     };
-    Ok(schema_type
-        .all_fields
-        .iter()
-        .map(field_meta)
-        .collect::<Vec<_>>())
+    Ok(fields.map(field_meta).collect::<Vec<_>>())
 }
 
-fn field_meta(field: &CftSchemaField) -> FieldMeta {
+fn field_meta(field: &CftFieldMeta) -> FieldMeta {
     FieldMeta {
         name: field.name.clone(),
         ty: field.ty_ref.clone(),

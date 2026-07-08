@@ -223,7 +223,7 @@ where
 
         let fields = self
             .schema
-            .full_fields(object.actual_type())
+            .fields_slice(object.actual_type())
             .ok_or_else(|| {
                 ExportError::new(format!(
                     "unknown CFT type `{}` during export",

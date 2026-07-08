@@ -1,8 +1,6 @@
-use coflow_api::{
-    CfdObject, CfdValue, CftContainer, CftSchemaField, CftSchemaTypeRef, DiagnosticSet,
-};
+use coflow_api::{CfdObject, CfdValue, CftContainer, CftSchemaTypeRef, DiagnosticSet};
 use coflow_cfd::ast::{CfdBlockEntry, CfdRecord as AstRecord};
-use coflow_cft::CftSchemaDefaultValue;
+use coflow_cft::{CftFieldMeta, CftSchemaDefaultValue, CftSchemaView};
 use coflow_data_model::CfdEnumValue;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -30,15 +28,14 @@ pub(super) fn rewrite_cfd_records(
     actual_type: &str,
     schema: &CftContainer,
 ) -> Result<String, DiagnosticSet> {
-    let schema_type = schema.resolve_type(actual_type).ok_or_else(|| {
+    let view = CftSchemaView::new(schema);
+    let schema_fields = view.fields(actual_type).ok_or_else(|| {
         DiagnosticSet::one(diag(
             "CFD-TABLE",
             format!("unknown CFT type `{actual_type}`"),
         ))
     })?;
-    let fields = schema_type
-        .all_fields
-        .iter()
+    let fields = schema_fields
         .map(|field| (field.name.clone(), field))
         .collect::<BTreeMap<_, _>>();
     let mut replacements = Vec::new();
@@ -58,7 +55,7 @@ fn render_cfd_record(
     source: &str,
     record: &AstRecord,
     schema: &CftContainer,
-    fields: &BTreeMap<String, &CftSchemaField>,
+    fields: &BTreeMap<String, &CftFieldMeta>,
 ) -> String {
     let existing = record
         .fields
@@ -101,7 +98,7 @@ fn format_record_key(key: &str) -> String {
     }
 }
 
-fn default_cfd_value(schema: &CftContainer, field: &CftSchemaField) -> String {
+fn default_cfd_value(schema: &CftContainer, field: &CftFieldMeta) -> String {
     let value = field.default.as_ref().map_or_else(
         || value_from_type_default(schema, &field.ty_ref),
         |default| value_from_schema_default(schema, &field.ty_ref, default),
@@ -163,11 +160,11 @@ fn value_from_type_default(schema: &CftContainer, ty: &CftSchemaTypeRef) -> CfdV
                 },
             ),
         CftSchemaTypeRef::Named(name) => {
-            let fields = schema
-                .resolve_type(name)
-                .map(|ty| {
-                    ty.all_fields
-                        .iter()
+            let view = CftSchemaView::new(schema);
+            let fields = view
+                .fields(name)
+                .map(|fields| {
+                    fields
                         .map(|field| {
                             (
                                 field.name.clone(),

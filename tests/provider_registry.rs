@@ -51,12 +51,51 @@ fn builtin_registry_contains_all_default_providers() -> Result<(), String> {
         "missing lark-sheet table manager",
     )?;
     ensure(
+        registry
+            .table_manager("cfd")
+            .expect("cfd table manager")
+            .descriptor()
+            .addressing
+            == coflow_api::TableAddressing::Document,
+        "cfd table manager addressing",
+    )?;
+    ensure(
+        registry
+            .table_manager("excel")
+            .expect("excel table manager")
+            .descriptor()
+            .addressing
+            == coflow_api::TableAddressing::Sheet,
+        "excel table manager addressing",
+    )?;
+    ensure(
         registry.dimension_source_manager("csv").is_some(),
         "missing csv dimension source manager",
     )?;
     ensure(
         registry.dimension_source_manager("cfd").is_some(),
         "missing cfd dimension source manager",
+    )?;
+    let csv_options = registry
+        .dimension_source_manager("csv")
+        .expect("csv dimension manager")
+        .source_options(&coflow_api::DimensionSourceOptionsRequest {
+            sheet: "Item_name",
+            actual_type: "Item_nameVariants",
+        });
+    ensure_eq(
+        csv_options["sheets"][0]["sheet"]
+            .as_str()
+            .unwrap_or_default(),
+        "Item_name",
+        "csv dimension source sheet option",
+    )?;
+    ensure_eq(
+        csv_options["sheets"][0]["type"]
+            .as_str()
+            .unwrap_or_default(),
+        "Item_nameVariants",
+        "csv dimension source type option",
     )?;
     ensure(registry.exporter("json").is_some(), "missing json exporter")?;
     ensure(
@@ -161,6 +200,7 @@ static FAKE_TABLE_MANAGER_DESCRIPTOR: coflow_api::TableManagerDescriptor =
         display_name: "Fake table",
         file_extensions: &["fake"],
         aliases: &[],
+        addressing: coflow_api::TableAddressing::Sheet,
     };
 
 impl coflow_api::TableManager for FakeTableManager {

@@ -1,6 +1,6 @@
 use coflow_api::{
-    CreateTableRequest, DiagnosticSet, SourceLocationSpec, SyncHeaderRequest, TableContext,
-    TableManager, TableManagerDescriptor, TableOperationResult,
+    CreateTableRequest, DiagnosticSet, SourceLocationSpec, SyncHeaderRequest, TableAddressing,
+    TableContext, TableManager, TableManagerDescriptor, TableOperationResult,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -13,6 +13,7 @@ pub static CSV_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManagerDe
     display_name: "CSV table",
     file_extensions: &["csv"],
     aliases: &[],
+    addressing: TableAddressing::Sheet,
 };
 
 impl TableManager for CsvWriter {

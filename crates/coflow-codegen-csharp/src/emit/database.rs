@@ -274,8 +274,7 @@ fn collect_table_dependencies(
     table_set: &BTreeSet<String>,
     out: &mut BTreeSet<String>,
 ) -> Result<(), CsharpCodegenError> {
-    let ty = view.type_meta(type_name)?;
-    for field in &ty.all_fields {
+    for field in view.fields(type_name)? {
         collect_table_dependencies_for_field_type(view, &field.ty_ref, table_set, out)?;
     }
     Ok(())
@@ -297,8 +296,8 @@ fn collect_table_dependencies_for_field_type(
                 }
             }
             if !hit_table {
-                if let Ok(meta) = view.type_meta(name) {
-                    for field in &meta.all_fields {
+                if view.type_meta(name).is_ok() {
+                    for field in view.fields(name)? {
                         collect_table_dependencies_for_field_type(
                             view,
                             &field.ty_ref,
@@ -311,8 +310,8 @@ fn collect_table_dependencies_for_field_type(
         }
         CftSchemaTypeRef::Named(name) if view.is_schema_enum(name) => {}
         CftSchemaTypeRef::Named(name) => {
-            if let Ok(meta) = view.type_meta(name) {
-                for field in &meta.all_fields {
+            if view.type_meta(name).is_ok() {
+                for field in view.fields(name)? {
                     collect_table_dependencies_for_field_type(view, &field.ty_ref, table_set, out)?;
                 }
             }

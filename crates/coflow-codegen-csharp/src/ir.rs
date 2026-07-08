@@ -436,7 +436,10 @@ fn validate_generated_member_names(
 ) {
     for ty in view.type_metas() {
         let mut members = BTreeMap::<String, String>::new();
-        for field in &ty.all_fields {
+        let Ok(fields) = view.fields(&ty.name) else {
+            continue;
+        };
+        for field in fields {
             let property_name = csharp_type_name(&field.name);
             insert_generated_member_name(
                 &mut members,

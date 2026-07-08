@@ -156,9 +156,10 @@ pub fn inspect_schema(
             is_sealed: ty.is_sealed,
             is_singleton: ty.is_singleton,
             annotations: annotations(&ty.annotations),
-            fields: ty
-                .all_fields
-                .iter()
+            fields: view
+                .fields(&ty.name)
+                .into_iter()
+                .flatten()
                 .map(|field| SchemaFieldInfo {
                     name: field.name.clone(),
                     ty: type_ref_info(&view, &field.ty_ref),

@@ -1,7 +1,7 @@
 use calamine::Reader;
 use coflow_api::{
-    CreateTableRequest, DiagnosticSet, SourceLocationSpec, SyncHeaderRequest, TableContext,
-    TableManager, TableManagerDescriptor, TableOperationResult,
+    CreateTableRequest, DiagnosticSet, SourceLocationSpec, SyncHeaderRequest, TableAddressing,
+    TableContext, TableManager, TableManagerDescriptor, TableOperationResult,
 };
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -13,6 +13,7 @@ pub static EXCEL_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManager
     display_name: "Excel table",
     file_extensions: &["xlsx", "xlsm", "xls"],
     aliases: &["xlsx"],
+    addressing: TableAddressing::Sheet,
 };
 
 impl TableManager for ExcelWriter {

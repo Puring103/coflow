@@ -23,7 +23,8 @@ pub(super) fn loader_method(
     view: &CsharpSchemaContext,
 ) -> Result<CsharpLoader, CsharpCodegenError> {
     let ty = view.type_meta(type_name)?;
-    let mut used_local_names = loader_reserved_local_names(ty);
+    let schema_fields = view.fields(type_name)?.collect::<Vec<_>>();
+    let mut used_local_names = loader_reserved_local_names(schema_fields.iter().copied());
     let key_ty = view.key_field_type(type_name);
     let key_local_name = field_local_name("id", &mut used_local_names)?;
     let is_table = type_is_table(type_name, view);
@@ -34,9 +35,9 @@ pub(super) fn loader_method(
     // `LoadTable` for singletons and the shared `Load(dataDir)` body would
     // fail to compile.
     let is_disk_loadable = is_table || ty.is_singleton;
-    let fields = ty
-        .all_fields
+    let fields = schema_fields
         .iter()
+        .copied()
         .map(|field| {
             load_field(
                 field,
@@ -212,8 +213,7 @@ fn field_type_requires_context_inner(
                 return Ok(false);
             }
             for concrete in view.concrete_assignable_types(name)? {
-                let meta = view.type_meta(&concrete)?;
-                for field in &meta.all_fields {
+                for field in view.fields(&concrete)? {
                     if field_type_requires_context_inner(&field.ty_ref, view, visited)? {
                         return Ok(true);
                     }

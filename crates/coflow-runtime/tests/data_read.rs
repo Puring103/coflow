@@ -190,6 +190,30 @@ fn duplicate_record_diagnostics_keep_source_file_and_logical_record() {
         !session.diagnostics.by_record("Item", "sword").is_empty(),
         "duplicate diagnostic should be indexed by logical record"
     );
+    let rejected = session.records.rejected();
+    assert_eq!(
+        rejected.len(),
+        2,
+        "duplicate model-build failure should keep all rejected source rows"
+    );
+    assert!(rejected.iter().all(|record| {
+        record.coordinate.actual_type == "Item"
+            && record.coordinate.key == "sword"
+            && record.display_path == "data/items.cfd"
+    }));
+    assert_eq!(
+        session.records.rejected_in_file("data/items.cfd").count(),
+        2,
+        "rejected source rows should be queryable by file"
+    );
+    assert_eq!(
+        session
+            .records
+            .rejected_by_coordinate("Item", "sword")
+            .count(),
+        2,
+        "rejected source rows should be queryable by logical coordinate"
+    );
 
     let _ = std::fs::remove_dir_all(root);
 }

@@ -1,4 +1,4 @@
-use coflow_cft::{CftContainer, CftSchemaField};
+use coflow_cft::{CftContainer, CftFieldMeta, CftSchemaView};
 
 use super::diagnostics::{
     invalid_declared_type, CellValueDiagnostic, CellValueDiagnostics, CellValueErrorCode,
@@ -176,7 +176,8 @@ pub(super) fn full_fields(
     schema: &CftContainer,
     type_name: &str,
 ) -> Result<Vec<FieldMeta>, CellValueDiagnostics> {
-    let Some(schema_type) = schema.resolve_type(type_name) else {
+    let view = CftSchemaView::new(schema);
+    let Some(fields) = view.fields(type_name) else {
         return Err(CellValueDiagnostics {
             diagnostics: vec![CellValueDiagnostic {
                 code: CellValueErrorCode::UnknownType,
@@ -184,19 +185,15 @@ pub(super) fn full_fields(
             }],
         });
     };
-    schema_type
-        .all_fields
-        .iter()
-        .map(|field| field_meta(schema, field))
-        .collect()
+    fields.map(|field| field_meta(schema, field)).collect()
 }
 
 fn field_meta(
     schema: &CftContainer,
-    field: &CftSchemaField,
+    field: &CftFieldMeta,
 ) -> Result<FieldMeta, CellValueDiagnostics> {
     Ok(FieldMeta {
         name: field.name.clone(),
-        ty: CellType::parse(schema, &field.ty)?,
+        ty: CellType::parse(schema, &field.raw_type)?,
     })
 }

@@ -1,9 +1,9 @@
 use coflow_api::{
     CreateTableRequest, DeleteRecordRequest, DiagnosticSet, InsertRecordRequest, RecordOrigin,
     RenameRecordRequest, RewriteRecordReferencesRequest, SourceDocument, SourceLocationSpec,
-    SourceWriter, TableContext, TableManager, TableManagerDescriptor, TableOperationResult,
-    WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome, WriterCapabilities,
-    WriterDescriptor,
+    SourceWriter, TableAddressing, TableContext, TableManager, TableManagerDescriptor,
+    TableOperationResult, WriteCellRequest, WriteContext, WriteFieldPathSegment, WriteOutcome,
+    WriterCapabilities, WriterDescriptor,
 };
 use coflow_loader_table_core::cell_value::render_cell_value;
 use coflow_loader_table_core::writer::{plan_insert_record, TableInsertRecord, TableWritePlan};
@@ -38,6 +38,7 @@ pub static LARK_SHEET_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableMa
     display_name: "Lark Sheet",
     file_extensions: &[],
     aliases: &[],
+    addressing: TableAddressing::Sheet,
 };
 
 impl<C> SourceWriter for LarkSheetWriter<C>

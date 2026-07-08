@@ -1,8 +1,10 @@
 use coflow_api::{
     DiagnosticSet, DimensionSourceManager, DimensionSourceManagerDescriptor,
-    DimensionSourceRequest, DimensionSourceResult, SourceLocationSpec, TableContext,
+    DimensionSourceOptionsRequest, DimensionSourceRequest, DimensionSourceResult,
+    SourceLocationSpec, TableContext,
 };
 use coflow_loader_table_core::cell_value::{render_cell_value, CellRenderError};
+use serde_json::json;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -19,6 +21,15 @@ pub(super) static CSV_DIMENSION_SOURCE_MANAGER_DESCRIPTOR: DimensionSourceManage
 impl DimensionSourceManager for CsvWriter {
     fn descriptor(&self) -> &'static DimensionSourceManagerDescriptor {
         &CSV_DIMENSION_SOURCE_MANAGER_DESCRIPTOR
+    }
+
+    fn source_options(&self, request: &DimensionSourceOptionsRequest<'_>) -> serde_json::Value {
+        json!({
+            "sheets": [{
+                "sheet": request.sheet,
+                "type": request.actual_type,
+            }]
+        })
     }
 
     fn sync_dimension_source(

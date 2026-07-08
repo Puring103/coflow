@@ -136,12 +136,15 @@ fn build_data_pipeline(
 ) -> Result<LoadedSessionData, String> {
     let (mut output, mut indexes) = match load_base_data(ctx) {
         Ok(loaded) => loaded,
-        Err(load_diagnostics) => {
+        Err(load_failure) => {
             diagnostics.extend_with_logical_locations(
-                load_diagnostics.diagnostics,
-                load_diagnostics.logical_locations,
+                load_failure.diagnostics.diagnostics,
+                load_failure.diagnostics.logical_locations,
             );
-            return LoadedSessionData::empty();
+            return Ok(LoadedSessionData {
+                model: empty_model()?,
+                indexes: load_failure.indexes,
+            });
         }
     };
 
@@ -162,7 +165,7 @@ fn build_data_pipeline(
 
 fn load_base_data(
     ctx: &SessionBuildContext<'_>,
-) -> Result<(ProjectLoadOutput, SessionIndexes), LoadDiagnostics> {
+) -> Result<(ProjectLoadOutput, SessionIndexes), DataLoadFailure> {
     load_data(ctx, false, !ctx.has_dimension_fields())
 }
 
@@ -172,12 +175,12 @@ fn reload_with_dimensions(
 ) -> Result<(ProjectLoadOutput, SessionIndexes), String> {
     match load_data(ctx, true, true) {
         Ok(loaded) => Ok(loaded),
-        Err(load_diagnostics) => {
+        Err(load_failure) => {
             diagnostics.extend_with_logical_locations(
-                load_diagnostics.diagnostics,
-                load_diagnostics.logical_locations,
+                load_failure.diagnostics.diagnostics,
+                load_failure.diagnostics.logical_locations,
             );
-            Ok((empty_load_output()?, SessionIndexes::default()))
+            Ok((empty_load_output()?, load_failure.indexes))
         }
     }
 }
@@ -186,9 +189,9 @@ fn load_data(
     ctx: &SessionBuildContext<'_>,
     include_implicit_dimension_sources: bool,
     run_checks: bool,
-) -> Result<(ProjectLoadOutput, SessionIndexes), LoadDiagnostics> {
+) -> Result<(ProjectLoadOutput, SessionIndexes), DataLoadFailure> {
     let mut indexes = SessionIndexes::default();
-    let output = load_project_data(
+    let output = match load_project_data(
         &ctx.project,
         &ctx.schema,
         ctx.registry,
@@ -199,8 +202,21 @@ fn load_data(
             include_implicit_dimension_sources,
             run_checks,
         },
-    )?;
+    ) {
+        Ok(output) => output,
+        Err(diagnostics) => {
+            return Err(DataLoadFailure {
+                diagnostics,
+                indexes,
+            })
+        }
+    };
     Ok((output, indexes))
+}
+
+struct DataLoadFailure {
+    diagnostics: LoadDiagnostics,
+    indexes: SessionIndexes,
 }
 
 fn commit_dimensions_if_needed(

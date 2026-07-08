@@ -14,9 +14,9 @@ mod target;
 use coflow_api::{
     CreateTableRequest, DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest,
     RecordOrigin, RenameRecordRequest, RewriteRecordReferencesRequest, SourceLocationSpec,
-    SourceWriter, SyncHeaderRequest, TableContext, TableManager, TableManagerDescriptor,
-    TableOperationResult, TextSpan, WriteCellRequest, WriteContext, WriteOutcome,
-    WriterCapabilities, WriterDescriptor,
+    SourceWriter, SyncHeaderRequest, TableAddressing, TableContext, TableManager,
+    TableManagerDescriptor, TableOperationResult, TextSpan, WriteCellRequest, WriteContext,
+    WriteOutcome, WriterCapabilities, WriterDescriptor,
 };
 use coflow_cfd::{parse_cfd, CfdAst};
 use coflow_cft::Span;
@@ -49,6 +49,7 @@ pub static CFD_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManagerDe
     display_name: "Coflow data text",
     file_extensions: &["cfd"],
     aliases: &[],
+    addressing: TableAddressing::Document,
 };
 
 /// Writer for `.cfd` text sources. Holds a cache of source text + AST per
