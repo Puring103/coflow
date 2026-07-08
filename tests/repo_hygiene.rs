@@ -765,6 +765,38 @@ fn csv_dimension_source_sync_does_not_live_in_writer_rs() {
 }
 
 #[test]
+fn excel_table_manager_does_not_live_in_writer_rs() {
+    let writer = std::fs::read_to_string("crates/coflow-loader-excel/src/writer.rs")
+        .expect("read excel writer");
+    let table_manager =
+        std::fs::read_to_string("crates/coflow-loader-excel/src/writer/table_manager.rs")
+            .expect("read excel table manager");
+
+    for expected in [
+        "impl TableManager for ExcelWriter",
+        "pub static EXCEL_TABLE_MANAGER_DESCRIPTOR",
+        "fn create_table",
+        "fn sync_header",
+        "fn create_excel_file",
+        "fn append_excel_sheet",
+        "fn sync_excel_header",
+    ] {
+        assert!(
+            table_manager.contains(expected),
+            "Excel table manager item `{expected}` should live in writer/table_manager.rs"
+        );
+        assert!(
+            !writer.contains(expected),
+            "Excel table manager item `{expected}` should not live in writer.rs"
+        );
+    }
+    assert!(
+        writer.lines().count() < 650,
+        "coflow-loader-excel writer.rs should stay below the 650-line focused-module threshold"
+    );
+}
+
+#[test]
 fn csv_loader_helpers_do_not_live_in_lib_rs() {
     let lib = std::fs::read_to_string("crates/coflow-loader-csv/src/lib.rs").expect("read csv lib");
     let format =
