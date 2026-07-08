@@ -701,6 +701,137 @@ dimensions:
 }
 
 #[test]
+fn language_dimension_removes_new_generated_csv_when_reload_checks_fail() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-engine-dim-rollback-new-file-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create dimensions dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        r#"
+        type Item {
+            @localized
+            name: string;
+
+            check { name != "BAD"; }
+        }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.csv"), "id,name\npotion,BAD\n").expect("write items");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+sources:
+  - path: data/items.csv
+    type: csv
+    sheets:
+      - sheet: items
+        type: Item
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+
+    let generated_path = root.join("data/dimensions/language/Item_name.csv");
+    assert!(!generated_path.exists());
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let registry = csv_dimension_registry();
+    let session = build_project_session(project, &registry).expect("build session");
+    assert!(session.has_diagnostics());
+    assert!(
+        !generated_path.exists(),
+        "new generated dimension file should be removed after rollback"
+    );
+
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
+fn language_dimension_rolls_back_all_changed_csv_files_when_reload_checks_fail() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-engine-dim-rollback-multi-file-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).expect("clean temp dir");
+    }
+    std::fs::create_dir_all(root.join("schema")).expect("create schema dir");
+    std::fs::create_dir_all(root.join("data/dimensions/language")).expect("create dimensions dir");
+    std::fs::write(
+        root.join("schema/main.cft"),
+        r#"
+        type Item {
+            @localized
+            name: string;
+
+            @localized
+            title: string;
+
+            check { name != "BAD"; }
+        }
+        "#,
+    )
+    .expect("write schema");
+    std::fs::write(root.join("data/items.csv"), "id,name,title\npotion,Potion,New Title\n")
+        .expect("write items");
+    let original_name_csv = "id,default,zh\npotion,Old,BAD\n";
+    let original_title_csv = "id,default,zh\npotion,Old Title,旧标题\n";
+    std::fs::write(
+        root.join("data/dimensions/language/Item_name.csv"),
+        original_name_csv,
+    )
+    .expect("write name dimension csv");
+    std::fs::write(
+        root.join("data/dimensions/language/Item_title.csv"),
+        original_title_csv,
+    )
+    .expect("write title dimension csv");
+    std::fs::write(
+        root.join("coflow.yaml"),
+        r#"schema: schema/main.cft
+sources:
+  - path: data/items.csv
+    type: csv
+    sheets:
+      - sheet: items
+        type: Item
+dimensions:
+  language:
+    variants: [zh]
+    out_dir: data/dimensions/language
+"#,
+    )
+    .expect("write config");
+
+    let project = Project::open_schema_only(Some(&root)).expect("open project");
+    let registry = csv_dimension_registry();
+    let session = build_project_session(project, &registry).expect("build session");
+    assert!(session.has_diagnostics());
+    assert_eq!(
+        std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
+            .expect("read rolled back name csv"),
+        original_name_csv
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("data/dimensions/language/Item_title.csv"))
+            .expect("read rolled back title csv"),
+        original_title_csv
+    );
+
+    std::fs::remove_dir_all(root).expect("remove temp dir");
+}
+
+#[test]
 fn language_dimension_does_not_rewrite_unchanged_generated_files() {
     let root = std::env::temp_dir().join(format!(
         "coflow-engine-dim-no-unchanged-rewrite-{}",
