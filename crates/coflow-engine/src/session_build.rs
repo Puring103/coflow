@@ -1,12 +1,17 @@
 use std::collections::BTreeSet;
 
-use coflow_api::ProviderRegistry;
+use coflow_api::{CftContainer, ProviderRegistry};
 use coflow_cft::CftSchemaView;
+use coflow_data_model::CfdDataModel;
 use coflow_project::Project;
 
 use crate::dimensions;
-use crate::indexes::{DependencyIndex, FileIndex, RecordIndex, SourceIndex};
-use crate::load::{empty_load_output, empty_model, load_project_data, LoadProjectDataOptions};
+use crate::dimensions::{DimensionField, DimensionGenerationTransaction};
+use crate::indexes::{DependencyIndex, DiagnosticsStore, FileIndex, RecordIndex, SourceIndex};
+use crate::load::{
+    empty_load_output, empty_model, load_project_data, LoadDiagnostics, LoadProjectDataOptions,
+    ProjectLoadOutput,
+};
 use crate::schema_build::build_project_schema_with_diagnostics;
 use crate::session::{ProjectSchemaSession, ProjectSession};
 
@@ -50,109 +55,216 @@ fn build_project_session_with_dimension_mode(
     registry: &ProviderRegistry,
     dimension_mode: DimensionBuildMode,
 ) -> Result<ProjectSession, String> {
-    let mut initial_diagnostics = project.schema_diagnostic_set();
-    initial_diagnostics.extend(project.data_diagnostic_set());
-    let schema_session = build_project_schema_with_diagnostics(project, initial_diagnostics)?;
     let ProjectSchemaSession {
         project,
         schema,
         mut diagnostics,
-    } = schema_session;
+    } = build_schema_session(project)?;
 
-    let mut sources = SourceIndex::default();
-    let mut records = RecordIndex::default();
-    let mut files = FileIndex::default();
     let schema_view = CftSchemaView::new(&schema);
     let dimension_fields = dimensions::dimension_fields(&schema_view);
-    let (model, dependencies) = if diagnostics.is_empty() {
-        match load_project_data(
-            &project,
-            &schema,
-            registry,
-            &mut sources,
-            &mut records,
-            &mut files,
-            LoadProjectDataOptions {
-                include_implicit_dimension_sources: false,
-                run_checks: dimension_fields.is_empty(),
-            },
-        ) {
-            Ok(mut output) => {
-                let has_dimension_fields = !dimension_fields.is_empty();
-                let should_generate_dimensions =
-                    dimension_mode == DimensionBuildMode::Generate && has_dimension_fields;
-                let mut dimension_transaction = None;
-                if should_generate_dimensions {
-                    let dimension_result = dimensions::regenerate_dimension_sources(
-                        &project,
-                        &output.model,
-                        &dimension_fields,
-                        registry,
-                    );
-                    diagnostics.extend(dimension_result.diagnostics);
-                    if diagnostics.is_empty() && !dimension_result.transaction.is_empty() {
-                        dimension_transaction = Some(dimension_result.transaction);
-                    }
-                }
-                if diagnostics.is_empty() && has_dimension_fields {
-                    sources = SourceIndex::default();
-                    records = RecordIndex::default();
-                    files = FileIndex::default();
-                    match load_project_data(
-                        &project,
-                        &schema,
-                        registry,
-                        &mut sources,
-                        &mut records,
-                        &mut files,
-                        LoadProjectDataOptions {
-                            include_implicit_dimension_sources: true,
-                            run_checks: true,
-                        },
-                    ) {
-                        Ok(reloaded) => output = reloaded,
-                        Err(load_diagnostics) => {
-                            diagnostics.extend_with_logical_locations(
-                                load_diagnostics.diagnostics,
-                                load_diagnostics.logical_locations,
-                            );
-                            output = empty_load_output()?;
-                        }
-                    }
-                }
-                records.finalize_with_model(&output.model);
-                diagnostics
-                    .extend_with_logical_locations(output.diagnostics, output.logical_locations);
-                if !diagnostics.is_empty() {
-                    if let Some(transaction) = dimension_transaction.take() {
-                        diagnostics.extend(transaction.rollback(&project.config_path));
-                    }
-                }
-                (output.model, output.dependencies)
-            }
-            Err(load_diagnostics) => {
-                diagnostics.extend_with_logical_locations(
-                    load_diagnostics.diagnostics,
-                    load_diagnostics.logical_locations,
-                );
-                (empty_model()?, DependencyIndex::default())
-            }
-        }
-    } else {
-        (empty_model()?, DependencyIndex::default())
-    };
-
-    Ok(ProjectSession {
+    let mut ctx = SessionBuildContext {
         project,
         schema,
+        registry,
+        dimension_mode,
+        dimension_fields,
+    };
+
+    let LoadedSessionData {
+        model,
+        dependencies,
+        indexes,
+    } = if diagnostics.is_empty() {
+        build_data_pipeline(&mut ctx, &mut diagnostics)?
+    } else {
+        LoadedSessionData::empty()?
+    };
+
+    Ok(assemble_session(
+        ctx,
+        model,
+        dependencies,
+        diagnostics,
+        indexes,
+    ))
+}
+
+fn build_schema_session(project: Project) -> Result<ProjectSchemaSession, String> {
+    let mut initial_diagnostics = project.schema_diagnostic_set();
+    initial_diagnostics.extend(project.data_diagnostic_set());
+    build_project_schema_with_diagnostics(project, initial_diagnostics)
+}
+
+struct SessionBuildContext<'a> {
+    project: Project,
+    schema: CftContainer,
+    registry: &'a ProviderRegistry,
+    dimension_mode: DimensionBuildMode,
+    dimension_fields: Vec<DimensionField>,
+}
+
+impl SessionBuildContext<'_> {
+    fn has_dimension_fields(&self) -> bool {
+        !self.dimension_fields.is_empty()
+    }
+
+    fn should_generate_dimensions(&self) -> bool {
+        self.dimension_mode == DimensionBuildMode::Generate && self.has_dimension_fields()
+    }
+}
+
+#[derive(Default)]
+struct SessionIndexes {
+    sources: SourceIndex,
+    records: RecordIndex,
+    files: FileIndex,
+}
+
+struct LoadedSessionData {
+    model: CfdDataModel,
+    dependencies: DependencyIndex,
+    indexes: SessionIndexes,
+}
+
+impl LoadedSessionData {
+    fn empty() -> Result<Self, String> {
+        Ok(Self {
+            model: empty_model()?,
+            dependencies: DependencyIndex::default(),
+            indexes: SessionIndexes::default(),
+        })
+    }
+}
+
+fn build_data_pipeline(
+    ctx: &mut SessionBuildContext<'_>,
+    diagnostics: &mut DiagnosticsStore,
+) -> Result<LoadedSessionData, String> {
+    let (mut output, mut indexes) = match load_base_data(ctx) {
+        Ok(loaded) => loaded,
+        Err(load_diagnostics) => {
+            diagnostics.extend_with_logical_locations(
+                load_diagnostics.diagnostics,
+                load_diagnostics.logical_locations,
+            );
+            return LoadedSessionData::empty();
+        }
+    };
+
+    let mut dimension_transaction = commit_dimensions_if_needed(ctx, &output, diagnostics);
+    if diagnostics.is_empty() && ctx.has_dimension_fields() {
+        (output, indexes) = reload_with_dimensions(ctx, diagnostics)?;
+    }
+
+    indexes.records.finalize_with_model(&output.model);
+    diagnostics.extend_with_logical_locations(output.diagnostics, output.logical_locations);
+    rollback_dimensions_after_failed_pipeline(ctx, &mut dimension_transaction, diagnostics);
+
+    Ok(LoadedSessionData {
+        model: output.model,
+        dependencies: output.dependencies,
+        indexes,
+    })
+}
+
+fn load_base_data(
+    ctx: &SessionBuildContext<'_>,
+) -> Result<(ProjectLoadOutput, SessionIndexes), LoadDiagnostics> {
+    load_data(ctx, false, !ctx.has_dimension_fields())
+}
+
+fn reload_with_dimensions(
+    ctx: &SessionBuildContext<'_>,
+    diagnostics: &mut DiagnosticsStore,
+) -> Result<(ProjectLoadOutput, SessionIndexes), String> {
+    match load_data(ctx, true, true) {
+        Ok(loaded) => Ok(loaded),
+        Err(load_diagnostics) => {
+            diagnostics.extend_with_logical_locations(
+                load_diagnostics.diagnostics,
+                load_diagnostics.logical_locations,
+            );
+            Ok((empty_load_output()?, SessionIndexes::default()))
+        }
+    }
+}
+
+fn load_data(
+    ctx: &SessionBuildContext<'_>,
+    include_implicit_dimension_sources: bool,
+    run_checks: bool,
+) -> Result<(ProjectLoadOutput, SessionIndexes), LoadDiagnostics> {
+    let mut indexes = SessionIndexes::default();
+    let output = load_project_data(
+        &ctx.project,
+        &ctx.schema,
+        ctx.registry,
+        &mut indexes.sources,
+        &mut indexes.records,
+        &mut indexes.files,
+        LoadProjectDataOptions {
+            include_implicit_dimension_sources,
+            run_checks,
+        },
+    )?;
+    Ok((output, indexes))
+}
+
+fn commit_dimensions_if_needed(
+    ctx: &SessionBuildContext<'_>,
+    output: &ProjectLoadOutput,
+    diagnostics: &mut DiagnosticsStore,
+) -> Option<DimensionGenerationTransaction> {
+    if !ctx.should_generate_dimensions() {
+        return None;
+    }
+
+    let dimension_result = dimensions::regenerate_dimension_sources(
+        &ctx.project,
+        &output.model,
+        &ctx.dimension_fields,
+        ctx.registry,
+    );
+    diagnostics.extend(dimension_result.diagnostics);
+    if diagnostics.is_empty() && !dimension_result.transaction.is_empty() {
+        Some(dimension_result.transaction)
+    } else {
+        None
+    }
+}
+
+fn rollback_dimensions_after_failed_pipeline(
+    ctx: &SessionBuildContext<'_>,
+    dimension_transaction: &mut Option<DimensionGenerationTransaction>,
+    diagnostics: &mut DiagnosticsStore,
+) {
+    if diagnostics.is_empty() {
+        return;
+    }
+    if let Some(transaction) = dimension_transaction.take() {
+        diagnostics.extend(transaction.rollback(&ctx.project.config_path));
+    }
+}
+
+fn assemble_session(
+    ctx: SessionBuildContext<'_>,
+    model: CfdDataModel,
+    dependencies: DependencyIndex,
+    diagnostics: DiagnosticsStore,
+    indexes: SessionIndexes,
+) -> ProjectSession {
+    ProjectSession {
+        project: ctx.project,
+        schema: ctx.schema,
         model,
         diagnostics,
-        sources,
-        records,
-        files,
+        sources: indexes.sources,
+        records: indexes.records,
+        files: indexes.files,
         dependencies,
-        loader_extensions: loader_extensions(registry),
-    })
+        loader_extensions: loader_extensions(ctx.registry),
+    }
 }
 
 fn loader_extensions(registry: &ProviderRegistry) -> BTreeSet<String> {
