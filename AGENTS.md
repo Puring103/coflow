@@ -14,6 +14,8 @@ gates only.
 For release or packaging commits, run the full gate from the repository root:
 
 ```powershell
+pwsh scripts/sync-skill-references.ps1
+pwsh scripts/sync-skill-references.ps1 -Check
 cargo check --workspace
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
@@ -22,6 +24,12 @@ cargo test --workspace
 
 Do not package or release while any of these commands fail.
 Release and packaging workflows should keep this full gate.
+
+The skill reference sync copies public website reference docs into synced files under
+`skills/*/references/*.md`. Synced files intentionally have no file header; source mappings live in
+`scripts/sync-skill-references.ps1`, and public URLs are listed from each skill's `SKILL.md`. Run the
+sync for release/packaging whenever `website/docs/docs/reference/` or `skills/` changes, and commit
+the synced files.
 
 When the user specifies a version to package or release, reinstall the local Cargo CLI after the checks pass:
 

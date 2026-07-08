@@ -24,6 +24,17 @@ jobs:
         with:
           node-version: 22
 
+      - name: Sync skill references
+        shell: pwsh
+        run: |
+          pwsh scripts/sync-skill-references.ps1
+          pwsh scripts/sync-skill-references.ps1 -Check
+          $skillStatus = git status --porcelain -- skills
+          if ($skillStatus) {
+            $skillStatus
+            throw "Skill references changed after sync. Commit synced files before release."
+          }
+
       - name: Check workspace
         run: cargo check --workspace
 

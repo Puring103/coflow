@@ -50,6 +50,7 @@ export default withMermaid(defineConfig({
             { text: '策划视角', link: '/docs/guide/for-designers' },
             { text: '程序视角', link: '/docs/guide/for-programmers' },
             { text: '示例', link: '/docs/guide/examples' },
+            { text: 'AI Agent Skills', link: '/docs/guide/ai-agent' },
             { text: '最佳工作流', link: '/docs/guide/best-workflow' }
           ]
         },
