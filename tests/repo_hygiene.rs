@@ -39,12 +39,12 @@ fn final_architecture_has_no_pipeline_or_editor_core_crates() {
         "default provider registration should live in coflow-builtins"
     );
     assert!(
-        manifest.contains("crates/coflow-engine"),
-        "runtime implementation should live in coflow-engine"
+        manifest.contains("crates/coflow-runtime"),
+        "runtime implementation should live in coflow-runtime"
     );
     assert!(
-        manifest.contains("crates/coflow-runtime"),
-        "host-facing runtime boundary should live in coflow-runtime"
+        !manifest.contains("crates/coflow-engine"),
+        "coflow-engine should be removed after the runtime crate rename"
     );
     assert!(
         !manifest.contains("crates/coflow-pipeline"),
@@ -1160,7 +1160,7 @@ fn hosts_depend_on_runtime_boundary_not_engine_implementation() {
     );
     assert!(
         !root_manifest.contains("coflow-engine ="),
-        "root CLI should not depend on coflow-engine directly"
+        "root CLI should not depend on the removed coflow-engine crate"
     );
     assert!(
         editor_manifest.contains("coflow-runtime ="),
@@ -1168,26 +1168,30 @@ fn hosts_depend_on_runtime_boundary_not_engine_implementation() {
     );
     assert!(
         !editor_manifest.contains("coflow-engine ="),
-        "editor backend should not depend on coflow-engine directly"
+        "editor backend should not depend on the removed coflow-engine crate"
     );
     assert!(
-        runtime_manifest.contains("coflow-engine ="),
-        "runtime facade should delegate to the engine implementation crate"
+        !runtime_manifest.contains("coflow-engine ="),
+        "coflow-runtime should be the implementation crate, not delegate to coflow-engine"
     );
     assert!(
-        runtime_lib.contains("pub use coflow_engine::*;"),
-        "runtime facade should expose the current engine runtime API"
+        !runtime_lib.contains("pub use coflow_runtime::*;"),
+        "coflow-runtime should not be a self-reexport facade"
+    );
+    assert!(
+        !std::path::Path::new("crates/coflow-engine/Cargo.toml").exists(),
+        "coflow-engine crate should not exist after the runtime rename"
     );
 }
 
 #[test]
 fn engine_public_api_does_not_expose_checker_dependency_graph() {
     let engine =
-        std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");
+        std::fs::read_to_string("crates/coflow-runtime/src/lib.rs").expect("read engine source");
 
     assert!(
         !engine.contains("use coflow_checker::{run_checks_with_deps, DependencyGraph}"),
-        "coflow-engine should wrap checker dependency graph instead of re-exporting the checker type through ProjectSession"
+        "coflow-runtime should wrap checker dependency graph instead of re-exporting the checker type through ProjectSession"
     );
     assert!(
         !engine.contains("pub dependencies: coflow_checker::DependencyGraph")
@@ -1203,8 +1207,8 @@ fn engine_public_api_does_not_expose_checker_dependency_graph() {
 #[test]
 fn engine_runtime_indexes_do_not_live_in_lib_rs() {
     let engine =
-        std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");
-    let indexes = std::fs::read_to_string("crates/coflow-engine/src/indexes.rs")
+        std::fs::read_to_string("crates/coflow-runtime/src/lib.rs").expect("read engine source");
+    let indexes = std::fs::read_to_string("crates/coflow-runtime/src/indexes.rs")
         .expect("read engine indexes source");
 
     for expected in [
@@ -1228,8 +1232,8 @@ fn engine_runtime_indexes_do_not_live_in_lib_rs() {
 #[test]
 fn engine_session_api_does_not_live_in_lib_rs() {
     let engine =
-        std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");
-    let session = std::fs::read_to_string("crates/coflow-engine/src/session.rs")
+        std::fs::read_to_string("crates/coflow-runtime/src/lib.rs").expect("read engine source");
+    let session = std::fs::read_to_string("crates/coflow-runtime/src/session.rs")
         .expect("read engine session source");
 
     for expected in [
@@ -1252,8 +1256,8 @@ fn engine_session_api_does_not_live_in_lib_rs() {
 #[test]
 fn engine_schema_build_pipeline_does_not_live_in_lib_rs() {
     let engine =
-        std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");
-    let schema_build = std::fs::read_to_string("crates/coflow-engine/src/schema_build.rs")
+        std::fs::read_to_string("crates/coflow-runtime/src/lib.rs").expect("read engine source");
+    let schema_build = std::fs::read_to_string("crates/coflow-runtime/src/schema_build.rs")
         .expect("read engine schema build source");
 
     for expected in [
@@ -1276,10 +1280,10 @@ fn engine_schema_build_pipeline_does_not_live_in_lib_rs() {
 #[test]
 fn engine_load_pipeline_does_not_live_in_lib_rs() {
     let engine =
-        std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");
+        std::fs::read_to_string("crates/coflow-runtime/src/lib.rs").expect("read engine source");
     let load =
-        std::fs::read_to_string("crates/coflow-engine/src/load.rs").expect("read engine load");
-    let session_build = std::fs::read_to_string("crates/coflow-engine/src/session_build.rs")
+        std::fs::read_to_string("crates/coflow-runtime/src/load.rs").expect("read engine load");
+    let session_build = std::fs::read_to_string("crates/coflow-runtime/src/session_build.rs")
         .expect("read engine session build pipeline");
 
     for expected in [
@@ -1305,7 +1309,7 @@ fn engine_load_pipeline_does_not_live_in_lib_rs() {
     }
     assert!(
         engine.lines().count() < 300,
-        "coflow-engine lib.rs should stay below the 300-line orchestration threshold"
+        "coflow-runtime lib.rs should stay below the 300-line orchestration threshold"
     );
     for expected in [
         "pub fn build_project_session",
@@ -1340,14 +1344,14 @@ fn engine_load_pipeline_does_not_live_in_lib_rs() {
 #[test]
 fn engine_runtime_does_not_depend_on_excel_implementation_crates() {
     let manifest =
-        std::fs::read_to_string("crates/coflow-engine/Cargo.toml").expect("read engine manifest");
-    let data_files = std::fs::read_to_string("crates/coflow-engine/src/data_files.rs")
+        std::fs::read_to_string("crates/coflow-runtime/Cargo.toml").expect("read engine manifest");
+    let data_files = std::fs::read_to_string("crates/coflow-runtime/src/data_files.rs")
         .expect("read engine data file commands");
 
     for forbidden in ["calamine", "umya-spreadsheet", "umya_spreadsheet"] {
         assert!(
             !manifest.contains(forbidden),
-            "coflow-engine should not depend on Excel implementation crate `{forbidden}`"
+            "coflow-runtime should not depend on Excel implementation crate `{forbidden}`"
         );
         assert!(
             !data_files.contains(forbidden),
@@ -1359,17 +1363,17 @@ fn engine_runtime_does_not_depend_on_excel_implementation_crates() {
 #[test]
 fn engine_data_file_commands_do_not_depend_on_cfd_provider_source_writer() {
     let manifest =
-        std::fs::read_to_string("crates/coflow-engine/Cargo.toml").expect("read engine manifest");
+        std::fs::read_to_string("crates/coflow-runtime/Cargo.toml").expect("read engine manifest");
     let production_manifest = manifest
         .split("[dev-dependencies]")
         .next()
         .expect("manifest has production dependency section");
-    let data_files = std::fs::read_to_string("crates/coflow-engine/src/data_files.rs")
+    let data_files = std::fs::read_to_string("crates/coflow-runtime/src/data_files.rs")
         .expect("read engine data file commands");
     let dimension_regenerate =
-        std::fs::read_to_string("crates/coflow-engine/src/dimensions/regenerate.rs")
+        std::fs::read_to_string("crates/coflow-runtime/src/dimensions/regenerate.rs")
             .expect("read engine dimension regeneration");
-    let session_build = std::fs::read_to_string("crates/coflow-engine/src/session_build.rs")
+    let session_build = std::fs::read_to_string("crates/coflow-runtime/src/session_build.rs")
         .expect("read engine session build pipeline");
 
     for expected in [
@@ -1403,7 +1407,7 @@ fn engine_data_file_commands_do_not_depend_on_cfd_provider_source_writer() {
     ] {
         assert!(
             !production_manifest.contains(forbidden),
-            "coflow-engine should use provider operations instead of depending on {forbidden}"
+            "coflow-runtime should use provider operations instead of depending on {forbidden}"
         );
     }
     for forbidden in [
@@ -2313,7 +2317,7 @@ fn exporter_core_schema_projection_uses_cft_schema_view() {
 
 #[test]
 fn engine_dimension_synthesis_uses_cft_schema_view() {
-    let synthesize = std::fs::read_to_string("crates/coflow-engine/src/dimensions/synthesize.rs")
+    let synthesize = std::fs::read_to_string("crates/coflow-runtime/src/dimensions/synthesize.rs")
         .expect("read dimension synthesis");
 
     assert!(
@@ -2330,7 +2334,7 @@ fn engine_dimension_synthesis_uses_cft_schema_view() {
 
 #[test]
 fn engine_schema_inspect_uses_cft_schema_view_for_schema_traversal() {
-    let schema_inspect = std::fs::read_to_string("crates/coflow-engine/src/schema_inspect.rs")
+    let schema_inspect = std::fs::read_to_string("crates/coflow-runtime/src/schema_inspect.rs")
         .expect("read schema inspect");
 
     assert!(
@@ -2352,7 +2356,7 @@ fn engine_schema_inspect_uses_cft_schema_view_for_schema_traversal() {
 
 #[test]
 fn engine_write_rules_use_cft_schema_view_for_path_types() {
-    let write_rules = std::fs::read_to_string("crates/coflow-engine/src/write_rules.rs")
+    let write_rules = std::fs::read_to_string("crates/coflow-runtime/src/write_rules.rs")
         .expect("read engine write rules");
 
     assert!(
@@ -2375,7 +2379,7 @@ fn engine_write_rules_use_cft_schema_view_for_path_types() {
 
 #[test]
 fn engine_data_file_headers_use_cft_schema_view() {
-    let data_files = std::fs::read_to_string("crates/coflow-engine/src/data_files.rs")
+    let data_files = std::fs::read_to_string("crates/coflow-runtime/src/data_files.rs")
         .expect("read engine data file commands");
 
     assert!(
@@ -2397,7 +2401,7 @@ fn engine_data_file_headers_use_cft_schema_view() {
 #[test]
 fn engine_writes_use_cft_schema_view_for_insert_schema_checks() {
     let writes =
-        std::fs::read_to_string("crates/coflow-engine/src/writes.rs").expect("read engine writes");
+        std::fs::read_to_string("crates/coflow-runtime/src/writes.rs").expect("read engine writes");
 
     assert!(
         writes.contains("CftSchemaView::new(&session.schema)"),
@@ -2419,8 +2423,8 @@ fn engine_writes_use_cft_schema_view_for_insert_schema_checks() {
 #[test]
 fn engine_write_path_helpers_do_not_live_in_writes_rs() {
     let writes =
-        std::fs::read_to_string("crates/coflow-engine/src/writes.rs").expect("read engine writes");
-    let path = std::fs::read_to_string("crates/coflow-engine/src/writes/path.rs")
+        std::fs::read_to_string("crates/coflow-runtime/src/writes.rs").expect("read engine writes");
+    let path = std::fs::read_to_string("crates/coflow-runtime/src/writes/path.rs")
         .expect("read engine write path helpers");
 
     for expected in [
@@ -2441,15 +2445,15 @@ fn engine_write_path_helpers_do_not_live_in_writes_rs() {
     }
     assert!(
         writes.lines().count() < 800,
-        "coflow-engine writes.rs should stay below the 800-line large-module threshold"
+        "coflow-runtime writes.rs should stay below the 800-line large-module threshold"
     );
 }
 
 #[test]
 fn engine_write_reference_planning_does_not_live_in_writes_rs() {
     let writes =
-        std::fs::read_to_string("crates/coflow-engine/src/writes.rs").expect("read engine writes");
-    let refs = std::fs::read_to_string("crates/coflow-engine/src/writes/refs.rs")
+        std::fs::read_to_string("crates/coflow-runtime/src/writes.rs").expect("read engine writes");
+    let refs = std::fs::read_to_string("crates/coflow-runtime/src/writes/refs.rs")
         .expect("read engine write reference helpers");
 
     for expected in [
@@ -2471,15 +2475,15 @@ fn engine_write_reference_planning_does_not_live_in_writes_rs() {
     }
     assert!(
         writes.lines().count() < 560,
-        "coflow-engine writes.rs should stay below the 560-line focused-module threshold"
+        "coflow-runtime writes.rs should stay below the 560-line focused-module threshold"
     );
 }
 
 #[test]
 fn engine_write_target_resolution_does_not_live_in_writes_rs() {
     let writes =
-        std::fs::read_to_string("crates/coflow-engine/src/writes.rs").expect("read engine writes");
-    let target = std::fs::read_to_string("crates/coflow-engine/src/writes/target.rs")
+        std::fs::read_to_string("crates/coflow-runtime/src/writes.rs").expect("read engine writes");
+    let target = std::fs::read_to_string("crates/coflow-runtime/src/writes/target.rs")
         .expect("read engine write target helpers");
 
     for expected in [
@@ -2502,8 +2506,8 @@ fn engine_write_target_resolution_does_not_live_in_writes_rs() {
 #[test]
 fn engine_write_writer_dispatch_does_not_live_in_writes_rs() {
     let writes =
-        std::fs::read_to_string("crates/coflow-engine/src/writes.rs").expect("read engine writes");
-    let writer_dispatch = std::fs::read_to_string("crates/coflow-engine/src/writes/writer.rs")
+        std::fs::read_to_string("crates/coflow-runtime/src/writes.rs").expect("read engine writes");
+    let writer_dispatch = std::fs::read_to_string("crates/coflow-runtime/src/writes/writer.rs")
         .expect("read engine writer dispatch helpers");
 
     for expected in [
@@ -2521,13 +2525,13 @@ fn engine_write_writer_dispatch_does_not_live_in_writes_rs() {
     }
     assert!(
         writes.lines().count() < 460,
-        "coflow-engine writes.rs should stay below the 460-line focused-module threshold"
+        "coflow-runtime writes.rs should stay below the 460-line focused-module threshold"
     );
 }
 
 #[test]
 fn engine_mutation_defaults_use_cft_schema_view() {
-    let defaults = std::fs::read_to_string("crates/coflow-engine/src/mutation/defaults.rs")
+    let defaults = std::fs::read_to_string("crates/coflow-runtime/src/mutation/defaults.rs")
         .expect("read mutation defaults")
         .replace("\r\n", "\n");
 
@@ -2553,7 +2557,7 @@ fn engine_mutation_defaults_use_cft_schema_view() {
 
 #[test]
 fn engine_mutation_field_coercion_uses_cft_schema_view() {
-    let coercion = std::fs::read_to_string("crates/coflow-engine/src/mutation/coercion.rs")
+    let coercion = std::fs::read_to_string("crates/coflow-runtime/src/mutation/coercion.rs")
         .expect("read mutation coercion")
         .replace("\r\n", "\n");
 
@@ -2576,9 +2580,9 @@ fn engine_mutation_field_coercion_uses_cft_schema_view() {
 
 #[test]
 fn engine_mutation_uses_cft_schema_view_for_schema_queries() {
-    let mutation =
-        std::fs::read_to_string("crates/coflow-engine/src/mutation/mod.rs").expect("read mutation");
-    let coercion = std::fs::read_to_string("crates/coflow-engine/src/mutation/coercion.rs")
+    let mutation = std::fs::read_to_string("crates/coflow-runtime/src/mutation/mod.rs")
+        .expect("read mutation");
+    let coercion = std::fs::read_to_string("crates/coflow-runtime/src/mutation/coercion.rs")
         .expect("read mutation coercion");
 
     assert!(
@@ -2610,8 +2614,8 @@ fn engine_mutation_uses_cft_schema_view_for_schema_queries() {
 #[test]
 fn engine_public_mutation_api_does_not_expose_prepared_ops() {
     let engine =
-        std::fs::read_to_string("crates/coflow-engine/src/lib.rs").expect("read engine source");
-    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation/types.rs")
+        std::fs::read_to_string("crates/coflow-runtime/src/lib.rs").expect("read engine source");
+    let mutation = std::fs::read_to_string("crates/coflow-runtime/src/mutation/types.rs")
         .expect("read mutation types")
         .replace("\r\n", "\n");
 
@@ -2636,9 +2640,9 @@ fn engine_public_mutation_api_does_not_expose_prepared_ops() {
 
 #[test]
 fn engine_mutation_wire_types_do_not_live_in_mutation_mod_rs() {
-    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation/mod.rs")
+    let mutation = std::fs::read_to_string("crates/coflow-runtime/src/mutation/mod.rs")
         .expect("read mutation module");
-    let types = std::fs::read_to_string("crates/coflow-engine/src/mutation/types.rs")
+    let types = std::fs::read_to_string("crates/coflow-runtime/src/mutation/types.rs")
         .expect("read mutation types module");
 
     for expected in [
@@ -2661,9 +2665,9 @@ fn engine_mutation_wire_types_do_not_live_in_mutation_mod_rs() {
 
 #[test]
 fn engine_mutation_defaults_do_not_live_in_mutation_mod_rs() {
-    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation/mod.rs")
+    let mutation = std::fs::read_to_string("crates/coflow-runtime/src/mutation/mod.rs")
         .expect("read mutation module");
-    let defaults = std::fs::read_to_string("crates/coflow-engine/src/mutation/defaults.rs")
+    let defaults = std::fs::read_to_string("crates/coflow-runtime/src/mutation/defaults.rs")
         .expect("read mutation defaults module");
 
     for expected in [
@@ -2685,9 +2689,9 @@ fn engine_mutation_defaults_do_not_live_in_mutation_mod_rs() {
 
 #[test]
 fn engine_mutation_coercion_does_not_live_in_mutation_mod_rs() {
-    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation/mod.rs")
+    let mutation = std::fs::read_to_string("crates/coflow-runtime/src/mutation/mod.rs")
         .expect("read mutation module");
-    let coercion = std::fs::read_to_string("crates/coflow-engine/src/mutation/coercion.rs")
+    let coercion = std::fs::read_to_string("crates/coflow-runtime/src/mutation/coercion.rs")
         .expect("read mutation coercion module");
 
     for expected in [
@@ -2711,9 +2715,9 @@ fn engine_mutation_coercion_does_not_live_in_mutation_mod_rs() {
 
 #[test]
 fn engine_mutation_prepare_does_not_live_in_mutation_mod_rs() {
-    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation/mod.rs")
+    let mutation = std::fs::read_to_string("crates/coflow-runtime/src/mutation/mod.rs")
         .expect("read mutation module");
-    let prepare = std::fs::read_to_string("crates/coflow-engine/src/mutation/prepare.rs")
+    let prepare = std::fs::read_to_string("crates/coflow-runtime/src/mutation/prepare.rs")
         .expect("read mutation prepare module");
 
     for expected in [
@@ -2734,15 +2738,15 @@ fn engine_mutation_prepare_does_not_live_in_mutation_mod_rs() {
     }
     assert!(
         mutation.lines().count() < 120,
-        "coflow-engine mutation/mod.rs should stay as a small module boundary"
+        "coflow-runtime mutation/mod.rs should stay as a small module boundary"
     );
 }
 
 #[test]
 fn engine_mutation_apply_does_not_live_in_mutation_mod_rs() {
-    let mutation = std::fs::read_to_string("crates/coflow-engine/src/mutation/mod.rs")
+    let mutation = std::fs::read_to_string("crates/coflow-runtime/src/mutation/mod.rs")
         .expect("read mutation module");
-    let apply = std::fs::read_to_string("crates/coflow-engine/src/mutation/apply.rs")
+    let apply = std::fs::read_to_string("crates/coflow-runtime/src/mutation/apply.rs")
         .expect("read mutation apply module");
 
     for expected in [
@@ -3226,7 +3230,7 @@ fn loaders_do_not_depend_on_checker_runtime_directly() {
 
     assert!(
         !excel_manifest.contains("coflow-checker"),
-        "loaders should only produce input records; model checks belong in coflow-engine"
+        "loaders should only produce input records; model checks belong in coflow-runtime"
     );
 }
 
@@ -3270,7 +3274,7 @@ fn lsp_is_documented_as_schema_only_not_engine_runtime_host() {
 
     assert!(
         !architecture.contains("LSP --> Engine"),
-        "architecture reference should not show coflow-lsp depending on coflow-engine while the LSP remains schema-only"
+        "architecture reference should not show coflow-lsp depending on coflow-runtime while the LSP remains schema-only"
     );
     assert!(
         !architecture.contains("LSP --> Builtins"),

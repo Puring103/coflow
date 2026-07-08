@@ -2,7 +2,7 @@
 name = "coflow-runtime"
 version = "0.1.0"
 edition = "2021"
-description = "Host-facing Coflow project runtime."
+description = "Shared Coflow project runtime."
 license = "Apache-2.0"
 publish = false
 
@@ -11,7 +11,25 @@ workspace = true
 
 [features]
 default = []
-ts-export = ["coflow-engine/ts-export"]
+ts-export = [
+    "dep:ts-rs",
+    "coflow-api/ts-export",
+    "coflow-data-model/ts-export",
+    "coflow-project/ts-export",
+]
 
 [dependencies]
-coflow-engine = { path = "../coflow-engine" }
+coflow-api = { path = "../coflow-api" }
+coflow-cfd = { path = "../coflow-cfd" }
+coflow-cft = { path = "../coflow-cft" }
+coflow-checker = { path = "../coflow-checker" }
+coflow-data-model = { path = "../coflow-data-model" }
+coflow-project = { path = "../coflow-project" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+ts-rs = { version = "10", optional = true }
+walkdir = "2"
+
+[dev-dependencies]
+coflow-builtins = { path = "../coflow-builtins" }
+coflow-loader-csv = { path = "../coflow-loader-csv" }

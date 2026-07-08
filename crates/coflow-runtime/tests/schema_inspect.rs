@@ -1,7 +1,7 @@
 #![allow(clippy::expect_used, clippy::panic)]
 
-use coflow_engine::{build_project_schema_session, inspect_schema, schema_files};
 use coflow_project::Project;
+use coflow_runtime::{build_project_schema_session, inspect_schema, schema_files};
 
 fn write_project(root: &std::path::Path) {
     std::fs::create_dir_all(root.join("schema")).expect("create schema dir");

@@ -7,8 +7,8 @@
 use coflow_api::WriteFieldPathSegment;
 use coflow_cft::{CftContainer, Dimension, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputRecord, CfdInputValue, CfdValue};
-use coflow_engine::{build_project_session, build_project_session_read_only, ProjectSession};
 use coflow_project::Project;
+use coflow_runtime::{build_project_session, build_project_session_read_only, ProjectSession};
 
 fn csv_dimension_registry() -> coflow_api::ProviderRegistry {
     let mut registry = coflow_api::ProviderRegistry::default();
@@ -78,7 +78,7 @@ fn singleton_schema_publishes_is_singleton() {
 #[test]
 fn localized_schema_requires_language_dimension_config() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-engine-dim-config-missing-{}",
+        "coflow-runtime-dim-config-missing-{}",
         std::process::id()
     ));
     if root.exists() {
@@ -126,7 +126,7 @@ fn localized_schema_requires_language_dimension_config() {
 #[test]
 fn custom_dimension_schema_requires_matching_dimension_config() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-engine-custom-dim-config-missing-{}",
+        "coflow-runtime-custom-dim-config-missing-{}",
         std::process::id()
     ));
     if root.exists() {
@@ -184,7 +184,7 @@ fn custom_dimension_schema_requires_matching_dimension_config() {
 #[test]
 fn language_dimension_injects_variant_type_and_implicit_sources() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-engine-dim-synthesis-{}",
+        "coflow-runtime-dim-synthesis-{}",
         std::process::id()
     ));
     if root.exists() {
@@ -266,7 +266,7 @@ dimensions:
 #[test]
 fn custom_dimension_injects_variant_type_and_implicit_sources() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-engine-custom-dim-synthesis-{}",
+        "coflow-runtime-custom-dim-synthesis-{}",
         std::process::id()
     ));
     if root.exists() {
@@ -340,7 +340,7 @@ dimensions:
 #[test]
 fn language_dimension_synthesizes_nullable_source_fields_once() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-engine-dim-nullable-synthesis-{}",
+        "coflow-runtime-dim-nullable-synthesis-{}",
         std::process::id()
     ));
     if root.exists() {
@@ -386,7 +386,7 @@ dimensions:
 #[test]
 fn read_only_session_does_not_generate_dimension_sources() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-engine-dim-read-only-{}",
+        "coflow-runtime-dim-read-only-{}",
         std::process::id()
     ));
     if root.exists() {
@@ -441,7 +441,7 @@ dimensions:
 #[test]
 fn inherited_localized_fields_are_not_synthesized_for_child_types() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-engine-dim-inherited-field-{}",
+        "coflow-runtime-dim-inherited-field-{}",
         std::process::id()
     ));
     if root.exists() {
@@ -511,7 +511,7 @@ dimensions:
 #[test]
 fn language_dimension_regenerates_csv_with_defaults_and_preserved_variants() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-engine-dim-regenerate-{}",
+        "coflow-runtime-dim-regenerate-{}",
         std::process::id()
     ));
     if root.exists() {
@@ -571,7 +571,7 @@ dimensions:
 #[test]
 fn language_dimension_regenerates_csv_removes_stale_records() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-engine-dim-remove-stale-records-{}",
+        "coflow-runtime-dim-remove-stale-records-{}",
         std::process::id()
     ));
     if root.exists() {
@@ -631,7 +631,7 @@ dimensions:
 #[test]
 fn language_dimension_rolls_back_generated_csv_when_reload_checks_fail() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-engine-dim-rollback-check-failure-{}",
+        "coflow-runtime-dim-rollback-check-failure-{}",
         std::process::id()
     ));
     if root.exists() {
@@ -703,7 +703,7 @@ dimensions:
 #[test]
 fn language_dimension_removes_new_generated_csv_when_reload_checks_fail() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-engine-dim-rollback-new-file-{}",
+        "coflow-runtime-dim-rollback-new-file-{}",
         std::process::id()
     ));
     if root.exists() {
@@ -759,7 +759,7 @@ dimensions:
 #[test]
 fn language_dimension_rolls_back_all_changed_csv_files_when_reload_checks_fail() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-engine-dim-rollback-multi-file-{}",
+        "coflow-runtime-dim-rollback-multi-file-{}",
         std::process::id()
     ));
     if root.exists() {
@@ -837,7 +837,7 @@ dimensions:
 #[test]
 fn language_dimension_does_not_rewrite_unchanged_generated_files() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-engine-dim-no-unchanged-rewrite-{}",
+        "coflow-runtime-dim-no-unchanged-rewrite-{}",
         std::process::id()
     ));
     if root.exists() {
@@ -912,7 +912,7 @@ dimensions:
 #[test]
 fn language_dimension_uses_bucket_for_csv_file_names() {
     let root =
-        std::env::temp_dir().join(format!("coflow-engine-dim-bucket-{}", std::process::id()));
+        std::env::temp_dir().join(format!("coflow-runtime-dim-bucket-{}", std::process::id()));
     if root.exists() {
         std::fs::remove_dir_all(&root).expect("clean temp dir");
     }
@@ -973,7 +973,7 @@ dimensions:
 #[test]
 fn language_dimension_regenerates_csv_defaults_with_cell_value_syntax() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-engine-dim-regenerate-cell-values-{}",
+        "coflow-runtime-dim-regenerate-cell-values-{}",
         std::process::id()
     ));
     if root.exists() {
@@ -1046,7 +1046,7 @@ dimensions:
 #[test]
 fn language_dimension_regenerates_singleton_cfd_with_defaults_and_preserved_variants() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-engine-dim-regenerate-singleton-{}",
+        "coflow-runtime-dim-regenerate-singleton-{}",
         std::process::id()
     ));
     if root.exists() {
@@ -1131,7 +1131,7 @@ dimensions:
 #[test]
 fn synthetic_and_source_records_with_same_key_do_not_collide() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-engine-record-coordinate-collision-{}",
+        "coflow-runtime-record-coordinate-collision-{}",
         std::process::id()
     ));
     if root.exists() {
@@ -1228,7 +1228,7 @@ dimensions:
 #[test]
 fn write_field_redirects_spread_fields_to_source_record() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-engine-spread-write-source-{}",
+        "coflow-runtime-spread-write-source-{}",
         std::process::id()
     ));
     if root.exists() {
@@ -1378,7 +1378,7 @@ fn assert_nested_spread_write_redirects(
 #[test]
 fn rename_record_updates_direct_refs_and_spread_sources_without_global_ref_scan() {
     let root = std::env::temp_dir().join(format!(
-        "coflow-engine-rename-spread-source-{}",
+        "coflow-runtime-rename-spread-source-{}",
         std::process::id()
     ));
     if root.exists() {

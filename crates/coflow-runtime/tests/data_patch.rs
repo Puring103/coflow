@@ -1,10 +1,10 @@
 #![allow(clippy::expect_used, clippy::panic)]
 
-use coflow_engine::{
+use coflow_project::Project;
+use coflow_runtime::{
     build_project_session, DataPatchOp, DataPatchRequest, DefaultMaterialization, MutationOp,
     MutationRequest, MutationValue, PatchPathSegment, PatchRecordSelector, RecordCoordinate,
 };
-use coflow_project::Project;
 use serde_json::json;
 
 fn write_project(root: &std::path::Path) {
@@ -147,7 +147,7 @@ fn registry() -> coflow_api::ProviderRegistry {
 
 fn session(
     root: &std::path::Path,
-) -> (coflow_engine::ProjectSession, coflow_api::ProviderRegistry) {
+) -> (coflow_runtime::ProjectSession, coflow_api::ProviderRegistry) {
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
     let registry = registry();
     let session = build_project_session(project, &registry).expect("session");

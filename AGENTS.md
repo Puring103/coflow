@@ -53,8 +53,7 @@ in this file or in `docs/`.
 
 - `coflow-api` defines provider traits, diagnostics, source locations, artifacts, and write contracts.
 - `coflow-project` handles project configuration, path resolution, configuration diagnostics, schema file discovery, and project initialization.
-- `coflow-engine` owns the runtime implementation: schema compilation, source resolve/load, data model, check, diagnostics, and source/record/file indexes.
-- `coflow-runtime` is the host-facing runtime boundary for the CLI, editor, and automation hosts.
+- `coflow-runtime` owns the shared project runtime: schema compilation, source resolve/load, data model, check, diagnostics, and source/record/file indexes.
 - `coflow-builtins` registers the default provider registry for the CLI, editor, and LSP hosts.
 - The root `coflow` crate owns CLI command orchestration, terminal/JSON output, export/codegen staging, and artifact commit.
 - `editors/cfd-editor/src-tauri` is the editor backend host. It reuses `coflow-runtime` and keeps only editor wire DTOs, graph/table views, and write command bridging.

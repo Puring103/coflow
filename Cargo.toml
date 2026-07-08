@@ -19,7 +19,6 @@ members = [
     "crates/coflow-loader-cfd",
     "crates/coflow-data-model",
     "crates/coflow-checker",
-    "crates/coflow-engine",
     "crates/coflow-runtime",
     "crates/coflow-loader-table-core",
     "crates/coflow-loader-csv",

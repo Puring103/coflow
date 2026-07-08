@@ -666,24 +666,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "coflow-engine"
-version = "0.1.0"
-dependencies = [
- "coflow-api",
- "coflow-builtins",
- "coflow-cfd",
- "coflow-cft",
- "coflow-checker",
- "coflow-data-model",
- "coflow-loader-csv",
- "coflow-project",
- "serde",
- "serde_json",
- "ts-rs",
- "walkdir",
-]
-
-[[package]]
 name = "coflow-exporter-core"
 version = "0.1.0"
 dependencies = [
@@ -798,7 +780,18 @@ dependencies = [
 name = "coflow-runtime"
 version = "0.1.0"
 dependencies = [
- "coflow-engine",
+ "coflow-api",
+ "coflow-builtins",
+ "coflow-cfd",
+ "coflow-cft",
+ "coflow-checker",
+ "coflow-data-model",
+ "coflow-loader-csv",
+ "coflow-project",
+ "serde",
+ "serde_json",
+ "ts-rs",
+ "walkdir",
 ]
 
 [[package]]
