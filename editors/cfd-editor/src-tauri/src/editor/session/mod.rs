@@ -7,8 +7,8 @@
 //!
 //! After spec 17, the data flow is:
 //! 1. `load_project` opens the project and asks `coflow-runtime` to build a
-//!    `ProjectSession` (schema, model, diagnostics, dependency graph, and
-//!    source/record/file indexes).
+//!    `ProjectSession` (schema, model, diagnostics, and source/record/file
+//!    indexes).
 //! 2. `get_*` commands read engine state under a read lock and derive only
 //!    the wire DTOs they need.
 //! 3. `write_field` / `insert_record` / `delete_record` call into the engine

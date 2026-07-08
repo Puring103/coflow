@@ -80,4 +80,4 @@ Provider 不负责：
 - 直接替换导出目录。
 - 各自实现业务合法性校验。
 
-项目生命周期由 `coflow-project` 和 `coflow-engine` 编排；产物落盘由 CLI 宿主负责；业务合法性由 CFT schema、DataModel 和 checker 统一判断。
+项目生命周期由 `coflow-project` 和 `coflow-runtime` 编排；产物落盘由 CLI 宿主负责；业务合法性由 CFT schema、DataModel 和 checker 统一判断。

@@ -40,7 +40,7 @@ impl ProjectSession {
     /// are returned without rebuilding.
     ///
     /// On success the engine triggers `build_project_session_for_build` again to
-    /// refresh model, diagnostics, and dependency graph. The
+    /// refresh model, diagnostics, and indexes. The
     /// [`WriteOutcome`] reports the post-write coordinate (which differs
     /// when the write changed the host record's `id` field).
     ///

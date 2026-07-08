@@ -63,17 +63,17 @@ in this file or in `docs/`.
 
 Public reference documentation lives under `website/docs/docs/reference/`:
 
-- `website/docs/docs/reference/project-config.md`: `coflow.yaml`.
-- `website/docs/docs/reference/cft.md`: CFT language reference.
-- `website/docs/docs/reference/cfd.md`: CFD text configuration syntax.
-- `website/docs/docs/reference/cli.md`: CLI command behavior.
-- `website/docs/docs/reference/data-model.md`: data model.
-- `website/docs/docs/reference/schema-api.md`: schema API.
-- `website/docs/docs/reference/project-pipeline.md`: project pipeline.
-- `website/docs/docs/reference/sources/`: data sources, providers, and cell value syntax.
-- `website/docs/docs/reference/export/`: JSON and MessagePack export formats.
-- `website/docs/docs/reference/codegen/csharp.md`: C# code generation.
-- `website/docs/docs/reference/diagnostics.md`: diagnostics format and handling.
-- `website/docs/docs/reference/diagnostics/codes.md`: diagnostics error code index.
-- `website/docs/docs/reference/localization.md`: dimensions and localization.
-- `website/docs/docs/reference/architecture.md`: project architecture.
+- `website/docs/docs/reference/01-project-config.md`: `coflow.yaml`.
+- `website/docs/docs/reference/03-language/01-cft.md`: CFT language reference.
+- `website/docs/docs/reference/03-language/02-cfd.md`: CFD text configuration syntax.
+- `website/docs/docs/reference/08-cli.md`: CLI command behavior.
+- `website/docs/docs/reference/05-data-model.md`: data model.
+- `website/docs/docs/reference/11-schema-api.md`: schema API.
+- `website/docs/docs/reference/02-project-pipeline.md`: project pipeline.
+- `website/docs/docs/reference/04-sources/`: data sources, providers, and cell value syntax.
+- `website/docs/docs/reference/06-export/`: JSON and MessagePack export formats.
+- `website/docs/docs/reference/07-codegen/01-csharp.md`: C# code generation.
+- `website/docs/docs/reference/09-diagnostics/01-diagnostics.md`: diagnostics format and handling.
+- `website/docs/docs/reference/09-diagnostics/02-codes.md`: diagnostics error code index.
+- `website/docs/docs/reference/10-localization.md`: dimensions and localization.
+- `website/docs/docs/reference/12-architecture.md`: project architecture.

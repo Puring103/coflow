@@ -158,8 +158,8 @@ outputs:
 使用 `path` 表示本地文件或目录，使用 `url` 表示远端 source；`type` 是可选的
 provider id，省略时由 registry probe 推断。除 `type`、`path`、`url` 之外的
 source 字段会原样传给 provider 作为 options。`path` 可以指向 `.xlsx` / `.xlsm` /
-`.xls` / `.cfd` 文件，也可以指向目录；目录源会由 loader resolve 阶段递归发现
-支持的 Excel 和 CFD 文件。
+`.xls` / `.csv` / `.cfd` 文件，也可以指向目录；目录源会由 loader resolve 阶段递归发现
+支持的 Excel、CSV 和 CFD 文件。
 
 Excel 和飞书电子表格共享同一套 sheet 配置习惯：省略 `sheets` 时默认加载所有
 sheet，sheet 名作为 CFT 类型名，表头文本作为字段名；配置 `sheets` 时可显式映射
@@ -229,7 +229,7 @@ coflow data patch examples/rpg --patch patch.json
 `data create-file` / `data sync-header` 是本地文件级命令，支持 `.cfd`、`.csv`
 和 `.xlsx`；表格文件同步表头，CFD 文件同步记录顶层字段而不写表头。
 
-完整命令行为见 [CLI 命令参考](website/docs/docs/reference/cli.md)。
+完整命令行为见 [CLI 命令参考](website/docs/docs/reference/08-cli.md)。
 
 ---
 
@@ -238,7 +238,7 @@ coflow data patch examples/rpg --patch patch.json
 仓库内提供面向 AI agent 的 Coflow skills：
 
 - `coflow-schema-data`：维护 Coflow schema、数据文件和记录写入。
-- `coflow-cli-development`：开发 Coflow CLI / engine 功能。
+- `coflow-cli-development`：开发 Coflow CLI / runtime 功能。
 - `coflow-cft-cfd-authoring`：编写 CFT schema 和 CFD 文本配置。
 
 从本仓库安装指定 skill：

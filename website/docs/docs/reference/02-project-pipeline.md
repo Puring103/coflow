@@ -92,7 +92,7 @@ Schema 编译阶段会处理：
 
 ## Source Resolve
 
-Source resolve 由 `coflow-engine` 通过 `ProviderRegistry` 执行。
+Source resolve 由 `coflow-runtime` 通过 `ProviderRegistry` 执行。
 
 选择 Provider 的规则：
 
@@ -148,7 +148,7 @@ Checker 阶段执行 CFT `check {}`，并生成 `CFD-CHECK-*` 诊断。
 
 ## ProjectSession
 
-`ProjectSession` 是 engine 构建出的共享运行时状态：
+`ProjectSession` 是 runtime 构建出的共享运行时状态：
 
 ```text
 ProjectSession
@@ -159,14 +159,13 @@ ProjectSession
   sources
   records
   files
-  dependencies
 ```
 
 CLI、编辑器和自动化命令应该复用 `ProjectSession` 中的 schema、model、source index、record index 和 diagnostics，而不是重新实现一套加载和检查流程。
 
 ## 维度文件
 
-`dimensions.language` 启用语言维度时，engine 会：
+`dimensions.language` 启用语言维度时，runtime 会：
 
 1. 扫描 schema 中的 `@localized` 字段。
 2. 注入合成 type。
@@ -225,9 +224,9 @@ DiagnosticSet
 | 模块 | 职责 |
 | --- | --- |
 | `coflow-project` | 项目配置、项目根目录、路径解析、schema 文件发现、项目初始化 |
-| `coflow-engine` | schema 编译、source resolve/load、DataModel、check、索引、诊断聚合 |
+| `coflow-runtime` | schema 编译、source resolve/load、DataModel、check、索引、诊断聚合 |
 | 根 `coflow` crate | CLI 参数、命令编排、human/JSON 输出、产物 preflight、staging 和 commit |
 | `coflow-builtins` | 默认 Provider registry |
 | Provider crates | loader、writer、exporter、codegen 具体实现 |
 
-Provider 不发现项目配置，不持有宿主状态，不直接决定业务合法性。Engine 不渲染 CLI 输出，不替换导出目录。CLI 不重新实现 source resolve/load/model/check。
+Provider 不发现项目配置，不持有宿主状态，不直接决定业务合法性。Runtime 不渲染 CLI 输出，不替换导出目录。CLI 不重新实现 source resolve/load/model/check。

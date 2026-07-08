@@ -51,7 +51,7 @@ sources:
 数据源加载分为几步：
 
 1. `coflow-project` 读取 `coflow.yaml` 并解析路径。
-2. `coflow-engine` 根据 source 的 `type`、`path` 或 `url` 选择 Provider。
+2. `coflow-runtime` 根据 source 的 `type`、`path` 或 `url` 选择 Provider。
 3. Provider 执行 resolve / preflight / load。
 4. Loader 输出统一的 input records。
 5. DataModel 合并所有来源的记录，解析引用，执行 CFT `check {}`。

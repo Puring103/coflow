@@ -15,7 +15,7 @@ Schema API 只描述完成解析和编译后的 CFT 结构：
 - 不构建 DataModel。
 - 不运行 `check {}` 的运行期求值。
 
-项目级宿主通常通过 `coflow-project` 和 `coflow-engine` 获取已编译 schema；低层工具可以直接使用 `CftContainer` 注册模块并调用 `compile()`。
+项目级宿主通常通过 `coflow-project` 和 `coflow-runtime` 获取已编译 schema；低层工具可以直接使用 `CftContainer` 注册模块并调用 `compile()`。
 
 ## 核心入口
 
@@ -128,4 +128,4 @@ Schema API 是低层能力。完整项目运行时还会继续做：
 7. 构建 DataModel。
 8. 运行 check。
 
-这些项目级步骤由 `coflow-project` 和 `coflow-engine` 负责。Provider 和 codegen 通常只消费已经准备好的 schema。
+这些项目级步骤由 `coflow-project` 和 `coflow-runtime` 负责。Provider 和 codegen 通常只消费已经准备好的 schema。
