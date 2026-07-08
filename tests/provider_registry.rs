@@ -159,6 +159,8 @@ static FAKE_TABLE_MANAGER_DESCRIPTOR: coflow_api::TableManagerDescriptor =
     coflow_api::TableManagerDescriptor {
         id: "fake-table",
         display_name: "Fake table",
+        file_extensions: &["fake"],
+        aliases: &[],
     };
 
 impl coflow_api::TableManager for FakeTableManager {

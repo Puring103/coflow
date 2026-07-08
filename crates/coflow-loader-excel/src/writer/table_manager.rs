@@ -11,6 +11,8 @@ use super::{diag, excel_cell_to_text, ExcelWriter};
 pub static EXCEL_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManagerDescriptor {
     id: "excel",
     display_name: "Excel table",
+    file_extensions: &["xlsx", "xlsm", "xls"],
+    aliases: &["xlsx"],
 };
 
 impl TableManager for ExcelWriter {

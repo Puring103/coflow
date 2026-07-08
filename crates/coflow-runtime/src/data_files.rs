@@ -197,29 +197,16 @@ fn resolve_provider_id(
     file: &str,
 ) -> Result<String, DiagnosticSet> {
     if let Some(provider) = raw {
-        return if registry.table_manager(provider).is_some() {
-            Ok(provider.to_string())
-        } else {
-            Err(one_data_file_error(
-                "DATA-FILE-PROVIDER",
-                format!("unknown data file provider `{provider}`"),
-            ))
-        };
+        return resolve_explicit_provider_id(registry, provider);
     }
     let extension = Path::new(file)
         .extension()
         .and_then(|extension| extension.to_str())
         .unwrap_or_default();
     let candidates = registry
-        .source_provider_descriptors()
+        .table_manager_descriptors()
         .into_iter()
-        .filter(|descriptor| {
-            registry.table_manager(descriptor.id).is_some()
-                && descriptor
-                    .extensions
-                    .iter()
-                    .any(|candidate| *candidate == extension)
-        })
+        .filter(|descriptor| descriptor.file_extensions.contains(&extension))
         .map(|descriptor| descriptor.id)
         .collect::<Vec<_>>();
     match candidates.as_slice() {
@@ -232,6 +219,35 @@ fn resolve_provider_id(
             "DATA-FILE-PROVIDER",
             format!(
                 "extension `{extension}` for `{file}` matches multiple providers {}; pass --provider",
+                candidates.join(", ")
+            ),
+        )),
+    }
+}
+
+fn resolve_explicit_provider_id(
+    registry: &ProviderRegistry,
+    provider: &str,
+) -> Result<String, DiagnosticSet> {
+    if registry.table_manager(provider).is_some() {
+        return Ok(provider.to_string());
+    }
+    let candidates = registry
+        .table_manager_descriptors()
+        .into_iter()
+        .filter(|descriptor| descriptor.aliases.contains(&provider))
+        .map(|descriptor| descriptor.id)
+        .collect::<Vec<_>>();
+    match candidates.as_slice() {
+        [provider] => Ok((*provider).to_string()),
+        [] => Err(one_data_file_error(
+            "DATA-FILE-PROVIDER",
+            format!("unknown data file provider `{provider}`"),
+        )),
+        _ => Err(one_data_file_error(
+            "DATA-FILE-PROVIDER",
+            format!(
+                "data file provider alias `{provider}` matches multiple providers {}; pass canonical --provider",
                 candidates.join(", ")
             ),
         )),
@@ -283,12 +299,18 @@ fn table_layout(
         .map(|config| config.field_headers.clone())
         .unwrap_or_default();
     let mut headers = vec![key_header];
-    headers.extend(schema_type.all_fields.iter().map(|field| {
-        field_headers
-            .get(&field.name)
-            .cloned()
-            .unwrap_or_else(|| field.name.clone())
-    }));
+    headers.extend(
+        schema_view
+            .full_fields(&actual_type)
+            .unwrap_or(&[])
+            .iter()
+            .map(|field| {
+                field_headers
+                    .get(&field.name)
+                    .cloned()
+                    .unwrap_or_else(|| field.name.clone())
+            }),
+    );
     Ok(TableLayout {
         actual_type,
         sheet,

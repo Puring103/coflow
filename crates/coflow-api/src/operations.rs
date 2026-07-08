@@ -69,6 +69,8 @@ pub trait TableManager: Send + Sync {
 pub struct TableManagerDescriptor {
     pub id: &'static str,
     pub display_name: &'static str,
+    pub file_extensions: &'static [&'static str],
+    pub aliases: &'static [&'static str],
 }
 
 #[derive(Debug, Clone)]

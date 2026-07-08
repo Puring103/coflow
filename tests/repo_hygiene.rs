@@ -2388,10 +2388,16 @@ fn engine_data_file_headers_use_cft_compiler_context() {
         data_files.contains("CftSchemaView::new(&session.schema)"),
         "data file header planning should use CftSchemaView for schema metadata"
     );
+    assert!(
+        data_files.contains(".table_manager_descriptors()"),
+        "data file provider inference should use table manager descriptors"
+    );
     for forbidden in [
         ".resolve_type(",
         "session.schema.resolve_type",
         ".types.get(",
+        ".all_fields",
+        ".source_provider_descriptors()",
         "\"xlsx\" => Ok(\"excel\"",
         "\"cfd\" | \"csv\"",
         "\"cfd\" | \"csv\" | \"excel\"",

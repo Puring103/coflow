@@ -2,10 +2,11 @@
 
 use std::fmt::Write as _;
 
-use coflow_project::Project;
+use coflow_data_model::CfdErrorCode;
+use coflow_project::{path_to_slash, Project};
 use coflow_runtime::{
-    build_project_session_for_build, data_get, data_list, data_sources, DataGetQuery,
-    DataListQuery, RecordCoordinate,
+    build_project_session_for_build, create_data_file, data_get, data_list, data_sources,
+    DataCreateFileOptions, DataGetQuery, DataListQuery, RecordCoordinate,
 };
 
 fn write_project(root: &std::path::Path) {
@@ -87,6 +88,108 @@ fn data_sources_report_provider_capabilities_and_types() {
     assert!(source.capabilities.can_edit_field);
     assert!(source.capabilities.can_insert_record);
     assert_eq!(source.types, vec!["Item"]);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn data_file_provider_inference_uses_table_manager_descriptor_capabilities() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-data-file-provider-descriptor-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_project(&root);
+    let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
+    let registry = registry();
+    let schema_session =
+        coflow_runtime::build_project_schema_session(project).expect("schema session");
+
+    let inferred = create_data_file(
+        &schema_session,
+        &registry,
+        DataCreateFileOptions {
+            file: "data/generated.xlsx".to_string(),
+            actual_type: Some("Item".to_string()),
+            provider: None,
+            sheet: Some("Generated".to_string()),
+        },
+    )
+    .expect("xlsx extension should infer excel table manager");
+    assert_eq!(inferred.provider, "excel");
+
+    let alias = create_data_file(
+        &schema_session,
+        &registry,
+        DataCreateFileOptions {
+            file: "data/generated-alias.xlsx".to_string(),
+            actual_type: Some("Item".to_string()),
+            provider: Some("xlsx".to_string()),
+            sheet: Some("GeneratedAlias".to_string()),
+        },
+    )
+    .expect("xlsx alias should resolve to excel table manager");
+    assert_eq!(alias.provider, "excel");
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn duplicate_record_diagnostics_keep_source_file_and_logical_record() {
+    let root = std::env::temp_dir().join(format!(
+        "coflow-duplicate-record-source-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    write_project(&root);
+    std::fs::write(
+        root.join("data").join("items.cfd"),
+        r#"
+            sword: Item { name: "Sword", price: 100 }
+            sword: Item { name: "Duplicate Sword", price: 120 }
+        "#,
+    )
+    .expect("write duplicate cfd");
+    let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
+    let registry = registry();
+    let session = build_project_session_for_build(project, &registry).expect("session");
+
+    let duplicate_index = session
+        .diagnostics
+        .as_set()
+        .diagnostics
+        .iter()
+        .position(|diagnostic| diagnostic.code == CfdErrorCode::DuplicateId.to_string())
+        .expect("duplicate diagnostic");
+    let duplicate = &session.diagnostics.as_set().diagnostics[duplicate_index];
+    let primary = duplicate
+        .primary
+        .as_ref()
+        .expect("duplicate diagnostic should keep source location");
+    let coflow_api::SourceLocation::FileSpan { path, .. } = &primary.location else {
+        panic!("duplicate diagnostic should point at a file span: {duplicate:?}");
+    };
+    assert!(
+        path.to_string_lossy()
+            .replace('\\', "/")
+            .ends_with("data/items.cfd"),
+        "duplicate diagnostic should point at data/items.cfd: {duplicate:?}"
+    );
+    let logical = session
+        .diagnostics
+        .logical_location(duplicate_index)
+        .expect("duplicate diagnostic should keep logical record location");
+    assert_eq!(logical.actual_type.as_deref(), Some("Item"));
+    assert_eq!(logical.record_key.as_deref(), Some("sword"));
+    let indexed_file = path_to_slash(path);
+    assert!(
+        !session.diagnostics.by_file(&indexed_file).is_empty(),
+        "duplicate diagnostic should be indexed by source file `{indexed_file}`"
+    );
+    assert!(
+        !session.diagnostics.by_record("Item", "sword").is_empty(),
+        "duplicate diagnostic should be indexed by logical record"
+    );
 
     let _ = std::fs::remove_dir_all(root);
 }

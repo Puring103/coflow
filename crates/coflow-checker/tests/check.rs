@@ -448,6 +448,39 @@ fn contains_reports_runtime_type_errors_for_null_collections() {
 }
 
 #[test]
+fn non_finite_float_comparisons_are_runtime_type_errors() {
+    let schema = compile_schema(
+        r#"
+            type Holder {
+                value: float;
+                check {
+                    value / value > 0.0;
+                    ((0.0 - 1.0) ** 0.5) > 0.0;
+                }
+            }
+        "#,
+    );
+    let mut builder = CfdDataModel::builder(&schema);
+    builder.add_record(
+        "holder_1",
+        "Holder",
+        [("value", CfdInputValue::from(0.0_f64))],
+    );
+    let model = build_model(&schema, builder);
+    let err = model
+        .run_checks(&schema)
+        .expect_err("NaN comparisons should fail as runtime type errors");
+
+    assert_has_code(&err, CfdErrorCode::CheckEvalTypeError);
+    assert!(
+        !err.diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == CfdErrorCode::CheckComparisonFailed),
+        "NaN comparisons must not be downgraded into false comparisons: {err:?}"
+    );
+}
+
+#[test]
 fn inherited_checks_and_statement_order_are_stable() {
     let schema = compile_schema(
         r#"

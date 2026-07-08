@@ -11,6 +11,8 @@ use crate::{parse, write};
 pub static CSV_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManagerDescriptor {
     id: "csv",
     display_name: "CSV table",
+    file_extensions: &["csv"],
+    aliases: &[],
 };
 
 impl TableManager for CsvWriter {

@@ -36,6 +36,8 @@ pub static LARK_SHEET_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
 pub static LARK_SHEET_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManagerDescriptor {
     id: "lark-sheet",
     display_name: "Lark Sheet",
+    file_extensions: &[],
+    aliases: &[],
 };
 
 impl<C> SourceWriter for LarkSheetWriter<C>

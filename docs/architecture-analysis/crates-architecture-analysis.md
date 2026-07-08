@@ -94,7 +94,7 @@
 | 旧问题 | 当前结论 | 依据 |
 |---|---|---|
 | engine 直接依赖具体 local provider 实现 | 已修复为生产依赖层面不成立 | `coflow-runtime` 生产依赖不含 loader provider crates；只保留 dev 依赖用于测试 |
-| `data_files.rs` 硬编码 CSV/CFD/Excel writer 操作 | 大部分已修复 | `create_data_file` / `sync_data_header` 走 registry 的 `TableManager` |
+| `data_files.rs` 硬编码 CSV/CFD/Excel writer 操作 | 已修复 | `create_data_file` / `sync_data_header` 走 registry 的 `TableManager`；provider 推断也改为 `TableManagerDescriptor` 的 extension/alias |
 | header sync 没有 provider operation | 已修复 | `coflow-api::operations::TableManager::sync_header` |
 | 维度生成没有回滚 | 已修复 | `DimensionGenerationTransaction` 和 failed pipeline rollback 已存在 |
 | 环境变量展开影响 config 纯度 | 已修复 | `coflow-project/src` 搜索不到 `expand_env`、`std::env`、`${...}` 展开逻辑 |
@@ -139,17 +139,17 @@
 6. **`coflow-runtime` public surface 仍然偏宽。**
    现在已经删除薄 facade，`coflow-runtime` 是实际实现 crate。但它仍暴露大部分 runtime 内部报告、索引、mutation、write 类型，没有表达 read-only/build/write 三类更窄 session 入口的差异。短期命名已经准确，长期需要继续收窄 public API。
 
-7. **runtime 已 provider-neutral，但 provider 能力模型仍需要继续校准。**
-   `data_files.rs::resolve_provider_id` 已从硬编码 `cfd/csv/excel/xlsx` 改为根据 registry 中的 source provider extension 与 table manager 注册情况推断 provider。旧“新增本地 table provider 必须改 runtime 分支”的问题已缓解；剩余风险是 `TableManagerDescriptor` 自身还没有表达 extension/alias 等能力，推断仍依赖同 id source provider descriptor。
+7. **runtime 已 provider-neutral，provider 能力模型从 source descriptor 进一步下沉到 table manager。**
+   `data_files.rs::resolve_provider_id` 已改为根据 `registry.table_manager_descriptors()` 读取 `TableManagerDescriptor::file_extensions` / `aliases`。旧“新增本地 table provider 必须改 runtime 分支”和“table create/sync 推断依赖同 id source provider descriptor”的问题已修复。剩余风险是同一 provider 的 source provider、writer、table manager、dimension source manager 四组 descriptor 仍需人工保持一致。
 
 8. **Table/dimension manager 与 writer 是平行接口，能力模型需要持续校准。**
    `SourceWriter` 处理 record/field 写入，`TableManager` 处理 create/sync header，`DimensionSourceManager` 处理 generated dimension source。拆分比单个巨型 writer 更清晰，但同一 provider 往往要实现三组接口；capability、diagnostic code、source option parsing、cache invalidation 需要保持一致。
 
-9. **record/source index 对 rejected/duplicate 输入的可追踪性仍需要确认。**
-   旧问题中提到 duplicate coordinate 在 `RecordIndex::finalize_with_model` 可能丢失完整 pending metadata。当前 `indexes.rs` 仍有 `pending_by_coordinate.remove(&coordinate)` 路径，说明成功 model 记录和 pending source metadata 的配对仍以 coordinate 为核心。data model diagnostics 能报告重复，但 runtime 后续 record/file index 对 rejected rows 的可查询性仍弱。
+9. **duplicate diagnostics 的定位已确认，rejected row 查询能力仍弱。**
+   新增 runtime baseline 确认 duplicate record diagnostic 能保留 source file span、logical record location，并进入 diagnostics file/record index。旧“duplicate 完全丢 source identity”的判断不成立。残留问题更窄：`RecordIndex::finalize_with_model` 仍只索引成功进入 model 的 records，rejected rows 不会作为独立 record/source entry 出现在普通 data query/file record list 中，只能通过 diagnostics 观察。
 
-10. **checker 运行期数值策略仍需作为语言语义明确。**
-    checker 已拆分 `ops` 等模块，但 float division、`powf`、非有限浮点值是否允许继续传播，需要明确为语言规则并用测试固定。否则 type checker、runtime check、export/codegen 消费端可能对 `NaN`/`inf` 行为理解不同。
+10. **checker 运行期数值策略已有 baseline，但仍需文档化为语言语义。**
+    checker 已有测试固定 empty int sum、float infinity 传播，以及 NaN 比较必须报 `CheckEvalTypeError` 而不是降级成 false comparison。残留风险从“行为未确认”变为“语言参考与跨消费者语义仍需同步”。
 
 11. **远程 provider 鲁棒性仍有集中风险。**
     Lark 已拆模块，但 remote API contract、retry/backoff、分页、权限错误分类、fake client 与真实 client method contract 仍是高维护区。当前拆分降低了文件复杂度，不等于远程协议边界已经稳定。
@@ -397,7 +397,7 @@
 
 - runtime 已经比上一轮模块化很多，生产依赖也 provider-neutral。
 - `build_project_session_for_build` 的写副作用仍需在 public API 命名或 options 层更显式表达。
-- `data_files.rs` 的本地 provider 推断已改为 registry-driven，不再硬编码 `cfd/csv/excel/xlsx` 分支；但 `TableManagerDescriptor` 仍缺少自己的 extension/alias 能力描述。
+- `data_files.rs` 的本地 provider 推断已改为 `TableManagerDescriptor` driven，不再硬编码 `cfd/csv/excel/xlsx` 分支，也不再借用 source provider extension。
 - runtime 已移除无消费者的 checker dependency index 存储，不再把 `DependencyIndex` 作为 session/public surface 的一部分。
 - runtime 内部仍大量直接创建 `CftSchemaView`，说明统一 schema facade 还未完全下沉。
 
@@ -594,9 +594,10 @@
 
 - runtime 生产依赖不再包含具体 provider crates。
 - create/sync/dimension source 通过 registry provider operation。
-- 残留硬编码主要是 `data_files.rs` 的 provider id 推断和本地文件语义。
+- provider id/extension/alias 推断已下沉到 `TableManagerDescriptor`，`data_files.rs` 不再枚举具体 provider。
+- 残留耦合主要是 data file 命令天然面向本地文件语义，远程 table manager 不应被扩展名推断路径误用。
 
-建议优先级：中。下一步可让 registry 暴露 extension -> table manager/source provider inference。
+建议优先级：低到中。下一步不是继续移动代码，而是统一各 provider descriptor 的 capability/preflight 约定，并补 alias/extension 冲突测试。
 
 ### 4.3 Duplicate data structures and semantic projections
 
@@ -618,12 +619,13 @@
 
 ### 4.5 Record/source index completeness
 
-当前状态：仍需要确认和补强。
+当前状态：duplicate diagnostics 已确认，rejected row 查询能力仍需补强。
 
 - data model 能产生 duplicate/rejected diagnostics。
-- runtime record index 仍偏向成功 model 记录，rejected rows 在后续 query/file index 里的可见性弱。
+- duplicate record diagnostic 已有 runtime baseline，确认 source file span、logical record location、diagnostics file/record index 都可用。
+- runtime record index 仍偏向成功 model 记录，rejected rows 在后续 data query/file record list 里的可见性弱。
 
-建议优先级：中。补 rejected source entry index，或者在 diagnostics/file view 中明确暴露 rejected source rows。
+建议优先级：中。若编辑器需要展示无效行，应补 rejected source entry index；否则可维持“通过 diagnostics 暴露 rejected rows”的较窄能力。
 
 ### 4.6 Remote writer robustness
 
@@ -639,15 +641,15 @@
 ### Phase 1: Consolidate current refactor gains
 
 1. 收窄 `coflow-runtime` public API：显式区分 build-with-generation、read-only session、write session，避免 host 直接误用有副作用的入口。
-2. 把 provider id/extension 推断进一步移到 registry descriptor，减少 `data_files.rs` 对 `cfd/csv/excel/xlsx` 的硬编码。
+2. 统一 provider descriptor capability/preflight 约定，给 table manager extension/alias 冲突补测试。
 3. 给 `build_project_session_for_build` 维度生成路径继续补充事务/失败路径测试，确保 provider manager 的所有写入都可 rollback 或至少失败前置。
-4. 补 rejected/duplicate source row 可追踪测试，确认 record/file/diagnostic index 的行为。
+4. 继续补 rejected source row 可追踪测试；duplicate source diagnostic baseline 已补。
 
 ### Phase 2: Reduce semantic duplication
 
 1. 建立共享 schema query/type facade，优先覆盖 data-model、runtime mutation/write_rules、exporter-core、codegen 的重复 view。
 2. 将 CFT type checker 与 checker runtime 的 operator/builtin signature 规则对齐，用 shared table 或 conformance test 固定。
-3. 固定 checker numeric semantics，包括 integer/float division、`powf`、非有限 float 的诊断策略。
+3. 固定并文档化 checker numeric semantics，包括 integer/float division、`powf`、非有限 float 的诊断策略；NaN comparison baseline 已补。
 4. 建跨 crate conformance tests：schema view、cell value、dimension default preservation、export/codegen fixture。
 
 ### Phase 3: Strengthen provider contracts

@@ -47,6 +47,8 @@ pub static CFD_WRITER_DESCRIPTOR: WriterDescriptor = WriterDescriptor {
 pub static CFD_TABLE_MANAGER_DESCRIPTOR: TableManagerDescriptor = TableManagerDescriptor {
     id: "cfd",
     display_name: "Coflow data text",
+    file_extensions: &["cfd"],
+    aliases: &[],
 };
 
 /// Writer for `.cfd` text sources. Holds a cache of source text + AST per
