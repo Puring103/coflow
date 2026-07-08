@@ -4,7 +4,7 @@ use crate::error::CftErrorCode;
 use crate::schema::support::{ordered_comparable, types_comparable, unwrap_nullable, Ty};
 use crate::span::Span;
 
-impl<'a, 'b> TypeChecker<'a, 'b> {
+impl TypeChecker<'_, '_> {
     pub(super) fn check_unary(&mut self, op: UnaryOp, ty: &Ty, span: Span) -> Ty {
         if *ty == Ty::Unknown {
             return Ty::Unknown;

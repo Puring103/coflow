@@ -4,7 +4,7 @@ use coflow_cft::CftSchemaTypeRef;
 use coflow_data_model::{CfdInputDictKey, CfdInputValue};
 use std::collections::{BTreeMap, BTreeSet};
 
-impl<'a> Parser<'a> {
+impl Parser<'_> {
     pub(super) fn parse_value(
         &mut self,
         ty: &CftSchemaTypeRef,

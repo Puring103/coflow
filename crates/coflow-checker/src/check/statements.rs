@@ -125,7 +125,7 @@ fn eval_quantifier_stmt(
         Err(EvalAbort::Skipped) => return EvalFlow::Skipped,
         Err(EvalAbort::Error) => return EvalFlow::HardStop,
     };
-    let items = match evaluator.from_ops(quantifiers::quantifier_items(collection_value)) {
+    let items = match evaluator.eval_ops(quantifiers::quantifier_items(collection_value)) {
         Ok(items) => items,
         Err(EvalAbort::Skipped) => return EvalFlow::Skipped,
         Err(EvalAbort::Error) => return EvalFlow::HardStop,

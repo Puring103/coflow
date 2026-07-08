@@ -5,7 +5,7 @@ use crate::schema_view::{type_accepts_default, CfdValueDraft};
 use coflow_cft::{CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef};
 use std::collections::BTreeMap;
 
-impl<'s> Validator<'s> {
+impl Validator<'_> {
     pub(super) fn default_field_value(
         &mut self,
         field: &CftFieldMeta,

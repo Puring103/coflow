@@ -4,7 +4,7 @@ use crate::error::{CftDiagnostics, CftErrorCode};
 use crate::lexer::TokenKind;
 use crate::span::Span;
 
-impl<'a> Parser<'a> {
+impl Parser<'_> {
     pub(super) fn parse_postfix_expr(&mut self) -> Result<CheckExpr, CftDiagnostics> {
         let mut expr = self.parse_primary_expr()?;
         loop {

@@ -7,7 +7,7 @@ pub(super) struct Token {
     pub(super) span: Span,
 }
 
-impl<'a> Parser<'a> {
+impl Parser<'_> {
     pub(super) fn parse_key(&mut self, label: &str) -> Result<Token, CfdSyntaxDiagnostic> {
         self.skip_ws_and_comments();
         if self.peek_char() == Some('"') {

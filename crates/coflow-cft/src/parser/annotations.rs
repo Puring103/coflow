@@ -4,7 +4,7 @@ use crate::error::{CftDiagnostics, CftErrorCode};
 use crate::lexer::TokenKind;
 use crate::span::Span;
 
-impl<'a> Parser<'a> {
+impl Parser<'_> {
     pub(super) fn parse_annotation(&mut self) -> Result<Annotation, CftDiagnostics> {
         let start = self
             .expect_simple(&TokenKind::At, CftErrorCode::InvalidAnnotationSyntax)?

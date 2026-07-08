@@ -4,7 +4,7 @@ use crate::model::{CfdDictKey, CfdDomainId, CfdObject, CfdRecordId, CfdValue};
 use crate::schema_view::{CfdValueDraft, RecordDraft};
 use std::collections::BTreeMap;
 
-impl<'s> Validator<'s> {
+impl Validator<'_> {
     pub(super) fn resolve_fields(
         &mut self,
         fields: &BTreeMap<String, CfdValueDraft>,

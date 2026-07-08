@@ -8,7 +8,7 @@ use crate::error::{CftDiagnostic, CftDiagnostics, CftErrorCode};
 use crate::lexer::TokenKind;
 use crate::span::Span;
 
-impl<'a> Parser<'a> {
+impl Parser<'_> {
     pub(super) fn parse_check_block(&mut self) -> Result<CheckBlock, CftDiagnostics> {
         let start = self
             .expect_simple(&TokenKind::Check, CftErrorCode::UnexpectedToken)?

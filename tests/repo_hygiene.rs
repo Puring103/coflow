@@ -1,4 +1,9 @@
-#![allow(clippy::expect_used, clippy::panic)]
+#![allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::single_element_loop,
+    clippy::too_many_lines
+)]
 
 use std::process::Command;
 use toml::{Table, Value};
@@ -1045,7 +1050,7 @@ fn cfd_parser_lexer_helpers_do_not_live_in_parser_rs() {
         .expect("read cfd parser lexer helpers");
 
     for expected in [
-        "pub(super) enum NameTokenKind",
+        "pub enum NameTokenKind",
         "pub(super) struct ScalarToken",
         "pub(super) fn parse_scalar_token",
         "pub(super) fn parse_quoted_string",
@@ -2498,7 +2503,7 @@ fn engine_write_target_resolution_does_not_live_in_writes_rs() {
 fn engine_write_writer_dispatch_does_not_live_in_writes_rs() {
     let writes =
         std::fs::read_to_string("crates/coflow-engine/src/writes.rs").expect("read engine writes");
-    let writer = std::fs::read_to_string("crates/coflow-engine/src/writes/writer.rs")
+    let writer_dispatch = std::fs::read_to_string("crates/coflow-engine/src/writes/writer.rs")
         .expect("read engine writer dispatch helpers");
 
     for expected in [
@@ -2506,7 +2511,7 @@ fn engine_write_writer_dispatch_does_not_live_in_writes_rs() {
         "pub(super) fn lookup_source_writer",
     ] {
         assert!(
-            writer.contains(expected),
+            writer_dispatch.contains(expected),
             "engine writer dispatch helper `{expected}` should live in writes/writer.rs"
         );
         assert!(

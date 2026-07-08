@@ -1,6 +1,7 @@
 use crate::{CfdTextDiagnostic, CfdTextDiagnostics, CfdTextErrorCode, CfdTextSpan};
 
-pub(super) enum NameTokenKind {
+#[derive(Debug, Clone, Copy)]
+pub enum NameTokenKind {
     General,
     Reference,
 }
@@ -19,7 +20,7 @@ pub(super) fn parse_name(
     skip_ws_and_comments(source, pos);
     let start = *pos;
     while let Some(ch) = peek_char(source, *pos) {
-        if is_name_boundary(ch, &kind) {
+        if is_name_boundary(ch, kind) {
             break;
         }
         *pos += ch.len_utf8();
@@ -180,7 +181,7 @@ pub(super) fn is_value_boundary(ch: char) -> bool {
     ch.is_whitespace() || matches!(ch, ',' | ';' | '}' | ']' | '|' | ':')
 }
 
-fn is_name_boundary(ch: char, kind: &NameTokenKind) -> bool {
+fn is_name_boundary(ch: char, kind: NameTokenKind) -> bool {
     match kind {
         NameTokenKind::General => {
             ch.is_whitespace()

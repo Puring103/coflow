@@ -55,6 +55,7 @@ todo = "warn"
 unimplemented = "warn"
 unreachable = "warn"
 dbg_macro = "warn"
+redundant_pub_crate = "allow"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

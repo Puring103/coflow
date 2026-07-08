@@ -233,7 +233,7 @@ pub(super) fn sum_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue
                 saw_numeric = true;
                 let Some(next) = int_sum.checked_add(value) else {
                     return Err(OpsError::eval_type(
-                        path.clone(),
+                        path,
                         format!("整数求和溢出: {int_sum} + {value}"),
                     ));
                 };
@@ -254,7 +254,7 @@ pub(super) fn sum_value(value: LocatedCheckValue) -> OpsResult<LocatedCheckValue
             CheckValue::Null => {}
             other => {
                 return Err(OpsError::eval_type(
-                    path.clone(),
+                    path,
                     format!(
                         "sum 元素不是数值: 实际为 {}",
                         format_value_for_message(&other)

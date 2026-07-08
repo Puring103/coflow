@@ -4,7 +4,7 @@ use crate::error::{CftDiagnostics, CftErrorCode};
 use crate::lexer::TokenKind;
 use crate::span::Span;
 
-impl<'a> Parser<'a> {
+impl Parser<'_> {
     pub(super) fn parse_default_expr(&mut self) -> Result<DefaultExpr, CftDiagnostics> {
         let token = self.peek().clone();
         match token.kind {

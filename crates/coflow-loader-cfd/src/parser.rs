@@ -196,7 +196,7 @@ impl<'a> Parser<'a> {
         lexer::eat_keyword(self.source, &mut self.pos, expected)
     }
 
-    fn peek_keyword(&mut self, expected: &str) -> bool {
+    fn peek_keyword(&self, expected: &str) -> bool {
         lexer::peek_keyword(self.source, self.pos, expected)
     }
 

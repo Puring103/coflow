@@ -10,7 +10,7 @@ use crate::schema::{
 };
 use std::collections::BTreeMap;
 
-impl<'a> SchemaCompiler<'a> {
+impl SchemaCompiler<'_> {
     pub(super) fn build_schema(&self) -> CompiledSchema {
         let mut modules = self
             .container

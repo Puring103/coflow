@@ -170,18 +170,18 @@ fn default_from_schema_default(
             variant,
             value,
         } => Ok(CfdValue::Enum(
-            schema
-                .enum_value_from_int(enum_name, *value)
-                .map(|value| CfdEnumValue {
-                    enum_name: value.enum_name,
-                    variant: value.variant,
-                    value: value.value,
-                })
-                .unwrap_or_else(|| CfdEnumValue {
+            schema.enum_value_from_int(enum_name, *value).map_or_else(
+                || CfdEnumValue {
                     enum_name: enum_name.clone(),
                     variant: Some(variant.clone()),
                     value: *value,
-                }),
+                },
+                |value| CfdEnumValue {
+                    enum_name: value.enum_name,
+                    variant: value.variant,
+                    value: value.value,
+                },
+            ),
         )),
         CftSchemaDefaultValue::EmptyArray => Ok(CfdValue::Array(Vec::new())),
         CftSchemaDefaultValue::EmptyObject => match non_nullable(ty) {

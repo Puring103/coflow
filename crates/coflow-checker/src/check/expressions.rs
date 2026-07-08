@@ -107,7 +107,7 @@ fn eval_cmp_chain_expr(
     for (op, rhs_expr) in rest {
         let rhs = evaluator.eval_expr(rhs_expr)?;
         let path = lhs.path.clone().or_else(|| rhs.path.clone());
-        if !evaluator.from_ops(ops::compare(*op, &lhs.value, &rhs.value, rhs.path.clone()))? {
+        if !evaluator.eval_ops(ops::compare(*op, &lhs.value, &rhs.value, rhs.path.clone()))? {
             return Ok(LocatedCheckValue::new(CheckValue::Bool(false), path));
         }
         lhs = rhs;

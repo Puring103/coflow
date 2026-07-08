@@ -5,7 +5,7 @@ use crate::error::{CftDiagnostic, CftErrorCode};
 use crate::schema::support::{types_assignable, SymbolKind, Ty};
 use std::collections::BTreeSet;
 
-impl<'a> SchemaCompiler<'a> {
+impl SchemaCompiler<'_> {
     pub(super) fn validate_defaults(&mut self) {
         self.each_type(|this, info| {
             let mut field_names = this

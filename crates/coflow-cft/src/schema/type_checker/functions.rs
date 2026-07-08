@@ -7,7 +7,7 @@ use crate::schema::support::{
 use crate::span::Span;
 use regex::Regex;
 
-impl<'a, 'b> TypeChecker<'a, 'b> {
+impl TypeChecker<'_, '_> {
     pub(super) fn check_call(&mut self, name: &NameRef, args: &[CheckExpr], span: Span) -> Ty {
         if self.compiler.enums.contains_key(&name.name) {
             if args.len() != 1 {

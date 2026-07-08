@@ -58,7 +58,7 @@ impl ValueExprEvaluator for CheckEvaluator<'_> {
         rhs: &CheckValue,
         rhs_path: Option<CfdPath>,
     ) -> EvalResult<bool> {
-        self.from_ops(ops::compare(op, lhs, rhs, rhs_path))
+        self.eval_ops(ops::compare(op, lhs, rhs, rhs_path))
     }
 }
 
@@ -117,7 +117,7 @@ impl<'a> CheckEvaluator<'a> {
         self.deps.note_read_from(target);
     }
 
-    pub(super) fn from_ops<T>(&mut self, result: OpsResult<T>) -> EvalResult<T> {
+    pub(super) fn eval_ops<T>(&mut self, result: OpsResult<T>) -> EvalResult<T> {
         result.map_err(|err| {
             let (code, path, message) = err.into_parts();
             self.diag_at(code, path, message);
@@ -207,7 +207,7 @@ impl<'a> CheckEvaluator<'a> {
             CheckValue::Record(record) => Some(record.clone()),
             _ => None,
         };
-        let mut result = self.from_ops(fields::field_value(
+        let mut result = self.eval_ops(fields::field_value(
             self.schema,
             self.model,
             self.root_record,
@@ -229,7 +229,7 @@ impl<'a> CheckEvaluator<'a> {
         target: LocatedCheckValue,
         index: LocatedCheckValue,
     ) -> EvalResult<LocatedCheckValue> {
-        self.from_ops(access::index_value(target, index))
+        self.eval_ops(access::index_value(target, index))
     }
 
     pub(super) fn eval_call(
@@ -276,14 +276,14 @@ impl<'a> CheckEvaluator<'a> {
             Builtin::Len => {
                 let arg = &args[0];
                 let arg_value = self.eval_expr(arg)?;
-                self.from_ops(builtin_values::len_value(arg_value))
+                self.eval_ops(builtin_values::len_value(arg_value))
             }
             Builtin::Contains => {
                 let collection = self.eval_expr(&args[0])?;
                 let value = self.eval_expr(&args[1])?;
                 Ok(LocatedCheckValue::new(
                     CheckValue::Bool(
-                        self.from_ops(builtin_values::contains_value(&collection, &value.value))?,
+                        self.eval_ops(builtin_values::contains_value(&collection, &value.value))?,
                     ),
                     collection.path.clone(),
                 ))
@@ -291,25 +291,25 @@ impl<'a> CheckEvaluator<'a> {
             Builtin::Unique => {
                 let arg = &args[0];
                 let arg_value = self.eval_expr(arg)?;
-                self.from_ops(builtin_values::unique_value(arg_value))
+                self.eval_ops(builtin_values::unique_value(arg_value))
             }
             Builtin::Min | Builtin::Max => self.eval_min_max(builtin, args),
             Builtin::Sum => self.eval_sum(args),
             Builtin::Keys => {
                 let arg = &args[0];
                 let arg_value = self.eval_expr(arg)?;
-                self.from_ops(builtin_values::keys_value(arg_value))
+                self.eval_ops(builtin_values::keys_value(arg_value))
             }
             Builtin::Values => {
                 let arg = &args[0];
                 let arg_value = self.eval_expr(arg)?;
-                self.from_ops(builtin_values::values_value(arg_value))
+                self.eval_ops(builtin_values::values_value(arg_value))
             }
             Builtin::Matches => {
                 let value = self.eval_expr(&args[0])?;
                 let pattern =
                     self.resolve_call_signature(builtin_calls::matches_pattern_arg(&args[1]))?;
-                self.from_ops(builtin_values::matches_value(value, pattern))
+                self.eval_ops(builtin_values::matches_value(value, pattern))
             }
         }
     }
@@ -323,31 +323,35 @@ impl<'a> CheckEvaluator<'a> {
         let signature =
             self.resolve_call_signature(CallSignature::resolve_method(name, args.len()))?;
         let CallTarget::Builtin(builtin) = signature.target else {
-            unreachable!("method calls cannot resolve to enum constructors");
+            self.diag(
+                CfdErrorCode::CheckEvalTypeError,
+                "method calls cannot resolve to enum constructors",
+            );
+            return Err(EvalAbort::Error);
         };
 
         let receiver_value = self.eval_expr(receiver)?;
         match builtin {
-            Builtin::Len => self.from_ops(builtin_values::len_value(receiver_value)),
+            Builtin::Len => self.eval_ops(builtin_values::len_value(receiver_value)),
             Builtin::Contains => {
                 let value = self.eval_expr(&args[0])?;
                 Ok(LocatedCheckValue::new(
-                    CheckValue::Bool(self.from_ops(builtin_values::contains_value(
+                    CheckValue::Bool(self.eval_ops(builtin_values::contains_value(
                         &receiver_value,
                         &value.value,
                     ))?),
                     receiver_value.path.clone(),
                 ))
             }
-            Builtin::Unique => self.from_ops(builtin_values::unique_value(receiver_value)),
+            Builtin::Unique => self.eval_ops(builtin_values::unique_value(receiver_value)),
             Builtin::Min | Builtin::Max => self.eval_min_max_value(builtin, receiver_value),
             Builtin::Sum => self.eval_sum_value(receiver_value),
-            Builtin::Keys => self.from_ops(builtin_values::keys_value(receiver_value)),
-            Builtin::Values => self.from_ops(builtin_values::values_value(receiver_value)),
+            Builtin::Keys => self.eval_ops(builtin_values::keys_value(receiver_value)),
+            Builtin::Values => self.eval_ops(builtin_values::values_value(receiver_value)),
             Builtin::Matches => {
                 let pattern =
                     self.resolve_call_signature(builtin_calls::matches_pattern_arg(&args[0]))?;
-                self.from_ops(builtin_values::matches_value(receiver_value, pattern))
+                self.eval_ops(builtin_values::matches_value(receiver_value, pattern))
             }
         }
     }
@@ -386,7 +390,7 @@ impl<'a> CheckEvaluator<'a> {
         builtin: Builtin,
         arg_value: LocatedCheckValue,
     ) -> EvalResult<LocatedCheckValue> {
-        self.from_ops(builtin_values::min_max_value(builtin, arg_value))
+        self.eval_ops(builtin_values::min_max_value(builtin, arg_value))
     }
 
     pub(super) fn eval_sum(
@@ -401,7 +405,7 @@ impl<'a> CheckEvaluator<'a> {
         &mut self,
         arg_value: LocatedCheckValue,
     ) -> EvalResult<LocatedCheckValue> {
-        self.from_ops(builtin_values::sum_value(arg_value))
+        self.eval_ops(builtin_values::sum_value(arg_value))
     }
 
     pub(super) fn eval_unary(
@@ -409,7 +413,7 @@ impl<'a> CheckEvaluator<'a> {
         op: CftSchemaUnaryOp,
         value: LocatedCheckValue,
     ) -> EvalResult<LocatedCheckValue> {
-        self.from_ops(ops::unary_op(self.schema, op, value))
+        self.eval_ops(ops::unary_op(self.schema, op, value))
     }
 
     #[allow(clippy::similar_names)]
@@ -422,29 +426,29 @@ impl<'a> CheckEvaluator<'a> {
         match op {
             CftSchemaBinOp::Or => {
                 let lhs = self.eval_expr(lhs)?;
-                let (lhs, lhs_path) = self.from_ops(ops::expect_bool_operand(lhs, "左"))?;
+                let (lhs, lhs_path) = self.eval_ops(ops::expect_bool_operand(lhs, "左"))?;
                 if lhs {
                     return Ok(LocatedCheckValue::new(CheckValue::Bool(true), lhs_path));
                 }
                 let rhs = self.eval_expr(rhs)?;
-                let (rhs, rhs_path) = self.from_ops(ops::expect_bool_operand(rhs, "右"))?;
+                let (rhs, rhs_path) = self.eval_ops(ops::expect_bool_operand(rhs, "右"))?;
                 Ok(LocatedCheckValue::new(CheckValue::Bool(rhs), rhs_path))
             }
             CftSchemaBinOp::And => {
                 let lhs = self.eval_expr(lhs)?;
-                let (lhs, lhs_path) = self.from_ops(ops::expect_bool_operand(lhs, "左"))?;
+                let (lhs, lhs_path) = self.eval_ops(ops::expect_bool_operand(lhs, "左"))?;
                 if !lhs {
                     return Ok(LocatedCheckValue::new(CheckValue::Bool(false), lhs_path));
                 }
                 let rhs = self.eval_expr(rhs)?;
-                let (rhs, rhs_path) = self.from_ops(ops::expect_bool_operand(rhs, "右"))?;
+                let (rhs, rhs_path) = self.eval_ops(ops::expect_bool_operand(rhs, "右"))?;
                 Ok(LocatedCheckValue::new(CheckValue::Bool(rhs), rhs_path))
             }
             _ => {
                 let lhs = self.eval_expr(lhs)?;
                 let rhs = self.eval_expr(rhs)?;
                 let path = lhs.path.clone().or_else(|| rhs.path.clone());
-                self.from_ops(ops::eager_bin_op(
+                self.eval_ops(ops::eager_bin_op(
                     self.schema,
                     op,
                     lhs.value,

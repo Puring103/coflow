@@ -5,6 +5,7 @@ use coflow_api::{
 use coflow_cfd::ast::CfdBlockEntry;
 use coflow_cfd::parse_cfd;
 use std::collections::BTreeMap;
+use std::fmt::Write;
 use std::path::Path;
 
 use super::render::serialize_value;
@@ -39,17 +40,14 @@ impl DimensionSourceManager for CfdWriter {
             let actual_type = row
                 .and_then(|row| (!row.actual_type.is_empty()).then_some(row.actual_type.as_str()))
                 .unwrap_or(entry.actual_type.as_str());
-            out.push_str(&format!("{}: {actual_type} {{\n", entry.key));
-            out.push_str(&format!(
-                "    default: {},\n",
-                serialize_value(&entry.default, 2)
-            ));
+            let _ = writeln!(out, "{}: {actual_type} {{", entry.key);
+            let _ = writeln!(out, "    default: {},", serialize_value(&entry.default, 2));
             for variant in request.variants {
                 let value = row
                     .and_then(|row| row.variants.get(variant))
                     .cloned()
                     .unwrap_or_default();
-                out.push_str(&format!("    {variant}: {},\n", render_cfd_cell(&value)));
+                let _ = writeln!(out, "    {variant}: {},", render_cfd_cell(&value));
             }
             out.push_str("}\n\n");
         }

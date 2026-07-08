@@ -71,11 +71,10 @@ pub fn create_data_file(
         &CreateTableRequest {
             source: &source,
             sheet: layout.as_ref().map_or("", |layout| layout.sheet.as_str()),
-            actual_type: layout
-                .as_ref()
-                .map_or(actual_type.as_deref().unwrap_or(""), |layout| {
-                    layout.actual_type.as_str()
-                }),
+            actual_type: layout.as_ref().map_or_else(
+                || actual_type.as_deref().unwrap_or(""),
+                |layout| layout.actual_type.as_str(),
+            ),
             headers: layout
                 .as_ref()
                 .map_or_else(|| [].as_slice(), |layout| layout.headers.as_slice()),
@@ -171,7 +170,7 @@ fn table_manager(
     })
 }
 
-fn report(
+const fn report(
     file: String,
     provider_id: String,
     sheet: Option<String>,

@@ -9,7 +9,7 @@ use crate::schema::support::{
 use crate::span::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
-impl<'a> SchemaCompiler<'a> {
+impl SchemaCompiler<'_> {
     pub(super) fn report_dangling_annotations(&mut self) {
         for (module_id, module) in &self.container.modules {
             for annotation in &module.ast.dangling_annotations {

@@ -5,7 +5,7 @@ use coflow_cft::CftSchemaTypeRef;
 
 use super::Validator;
 
-impl<'s> Validator<'s> {
+impl Validator<'_> {
     pub(super) fn validate_dict_entries(
         &mut self,
         key_ty: &CftSchemaTypeRef,

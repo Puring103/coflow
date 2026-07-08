@@ -63,7 +63,7 @@ fn build_project_session_with_dimension_mode(
 
     let schema_view = CftSchemaView::new(&schema);
     let dimension_fields = dimensions::dimension_fields(&schema_view);
-    let mut ctx = SessionBuildContext {
+    let ctx = SessionBuildContext {
         project,
         schema,
         registry,
@@ -76,7 +76,7 @@ fn build_project_session_with_dimension_mode(
         dependencies,
         indexes,
     } = if diagnostics.is_empty() {
-        build_data_pipeline(&mut ctx, &mut diagnostics)?
+        build_data_pipeline(&ctx, &mut diagnostics)?
     } else {
         LoadedSessionData::empty()?
     };
@@ -105,7 +105,7 @@ struct SessionBuildContext<'a> {
 }
 
 impl SessionBuildContext<'_> {
-    fn has_dimension_fields(&self) -> bool {
+    const fn has_dimension_fields(&self) -> bool {
         !self.dimension_fields.is_empty()
     }
 
@@ -138,7 +138,7 @@ impl LoadedSessionData {
 }
 
 fn build_data_pipeline(
-    ctx: &mut SessionBuildContext<'_>,
+    ctx: &SessionBuildContext<'_>,
     diagnostics: &mut DiagnosticsStore,
 ) -> Result<LoadedSessionData, String> {
     let (mut output, mut indexes) = match load_base_data(ctx) {
@@ -227,10 +227,10 @@ fn commit_dimensions_if_needed(
         ctx.registry,
     );
     diagnostics.extend(dimension_result.diagnostics);
-    if !dimension_result.transaction.is_empty() {
-        Some(dimension_result.transaction)
-    } else {
+    if dimension_result.transaction.is_empty() {
         None
+    } else {
+        Some(dimension_result.transaction)
     }
 }
 

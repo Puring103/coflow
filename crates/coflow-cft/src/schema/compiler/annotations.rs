@@ -8,7 +8,7 @@ use crate::schema::support::{
 use crate::span::Span;
 use std::collections::BTreeMap;
 
-impl<'a> SchemaCompiler<'a> {
+impl SchemaCompiler<'_> {
     pub(super) fn validate_annotations(&mut self) {
         self.each_enum(|this, info| {
             this.validate_annotation_list(
