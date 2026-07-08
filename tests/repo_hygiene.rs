@@ -2471,6 +2471,56 @@ fn engine_write_reference_planning_does_not_live_in_writes_rs() {
 }
 
 #[test]
+fn engine_write_target_resolution_does_not_live_in_writes_rs() {
+    let writes =
+        std::fs::read_to_string("crates/coflow-engine/src/writes.rs").expect("read engine writes");
+    let target = std::fs::read_to_string("crates/coflow-engine/src/writes/target.rs")
+        .expect("read engine write target helpers");
+
+    for expected in [
+        "pub(super) fn guess_new_coordinate",
+        "pub(super) fn is_id_path",
+        "pub(super) struct WriteTarget",
+        "pub(super) fn write_target_for_path",
+    ] {
+        assert!(
+            target.contains(expected),
+            "engine write target helper `{expected}` should live in writes/target.rs"
+        );
+        assert!(
+            !writes.contains(expected),
+            "engine write target helper `{expected}` should not live in writes.rs"
+        );
+    }
+}
+
+#[test]
+fn engine_write_writer_dispatch_does_not_live_in_writes_rs() {
+    let writes =
+        std::fs::read_to_string("crates/coflow-engine/src/writes.rs").expect("read engine writes");
+    let writer = std::fs::read_to_string("crates/coflow-engine/src/writes/writer.rs")
+        .expect("read engine writer dispatch helpers");
+
+    for expected in [
+        "pub(super) fn source_for_file",
+        "pub(super) fn lookup_source_writer",
+    ] {
+        assert!(
+            writer.contains(expected),
+            "engine writer dispatch helper `{expected}` should live in writes/writer.rs"
+        );
+        assert!(
+            !writes.contains(expected),
+            "engine writer dispatch helper `{expected}` should not live in writes.rs"
+        );
+    }
+    assert!(
+        writes.lines().count() < 460,
+        "coflow-engine writes.rs should stay below the 460-line focused-module threshold"
+    );
+}
+
+#[test]
 fn engine_mutation_defaults_use_cft_schema_view() {
     let defaults = std::fs::read_to_string("crates/coflow-engine/src/mutation/defaults.rs")
         .expect("read mutation defaults")

@@ -8,13 +8,12 @@
 
 mod path;
 mod refs;
-
-use std::sync::Arc;
+mod target;
+mod writer;
 
 use coflow_api::{
     DeleteRecordRequest, Diagnostic, DiagnosticSet, InsertRecordRequest, ProviderRegistry,
-    RecordOrigin, RenameRecordRequest, ResolvedSource, Severity, SourceWriter, WriteCellRequest,
-    WriteContext, WriteFieldPathSegment,
+    RecordOrigin, RenameRecordRequest, WriteCellRequest, WriteContext, WriteFieldPathSegment,
 };
 use coflow_cft::CftSchemaView;
 use coflow_data_model::{CfdRecordId, CfdValue};
@@ -22,8 +21,9 @@ use coflow_data_model::{CfdRecordId, CfdValue};
 use super::records::WriteOutcome;
 use super::write_rules;
 use super::{build_project_session, ProjectSession, RecordCoordinate};
-use path::{cfd_path_from_write_path, cfd_path_to_write_path};
 use refs::{reference_update_actions, source_rewrite_actions};
+use target::{guess_new_coordinate, is_id_path, write_target_for_path};
+use writer::{lookup_source_writer, source_for_file};
 
 impl ProjectSession {
     /// Persist a single field edit and rebuild the session in place.
@@ -322,37 +322,6 @@ fn not_found(actual_type: &str, key: &str) -> Diagnostic {
     )
 }
 
-fn source_for_file(session: &ProjectSession, file: &str) -> Result<ResolvedSource, DiagnosticSet> {
-    session
-        .files
-        .source_for_display(file)
-        .and_then(|source_id| session.sources.entries().get(source_id.index()))
-        .map(|entry| entry.source.clone())
-        .ok_or_else(|| {
-            DiagnosticSet::one(Diagnostic::error(
-                "WRITE-NO-SOURCE",
-                "WRITE",
-                format!("no resolved source recorded for file `{file}` (cannot dispatch write)"),
-            ))
-        })
-}
-
-fn lookup_source_writer(
-    registry: &ProviderRegistry,
-    source: &ResolvedSource,
-) -> Result<Arc<dyn SourceWriter>, DiagnosticSet> {
-    registry.source_writer(&source.provider_id).ok_or_else(|| {
-        DiagnosticSet::one(Diagnostic {
-            code: "WRITE-NO-WRITER".to_string(),
-            stage: "WRITE".to_string(),
-            severity: Severity::Error,
-            message: format!("no writer registered for provider `{}`", source.provider_id),
-            primary: None,
-            related: Vec::new(),
-        })
-    })
-}
-
 /// Pick the sheet name to target when inserting a record into a table source.
 fn sheet_for_file_type(session: &ProjectSession, file: &str, actual_type: &str) -> Option<String> {
     for id in session.records.ids_in_file(file) {
@@ -466,83 +435,4 @@ fn ensure_rename_key_available(
         "WRITE-RENAME",
         "WRITE",
     )
-}
-
-/// Compute the post-write coordinate. Writers don't tell us the new key, so
-/// we walk the path: only a write at exactly `[Field("id")]` can rename the
-/// record. Everything else preserves the original coordinate.
-fn guess_new_coordinate(
-    session: &ProjectSession,
-    old: &RecordCoordinate,
-    path: &[WriteFieldPathSegment],
-    new_value: &CfdValue,
-) -> RecordCoordinate {
-    if path.len() == 1 {
-        if let WriteFieldPathSegment::Field(name) = &path[0] {
-            if name == "id" {
-                if let CfdValue::String(new_key) = new_value {
-                    if session
-                        .records
-                        .get_by_coordinate(&old.actual_type, new_key)
-                        .is_some()
-                    {
-                        return RecordCoordinate::new(&old.actual_type, new_key.clone());
-                    }
-                }
-            }
-        }
-    }
-    let _ = session;
-    let _ = (path, new_value);
-    old.clone()
-}
-
-fn is_id_path(path: &[WriteFieldPathSegment]) -> bool {
-    matches!(path, [WriteFieldPathSegment::Field(name)] if name == "id")
-}
-
-#[derive(Debug, Clone)]
-struct WriteTarget {
-    coordinate: RecordCoordinate,
-    origin: RecordOrigin,
-    display_path: String,
-    field_path: Vec<WriteFieldPathSegment>,
-}
-
-fn write_target_for_path(
-    session: &ProjectSession,
-    host_ref: &super::RecordRef,
-    path: &[WriteFieldPathSegment],
-) -> Result<WriteTarget, DiagnosticSet> {
-    let Some(WriteFieldPathSegment::Field(top_field)) = path.first() else {
-        return Ok(WriteTarget {
-            coordinate: host_ref.coordinate.clone(),
-            origin: host_ref.origin.clone(),
-            display_path: host_ref.display_path.clone(),
-            field_path: path.to_vec(),
-        });
-    };
-    let path = cfd_path_from_write_path(path);
-    let Some((source_id, source_path)) = session.model.spread_source_path(host_ref.id, &path)
-    else {
-        return Ok(WriteTarget {
-            coordinate: host_ref.coordinate.clone(),
-            origin: host_ref.origin.clone(),
-            display_path: host_ref.display_path.clone(),
-            field_path: cfd_path_to_write_path(&path),
-        });
-    };
-    let Some(source_ref) = session.records.get(source_id) else {
-        return Err(DiagnosticSet::one(Diagnostic::error(
-            "WRITE-SPREAD-SOURCE",
-            "WRITE",
-            format!("spread source for field `{top_field}` is no longer indexed"),
-        )));
-    };
-    Ok(WriteTarget {
-        coordinate: source_ref.coordinate.clone(),
-        origin: source_ref.origin.clone(),
-        display_path: source_ref.display_path.clone(),
-        field_path: cfd_path_to_write_path(&source_path),
-    })
 }
