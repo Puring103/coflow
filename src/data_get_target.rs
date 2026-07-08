@@ -1,4 +1,4 @@
-use coflow_engine::RecordCoordinate;
+use coflow_runtime::RecordCoordinate;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]

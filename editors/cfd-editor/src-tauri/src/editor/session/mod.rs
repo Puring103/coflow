@@ -6,7 +6,7 @@
 //! don't block one another and a write is scoped to a single session.
 //!
 //! After spec 17, the data flow is:
-//! 1. `load_project` opens the project and asks `coflow-engine` to build a
+//! 1. `load_project` opens the project and asks `coflow-runtime` to build a
 //!    `ProjectSession` (schema, model, diagnostics, dependency graph, and
 //!    source/record/file indexes).
 //! 2. `get_*` commands read engine state under a read lock and derive only
@@ -27,7 +27,7 @@ use std::sync::{Arc, RwLock};
 
 use coflow_api::ProviderRegistry;
 use coflow_data_model::CfdValue;
-use coflow_engine::{
+use coflow_runtime::{
     DefaultMaterialization, MutationFields, MutationOp, MutationRequest, MutationValue,
     ProjectSession, RecordCoordinate,
 };
@@ -677,7 +677,7 @@ fn api_diagnostics_to_editor_error(diagnostics: coflow_api::DiagnosticSet) -> Ed
 
 fn mutation_report_to_editor_error(
     fallback: &str,
-    report: &coflow_engine::MutationReport,
+    report: &coflow_runtime::MutationReport,
 ) -> EditorError {
     let message = report
         .failed

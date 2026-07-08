@@ -2,7 +2,7 @@
 //!
 //! After the core-types refactor (spec 17), the editor stops re-defining
 //! "value", "path segment", "dict key" and friends; those are imported
-//! from `coflow-data-model` / `coflow-api` / `coflow-engine` and shipped
+//! from `coflow-data-model` / `coflow-api` / `coflow-runtime` and shipped
 //! straight to the front-end. The types that *remain* here are
 //! composition views — `RecordRow`, `FieldCell`, `FieldAnnotation`,
 //! `ProjectSnapshot`, ... — that bundle core data with editor-specific
@@ -10,7 +10,7 @@
 
 use coflow_api::{FlatDiagnostic, WriterCapabilities};
 use coflow_data_model::{CfdRecord, CfdValue};
-use coflow_engine::{FileTreeNode, RecordCoordinate};
+use coflow_runtime::{FileTreeNode, RecordCoordinate};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 

@@ -1,7 +1,7 @@
 use coflow_api::{
     CreateTableRequest, DiagnosticSet, ProviderRegistry, SourceLocationSpec, TableContext,
 };
-use coflow_engine::{configured_project_source, DataFileReport};
+use coflow_runtime::{configured_project_source, DataFileReport};
 
 pub(super) fn infer_table_provider(source: &str) -> Option<&'static str> {
     if source.starts_with("lark:")
@@ -21,7 +21,7 @@ pub(super) fn infer_table_provider(source: &str) -> Option<&'static str> {
 }
 
 pub(super) fn create_lark_table(
-    session: &coflow_engine::ProjectSchemaSession,
+    session: &coflow_runtime::ProjectSchemaSession,
     registry: &ProviderRegistry,
     source: &str,
     actual_type: Option<String>,
@@ -84,7 +84,7 @@ struct CliTableLayout {
 }
 
 fn lark_table_layout(
-    session: &coflow_engine::ProjectSchemaSession,
+    session: &coflow_runtime::ProjectSchemaSession,
     source: &coflow_project::SourceConfig,
     actual_type: Option<String>,
     sheet: Option<String>,

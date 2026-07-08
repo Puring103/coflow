@@ -2,7 +2,7 @@
 //! [`coflow_api::FlatDiagnostic`] shape.
 
 use coflow_api::FlatDiagnostic;
-use coflow_engine::DiagnosticsStore;
+use coflow_runtime::DiagnosticsStore;
 use std::path::Path;
 
 #[derive(Debug, Default, Clone)]

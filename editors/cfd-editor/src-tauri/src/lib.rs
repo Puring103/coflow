@@ -6,7 +6,7 @@ pub mod editor;
 mod watcher;
 
 use coflow_data_model::{CfdPathSegment, CfdValue};
-use coflow_engine::RecordCoordinate;
+use coflow_runtime::RecordCoordinate;
 use editor::{
     DeleteRecordOutcome, EditorError, FileRecords, GraphData, GraphQuery, InsertRecordOutcome,
     ProjectSnapshot, RefTarget, RenameRecordOutcome, SessionStore, WriteFieldOutcome,

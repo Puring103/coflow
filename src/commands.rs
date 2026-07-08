@@ -6,7 +6,7 @@ use crate::artifacts::{
 };
 use artifact_safety::{artifact_safety_diagnostics, ArtifactOutputPlan};
 use coflow_api::{Diagnostic, DiagnosticSet, Label, ProviderRegistry, Severity, SourceLocation};
-use coflow_engine::{build_project_schema_session, build_project_session, ProjectSession};
+use coflow_runtime::{build_project_schema_session, build_project_session, ProjectSession};
 use coflow_project::{OutputConfig, Project};
 use id_as_enum::{id_as_enum_variants_for_schema_only, stage_id_as_enum_lockfile_for_build};
 use std::path::{Path, PathBuf};

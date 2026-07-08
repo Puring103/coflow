@@ -35,7 +35,11 @@ fn final_architecture_has_no_pipeline_or_editor_core_crates() {
     );
     assert!(
         manifest.contains("crates/coflow-engine"),
-        "shared project runtime should live in coflow-engine"
+        "runtime implementation should live in coflow-engine"
+    );
+    assert!(
+        manifest.contains("crates/coflow-runtime"),
+        "host-facing runtime boundary should live in coflow-runtime"
     );
     assert!(
         !manifest.contains("crates/coflow-pipeline"),
@@ -1131,7 +1135,43 @@ fn editor_backend_does_not_depend_on_checker_runtime_directly() {
 
     assert!(
         !manifest.contains("coflow-checker"),
-        "editor backend should consume checker results through coflow-engine, not depend on coflow-checker directly"
+        "editor backend should consume checker results through coflow-runtime, not depend on coflow-checker directly"
+    );
+}
+
+#[test]
+fn hosts_depend_on_runtime_boundary_not_engine_implementation() {
+    let root_manifest = std::fs::read_to_string("Cargo.toml").expect("read root manifest");
+    let editor_manifest = std::fs::read_to_string("editors/cfd-editor/src-tauri/Cargo.toml")
+        .expect("read editor backend manifest");
+    let runtime_manifest =
+        std::fs::read_to_string("crates/coflow-runtime/Cargo.toml").expect("read runtime manifest");
+    let runtime_lib =
+        std::fs::read_to_string("crates/coflow-runtime/src/lib.rs").expect("read runtime lib");
+
+    assert!(
+        root_manifest.contains("coflow-runtime ="),
+        "root CLI should depend on coflow-runtime"
+    );
+    assert!(
+        !root_manifest.contains("coflow-engine ="),
+        "root CLI should not depend on coflow-engine directly"
+    );
+    assert!(
+        editor_manifest.contains("coflow-runtime ="),
+        "editor backend should depend on coflow-runtime"
+    );
+    assert!(
+        !editor_manifest.contains("coflow-engine ="),
+        "editor backend should not depend on coflow-engine directly"
+    );
+    assert!(
+        runtime_manifest.contains("coflow-engine ="),
+        "runtime facade should delegate to the engine implementation crate"
+    );
+    assert!(
+        runtime_lib.contains("pub use coflow_engine::*;"),
+        "runtime facade should expose the current engine runtime API"
     );
 }
 

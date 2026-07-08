@@ -1,5 +1,5 @@
 use coflow_api::{FlatDiagnostic, ProviderRegistry};
-use coflow_engine::{
+use coflow_runtime::{
     build_project_schema_session, build_project_session, data_get, data_list, data_sources,
     DataGetQuery, DataGetReport, DataListQuery, DataPatchReport, DataPatchRequest, ProjectSession,
     RecordCoordinate,
@@ -321,7 +321,7 @@ fn open_session(
 
 fn open_schema_session(
     config_or_dir: Option<&Path>,
-) -> Result<coflow_engine::ProjectSchemaSession, String> {
+) -> Result<coflow_runtime::ProjectSchemaSession, String> {
     let project = Project::open_schema_only(config_or_dir)?;
     build_project_schema_session(project)
 }

@@ -1,5 +1,5 @@
 use coflow_api::FlatDiagnostic;
-use coflow_engine::{
+use coflow_runtime::{
     build_project_schema_session, inspect_schema, schema_files, SchemaFilesReport,
     SchemaInspectReport,
 };

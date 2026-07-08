@@ -449,9 +449,9 @@ dependencies = [
  "coflow-builtins",
  "coflow-cft",
  "coflow-data-model",
- "coflow-engine",
  "coflow-loader-csv",
  "coflow-project",
+ "coflow-runtime",
  "notify",
  "serde",
  "serde_json",
@@ -581,12 +581,12 @@ dependencies = [
  "coflow-builtins",
  "coflow-cft",
  "coflow-codegen-csharp",
- "coflow-engine",
  "coflow-exporter-json",
  "coflow-loader-csv",
  "coflow-loader-excel",
  "coflow-lsp",
  "coflow-project",
+ "coflow-runtime",
  "rust_xlsxwriter",
  "serde",
  "serde_json",
@@ -792,6 +792,13 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "ts-rs",
+]
+
+[[package]]
+name = "coflow-runtime"
+version = "0.1.0"
+dependencies = [
+ "coflow-engine",
 ]
 
 [[package]]

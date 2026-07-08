@@ -8,7 +8,7 @@ use coflow_api::{
     SourceProviderDescriptor, SourceWriter, WriteCellRequest, WriteContext, WriteOutcome,
     WriterCapabilities, WriterDescriptor,
 };
-use coflow_engine::{build_project_session, RecordCoordinate};
+use coflow_runtime::{build_project_session, RecordCoordinate};
 use coflow_project::Project;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};

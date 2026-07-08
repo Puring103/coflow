@@ -20,6 +20,7 @@ members = [
     "crates/coflow-data-model",
     "crates/coflow-checker",
     "crates/coflow-engine",
+    "crates/coflow-runtime",
     "crates/coflow-loader-table-core",
     "crates/coflow-loader-csv",
     "crates/coflow-loader-excel",
@@ -60,9 +61,9 @@ clap = { version = "4", features = ["derive"] }
 coflow-api = { path = "crates/coflow-api" }
 coflow-builtins = { path = "crates/coflow-builtins" }
 coflow-cft = { path = "crates/coflow-cft" }
-coflow-engine = { path = "crates/coflow-engine" }
 coflow-lsp = { path = "crates/coflow-lsp" }
 coflow-project = { path = "crates/coflow-project" }
+coflow-runtime = { path = "crates/coflow-runtime" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 

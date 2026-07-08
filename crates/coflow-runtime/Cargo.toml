@@ -1,0 +1,17 @@
+[package]
+name = "coflow-runtime"
+version = "0.1.0"
+edition = "2021"
+description = "Host-facing Coflow project runtime."
+license = "Apache-2.0"
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+ts-export = ["coflow-engine/ts-export"]
+
+[dependencies]
+coflow-engine = { path = "../coflow-engine" }

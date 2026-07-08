@@ -21,8 +21,8 @@ ts-export = [
     "dep:ts-rs",
     "coflow-api/ts-export",
     "coflow-data-model/ts-export",
-    "coflow-engine/ts-export",
     "coflow-project/ts-export",
+    "coflow-runtime/ts-export",
 ]
 
 [build-dependencies]
@@ -38,8 +38,8 @@ coflow-api = { path = "../../../crates/coflow-api" }
 coflow-builtins = { path = "../../../crates/coflow-builtins" }
 coflow-cft = { path = "../../../crates/coflow-cft" }
 coflow-data-model = { path = "../../../crates/coflow-data-model" }
-coflow-engine = { path = "../../../crates/coflow-engine" }
 coflow-loader-csv = { path = "../../../crates/coflow-loader-csv" }
 coflow-project = { path = "../../../crates/coflow-project" }
+coflow-runtime = { path = "../../../crates/coflow-runtime" }
 walkdir = "2"
 ts-rs = { version = "10", optional = true }
