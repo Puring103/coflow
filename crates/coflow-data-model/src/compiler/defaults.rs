@@ -1,7 +1,7 @@
 use super::Validator;
+use crate::compiler_context::{type_accepts_default, CfdValueDraft};
 use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::model::{CfdEnumValue, CfdRecordId, CfdValue};
-use crate::schema_view::{type_accepts_default, CfdValueDraft};
 use coflow_cft::{CftFieldMeta, CftSchemaDefaultValue, CftSchemaTypeRef};
 use std::collections::BTreeMap;
 

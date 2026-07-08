@@ -53,13 +53,13 @@ pub(crate) enum CfdValueDraft {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct SchemaView {
+pub(crate) struct DataModelCompilerContext {
     cft: CftSchemaView,
     dimension_storage_types: BTreeMap<DimensionStorageKey, String>,
     domain_index: CfdDomainIndex,
 }
 
-impl SchemaView {
+impl DataModelCompilerContext {
     pub(crate) fn new(schema: &CftContainer) -> Self {
         let cft_view = CftSchemaView::new(schema);
         let domain_index = Self::build_domain_index(&cft_view);

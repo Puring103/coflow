@@ -6,7 +6,7 @@ use crate::model::{
     CsharpDatabase, CsharpParameter, CsharpTable,
 };
 use crate::names::camel_case;
-use crate::schema_view::SchemaView;
+use crate::schema_context::CsharpSchemaContext;
 use crate::CsharpCodegenError;
 use coflow_cft::CftSchemaTypeRef;
 
@@ -14,7 +14,7 @@ use super::identifiers::{context_index_field_name, plural_records_var};
 use super::types::csharp_type;
 
 pub fn build_csharp_database(
-    view: &SchemaView,
+    view: &CsharpSchemaContext,
     tables: &[String],
     _database_class: &str,
     data_format: CsharpDataFormat,
@@ -93,7 +93,7 @@ pub fn build_csharp_database(
 }
 
 fn build_context_lookups(
-    view: &SchemaView,
+    view: &CsharpSchemaContext,
     tables: &[String],
 ) -> Result<Vec<CsharpContextLookup>, CsharpCodegenError> {
     let mut context_lookups = Vec::new();
@@ -184,7 +184,7 @@ fn build_messagepack_load_steps(table_models: &[CsharpTable], load_extension: &s
     load_steps
 }
 
-fn build_table_model(view: &SchemaView, table_name: &str) -> CsharpTable {
+fn build_table_model(view: &CsharpSchemaContext, table_name: &str) -> CsharpTable {
     let csharp_name = view.csharp_type_name(table_name);
     let id_ty = view.key_field_type(table_name);
     CsharpTable {
@@ -202,7 +202,7 @@ fn build_table_model(view: &SchemaView, table_name: &str) -> CsharpTable {
 }
 
 fn sort_tables_by_dependencies(
-    view: &SchemaView,
+    view: &CsharpSchemaContext,
     tables: &[String],
 ) -> Result<Vec<String>, CsharpCodegenError> {
     let table_set = tables.iter().cloned().collect::<BTreeSet<_>>();
@@ -269,7 +269,7 @@ fn visit_table(
 }
 
 fn collect_table_dependencies(
-    view: &SchemaView,
+    view: &CsharpSchemaContext,
     type_name: &str,
     table_set: &BTreeSet<String>,
     out: &mut BTreeSet<String>,
@@ -282,7 +282,7 @@ fn collect_table_dependencies(
 }
 
 fn collect_table_dependencies_for_field_type(
-    view: &SchemaView,
+    view: &CsharpSchemaContext,
     ty: &CftSchemaTypeRef,
     table_set: &BTreeSet<String>,
     out: &mut BTreeSet<String>,

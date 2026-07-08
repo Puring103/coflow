@@ -15,18 +15,23 @@ use crate::load::{
 use crate::schema_build::build_project_schema_with_diagnostics;
 use crate::session::{ProjectSchemaSession, ProjectSession};
 
-/// Opens, loads, builds, and checks a project into a reusable runtime session.
+/// Builds a project into a reusable runtime session for the normal `build`
+/// pipeline.
+///
+/// This entry point may write generated dimension sources before the final
+/// reload. Use [`open_project_session_read_only`] for editor, inspection, and
+/// background tasks that must not mutate project files.
 ///
 /// # Errors
 ///
 /// Returns unrecoverable project/config/schema I/O errors. User-fixable
 /// project, schema, loader, model, and check problems are captured in the
 /// returned session diagnostics.
-pub fn build_project_session(
+pub fn build_project_session_for_build(
     project: Project,
     registry: &ProviderRegistry,
 ) -> Result<ProjectSession, String> {
-    build_project_session_with_dimension_mode(project, registry, DimensionBuildMode::Generate)
+    build_project_session_with_mode(project, registry, DimensionBuildMode::Generate)
 }
 
 /// Opens, loads, and checks a project without writing generated dimension
@@ -37,11 +42,11 @@ pub fn build_project_session(
 /// Returns unrecoverable project/config/schema I/O errors. User-fixable
 /// project, schema, loader, model, and check problems are captured in the
 /// returned session diagnostics.
-pub fn build_project_session_read_only(
+pub fn open_project_session_read_only(
     project: Project,
     registry: &ProviderRegistry,
 ) -> Result<ProjectSession, String> {
-    build_project_session_with_dimension_mode(project, registry, DimensionBuildMode::ReadOnly)
+    build_project_session_with_mode(project, registry, DimensionBuildMode::ReadOnly)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,7 +55,7 @@ enum DimensionBuildMode {
     ReadOnly,
 }
 
-fn build_project_session_with_dimension_mode(
+fn build_project_session_with_mode(
     project: Project,
     registry: &ProviderRegistry,
     dimension_mode: DimensionBuildMode,

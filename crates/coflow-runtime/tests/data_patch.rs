@@ -2,8 +2,9 @@
 
 use coflow_project::Project;
 use coflow_runtime::{
-    build_project_session, DataPatchOp, DataPatchRequest, DefaultMaterialization, MutationOp,
-    MutationRequest, MutationValue, PatchPathSegment, PatchRecordSelector, RecordCoordinate,
+    build_project_session_for_build, DataPatchOp, DataPatchRequest, DefaultMaterialization,
+    MutationOp, MutationRequest, MutationValue, PatchPathSegment, PatchRecordSelector,
+    RecordCoordinate,
 };
 use serde_json::json;
 
@@ -150,7 +151,7 @@ fn session(
 ) -> (coflow_runtime::ProjectSession, coflow_api::ProviderRegistry) {
     let project = Project::open_schema_only(Some(&root.join("coflow.yaml"))).expect("open");
     let registry = registry();
-    let session = build_project_session(project, &registry).expect("session");
+    let session = build_project_session_for_build(project, &registry).expect("session");
     (session, registry)
 }
 

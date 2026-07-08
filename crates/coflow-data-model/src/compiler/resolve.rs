@@ -1,7 +1,7 @@
 use super::{SpreadFieldRef, Validator};
+use crate::compiler_context::{CfdValueDraft, RecordDraft};
 use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::model::{CfdDictKey, CfdDomainId, CfdObject, CfdRecordId, CfdValue};
-use crate::schema_view::{CfdValueDraft, RecordDraft};
 use std::collections::BTreeMap;
 
 impl Validator<'_> {

@@ -4,7 +4,7 @@ use crate::names::{
     camel_case, csharp_ident_error, csharp_member_ident_error, csharp_namespace_error,
     csharp_type_name, has_annotation, index_param_name, pluralize,
 };
-use crate::schema_view::SchemaView;
+use crate::schema_context::CsharpSchemaContext;
 use crate::CsharpCodegenError;
 use coflow_cft::CftContainer;
 use serde::{Deserialize, Serialize};
@@ -77,7 +77,7 @@ pub fn build_project(
     id_as_enum_variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
     non_empty_tables: Option<&BTreeSet<String>>,
 ) -> Result<CsharpProject, CsharpCodegenError> {
-    let view = SchemaView::new(schema)
+    let view = CsharpSchemaContext::new(schema)
         .with_int_32(options.int_32)
         .with_float_32(options.float_32);
     let diagnostics = preflight_csharp_codegen_with_view(&view, options, &id_as_enum_variants);
@@ -97,7 +97,7 @@ pub fn build_project(
         .filter(|name| non_empty_tables.is_none_or(|set| set.contains(name)))
         .collect();
     let loadable: BTreeSet<String> = tables.iter().cloned().collect();
-    let view = SchemaView::new(schema)
+    let view = CsharpSchemaContext::new(schema)
         .with_int_32(options.int_32)
         .with_float_32(options.float_32)
         .with_loadable_tables(loadable);
@@ -143,7 +143,7 @@ pub fn build_project(
     })
 }
 
-fn build_csharp_singletons(view: &SchemaView) -> Vec<crate::model::CsharpSingleton> {
+fn build_csharp_singletons(view: &CsharpSchemaContext) -> Vec<crate::model::CsharpSingleton> {
     view.singleton_type_names()
         .into_iter()
         .map(|name| {
@@ -164,14 +164,14 @@ pub fn preflight_csharp_codegen(
     options: &CsharpCodegenOptions,
     id_as_enum_variants: &BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
 ) -> Vec<CsharpCodegenDiagnostic> {
-    let view = SchemaView::new(schema)
+    let view = CsharpSchemaContext::new(schema)
         .with_int_32(options.int_32)
         .with_float_32(options.float_32);
     preflight_csharp_codegen_with_view(&view, options, id_as_enum_variants)
 }
 
 fn preflight_csharp_codegen_with_view(
-    view: &SchemaView,
+    view: &CsharpSchemaContext,
     options: &CsharpCodegenOptions,
     id_as_enum_variants: &BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
 ) -> Vec<CsharpCodegenDiagnostic> {
@@ -220,7 +220,10 @@ fn validate_options(
     }
 }
 
-fn validate_schema_names(view: &SchemaView, diagnostics: &mut Vec<CsharpCodegenDiagnostic>) {
+fn validate_schema_names(
+    view: &CsharpSchemaContext,
+    diagnostics: &mut Vec<CsharpCodegenDiagnostic>,
+) {
     for schema_enum in view.cft_enum_metas() {
         validate_ident("enum", &schema_enum.name, diagnostics);
         validate_ident("enum", &csharp_type_name(&schema_enum.name), diagnostics);
@@ -253,7 +256,7 @@ fn validate_schema_names(view: &SchemaView, diagnostics: &mut Vec<CsharpCodegenD
 }
 
 fn validate_generated_names(
-    view: &SchemaView,
+    view: &CsharpSchemaContext,
     options: &CsharpCodegenOptions,
     diagnostics: &mut Vec<CsharpCodegenDiagnostic>,
 ) {
@@ -292,7 +295,7 @@ fn validate_generated_names(
 }
 
 fn validate_generated_file_names(
-    view: &SchemaView,
+    view: &CsharpSchemaContext,
     options: &CsharpCodegenOptions,
     diagnostics: &mut Vec<CsharpCodegenDiagnostic>,
 ) {
@@ -357,7 +360,7 @@ fn validate_id_as_enum_variants(
 }
 
 fn build_id_as_enums(
-    view: &SchemaView,
+    view: &CsharpSchemaContext,
     declared: &BTreeSet<String>,
     mut variants: BTreeMap<String, Vec<CsharpIdAsEnumVariant>>,
 ) -> BTreeMap<String, CsharpEnum> {
@@ -428,7 +431,7 @@ fn case_insensitive_file_key(file_name: &str) -> String {
 }
 
 fn validate_generated_member_names(
-    view: &SchemaView,
+    view: &CsharpSchemaContext,
     diagnostics: &mut Vec<CsharpCodegenDiagnostic>,
 ) {
     for ty in view.type_metas() {

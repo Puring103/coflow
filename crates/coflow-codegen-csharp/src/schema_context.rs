@@ -1,12 +1,10 @@
 use crate::names::csharp_type_name;
 use crate::CsharpCodegenError;
-use coflow_cft::{
-    CftContainer, CftEnumMeta, CftFieldMeta, CftSchemaTypeRef, CftSchemaView, CftTypeMeta,
-};
+use coflow_cft::{CftContainer, CftEnumMeta, CftSchemaTypeRef, CftSchemaView, CftTypeMeta};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
-pub struct SchemaView {
+pub struct CsharpSchemaContext {
     pub int_32: bool,
     pub float_32: bool,
     pub loadable_tables: BTreeSet<String>,
@@ -15,7 +13,7 @@ pub struct SchemaView {
     csharp_enums: BTreeMap<String, String>,
 }
 
-impl SchemaView {
+impl CsharpSchemaContext {
     pub fn new(schema: &CftContainer) -> Self {
         let cft = CftSchemaView::new(schema);
 
@@ -50,7 +48,7 @@ impl SchemaView {
         self.cft.enum_metas()
     }
 
-    pub fn type_metas(&self) -> impl Iterator<Item = &TypeMeta> {
+    pub fn type_metas(&self) -> impl Iterator<Item = &CftTypeMeta> {
         self.cft.type_metas()
     }
 
@@ -97,7 +95,7 @@ impl SchemaView {
             .is_ok_and(|assignable| assignable.iter().any(|t| self.loadable_tables.contains(t)))
     }
 
-    pub fn type_meta(&self, name: &str) -> Result<&TypeMeta, CsharpCodegenError> {
+    pub fn type_meta(&self, name: &str) -> Result<&CftTypeMeta, CsharpCodegenError> {
         self.cft
             .type_meta(name)
             .ok_or_else(|| CsharpCodegenError::new(format!("unknown CFT type `{name}`")))
@@ -188,10 +186,7 @@ impl SchemaView {
         self.cft.ref_target_names()
     }
 
-    pub fn type_is_struct(&self, ty: &TypeMeta) -> bool {
+    pub fn type_is_struct(&self, ty: &CftTypeMeta) -> bool {
         self.cft.type_is_struct(&ty.name)
     }
 }
-
-pub type TypeMeta = CftTypeMeta;
-pub type FieldMeta = CftFieldMeta;

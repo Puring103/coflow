@@ -1,9 +1,9 @@
 use coflow_api::{FlatDiagnostic, ProviderRegistry};
 use coflow_project::Project;
 use coflow_runtime::{
-    build_project_schema_session, build_project_session, data_get, data_list, data_sources,
-    DataGetQuery, DataGetReport, DataListQuery, DataPatchReport, DataPatchRequest, ProjectSession,
-    RecordCoordinate,
+    build_project_schema_session, build_project_session_for_build, data_get, data_list,
+    data_sources, DataGetQuery, DataGetReport, DataListQuery, DataPatchReport, DataPatchRequest,
+    ProjectSession, RecordCoordinate,
 };
 use output::{
     flat_diagnostics, write_data_write_file_human, write_file_report_human, write_get_human,
@@ -315,7 +315,7 @@ fn open_session(
 ) -> Result<(ProjectSession, ProviderRegistry), String> {
     let project = Project::open_schema_only(config_or_dir)?;
     let registry = coflow_builtins::default_provider_registry().map_err(|err| err.to_string())?;
-    let session = build_project_session(project, &registry)?;
+    let session = build_project_session_for_build(project, &registry)?;
     Ok((session, registry))
 }
 

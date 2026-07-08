@@ -8,7 +8,9 @@ use coflow_api::WriteFieldPathSegment;
 use coflow_cft::{CftContainer, Dimension, ModuleId};
 use coflow_data_model::{CfdDataModel, CfdInputRecord, CfdInputValue, CfdValue};
 use coflow_project::Project;
-use coflow_runtime::{build_project_session, build_project_session_read_only, ProjectSession};
+use coflow_runtime::{
+    build_project_session_for_build, open_project_session_read_only, ProjectSession,
+};
 
 fn csv_dimension_registry() -> coflow_api::ProviderRegistry {
     let mut registry = coflow_api::ProviderRegistry::default();
@@ -103,7 +105,7 @@ fn localized_schema_requires_language_dimension_config() {
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = coflow_api::ProviderRegistry::default();
-    let session = build_project_session(project, &registry).expect("build session");
+    let session = build_project_session_for_build(project, &registry).expect("build session");
 
     assert!(
         session
@@ -151,7 +153,7 @@ fn custom_dimension_schema_requires_matching_dimension_config() {
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = coflow_api::ProviderRegistry::default();
-    let session = build_project_session(project, &registry).expect("build session");
+    let session = build_project_session_for_build(project, &registry).expect("build session");
 
     assert!(
         session
@@ -222,7 +224,7 @@ dimensions:
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = csv_dimension_registry();
-    let session = build_project_session(project, &registry).expect("build session");
+    let session = build_project_session_for_build(project, &registry).expect("build session");
 
     let variants = session
         .schema
@@ -311,7 +313,7 @@ dimensions:
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = csv_dimension_registry();
-    let session = build_project_session(project, &registry).expect("build session");
+    let session = build_project_session_for_build(project, &registry).expect("build session");
 
     let variants = session
         .schema
@@ -371,7 +373,7 @@ dimensions:
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = csv_dimension_registry();
-    let session = build_project_session(project, &registry).expect("build session");
+    let session = build_project_session_for_build(project, &registry).expect("build session");
 
     let variants = session
         .schema
@@ -423,7 +425,7 @@ dimensions:
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = csv_dimension_registry();
-    let session = build_project_session_read_only(project, &registry).expect("build session");
+    let session = open_project_session_read_only(project, &registry).expect("build session");
 
     assert!(
         !session.has_diagnostics(),
@@ -488,7 +490,7 @@ dimensions:
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = csv_dimension_registry();
-    let session = build_project_session(project, &registry).expect("build session");
+    let session = build_project_session_for_build(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
@@ -554,7 +556,7 @@ dimensions:
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = csv_dimension_registry();
-    let session = build_project_session(project, &registry).expect("build session");
+    let session = build_project_session_for_build(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
@@ -614,7 +616,7 @@ dimensions:
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = csv_dimension_registry();
-    let session = build_project_session(project, &registry).expect("build session");
+    let session = build_project_session_for_build(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
@@ -677,7 +679,7 @@ dimensions:
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = csv_dimension_registry();
-    let session = build_project_session(project, &registry).expect("build session");
+    let session = build_project_session_for_build(project, &registry).expect("build session");
     assert!(
         session.has_diagnostics(),
         "dimension zh variant should fail the check"
@@ -746,7 +748,7 @@ dimensions:
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = csv_dimension_registry();
-    let session = build_project_session(project, &registry).expect("build session");
+    let session = build_project_session_for_build(project, &registry).expect("build session");
     assert!(session.has_diagnostics());
     assert!(
         !generated_path.exists(),
@@ -818,7 +820,7 @@ dimensions:
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = csv_dimension_registry();
-    let session = build_project_session(project, &registry).expect("build session");
+    let session = build_project_session_for_build(project, &registry).expect("build session");
     assert!(session.has_diagnostics());
     assert_eq!(
         std::fs::read_to_string(root.join("data/dimensions/language/Item_name.csv"))
@@ -875,7 +877,7 @@ dimensions:
 
     let registry = csv_dimension_registry();
     let project = Project::open_schema_only(Some(&root)).expect("open project");
-    let session = build_project_session(project, &registry).expect("build session");
+    let session = build_project_session_for_build(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
@@ -890,7 +892,7 @@ dimensions:
     std::thread::sleep(std::time::Duration::from_millis(1200));
 
     let project = Project::open_schema_only(Some(&root)).expect("reopen project");
-    let session = build_project_session(project, &registry).expect("rebuild session");
+    let session = build_project_session_for_build(project, &registry).expect("rebuild session");
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
@@ -948,7 +950,7 @@ dimensions:
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = csv_dimension_registry();
-    let session = build_project_session(project, &registry).expect("build session");
+    let session = build_project_session_for_build(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
@@ -1018,7 +1020,7 @@ dimensions:
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = coflow_builtins::default_provider_registry().expect("default provider registry");
-    let session = build_project_session(project, &registry).expect("build session");
+    let session = build_project_session_for_build(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
@@ -1098,7 +1100,7 @@ dimensions:
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = coflow_builtins::default_provider_registry().expect("default provider registry");
-    let session = build_project_session(project, &registry).expect("build session");
+    let session = build_project_session_for_build(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
@@ -1169,7 +1171,7 @@ dimensions:
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = csv_dimension_registry();
-    let session = build_project_session(project, &registry).expect("build session");
+    let session = build_project_session_for_build(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
@@ -1288,7 +1290,7 @@ sources:
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = coflow_builtins::default_provider_registry().expect("default provider registry");
-    let mut session = build_project_session(project, &registry).expect("build session");
+    let mut session = build_project_session_for_build(project, &registry).expect("build session");
     assert!(
         !session.has_diagnostics(),
         "diagnostics: {:?}",
@@ -1388,7 +1390,7 @@ fn rename_record_updates_direct_refs_and_spread_sources_without_global_ref_scan(
 
     let project = Project::open_schema_only(Some(&root)).expect("open project");
     let registry = coflow_builtins::default_provider_registry().expect("default provider registry");
-    let mut session = build_project_session(project, &registry).expect("build session");
+    let mut session = build_project_session_for_build(project, &registry).expect("build session");
 
     session
         .rename_record_key(&registry, "Holder", "base_holder", "renamed_holder")

@@ -1,6 +1,6 @@
+use crate::compiler_context::{DataModelCompilerContext, RecordDraft};
 use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::model::{CfdDomainId, CfdPolymorphicIndex, CfdRecordId, CfdTable, CfdTypeId};
-use crate::schema_view::{RecordDraft, SchemaView};
 use coflow_cft::{is_cft_identifier, record_key_ident_error};
 use std::collections::BTreeMap;
 
@@ -12,7 +12,7 @@ pub(super) struct ModelIndexes {
 }
 
 pub(super) fn build_indexes(
-    schema: &SchemaView,
+    schema: &DataModelCompilerContext,
     drafts: &[RecordDraft],
     diagnostics: &mut Vec<CfdDiagnostic>,
 ) -> ModelIndexes {
@@ -112,7 +112,7 @@ pub(super) fn build_indexes(
 }
 
 fn add_polymorphic_ids(
-    schema: &SchemaView,
+    schema: &DataModelCompilerContext,
     inheritance_index: &mut BTreeMap<String, CfdPolymorphicIndex>,
     actual_type: &str,
     key: &str,
@@ -132,7 +132,7 @@ fn add_polymorphic_ids(
 }
 
 pub(super) fn validate_singletons(
-    schema: &SchemaView,
+    schema: &DataModelCompilerContext,
     drafts: &[RecordDraft],
     tables: &BTreeMap<String, CfdTable>,
     diagnostics: &mut Vec<CfdDiagnostic>,

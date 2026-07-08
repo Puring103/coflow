@@ -1312,9 +1312,9 @@ fn engine_load_pipeline_does_not_live_in_lib_rs() {
         "coflow-runtime lib.rs should stay below the 300-line orchestration threshold"
     );
     for expected in [
-        "pub fn build_project_session",
-        "pub fn build_project_session_read_only",
-        "fn build_project_session_with_dimension_mode",
+        "pub fn build_project_session_for_build",
+        "pub fn open_project_session_read_only",
+        "fn build_project_session_with_mode",
         "fn build_schema_session",
         "fn build_data_pipeline",
         "fn load_base_data",
@@ -1436,20 +1436,21 @@ fn engine_data_file_commands_do_not_depend_on_cfd_provider_source_writer() {
 }
 
 #[test]
-fn data_model_schema_projection_uses_cft_schema_view() {
-    let schema_view = std::fs::read_to_string("crates/coflow-data-model/src/schema_view.rs")
-        .expect("read data-model schema view");
+fn data_model_schema_projection_uses_cft_compiler_context() {
+    let compiler_context =
+        std::fs::read_to_string("crates/coflow-data-model/src/compiler_context.rs")
+            .expect("read data-model compiler context");
 
     assert!(
-        schema_view.contains("CftSchemaView::new(schema)"),
+        compiler_context.contains("CftSchemaView::new(schema)"),
         "data-model schema projection should be built from coflow-cft CftSchemaView"
     );
     assert!(
-        schema_view.contains("CftTypeMeta"),
+        compiler_context.contains("CftTypeMeta"),
         "data-model schema view should reuse coflow-cft type metadata instead of local type metadata"
     );
     assert!(
-        schema_view.contains("CftFieldMeta") && schema_view.contains("CftSchemaTypeRef"),
+        compiler_context.contains("CftFieldMeta") && compiler_context.contains("CftSchemaTypeRef"),
         "data-model schema view should reuse coflow-cft field metadata and type refs"
     );
     for forbidden in [
@@ -1470,14 +1471,14 @@ fn data_model_schema_projection_uses_cft_schema_view() {
         "CftSchemaField,",
     ] {
         assert!(
-            !schema_view.contains(forbidden),
+            !compiler_context.contains(forbidden),
             "data-model schema view should not rebuild schema projection from `{forbidden}`"
         );
     }
 }
 
 #[test]
-fn data_model_value_semantics_uses_cft_schema_view() {
+fn data_model_value_semantics_uses_cft_compiler_context() {
     let value_semantics =
         std::fs::read_to_string("crates/coflow-data-model/src/value_semantics.rs")
             .expect("read data-model value semantics");
@@ -2068,16 +2069,17 @@ fn cft_parser_check_expression_parser_is_split_out() {
 }
 
 #[test]
-fn csharp_codegen_schema_projection_uses_cft_schema_view() {
-    let schema_view = std::fs::read_to_string("crates/coflow-codegen-csharp/src/schema_view.rs")
-        .expect("read C# codegen schema view");
+fn csharp_codegen_schema_projection_uses_cft_schema_context() {
+    let schema_context =
+        std::fs::read_to_string("crates/coflow-codegen-csharp/src/schema_context.rs")
+            .expect("read C# codegen schema context");
     let ir = std::fs::read_to_string("crates/coflow-codegen-csharp/src/ir.rs").expect("read C# IR");
     let emit =
         std::fs::read_to_string("crates/coflow-codegen-csharp/src/emit.rs").expect("read C# emit");
-    let codegen = format!("{schema_view}\n{ir}\n{emit}");
+    let codegen = format!("{schema_context}\n{ir}\n{emit}");
 
     assert!(
-        schema_view.contains("CftSchemaView::new(schema)"),
+        schema_context.contains("CftSchemaView::new(schema)"),
         "C# codegen schema projection should be built from coflow-cft CftSchemaView"
     );
     for forbidden in [
@@ -2109,9 +2111,8 @@ fn csharp_codegen_schema_projection_uses_cft_schema_view() {
         );
     }
     assert!(
-        schema_view.contains("pub type TypeMeta = CftTypeMeta;")
-            && schema_view.contains("pub type FieldMeta = CftFieldMeta;"),
-        "C# codegen should re-export coflow-cft type/field metadata instead of defining local copies"
+        codegen.contains("CftTypeMeta") && codegen.contains("CftFieldMeta"),
+        "C# codegen should consume coflow-cft type/field metadata directly instead of defining local copies"
     );
     for expected in [
         "self.cft.id_as_enum_names()",
@@ -2120,7 +2121,7 @@ fn csharp_codegen_schema_projection_uses_cft_schema_view() {
         "self.cft.type_is_struct(&ty.name)",
     ] {
         assert!(
-            schema_view.contains(expected),
+            schema_context.contains(expected),
             "C# codegen schema facade should delegate `{expected}` to coflow-cft"
         );
     }
@@ -2133,7 +2134,7 @@ fn csharp_codegen_schema_projection_uses_cft_schema_view() {
         "has_annotation(&ty.annotations",
     ] {
         assert!(
-            !schema_view.contains(forbidden),
+            !schema_context.contains(forbidden),
             "C# codegen schema facade should not keep local schema semantic helper `{forbidden}`"
         );
     }
@@ -2292,7 +2293,7 @@ fn csharp_codegen_emit_loader_helpers_do_not_live_in_emit_rs() {
 }
 
 #[test]
-fn exporter_core_schema_projection_uses_cft_schema_view() {
+fn exporter_core_schema_projection_uses_cft_compiler_context() {
     let exporter =
         std::fs::read_to_string("crates/coflow-exporter-core/src/lib.rs").expect("read exporter");
 
@@ -2306,7 +2307,7 @@ fn exporter_core_schema_projection_uses_cft_schema_view() {
         "schema.resolve_type(",
         "CftSchemaField",
         "struct FieldMeta",
-        "struct SchemaView",
+        "struct DataModelCompilerContext",
     ] {
         assert!(
             !exporter.contains(forbidden),
@@ -2316,7 +2317,7 @@ fn exporter_core_schema_projection_uses_cft_schema_view() {
 }
 
 #[test]
-fn engine_dimension_synthesis_uses_cft_schema_view() {
+fn engine_dimension_synthesis_uses_cft_compiler_context() {
     let synthesize = std::fs::read_to_string("crates/coflow-runtime/src/dimensions/synthesize.rs")
         .expect("read dimension synthesis");
 
@@ -2333,7 +2334,7 @@ fn engine_dimension_synthesis_uses_cft_schema_view() {
 }
 
 #[test]
-fn engine_schema_inspect_uses_cft_schema_view_for_schema_traversal() {
+fn engine_schema_inspect_uses_cft_compiler_context_for_schema_traversal() {
     let schema_inspect = std::fs::read_to_string("crates/coflow-runtime/src/schema_inspect.rs")
         .expect("read schema inspect");
 
@@ -2355,7 +2356,7 @@ fn engine_schema_inspect_uses_cft_schema_view_for_schema_traversal() {
 }
 
 #[test]
-fn engine_write_rules_use_cft_schema_view_for_path_types() {
+fn engine_write_rules_use_cft_compiler_context_for_path_types() {
     let write_rules = std::fs::read_to_string("crates/coflow-runtime/src/write_rules.rs")
         .expect("read engine write rules");
 
@@ -2378,7 +2379,7 @@ fn engine_write_rules_use_cft_schema_view_for_path_types() {
 }
 
 #[test]
-fn engine_data_file_headers_use_cft_schema_view() {
+fn engine_data_file_headers_use_cft_compiler_context() {
     let data_files = std::fs::read_to_string("crates/coflow-runtime/src/data_files.rs")
         .expect("read engine data file commands");
 
@@ -2399,7 +2400,7 @@ fn engine_data_file_headers_use_cft_schema_view() {
 }
 
 #[test]
-fn engine_writes_use_cft_schema_view_for_insert_schema_checks() {
+fn engine_writes_use_cft_compiler_context_for_insert_schema_checks() {
     let writes =
         std::fs::read_to_string("crates/coflow-runtime/src/writes.rs").expect("read engine writes");
 
@@ -2530,7 +2531,7 @@ fn engine_write_writer_dispatch_does_not_live_in_writes_rs() {
 }
 
 #[test]
-fn engine_mutation_defaults_use_cft_schema_view() {
+fn engine_mutation_defaults_use_cft_compiler_context() {
     let defaults = std::fs::read_to_string("crates/coflow-runtime/src/mutation/defaults.rs")
         .expect("read mutation defaults")
         .replace("\r\n", "\n");
@@ -2556,7 +2557,7 @@ fn engine_mutation_defaults_use_cft_schema_view() {
 }
 
 #[test]
-fn engine_mutation_field_coercion_uses_cft_schema_view() {
+fn engine_mutation_field_coercion_uses_cft_compiler_context() {
     let coercion = std::fs::read_to_string("crates/coflow-runtime/src/mutation/coercion.rs")
         .expect("read mutation coercion")
         .replace("\r\n", "\n");
@@ -2579,7 +2580,7 @@ fn engine_mutation_field_coercion_uses_cft_schema_view() {
 }
 
 #[test]
-fn engine_mutation_uses_cft_schema_view_for_schema_queries() {
+fn engine_mutation_uses_cft_compiler_context_for_schema_queries() {
     let mutation = std::fs::read_to_string("crates/coflow-runtime/src/mutation/mod.rs")
         .expect("read mutation");
     let coercion = std::fs::read_to_string("crates/coflow-runtime/src/mutation/coercion.rs")

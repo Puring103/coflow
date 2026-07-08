@@ -28,11 +28,11 @@
 )]
 
 mod compiler;
+mod compiler_context;
 mod diagnostic;
 mod edge_index;
 mod model;
 mod origin;
-mod schema_view;
 pub mod serde_i64;
 mod value_semantics;
 

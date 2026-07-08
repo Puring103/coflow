@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use crate::names::{camel_case, csharp_ident_error, pascal_case};
-use crate::schema_view::TypeMeta;
 use crate::CsharpCodegenError;
+use coflow_cft::CftTypeMeta;
 
 pub(super) fn csharp_public_type_name(name: &str) -> String {
     pascal_case(name)
@@ -25,7 +25,7 @@ pub(super) fn context_index_field_name(type_name: &str) -> String {
     format!("{type_name}Index")
 }
 
-pub(super) fn loader_reserved_local_names(ty: &TypeMeta) -> HashSet<String> {
+pub(super) fn loader_reserved_local_names(ty: &CftTypeMeta) -> HashSet<String> {
     let mut out = ty
         .all_fields
         .iter()

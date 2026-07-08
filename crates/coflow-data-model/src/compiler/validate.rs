@@ -1,30 +1,34 @@
 mod dicts;
 
+use crate::compiler_context::{
+    display_type_ref, input_value_kind, CfdValueDraft, DataModelCompilerContext, RecordDraft,
+    SpreadFieldSource,
+};
 use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::model::{CfdEnumValue, CfdInputValue, CfdRecordId, CfdValue};
 use crate::origin::RecordOrigin;
-use crate::schema_view::{
-    display_type_ref, input_value_kind, CfdValueDraft, RecordDraft, SchemaView, SpreadFieldSource,
-};
 use coflow_cft::{CftFieldMeta, CftSchemaTypeRef};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Validation and resolution helper.
 ///
-/// Separating `schema` (a copied `&'s SchemaView` reference) from
+/// Separating `schema` (a copied `&'s DataModelCompilerContext` reference) from
 /// `diagnostics` (a mutable borrow) lets every method call
 /// `schema.full_fields(type)` and obtain field references whose lifetime is
-/// tied to the outer `SchemaView`, **not** to `self`. The references
+/// tied to the outer `DataModelCompilerContext`, **not** to `self`. The references
 /// can therefore be iterated while `&mut self` methods are called to emit
 /// diagnostics — something impossible when the schema is an owned field of
 /// the same struct.
 pub(super) struct Validator<'s> {
-    pub(super) schema: &'s SchemaView,
+    pub(super) schema: &'s DataModelCompilerContext,
     pub(super) diagnostics: &'s mut Vec<CfdDiagnostic>,
 }
 
 impl<'s> Validator<'s> {
-    pub(super) fn new(schema: &'s SchemaView, diagnostics: &'s mut Vec<CfdDiagnostic>) -> Self {
+    pub(super) fn new(
+        schema: &'s DataModelCompilerContext,
+        diagnostics: &'s mut Vec<CfdDiagnostic>,
+    ) -> Self {
         Self {
             schema,
             diagnostics,

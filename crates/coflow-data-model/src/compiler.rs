@@ -3,15 +3,15 @@ mod indexes;
 mod resolve;
 mod validate;
 
+use crate::compiler_context::DataModelCompilerContext;
 use crate::diagnostic::{CfdDiagnostic, CfdDiagnostics, CfdPath};
 use crate::edge_index::{build_ref_indexes, build_spread_indexes};
 use crate::model::{CfdDataModel, CfdInputRecord, CfdObject, CfdRecord, CfdRecordId};
-use crate::schema_view::SchemaView;
 use coflow_cft::CftContainer;
 use validate::Validator;
 
 pub(crate) struct ModelCompiler {
-    schema: SchemaView,
+    schema: DataModelCompilerContext,
     input: Vec<CfdInputRecord>,
     diagnostics: Vec<CfdDiagnostic>,
 }
@@ -25,7 +25,7 @@ struct SpreadFieldRef<'a> {
 impl ModelCompiler {
     pub(crate) fn new(schema_source: &CftContainer, input: Vec<CfdInputRecord>) -> Self {
         Self {
-            schema: SchemaView::new(schema_source),
+            schema: DataModelCompilerContext::new(schema_source),
             input,
             diagnostics: Vec::new(),
         }

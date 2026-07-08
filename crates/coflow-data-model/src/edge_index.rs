@@ -1,9 +1,9 @@
+use crate::compiler_context::{CfdValueDraft, DataModelCompilerContext, RecordDraft};
 use crate::diagnostic::CfdPath;
 use crate::model::{
     CfdDomainId, CfdRecord, CfdRecordId, CfdValue, RefEdge, RefEdgeId, RefSite, SpreadEdge,
     SpreadEdgeId, SpreadSite,
 };
-use crate::schema_view::{CfdValueDraft, RecordDraft, SchemaView};
 use coflow_cft::CftSchemaTypeRef;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -25,7 +25,7 @@ pub(crate) struct SpreadIndexes {
 pub(crate) fn build_spread_indexes(
     drafts: &[RecordDraft],
     record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
-    schema: &SchemaView,
+    schema: &DataModelCompilerContext,
 ) -> SpreadIndexes {
     let mut out = SpreadIndexes::default();
     for (index, draft) in drafts.iter().enumerate() {
@@ -48,7 +48,7 @@ fn collect_spread_edges(
     path: &CfdPath,
     drafts: &[RecordDraft],
     record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
-    schema: &SchemaView,
+    schema: &DataModelCompilerContext,
     out: &mut SpreadIndexes,
 ) {
     let mut fields_by_source = draft
@@ -122,7 +122,7 @@ fn collect_nested_spread_edges(
     path: &CfdPath,
     drafts: &[RecordDraft],
     record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
-    schema: &SchemaView,
+    schema: &DataModelCompilerContext,
     out: &mut SpreadIndexes,
 ) {
     match value {
@@ -188,7 +188,7 @@ fn collect_nested_spread_edges(
 pub(crate) fn build_ref_indexes(
     records: &[CfdRecord],
     record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
-    schema: &SchemaView,
+    schema: &DataModelCompilerContext,
     spread_edges: &[SpreadEdge],
 ) -> RefIndexes {
     let mut out = RefIndexes::default();
@@ -232,7 +232,7 @@ pub(crate) fn build_ref_indexes(
 struct RefEdgeBuildContext<'a> {
     records: &'a [CfdRecord],
     record_by_domain_key: &'a BTreeMap<(CfdDomainId, String), CfdRecordId>,
-    schema: &'a SchemaView,
+    schema: &'a DataModelCompilerContext,
     spread_edges_by_host: BTreeMap<CfdRecordId, Vec<&'a SpreadEdge>>,
 }
 
@@ -342,7 +342,7 @@ fn collect_ref_edges(
 }
 
 fn lookup_domain_ref(
-    schema: &SchemaView,
+    schema: &DataModelCompilerContext,
     record_by_domain_key: &BTreeMap<(CfdDomainId, String), CfdRecordId>,
     target_type: &str,
     key: &str,

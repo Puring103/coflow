@@ -22,7 +22,7 @@ mod ir;
 mod model;
 mod names;
 mod render;
-mod schema_view;
+mod schema_context;
 
 use coflow_api::{
     ArtifactFile, ArtifactSet, CodeGenerator, CodegenContext, CodegenDescriptor, Diagnostic,

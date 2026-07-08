@@ -68,4 +68,4 @@ pub use schema_inspect::{
     SchemaTypeRefInfo,
 };
 pub use session::{ProjectSchemaSession, ProjectSession, RecordCoordinate};
-pub use session_build::{build_project_session, build_project_session_read_only};
+pub use session_build::{build_project_session_for_build, open_project_session_read_only};

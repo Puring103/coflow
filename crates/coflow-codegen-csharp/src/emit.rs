@@ -9,9 +9,10 @@ use crate::model::{
     CsharpProperty, CsharpType,
 };
 use crate::names::{camel_case, has_annotation};
-use crate::schema_view::{FieldMeta, SchemaView, TypeMeta};
+use crate::schema_context::CsharpSchemaContext;
 use crate::CsharpCodegenError;
 use coflow_cft::{CftEnumMeta, CftSchemaTypeRef};
+use coflow_cft::{CftFieldMeta, CftTypeMeta};
 use std::collections::{BTreeSet, HashSet};
 
 pub use database::build_csharp_database;
@@ -39,8 +40,8 @@ pub fn build_csharp_enum(schema_enum: &CftEnumMeta) -> CsharpEnum {
 }
 
 pub fn build_csharp_type(
-    schema_type: &TypeMeta,
-    view: &SchemaView,
+    schema_type: &CftTypeMeta,
+    view: &CsharpSchemaContext,
 ) -> Result<CsharpType, CsharpCodegenError> {
     let ty = view.type_meta(&schema_type.name)?;
     let mut constructor_parameters = Vec::new();
@@ -131,8 +132,8 @@ pub fn build_csharp_type(
 }
 
 fn add_id_constructor_member(
-    schema_type: &TypeMeta,
-    view: &SchemaView,
+    schema_type: &CftTypeMeta,
+    view: &CsharpSchemaContext,
     constructor_parameters: &mut Vec<CsharpParameter>,
     base_constructor_args: &mut Vec<String>,
     properties: &mut Vec<CsharpProperty>,
@@ -163,10 +164,10 @@ fn add_id_constructor_member(
 }
 
 fn add_field_constructor_member(
-    field: &FieldMeta,
+    field: &CftFieldMeta,
     property_type: String,
     local_name: String,
-    view: &SchemaView,
+    view: &CsharpSchemaContext,
     properties: &mut Vec<CsharpProperty>,
     assignments: &mut Vec<CsharpConstructorAssignment>,
 ) {
@@ -187,11 +188,11 @@ fn add_field_constructor_member(
     });
 }
 
-fn type_is_table(type_name: &str, view: &SchemaView) -> bool {
+fn type_is_table(type_name: &str, view: &CsharpSchemaContext) -> bool {
     view.is_ref_target_loadable(type_name)
 }
 
-fn has_concrete_parent(type_name: &str, view: &SchemaView) -> bool {
+fn has_concrete_parent(type_name: &str, view: &CsharpSchemaContext) -> bool {
     let mut parent = view
         .type_meta(type_name)
         .ok()
@@ -211,7 +212,7 @@ fn has_concrete_parent(type_name: &str, view: &SchemaView) -> bool {
 pub(super) fn backing_field_name(
     property_name: &str,
     ty: &CftSchemaTypeRef,
-    view: &SchemaView,
+    view: &CsharpSchemaContext,
 ) -> Option<String> {
     field_type_requires_context(ty, view)
         .ok()
@@ -219,7 +220,7 @@ pub(super) fn backing_field_name(
         .map(|_| format!("_{}", camel_case(property_name)))
 }
 
-fn type_declaration(schema_type: &TypeMeta, view: &SchemaView) -> String {
+fn type_declaration(schema_type: &CftTypeMeta, view: &CsharpSchemaContext) -> String {
     let prefix = if schema_type.is_abstract {
         "public abstract partial class"
     } else if view.type_is_struct(schema_type) {

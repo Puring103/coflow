@@ -1,12 +1,13 @@
-use crate::schema_view::{FieldMeta, SchemaView};
+use crate::schema_context::CsharpSchemaContext;
 use crate::CsharpCodegenError;
+use coflow_cft::CftFieldMeta;
 use coflow_cft::CftSchemaTypeRef;
 
 pub(super) fn read_field_expr(
-    field: &FieldMeta,
+    field: &CftFieldMeta,
     obj: &str,
     context: &str,
-    view: &SchemaView,
+    view: &CsharpSchemaContext,
     missing_expr: Option<&str>,
 ) -> Result<String, CsharpCodegenError> {
     let name = &field.name;
@@ -32,7 +33,7 @@ pub(super) fn read_token_expr(
     ty: &CftSchemaTypeRef,
     token: &str,
     context: &str,
-    view: &SchemaView,
+    view: &CsharpSchemaContext,
 ) -> Result<String, CsharpCodegenError> {
     match ty {
         CftSchemaTypeRef::Int => Ok(format!("CoflowJson.ReadInt({token})")),
@@ -80,7 +81,7 @@ pub(super) fn read_token_expr(
 fn read_dict_key_expr(
     ty: &CftSchemaTypeRef,
     key: &str,
-    view: &SchemaView,
+    view: &CsharpSchemaContext,
 ) -> Result<String, CsharpCodegenError> {
     match ty.non_nullable() {
         CftSchemaTypeRef::String => Ok(key.to_string()),
@@ -98,10 +99,10 @@ fn read_dict_key_expr(
 }
 
 pub(super) fn read_messagepack_field_expr(
-    field: &FieldMeta,
+    field: &CftFieldMeta,
     reader: &str,
     context: &str,
-    view: &SchemaView,
+    view: &CsharpSchemaContext,
 ) -> Result<String, CsharpCodegenError> {
     read_messagepack_expr(&field.ty_ref, reader, context, view)
 }
@@ -110,7 +111,7 @@ pub(super) fn read_messagepack_expr(
     ty: &CftSchemaTypeRef,
     reader: &str,
     context: &str,
-    view: &SchemaView,
+    view: &CsharpSchemaContext,
 ) -> Result<String, CsharpCodegenError> {
     match ty {
         CftSchemaTypeRef::Int => Ok(format!("CoflowMessagePack.ReadInt(ref {reader})")),
@@ -159,7 +160,7 @@ pub(super) fn read_messagepack_expr(
 fn read_messagepack_dict_key_expr(
     ty: &CftSchemaTypeRef,
     key: &str,
-    view: &SchemaView,
+    view: &CsharpSchemaContext,
 ) -> Result<String, CsharpCodegenError> {
     match ty.non_nullable() {
         CftSchemaTypeRef::String => Ok(key.to_string()),

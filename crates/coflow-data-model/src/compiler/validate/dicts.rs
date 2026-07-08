@@ -1,6 +1,6 @@
+use crate::compiler_context::CfdValueDraft;
 use crate::diagnostic::{CfdDiagnostic, CfdErrorCode, CfdPath};
 use crate::model::{CfdDictKey, CfdInputDictKey, CfdInputValue, CfdRecordId};
-use crate::schema_view::CfdValueDraft;
 use coflow_cft::CftSchemaTypeRef;
 
 use super::Validator;

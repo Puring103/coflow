@@ -1,5 +1,5 @@
 use super::{CfdDataModel, CfdRecordId, CfdValue};
-use crate::schema_view::SchemaView;
+use crate::compiler_context::DataModelCompilerContext;
 use coflow_cft::{CftContainer, CftSchemaTypeRef};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,11 +37,11 @@ impl CfdDataModel {
             .record(source_record)
             .ok_or(DimensionFieldLookupError::MissingStorageRecord)?;
         let actual_type = record.actual_type();
-        let schema_view = SchemaView::new(schema);
-        let source_type = schema_view
+        let compiler_context = DataModelCompilerContext::new(schema);
+        let source_type = compiler_context
             .type_meta(actual_type)
             .ok_or(DimensionFieldLookupError::NotDimensional)?;
-        let field = schema_view
+        let field = compiler_context
             .field_meta(actual_type, field_name)
             .ok_or(DimensionFieldLookupError::NotDimensional)?;
         let Some(field_dimension) = field
@@ -54,7 +54,7 @@ impl CfdDataModel {
         if field_dimension != dimension {
             return Err(DimensionFieldLookupError::DimensionMismatch);
         }
-        let storage_type = schema_view
+        let storage_type = compiler_context
             .dimension_storage_type(dimension, actual_type, field_name)
             .ok_or(DimensionFieldLookupError::MissingStorageRecord)?;
         let storage_key = if source_type.is_singleton {
@@ -71,7 +71,7 @@ impl CfdDataModel {
         let value = storage_record
             .field(variant)
             .ok_or(DimensionFieldLookupError::MissingVariantField)?;
-        let field_type = schema_view
+        let field_type = compiler_context
             .field_meta(storage_type, variant)
             .map(|field| field.ty_ref.clone());
         Ok(DimensionFieldValue {

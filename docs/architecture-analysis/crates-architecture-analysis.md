@@ -79,15 +79,15 @@
 
 1. `coflow-project` 读取 `coflow.yaml`，解析 `schema`、`sources`、`outputs`、`dimensions`，解析路径和 schema 文件。
 2. `coflow-cft` 对 schema 文件 lex/parse，再 compile 到 `CftContainer`。
-3. `coflow-runtime::build_project_session` 创建 schema session。
+3. `coflow-runtime::build_project_session_for_build` 创建 schema session。
 4. runtime 通过 registry 选择 source provider，加载 sources 为 `CfdInputRecord`。
-5. 如果 schema 有 dimension fields，普通 `build_project_session` 会在基础数据 load 后调用 `dimensions::regenerate_dimension_sources`，再带隐式维度 sources 重新 load 一次数据；`build_project_session_read_only` 则跳过生成但仍会进行维度相关 reload。
+5. 如果 schema 有 dimension fields，普通 `build_project_session_for_build` 会在基础数据 load 后调用 `dimensions::regenerate_dimension_sources`，再带隐式维度 sources 重新 load 一次数据；`open_project_session_read_only` 则跳过生成但仍会进行维度相关 reload。
 6. `coflow-data-model` 编译输入记录，构建 table/index/ref/spread 图。
 7. `coflow-checker` 执行 schema 中的 check 表达式，并返回 diagnostics 与依赖图。
 8. runtime 聚合 diagnostics/source/record/file/dependency index，供 CLI/editor 读写。
 9. exporter/codegen 根据 project outputs 提交 artifact。
 
-和上一轮相比，维度生成已经有 transaction rollback：如果生成后 pipeline diagnostics 非空，会通过 `DimensionGenerationTransaction::rollback` 回滚已写文件。这个修复降低了半状态风险。但普通 `build_project_session` 仍是带写副作用的复合构建入口，这在用户确认“build 本身就是复合命令、维度 build 需要参与普通 build”之后不再是 CLI 行为 bug；它仍是 API 语义风险，因为只读 host 必须明确调用 `build_project_session_read_only`。
+和上一轮相比，维度生成已经有 transaction rollback：如果生成后 pipeline diagnostics 非空，会通过 `DimensionGenerationTransaction::rollback` 回滚已写文件。这个修复降低了半状态风险。但普通 `build_project_session_for_build` 仍是带写副作用的复合构建入口，这在用户确认“build 本身就是复合命令、维度 build 需要参与普通 build”之后不再是 CLI 行为 bug；它仍是 API 语义风险，因为只读 host 必须明确调用 `open_project_session_read_only`。
 
 ### 2.3 Fixed or no-longer-valid previous findings
 
@@ -119,11 +119,11 @@
 
 #### High severity
 
-1. **普通 session build 仍有写副作用，且名称没有显式表达。**
-   `build_project_session` 默认 `DimensionBuildMode::Generate`，会写入 generated dimension sources，再 reload；`build_project_session_read_only` 才是无写入口。用户已经确认普通 build 包含维度 build 是合理的，所以这不是 CLI 需求偏差。但函数名本身仍像只读构建，对 editor、测试、第三方 host、未来后台索引很容易误用。建议在 `coflow-runtime` 暴露更明确的 `build_project_session_for_build` / `open_project_session_read_only` 之类入口，或使用显式 options 收窄。
+1. **普通 session build 仍有写副作用，但 public 入口已经显式。**
+   `build_project_session_for_build` 默认 `DimensionBuildMode::Generate`，会写入 generated dimension sources，再 reload；`open_project_session_read_only` 才是无写入口。用户已经确认普通 build 包含维度 build 是合理的，所以这不是 CLI 需求偏差。上一轮“名称没有显式表达”的问题已修复；剩余风险是第三方 host 仍可直接调用较宽的 runtime API，需要继续通过 public surface 收窄和测试约束防止误用。
 
 2. **语义 view 和类型解释仍在多处重复。**
-   `coflow-cft::CftSchemaView`、`coflow-data-model::schema_view`、`coflow-codegen-csharp::schema_view`、`coflow-exporter-core::SchemaView`、runtime 写入/默认值/mutation、checker value/type 逻辑、LSP completion/hover/semantic tokens 都在解释 schema/type/value。上一轮“直接替换 CftSchemaView”之后已有改善，但还没有形成一个所有消费者共用的 schema query/type facade。语义变化仍可能导致 build/check/export/codegen/LSP 行为不一致。
+   `coflow-cft::CftSchemaView`、`coflow-data-model::compiler_context`、`coflow-codegen-csharp::schema_context`、runtime 写入/默认值/mutation、checker value/type 逻辑、LSP completion/hover/semantic tokens 都在解释 schema/type/value。data-model 和 C# codegen 已经不再定义本地 `TypeMeta`/`FieldMeta` wrapper，C# codegen 也改用更准确的 `CsharpSchemaContext` 命名；但还没有形成一个所有消费者共用的 schema query/type facade。语义变化仍可能导致 build/check/export/codegen/LSP 行为不一致。
 
 3. **`coflow-api` 仍是宽接口层，不是低耦合 provider ABI。**
    API 模块已经拆分，但 provider trait 仍直接暴露 `CftContainer`、`CfdDataModel`、`CfdValue`、`RecordOrigin` 等内部模型。这样 provider 与语言/数据模型版本强绑定。当前作为同仓库 crate 可以接受，但如果要长期支持独立 provider 或稳定扩展点，仍会成为主要变更热点。
@@ -269,7 +269,7 @@
 当前问题：
 
 - 旧“parser/compiler/type checker 都是大单文件”已经明显缓解。
-- `CftSchemaView` 比上一轮更核心，但 data-model/codegen/exporter/runtime/LSP 仍存在各自投影或局部解释。
+- `CftSchemaView` 比上一轮更核心，data-model/codegen 已改为编译上下文命名并直接复用 CFT meta；runtime/checker/LSP 仍存在局部解释。
 - schema compiler/type checker 和 checker runtime 的表达式规则仍需要更强一致性测试。
 
 ### 3.5 `coflow-data-model`
@@ -278,7 +278,7 @@
 
 - compiler 已拆为 `compiler/defaults.rs`、`indexes.rs`、`resolve.rs`、`validate.rs`、`validate/dicts.rs`。
 - model 已拆为 `model/dimensions.rs`、`domain.rs`、`edges.rs`、`ids.rs`、`input.rs`、`tables.rs`、`value.rs`。
-- 还有 `schema_view.rs`、`edge_index.rs`、`origin.rs`、`value_semantics.rs`、`diagnostic.rs`。
+- 还有 `compiler_context.rs`、`edge_index.rs`、`origin.rs`、`value_semantics.rs`、`diagnostic.rs`。
 
 核心类型：
 
@@ -301,7 +301,7 @@
 当前问题：
 
 - 旧“compiler/model 都过千行”已修复。
-- `schema_view.rs` 仍是独立投影，和 CFT/codegen/exporter/checker 的 schema 解释没有完全统一。
+- `compiler_context.rs` 是 data-model 编译期上下文，包含 CFT view、dimension storage 索引和 domain 索引；它不再定义本地 type/field wrapper，但仍和 checker/runtime/LSP 的部分 schema 解释没有完全统一。
 - `CfdRecordId` 的 session 内稳定性/跨 reload 稳定性仍需要作为 contract 明确。
 - rejected/duplicate records 的 runtime 侧 source mapping 仍需要继续改进。
 
@@ -384,7 +384,7 @@
 
 核心入口：
 
-- `build_project_session`, `build_project_session_read_only`, `build_project_schema_session`, `configured_project_source`。
+- `build_project_session_for_build`, `open_project_session_read_only`, `build_project_schema_session`, `configured_project_source`。
 - `ProjectSession::record_view/record_views_in_file/file_tree/dimensions/id_for_coordinate/coordinate_of`。
 - `ProjectSession::write_field/rename_record_key/insert_record/delete_record`。
 - `ProjectSession::prepare_mutation/apply_prepared_mutation/apply_mutation/apply_data_patch/default_record_value`。
@@ -396,7 +396,7 @@
 当前问题：
 
 - runtime 已经比上一轮模块化很多，生产依赖也 provider-neutral。
-- `build_project_session` 的写副作用仍需在 public API 命名或 options 层更显式表达。
+- `build_project_session_for_build` 的写副作用仍需在 public API 命名或 options 层更显式表达。
 - `data_files.rs` 仍硬编码本地 provider id 推断，虽然实际操作已经走 registry。
 - runtime 内部仍大量直接创建 `CftSchemaView`，说明统一 schema facade 还未完全下沉。
 
@@ -405,13 +405,13 @@
 现状：
 
 - 单文件共享导出遍历。
-- 核心类型：`ExportEncoder`, `ExportError`, internal `Exporter`, `SchemaView`, `FieldMeta`, `TypeTagMode`。
+- 核心类型：`ExportEncoder`, `ExportError`, internal `Exporter`, `CftSchemaView`, `CftFieldMeta`, `TypeTagMode`。
 - 核心入口：`export_model_with_encoder`, `ExportEncoder::null/bool/int/float/string/array/map`。
 
 当前问题：
 
 - JSON/MessagePack 共享遍历是合理的。
-- internal `SchemaView` 是又一个 schema 投影，仍属于语义重复的一部分。
+- exporter 已直接使用 `CftSchemaView` / `CftFieldMeta`，旧 internal schema projection 问题已不成立；剩余风险主要是导出遍历和 codegen/runtime 对默认值、多态和 type tag 的解释需要靠 golden/roundtrip 测试保持一致。
 
 ### 3.10 `coflow-exporter-json` / `coflow-exporter-messagepack`
 
@@ -429,14 +429,14 @@
 
 文件结构：
 
-- `ir.rs`, `model.rs`, `schema_view.rs`, `emit.rs`, `render.rs`, `names.rs`, provider entry 和 tests。
+- `ir.rs`, `model.rs`, `schema_context.rs`, `emit.rs`, `render.rs`, `names.rs`, provider entry 和 tests。
 
 核心类型：
 
 - public API：`GeneratedFile`, `CsharpTemplate`, `CsharpDatabaseTemplates`, `CsharpCodegenError`, `CsharpCodeGenerator`。
 - options：`CsharpCodegenOptions`, `CsharpDataFormat`, `CsharpIdAsEnumVariant`, `CsharpCodegenDiagnostic`。
 - IR：`CsharpProject`, `CsharpType`, `CsharpProperty`, `CsharpEnum`, `CsharpEnumVariant`, `CsharpDatabase`, `CsharpTable`, `CsharpLoader`, `CsharpPolymorphicCase`。
-- view：`SchemaView`, `TypeMeta`, `FieldMeta`, `FieldType`。
+- schema context：`CsharpSchemaContext`，直接消费 `CftSchemaView`、`CftTypeMeta`、`CftFieldMeta`、`CftSchemaTypeRef`。
 
 核心入口：
 
@@ -448,7 +448,7 @@
 
 当前问题：
 
-- codegen schema view 仍独立。
+- codegen 已没有独立 `TypeMeta`/`FieldMeta` wrapper，`schema_context.rs` 主要承载 C# 命名、loadable table 和 codegen 选项上下文；它仍是局部 schema context，但不是重复 schema model。
 - 需要继续用现有 fixture/golden 保证 C# 与当前 export 数据可互操作，但不应新增未要求的 export/codegen version contract。
 
 ### 3.12 `coflow-loader-cfd`
@@ -580,8 +580,8 @@
 
 当前状态：部分修复，风险残留。
 
-- 普通 `build_project_session` 仍会生成维度源，这是用户确认的普通 build 语义。
-- 已新增 `build_project_session_read_only`。
+- 普通 `build_project_session_for_build` 仍会生成维度源，这是用户确认的普通 build 语义。
+- 已新增 `open_project_session_read_only`。
 - 已有 generation transaction 和 rollback。
 - 残留问题是 API 命名和 facade 没把“有写副作用的 build”和“只读 open/check session”区分得足够强。
 
@@ -639,7 +639,7 @@
 
 1. 收窄 `coflow-runtime` public API：显式区分 build-with-generation、read-only session、write session，避免 host 直接误用有副作用的入口。
 2. 把 provider id/extension 推断进一步移到 registry descriptor，减少 `data_files.rs` 对 `cfd/csv/excel/xlsx` 的硬编码。
-3. 给 `build_project_session` 维度生成路径继续补充事务/失败路径测试，确保 provider manager 的所有写入都可 rollback 或至少失败前置。
+3. 给 `build_project_session_for_build` 维度生成路径继续补充事务/失败路径测试，确保 provider manager 的所有写入都可 rollback 或至少失败前置。
 4. 补 rejected/duplicate source row 可追踪测试，确认 record/file/diagnostic index 的行为。
 
 ### Phase 2: Reduce semantic duplication
@@ -665,6 +665,6 @@
 
 上一轮分析里的不少问题已经实质修复：runtime 不再生产依赖具体 provider，表创建/表头同步/维度源生成已经 provider-operation 化，维度生成有 rollback，环境变量展开已移除，多处千行单文件也已经拆开，原 `coflow-engine` 已重命名为 `coflow-runtime`，薄 re-export facade 已删除。
 
-当前最重要的残留问题已经不是“代码全堆在一起”，而是三个边界还没完全收口：第一，`build_project_session` 的写副作用需要在 runtime public API 上显式化；第二，schema/type/value 解释仍在多个 crate 重复；第三，provider API 仍直接暴露内部 schema/data model，适合同仓库迭代但不适合作为长期稳定 ABI。
+当前最重要的残留问题已经不是“代码全堆在一起”，而是三个边界还没完全收口：第一，`build_project_session_for_build` 的写副作用需要在 runtime public API 上显式化；第二，schema/type/value 解释仍在多个 crate 重复；第三，provider API 仍直接暴露内部 schema/data model，适合同仓库迭代但不适合作为长期稳定 ABI。
 
 如果继续按“不做 LSP/Lark 深改、不新增无关导出 contract”的约束推进，下一步最有价值的是收窄 `coflow-runtime` 的 session/build/write 入口，并开始以 conformance tests 驱动统一 schema query/type facade。
